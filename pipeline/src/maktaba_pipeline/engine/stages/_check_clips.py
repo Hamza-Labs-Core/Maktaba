@@ -1,4 +1,8 @@
-"""``check_clips``: a language model checks what each short video is about (mediaintel
+"""What ``check_clips`` shares with the pipeline (mediaintel's import): the library's clips and
+their questions, a verdict applied, and the stage's input fingerprint. The stage itself is
+``tv.maktaba.classify``'s (Epic 54 wave 4, story 54.31).
+
+``check_clips``: a language model checks what each short video is about (mediaintel
 ``check-clips``).
 
 Subject: a library. Runs after ``tag``. The keyword tagger reads a clip's title word by word,
@@ -21,30 +25,29 @@ Settings: ``rules.tagcheck`` (``enabled``, ``clips``, ``clip_batch``, ``clip_max
 
 from __future__ import annotations
 
-import asyncio
 import json
-import urllib.error
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
 from ...classify import tag_check as tc
-from ...db.jobs import Job
 from ...rules import read as read_rules
 from ...settings import to_json
-from ..context import StageContext, StageFailure
-from ..graph import StageResult, Subject
+from ..graph import Subject
 from ..hashing import canonical_hash
-from ..sql import now, to_ts, uid
-from ._leftovers import library_name
-from ._tagging import latest_output, read_video_tags, video_tags_digest, write_video_tags
-from .registry import StageImpl
+from ..sql import uid
+from ._tagging import latest_output, read_video_tags, write_video_tags
 
-__all__ = ["ClipPlan", "IMPL", "apply_verdict", "load_clips", "plan_clips", "video_titles"]
+__all__ = [
+    "ClipPlan",
+    "apply_verdict",
+    "clips_on",
+    "input_fingerprint",
+    "load_clips",
+    "plan_clips",
+    "video_titles",
+]
 
-#: unanswered questions in a row after which the model server is taken as gone and the job
-#: stops (the answers so far are kept; the retry asks the rest)
-MAX_UNANSWERED_IN_A_ROW = 5
 
 _CLIPS_SQL = """
 SELECT v.id AS vid, COALESCE(yv.title, v.title, v.filename) AS title
@@ -159,11 +162,7 @@ async def apply_verdict(
     return True
 
 
-def _ask(items: list[tuple[str, str, tuple[str, ...]]], cfg: tc.TagCheckConfig) -> str:
-    return tc.ask(tc.clip_prompt(items, cfg), cfg)
-
-
-def _on(cfg: tc.TagCheckConfig) -> bool:
+def clips_on(cfg: tc.TagCheckConfig) -> bool:
     return cfg.enabled and cfg.clips
 
 
@@ -171,7 +170,7 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
     """DB only: the library's short videos and seasons, the tagcheck settings and the newest
     ``tag`` output of the library (a new tag run asks for the verdicts to be applied again)."""
     cfg: tc.TagCheckConfig = (await read_rules(db, "tagcheck"))[0]
-    if not _on(cfg):
+    if not clips_on(cfg):
         return canonical_hash({"off": True, "v": tc.CLIP_CHECK_VERSION})
     lib = uid(subject.id)
     seasons = await db.fetch(
@@ -197,68 +196,3 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
             "v": tc.CLIP_CHECK_VERSION,
         }
     )
-
-
-async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
-    library_id: UUID = job.subject.id
-    cfg: tc.TagCheckConfig = await ctx.rules("tagcheck")
-    lib = await library_name(db, library_id)
-    if lib is None:
-        return StageResult(output_hash=canonical_hash({"library": None}), summary={"gone": True})
-    if not _on(cfg):
-        return StageResult(
-            output_hash=await video_tags_digest(db, library_id), summary={"enabled": False}
-        )
-    plan = await plan_clips(db, library_id, lib, cfg)
-    counts = {"clips": plan.clips, "asked": 0, "cached": plan.carried, "applied": 0, "failed": 0}
-    for vid, keep, applied in plan.to_apply:
-        counts["cached"] += 1
-        if await apply_verdict(db, vid, keep, applied, cfg):
-            counts["applied"] += 1
-    size = max(1, cfg.clip_batch)
-    batches = [plan.todo[i : i + size] for i in range(0, len(plan.todo), size)]
-    in_a_row = 0  # unanswered questions in a row: the model server went away
-    for b, batch in enumerate(batches, 1):
-        await ctx.check_cancel()
-        await ctx.progress("ask", b - 1, len(batches), f"{counts['asked']} clips answered")
-        try:
-            answer = await asyncio.to_thread(
-                _ask, [(lib, c.title, c.candidates) for c, _ in batch], cfg
-            )
-        except (OSError, urllib.error.URLError, KeyError, ValueError) as e:
-            counts["failed"] += len(batch)
-            in_a_row += 1
-            if in_a_row >= MAX_UNANSWERED_IN_A_ROW:
-                await ctx.log("warn", f"question {b}: the model is not answering ({e}); stopping")
-                break
-            continue
-        in_a_row = 0
-        got = tc.parse_clips(answer, [c.candidates for c, _ in batch])
-        for i, (clip, h) in enumerate(batch, 1):
-            if i not in got:
-                counts["failed"] += 1  # left out of the answer: asked again next run
-                continue
-            counts["asked"] += 1
-            await db.execute(
-                "INSERT INTO clip_checks (video_id, input_hash, model, topics, applied_hash,"
-                " checked_at) VALUES ($1,$2,$3,$4,NULL,$5) ON CONFLICT (video_id) DO UPDATE SET"
-                " input_hash = EXCLUDED.input_hash, model = EXCLUDED.model,"
-                " topics = EXCLUDED.topics, applied_hash = NULL, checked_at = EXCLUDED.checked_at",
-                uid(clip.video_id),
-                h,
-                cfg.model,
-                json.dumps(got[i]),
-                to_ts(db, now()),
-            )
-            if await apply_verdict(db, clip.video_id, got[i], None, cfg):
-                counts["applied"] += 1
-    if counts["failed"]:
-        # what was answered is saved; the retry asks the rest
-        raise StageFailure(
-            "model_unavailable",
-            f"{counts['failed']} of {len(plan.todo)} clips got no answer from the model",
-        )
-    return StageResult(output_hash=await video_tags_digest(db, library_id), summary=counts)
-
-
-IMPL = StageImpl(run=run, input_fingerprint=input_fingerprint)

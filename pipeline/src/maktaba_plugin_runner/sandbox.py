@@ -719,6 +719,7 @@ def policy_for(
     api_socket: str,
     own_socket: str,
     run_dir: str,
+    group: str | None = None,
 ) -> Policy:
     """The union of a group's ``[trusted]`` tables; ``areas`` maps an area name
     (``library``, ``data.thumbnails`` …) to this machine's folders (``;``-separated).
@@ -726,7 +727,14 @@ def policy_for(
     The sockets and the run folder are named by their real paths, as the areas are: a
     runner's socket outside a long data folder is under ``/tmp``, which is ``/private/tmp``
     on macOS, and Seatbelt matches the real path (a bind there was refused, so the runner
-    exited 1)."""
+    exited 1).
+
+    With ``group`` named, the network is the ``net`` group's alone: a plugin that declares
+    hosts for one stage in ``net`` (classify's ``books``, story 54.31) gives its other
+    groups no socket, so a classify stage in ``light`` is still refused one. And a plugin
+    whose stage runs outside its own ``[trusted] runner`` group (that stage's ``runner``)
+    brings only its network there: its files, tools and GPU stay with its own group, so
+    ``books`` does not give the ``net`` runner classify's thumbnails or reports folder."""
 
     def real(path: str) -> str:
         return os.path.realpath(path) if path else path
@@ -737,6 +745,10 @@ def policy_for(
         return [x for x in areas.get(area, "").split(";") if x]
 
     for t in trusted:
+        own = str(t.get("runner") or "")
+        if group is not None and own not in (group, "own"):
+            p.net |= bool(t.get("net"))
+            continue
         files = t.get("files") or {}
         assert isinstance(files, dict)
         for a in files.get("read") or ():
@@ -752,6 +764,8 @@ def policy_for(
                 p.exec.append(found)
         p.net |= bool(t.get("net"))
         p.gpu |= str(t.get("gpu") or "none") != "none"
+    if group is not None and group != "net":
+        p.net = False
     p.read, p.write, p.exec = sorted(set(p.read)), sorted(set(p.write)), sorted(set(p.exec))
     # a folder the group may write in full needs no name rule
     p.write_named = sorted(

@@ -83,8 +83,10 @@ fun localWhen(ms: Long): Pair<String, String> {
 /**
  * The status strip above [content] (Epic 53 story 53.06): the home's `/status.json`, read
  * every [intervalMs] while the app is started; the highest line, "N more", Close (it comes back
- * when the state changes) and, for an admin, Details (the home's page in the browser). Nothing
- * while [enabled] is false (a video playing full screen) or all is well.
+ * when the state changes) and, for an admin, Details (the home's page in the browser, or the
+ * app's own screen for it: [onDetails] answers true when it showed one, as the Remote's recovery
+ * screen for `/recovery`). Nothing while [enabled] is false (a video playing full screen) or all
+ * is well.
  */
 @Composable
 fun HomeStatusHost(
@@ -93,6 +95,7 @@ fun HomeStatusHost(
     enabled: Boolean = true,
     liveTvOff: Boolean = false,
     intervalMs: Long = STATUS_POLL_MS,
+    onDetails: ((String) -> Boolean)? = null,
     content: @Composable () -> Unit,
 ) {
     var status by remember(client) { mutableStateOf<HomeStatusDoc?>(null) }
@@ -126,15 +129,24 @@ fun HomeStatusHost(
     val shown = enabled && lines.isNotEmpty() && closed != sig
     Column(Modifier.fillMaxSize()) {
         if (shown) {
-            StatusStrip(lines, client.home.toString(), onClose = { closed = sig }, modifier = Modifier.statusBarsPadding())
+            StatusStrip(lines, client.home.toString(), onClose = { closed = sig }, modifier = Modifier.statusBarsPadding(), onDetails = onDetails)
         }
         Box(Modifier.weight(1f).then(if (shown) Modifier.consumeWindowInsets(WindowInsets.statusBars) else Modifier)) { content() }
     }
 }
 
-/** The strip itself: [lines] highest first, Details to [home]'s pages for an admin. */
+/**
+ * The strip itself: [lines] highest first, Details to [home]'s pages for an admin, or to the
+ * app's own screen when [onDetails] takes the line's path.
+ */
 @Composable
-fun StatusStrip(lines: List<StripLine>, home: String, onClose: () -> Unit, modifier: Modifier = Modifier) {
+fun StatusStrip(
+    lines: List<StripLine>,
+    home: String,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+    onDetails: ((String) -> Boolean)? = null,
+) {
     var open by remember(lines) { mutableStateOf(false) }
     val context = LocalContext.current
     Surface(
@@ -153,10 +165,12 @@ fun StatusStrip(lines: List<StripLine>, home: String, onClose: () -> Unit, modif
                         )
                         (line.link ?: line.details?.let { home.trimEnd('/') + it })?.let { url ->
                             TextButton(onClick = {
+                                val path = line.details
+                                if (line.link == null && path != null && onDetails?.invoke(path) == true) return@TextButton
                                 runCatching {
                                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                                 }
-                            }) { Text(stringResource(R.string.status_details)) }
+                            }, modifier = Modifier.testTag("strip.details.${line.key.name.lowercase()}")) { Text(stringResource(R.string.status_details)) }
                         }
                     }
                 }

@@ -367,9 +367,20 @@ func (s *Server) computeRoutes() {
 			MaxTokens   int     `json:"max_tokens"`
 			Temperature float64 `json:"temperature"`
 			JSONSchema  *string `json:"json_schema"`
+			// a first-party stage's own question (story 54.31 §2): Ollama chat messages,
+			// format and options, passed on unchanged
+			Messages json.RawMessage `json:"messages"`
+			Format   json.RawMessage `json:"format"`
+			Options  json.RawMessage `json:"options"`
 		}
 		if ref := c.decode(&in); ref != nil {
 			return nil, ref
+		}
+		if section := firstPartyModelRules(c.inv); section != "" {
+			return c.s.Compute.firstPartyChat(c, section, in.Messages, in.Format, in.Options)
+		}
+		if len(in.Messages)+len(in.Format)+len(in.Options) > 0 {
+			return nil, refuse(400, CodeInvalid, "messages, format and options are for a first-party stage that names model_rules")
 		}
 		if in.Prompt == "" {
 			return nil, refuse(400, CodeInvalid, "a prompt")
@@ -433,6 +444,111 @@ func (s *Server) computeRoutes() {
 			"prompt_bytes", len(in.Prompt), "answer_bytes", len(text), "ms", k.now().Sub(start).Milliseconds())
 		return map[string]any{"text": text, "model": model}, nil
 	}
+}
+
+// MaxFirstPartyChat bounds a first-party stage's chat request (its messages, format and
+// options together): a batch of titles is larger than a third-party prompt.
+const MaxFirstPartyChat = 512 << 10
+
+// firstPartyModelRules answers the rules section a first-party job's stage asks its model
+// through (its manifest's model_rules), or "" for any other token.
+func firstPartyModelRules(inv *Invocation) string {
+	if inv == nil || !inv.Trusted || inv.FirstParty == nil || inv.Stage == "" {
+		return ""
+	}
+	return inv.FirstParty.ModelRules[inv.Stage]
+}
+
+// modelRules reads rules.<section>'s model server, model and timeout as the pipeline's own
+// stages read them: the machine's server (MAKTABA_OLLAMA_URL) where the section keeps the
+// default address, so a node that asks a model server on another machine keeps doing so.
+func (k *Compute) modelRules(ctx context.Context, db *sql.DB, section string) (server, model string, timeout time.Duration) {
+	server, model, secs := "http://localhost:11434", "qwen2.5:7b", 120
+	if m, err := rules.Effective(ctx, db, section); err == nil {
+		if v, ok := m["url"].(string); ok && strings.TrimSpace(v) != "" {
+			server = strings.TrimSpace(v)
+		}
+		if v, ok := m["model"].(string); ok && strings.TrimSpace(v) != "" {
+			model = strings.TrimSpace(v)
+		}
+		setInt(m["timeout_s"], &secs)
+	}
+	env := os.Getenv
+	if k != nil && k.Env != nil {
+		env = k.Env
+	}
+	if v := strings.TrimRight(strings.TrimSpace(env("MAKTABA_OLLAMA_URL")), "/"); v != "" && server == "http://localhost:11434" {
+		server = v
+	}
+	if secs < 1 {
+		secs = 120
+	}
+	return strings.TrimRight(server, "/"), model, time.Duration(secs) * time.Second
+}
+
+// firstPartyChat asks rules.<section>'s model server one chat question for a first-party
+// stage that names model_rules (story 54.31 §2): the stage's messages, format and options
+// unchanged, so its recorded answers match. The stage's own pool (lookup: one question at
+// a time) and settings govern it; the third-party quota, lease and local-only rule do not
+// (the owner set that address for the stage, as before the move). Never logs the text.
+func (k *Compute) firstPartyChat(c *call, section string, messages, format, options json.RawMessage) (any, *Refusal) {
+	if len(messages) == 0 || string(messages) == "null" {
+		return nil, refuse(400, CodeInvalid, "messages")
+	}
+	if len(messages)+len(format)+len(options) > MaxFirstPartyChat {
+		return nil, refuse(413, CodeTooLarge, "a first-party question is at most 512 KB")
+	}
+	server, model, timeout := k.modelRules(c.ctx, c.s.DB, section)
+	body := map[string]any{"model": model, "stream": false, "messages": messages}
+	if len(format) > 0 && string(format) != "null" {
+		body["format"] = format
+	}
+	if len(options) > 0 && string(options) != "null" {
+		body["options"] = options
+	}
+	b, _ := json.Marshal(body)
+	ctx, cancel := context.WithTimeout(c.ctx, timeout)
+	defer cancel()
+	start := k.now()
+	text, err := ollamaChat(ctx, &http.Client{Timeout: timeout}, server, b)
+	if err != nil {
+		c.s.logger().Warn("plugin_compute_failed", "plugin", c.inv.PluginID, "kind", "chat", "stage", c.inv.Stage,
+			"rules", section, "request_bytes", len(b), "err", err)
+		return nil, refuse(503, CodeComputeUnavailable, "the language model did not answer")
+	}
+	c.s.logger().Info("plugin_compute", "plugin", c.inv.PluginID, "kind", "chat", "stage", c.inv.Stage,
+		"rules", section, "request_bytes", len(b), "answer_bytes", len(text), "ms", k.now().Sub(start).Milliseconds())
+	return map[string]any{"text": text, "model": model}, nil
+}
+
+// ollamaChat posts one chat request to Ollama's /api/chat and answers the message's content.
+func ollamaChat(ctx context.Context, client *http.Client, server string, body []byte) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server+"/api/chat", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("ollama answered %d", resp.StatusCode)
+	}
+	var out struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return "", err
+	}
+	return out.Message.Content, nil
 }
 
 // ollamaGenerate asks Ollama's /api/generate once, without streaming.

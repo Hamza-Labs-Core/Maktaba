@@ -200,7 +200,7 @@ async def test_named_seasons_are_stored_and_titled(
     db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from maktaba_pipeline.classify.series_detector import Detection, Season, Series
-    from maktaba_pipeline.engine.stages import detect as detect_stage
+    from maktaba_pipeline.engine.stages import _detect as detect_stage
     from maktaba_pipeline.extensions.seasons import collection_title, load_season
 
     lib = await make_library(db, "أحمد منصور")

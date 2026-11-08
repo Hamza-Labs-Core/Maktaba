@@ -39,8 +39,8 @@ signed-in device (viewer or admin; the device's own token):
 |---|---|---|
 | iPhone, iPad, Mac Player and Remote | MetricKit `MXCrashDiagnostic` (exists, `CrashReports.swift`) | Turn each kept payload into an envelope (call stack tree + exception + termination reason + the app log ring of that launch) and send on the next launch when signed in. |
 | Apple TV | none today (no MetricKit on tvOS) | **PLCrashReporter** (MIT, tvOS 12+) via SwiftPM in the tvOS target only; same envelope. |
-| Android Player and Remote | `CrashLog` (exists) | Envelope from `last-crash.txt` + the log ring; on API 30+ also read `ActivityManager.getHistoricalProcessExitReasons()` at start for `REASON_ANR`, `REASON_CRASH_NATIVE`, `REASON_LOW_MEMORY` since the last run (ANR trace included, ≤ 256 KB). |
-| Android TV | none | Install `CrashLog` (the core one) in `MaktabaTVApp.kt`; same ANR read. |
+| Android Player and Remote | `CrashLog` (exists) | Envelope from `last-crash.txt` + the log ring; on API 30+ also read `ActivityManager.getHistoricalProcessExitReasons()` at start for `REASON_ANR`, `REASON_CRASH_NATIVE`, `REASON_LOW_MEMORY` since the last run (ANR trace included, ≤ 256 KB). A native crash's trace is its protobuf tombstone (Android 12+): a small wire reader keeps the signal, the abort message (scrubbed, paths removed) and the crashed thread's frames (library file name only, pc offset, function and offset, build id) as the event's native stack, top first; on Android 11 or a tombstone that does not parse, the reason alone. |
+| Android TV | none | Install `CrashLog` (the core one) in `MaktabaTVApp.kt`; same ANR and native-crash read. |
 | Web (and the phone shells) | `errorLog.ts` (exists) | Uncaught errors and unhandled rejections (≤ 1 per fingerprint per page load) sent as envelopes to the home **only when the signed-in user turned crash reports on** (§3). This switch is separate from the usage-data opt-in, which is about **Maktaba**, not the home. |
 | Desktop shell | `applog.rs` panic hook (exists) | Envelope written to disk at panic; sent by the next start through the local server, only when crash reports are on. |
 

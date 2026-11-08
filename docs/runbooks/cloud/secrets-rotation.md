@@ -20,6 +20,7 @@ In this order (the cheapest to rotate first, the one that needs a release last):
 4. **The token secret** (`MAKTABA_CLOUD_TOKEN_SECRET`): homes fall back to their bearer and reconnect; resume tickets die (a reconnect costs one password check each).
 5. **The entitlement key, last**: it needs a coordinated release (25.26): homes must trust the new key before the old one stops signing.
 6. Any GitHub secret it touched (`RELAY_SSH_KEY`, `PUSHGATEWAY_TOKEN`): replace in Settings → Secrets.
+   `MAKTABA_SYMBOLS_TOKEN` (the release symbol tables' upload token): replace it, then run a cloud deploy, which writes it to both nodes and restarts the api; the old one is refused from then on.
 
 ## Done when
 

@@ -5,6 +5,9 @@
 //	maktaba-symbols extract [-o DIR] X.dSYM…                 one table per binary and architecture
 //	maktaba-symbols upload [-url URL] [-version V] X.dSYM…   extract and upload them
 //
+// upload also takes the tables extract wrote (<debug_id>.symbols): a release that could not
+// reach the cloud keeps them, and they are uploaded later as they are.
+//
 // The upload's token is MAKTABA_SYMBOLS_TOKEN (the cloud's MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE).
 // It runs where the dSYMs are; the cloud never sees the dSYM itself.
 package main
@@ -32,7 +35,7 @@ func main() {
 	}
 }
 
-const usage = "usage: maktaba-symbols extract [-o DIR] X.dSYM… | upload [-url URL] [-version V] X.dSYM…"
+const usage = "usage: maktaba-symbols extract [-o DIR] X.dSYM… | upload [-url URL] [-version V] X.dSYM|T.symbols…"
 
 func run(ctx context.Context, args []string, out io.Writer) error {
 	if len(args) == 0 {
@@ -92,12 +95,27 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	return fmt.Errorf("%s", usage)
 }
 
-// each extracts every path's tables and hands each, encoded, to do.
+// each extracts every path's tables and hands each, encoded, to do. A path ending in
+// .symbols is a table extract already wrote, handed on as it is.
 func each(paths []string, do func(*symbols.Table, []byte) error) error {
 	if len(paths) == 0 {
 		return fmt.Errorf("%s", usage)
 	}
 	for _, p := range paths {
+		if strings.HasSuffix(p, ".symbols") {
+			b, err := os.ReadFile(p)
+			if err != nil {
+				return err
+			}
+			t, err := symbols.Decode(b)
+			if err != nil {
+				return fmt.Errorf("%s: %w", p, err)
+			}
+			if err := do(t, b); err != nil {
+				return err
+			}
+			continue
+		}
 		tables, err := symbols.ExtractPath(p)
 		if err != nil {
 			return err

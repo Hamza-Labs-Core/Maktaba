@@ -32,7 +32,9 @@ class _DB:
 
 @pytest.fixture
 def stage(monkeypatch: pytest.MonkeyPatch) -> str:
-    name = "promo_links"  # tv.maktaba.classify's (wave 1)
+    # a plugin with no file access (tv.maktaba.classify reads thumbnails since wave 4, so
+    # its runner must also hold this machine's current areas)
+    name = "plex_index"
     assert firstparty.by_stage(name) is not None
 
     async def serving(_stage: str) -> tuple[bool, str | None]:

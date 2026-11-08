@@ -201,7 +201,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	go reports.RunSweeper(metricsCtx, reportStore, logger)
 	// The release dSYMs' symbol tables their Apple crashes are read against (53.14, 53.16):
 	// uploaded with the token in MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE (none: uploads are off).
-	symbolDeps := &symbols.Deps{Store: &symbols.Store{DB: pool.DB}, Token: tokenFile(EnvSymbolsTokenFile), Logger: logger}
+	symbolDeps := &symbols.Deps{Store: &symbols.Store{DB: pool.DB}, Token: symbolsToken(), Logger: logger}
 
 	// OAuth flows — each is on only when its client id is configured.
 	var googleFlow *oauth.GoogleFlow

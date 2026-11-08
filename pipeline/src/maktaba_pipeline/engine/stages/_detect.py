@@ -1,5 +1,9 @@
 # ruff: noqa: E501  (long SQL string literals read better unwrapped)
-"""``detect``: place a library's episodes into series and seasons (plan 06-11 sections 3.4, 4.4).
+"""What ``detect`` shares with the pipeline (mediaintel's import, ``topic_collections``'s
+playlists): loading a library, planning it, the changes and their writes, the fingerprint.
+The stage itself is ``tv.maktaba.classify``'s (Epic 54 wave 4, story 54.31).
+
+``detect``: place a library's episodes into series and seasons (plan 06-11 sections 3.4, 4.4).
 
 The pure detector (:mod:`maktaba_pipeline.classify.series_detector`) is called
 unchanged. This module is the I/O half, ported from the mediaintel prototype's
@@ -22,12 +26,11 @@ propagates; dates and fingerprint plans do not.
 
 from __future__ import annotations
 
-import asyncio
 import math
 import posixpath
 from collections import Counter, defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from typing import Any
 from uuid import UUID
@@ -42,25 +45,25 @@ from ...classify.series_detector import (
     VideoFacts,
     detect,
 )
-from ...db.jobs import Job
 from ...rules import read as read_rules
-from ..changes import ChangeSet, apply_or_review
-from ..context import StageContext
-from ..graph import SIG_VERSION, Request, StageResult, Subject
+from ..changes import ChangeSet
+from ..graph import SIG_VERSION, Subject
 from ..hashing import canonical_hash
 from ..ids import season_uuid, series_uuid
 from ..sql import dumps, is_pg, loads, now, to_date, to_ts, uid
 from ._common import load_video  # noqa: F401 - re-export for tests
-from .registry import StageImpl
 
 __all__ = [
-    "IMPL",
     "PER_SEASON",
     "LibraryPlan",
     "PlannedSeason",
+    "Row",
     "apply_changes",
     "compute_changes",
+    "input_fingerprint",
+    "load_current",
     "load_rows",
+    "output_hash",
     "plan_library",
 ]
 
@@ -127,7 +130,7 @@ SELECT v.id AS id, v.path AS path, v.filename AS filename, v.title AS title,
   FROM videos v
   LEFT JOIN video_signals vs ON vs.video_id = v.id
   LEFT JOIN media_metadata_enrichment m
-         ON m.video_id = v.id AND m.provider = 'youtube' AND m.is_dismissed = {false}
+         ON m.video_id = v.id AND m.provider = 'youtube' AND NOT m.is_dismissed
   LEFT JOIN youtube_videos yv ON yv.youtube_id = m.external_id
   LEFT JOIN youtube_channels yc ON yc.channel_id = yv.channel_id
  WHERE v.library_id = $1 AND v.deleted_at IS NULL
@@ -136,9 +139,8 @@ SELECT v.id AS id, v.path AS path, v.filename AS filename, v.title AS title,
 
 
 async def load_rows(db: Any, library_id: UUID) -> list[Row]:
-    sql = _LOAD_SQL.replace("{false}", "false" if is_pg(db) else "0")
     out: list[Row] = []
-    for r in await db.fetch(sql, uid(library_id)):
+    for r in await db.fetch(_LOAD_SQL, uid(library_id)):
         meta = loads(r["metadata"]) or {}
         w, h = meta.get("width"), meta.get("height")
         stem = str(r["filename"]).rsplit(".", 1)[0]
@@ -545,14 +547,21 @@ def compute_changes(
 
 # --------------------------------------------------------------------------- applying
 
-_CHUNK = 400
 
-
-async def _delete_in(db: Any, table: str, col: str, ids: Sequence[str]) -> None:
-    for i in range(0, len(ids), _CHUNK):
-        chunk = ids[i : i + _CHUNK]
-        marks = ",".join(f"${n + 1}" for n in range(len(chunk)))
-        await db.execute(f"DELETE FROM {table} WHERE {col} IN ({marks})", *chunk)
+async def _delete_episodes(db: Any, video_ids: Sequence[str]) -> None:
+    """The episodes of these videos, gone. One fixed text per dialect (a first-party plugin
+    runs named statements): the ids as one array on Postgres, one JSON list on SQLite."""
+    if not video_ids:
+        return
+    if is_pg(db):
+        await db.execute(
+            "DELETE FROM series_episodes WHERE video_id = ANY($1::uuid[])", list(video_ids)
+        )
+    else:
+        await db.execute(
+            "DELETE FROM series_episodes WHERE video_id IN (SELECT value FROM json_each($1))",
+            dumps(list(video_ids)),
+        )
 
 
 async def apply_changes(
@@ -647,7 +656,7 @@ async def apply_changes(
                 uid(library_id),
             )
         }
-        await _delete_in(db, "series_episodes", "video_id", sorted(existing - set(placed)))
+        await _delete_episodes(db, sorted(existing - set(placed)))
         for placed_vid, (series_id, season_no, num) in placed.items():
             await db.execute(
                 "INSERT INTO series_episodes (series_id, video_id, season, episode, created_at)"
@@ -720,102 +729,3 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
             "v": DETECTOR_VERSION,
         }
     )
-
-
-@dataclass
-class _Progress:
-    done: int = 0
-    total: int = 0
-    seen: list[tuple[int, int]] = field(default_factory=list)
-
-    def __call__(self, done: int, total: int) -> None:
-        self.done, self.total = done, total
-
-
-async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
-    library_id = job.subject.id
-    rows = await load_rows(db, library_id)
-    playlists = await _playlists(db, library_id)
-    prog = _Progress()
-    task = asyncio.create_task(_report_progress(ctx, prog))
-    try:
-        detect_cfg = await ctx.rules("detect")
-        plan = await asyncio.to_thread(
-            plan_library, library_id, rows, playlists, config=detect_cfg, progress=prog
-        )
-    finally:
-        task.cancel()
-    current = await load_current(db, library_id)
-    changes, touched = compute_changes(plan, current)
-
-    async def apply(_cs: ChangeSet) -> None:
-        await apply_changes(db, library_id, plan, current)
-
-    if changes.is_empty:
-        # nothing visible changed, but dates / fingerprint plans / metadata may still have:
-        # write silently so stored state matches the plan
-        await apply_changes(db, library_id, plan, current)
-        mode = "noop"
-    else:
-        mode = await apply_or_review(ctx, changes, apply)
-    if mode == "review":
-        return StageResult(
-            output_hash=canonical_hash("review"),
-            outcome="awaiting_review",
-            summary={"changes": changes.counts},
-        )
-
-    rowmap = {r.id: r for r in rows}
-    requests = _fingerprint_requests(plan, rowmap)
-    out = output_hash(plan.seasons)
-    return StageResult(
-        output_hash=out,
-        changed_subjects=tuple(touched),  # type: ignore[arg-type]
-        requests=tuple(requests),
-        summary={
-            "placed": plan.episode_count,
-            "seasons": len(plan.seasons),
-            "seasons_changed": len(touched),
-            "unassigned": len(plan.unassigned),
-            "shorts": len(plan.shorts),
-            "changes": changes.counts,
-        },
-    )
-
-
-async def _report_progress(ctx: StageContext, prog: _Progress) -> None:
-    try:
-        while True:
-            await asyncio.sleep(2.0)
-            if prog.total:
-                await ctx.progress("matching", prog.done, prog.total, force=True)
-    except asyncio.CancelledError:
-        return
-
-
-def _fingerprint_requests(plan: LibraryPlan, rows: dict[UUID, Row]) -> list[Request]:
-    """Pass 1 of the two-pass flow: sample fingerprints per season, then the gate."""
-    samples: dict[UUID, set[str]] = defaultdict(set)
-    gates: list[Request] = []
-    for s in plan.seasons:
-        if not s.fp_plan or not s.fp_plan["candidates"]:
-            continue
-        for v in s.fp_plan["samples"]:
-            row = rows.get(UUID(v))
-            if row is not None and not row.fingerprinted:
-                samples[UUID(v)].add(str(s.id))
-        gates.append(Request("fp_gate", "season", s.id, f"unplaced candidates for {s.series_name}"))
-    reqs = [
-        Request(
-            "fingerprint",
-            "video",
-            vid,
-            "sample of a season with unplaced videos",
-            payload={"role": "sample", "seasons": sorted(seasons)},
-        )
-        for vid, seasons in sorted(samples.items(), key=lambda kv: str(kv[0]))
-    ]
-    return reqs + gates
-
-
-IMPL = StageImpl(run=run, input_fingerprint=input_fingerprint)
