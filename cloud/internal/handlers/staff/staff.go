@@ -57,8 +57,10 @@ type Deps struct {
 	Gate *middleware.StaffGate
 	// Turnstile is the bot check on sign-in (50.30); its WebOrigins name the console.
 	Turnstile *turnstile.Guard
-	Audit     *audit.Log
-	Logger    *slog.Logger
+	// TurnstileSiteKey is the widget's public key, served to the console with the guard on.
+	TurnstileSiteKey string
+	Audit            *audit.Log
+	Logger           *slog.Logger
 	// Secure marks the cookie Secure (always, except a plain-HTTP test).
 	Secure bool
 	Now    func() time.Time
@@ -70,6 +72,7 @@ func Mount(r interface {
 	Get(pattern string, h http.HandlerFunc)
 	Method(method, pattern string, h http.Handler)
 }, d *Deps) {
+	r.Get("/v1/staff/config", d.Config)
 	r.Post("/v1/staff/login", d.Login)
 	r.Post("/v1/staff/mfa/totp", d.MFATOTP)
 	r.Post("/v1/staff/mfa/recovery", d.MFARecovery)
@@ -164,6 +167,16 @@ func (d *Deps) failStep(r *http.Request, a stores.StaffAccount, action string) {
 		d.audit(r, a.ID, a.Email, audit.ActionStaffLocked, map[string]any{"until": now.Add(staffauth.LockFor)})
 		d.Logger.Error("staff account locked after failed sign-in steps", "code", AlertLockout, "staff_id", a.ID)
 	}
+}
+
+// Config is what the sign-in page needs before anyone signs in: the bot check's site key when
+// the check is on ("" when off).
+func (d *Deps) Config(w http.ResponseWriter, _ *http.Request) {
+	key := ""
+	if d.Turnstile != nil && d.Turnstile.Enabled {
+		key = d.TurnstileSiteKey
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"turnstile_site_key": key})
 }
 
 // --- step 1: the password ---

@@ -9,7 +9,7 @@ import { Card } from "@ds/components/Card/Card";
 import { Select } from "@ds/components/Select/Select";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { useToast } from "@ds/components/Toast/Toast";
-import { api } from "@cloud-shared/api";
+import { api } from "../api";
 import { useI18n } from "@cloud-shared/i18n";
 import { LoadError, Loading, Page, useBytes, useLoad } from "@cloud-shared/ui";
 import type { AdminAccount } from "./Accounts";

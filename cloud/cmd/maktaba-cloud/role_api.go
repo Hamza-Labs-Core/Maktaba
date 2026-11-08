@@ -336,7 +336,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		g.Use(authRateLimit(ratelimit.NewLimiter(30, 5), []string{"/v1/staff/refresh"}))
 		staffh.Mount(g, &staffh.Deps{
 			Staff: staffStore, Signer: staffSigner, Box: staffBox, Gate: staffGate,
-			Turnstile: staffTurnstile(cfg, tsGuard, o.Turnstile), Audit: auditLog, Logger: logger, Secure: true,
+			Turnstile: staffTurnstile(cfg, tsGuard, o.Turnstile), TurnstileSiteKey: cfg.Turnstile.SiteKey,
+			Audit: auditLog, Logger: logger, Secure: true,
 		})
 
 		// Service-admin console: every /v1/admin/* route checks the staff role in the database

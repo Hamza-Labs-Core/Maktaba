@@ -1,4 +1,5 @@
-// Entry point for the operator console (web/admin/, story 50.32).
+// Entry point for the operator console (web/admin/, stories 50.32 and 50.33). Its API client
+// (api.ts) sends the console's CSRF header (staff.ts) on every change itself.
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "@fontsource/ibm-plex-sans-arabic/400.css";
@@ -10,12 +11,7 @@ import "@fontsource/amiri/700.css";
 import "../../src/styles/tokens.css";
 import "../../cloud/src/cloud.css";
 import { applyResolvedTheme, readMode } from "../../src/lib/theme";
-import { setChangeHeaders } from "@cloud-shared/api";
 import { App } from "./App";
-import { STAFF_HEADERS } from "./staff";
-
-// the console's listener refuses a change without its CSRF header (story 50.32 §4)
-setChangeHeaders(STAFF_HEADERS);
 
 // the same light / dark choice as the home app (stored mode, else the OS)
 applyResolvedTheme(readMode());

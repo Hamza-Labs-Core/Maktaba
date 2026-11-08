@@ -19,7 +19,7 @@ import { Input } from "@ds/components/Input/Input";
 import { Textarea } from "@ds/components/Textarea/Textarea";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { Select } from "@ds/components/Select/Select";
-import { api, fetchApi, withQuery } from "@cloud-shared/api";
+import { api, fetchApi, withQuery } from "../api";
 import { useI18n } from "@cloud-shared/i18n";
 import { LoadError, Loading, Page, useErrorMessage, useLoad } from "@cloud-shared/ui";
 import { Pager } from "./shared";

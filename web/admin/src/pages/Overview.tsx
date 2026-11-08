@@ -1,6 +1,6 @@
 // / — fleet and revenue at a glance.
 import { Card } from "@ds/components/Card/Card";
-import { api } from "@cloud-shared/api";
+import { api } from "../api";
 import { useI18n } from "@cloud-shared/i18n";
 import { LoadError, Loading, Page, useLoad, useMoney } from "@cloud-shared/ui";
 

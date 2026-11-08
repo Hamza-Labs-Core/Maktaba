@@ -8,7 +8,7 @@ import { Input } from "@ds/components/Input/Input";
 import { Select } from "@ds/components/Select/Select";
 import { Textarea } from "@ds/components/Textarea/Textarea";
 import { useToast } from "@ds/components/Toast/Toast";
-import { api } from "@cloud-shared/api";
+import { api } from "../api";
 import { useI18n } from "@cloud-shared/i18n";
 import { Banner, LoadError, Loading, Page, useErrorMessage, useLoad } from "@cloud-shared/ui";
 import { ReasonDialog } from "./ReasonDialog";

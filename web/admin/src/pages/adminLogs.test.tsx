@@ -5,18 +5,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { setAccessToken } from "@cloud-shared/api";
-import { renderAt, session, stubFetch, user } from "../test/harness";
+import { setStaffToken } from "../api";
+import { renderAt, staffSession, stubFetch } from "../test/harness";
 
-beforeEach(() => setAccessToken(null));
+beforeEach(() => setStaffToken(null));
 afterEach(() => vi.unstubAllGlobals());
 
-const admin = () => session(user({ role: "service_admin" }));
+const admin = () => staffSession();
 
 describe("admin logs and errors", () => {
   it("renders Access denied for an account without the role", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "user" })),
+      "POST /v1/staff/refresh": staffSession([]),
       "GET /v1/admin/logs/search": [403, { error: "admin_access_denied", message: "denied" }],
     });
     renderAt("/logs");
@@ -25,7 +25,7 @@ describe("admin logs and errors", () => {
 
   it("searches the cloud's lines with the filters, and follows a request", async () => {
     const f = stubFetch({
-      "POST /v1/auth/refresh": admin(),
+      "POST /v1/staff/refresh": admin(),
       "GET /v1/admin/logs/search": [
         200,
         {
@@ -65,7 +65,7 @@ describe("admin logs and errors", () => {
 
   it("shows the cloud's errors beside the homes', with their reports", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": admin(),
+      "POST /v1/staff/refresh": admin(),
       "GET /v1/admin/errors": [
         200,
         {
@@ -113,7 +113,7 @@ describe("admin logs and errors", () => {
 
   it("says when the witness's index is not set up, and still shows the homes' errors", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": admin(),
+      "POST /v1/staff/refresh": admin(),
       "GET /v1/admin/errors": [200, { days: 14, cloud_error: "logs_unavailable", homes: [] }],
     });
     renderAt("/errors");
@@ -124,7 +124,7 @@ describe("admin logs and errors", () => {
 
   it("links Logs and Errors from the admin nav", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": admin(),
+      "POST /v1/staff/refresh": admin(),
       "GET /v1/admin/errors": [200, { days: 14, cloud: [], homes: [] }],
     });
     renderAt("/errors");

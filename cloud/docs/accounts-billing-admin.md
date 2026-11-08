@@ -288,6 +288,7 @@ codes. Until enrolment finishes the account can't sign in.
 
 | Route | Body | Answer |
 |---|---|---|
+| `GET /v1/staff/config` | — | `{turnstile_site_key}` for the console's bot-check widget (`""` when off; the widget's hostnames must include `admin.maktaba.tv`) |
 | `POST /v1/staff/login` | `{email, password, turnstile_token}` | `200 {mfa_token, methods}`; a wrong email, password or a disabled account: the same `401 invalid_credentials` after the same argon2id work; `403 mfa_required` (no factor); `423 account_locked` (`Retry-After`); `429 too_many_attempts` |
 | `POST /v1/staff/mfa/totp`, `/mfa/recovery` | `{mfa_token, code}` | the session; `401 mfa_failed`; `401 mfa_token_invalid` (5 minutes, the same client IP, 5 attempts) |
 | `POST /v1/staff/refresh` | — (cookie) | the session, the cookie rotated; `401 {no_session, reason: idle\|capped}`; a rotated cookie presented again ends every session of the account |

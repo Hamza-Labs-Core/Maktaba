@@ -6,10 +6,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { setAccessToken } from "@cloud-shared/api";
-import { renderAt, session, stubFetch, user } from "../test/harness";
+import { setStaffToken } from "../api";
+import { renderAt, staffSession, stubFetch } from "../test/harness";
 
-beforeEach(() => setAccessToken(null));
+beforeEach(() => setStaffToken(null));
 afterEach(() => vi.unstubAllGlobals());
 
 const REPORT = {
@@ -31,7 +31,7 @@ const REPORT = {
 describe("admin problem reports", () => {
   it("renders Access denied for an account without the service admin role", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "user" })),
+      "POST /v1/staff/refresh": staffSession([]),
       "GET /v1/admin/reports": [403, { error: "admin_access_denied", message: "denied" }],
     });
     renderAt("/reports");
@@ -40,7 +40,7 @@ describe("admin problem reports", () => {
 
   it("lists the reports across homes and filters them", async () => {
     const f = stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "POST /v1/staff/refresh": staffSession(),
       "GET /v1/admin/reports": [200, { reports: [REPORT], total: 1 }],
     });
     renderAt("/reports?app=apple.player");
@@ -58,7 +58,7 @@ describe("admin problem reports", () => {
 
   it("a report's timeline, and its status, issue and reply", async () => {
     const f = stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "POST /v1/staff/refresh": staffSession(),
       "GET /v1/admin/reports/41": [
         200,
         {
@@ -109,7 +109,7 @@ describe("admin problem reports", () => {
 
   it("links the reports from the admin nav", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "POST /v1/staff/refresh": staffSession(),
       "GET /v1/admin/reports": [200, { reports: [], total: 0 }],
     });
     renderAt("/reports");
@@ -123,7 +123,7 @@ describe("admin problem reports", () => {
 
   it("a report's crash, symbolicated where the release's symbols are uploaded", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "POST /v1/staff/refresh": staffSession(),
       "GET /v1/admin/reports/41": [
         200,
         {
@@ -164,7 +164,7 @@ describe("admin problem reports", () => {
 
   it("an Android crash read with the release's R8 mapping, inlined frames marked", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "POST /v1/staff/refresh": staffSession(),
       "GET /v1/admin/reports/41": [
         200,
         {
@@ -235,7 +235,7 @@ describe("admin problem reports", () => {
 
   it("a desktop crash says the app is not obfuscated", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "POST /v1/staff/refresh": staffSession(),
       "GET /v1/admin/reports/41": [
         200,
         {
@@ -270,7 +270,7 @@ describe("admin problem reports", () => {
 
   it("an Android native crash read with its libraries' tables, a missing library named with its build ID", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "POST /v1/staff/refresh": staffSession(),
       "GET /v1/admin/reports/41": [
         200,
         {
@@ -323,7 +323,7 @@ describe("admin problem reports", () => {
 
   it("a native crash kept with its reason alone says it has no frames", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "POST /v1/staff/refresh": staffSession(),
       "GET /v1/admin/reports/41": [
         200,
         {
@@ -346,7 +346,7 @@ describe("admin problem reports", () => {
 
   it("a report without crashes shows no crash section", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "POST /v1/staff/refresh": staffSession(),
       "GET /v1/admin/reports/41": [200, { ...REPORT, body: {} }],
     });
     renderAt("/reports/41");
@@ -389,7 +389,7 @@ describe("admin problem reports", () => {
 
   it("lists the uploaded crash symbols by type, each under its own key, linked from the nav", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "POST /v1/staff/refresh": staffSession(),
       "GET /v1/admin/symbols": [200, { tables: TABLES }],
     });
     renderAt("/symbols");
@@ -437,7 +437,7 @@ describe("admin problem reports", () => {
 
   it("names a mapping from an API without kinds by its architecture", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "POST /v1/staff/refresh": staffSession(),
       "GET /v1/admin/symbols": [
         200,
         { tables: TABLES.slice(0, 2).map(({ kind: _kind, ...t }) => t) },
@@ -455,7 +455,7 @@ describe("admin problem reports", () => {
     localStorage.setItem("mkt:cloud:locale", "ar");
     try {
       stubFetch({
-        "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+        "POST /v1/staff/refresh": staffSession(),
         "GET /v1/admin/symbols": [200, { tables: TABLES }],
       });
       renderAt("/symbols");
@@ -480,7 +480,7 @@ describe("admin problem reports", () => {
 
   it("says when no symbols are uploaded", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "POST /v1/staff/refresh": staffSession(),
       "GET /v1/admin/symbols": [200, { tables: [] }],
     });
     renderAt("/symbols");
@@ -489,7 +489,7 @@ describe("admin problem reports", () => {
 
   it("renders Access denied on the symbols page for a normal account", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "user" })),
+      "POST /v1/staff/refresh": staffSession([]),
       "GET /v1/admin/symbols": [403, { error: "admin_access_denied", message: "denied" }],
     });
     renderAt("/symbols");
