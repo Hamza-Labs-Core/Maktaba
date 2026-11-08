@@ -41,14 +41,13 @@ import (
 
 // rehearsalWave is one wave of Phase 4: its scenario, its story and the stages the
 // scenario queues (those of its stages a home without a GPU, a model or a network
-// service claims), and what the home needs before they claim (setup). A wave whose setup
-// gives the seed its stages' subjects sets must: every stage gets a job in every round,
-// and a stage that queued none fails the scenario instead of passing without it.
+// service claims), and what the home needs before they claim (setup: the subjects the
+// small seed lacks, derived data such as seasons). Every stage gets a job in every round:
+// one that queued none fails the scenario instead of passing without it.
 type rehearsalWave struct {
 	id, story string
 	stages    []string
 	setup     func(r *rehearsal, home *appMachine, db *sql.DB)
-	must      bool
 }
 
 // plexOn turns the Plex extension on as an owner does: Settings' PUT
@@ -88,7 +87,7 @@ func waitStagesEnabled(t *testing.T, db *sql.DB, stages []string, within time.Du
 }
 
 // seasonsOn gives the seed a small series with two seasons, as the detect stage writes them:
-// the small seed has no series, and fp_gate claims seasons. Its first library's first four
+// the small seed has no series, and fp_gate (16.9) and rate_style (16.1) claim seasons. Its first library's first four
 // videos are the episodes, two to a season. A detect run that sees them otherwise retires
 // the rows and never deletes them, and the queue takes a retired season's job all the same.
 func seasonsOn(r *rehearsal, _ *appMachine, db *sql.DB) {
@@ -117,18 +116,18 @@ func seasonsOn(r *rehearsal, _ *appMachine, db *sql.DB) {
 		  FROM generate_series(1, 2) AS s`, series, lib); err != nil {
 		t.Fatalf("the rehearsal series' seasons: %v", err)
 	}
-	r.logf("the seed has a series with two seasons (library %s): fp_gate claims", lib)
+	r.logf("the seed has a series with two seasons (library %s): the season stages claim", lib)
 }
 
 var rehearsalWaves = map[string]rehearsalWave{
-	"16.1": {"16.1", "54.28", []string{"promo_links", "clip_groups", "topic_collections", "rate_style"}, nil, false},
-	"16.2": {"16.2", "54.29", []string{"thumb_small", "chapter_thumbs", "subtitle_gen"}, nil, false},
-	"16.3": {"16.3", "54.30", []string{"topic_assign", "chapter_infer"}, nil, false},
-	"16.4": {"16.4", "54.31", []string{"detect", "tag"}, nil, false},
-	"16.5": {"16.5", "54.32", []string{"dedup_scan"}, nil, false},
-	"16.6": {"16.6", "54.33", []string{"exact_dates"}, nil, false},
-	"16.8": {"16.8", "54.35", []string{"plex_livetv"}, plexOn, false},
-	"16.9": {"16.9", "54.36", []string{"scan", "probe", "link", "fp_gate"}, seasonsOn, true},
+	"16.1": {"16.1", "54.28", []string{"promo_links", "clip_groups", "topic_collections", "rate_style"}, seasonsOn},
+	"16.2": {"16.2", "54.29", []string{"thumb_small", "chapter_thumbs", "subtitle_gen"}, nil},
+	"16.3": {"16.3", "54.30", []string{"topic_assign", "chapter_infer"}, nil},
+	"16.4": {"16.4", "54.31", []string{"detect", "tag"}, nil},
+	"16.5": {"16.5", "54.32", []string{"dedup_scan"}, nil},
+	"16.6": {"16.6", "54.33", []string{"exact_dates"}, nil},
+	"16.8": {"16.8", "54.35", []string{"plex_livetv"}, plexOn},
+	"16.9": {"16.9", "54.36", []string{"scan", "probe", "link", "fp_gate"}, seasonsOn},
 }
 
 // waveSleep is how long each job of a wave stage sleeps: longer than the claim loop's
@@ -337,11 +336,8 @@ func makeDue(t *testing.T, db *sql.DB, stages []string, since int64) {
 	}
 }
 
-// gotEach fails, for a wave that must, for a stage of it with no job among queued.
+// gotEach fails for a stage of the wave with no job among queued.
 func (r *rehearsal) gotEach(w rehearsalWave, what string, jobs []waveJob, queued map[int64]bool) {
-	if !w.must {
-		return
-	}
 	got := map[string]bool{}
 	for _, j := range jobs {
 		if queued[j.id] {
@@ -594,6 +590,7 @@ func (r *rehearsal) waveScenario(id string) {
 		queued = queuedIDs(waveJobs(t, db, w.stages, since))
 		jobs = waitSettled(t, db, w.stages, since, 5*time.Minute)
 		r.checkWaveJobs(id+" warming up after the flip", jobs, queued, want)
+		r.gotEach(w, id+" warming up after the flip", jobs, queued)
 		// the stages that got a job: one whose subject kind the seed lacks (fp_gate's seasons
 		// in the small seed) never queues, and would hold the warm-up to its time limit
 		got, inRunner := map[string]bool{}, map[string]bool{}
