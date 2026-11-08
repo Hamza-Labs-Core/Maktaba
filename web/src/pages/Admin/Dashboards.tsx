@@ -2,7 +2,9 @@
 // Streaming, Storage and Use, each a set of panels over one shared time range (1 h to 90 d).
 // Each panel is one metric (a line per label set), with its value under the pointer, a
 // sentence for screen readers, and Open in Logs for the same window. Use shows counts and
-// titles only, never one person's history.
+// titles only, never one person's history. With several machines the Overview shows totals
+// across them and the five most in need of attention, says how many of how many it shows,
+// and offers each machine on its own.
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card } from "@ds/components/Card/Card";
@@ -52,23 +54,26 @@ function DashboardsInner() {
     return (BOARDS as readonly string[]).includes(b ?? "") ? (b as Board) : "overview";
   });
   const [range, setRange] = useState<Range>("24h");
+  const [machine, setMachine] = useState("");
   const [doc, setDoc] = useState<BoardDoc | null>(null);
+  const [machines, setMachines] = useState<string[]>([]);
   const [err, setErr] = useState(false);
 
   useEffect(() => {
     let alive = true;
     setDoc(null);
-    getBoard(board, range)
+    getBoard(board, range, machine)
       .then((d) => {
         if (!alive) return;
         setDoc(d);
+        if (d.machines) setMachines(d.machines.all);
         setErr(false);
       })
       .catch(() => alive && setErr(true));
     return () => {
       alive = false;
     };
-  }, [board, range]);
+  }, [board, range, machine]);
 
   const since = new Date(Date.now() - RANGE_MS[range]).toISOString();
   const fmtTime = (s: number) => formatDate(new Date(s * 1000).toISOString());
@@ -106,6 +111,36 @@ function DashboardsInner() {
           </Button>
         ))}
       </div>
+      {board === "overview" && machines.length > 1 && (
+        <div className="mkt-dash__bar">
+          <label htmlFor="dash-machine">{t("dash.machine")}</label>
+          <select
+            id="dash-machine"
+            data-testid="dash-machine"
+            value={machine}
+            onChange={(e) => setMachine(e.target.value)}
+          >
+            <option value="">{t("dash.machine.all")}</option>
+            {machines.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      {doc &&
+        board === "overview" &&
+        !machine &&
+        doc.machines &&
+        doc.machines.total > doc.machines.shown.length && (
+          <p className="mkt-muted" data-testid="dash-machines-shown">
+            {t("dash.machines.shown", {
+              shown: n(doc.machines.shown.length),
+              total: n(doc.machines.total),
+            })}
+          </p>
+        )}
       {err && <p className="mkt-muted">{t("dash.loadError")}</p>}
       {doc && doc.series.length === 0 && (doc.top ?? []).length === 0 && (
         <p className="mkt-muted" data-testid="dash-empty">
@@ -143,6 +178,11 @@ function DashboardsInner() {
             );
           })}
       </div>
+      {doc && (doc.omitted ?? 0) > 0 && (
+        <p className="mkt-muted" data-testid="dash-omitted">
+          {t("dash.omitted", { count: n(doc.omitted ?? 0) })}
+        </p>
+      )}
       {doc && board === "use" && (doc.top ?? []).length > 0 && (
         <Card>
           <h2>{t("dash.topVideos")}</h2>

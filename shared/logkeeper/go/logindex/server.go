@@ -227,7 +227,7 @@ func (ix *Index) Handler(ready *atomic.Bool) http.Handler {
 		if rng == "" {
 			rng = "24h"
 		}
-		doc, err := ix.Board(r.Context(), r.PathValue("board"), rng)
+		doc, err := ix.BoardOf(r.Context(), r.PathValue("board"), rng, r.URL.Query().Get("machine"))
 		if errors.Is(err, ErrBoard) {
 			writeErr(w, http.StatusNotFound, err)
 			return

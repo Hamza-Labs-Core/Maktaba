@@ -3,6 +3,7 @@ package com.hamzalabs.maktaba.core
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.Board
+import com.hamzalabs.maktaba.core.api.BoardDoc
 import com.hamzalabs.maktaba.core.api.ErrorFilter
 import com.hamzalabs.maktaba.core.api.ErrorGroupAction
 import com.hamzalabs.maktaba.core.api.ErrorSort
@@ -170,6 +171,34 @@ class DiagnosticsApiTest {
         assertEquals("7d", last().url.queryParameter("range"))
         assertEquals(listOf("maktaba_logs_bytes", "maktaba_disk_free_bytes"), b.panels.map { it.first })
         assertEquals(listOf("segments", "index"), b.panels[0].second.map { it.legend })
+    }
+
+    @Test
+    fun theOverviewOfManyMachinesSaysWhichItShowsAndAsksForOne() = runBlocking {
+        answer = {
+            json(200, """{"board":"overview","range":"24h","omitted":2,
+              "machines":{"total":37,"shown":["n07","n33","n12","n41","n20"],"all":["n00","n01","n07"]},
+              "series":[{"name":"maktaba_machines_components_down","points":[[1800000000,4]]},
+                {"name":"maktaba_component_down","labels":"machine=n07","points":[[1800000000,3]]}]}""")
+        }
+        val all = client().board(Board.Overview, "24h")
+        assertEquals(null, last().url.queryParameter("machine"))
+        assertEquals(37, all.machines?.total)
+        assertEquals(listOf("n07", "n33", "n12", "n41", "n20"), all.machines?.shown)
+        assertEquals(2, all.omitted)
+        assertTrue(all.showsSomeMachines)
+        assertEquals(listOf("maktaba_machines_components_down", "maktaba_component_down"), all.panels.map { it.first })
+        assertEquals("n07", all.panels[1].second[0].legend)
+        client().board(Board.Overview, "24h", machine = "n07")
+        assertEquals("n07", last().url.queryParameter("machine"))
+        // the machine is the Overview's; Storage is asked without it
+        client().board(Board.Storage, "24h", machine = "n07")
+        assertEquals(null, last().url.queryParameter("machine"))
+        val one = Json { ignoreUnknownKeys = true }.decodeFromString<BoardDoc>(
+            """{"board":"overview","machine":"n07","machines":{"total":37,"shown":["n07"],"all":[]}}""",
+        )
+        assertFalse(one.showsSomeMachines)
+        assertFalse(Json.decodeFromString<BoardDoc>("""{"board":"storage"}""").showsSomeMachines)
     }
 
     @Test

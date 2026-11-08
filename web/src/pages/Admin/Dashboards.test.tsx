@@ -110,6 +110,82 @@ describe("Dashboards", () => {
     expect(panels[0].querySelector("figure")?.getAttribute("dir")).toBe("ltr");
   });
 
+  it("with many machines it says how many it shows, and picks one machine on its own", async () => {
+    const all = Array.from({ length: 37 }, (_, i) => `n${String(i).padStart(2, "0")}`);
+    get.mockImplementation((path: string) =>
+      Promise.resolve({
+        board: "overview",
+        range: "24h",
+        step: 60,
+        machine: path.includes("machine=") ? "n07" : undefined,
+        machines: {
+          total: 37,
+          shown: path.includes("machine=") ? ["n07"] : ["n07", "n33", "n12", "n41", "n20"],
+          all,
+        },
+        omitted: path.includes("machine=") ? 3 : 0,
+        series: [
+          { name: "maktaba_machines_components_down", kind: "gauge", points: [[1, 4]] },
+          {
+            name: "maktaba_component_down",
+            labels: "machine=n07",
+            kind: "gauge",
+            points: [[1, 3]],
+          },
+        ],
+      })
+    );
+    renderPage(<AdminDashboards />, { path: "/admin/dashboards" });
+    const panels = await screen.findAllByTestId("dash-panel");
+    expect(within(panels[0]).getByRole("heading")).toHaveTextContent(
+      en["dash.series.maktaba_machines_components_down"]
+    );
+    expect(within(panels[1]).getByRole("heading")).toHaveTextContent(
+      en["dash.series.maktaba_component_down"]
+    );
+    expect(screen.getByTestId("dash-machines-shown")).toHaveTextContent("Showing 5 of 37 machines");
+    const pick = screen.getByLabelText(en["dash.machine"]) as HTMLSelectElement;
+    expect(pick.options).toHaveLength(38);
+    expect(pick.options[0].textContent).toBe(en["dash.machine.all"]);
+    expect(screen.queryByTestId("dash-omitted")).toBeNull();
+    fireEvent.change(pick, { target: { value: "n07" } });
+    await waitFor(() =>
+      expect(String(get.mock.calls.at(-1)?.[0])).toBe(
+        "/api/admin/dashboards/overview?range=24h&machine=n07"
+      )
+    );
+    expect(await screen.findByTestId("dash-omitted")).toHaveTextContent("3 more lines did not fit");
+    expect(screen.queryByTestId("dash-machines-shown")).toBeNull();
+    // the machine is the Overview's: another board is asked without it
+    fireEvent.click(screen.getByRole("tab", { name: en["dash.storage"] }));
+    await waitFor(() =>
+      expect(String(get.mock.calls.at(-1)?.[0])).toBe("/api/admin/dashboards/storage?range=24h")
+    );
+    expect(screen.queryByTestId("dash-machine")).toBeNull();
+  });
+
+  it("in Arabic the machines line is Arabic", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    get.mockResolvedValue({
+      board: "overview",
+      range: "24h",
+      step: 60,
+      machines: {
+        total: 9,
+        shown: ["a", "b", "c", "d", "e"],
+        all: ["a", "b", "c", "d", "e", "f", "g", "h", "i"],
+      },
+      series: [{ name: "maktaba_machines_load1_max", kind: "gauge", points: [[1, 2]] }],
+    });
+    renderPage(<AdminDashboards />, { path: "/admin/dashboards" });
+    const panels = await screen.findAllByTestId("dash-panel");
+    expect(within(panels[0]).getByRole("heading")).toHaveTextContent(
+      ar["dash.series.maktaba_machines_load1_max"]
+    );
+    expect(screen.getByTestId("dash-machines-shown").textContent).toContain("عرض");
+    expect(screen.getByLabelText(ar["dash.machine"])).toBeInTheDocument();
+  });
+
   it("a viewer sees admins only, and no board is asked for", async () => {
     renderPage(<AdminDashboards />, { path: "/admin/dashboards", user: memberUser });
     expect(await screen.findByText(en["common.forbidden.title"])).toBeInTheDocument();
