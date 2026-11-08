@@ -162,8 +162,8 @@ def test_promote_replaces_the_seed_whole(tmp_path: Path) -> None:
 def test_sweep_spares_live_sessions_and_old_folders(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A folder is removed only when its owner's process is gone: a live session's, or one
-    with no owner file, stays."""
+    """A folder (or a seed's part file) is removed only when its owner's process is gone: a
+    live session's, or a folder with no owner file, stays."""
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
     dead = subprocess.Popen([sys.executable, "-c", "pass"])
     dead.wait()
@@ -171,7 +171,15 @@ def test_sweep_spares_live_sessions_and_old_folders(
         (tmp_path / name).mkdir()
         if owner is not None:
             (tmp_path / name / harness._OWNER).write_text(str(owner))
+    seed = "maktaba-plugin-api-dev-abc.seed"
+    for owner in (dead.pid, os.getpid()):
+        (tmp_path / f"{seed}.{owner}.0123abcd").write_bytes(b"part")
     if os.name != "posix":
         pytest.skip("the sweep runs on POSIX only")
     harness._sweep()
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["mkp-live", "mkp-old"]
+    left = sorted(p.name for p in tmp_path.iterdir())
+    assert left == [
+        f"maktaba-plugin-api-dev-abc.seed.{os.getpid()}.0123abcd",
+        "mkp-live",
+        "mkp-old",
+    ]

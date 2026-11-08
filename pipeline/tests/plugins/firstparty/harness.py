@@ -159,8 +159,9 @@ def _alive(pid: int) -> bool:
 
 
 def _sweep() -> None:
-    """Remove the folders of sessions whose process is gone (a run killed before its exit
-    handlers ran). Only POSIX: Windows's ``os.kill`` ends the process it is asked about."""
+    """Remove the folders (and seed part files) of sessions whose process is gone (a run
+    killed before its exit handlers ran). Only POSIX: Windows's ``os.kill`` ends the process
+    it is asked about."""
     if os.name != "posix":
         return
     for d in Path(tempfile.gettempdir()).glob("mkp-*"):
@@ -170,6 +171,15 @@ def _sweep() -> None:
             continue
         if pid != os.getpid() and not _alive(pid):
             shutil.rmtree(d, ignore_errors=True)
+    # a seed's part file (_promote) whose session died before its rename
+    for f in Path(tempfile.gettempdir()).glob("maktaba-plugin-api-dev-*.seed.*.*"):
+        try:
+            pid = int(f.name.rsplit(".", 2)[1])
+        except (IndexError, ValueError):
+            continue
+        if pid != os.getpid() and not _alive(pid):
+            with contextlib.suppress(OSError):
+                f.unlink()
 
 
 def _end_session(pid: int) -> None:
