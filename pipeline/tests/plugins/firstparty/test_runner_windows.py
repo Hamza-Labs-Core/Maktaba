@@ -488,12 +488,49 @@ def test_every_look_on_a_share_path_goes_through_the_broker_or_is_refused(
         with pytest.raises(PermissionError) as refused:
             shim.exec_hook(event, args)
         assert sandbox_refused(refused.value), event
-    # a local path, an fd and a share outside the brokered folders are not the shim's
+    # a local path and an fd are not the shim's
     shim.exec_hook("os.scandir", (str(tmp_path),))
     shim.exec_hook("open", (3, "rb", 0))
-    shim.exec_hook("os.scandir", ("\\\\nas\\other",))
     assert {a["op"] for a in asked} == {"stat", "open"}
     assert shim.counts == {"stat": 6, "open": 1, "unrouted_refused": 7}
+
+
+def test_a_share_outside_the_brokered_folders_is_refused_never_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The AppContainer reaches no share but through the broker: a share path outside its
+    folders (another share, or a brokered one in the long form) is refused by every routed
+    call and by the audit hook, naming the path, never answered as absent; the long forms of
+    a local path and a device are the plain calls."""
+    from maktaba_pipeline.plugins.native import sandbox_refused
+
+    monkeypatch.setattr(sys, "audit", lambda *_: None)
+    shim, asked = _shim(tmp_path, {})
+    for other in (
+        "\\\\nas\\other\\a.jpg",
+        "//nas/other/a.jpg",
+        "\\\\?\\UNC\\nas\\media\\shows\\a.jpg",
+    ):
+        for call in (
+            shim.exists_,
+            shim.isfile_,
+            shim.isdir_,
+            shim.lexists_,
+            shim.stat_,
+            shim.listdir_,
+        ):
+            with pytest.raises(PermissionError) as refused:
+                call(other)
+            assert sandbox_refused(refused.value) and other in str(refused.value)
+        with pytest.raises(PermissionError):
+            shim.open_(other, "rb")
+        with pytest.raises(PermissionError):
+            shim.exec_hook("os.scandir", (other,))
+    assert not asked  # none reached the broker
+    assert winfiles.share_path("\\\\server\\share\\x")
+    for local in ("\\\\.\\pipe\\maktaba", "\\\\?\\C:\\x", "C:\\x", str(tmp_path), 3, None):
+        assert not winfiles.share_path(local)
+    assert shim.exists_(str(tmp_path)) and not shim.isfile_(str(tmp_path / "none"))
 
 
 def test_the_broker_counts_are_taken_once_per_job(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -19,7 +19,9 @@ refusal is a ``PermissionError``, so a job refused there runs in the worker
 (``sandbox_refused``). The lookups Windows answers without ``os.stat`` (``lexists``,
 ``islink``, ``isjunction``, ``os.access``) go through the broker too, and any other file call
 on a brokered path (``os.scandir``, ``os.open``, ``glob``, a ``shutil`` copy...) is refused
-by the audit hook: inside the AppContainer it would fail as if the file were not there. What
+by the audit hook: inside the AppContainer it would fail as if the file were not there. So is
+every call on a share path outside the brokered folders (another share, or the long
+``\\\\?\\UNC\\`` form), naming the path. What
 the broker answered for each job is counted (:func:`take_counts`, the runner's job line).
 
 A tool (ffmpeg, ffprobe) reaches no share either, being a child in the same AppContainer and
@@ -65,6 +67,21 @@ HANDLE_TOOLS = frozenset({"ffmpeg", "ffprobe"})
 
 #: inputs that are the tool's standard input already: one brokered input would collide
 _STDIN_INPUTS = ("-", "pipe:", "pipe:0", "fd:")
+
+
+def share_path(path: object) -> bool:
+    """Whether ``path`` names a file on a share (``\\\\server\\share\\...``, either slash, or
+    ``\\\\?\\UNC\\...``), never a device or a local path in the long form (``\\\\.\\pipe\\...``,
+    ``\\\\?\\C:\\...``)."""
+    if path is None or isinstance(path, int):
+        return False
+    try:
+        p = os.fsdecode(path).replace("/", "\\")  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return False
+    if p[:8].upper() == "\\\\?\\UNC\\":
+        return True
+    return p.startswith("\\\\") and p[2:3] not in ("?", ".")
 
 
 def _key(path: str) -> str:
@@ -135,6 +152,23 @@ class _Shim:
             return p
         return None
 
+    def _route(self, path: object) -> str | None:
+        """``path`` when the broker answers for it (:meth:`under`), None for a path the plain
+        call serves. A share path outside the brokered folders (another share, or a brokered
+        one spelled otherwise: ``\\\\?\\UNC\\...``) is refused: the AppContainer reaches no
+        share, so the plain call would answer it as absent."""
+        p = self.under(path)
+        if p is None and share_path(path):
+            self.count("unbrokered_refused")
+            name = os.fsdecode(path)  # type: ignore[arg-type]
+            raise PermissionError(
+                errno.EACCES,
+                f"{name}: a share path outside this runner's brokered folders"
+                "; the worker runs this job",
+                name,
+            )
+        return p
+
     def count(self, key: str) -> None:
         self.counts[key] = self.counts.get(key, 0) + 1
 
@@ -167,7 +201,7 @@ class _Shim:
     # -- the calls routed -------------------------------------------------------------
 
     def open_(self, file: Any, mode: str = "r", *args: Any, **kwargs: Any) -> Any:
-        p = self.under(file)
+        p = self._route(file)
         if p is None:
             return self.open(file, mode, *args, **kwargs)
         write = any(c in mode for c in "wax+")
@@ -192,13 +226,13 @@ class _Shim:
         return self.open(fd, mode, *args, **kwargs)
 
     def stat_(self, path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
-        p = self.under(path)
+        p = self._route(path)
         if p is None:
             return self.stat(path, *args, **kwargs)
         return self._stat(p)
 
     def lstat_(self, path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
-        p = self.under(path)
+        p = self._route(path)
         if p is None:
             return self.lstat(path, *args, **kwargs)
         return self._stat(p)
@@ -217,7 +251,7 @@ class _Shim:
     # False, a stage would go on as if the file were absent (a thumbnail not found, a job
     # done with the wrong result) instead of running in the worker (sandbox_refused).
     def exists_(self, path: Any) -> bool:
-        if self.under(path) is None:
+        if self._route(path) is None:
             return self.exists(path)
         try:
             self.stat_(path)
@@ -228,7 +262,7 @@ class _Shim:
         return True
 
     def isfile_(self, path: Any) -> bool:
-        if self.under(path) is None:
+        if self._route(path) is None:
             return self.isfile(path)
         try:
             return stat_mod.S_ISREG(self.stat_(path).st_mode)
@@ -238,7 +272,7 @@ class _Shim:
             return False
 
     def isdir_(self, path: Any) -> bool:
-        if self.under(path) is None:
+        if self._route(path) is None:
             return self.isdir(path)
         try:
             return stat_mod.S_ISDIR(self.stat_(path).st_mode)
@@ -250,24 +284,24 @@ class _Shim:
     # these answer without os.stat on Windows too: a share path goes through the broker (a
     # brokered file is never a link: the broker refuses one, which raises here)
     def lexists_(self, path: Any) -> bool:
-        if self.under(path) is None:
+        if self._route(path) is None:
             return self.lexists(path)
         return self.exists_(path)
 
     def islink_(self, path: Any) -> bool:
-        if self.under(path) is None:
+        if self._route(path) is None:
             return self.islink(path)
         self.exists_(path)
         return False
 
     def isjunction_(self, path: Any) -> bool:
-        if self.under(path) is None:
+        if self._route(path) is None:
             return bool(self.isjunction and self.isjunction(path))
         self.exists_(path)
         return False
 
     def access_(self, path: Any, mode: int, *args: Any, **kwargs: Any) -> bool:
-        if self.under(path) is None:
+        if self._route(path) is None:
             return self.access(path, mode, *args, **kwargs)
         if mode & (os.W_OK | os.X_OK):
             self.count("unrouted_refused")
@@ -277,7 +311,7 @@ class _Shim:
         return self.exists_(path)
 
     def listdir_(self, path: Any = ".") -> list[Any]:
-        p = self.under(path)
+        p = self._route(path)
         if p is None:
             return self.listdir(path)
         self._audit("os.listdir", p)
@@ -287,7 +321,7 @@ class _Shim:
     def _move(
         self, plain: Callable[..., None], src: Any, dst: Any, *args: Any, **kwargs: Any
     ) -> None:
-        s, d = self.under(src), self.under(dst)
+        s, d = self._route(src), self._route(dst)
         if s is None and d is None:
             plain(src, dst, *args, **kwargs)
             return
@@ -305,7 +339,7 @@ class _Shim:
         self._move(self.rename, src, dst, *args, **kwargs)
 
     def _remove(self, plain: Callable[..., None], path: Any, *args: Any, **kwargs: Any) -> None:
-        p = self.under(path)
+        p = self._route(path)
         if p is None:
             plain(path, *args, **kwargs)
             return
@@ -421,7 +455,9 @@ class _Shim:
             if getattr(self._own, "on", False):
                 return
             for a in args[: _FILE_EVENTS[event]]:
-                if isinstance(a, (str, bytes, os.PathLike)) and self.under(a) is not None:
+                if isinstance(a, (str, bytes, os.PathLike)) and (
+                    self.under(a) is not None or share_path(a)
+                ):
                     self.count("unrouted_refused")
                     raise PermissionError(
                         errno.EACCES,
