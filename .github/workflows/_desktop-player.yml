@@ -92,6 +92,52 @@ jobs:
           path: build/ci-pinned/gradle
           key: ${{ steps.gradle-dist-key.outputs.key }}
 
+      # The .msi's WiX toolset: compose's downloadWix fetches it from a github.com release with
+      # no retry (it timed out on 2026-11-08), and skips that when
+      # $GRADLE_USER_HOME/compose-jb/wix311.zip is there (compose 1.12.2, wixToolset.kt). Pinned
+      # by SHA-256, cached, fetched by tools/release/fetch-pinned.sh (the API first, retried)
+      # and put there, so the build downloads nothing. A compose that wants another WiX
+      # downloads its own, as before.
+      - name: WiX's cache key
+        id: wix-pin
+        if: runner.os == 'Windows'
+        working-directory: .
+        env:
+          WIX_URL: https://github.com/wixtoolset/wix3/releases/download/wix3112rtm/wix311-binaries.zip
+          WIX_SHA256: 2c1888d5d1dba377fc7fa14444cf556963747ff9a0a289a3599cf09da03b9e2e
+        run: |
+          {
+            echo "key=$(tools/release/fetch-pinned.sh --key "$WIX_URL" "$WIX_SHA256")"
+            echo "url=$WIX_URL"
+            echo "sha256=$WIX_SHA256"
+          } >>"$GITHUB_OUTPUT"
+      - id: wix-cache
+        if: runner.os == 'Windows'
+        uses: actions/cache/restore@v4
+        with:
+          path: build/ci-pinned/wix
+          key: ${{ steps.wix-pin.outputs.key }}
+      - name: WiX, retried
+        if: runner.os == 'Windows'
+        working-directory: .
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WIX_URL: ${{ steps.wix-pin.outputs.url }}
+          WIX_SHA256: ${{ steps.wix-pin.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          zip="$(tools/release/fetch-pinned.sh "$WIX_URL" "$WIX_SHA256" build/ci-pinned/wix/wix311.zip)"
+          home="${GRADLE_USER_HOME:-$HOME/.gradle}"
+          mkdir -p "$home/compose-jb"
+          cp "$zip" "$home/compose-jb/wix311.zip"
+          echo "WiX put in $home/compose-jb/wix311.zip for compose's downloadWix to skip"
+      - name: Save WiX
+        if: runner.os == 'Windows' && steps.wix-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/ci-pinned/wix
+          key: ${{ steps.wix-pin.outputs.key }}
+
       - name: Tests, installers
         run: |
           set -euo pipefail

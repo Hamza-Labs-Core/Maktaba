@@ -233,3 +233,11 @@ def test_a_distribution_off_gradle_s_host_is_refused(tmp_path: Path, url: str, m
     assert r.returncode != 0
     assert "distributionUrl" in r.stderr
     assert not (tmp_path / "cache").exists()
+
+
+def test_the_windows_player_puts_wix_where_compose_skips_its_download() -> None:
+    text = (ROOT / ".github/workflows/_desktop-player.yml").read_text(encoding="utf-8")
+    fetch = text.find("tools/release/fetch-pinned.sh \"$WIX_URL\" \"$WIX_SHA256\" build/ci-pinned/wix/wix311.zip")
+    place = text.find('cp "$zip" "$home/compose-jb/wix311.zip"')
+    build = text.find("./gradlew --no-daemon")
+    assert -1 < fetch < place < build
