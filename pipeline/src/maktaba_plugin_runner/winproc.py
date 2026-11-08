@@ -36,6 +36,14 @@ __all__ = ["Process", "create_subprocess_exec", "install"]
 _LIMIT = 2**16  # asyncio's default stream limit
 
 
+class EmptyStdin(int):
+    """The read end of an empty pipe given to a tool as its standard input in place of
+    ``DEVNULL`` (the ``nul`` device, which an AppContainer may not open): the runner's share
+    routing treats it as ``DEVNULL``, a standard input no caller needs."""
+
+    empty_stdin = True
+
+
 class _Job:
     """A Job Object holding one tool (Windows): terminating it ends the tool and what it
     started. Best effort: without one, a kill ends the tool alone."""
@@ -104,6 +112,17 @@ def _pump(loop: asyncio.AbstractEventLoop, fd: int, reader: asyncio.StreamReader
         _on_loop(loop, reader.feed_eof)
 
 
+def _drain(fd: int) -> None:
+    try:
+        while os.read(fd, 65536):
+            pass
+    except OSError:
+        pass
+    finally:
+        with contextlib.suppress(OSError):
+            os.close(fd)
+
+
 class _Writer:
     """The tool's standard input when it is a pipe: what ``communicate(input)`` and a
     stage's ``write``/``drain`` need, the writes in a thread."""
@@ -138,7 +157,9 @@ class _Writer:
 class Process:
     """asyncio's ``Process`` for a tool started through anonymous pipes."""
 
-    def __init__(self, popen: subprocess.Popen[bytes], limit: int) -> None:
+    def __init__(
+        self, popen: subprocess.Popen[bytes], limit: int, discard: list[str] | None = None
+    ) -> None:
         loop = asyncio.get_running_loop()
         self._popen = popen
         self._job = _Job(popen)
@@ -146,17 +167,25 @@ class Process:
         self._returncode: int | None = None
         self._exited: asyncio.Future[int] = loop.create_future()
         self.stdin = _Writer(popen.stdin) if popen.stdin is not None else None
-        self.stdout = self._reader(loop, popen.stdout, limit)
-        self.stderr = self._reader(loop, popen.stderr, limit)
+        drop = discard or []
+        self.stdout = self._reader(loop, popen.stdout, limit, keep="stdout" not in drop)
+        self.stderr = self._reader(loop, popen.stderr, limit, keep="stderr" not in drop)
         threading.Thread(target=self._wait_thread, args=(loop,), daemon=True).start()
 
     @staticmethod
-    def _reader(loop: asyncio.AbstractEventLoop, f: Any, limit: int) -> asyncio.StreamReader | None:
+    def _reader(
+        loop: asyncio.AbstractEventLoop, f: Any, limit: int, keep: bool = True
+    ) -> asyncio.StreamReader | None:
+        """A captured pipe as asyncio's reader (a thread feeds it); one the caller asked
+        to discard (``DEVNULL``) is drained and dropped, and answers ``None``."""
         if f is None:
             return None
-        reader = asyncio.StreamReader(limit=limit, loop=loop)
         fd = os.dup(f.fileno())
         f.close()
+        if not keep:
+            threading.Thread(target=_drain, args=(fd,), daemon=True).start()
+            return None
+        reader = asyncio.StreamReader(limit=limit, loop=loop)
         threading.Thread(target=_pump, args=(loop, fd, reader), daemon=True).start()
         return reader
 
@@ -227,11 +256,29 @@ async def create_subprocess_exec(
     limit: int = _LIMIT,
     **kwds: Any,
 ) -> Process:
-    """``asyncio.create_subprocess_exec`` through anonymous pipes (the same arguments)."""
-    popen = subprocess.Popen(  # noqa: S603 - the stage's tool, as asyncio would start it
-        [program, *args], stdin=stdin, stdout=stdout, stderr=stderr, bufsize=0, **kwds
-    )
-    return Process(popen, limit)
+    """``asyncio.create_subprocess_exec`` through anonymous pipes (the same arguments).
+
+    ``DEVNULL`` is never the ``nul`` device, which an AppContainer may not open either: the
+    tool's standard input is then an empty pipe (:class:`EmptyStdin`), and an output it
+    discards goes to a pipe drained and dropped."""
+    empty: EmptyStdin | None = None
+    if stdin == subprocess.DEVNULL:
+        r, w = os.pipe()
+        os.close(w)
+        stdin = empty = EmptyStdin(r)
+    discard = [n for n, v in (("stdout", stdout), ("stderr", stderr)) if v == subprocess.DEVNULL]
+    if stdout == subprocess.DEVNULL:
+        stdout = subprocess.PIPE
+    if stderr == subprocess.DEVNULL:
+        stderr = subprocess.PIPE
+    try:
+        popen = subprocess.Popen(  # noqa: S603 - the stage's tool, as asyncio would start it
+            [program, *args], stdin=stdin, stdout=stdout, stderr=stderr, bufsize=0, **kwds
+        )
+    finally:
+        if empty is not None:
+            os.close(empty)
+    return Process(popen, limit, discard=discard)
 
 
 def install() -> None:

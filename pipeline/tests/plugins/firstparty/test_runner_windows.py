@@ -672,3 +672,46 @@ def test_a_kill_after_the_tool_exited_never_terminates_its_closed_job() -> None:
     assert not job.terminate()  # a kill after: nothing terminated
     job.close()  # closed once
     assert k32.calls == [("terminate", 77), ("close", 77)]
+
+
+def test_devnull_is_never_the_nul_device_for_a_tool(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An AppContainer may not open the ``nul`` device either, so ``DEVNULL`` (what the
+    media helpers pass) is never it: the tool's standard input is an empty pipe, marked so
+    the share routing treats it as ``DEVNULL``, and an output it discards goes to a pipe
+    drained and dropped (a large one never blocks the tool)."""
+    opened: list[str] = []
+    real_open = os.open
+
+    def no_nul(path: Any, *a: Any, **k: Any) -> int:
+        opened.append(str(path))
+        if str(path) == os.devnull:
+            raise PermissionError(13, "Permission denied", path)
+        return real_open(path, *a, **k)
+
+    seen_stdin: list[object] = []
+    real_init = subprocess.Popen.__init__
+
+    def init(popen: Any, args: Any, **kw: Any) -> None:
+        seen_stdin.append(kw.get("stdin"))
+        real_init(popen, args, **kw)
+
+    monkeypatch.setattr(os, "open", no_nul)
+    monkeypatch.setattr(subprocess.Popen, "__init__", init)
+
+    async def go() -> tuple[bytes | None, bytes | None, int | None, object, object]:
+        proc = await winproc.create_subprocess_exec(
+            _PY,
+            "-c",
+            "import sys; d = sys.stdin.read(); sys.stdout.write('x'*(4<<20));"
+            " sys.stderr.write('in=%d' % len(d))",
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        out, err = await asyncio.wait_for(proc.communicate(), 60)
+        return out, err, proc.returncode, proc.stdout, proc.stdin
+
+    out, err, code, stdout, stdin = asyncio.run(go())
+    assert (out, err, code, stdout, stdin) == (None, b"in=0", 0, None, None)
+    assert os.devnull not in opened
+    assert isinstance(seen_stdin[0], winproc.EmptyStdin) and seen_stdin[0].empty_stdin
