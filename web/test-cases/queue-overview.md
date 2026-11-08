@@ -254,13 +254,13 @@
 - **Priority:** P2
 - **Category:** Happy path
 - **Covered by existing test?** Yes (`QueueOverview.cases.test.tsx`)
-- **Preconditions / data:** `/api/issues` → groups with `action` `"retry"` (cause `nas_timeout`, stage `probe`), `"apply"` (stage `plex_collection`), `"open_settings"`, `"show_workers"`; snapshot `health.nas.open_ms_p95: 850`.
+- **Preconditions / data:** `/api/issues` → groups with `action` `"retry"` (cause `nas_timeout`, stage `probe`), `"apply"` (stage `plex_livetv`), `"open_settings"`, `"show_workers"`; snapshot `health.nas.open_ms_p95: 850`.
 - **Steps:**
   1. Read the retry button label.
   2. Click "Apply".
   3. Click "Open settings"; go back; click "Show workers".
   4. Click a sample subject link.
-- **Expected:** step 1 label "Retry N (NAS open p95 850 ms)" for `nas_*` causes. Step 2 posts `/api/queues/plex_collection/apply` with `{ "all": true }`, then reloads `/api/queues`, `/api/issues`, `/api/queues/libraries`. Step 3 goes to `/admin/extensions` then `/admin/health`. Step 4 goes to `/queue/items/<kind>/<id>` (encoded).
+- **Expected:** step 1 label "Retry N (NAS open p95 850 ms)" for `nas_*` causes. Step 2 posts `/api/queues/plex_livetv/apply` with `{ "all": true }`, then reloads `/api/queues`, `/api/issues`, `/api/queues/libraries`. Step 3 goes to `/admin/extensions` then `/admin/health`. Step 4 goes to `/queue/items/<kind>/<id>` (encoded).
 
 ### QOV-19 — Queue work dialog: validation, close, keyboard
 

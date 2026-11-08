@@ -46,6 +46,10 @@ func componentIssues(rows []store.Status, now time.Time, off func(machine, id st
 		if off != nil && off(k.Machine, k.ID) {
 			continue
 		}
+		// a component a release removed keeps its last status row until the cleanup migration
+		if components.RetiredComponent(k.ID) {
+			continue
+		}
 		is := ComponentIssue{Machine: k.Machine, ID: k.ID, Phase: s.Phase, Reason: s.Reason(), Since: s.Since}
 		switch s.Phase {
 		case components.PhaseFailed:

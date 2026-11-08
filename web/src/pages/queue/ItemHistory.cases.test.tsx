@@ -33,7 +33,6 @@ import type { ItemHistoryData } from "../../lib/queueApi";
 import { routeGet } from "../../test/queueHarness";
 import { memberUser, quietCrash, renderPage } from "../../test/pageHarness";
 import {
-  extensionsFixture,
   libraryHistoryFixture,
   snapshotFixture,
   videoHistoryFixture,
@@ -46,7 +45,6 @@ function table(over: Table = {}): Table {
   return {
     "/api/queues": snapshotFixture,
     [LIB]: libraryHistoryFixture,
-    "/api/extensions": { extensions: extensionsFixture },
     "/api/reports": { reports: [] },
     "/api/items/library/lib-1/collections": { topics: [], clip_groups: [], promos: [] },
     ...over,
@@ -257,10 +255,8 @@ describe("ItemHistory (test-cases/queue-item-history.md)", () => {
     }
   });
 
-  it("QIH-08: extensions / reports / collections lists null do not crash", async () => {
+  it("QIH-08: reports / collections lists null do not crash", async () => {
     const variants: Table[] = [
-      { "/api/extensions": { extensions: null } },
-      { "/api/extensions": {} },
       { "/api/reports": { reports: null } },
       { "/api/reports": {} },
       { "/api/items/library/lib-1/collections": { topics: null, clip_groups: [], promos: [] } },
@@ -274,7 +270,6 @@ describe("ItemHistory (test-cases/queue-item-history.md)", () => {
       await waitFor(() => expect(calls("/api/items/library/lib-1/collections").length).toBe(1));
       noCrash();
       expect(screen.queryByRole("link", { name: "Review page" })).toBeNull();
-      expect(screen.queryByText(/dz-12|dizqueTV/)).toBeNull();
       unmount();
       get.mockReset();
     }

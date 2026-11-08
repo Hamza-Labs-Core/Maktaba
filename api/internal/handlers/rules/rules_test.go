@@ -333,6 +333,8 @@ func TestPatch_WordsComparedAsSet(t *testing.T) {
 func TestGet_UnknownAndInvalidStored(t *testing.T) {
 	db, srv := newServer(t)
 	putRow(t, db, "planner", `{"retired_knob":1,"min_slot_minutes":2,"mix_number":120}`)
+	// stored at the planner's own major (2.0): one at 1.x waits for the home to move it
+	putVersion(t, db, "planner", `{"major":2,"minor":0}`)
 	putRow(t, db, "groups", `"not an object"`)
 	_, resp := do(t, srv, http.MethodGet, "/api/rules", "", admin)
 
@@ -360,6 +362,61 @@ func TestGet_UnknownAndInvalidStored(t *testing.T) {
 	row, _ := storedRow(t, db, "planner")
 	if _, has := row["retired_knob"]; has {
 		t.Errorf("unknown name kept: %v", row)
+	}
+}
+
+// The old dizqueTV settings (rules.dizquetv, kept by the lossless slot 0215) still give
+// Maktaba TV its live broadcasts while the tv rules name none: GET shows that list on
+// tv.live, marked inherited, and an own list (not empty) wins.
+func delRow(t *testing.T, db *sql.DB, section string) {
+	t.Helper()
+	if _, err := db.Exec(`DELETE FROM app_settings WHERE key = ?`, "rules."+section); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGet_TvLiveInheritsTheOldDizqueTVList(t *testing.T) {
+	db, srv := newServer(t)
+	row := `{"channel":105,"url":"https://www.youtube.com/@aljazeera/live","title":"Live","start":"20:00","end":"22:00","every_minutes":60,"minutes":10}`
+	putRow(t, db, "dizquetv", `{"live":[`+row+`],"filler_cooldown_min":30}`)
+	_, resp := do(t, srv, http.MethodGet, "/api/rules", "", admin)
+	live := fieldOf(t, resp, "tv", "live")
+	if live["inherited"] != true || live["changed"] != false {
+		t.Fatalf("inherited live: %v", live)
+	}
+	if rows, ok := live["value"].([]any); !ok || len(rows) != 1 || rows[0].(map[string]any)["channel"] != float64(105) {
+		t.Fatalf("inherited rows: %v", live["value"])
+	}
+	for _, sec := range resp["sections"].([]any) {
+		if sec.(map[string]any)["key"] == "dizquetv" {
+			t.Fatal("the removed section is not a section")
+		}
+	}
+
+	// an empty own list is none of its own: still inherited
+	putRow(t, db, "tv", `{"live":[]}`)
+	_, resp = do(t, srv, http.MethodGet, "/api/rules", "", admin)
+	if live = fieldOf(t, resp, "tv", "live"); live["inherited"] != true {
+		t.Fatalf("empty own list: %v", live)
+	}
+
+	// an own list wins
+	own := strings.Replace(row, "105", "102", 1)
+	delRow(t, db, "tv")
+	putRow(t, db, "tv", `{"live":[`+own+`]}`)
+	_, resp = do(t, srv, http.MethodGet, "/api/rules", "", admin)
+	live = fieldOf(t, resp, "tv", "live")
+	if _, ok := live["inherited"]; ok || live["value"].([]any)[0].(map[string]any)["channel"] != float64(102) {
+		t.Fatalf("own live: %v", live)
+	}
+
+	// a list the field would not take is not shown
+	delRow(t, db, "tv")
+	delRow(t, db, "dizquetv")
+	putRow(t, db, "dizquetv", `{"live":[{"channel":"x"}]}`)
+	_, resp = do(t, srv, http.MethodGet, "/api/rules", "", admin)
+	if live = fieldOf(t, resp, "tv", "live"); live["inherited"] != nil {
+		t.Fatalf("bad old list: %v", live)
 	}
 }
 

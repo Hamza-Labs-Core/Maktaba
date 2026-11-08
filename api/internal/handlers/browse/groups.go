@@ -10,11 +10,10 @@ package browse
 // malformed, not theirs) answers 404. The collections list merges what the
 // pipeline groups (topic collections, "ملف"; clip groups, "مقاطع" filler and
 // "منفردات" stand-alone) with the admins' collections (curated lists and
-// saved filters). The automatic ones are what the Plex extension's
-// plex_groups writes to Plex: every topic and every clip group of the library
-// with at least one video (plex_groups skips one with none), its members in
-// their stored position; neither stage marks a group as TV-only or hidden, so
-// none is left out here. Only hidden videos (missing, superseded, deleted) are.
+// saved filters). The automatic ones are every topic and every clip group of
+// the library with at least one video, its members in their stored position;
+// no stage marks a group as TV-only or hidden, so none is left out here. Only
+// hidden videos (missing, superseded, deleted) are.
 
 import (
 	"context"
@@ -242,9 +241,10 @@ type LibraryCollection struct {
 	// SmartQuery is a saved filter's smart_query, as stored (JSON text).
 	SmartQuery *string `json:"smart_query,omitempty"`
 	// Epic 56 (slot 0193): a collection a pipeline stage keeps in step with
-	// a YouTube playlist or channel or a Plex collection (kind youtube or
-	// plex, read-only like the topic and clip groups), and an admin's
-	// choices: shown as a row on the library's Recommended tab, hidden.
+	// a YouTube playlist or channel (kind youtube), or one an older release
+	// read in from Plex (kind plex, no longer synced), read-only like the topic
+	// and clip groups, and an admin's choices: shown as a row on the library's
+	// Recommended tab, hidden.
 	SourceKind    string `json:"source_kind,omitempty"`
 	ShowOnLibrary bool   `json:"show_on_library"`
 	Hidden        bool   `json:"hidden,omitempty"`

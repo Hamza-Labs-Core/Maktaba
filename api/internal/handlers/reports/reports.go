@@ -10,9 +10,9 @@
 //
 // The pages are the stand-alone control centre's reports ported to Maktaba:
 // one review page per library (review_pages stage), channel-plan.html (the
-// plan_channels stage), channel-plan-preview.html (the dry run) and
-// channel-audit.html (the audit stage). Any other *.html in the folder is
-// listed and served the same way.
+// plan_channels stage) and channel-plan-preview.html (the dry run). Any
+// other *.html in the folder is listed and served the same way (a
+// channel-audit.html left by the removed dizqueTV audit stage among them).
 //
 // Security. A request names a file; it never names a path. The name must
 // match a strict pattern AND be a regular file found by listing the folder,
@@ -21,7 +21,7 @@
 // or network access (images only from this origin), nosniff and no referrer;
 // the web app shows them in a sandboxed iframe. Reads need a signed-in
 // principal and follow the library ACL: a review page needs read access to
-// its library, the collection-wide pages (plan, preview, audit, other) an
+// its library, the collection-wide pages (plan, preview, other) an
 // admin or all-library principal. Starting a preview needs an admin.
 package reports
 
@@ -50,11 +50,10 @@ import (
 )
 
 // Well-known page names (the pipeline writes them; keep in step with
-// engine/plan_page.py and the audit stage).
+// engine/plan_page.py).
 const (
 	PlanPage    = "channel-plan.html"
 	PreviewPage = "channel-plan-preview.html"
-	AuditPage   = "channel-audit.html"
 )
 
 // Report kinds returned by GET /api/reports.
@@ -62,7 +61,6 @@ const (
 	KindReview  = "review"
 	KindPlan    = "plan"
 	KindPreview = "preview"
-	KindAudit   = "audit"
 	KindOther   = "other"
 )
 
@@ -163,7 +161,7 @@ func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 
 // canSee applies the per-principal library ACL to a report: a review page
 // belongs to its library and needs read access to it (as the channels
-// handler's canRead); every other page (plan, preview, audit, other) spans
+// handler's canRead); every other page (plan, preview, other) spans
 // the whole collection, so it needs an admin or an all-library principal.
 func canSee(p *principal.Principal, name string) bool {
 	if p == nil {
@@ -195,8 +193,6 @@ func kindOf(name string) string {
 		return KindPlan
 	case PreviewPage:
 		return KindPreview
-	case AuditPage:
-		return KindAudit
 	}
 	if uuidRe.MatchString(strings.TrimSuffix(name, ".html")) {
 		return KindReview
@@ -256,7 +252,6 @@ func (h *Handler) libraryNames(ctx context.Context, ids []string) map[string]str
 var fixedTitles = map[string]string{
 	PlanPage:    "Channel plan",
 	PreviewPage: "Channel plan (preview)",
-	AuditPage:   "Channel audit",
 }
 
 // List implements GET /api/reports.
@@ -299,7 +294,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, rep)
 	}
-	rank := map[string]int{KindPlan: 0, KindPreview: 1, KindAudit: 2, KindReview: 3, KindOther: 4}
+	rank := map[string]int{KindPlan: 0, KindPreview: 1, KindReview: 2, KindOther: 3}
 	sort.Slice(out, func(i, j int) bool {
 		if rank[out[i].Kind] != rank[out[j].Kind] {
 			return rank[out[i].Kind] < rank[out[j].Kind]

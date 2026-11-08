@@ -43,7 +43,7 @@ func TestEnqueue_ArgsAndOutcomes(t *testing.T) {
 			row: []driver.Value{int64(3), "rerun_requested"}, wantRes: EnqueueResult{JobID: i64(3), Outcome: OutcomeRerunRequested}, accepted: true,
 		},
 		{
-			name: "disabled has no job", p: EnqueueParams{SubjectKind: "library", SubjectID: uidA, Stage: "plex_collection"},
+			name: "disabled has no job", p: EnqueueParams{SubjectKind: "library", SubjectID: uidA, Stage: "plex_livetv"},
 			row: []driver.Value{nil, "disabled"}, wantRes: EnqueueResult{Outcome: OutcomeDisabled},
 		},
 		{

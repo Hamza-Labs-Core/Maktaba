@@ -15,12 +15,7 @@ from maktaba_pipeline.channels.base import BlockKind, ChannelMode, ContentItem, 
 from maktaba_pipeline.channels.filler import FillerList, FillerPicker, FillerSet
 from maktaba_pipeline.channels.hijri import hijri, in_hijri_month
 from maktaba_pipeline.channels.planner.schedule import SchedulePlanner, live_windows
-from maktaba_pipeline.schedule.tv_settings import (
-    DizqueExportConfig,
-    LiveSlot,
-    MaktabaTvConfig,
-    live_slots,
-)
+from maktaba_pipeline.schedule.tv_settings import LiveSlot, MaktabaTvConfig
 
 from .helpers import FakeRepo, dt, mk_channel, mk_content
 
@@ -307,13 +302,6 @@ def test_live_blocks_air_on_time_and_nothing_runs_into_them() -> None:
         if b.start_at >= dt("2026-06-14T19:50:00") and b.end_at <= live[0].start_at
     ]
     assert before and all(b.kind in (BlockKind.FILLER, BlockKind.SLATE) for b in before)
-
-
-def test_maktaba_tv_live_falls_back_to_the_dizquetv_rows() -> None:
-    dz = DizqueExportConfig(live=(NEWS,))
-    assert live_slots(MaktabaTvConfig(), dz) == (NEWS,)
-    own = LiveSlot(channel=101, url="x", minutes=5)
-    assert live_slots(MaktabaTvConfig(live=(own,)), dz) == (own,)
 
 
 @pytest.mark.asyncio

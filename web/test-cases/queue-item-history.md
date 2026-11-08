@@ -4,45 +4,44 @@
 - **Component:** `src/pages/queue/ItemHistory.tsx`; children: `src/components/queue/ItemParts.tsx` (`KindChips`, `AppearsIn`, `visibleAppears`, `Timeline`, `WriteChanges`, `filterTimeline`), `LibraryCollections.tsx` (library only), `RetriggerDialog.tsx`, `useAction.ts`, `useThrottledReload.ts`, `format.ts`.
 - **API calls:**
   - `GET /api/items/{kind}/{id}/history?limit=50[&cursor=]` → `ItemHistoryData` `{ subject, kinds, queues, seasons?, appears_in, timeline, next }` via `queueApi.history` (`src/lib/queueApi.ts`); reloaded (throttled 5 s) when a job for this subject finishes on the stream and after a re-queue.
-  - `GET /api/extensions` → `{ extensions }` (which Plex / dizqueTV rows to show).
   - `GET /api/reports` → `{ reports: Report[] }` via `reportsApi.list()` (`src/lib/reportsApi.ts`), library only, for the "Review page" link.
   - `GET /api/items/library/{id}/collections` → `LibraryCollections` `{ topics, clip_groups, promos }` (library only).
   - `GET /api/queues` (snapshot, for stage labels), `GET /api/workers`; job stream filtered by `subjectId`.
   - `POST /api/queue/retrigger` `{ items: [{ subject_kind, subject_id, stage? }], mode: "queue" | "force_cascade" }` → `RetriggerResponse`.
 - **Access:** any signed-in user (`RequireAuth`); no admin check in the page; the server enforces admin on retrigger.
-- **Existing tests:** `src/pages/queue/ItemHistory.test.tsx` covers: title, kind chips, seasons as bars, timeline; write changes; filter changes/problems; re-queue one queue and "Everything from the start" with the note; disabled re-queue when `can_requeue` is false; Plex/dizqueTV rows only with the extension enabled; no extension rows when none enabled; refresh on a finished job for this item; library topics/clip groups/promos and review link; no collections panel / review link when empty. `src/pages/queue/a11y.test.tsx` "item page has no violations". `queueParts.test.tsx` "timeline filter". Gaps: not found; load errors; loading; null lists; error boundary/Back; signed out; non-admin; failed re-queue; Load older and its interaction with live reloads; navigation between items; video/season variants; RTL; theme; phone.
+- **Existing tests:** `src/pages/queue/ItemHistory.test.tsx` covers: title, kind chips, seasons as bars, timeline; write changes; filter changes/problems; re-queue one queue and "Everything from the start" with the note; disabled re-queue when `can_requeue` is false; only channel and channel-slot rows in "Where it appears" (a target it has no words for is dropped); refresh on a finished job for this item; library topics/clip groups/promos and review link; no collections panel / review link when empty. `src/pages/queue/a11y.test.tsx` "item page has no violations". `queueParts.test.tsx` "timeline filter". Gaps: not found; load errors; loading; null lists; error boundary/Back; signed out; non-admin; failed re-queue; Load older and its interaction with live reloads; navigation between items; video/season variants; RTL; theme; phone.
 
 ## Summary
 
-| ID     | Title                                                       | Category      | Priority | Covered by existing test?                                                          |
-| ------ | ----------------------------------------------------------- | ------------- | -------- | ---------------------------------------------------------------------------------- |
-| QIH-01 | Library item renders header, re-queue, seasons, timeline    | Happy path    | P1       | Yes (`ItemHistory.test.tsx`)                                                       |
-| QIH-02 | Video and season items: breadcrumb and "Open" link          | Happy path    | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
-| QIH-03 | Shows Loading while history is pending                      | Loading       | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
-| QIH-04 | Unknown id shows "Nothing is known about this item."        | Navigation    | P1       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
-| QIH-05 | 500 / network / 401 is not reported as "nothing known"      | Error         | P1       | Yes (`ItemHistory.cases.test.tsx`; it.fails: a 401 does not redirect to /login)    |
-| QIH-06 | Unknown `kind` in the URL                                   | Navigation    | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
-| QIH-07 | History list fields `null` or missing                       | Empty state   | P1       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
-| QIH-08 | Extensions / reports / collections / retrigger lists `null` | Empty state   | P1       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
-| QIH-09 | Valid empty history shows empty states                      | Empty state   | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
-| QIH-10 | Render crash shows route error fallback; Back works         | Error         | P1       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
-| QIH-11 | Signed-out user is sent to `/login`                         | Permissions   | P1       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
-| QIH-12 | Non-admin re-queue gets a readable 403                      | Permissions   | P1       | Yes (`ItemHistory.cases.test.tsx`; it.fails: re-queue still offered to non-admins) |
-| QIH-13 | Re-queue one queue and "Everything from the start"          | Happy path    | P1       | Yes (`ItemHistory.test.tsx`)                                                       |
-| QIH-14 | Failed re-queue shows an alert                              | Error         | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
-| QIH-15 | Re-queue disabled where the queue cannot run on this item   | Validation    | P2       | Yes (`ItemHistory.test.tsx`)                                                       |
-| QIH-16 | History filter: Everything / Changes only / Problems only   | Happy path    | P2       | Yes (`ItemHistory.test.tsx`)                                                       |
-| QIH-17 | Load older pages the timeline; failure keeps the button     | Navigation    | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
-| QIH-18 | Live reload after a finished job keeps loaded pages         | Happy path    | P2       | No (it.todo: bug)                                                                  |
-| QIH-19 | Plex / dizqueTV rows follow enabled extensions              | Happy path    | P2       | Yes (`ItemHistory.test.tsx`)                                                       |
-| QIH-20 | Library collections panel and review page link              | Happy path    | P2       | Yes (`ItemHistory.test.tsx`)                                                       |
-| QIH-21 | Links between items, stages and back; data resets per item  | Navigation    | P1       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
-| QIH-22 | "Choose queues…" dialog is prefilled with this item         | Happy path    | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
-| QIH-23 | Unknown kinds / outcomes do not show raw i18n keys          | Empty state   | P3       | No                                                                                 |
-| QIH-24 | Phone width 375 px                                          | Responsive    | P3       | No (e2e-only)                                                                      |
-| QIH-25 | Arabic: RTL and Arabic titles                               | RTL           | P3       | No                                                                                 |
-| QIH-26 | Light and dark theme                                        | Theme         | P3       | No                                                                                 |
-| QIH-27 | Keyboard and accessibility basics                           | Accessibility | P3       | Partial (`a11y.test.tsx`: axe only)                                                |
+| ID     | Title                                                      | Category      | Priority | Covered by existing test?                                                          |
+| ------ | ---------------------------------------------------------- | ------------- | -------- | ---------------------------------------------------------------------------------- |
+| QIH-01 | Library item renders header, re-queue, seasons, timeline   | Happy path    | P1       | Yes (`ItemHistory.test.tsx`)                                                       |
+| QIH-02 | Video and season items: breadcrumb and "Open" link         | Happy path    | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-03 | Shows Loading while history is pending                     | Loading       | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-04 | Unknown id shows "Nothing is known about this item."       | Navigation    | P1       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-05 | 500 / network / 401 is not reported as "nothing known"     | Error         | P1       | Yes (`ItemHistory.cases.test.tsx`; it.fails: a 401 does not redirect to /login)    |
+| QIH-06 | Unknown `kind` in the URL                                  | Navigation    | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-07 | History list fields `null` or missing                      | Empty state   | P1       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-08 | Reports / collections / retrigger lists `null`             | Empty state   | P1       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-09 | Valid empty history shows empty states                     | Empty state   | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-10 | Render crash shows route error fallback; Back works        | Error         | P1       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-11 | Signed-out user is sent to `/login`                        | Permissions   | P1       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-12 | Non-admin re-queue gets a readable 403                     | Permissions   | P1       | Yes (`ItemHistory.cases.test.tsx`; it.fails: re-queue still offered to non-admins) |
+| QIH-13 | Re-queue one queue and "Everything from the start"         | Happy path    | P1       | Yes (`ItemHistory.test.tsx`)                                                       |
+| QIH-14 | Failed re-queue shows an alert                             | Error         | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-15 | Re-queue disabled where the queue cannot run on this item  | Validation    | P2       | Yes (`ItemHistory.test.tsx`)                                                       |
+| QIH-16 | History filter: Everything / Changes only / Problems only  | Happy path    | P2       | Yes (`ItemHistory.test.tsx`)                                                       |
+| QIH-17 | Load older pages the timeline; failure keeps the button    | Navigation    | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-18 | Live reload after a finished job keeps loaded pages        | Happy path    | P2       | No (it.todo: bug)                                                                  |
+| QIH-19 | "Where it appears" lists only channels and slots           | Happy path    | P2       | Yes (`ItemHistory.test.tsx`)                                                       |
+| QIH-20 | Library collections panel and review page link             | Happy path    | P2       | Yes (`ItemHistory.test.tsx`)                                                       |
+| QIH-21 | Links between items, stages and back; data resets per item | Navigation    | P1       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-22 | "Choose queues…" dialog is prefilled with this item        | Happy path    | P2       | Yes (`ItemHistory.cases.test.tsx`)                                                 |
+| QIH-23 | Unknown kinds / outcomes do not show raw i18n keys         | Empty state   | P3       | No                                                                                 |
+| QIH-24 | Phone width 375 px                                         | Responsive    | P3       | No (e2e-only)                                                                      |
+| QIH-25 | Arabic: RTL and Arabic titles                              | RTL           | P3       | No                                                                                 |
+| QIH-26 | Light and dark theme                                       | Theme         | P3       | No                                                                                 |
+| QIH-27 | Keyboard and accessibility basics                          | Accessibility | P3       | Partial (`a11y.test.tsx`: axe only)                                                |
 
 ## Cases
 
@@ -117,15 +116,15 @@
   1. Open `/queue/items/library/lib-1`; switch filters.
 - **Expected:** page renders; no kind chips; "Re-queue" shows only "Everything from the start" / "Choose queues…"; no seasons section; "Not used anywhere yet."; "Nothing to show."; entries render without "Because:" / "Re-queued:" lines; no "Load older". (currently unhandled — likely bug: `kinds.map` in `KindChips`, `data.queues.map`, `entries.filter` in `visibleAppears` / `filterTimeline`, `e.triggered.length` and `e.reasons.length` in `Timeline` throw; `seasons` and `changes` are already guarded.)
 
-### QIH-08 — Extensions / reports / collections / retrigger lists `null`
+### QIH-08 — Reports / collections / retrigger lists `null`
 
 - **Priority:** P1
 - **Category:** Empty state
 - **Covered by existing test?** Yes (`ItemHistory.cases.test.tsx`)
-- **Preconditions / data:** one at a time: `/api/extensions` → `{ extensions: null }`; `/api/reports` → `{ reports: null }`; `/api/items/library/lib-1/collections` → `{ topics: null, clip_groups: [], promos: [] }` (and each of the three `null`/missing); `POST /api/queue/retrigger` → `{ results: null }`.
+- **Preconditions / data:** one at a time: `/api/reports` → `{ reports: null }`; `/api/items/library/lib-1/collections` → `{ topics: null, clip_groups: [], promos: [] }` (and each of the three `null`/missing); `POST /api/queue/retrigger` → `{ results: null }`.
 - **Steps:**
   1. Open the library item; click "Re-queue <queue>".
-- **Expected:** extension rows hidden; no review link; no collections panel (or a panel with only the non-null tables); the re-queue shows a status or an error, never a blank page. (currently unhandled — likely bug: `data.topics.length` in `LibraryCollections.tsx` and `r.results.filter` in `ItemHistory.tsx` throw; extensions/reports `null` are swallowed by `.catch`.)
+- **Expected:** no review link; no collections panel (or a panel with only the non-null tables); the re-queue shows a status or an error, never a blank page. (currently unhandled — likely bug: `data.topics.length` in `LibraryCollections.tsx` and `r.results.filter` in `ItemHistory.tsx` throw; reports `null` is swallowed by `.catch`.)
 
 ### QIH-09 — Valid empty history shows empty states
 
@@ -228,15 +227,15 @@
   1. Emit the finished event; wait for the throttled reload (5 s).
 - **Expected:** the history refetches; the user should not lose the older page they loaded or at least keep the "Load older" button (currently unhandled — likely bug: `load()` replaces `data` with page 1 only, so loaded older entries vanish while reading). An event for another subject does not reload.
 
-### QIH-19 — Plex / dizqueTV rows follow enabled extensions
+### QIH-19 — "Where it appears" lists only channels and slots
 
 - **Priority:** P2
 - **Category:** Happy path
-- **Covered by existing test?** Yes — `ItemHistory.test.tsx` "lists Plex and dizqueTV only while those extensions are enabled", "hides every extension row when no extension is enabled"
-- **Preconditions / data:** `appears_in` with `plex_collection`, `dizquetv_show`, `maktaba_channel` targets; extensions plex enabled, dizquetv disabled; then `/api/extensions` → 500.
+- **Covered by existing test?** Yes — `ItemHistory.test.tsx` "lists the channels and slots it appears in, and drops targets it does not know"
+- **Preconditions / data:** `appears_in` with `maktaba_channel` and `channel_slot` targets plus a row of a target the web has no words for (left by an integration since removed).
 - **Steps:**
   1. Open the item.
-- **Expected:** Plex and Maktaba rows show, dizqueTV row hidden; with the 500 only `maktaba_channel` / `channel_slot` rows show.
+- **Expected:** the Maktaba channel and channel slot rows show; the unknown target's row is not listed.
 
 ### QIH-20 — Library collections panel and review page link
 

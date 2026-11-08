@@ -16,14 +16,14 @@ func TestCatchupJobCarriesItsComponents(t *testing.T) {
 	db, _ := clustertest.ScratchDB(t)
 	if _, err := db.Exec(`INSERT INTO processing_jobs (subject_kind, subject_id, stage, state, payload)
 		VALUES ('catalog', '00000000-0000-0000-0000-00000000ca7a', 'component_catchup', 'pending',
-		'{"components":[{"component":"ext.dizquetv","off_since":"2026-11-01T10:00:00Z"},{"component":"livetv","off_since":null}]}'::jsonb)`); err != nil {
+		'{"components":[{"component":"ext.plex","off_since":"2026-11-01T10:00:00Z"},{"component":"livetv","off_since":null}]}'::jsonb)`); err != nil {
 		t.Fatal(err)
 	}
 	refs, err := queryJobRefs(t.Context(), db, jobRefQuery("")+` WHERE j.stage IN ('component_catchup')`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(refs) != 1 || len(refs[0].Components) != 2 || refs[0].Components[0] != "ext.dizquetv" || refs[0].Components[1] != "livetv" {
+	if len(refs) != 1 || len(refs[0].Components) != 2 || refs[0].Components[0] != "ext.plex" || refs[0].Components[1] != "livetv" {
 		t.Fatalf("refs %+v", refs)
 	}
 	// through the stage's detail route, as the card reads it
@@ -42,7 +42,7 @@ func TestCatchupJobCarriesItsComponents(t *testing.T) {
 	if len(d.NextUp) != 1 {
 		t.Fatalf("next_up %v", d.NextUp)
 	}
-	if c, _ := d.NextUp[0]["components"].([]any); len(c) != 2 || c[0] != "ext.dizquetv" {
+	if c, _ := d.NextUp[0]["components"].([]any); len(c) != 2 || c[0] != "ext.plex" {
 		t.Fatalf("components %v", d.NextUp[0]["components"])
 	}
 	if got := catchupComponents([]byte(`{"components":["youtube"]}`)); len(got) != 1 || got[0] != "youtube" {

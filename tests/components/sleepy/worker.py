@@ -4,7 +4,7 @@
 
 Every stage named is registered with a handler that sleeps ``--sleep`` seconds (plus a
 little jitter) and returns a new output, so each job finishes ``changed`` and its edges
-fire; ``component_catchup`` keeps its real handler. An extension's stage (``plex_index``)
+fire; ``component_catchup`` keeps its real handler. An extension's stage (``plex_livetv``)
 sleeps too: its own handler is replaced after the extensions register theirs. Then the
 real worker runs (``maktaba_pipeline.runtime.run``) with its component runner, until SIGTERM.
 """

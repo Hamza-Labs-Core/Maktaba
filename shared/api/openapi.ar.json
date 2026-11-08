@@ -1210,8 +1210,8 @@
       "ar": "تم"
     },
     "/paths/~1extensions/get/summary": {
-      "en": "Optional extensions (Plex, dizqueTV)",
-      "ar": "الامتدادات الاختيارية (Plex وdizqueTV)"
+      "en": "Optional extensions (Plex, Cloudflare Stream, web search)",
+      "ar": "الامتدادات الاختيارية (Plex وCloudflare Stream والبحث على الويب)"
     },
     "/paths/~1extensions/get/responses/200/description": {
       "en": "OK",
@@ -1238,8 +1238,8 @@
       "ar": "اختبار اتصال امتداد (قائمة من الفحوص)"
     },
     "/paths/~1extensions~1{name}~1test/post/description": {
-      "en": "Admin-only; runs on the home. Each check: key, ok, optional (a warning when not ok), skipped, detail, code, latency_ms. Plex: reachable, token, server, livetv, maktaba_tuner, dizquetv_tuner, path_map. dizqueTV: reachable, channels, plex_servers. Cloudflare Stream: see /tv/remote/test. Every run is audited (audit_log config/extension_test).",
-      "ar": "للمشرف فقط؛ يعمل على الخادم المنزلي. كل فحص يتضمن: `key` و`ok` و`optional` (تحذير عندما لا يكون `ok`) و`skipped` و`detail` و`code` و`latency_ms`. Plex: `reachable` و`token` و`server` و`livetv` و`maktaba_tuner` و`dizquetv_tuner` و`path_map`. dizqueTV: `reachable` و`channels` و`plex_servers`. Cloudflare Stream: راجع `/tv/remote/test`. تُدقَّق كل عملية تشغيل (`audit_log` `config/extension_test`)."
+      "en": "Admin-only; runs on the home. Each check: key, ok, optional (a warning when not ok), skipped, detail, code, latency_ms. Plex: reachable, token, server, livetv, maktaba_tuner. Cloudflare Stream: see /tv/remote/test. Every run is audited (audit_log config/extension_test).",
+      "ar": "للمشرف فقط؛ يعمل على الخادم المنزلي. كل فحص يتضمن: `key` و`ok` و`optional` (تحذير عندما لا يكون `ok`) و`skipped` و`detail` و`code` و`latency_ms`. Plex: `reachable` و`token` و`server` و`livetv` و`maktaba_tuner`. Cloudflare Stream: راجع `/tv/remote/test`. تُدقَّق كل عملية تشغيل (`audit_log` `config/extension_test`)."
     },
     "/paths/~1extensions~1{name}~1test/post/responses/200/description": {
       "en": "OK",
@@ -1582,8 +1582,8 @@
       "ar": "عامل مسجّل."
     },
     "/components/schemas/ExtensionInfo/description": {
-      "en": "An optional extension (Plex, dizqueTV). Secret settings are never returned.",
-      "ar": "امتداد اختياري (Plex وdizqueTV). لا تُعاد الإعدادات السرية أبدًا."
+      "en": "An optional extension (Plex, Cloudflare Stream, web search). Secret settings are never returned.",
+      "ar": "امتداد اختياري (Plex وCloudflare Stream والبحث على الويب). لا تُعاد الإعدادات السرية أبدًا."
     },
     "/components/requestBodies/WsClientMessage/description": {
       "en": "JSON envelope sent from client to server over the WebSocket. Use `subscribe` / `unsubscribe`.",
@@ -2524,14 +2524,6 @@
     "/paths/~1libraries~1{id}~1categories/get/summary": {
       "en": "A library's speakers, topics, languages and years",
       "ar": "متحدثو المكتبة ومواضيعها ولغاتها وسنواتها"
-    },
-    "/paths/~1libraries~1{id}~1plex-missing/get/responses/200/description": {
-      "en": "The missing items.",
-      "ar": "العناصر الغائبة."
-    },
-    "/paths/~1libraries~1{id}~1plex-missing/get/summary": {
-      "en": "The items of a library's Plex collections that are not in Maktaba (admin)",
-      "ar": "عناصر مجموعات Plex للمكتبة غير الموجودة في مكتبة (للمشرف)"
     },
     "/paths/~1videos~1facets/get/responses/200/description": {
       "en": "Languages, tags, speakers, letters and bands with counts.",

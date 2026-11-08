@@ -237,15 +237,12 @@ POOLS: tuple[PoolDef, ...] = (
     # writes next to the videos (subtitle files): small, kept apart from the reads
     PoolDef("nas_write", "NAS writes", "global", 4, 4),
     PoolDef("network_plex", "Plex", "global", 2, 2),
-    PoolDef("network_tv", "dizqueTV", "global", 1, 1),
     PoolDef("network_yt", "YouTube", "global", 1, 1),
     # the language model (Ollama) and the encyclopedia answer one question at a time
     PoolDef("lookup", "Model and encyclopedia", "global", 1, 1),
     # review pages only: they never take a cpu or network slot from the stages that write
     PoolDef("reports", "Review pages", "global", 1, 1),
-    # the channel audit reads dizqueTV for minutes; a repair downloads for hours: neither
-    # takes the slot that writes the channels or lists YouTube
-    PoolDef("audits", "Channel audit", "global", 1, 1),
+    # a repair downloads for hours: it never takes the slot that lists YouTube
     PoolDef("repairs", "Repairs", "global", 1, 1),
     # Epic 47: a library's conversion to MP4 (ffmpeg plus a full decode), one at a time
     PoolDef("convert", "Convert to MP4", "global", 1, 1),
@@ -521,8 +518,7 @@ GRAPH: tuple[StageDef, ...] = (
     # ---- channels lane -------------------------------------------------
     # Epic 54: defined by tv.maktaba.livetv's manifest
     _fp("plan_channels"),
-    # Core write_channels writes Maktaba Live TV only (a cpu-bound DB write);
-    # the dizqueTV channel export is the dizquetv extension's own stage.
+    # Core write_channels writes Maktaba Live TV (a cpu-bound DB write).
     # Epic 54: defined by tv.maktaba.livetv's manifest
     _fp("write_channels"),
     # Epic 33: TV changes. The API's change controller enqueues them (payload

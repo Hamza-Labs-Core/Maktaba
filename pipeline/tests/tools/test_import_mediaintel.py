@@ -25,6 +25,7 @@ from maktaba_pipeline.engine.sql import loads, now, to_ts
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.tools.import_mediaintel import (
     IMPORTED_TAGGER_VERSION,
+    TABLES,
     parse_path_maps,
     run_import,
     thumbs_name,
@@ -261,10 +262,8 @@ async def test_apply_imports_data_and_every_live_job_is_then_skipped(
         await db.fetchval("SELECT tag FROM season_tags WHERE tag LIKE 'topic:%'") == "topic:seerah"
     )
     assert await db.fetchval("SELECT style FROM season_style") == "talk"
-    link = await db.fetchrow(
-        "SELECT external_id, created_by_tool FROM external_links WHERE target = 'plex_collection'"
-    )
-    assert link["external_id"] == "4242" and link["created_by_tool"]
+    # the cache's Plex collections (plex_collections) are not imported: Maktaba keeps none
+    assert "external_links" not in TABLES
 
     # synthetic history
     imp = await db.fetch(

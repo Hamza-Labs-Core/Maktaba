@@ -61,8 +61,6 @@ export function InsightsPanel() {
     ["videos_with_length", c.videos_with_length],
     ["series", c.series],
     ["seasons", c.seasons],
-    ["plex_collections", c.plex_collections],
-    ["dizquetv_shows", c.dizquetv_shows],
     ["channels", c.channels],
     ["style_pinned", c.style_pinned],
   ];

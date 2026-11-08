@@ -1,7 +1,9 @@
 """The extension relay end to end, two processes (story 31.R): the real Go hub and service
 door (``api/internal/cluster/agent/relayfixture``) on a scratch Postgres database, and this
-process as a node — its real agent channel, the real Plex stages with the default client
-(no token on the node: through the door), against a fake Plex over HTTP.
+process as a node — its real agent channel and the default Plex client (no token on the
+node: through the door), against a fake Plex over HTTP. No stage runs Plex on a node any
+more (plex_livetv is home-only), so this covers the door itself: the token added on the
+home, the allow-list, the switch and the registry.
 
 Runs with ``MAKTABA_TEST_PG_URL`` and a Go toolchain on ``PATH``; skipped otherwise.
 """
@@ -32,7 +34,6 @@ from maktaba_pipeline.cluster.agent.client import AgentIdentity, ChannelAgent
 from maktaba_pipeline.cluster.agent.logship import LogShipper
 from maktaba_pipeline.cluster.stages import lifted_placements, select_stages
 from maktaba_pipeline.engine.loader import build_full_graph
-from maktaba_pipeline.extensions.links import get_link, get_links
 from maktaba_pipeline.extensions.plex import PlexExtension
 from maktaba_pipeline.extensions.store import load_state
 from maktaba_pipeline.home_secrets import put_secret
@@ -40,24 +41,13 @@ from maktaba_pipeline.integrations.plex import PlexClient, PlexError
 from maktaba_pipeline.llm.runtimes import LLMRuntimes
 from maktaba_pipeline.llm.service import LocalLLM
 from maktaba_pipeline.runtime import Database
-from tests.engine.factory import make_library, make_series_and_season, make_video
 from tests.engine.fixtures_db import PG_URL, _swap_db
-from tests.extensions.harness import (
-    FakePlex,
-    add_episode,
-    all_event_text,
-    error_of,
-    run_stage,
-    set_membership,
-    setup_runtime,
-    summary_of,
-)
+from tests.extensions.harness import FakePlex, all_event_text
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 TOKEN = "two-process-PLEX-token-0123456789"
 API_DIR = Path(__file__).resolve().parents[3] / "api"
-PLEX_STAGES = {"plex_index", "plex_collection", "plex_groups"}
 
 
 def _go() -> str | None:
@@ -188,7 +178,7 @@ async def until(cond: Any, timeout: float = 10.0) -> None:
 # ------------------------------------------------------------------ the test
 
 
-async def test_plex_stages_run_on_a_node_through_the_home(
+async def test_a_node_reaches_plex_through_the_home(
     pg: tuple[Database, str],
     fixture_binary: Path,
     tmp_path: Path,
@@ -203,16 +193,7 @@ async def test_plex_stages_run_on_a_node_through_the_home(
     key = os.urandom(32)
     key_file.write_bytes(key)
 
-    # the library, a season of three episodes, all of them in (fake) Plex
-    lib = await make_library(db, "Lib")
-    series, season = await make_series_and_season(db, lib, name="Show")
     fake = FakePlex()
-    videos = []
-    for i in range(1, 4):
-        v = await make_video(db, lib, path=f"Y:/Show/e{i}.mp4", title=f"Episode {i}", duration=None)
-        await add_episode(db, series, v, episode=i)
-        videos.append(v)
-        fake.add_item(str(100 + i), f"Episode {i}", f"/volume1/share/Show/e{i}.mp4")
 
     node_key = crypto.generate_keypair()
     node_id = str(uuid.uuid4())
@@ -230,7 +211,7 @@ async def test_plex_stages_run_on_a_node_through_the_home(
             "INSERT INTO extensions (name, enabled, settings, updated_at)"
             " VALUES ('plex', true, $1, now())"
             " ON CONFLICT (name) DO UPDATE SET enabled = true, settings = EXCLUDED.settings",
-            json.dumps({"url": plex_url, "path_map": "Y:/=/volume1/share/"}),
+            json.dumps({"url": plex_url}),
         )
         await put_secret(db, "ext.plex.token", TOKEN, key)
 
@@ -258,9 +239,7 @@ async def test_plex_stages_run_on_a_node_through_the_home(
             relay.attach(agent)
             try:
                 await until(lambda: agent.connected)
-                await _node_runs_the_plex_stages(
-                    db, info, fake, tokens, lib, season, series, videos
-                )
+                await _node_pings_plex(db, info, tokens)
                 await _refusals(db, info, agent, node_id)
             finally:
                 relay.detach()
@@ -269,56 +248,22 @@ async def test_plex_stages_run_on_a_node_through_the_home(
                     await asyncio.wait_for(task, 5)
 
 
-async def _node_runs_the_plex_stages(
-    db: Database,
-    info: dict[str, str],
-    fake: FakePlex,
-    tokens: list[str],
-    lib: Any,
-    season: Any,
-    series: Any,
-    videos: list[Any],
-) -> None:
+async def _node_pings_plex(db: Database, info: dict[str, str], tokens: list[str]) -> None:
     ext = PlexExtension()  # the default client: direct with a token, else the relay
     state = await load_state(db, ext)
     assert not state.settings.get("token") and state.settings["url"].startswith("http://127.0.0.1")
 
     graph = build_full_graph([ext])
     lifted = await lifted_placements(db, graph)
-    assert lifted >= PLEX_STAGES and "plex_livetv" not in lifted
-    # the home syncs the stage registry (it has the token: the extension is configured);
-    # this worker runs with what a node reads: no token
-    rt = await setup_runtime(db, [ext], {"plex": {**state.settings, "token": "on-the-home"}})
-    rt.extension_states = {"plex": state}
+    assert "plex_livetv" not in lifted
     served, off = select_stages(
         graph, role="node", lifted=lifted, handlers={s.name for s in graph if s.legacy}
     )
-    assert set(served) >= PLEX_STAGES, off
-    assert off.get("plex_livetv") == "home_only"
+    assert "plex_livetv" not in served and off.get("plex_livetv") == "home_only"
 
-    row = await run_stage(db, rt, "plex_index", "library", lib)
-    assert row["state"] == "done", error_of(row)
-    assert summary_of(row)["matched"] == 3
-    links = await get_links(db, "plex_item", "video", [str(v) for v in videos])
-    assert [links[str(v)].external_id for v in videos] == ["101", "102", "103"]
-
-    row = await run_stage(db, rt, "plex_collection", "season", season)
-    assert row["state"] == "done" and row["outcome"] == "changed", error_of(row)
-    ((first_key, col),) = fake.collections.items()
-    assert col["children"] == ["101", "102", "103"] and col.get("labels") == ["maktaba-auto"]
-
-    # a new order: the old collection is deleted (the door checks it is a collection)
-    # before the new one is made
-    await db.execute(
-        "UPDATE series_episodes SET episode = 4 - episode WHERE series_id = $1", str(series)
-    )
-    await set_membership(db, season, "h1")
-    row = await run_stage(db, rt, "plex_collection", "season", season)
-    assert row["state"] == "done" and row["outcome"] == "changed", error_of(row)
-    (col,) = fake.collections.values()
-    assert first_key not in fake.collections and col["children"] == ["103", "102", "101"]
-    link = await get_link(db, "plex_collection", "season", str(season))
-    assert link is not None and link.external_id == next(iter(fake.collections))
+    # the default client with no token goes through the door; the home adds the token
+    client = ext.service.client(state.settings)
+    await asyncio.to_thread(client.ping)
 
     # Plex got the token on every call, from the home; it is nowhere on this side
     assert tokens and set(tokens) == {TOKEN}
@@ -326,8 +271,7 @@ async def _node_runs_the_plex_stages(
     st = relay_status(info["url"])
     assert TOKEN not in json.dumps(st)
     assert st["enabled"] and st["extensions"][0]["configured"]
-    methods = {c["method"] for c in st["calls"]}
-    assert {"GET", "POST", "PUT", "DELETE"} <= methods
+    assert {c["path"] for c in st["calls"]} == {"/identity"}
     assert all(c["node_name"] == "mac-mini" for c in st["calls"])
 
 
@@ -340,14 +284,12 @@ async def _refusals(db: Database, info: dict[str, str], agent: ChannelAgent, nod
     calls = relay_status(info["url"])["calls"]
     assert calls[0]["path"] == "/:/prefs" and calls[0]["error"] == "not_allowed"
 
-    # switched off in the settings: refused, and the stages stay on the home
+    # switched off in the settings: refused
     await db.execute(
         "INSERT INTO app_settings (key, value, updated_at) VALUES ('rules.relay', $1, now())"
         " ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
         json.dumps({"enabled": False}),
     )
-    graph = build_full_graph([PlexExtension()])
-    assert not (PLEX_STAGES & await lifted_placements(db, graph))
     await asyncio.sleep(5.5)  # the door re-reads its settings every 5 s
     with pytest.raises(Exception, match="relay_off"):
         await asyncio.to_thread(client.get, "/identity")

@@ -1,10 +1,10 @@
-"""The settings of the TV-side stages that are not the planner's: the dizqueTV export, the
-exact upload dates, the channel audit and the repair of broken downloads.
+"""The settings of the TV-side stages that are not the planner's: Maktaba TV, the exact upload
+dates, Plex Live TV and the repair of broken downloads.
 
 Each is a frozen config whose defaults are the behaviour the stand-alone mediaintel tool has
-without its flags (:mod:`maktaba_pipeline.rules` lists them as sections ``dizquetv``,
-``exactdates``, ``audit`` and ``repair``). What writes to the share or hits YouTube is off
-until it is switched on here.
+without its flags (:mod:`maktaba_pipeline.rules` lists them as sections ``tv``,
+``exactdates``, ``plexlive`` and ``repair``, among others). What writes to the share or hits
+YouTube is off until it is switched on here.
 """
 
 from __future__ import annotations
@@ -15,8 +15,6 @@ from dataclasses import dataclass, field
 from maktaba_pipeline.settings import Help, register
 
 __all__ = [
-    "ChannelAuditConfig",
-    "DizqueExportConfig",
     "ExactDatesConfig",
     "LiveSlot",
     "MaktabaTvConfig",
@@ -26,12 +24,9 @@ __all__ = [
     "StripClock",
     "TvStripConfig",
     "channel_numbers",
-    "live_slots",
 ]
 
-DZ = "dizqueTV export"
 EX = "Exact dates"
-AU = "Channel audit"
 RP = "Repair"
 TV = "Maktaba TV"
 TVG = "Guide"
@@ -71,30 +66,9 @@ class LiveSlot:
 
 
 @dataclass(frozen=True)
-class DizqueExportConfig:
-    #: delete what this tool made earlier and the plan no longer has (its channels, its
-    #: ``maktaba-plan · `` shows and filler lists); never anything else
-    prune: bool = False
-    #: with prune: also delete every other channel that is not in the plan (a fresh lineup)
-    clear_channels: bool = False
-    #: take over a channel, show or filler list of the same number / name that this tool did
-    #: not make (it is left alone otherwise and reported as a conflict)
-    replace_existing: bool = False
-    #: use the Ramadan grids
-    ramadan: bool = False
-    #: a rewrite keeps what is on air and each show's queue where the channel left it
-    keep_airing: bool = True
-    #: only these channel numbers (comma separated); empty: all. Nothing is pruned then.
-    only_channels: str = ""
-    #: live broadcasts in channels' grids (none: the grids as planned)
-    live: tuple[LiveSlot, ...] = ()
-
-
-@dataclass(frozen=True)
 class MaktabaTvConfig:
-    """How Maktaba's own scheduler airs the planned channels (what dizqueTV does for the
-    dizqueTV export: filler lists by weight and cooldown, the Ramadan grids, live
-    broadcasts, the channel's look)."""
+    """How Maktaba's own scheduler airs the planned channels: filler lists by weight and
+    cooldown, the Ramadan grids, live broadcasts, the channel's look."""
 
     #: at most this many clips fill one gap (0: as many as fit, as dizqueTV); the rest
     #: of the gap is the slate
@@ -108,8 +82,7 @@ class MaktabaTvConfig:
     #: days added to the computed Hijri date (the tabular calendar can be a day off the
     #: sighted month)
     hijri_adjust_days: int = 0
-    #: live broadcasts in the channels' grids; empty: the dizqueTV export's (rules
-    #: dizquetv.live), so one list serves both
+    #: live broadcasts in the channels' grids (none: the grids as planned)
     live: tuple[LiveSlot, ...] = ()
     #: one yt-dlp lookup of a live page is shared this long by every channel airing it
     live_lookup_reuse_seconds: int = 600
@@ -356,14 +329,6 @@ class TvStripConfig:
     show_channel_name: bool = False
 
 
-def live_slots(tv: MaktabaTvConfig | None, dz: DizqueExportConfig | None) -> tuple[LiveSlot, ...]:
-    """The live broadcasts both Maktaba TV and the dizqueTV export carry: Maktaba TV's own
-    list, else the dizqueTV export's (``rules.dizquetv.live`` keeps working)."""
-    if tv is not None and tv.live:
-        return tv.live
-    return dz.live if dz is not None else ()
-
-
 def channel_numbers(text: str) -> set[int]:
     """``"101, 105"`` -> ``{101, 105}`` (anything that is not a number is ignored)."""
     return {int(x) for x in (p.strip() for p in text.split(",")) if x.isdigit()}
@@ -382,15 +347,6 @@ class ExactDatesConfig:
     cookies_from_browser: str = ""
     #: at most this many videos a run (0: all); the rest waits for the next run
     max_per_run: int = 0
-
-
-@dataclass(frozen=True)
-class ChannelAuditConfig:
-    enabled: bool = True
-    #: what airs in this many days from now is weighed
-    window_days: int = 28
-    #: audits kept (older ones are deleted)
-    keep: int = 5
 
 
 @dataclass(frozen=True)
@@ -442,55 +398,6 @@ class RepairConfig:
 
 
 register(
-    DizqueExportConfig,
-    {
-        "prune": Help(
-            DZ,
-            "Remove what the plan no longer has",
-            "Delete the channels, shows and filler lists this tool made earlier and the plan "
-            "does not have now. Only what carries this tool's mark is touched.",
-        ),
-        "clear_channels": Help(
-            DZ,
-            "Also remove other channels not in the plan",
-            "With the setting above: every channel that is not in the plan goes, "
-            "including the ones made by hand. For a fresh lineup.",
-        ),
-        "replace_existing": Help(
-            DZ,
-            "Take over what exists",
-            "A channel, show or filler list that is there under the same number or name but "
-            "was not made by this tool is replaced. Off: it is left alone and reported.",
-        ),
-        "ramadan": Help(
-            DZ, "Use the Ramadan grids", "A channel without one uses its regular grid."
-        ),
-        "keep_airing": Help(
-            DZ,
-            "Rewrite without a break",
-            "A rewrite lets the programme on air finish, goes on with each show where it "
-            "stopped, drops no programme and leaves no gap; a channel whose schedule and "
-            "programmes did not change is not saved at all (nobody watching is restarted). "
-            "Off: the timeline is rebuilt from the start.",
-        ),
-        "only_channels": Help(
-            DZ,
-            "Only these channels",
-            "Channel numbers separated by commas (101, 105). Empty: all of them.",
-        ),
-        "live": Help(
-            DZ,
-            "Live broadcasts",
-            "A live stream a channel carries at set times, such as the news on the hour: "
-            "channel number, the YouTube live page (https://www.youtube.com/@aljazeera/live) "
-            "or a stream address, the guide title, the first start (HH:MM), the end (00:00: "
-            "until midnight), how often (minutes), how long (minutes) and the days (mon ... "
-            "sun; empty: every day). What airs before it finishes first or makes way: "
-            "no programme is cut and the broadcast starts on time.",
-        ),
-    },
-)
-register(
     MaktabaTvConfig,
     {
         "max_filler_per_gap": Help(
@@ -525,8 +432,7 @@ register(
             "page or a stream address, the guide title, the first start (HH:MM), the end "
             "(00:00: until midnight), how often (minutes), how long (minutes) and the days "
             "(mon ... sun; empty: every day). No programme runs into it: what would not end "
-            "before it is not started, filler fills up to it and the show goes on after. "
-            "Empty: the dizqueTV export's live broadcasts.",
+            "before it is not started, filler fills up to it and the show goes on after.",
         ),
         "live_lookup_reuse_seconds": Help(
             TV,
@@ -1014,21 +920,6 @@ register(
             "firefox, chrome ...: yt-dlp uses that browser's YouTube session.",
         ),
         "max_per_run": Help(EX, "Most videos a run", "0: all of them.", minimum=0),
-    },
-)
-register(
-    ChannelAuditConfig,
-    {
-        "enabled": Help(
-            AU,
-            "Audit the channels",
-            "After the channels are written, check that "
-            "what each airs is about the channel (reads dizqueTV, writes nothing).",
-        ),
-        "window_days": Help(
-            AU, "Days weighed", "What airs from now for this many days.", minimum=1
-        ),
-        "keep": Help(AU, "Audits kept", minimum=1),
     },
 )
 register(

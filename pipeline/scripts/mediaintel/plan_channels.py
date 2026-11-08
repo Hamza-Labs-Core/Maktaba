@@ -8,8 +8,7 @@ tags, production style, shorts, loose videos) and runs the pure planner
   reasons, weekly slot grid, Ramadan grid, filler pools, a simulated sample
   day), lanes (ordered seasons → episodes with Plex rating keys and file
   paths), filler pools (items with rating keys and paths), and for every
-  channel the Maktaba ``POST /api/channels`` body and the dizqueTV time-slot
-  schedule (``export-dizquetv`` turns that into API calls);
+  channel the Maktaba ``POST /api/channels`` body;
 - ``channel-plan.html`` — a review page (same look as ``report``).
 
 Read-only: the cache is never written. Missing tables degrade: no
@@ -30,7 +29,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from maktaba_pipeline.integrations.dizquetv_export import filler_collections
 from maktaba_pipeline.schedule.channel_planner import (
     DAY_MINUTES,
     WEEKDAYS,
@@ -43,7 +41,6 @@ from maktaba_pipeline.schedule.channel_planner import (
     PlanResult,
     SeasonCandidate,
     Slot,
-    dizquetv_time_slots,
     fmt_hhmm,
     maktaba_channel_definition,
     simulate,
@@ -442,16 +439,6 @@ def build_plan_json(
                     "airings": [_airing_json(a) for a in sample],
                 },
                 "maktaba": maktaba_channel_definition(ch, plan),
-                "dizquetv": {
-                    "number": ch.number,
-                    "name": ch.name_ar or ch.name,
-                    "schedule": dizquetv_time_slots(ch, plan),
-                    "ramadan_schedule": (
-                        dizquetv_time_slots(ch, plan, ramadan=True) if ch.ramadan_slots else None
-                    ),
-                    "fillerCollections": filler_collections(ch, plan.config),
-                    "fillerRepeatCooldown": plan.config.dz_filler_cooldown_ms,
-                },
             }
         )
     pools = {

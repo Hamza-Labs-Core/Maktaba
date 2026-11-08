@@ -12,7 +12,7 @@ import pytest
 from maktaba_fp_classify.stages import clip_groups, promo_links
 from maktaba_fp_livetv.stages import plan_channels
 
-from maktaba_pipeline import rules
+from maktaba_pipeline import rules, settings
 from maktaba_pipeline.engine.graph import Subject
 from maktaba_pipeline.engine.sql import dumps, now, to_ts
 from maktaba_pipeline.engine.stages import _detect as detect
@@ -41,6 +41,14 @@ async def test_no_stored_rules_are_the_defaults(db: Database) -> None:
 @pytest.mark.asyncio
 async def test_stored_changes_apply_and_a_bad_one_is_skipped(db: Database) -> None:
     await _set(db, "planner", {"extra_airings": False, "mix_number": "two", "gone": 1})
+    # stored at the code's major: read field by field (an older one is moved first)
+    major = settings.schema_version(rules.SECTIONS["planner"][0])[0]
+    await db.execute(
+        "INSERT INTO app_settings (key, value, updated_at) VALUES ($1, $2, $3)",
+        rules.VERSION_PREFIX + "planner",
+        dumps({"major": major, "minor": 0}),
+        to_ts(db, now()),
+    )
     cfg, _, bad = await rules.read(db, "planner")
     assert cfg.extra_airings is False
     assert cfg.mix_number == rules.SECTIONS["planner"][0]().mix_number  # default kept

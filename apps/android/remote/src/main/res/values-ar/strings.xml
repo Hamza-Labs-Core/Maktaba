@@ -242,7 +242,6 @@
     <string name="w_components_enrich_title">البحث عن التفاصيل</string>
     <string name="w_components_youtube_title">يوتيوب</string>
     <string name="w_components_ext_plex_title">إضافة Plex</string>
-    <string name="w_components_ext_dizquetv_title">إضافة dizqueTV</string>
     <string name="w_components_livetv_title">البث المباشر</string>
     <string name="w_health_processes_state_standby">في الانتظار</string>
     <string name="w_health_processes_state_running">يعمل</string>
@@ -384,7 +383,6 @@
     <string name="cause_youtube_unavailable">فيديو أو قناة YouTube غير متاحة</string>
     <string name="cause_plex_unreachable">لا يمكن الوصول إلى Plex</string>
     <string name="cause_plex_auth">رفض Plex الرمز</string>
-    <string name="cause_dizquetv_unreachable">لا يمكن الوصول إلى dizqueTV</string>
     <string name="cause_readback_mismatch">لم تُقرأ الكتابة كما كُتبت</string>
     <string name="cause_no_handler">لا عامل يتولّى هذه المرحلة</string>
     <string name="cause_graph_violation">طلبت المرحلة عملًا لا يسمح به مخططها</string>

@@ -14,6 +14,23 @@ build fails when the two differ.
 
 ### Changed
 
+- **Maktaba no longer syncs your library into Plex, and the dizqueTV integration is removed.**
+  Maktaba now replaces Plex for watching the library. These are gone:
+  - the Plex index, the season collections, the clip-group collections and the import of
+    Plex collections;
+  - the Plex path map setting;
+  - the whole dizqueTV extension: its shows, its channels, the channel audit and its settings.
+
+  Plex Live TV stays: Maktaba can still add its tuner and guide to Plex, refresh them and
+  restore its channel list. A dizqueTV tuner already in Plex is now shown as another
+  program's. The update deletes no data: the removed steps' jobs, the stored Plex item list,
+  the channel audits, the links to Plex and dizqueTV items and the old dizqueTV settings stay
+  in the database, and Maktaba no longer shows them. A rollback goes back to the release
+  before with all of it. Live broadcasts set only in the old dizqueTV settings keep airing on
+  Maktaba TV, and the channel editor shows them with a note; saving there gives Maktaba TV its
+  own copy.
+
+
 - **An offline machine comes first on the Overview (Epic 53 story 53.12).** On the home's
   dashboards, a joined machine that is offline now ranks first among the machines most in need
   of attention, and is named as offline: a line on the web page and both Remotes ("Offline:

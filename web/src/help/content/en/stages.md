@@ -8,13 +8,13 @@ A step works on one kind of item: a video, a library, a season, or the whole cat
 
 The steps are shown in lanes:
 
-- **Sources**: what Maktaba reads from YouTube (and Plex, with that extension).
+- **Sources**: what Maktaba reads from YouTube.
 - **Episodes**: per-video facts read from the files: identity, length, thumbnails, fingerprints.
 - **Seasons & libraries**: placing episodes into series and seasons, topics, titles, collections.
 - **Channels**: planning and writing the live TV channels.
 - **Transcription**: speech to text, subtitles, search, chapters and topics.
 - **Media processing**: scanning folders, posters and maintenance steps. This lane is folded when it has no work.
-- **Extensions**: steps that belong to Plex or dizqueTV. They are **Off** until that extension is turned on and set up in [Extensions](/admin/extensions).
+- **Extensions**: steps that belong to an extension, such as Plex Live TV. They are **Off** until that extension is turned on and set up in [Extensions](/admin/extensions).
 
 ## How to use it {#how-to-use}
 
@@ -32,10 +32,6 @@ Reads the YouTube channel listings that go with your libraries: their videos, pl
 ### Exact dates {#exact-dates}
 
 Asks YouTube for the exact upload day of series episodes whose date is only approximate, one video at a time, slowly. It follows **YouTube listing** and runs **Place episodes** again with the better dates. Off until you turn on [Exact dates](/help/rules#exactdates) (or **Exact upload dates** in **Start a run**).
-
-### Plex index {#plex-index}
-
-Plex extension. Reads the Plex listing of each library once and keeps it, so later Plex steps do not ask Plex item by item. It runs after **Scan folders** and feeds **Plex collection**, **Plex topic and clip collections** and **dizqueTV show**.
 
 ### File identity {#content-hash}
 
@@ -117,25 +113,9 @@ Rates each season as talk, produced, cinematic or still picture with audio, from
 
 Writes one review page per library, to check its seasons by eye. It runs after **Place episodes** and **Small thumbnail**, on the main machine, one at a time. Read the pages under **Reports**.
 
-### Plex collection {#plex-collection}
-
-Plex extension. Keeps one Plex collection per season in step with Maktaba's seasons. It writes to Plex, so it offers **Review first**. Runs after **Place episodes** and **Plex index**.
-
-### Plex topic and clip collections {#plex-groups}
-
-Plex extension. Writes the topic collections and clip groups as Plex collections, and removes the ones that are gone. It writes to Plex and offers **Review first**. Runs after **Topic collections**, **Clip groups** and **Plex index**.
-
-### Read Plex collections {#plex-collections-import}
-
-Plex extension. Copies each Plex collection of a linked library into Maktaba, in Plex's order, with the videos that are in Maktaba (the others are counted on Manage libraries). Collections Maktaba wrote to Plex are not read back. Runs after **Plex index**.
-
-### dizqueTV show {#dizquetv-show}
-
-dizqueTV extension. Keeps one dizqueTV show per season in step with the seasons. It writes to dizqueTV and offers **Review first**. Runs after **Place episodes**, **Plex collection** and **Plex index**.
-
 ### Plan channels {#plan-channels}
 
-Plans which live TV channels to build, and their time-slot grids, from everything above: seasons, tags, styles, clip groups and promos. It works on the whole catalog, waits a few minutes after changes, keeps a history of plans, and feeds **Write channels** and **dizqueTV channels**. **Preview channels** under **Reports** runs the same plan without saving it. Rules: [Channels](/help/rules#planner).
+Plans which live TV channels to build, and their time-slot grids, from everything above: seasons, tags, styles, clip groups and promos. It works on the whole catalog, waits a few minutes after changes, keeps a history of plans, and feeds **Write channels**. **Preview channels** under **Reports** runs the same plan without saving it. Rules: [Channels](/help/rules#planner).
 
 ### Write channels {#write-channels}
 
@@ -144,14 +124,6 @@ Writes the planned channels to Maktaba's own Live TV. It only touches channels i
 ### Plex Live TV {#plex-livetv}
 
 Plex extension. Keeps Maktaba's channels and their guide in Plex Live TV up to date, after the channels change and when the guide grows. It writes to Plex and offers **Review first**. Rules: [Plex Live TV](/help/rules#plexlive).
-
-### dizqueTV channels {#dizquetv-channels}
-
-dizqueTV extension. Writes the planned channels into dizqueTV, with their logos. It writes to dizqueTV and offers **Review first**. Runs after **Plan channels** and feeds **Channel audit**. Rules: [dizqueTV export](/help/rules#dizquetv).
-
-### Channel audit {#dizquetv-audit}
-
-dizqueTV extension. Checks whether what each channel airs fits the channel, and writes the **Channel audit** report. Runs after **dizqueTV channels**. Rules: [Channel audit](/help/rules#audit).
 
 ### Stage TV change {#tv-stage}
 
@@ -171,7 +143,7 @@ Puts the previous TV release back on the air: when an admin rolls back, when a n
 
 ### Scan folders {#scan}
 
-Looks for new and changed files in a library's folders. It feeds **Length** for each file it finds (and **Plex index** with that extension). It runs when a library is scanned.
+Looks for new and changed files in a library's folders. It feeds **Length** for each file it finds. It runs when a library is scanned.
 
 ### Extract audio {#extract}
 
@@ -277,7 +249,7 @@ Makes the YouTube sources of every library from Tartube's records, started by **
 
 - **Starts here**: no step feeds this one; it is started by a run, a schedule or a button.
 - **Last step**: this step feeds no other step.
-- **Plex extension** or **dizqueTV extension** badge: the step belongs to that extension.
+- **Plex extension** badge: the step belongs to that extension.
 - **Set up in Extensions**: the extension is not set up; the step cannot run until it is.
 - **Served by …**: the machines whose workers run this step.
 - A line like "Samples to candidates: 2 running, 5 waiting" on a tile: a hidden helper step that runs with the step on the tile.
@@ -296,7 +268,7 @@ They only read the videos other steps ask for: a few samples per season, not eve
 
 ### Which steps write outside Maktaba? {#faq-writes}
 
-**Subtitle files** and **Repair broken files** write to your share; the Plex and dizqueTV steps write to those servers. They offer **Review first** on their page.
+**Subtitle files** and **Repair broken files** write to your share; the Plex Live TV step writes to Plex. They offer **Review first** on their page.
 
 ### Can I turn off transcription? {#faq-transcription-off}
 

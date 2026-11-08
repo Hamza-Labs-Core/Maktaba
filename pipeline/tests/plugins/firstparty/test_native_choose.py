@@ -34,7 +34,7 @@ class _DB:
 def stage(monkeypatch: pytest.MonkeyPatch) -> str:
     # a plugin with no file access (tv.maktaba.classify reads thumbnails since wave 4, so
     # its runner must also hold this machine's current areas)
-    name = "plex_index"
+    name = "plex_livetv"
     assert firstparty.by_stage(name) is not None
 
     async def serving(_stage: str) -> tuple[bool, str | None]:

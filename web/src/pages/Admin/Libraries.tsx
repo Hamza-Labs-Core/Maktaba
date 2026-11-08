@@ -24,7 +24,6 @@ import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import {
   COLLECTION_MODES,
-  fetchPlexMissing,
   libraryAdminApi,
   problemMessage,
   setCollectionMode,
@@ -32,7 +31,6 @@ import {
   type ConflictGroup,
   type ManageResponse,
   type ManagedLibrary,
-  type PlexMissingItem,
 } from "../../lib/libraryAdminApi";
 import { useToast } from "@ds/components/Toast/Toast";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
@@ -424,7 +422,7 @@ function LibraryCard({
   );
 }
 
-/** A library's collection mode and what the Plex import read (Epic 56 stories 56.07, 56.08). */
+/** A library's collection mode (Epic 56 story 56.08). */
 function LibraryCollectionsAdmin({
   library: lib,
   onChanged,
@@ -432,10 +430,9 @@ function LibraryCollectionsAdmin({
   library: ManagedLibrary;
   onChanged: () => void;
 }) {
-  const { t, n } = useI18n();
+  const { t } = useI18n();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
-  const [missing, setMissing] = useState<PlexMissingItem[] | null>(null);
   const mode = lib.collection_mode ?? "tab_only";
   async function change(m: CollectionMode) {
     setBusy(true);
@@ -448,7 +445,6 @@ function LibraryCollectionsAdmin({
       setBusy(false);
     }
   }
-  const plex = lib.plex_collections;
   return (
     <div className="mkt-libadmin__collections">
       <label className="mkt-field">
@@ -471,38 +467,6 @@ function LibraryCollectionsAdmin({
           ))}
         </select>
       </label>
-      {plex && (
-        <p className="mkt-muted mkt-libadmin__small">
-          {t("libraryAdmin.plex.collections", { n: n(plex.imported), m: n(plex.missing_videos) })}{" "}
-          {plex.missing_videos > 0 && missing == null && (
-            <Button
-              type="button"
-              variant="link"
-              size="sm"
-              onClick={() => void fetchPlexMissing(lib.id).then(setMissing, () => setMissing([]))}
-            >
-              {t("libraryAdmin.plex.skipped")}
-            </Button>
-          )}
-        </p>
-      )}
-      {missing && missing.length > 0 && (
-        <ul className="mkt-libadmin__plex-missing">
-          {missing.map((m) => (
-            <li key={`${m.collection}:${m.rating_key}`}>
-              <bdi>{m.collection}</bdi> — <bdi>{m.title || m.rating_key}</bdi>
-              {m.file ? (
-                <>
-                  {" "}
-                  <bdi dir="ltr" className="mkt-libadmin__path">
-                    {m.file}
-                  </bdi>
-                </>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   );
 }

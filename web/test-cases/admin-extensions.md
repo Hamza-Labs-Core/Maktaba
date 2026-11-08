@@ -1,6 +1,6 @@
 # Admin: Extensions
 
-- **Route:** `/admin/extensions`; deep links with a hash to one card, e.g. `/admin/extensions#dizquetv` (linked from the queue overview, see `QueueOverview.test.tsx`). Card section ids = extension `name`.
+- **Route:** `/admin/extensions`; deep links with a hash to one card, e.g. `/admin/extensions#plex` (linked from the queue overview, see `QueueOverview.test.tsx`). Card section ids = extension `name`.
 - **Component:** `src/pages/Admin/Extensions.tsx` (`AdminExtensions`, `ExtensionCard`); children: `src/pages/Admin/PlexSignin.tsx` (Plex card only), `src/pages/Admin/CloudflareRemote.tsx` (`CloudflareRemote` on the `cloudflare_stream` card, `RemoteTestLines` for any test result with `lines`), `src/pages/Admin/RemoteUsage.tsx` (inside CloudflareRemote). Uses `useAction` (`src/components/queue/useAction.ts`).
 - **API calls:** `queueApi` in `src/lib/queueApi.ts`:
   - `GET /api/extensions` via `queueApi.extensions()` → `{ extensions: Extension[] }`, `Extension = { name, label, description, version, enabled, configured, settings_schema: [{key,label,type:"text"|"url"|"secret"|"number"|"boolean"|"select",required?,help?,options?:[{value,label}]}], settings: Record<string, string|number|boolean|null>, secrets_set: string[] }`
@@ -51,10 +51,10 @@
 - **Priority:** P1
 - **Category:** Happy path
 - **Covered by existing test?** Yes — `Extensions.test.tsx` "lists extensions with version, status and a form generated from the schema"
-- **Preconditions / data:** admin; `GET /api/extensions` → `{ extensions: extensionsFixture }` (`src/test/fixtures/queues.ts`: plex enabled+configured, dizquetv disabled+not configured).
+- **Preconditions / data:** admin; `GET /api/extensions` → `{ extensions: extensionsFixture }` (`src/test/fixtures/queues.ts`: plex enabled+configured, web_search disabled+not configured).
 - **Steps:**
   1. Open `/admin/extensions`.
-- **Expected:** h1 "Extensions", intro `queue.ext.intro`. One section per extension labelled by its h2 ("Plex", "dizqueTV"); "version 1.2.0"; "Configured" / "Not configured"; switch "Enabled" checked for Plex, unchecked for dizqueTV; "Server address" prefilled; "Also mirror channels" checkbox; buttons "Save settings" and "Test connection". Plex card also has "Sign in with Plex".
+- **Expected:** h1 "Extensions", intro `queue.ext.intro`. One section per extension labelled by its h2 ("Plex", "Web search"); "version 1.2.0"; "Configured" / "Not configured"; switch "Enabled" checked for Plex, unchecked for Web search; "Server address" prefilled; "Search engine ID (cx)" field; buttons "Save settings" and "Test connection". Plex card also has "Sign in with Plex".
 
 ### EXT-02 — Secrets are masked and write-only
 
@@ -116,9 +116,9 @@
 - **Priority:** P1
 - **Category:** Happy path
 - **Covered by existing test?** Yes (`Extensions.cases.test.tsx`)
-- **Preconditions / data:** fixture. (a) PUT `/api/extensions/dizquetv` → `{...fixture[1], enabled:true}`; (b) PUT → 403 problem `{ "title":"forbidden","status":403,"detail":"admin only" }`; (c) PUT → 500 / fetch rejects.
+- **Preconditions / data:** fixture. (a) PUT `/api/extensions/web_search` → `{...fixture[1], enabled:true}`; (b) PUT → 403 problem `{ "title":"forbidden","status":403,"detail":"admin only" }`; (c) PUT → 500 / fetch rejects.
 - **Steps:**
-  1. Click the dizqueTV "Enabled" switch.
+  1. Click the Web search "Enabled" switch.
 - **Expected:** switch disabled while the request runs. (a) switch checked. (b)/(c) switch stays unchecked and the card shows `role="alert"` with the error ("forbidden: admin only" / "Failed to fetch"). Other cards are not affected.
 
 ### EXT-08 — Toggling discards unsaved form edits
@@ -128,7 +128,7 @@
 - **Covered by existing test?** Yes (`Extensions.cases.test.tsx`)
 - **Preconditions / data:** fixture; PUT `{enabled:false}` → fixture[0] with `enabled:false`.
 - **Steps:**
-  1. On Plex, change "Path map" to "/x=Y:/" and type a token; do NOT save.
+  1. On Plex, change "Server address" to "http://nas:32400" and type a token; do NOT save.
   2. Toggle Plex "Enabled" off.
 - **Expected:** wanted: typed values stay in the form. Currently `onSaved` replaces `ext`, and the `useEffect([ext])` resets `values` and `secrets`, so the edits are lost silently (currently unhandled — likely bug). Same after a Plex sign-in finishes.
 
@@ -226,8 +226,8 @@
 - **Covered by existing test?** Yes (`Extensions.cases.test.tsx`)
 - **Preconditions / data:** fixture; GET resolves after a delay (e.g. 300 ms).
 - **Steps:**
-  1. Open `/admin/extensions#dizquetv` (as linked from the queue overview). Also `#unknown`.
-- **Expected:** after load the dizqueTV card is scrolled into view (and ideally focused/highlighted). Currently nothing scrolls once cards appear after the async load, since the browser only jumps to the hash before the element exists (currently unhandled — likely bug). `#unknown` → page renders normally at the top.
+  1. Open `/admin/extensions#web_search` (as linked from the queue overview). Also `#unknown`.
+- **Expected:** after load the Web search card is scrolled into view (and ideally focused/highlighted). Currently nothing scrolls once cards appear after the async load, since the browser only jumps to the hash before the element exists (currently unhandled — likely bug). `#unknown` → page renders normally at the top.
 
 ### EXT-18 — "Back to the queues" link and browser Back
 
