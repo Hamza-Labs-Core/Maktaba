@@ -67,7 +67,9 @@ from datetime import date
 from functools import partial
 from pathlib import Path
 from statistics import median
-from typing import Any
+from typing import Any, ClassVar
+
+from .. import settings
 
 __all__ = [
     "DAY_MINUTES",
@@ -432,6 +434,9 @@ DEFAULT_RAMADAN_DAYPARTS: tuple[Daypart, ...] = (
 class PlannerConfig:
     """Every threshold the planner uses. Durations in minutes unless named ``_s``."""
 
+    #: 2.0: the dizqueTV export's settings (``RETIRED_V1``) went with the export
+    SCHEMA_VERSION: ClassVar[tuple[int, int]] = (2, 0)
+
     themes: tuple[ThemeSpec, ...] = DEFAULT_THEMES
     dayparts: tuple[Daypart, ...] = DEFAULT_DAYPARTS
     ramadan_dayparts: tuple[Daypart, ...] = DEFAULT_RAMADAN_DAYPARTS
@@ -676,6 +681,39 @@ class PlannerConfig:
     dz_watermark_position: str = "top-right"
     dz_watermark_width: float = 12.0  # % of the picture's width
     dz_watermark_margin: float = 2.0  # % from the edges
+
+
+#: the planner rules 1.x had for the dizqueTV export, gone with it in 2.0
+RETIRED_V1 = (
+    "dz_lateness_ms",
+    "dz_max_days",
+    "dz_pad_ms",
+    "dz_guide_min_program_s",
+    "dz_guide_max_padding_s",
+    "dz_guide_filler_title",
+    "dz_art_url",
+    "dz_public_url",
+)
+
+
+def migrate_v1_to_v2(value: dict[str, Any]) -> dict[str, Any]:
+    """Planner rules stored at 1.x, without the dizqueTV export's settings (the stored
+    value stays under the version's ``previous`` for a rollback). 1.x read a stored value
+    field by field and skipped one it could not use (an unknown name, a wrong shape); 2.0
+    checks the moved value whole, so what 1.x skipped is left out here, never refused."""
+    out: dict[str, Any] = {}
+    for name, v in value.items():
+        if name in RETIRED_V1:
+            continue
+        try:
+            settings.apply(PlannerConfig, {name: v})
+        except settings.SettingsError:
+            continue
+        out[name] = v
+    return out
+
+
+settings.register_migration(PlannerConfig, 1, migrate_v1_to_v2)
 
 
 # --------------------------------------------------------------------------- outputs
