@@ -380,7 +380,7 @@ func TestInFlightCap(t *testing.T) {
 func TestAnswerSizeLimitAndTimeout(t *testing.T) {
 	h := newHarness(t)
 	var slow atomic.Bool
-	h.plex.handle = func(w http.ResponseWriter, r *http.Request) {
+	h.plex.handle = func(w http.ResponseWriter, _ *http.Request) {
 		if slow.Load() {
 			time.Sleep(300 * time.Millisecond)
 			return

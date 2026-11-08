@@ -333,6 +333,8 @@ func TestPatch_WordsComparedAsSet(t *testing.T) {
 func TestGet_UnknownAndInvalidStored(t *testing.T) {
 	db, srv := newServer(t)
 	putRow(t, db, "planner", `{"retired_knob":1,"min_slot_minutes":2,"mix_number":120}`)
+	// stored at the planner's own major (2.0): one at 1.x waits for the home to move it
+	putVersion(t, db, "planner", `{"major":2,"minor":0}`)
 	putRow(t, db, "groups", `"not an object"`)
 	_, resp := do(t, srv, http.MethodGet, "/api/rules", "", admin)
 
