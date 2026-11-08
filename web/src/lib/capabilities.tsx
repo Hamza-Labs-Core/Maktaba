@@ -307,9 +307,13 @@ export function useOpenFeatureGate(id: FeatureId): "show" | "explain" | "hide" {
   const caps = useCapabilities();
   const gate = useFeatureGate(id);
   const [kept, setKept] = useState<"show" | "explain" | "hide" | null>(null);
-  useEffect(() => {
-    if (kept === null && caps.answered) setKept(gate);
-  }, [kept, caps.answered, gate]);
+  // Kept in the render that first sees an answer, not in an effect after it: the effect's update
+  // waited at a lower priority than the store's, so an answer turning the feature off that
+  // arrived before it rendered with nothing kept and closed the open screen.
+  if (kept === null && caps.answered) {
+    setKept(gate);
+    return gate;
+  }
   return kept ?? gate;
 }
 
