@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# A pinned download for a CI job, checked against its SHA-256 and retried with backoff.
+# A pinned download, checked against its SHA-256 and retried with backoff: the fetch of the
+# app payloads (tools/release/{mac,linux,win}-app/payload.sh) and of CI jobs.
 #
 #   fetch-pinned.sh URL SHA256 DEST    DEST holds URL's bytes, checked; prints DEST
 #   fetch-pinned.sh --key URL SHA256   the actions/cache key for that file
@@ -15,16 +16,15 @@
 # Every failure ends in an `::error::` that names the URL.
 #
 # GitHub's release downloads answered 504 for minutes at a time (2026-11-08): curl's
-# --retry 3 waits 1, 2 then 4 s and gave up 11 s in. The release scripts' own fetch
-# (tools/release/*/payload.sh) finds the file this put in their download folder, checks
-# it and downloads nothing.
+# --retry 3 waits 1, 2 then 4 s and gave up 11 s in.
 #
 # The key is pinned-<runner OS>-<file name in the URL>-<first 16 hex of the SHA-256>: the
 # file name carries the tool, its version and its platform, and a new pin misses.
 # tools/ci/tests/test_fetch_pinned.py tests it against a local server.
 set -euo pipefail
 
-err() { printf '::error::%s\n' "$*"; exit 1; }
+# on stderr: the payload scripts read the path from stdout (Actions reads commands on both)
+err() { printf '::error::%s\n' "$*" >&2; exit 1; }
 log() { printf 'fetch-pinned: %s\n' "$*" >&2; }
 
 sha256() {
@@ -94,7 +94,10 @@ get() {
     shift
     rc=0
     code="$(curl -sSL --connect-timeout 30 --max-time 900 ${1+"$@"} -o "$part" -w '%{http_code}' "$from")" || rc=$?
-    [ "$rc" -ne 0 ] || [ "$code" -lt 200 ] || [ "$code" -ge 300 ] || return 0
+    # 000 with exit 0: not HTTP (file://, which pins-check.sh's offline test uses)
+    if [ "$rc" -eq 0 ] && { [ "$code" = 000 ] || { [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; }; }; then
+        return 0
+    fi
     rm -f "$part"
     [ "$code" != 000 ] || code=
     return 1
@@ -125,6 +128,10 @@ for ((i = 1; i <= attempts; i++)); do
             *) err "$name: $url answered HTTP $code, which another try will not change" ;;
         esac
     else
+        case "$rc" in
+            # an unsupported scheme, a malformed URL, a local file that is not there
+            1 | 3 | 37) err "$name: $url failed with curl exit $rc, which another try will not change" ;;
+        esac
         why="curl exit $rc${code:+ (HTTP $code)}"
     fi
     api_asset_url

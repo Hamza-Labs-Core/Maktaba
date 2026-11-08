@@ -112,48 +112,44 @@ jobs:
           # pull requests and tags restore main's build; only a push to main saves
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
-      # the pinned third-party downloads (~180 MB), keyed on their checksums
+      # every pinned download (~180 MB) in one cache, keyed on the runner's OS and arch and on
+      # pins.env, so a pin bump misses; an earlier pins.env's entry is restored as a start
+      # (every file is checked against its pin, only what changed downloads). Saved on a miss
+      # on any ref: main's serves every pull request, a pull request's its own reruns.
       - id: downloads-cache
         uses: actions/cache/restore@v4
         with:
           path: build/win-app/downloads
-          key: win-app-downloads-${{ hashFiles('tools/release/win-app/pins.env') }}
-      # Postgres (theseus-rs/postgresql-binaries) in a cache of its own, keyed on its file
-      # name (tool, version, platform) and pin: GitHub's release downloads answer 504 for
-      # minutes at a time, and the cache above is saved only by main's run
-      - id: postgres-cache-pin
-        run: |
-          . tools/release/win-app/pins.env
-          echo "key=$(tools/ci/fetch-pinned.sh --key "$POSTGRES_URL" "$POSTGRES_SHA256")" >>"$GITHUB_OUTPUT"
-          echo "path=build/win-app/downloads/postgresql-$POSTGRES_VERSION.zip" >>"$GITHUB_OUTPUT"
-      - id: postgres-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ steps.postgres-cache-pin.outputs.path }}
-          key: ${{ steps.postgres-cache-pin.outputs.key }}
+          key: win-app-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/release/win-app/pins.env') }}
+          restore-keys: win-app-downloads-${{ runner.os }}-${{ runner.arch }}-
 
-      # every piece payload.sh downloads, put where it looks (build/win-app/downloads) and
-      # checked against pins.env, retried with backoff (tools/ci/fetch-pinned.sh); a restored
-      # file with the pin is kept and nothing is downloaded. payload.sh then checks each
-      # again and downloads none.
+      # on a miss, every piece payload.sh downloads, under payload.sh's names in its download
+      # folder, checked and retried by tools/release/fetch-pinned.sh, which payload.sh's fetch
+      # uses as well; files no pin names any more are dropped. payload.sh then checks each
+      # and downloads none.
       - name: The pinned downloads, retried
+        if: steps.downloads-cache.outputs.cache-hit != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           . tools/release/win-app/pins.env
-          f=tools/ci/fetch-pinned.sh d=build/win-app/downloads
+          f=tools/release/fetch-pinned.sh d=build/win-app/downloads
           $f "$PYTHON_URL" "$PYTHON_SHA256" "$d/cpython-$PYTHON_VERSION.tar.gz"
           $f "$POSTGRES_URL" "$POSTGRES_SHA256" "$d/postgresql-$POSTGRES_VERSION.zip"
           $f "$PGVECTOR_URL" "$PGVECTOR_SHA256" "$d/pgvector-$PGVECTOR_VERSION.tar.gz"
           $f "$FFMPEG_URL" "$FFMPEG_SHA256" "$d/ffmpeg-$FFMPEG_VERSION.zip"
+          keep=" cpython-$PYTHON_VERSION.tar.gz postgresql-$POSTGRES_VERSION.zip pgvector-$PGVECTOR_VERSION.tar.gz ffmpeg-$FFMPEG_VERSION.zip "
+          for x in "$d"/*; do
+            case "$keep" in *" ${x##*/} "*) ;; *) echo "dropping ${x##*/} (no pin names it)"; rm -rf "$x" ;; esac
+          done
 
-      - name: Save the Postgres download
-        if: steps.postgres-cache.outputs.cache-hit != 'true'
+      - name: Save the pinned downloads
+        if: steps.downloads-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: ${{ steps.postgres-cache-pin.outputs.path }}
-          key: ${{ steps.postgres-cache-pin.outputs.key }}
+          path: build/win-app/downloads
+          key: win-app-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/release/win-app/pins.env') }}
 
       # tauri's NSIS bundler downloads its toolset from GitHub releases with no retry (a 504
       # failed this job): the two files tauri-cli 2.12.3 pins (nsis/mod.rs: NSIS_URL and
@@ -169,7 +165,7 @@ jobs:
           UTILS_SHA256: 5ba143b5db4a87d32d6e7802e033330aae56cbceabe0d1e3ba41948385ad4709
         run: |
           {
-            echo "key=$(tools/ci/fetch-pinned.sh --key "$NSIS_URL" "$NSIS_SHA256")-utils-0.5.3-${UTILS_SHA256:0:16}"
+            echo "key=$(tools/release/fetch-pinned.sh --key "$NSIS_URL" "$NSIS_SHA256")-utils-0.5.3-${UTILS_SHA256:0:16}"
             echo "nsis_url=$NSIS_URL"
             echo "nsis_sha256=$NSIS_SHA256"
             echo "utils_url=$UTILS_URL"
@@ -190,8 +186,8 @@ jobs:
         run: |
           set -euo pipefail
           d=build/ci-pinned/nsis
-          zip="$(tools/ci/fetch-pinned.sh "$NSIS_URL" "$NSIS_SHA256" "$d/nsis-3.13.zip")"
-          dll="$(tools/ci/fetch-pinned.sh "$UTILS_URL" "$UTILS_SHA256" "$d/nsis_tauri_utils.dll")"
+          zip="$(tools/release/fetch-pinned.sh "$NSIS_URL" "$NSIS_SHA256" "$d/nsis-3.13.zip")"
+          dll="$(tools/release/fetch-pinned.sh "$UTILS_URL" "$UTILS_SHA256" "$d/nsis_tauri_utils.dll")"
           tools="$(cygpath -u "$LOCALAPPDATA")/tauri"
           if [ -e "$tools/NSIS" ]; then
             echo "tauri's NSIS is already in $tools/NSIS: tauri checks it"
@@ -244,10 +240,3 @@ jobs:
         with:
           path: ${{ steps.pnpm-cache.outputs.path }}
           key: ${{ steps.pnpm-cache.outputs.key }}
-
-      - name: Save the pinned downloads
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.downloads-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: build/win-app/downloads
-          key: win-app-downloads-${{ hashFiles('tools/release/win-app/pins.env') }}

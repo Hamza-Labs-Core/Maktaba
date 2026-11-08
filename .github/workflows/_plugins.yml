@@ -263,13 +263,13 @@ jobs:
 
       # the Windows app's ffmpeg (tools/release/win-app/pins.env), for the runner's tools
       # on a share file: in a cache keyed on its file name and pin, fetched on a miss with
-      # retries and backoff (tools/ci/fetch-pinned.sh; GitHub's release downloads answer 504
+      # retries and backoff (tools/release/fetch-pinned.sh; GitHub's release downloads answer 504
       # for minutes at a time), checked against the pin on a hit as on a miss
       - id: ffmpeg-cache-pin
         if: runner.os == 'Windows'
         run: |
           . tools/release/win-app/pins.env
-          echo "key=$(tools/ci/fetch-pinned.sh --key "$FFMPEG_URL" "$FFMPEG_SHA256")" >>"$GITHUB_OUTPUT"
+          echo "key=$(tools/release/fetch-pinned.sh --key "$FFMPEG_URL" "$FFMPEG_SHA256")" >>"$GITHUB_OUTPUT"
           echo "path=build/ci-pinned/ffmpeg-$FFMPEG_VERSION.zip" >>"$GITHUB_OUTPUT"
       - id: ffmpeg-cache
         if: runner.os == 'Windows'
@@ -284,7 +284,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           . tools/release/win-app/pins.env
-          tools/ci/fetch-pinned.sh "$FFMPEG_URL" "$FFMPEG_SHA256" "$ZIP"
+          tools/release/fetch-pinned.sh "$FFMPEG_URL" "$FFMPEG_SHA256" "$ZIP"
       - name: Save the ffmpeg download
         if: runner.os == 'Windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4

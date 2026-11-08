@@ -265,8 +265,8 @@ plugins:
   - 'cmd/maktaba-server/go.mod'
   - 'web/src/i18n/**'
   - '.github/workflows/_plugins.yml'
-  # its pinned downloads, retried and checked
-  - 'tools/ci/fetch-pinned.sh'
+  # its pinned downloads, retried and checked (the payload's fetch too)
+  - 'tools/release/fetch-pinned.sh'
   # Epic 54 Phase 4: Maktaba's own stages as first-party plugins
   - 'plugins/**'
   - 'tools/plugins/**'
@@ -550,8 +550,8 @@ mac_app:
   - 'pipeline/src/maktaba_plugin_runner/**'
   - 'pipeline/src/maktaba_pipeline/plugins/native.py'
   - '.github/workflows/_mac-app.yml'
-  # its pinned downloads, retried and checked
-  - 'tools/ci/fetch-pinned.sh'
+  # its pinned downloads, retried and checked (the payload's fetch too)
+  - 'tools/release/fetch-pinned.sh'
   - '.github/workflows/desktop-release.yml'
   - 'Makefile'
 
@@ -567,8 +567,8 @@ win_app:
   - 'pipeline/uv.lock'
   - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'
   - '.github/workflows/_win-app.yml'
-  # its pinned downloads, retried and checked
-  - 'tools/ci/fetch-pinned.sh'
+  # its pinned downloads, retried and checked (the payload's fetch too)
+  - 'tools/release/fetch-pinned.sh'
   - '.github/workflows/desktop-release.yml'
   - 'Makefile'
 
@@ -585,6 +585,8 @@ linux_app:
   - 'pipeline/uv.lock'
   - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'
   - '.github/workflows/_linux-app.yml'
+  # the payload's fetch (pinned downloads, retried and checked)
+  - 'tools/release/fetch-pinned.sh'
   - 'Makefile'
 
 # ---- the native apps ------------------------------------------------------------------

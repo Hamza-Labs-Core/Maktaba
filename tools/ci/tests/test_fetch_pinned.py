@@ -1,4 +1,4 @@
-"""tools/ci/fetch-pinned.sh: a pinned CI download, checked, retried with backoff.
+"""tools/release/fetch-pinned.sh: a pinned download (the app payloads' fetch, CI's), checked, retried with backoff.
 
 GitHub's release downloads answered 504 for minutes at a time (2026-11-08) and failed the
 Core bundle-size job and the Windows plugin sandbox. The helper keeps a restored file that
@@ -24,7 +24,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
-SCRIPT = ROOT / "tools/ci/fetch-pinned.sh"
+SCRIPT = ROOT / "tools/release/fetch-pinned.sh"
 BODY = b"pinned archive bytes\n" * 100
 SHA = hashlib.sha256(BODY).hexdigest()
 
@@ -125,8 +125,29 @@ def test_stops_at_once_on_another_4xx(server: _Server, tmp_path: Path, status: i
     r = _run(server.url, SHA, str(dst))
     assert r.returncode != 0
     assert server.requests == 1
-    assert f"::error::f.zip: {server.url} answered HTTP {status}" in r.stdout
+    assert f"::error::f.zip: {server.url} answered HTTP {status}" in r.stderr
     assert not dst.exists()
+
+
+def test_a_file_url_downloads_and_a_missing_one_stops_at_once(tmp_path: Path) -> None:
+    # pins-check.sh's offline test of payload.sh's fetch: curl reports no HTTP code for file://
+    src = tmp_path / "asset"
+    src.write_bytes(BODY)
+    r = _run(f"file://{src}", SHA, str(tmp_path / "out" / "a.tgz"))
+    assert r.returncode == 0, r.stderr
+    assert (tmp_path / "out" / "a.tgz").read_bytes() == BODY
+    r = _run(f"file://{tmp_path}/missing", SHA, str(tmp_path / "out" / "m.tgz"))
+    assert r.returncode != 0
+    assert "attempt 2" not in r.stderr
+    assert "curl exit 37" in r.stderr
+
+
+def test_a_failure_prints_no_path_on_stdout(server: _Server, tmp_path: Path) -> None:
+    # the payload scripts take stdout as the file's path (`tar -xzf "$(fetch ...)"`)
+    server.replies = [404]
+    r = _run(server.url, SHA, str(tmp_path / "f.zip"))
+    assert r.returncode != 0
+    assert r.stdout == ""
 
 
 def test_gives_up_after_five_attempts_naming_the_url(server: _Server, tmp_path: Path) -> None:
@@ -135,7 +156,7 @@ def test_gives_up_after_five_attempts_naming_the_url(server: _Server, tmp_path: 
     r = _run(server.url, SHA, str(dst))
     assert r.returncode != 0
     assert server.requests == 5
-    assert f"::error::f.zip: {server.url} not downloaded after 5 attempts (last: HTTP 504)" in r.stdout
+    assert f"::error::f.zip: {server.url} not downloaded after 5 attempts (last: HTTP 504)" in r.stderr
     assert not dst.exists()
 
 
@@ -145,7 +166,7 @@ def test_other_bytes_fail_and_leave_nothing(server: _Server, tmp_path: Path) -> 
     r = _run(server.url, SHA, str(dst))
     assert r.returncode != 0
     assert server.requests == 1
-    assert "::error::" in r.stdout and f"the pin says {SHA}" in r.stdout
+    assert "::error::" in r.stderr and f"the pin says {SHA}" in r.stderr
     assert not dst.exists()
     assert not dst.with_name("f.zip.part").exists()
 
@@ -202,7 +223,7 @@ def test_the_api_route_is_looked_up_once_and_retried_with_the_url(server: _Serve
     assert r.returncode != 0
     assert server.requests == 5
     assert all(p == "/repos/o/r/releases/tags/t" for p in server.api)
-    assert "not downloaded after 5 attempts" in r.stdout
+    assert "not downloaded after 5 attempts" in r.stderr
 
 
 def test_a_github_release_404_does_not_ask_the_api(server: _Server, tmp_path: Path) -> None:
@@ -220,7 +241,7 @@ def test_the_api_route_bytes_are_checked_too(server: _Server, tmp_path: Path) ->
     dst = tmp_path / "f"
     r = _run(url, other, str(dst), **env)
     assert r.returncode != 0
-    assert f"the pin says {other}" in r.stdout
+    assert f"the pin says {other}" in r.stderr
     assert not dst.exists()
 
 
