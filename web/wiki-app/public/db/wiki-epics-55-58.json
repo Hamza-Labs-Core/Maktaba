@@ -1,6 +1,6 @@
 {
   "version": "2.0",
-  "part": "wiki-epics-55-57.json",
+  "part": "wiki-epics-55-58.json",
   "entries": [
     {
       "id": "story-55.1",
@@ -1368,6 +1368,506 @@
       ],
       "metadata": {
         "slug": "openapi-roles-rehearsal"
+      }
+    },
+    {
+      "id": "story-58.1",
+      "type": "story",
+      "title": "The compatibility contract: API levels, oldest supported apps and the update prompt",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# Story 58.01 — The compatibility contract: API levels, oldest supported apps and the update prompt\n\n> Epic 58 · Phase 1 · Depends on: — · Needed by: 58.05, 58.07, 58.08, 58.09, 58.12, 58.17, 58.18\n\n## Why\n\nA home and the apps on a family's TVs update on different clocks. The home updates itself\n(Epic 28, `docs/updates.md`). A Fire TV app updates when the Amazon Appstore pushes it, a Roku\nchannel when Roku does, and a Samsung or LG app only after the store certifies it, which can take\nweeks. Today an app learns only the home's `version` string (`GET /api/discovery/home`, read by\n`HomeProbe` in",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms",
+        "ep-get-capabilities",
+        "ep-get-home"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-01-compatibility-contract.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /capabilities",
+        "GET /home"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "compatibility-contract"
+      }
+    },
+    {
+      "id": "story-58.2",
+      "type": "story",
+      "title": "Playback that fits each TV: device-reported capabilities, new profiles and HLS in fMP4",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# Story 58.02 — Playback that fits each TV: device-reported capabilities, new profiles and HLS in fMP4\n\n> Epic 58 · Phase 1 · Depends on: — · Needed by: 58.05, 58.07, 58.08, 58.10, 58.11, 58.13, 58.17, 58.18\n\n## Why\n\nThe streaming service decides direct play, remux or transcode from a named client profile\n(`streaming/internal/capability/matrix.go`: `generic`, `desktop-player`, `browser-chrome`,\n`browser-safari`, `ios-native`, `tvos`, `android-native`, `androidtv`). An unknown profile falls\nback to `generic`: H.264 and AAC in HLS, at most 720p. Every new TV would get 720p transcodes.\n\nOne profi",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms",
+        "ep-post-sessions"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-02-device-playback-caps.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "POST /sessions"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "device-playback-caps"
+      }
+    },
+    {
+      "id": "story-58.3",
+      "type": "story",
+      "title": "Sign a TV in from anywhere: a code through Maktaba Cloud",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# Story 58.03 — Sign a TV in from anywhere: a code through Maktaba Cloud\n\n> Epic 58 · Phase 1 · Depends on: — · Needed by: 58.04, 58.09, 58.12, 58.14, 58.17, 58.18\n\n## Why\n\nA TV signs in today in one of two ways:\n- **By a code the home makes.** It shows `ABCD-1234` (`POST /api/pairing/device`), a phone\n  approves it, and the TV redeems the code. This needs the TV to know the home first: Android\n  TV and Apple TV find it with mDNS (`_maktaba._tcp`).\n- **By typing a username and password** on an on-screen keyboard.\n\nThe new platforms cannot always find the home:\n- Samsung and LG web apps have no",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms",
+        "ep-get-home"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-03-cloud-tv-code.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /home"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "cloud-tv-code"
+      }
+    },
+    {
+      "id": "story-58.4",
+      "type": "story",
+      "title": "A home for store reviewers",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# Story 58.04 — A home for store reviewers\n\n> Epic 58 · Phase 1 · Depends on: 58.03 · Needed by: 58.05, 58.07, 58.10, 58.11, 58.13, 58.18\n\n## Why\n\nEvery store reviews a TV app by using it:\n- Amazon's Appstore review.\n- Roku's certification, which checks launch time, deep links and playback start.\n- Samsung's verification test.\n- LG's QA function stage.\n- Google's Cast console needs no review, but a published receiver must work.\n\nMaktaba is useless without a home, and a reviewer has none. Every store asks for working test\ncredentials in the submission form. A reviewer who cannot sign in rejects",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-04-store-review-home.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "store-review-home"
+      }
+    },
+    {
+      "id": "story-58.5",
+      "type": "story",
+      "title": "Fire TV on Fire OS: an Amazon build of the Android TV app",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# Story 58.05 — Fire TV on Fire OS: an Amazon build of the Android TV app\n\n> Epic 58 · Phase 2 · Depends on: 58.01, 58.02, 58.04 · Needed by: 58.14, 58.16\n\n## Why\n\nFire OS is Android:\n- Fire OS 7 is API 28, Fire OS 8 is API 30, Fire OS 14 is API 34 and Fire OS 16 is API 36.\n- Amazon sets only a minimum targetSdk per Fire OS version, and no maximum (research.md §2.1).\n- The Android TV app (`apps/tv/android`, minSdk 28, Compose for TV, Media3) uses no Google Play\n  Services, Play Billing or Firebase. Its only Google-specific part is the Play bundle and\n  `play-bundles.yml`.\n\nSo the cheapest new ",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-05-fire-tv.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "fire-tv"
+      }
+    },
+    {
+      "id": "story-58.6",
+      "type": "story",
+      "title": "Google Cast senders in the Android Player, the Apple Player and the web",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# Story 58.06 — Google Cast senders in the Android Player, the Apple Player and the web\n\n> Epic 58 · Phase 2 · Depends on: 58.07 · Needed by: 58.14, 58.16\n\n## Why\n\nCast reaches TVs Maktaba will never have an app on:\n- Chromecast and the Google TV Streamer.\n- Every Google TV set: Sony, TCL, Hisense's Google TV models.\n- Vizio's TVs with Chromecast built-in. Vizio's own app platform needs a partner agreement\n  (research.md §8).\n\nToday only the Android Player casts (`apps/android/player/…/media/Cast.kt`), and only to Google's\nDefault Media Receiver, on the LAN:\n- No Arabic.\n- No queue beyond one ",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-06-cast-senders.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "cast-senders"
+      }
+    },
+    {
+      "id": "story-58.7",
+      "type": "story",
+      "title": "Maktaba's Cast receiver at cast.maktaba.tv",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# Story 58.07 — Maktaba's Cast receiver at cast.maktaba.tv\n\n> Epic 58 · Phase 2 · Depends on: 58.01, 58.02, 58.04 · Needed by: 58.06, 58.14, 58.16\n\n## Why\n\nGoogle's Default Media Receiver plays a URL with Google's own screen. It has no Arabic, no\nMaktaba queue, no subtitle choice by language, and no way to report progress to the home. A\nCustom Web Receiver is a web page Maktaba writes with Google's CAF Web Receiver SDK. Google\nloads it on the Cast device when a sender starts a session with its application ID. It must\nbe served over HTTPS at a public URL and registered in the Google Cast SDK De",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms",
+        "ep-get-home"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-07-cast-receiver.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /home"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "cast-receiver"
+      }
+    },
+    {
+      "id": "story-58.8",
+      "type": "story",
+      "title": "The TV build of the big-screen view, served by the home at /tv/",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# Story 58.08 — The TV build of the big-screen view, served by the home at /tv/\n\n> Epic 58 · Phase 3 · Depends on: 58.01, 58.02 · Needed by: 58.09, 58.10, 58.11, 58.14\n\n## Why\n\nSamsung's Tizen and LG's webOS both run web apps in Chromium. The same model year gets nearly\nthe same engine on both: 2024 has M108 on both, 2025 has M120 on both (research.md §3.1, §4.1).\nMaktaba already has a 10-foot web UI: the big-screen view of Epic 46 (`web/src/bigscreen`, served\nat `/big`):\n- It covers Home, Libraries, Series, Video, Search, Live TV, Settings and the player.\n- It has its own focus engine (`bigsc",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-08-tv-web-ui.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tv-web-ui"
+      }
+    },
+    {
+      "id": "story-58.9",
+      "type": "story",
+      "title": "The web-TV launcher: finding the home, signing in, and the bridge to the TV",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# Story 58.09 — The web-TV launcher: finding the home, signing in, and the bridge to the TV\n\n> Epic 58 · Phase 3 · Depends on: 58.01, 58.03, 58.08 · Needed by: 58.10, 58.11, 58.14\n\n## Why\n\nThe Samsung and LG apps are packages installed from each TV's store. The 10-foot UI is the\nhome's `/tv/` (58.08). Something packaged has to:\n- find a home on a TV with no mDNS (research.md §3.1, §4.1);\n- check that the home and the package fit (58.01);\n- show the home's UI;\n- give that UI what only the TV's packaged context has:\n  - Samsung's AVPlay and its `tvinputdevice` key registration;\n  - LG's luna ser",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms",
+        "ep-get-home"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-09-tv-web-launcher.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /home"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tv-web-launcher"
+      }
+    },
+    {
+      "id": "story-58.10",
+      "type": "story",
+      "title": "Samsung Tizen: AVPlay, the package and the Samsung store",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# Story 58.10 — Samsung Tizen: AVPlay, the package and the Samsung store\n\n> Epic 58 · Phase 3 · Depends on: 58.02, 58.04, 58.09 · Needed by: 58.14, 58.16\n\n## Why\n\nSamsung is the largest smart-TV brand. Its share of TV operating systems is about 17% worldwide\nin 2025 per Omdia and 23% of US connected-TV platforms in use per Parks Associates, and it is\nstrong in the Gulf (research.md §7). The launcher (58.09) and the TV UI (58.08) are shared with\nLG. This story is what only Samsung needs: its player, its package and its store.\n\n## Description\n\n**Supported TVs.** 2020 models and later: Tizen 5.5 ",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-10-tizen.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tizen"
+      }
+    },
+    {
+      "id": "story-58.11",
+      "type": "story",
+      "title": "LG webOS: the native player, the package and the LG Content Store",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# Story 58.11 — LG webOS: the native player, the package and the LG Content Store\n\n> Epic 58 · Phase 3 · Depends on: 58.02, 58.04, 58.09 · Needed by: 58.14, 58.16\n\n## Why\n\nLG is the third-largest TV operating system, at about 7–12% of TVs worldwide depending on the\nsource (research.md §7). LG is also the most open store for an individual developer: an\nIndividual Seller account exists, no partner contract is needed, and jellyfin-webos already\nships a hosted UI through LG's QA (research.md §4.3–4.4). It shares the launcher (58.09) and\nthe UI (58.08) with Samsung.\n\n## Description\n\n**Supported TVs",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-11-webos.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "webos"
+      }
+    },
+    {
+      "id": "story-58.12",
+      "type": "story",
+      "title": "Roku: a SceneGraph channel with the TV layout",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# Story 58.12 — Roku: a SceneGraph channel with the TV layout\n\n> Epic 58 · Phase 4 · Depends on: 58.01, 58.03, 58.15 · Needed by: 58.13, 58.14\n\n## Why\n\nRoku is the largest streaming platform in the US: 28% of connected-TV platforms in use (Parks\nAssociates, 2026), and over 90 million streaming households (research.md §7). Outside the\nAmericas it is small, and it has almost no official presence in the Middle East. Roku runs\nneither web apps nor Android apps. A channel is BrightScript and SceneGraph XML, so nothing of\nthe web-TV codebase runs there except shared test vectors.\n\nRoku also does not",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-12-roku-channel.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "roku-channel"
+      }
+    },
+    {
+      "id": "story-58.13",
+      "type": "story",
+      "title": "Roku: the player, certification and release",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# Story 58.13 — Roku: the player, certification and release\n\n> Epic 58 · Phase 4 · Depends on: 58.02, 58.04, 58.12 · Needed by: 58.14, 58.16\n\n## Why\n\nRoku's Video node plays a lot of formats natively (research.md §6.2):\n- HLS (TS or CMAF), DASH, and MP4 or MKV files directly.\n- HEVC to 4K, HDR10, HLG, and Dolby Vision as profile 5.\n- AV1 only inside DASH. No TrueHD.\n\nA channel also has to pass Roku's certification before the public can install it:\n- performance limits;\n- deep linking;\n- Back behaviour;\n- voice \"direct to play\".\n\n## Description\n\n**The player screen** is a SceneGraph `Video` nod",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms",
+        "ep-post-sessions",
+        "ep-get-components"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-13-roku-player-certification.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "POST /sessions",
+        "GET /components"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "roku-player-certification"
+      }
+    },
+    {
+      "id": "story-58.14",
+      "type": "story",
+      "title": "Parental controls on the new TVs",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# Story 58.14 — Parental controls on the new TVs\n\n> Epic 58 · Phase 5 · Depends on: Epic 57 stories 57.03, 57.05, 57.06, 57.10; 58.05, 58.06, 58.07, 58.08, 58.12 · Needed by: 58.17\n\n## Why\n\nEpic 57 put the parental filter in the home's API (story 57.03). Every client gets it, including\nones whose screens come later. A restricted child signed in on any TV of this epic therefore\nalready sees only allowed items, through the LAN, the relay or a cast, with nothing built on\nthe TV. This story covers what the TV must still do:\n- show a blocked item as Epic 57 does;\n- offer Ask a parent;\n- make sure t",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms",
+        "ep-get-components"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-14-parental-controls.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /components"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "parental-controls"
+      }
+    },
+    {
+      "id": "story-58.15",
+      "type": "story",
+      "title": "English and Arabic on every TV: catalogs, mirroring, fonts and Roku's visual text",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# Story 58.15 — English and Arabic on every TV: catalogs, mirroring, fonts and Roku's visual text\n\n> Epic 58 · Phase 1 (catalog checks) and Phase 4 (Roku) · Depends on: — · Needed by: 58.12, 58.13 and every story with strings\n\n## Why\n\nEvery user-facing string ships in English and Arabic, and every screen mirrors in Arabic. That\nalready holds for the Android TV and Apple TV apps (`values-ar`, String Catalogs) and for the\nweb. The new platforms differ:\n- **Fire TV** uses the Android TV app's catalogs as they are.\n- **Samsung, LG and the Cast receiver** are web pages, which handle Arabic and bidi",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-15-strings-arabic-rtl.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "strings-arabic-rtl"
+      }
+    },
+    {
+      "id": "story-58.16",
+      "type": "story",
+      "title": "CI for each TV: emulators where they exist, real-device checklists where they don't, logs kept",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# Story 58.16 — CI for each TV: emulators where they exist, real-device checklists where they don't, logs kept\n\n> Epic 58 · Phase 1 (jobs and log upload), each platform's tests land with its story · Depends on: — · Needed by: every platform story\n\n## Why\n\nEvery app needs automated tests in CI, run only for the code they cover. Each test keeps the\napp's log in the CI report. Screenshots are dark, in English and Arabic. The TV platforms differ\nin what can run on a CI runner at all, and this story says it plainly for each one, so no one\nmistakes a fake for a real device.\n\n## Description\n\n**Jobs**",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-16-ci-per-platform.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "ci-per-platform"
+      }
+    },
+    {
+      "id": "story-58.17",
+      "type": "story",
+      "title": "OpenAPI, role tests and the new-clients rehearsal",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# Story 58.17 — OpenAPI, role tests and the new-clients rehearsal\n\n> Epic 58 · Phase 5 · Depends on: 58.01, 58.02, 58.03, 58.06, 58.14 · Needed by: —\n\n## Why\n\nThe TV apps use the same API and the same roles as every other client. The server enforces every\nrole rule, with a role test for each, and hiding a button is never a rule. This epic adds four\nthings to the server:\n- the cloud code approval;\n- the cast grant and its scope;\n- `device_caps` on stream sessions;\n- the compatibility fields and `client_floor`.\n\nEach needs its OpenAPI entry, a role table and a place in a rehearsal that runs the ",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms",
+        "ep-get-videos",
+        "ep-post-sessions",
+        "ep-get-home"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-17-openapi-roles-rehearsal.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /videos",
+        "POST /sessions",
+        "GET /home"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "openapi-roles-rehearsal"
+      }
+    },
+    {
+      "id": "story-58.18",
+      "type": "story",
+      "title": "Amazon Vega OS: a React Native app, built when Vega devices are a real share",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# Story 58.18 — Amazon Vega OS: a React Native app, built when Vega devices are a real share\n\n> Epic 58 · Phase 6 · Depends on: 58.01, 58.02, 58.03, 58.04, 58.05 · Needed by: —\n\n## Why\n\nAmazon launched Vega OS, a Linux-based Fire TV operating system, on the Fire TV Stick 4K Select\nin 2025 (research.md §2.2). Since then Amazon has added:\n- the Fire TV Stick HD (2026);\n- the Fire TV Stick 4K 3rd gen (2026-09-30).\n\nReports say every future Fire TV Stick will run Vega. Android apps do not run on Vega, and there\nis no sideloading, so the Fire OS build (58.05) does not reach these sticks. A Vega app",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-18-vega-os.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "vega-os"
       }
     }
   ]
