@@ -152,7 +152,7 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 	if !ok {
 		t.Fatal("no pinned Postgres for windows/amd64")
 	}
-	home, err := pgbin.Ensure(ctx, env["MAKTABA_TEST_PG_DOWNLOAD"], pin, pgbin.HTTPFetch(nil), io.Discard)
+	home, err := pgbin.Ensure(ctx, env["MAKTABA_TEST_PG_DOWNLOAD"], pin, pgbin.HTTPDownloader(nil, pgbin.DefaultMirrors()), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
