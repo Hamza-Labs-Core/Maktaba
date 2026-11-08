@@ -431,7 +431,7 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 	}
 	for id, want := range map[string]string{
 		"livetv.slots": "enabled", "livetv.inprocess": "installed", "livetv.hdhomerun": "installed",
-		"ext.plex": "enabled", "ext.dizquetv": "installed", "ext.cloudflare_stream": "installed",
+		"ext.plex": "enabled", "ext.cloudflare_stream": "installed",
 		"cloud.link": "installed", "cloud.relay": "installed",
 		"youtube":        "enabled", // one of its four stages off: the others still run
 		"discovery.mdns": "enabled", "backups": "enabled", "telemetry": "enabled", "cluster": "enabled",
@@ -440,6 +440,13 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 	} {
 		if wants[id] != want {
 			t.Errorf("%s = %q, want %q", id, wants[id], want)
+		}
+	}
+	// a component this release removed (ext.dizquetv) has no row after the update, whether
+	// the previous release had one or not
+	for _, id := range components.RetiredComponents {
+		if w, ok := wants[id]; ok {
+			t.Errorf("%s, a removed component, still has a row (%q)", id, w)
 		}
 	}
 
