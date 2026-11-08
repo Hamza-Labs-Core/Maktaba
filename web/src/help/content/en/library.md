@@ -68,7 +68,7 @@ The **Series** tab shows every series with a lesson in this library: its picture
 
 The **Collections** tab shows the library's collections, under a heading for each kind, with the number in each:
 
-- **Topics**, **Clips** and **Stand-alone**: collections Maktaba makes by itself from the library's videos, marked **Automatic**. A topic gathers the lessons of one subject across shows; clips are the short pieces (and the promos), stand-alone the one-off videos that belong to no series. They are the same collections Plex shows for this library, in the same order. They update when the library changes, so nobody edits them; open one to play it (**Play all**, **Shuffle**, **Play from here**).
+- **Topics**, **Clips** and **Stand-alone**: collections Maktaba makes by itself from the library's videos, marked **Automatic**. A topic gathers the lessons of one subject across shows; clips are the short pieces (and the promos), stand-alone the one-off videos that belong to no series. They update when the library changes, so nobody edits them; open one to play it (**Play all**, **Shuffle**, **Play from here**).
 - **Curated**: the collections admins make.
 
 The chips above them (**All**, **Topics**, **Clips**, **Stand-alone**, **Curated**) show one kind only; the choice is kept in the page's address. The old Collections page's address opens this tab. Everyone who can see the library sees its collections; only admins make and change the curated ones.

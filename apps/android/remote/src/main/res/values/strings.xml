@@ -247,7 +247,6 @@
     <string name="w_components_enrich_title">Details lookup</string>
     <string name="w_components_youtube_title">YouTube</string>
     <string name="w_components_ext_plex_title">Plex</string>
-    <string name="w_components_ext_dizquetv_title">dizqueTV</string>
     <string name="w_components_livetv_title">Live TV</string>
     <string name="w_health_processes_state_standby">Standing by</string>
     <string name="w_health_processes_state_running">Running</string>
@@ -387,7 +386,6 @@
     <string name="cause_youtube_unavailable">YouTube video or channel unavailable</string>
     <string name="cause_plex_unreachable">Plex is unreachable</string>
     <string name="cause_plex_auth">Plex rejected the token</string>
-    <string name="cause_dizquetv_unreachable">dizqueTV is unreachable</string>
     <string name="cause_readback_mismatch">Write did not read back correctly</string>
     <string name="cause_no_handler">No worker handles this stage</string>
     <string name="cause_graph_violation">Stage requested work its graph does not allow</string>

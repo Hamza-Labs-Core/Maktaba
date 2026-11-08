@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 181,
+    "endpoint": 180,
     "entity": 42,
     "epic": 57,
     "feature": 3,
@@ -7626,7 +7626,7 @@
       "id": "ep-get-extensions",
       "type": "endpoint",
       "title": "GET /extensions",
-      "content": "Optional extensions (Plex, dizqueTV)",
+      "content": "Optional extensions (Plex, Cloudflare Stream, web search)",
       "tags": [
         "api",
         "Queue",
@@ -9057,27 +9057,6 @@
         "path": "/libraries/{id}/categories",
         "tag": "Browse",
         "operationId": "getLibraryCategories"
-      }
-    },
-    {
-      "id": "ep-get-libraries-id-plex-missing",
-      "type": "endpoint",
-      "title": "GET /libraries/{id}/plex-missing",
-      "content": "The items of a library's Plex collections that are not in Maktaba (admin)",
-      "tags": [
-        "api",
-        "Libraries",
-        "get"
-      ],
-      "related": [],
-      "files": {
-        "openapi": "shared/api/openapi.yaml"
-      },
-      "metadata": {
-        "method": "GET",
-        "path": "/libraries/{id}/plex-missing",
-        "tag": "Libraries",
-        "operationId": "listPlexMissing"
       }
     },
     {

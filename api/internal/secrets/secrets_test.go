@@ -234,8 +234,8 @@ func TestExtensionSecretsMovedToHomeSecrets(t *testing.T) {
 	db := sqliteDB(t)
 	s := &DBStore{DB: db, Key: testKey(t, 3)}
 	if _, err := db.Exec(`INSERT INTO extensions (name, enabled, settings) VALUES
-		('plex', 1, '{"url":"http://plex:32400","token":"PLEX-SECRET","path_map":"{}"}'),
-		('dizquetv', 0, '{"url":"http://dq"}')`); err != nil {
+		('plex', 1, '{"url":"http://plex:32400","token":"PLEX-SECRET","client_id":"cid"}'),
+		('cloudflare_stream', 0, '{"account_id":"acc"}')`); err != nil {
 		t.Fatal(err)
 	}
 	fields := ExtensionSecretFields{"plex": {"token": ExtensionName("plex", "token")}, "cloudflare_stream": {"api_token": "cf_api_token"}}
@@ -252,7 +252,7 @@ func TestExtensionSecretsMovedToHomeSecrets(t *testing.T) {
 	}
 	var settings map[string]any
 	_ = json.Unmarshal([]byte(raw), &settings)
-	if _, has := settings["token"]; has || settings["url"] != "http://plex:32400" || settings["path_map"] != "{}" {
+	if _, has := settings["token"]; has || settings["url"] != "http://plex:32400" || settings["client_id"] != "cid" {
 		t.Fatalf("settings after the move: %s", raw)
 	}
 	if got, err := s.Get(ctx, "ext.plex.token"); err != nil || string(got) != "PLEX-SECRET" {

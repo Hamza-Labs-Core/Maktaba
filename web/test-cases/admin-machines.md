@@ -182,7 +182,7 @@ Notes for the implementer: reuse the `fixture()` / `baseNode` from `Machines.tes
 - **Priority:** P2
 - **Category:** Empty state
 - **Covered by existing test?** Yes (Machines.cases.test.tsx)
-- **Preconditions / data:** admin; home with `storage` set and `canonicalize: { "state": { "phase": "done", "problems": null, "servers_added": [ { "name": "nas", "addresses": null } ], "plex_added": null }, "request": null, "requested_at": null, "requested_by": null }`; also `canonicalize: { "state": null }`.
+- **Preconditions / data:** admin; home with `storage` set and `canonicalize: { "state": { "phase": "done", "problems": null, "servers_added": [ { "name": "nas", "addresses": null } ] }, "request": null, "requested_at": null, "requested_by": null }`; also `canonicalize: { "state": null }`.
 - **Steps:**
   1. Open `/admin/machines`.
 - **Expected:** Panel renders; no problems list; server line without addresses. Today `s.addresses.join` (CanonicalizePanel.tsx:109) throws on null addresses (currently unhandled — likely bug). Check `state: null` does not throw.

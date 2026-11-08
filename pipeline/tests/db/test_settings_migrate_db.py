@@ -124,7 +124,7 @@ async def test_a_migration_that_raises_keeps_its_component_failed(db: Database) 
 
     settings.register_migration(_TranscriptionV2, 1, boom)
     await _put(db, "rules.transcription", {"relisten_tries": 9})
-    await _put(db, "rules.planner", {"dawn_quran": False})
+    await _put(db, "rules.tv", {"loudnorm": False})
 
     failed = await settings_migrate.run_pass(db)
 
@@ -143,8 +143,8 @@ async def test_a_migration_that_raises_keeps_its_component_failed(db: Database) 
     assert rows[0].conditions[0].params["section"] == "transcription"
     # the other components are not touched, and their sections read as they are
     assert await store.statuses(db, "livetv") == []
-    cfg, _, _ = await rules.read(db, "planner")
-    assert cfg.dawn_quran is False
+    cfg, _, _ = await rules.read(db, "tv")
+    assert cfg.loudnorm is False
     # the stage never runs on the defaults instead
     with pytest.raises(rules.SettingsInvalid, match="cannot read"):
         await rules.read(db, "transcription")
@@ -210,7 +210,7 @@ async def test_a_failed_section_tells_the_runners(db: Database) -> None:
 
 @pytest.mark.asyncio
 async def test_same_major_and_no_value_need_nothing(db: Database) -> None:
-    await _put(db, "rules.planner", {"dawn_quran": False})
+    await _put(db, "rules.tv", {"loudnorm": False})
     outcomes = await settings_migrate.migrate_all(db)
     assert {o.action for o in outcomes} == {"none"}
     assert (

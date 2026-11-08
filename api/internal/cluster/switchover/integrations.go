@@ -38,9 +38,9 @@ type Secrets interface {
 // each moved with the kit and checked from here, or what only a person can do.
 //
 //   - secrets: every secret the old home kept opens with the key it handed over;
-//   - plex, dizquetv: they answer from here at the address the pipeline has for them
+//   - plex: it answers from here at the address the pipeline has for it
 //     (an address that was the old home's own is moved to its network address when
-//     they answer there: checkService);
+//     it answers there: checkService);
 //   - cloudflare_stream, simulcast, web_search: their secrets open (cloud services,
 //     bound to no machine);
 //   - cf_webhook: Cloudflare's notifications reach this home (cfWebhook);
@@ -103,7 +103,6 @@ func HomeIntegrations(db *sql.DB, store Secrets, hfToken string, publicStream fu
 		}
 		oldHost := oldHomeHost(ctx, db)
 		out["plex"] = checkService(ctx, db, store, plexService, oldHost)
-		out["dizquetv"] = checkService(ctx, db, store, dizquetvService, oldHost)
 		out["relay"] = relayLink(ctx, os.Getenv("MAKTABA_CLOUDLINK_STATUS_URL"))
 		out["cf_webhook"] = cfWebhook(ctx, db, out["relay"])
 		out["plex_live_tv"] = liveTV(ctx, db, publicStream)

@@ -749,13 +749,10 @@ func runServe() error {
 				DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping), Version: version.Version, Secrets: homeSecrets, Loops: loops,
 				Capabilities: capabilities, Embedder: embedderClient(pipelineClient, searchPipelineClient),
 				// story 54.35: the first-party Plex plugin reaches Plex through the home's
-				// service door, which adds the token and scrubs it out of every answer; issue
-				// #827: the dizqueTV plugin reaches dizqueTV through its operations, which
-				// build the programmes on the home
+				// service door, which adds the token and scrubs it out of every answer
 				Service: relay.New(relay.Config{Settings: relay.DBSettings(appDB),
-					Upstream: relay.DBUpstream(appDB, homeSecrets, os.Getenv), ArtBase: relay.DBArtBase(appDB),
-					PublicBase: relay.DBPublicBase(appDB),
-					Logger:     logger})})
+					Upstream: relay.DBUpstream(appDB, homeSecrets, os.Getenv),
+					Logger:   logger})})
 			reaper := &watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),

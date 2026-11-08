@@ -14,6 +14,23 @@ build fails when the two differ.
 
 ### Changed
 
+- **Maktaba no longer syncs your library into Plex, and the dizqueTV integration is removed.**
+  Maktaba now replaces Plex for watching the library. These are gone:
+  - the Plex index, the season collections, the clip-group collections and the import of
+    Plex collections;
+  - the Plex path map setting;
+  - the whole dizqueTV extension: its shows, its channels, the channel audit and its settings.
+
+  Plex Live TV stays: Maktaba can still add its tuner and guide to Plex, refresh them and
+  restore its channel list. A dizqueTV tuner already in Plex is now shown as another
+  program's. The update deletes no data: the removed steps' jobs, the stored Plex item list,
+  the channel audits, the links to Plex and dizqueTV items and the old dizqueTV settings stay
+  in the database, and Maktaba no longer shows them. A rollback goes back to the release
+  before with all of it. Live broadcasts set only in the old dizqueTV settings keep airing on
+  Maktaba TV, and the channel editor shows them with a note; saving there gives Maktaba TV its
+  own copy.
+
+
 - **An offline machine comes first on the Overview (Epic 53 story 53.12).** On the home's
   dashboards, a joined machine that is offline now ranks first among the machines most in need
   of attention, and is named as offline: a line on the web page and both Remotes ("Offline:
@@ -168,14 +185,25 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Share media a Windows runner missed on v0.3.105 is processed again (story 54.23).** On
+  v0.3.105, a Windows runner could read a file on a share as missing. A small thumbnail then
+  ended done with no thumbnail, and an approved duplicate merge failed with its kept file
+  unreadable. The reconciler now queues each such result once more, forced, in a library on a
+  share (a network path or a mapped network drive) since that release; the merge keeps its
+  approval and runs its checks again. On Windows, while a library is on a share, the stages
+  that read or write the libraries (thumbnails, subtitles, transcription, MP4 conversion,
+  duplicates, repair, YouTube) run in the worker, which reaches every share, until the
+  Windows end to end proves their runners there; and a runner refuses every share path it is
+  not brokered, so no look there reads a refusal as a missing file.
+
 - **A share file a sandboxed runner may not read runs in the worker, never as missing (story
-  54.23).** On Windows, when a runner's sandbox refused a file in a library on a share, two
-  stages treated the refusal as a missing file instead of handing the job to the worker. The
-  small thumbnail ended done with no thumbnail, because its sidecar look found nothing. The MP4
-  conversion failed as a missing file: the files runner never reaches a share, since it writes
-  the libraries in full. Both now report the refusal, and the worker runs the job, as the
-  runner's design says. A Windows CI job now runs both stages on a local library and on an SMB
-  share, through the worker's plugin path into their sandboxed runners.
+  54.23).** On Windows, when a runner's sandbox refused a file in a library on a share, some
+  lookups read the refusal as a missing file instead of handing the job to the worker. The
+  small thumbnail could end done with no thumbnail, because its sidecar look found nothing, and
+  the MP4 conversion could fail as a missing file. Every lookup on a share path in a runner
+  (exists, lexists, isfile, isdir, stat, open) now reports a refusal as a refusal, and a folder
+  scan there (scandir, walk, glob) is refused rather than seen as empty, so the worker runs the
+  job, as the runner's design says. A missing file still reads as missing.
 
 - **After an update, the plugin runners wait for the new release's Python packages.** In the
   Mac app, the plugin runners (light, ml-1, ml-2, index) started while the update was still

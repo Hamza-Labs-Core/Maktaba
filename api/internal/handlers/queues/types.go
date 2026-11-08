@@ -137,7 +137,7 @@ const (
 	WaitDebouncing     WaitingReason = "debouncing"
 	WaitBackoff        WaitingReason = "backoff"
 	// WaitServiceRetrying: the waiting rows are backing off because an
-	// external service (Plex, dizqueTV) did not answer ("Plex not
+	// external service (Plex) did not answer ("Plex not
 	// answering, retrying"); QueueSummary.RetryingService names it.
 	WaitServiceRetrying WaitingReason = "service_retrying"
 	WaitUpstream        WaitingReason = "upstream"
@@ -182,7 +182,7 @@ type QueueSummary struct {
 	NoWorker      bool     `json:"no_worker"`
 	// Extension mirrors StageInfo.Extension for card rendering.
 	Extension *string `json:"extension"`
-	// RetryingService names the external service ("plex", "dizquetv")
+	// RetryingService names the external service ("plex")
 	// whose failures put this stage's waiting rows into backoff; nil when
 	// none did. Set even while other rows run, so the card can say so.
 	RetryingService *string `json:"retrying_service"`
@@ -407,8 +407,8 @@ type TimelineEntry struct {
 	// Summary is processing_jobs.output_summary: for external writes it
 	// carries the diff the write applied.
 	Summary json.RawMessage `json:"output_summary"`
-	// Changes is what an external write changed (plex_collection,
-	// dizquetv_show, write_channels), from the job_events data / summary.
+	// Changes is what an external write changed (write_channels), from the
+	// job_events data / summary.
 	Changes   []WriteChange  `json:"changes,omitempty"`
 	Triggered []TriggeredRef `json:"triggered"`
 	Reasons   []ReasonRef    `json:"reasons"`

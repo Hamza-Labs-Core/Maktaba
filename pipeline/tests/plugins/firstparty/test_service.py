@@ -14,22 +14,22 @@ import pytest
 from maktaba_pipeline.plugins import native, service
 
 SETTINGS = {
-    "plex": {"url": "http://192.168.1.4:32400", "token": "SECRET", "path_map": "Y:/=/v/"},
-    "dizquetv": {"url": "http://192.168.1.4:8000"},
+    "plex": {"url": "http://192.168.1.4:32400", "token": "SECRET"},
+    "cloudflare_stream": {"account_id": "acct"},
 }
 
 
 def test_a_plugins_job_gets_no_secret_and_no_service_address() -> None:
     got = service.plugin_settings(SETTINGS, ("plex",))
-    assert got["plex"] == {"url": "service:plex", "path_map": "Y:/=/v/"}
-    assert got["dizquetv"] == {"url": "http://192.168.1.4:8000"}  # not a service it reaches
+    assert got["plex"] == {"url": "service:plex"}
+    assert got["cloudflare_stream"] == {"account_id": "acct"}  # not a service it reaches
     assert "SECRET" not in repr(got)
 
 
 def test_the_route_follows_where_the_worker_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     ctx = SimpleNamespace(settings=SETTINGS)
     # on the home the worker has the token: the plugin API's door
-    frame = native._service_frame("plex_index", ctx)
+    frame = native._service_frame("plex_livetv", ctx)
     assert frame["service_via"] == "api" and frame["extension_settings"]["plex"]["url"] == (
         "service:plex"
     )
@@ -38,7 +38,7 @@ def test_the_route_follows_where_the_worker_runs(monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(relay, "node_may_relay", lambda: True)
     node = SimpleNamespace(settings={"plex": {"url": "http://192.168.1.4:32400"}})
-    assert native._service_frame("plex_index", node)["service_via"] == "worker"
+    assert native._service_frame("plex_livetv", node)["service_via"] == "worker"
     # a stage that reaches no service gets nothing (no settings, no work per job)
     assert native._service_frame("tv_gc", ctx) == {}
 
@@ -62,14 +62,16 @@ async def test_a_node_asks_its_worker_which_relays_to_the_home(
             return 200, b'{"MediaContainer":{}}'
 
     monkeypatch.setattr(relay, "RelayTransport", Relayed)
-    ctx = SimpleNamespace(job=SimpleNamespace(stage="plex_index"))
+    ctx = SimpleNamespace(job=SimpleNamespace(stage="plex_livetv"))
     got = await native._relayed_service(
-        ctx, {"service": "plex", "method": "GET", "target": "/library/sections", "body": ""}
+        ctx, {"service": "plex", "method": "GET", "target": "/livetv/dvrs", "body": ""}
     )
     assert got["status"] == 200 and base64.b64decode(got["body"]) == b'{"MediaContainer":{}}'
-    assert seen == [("GET", "relay://plex/library/sections", None)]
+    assert seen == [("GET", "relay://plex/livetv/dvrs", None)]
     with pytest.raises(native.EnqueueRefused, match="plugin_capability"):
-        await native._relayed_service(ctx, {"service": "dizquetv", "method": "GET", "target": "/"})
+        await native._relayed_service(
+            ctx, {"service": "cloudflare_stream", "method": "GET", "target": "/"}
+        )
     with pytest.raises(native.EnqueueRefused, match="plugin_capability"):
         await native._relayed_service(
             SimpleNamespace(job=SimpleNamespace(stage="tv_gc")),

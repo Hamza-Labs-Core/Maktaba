@@ -18,9 +18,6 @@ Commands (each reads/writes the same SQLite cache, ``--db``):
   report                      HTML page per folder to review the grouping visually
   export-plex                 one Plex collection per season (dry run unless --apply)
   plan-channels               suggest live TV channels + time-slot grids + filler pools
-  audit-channels              is what each channel airs about the channel? (report)
-  dizquetv-shows              dizqueTV custom shows per series and per season (dry run unless --apply)
-  export-dizquetv  PLAN.json  what a channel plan would write to dizqueTV (dry run)
   status                      what the cache knows, per folder
   serve [--log RUN.log]       live status page: current step, jobs per stage and library
   explain      TEXT           facts behind matching videos and where they ended up
@@ -37,9 +34,7 @@ from . import (
     classify_tags,
     db,
     detect,
-    dizquetv_shows,
     explain,
-    export_dizquetv,
     export_plex,
     link,
     pipeline,
@@ -62,9 +57,6 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def plex_args(p: argparse.ArgumentParser) -> None:
-        p.add_argument(
-            "--dizquetv-db", type=Path, help=".dizquetv folder (reads plex-servers.json)"
-        )
         p.add_argument("--plex-url")
         p.add_argument("--plex-token")
         p.add_argument("--path-map", action="append", default=[],
@@ -91,9 +83,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--from-step", default="scan", metavar="STEP",
                    help="start at this step, keeping what earlier steps cached: scan, plex, "
                         "youtube, link, detect, signatures, exact, tag, check-tags, check-clips, books, group, "
-                        "export-plex, "
-                        "dizquetv-shows, report, scan-visual, plan-channels, export-dizquetv, "
-                        "audit-channels")  # fmt: skip
+                        "export-plex, report, scan-visual, plan-channels")  # fmt: skip
     p.add_argument("--skip", action="append", default=[], metavar="STEP",
                    help="leave this step out (repeatable), e.g. scan-visual while the NAS is slow")  # fmt: skip
     p.add_argument("--exact", action="store_true",
@@ -103,14 +93,6 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", type=Path, default=Path("reports"), help="report directory")
     p.add_argument("--plex", action="store_true",
                    help="write season collections to Plex (replaces same-named ones, deletes none)")  # fmt: skip
-    p.add_argument("--tv", action="store_true", help="update/create dizqueTV custom shows")
-    p.add_argument("--tv-url", default="http://localhost:8002")
-    p.add_argument(
-        "--clear-channels",
-        action="store_true",
-        help="the channel export deletes every dizqueTV channel not in the plan",
-    )
-    p.add_argument("--backup-dir", type=Path, default=Path("backups"))
 
     p = sub.add_parser("explain", help="why a video is where it is")
     p.add_argument("text", nargs="?", default="", help="part of the title or file name")
@@ -162,7 +144,8 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("serve", help="live status page (http://localhost:8770)")
     p.add_argument("--log", type=Path, help="the run's log file, for the current step")
     p.add_argument("--port", type=int, default=8770)
-    p.add_argument("--dizquetv-db", type=Path, help=".dizquetv folder, passed to runs started here")
+    p.add_argument("--plex-url", help="Plex address, passed to runs started here")
+    p.add_argument("--plex-token", help="Plex token, passed to runs started here")
     p.add_argument("--reports", type=Path, default=Path("reports"), help="review pages to serve")
 
     p = sub.add_parser("status", help="summary per folder")
@@ -200,49 +183,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--folder", help="only folders whose path contains this")
 
-    p = sub.add_parser("dizquetv-shows", help="update/create dizqueTV custom shows from seasons")
-    plex_args(p)
-    p.add_argument("--url", default="http://localhost:8002", help="dizqueTV")
-    p.add_argument("--library", help="only libraries whose name contains this")
-    p.add_argument("--apply", action="store_true", help="write (default: dry run)")
-    p.add_argument("--create-series", action="store_true",
-                   help="also create a whole-series show where none exists")  # fmt: skip
-    p.add_argument("--backup-dir", type=Path, default=Path("backups/dizquetv-shows"))
-
     p = sub.add_parser("plan-channels", help="suggest live TV channels + time-slot grids")
     p.add_argument("--out", type=Path, default=Path("reports"), help="output directory")
     p.add_argument("--review", type=Path, help="also write a plain-text review here")
     p.add_argument("--focus", action="append", default=[],
                    help="detail channels whose name contains this (repeatable)")  # fmt: skip
 
-    p = sub.add_parser(
-        "export-dizquetv", help="what a channel plan would write to dizqueTV (dry run)"
-    )
-    p.add_argument("plan", type=Path, help="channel-plan.json")
-    p.add_argument("--url", default="http://localhost:8002")
-    p.add_argument("--offline", action="store_true", help="don't read dizqueTV's current state")
-    p.add_argument("--channel", type=int, action="append", help="only this channel number")
-    p.add_argument("--ramadan", action="store_true", help="use the Ramadan grids")
-    p.add_argument("--tz-offset", type=int, help="minutes, UTC - local (default: this machine)")
-    p.add_argument("--replace-existing", action="store_true")
-    p.add_argument(
-        "--prune",
-        action="store_true",
-        help="delete this tool's channels / shows / filler lists the plan no longer has",
-    )
-    p.add_argument(
-        "--clear-channels",
-        action="store_true",
-        help="also delete every other channel that is not in the plan",
-    )
-    p.add_argument("--dump", type=Path, help="write the request bodies to this folder")
-    p.add_argument(
-        "--apply", action="store_true", help="create/update the channels (default: dry run)"
-    )
-    plex_args(p)
-
     p = sub.add_parser("export-plex", help="write seasons to Plex as collections")
-    p.add_argument("--dizquetv-db", type=Path, help=".dizquetv folder (reads plex-servers.json)")
     p.add_argument("--plex-url")
     p.add_argument("--plex-token")
     p.add_argument("--library", help="only libraries whose name contains this")
@@ -254,12 +201,6 @@ def main(argv: list[str] | None = None) -> int:
                    help="delete older collections fully covered by a new season")  # fmt: skip
     p.add_argument("--diff", action="store_true",
                    help="list the episodes each change adds or takes out")  # fmt: skip
-
-    p = sub.add_parser(
-        "audit-channels", help="is what each channel airs about the channel? (report)"
-    )
-    p.add_argument("--url", default="http://localhost:8002", help="dizqueTV")
-    p.add_argument("--out", type=Path, default=Path("reports"), help="output directory")
 
     p = sub.add_parser(
         "repair-broken", help="download again the broken files (unfinished downloads)"
@@ -284,8 +225,8 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd in ("scan-local", "run"):
         roots = list(a.roots)
         server = None
-        if a.from_plex or a.dizquetv_db or a.plex_url:
-            server = scan_plex.load_server(a.dizquetv_db, a.plex_url, a.plex_token)
+        if a.from_plex or a.plex_url:
+            server = scan_plex.load_server(a.plex_url, a.plex_token)
         if a.from_plex:
             assert server is not None
             libs = scan_plex.plex_roots(
@@ -301,10 +242,9 @@ def main(argv: list[str] | None = None) -> int:
             pipeline.run(
                 conn, roots, server=server, path_map=maps, youtube=not a.no_youtube,
                 exact=a.exact, lang=a.lang, delay_s=a.delay, report_dir=a.out, workers=a.workers,
-                plex=a.plex, tv=a.tv, tv_url=a.tv_url, backup_dir=a.backup_dir,
+                plex=a.plex,
                 from_step=a.from_step,
                 skip=tuple(a.skip),
-                clear_channels=a.clear_channels,
             )  # fmt: skip
     elif a.cmd == "explain":
         explain.explain(
@@ -312,7 +252,7 @@ def main(argv: list[str] | None = None) -> int:
             min_minutes=a.min_minutes, max_minutes=a.max_minutes, verdict=a.verdict,
         )  # fmt: skip
     elif a.cmd == "scan-plex":
-        server = scan_plex.load_server(a.dizquetv_db, a.plex_url, a.plex_token)
+        server = scan_plex.load_server(a.plex_url, a.plex_token)
         scan_plex.scan_plex(conn, server, maps, a.library)
     elif a.cmd == "scan-youtube":
         from . import scan_youtube  # needs the optional yt-dlp extra
@@ -331,12 +271,6 @@ def main(argv: list[str] | None = None) -> int:
         scan_youtube.list_source(a.url, match=a.match, lang=a.lang)
     elif a.cmd == "link":
         link.link(conn)
-    elif a.cmd == "dizquetv-shows":
-        dizquetv_shows.run(
-            conn, scan_plex.load_server(a.dizquetv_db, a.plex_url, a.plex_token), url=a.url,
-            apply=a.apply, library_filter=a.library, create_series=a.create_series,
-            backup_dir=a.backup_dir,
-        )  # fmt: skip
     elif a.cmd == "group":
         from . import group_clips
 
@@ -351,20 +285,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"##### repair-broken (download broken files again)  ({when})", flush=True)
         repair_broken.run(conn, a.cookies_from_browser)
         print("done", flush=True)
-    elif a.cmd == "audit-channels":
-        from . import audit_channels
-
-        audit_channels.run(conn, a.url, a.out)
     elif a.cmd == "plan-channels":
         plan_channels.run(conn, a.out, review=a.review, focus=a.focus)
-    elif a.cmd == "export-dizquetv":
-        export_dizquetv.run(
-            a.plan, url=a.url, offline=a.offline, only=set(a.channel or []) or None,
-            ramadan=a.ramadan, tz_offset=a.tz_offset, replace_existing=a.replace_existing,
-            dump=a.dump, apply=a.apply,
-            server=scan_plex.load_server(a.dizquetv_db, a.plex_url, a.plex_token) if a.apply else None,
-            conn=conn, prune=a.prune, clear_channels=a.clear_channels,
-        )  # fmt: skip
     elif a.cmd == "set-style":
         from . import scan_visual
 
@@ -381,7 +303,7 @@ def main(argv: list[str] | None = None) -> int:
     elif a.cmd == "detect":
         detect.run(conn, a.folder, a.min_episode_minutes)
     elif a.cmd == "export-plex":
-        server = scan_plex.load_server(a.dizquetv_db, a.plex_url, a.plex_token)
+        server = scan_plex.load_server(a.plex_url, a.plex_token)
         export_plex.export(
             conn, server, apply=a.apply, library_filter=a.library, include_clips=a.include_clips,
             replace_existing=a.replace_existing, remove_superseded=a.remove_superseded, diff=a.diff,
@@ -391,7 +313,14 @@ def main(argv: list[str] | None = None) -> int:
     elif a.cmd == "serve":
         from . import serve
 
-        serve.serve(str(a.db), a.log, a.port, dizquetv_db=a.dizquetv_db, reports=a.reports)
+        serve.serve(
+            str(a.db),
+            a.log,
+            a.port,
+            plex_url=a.plex_url,
+            plex_token=a.plex_token,
+            reports=a.reports,
+        )
         return 0
     elif a.cmd == "status":
         if a.jobs:

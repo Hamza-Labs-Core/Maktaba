@@ -5594,7 +5594,7 @@
         "tags": [
           "Queue"
         ],
-        "summary": "Optional extensions (Plex, dizqueTV)",
+        "summary": "Optional extensions (Plex, Cloudflare Stream, web search)",
         "responses": {
           "200": {
             "description": "OK",
@@ -5725,7 +5725,7 @@
           "Queue"
         ],
         "summary": "Test an extension connection (a list of checks)",
-        "description": "Admin-only; runs on the home. Each check: key, ok, optional (a warning when not ok), skipped, detail, code, latency_ms. Plex: reachable, token, server, livetv, maktaba_tuner, dizquetv_tuner, path_map. dizqueTV: reachable, channels, plex_servers. Cloudflare Stream: see /tv/remote/test. Every run is audited (audit_log config/extension_test).",
+        "description": "Admin-only; runs on the home. Each check: key, ok, optional (a warning when not ok), skipped, detail, code, latency_ms. Plex: reachable, token, server, livetv, maktaba_tuner. Cloudflare Stream: see /tv/remote/test. Every run is audited (audit_log config/extension_test).",
         "responses": {
           "200": {
             "description": "OK",
@@ -9030,45 +9030,6 @@
           }
         },
         "operationId": "getLibraryCategories"
-      }
-    },
-    "/libraries/{id}/plex-missing": {
-      "get": {
-        "tags": [
-          "Libraries"
-        ],
-        "summary": "The items of a library's Plex collections that are not in Maktaba (admin)",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The missing items.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "default": {
-            "$ref": "#/components/responses/InternalError"
-          }
-        },
-        "operationId": "listPlexMissing"
       }
     },
     "/videos/facets": {
@@ -12994,7 +12955,7 @@
       },
       "ExtensionInfo": {
         "type": "object",
-        "description": "An optional extension (Plex, dizqueTV). Secret settings are never returned.",
+        "description": "An optional extension (Plex, Cloudflare Stream, web search). Secret settings are never returned.",
         "required": [
           "name",
           "label",

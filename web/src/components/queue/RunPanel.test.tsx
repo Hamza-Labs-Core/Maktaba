@@ -96,14 +96,14 @@ describe("what the panel offers", () => {
     expect(names).toContain("detect");
     expect(names).toContain("plan_channels");
     expect(names).not.toContain("probe"); // a per-video step
-    expect(names).not.toContain("dizquetv_show"); // switched off
+    expect(canStartAt({ ...stageInfo({ stage: "plan_channels" }), enabled: false })).toBe(false);
   });
 
   it("leaves extension queues and the YouTube read to the write switches", () => {
     const names = leaveOutChoices(stages).map((s) => s.stage);
     expect(names).toContain("tag");
     expect(names).not.toContain("youtube_sync");
-    expect(names).not.toContain("plex_collection");
+    expect(names).not.toContain("plex_livetv");
   });
 });
 
@@ -141,9 +141,7 @@ describe("RunPanel", () => {
 
   it("saves a changed write switch and a left-out step, then queues from the chosen step", async () => {
     setup();
-    // dizqueTV is not set up: its switch is off and cannot be turned on from here
-    expect(screen.getByRole("checkbox", { name: /dizqueTV shows/ })).toBeDisabled();
-    const plex = screen.getByRole("checkbox", { name: /Season collections in Plex/ });
+    const plex = screen.getByRole("checkbox", { name: /channels in Plex Live TV/ });
     expect(plex).toBeChecked();
     await userEvent.click(plex); // stop writing to Plex
     await userEvent.click(screen.getByText(/^Leave out/));
@@ -159,6 +157,17 @@ describe("RunPanel", () => {
     // the switches are saved before the work is queued
     expect(put.mock.invocationCallOrder[0]).toBeLessThan(post.mock.invocationCallOrder[0]!);
     expect(patch.mock.invocationCallOrder[0]).toBeLessThan(post.mock.invocationCallOrder[0]!);
+  });
+
+  it("an extension that is not set up cannot be switched on from here", () => {
+    setup({
+      extensions: extensionsFixture.map((e) => ({ ...e, enabled: false, configured: false })),
+    });
+    expect(screen.getByRole("checkbox", { name: /channels in Plex Live TV/ })).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Not set up" })).toHaveAttribute(
+      "href",
+      "/admin/extensions"
+    );
   });
 
   it("a step that is left out cannot also be the start", async () => {

@@ -216,10 +216,10 @@
 - **Priority:** P2
 - **Category:** Happy path
 - **Covered by existing test?** Yes (`QueueDetail.cases.test.tsx`)
-- **Preconditions / data:** external-write stage `plex_collection` with a failure group `action: "apply"`; another with `action: "retry"`.
+- **Preconditions / data:** external-write stage `plex_livetv` with a failure group `action: "apply"`; another with `action: "retry"`.
 - **Steps:**
   1. Click "Apply"; click "Retry N".
-- **Expected:** `POST /api/queues/plex_collection/apply` `{ all: true }`; `POST /api/queues/plex_collection/retry` `{ cause }`; the clicked button shows loading only for its own group; no stage chip in groups (`hideStage`).
+- **Expected:** `POST /api/queues/plex_livetv/apply` `{ all: true }`; `POST /api/queues/plex_livetv/retry` `{ cause }`; the clicked button shows loading only for its own group; no stage chip in groups (`hideStage`).
 
 ### QDT-18 — Write mode select for external-write stages
 

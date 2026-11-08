@@ -104,6 +104,8 @@ func runnerDir(cfg config.Config, goos string) string {
 }
 
 // runnerEnvDrop is what a runner's environment never has (a test asserts the child's).
+// MAKTABA_DIZQUE*: dizqueTV is no longer Maktaba's, but an older install's variable must
+// still not reach a runner.
 func runnerEnvDrop(k string) bool {
 	switch k {
 	case "DATABASE_URL", "MAKTABA_DATABASE_URL", "MAKTABA_HOME_SECRETS", "MAKTABA_SUPERVISOR_TOKEN_FILE",

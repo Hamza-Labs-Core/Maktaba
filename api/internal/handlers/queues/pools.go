@@ -12,6 +12,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
 var laneRank = map[string]int{"sources": 0, "episodes": 1, "speech": 2, "seasons": 3, "channels": 4, "media": 5}
@@ -129,6 +130,10 @@ func (h *Handler) loadPools(ctx context.Context, stages []StageInfo) ([]Pool, er
 		}
 		p.UpdatedBy = nullStrPtr(by)
 		p.Stages = []string{}
+		// a pool only removed stages used keeps its row until the cleanup migration
+		if components.RetiredPool(p.Pool) {
+			continue
+		}
 		pools = append(pools, p)
 	}
 	if err := rows.Err(); err != nil {

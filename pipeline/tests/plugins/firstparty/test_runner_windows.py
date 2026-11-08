@@ -416,6 +416,7 @@ def test_what_the_broker_refuses_runs_in_the_worker(
     assert not shim.exists_(SHARE + "\\a\\gone.mkv")
     assert not shim.isfile_(SHARE + "\\a\\gone.mkv")
     assert not shim.isdir_(SHARE + "\\a\\gone.mkv")
+    assert not shim.lexists_(SHARE + "\\a\\gone.mkv")
     n = len(asked)
     for mode in ("ab", "xb", "r+b", "w+b"):
         with pytest.raises(PermissionError):
@@ -447,13 +448,77 @@ def test_a_refused_look_is_never_an_absent_file(
     monkeypatch.setattr(sys, "audit", lambda *_: None)
     shim, _ = _shim(tmp_path, {"stat": {"error": "a link or another reparse point", "errno": 13}})
     video = SHARE + "\\a\\ep1.mp4"
-    for look in (shim.exists_, shim.isfile_, shim.isdir_):
+    for look in (shim.exists_, shim.lexists_, shim.isfile_, shim.isdir_):
         with pytest.raises(PermissionError) as refused:
             look(video)
         assert sandbox_refused(refused.value)
     monkeypatch.setattr(os.path, "isfile", shim.isfile_)
     with pytest.raises(PermissionError):
         find_sidecar_thumbnail(video)
+
+
+def test_a_share_folder_is_never_scanned_as_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``os.scandir`` (and so ``os.walk`` and ``Path.glob``) is not brokered: on a brokered
+    folder it raises the refusal, so the job runs in the worker instead of finding nothing;
+    a local folder is scanned as before, and the broker is never asked."""
+    from maktaba_pipeline.plugins.native import sandbox_refused
+
+    monkeypatch.setattr(sys, "audit", lambda *_: None)
+    shim, asked = _shim(tmp_path, {})
+    with pytest.raises(PermissionError) as refused:
+        shim.scandir_(SHARE + "\\a")
+    assert sandbox_refused(refused.value)
+    (tmp_path / "local.mkv").write_bytes(b"x")
+    with shim.scandir_(str(tmp_path)) as it:
+        assert "local.mkv" in [e.name for e in it]
+    assert shim.lexists_(str(tmp_path / "local.mkv"))
+    assert asked == []
+
+
+def test_a_share_this_runner_is_not_brokered_is_refused_never_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A runner reaches no share by itself: any share path outside its brokered folders
+    (all of them, for a runner with no broker) raises the refusal from every look, so the
+    plain calls never answer False or empty there; the broker is never asked, and local
+    paths, long local paths and devices go to the plain calls."""
+    from maktaba_pipeline.plugins.native import sandbox_refused
+
+    monkeypatch.setattr(sys, "audit", lambda *_: None)
+    for roots in ([SHARE], []):
+        shim, asked = _shim(tmp_path, {})
+        shim.roots = [winfiles._key(r) for r in roots]
+        for other in (
+            "\\\\other\\media\\a.mkv",
+            "//other/media/a.mkv",
+            "\\\\?\\UNC\\other\\m\\a.mkv",
+        ):
+            for look in (
+                shim.exists_,
+                shim.lexists_,
+                shim.isfile_,
+                shim.isdir_,
+                shim.stat_,
+                shim.listdir_,
+                shim.scandir_,
+                shim.open_,
+            ):
+                with pytest.raises(PermissionError) as refused:
+                    look(other)
+                assert sandbox_refused(refused.value)
+        if not roots:
+            with pytest.raises(PermissionError):
+                shim.exists_(SHARE + "\\a\\ep1.mp4")
+        assert asked == []
+        local = tmp_path / "local.mkv"
+        local.write_bytes(b"x")
+        assert shim.exists_(str(local)) and shim.isfile_(str(local))
+        assert not shim.exists_(str(tmp_path / "gone.mkv"))
+    assert winfiles.is_share("\\\\nas\\m") and winfiles.is_share("\\\\?\\unc\\nas\\m")
+    assert not winfiles.is_share("\\\\?\\C:\\m") and not winfiles.is_share("\\\\.\\pipe\\x")
+    assert not winfiles.is_share("C:\\m")
 
 
 def test_every_look_on_a_share_path_goes_through_the_broker_or_is_refused(
@@ -493,44 +558,6 @@ def test_every_look_on_a_share_path_goes_through_the_broker_or_is_refused(
     shim.exec_hook("open", (3, "rb", 0))
     assert {a["op"] for a in asked} == {"stat", "open"}
     assert shim.counts == {"stat": 6, "open": 1, "unrouted_refused": 7}
-
-
-def test_a_share_outside_the_brokered_folders_is_refused_never_absent(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The AppContainer reaches no share but through the broker: a share path outside its
-    folders (another share, or a brokered one in the long form) is refused by every routed
-    call and by the audit hook, naming the path, never answered as absent; the long forms of
-    a local path and a device are the plain calls."""
-    from maktaba_pipeline.plugins.native import sandbox_refused
-
-    monkeypatch.setattr(sys, "audit", lambda *_: None)
-    shim, asked = _shim(tmp_path, {})
-    for other in (
-        "\\\\nas\\other\\a.jpg",
-        "//nas/other/a.jpg",
-        "\\\\?\\UNC\\nas\\media\\shows\\a.jpg",
-    ):
-        for call in (
-            shim.exists_,
-            shim.isfile_,
-            shim.isdir_,
-            shim.lexists_,
-            shim.stat_,
-            shim.listdir_,
-        ):
-            with pytest.raises(PermissionError) as refused:
-                call(other)
-            assert sandbox_refused(refused.value) and other in str(refused.value)
-        with pytest.raises(PermissionError):
-            shim.open_(other, "rb")
-        with pytest.raises(PermissionError):
-            shim.exec_hook("os.scandir", (other,))
-    assert not asked  # none reached the broker
-    assert winfiles.share_path("\\\\server\\share\\x")
-    for local in ("\\\\.\\pipe\\maktaba", "\\\\?\\C:\\x", "C:\\x", str(tmp_path), 3, None):
-        assert not winfiles.share_path(local)
-    assert shim.exists_(str(tmp_path)) and not shim.isfile_(str(tmp_path / "none"))
 
 
 def test_a_local_folder_the_sandbox_refuses_is_never_absent(

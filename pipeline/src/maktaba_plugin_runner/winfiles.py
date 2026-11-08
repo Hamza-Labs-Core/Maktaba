@@ -12,17 +12,19 @@ file closes: the runner holds no handle it could write with
 (cmd/maktaba-server/internal/appcontainer/broker.go).
 
 :func:`install` routes the calls a stage makes on such a path to the broker: ``open``,
-``os.stat`` (and so ``os.path.exists`` and the like), ``os.listdir``, ``os.replace`` /
-``os.rename`` and ``os.remove`` / ``os.unlink``. Each raises the audit event the plain call
-would, so the runner's guards (subtitle names, the job's scope) see the path as before. A
-refusal is a ``PermissionError``, so a job refused there runs in the worker
-(``sandbox_refused``). The lookups Windows answers without ``os.stat`` (``lexists``,
-``islink``, ``isjunction``, ``os.access``) go through the broker too, and any other file call
-on a brokered path (``os.scandir``, ``os.open``, ``glob``, a ``shutil`` copy...) is refused
-by the audit hook: inside the AppContainer it would fail as if the file were not there. So is
-every call on a share path outside the brokered folders (another share, or the long
-``\\\\?\\UNC\\`` form), naming the path. What
-the broker answered for each job is counted (:func:`take_counts`, the runner's job line).
+``os.stat`` (and so ``os.path.exists``, ``lexists``, ``isfile``, ``isdir`` and the like),
+``os.listdir``, ``os.replace`` / ``os.rename`` and ``os.remove`` / ``os.unlink``; ``os.scandir``
+(and so ``os.walk`` and ``Path.glob``) is refused there. Each raises the audit event the plain
+call would, so the runner's guards (subtitle names, the job's scope) see the path as before. A
+refusal is a ``PermissionError``, never a missing file: a lookup that answered False or empty
+for a refused file would let a stage end done with the wrong result, where the refusal makes
+the job run in the worker (``sandbox_refused``). The lookups Windows answers without
+``os.stat`` (``islink``, ``isjunction``, ``os.access``) go through the broker too; a local path
+the AppContainer has no grant for (a share this machine serves, mapped back to its folder)
+raises from the lookups instead of answering absent; and any other file call on a share path
+(``os.open``, ``glob``, a mkdir, a ``shutil`` copy...) is refused by the audit hook. What the
+broker and the plain lookups answered for each job is counted, with the first paths a lookup
+found missing (:func:`take_counts`, :func:`take_missing`: the runner's job line).
 
 A tool (ffmpeg, ffprobe) reaches no share either, being a child in the same AppContainer and
 Job Object. One given a single file of a brokered folder as its input reads it through a
@@ -58,6 +60,8 @@ __all__ = [
     "Broker",
     "install",
     "install_from_env",
+    "install_unbrokered",
+    "is_share",
     "take_counts",
     "take_missing",
 ]
@@ -78,19 +82,13 @@ HANDLE_TOOLS = frozenset({"ffmpeg", "ffprobe"})
 _STDIN_INPUTS = ("-", "pipe:", "pipe:0", "fd:")
 
 
-def share_path(path: object) -> bool:
-    """Whether ``path`` names a file on a share (``\\\\server\\share\\...``, either slash, or
-    ``\\\\?\\UNC\\...``), never a device or a local path in the long form (``\\\\.\\pipe\\...``,
-    ``\\\\?\\C:\\...``)."""
-    if path is None or isinstance(path, int):
-        return False
-    try:
-        p = os.fsdecode(path).replace("/", "\\")  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return False
+def is_share(path: str) -> bool:
+    """``path`` names a file on a share (``\\\\server\\share\\...``, also as ``\\\\?\\UNC\\...``),
+    not a device or a local path in the long form (``\\\\?\\C:\\...``, ``\\\\.\\pipe\\...``)."""
+    p = path.replace("/", "\\")
     if p[:8].upper() == "\\\\?\\UNC\\":
         return True
-    return p.startswith("\\\\") and p[2:3] not in ("?", ".")
+    return p.startswith("\\\\") and not p.startswith(("\\\\?\\", "\\\\.\\"))
 
 
 def _key(path: str) -> str:
@@ -133,18 +131,20 @@ class _Shim:
         self.rename = os.rename
         self.remove = os.remove
         self.unlink = os.unlink
+        self.scandir = os.scandir
         self.exists = os.path.exists
+        self.lexists = os.path.lexists
         self.isfile = os.path.isfile
         self.isdir = os.path.isdir
-        self.lexists = os.path.lexists
         self.islink = os.path.islink
         self.isjunction = getattr(os.path, "isjunction", None)
         self.access = os.access
-        #: what the broker answered since :func:`take_counts` last read it: ``<op>`` for an
-        #: answer, ``<op>_missing`` for a file not there, ``<op>_refused`` for a refusal,
-        #: ``unrouted_refused`` for a call on a share path the shim does not route
+        #: what the broker and the plain lookups answered since :func:`take_counts`: ``<op>``
+        #: for an answer, ``<op>_missing`` for a file not there, ``<op>_refused`` for a
+        #: refusal, ``plain``/``plain_missing`` for a lookup the plain call served,
+        #: ``unbrokered_refused``/``unrouted_refused`` for a share path refused here
         self.counts: dict[str, int] = {}
-        #: the first paths a look-up found missing since :func:`take_missing` (at most 3)
+        #: the first paths a lookup found missing since :func:`take_missing` (at most 3)
         self.missing: list[str] = []
         self._own = threading.local()
 
@@ -163,25 +163,36 @@ class _Shim:
             return p
         return None
 
-    def _route(self, path: object) -> str | None:
-        """``path`` when the broker answers for it (:meth:`under`), None for a path the plain
-        call serves. A share path outside the brokered folders (another share, or a brokered
-        one spelled otherwise: ``\\\\?\\UNC\\...``) is refused: the AppContainer reaches no
-        share, so the plain call would answer it as absent."""
+    def route(self, path: object) -> str | None:
+        """:meth:`under`, and a refusal for any other share path: an AppContainer reaches
+        no share by itself, so a plain call there could only fail, and the plain lookups
+        (``os.path.exists`` and the like, which answer False on any error) would read that
+        failure as a missing file. A runner with no broker (one that writes its libraries
+        in full) refuses every share path this way, so its job runs in the worker."""
         p = self.under(path)
-        if p is None and share_path(path):
+        if p is not None:
+            return p
+        if path is None or isinstance(path, int):
+            return None
+        try:
+            text = os.fsdecode(path)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+        if is_share(text):
             self.count("unbrokered_refused")
-            name = os.fsdecode(path)  # type: ignore[arg-type]
             raise PermissionError(
                 errno.EACCES,
-                f"{name}: a share path outside this runner's brokered folders"
-                "; the worker runs this job",
-                name,
+                f"{text}: a share this runner is not brokered; the worker runs this job",
             )
-        return p
+        return None
 
     def count(self, key: str) -> None:
         self.counts[key] = self.counts.get(key, 0) + 1
+
+    def note_missing(self, path: Any) -> None:
+        if len(self.missing) < 3:
+            with contextlib.suppress(TypeError, ValueError):
+                self.missing.append(os.fsdecode(path))
 
     def ask(self, req: dict[str, Any]) -> dict[str, Any]:
         op = str(req.get("op"))
@@ -210,10 +221,28 @@ class _Shim:
         finally:
             self._own.on = False
 
+    def _plain_look(
+        self, look: Callable[[os.stat_result], bool], path: Any, *, follow: bool = True
+    ) -> bool:
+        """A lookup the plain call serves, answered as the plain one is but for a refusal,
+        which is raised: inside the AppContainer a folder without a grant answers
+        ``PermissionError`` (a share this machine serves, mapped back to its folder, is one),
+        and ``os.path.isfile`` and the like would answer False, as if the file were not there."""
+        try:
+            st = (self.stat if follow else self.lstat)(path)
+        except PermissionError:
+            raise
+        except (OSError, ValueError):
+            self.count("plain_missing")
+            self.note_missing(path)
+            return False
+        self.count("plain")
+        return look(st)
+
     # -- the calls routed -------------------------------------------------------------
 
     def open_(self, file: Any, mode: str = "r", *args: Any, **kwargs: Any) -> Any:
-        p = self._route(file)
+        p = self.route(file)
         if p is None:
             return self.open(file, mode, *args, **kwargs)
         write = any(c in mode for c in "wax+")
@@ -238,13 +267,13 @@ class _Shim:
         return self.open(fd, mode, *args, **kwargs)
 
     def stat_(self, path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
-        p = self._route(path)
+        p = self.route(path)
         if p is None:
             return self.stat(path, *args, **kwargs)
         return self._stat(p)
 
     def lstat_(self, path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
-        p = self._route(path)
+        p = self.route(path)
         if p is None:
             return self.lstat(path, *args, **kwargs)
         return self._stat(p)
@@ -262,31 +291,8 @@ class _Shim:
     # A missing file is False, as the plain calls answer; a refusal is raised: answered
     # False, a stage would go on as if the file were absent (a thumbnail not found, a job
     # done with the wrong result) instead of running in the worker (sandbox_refused).
-    def _plain_look(
-        self, look: Callable[[os.stat_result], bool], path: Any, *, follow: bool = True
-    ) -> bool:
-        """A look-up the plain call serves, answered as the plain one is but for a refusal,
-        which is raised: inside the AppContainer a folder without a grant answers
-        ``PermissionError`` (a share this machine serves, mapped back to its folder, is one),
-        and ``os.path.isfile`` and the like would answer False, as if the file were not there."""
-        try:
-            st = (self.stat if follow else self.lstat)(path)
-        except PermissionError:
-            raise
-        except (OSError, ValueError):
-            self.count("plain_missing")
-            self.note_missing(path)
-            return False
-        self.count("plain")
-        return look(st)
-
-    def note_missing(self, path: Any) -> None:
-        if len(self.missing) < 3:
-            with contextlib.suppress(TypeError, ValueError):
-                self.missing.append(os.fsdecode(path))
-
     def exists_(self, path: Any) -> bool:
-        if self._route(path) is None:
+        if self.route(path) is None:
             return self._plain_look(lambda _st: True, path)
         try:
             self.stat_(path)
@@ -296,8 +302,19 @@ class _Shim:
             return False
         return True
 
+    def lexists_(self, path: Any) -> bool:
+        if self.route(path) is None:
+            return self._plain_look(lambda _st: True, path, follow=False)
+        try:
+            self.lstat_(path)
+        except PermissionError:
+            raise  # refused, not absent: the job runs in the worker (sandbox_refused)
+        except (OSError, ValueError):
+            return False
+        return True
+
     def isfile_(self, path: Any) -> bool:
-        if self._route(path) is None:
+        if self.route(path) is None:
             return self._plain_look(lambda st: stat_mod.S_ISREG(st.st_mode), path)
         try:
             return stat_mod.S_ISREG(self.stat_(path).st_mode)
@@ -307,7 +324,7 @@ class _Shim:
             return False
 
     def isdir_(self, path: Any) -> bool:
-        if self._route(path) is None:
+        if self.route(path) is None:
             return self._plain_look(lambda st: stat_mod.S_ISDIR(st.st_mode), path)
         try:
             return stat_mod.S_ISDIR(self.stat_(path).st_mode)
@@ -318,25 +335,20 @@ class _Shim:
 
     # these answer without os.stat on Windows too: a share path goes through the broker (a
     # brokered file is never a link: the broker refuses one, which raises here)
-    def lexists_(self, path: Any) -> bool:
-        if self._route(path) is None:
-            return self._plain_look(lambda _st: True, path, follow=False)
-        return self.exists_(path)
-
     def islink_(self, path: Any) -> bool:
-        if self._route(path) is None:
+        if self.route(path) is None:
             return self.islink(path)
         self.exists_(path)
         return False
 
     def isjunction_(self, path: Any) -> bool:
-        if self._route(path) is None:
+        if self.route(path) is None:
             return bool(self.isjunction and self.isjunction(path))
         self.exists_(path)
         return False
 
     def access_(self, path: Any, mode: int, *args: Any, **kwargs: Any) -> bool:
-        if self._route(path) is None:
+        if self.route(path) is None:
             return self.access(path, mode, *args, **kwargs)
         if mode & (os.W_OK | os.X_OK):
             self.count("unrouted_refused")
@@ -346,17 +358,26 @@ class _Shim:
         return self.exists_(path)
 
     def listdir_(self, path: Any = ".") -> list[Any]:
-        p = self._route(path)
+        p = self.route(path)
         if p is None:
             return self.listdir(path)
         self._audit("os.listdir", p)
         names = [str(n) for n in self.ask({"op": "list", "path": p}).get("names") or []]
         return [os.fsencode(n) for n in names] if isinstance(path, bytes) else names
 
+    def scandir_(self, path: Any = ".") -> Any:
+        """Not brokered (its entries would stat behind the broker's back): a brokered folder
+        is refused, so the job runs in the worker instead of seeing an empty or missing one."""
+        p = self.route(path)
+        if p is None:
+            return self.scandir(path)
+        self._audit("os.scandir", p)
+        raise PermissionError(errno.EACCES, f"{p}: a share folder is listed with os.listdir")
+
     def _move(
         self, plain: Callable[..., None], src: Any, dst: Any, *args: Any, **kwargs: Any
     ) -> None:
-        s, d = self._route(src), self._route(dst)
+        s, d = self.route(src), self.route(dst)
         if s is None and d is None:
             plain(src, dst, *args, **kwargs)
             return
@@ -374,7 +395,7 @@ class _Shim:
         self._move(self.rename, src, dst, *args, **kwargs)
 
     def _remove(self, plain: Callable[..., None], path: Any, *args: Any, **kwargs: Any) -> None:
-        p = self._route(path)
+        p = self.route(path)
         if p is None:
             plain(path, *args, **kwargs)
             return
@@ -482,22 +503,27 @@ class _Shim:
     def exec_hook(self, event: str, args: tuple[object, ...]) -> None:
         """The backstop: a share path that reaches a process start (one not routed by
         :meth:`popen_init`: ``os.spawn``, a shell, a string command) is refused, so that job
-        runs in the worker; and so is a file call on a brokered path that the shim does not
-        route (``os.scandir`` and so ``os.walk``/``glob``, ``os.open``, ``os.mkdir``, a
-        ``shutil`` copy...): inside the AppContainer it would fail as if the file were not
-        there, and a stage would go on with the wrong answer."""
+        runs in the worker; and so is a file call on a share path that the shim does not
+        route (``os.open``, ``glob``, ``os.mkdir``, a ``shutil`` copy...): inside the
+        AppContainer it would fail as if the file were not there, and a stage would go on
+        with the wrong answer."""
         if event in _FILE_EVENTS:
             if getattr(self._own, "on", False):
                 return
             for a in args[: _FILE_EVENTS[event]]:
-                if isinstance(a, (str, bytes, os.PathLike)) and (
-                    self.under(a) is not None or share_path(a)
-                ):
+                if not isinstance(a, (str, bytes, os.PathLike)):
+                    continue
+                try:
+                    text = os.fsdecode(a)
+                except (TypeError, ValueError):
+                    continue
+                if self.under(text) is not None or is_share(text):
                     self.count("unrouted_refused")
                     raise PermissionError(
                         errno.EACCES,
-                        f"{event} on a share path is not brokered; the worker runs this job",
-                        os.fsdecode(a),
+                        f"{text}: {event} on a share path is not brokered"
+                        "; the worker runs this job",
+                        text,
                     )
             return
         if event != "subprocess.Popen":
@@ -513,7 +539,7 @@ class _Shim:
 
 
 #: the audit events of file calls (and how many of their first arguments are paths) that
-#: the shim does not route itself: on a brokered path each is refused (:meth:`_Shim.exec_hook`)
+#: the shim does not route itself: on a share path each is refused (:meth:`_Shim.exec_hook`)
 _FILE_EVENTS: dict[str, int] = {
     "open": 1,  # os.open, io.open_code, and any open the shim did not route
     "os.scandir": 1,
@@ -592,14 +618,15 @@ def install(
     os.stat = shim.stat_
     os.lstat = shim.lstat_
     os.listdir = shim.listdir_
+    os.scandir = shim.scandir_
     os.replace = shim.replace_
     os.rename = shim.rename_
     os.remove = shim.remove_
     os.unlink = shim.unlink_
     os.path.exists = shim.exists_
+    os.path.lexists = shim.lexists_
     os.path.isfile = shim.isfile_
     os.path.isdir = shim.isdir_  # type: ignore[assignment]
-    os.path.lexists = shim.lexists_
     os.path.islink = shim.islink_
     if shim.isjunction is not None:
         os.path.isjunction = shim.isjunction_
@@ -608,9 +635,22 @@ def install(
     sys.addaudithook(shim.exec_hook)
 
 
+def _no_broker(req: dict[str, Any]) -> dict[str, Any]:
+    return {"error": "this runner has no broker", "errno": errno.EACCES}
+
+
+def install_unbrokered(*, fdopen: Callable[[int, int], int] | None = None) -> None:
+    """:func:`install` with no broker and no folders: every share path is refused
+    (:meth:`_Shim.route`), so a runner whose launcher brokers nothing (it writes its
+    libraries in full) hands a share job to the worker instead of reading the share as
+    empty or a file there as missing. A no-op once a broker is installed."""
+    install(_no_broker, [], fdopen=fdopen)
+
+
 def take_counts() -> dict[str, int]:
-    """What the broker answered since the last call (the runner's job line), emptied; {}
-    when no broker is installed. Jobs that run at once in one runner share the counts."""
+    """What the broker and the plain lookups answered since the last call (the runner's job
+    line), emptied; {} when no shim is installed. Jobs that run at once in one runner share
+    the counts."""
     if not _installed:
         return {}
     shim = _installed[0]
@@ -619,7 +659,7 @@ def take_counts() -> dict[str, int]:
 
 
 def take_missing() -> list[str]:
-    """The first paths a look-up found missing since the last call (at most 3), emptied:
+    """The first paths a lookup found missing since the last call (at most 3), emptied:
     the runner's job line names them, so a stage that found nothing says where it looked."""
     if not _installed:
         return []

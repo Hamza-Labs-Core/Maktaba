@@ -15,9 +15,6 @@ dedup_apply
 dedup_scan
 detect
 display_title
-dizquetv_audit
-dizquetv_channels
-dizquetv_show
 enrich
 exact_dates
 extract
@@ -27,10 +24,6 @@ fp_gate
 index
 link
 plan_channels
-plex_collection
-plex_collections_import
-plex_groups
-plex_index
 plex_livetv
 probe
 promo_links

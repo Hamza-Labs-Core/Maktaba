@@ -2,8 +2,7 @@
 """``write_channels``: write the planned lineup to Maktaba's own Live TV (plan 06-11 section 3.2).
 
 Core only: this creates, updates and removes rows of ``channels`` (Epic 27) for the latest
-``channel_plans`` row and marks their schedules stale so the scheduler regenerates. Writing the
-lineup to an external system (dizqueTV) is an extension stage of its own.
+``channel_plans`` row and marks their schedules stale so the scheduler regenerates.
 
 Safety rules carried over from the prototype's exporters:
 
@@ -16,14 +15,12 @@ Safety rules carried over from the prototype's exporters:
   and reported (a ``conflict``);
 * after writing, the rows are read back and verified (``readback_mismatch``).
 
-What the dizqueTV export gives a channel, this gives it too, so Maktaba's own scheduler airs
-the same: the plan's filler pools are written to ``filler_pools`` / ``filler_items`` (the
-same clips as the dizqueTV filler lists, ``dz_filler_max_items`` of each; a pool is the
-tool's by its ``external_key``, and only those are ever changed or removed), each channel's
-filler lists with their weights and cooldowns (``mode_config.filler``), the grid's filler
-rules (``slot_max_filler_minutes``, ``filler_between_episodes``) and its look: the logo
-(``logo_path``, the file the dizqueTV export uploads) and ``mode_config.look`` (corner
-watermark, loading picture, loudness).
+The plan's filler pools are written to ``filler_pools`` / ``filler_items``
+(``dz_filler_max_items`` clips of each; a pool is the tool's by its ``external_key``, and
+only those are ever changed or removed), each channel's filler lists with their weights and
+cooldowns (``mode_config.filler``), the grid's filler rules (``slot_max_filler_minutes``,
+``filler_between_episodes``) and its look: the logo (``logo_path``) and
+``mode_config.look`` (corner watermark, loading picture, loudness).
 
 ``compute_changes`` is a pure diff of planned versus actual; ``apply_changes`` performs it.
 """
@@ -193,7 +190,7 @@ class PoolPlan:
 
 
 def _filler_spec(ch: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
-    """The channel's filler lists as the dizqueTV export gives them (weight, cooldown)
+    """The channel's filler lists (weight, cooldown)
     and the repeat cooldown of a clip (``dz_filler_cooldown_ms``)."""
     pools = list(ch.get("filler_pools") or [])
     lists = [
@@ -237,7 +234,7 @@ def _desired(plan: dict[str, Any], tv: MaktabaTvConfig | None = None) -> dict[st
         mode_config = {
             **m["mode_config"],
             "filler": _filler_spec(ch, cfg),
-            # the grid's filler rules, as the dizqueTV time slots have them
+            # the grid's filler rules
             "slot_max_filler_minutes": int(cfg.get("slot_max_filler_minutes", 20)),
             "filler_between_episodes": bool(cfg.get("filler_between_episodes", True)),
             "look": ch_look,

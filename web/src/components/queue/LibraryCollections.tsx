@@ -1,6 +1,6 @@
 // "Topics, clips and promos" of one library (the stand-alone item page's second
 // table group): the topic collections, the clip and stand-alone groups and the
-// promos linked to their shows, each with the Plex collection written for it.
+// promos linked to their shows.
 // GET /api/items/library/{id}/collections.
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -34,8 +34,6 @@ export function LibraryCollections({ libraryId }: { libraryId: string }) {
   }, [libraryId]);
 
   if (!data || data.topics.length + data.clip_groups.length + data.promos.length === 0) return null;
-  const plex = (c: string | null) =>
-    c ? bidiIsolate(c) : <span className="mkt-q-muted">{t("queue.coll.notWritten")}</span>;
 
   return (
     <section className="mkt-q-panel" aria-labelledby="mkt-q-coll-h">
@@ -50,7 +48,6 @@ export function LibraryCollections({ libraryId }: { libraryId: string }) {
               <tr>
                 <th scope="col">{t("queue.coll.name")}</th>
                 <th scope="col">{t("queue.coll.items")}</th>
-                <th scope="col">{t("queue.coll.plex")}</th>
               </tr>
             </thead>
             <tbody>
@@ -58,7 +55,6 @@ export function LibraryCollections({ libraryId }: { libraryId: string }) {
                 <tr key={x.id}>
                   <td dir="auto">{bidiIsolate(x.name)}</td>
                   <td>{n(x.items)}</td>
-                  <td dir="auto">{plex(x.collection)}</td>
                 </tr>
               ))}
             </tbody>
@@ -74,7 +70,6 @@ export function LibraryCollections({ libraryId }: { libraryId: string }) {
                 <th scope="col">{t("queue.coll.name")}</th>
                 <th scope="col">{t("queue.coll.kind")}</th>
                 <th scope="col">{t("queue.coll.items")}</th>
-                <th scope="col">{t("queue.coll.plex")}</th>
               </tr>
             </thead>
             <tbody>
@@ -86,7 +81,6 @@ export function LibraryCollections({ libraryId }: { libraryId: string }) {
                     <span className="mkt-q-muted">· {t(`queue.coll.basis.${x.basis}`)}</span>
                   </td>
                   <td>{n(x.items)}</td>
-                  <td dir="auto">{plex(x.collection)}</td>
                 </tr>
               ))}
             </tbody>

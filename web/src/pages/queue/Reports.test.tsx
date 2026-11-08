@@ -24,9 +24,9 @@ const reports: Report[] = [
     updated_at: "2026-05-18T11:00:00Z",
   },
   {
-    name: "channel-audit.html",
-    kind: "audit",
-    title: "Channel audit",
+    name: "notes.html",
+    kind: "other",
+    title: "notes.html",
     library_id: null,
     size: 10,
     updated_at: "2026-05-18T11:00:00Z",
@@ -83,8 +83,8 @@ describe("Reports", () => {
     expect(headings).toEqual([
       "Channel plan",
       "Plan preview",
-      "Channel audit",
       "Library review pages (1)",
+      "Other reports",
     ]);
     expect(within(nav).getByRole("button", { name: /قناة الاختبار/ })).toBeInTheDocument();
     expect(screen.getByText("Pick a report to read it here.")).toBeInTheDocument();
@@ -92,15 +92,15 @@ describe("Reports", () => {
 
   it("opens a report in a frame that runs no script and has no same-site powers beyond cookies", async () => {
     setup();
-    await userEvent.click(await screen.findByRole("button", { name: /Channel audit/ }));
-    const frame = await screen.findByTitle("Channel audit");
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.html/ }));
+    const frame = await screen.findByTitle("notes.html");
     expect(frame).toHaveAttribute("sandbox", "allow-same-origin");
     expect(frame.getAttribute("sandbox")).not.toMatch(/allow-scripts/);
-    expect(frame).toHaveAttribute("src", "/api/reports/channel-audit.html");
+    expect(frame).toHaveAttribute("src", "/api/reports/notes.html");
     expect(frame).toHaveAttribute("referrerpolicy", "no-referrer");
     expect(screen.getByRole("link", { name: "Open in a new tab" })).toHaveAttribute(
       "href",
-      "/api/reports/channel-audit.html"
+      "/api/reports/notes.html"
     );
   });
 
@@ -120,7 +120,7 @@ describe("Reports", () => {
 
   it("filters the list", async () => {
     setup();
-    await userEvent.type(await screen.findByRole("searchbox", { name: "Filter reports" }), "audit");
+    await userEvent.type(await screen.findByRole("searchbox", { name: "Filter reports" }), "notes");
     const nav = screen.getByRole("navigation", { name: "Report pages" });
     expect(within(nav).getAllByRole("button")).toHaveLength(1);
   });

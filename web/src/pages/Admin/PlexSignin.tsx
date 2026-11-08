@@ -1,5 +1,5 @@
-// "Sign in with Plex" on the Plex extension card: the plex.tv PIN flow
-// (as dizqueTV does it), so nobody has to find or paste a Plex token.
+// "Sign in with Plex" on the Plex extension card: the plex.tv PIN flow,
+// so nobody has to find or paste a Plex token.
 //   POST /api/extensions/plex/signin           -> { id, code, auth_url }
 //   GET  /api/extensions/plex/signin/{id}      -> { state, servers? } (polled every 2 s)
 //   POST /api/extensions/plex/signin/{id}/use  { name } -> Extension

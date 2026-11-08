@@ -175,18 +175,6 @@ def test_model_stages_are_home_only_unless_the_settings_name_a_shared_server() -
     assert _run(lifted_placements(shared, CORE)) == {"check_tags", "check_clips", "display_title"}
 
 
-def test_the_dizquetv_channel_stages_are_home_only() -> None:
-    from maktaba_pipeline.engine.graph import GRAPH as CORE
-    from maktaba_pipeline.engine.graph import GraphBuilder
-    from maktaba_pipeline.extensions.dizquetv import DizqueTVExtension
-
-    gb = GraphBuilder(CORE)
-    DizqueTVExtension().register(gb)
-    by = {s.name: s for s in gb.build()}
-    assert by["dizquetv_channels"].placement == "home"
-    assert by["dizquetv_audit"].placement == "home"
-
-
 # --- the stage selection: transcription on the GPU node, and why not -----------------------
 
 

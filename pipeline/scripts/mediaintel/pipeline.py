@@ -21,8 +21,7 @@ from . import db, detect, link, report, scan_local, scan_plex
 #: the steps ``run --from-step`` can start at, in order
 STEPS = (
     "scan", "plex", "youtube", "link", "detect", "signatures", "exact", "tag", "check-tags",
-    "check-clips", "books", "group", "export-plex",
-    "dizquetv-shows", "report", "scan-visual", "plan-channels", "export-dizquetv", "audit-channels",
+    "check-clips", "books", "group", "export-plex", "report", "scan-visual", "plan-channels",
 )  # fmt: skip
 
 
@@ -44,29 +43,22 @@ def run(
     report_dir: Path = Path("reports"),
     workers: int = 8,
     plex: bool = False,
-    tv: bool = False,
-    tv_url: str = "http://localhost:8002",
-    backup_dir: Path = Path("backups"),
     from_step: str = "scan",
     skip: tuple[str, ...] = (),
-    clear_channels: bool = False,
 ) -> None:
     """``skip``: steps to leave out (e.g. ``scan-visual`` while the NAS is slow).
     ``from_step``: start at that step (see :data:`STEPS`); earlier steps are left as the
     cache holds them, e.g. to finish a stopped run without listing and detecting again.
     ``plex``: write the season collections (``export-plex --apply --replace-existing``;
-    older collections are listed as superseded, never deleted). ``tv``: update dizqueTV
-    custom shows (``dizquetv-shows --apply``). Both log every change with its diff.
-    ``clear_channels``: the channel export also deletes every dizqueTV channel that is
-    not in the plan (a fresh lineup), not only the planner's own."""
+    older collections are listed as superseded, never deleted); every change is logged
+    with its diff."""
     t0 = time.monotonic()
     pid_file = Path(conn.execute("PRAGMA database_list").fetchone()[2] + ".run.pid")
     pid_file.write_text(str(os.getpid()), encoding="utf-8")  # lets `serve` show / stop it
     try:
         _run(conn, roots, server=server, path_map=path_map, youtube=youtube, exact=exact,
              lang=lang, delay_s=delay_s, report_dir=report_dir, workers=workers, plex=plex,
-             tv=tv, tv_url=tv_url, backup_dir=backup_dir, t0=t0, from_step=from_step, skip=skip,
-             clear_channels=clear_channels)  # fmt: skip
+             t0=t0, from_step=from_step, skip=skip)  # fmt: skip
     finally:
         pid_file.unlink(missing_ok=True)
 
@@ -84,13 +76,9 @@ def _run(
     report_dir: Path,
     workers: int,
     plex: bool,
-    tv: bool,
-    tv_url: str,
-    backup_dir: Path,
     t0: float,
     from_step: str = "scan",
     skip: tuple[str, ...] = (),
-    clear_channels: bool = False,
 ) -> None:
     if from_step not in STEPS:
         raise ValueError(f"--from-step must be one of {', '.join(STEPS)}")
@@ -233,16 +221,6 @@ def _run(
             )  # fmt: skip
         print("Plex apps keep their old library view: restart the Plex app (or refresh "
               "the library) to see the new collections", flush=True)  # fmt: skip
-    if tv and server is not None and want("dizquetv-shows"):
-        from . import dizquetv_shows
-
-        _step(f"dizquetv-shows ({len(libraries)} libraries)")
-        for lib in libraries:
-            print(f"=== {lib}", flush=True)
-            dizquetv_shows.run(
-                conn, server, url=tv_url, apply=True, library_filter=lib,
-                backup_dir=backup_dir / "dizquetv-shows",
-            )  # fmt: skip
     # review pages read thumbnails from the share (cached once): they run alongside the
     # remaining steps on their own connection, never holding them up
     side: threading.Thread | None = None
@@ -263,7 +241,7 @@ def _run(
 
         side = threading.Thread(target=pages, name="report", daemon=True)
         side.start()
-    # production style feeds only channel planning, so Plex and dizqueTV don't wait for it
+    # production style feeds only channel planning, so Plex doesn't wait for it
     if want("scan-visual"):
         try:
             sv = importlib.import_module(f"{__package__}.scan_visual")
@@ -278,28 +256,6 @@ def _run(
         from . import plan_channels
 
         plan_channels.run(conn, report_dir)
-    if tv and server is not None and want("export-dizquetv"):
-        from . import export_dizquetv
-
-        _step("export-dizquetv (channels)")
-        # the planner's own channels and lists the new plan no longer has go (--prune)
-        export_dizquetv.run(
-            report_dir / "channel-plan.json",
-            url=tv_url,
-            apply=True,
-            server=server,
-            conn=conn,
-            prune=True,
-            clear_channels=clear_channels,
-        )
-    if tv and want("audit-channels"):
-        from . import audit_channels
-
-        _step("audit-channels (is each channel's content about the channel?)")
-        try:
-            audit_channels.run(conn, tv_url, report_dir)
-        except OSError as e:  # dizqueTV not running: the audit is a report, never a failure
-            print(f"  -  skipped: dizqueTV not reachable at {tv_url} ({e})")
     if side is not None and side.is_alive():
         print("waiting for the review pages to finish", flush=True)
         side.join()

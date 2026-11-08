@@ -216,7 +216,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 - **Priority:** P2
 - **Category:** Validation
 - **Covered by existing test?** Yes (`RulesSection.cases.test.tsx`)
-- **Preconditions / data:** `withTv()` (fields `news_start` time-as-text, `dz_art_url`); add a `tv_strip` section field `{ name: "bg_color", kind: "str", default: "#0b5d3b" }`; a `select` field whose saved value is not in `choices` (`quran_rotation` value `"random"`).
+- **Preconditions / data:** `withTv()` (field `news_start` time-as-text; a `logo_url` "Logos web address" field); add a `tv_strip` section field `{ name: "bg_color", kind: "str", default: "#0b5d3b" }`; a `select` field whose saved value is not in `choices` (`quran_rotation` value `"random"`).
 - **Steps:**
   1. Type `25:00` into "News from" (text fallback when value is `24:00`; otherwise time input).
   2. Type `aljazeera` into "Logos web address"; then clear it.
@@ -291,7 +291,7 @@ Use the existing harness: `setup(data)` / `renderAt(<RulesSection />, "/settings
 - **Covered by existing test?** Yes — "filters fields by name, label, help or group" and the fold test
 - **Preconditions / data:** fixture.
 - **Steps:**
-  1. Type `khutbah`, `dz_pad`, `zzz-nothing` in "Find a rule". Also type ` KHUTBAH` (case and spaces).
+  1. Type `khutbah`, `dz_filler`, `zzz-nothing` in "Find a rule". Also type ` KHUTBAH` (case and spaces).
 - **Expected:** Only matching rows; "No rule matches “zzz-nothing”."; matching is case-insensitive and trimmed. While searching, fold buttons are disabled and every group is open; "Expand all/Collapse all" is hidden. The query is kept when switching section tabs (it is shared state; note).
 
 ### SRL-23 — Fold, Expand all / Collapse all

@@ -285,7 +285,6 @@ internal object WebWords {
         "enrich" to R.string.w_components_enrich_title,
         "youtube" to R.string.w_components_youtube_title,
         "ext.plex" to R.string.w_components_ext_plex_title,
-        "ext.dizquetv" to R.string.w_components_ext_dizquetv_title,
         "livetv" to R.string.w_components_livetv_title,
     )
 

@@ -356,17 +356,11 @@ The cause labels come from the server and are in English for now. The Arabic pag
 - **Does Maktaba fix it itself?** It retries a few times, but with the same token every try fails the same way.
 - **What you can do:** press **Open settings**, then **Sign in with Plex** again (or paste a new token) and **Test connection**. Then retry the failed items from the queue's page.
 
-### dizqueTV is unreachable {#dizquetv-unreachable}
-
-- **What it means:** Maktaba could not connect to your dizqueTV server.
-- **Does Maktaba fix it itself?** Yes, it retries a few times with a pause; meanwhile the queue shows **dizqueTV not answering, retrying**.
-- **What you can do:** check that dizqueTV is running. Press **Open settings**, check its address and press **Test connection**. Then press **Retry**.
-
 ### Write did not read back correctly {#readback-mismatch}
 
-- **What it means:** Maktaba wrote a change to Plex or dizqueTV and then read it back to check it, and it was not what was written (for example a channel still there after it was removed).
+- **What it means:** Maktaba wrote a change to another system (for example Plex) and then read it back to check it, and it was not what was written (for example a channel still there after it was removed).
 - **Does Maktaba fix it itself?** Yes, it retries a few times.
-- **What you can do:** check the item in Plex or dizqueTV. Someone or something may be changing it at the same time. Then press **Retry**.
+- **What you can do:** check the item in that system. Someone or something may be changing it at the same time. Then press **Retry**.
 
 ### No worker handles this stage {#no-handler}
 

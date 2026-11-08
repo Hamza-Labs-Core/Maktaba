@@ -622,8 +622,9 @@ fn slow(iterations: u64, filler: usize) -> Vec<u8> {
 }
 
 /// 54.02 §5: compiling a package the host had not loaded is not the job's time. The guest's
-/// work is timed first (a package without filler, already loaded); the job's limit is twice
-/// that. The package under test has filler compiled with it but never instantiated, so its
+/// work is timed first (a package without filler, already loaded); the job's limit is four
+/// times that (a shared CI runner's noise once took a run past twice), still far under the
+/// compile, which is checked. The package under test has filler compiled with it but never instantiated, so its
 /// compile takes longer than the whole limit: the stage still runs, and the compile is
 /// reported on its own.
 #[test]
@@ -635,7 +636,7 @@ fn a_compile_is_not_the_jobs_time() {
     f.host.preload(ID, VERSION, &warm).unwrap();
     let solo = f.run(&warm, "x", &[], Limits { timeout_ms: 60_000, fuel, ..Default::default() });
     assert_eq!(solo.outcome, Outcome::Ok, "{solo:?}");
-    let timeout_ms = (solo.wall_ms * 2).max(300);
+    let timeout_ms = (solo.wall_ms * 4).max(300);
 
     let g = Fixture::new(false);
     let p = g.package("slowcompile", &slow(iterations, 80_000), &[]);

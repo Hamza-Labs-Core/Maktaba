@@ -19,7 +19,6 @@ internal val causeWords: Map<String, Int> = mapOf(
     "youtube_unavailable" to R.string.cause_youtube_unavailable,
     "plex_unreachable" to R.string.cause_plex_unreachable,
     "plex_auth" to R.string.cause_plex_auth,
-    "dizquetv_unreachable" to R.string.cause_dizquetv_unreachable,
     "readback_mismatch" to R.string.cause_readback_mismatch,
     "no_handler" to R.string.cause_no_handler,
     "graph_violation" to R.string.cause_graph_violation,

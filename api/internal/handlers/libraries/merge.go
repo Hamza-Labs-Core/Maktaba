@@ -162,6 +162,7 @@ var mergeMoves = []struct{ table, column, query string }{
 	{"segment_embeddings", "library_id", `UPDATE segment_embeddings SET library_id = $1 WHERE library_id = $2`},
 	{"video_repairs", "library_id", `UPDATE video_repairs SET library_id = $1 WHERE library_id = $2`},
 	{"promo_links", "library_id", `UPDATE promo_links SET library_id = $1 WHERE library_id = $2`},
+	// the removed Plex sync's rows (slot 0215 keeps them until the cleanup migration)
 	{"plex_items", "library_id", `UPDATE plex_items SET library_id = $1 WHERE library_id = $2`},
 	{"job_events", "library_id", `UPDATE job_events SET library_id = $1 WHERE library_id = $2`},
 	// what groups those videos: the series (and their seasons, which would
