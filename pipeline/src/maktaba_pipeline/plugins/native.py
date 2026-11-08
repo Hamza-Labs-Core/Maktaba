@@ -314,7 +314,7 @@ SHARE_RUNNERS_ENV = "MAKTABA_WINDOWS_SHARE_RUNNERS"
 #: while a library is on a share: those that write the libraries in full (convert, dedup,
 #: repair, youtube; their broker serves reads only), and transcribe and second_listen, which
 #: run in the per-slot ml runners no end to end has run on a share yet.
-SHARE_RUNNER_STAGES = frozenset({"thumb_small", "chapter_thumbs", "subtitle_gen"})
+SHARE_RUNNER_STAGES: frozenset[str] = frozenset()  # NEGATIVE CONTROL, reverted next
 
 
 def share_guarded(stage: str) -> bool:
