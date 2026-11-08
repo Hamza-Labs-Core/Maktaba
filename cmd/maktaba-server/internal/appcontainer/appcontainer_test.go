@@ -40,13 +40,14 @@ func TestLaunchArguments(t *testing.T) {
 	}
 }
 
-// The plugin host's launcher grants each folder as the filesystem names it (links resolved,
-// on Windows short names expanded): Grant applies only to the object its path names, so a
-// folder handed over by another spelling is canonicalized first, never refused.
+// The plugin host's launcher grants each folder as the filesystem names it (a link above
+// it resolved, on Windows short names expanded): Grant applies only to the object its path
+// names, so a folder handed over by another spelling is canonicalized first, not refused;
+// a folder that is itself a link is refused.
 func TestThePluginHostsFoldersAreGrantedAsTheFilesystemNamesThem(t *testing.T) {
 	dir := mustCanonical(t, t.TempDir())
 	target := filepath.Join(dir, "plugins")
-	if err := os.MkdirAll(target, 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(target, "sub"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	link := filepath.Join(dir, "link")
@@ -62,11 +63,18 @@ func TestThePluginHostsFoldersAreGrantedAsTheFilesystemNamesThem(t *testing.T) {
 	}
 	runFn = func(string, string, []string, Options) (int, error) { return 0, nil }
 	run := filepath.Join(link, "run")
-	if code := Launch([]string{"plugins-sandbox-run", "-read", link, "-write", run, "--", "x"}, io.Discard); code != 0 {
+	if code := Launch([]string{"plugins-sandbox-run", "-read", filepath.Join(link, "sub"), "-write", run, "--", "x"}, io.Discard); code != 0 {
 		t.Fatalf("exit %d", code)
 	}
-	want := []GrantEntry{{Path: target}, {Path: filepath.Join(target, "run"), Write: true}}
+	want := []GrantEntry{{Path: filepath.Join(target, "sub")}, {Path: filepath.Join(target, "run"), Write: true}}
 	if !reflect.DeepEqual(granted, want) {
 		t.Fatalf("granted %+v, want %+v", granted, want)
+	}
+	// a folder that is itself a link is refused, its target never granted
+	granted = nil
+	var out strings.Builder
+	if code := Launch([]string{"plugins-sandbox-run", "-read", link, "--", "x"}, &out); code != 2 || len(granted) != 0 ||
+		!strings.Contains(out.String(), "is a link") {
+		t.Fatalf("a link: exit %d, granted %+v: %s", code, granted, out.String())
 	}
 }

@@ -41,9 +41,13 @@ func Launch(args []string, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "plugins-sandbox-run: a program to run is required after --")
 		return 2
 	}
-	// granted as the filesystem names them (short names expanded, links resolved): a
-	// grant applies only to the object its path names (Grant checks it by handle)
+	// granted as the filesystem names them (short names expanded, links above resolved): a
+	// grant applies only to the object its path names (Grant checks it by handle). A folder
+	// that is itself a link or junction is refused, never its target granted
 	grant := func(d string, write bool) error {
+		if info, err := os.Lstat(d); err == nil && info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			return fmt.Errorf("%s is a link: never granted", d)
+		}
 		c, err := canonical(d)
 		if err != nil {
 			return err
