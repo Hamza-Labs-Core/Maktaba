@@ -698,12 +698,15 @@ GRAPH: tuple[StageDef, ...] = (
     # and their paths into videos.poster_path / sprite_path, which the home serves:
     # the per-machine caches stay on the home (Epic 31 R3.4, R4.2; moving them to the
     # share is out of scope), so a node never claims it (as thumb_small after it).
-    _legacy(
-        "thumbnail",
-        "Poster and sprites",
-        ("video",),
-        "nas_read",
-        5,
+    # Epic 54 story 54.36 §2: on the engine, its output the poster's and the sprite's paths
+    StageDef(
+        name="thumbnail",
+        label="Poster and sprites",
+        subject_kinds=("video",),
+        pool="nas_read",
+        lane="media",
+        lane_order=5,
+        version=1,
         edges=(Edge("thumb_small", "same"),),
         placement="home",
     ),
