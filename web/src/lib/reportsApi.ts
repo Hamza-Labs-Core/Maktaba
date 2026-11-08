@@ -1,9 +1,9 @@
 // Typed client for the reports the pipeline writes (review pages, channel plan,
-// its preview, channel audit) and the plan preview. The pages themselves are
+// its preview) and the plan preview. The pages themselves are
 // loaded by an iframe from `reportsApi.pageUrl(name)`.
 import { api, apiUrl } from "./api";
 
-export type ReportKind = "review" | "plan" | "preview" | "audit" | "other";
+export type ReportKind = "review" | "plan" | "preview" | "other";
 
 export interface Report {
   name: string;

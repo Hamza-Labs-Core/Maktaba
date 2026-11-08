@@ -17,7 +17,7 @@ runner    = "light"
 component = "livetv.slots"
 db.read   = ["app_settings", "channel_art_overrides", "channel_plans", "collection_items", "filler_items", "filler_pools", "job_stages", "series", "series_episodes", "tv_slots", "videos"]
 db.write  = ["channel_programs", "channel_schedule_state", "channels", "external_links", "tv_change_events", "tv_changes", "tv_release_channels", "tv_releases", "tv_routing", "tv_sched_gen_seq"]
-settings  = ["tv", "tv_output", "tv_staging", "dizquetv", "display_titles"]
+settings  = ["tv", "tv_output", "tv_staging", "display_titles"]
 files.read  = ["data.channels"]
 files.write = []
 

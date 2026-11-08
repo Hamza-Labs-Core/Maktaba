@@ -14,13 +14,23 @@ build fails when the two differ.
 
 ### Changed
 
-- **The Overview names each machine (Epic 53 story 53.12).** On the home's dashboards, the
-  machine picker, the Offline line and the chart legends show each machine by its name, as the
-  Machines page shows it (the home by its own name), on the web page and both Remotes; the
-  picker keeps the node id beside the name. The API adds `names` (`{<node id>: <name>}`, only
-  the ids the answer mentions) from the cluster: a name is bounded to 64 characters with control
-  and bidirectional override characters dropped, and a machine with no name, or every machine
-  when the cluster can't be read, keeps its node id. The node id stays the key (`machine=`).
+- **Maktaba no longer syncs your library into Plex, and the dizqueTV integration is removed.**
+  Maktaba now replaces Plex for watching the library. These are gone:
+  - the Plex index, the season collections, the clip-group collections and the import of
+    Plex collections;
+  - the Plex path map setting;
+  - the whole dizqueTV extension: its shows, its channels, the channel audit and its settings.
+
+  Plex Live TV stays: Maktaba can still add its tuner and guide to Plex, refresh them and
+  restore its channel list. A dizqueTV tuner already in Plex is now shown as another
+  program's. The update deletes no data: the removed steps' jobs, the stored Plex item list,
+  the channel audits, the links to Plex and dizqueTV items and the old dizqueTV settings stay
+  in the database, and Maktaba no longer shows them. A rollback goes back to the release
+  before with all of it. Live broadcasts set only in the old dizqueTV settings keep airing on
+  Maktaba TV, and the channel editor shows them with a note; saving there gives Maktaba TV its
+  own copy.
+
+
 - **An offline machine comes first on the Overview (Epic 53 story 53.12).** On the home's
   dashboards, a joined machine that is offline now ranks first among the machines most in need
   of attention, and is named as offline: a line on the web page and both Remotes ("Offline:
@@ -2329,6 +2339,14 @@ build fails when the two differ.
   Android; the app keeps no copy. Both use the recovery pass and stop at the first refusal, as
   the rest of the screen does.
 
+- **The Overview names each machine (Epic 53 story 53.12).** On the home's dashboards, the
+  machine picker, the Offline line and the chart legends show each machine by its name, as the
+  Machines page shows it (the home by its own name), on the web page and both Remotes; the
+  picker keeps the node id beside the name. The API adds `names` (`{<node id>: <name>}`, only
+  the ids the answer mentions) from the cluster: a name is bounded to 64 characters with control
+  and bidirectional override characters dropped, and a machine with no name, or every machine
+  when the cluster can't be read, keeps its node id. The node id stays the key (`machine=`).
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
@@ -2833,6 +2851,15 @@ build fails when the two differ.
   stage that runs ffmpeg or ffprobe there failed as if the tool were broken. Until the runners start
   tools through anonymous pipes, every first-party stage on Windows runs in the worker, as before
   v0.3.102, and no runner is started for it.
+
+- **A runner on Windows starts its tools again (story 54.23).** Inside a runner's
+  AppContainer, a stage that starts a tool and captures its output (thumbnails, probes,
+  audio and the transcription input) failed: asyncio's pipes on Windows are named pipes,
+  which an AppContainer may not create. The runner now starts its tools through anonymous
+  pipes, with the same results, and a timeout or a cancel ends the tool and what it started.
+  So first-party stages on Windows run in their runners again instead of all in the queue
+  worker. A tool the sandbox refuses to start is now a refusal, so that job runs in the worker,
+  rather than failing as the tool's own exit.
 
 ## [0.2.0] - 2026-10-19
 

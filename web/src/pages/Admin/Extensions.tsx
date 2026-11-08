@@ -1,4 +1,4 @@
-// /admin/extensions — Plex and dizqueTV (and future integrations) are
+// /admin/extensions — Plex Live TV, Cloudflare Stream (and future integrations) are
 // extensions, not core. One card per extension: enabled toggle,
 // configured status, a settings form generated from the extension's
 // settings schema (secrets are write-only and shown masked), Save and
@@ -286,7 +286,7 @@ function ExtensionsInner() {
   );
   const failed = err != null;
 
-  // Deep links like #dizquetv: the cards only exist after the load, so
+  // Deep links like #plex: the cards only exist after the load, so
   // jump to the card once it is there.
   useEffect(() => {
     if (!list || !hash || scrolled.current) return;

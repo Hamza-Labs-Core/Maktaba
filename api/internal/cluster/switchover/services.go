@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// A service of the home's network the pipeline talks to (Plex, dizqueTV): its extension,
+// A service of the home's network the pipeline talks to (Plex): its extension,
 // where its address may come from on this machine, how it is asked whether it answers.
 type localService struct {
 	ext    string // the extensions row
@@ -26,8 +26,7 @@ type localService struct {
 }
 
 var (
-	plexService     = localService{ext: "plex", urlEnv: "MAKTABA_PLEX_URL", probe: "/identity", tokenSecret: "ext.plex.token", tokenEnv: "MAKTABA_PLEX_TOKEN"}
-	dizquetvService = localService{ext: "dizquetv", urlEnv: "MAKTABA_DIZQUETV_URL", probe: "/api/channels"}
+	plexService = localService{ext: "plex", urlEnv: "MAKTABA_PLEX_URL", probe: "/identity", tokenSecret: "ext.plex.token", tokenEnv: "MAKTABA_PLEX_TOKEN"}
 )
 
 // serviceClient asks the services (their own network: never through a proxy).

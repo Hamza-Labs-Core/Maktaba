@@ -489,7 +489,6 @@ export const CHECKLIST_ACTION: Record<string, string> = {
   llm: "/settings/rules?section=tagcheck&q=url",
   hugging_face: "/settings/models",
   plex: "/admin/extensions",
-  dizquetv: "/admin/extensions",
   web_search: "/admin/extensions",
   secrets: "/admin/extensions",
   plex_live_tv: "/admin/live-tv",

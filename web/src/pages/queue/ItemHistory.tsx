@@ -59,30 +59,6 @@ export function ItemHistory() {
   const [loadingMore, setLoadingMore] = useState(false);
   // a library has a review page once the review_pages queue has written it
   const [hasReview, setHasReview] = useState(false);
-  // While unknown (or if the call fails) extension rows stay hidden.
-  const [enabledExt, setEnabledExt] = useState<ReadonlySet<string>>(new Set());
-
-  useEffect(() => {
-    let alive = true;
-    queueApi
-      .extensions()
-      .then(
-        (r) =>
-          alive &&
-          setEnabledExt(
-            new Set(
-              arr(r?.extensions)
-                .filter((e) => e.enabled)
-                .map((e) => e.name)
-            )
-          )
-      )
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
-
   useEffect(() => {
     if (kind !== "library") return;
     let alive = true;
@@ -355,7 +331,7 @@ export function ItemHistory() {
         <h2 className="mkt-q-section-title" id="mkt-q-appears-h">
           {t("queue.item.appears")}
         </h2>
-        <AppearsIn entries={visibleAppears(data.appears_in, enabledExt)} />
+        <AppearsIn entries={visibleAppears(data.appears_in)} />
       </section>
 
       <section className="mkt-q-panel" aria-labelledby="mkt-q-hist-h">

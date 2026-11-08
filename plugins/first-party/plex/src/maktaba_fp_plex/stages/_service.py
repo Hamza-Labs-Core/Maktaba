@@ -1,6 +1,6 @@
-"""What every Plex stage of the plugin shares (story 54.35): one PlexService (its index
-cache serves every job, as in-process) whose client goes through the home's service door
-when the job runs in the plugin's runner, and the job's binding to that door."""
+"""What the plugin's Plex Live TV stage shares (story 54.35): one PlexService whose client
+goes through the home's service door when the job runs in the plugin's runner, and the
+job's binding to that door."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import contextlib
 from collections.abc import Iterator
 from typing import Any
 
-from maktaba_pipeline.extensions.plex.collection import PlexService
+from maktaba_pipeline.extensions.plex.service import PlexService
 from maktaba_pipeline.plugins.service import bind, plex_client
 
 SERVICE = PlexService(plex_client)

@@ -2,9 +2,8 @@
 weights (:func:`filler_lists`), the clips a list holds (:func:`filler_items`) and its look
 (:func:`channel_art`: the logo and corner watermark files).
 
-Shared by the dizqueTV export (the integrations package's exporter) and
-Maktaba's own ``write_channels``, so both air the same. Pure, apart from checking that the
-picture files exist.
+Used by Maktaba's own ``write_channels``. Pure, apart from checking that the picture files
+exist.
 """
 
 from __future__ import annotations
@@ -21,9 +20,9 @@ __all__ = ["channel_art", "filler_items", "filler_lists", "plan_art"]
 def filler_lists(
     key: str, kind: str, pools: Sequence[str], cfg: PlannerConfig | Mapping[str, Any]
 ) -> list[dict[str, Any]]:
-    """:func:`filler_collections` from a channel's key, kind and filler pools and the
-    planner's settings (a :class:`PlannerConfig` or a plan's ``config``): the same lists
-    for dizqueTV and for Maktaba TV's own scheduler."""
+    """A channel's weighted filler lists from its key, kind and filler pools and the
+    planner's settings (a :class:`PlannerConfig` or a plan's ``config``), for Maktaba TV's
+    own scheduler."""
 
     def weight(name: str) -> int:
         if isinstance(cfg, Mapping):
@@ -44,16 +43,16 @@ def filler_lists(
 def filler_items(
     plan: Mapping[str, Any], items: Sequence[Mapping[str, Any]]
 ) -> Sequence[Mapping[str, Any]]:
-    """A dizqueTV filler list needs variety, not the whole pool: the first
-    ``dz_filler_max_items`` of it (the pool is in priority order: own promos, then
-    on-topic clips). A whole pool can be 75,000 clips, past dizqueTV's 50 MB request limit."""
+    """A filler list needs variety, not the whole pool: the first ``dz_filler_max_items``
+    of it (the pool is in priority order: own promos, then on-topic clips). A whole pool can
+    be 75,000 clips."""
     cap = int((plan.get("config") or {}).get("dz_filler_max_items") or 2000)
     return items[: max(1, cap)]
 
 
 def channel_art(plan: Mapping[str, Any], key: str) -> dict[str, Any]:
-    """The channel's logo and corner watermark from the plan's settings, as local files
-    (``apply`` uploads them): ``{"icon": path, "watermark": {...}}``, only what is set."""
+    """The channel's logo and corner watermark from the plan's settings, as local files:
+    ``{"icon": path, "watermark": {...}}``, only what is set."""
     cfg = plan.get("config") or {}
     out: dict[str, Any] = {}
     if folder := str(cfg.get("dz_logo_dir") or ""):
@@ -79,9 +78,8 @@ def channel_art(plan: Mapping[str, Any], key: str) -> dict[str, Any]:
 def plan_art(plan: Mapping[str, Any], key: str) -> tuple[str | None, dict[str, Any]]:
     """The plan's art for channel ``key`` as Maktaba TV takes it: ``(logo_path,
     {"watermark": {path, position, width_pct, margin_pct} | None, "loading_path"})`` —
-    the logo and corner watermark the dizqueTV export uploads (:func:`channel_art`) and
-    the channel's own loading picture (``loading-<logo>.png`` beside the logo: the
-    dizqueTV build's ``maktaba-loading-<key>.png``), or None."""
+    the logo and corner watermark (:func:`channel_art`) and the channel's own loading
+    picture (``loading-<logo>.png`` beside the logo), or None."""
     art = channel_art(plan, key)
     logo = art.get("icon")
     wm = art.get("watermark")

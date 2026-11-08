@@ -50,7 +50,7 @@ Each entry says what the section decides and which settings people change most.
 
 ### Channels {#planner}
 
-Decides which channels exist and how their days are built: themes, day parts, slots, filler and the Quran channel. Groups: Channels, Grid and slots, Ramadan, Programmes and filler, Fillers, Quran at dawn and Friday khutbah, How often shows air, Quran channel, Prime time, dizqueTV.
+Decides which channels exist and how their days are built: themes, day parts, slots, filler and the Quran channel. Groups: Channels, Grid and slots, Ramadan, Programmes and filler, Fillers, Quran at dawn and Friday khutbah, How often shows air, Quran channel, Prime time, Schedule and look.
 
 - **Themed channels** is the list of theme channels: number, names, the topics and audiences each one takes, and what it never takes.
 - **Channels (most)** caps the lineup (20). **Days without a repeat** (30) decides how much content a channel needs: lower it and smaller themes get a channel.
@@ -83,17 +83,6 @@ A local language model (Ollama) reads each series' name and episode titles and s
 ### Books {#books}
 
 A lesson series that explains a book (for example a commentary on Bulugh al-Maram) takes its topics from that book. **Look up the books series explain** searches the encyclopedia (Arabic Wikipedia by default). A book not found is searched again after 30 days. See [Stages](/help/stages#books).
-
-### dizqueTV export {#dizquetv}
-
-Decides how the planned channels are written into dizqueTV.
-
-- **Remove what the plan no longer has** deletes channels and lists Maktaba made earlier that the plan dropped.
-- **Also remove other channels not in the plan** also deletes channels made by hand. Use it only for a fresh lineup.
-- **Take over what exists** replaces a channel of the same number or name that Maktaba did not make.
-- **Rewrite without a break** (on) lets the programme on air finish. **Only these channels** limits the export to some channel numbers.
-
-See [dizqueTV](/help/dizquetv).
 
 ### Maktaba TV {#tv}
 
@@ -129,15 +118,11 @@ Decides how **Find metadata** and **Search again from what Maktaba knows** work:
 
 ### Display titles {#display-titles}
 
-Decides the short, clean on-air titles of the guide, the channel strip and the dizqueTV export: no channel names, hashtags, emojis, links or dates. **Longest title (characters)** (0: no limit) cuts long titles at a word. **Words removed** and **Patterns removed** list what is taken out. **Show the episode number** adds the episode label. A title you set by hand on a video always wins. See [Finding metadata](/help/metadata#display-titles).
+Decides the short, clean on-air titles of the guide and the channel strip: no channel names, hashtags, emojis, links or dates. **Longest title (characters)** (0: no limit) cuts long titles at a word. **Words removed** and **Patterns removed** list what is taken out. **Show the episode number** adds the episode label. A title you set by hand on a video always wins. See [Finding metadata](/help/metadata#display-titles).
 
 ### Exact dates {#exactdates}
 
 **Fetch exact upload dates** (off by default) asks YouTube for the exact date of series videos whose date is only known to the month. Exact dates help Maktaba see whether a show is daily or weekly. It is slow on purpose; **Seconds between requests** sets the pace. A YouTube bot check stops the run and the next run carries on; **Use a signed-in browser** can help. See [YouTube bot check](/help/failures#youtube-bot-check).
-
-### Channel audit {#audit}
-
-**Audit the channels** (on) checks, after the channels are written, that what each channel airs is about the channel. It only reads dizqueTV and writes nothing. **Days weighed** (28) is how far ahead it looks. See [dizqueTV](/help/dizquetv).
 
 ### Plex Live TV {#plexlive}
 
@@ -149,7 +134,7 @@ Decides how Maktaba's channels appear in Plex. **Add Maktaba to Plex by itself**
 
 ### Extension relay {#relay}
 
-Other machines run the Plex steps through the home, which adds the Plex sign-in so it never leaves the home. **Relay extension calls for machines** (on) turns this on; off, those steps run on the home only. The other settings limit how many calls each machine may make. See [Machines](/help/machines) and [Plex](/help/plex).
+Other machines reach Plex through the home, which adds the Plex sign-in so it never leaves the home. **Relay extension calls for machines** (on) turns this on; off, other machines cannot reach Plex. The other settings limit how many calls each machine may make. See [Machines](/help/machines) and [Plex](/help/plex).
 
 ### Canonical share paths {#storage}
 

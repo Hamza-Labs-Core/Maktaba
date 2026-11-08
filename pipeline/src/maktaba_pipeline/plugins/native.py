@@ -134,7 +134,6 @@ async def open_runner(
     """A connection to the group's runner: its unix socket, or on Windows (no AF_UNIX in
     Python there) the supervisor's pipe to it, the prefix ``MAKTABA_RUNNER_PIPES`` and the
     group's name (story 54.23). Raises ``OSError`` when it does not answer, on every OS."""
-    import sys
 
     if sys.platform == "win32":
         from . import pipe
@@ -306,12 +305,6 @@ async def choose(db: Any, stage: str) -> ImplChoice:
         return ImplChoice("inproc")
     if await stage_impl(db, stage) != "plugin":
         return ImplChoice("inproc")
-    if sys.platform == "win32":
-        # story 54.23: inside its AppContainer a runner cannot create the named pipes
-        # asyncio captures a tool's output with (WinError 5), and engine.media turns that
-        # into a tool failure; until the runners start tools through anonymous pipes, every
-        # first-party stage on Windows runs here, and no runner is started for it
-        return ImplChoice("inproc", "windows_tool_pipes")
     ok, _ = await serving(stage)
     if not ok:
         return ImplChoice("inproc", "runner_not_serving_here")
@@ -752,7 +745,7 @@ def _service_frame(stage: str, ctx: Any) -> dict[str, Any]:
     """What a plugin's job gets for the services it reaches (story 54.35): the extensions'
     settings with no secret and no service address, and ``service_via``: ``api`` on the home
     (the plugin API's door), ``worker`` on a joined machine (this worker's channel to the
-    home's door, as for its own Plex stages)."""
+    home's door, as for its own Plex calls)."""
     from .. import relay
     from .service import holds_secret, plugin_settings
 
@@ -760,8 +753,7 @@ def _service_frame(stage: str, ctx: Any) -> dict[str, Any]:
     if not services:
         return {}  # no service: the job gets no extension settings, as before
     settings = getattr(ctx, "settings", None) or {}
-    # only a service with a secret is relayed (a machine without it asks the home's door);
-    # dizqueTV keeps none and is home-only (issue #827)
+    # only a service with a secret is relayed (a machine without it asks the home's door)
     via = (
         "worker"
         if any(relay.relayed(settings.get(s, {})) for s in services if holds_secret(s))

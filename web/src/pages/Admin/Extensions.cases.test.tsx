@@ -24,7 +24,7 @@ import { axeViolations } from "../../test/axe";
 import type { Extension } from "../../lib/queueApi";
 import type { User } from "../../lib/auth";
 
-const [plexExt, dzExt] = extensionsFixture;
+const [plexExt, searchExt] = extensionsFixture;
 
 function open(
   table: Record<string, unknown> = { "/api/extensions": { extensions: extensionsFixture } },
@@ -101,7 +101,7 @@ describe("AdminExtensions (test-cases/admin-extensions.md)", () => {
 
   it("EXT-06: select options null and settings null render empty fields", async () => {
     const ext = {
-      ...dzExt,
+      ...searchExt,
       settings: null,
       settings_schema: [
         { key: "mode", label: "Mode", type: "select", options: null },
@@ -109,7 +109,7 @@ describe("AdminExtensions (test-cases/admin-extensions.md)", () => {
       ],
     };
     open({ "/api/extensions": { extensions: [ext] } });
-    const dz = await card("dizqueTV");
+    const dz = await card("Web search");
     expect(within(dz).getByLabelText("Mode").querySelectorAll("option")).toHaveLength(0);
     expect(within(dz).getByLabelText("Server address")).toHaveValue("");
   });
@@ -118,12 +118,12 @@ describe("AdminExtensions (test-cases/admin-extensions.md)", () => {
     let resolve!: (v: unknown) => void;
     put.mockReturnValue(new Promise((r) => (resolve = r)));
     open();
-    const dz = await card("dizqueTV");
+    const dz = await card("Web search");
     const sw = within(dz).getByRole("switch", { name: "Enabled" });
     await userEvent.setup().click(sw);
-    expect(put).toHaveBeenCalledWith("/api/extensions/dizquetv", { enabled: true });
+    expect(put).toHaveBeenCalledWith("/api/extensions/web_search", { enabled: true });
     expect(sw).toBeDisabled();
-    resolve({ ...dzExt, enabled: true });
+    resolve({ ...searchExt, enabled: true });
     await waitFor(() => expect(sw).toBeChecked());
     expect(sw).toBeEnabled();
   });
@@ -136,7 +136,7 @@ describe("AdminExtensions (test-cases/admin-extensions.md)", () => {
     async (_n, err, text) => {
       put.mockRejectedValue(err);
       open();
-      const dz = await card("dizqueTV");
+      const dz = await card("Web search");
       const sw = within(dz).getByRole("switch", { name: "Enabled" });
       await userEvent.setup().click(sw);
       expect(await within(dz).findByRole("alert")).toHaveTextContent(text);
@@ -150,15 +150,15 @@ describe("AdminExtensions (test-cases/admin-extensions.md)", () => {
     open();
     const plex = await card("Plex");
     const user = userEvent.setup();
-    const pathMap = within(plex).getByLabelText(/Path map/);
-    await user.clear(pathMap);
-    await user.type(pathMap, "/x=Y:/");
+    const url = within(plex).getByLabelText(/Server address/);
+    await user.clear(url);
+    await user.type(url, "http://nas:32400");
     await user.type(within(plex).getByLabelText(/Token/), "tok");
     await user.click(within(plex).getByRole("switch", { name: "Enabled" }));
     await waitFor(() =>
       expect(within(plex).getByRole("switch", { name: "Enabled" })).not.toBeChecked()
     );
-    expect(within(plex).getByLabelText(/Path map/)).toHaveValue("/x=Y:/");
+    expect(within(plex).getByLabelText(/Server address/)).toHaveValue("http://nas:32400");
     expect(within(plex).getByLabelText(/Token/)).toHaveValue("tok");
   });
 
@@ -173,10 +173,8 @@ describe("AdminExtensions (test-cases/admin-extensions.md)", () => {
     const user = userEvent.setup();
     const url = within(plex).getByLabelText(/Server address/);
     await user.clear(url);
-    await user.type(within(plex).getByLabelText(/Path map/), "{Enter}");
-    expect(put).toHaveBeenCalledWith("/api/extensions/plex", {
-      settings: { url: "", path_map: "/data=Z:/" },
-    });
+    await user.type(url, "{Enter}");
+    expect(put).toHaveBeenCalledWith("/api/extensions/plex", { settings: { url: "" } });
     expect(await within(plex).findByRole("alert")).toHaveTextContent(text);
     expect(within(plex).queryByText("Settings saved.")).toBeNull();
     expect(url).toHaveValue("");
@@ -454,16 +452,16 @@ describe("AdminExtensions (test-cases/admin-extensions.md)", () => {
     expect(get).not.toHaveBeenCalled();
   });
 
-  it("EXT-17: #dizquetv deep link scrolls to the card once it loads", async () => {
+  it("EXT-17: #web_search deep link scrolls to the card once it loads", async () => {
     const scrolled: string[] = [];
     const orig = Element.prototype.scrollIntoView;
     Element.prototype.scrollIntoView = function (this: Element) {
       scrolled.push(this.id);
     };
     try {
-      open(undefined, { path: "/admin/extensions#dizquetv" });
-      await card("dizqueTV");
-      await waitFor(() => expect(scrolled).toEqual(["dizquetv"]));
+      open(undefined, { path: "/admin/extensions#web_search" });
+      await card("Web search");
+      await waitFor(() => expect(scrolled).toEqual(["web_search"]));
     } finally {
       Element.prototype.scrollIntoView = orig;
     }

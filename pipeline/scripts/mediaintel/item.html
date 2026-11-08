@@ -94,8 +94,7 @@ function render(d) {
     return `<tr><td class="lib" dir="auto" title="${esc(g.name)}"><a href="item?folder=${encodeURIComponent(d.folder)}&series=${encodeURIComponent(g.key)}">${esc(g.name)}</a></td>
       <td><span class="chip k-${esc(g.kind)}">${esc(g.kind)}</span></td><td>${esc(seasonsText(g))}</td><td class="n">${fmt(g.episodes)}</td>
       <td class="num">${esc(span(g.first_air, g.last_air))}</td>
-      <td dir="auto">${cols.length ? cols.map(c => `<span class="chip good">Plex: ${esc(c)}</span>`).join(" ") : `<span class="muted">no Plex collection yet</span>`}
-        ${g.tv === null ? `<span class="muted">dizqueTV not reachable</span>` : g.tv.length ? g.tv.map(c => `<span class="chip good">dizqueTV: ${esc(c)}</span>`).join(" ") : `<span class="muted">no dizqueTV show yet</span>`}</td></tr>`;
+      <td dir="auto">${cols.length ? cols.map(c => `<span class="chip good">Plex: ${esc(c)}</span>`).join(" ") : `<span class="muted">no Plex collection yet</span>`}</td></tr>`;
   }).join("") : `<tr><td class="empty">No series detected in this library yet.</td></tr>`;
   if (one) $("series").innerHTML = `<tr><th>Season</th><th>Episodes</th><th>Aired</th><th>Plex collection</th></tr>` + one.seasons.map(x =>
     `<tr><td dir="auto">${esc(x.name || (x.season != null ? "Season " + x.season : "—"))}</td><td class="n">${fmt(x.episodes)}</td>
@@ -133,7 +132,7 @@ $("rerun").addEventListener("click", () => { $("rerun").hidden = true; $("rerun-
 $("rerun-no").addEventListener("click", () => { $("rerun-confirm").hidden = true; $("rerun").hidden = false; $("rerun").focus(); });
 $("rerun-yes").addEventListener("click", async () => {
   $("rerun-confirm").hidden = true; $("rerun").hidden = false;
-  try { const j = await post("api/run", {plex: true, tv: true, youtube: true, exact: false, folders: [folder]}); toast(`Run started: ${j.command.slice(3).join(" ")}`); load(); }
+  try { const j = await post("api/run", {plex: true, youtube: true, exact: false, folders: [folder]}); toast(`Run started: ${j.command.slice(3).join(" ")}`); load(); }
   catch (e) { toast(e.message, true); }
 });
 load(); setInterval(load, 10000);

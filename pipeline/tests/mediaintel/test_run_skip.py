@@ -14,8 +14,7 @@ def _run(skip: tuple[str, ...]) -> None:
     pipeline._run(
         sqlite3.connect(":memory:"), [], server=None, path_map=[], youtube=False,
         exact=False, lang="ar", delay_s=0, report_dir=Path("."), workers=1, plex=False,
-        tv=False, tv_url="", backup_dir=Path("."), t0=0.0, from_step="export-dizquetv",
-        skip=skip,
+        t0=0.0, from_step="plan-channels", skip=(*skip, "plan-channels"),
     )  # fmt: skip
 
 

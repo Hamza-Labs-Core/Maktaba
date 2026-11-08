@@ -111,16 +111,6 @@ export function CanonicalizePanel({
           ))}
         </p>
       )}
-      {st.plex_added && st.plex_added.length > 0 && (
-        <p className="mkt-mc-muted">
-          {t("machines.canon.plexAdded")}{" "}
-          {st.plex_added.map((e) => (
-            <code key={e} dir="ltr">
-              {`${e} `}
-            </code>
-          ))}
-        </p>
-      )}
       {status?.request && (
         <p className="mkt-mc-muted">
           {t("machines.canon.requested", { action: t(`machines.canon.action.${status.request}`) })}

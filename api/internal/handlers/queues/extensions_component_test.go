@@ -28,7 +28,7 @@ const extAdminID = "00000000-0000-0000-0000-0000000000a1"
 func extRouter(t *testing.T) (http.Handler, *sql.DB) {
 	t.Helper()
 	db, _ := clustertest.ScratchDB(t)
-	for _, name := range []string{"plex", "dizquetv", "cloudflare_stream"} {
+	for _, name := range []string{"plex", "cloudflare_stream"} {
 		if _, err := db.Exec(`INSERT INTO extensions (name, enabled, settings, updated_at)
 			VALUES ($1, true, '{"url":"http://plex:32400"}'::jsonb, now()) ON CONFLICT (name) DO NOTHING`, name); err != nil {
 			t.Fatal(err)
@@ -107,7 +107,7 @@ func TestPutExtensionWritesTheComponent(t *testing.T) {
 // T04: GET answers today's fields plus component and held; enabled is the desired state.
 func TestGetExtensionsAddsComponentAndHeld(t *testing.T) {
 	r, db := extRouter(t)
-	held := store.Desired{ID: "ext.dizquetv", Want: comps.WantEnabled, Hold: &store.Hold{By: "admin"}}
+	held := store.Desired{ID: "ext.cloudflare_stream", Want: comps.WantEnabled, Hold: &store.Hold{By: "admin"}}
 	if _, err := components.SetDesired(context.Background(), components.New(db), held,
 		store.Audit{By: "admin", Action: "component.hold"}); err != nil {
 		t.Fatal(err)
@@ -144,8 +144,8 @@ func TestGetExtensionsAddsComponentAndHeld(t *testing.T) {
 				t.Fatalf("%v: keys %v, want %v", e["name"], keys, want)
 			}
 		}
-		if e["name"] == "dizquetv" && (e["component"] != "ext.dizquetv" || e["held"] != true || e["enabled"] != true) {
-			t.Fatalf("dizquetv %v", e)
+		if e["name"] == "cloudflare_stream" && (e["component"] != "ext.cloudflare_stream" || e["held"] != true || e["enabled"] != true) {
+			t.Fatalf("cloudflare_stream %v", e)
 		}
 		if e["name"] == "plex" && (e["component"] != "ext.plex" || e["held"] != false) {
 			t.Fatalf("plex %v", e)
@@ -311,19 +311,19 @@ func TestClearExtensionTurnsTheComponentOff(t *testing.T) {
 // component's desired state says.
 func TestSettingsSaveNewRowFollowsTheComponent(t *testing.T) {
 	r, db := extRouter(t)
-	if _, err := db.Exec(`DELETE FROM extensions WHERE name = 'dizquetv'`); err != nil {
+	if _, err := db.Exec(`DELETE FROM extensions WHERE name = 'cloudflare_stream'`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := components.SetDesired(context.Background(), components.New(db),
-		store.Desired{ID: "ext.dizquetv", Want: comps.WantEnabled}, store.Audit{By: "admin", Action: "component.enable"}); err != nil {
+		store.Desired{ID: "ext.cloudflare_stream", Want: comps.WantEnabled}, store.Audit{By: "admin", Action: "component.enable"}); err != nil {
 		t.Fatal(err)
 	}
-	rec := extCall(t, r, extAdmin(), "PUT", "/api/extensions/dizquetv", map[string]any{"settings": map[string]any{}})
+	rec := extCall(t, r, extAdmin(), "PUT", "/api/extensions/cloudflare_stream", map[string]any{"settings": map[string]any{}})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
 	var on bool
-	if err := db.QueryRow(`SELECT enabled FROM extensions WHERE name = 'dizquetv'`).Scan(&on); err != nil || !on {
+	if err := db.QueryRow(`SELECT enabled FROM extensions WHERE name = 'cloudflare_stream'`).Scan(&on); err != nil || !on {
 		t.Fatalf("new row enabled %v (%v)", on, err)
 	}
 }

@@ -1,7 +1,7 @@
 """The built-in extensions are components (Epic 51, story 51.07): the stage reasons'
-order (T05), dizqueTV waiting on livetv and catching up when it is back (T06, T07), an
-enabled extension without its settings (T08), and an entry-point extension left as it is
-(T10)."""
+order (T05), an enabled extension without its settings (T08), and an entry-point extension
+left as it is (T10). T06/T07 (an extension's stages waiting on livetv and catching up) went
+with dizqueTV: no extension with stages requires another component any more."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from maktaba_pipeline.components.stages import (
 )
 from maktaba_pipeline.components.store import Desired
 from maktaba_pipeline.engine.loader import build_full_graph
-from maktaba_pipeline.engine.sql import dumps, is_pg, loads
+from maktaba_pipeline.engine.sql import dumps, is_pg
 from maktaba_pipeline.engine.sync import stage_enabled_state, sync_graph
 from maktaba_pipeline.extensions import discover
 from maktaba_pipeline.extensions.store import ExtensionState, ensure_rows, load_state
@@ -33,18 +33,17 @@ from tests.components._helpers import set_want, stage_row
 EXTENSIONS = discover(include_entry_points=False)
 GRAPH = build_full_graph(EXTENSIONS)
 BY_NAME = {s.name: s for s in GRAPH}
-DIZQUETV_STAGES = ("dizquetv_show", "dizquetv_channels", "dizquetv_audit")
 
 
 @pytest.fixture(autouse=True)
 def _no_env_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    for var in ("MAKTABA_DIZQUETV_URL", "MAKTABA_PLEX_URL", "MAKTABA_PLEX_TOKEN"):
+    for var in ("MAKTABA_PLEX_URL", "MAKTABA_PLEX_TOKEN"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(cluster_stages, "_cannot_run", lambda _st, _h: None)
 
 
 def _state(enabled: bool, configured: bool) -> ExtensionState:
-    return ExtensionState("dizquetv", enabled, {}, configured)
+    return ExtensionState("plex", enabled, {}, configured)
 
 
 # -- T05 ---------------------------------------------------------------------------------
@@ -63,26 +62,27 @@ def _state(enabled: bool, configured: bool) -> ExtensionState:
 def test_t05_the_extensions_own_reasons_come_first(
     row: ExtensionState, gate: str | None, want: tuple[bool, str | None]
 ) -> None:
-    st = BY_NAME["dizquetv_show"]
-    assert stage_enabled_state(st, {"dizquetv": row}, gate) == want
+    st = BY_NAME["plex_livetv"]
+    assert stage_enabled_state(st, {"plex": row}, gate) == want
 
 
 def test_the_built_in_extensions_are_stage_groups() -> None:
     ids = {c.id for c in stage_components()}
-    assert {"ext.plex", "ext.dizquetv"} <= ids
+    assert "ext.plex" in ids and "ext.cloudflare_stream" not in ids  # no stages: no group
     c = default().get("ext.plex")
     assert c is not None and extension_name(c) == "plex"
     off = gates({"livetv": Desired(id="livetv", want="installed", generation=1)})
-    assert off["ext.dizquetv"].reason == "dependency_off"
-    assert off["ext.dizquetv"].params == {"component": "livetv"}
-    assert machine_reasons(off)["dizquetv_show"] == "component_off:ext.dizquetv"
+    assert off["ext.cloudflare_stream"].reason == "dependency_off"
+    assert off["ext.cloudflare_stream"].params == {"component": "livetv"}
+    held = gates({"ext.plex": Desired(id="ext.plex", want="installed", generation=1)})
+    assert machine_reasons(held)["plex_livetv"].endswith(":ext.plex")
 
 
 # -- T10 ---------------------------------------------------------------------------------
 
 
 def test_t10_an_entry_point_extension_is_not_a_component() -> None:
-    other = dataclasses.replace(BY_NAME["dizquetv_show"], name="acme_sync", extension="acme")
+    other = dataclasses.replace(BY_NAME["plex_livetv"], name="acme_sync", extension="acme")
     assert default().by_stage("acme_sync") is None
     everything_off = {
         c.id: Desired(id=c.id, want="installed", generation=1) for c in default().components()
@@ -95,7 +95,7 @@ def test_t10_an_entry_point_extension_is_not_a_component() -> None:
     assert stage_enabled_state(other, acme, None) == (True, None)
 
 
-# -- T06-T08: the runner ----------------------------------------------------------------------
+# -- T08: the runner ----------------------------------------------------------------------
 
 
 async def _extension(db: Database, name: str, *, enabled: bool, settings: dict[str, str]) -> None:
@@ -145,36 +145,6 @@ async def _status(db: Database, cid: str) -> store.Status:
 
 
 @pytest.mark.asyncio
-async def test_t06_t07_dizquetv_waits_on_livetv_and_catches_up(db: Database) -> None:
-    r = await _runner(db)
-    await _extension(db, "dizquetv", enabled=True, settings={"url": "http://dizquetv:8000"})
-    await sync_graph(db, GRAPH, await _states(db), gates={})
-    await set_want(db, "ext.dizquetv", "enabled")
-    await set_want(db, "livetv", "installed")
-    await _pass(r)
-    st = await _status(db, "ext.dizquetv")
-    assert st.phase == "waiting"
-    assert st.reason == "dependency_off"
-    assert st.conditions[0].params == {"component": "livetv"}
-    for stage in DIZQUETV_STAGES:
-        assert await stage_row(db, stage) == (False, "component_off")
-    # its desired state is the admin's, untouched
-    desired, _ = await store.desired(db)
-    assert desired["ext.dizquetv"].want == "enabled"
-
-    await set_want(db, "livetv", "enabled")
-    await _pass(r)
-    for stage in DIZQUETV_STAGES:
-        assert await stage_row(db, stage) == (True, None)
-    assert (await _status(db, "ext.dizquetv")).phase == "running"
-    jobs = await db.fetch("SELECT payload FROM processing_jobs WHERE stage = 'component_catchup'")
-    assert len(jobs) == 1
-    entries = {e["component"] for e in loads(jobs[0]["payload"])["components"]}
-    assert "ext.dizquetv" in entries
-    await r.close()
-
-
-@pytest.mark.asyncio
 async def test_t08_an_enabled_extension_without_its_settings_waits(db: Database) -> None:
     r = await _runner(db)
     await _extension(db, "plex", enabled=True, settings={})
@@ -184,7 +154,7 @@ async def test_t08_an_enabled_extension_without_its_settings_waits(db: Database)
     st = await _status(db, "ext.plex")
     assert (st.phase, st.reason) == ("waiting", "not_configured")
     # the stage rows are as they were before components
-    assert await stage_row(db, "plex_index") == (False, "not_configured")
+    assert await stage_row(db, "plex_livetv") == (False, "not_configured")
     await r.close()
 
 
@@ -196,5 +166,5 @@ async def test_an_extension_switched_off_reads_off_with_todays_rows(db: Database
     await set_want(db, "ext.plex", "installed")
     await _pass(r)
     assert (await _status(db, "ext.plex")).phase == "off"
-    assert await stage_row(db, "plex_index") == (False, "extension_disabled")
+    assert await stage_row(db, "plex_livetv") == (False, "extension_disabled")
     await r.close()

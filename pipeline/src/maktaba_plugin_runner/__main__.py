@@ -129,6 +129,11 @@ def main(argv: list[str] | None = None) -> int:
         log("plugin_runner_sandbox_unavailable", group=group, step=exc.step, detail=str(exc))
         return EXIT_SANDBOX
     if sys.platform == "win32":
+        # tools start through anonymous pipes: asyncio's own are named pipes, which an
+        # AppContainer may not create
+        from . import winproc
+
+        winproc.install()
         # the library's share folders, through the launcher's broker (an AppContainer
         # reaches no share): without it, a job refused there runs in the worker
         from . import winfiles

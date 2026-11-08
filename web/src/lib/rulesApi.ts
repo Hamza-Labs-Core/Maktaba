@@ -26,6 +26,9 @@ export interface RuleField {
   time_columns?: number[];
   /** per column: a row may leave it out (its default applies) */
   column_optional?: boolean[];
+  /** tv.live only: the value is the old dizqueTV settings' list, which Maktaba TV airs
+   *  while it has none of its own */
+  inherited?: boolean;
 }
 
 export interface RuleSection {

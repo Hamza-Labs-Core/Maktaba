@@ -96,7 +96,7 @@ func TestPlexSignin_RequireAdmin(t *testing.T) {
 
 func TestPlexSignin_Create(t *testing.T) {
 	t.Run("stores a new client id and returns the auth url", func(t *testing.T) {
-		f, fp := plexFixture(t, `{"url":"http://old","path_map":"{}"}`)
+		f, fp := plexFixture(t, `{"url":"http://old","other":"{}"}`)
 		rec := f.do("POST", "/api/extensions/plex/signin", "", admin())
 		if rec.Code != 200 {
 			t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
@@ -115,7 +115,7 @@ func TestPlexSignin_Create(t *testing.T) {
 		var saved map[string]any
 		_ = json.Unmarshal([]byte(ups[0].Args[2].(string)), &saved)
 		cid, _ := saved["client_id"].(string)
-		if cid == "" || saved["url"] != "http://old" || saved["path_map"] != "{}" || ups[0].Args[1] != true {
+		if cid == "" || saved["url"] != "http://old" || saved["other"] != "{}" || ups[0].Args[1] != true {
 			t.Fatalf("saved %v enabled %v", saved, ups[0].Args[1])
 		}
 		if fp.clientIDs[0] != cid {
@@ -196,7 +196,7 @@ func TestPlexSignin_ConcurrentPollsAreRaceFree(t *testing.T) {
 }
 
 func TestPlexSignin_PollAndUse(t *testing.T) {
-	f, fp := plexFixture(t, `{"client_id":"cid","path_map":"{\"/m\":\"E:/m\"}","url":"http://old","token":"OLD"}`)
+	f, fp := plexFixture(t, `{"client_id":"cid","other":"{\"/m\":\"E:/m\"}","url":"http://old","token":"OLD"}`)
 	store := secrets.NewMemory()
 	f.h.Secrets = store
 	if rec := f.do("GET", "/api/extensions/plex/signin/99", "", admin()); rec.Code != 404 {
@@ -260,7 +260,7 @@ func TestPlexSignin_PollAndUse(t *testing.T) {
 	ups := f.db.Find("insert into extensions")
 	var saved map[string]any
 	_ = json.Unmarshal([]byte(ups[len(ups)-1].Args[2].(string)), &saved)
-	if _, has := saved["token"]; has || saved["url"] != "http://cabin:32400" || saved["path_map"] != `{"/m":"E:/m"}` || saved["client_id"] != "cid" {
+	if _, has := saved["token"]; has || saved["url"] != "http://cabin:32400" || saved["other"] != `{"/m":"E:/m"}` || saved["client_id"] != "cid" {
 		t.Errorf("saved %v (the token must not stay in the row)", saved)
 	}
 	if v, err := store.Get(context.Background(), secrets.ExtensionName("plex", "token")); err != nil || string(v) != "SERVER-TOKEN-2" {
@@ -301,7 +301,7 @@ func TestPickConnection(t *testing.T) {
 // token in home_secrets, never the account token), and keeps setup's client
 // id as the install's.
 func TestLinkPlex(t *testing.T) {
-	f, fp := plexFixture(t, `{"path_map":"{\"/m\":\"E:/m\"}"}`)
+	f, fp := plexFixture(t, `{"other":"{\"/m\":\"E:/m\"}"}`)
 	store := secrets.NewMemory()
 	f.h.Secrets = store
 	got, err := f.h.LinkPlex(context.Background(), "setup-cid", "ACCOUNT-TOKEN", "")
@@ -318,7 +318,7 @@ func TestLinkPlex(t *testing.T) {
 	ups := f.db.Find("insert into extensions")
 	var saved map[string]any
 	_ = json.Unmarshal([]byte(ups[len(ups)-1].Args[2].(string)), &saved)
-	if saved["url"] != got.URL || saved["client_id"] != "setup-cid" || saved["path_map"] != `{"/m":"E:/m"}` {
+	if saved["url"] != got.URL || saved["client_id"] != "setup-cid" || saved["other"] != `{"/m":"E:/m"}` {
 		t.Errorf("saved %v", saved)
 	}
 	if v, err := store.Get(context.Background(), secrets.ExtensionName("plex", "token")); err != nil || string(v) != "SERVER-TOKEN-1" {

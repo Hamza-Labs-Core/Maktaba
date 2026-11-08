@@ -86,16 +86,21 @@ const plexEmpty = {
     dvrs: [
       {
         key: "11",
-        title: "dizqueTV",
+        title: "Antenna",
         lineup: "lineup://x",
         maktaba: false,
         devices: [
-          { key: "3", uri: "http://pc:8000", device_id: "D1", title: "dizqueTV", kind: "dizquetv" },
+          {
+            key: "3",
+            uri: "http://192.0.2.30:5004",
+            device_id: "D1",
+            title: "HDHomeRun antenna",
+            kind: "other",
+          },
         ],
       },
     ],
     maktaba: { tuner_key: null, dvr_key: null, registered: false },
-    dizquetv_present: true,
     channels: { lineup: 3, mapped: null, in_sync: null },
     target: {
       tuner_url: "http://192.0.2.20:8782",
@@ -229,10 +234,10 @@ describe("AdminLiveTV", () => {
     expect(document.activeElement).toBe(screen.getByDisplayValue("192.0.2.20:8782"));
   });
 
-  it("shows the Plex status with other tuners left alone, dizqueTV not named", async () => {
+  it("shows the Plex status with other tuners left alone", async () => {
     renderPage();
     expect(await screen.findByText("Not added yet")).toBeInTheDocument();
-    expect(screen.getByText("dizqueTV: another tuner (left as it is)")).toBeInTheDocument();
+    expect(screen.getByText("Antenna: another tuner (left as it is)")).toBeInTheDocument();
     expect(screen.queryByText(/tuner is in Plex too/)).not.toBeInTheDocument();
     expect(screen.getByText("http://plex.lan:32400 · reachable")).toBeInTheDocument();
   });
@@ -249,7 +254,6 @@ describe("AdminLiveTV", () => {
     expect(dialog).toHaveTextContent("XMLTV guide http://192.0.2.20:8782/xmltv.xml");
     expect(dialog).toHaveTextContent('as "Add Another Device" does');
     expect(dialog).toHaveTextContent("Other tuners in Plex stay as they are");
-    expect(dialog).not.toHaveTextContent(/dizqueTV/);
     routes({ "/api/tv/hdhr": { ...device, enabled: true }, "/api/tv/plex": plexRegistered });
     await user.click(screen.getByRole("button", { name: "Add to Plex" }));
     expect(post).toHaveBeenCalledWith("/api/tv/plex/register");

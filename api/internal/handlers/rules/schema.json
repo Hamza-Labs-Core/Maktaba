@@ -5,7 +5,7 @@
    "title": "Channels",
    "what": "how channels, slots, fillers and the Quran channel are planned",
    "version": [
-    1,
+    2,
     0
    ],
    "fields": [
@@ -2012,51 +2012,24 @@
     {
      "name": "timezone",
      "kind": "str?",
-     "group": "dizqueTV",
+     "group": "Schedule and look",
      "label": "Time zone",
      "help": "IANA name (Asia/Riyadh); empty: the server's.",
      "default": null
     },
     {
-     "name": "dz_lateness_ms",
-     "kind": "int",
-     "group": "dizqueTV",
-     "label": "Allowed lateness (ms)",
-     "help": "How late a slot may start and still play its show: an episode that runs past the next slot's start pushes it back. Past this, dizqueTV gives the whole slot to filler (an hour and more of clips, no programme). A day: every slot plays its next episode, the schedule is programmes around the clock.",
-     "default": 86400000,
-     "minimum": 0
-    },
-    {
      "name": "slot_max_filler_minutes",
      "kind": "int",
-     "group": "dizqueTV",
+     "group": "Schedule and look",
      "label": "Most filler at a slot's end (minutes)",
      "help": "When the next episode does not fit what is left of its slot, the rest is filler; past this many minutes the episode plays anyway, running past the slot's end (the next slot starts late). 0: never. A nonstop channel keeps its filler to the hour.",
      "default": 20,
      "minimum": 0
     },
     {
-     "name": "dz_max_days",
-     "kind": "int",
-     "group": "dizqueTV",
-     "label": "Schedule length (days)",
-     "help": "",
-     "default": 365,
-     "minimum": 1
-    },
-    {
-     "name": "dz_pad_ms",
-     "kind": "int",
-     "group": "dizqueTV",
-     "label": "Pad (ms)",
-     "help": "",
-     "default": 1,
-     "minimum": 0
-    },
-    {
      "name": "dz_filler_cooldown_ms",
      "kind": "int",
-     "group": "dizqueTV",
+     "group": "Schedule and look",
      "label": "Filler cooldown (ms)",
      "help": "",
      "default": 1800000,
@@ -2065,7 +2038,7 @@
     {
      "name": "dz_weight_topic",
      "kind": "int",
-     "group": "dizqueTV",
+     "group": "Schedule and look",
      "label": "Filler weight: the channel's topic clips",
      "help": "",
      "default": 300,
@@ -2074,7 +2047,7 @@
     {
      "name": "dz_weight_promos",
      "kind": "int",
-     "group": "dizqueTV",
+     "group": "Schedule and look",
      "label": "Filler weight: its shows' promos",
      "help": "",
      "default": 150,
@@ -2083,7 +2056,7 @@
     {
      "name": "dz_weight_breaks",
      "kind": "int",
-     "group": "dizqueTV",
+     "group": "Schedule and look",
      "label": "Filler weight: breaks (nasheeds, short clips)",
      "help": "",
      "default": 200,
@@ -2092,59 +2065,33 @@
     {
      "name": "dz_weight_general",
      "kind": "int",
-     "group": "dizqueTV",
+     "group": "Schedule and look",
      "label": "Filler weight: general clips",
      "help": "",
      "default": 100,
      "minimum": 0
     },
     {
-     "name": "dz_guide_min_program_s",
-     "kind": "int",
-     "group": "dizqueTV",
-     "label": "Guide: shortest programme listed (s)",
-     "help": "Programmes at least this long have their own entry in the guide; shorter ones count as filler.",
-     "default": 60,
-     "minimum": 0
-    },
-    {
-     "name": "dz_guide_max_padding_s",
-     "kind": "int",
-     "group": "dizqueTV",
-     "label": "Guide: filler shown from (s)",
-     "help": "Filler time at least this long gets its own guide entry (the filler title below); shorter filler is added to the programme before it. dizqueTV's own default is 1800.",
-     "default": 120,
-     "minimum": 0
-    },
-    {
-     "name": "dz_guide_filler_title",
-     "kind": "str",
-     "group": "dizqueTV",
-     "label": "Guide: title of filler time",
-     "help": "",
-     "default": "فواصل"
-    },
-    {
      "name": "dz_filler_max_items",
      "kind": "int",
-     "group": "dizqueTV",
+     "group": "Schedule and look",
      "label": "Filler list size (most clips)",
-     "help": "A dizqueTV filler list holds the first this many clips of its pool (own promos, then on-topic clips). dizqueTV takes at most 50 MB per request.",
+     "help": "A filler list holds the first this many clips of its pool (own promos, then on-topic clips).",
      "default": 2000,
      "minimum": 1
     },
     {
      "name": "dz_logo_dir",
      "kind": "str",
-     "group": "dizqueTV",
+     "group": "Schedule and look",
      "label": "Channel logos folder",
-     "help": "The guide's channel logos: <channel key>.png (quran.png, kids.png …), else default.png. Uploaded to dizqueTV with the channels. Empty: none.",
+     "help": "The guide's channel logos: <channel key>.png (quran.png, kids.png …), else default.png. Empty: none.",
      "default": ""
     },
     {
      "name": "dz_watermark_file",
      "kind": "str",
-     "group": "dizqueTV",
+     "group": "Schedule and look",
      "label": "Corner logo (watermark)",
      "help": "A picture shown in a corner of the video on every channel, like a TV station's logo; an animated GIF loops. Empty: none.",
      "default": ""
@@ -2152,7 +2099,7 @@
     {
      "name": "dz_watermark_dir",
      "kind": "str",
-     "group": "dizqueTV",
+     "group": "Schedule and look",
      "label": "Corner logos folder (per channel)",
      "help": "Each channel's own corner logo: <channel key>.gif (quran.gif, palestine.gif …) or .png; a channel without one uses the corner logo above. Empty: that one everywhere.",
      "default": ""
@@ -2160,7 +2107,7 @@
     {
      "name": "dz_watermark_position",
      "kind": "str",
-     "group": "dizqueTV",
+     "group": "Schedule and look",
      "label": "Corner logo position",
      "help": "",
      "default": "top-right",
@@ -2174,7 +2121,7 @@
     {
      "name": "dz_watermark_width",
      "kind": "float",
-     "group": "dizqueTV",
+     "group": "Schedule and look",
      "label": "Corner logo width (% of the picture)",
      "help": "",
      "default": 12.0,
@@ -2183,27 +2130,11 @@
     {
      "name": "dz_watermark_margin",
      "kind": "float",
-     "group": "dizqueTV",
+     "group": "Schedule and look",
      "label": "Corner logo margin (% from the edges)",
      "help": "",
      "default": 2.0,
      "minimum": 0
-    },
-    {
-     "name": "dz_art_url",
-     "kind": "str",
-     "group": "dizqueTV",
-     "label": "Logos web address",
-     "help": "Where the logos are served from, e.g. a Cloudflare R2 or Pages address: the files sit there under their own names (…/quran.png, …/watermark.gif) and are checked before use. Empty: uploaded to dizqueTV and served by it.",
-     "default": ""
-    },
-    {
-     "name": "dz_public_url",
-     "kind": "str",
-     "group": "dizqueTV",
-     "label": "dizqueTV address on the network",
-     "help": "How the TVs and Plex reach dizqueTV, e.g. http://192.168.1.20:8002 or a Tailscale address; used for the links of logos dizqueTV serves. Empty: the address the export uses (localhost works on this PC only).",
-     "default": ""
     }
    ]
   },
@@ -3245,103 +3176,6 @@
    ]
   },
   {
-   "key": "dizquetv",
-   "title": "dizqueTV export",
-   "what": "how the planned channels are written into dizqueTV: removing what the plan dropped, rewriting a channel that is on air",
-   "version": [
-    1,
-    0
-   ],
-   "fields": [
-    {
-     "name": "prune",
-     "kind": "bool",
-     "group": "dizqueTV export",
-     "label": "Remove what the plan no longer has",
-     "help": "Delete the channels, shows and filler lists this tool made earlier and the plan does not have now. Only what carries this tool's mark is touched.",
-     "default": false
-    },
-    {
-     "name": "clear_channels",
-     "kind": "bool",
-     "group": "dizqueTV export",
-     "label": "Also remove other channels not in the plan",
-     "help": "With the setting above: every channel that is not in the plan goes, including the ones made by hand. For a fresh lineup.",
-     "default": false
-    },
-    {
-     "name": "replace_existing",
-     "kind": "bool",
-     "group": "dizqueTV export",
-     "label": "Take over what exists",
-     "help": "A channel, show or filler list that is there under the same number or name but was not made by this tool is replaced. Off: it is left alone and reported.",
-     "default": false
-    },
-    {
-     "name": "ramadan",
-     "kind": "bool",
-     "group": "dizqueTV export",
-     "label": "Use the Ramadan grids",
-     "help": "A channel without one uses its regular grid.",
-     "default": false
-    },
-    {
-     "name": "keep_airing",
-     "kind": "bool",
-     "group": "dizqueTV export",
-     "label": "Rewrite without a break",
-     "help": "A rewrite lets the programme on air finish, goes on with each show where it stopped, drops no programme and leaves no gap; a channel whose schedule and programmes did not change is not saved at all (nobody watching is restarted). Off: the timeline is rebuilt from the start.",
-     "default": true
-    },
-    {
-     "name": "only_channels",
-     "kind": "str",
-     "group": "dizqueTV export",
-     "label": "Only these channels",
-     "help": "Channel numbers separated by commas (101, 105). Empty: all of them.",
-     "default": ""
-    },
-    {
-     "name": "live",
-     "kind": "rows",
-     "group": "dizqueTV export",
-     "label": "Live broadcasts",
-     "help": "A live stream a channel carries at set times, such as the news on the hour: channel number, the YouTube live page (https://www.youtube.com/@aljazeera/live) or a stream address, the guide title, the first start (HH:MM), the end (00:00: until midnight), how often (minutes), how long (minutes) and the days (mon ... sun; empty: every day). What airs before it finishes first or makes way: no programme is cut and the broadcast starts on time.",
-     "default": [],
-     "columns": [
-      "channel",
-      "url",
-      "title",
-      "start",
-      "end",
-      "every_minutes",
-      "minutes",
-      "days"
-     ],
-     "column_kinds": [
-      "int",
-      "str",
-      "str",
-      "time",
-      "time",
-      "int",
-      "int",
-      "list"
-     ],
-     "column_optional": [
-      true,
-      true,
-      true,
-      true,
-      true,
-      true,
-      true,
-      true
-     ]
-    }
-   ]
-  },
-  {
    "key": "tv",
    "title": "Maktaba TV",
    "what": "how Maktaba's own channels air: filler between programmes, the Ramadan grids, live broadcasts, loudness, the guide's days ahead",
@@ -3388,7 +3222,7 @@
      "kind": "rows",
      "group": "Maktaba TV",
      "label": "Live broadcasts",
-     "help": "A live stream a channel carries at set times: channel number, the YouTube live page or a stream address, the guide title, the first start (HH:MM), the end (00:00: until midnight), how often (minutes), how long (minutes) and the days (mon ... sun; empty: every day). No programme runs into it: what would not end before it is not started, filler fills up to it and the show goes on after. Empty: the dizqueTV export's live broadcasts.",
+     "help": "A live stream a channel carries at set times: channel number, the YouTube live page or a stream address, the guide title, the first start (HH:MM), the end (00:00: until midnight), how often (minutes), how long (minutes) and the days (mon ... sun; empty: every day). No programme runs into it: what would not end before it is not started, filler fills up to it and the show goes on after.",
      "default": [],
      "columns": [
       "channel",
@@ -4856,7 +4690,7 @@
   {
    "key": "display_titles",
    "title": "Display titles",
-   "what": "short, clean on-air titles for the guide, the channel strip and the dizqueTV export",
+   "what": "short, clean on-air titles for the guide and the channel strip",
    "version": [
     1,
     0
@@ -4867,7 +4701,7 @@
      "kind": "bool",
      "group": "Display titles",
      "label": "Clean on-air titles",
-     "help": "The guide, the channel strip and the dizqueTV export show a short title made from the library title: no channel names, hashtags, emojis, links, dates or file leftovers, the series and «الحلقة 45» kept apart. A title set by hand on the video always wins.",
+     "help": "The guide and the channel strip show a short title made from the library title: no channel names, hashtags, emojis, links, dates or file leftovers, the series and «الحلقة 45» kept apart. A title set by hand on the video always wins.",
      "default": true
     },
     {
@@ -4973,7 +4807,7 @@
      "name": "use_in_guide",
      "kind": "bool",
      "group": "Display titles",
-     "label": "Use in the guide and dizqueTV",
+     "label": "Use in the guide",
      "help": "Off: only the channel strip shows the display titles.",
      "default": true
     },
@@ -5059,43 +4893,6 @@
      "help": "0: all of them.",
      "default": 0,
      "minimum": 0
-    }
-   ]
-  },
-  {
-   "key": "audit",
-   "title": "Channel audit",
-   "what": "is what each channel airs about the channel",
-   "version": [
-    1,
-    0
-   ],
-   "fields": [
-    {
-     "name": "enabled",
-     "kind": "bool",
-     "group": "Channel audit",
-     "label": "Audit the channels",
-     "help": "After the channels are written, check that what each airs is about the channel (reads dizqueTV, writes nothing).",
-     "default": true
-    },
-    {
-     "name": "window_days",
-     "kind": "int",
-     "group": "Channel audit",
-     "label": "Days weighed",
-     "help": "What airs from now for this many days.",
-     "default": 28,
-     "minimum": 1
-    },
-    {
-     "name": "keep",
-     "kind": "int",
-     "group": "Channel audit",
-     "label": "Audits kept",
-     "help": "",
-     "default": 5,
-     "minimum": 1
     }
    ]
   },
@@ -5275,7 +5072,7 @@
   {
    "key": "relay",
    "title": "Extension relay",
-   "what": "machines run the Plex stages through the home, which adds the Plex token they never see; limits per machine",
+   "what": "machines reach Plex through the home, which adds the Plex token they never see; limits per machine",
    "version": [
     1,
     0
@@ -5286,7 +5083,7 @@
      "kind": "bool",
      "group": "Extension relay",
      "label": "Relay extension calls for machines",
-     "help": "Machines run the Plex stages (index, collections) through the home, which adds the Plex token; the token never leaves the home. Off: those stages run on the home only.",
+     "help": "Machines reach Plex through the home, which adds the Plex token; the token never leaves the home. Off: the home refuses their Plex calls.",
      "default": true
     },
     {

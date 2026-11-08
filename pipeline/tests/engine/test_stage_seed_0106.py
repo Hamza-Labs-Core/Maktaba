@@ -43,5 +43,5 @@ async def test_the_migrated_row_is_the_graphs_stage(db: Database, stage: str) ->
 @pytest.mark.asyncio
 async def test_the_pools_exist_before_any_worker_runs(db: Database) -> None:
     have = {r["pool"] for r in await db.fetch("SELECT pool FROM worker_pools")}
-    assert {"audits", "repairs"} <= have
-    assert {"audits", "repairs"} <= {p.pool for p in POOLS}
+    # slot 0106 also seeded "audits", for the channel audit slot 0215 removed
+    assert "repairs" in have and "repairs" in {p.pool for p in POOLS}

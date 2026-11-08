@@ -985,8 +985,8 @@ def _distinct_names(
     presenter: frozenset[str],
     cfg: DetectorConfig,
 ) -> None:
-    """Two shows of one channel never share a name: they would land in one Plex
-    collection and one dizqueTV show. Each takes the part of its playlist title that
+    """Two shows of one channel never share a name: they would read as one show in the
+    library, the guide and the channels. Each takes the part of its playlist title that
     tells them apart, else its first year, else a number."""
     titles_of = {p.playlist_id: p.title for p in playlists}
     groups: dict[str, list[Series]] = defaultdict(list)
@@ -1362,7 +1362,7 @@ def detect(
             if carried < 0.3 * len(eps_all):
                 named = _title_name(eps_all, facts, presenter | cfg.generic_words)
                 # never the name another show of this channel already has: two shows of
-                # one name would land in one Plex collection / dizqueTV show
+                # one name would read as one show
                 taken = {fold(o.name) for o in series if o is not ser}
                 if named and fold(named) not in taken:
                     ser.name = named

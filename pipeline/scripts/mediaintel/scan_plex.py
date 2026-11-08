@@ -71,16 +71,10 @@ class PlexError(RuntimeError):
         self.said = said
 
 
-def load_server(dizquetv_db: Path | None, uri: str | None, token: str | None) -> PlexServer:
-    if uri and token:
-        return PlexServer("plex", uri.rstrip("/"), token)
-    if dizquetv_db is None:
-        raise SystemExit(
-            "give --plex-url and --plex-token, or --dizquetv-db pointing at a .dizquetv folder"
-        )
-    servers = json.loads((dizquetv_db / "plex-servers.json").read_text(encoding="utf-8"))
-    s = sorted(servers, key=lambda x: x.get("index", 0))[0]
-    return PlexServer(s["name"], s["uri"].rstrip("/"), s["accessToken"])
+def load_server(uri: str | None, token: str | None) -> PlexServer:
+    if not (uri and token):
+        raise SystemExit("give --plex-url and --plex-token")
+    return PlexServer("plex", uri.rstrip("/"), token)
 
 
 def map_path(plex_path: str, path_map: list[tuple[str, str]]) -> str | None:
@@ -90,7 +84,7 @@ def map_path(plex_path: str, path_map: list[tuple[str, str]]) -> str | None:
     return None
 
 
-#: the item fields kept in ``plex_items.detail``: what a dizqueTV programme is built from
+#: the item fields kept in ``plex_items.detail`` (the cache's copy of Plex's record)
 DETAIL_KEYS = (
     "ratingKey", "key", "type", "title", "summary", "duration", "thumb", "year",
     "originallyAvailableAt", "contentRating", "grandparentTitle", "grandparentThumb",
@@ -172,19 +166,6 @@ def scan_plex(
         conn.commit()
         print(f"  [{n_sec}/{len(sections)}] {sec['title']}: {len(items)} items, "
               f"{matched} matched to scanned files", flush=True)  # fmt: skip
-
-
-def cached_items(conn: sqlite3.Connection, keys: list[str]) -> dict[str, dict[str, Any]]:
-    """Saved Plex records (``plex_items``) for these rating keys."""
-    out: dict[str, dict[str, Any]] = {}
-    for i in range(0, len(keys), 500):
-        part = keys[i : i + 500]
-        for k, d in conn.execute(
-            f"SELECT rating_key, detail FROM plex_items WHERE rating_key IN ({','.join('?' * len(part))})",  # noqa: S608
-            part,
-        ):
-            out[k] = json.loads(d)
-    return out
 
 
 def quote(s: str) -> str:

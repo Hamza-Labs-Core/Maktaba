@@ -67,8 +67,6 @@ function setup(over: Partial<typeof snapshotFixture> = {}) {
         videos_with_length: 300,
         series: 5,
         seasons: 9,
-        plex_collections: 4,
-        dizquetv_shows: 1,
         channels: 3,
         style_pinned: 0,
         youtube_videos: 0,
@@ -100,7 +98,7 @@ describe("QueueOverview", () => {
     const nas = screen.getByRole("group", { name: "NAS reads" });
     expect(nas).toHaveTextContent("2of 2 slots busy");
     expect(nas).toHaveClass("mkt-q-stat--warn");
-    expect(screen.getByRole("group", { name: "Network" })).toHaveTextContent("2of 3 reachable");
+    expect(screen.getByRole("group", { name: "Network" })).toHaveTextContent("1of 2 reachable");
     expect(screen.getByText("3 NAS timeouts in 10 min")).toBeInTheDocument();
     expect(screen.getByText("unreachable")).toBeInTheDocument();
     // workers
@@ -143,27 +141,44 @@ describe("QueueOverview", () => {
     );
   });
 
-  it("groups extension queues in an Extensions lane with a badge; unconfigured ones are off, not failing", async () => {
+  it("groups extension queues in an Extensions lane with a badge", async () => {
     setup();
     const plex = await waitFor(() => {
-      const c = document.querySelector('[data-stage="plex_collection"]');
+      const c = document.querySelector('[data-stage="plex_livetv"]');
       expect(c).not.toBeNull();
       return c as HTMLElement;
     });
     expect(screen.getByRole("heading", { name: "Extensions" })).toBeInTheDocument();
     expect(within(plex).getByText("Plex extension")).toBeInTheDocument();
-    const dz = document.querySelector('[data-stage="dizquetv_show"]') as HTMLElement;
-    expect(dz).toHaveAttribute("data-state", "off");
-    expect(within(dz).getByText("Not set up")).toBeInTheDocument();
-    expect(within(dz).getByRole("link", { name: "Set up in Extensions" })).toHaveAttribute(
-      "href",
-      "/admin/extensions#dizquetv"
-    );
-    const seasons = document.getElementById("mkt-q-lane-seasons")!.closest("section")!;
-    expect(seasons.querySelector('[data-stage="plex_collection"]')).toBeNull();
+    const channels = document.getElementById("mkt-q-lane-channels")!.closest("section")!;
+    expect(channels.querySelector('[data-stage="plex_livetv"]')).toBeNull();
     expect(screen.getByRole("link", { name: "Extensions" })).toHaveAttribute(
       "href",
       "/admin/extensions"
+    );
+  });
+
+  it("shows an unconfigured extension queue as off, not failing, with a link to set it up", async () => {
+    setup({
+      stages: snapshotFixture.stages.map((s) =>
+        s.stage === "plex_livetv" ? { ...s, enabled: false, disabled_reason: "not_configured" } : s
+      ),
+      queues: snapshotFixture.queues.map((q) =>
+        q.stage === "plex_livetv"
+          ? { ...q, counts: { ...q.counts, pending: 0 }, waiting_reason: "not_configured" }
+          : q
+      ),
+    });
+    const plex = await waitFor(() => {
+      const c = document.querySelector('[data-stage="plex_livetv"]');
+      expect(c).not.toBeNull();
+      return c as HTMLElement;
+    });
+    expect(plex).toHaveAttribute("data-state", "off");
+    expect(within(plex).getByText("Not set up")).toBeInTheDocument();
+    expect(within(plex).getByRole("link", { name: "Set up in Extensions" })).toHaveAttribute(
+      "href",
+      "/admin/extensions#plex"
     );
   });
 
@@ -184,13 +199,12 @@ describe("QueueOverview", () => {
     expect(within(small).getByRole("img", { name: /160 of 200 done/ })).toBeInTheDocument();
   });
 
-  it("shows the topic, promo, clip-group and Plex group queues", async () => {
+  it("shows the topic, promo and clip-group queues", async () => {
     setup();
     for (const [name, stage] of [
       ["Topic collections", "topic_collections"],
       ["Promo links", "promo_links"],
       ["Clip groups", "clip_groups"],
-      ["Plex topic and clip collections", "plex_groups"],
     ]) {
       expect(await screen.findByRole("link", { name })).toHaveAttribute("href", `/queue/${stage}`);
     }

@@ -185,7 +185,7 @@ data class QueueSummary(
      * upstream, disabled, not_configured, awaiting_review, no_worker, idle (null: it runs).
      */
     @SerialName("waiting_reason") val waitingReason: String? = null,
-    /** the outside service ("plex", "dizquetv") whose failures put waiting jobs into backoff */
+    /** the outside service (e.g. "plex") whose failures put waiting jobs into backoff */
     @SerialName("retrying_service") val retryingService: String? = null,
     val health: StageHealth? = null,
     /** Epic 51: the catalog component that owns the stage, while it waits on it (component_off / component_held). */

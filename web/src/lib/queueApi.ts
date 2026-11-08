@@ -87,7 +87,7 @@ export interface StageInfo {
   may_request: string[];
   entry_for: string[];
   fed_by: string[];
-  /** Extension that owns this queue (e.g. "plex", "dizquetv"); null/absent = core. */
+  /** Extension that owns this queue (e.g. "plex"); null/absent = core. */
   extension?: string | null;
   graph_synced_at: string | null;
   /** The built-in (first-party) plugin that defines the stage (Epic 54); null: the core's. */
@@ -135,7 +135,7 @@ export interface QueueSummary {
   served_by?: string[];
   /** true when work is waiting but no live worker serves this stage. */
   no_worker?: boolean;
-  /** External service ("plex", "dizquetv") whose failures put waiting rows into backoff. */
+  /** External service (e.g. "plex") whose failures put waiting rows into backoff. */
   retrying_service?: string | null;
   /** Epic 51: the component that owns the stage, while it waits on it (component_off / component_held). */
   component?: string | null;
@@ -610,7 +610,7 @@ export interface HealthNow {
     timeouts_10m: number;
   };
   cpu: { pct: number | null };
-  network: { plex_ms: number | null; tv_ms: number | null; youtube_ms: number | null };
+  network: { plex_ms: number | null; youtube_ms: number | null };
   backlog: { ready: number; oldest_waiting_sec: number | null };
   spark: Record<"nas_open_ms" | "nas_timeouts" | "cpu_pct" | "backlog_ready", number[]>;
 }
@@ -701,7 +701,7 @@ export interface RetriggerResponse {
   }[];
 }
 
-/** One thing an external write changed (from the job_events data of plex_collection / dizquetv_show / write_channels). */
+/** One thing an external write changed (from the job_events data of write_channels). */
 export interface WriteChange {
   action: "added" | "removed" | "reordered" | "created" | "deleted" | "updated";
   what: "episodes" | "collection" | "show" | "channel" | "slot";
@@ -719,12 +719,7 @@ export interface TimelineEntry {
 }
 
 export interface AppearsInEntry {
-  target:
-    | "plex_collection"
-    | "dizquetv_show"
-    | "maktaba_channel"
-    | "dizquetv_channel"
-    | "channel_slot";
+  target: "maktaba_channel" | "channel_slot";
   title: string;
   external_id: string;
   detail?: string;
@@ -826,7 +821,6 @@ export interface ExplainVideo {
   link_method: string | null;
   tab: string | null;
   playlists: ExplainPlaylist[];
-  plex_rating_key: string | null;
   verdict: ExplainVerdict;
 }
 export interface ExplainRemote {
@@ -872,8 +866,6 @@ export interface InsightTotals {
   videos_with_length: number;
   series: number;
   seasons: number;
-  plex_collections: number;
-  dizquetv_shows: number;
   channels: number;
   style_pinned: number;
   youtube_videos: number;
@@ -911,14 +903,13 @@ export interface Pulse {
 }
 
 export interface LibraryCollections {
-  topics: { id: string; name: string; items: number; collection: string | null }[];
+  topics: { id: string; name: string; items: number }[];
   clip_groups: {
     id: string;
     kind: "clips" | "standalone";
     basis: "playlist" | "topic" | "rest" | "promo";
     title: string;
     items: number;
-    collection: string | null;
   }[];
   promos: {
     video_id: string;

@@ -12,7 +12,6 @@ from maktaba_pipeline.schedule.channel_planner import (
     PlanResult,
     ProgramUnit,
     Slot,
-    dizquetv_time_slots,
     simulate,
 )
 
@@ -51,8 +50,3 @@ def test_off_keeps_the_slot() -> None:
     ch, plan = _plan([30, 50, 60], slot_max_filler_minutes=0)
     progs = [a for a in simulate(ch, plan) if a.kind == "program" and a.start_s < 7200]
     assert len(progs) == 2
-
-
-def test_dizquetv_gets_the_most_filler_a_slot_ends_on() -> None:
-    ch, plan = _plan([30])
-    assert dizquetv_time_slots(ch, plan)["maxFlex"] == 20 * 60_000

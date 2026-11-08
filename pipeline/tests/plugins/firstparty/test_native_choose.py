@@ -34,7 +34,7 @@ class _DB:
 def stage(monkeypatch: pytest.MonkeyPatch) -> str:
     # a plugin with no file access (tv.maktaba.classify reads thumbnails since wave 4, so
     # its runner must also hold this machine's current areas)
-    name = "plex_index"
+    name = "plex_livetv"
     assert firstparty.by_stage(name) is not None
 
     async def serving(_stage: str) -> tuple[bool, str | None]:
@@ -59,26 +59,24 @@ async def test_an_unreadable_answer_runs_in_process(stage: str) -> None:
     assert (got.impl, got.why) == ("inproc", "role_unusable")
 
 
-async def test_on_windows_a_first_party_stage_stays_in_the_worker(
+async def test_on_windows_a_first_party_stage_asks_its_runner(
     stage: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Story 54.23: a runner inside its Windows AppContainer cannot create the named pipes
-    asyncio captures a tool's output with, so until the runners start tools through
-    anonymous pipes every first-party stage on Windows runs in the worker, and no runner
-    is asked or started for it."""
+    """Story 54.23: a runner on Windows starts its tools through anonymous pipes (winproc),
+    so a first-party stage there is chosen as on any other OS: its runner is asked."""
     import sys
 
     asked: list[str] = []
 
     async def serving(s: str) -> tuple[bool, str | None]:
         asked.append(s)
-        return True, None
+        return False, None
 
     monkeypatch.setattr(native, "serving", serving)
     monkeypatch.setattr(sys, "platform", "win32")
     got = await native.choose(_DB(True), stage)
-    assert (got.impl, got.why) == ("inproc", "windows_tool_pipes")
-    assert asked == []
+    assert (got.impl, got.why) == ("inproc", "runner_not_serving_here")
+    assert asked == [stage]
 
 
 async def test_the_answer_is_kept_for_a_minute(stage: str) -> None:
