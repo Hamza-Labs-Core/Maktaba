@@ -52,6 +52,7 @@ __all__ = [
     "SandboxRefused",
     "Unregistered",
     "choose",
+    "touches_library",
     "hello",
     "result_from_wire",
     "result_to_wire",
@@ -299,12 +300,80 @@ async def stage_impl(db: Any, stage: str) -> str:
     return "plugin" if v == "plugin" else "inproc"
 
 
+#: set to 1, a Windows home with a library on a share runs its library stages in their
+#: runners anyway (the Windows end to end does, to prove that path)
+SHARE_RUNNERS_ENV = "MAKTABA_WINDOWS_SHARE_RUNNERS"
+
+
+def touches_library(stage: str) -> bool:
+    """The stage's plugin reads or writes the libraries (``files.read`` or ``files.write``
+    names ``library`` or a part of it): thumbnails, subtitles, transcription, convert,
+    dedup, repair and youtube."""
+    fp = firstparty.by_stage(stage)
+    files = (fp.trusted.get("files") or {}) if fp is not None else {}
+    areas = [str(a) for k in ("read", "write") for a in (files.get(k) or [])]
+    return any(a == "library" or a.startswith("library.") for a in areas)
+
+
+def remote_path(path: str) -> bool:
+    """``path`` is on a share: a ``\\\\server\\share`` path, or (on Windows) a drive letter
+    mapped to one."""
+    from maktaba_plugin_runner.winfiles import is_share
+
+    if is_share(path):
+        return True
+    if sys.platform != "win32" or len(path) < 2 or path[1] != ":":
+        return False
+    import ctypes
+
+    windll = getattr(ctypes, "windll", None)
+    if windll is None:
+        return False
+    drive_remote = 4
+    return bool(windll.kernel32.GetDriveTypeW(path[:2] + "\\") == drive_remote)
+
+
+#: whether a library of this home has a root on a share, kept for a minute
+_SHARE_LIBRARY: list[tuple[float, bool]] = []
+
+
+async def share_library(db: Any) -> bool:
+    """A library of this home has a root on a share (unknown: True, so the job runs in the
+    worker)."""
+    from ..engine.failure_policy import _roots
+    from ..engine.paths import to_local
+
+    now = time.monotonic()
+    if _SHARE_LIBRARY and now - _SHARE_LIBRARY[-1][0] < _ROLE_TTL:
+        return _SHARE_LIBRARY[-1][1]
+    try:
+        rows = await db.fetch("SELECT roots FROM libraries")
+        found = any(remote_path(to_local(root)) for r in rows for root in _roots(r["roots"]))
+    except Exception:  # noqa: BLE001 - unknown: the worker, which reaches every share
+        found = True
+    _SHARE_LIBRARY[:] = [(now, found)]
+    return found
+
+
 async def choose(db: Any, stage: str) -> ImplChoice:
     """Where this job of ``stage`` runs on this machine."""
     if firstparty.by_stage(stage) is None or getattr(db, "dialect", "") != "postgres":
         return ImplChoice("inproc")
     if await stage_impl(db, stage) != "plugin":
         return ImplChoice("inproc")
+    if (
+        sys.platform == "win32"
+        and touches_library(stage)
+        and os.environ.get(SHARE_RUNNERS_ENV) != "1"
+        and await share_library(db)
+    ):
+        # a runner reaches a library on a share only through its launcher's broker (none
+        # for a folder written in full), and v0.3.105 showed a look there answered as a
+        # missing file (a small thumbnail done with none): while a library is on a share,
+        # the stages that read or write the libraries run in the worker, which reaches every
+        # share, until the Windows end to end proves the runner path
+        # (MAKTABA_WINDOWS_SHARE_RUNNERS=1 asks the runners anyway)
+        return ImplChoice("inproc", "windows_share_library")
     ok, _ = await serving(stage)
     if not ok:
         return ImplChoice("inproc", "runner_not_serving_here")

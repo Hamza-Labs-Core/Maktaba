@@ -23,7 +23,10 @@ is always the leader). It repairs and schedules:
    holds an entry past its ``purge_after``;
 8. thumbnails in a folder's ``.thumbs/`` (2026-11): a ``thumb_hash`` once for each video
    whose latest one found no thumbnail of its own, so one found there now is used;
-9. YouTube sources from the links (slot 0182): every library's sources are derived from
+9. results a Windows runner read wrong on a share (v0.3.105, story 54.23): a ``thumb_small``
+   that ended done with no thumbnail, and a ``dedup_apply`` failed as its keeper unreadable,
+   are queued once more (:func:`_share_miss_sweep`);
+10. YouTube sources from the links (slot 0182): every library's sources are derived from
    its linked videos (:mod:`..library_mgmt.youtube_derive`, new ones off) when no library
    was decided yet or the last decision is ``MAKTABA_YT_DERIVE_HOURS`` old (default 6;
    0: never). The first pass after the update covers the links made before it.
@@ -36,7 +39,7 @@ import contextlib
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -78,6 +81,8 @@ class ReconcileReport:
     thumbs_dir: int = 0
     #: libraries the YouTube source derivation made a source for (slot 0182)
     yt_derive: int = 0
+    #: jobs queued again whose result a Windows runner read wrong on a share (54.23)
+    share_miss: int = 0
 
 
 async def reconcile_once(
@@ -132,8 +137,19 @@ async def _pass(
     purges = await _trash_purges(db, graph, t)
     thumbs = await _thumbs_dir_sweep(db, graph)
     derived = await _youtube_derive(db, t)
+    share_miss = await _share_miss_sweep(db, graph)
     return ReconcileReport(
-        True, propagated, refresh, sweep, scans, periodic, missing, purges, thumbs, derived
+        True,
+        propagated,
+        refresh,
+        sweep,
+        scans,
+        periodic,
+        missing,
+        purges,
+        thumbs,
+        derived,
+        share_miss,
     )
 
 
@@ -458,6 +474,126 @@ async def _thumbs_dir_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
             reason={"why": THUMBS_SWEEP_WHY, "by": "system"},
         )
         n += 1 if res.job_id is not None else 0
+    return n
+
+
+#: #977's merge (2026-11-08 06:34:50 UTC), the first build whose Windows runners ran
+#: first-party stages, so no result before it was read in one; v0.3.105 shipped it
+SHARE_MISS_SINCE = datetime(2026, 11, 8, 6, 34, 50, tzinfo=UTC)
+#: the reason of the jobs :func:`_share_miss_sweep` queues; a subject that ever had one is
+#: not queued by it again
+SHARE_MISS_WHY = "a Windows runner read a share file as missing (54.23)"
+
+
+def _on_share(path: str) -> bool:
+    from ..plugins.native import remote_path
+    from .paths import to_local
+
+    try:
+        return remote_path(to_local(path))
+    except (OSError, ValueError):
+        return False
+
+
+async def _share_miss_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
+    """Results a Windows runner read wrong on a share, queued once more (story 54.23).
+
+    On v0.3.105 a runner answered a refused look on a share as a missing file (fixed by
+    #988), and two results of it stay without a rerun of their own:
+
+    * ``thumb_small`` ended done with no thumbnail (its sidecar look found nothing). Its
+      input fingerprint is unchanged, so a plain rerun would be skipped: it is queued
+      forced;
+    * ``dedup_apply`` failed as ``keeper_unreadable`` (a library written in full has no
+      broker there, so the keeper's probe failed). The group went back to review; the job
+      is queued with the approval it carried, and the merge's own checks run again.
+
+    Only results since :data:`SHARE_MISS_SINCE` whose file is on a share (a
+    ``\\\\server\\share`` path or a mapped network drive) are looked at, each subject is
+    queued by this once (the reason marks it), and a subject with a live job is left alone,
+    so the sweep ends by itself. A ``convert_mp4`` failed as ``file_missing`` needs nothing
+    here: the next completed scan queues it again once the file answers
+    (:mod:`.missing_files`)."""
+    since = to_ts(db, SHARE_MISS_SINCE)
+    n = 0
+
+    def field(name: str) -> str:
+        if is_pg(db):
+            return f"(j.output_summary->>'{name}')"
+        return f"json_extract(j.output_summary, '$.{name}')"
+
+    def untouched(stage: str, kind: str) -> str:
+        return (
+            " AND NOT EXISTS (SELECT 1 FROM processing_jobs l"
+            f" WHERE l.subject_kind = '{kind}' AND l.subject_id = j.subject_id"
+            f" AND l.stage = '{stage}'"
+            " AND (l.state IN ('pending','claimed','running','resuming','paused')"
+            "  OR CAST(l.reasons AS TEXT) LIKE $1))"
+            " AND j.id = (SELECT max(k.id) FROM processing_jobs k"
+            f" WHERE k.subject_kind = '{kind}' AND k.subject_id = j.subject_id"
+            f" AND k.stage = '{stage}')"
+        )
+
+    marker = f"%{SHARE_MISS_WHY}%"
+    if "thumb_small" in graph:
+        rows = await db.fetch(
+            "SELECT j.subject_id AS sid, v.path AS path FROM processing_jobs j"
+            " JOIN videos v ON v.id = j.subject_id"
+            " WHERE j.stage = 'thumb_small' AND j.subject_kind = 'video' AND j.state = 'done'"
+            f" AND {field('reason')} = 'no_thumbnail' AND j.finished_at >= $2"
+            " AND v.deleted_at IS NULL"
+            + untouched("thumb_small", "video")
+            + " ORDER BY j.id LIMIT $3",
+            marker,
+            since,
+            SWEEP_BATCH,
+        )
+        for r in rows:
+            if not await asyncio.to_thread(_on_share, str(r["path"])):
+                continue
+            res = await enqueue_job(
+                db,
+                subject_kind="video",
+                subject_id=UUID(str(r["sid"])),
+                stage="thumb_small",
+                priority=SWEEP_PRIORITY,
+                force=True,
+                reason={"why": SHARE_MISS_WHY, "by": "system"},
+            )
+            n += 1 if res.job_id is not None else 0
+    if "dedup_apply" in graph:
+        rows = await db.fetch(
+            "SELECT j.subject_id AS sid, j.payload AS payload, l.roots AS roots"
+            " FROM processing_jobs j"
+            " JOIN duplicate_groups g ON g.id = j.subject_id"
+            " JOIN libraries l ON l.id = g.library_id"
+            " WHERE j.stage = 'dedup_apply' AND j.subject_kind = 'dup_group'"
+            " AND j.state = 'failed' AND j.error_cause LIKE 'keeper_unreadable%'"
+            " AND j.finished_at >= $2 AND g.status = 'failed'"
+            + untouched("dedup_apply", "dup_group")
+            + " ORDER BY j.id LIMIT $3",
+            marker,
+            since,
+            SWEEP_BATCH,
+        )
+        from .failure_policy import _roots
+
+        for r in rows:
+            roots = _roots(r["roots"])
+            if not any([await asyncio.to_thread(_on_share, x) for x in roots]):
+                continue
+            payload = loads(r["payload"]) if r["payload"] is not None else None
+            res = await enqueue_job(
+                db,
+                subject_kind="dup_group",
+                subject_id=UUID(str(r["sid"])),
+                stage="dedup_apply",
+                priority=SWEEP_PRIORITY,
+                force=True,
+                reason={"why": SHARE_MISS_WHY, "by": "system"},
+                payload=payload if isinstance(payload, dict) else None,
+            )
+            n += 1 if res.job_id is not None else 0
     return n
 
 

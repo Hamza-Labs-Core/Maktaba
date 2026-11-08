@@ -47,7 +47,15 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
-__all__ = ["PIPE_ENV", "ROOTS_ENV", "Broker", "install", "install_from_env"]
+__all__ = [
+    "PIPE_ENV",
+    "ROOTS_ENV",
+    "Broker",
+    "install",
+    "install_from_env",
+    "install_unbrokered",
+    "is_share",
+]
 
 PIPE_ENV = "MAKTABA_RUNNER_FILES_PIPE"
 ROOTS_ENV = "MAKTABA_RUNNER_FILES_ROOTS"
@@ -63,6 +71,15 @@ HANDLE_TOOLS = frozenset({"ffmpeg", "ffprobe"})
 
 #: inputs that are the tool's standard input already: one brokered input would collide
 _STDIN_INPUTS = ("-", "pipe:", "pipe:0", "fd:")
+
+
+def is_share(path: str) -> bool:
+    """``path`` names a file on a share (``\\\\server\\share\\...``, also as ``\\\\?\\UNC\\...``),
+    not a device or a local path in the long form (``\\\\?\\C:\\...``, ``\\\\.\\pipe\\...``)."""
+    p = path.replace("/", "\\")
+    if p[:8].upper() == "\\\\?\\UNC\\":
+        return True
+    return p.startswith("\\\\") and not p.startswith(("\\\\?\\", "\\\\.\\"))
 
 
 def _key(path: str) -> str:
@@ -126,6 +143,28 @@ class _Shim:
             return p
         return None
 
+    def route(self, path: object) -> str | None:
+        """:meth:`under`, and a refusal for any other share path: an AppContainer reaches
+        no share by itself, so a plain call there could only fail, and the plain lookups
+        (``os.path.exists`` and the like, which answer False on any error) would read that
+        failure as a missing file. A runner with no broker (one that writes its libraries
+        in full) refuses every share path this way, so its job runs in the worker."""
+        p = self.under(path)
+        if p is not None:
+            return p
+        if path is None or isinstance(path, int):
+            return None
+        try:
+            text = os.fsdecode(path)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None
+        if is_share(text):
+            raise PermissionError(
+                errno.EACCES,
+                f"{text}: a share this runner is not brokered; the worker runs this job",
+            )
+        return None
+
     def ask(self, req: dict[str, Any]) -> dict[str, Any]:
         out = self.request(req)
         if out.get("error"):
@@ -138,7 +177,7 @@ class _Shim:
     # -- the calls routed -------------------------------------------------------------
 
     def open_(self, file: Any, mode: str = "r", *args: Any, **kwargs: Any) -> Any:
-        p = self.under(file)
+        p = self.route(file)
         if p is None:
             return self.open(file, mode, *args, **kwargs)
         write = any(c in mode for c in "wax+")
@@ -163,13 +202,13 @@ class _Shim:
         return self.open(fd, mode, *args, **kwargs)
 
     def stat_(self, path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
-        p = self.under(path)
+        p = self.route(path)
         if p is None:
             return self.stat(path, *args, **kwargs)
         return self._stat(p)
 
     def lstat_(self, path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
-        p = self.under(path)
+        p = self.route(path)
         if p is None:
             return self.lstat(path, *args, **kwargs)
         return self._stat(p)
@@ -188,7 +227,7 @@ class _Shim:
     # False, a stage would go on as if the file were absent (a thumbnail not found, a job
     # done with the wrong result) instead of running in the worker (sandbox_refused).
     def exists_(self, path: Any) -> bool:
-        if self.under(path) is None:
+        if self.route(path) is None:
             return self.exists(path)
         try:
             self.stat_(path)
@@ -199,7 +238,7 @@ class _Shim:
         return True
 
     def lexists_(self, path: Any) -> bool:
-        if self.under(path) is None:
+        if self.route(path) is None:
             return self.lexists(path)
         try:
             self.lstat_(path)
@@ -210,7 +249,7 @@ class _Shim:
         return True
 
     def isfile_(self, path: Any) -> bool:
-        if self.under(path) is None:
+        if self.route(path) is None:
             return self.isfile(path)
         try:
             return stat_mod.S_ISREG(self.stat_(path).st_mode)
@@ -220,7 +259,7 @@ class _Shim:
             return False
 
     def isdir_(self, path: Any) -> bool:
-        if self.under(path) is None:
+        if self.route(path) is None:
             return self.isdir(path)
         try:
             return stat_mod.S_ISDIR(self.stat_(path).st_mode)
@@ -230,7 +269,7 @@ class _Shim:
             return False
 
     def listdir_(self, path: Any = ".") -> list[Any]:
-        p = self.under(path)
+        p = self.route(path)
         if p is None:
             return self.listdir(path)
         sys.audit("os.listdir", p)
@@ -240,7 +279,7 @@ class _Shim:
     def scandir_(self, path: Any = ".") -> Any:
         """Not brokered (its entries would stat behind the broker's back): a brokered folder
         is refused, so the job runs in the worker instead of seeing an empty or missing one."""
-        p = self.under(path)
+        p = self.route(path)
         if p is None:
             return self.scandir(path)
         sys.audit("os.scandir", p)
@@ -249,7 +288,7 @@ class _Shim:
     def _move(
         self, plain: Callable[..., None], src: Any, dst: Any, *args: Any, **kwargs: Any
     ) -> None:
-        s, d = self.under(src), self.under(dst)
+        s, d = self.route(src), self.route(dst)
         if s is None and d is None:
             plain(src, dst, *args, **kwargs)
             return
@@ -267,7 +306,7 @@ class _Shim:
         self._move(self.rename, src, dst, *args, **kwargs)
 
     def _remove(self, plain: Callable[..., None], path: Any, *args: Any, **kwargs: Any) -> None:
-        p = self.under(path)
+        p = self.route(path)
         if p is None:
             plain(path, *args, **kwargs)
             return
@@ -450,6 +489,18 @@ def install(
     os.path.isdir = shim.isdir_  # type: ignore[assignment]
     subprocess.Popen.__init__ = shim.popen_init(subprocess.Popen.__init__)  # type: ignore[method-assign]
     sys.addaudithook(shim.exec_hook)
+
+
+def _no_broker(req: dict[str, Any]) -> dict[str, Any]:
+    return {"error": "this runner has no broker", "errno": errno.EACCES}
+
+
+def install_unbrokered(*, fdopen: Callable[[int, int], int] | None = None) -> None:
+    """:func:`install` with no broker and no folders: every share path is refused
+    (:meth:`_Shim.route`), so a runner whose launcher brokers nothing (it writes its
+    libraries in full) hands a share job to the worker instead of reading the share as
+    empty or a file there as missing. A no-op once a broker is installed."""
+    install(_no_broker, [], fdopen=fdopen)
 
 
 def install_from_env(environ: dict[str, str] | None = None) -> bool:

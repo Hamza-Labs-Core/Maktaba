@@ -182,14 +182,15 @@ fun machineName(names: Map<String, String>, machine: String): String = names[mac
 
 /**
  * The Overview's machines: how many there are, the ones shown (most in need of attention first, a joined machine that is
- * offline before any other), all of them, and the offline ones (empty from a home before the list).
+ * offline before any other), all of them, and the offline ones (empty from a home before the list). A malformed value
+ * is its default and a malformed entry is left out (Lenient.kt); the rest of the board still decodes.
  */
 @Serializable
 data class BoardMachines(
-    val total: Int = 0,
-    val shown: List<String> = emptyList(),
-    val all: List<String> = emptyList(),
-    val offline: List<String> = emptyList(),
+    @Serializable(with = LenientCount::class) val total: Int = 0,
+    @Serializable(with = LenientStrings::class) val shown: List<String> = emptyList(),
+    @Serializable(with = LenientStrings::class) val all: List<String> = emptyList(),
+    @Serializable(with = LenientStrings::class) val offline: List<String> = emptyList(),
 ) {
     /** Whether a machine is one of the offline ones. */
     fun isOffline(machine: String): Boolean = machine in offline
@@ -203,11 +204,11 @@ data class BoardDoc(
     /** The one machine the Overview was asked for (null: all of them). */
     val machine: String? = null,
     /** The Overview's machines (null on the other boards, and from a home before them). */
-    val machines: BoardMachines? = null,
+    @Serializable(with = LenientMachines::class) val machines: BoardMachines? = null,
     /** Lines the board's 50 left out. */
-    val omitted: Int = 0,
+    @Serializable(with = LenientCount::class) val omitted: Int = 0,
     /** The Overview's machine ids named as the Machines page names them (empty from a home before names: each by its id). */
-    val names: Map<String, String> = emptyMap(),
+    @Serializable(with = LenientNames::class) val names: Map<String, String> = emptyMap(),
 ) {
     /** A machine's name for display: its name, else its node id. */
     fun nameOf(machine: String): String = machineName(names, machine)
