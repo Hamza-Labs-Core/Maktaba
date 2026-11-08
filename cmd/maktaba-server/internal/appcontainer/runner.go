@@ -175,9 +175,10 @@ var (
 		}
 		return out.Bytes(), 0, err
 	}
-	grantFn  = Grant
-	revokeFn = Revoke
-	runFn    = Run
+	grantFn      = Grant
+	grantFilesFn = GrantFiles
+	revokeFn     = Revoke
+	runFn        = Run
 	// remoteFn: a folder on another machine (a share, a mapped drive), whose ACL the
 	// launcher never changes; an AppContainer cannot reach SMB shares anyway
 	remoteFn = remotePath
@@ -193,22 +194,33 @@ func uncPath(p string) bool {
 
 // LaunchRunner is `maktaba-server runner-sandbox-run` (and aclaunch's runner-sandbox-run):
 //
-//	runner-sandbox-run -group name [-grants file] [-memory bytes] -- python -m maktaba_plugin_runner args...
+//	runner-sandbox-run -group name -run-dir dir [-areas-dir dir] [-protect dir]... [-grants file] [-memory bytes] \
+//	    -- python -m maktaba_plugin_runner args...
+//
+// What the supervisor names on this command line is trusted; what the runner's policy names
+// is not: its areas come from areas.json, so a path in it is never granted when it holds or
+// is inside a -protect folder (the supervisor's token, the keys, the run folders), except
+// the group's own -run-dir, which replaces the policy's run folder. -areas-dir (where the
+// worker writes areas.json) is granted read on its own files only.
 func LaunchRunner(args []string, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "runner-sandbox-run" {
 		args = args[1:]
 	}
 	fs := flag.NewFlagSet("runner-sandbox-run", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	var protect list
 	group := fs.String("group", "", "the runner group")
+	runDir := fs.String("run-dir", "", "the group's own run folder (the only one it writes there)")
+	areasDir := fs.String("areas-dir", "", "the folder of the worker's areas.json (read, its files only)")
 	grantsFile := fs.String("grants", "", "where the profile's grants are kept between starts")
 	memory := fs.Uint64("memory", 0, "the Job Object's memory cap in bytes (0: none)")
+	fs.Var(&protect, "protect", "a folder no grant may hold or be inside (repeatable)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	rest := fs.Args()
-	if len(rest) == 0 || !validGroup(*group) {
-		fmt.Fprintln(stderr, "runner-sandbox-run: -group and a program to run after -- are required")
+	if len(rest) == 0 || !validGroup(*group) || *runDir == "" {
+		fmt.Fprintln(stderr, "runner-sandbox-run: -group, -run-dir and a program to run after -- are required")
 		return 2
 	}
 	fail := func(step string, err error) int {
@@ -230,23 +242,55 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 	if err := json.Unmarshal(lastLine(raw), &p); err != nil {
 		return fail("policy", err)
 	}
-	profile := RunnerProfile(*group)
+	p.RunDir = *runDir
 	now := p.Grants(os.Getenv("MAKTABA_DATA_DIR"))
+	if err := CheckGrants(now, protect, *runDir); err != nil {
+		return fail("policy_path", err)
+	}
+	profile := RunnerProfile(*group)
 	var before []GrantEntry
 	if *grantsFile != "" {
-		if b, err := os.ReadFile(*grantsFile); err == nil {
-			_ = json.Unmarshal(b, &before)
+		b, err := os.ReadFile(*grantsFile)
+		if err != nil && !os.IsNotExist(err) {
+			return fail("grants_file", err)
+		}
+		if err == nil {
+			if err := json.Unmarshal(b, &before); err != nil {
+				return fail("grants_file", err)
+			}
 		}
 	}
-	for _, g := range Stale(before, now) {
-		if _, err := os.Stat(g.Path); err != nil || remoteFn(g.Path) {
+	// what this start leaves granted, kept before any grant is made: the new grants, and
+	// any stale one that could not be taken back now (a folder not mounted: next time)
+	keep := []GrantEntry{}
+	for _, g := range now {
+		if !remoteFn(g.Path) {
+			keep = append(keep, GrantEntry{Path: g.Path, Write: g.Write})
+		}
+	}
+	stale := Stale(before, now)
+	var revoke []GrantEntry
+	for _, g := range stale {
+		if _, err := os.Stat(g.Path); err != nil {
+			keep = append(keep, g)
 			continue
 		}
+		if !remoteFn(g.Path) {
+			revoke = append(revoke, g)
+		}
+	}
+	if *grantsFile != "" {
+		// the revocations below are recorded as kept until they are done
+		b, _ := json.Marshal(append(append([]GrantEntry{}, keep...), revoke...))
+		if err := writeFileAtomic(*grantsFile, b); err != nil {
+			return fail("grants_file", err)
+		}
+	}
+	for _, g := range revoke {
 		if err := revokeFn(profile, g.Path); err != nil {
 			return fail("revoke", err)
 		}
 	}
-	var granted []GrantEntry
 	for _, g := range now {
 		if g.Create {
 			if err := os.MkdirAll(g.Path, 0o700); err != nil {
@@ -265,10 +309,17 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 		if err := grantFn(profile, g.Path, g.Write); err != nil {
 			return fail("grant", err)
 		}
-		granted = append(granted, g)
+	}
+	if *areasDir != "" {
+		if err := os.MkdirAll(*areasDir, 0o700); err != nil {
+			return fail("grant", err)
+		}
+		if err := grantFilesFn(profile, *areasDir); err != nil {
+			return fail("grant", err)
+		}
 	}
 	if *grantsFile != "" {
-		b, _ := json.Marshal(granted)
+		b, _ := json.Marshal(keep)
 		if err := writeFileAtomic(*grantsFile, b); err != nil {
 			return fail("grants_file", err)
 		}
@@ -280,6 +331,29 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 		return fail("start", err)
 	}
 	return code
+}
+
+// CheckGrants refuses a grant that would expose a protected folder: one that holds it (or
+// is it), or one inside it other than the group's own run folder; and a filesystem root.
+func CheckGrants(gs []GrantEntry, protect []string, runDir string) error {
+	for _, g := range gs {
+		clean := filepath.Clean(g.Path)
+		if filepath.Dir(clean) == clean {
+			return fmt.Errorf("%s: a filesystem root is never granted", g.Path)
+		}
+		for _, pr := range protect {
+			if strings.TrimSpace(pr) == "" {
+				continue
+			}
+			if under(pr, g.Path) {
+				return fmt.Errorf("%s holds %s, which a runner never reaches", g.Path, pr)
+			}
+			if under(g.Path, pr) && !under(g.Path, runDir) {
+				return fmt.Errorf("%s is inside %s, which a runner never reaches", g.Path, pr)
+			}
+		}
+	}
+	return nil
 }
 
 func validGroup(g string) bool {

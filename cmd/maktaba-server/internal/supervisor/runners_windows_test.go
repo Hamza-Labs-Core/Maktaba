@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -85,8 +86,10 @@ func TestARunnersPipesOnWindows(t *testing.T) {
 		t.Fatalf("no light runner in %d", len(ps))
 	}
 	args := light.Cmd.Args
-	if len(args) < 6 || args[1] != "runner-sandbox-run" || args[3] != "light" ||
-		args[5] != filepath.Join(cfg.Server.DataDir, "run", "runner-light.grants") {
+	if len(args) < 10 || args[1] != "runner-sandbox-run" || args[3] != "light" ||
+		args[5] != filepath.Join(RunnerDir(cfg), "light") ||
+		args[9] != filepath.Join(cfg.Server.DataDir, "run", "runner-light.grants") ||
+		!slices.Contains(args, filepath.Join(cfg.Server.DataDir, "supervisor")) {
 		t.Fatalf("command %v", args)
 	}
 	env := map[string]string{}

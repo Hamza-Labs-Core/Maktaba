@@ -89,6 +89,10 @@ def run_probes() -> None:
     probe("read_secret", lambda: Path(env("PROBE_SECRET", "")).read_text())
     probe("write_granted", lambda: Path(env("PROBE_WRITE_DIR", ""), "w.txt").write_text("x"))
     probe("write_elsewhere", lambda: Path(env("PROBE_DENY_DIR", ""), "w.txt").write_text("x"))
+    # the worker's areas.json: read (its files are granted), never written (another group's
+    # sandbox is built from it)
+    probe("read_areas", lambda: Path(env("PROBE_AREAS_DIR", ""), "areas.json").read_text())
+    probe("write_areas", lambda: Path(env("PROBE_AREAS_DIR", ""), "areas.json").write_text("{}"))
     for i, addr in enumerate((env("PROBE_CANARIES") or "").split(";")):
         if addr:
             host, _, port = addr.rpartition(":")

@@ -61,17 +61,20 @@ func SIDString(profile string) (string, error) {
 	return sid.String(), nil
 }
 
-// fileRead and fileAll are the masks an inherited grant holds once Windows mapped the
-// generic rights (what a DACL keeps).
+// fileRead and fileModify are the masks a grant holds: read and execute, or modify (read,
+// write, execute and delete). Never full control: WRITE_DAC and WRITE_OWNER would let the
+// AppContainer change the folder's ACL itself.
 const (
-	fileRead = windows.FILE_GENERIC_READ | windows.FILE_GENERIC_EXECUTE
-	fileAll  = windows.STANDARD_RIGHTS_REQUIRED | windows.SYNCHRONIZE | 0x1FF // FILE_ALL_ACCESS
+	fileRead   = windows.FILE_GENERIC_READ | windows.FILE_GENERIC_EXECUTE
+	fileModify = fileRead | windows.FILE_GENERIC_WRITE | windows.DELETE
 )
 
-// hasGrant reports whether the DACL already has the SID's explicit, inheritable allow entry
-// with at least the rights asked, as generic rights or as Windows mapped them (a grant made
-// by an earlier start: no walk of the tree again).
-func hasGrant(dacl *windows.ACL, sid *windows.SID, generic, mapped windows.ACCESS_MASK) bool {
+const inheritAll = windows.OBJECT_INHERIT_ACE | windows.CONTAINER_INHERIT_ACE
+
+// hasGrant reports whether the DACL already has the SID's explicit allow entry with the
+// inheritance flags asked and at least mask (a grant made by an earlier start: no walk of
+// the tree again).
+func hasGrant(dacl *windows.ACL, sid *windows.SID, mask windows.ACCESS_MASK, flags uint8) bool {
 	if dacl == nil {
 		return false
 	}
@@ -83,12 +86,12 @@ func hasGrant(dacl *windows.ACL, sid *windows.SID, generic, mapped windows.ACCES
 		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Header.AceFlags&windows.INHERITED_ACE != 0 {
 			continue
 		}
-		const inherit = windows.OBJECT_INHERIT_ACE | windows.CONTAINER_INHERIT_ACE
-		if ace.Header.AceFlags&inherit != inherit {
+		const kinds = windows.OBJECT_INHERIT_ACE | windows.CONTAINER_INHERIT_ACE | windows.NO_PROPAGATE_INHERIT_ACE
+		if ace.Header.AceFlags&kinds != flags {
 			continue
 		}
 		s := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
-		if s.Equals(sid) && (ace.Mask&generic == generic || ace.Mask&mapped == mapped) {
+		if s.Equals(sid) && ace.Mask&mask == mask {
 			return true
 		}
 	}
@@ -124,9 +127,26 @@ func Revoke(profile, path string) error {
 	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION, nil, nil, acl, nil)
 }
 
-// Grant gives the profile's SID read and execute (and, with write, full control) on a
-// folder or file, inherited by what it holds. A grant already there is left as it is.
+// Grant gives the profile's SID read and execute (and, with write, modify: never full
+// control) on a folder or file, inherited by what it holds. A grant already there is left
+// as it is.
 func Grant(profile, path string, write bool) error {
+	mask := windows.ACCESS_MASK(fileRead)
+	if write {
+		mask = fileModify
+	}
+	return grant(profile, path, mask, windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT, inheritAll)
+}
+
+// GrantFiles gives the profile's SID read on a folder and the files directly in it, not
+// its subfolders (a runner reads the worker's areas.json there, story 54.23; the other
+// groups' run folders below are not its).
+func GrantFiles(profile, path string) error {
+	return grant(profile, path, fileRead, windows.SUB_OBJECTS_ONLY_INHERIT|windows.INHERIT_NO_PROPAGATE,
+		windows.OBJECT_INHERIT_ACE|windows.NO_PROPAGATE_INHERIT_ACE)
+}
+
+func grant(profile, path string, mask windows.ACCESS_MASK, inheritance uint32, flags uint8) error {
 	sid, err := SID(profile)
 	if err != nil {
 		return err
@@ -139,18 +159,13 @@ func Grant(profile, path string, write bool) error {
 	if err != nil {
 		return err
 	}
-	mask := windows.ACCESS_MASK(windows.GENERIC_READ | windows.GENERIC_EXECUTE)
-	have := windows.ACCESS_MASK(fileRead)
-	if write {
-		mask, have = windows.GENERIC_ALL, fileAll
-	}
-	if hasGrant(dacl, sid, mask, have) {
+	if hasGrant(dacl, sid, mask, flags) {
 		return nil
 	}
 	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
 		AccessPermissions: mask,
 		AccessMode:        windows.GRANT_ACCESS,
-		Inheritance:       windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+		Inheritance:       inheritance,
 		Trustee: windows.TRUSTEE{
 			TrusteeForm:  windows.TRUSTEE_IS_SID,
 			TrusteeType:  windows.TRUSTEE_IS_WELL_KNOWN_GROUP,

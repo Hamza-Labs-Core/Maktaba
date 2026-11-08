@@ -105,6 +105,8 @@ func TestARunnerOnWindowsInItsAppContainer(t *testing.T) {
 		}
 	}
 	_ = os.WriteFile(filepath.Join(dir, "read", "granted.txt"), []byte("ok"), 0o600)
+	_ = os.MkdirAll(RunnerDir(cfg), 0o700)
+	_ = os.WriteFile(filepath.Join(RunnerDir(cfg), "areas.json"), []byte(`{"digest":"d","areas":{}}`), 0o600)
 	secret := filepath.Join(dir, "secret", "id_ed25519")
 	_ = os.WriteFile(secret, []byte("key"), 0o600)
 
@@ -151,6 +153,7 @@ func TestARunnerOnWindowsInItsAppContainer(t *testing.T) {
 			"PROBE_WRITE_DIR="+filepath.Join(dir, "write"),
 			"PROBE_DENY_DIR="+filepath.Join(dir, "deny"),
 			"PROBE_RUN_DIR="+RunnerDir(cfg),
+			"PROBE_AREAS_DIR="+RunnerDir(cfg),
 			"PROBE_SECRET="+secret,
 			"PROBE_CANARIES="+strings.Join(addrs, ";"),
 			"PROBE_OTHER_PIPE="+other.Back,
@@ -191,7 +194,7 @@ func TestARunnerOnWindowsInItsAppContainer(t *testing.T) {
 			t.Fatal(err)
 		}
 		name, args := runnerCommand("windows", SandboxLauncher(), python, group, apiSock, RunnerDir(cfg),
-			filepath.Join(cfg.Server.DataDir, "run", "runner-"+group+".grants"))
+			filepath.Join(cfg.Server.DataDir, "run", "runner-"+group+".grants"), runnerProtected(cfg))
 		// the probe in place of the runner module: the same launcher, the same pipes
 		for i, a := range args {
 			if a == "--" {
@@ -247,13 +250,14 @@ func TestARunnerOnWindowsInItsAppContainer(t *testing.T) {
 	t.Logf("inside (no net): %v", probes)
 	want := map[string]string{
 		"sandbox": "full", "read_granted": "allowed", "write_granted": "allowed", "api": "allowed",
+		"read_areas": "allowed",
 	}
 	for k, v := range want {
 		if probes[k] != v {
 			t.Errorf("%s = %v, want %s", k, probes[k], v)
 		}
 	}
-	for _, k := range []string{"read_secret", "write_elsewhere", "exec", "exec_kernel", "other_group_pipe", "own_caller_pipe"} {
+	for _, k := range []string{"read_secret", "write_elsewhere", "write_areas", "exec", "exec_kernel", "other_group_pipe", "own_caller_pipe"} {
 		if s, _ := probes[k].(string); !strings.HasPrefix(s, "denied:") {
 			t.Errorf("%s = %v, want denied", k, probes[k])
 		}

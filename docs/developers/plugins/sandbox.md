@@ -72,9 +72,11 @@ cannot be applied (`sandbox_unavailable`):
 
 On Windows a process cannot put itself in an AppContainer, so the launcher
 (`maktaba-server runner-sandbox-run`) asks the runner for its policy first, grants the
-group's profile its folders (read on the interpreter, the read areas and the tools; full
-control on the run folder and the write areas), takes back what an earlier start granted
-that the policy no longer names, and starts the runner. The runner then checks that its
+group's profile its folders (read on the interpreter, the read areas and the tools; modify,
+never full control, on the group's own run folder and the write areas), takes back what an
+earlier start granted that the policy no longer names, and starts the runner. No grant may
+reach the supervisor's own folders or the keys, and no runner can write the file the areas
+are read from. The runner then checks that its
 token is that AppContainer's with no other capability, or exits. Every AppContainer may run
 the system's programs, so the runner's own guard keeps a group with tools to those tools;
 subtitles next to a video are written by name only, as on Linux.

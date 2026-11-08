@@ -71,21 +71,23 @@ func TestOnlyANetGroupHoldsInternetClient(t *testing.T) {
 }
 
 type fakeLaunch struct {
-	policy   string
-	code     int
-	granted  []GrantEntry
-	revoked  []string
-	profile  string
-	started  bool
-	opts     Options
-	grantErr error
-	remote   string
+	policy    string
+	code      int
+	granted   []GrantEntry
+	revoked   []string
+	profile   string
+	started   bool
+	opts      Options
+	grantErr  error
+	remote    string
+	filesOnly []string
 }
 
 func (f *fakeLaunch) install(t *testing.T) {
 	t.Helper()
-	ap, gf, rf, run, rem := askPolicy, grantFn, revokeFn, runFn, remoteFn
-	t.Cleanup(func() { askPolicy, grantFn, revokeFn, runFn, remoteFn = ap, gf, rf, run, rem })
+	ap, gf, rf, run, rem, gff := askPolicy, grantFn, revokeFn, runFn, remoteFn, grantFilesFn
+	t.Cleanup(func() { askPolicy, grantFn, revokeFn, runFn, remoteFn, grantFilesFn = ap, gf, rf, run, rem, gff })
+	grantFilesFn = func(_, path string) error { f.filesOnly = append(f.filesOnly, path); return nil }
 	remoteFn = func(p string) bool { return f.remote != "" && p == f.remote }
 	askPolicy = func(_ string, args []string, _ io.Writer) ([]byte, int, error) {
 		if args[len(args)-1] != "--policy" {
@@ -119,11 +121,14 @@ func TestTheRunnerLauncherGrantsItsGroupsProfileAndStartsIt(t *testing.T) {
 	grants := filepath.Join(dir, "runner-light.grants")
 	b, _ := json.Marshal([]GrantEntry{{Path: old, Write: true}})
 	_ = os.WriteFile(grants, b, 0o600)
-	pol, _ := json.Marshal(RunnerPolicy{Read: []string{media, filepath.Join(dir, "missing")}, RunDir: run, Processes: 2})
+	// the policy's run folder is the runner's word; the supervisor's -run-dir wins
+	pol, _ := json.Marshal(RunnerPolicy{Read: []string{media, filepath.Join(dir, "missing")}, RunDir: filepath.Join(dir, "elsewhere"), Processes: 2})
 	f := &fakeLaunch{policy: string(pol)}
 	f.install(t)
 	var errOut strings.Builder
-	code := LaunchRunner([]string{"runner-sandbox-run", "-group", "light", "-grants", grants, "--", "python", "-m", "maktaba_plugin_runner"}, &errOut)
+	areas := filepath.Join(dir, "areas")
+	code := LaunchRunner([]string{"runner-sandbox-run", "-group", "light", "-run-dir", run, "-areas-dir", areas,
+		"-grants", grants, "--", "python", "-m", "maktaba_plugin_runner"}, &errOut)
 	if code != 0 || !f.started {
 		t.Fatalf("exit %d, started %v: %s", code, f.started, errOut.String())
 	}
@@ -140,13 +145,17 @@ func TestTheRunnerLauncherGrantsItsGroupsProfileAndStartsIt(t *testing.T) {
 	if info, err := os.Stat(run); err != nil || !info.IsDir() {
 		t.Fatalf("the run folder was not made: %v", err)
 	}
+	if !reflect.DeepEqual(f.filesOnly, []string{areas}) {
+		t.Fatalf("the areas folder: %v", f.filesOnly)
+	}
 	if f.opts.ProcessLimit != 2 || len(f.opts.Capabilities) != 0 {
 		t.Fatalf("options %+v", f.opts)
 	}
+	// kept: what was granted, and the missing read area (granted when it is back)
 	var kept []GrantEntry
 	raw, _ := os.ReadFile(grants)
 	_ = json.Unmarshal(raw, &kept)
-	if len(kept) != 2 {
+	if len(kept) != 3 {
 		t.Fatalf("grants kept %s", raw)
 	}
 }
@@ -156,11 +165,12 @@ func TestTheRunnerLauncherGrantsItsGroupsProfileAndStartsIt(t *testing.T) {
 // policy step (untrusted packages, a secret in its environment) pass through.
 func TestTheRunnerLauncherNeverStartsARunnerItCouldNotSandbox(t *testing.T) {
 	t.Setenv("MAKTABA_DATA_DIR", t.TempDir())
-	args := []string{"-group", "light", "--", "python"}
+	run := t.TempDir()
+	args := []string{"-group", "light", "-run-dir", run, "--", "python"}
 	for name, f := range map[string]*fakeLaunch{
 		"bad policy":   {policy: "not json"},
 		"policy fails": {policy: "{}", code: 1},
-		"grant fails":  {policy: `{"run_dir":"` + filepath.ToSlash(t.TempDir()) + `"}`, grantErr: errors.New("denied")},
+		"grant fails":  {policy: "{}", grantErr: errors.New("denied")},
 	} {
 		f.install(t)
 		var errOut strings.Builder
@@ -178,7 +188,7 @@ func TestTheRunnerLauncherNeverStartsARunnerItCouldNotSandbox(t *testing.T) {
 			t.Fatalf("the runner's own refusal %d became %d (started %v)", code, got, f.started)
 		}
 	}
-	if got := LaunchRunner([]string{"-group", "../x", "--", "python"}, io.Discard); got != 2 {
+	if got := LaunchRunner([]string{"-group", "../x", "-run-dir", run, "--", "python"}, io.Discard); got != 2 {
 		t.Fatalf("a group name that is not one: %d", got)
 	}
 }
@@ -186,7 +196,7 @@ func TestTheRunnerLauncherNeverStartsARunnerItCouldNotSandbox(t *testing.T) {
 // Launch hands runner-sandbox-run to LaunchRunner (aclaunch and maktaba-server alike).
 func TestLaunchHandsARunnerToLaunchRunner(t *testing.T) {
 	var out strings.Builder
-	if code := Launch([]string{"runner-sandbox-run", "--", "x"}, &out); code != 2 ||
+	if code := Launch([]string{"runner-sandbox-run", "-group", "light", "--", "x"}, &out); code != 2 ||
 		!strings.Contains(out.String(), "-group") {
 		t.Fatalf("%d %q", code, out.String())
 	}
@@ -203,7 +213,7 @@ func TestTheRunnerLauncherLeavesSharesAlone(t *testing.T) {
 	f := &fakeLaunch{policy: string(pol), remote: share}
 	f.install(t)
 	var errOut strings.Builder
-	if code := LaunchRunner([]string{"-group", "light", "--", "python"}, &errOut); code != 0 {
+	if code := LaunchRunner([]string{"-group", "light", "-run-dir", filepath.Join(dir, "run"), "--", "python"}, &errOut); code != 0 {
 		t.Fatalf("exit %d: %s", code, errOut.String())
 	}
 	for _, g := range f.granted {
@@ -218,5 +228,74 @@ func TestTheRunnerLauncherLeavesSharesAlone(t *testing.T) {
 		if uncPath(p) != want {
 			t.Fatalf("uncPath(%q) = %v", p, !want)
 		}
+	}
+}
+
+// The policy's areas come from areas.json, which the runner must not be able to steer to
+// a folder it should never reach: a grant holding or inside a protected folder (the
+// supervisor's token, the keys, the run folders) refuses the start, except the group's own
+// run folder; so does a filesystem root.
+func TestARunnersPolicyNeverReachesAProtectedFolder(t *testing.T) {
+	data := filepath.Join(string(filepath.Separator)+"d", "maktaba")
+	run := filepath.Join(data, "run")
+	own := filepath.Join(run, "runners", "light")
+	keys := filepath.Join(string(filepath.Separator)+"k", "keys")
+	protect := []string{run, filepath.Join(data, "supervisor"), keys}
+	ok := []GrantEntry{{Path: own, Write: true}, {Path: filepath.Join(data, "thumbnails"), Write: true}, {Path: "/media/a"}}
+	if err := CheckGrants(ok, protect, own); err != nil {
+		t.Fatalf("the group's own folders: %v", err)
+	}
+	for _, bad := range []string{data, filepath.Join(run, "runners"), filepath.Join(run, "runners", "net"),
+		filepath.Join(data, "supervisor", "local.token"), keys, filepath.Dir(keys), string(filepath.Separator)} {
+		if err := CheckGrants([]GrantEntry{{Path: bad}}, protect, own); err == nil {
+			t.Errorf("%s was allowed", bad)
+		}
+	}
+
+	dir := t.TempDir()
+	t.Setenv("MAKTABA_DATA_DIR", dir)
+	secret := filepath.Join(dir, "supervisor")
+	pol, _ := json.Marshal(RunnerPolicy{Read: []string{secret}})
+	f := &fakeLaunch{policy: string(pol)}
+	f.install(t)
+	var errOut strings.Builder
+	code := LaunchRunner([]string{"-group", "light", "-run-dir", filepath.Join(dir, "run", "runners", "light"),
+		"-protect", secret, "--", "python"}, &errOut)
+	if code != RunnerSandboxExit || f.started || len(f.granted) != 0 || !strings.Contains(errOut.String(), "policy_path") {
+		t.Fatalf("exit %d, started %v, granted %v: %s", code, f.started, f.granted, errOut.String())
+	}
+}
+
+// The grants file is the record of what the profile holds: written before any grant (so a
+// failed start still knows what to take back), kept across a folder that is not mounted, and
+// a file that cannot be read refuses the start rather than forgetting grants.
+func TestTheGrantsRecordIsKeptBeforeGranting(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("MAKTABA_DATA_DIR", dir)
+	media := filepath.Join(dir, "media")
+	_ = os.MkdirAll(media, 0o700)
+	grants := filepath.Join(dir, "g.json")
+	gone := filepath.Join(dir, "unmounted")
+	b, _ := json.Marshal([]GrantEntry{{Path: gone, Write: true}})
+	_ = os.WriteFile(grants, b, 0o600)
+	pol, _ := json.Marshal(RunnerPolicy{Read: []string{media}})
+	f := &fakeLaunch{policy: string(pol), grantErr: errors.New("denied")}
+	f.install(t)
+	args := []string{"-group", "light", "-run-dir", filepath.Join(dir, "run"), "-grants", grants, "--", "python"}
+	if code := LaunchRunner(args, io.Discard); code != RunnerSandboxExit {
+		t.Fatalf("exit %d", code)
+	}
+	raw, _ := os.ReadFile(grants)
+	for _, want := range []string{gone, media} {
+		if !strings.Contains(string(raw), filepath.ToSlash(want)) && !strings.Contains(string(raw), strings.ReplaceAll(want, `\`, `\\`)) {
+			t.Fatalf("%s is not in the record after a failed grant: %s", want, raw)
+		}
+	}
+	_ = os.WriteFile(grants, []byte("not json"), 0o600)
+	f2 := &fakeLaunch{policy: string(pol)}
+	f2.install(t)
+	var errOut strings.Builder
+	if code := LaunchRunner(args, &errOut); code != RunnerSandboxExit || f2.started || !strings.Contains(errOut.String(), "grants_file") {
+		t.Fatalf("an unreadable record: exit %d, started %v: %s", code, f2.started, errOut.String())
 	}
 }

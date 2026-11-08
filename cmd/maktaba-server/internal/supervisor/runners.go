@@ -193,7 +193,7 @@ func BuildPluginRunners(opts Options) ([]Process, error) {
 			}
 		}
 		name, args := runnerCommand(runtime.GOOS, SandboxLauncher(), pythonFor(opts), instance, api, dir,
-			filepath.Join(opts.Config.Server.DataDir, "run", "runner-"+instance+".grants"))
+			filepath.Join(opts.Config.Server.DataDir, "run", "runner-"+instance+".grants"), runnerProtected(opts.Config))
 		cmd := exec.Command(name, args...)
 		cmd.Env = env
 		wire(cmd)
@@ -250,13 +250,29 @@ func containsString(l []string, s string) bool {
 // runnerCommand is a runner's command line on goos: the interpreter itself (the runner
 // applies its own sandbox: Seatbelt, Landlock and seccomp), or on Windows the launcher's
 // runner-sandbox-run around it (the group's AppContainer and Job Object, from the policy
-// the runner prints; its grants kept in grants, outside the run folder the runners write).
-func runnerCommand(goos, launcher, python, instance, api, dir, grants string) (string, []string) {
-	runner := []string{"-m", "maktaba_plugin_runner", "--group", instance, "--api-socket", api, "--run-dir", dir}
+// the runner prints). On Windows each group writes only its own run folder,
+// <dir>\<group>, and reads the worker's areas.json in dir (its files, not the other
+// groups' folders); its grants are kept in grants, outside every runner's reach, and no
+// grant may hold or be inside a protected folder.
+func runnerCommand(goos, launcher, python, instance, api, dir, grants string, protect []string) (string, []string) {
 	if goos != "windows" {
-		return python, runner
+		return python, []string{"-m", "maktaba_plugin_runner", "--group", instance, "--api-socket", api, "--run-dir", dir}
 	}
-	return launcher, append([]string{"runner-sandbox-run", "-group", instance, "-grants", grants, "--", python}, runner...)
+	own := filepath.Join(dir, instance)
+	w := []string{"runner-sandbox-run", "-group", instance, "-run-dir", own, "-areas-dir", dir, "-grants", grants}
+	for _, p := range protect {
+		w = append(w, "-protect", p)
+	}
+	w = append(w, "--", python, "-m", "maktaba_plugin_runner", "--group", instance, "--api-socket", api, "--run-dir", own)
+	return launcher, w
+}
+
+// runnerProtected are the folders no runner's grant may hold or be inside: the run folder
+// (the plugin host's, the runners', the grants records), the supervisor's (its local
+// token) and the keys.
+func runnerProtected(cfg config.Config) []string {
+	return []string{filepath.Join(cfg.Server.DataDir, "run"), filepath.Join(cfg.Server.DataDir, "supervisor"),
+		config.KeysDir()}
 }
 
 // askRunnerHelloVia is a runner's health: it answers hello on a connection from dial (its

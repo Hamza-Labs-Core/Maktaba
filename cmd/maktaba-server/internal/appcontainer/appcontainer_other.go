@@ -14,3 +14,6 @@ func Revoke(_, _ string) error { return ErrUnsupported }
 
 // remotePath is a UNC path (elsewhere there is no drive type to ask).
 func remotePath(p string) bool { return uncPath(p) }
+
+// GrantFiles gives the profile's SID read on a folder and the files directly in it.
+func GrantFiles(_, _ string) error { return ErrUnsupported }

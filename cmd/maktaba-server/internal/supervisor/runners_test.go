@@ -71,15 +71,18 @@ func TestARunnerRunsInItsSandboxOnEveryOS(t *testing.T) {
 		t.Fatalf("a Postgres home on %s runs no runner", runtime.GOOS)
 	}
 	name, args := runnerCommand("windows", `C:\m\maktaba-server.exe`, `C:\m\venv\Scripts\python.exe`, "light",
-		`C:\d\run\plugins\plugin-api.sock`, `C:\d\run\runners`, `C:\d\run\runner-light.grants`)
-	want := []string{"runner-sandbox-run", "-group", "light", "-grants", `C:\d\run\runner-light.grants`, "--",
+		`C:\d\run\plugins\plugin-api.sock`, `C:\d\run\runners`, `C:\d\run\runner-light.grants`,
+		[]string{`C:\d\run`, `C:\k`})
+	want := []string{"runner-sandbox-run", "-group", "light", "-run-dir", filepath.Join(`C:\d\run\runners`, "light"),
+		"-areas-dir", `C:\d\run\runners`, "-grants", `C:\d\run\runner-light.grants`,
+		"-protect", `C:\d\run`, "-protect", `C:\k`, "--",
 		`C:\m\venv\Scripts\python.exe`, "-m", "maktaba_plugin_runner", "--group", "light",
-		"--api-socket", `C:\d\run\plugins\plugin-api.sock`, "--run-dir", `C:\d\run\runners`}
+		"--api-socket", `C:\d\run\plugins\plugin-api.sock`, "--run-dir", filepath.Join(`C:\d\run\runners`, "light")}
 	if name != `C:\m\maktaba-server.exe` || !slices.Equal(args, want) {
 		t.Fatalf("Windows: %s %v", name, args)
 	}
 	name, args = runnerCommand("linux", "/m/maktaba-server", "/m/venv/bin/python", "light", "/d/run/plugin-api.sock",
-		"/d/run/runners", "/d/run/runner-light.grants")
+		"/d/run/runners", "/d/run/runner-light.grants", nil)
 	if name != "/m/venv/bin/python" || slices.Contains(args, "runner-sandbox-run") || args[1] != "maktaba_plugin_runner" {
 		t.Fatalf("Linux: %s %v", name, args)
 	}
