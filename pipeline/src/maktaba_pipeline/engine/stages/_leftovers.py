@@ -21,7 +21,7 @@ from uuid import UUID
 from ...classify.clip_groups import DEFAULT, GroupConfig, Item, Show, is_qa, name_words
 from ...classify.series_detector import DetectorConfig, VideoFacts, is_short
 from ..sql import loads, uid
-from .detect import _playlists
+from ._detect import _playlists
 
 __all__ = ["Leftovers", "load_leftovers", "load_shows", "library_name"]
 

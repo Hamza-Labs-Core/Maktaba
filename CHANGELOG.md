@@ -2179,6 +2179,13 @@ build fails when the two differ.
   never holds the dashboards back. Component series keep their cap per machine, and come last on a
   board so each machine's memory, disk and load stay within its 50 lines.
 
+- **The rest of classify runs as Maktaba's own plugin (Epic 54 story 54.31).** Placing episodes,
+  tagging topics, the language model's checks of series and clips, the book lookup and the
+  review pages now run in `tv.maktaba.classify`, with the same results. The model's questions go
+  through the plugin API to the same model server the settings name, and the book lookup is the
+  only classify stage that may reach the network (the encyclopedia). Find metadata stays where
+  it was for now. An admin can switch any of these stages back to the worker under **Queues**.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings

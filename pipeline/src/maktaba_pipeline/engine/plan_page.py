@@ -221,7 +221,7 @@ def write_plan_page(
     plan: Mapping[str, Any], name: str = PLAN_PAGE, *, title: str = "Channel plan", banner: str = ""
 ) -> Path:
     """Render the plan into the reports folder (atomically: a reader never sees half a page)."""
-    from .stages.review_pages import reviews_dir  # not at import: the stages import this module
+    from .stages._review_pages import reviews_dir  # not at import: the stages import this module
 
     out = reviews_dir() / name
     out.parent.mkdir(parents=True, exist_ok=True)
