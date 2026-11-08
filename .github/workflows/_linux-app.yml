@@ -227,6 +227,8 @@ jobs:
           VERSION: v0.0.0-ci.${{ github.run_number }}
           # the pinned downloads go by the GitHub API first (tools/release/fetch-pinned.sh)
           GITHUB_TOKEN: ${{ github.token }}
+          # appimagetool's own output (-v), through linuxdeploy-plugin-appimage
+          LDAI_VERBOSE: "1"
         run: |
           set -o pipefail
           if ! make linux-app 2>&1 | tee "$RUNNER_TEMP/linux-app.log"; then
