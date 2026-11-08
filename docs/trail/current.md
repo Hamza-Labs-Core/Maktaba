@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.108
-up_to_commit: 56456b922
-built_from: v0.3.107
+tag: v0.3.109
+up_to_commit: 2e2a8c00d
+built_from: v0.3.108
 ---
 
-# Trail snapshot: v0.3.108
+# Trail snapshot: v0.3.109
 
 ## Keep doing
 
@@ -150,6 +150,16 @@ built_from: v0.3.107
 - Check every downloaded archive against its pin, whichever place sent it. Start a merge watcher from inside the repository, a couple of minutes after the push: started at once it reads the previous head's checks and stops on their failures, and from outside the repository it cannot read checks at all. (#1007)
 - Lift a sandbox guard one stage at a time, each with an override-off end to end whose verdict fails on any fallback, and a negative control reverted in a commit of its own: a guard hides its path's bugs from production. (#986, #1018, #1019)
 - Give every identity a sandbox boundary relies on a startup self-check, so a refusal shows at start rather than as each job's fallback. (#1018)
+- Re-check main's newest migration just before the push and again before the merge, and take the next slot then, not when the branch starts. Merge main right before dispatching a rehearsal: a long branch waiting on a 30-minute rehearsal has fallen behind again by the time it is green. (#998)
+- Run first-party plugin tests as their own pytest run (`pytest ../plugins/first-party`), and time them together with `tests/plugins/firstparty` as CI does: alone they load no pipeline pytest config, so the soft-cap hook never judges them. After moving core stages into plugins, run `cmd/maktaba-server`'s tests and check Core's footprint: every check that asks whether a stage is a plugin's changes, and always-on work moved into an on-demand process changes when that process runs. (#998)
+- Treat each automated security-review finding on a resolver as a lead, and check it against the schema (foreign keys, check constraints) before keeping or dropping a branch. (#1025)
+- When a gate fails on a pull request, check main's latest rehearsal run before debugging the branch, and say main's rehearsal is red on the thread that owns the release before opening a fix: two sessions opened the same fix within a minute. A removal updates the rehearsal's expected components in the same pull request, checking the retired list rather than naming ids. (#1032)
+- Pin by tagged release with SHA-256 where the upstream has one, keep `continuous` with a warning only where it has none, hand a tool its inputs as files, and read a bundle step's verbose log once for downloads before calling it pinned. (#1034)
+- Before trimming a cache, measure each family from the listing and the jobs' own save lines, count every profile and matrix leg, and price each cut by the job's uncached time on main. One writer per cache entry on main; every other job restores only. (#1036, d20261108-ci-cache-eviction-linuxdeploy)
+- Reset a spec worktree to `origin/main` before writing: one started 300+ commits behind. (#1038)
+- Make a scenario's coverage an assertion, and give the seed the subjects in the scenario's own setup rather than changing the shared seed: a scenario that skips a stage with no subject passes without it. (#1041)
+- A no-payload log test puts a marker string in the payload and looks for it in the log. A child session that cannot wait on CI says so and hands the merge back. (#1048)
+- For a speed-up that must keep its outputs, keep the old algorithm in the tests next to a fixture of its answers, and guard it with counted work and a CPU-time ratio measured in one process, not a wall-clock limit. (#1050)
 
 ## Stop doing
 
@@ -182,6 +192,8 @@ built_from: v0.3.107
 - Putting a registration step in front of `launchctl kickstart` with `?`: a refused registration then blocks starting a job that would have run. (d20261108-login-item-relaunch)
 - Reporting a fix as the production protection before an end to end on Windows has run it; a sandbox probe does not exercise the stages' own code paths. (#990, #976)
 - Piping `watch-merge2.sh` into `tail`: it hides the exit code, so read its last output line instead. (#983)
+- Bringing main in with a plain `git merge origin/main`, even when no conflict is expected: use `tools/dev/merge-main.sh`. (#1025)
+- A merge watcher that requires a check by its exact name: CI's names change between runs (`ci / plugins / first-party` and `plugins / first-party`); match without the workflow prefix. (#998)
 
 ## What we learned
 
@@ -412,6 +424,15 @@ built_from: v0.3.107
 - A first-party write's checks are worked out by the build from the parse tree and `tools/plugins/scope_tables.toml` (a top-level `AND` term on an owner column, every owner column of an `INSERT`, the conflict target of `DO UPDATE`), and a write it cannot bind fails the build; 91 of 187 statements had needed more than their header listed. Only `pgstore.write_vectors` (keys from `unnest($5)`) and `transcribe.forget_gone` (no argument) are set by hand. A `CASE WHEN $flag THEN $value` sets the owner column from `$value` only: checking the flag would refuse every call. (#1005)
 - A first-party token has `AllLibraries = true`, so a granted-library test passes for any library: a first-party job's own library is `inv.LibraryID`. YouTube rows are shared (a channel belongs to the first library that claims it), so one counts as in scope for every library that follows or downloads it. Bigint ids follow a predictable sequence, so only found rows are cached: a cached "no such row, allowed" could be replayed once another library creates that id. (#1005)
 - A home's `pgbin` fetches Postgres from Maktaba's CDN, then GitHub's API asset route (by tag and name, `Accept: application/octet-stream`, no credentials), then the github.com door, three tries each. The updater, self-update, the update catalog and packs inside an update job keep the door: they need an update-rehearsal T-row first. The same outage reached CI through the Windows job's WiX download and the Gradle wrapper. (#1007)
+- Moving core stages into a plugin conflicts with every wave merged meanwhile: drop both sides' moved entries and rebuild the generated files (`bundle.py --write`, `roles.py sql`). A parity world runs every stage the graph queues, including other plugins': switch off what is not under test, or it depends on the machine's tools. A runner exits after one idle minute (`RunnerIdleSec = 60`); a job that finds it gone waits for it to start. A real-ffmpeg Go timing test fails when pytest shares the machine, so run the full Go suites alone. (#998, #1041)
+- Core stages are not switchable, but the flip at update is the graph sync (`engine/sync.py`), which does not read `switchable`: only the admin route and the CLI refuse them. (#1041)
+- Every plugin-API read by id is typed from every column-to-`$N` comparison in the statement (`write_scope.read_checks`). `processing_jobs.subject_id` is polymorphic: the `job_subject` kind resolves it through the tables that own each subject kind and reads job rows only when none has the id, counting only job rows with a library, because `checkRow` allows as soon as a row has no library. A scratch cluster from `initdb` without `-E UTF8` is SQL_ASCII, and so is the `template1` the harness copies: livetv parity then fails with `22P05`, which looks like a code fault. (#1025, #1050)
+- A removal passes its own rehearsal while the previous release still has the component, and breaks the rehearsal one release later, when a release without it becomes the previous one. (#1032)
+- A tool that runs another tool can hide its downloads: appimagetool fetched its runtime unpinned inside linuxdeploy until given `--runtime-file`, and tauri-cli keeps linuxdeploy's output only at `--verbose`, so `failed to run linuxdeploy` with nothing after it means the output was dropped. `gh run rerun --job` refuses while the run is in progress. (#1034, d20261108-ci-cache-eviction-linuxdeploy)
+- Over GitHub's 10 GB limit an Actions cache entry can be evicted minutes after it is saved, and churn reports little loss because jobs re-save and go green: read a main run's "No cache found" and "Cache saved" lines per job. A cache-hit proof needs a rerun right after the save. The working set is accepted above the limit, with bounded churn and `cache-prune.yml`; the rehearsal seeds are about 4.1 GB a release. Go's build cache is addressed by its inputs, so the runner image need not be in the key. (#1034, #1036, d20261108-ci-cache-eviction-linuxdeploy)
+- Epic 58 platform facts: Roku states no right-to-left text; Samsung Public Seller accounts launch only in the US; Samsung MSE caps at FHD (4K needs AVPlay); Cast receivers take no HEVC in MPEG-TS; neither Tizen nor webOS gives a web app mDNS or SSDP. The wiki generator's Latin-share rule trips on brand-heavy excerpts (transliterate outside code spans), a new epic renames the chunk files, and `docs/wiki/epics/epic-NN-*.md` and the INDEX row are written by hand. (#1038)
+- A refusal's detail text can leak the payload: an error that echoes its input carries user data into the log. (#1048)
+- On small fixed-size images Python's big integers act as a wide vector unit: one int with a 16-bit lane per pixel beat `map`/`operator` chains 3 to 6 times with no dependency, and `to_bytes()` + `sum()` beats the multiply-by-ones trick at these sizes. A fixture from random inputs uses stdlib `random.Random`: numpy's `Generator` streams are not promised stable. (#1050)
 
 ## Open
 
@@ -424,7 +445,7 @@ built_from: v0.3.107
 - Epic 52: the real gold set and calibration curves; the rehearsal's "one component more" step. (#672)
 - Epic 54 on Windows: no GPU device grants (an `ml` runner may fall back to CPU) until CI has a GPU. While a library root is on a share, only `thumb_small`, `chapter_thumbs` and `subtitle_gen` run in their runners (`SHARE_RUNNER_STAGES`); every other library stage stays in the worker (`windows_share_library`). Still to come: a write broker for the full-write groups (convert, dedup, repair, youtube), and runner proof for transcribe and second_listen on a share. A share the group writes in full is served read-only by the broker, and a write op there goes to the worker. `serving_group("fp")` does not wait for its runner. `events/emit` refusals are not logged with the plugin, event and reason, as relay refusals now are. (#956, #953, #968, #976, #977, #990, #986, #1018, #1019, #1021)
 - Epic 54 Phase 2 and paid plugins (signing ships dark, no root keys): Phase 2 is built through the store browser, and buying, entitlements, private paid packages and purchase moves are in; the store is not deployed (its go-live list, with `PAID_URL_KEY`, the email provider, the Cloudflare resources, DNS and secrets, and the 90-day lifecycle rule on `report-logs/`, is in `store/README.md`); once the root keys are committed a release fails while the store's CDN is down (re-run); the isolated runner waits for Containers on the account; Apple snapshot references for the plugin panels (issue #876). (#733, #735, #743, #751, #753, #770, #778, #819, #820, #815, #837, #861, #886)
-- Epic 54 Phase 4: waves 1-3 and 5-8 are in, and the rehearsal's wave rows 16.4–16.9 skip until their plugins merge (each brings its own checks); YouTube's download swap is not file-scoped; the nightly YouTube hosts check meets a bot wall on data-centre runners, and yt-dlp needs a JS runtime the plugin cannot run (issue #900); `rate_style` has no subject in the small seed; the legacy `extract` and `thumbnail` stages with their hand chaining turned into edges (54.29), moving `enrich` (a secrets route for first-party plugins and a rule for its page reads, an owner decision), the rest of wave 9 (54.31, 54.36; scan, `probe`, `thumbnail` and `extract` are on the engine; next the move into `tv.maktaba.core-media`, then the removal one release later if no stage was flipped back; `categorize` has never had a handler, and removing it or keeping it declared is an owner decision), the job-scoped path check (issue #796), every wave's rehearsal scenarios (issue #804), N16 for `tv_stage`, `tv_swap` and `tv_rollback` (the bench cannot rerun a state transition), a runner call for a stage's `refresh` (still run from the worker), and removal of the in-process path; per-plugin `.mkplugin` packages in `checksums.txt` wait for a release-workflow change. (#731, #750, #760, #773, #789, #800, #806, #823, #842, #844, #890, #899, #847, #919, #920, #921, #925, #942, #948)
+- Epic 54 Phase 4: waves 1-3 and 5-8 are in; YouTube's download swap is not file-scoped; the nightly YouTube hosts check meets a bot wall on data-centre runners, and yt-dlp needs a JS runtime the plugin cannot run (issue #900); `rate_style` has no subject in the small seed; the legacy `extract` and `thumbnail` stages with their hand chaining turned into edges (54.29), moving `enrich` (a secrets route for first-party plugins and a rule for its page reads, an owner decision), the rest of wave 9 (54.31, 54.36; the core stages now run in `tv.maktaba.core-media`; next the legacy handlers' removal one release later, in its own pull request, if no stage was flipped back; `extract` has no ml runner yet and runs in the transcription plugin's group; `categorize` has never had a handler, and removing it or keeping it declared is an owner decision), the job-scoped path check (issue #796), every wave's rehearsal scenarios (issue #804), N16 for `tv_stage`, `tv_swap` and `tv_rollback` (the bench cannot rerun a state transition), a runner call for a stage's `refresh` (still run from the worker), and removal of the in-process path; per-plugin `.mkplugin` packages in `checksums.txt` wait for a release-workflow change. (#731, #750, #760, #773, #789, #800, #806, #823, #842, #844, #890, #899, #847, #919, #920, #921, #925, #942, #948, #998, #1041)
 - Epic 54 joined machines: a machine's plugin compute always asks the home's models; its own GPU models are not offered to plugins. (#767)
 - Epic 50: series that 53.17 emits for the status page; W gets the `maktaba-cloud` binary with 50.07 (`deploy.sh` ships to A and B only); 50.15's direct-remote rehearsal passes, but 50.06's scenario table says UPnP where the fake router speaks NAT-PMP; the web home settings' `direct.rebinding` notice for when the LAN name fails and the address works (the apps use the raw-IP entry; the probe cannot tell a blocked name from a LAN firewall on the port; the advice holds either way); 50.19 is in, with the owner's prices, Pro's allowance and the payment provider on the go-live list, the cloud issuing `basic` once homes that read it are out, and the rehearsal's plan numbers removed when real ones are set; 50.31's rehearsal scenarios T06–T08 are in, and the relay check will also require the attacker's (redacted) address once the relay logs its resolved client IP; 50.32 §1, §4 and §5 (§3's app and console Workers are in); 50.33 removes `ConsoleSignIn` in the listener and the Worker; the api and worker in 50.08's blue/green (a restart costs about a second per deploy); 50.33 and 53.18 follow (50.30's edge rules are in: whether Pro accepts `log` as a rate-limit action shows at the first apply, and 50.32's CSP must allow `https://challenges.cloudflare.com`; 50.34's Cloudflare workflows are in; 50.34 deploys both Workers with `cloud-web-deploy.yml` and smoke-checks them) (50.12 to 50.15 parts 1–2, 50.35 and the console's own bundle are in); the direct-name domains, their NS delegation and the ACME EAB accounts are on the go-live list. 50.13's T09 waits for a home stack in the cloud rehearsal; 50.14's absolute numbers, the epic's sizing figures and `RELAY_MEASURED_*` wait for a `loadtest.yml` run on the staging pair. 50.12's incident handling is in; `tunnel_connections_low` and the `staff_*` alerts come with 50.31 and 50.33, and the game day waits for the real pair. `nodecopy`'s tests still build maktaba-api per test. (#727, #739, #752, #780, #791, #798, #808, #825, #845, #856, #865, #871, #877, #883, #895, #897, #858, #852, #906, #892, #867, #873, #903, #922, #928, #941, #952)
 - An address two of a user's homes share loses its by-IP path for both, which fall back to the LAN name, direct or relay: a deliberate fail-closed trade until there is a per-home client. (#944)
@@ -446,14 +467,18 @@ built_from: v0.3.107
 - The rehearsal could skip, as not applicable, a row whose test does not exist at the rehearsed commit (for example `go test -list` first). (d20261108-rehearsal-matrix-skew)
 - Only the wave scenarios run the crash-loop check: the others use a fake pipeline wheel with no `maktaba_plugin_runner`; a fake runner module there would let every scenario run it. (d20261108-runners-wait-venv)
 - Epic 57 (parental controls, spec only): the build, Phase 1 first (57.01, 57.02, 57.03, 57.10), and a real-device check of whether the effective rating limit reflects the parent's own Content & Privacy Restrictions (57.04 §4), before the Phase 3 release tag. (#979)
-- Classify parity: `production_style.compute_metrics` (pure Python, O(frames × looks)) is the largest CPU cost left, and every parity open still clones two databases and starts the dev server (about 1 s). (#996)
+- Classify parity: every parity open still clones two databases and starts the dev server (about 1 s). In `compute_metrics`, `statistics.pstdev` is about 20 % of what is left for a season; replacing it would change the last bits of three metrics, so it stays. (#996, #1050)
 - One slow iPad shard's warm audits took 15.5 then 14.0 s: on such a runner a test's first audit can still reach XCTest's 15 s deadline. (#1001)
 - `TestRestoreAskedPutsTheBackupBackBeforeAnyRole` fails on the owner's Mac (asides empty) and passes in CI; not yet looked into. (#1002)
 - Plex removal's cleanup migration, a release or more later: the seven stages' rows, the two pools, the dizqueTV extension and component rows, settings keys, `external_links` targets, `plex_items` and the channel audit tables, the `maktaba_fp_dizquetv` role, the retired lists and the `rules.legacy_tv_live` fallback. The mediaintel scripts still write Plex collections on their own. (d20261108-remove-plex-sync)
-- CodeQL's default setup downloads its own tools and cannot use the API route: a rerun is the remedy. TinyGo and wasm-tools in `_plugins.yml`, and the packs' recipes (`tools/release/packs/`), still use `curl --retry 3`. linuxdeploy-plugin-appimage is pinned to its `continuous` build of 2026-10-01; when that build moves, the Linux app job warns and tauri downloads it unpinned. (#1003, #1014)
-- Write scope: wave 9f (core-media) needs `statements_build.py sync core-media` (7 headers) and its `[scope]` table removed once it is rebased on this; reads by id across libraries are not scoped (first-party tokens read every library); the worker's `publish` relay op still takes any payload. (#1005)
+- CodeQL's default setup downloads its own tools and cannot use the API route: a rerun is the remedy. TinyGo and wasm-tools in `_plugins.yml`, and the packs' recipes (`tools/release/packs/`), still use `curl --retry 3`. linuxdeploy-plugin-appimage has no tagged release and stays pinned to a `continuous` build; the step warns when it moves. The first release after this one's Linux legs are the first to run `tauri-tools.sh` in `desktop-release.yml`: check that they restore main's entry and bundle with no runtime download. (#1003, #1014, #1034)
+- Plugin scope: the worker's `publish` relay op still takes any payload. The `job` kind lets any job read a catalog job's row (no library's; flags and hashes only, harmless today). (#1005, #1025)
 - Runtime downloads: move the updater and the update catalog to the API route, with an update-rehearsal T-row; the store CDN's bucket (`maktaba-plugins`) and domain do not exist yet, so the publish step warns and skips, and homes go on to the API route (an owner decision, with the release token's write access); CI's WiX download could get the same fallback or be cached. (#1007)
 - Add an option in `.trail.toml` for trail-only events, so AGENTS.md needs no override note. (#1020)
+- Epic 58 (TV platforms, spec only): the build, Phase 1 first (58.01–58.04, 58.15's catalog check, 58.16), and a real-device spike of whether Cast receivers enforce Chrome's Local Network Access for LAN HTTPS names (58.07). (#1038)
+- Caches: compare job times on main's second run after the new entries exist (unit near 8.7 min) and re-measure usage; whether the rehearsal's `full` seed (2.7 GB) needs a cache is a question for its job's time. (#1036)
+- Plugin event emits: the `unavailable` and `home_unreachable` refusals are logged but have no test. (#1048)
+- CI's `plugins` job's path filter skips shared pipeline code that first-party stages call, such as `classify/production_style.py`. (#1050)
 
 ## Missing events
 
@@ -465,7 +490,10 @@ built_from: v0.3.107
 | #969 | 2026-11-08 | feat: remove Plex sync and dizqueTV; Plex Live TV stays |
 | #973 | 2026-11-08 | fix(supervisor): plugin runners wait for the venv like the pipeline |
 | #1023 | 2026-11-08 | test(rehearsal): scenario 16.7, wave 7's TV change across an update |
-| #1032 | 2026-11-08 | fix(rehearsal): scenario 12 expects a retired component to have no row after the update |
+| #1042 | 2026-11-08 | fix(web): an open screen keeps its feature gate when the feature goes off right after the first answer |
+| #1047 | 2026-11-08 | test(restore): the restore's tests no longer depend on the disk's free space |
+| #1049 | 2026-11-08 | test(plugins): each test session gets its own plugin API dev server and build |
+| #1053 | 2026-11-08 | Update rehearsal: every 16.x row has a job of each of its stages in every round |
 
 ## Index
 
@@ -994,6 +1022,7 @@ built_from: v0.3.107
 | 0994-symbols-table-type | 2026-11-08 | pr | 53.16: the Crash symbols page names each table's type and key |
 | 0996-classify-parity-fast | 2026-11-08 | pr | Classify's parity proof ran past the soft cap and failed unrelated pull requests |
 | 0997-fingerprint-refusal-answered | 2026-11-08 | pr | A fingerprint a Windows runner refuses is answered, and the worker takes it (story 54.23) |
+| 0998-wave9f-core-media | 2026-11-08 | pr | Wave 9f moves the core stages into tv.maktaba.core-media |
 | 1000-remote-ui-still-row | 2026-11-08 | pr | The Remote's diagnostics UI tests tap a Home row once it stands still |
 | 1001-player-ui-warmup-audits | 2026-11-08 | pr | Player UI warm-up audits until the process is warm |
 | 1002-shared-step-report-order | 2026-11-08 | pr | A process waiting on the venv showed the waiting text over the install's progress |
@@ -1006,8 +1035,17 @@ built_from: v0.3.107
 | 1019-share-runners | 2026-11-08 | pr | Thumbnails, chapter frames and subtitles run in their runner on a Windows share; the broker serves full-write shares read-only (story 54.23) |
 | 1020-trail-events-own-prs | 2026-11-08 | pr | Trail events go in their own trail-only pull requests (CLAUDE.md rule 2, AGENTS.md) |
 | 1021-publish-rules | 2026-11-08 | pr | The worker checks each event a plugin's runner asks it to publish |
+| 1025-read-scope-every-id | 2026-11-08 | pr | Every plugin-API read by id is checked against the job (README §15.12) |
+| 1032-rehearsal-12-retired | 2026-11-08 | pr | Update rehearsal scenario 12 expects a retired component to have no row |
+| 1034-appimage-runtime-pin | 2026-11-08 | pr | The AppImage runtime pinned and handed to appimagetool; linuxdeploy's and appimagetool's output in the log |
+| 1036-cache-budget | 2026-11-08 | pr | One Go cache entry per runner and Go version, free cache cuts, and a prune of stale entries |
+| 1038-epic58-smart-tv-platforms | 2026-11-08 | decision | Epic 58 spec: apps for the TVs Maktaba does not reach yet (Fire TV, Google Cast, Samsung, LG, Roku) |
+| 1041-rehearsal-16-9-core-stages | 2026-11-08 | pr | Rehearsal 16.9 takes wave 9's core stages through a rollback and an update |
+| 1048-emit-refusal-log | 2026-11-08 | pr | Every refused plugin event emit is logged with its plugin, kind, size and reason |
+| 1050-compute-metrics-lanes | 2026-11-08 | pr | compute_metrics runs 4 to 7 times faster with exactly the same outputs |
 | d20261108-android-native-symbols-path | 2026-11-08 | decision | The Play workflow's native-symbols path is right on AGP 9.4; nothing to change |
 | d20261108-backups-tidy | 2026-11-08 | incident | Old backups were pruned only at an update, and a lone failed dump stayed for good |
+| d20261108-ci-cache-eviction-linuxdeploy | 2026-11-08 | incident | After #1014, a pinned tool's cache was evicted within an hour, and the aarch64 AppImage bundle failed once in linuxdeploy |
 | d20261108-codeql-bundle-504 | 2026-11-08 | incident | CodeQL's bundle download failed with HTTP 504 and held every PR for about an hour |
 | d20261108-login-item-relaunch | 2026-11-08 | incident | The Mac update to 0.3.96 left the server stopped behind a login item macOS would not re-register |
 | d20261108-rehearsal-matrix-skew | 2026-11-08 | incident | A rehearsal of an older commit ran a scenario that commit does not have |
