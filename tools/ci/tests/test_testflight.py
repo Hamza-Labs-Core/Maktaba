@@ -229,6 +229,8 @@ def test_no_token_is_one_line_and_nothing_else() -> None:
     for s in UPLOAD["steps"][start + 1 : _step_index("Remove the API key")]:
         cond = str(s.get("if", ""))
         assert "steps.symbols.outputs.set == 'true'" in cond or "steps.symbols_upload.outputs.kept" in cond, s
+        # and nothing it does can fail the leg: the upload step exits 0 on its own
+        assert s.get("continue-on-error") is True or s.get("name") == "Upload crash symbols", s
 
 
 def test_a_failed_upload_warns_and_keeps_the_tables() -> None:

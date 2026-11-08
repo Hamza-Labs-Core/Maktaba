@@ -236,14 +236,17 @@ jobs:
             echo "::notice::$SCHEME: crash symbols not uploaded: no MAKTABA_SYMBOLS_TOKEN secret is set"
           fi
 
+      # a Go or module download that fails leaves the build below to warn (never a failed leg)
       - uses: actions/setup-go@v6.4.0
         if: steps.symbols.outputs.set == 'true'
+        continue-on-error: true
         with:
           go-version-file: cloud/go.mod
           cache: false
 
       - name: Go modules
         if: steps.symbols.outputs.set == 'true'
+        continue-on-error: true
         uses: ./.github/actions/go-mod-download
         with:
           modules: cloud
@@ -284,6 +287,7 @@ jobs:
 
       - name: Keep the symbol tables
         if: steps.symbols_upload.outputs.kept == 'true'
+        continue-on-error: true
         uses: actions/upload-artifact@v7.0.1
         with:
           name: symbols-${{ strategy.job-index }}
