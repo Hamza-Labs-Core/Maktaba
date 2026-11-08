@@ -72,7 +72,7 @@ const (
 const inheritAll = windows.OBJECT_INHERIT_ACE | windows.CONTAINER_INHERIT_ACE
 
 // hasGrant reports whether the DACL already has the SID's explicit allow entry with the
-// inheritance flags asked and at least mask (a grant made by an earlier start: no walk of
+// inheritance flags asked and exactly mask (a grant made by an earlier start: no walk of
 // the tree again).
 func hasGrant(dacl *windows.ACL, sid *windows.SID, mask windows.ACCESS_MASK, flags uint8) bool {
 	if dacl == nil {
@@ -91,7 +91,8 @@ func hasGrant(dacl *windows.ACL, sid *windows.SID, mask windows.ACCESS_MASK, fla
 			continue
 		}
 		s := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
-		if s.Equals(sid) && ace.Mask&mask == mask {
+		// exactly mask: an entry with more (an earlier GENERIC_ALL, WRITE_DAC) is set anew
+		if s.Equals(sid) && ace.Mask == mask {
 			return true
 		}
 	}
@@ -164,7 +165,7 @@ func grant(profile, path string, mask windows.ACCESS_MASK, inheritance uint32, f
 	}
 	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
 		AccessPermissions: mask,
-		AccessMode:        windows.GRANT_ACCESS,
+		AccessMode:        windows.SET_ACCESS, // replaces the SID's entries: never more than mask
 		Inheritance:       inheritance,
 		Trustee: windows.TRUSTEE{
 			TrusteeForm:  windows.TRUSTEE_IS_SID,

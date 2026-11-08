@@ -242,9 +242,19 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 	if err := json.Unmarshal(lastLine(raw), &p); err != nil {
 		return fail("policy", err)
 	}
-	p.RunDir = *runDir
-	now := p.Grants(os.Getenv("MAKTABA_DATA_DIR"))
-	if err := CheckGrants(now, protect, *runDir); err != nil {
+	// compared and granted as the filesystem names them (links, junctions and short names
+	// resolved), so no spelling of a path slips past the protected folders
+	if err := canonicalPolicy(&p); err != nil {
+		return fail("policy_path", err)
+	}
+	own := canonical(*runDir)
+	p.RunDir = own
+	var guarded []string
+	for _, pr := range protect {
+		guarded = append(guarded, canonical(pr))
+	}
+	now := p.Grants(canonical(os.Getenv("MAKTABA_DATA_DIR")))
+	if err := CheckGrants(now, guarded, own); err != nil {
 		return fail("policy_path", err)
 	}
 	profile := RunnerProfile(*group)
@@ -331,6 +341,58 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 		return fail("start", err)
 	}
 	return code
+}
+
+// badSpelling: a path the Windows APIs read otherwise than it is written: a device or
+// verbatim prefix (\\?\, \\.\), or a name ending in a dot or a space (Windows drops it).
+func badSpelling(p string) bool {
+	if strings.HasPrefix(p, `\\?\`) || strings.HasPrefix(p, `\\.\`) || strings.HasPrefix(p, `//?/`) || strings.HasPrefix(p, `//./`) {
+		return true
+	}
+	for _, part := range strings.FieldsFunc(p, func(r rune) bool { return r == '\\' || r == '/' }) {
+		if part != "." && part != ".." && (strings.HasSuffix(part, ".") || strings.HasSuffix(part, " ")) {
+			return true
+		}
+	}
+	return false
+}
+
+// canonical is a path as the filesystem names it: absolute, links and junctions resolved
+// (and on Windows short names expanded, as filepath.EvalSymlinks does); a path that does
+// not exist yet is resolved up to its nearest existing folder.
+func canonical(p string) string {
+	if strings.TrimSpace(p) == "" {
+		return p
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return filepath.Clean(p)
+	}
+	rest := ""
+	for cur := abs; ; {
+		if resolved, err := filepath.EvalSymlinks(cur); err == nil {
+			return filepath.Join(resolved, rest)
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return abs
+		}
+		rest = filepath.Join(filepath.Base(cur), rest)
+		cur = parent
+	}
+}
+
+// canonicalPolicy refuses a policy path spelled to be read otherwise, and resolves the rest.
+func canonicalPolicy(p *RunnerPolicy) error {
+	for _, l := range []*[]string{&p.Read, &p.Write, &p.WriteNamed, &p.Exec, &p.Python, &p.ToolDirs} {
+		for i, x := range *l {
+			if badSpelling(x) {
+				return fmt.Errorf("%s: a path spelled to be read otherwise", x)
+			}
+			(*l)[i] = canonical(x)
+		}
+	}
+	return nil
 }
 
 // CheckGrants refuses a grant that would expose a protected folder: one that holds it (or

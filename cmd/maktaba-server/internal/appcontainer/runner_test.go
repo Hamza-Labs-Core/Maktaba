@@ -113,7 +113,7 @@ func (f *fakeLaunch) install(t *testing.T) {
 // The launcher asks the runner for its policy, takes back the grants it no longer has,
 // grants the group's own profile, keeps the grants and starts the runner with them.
 func TestTheRunnerLauncherGrantsItsGroupsProfileAndStartsIt(t *testing.T) {
-	dir := t.TempDir()
+	dir := canonical(t.TempDir())
 	t.Setenv("MAKTABA_DATA_DIR", dir)
 	run, media, old := filepath.Join(dir, "run"), filepath.Join(dir, "media"), filepath.Join(dir, "old")
 	_ = os.MkdirAll(media, 0o700)
@@ -205,7 +205,7 @@ func TestLaunchHandsARunnerToLaunchRunner(t *testing.T) {
 // A folder on another machine (a share, a mapped drive) is never granted nor revoked: its
 // ACL is not the launcher's to change, and an AppContainer cannot reach a share anyway.
 func TestTheRunnerLauncherLeavesSharesAlone(t *testing.T) {
-	dir := t.TempDir()
+	dir := canonical(t.TempDir())
 	t.Setenv("MAKTABA_DATA_DIR", dir)
 	share := filepath.Join(dir, "share")
 	_ = os.MkdirAll(share, 0o700)
@@ -252,7 +252,7 @@ func TestARunnersPolicyNeverReachesAProtectedFolder(t *testing.T) {
 		}
 	}
 
-	dir := t.TempDir()
+	dir := canonical(t.TempDir())
 	t.Setenv("MAKTABA_DATA_DIR", dir)
 	secret := filepath.Join(dir, "supervisor")
 	pol, _ := json.Marshal(RunnerPolicy{Read: []string{secret}})
@@ -270,7 +270,7 @@ func TestARunnersPolicyNeverReachesAProtectedFolder(t *testing.T) {
 // failed start still knows what to take back), kept across a folder that is not mounted, and
 // a file that cannot be read refuses the start rather than forgetting grants.
 func TestTheGrantsRecordIsKeptBeforeGranting(t *testing.T) {
-	dir := t.TempDir()
+	dir := canonical(t.TempDir())
 	t.Setenv("MAKTABA_DATA_DIR", dir)
 	media := filepath.Join(dir, "media")
 	_ = os.MkdirAll(media, 0o700)
@@ -297,5 +297,33 @@ func TestTheGrantsRecordIsKeptBeforeGranting(t *testing.T) {
 	var errOut strings.Builder
 	if code := LaunchRunner(args, &errOut); code != RunnerSandboxExit || f2.started || !strings.Contains(errOut.String(), "grants_file") {
 		t.Fatalf("an unreadable record: exit %d, started %v: %s", code, f2.started, errOut.String())
+	}
+}
+
+// A policy path is compared as the filesystem names it: a link into a protected folder is
+// refused like the folder itself, and a spelling Windows reads otherwise (a verbatim or
+// device prefix, a trailing dot or space) is refused outright.
+func TestAPolicyPathIsComparedAsTheFilesystemNamesIt(t *testing.T) {
+	dir := canonical(t.TempDir())
+	t.Setenv("MAKTABA_DATA_DIR", dir)
+	secret := filepath.Join(dir, "supervisor")
+	_ = os.MkdirAll(secret, 0o700)
+	link := filepath.Join(dir, "innocent")
+	if err := os.Symlink(secret, link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	run := filepath.Join(dir, "run", "runners", "light")
+	for _, bad := range []string{link, `\\?\C:\data`, `\\.\C:\data`, filepath.Join(dir, "media."), filepath.Join(dir, "media ")} {
+		pol, _ := json.Marshal(RunnerPolicy{Read: []string{bad}})
+		f := &fakeLaunch{policy: string(pol)}
+		f.install(t)
+		var errOut strings.Builder
+		code := LaunchRunner([]string{"-group", "light", "-run-dir", run, "-protect", secret, "--", "python"}, &errOut)
+		if code != RunnerSandboxExit || f.started || !strings.Contains(errOut.String(), "policy_path") {
+			t.Errorf("%s: exit %d, started %v: %s", bad, code, f.started, errOut.String())
+		}
+	}
+	if got, want := canonical(filepath.Join(link, "not-yet", "x")), filepath.Join(canonical(secret), "not-yet", "x"); got != want {
+		t.Fatalf("canonical of a path not made yet: %s, want %s", got, want)
 	}
 }
