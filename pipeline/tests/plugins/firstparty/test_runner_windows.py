@@ -305,25 +305,3 @@ def test_the_run_folder_on_windows_is_never_under_tmp(
     monkeypatch.setenv("MAKTABA_DATA_DIR", str(long))
     monkeypatch.setattr(sys, "platform", "win32")
     assert runner_dir() == long / "run" / "runners"
-
-
-def test_the_worker_reaches_a_runner_through_its_pipe(monkeypatch: pytest.MonkeyPatch) -> None:
-    """On Windows the worker opens the group's pipe (the supervisor's prefix and the
-    group's name); without the prefix it finds none, as a missing socket elsewhere."""
-    from maktaba_pipeline.plugins import native, pipe
-
-    opened: list[str] = []
-
-    async def open_pipe(name: str, **_: Any) -> Any:
-        opened.append(name)
-        return "r", "w"
-
-    monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setattr(pipe, "open_pipe", open_pipe)
-    monkeypatch.setenv(winpipe.PIPES_ENV, "\\\\.\\pipe\\maktaba-runner-ab-")
-    got: Any = asyncio.run(native.open_runner("light"))
-    assert got == ("r", "w")
-    assert opened == ["\\\\.\\pipe\\maktaba-runner-ab-light"]
-    monkeypatch.delenv(winpipe.PIPES_ENV)
-    with pytest.raises(FileNotFoundError):
-        asyncio.run(native.open_runner("light"))

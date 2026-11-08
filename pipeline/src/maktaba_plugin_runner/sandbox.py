@@ -550,7 +550,29 @@ def _token_appcontainer() -> tuple[bool, list[str]]:  # pragma: no cover - Windo
 
     advapi = ctypes.WinDLL("advapi32", use_last_error=True)  # type: ignore[attr-defined]
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    # every handle and pointer typed: ctypes passes a bare Python int as a C int, and the
+    # process's pseudo-handle (-1 as a HANDLE) overflows one on 64-bit Windows
     kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel.GetCurrentProcess.argtypes = []
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel.LocalFree.restype = ctypes.c_void_p
+    advapi.OpenProcessToken.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.HANDLE),
+    ]
+    advapi.OpenProcessToken.restype = wintypes.BOOL
+    advapi.GetTokenInformation.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    advapi.GetTokenInformation.restype = wintypes.BOOL
+    advapi.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    advapi.ConvertSidToStringSidW.restype = wintypes.BOOL
     token = wintypes.HANDLE()
     if not advapi.OpenProcessToken(kernel.GetCurrentProcess(), _TOKEN_QUERY, ctypes.byref(token)):
         err = ctypes.get_last_error()  # type: ignore[attr-defined]
@@ -566,7 +588,9 @@ def _token_appcontainer() -> tuple[bool, list[str]]:  # pragma: no cover - Windo
             return False, []
         advapi.GetTokenInformation(token, _TOKEN_CAPABILITIES, None, 0, ctypes.byref(n))
         buf = ctypes.create_string_buffer(n.value or 4)
-        if not advapi.GetTokenInformation(token, _TOKEN_CAPABILITIES, buf, n, ctypes.byref(n)):
+        if not advapi.GetTokenInformation(
+            token, _TOKEN_CAPABILITIES, buf, n.value, ctypes.byref(n)
+        ):
             err = ctypes.get_last_error()  # type: ignore[attr-defined]
             raise SandboxUnavailable("appcontainer", f"capabilities: {err}")
 
@@ -581,7 +605,7 @@ def _token_appcontainer() -> tuple[bool, list[str]]:  # pragma: no cover - Windo
             text = wintypes.LPWSTR()
             if advapi.ConvertSidToStringSidW(ctypes.c_void_p(g.sid), ctypes.byref(text)):
                 caps.append(str(text.value))
-                kernel.LocalFree(text)
+                kernel.LocalFree(ctypes.cast(text, ctypes.c_void_p))
         return True, caps
     finally:
         kernel.CloseHandle(token)

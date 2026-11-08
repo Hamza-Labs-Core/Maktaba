@@ -51,7 +51,7 @@ func TestNoRunnerWithoutFirstPartyPlugins(t *testing.T) {
 	}
 	longCfg := config.Config{}
 	longCfg.Server.DataDir = "/" + strings.Repeat("d", 120)
-	if long := runnerDir(longCfg, "linux"); !strings.HasPrefix(long, "/tmp/maktaba-r-") {
+	if long := runnerDir(longCfg, "linux"); !strings.HasPrefix(long, filepath.Join("/tmp", "maktaba-r-")) {
 		t.Fatalf("a long data folder: %s", long)
 	}
 	// Windows: no socket there, so no /tmp folder; the run folder its AppContainers write
