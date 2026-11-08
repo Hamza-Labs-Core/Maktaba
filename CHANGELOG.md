@@ -427,6 +427,14 @@ build fails when the two differ.
 
 ### Security
 
+- **A runner's folder grant on Windows lands only on the folder that was checked (story
+  54.23).** The launcher applied a runner group's folder grants and revokes by path, so a
+  folder swapped for a junction between its check and its grant had the grant land on the
+  junction's target. Each grant and revoke now opens the folder by handle without following a
+  link, refuses it when it is a junction or Windows names it otherwise than checked, and sets
+  the ACL on that handle; what the folder holds gets the entry through handles opened inside
+  it, never through a junction or symbolic link. Such a swap now fails the runner's start, and
+  the worker runs the group's jobs.
 - **The cloud's two web sites each get a Worker in front (Epic 50 story 50.32).**
   `app.maktaba.tv` and `admin.maktaba.tv` serve their own bundles through a Cloudflare Worker that
   sets each host's security headers and content policy on every page and API answer. Each lets
