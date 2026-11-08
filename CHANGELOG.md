@@ -185,6 +185,15 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A share file a sandboxed runner may not read runs in the worker, never as missing (story
+  54.23).** On Windows, when a runner's sandbox refused a file in a library on a share, some
+  lookups read the refusal as a missing file instead of handing the job to the worker. The
+  small thumbnail could end done with no thumbnail, because its sidecar look found nothing, and
+  the MP4 conversion could fail as a missing file. Every lookup on a share path in a runner
+  (exists, lexists, isfile, isdir, stat, open) now reports a refusal as a refusal, and a folder
+  scan there (scandir, walk, glob) is refused rather than seen as empty, so the worker runs the
+  job, as the runner's design says. A missing file still reads as missing.
+
 - **After an update, the plugin runners wait for the new release's Python packages.** In the
   Mac app, the plugin runners (light, ml-1, ml-2, index) started while the update was still
   installing the new release's packages into the venv. Each died at once on a missing module,
