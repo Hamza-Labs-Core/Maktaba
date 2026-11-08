@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,18 +39,48 @@ import (
 
 // rehearsalWave is one wave of Phase 4: its scenario, its story and the stages the
 // scenario queues (those of its stages a home without a GPU, a model or a network
-// service claims), and what the home's environment adds for them (env).
+// service claims), and what the home needs before they claim (setup).
 type rehearsalWave struct {
 	id, story string
 	stages    []string
-	env       []string
+	setup     func(r *rehearsal, home *appMachine, db *sql.DB)
 }
 
-// plexEnv is how a real home turns the Plex extension on: its URL and token in the
-// environment seed the extension enabled and configured (extensions/store.py
-// ensure_rows), so the worker's graph sync gives its stages their rows and enables them.
-// The stages' work is a sleep here, so the address answers nothing (port 9, discard).
-var plexEnv = []string{"MAKTABA_PLEX_URL=http://127.0.0.1:9", "MAKTABA_PLEX_TOKEN=rehearsal-not-a-token"}
+// plexOn turns the Plex extension on as an owner does: Settings' PUT
+// /api/extensions/plex with enabled and its URL and token, which also sets the ext.plex
+// component's desired state (story 51.07). Its stages claim only then. Their work is a
+// sleep here, so the address answers nothing (port 9, discard) and the token is a
+// placeholder.
+func plexOn(r *rehearsal, home *appMachine, db *sql.DB) {
+	t := r.t
+	t.Helper()
+	admin := home.signIn()
+	code, body := admin.adminJSON("PUT", "/api/extensions/plex", map[string]any{"enabled": true,
+		"settings": map[string]any{"url": "http://127.0.0.1:9", "token": "rehearsal-not-a-token"}})
+	if code != http.StatusOK {
+		t.Fatalf("turn the Plex extension on: %d %s", code, body)
+	}
+	waitStagesEnabled(t, db, []string{"plex_groups"}, 3*time.Minute)
+	r.logf("the Plex extension is on; plex_groups claims")
+}
+
+// waitStagesEnabled waits until the stages' rows say enabled (the worker's graph sync
+// writes an extension stage's row and enables it once the extension is on).
+func waitStagesEnabled(t *testing.T, db *sql.DB, stages []string, within time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for {
+		var n int
+		_ = db.QueryRow(`SELECT count(*) FROM job_stages WHERE stage = ANY($1) AND enabled`, pq.Array(stages)).Scan(&n)
+		if n == len(stages) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%v not enabled within %s", stages, within)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
 
 var rehearsalWaves = map[string]rehearsalWave{
 	"16.1": {"16.1", "54.28", []string{"promo_links", "clip_groups", "topic_collections", "rate_style"}, nil},
@@ -58,7 +89,7 @@ var rehearsalWaves = map[string]rehearsalWave{
 	"16.4": {"16.4", "54.31", []string{"detect", "tag"}, nil},
 	"16.5": {"16.5", "54.32", []string{"dedup_scan"}, nil},
 	"16.6": {"16.6", "54.33", []string{"exact_dates"}, nil},
-	"16.8": {"16.8", "54.35", []string{"plex_groups"}, plexEnv},
+	"16.8": {"16.8", "54.35", []string{"plex_groups"}, plexOn},
 	"16.9": {"16.9", "54.36", []string{"link", "fp_gate"}, nil},
 }
 
@@ -367,7 +398,6 @@ func (r *rehearsal) waveScenario(id string) {
 	w := rehearsalWaves[id]
 	k := r.kit
 	r.realPipeline(w.stages)
-	r.pipelineEnv = append(r.pipelineEnv, w.env...)
 	want := map[string]map[string]bool{k.prev: r.builtIn(k.prev), k.cur: r.builtIn(k.cur)}
 	want[k.next] = want[k.cur]
 	for _, st := range w.stages {
@@ -386,6 +416,9 @@ func (r *rehearsal) waveScenario(id string) {
 	home, _ := r.homeOnPrev(profile("small"))
 	db := home.superDB("maktaba")
 	defer db.Close()
+	if w.setup != nil {
+		w.setup(r, home, db)
+	}
 	const per = 6
 
 	// 1. jobs in flight on the previous release; the update to the release that fails its
