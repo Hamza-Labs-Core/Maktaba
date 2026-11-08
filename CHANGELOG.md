@@ -126,6 +126,14 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Old backups go on their own.** The backups folder kept the newest nightly dumps and
+  pre-update dumps, but the other dumps were pruned only when an update ran, and a dump of a
+  failed update or of a database a restore replaced was kept until more of its kind came:
+  one 33 GB dump of a failed update stayed for weeks. The backups loop now prunes at every
+  check, scheduled dumps on or off: the nightly dumps to [backups] keep, the pre-update
+  dumps to their count, and a dump of a failed update or a replaced database once it is a
+  month old. The newest pre-update dump, the way back from the last update, never expires.
+
 - **A cloud node that loses the lead no longer keeps trying to take the Floating IP (Epic 50
   story 50.07).** When Hetzner's API refuses the move for a minute, the new leader keeps retrying
   in the background; that retry now stops as soon as Patroni says the node no longer leads, so a

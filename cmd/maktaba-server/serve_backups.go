@@ -26,12 +26,7 @@ import (
 // updateKeep is how many pre-update dumps stay: [backups] update_keep, else
 // [postgres] update_dumps (rules.updates.backups_keep, recorded in the backups
 // folder, wins over both: pgbundle.BackupsKeep).
-func updateKeep(cfg config.Config) int {
-	if cfg.Backups.UpdateKeep > 0 {
-		return cfg.Backups.UpdateKeep
-	}
-	return cfg.Postgres.KeepUpdateDumps()
-}
+func updateKeep(cfg config.Config) int { return pgbundle.UpdateKeepOf(cfg) }
 
 // roomOf is the room a dump leaves on its disk ([backups]).
 func roomOf(cfg config.Config) pgbundle.RoomPolicy {
