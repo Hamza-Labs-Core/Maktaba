@@ -345,6 +345,11 @@ build fails when the two differ.
   started, on a circular import, and was marked failed after five restarts; the worker ran
   the built-in plugins' stages in-process meanwhile, so no job was lost, but none ran in its
   runner. The runners start again, and a test imports each entry point in a fresh process.
+- **A plugin can no longer write another library's video by spelling its id differently
+  (Epic 54).** A statement scoped to the job's subject checked a video id from a library job
+  by its exact text, so the same id in capitals, without hyphens or in braces passed as a
+  video that no longer exists, while the database still found it. The id is now read as an
+  id first, and anything that isn't one is refused.
 
 ### Security
 

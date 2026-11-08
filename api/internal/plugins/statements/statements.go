@@ -36,6 +36,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -572,6 +573,14 @@ func (e *Executor) checkScope(ctx context.Context, sc Scope, st *Statement, args
 		}
 		return refuse(403, CodeScope, st.Name+": library "+v)
 	case "subject":
+		// A video id in any form Postgres takes for a uuid (upper case, no hyphens, braces)
+		// names the same row as its canonical text, which the lookup below compares: checked
+		// as given, another library's video would miss the lookup and pass as one that is gone.
+		id, perr := uuid.Parse(v)
+		if perr != nil {
+			return refuse(403, CodeScope, st.Name+": the scope argument is not a video id")
+		}
+		v = id.String()
 		if sc.SubjectKind == "video" {
 			if strings.EqualFold(v, sc.SubjectID) {
 				return nil
