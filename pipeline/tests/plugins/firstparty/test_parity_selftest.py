@@ -144,7 +144,44 @@ async def test_a_slower_plugin_fails_n16_with_both_numbers(
     async with run(toy, monkeypatch, template) as p:
         await p.run()
         problems = await p.compare([], stages=["fp_toy"])
-    assert any("fp_toy p50: plugin" in x and "x in-process" in x for x in problems), problems
+    # a plugin that waits costs no CPU: the paired wall time fails it
+    assert any(
+        "fp_toy p50 (wall, paired): plugin slower by" in x and "in-process" in x for x in problems
+    ), problems
+
+
+#: the toy job's CPU on both sides for N16's bench: above PERF_FLOOR_S, so doubling it is a
+#: difference N16 counts
+WORK_S = 0.03
+
+
+@asyncio_test
+async def test_a_plugin_job_doing_the_same_work_passes_n16(
+    toy: bytes, monkeypatch: pytest.MonkeyPatch, template: str
+) -> None:
+    from fp_toy import stage
+
+    stage.PLANT["work"] = WORK_S
+    async with run(toy, monkeypatch, template) as p:
+        await p.run()
+        problems = await p.compare_n16([], stages=["fp_toy"], timing_only=True)
+    assert problems == [], problems
+
+
+@asyncio_test
+async def test_a_plugin_job_costing_twice_the_cpu_fails_n16(
+    toy: bytes, monkeypatch: pytest.MonkeyPatch, template: str
+) -> None:
+    """N16's regression: the plugin-side handler doing its work twice over, through the
+    bench (both runs, as compare_n16 measures a timing failure once more)."""
+    from fp_toy import stage
+
+    stage.PLANT.update(work=WORK_S, more_work=2.0)
+    async with run(toy, monkeypatch, template) as p:
+        await p.run()
+        problems = await p.compare_n16([], stages=["fp_toy"], timing_only=True)
+    assert any("fp_toy p50 (CPU): plugin" in x for x in problems), problems
+    assert any("fp_toy p95 (CPU): plugin" in x for x in problems), problems
 
 
 def test_a_file_that_differs_fails_naming_the_file(tmp_path: Path) -> None:
