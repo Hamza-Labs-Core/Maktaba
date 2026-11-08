@@ -77,7 +77,7 @@ release folders (sha256 trees), the plan rows, and the `tvchange` rows a swap wr
 | `plugins/first-party/livetv/`, `plugins/first-party/livetv-slots/` (new) | §1–§3; `schedule/`, `channels/` stage parts and `tvrelease/` move (shared parts to `_lib`). |
 | `pipeline/src/maktaba_pipeline/engine/graph.py`, `stages/` | Remove moved definitions after one release. |
 | `shared/db/migrations/` | Roles; `impl = plugin` for the six. |
-| `tests/update_rehearsal/scenario_16_7_wave7.*` | T02. |
+| `api/rehearsal_wave7_e2e_test.go`, `tools/rehearsal/sleepy/`, `.github/workflows/update-rehearsal.yml` | T02: scenario 16.7 and its row; the stages' real work witnessed (where each job ran). |
 
 ### Tests
 
@@ -105,4 +105,14 @@ roles in the wave's `NNNN_fp_roles` migration). The plugins read the channels' a
 own change. The TV release code's statements are fixed texts. Parity (T01) plans a library
 into channels with staging off and on, and takes a change through stage, swap, rollback and
 clean-up with the TV clock frozen; N16 is measured on `plan_channels`, `write_channels` and
-`tv_gc`. The update rehearsal scenario 16.7 (T02) follows with issue #804.
+`tv_gc`.
+
+The update rehearsal's scenario 16.7 (T02, `api/rehearsal_wave7_e2e_test.go`) takes one TV
+change through a real Epic 33 swap across the update, on a home with its TV slots and each
+release's own pipeline: on the previous release a TV setting saved with staging on makes the
+change, `tv_stage` stages it in-process (the stage's switch set to `inproc`, since that release
+has the plugin), and the admin approves it to swap hours later; the update runs with the swap
+still to come; on this commit, Swap now runs `tv_swap` in the runner, the front door switches to
+the change's slot and the change is live; the admin's warm rollback runs `tv_rollback` in the
+runner and the previous release is live again on the previous slot. The change's verification
+is played: its soak needs channels airing real media, which the rehearsal's seed has none of.

@@ -99,6 +99,11 @@ on:
       - 'pipeline/uv.lock'
       - 'plugins/first-party/**'
       - 'plugins/sdk/python/**'
+      # 16.7's TV change: the release build, the swap commit and rollback, the front door's
+      # swap and rollback operations on the slots
+      - 'pipeline/src/maktaba_pipeline/tvrelease/**'
+      - 'streaming/internal/frontdoor/**'
+      - 'streaming/internal/slot/**'
       # the rehearsal itself
       - 'api/rehearsal_*_e2e_test.go'
       - 'api/autoupdate_*e2e_test.go'
@@ -539,6 +544,7 @@ jobs:
           - { id: '16.4', name: wave 4's jobs across a rollback and an update, test: TestUpdateRehearsal16_4Wave4, profile: small, venvs: true }
           - { id: '16.5', name: wave 5's jobs across a rollback and an update, test: TestUpdateRehearsal16_5Wave5, profile: small, venvs: true }
           - { id: '16.6', name: wave 6's jobs across a rollback and an update, test: TestUpdateRehearsal16_6Wave6, profile: small, venvs: true }
+          - { id: '16.7', name: wave 7's TV change staged before an update and swapped and rolled back after it, test: TestUpdateRehearsal16_7Wave7, profile: small, venvs: true }
           - { id: '16.8', name: wave 8's jobs across a rollback and an update, test: TestUpdateRehearsal16_8Wave8, profile: small, venvs: true }
           # the fault rehearsal (Epic 53 story 53.07, docs/fault-rehearsal.md): one part
           # killed at a time on a home of this commit; the tag guard requires these too

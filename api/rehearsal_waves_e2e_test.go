@@ -18,7 +18,9 @@ package main
 // are 'plugin' and new jobs run there (the flip at update, story 54.25 §3).
 //
 // A wave none of whose stages is a built-in plugin of this commit is skipped: its row
-// runs from the commit that brings it.
+// runs from the commit that brings it. Wave 7 (16.7, story 54.34) has a scenario of its own
+// (rehearsal_wave7_e2e_test.go): one TV change through a real Epic 33 swap across the
+// update.
 
 import (
 	"database/sql"
@@ -140,6 +142,10 @@ exec "` + envs + `/$v/bin/python" "$@"
 	r.buildPython = pipelinePython(t)
 	r.pipelineEnv = []string{"MAKTABA_REHEARSAL_SLEEPY=" + strings.Join(stages, ","),
 		fmt.Sprintf("MAKTABA_REHEARSAL_SLEEPY_SECONDS=%d", int(waveSleep/time.Second))}
+	if len(stages) == 0 {
+		r.logf("the real pipeline of each release; no stage sleeps")
+		return
+	}
 	r.logf("the real pipeline of each release; %s sleep %s", strings.Join(stages, ", "), waveSleep)
 }
 
