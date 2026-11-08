@@ -63,17 +63,29 @@ func aceOf(t *testing.T, path string, sid *windows.SID) (found bool, inherited b
 	return found, inherited
 }
 
-func autoInherited(t *testing.T, path string) bool {
+// setNullDACL gives path a NULL DACL (present, with no entries list: anyone may do
+// anything), set on its handle as stored.
+func setNullDACL(t *testing.T, path string) {
 	t.Helper()
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		t.Fatalf("%s: %v", path, err)
-	}
-	ctrl, _, err := sd.Control()
+	p16, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return ctrl&windows.SE_DACL_AUTO_INHERITED != 0
+	h, err := windows.CreateFile(p16, windows.WRITE_DAC|windows.READ_CONTROL, windows.FILE_SHARE_READ, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
+	if err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+	defer func() { _ = windows.CloseHandle(h) }()
+	sd, err := windows.NewSecurityDescriptor()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sd.SetDACL(nil, true, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.SetKernelObjectSecurity(h, windows.DACL_SECURITY_INFORMATION, sd); err != nil {
+		t.Fatalf("a NULL DACL on %s: %v", path, err)
+	}
 }
 
 func junction(t *testing.T, link, target string) {
@@ -187,11 +199,6 @@ func TestAGrantLandsOnlyOnTheFolderThatWasChecked(t *testing.T) {
 				}
 				if _, inherited := aceOf(t, show, sid); !inherited {
 					t.Errorf("%s: the entry is not marked inherited", show)
-				}
-				// marked auto-inherited, as Windows' own propagation marks a child it reaches
-				// (CI's temp folders are not: their files' entries are all explicit)
-				if !autoInherited(t, show) {
-					t.Errorf("%s: the walk did not mark it auto-inherited", show)
 				}
 				return
 			}
@@ -317,9 +324,7 @@ func TestAGrantsWalkStopsWhereWindowsInheritanceStops(t *testing.T) {
 	open := filepath.Join(dir, "open")
 	nullFile := filepath.Join(open, "null.bin")
 	mustWrite(t, nullFile)
-	if err := windows.SetNamedSecurityInfo(nullFile, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION, nil, nil, nil, nil); err != nil {
-		t.Fatalf("a NULL DACL: %v", err)
-	}
+	setNullDACL(t, nullFile)
 	if err := Grant(profile, open, false); err == nil || !strings.Contains(err.Error(), "NULL DACL") {
 		t.Fatalf("a grant over a NULL DACL: %v", err)
 	}

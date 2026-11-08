@@ -204,7 +204,7 @@ func change(sid *windows.SID, path string, add *ourACE, revoking bool) error {
 	}
 	acl := buildACL(aclRevision(dacl), out)
 	if revoking {
-		if err := setDACL(h, sd, acl, false); err != nil {
+		if err := setDACL(h, sd, acl); err != nil {
 			return fmt.Errorf("appcontainer: %s: %w", path, err)
 		}
 	}
@@ -214,7 +214,7 @@ func change(sid *windows.SID, path string, add *ourACE, revoking bool) error {
 		}
 	}
 	if !revoking {
-		if err := setDACL(h, sd, acl, false); err != nil {
+		if err := setDACL(h, sd, acl); err != nil {
 			return fmt.Errorf("appcontainer: %s: %w", path, err)
 		}
 	}
@@ -437,13 +437,12 @@ func inheritInto(h windows.Handle, path string, parent []ourACE, sid *windows.SI
 	}
 	dacl, _, err := sd.DACL()
 	switch {
-	case errors.Is(err, windows.ERROR_OBJECT_NOT_FOUND):
-		return nil // no DACL at all: anyone may reach it already, and an entry would narrow that
+	case errors.Is(err, windows.ERROR_OBJECT_NOT_FOUND), err == nil && dacl == nil:
+		// no DACL, or a NULL one (anyone may do anything): never changed in passing, so the
+		// walk fails closed
+		return fmt.Errorf("appcontainer: %s has a NULL DACL or none: not changed", path)
 	case err != nil:
 		return fmt.Errorf("appcontainer: %s: %w", path, err)
-	case dacl == nil:
-		// a NULL DACL present: never changed in passing, so the walk fails closed
-		return fmt.Errorf("appcontainer: %s has a NULL DACL: not changed", path)
 	}
 	isDir := info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0
 	list, err := aces(dacl)
@@ -463,7 +462,7 @@ func inheritInto(h windows.Handle, path string, parent []ourACE, sid *windows.SI
 		}
 	}
 	if !sameACEs(list, out) {
-		if err := setDACL(h, sd, buildACL(aclRevision(dacl), out), true); err != nil {
+		if err := setDACL(h, sd, buildACL(aclRevision(dacl), out)); err != nil {
 			return fmt.Errorf("appcontainer: %s: %w", path, err)
 		}
 	}
@@ -559,9 +558,11 @@ func buildACL(revision byte, list [][]byte) *windows.ACL {
 // setDACL sets a DACL on an open handle, keeping the object's protected and
 // auto-inherited flags; SetKernelObjectSecurity changes that object alone.
 // setDACL sets an object's DACL on its handle, keeping its protected and auto-inherited
-// control bits; a child the walk recomputed (child) is marked auto-inherited, as Windows'
-// own propagation marks each child it reaches.
-func setDACL(h windows.Handle, was *windows.SECURITY_DESCRIPTOR, acl *windows.ACL, child bool) error {
+// control bits. (SE_DACL_AUTO_INHERITED does not stick on its own through
+// SetKernelObjectSecurity, and asking for it with SE_DACL_AUTO_INHERIT_REQ has the kernel
+// rebuild the inherited entries from the old descriptor, dropping the new ones: a child the
+// walk changes keeps the control it had.)
+func setDACL(h windows.Handle, was *windows.SECURITY_DESCRIPTOR, acl *windows.ACL) error {
 	sd, err := windows.NewSecurityDescriptor()
 	if err != nil {
 		return err
@@ -574,11 +575,7 @@ func setDACL(h windows.Handle, was *windows.SECURITY_DESCRIPTOR, acl *windows.AC
 		return err
 	}
 	const keep = windows.SE_DACL_AUTO_INHERITED | windows.SE_DACL_PROTECTED
-	bits := ctrl & keep
-	if child {
-		bits |= windows.SE_DACL_AUTO_INHERITED
-	}
-	if err := sd.SetControl(keep, bits); err != nil {
+	if err := sd.SetControl(keep, ctrl&keep); err != nil {
 		return err
 	}
 	err = windows.SetKernelObjectSecurity(h, windows.DACL_SECURITY_INFORMATION, sd)
