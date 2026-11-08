@@ -354,46 +354,128 @@ describe("admin problem reports", () => {
     expect(screen.queryByRole("heading", { name: "Crashes" })).not.toBeInTheDocument();
   });
 
-  it("lists the uploaded crash symbols, linked from the nav", async () => {
+  const TABLES = [
+    {
+      debug_id: "9e40f33c5e1e37528634a1cd1b5ae44f",
+      code_file: "Maktaba",
+      arch: "arm64",
+      version: "0.3.98",
+      uploaded_at: "2026-11-07T12:00:00Z",
+      size: 2_500_000,
+      kind: "dsym",
+    },
+    {
+      debug_id: "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+      code_file: "android.tv",
+      arch: "jvm",
+      version: "0.3.102",
+      uploaded_at: "2026-11-07T12:00:00Z",
+      size: 300_000,
+      kind: "r8",
+    },
+    {
+      debug_id: "0102030405060708090a0b0c0d0e0f10",
+      code_file: "libmpv.so",
+      arch: "arm64",
+      version: "0.3.103",
+      uploaded_at: "2026-11-07T12:00:00Z",
+      size: 900_000,
+      kind: "elf",
+      code_id: "0102030405060708090a0b0c0d0e0f10aabbccdd",
+    },
+  ];
+  const row = (kind: string) =>
+    screen.getAllByTestId("symbol-table").find((r) => r.dataset.kind === kind)!;
+
+  it("lists the uploaded crash symbols by type, each under its own key, linked from the nav", async () => {
     stubFetch({
       "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
-      "GET /v1/admin/symbols": [
-        200,
-        {
-          tables: [
-            {
-              debug_id: "9e40f33c5e1e37528634a1cd1b5ae44f",
-              code_file: "Maktaba",
-              arch: "arm64",
-              version: "0.3.98",
-              uploaded_at: "2026-11-07T12:00:00Z",
-              size: 2_500_000,
-            },
-            {
-              debug_id: "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
-              code_file: "android.tv",
-              arch: "jvm",
-              version: "0.3.102",
-              uploaded_at: "2026-11-07T12:00:00Z",
-              size: 300_000,
-            },
-          ],
-        },
-      ],
+      "GET /v1/admin/symbols": [200, { tables: TABLES }],
     });
     renderAt("/symbols");
     const table = await screen.findByTestId("symbol-tables");
-    expect(table).toHaveTextContent("9e40f33c5e1e37528634a1cd1b5ae44f");
-    expect(table).toHaveTextContent("0.3.98");
-    expect(table).toHaveTextContent("2,442 KB");
-    // an Android release's mapping: its app, and "R8 mapping" for its architecture
-    expect(table).toHaveTextContent("android.tv");
-    expect(table).toHaveTextContent("R8 mapping");
+    const heads = within(table)
+      .getAllByRole("columnheader")
+      .map((h) => h.textContent);
+    expect(heads).toEqual(["Type", "Binary", "Architecture", "Version", "Key", "Uploaded", "Size"]);
+    expect(table).not.toHaveTextContent("UUID");
+    // an Apple dSYM's table: its binary's UUID as Apple's tools print it
+    const dsym = row("dsym");
+    expect(dsym).toHaveTextContent("Apple dSYM");
+    expect(dsym).toHaveTextContent("arm64");
+    expect(dsym).toHaveTextContent("9E40F33C-5E1E-3752-8634-A1CD1B5AE44F");
+    expect(within(dsym).getByTitle("9e40f33c5e1e37528634a1cd1b5ae44f")).toBeInTheDocument();
+    expect(dsym).toHaveTextContent("2,442 KB");
+    // an Android release's mapping: keyed by its app and version, with no architecture
+    const r8 = row("r8");
+    expect(r8).toHaveTextContent("R8 mapping");
+    expect(within(r8).getByTitle("0f1e2d3c4b5a69788796a5b4c3d2e1f0")).toHaveTextContent(
+      "android.tv 0.3.102"
+    );
+    expect(r8).not.toHaveTextContent("jvm");
+    // a native library: its whole build id, shortened, whole on hover and copied whole
+    const elf = row("elf");
+    expect(elf).toHaveTextContent("Native (build ID)");
+    expect(elf).toHaveTextContent("libmpv.so");
+    const id = within(elf).getByTestId("build-id");
+    expect(id).toHaveTextContent("010203040506…aabbccdd");
+    expect(id).toHaveAttribute("title", "0102030405060708090a0b0c0d0e0f10aabbccdd");
+    expect(id).toHaveAttribute("dir", "ltr");
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    // userEvent.setup() puts its own clipboard on navigator: stub it after
+    const u = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    await u.click(within(elf).getByRole("button", { name: "Copy build ID" }));
+    expect(writeText).toHaveBeenCalledWith("0102030405060708090a0b0c0d0e0f10aabbccdd");
+    expect(await within(elf).findByText("Copied")).toBeInTheDocument();
     const nav = screen.getByRole("navigation", { name: "Admin" });
     expect(within(nav).getByRole("link", { name: "Crash symbols" })).toHaveAttribute(
       "href",
       "/symbols"
     );
+  });
+
+  it("names a mapping from an API without kinds by its architecture", async () => {
+    stubFetch({
+      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "GET /v1/admin/symbols": [
+        200,
+        { tables: TABLES.slice(0, 2).map(({ kind: _kind, ...t }) => t) },
+      ],
+    });
+    renderAt("/symbols");
+    await screen.findByTestId("symbol-tables");
+    expect(row("r8")).toHaveTextContent("R8 mapping");
+    const unknown = row("unknown");
+    expect(unknown).toHaveTextContent("9e40f33c5e1e37528634a1cd1b5ae44f");
+    expect(unknown).not.toHaveTextContent("Apple dSYM");
+  });
+
+  it("lists the crash symbols in Arabic, right to left, keys left to right", async () => {
+    localStorage.setItem("mkt:cloud:locale", "ar");
+    try {
+      stubFetch({
+        "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+        "GET /v1/admin/symbols": [200, { tables: TABLES }],
+      });
+      renderAt("/symbols");
+      const table = await screen.findByTestId("symbol-tables");
+      await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
+      const heads = within(table)
+        .getAllByRole("columnheader")
+        .map((h) => h.textContent);
+      expect(heads[0]).toBe("النوع");
+      expect(heads[4]).toBe("المفتاح");
+      expect(row("dsym")).toHaveTextContent("dSYM من Apple");
+      expect(row("r8")).toHaveTextContent("خريطة R8");
+      expect(row("elf")).toHaveTextContent("أصلية (بمعرّف البناء)");
+      expect(
+        within(row("elf")).getByRole("button", { name: "نسخ معرّف البناء" })
+      ).toBeInTheDocument();
+      expect(within(row("elf")).getByTestId("build-id")).toHaveAttribute("dir", "ltr");
+    } finally {
+      localStorage.clear();
+    }
   });
 
   it("says when no symbols are uploaded", async () => {

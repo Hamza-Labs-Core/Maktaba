@@ -318,3 +318,24 @@ func TestAdminListNeedsTheGate(t *testing.T) {
 		t.Errorf("no gate: %d", w.Code)
 	}
 }
+
+// 53.16: the list names each table's kind (a dSYM's table has Kind ""), and a native
+// library's whole build id only for a library.
+func TestListNamesEachKind(t *testing.T) {
+	for kind, want := range map[string]string{"": ListDSYM, KindR8: ListR8, KindELF: ListELF} {
+		if got := listKind(kind); got != want {
+			t.Errorf("listKind(%q) = %q, want %q", kind, got, want)
+		}
+	}
+	if ListDSYM != "dsym" || ListR8 != "r8" || ListELF != "elf" {
+		t.Fatalf("the listed kinds are the API's: %q %q %q", ListDSYM, ListR8, ListELF)
+	}
+	b, _ := json.Marshal(Info{DebugID: "ab", Kind: ListDSYM})
+	if !strings.Contains(string(b), `"kind":"dsym"`) || strings.Contains(string(b), "code_id") {
+		t.Errorf("a dSYM's table: %s", b)
+	}
+	b, _ = json.Marshal(Info{DebugID: "ab", Kind: ListELF, CodeID: "0102030405060708090a0b0c0d0e0f10aabbccdd"})
+	if !strings.Contains(string(b), `"code_id":"0102030405060708090a0b0c0d0e0f10aabbccdd"`) {
+		t.Errorf("a library's table: %s", b)
+	}
+}
