@@ -9,6 +9,11 @@ These notes are for any coding agent working here: Codex, Cursor, Claude Code an
 The trail below is written by [agent-trail](https://github.com/Hamza-Labs-Core/agent-trail)
 (`trail init --agent agents`). Edit outside its markers.
 
+**This repository's rule overrides the generated text below:** a pull request's trail event goes
+in its own trail-only pull request (no CI, no tests), never inside the code pull request. Where
+the block below says to write the event "in that pull request", read it as "in a trail-only pull
+request opened alongside it and merged after". See [`CLAUDE.md`](CLAUDE.md) rule 2.
+
 <!-- agent-trail:begin (written by `trail init --agent`; edit outside the markers) -->
 
 ## The agent trail
