@@ -126,6 +126,11 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A cloud node that loses the lead no longer keeps trying to take the Floating IP (Epic 50
+  story 50.07).** When Hetzner's API refuses the move for a minute, the new leader keeps retrying
+  in the background; that retry now stops as soon as Patroni says the node no longer leads, so a
+  node demoted meanwhile can't pull the IP back. While Patroni doesn't answer at all, it keeps
+  trying, so the IP still moves to a real leader.
 - **A cloud deploy now updates the API and the worker (Epic 50).** Deploys installed the new
   release only for the relay and the name server, so the API and the worker never ran a
   release on the nodes. They now get it too, the standby first; on the leader they restart,
