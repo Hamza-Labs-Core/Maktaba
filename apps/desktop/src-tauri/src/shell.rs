@@ -1691,7 +1691,24 @@ const LOGIN_ITEM_RECHECK: Duration = Duration::from_secs(30);
 #[cfg(target_os = "macos")]
 fn register_again(to: &str, force: bool) -> Result<(), Failure> {
     let before = agent::login_item();
-    match agent::register_login_item(force) {
+    let said = login_item_after_update(to, before, agent::register_login_item(force))?;
+    if let Some(line) = said {
+        attempts::log(&line);
+    }
+    Ok(())
+}
+
+/// What the login item's sync after the update to `to` means for the attempt (it was
+/// `before`): a failure, or the line for its log (None when nothing was done). A
+/// registration macOS refused while launchd had the job comes back as Synced::Started, and
+/// is no failure (agent::on_refusal).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn login_item_after_update(
+    to: &str,
+    before: LoginItem,
+    synced: Result<agent::Synced, String>,
+) -> Result<Option<String>, Failure> {
+    match synced {
         Err(e) => {
             let code = if e.starts_with(attempts::LOGIN_ITEM_UNSIGNED) {
                 attempts::LOGIN_ITEM_UNSIGNED
@@ -1708,7 +1725,7 @@ fn register_again(to: &str, force: bool) -> Result<(), Failure> {
             ))
         }
         // this build registered it already (at the app's start), or it stays valid
-        Ok(agent::Synced::Unchanged) => Ok(()),
+        Ok(agent::Synced::Unchanged) => Ok(None),
         Ok(agent::Synced::NeedsApproval) => Err(Failure::new(
             attempts::STEP_RELAUNCH,
             attempts::RELAUNCH_FAILED,
@@ -1717,18 +1734,12 @@ fn register_again(to: &str, force: bool) -> Result<(), Failure> {
                  Settings › Login Items"
             ),
         )),
-        Ok(agent::Synced::Registered) => {
-            attempts::log(&format!(
-                "update to {to}: the server's login item registered again (it was {before:?})"
-            ));
-            Ok(())
-        }
-        Ok(agent::Synced::Started) => {
-            attempts::log(&format!(
-                "update to {to}: the server's registered job started (it was {before:?})"
-            ));
-            Ok(())
-        }
+        Ok(agent::Synced::Registered) => Ok(Some(format!(
+            "update to {to}: the server's login item registered again (it was {before:?})"
+        ))),
+        Ok(agent::Synced::Started) => Ok(Some(format!(
+            "update to {to}: the server's registered job started (it was {before:?})"
+        ))),
     }
 }
 
@@ -2327,6 +2338,56 @@ pub fn open_external(url: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_refused_login_item_whose_job_started_is_no_update_failure() {
+        let to = "0.3.96";
+        // 2026-11-08: Enabled, macOS refused the register, the registered job was started
+        let started = login_item_after_update(to, LoginItem::Enabled, Ok(agent::Synced::Started));
+        assert!(started.unwrap().unwrap().contains("registered job started"));
+        assert_eq!(
+            login_item_after_update(to, LoginItem::Enabled, Ok(agent::Synced::Unchanged)).unwrap(),
+            None
+        );
+        assert!(login_item_after_update(
+            to,
+            LoginItem::NotRegistered,
+            Ok(agent::Synced::Registered)
+        )
+        .unwrap()
+        .unwrap()
+        .contains("registered again"));
+        // turned off in System Settings: the attempt says so
+        let off = login_item_after_update(
+            to,
+            LoginItem::RequiresApproval,
+            Ok(agent::Synced::NeedsApproval),
+        )
+        .unwrap_err();
+        assert_eq!(off.code, attempts::RELAUNCH_FAILED);
+        assert!(
+            off.detail.contains("turned off in System"),
+            "{}",
+            off.detail
+        );
+        // a refusal with nothing to start stands, and an unsigned app keeps its code
+        let refused = login_item_after_update(
+            to,
+            LoginItem::NotRegistered,
+            Err("Operation not permitted (SMAppServiceErrorDomain 1)".into()),
+        )
+        .unwrap_err();
+        assert_eq!(refused.code, attempts::RELAUNCH_FAILED);
+        let unsigned = login_item_after_update(
+            to,
+            LoginItem::Enabled,
+            Err(agent::login_item_error(
+                "Codesigning failure (SMAppServiceErrorDomain 3)",
+            )),
+        )
+        .unwrap_err();
+        assert_eq!(unsigned.code, attempts::LOGIN_ITEM_UNSIGNED);
+    }
 
     #[test]
     fn only_the_setup_sites_open_externally() {
