@@ -245,13 +245,20 @@ func (r *rehearsal) queueWave(db *sql.DB, stages []string, n int) int64 {
 	if queued == 0 {
 		t.Fatalf("no job of %v queued: the seed has none of their subjects", stages)
 	}
-	// due at once: a stage's debounce (tag and exact_dates wait 300 s for more changes)
-	// is not what the scenario rehearses, and would outlast its five-minute waits
-	if _, err := db.Exec(`UPDATE processing_jobs SET not_before = now() WHERE id > $1 AND stage = ANY($2)
-		AND state = 'pending' AND not_before > now()`, last, pq.Array(stages)); err != nil {
-		t.Fatalf("make the queued jobs due: %v", err)
-	}
+	makeDue(t, db, stages, last)
 	return last
+}
+
+// makeDue makes the pending jobs of the stages after since due at once. A stage's debounce
+// (tag and exact_dates wait 300 s for more changes) is not what the scenarios rehearse, and
+// would outlast their five-minute waits: the jobs a scenario queues, and the ones the wave's
+// own runs enqueue later (a detect enqueues its video's tag), are made due as they appear.
+func makeDue(t *testing.T, db *sql.DB, stages []string, since int64) {
+	t.Helper()
+	if _, err := db.Exec(`UPDATE processing_jobs SET not_before = now() WHERE id > $1 AND stage = ANY($2)
+		AND state = 'pending' AND not_before > now()`, since, pq.Array(stages)); err != nil {
+		t.Fatalf("make the wave's jobs due: %v", err)
+	}
 }
 
 // waveJobs is the jobs of the stages after id since, with their starts and where they ran.
@@ -311,6 +318,7 @@ func waitSettled(t *testing.T, db *sql.DB, stages []string, since int64, d time.
 		if time.Now().After(deadline) {
 			t.Fatalf("%d of %d jobs of %v still open after %s: %+v", open, len(jobs), stages, d, jobs)
 		}
+		makeDue(t, db, stages, since)
 		time.Sleep(2 * time.Second)
 	}
 }
