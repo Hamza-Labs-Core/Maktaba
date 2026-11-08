@@ -117,6 +117,19 @@ async def test_a_payload_that_does_not_match_its_kinds_schema_is_refused() -> No
         await _refused(job, kind, payload, "schema")
 
 
+async def test_an_undecodable_payload_is_refused_as_a_schema_mismatch() -> None:
+    job = _job()
+    with capture_logs() as logs:
+        relay = _Relay()
+        handle = native.engine_handler(
+            SimpleNamespace(engine_relay=relay), SimpleNamespace(job=job), "p"
+        )
+        with pytest.raises(PublishRefused, match="schema"):
+            await handle("publish", {"type": "job.log", "payload": {"$t": "map", "v": "{not json"}})
+    assert relay.published == []
+    assert [e["reason"] for e in logs if e["event"] == "plugin_publish_refused"] == ["schema"]
+
+
 async def test_an_oversize_payload_is_refused() -> None:
     job = _job()
     big = _log_line(job, data={"blob": "x" * MAX_PAYLOAD_BYTES})

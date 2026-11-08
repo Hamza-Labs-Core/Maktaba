@@ -630,7 +630,11 @@ def engine_handler(db: Any, ctx: Any, plugin_id: str = "") -> EngineHandler:
             await events.log_event(db, **kw)
             return None
         if op == "publish":
-            kind, payload = a.get("type"), decode_any(a.get("payload"))
+            kind = a.get("type")
+            try:
+                payload = decode_any(a.get("payload"))
+            except Exception:  # noqa: BLE001 - an undecodable payload is refused as a schema
+                payload = None  # mismatch (and logged) like any other
             check_publish(plugin_id or str(ctx.job.stage), kind, payload, ctx.job)
             await events.publish(db, str(kind), payload)
             return None
