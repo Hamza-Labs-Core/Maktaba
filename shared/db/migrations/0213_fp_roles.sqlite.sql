@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0210: SQLite has no roles; first-party plugin runners need
+-- SQLite parity sibling for slot 0213: SQLite has no roles; first-party plugin runners need
 -- a Postgres home, so this slot changes nothing here.
 --
 SELECT 1;
