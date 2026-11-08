@@ -498,6 +498,16 @@ build fails when the two differ.
 
 ### Added
 
+- **A runner's tools read a library file on a share on Windows (story 54.23).** A job that
+  hands ffmpeg or ffprobe a file on a share-hosted library (thumbnails, probes, the
+  transcription input) no longer runs in the queue worker. The runner opens that one file
+  through its launcher's broker, with the same checks as its own reads, and hands the tool the
+  open file, for reading only, as its standard input. The tool still runs in the group's
+  AppContainer, reaches no share or other file there, and writes only where the group may.
+  An mp4 with its index at the end and a seek before the input both work. A share path a tool
+  cannot be handed that way (a second share file, an output on the share, another share,
+  another program) is refused, and that job runs in the worker as before.
+
 - **A runner reaches a library on a share on Windows (story 54.23).** A first-party runner on
   Windows runs in an AppContainer, which reaches no SMB share, so every job on a share-hosted
   library ran in the queue worker. The runner's launcher now brokers the group's share
