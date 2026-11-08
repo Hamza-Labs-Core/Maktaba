@@ -17,6 +17,9 @@ import MaktabaKit
 /// page without a reference fails too. Either way the page drawn now is attached to the test
 /// (`mac.xcresult` in CI's `player-ui-tests-mac` artifact): a reference is made or changed by
 /// committing that attachment: `tools/apple/snapshots.py <run id>` copies them here.
+///
+/// The Apple TV's video page draws MaktabaKit's TV form of the panels; `tvPanelMatchesItsReference`
+/// draws that form here (story 54.20 T05), as `tv-panel-<lang>.png`.
 @MainActor @Suite(.serialized) struct PageSnapshots {
     enum Page: String, CaseIterable, Sendable {
         case library, series, video
@@ -101,6 +104,82 @@ import MaktabaKit
         let diff = try Self.difference(image, ref)
         #expect(diff <= Self.tolerance,
                 "\(c.name) differs from its reference in \(String(format: "%.2f", diff * 100)) % of its pixels; if the change is meant, commit the attached image")
+    }
+
+    /// The Apple TV video page's panels (story 54.20 T05): MaktabaKit's own TV form, drawn here
+    /// on the Mac as the TV draws it (`pluginPanelsTVForm`: the TV's subset of blocks, open,
+    /// no chips), on the TV page's background at a 16:9 size, in English and Arabic (right to
+    /// left). One value is longer than the text rules allow: it ends in "…" and wraps. The
+    /// Apple TV's own text styles are larger than the Mac's; this is the closest the hosted
+    /// Mac tests draw it (no tvOS simulator snapshot runs in CI).
+    @Test(arguments: ["en", "ar"]) func tvPanelMatchesItsReference(_ lang: String) async throws {
+        let name = "tv-panel-\(lang)"
+        let panels = try JSONDecoder().decode([PanelView].self, from: Data(Self.tvPanel(lang).utf8))
+        #expect(PanelText.shown(panels[0].blocks, tv: true).map(\.type) == ["kv", "badges", "markers"])
+        let size = Self.tvSize
+        let root = ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                Text(verbatim: "The Night Journey").font(.largeTitle.bold())
+                PluginPanelsSection<String>(panels: panels, play: { _ in })
+            }
+            .padding(40)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Color(red: 0x0B / 255, green: 0x11 / 255, blue: 0x1C / 255))
+        .environment(\.pluginPanelsTVForm, true)
+        .environment(\.locale, Locale(identifier: lang))
+        .environment(\.layoutDirection, lang == "ar" ? .rightToLeft : .leftToRight)
+        .preferredColorScheme(.dark)
+        .frame(width: size.width, height: size.height)
+
+        let image = try await Self.render(root, size: size)
+        let png = try #require(image.representation(using: .png, properties: [:]))
+        Attachment.record(png, named: "\(name).png")
+        guard let refURL = Bundle(for: SnapshotBundle.self).url(forResource: name, withExtension: "png", subdirectory: "Snapshots"),
+              let refData = try? Data(contentsOf: refURL),
+              let ref = NSBitmapImageRep(data: refData) else {
+            Issue.record("no reference for \(name): commit the attached \(name).png as PlayerMacTests/Snapshots/\(name).png")
+            return
+        }
+        let diff = try Self.difference(image, ref)
+        #expect(diff <= Self.tolerance,
+                "\(name) differs from its reference in \(String(format: "%.2f", diff * 100)) % of its pixels; if the change is meant, commit the attached image")
+    }
+
+    /// A 1080p TV's 16:9, at half its points: the Mac's text styles are about half the Apple TV's.
+    static let tvSize = CGSize(width: 960, height: 540)
+
+    /// One plugin's panel as a home answers it in `lang`: every block type the TV form keeps
+    /// or drops, and a value longer than `PanelText.maxShown`.
+    nonisolated static func tvPanel(_ lang: String) -> String {
+        let ar = lang == "ar"
+        let long = String(repeating: ar ? "رحلة ليلية نحو الشمال عبر الصحراء الواسعة، " : "A journey north through the desert by night, ", count: 6)
+        return """
+        [{"plugin_id":"scenes","plugin":"\(ar ? "المشاهد" : "Scenes")","title":"\(ar ? "المشاهد" : "Scenes")","blocks":[
+         {"type":"kv","value":[{"label":"\(ar ? "الحقبة" : "Era")","value":"\(ar ? "العشرينيات" : "1920s")"},
+                               {"label":"\(ar ? "ملاحظات" : "Notes")","value":"\(long)"}]},
+         {"type":"badges","value":[{"text":"\(ar ? "مرمّم" : "Restored")"},{"text":"\(ar ? "عالي الدقة" : "HD")"}]},
+         {"type":"chips","value":["\(ar ? "تاريخ" : "History")"]},
+         {"type":"markers","value":[{"t_ms":754000,"label":"\(ar ? "الطريق شمالاً" : "The road north")"}]}]}]
+        """
+    }
+
+    /// A view with no requests, drawn in a borderless dark window of `size` once laid out.
+    static func render(_ view: some View, size: CGSize) async throws -> NSBitmapImageRep {
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .darkAqua)
+        defer { window.close() }
+        let hosting = NSHostingView(rootView: view)
+        window.contentView = hosting
+        window.orderFrontRegardless()
+        try await Task.sleep(for: .milliseconds(500))
+        hosting.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
+        let rep = try #require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+        hosting.cacheDisplay(in: hosting.bounds, to: rep)
+        return rep
     }
 
     @ViewBuilder static func screen(_ page: Page, context: PlayerContext) -> some View {

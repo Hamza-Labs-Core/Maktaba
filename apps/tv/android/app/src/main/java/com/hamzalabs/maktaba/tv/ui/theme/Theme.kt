@@ -40,6 +40,32 @@ fun MaktabaTvTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = MaktabaColors,
         typography = MaktabaTypography,
-        content = content,
-    )
+    ) {
+        // The phones' core composables (Material 3, e.g. the plugin panels) drawn on the TV:
+        // the same palette, never Material's light defaults.
+        androidx.compose.material3.MaterialTheme(colorScheme = CoreColors, content = content)
+    }
 }
+
+/** [MaktabaColors] in the phones' Material 3 slots, for the core composables the TV shows. */
+private val CoreColors = androidx.compose.material3.darkColorScheme(
+    primary = MaktabaPalette.Gold,
+    onPrimary = MaktabaPalette.OnGold,
+    primaryContainer = MaktabaPalette.Raised,
+    onPrimaryContainer = MaktabaPalette.Gold,
+    secondary = MaktabaPalette.GoldLight,
+    onSecondary = MaktabaPalette.OnGold,
+    secondaryContainer = MaktabaPalette.Raised,
+    onSecondaryContainer = MaktabaPalette.Text,
+    background = MaktabaPalette.Background,
+    onBackground = MaktabaPalette.Text,
+    surface = MaktabaPalette.Surface,
+    onSurface = MaktabaPalette.Text,
+    surfaceVariant = MaktabaPalette.Raised,
+    onSurfaceVariant = MaktabaPalette.Muted,
+    surfaceTint = MaktabaPalette.Gold,
+    inverseSurface = MaktabaPalette.Gold,
+    inverseOnSurface = MaktabaPalette.OnGold,
+    outline = MaktabaPalette.Border,
+    outlineVariant = MaktabaPalette.Border,
+)

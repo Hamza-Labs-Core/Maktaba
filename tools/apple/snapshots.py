@@ -10,7 +10,8 @@ a reference is what the page is meant to look like.
     tools/apple/snapshots.py <path/to/mac.xcresult>
     tools/apple/snapshots.py --self-test
 
-Only names PageSnapshots makes are copied (<page>-<panels>-<lang>[-ax3].png).
+Only names PageSnapshots makes are copied (<page>-<panels>-<lang>[-ax3].png, and the Apple TV
+form's tv-panel-<lang>.png).
 """
 
 from __future__ import annotations
@@ -25,7 +26,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DEST = ROOT / "apps/apple/PlayerMacTests/Snapshots"
-NAME = re.compile(r"^((?:library|series|video)-(?:none|collapsed|open)-(?:en|ar)(?:-ax3)?)(?:[._-].*)?\.png$")
+NAME = re.compile(
+    r"^((?:library|series|video)-(?:none|collapsed|open)-(?:en|ar)(?:-ax3)?|tv-panel-(?:en|ar))(?:[._-].*)?\.png$"
+)
 
 
 def reference_name(suggested: str) -> str | None:
@@ -81,6 +84,9 @@ def self_test() -> int:
     assert reference_name("library-none-en.png") == "library-none-en.png"
     assert reference_name("series-open-ar-ax3.png") == "series-open-ar-ax3.png"
     assert reference_name("video-collapsed-en_0_2F1C.png") == "video-collapsed-en.png"
+    assert reference_name("tv-panel-ar.png") == "tv-panel-ar.png"
+    assert reference_name("tv-panel-en_0_1A2B.png") == "tv-panel-en.png"
+    assert reference_name("tv-panel-fr.png") is None
     assert reference_name("library-open-fr.png") is None
     assert reference_name("Screenshot.png") is None
     manifest = [
@@ -88,11 +94,14 @@ def self_test() -> int:
             {"exportedFileName": "a.png", "suggestedHumanReadableName": "library-none-en.png"},
             {"exportedFileName": "b.png", "suggestedHumanReadableName": "other.png"},
         ]},
+        {"testIdentifier": "PageSnapshots/tvPanelMatchesItsReference(_:)", "attachments": [
+            {"exportedFileName": "d.png", "suggestedHumanReadableName": "tv-panel-ar.png"},
+        ]},
         {"testIdentifier": "PlayerMenus/x()", "attachments": [
             {"exportedFileName": "c.png", "suggestedHumanReadableName": "library-none-ar.png"},
         ]},
     ]
-    assert pick(manifest) == {"a.png": "library-none-en.png"}
+    assert pick(manifest) == {"a.png": "library-none-en.png", "d.png": "tv-panel-ar.png"}
     print("snapshots.py: self-test passed")
     return 0
 
