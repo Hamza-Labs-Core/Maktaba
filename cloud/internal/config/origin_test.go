@@ -24,6 +24,7 @@ func prodAPI() Config {
 	c.Server.Env = "production"
 	c.Server.ListenAddr = "127.0.0.1:8090"
 	c.Server.AdminListenAddr = "127.0.0.1:8091"
+	c.Server.AdminHost = "admin.maktaba.tv"
 	c.Server.TrustedProxies = []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32"), netip.MustParsePrefix("::1/128")}
 	return c
 }
@@ -34,6 +35,7 @@ func TestTrustedProxiesParse(t *testing.T) {
 env = "production"
 listen_addr = "127.0.0.1:8090"
 admin_listen_addr = "127.0.0.1:8091"
+admin_host = "admin.maktaba.tv"
 trusted_proxies = ["127.0.0.1/32", "::1/128"]
 origin_mode = "tunnel"
 `)

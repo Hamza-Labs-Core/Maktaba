@@ -34,12 +34,12 @@ func TestMetricsAdminComponents(t *testing.T) {
 		return rec.Body.String()
 	}
 	base := http.NotFoundHandler()
-	with := get(metricsAdmin(base, dir, &supervisor.ComponentMetrics{Source: metricsRows{}, Machine: "home"}, nil))
+	with := get(metricsAdmin(base, &machineMetrics{Dir: dir, Comps: &supervisor.ComponentMetrics{Source: metricsRows{}, Machine: "home"}}))
 	if !strings.Contains(with, "maktaba_update_") ||
 		!strings.Contains(with, `maktaba_component_up{id="youtube",machine="home",phase="off"} 0`) {
 		t.Fatalf("metrics:\n%s", with)
 	}
-	if without := get(metricsAdmin(base, dir, nil, nil)); strings.Contains(without, "maktaba_component_up{") {
+	if without := get(metricsAdmin(base, &machineMetrics{Dir: dir})); strings.Contains(without, "maktaba_component_up{") {
 		t.Fatalf("components without a reconciler:\n%s", without)
 	}
 }
@@ -55,7 +55,7 @@ func TestMetricsAdminHost(t *testing.T) {
 			return 200 << 30
 		}, Load: func() (float64, bool) { return 1.5, true }, CPUs: 8}
 	rec := httptest.NewRecorder()
-	h := metricsAdmin(http.NotFoundHandler(), t.TempDir(), &supervisor.ComponentMetrics{Source: metricsRows{}, Machine: "box2"}, host)
+	h := metricsAdmin(http.NotFoundHandler(), &machineMetrics{Dir: t.TempDir(), Comps: &supervisor.ComponentMetrics{Source: metricsRows{}, Machine: "box2"}, Host: host})
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	body := rec.Body.String()
 	for _, want := range []string{`maktaba_host_memory_bytes{machine="box2"} 1.7179869184e+10`,
@@ -70,8 +70,25 @@ func TestMetricsAdminHost(t *testing.T) {
 	}
 	host.Load = func() (float64, bool) { return 0, false }
 	rec = httptest.NewRecorder()
-	metricsAdmin(http.NotFoundHandler(), t.TempDir(), nil, host).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	metricsAdmin(http.NotFoundHandler(), &machineMetrics{Dir: t.TempDir(), Host: host}).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	if b := rec.Body.String(); strings.Contains(b, "maktaba_host_load1") || !strings.Contains(b, `maktaba_host_cpus{machine="home"} 8`) {
 		t.Errorf("without a load average, or a reconciler:\n%s", b)
+	}
+}
+
+// Story 53.12: a joined machine answers the home's "metrics" with the same text as its
+// /metrics (the home keeps the series labelled with the machine); before the supervisor
+// has built them it answers no.
+func TestMetricsCommand(t *testing.T) {
+	host := &hostMetrics{DataDir: "/data", Load: func() (float64, bool) { return 0.5, true }, CPUs: 4}
+	m := &machineMetrics{Dir: t.TempDir(), Comps: &supervisor.ComponentMetrics{Source: metricsRows{}, Machine: "box2"}, Host: host}
+	ok, detail := metricsCommand(t.Context(), m)
+	text, _ := detail.(string)
+	if !ok || !strings.Contains(text, `maktaba_host_load1{machine="box2"} 0.5`) ||
+		!strings.Contains(text, `maktaba_component_up{id="youtube",machine="box2",phase="off"} 0`) {
+		t.Fatalf("metrics: %v %q", ok, text)
+	}
+	if ok, _ := metricsCommand(t.Context(), nil); ok {
+		t.Fatal("answered before the metrics were built")
 	}
 }

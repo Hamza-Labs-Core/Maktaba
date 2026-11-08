@@ -452,6 +452,11 @@ func setForwarded(h http.Header, r *http.Request) {
 // Caddy in front of the relay), which appends the address it saw as the
 // rightmost X-Forwarded-For entry. Entries further left are the client's
 // own claims and are never trusted.
+// ClientIP is the address the relay attributes r to (its access log, its stream keys): the
+// rightmost X-Forwarded-For entry when the peer is Caddy on the loopback or a private
+// address, else the peer. CF-Connecting-IP is never read.
+func ClientIP(r *http.Request) string { return clientIP(r) }
+
 func clientIP(r *http.Request) string {
 	peer, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {

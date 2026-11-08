@@ -3,10 +3,12 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -50,4 +52,45 @@ func RunDraining(ctx context.Context, logger *slog.Logger, srv *http.Server, gra
 		logger.Info("tunnels drained", "took", time.Since(start).String())
 	}
 	return srv.Shutdown(shCtx)
+}
+
+// RunAll serves every srv (the api's user and admin listeners, Epic 50 story 50.32) until
+// ctx ends, SIGINT or SIGTERM arrives, or one of them fails; then shuts them all down
+// inside one grace. A listener that fails takes the others down with it: the node's
+// systemd unit restarts the role whole, rather than leaving half of it serving.
+func RunAll(ctx context.Context, logger *slog.Logger, grace time.Duration, srvs ...*http.Server) error {
+	errs := make(chan error, len(srvs))
+	for _, srv := range srvs {
+		go func(srv *http.Server) {
+			logger.Info("listening", "addr", srv.Addr)
+			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errs <- fmt.Errorf("%s: %w", srv.Addr, err)
+			}
+		}(srv)
+	}
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigs)
+
+	var failed error
+	select {
+	case failed = <-errs:
+		logger.Error("a listener failed; stopping the others", "err", failed)
+	case <-ctx.Done():
+	case sig := <-sigs:
+		logger.Info("shutdown signal", "signal", sig.String())
+	}
+	shCtx, cancel := context.WithTimeout(context.Background(), grace)
+	defer cancel()
+	var wg sync.WaitGroup
+	shut := make([]error, len(srvs))
+	for i, srv := range srvs {
+		wg.Add(1)
+		go func(i int, srv *http.Server) {
+			defer wg.Done()
+			shut[i] = srv.Shutdown(shCtx)
+		}(i, srv)
+	}
+	wg.Wait()
+	return errors.Join(append([]error{failed}, shut...)...)
 }

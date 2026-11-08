@@ -101,6 +101,7 @@ NOT_IN_CI: dict[str, str] = {
     "tools/ci/branch_head.py": "ci-branch.yml's guard; its tests (tools/ci/tests) run on every pull request",
     ".githooks/**": "the pre-push hook: the affected-tests job shellchecks it on every pull request",
     "tools/ci/ci_paths.py": "this guard: the lint job runs it on every pull request",
+    "tools/ci/caddy_deny_first.py": "the Caddyfile deny-first check (#927, #930): the lint job's repo checks run it and its tests on every pull request",
     "tools/lint/**": "the foreign-domain check (story 50.01): the lint job's repo checks run it and its test on every pull request",
     ".trail.toml": "the agent trail's settings: the lint job's trail check (the agent-trail Action) reads them on every pull request",
     "tools/ci/apple_player_scope.py": "run by the changes job on every pull request",

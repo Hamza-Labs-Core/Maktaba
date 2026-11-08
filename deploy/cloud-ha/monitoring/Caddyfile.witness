@@ -9,8 +9,13 @@
 }
 
 {$WITNESS_DOMAIN} {
+	# A handle of its own, first: a bare "respond @unauthed 401" never runs, because Caddy orders
+	# handle before respond and the catch-all handle below answers every request.
+	# tests/deny-first.sh checks the order.
 	@unauthed not header Authorization "Bearer {$WITNESS_TOKEN}"
-	respond @unauthed 401
+	handle @unauthed {
+		respond 401
+	}
 
 	handle /status/network1.json {
 		root * /srv

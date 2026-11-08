@@ -107,6 +107,8 @@ func TestScenario(t *testing.T) {
 		{"load-small", loadSmall},
 		{"relay-plans", relayPlans},
 		{"direct-remote", directRemote},
+		{"origin-only-via-edge", originOnlyViaEdge},
+		{"origin-aop", originAOP},
 	} {
 		t.Run(s.name, func(t *testing.T) {
 			if why, ok := skip[s.name]; ok || s.run == nil {
@@ -120,7 +122,8 @@ func TestScenario(t *testing.T) {
 			case "direct-remote":
 				c = upDirect(t, s.name)
 			case "failover-kill-leader", "failover-network-partition", "switchover", "restore-pitr",
-				"runbook-switchover", "runbook-forced-failover", "runbook-dns-swap":
+				"runbook-switchover", "runbook-forced-failover", "runbook-dns-swap",
+				"origin-only-via-edge", "origin-aop":
 				// the pair's own cluster (compose-ha.yml), started by the scenario
 			default:
 				c = up(t, s.name)

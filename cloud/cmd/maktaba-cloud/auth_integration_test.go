@@ -28,7 +28,7 @@ func TestRegisterVerifyLogin(t *testing.T) {
 	if r.json(t)["status"] != "pending_verification" {
 		t.Fatalf("register body: %s", r.body)
 	}
-	if _, ok := c.cookies["maktaba_refresh"]; ok {
+	if _, ok := c.cookies["__Host-maktaba_refresh"]; ok {
 		t.Fatal("registration must not start a session before verification")
 	}
 
@@ -77,7 +77,7 @@ func TestRegisterVerifyLogin(t *testing.T) {
 	if user["role"] != "user" || user["email_verified"] != true || body["access_token"] == "" {
 		t.Fatalf("login body: %s", r.body)
 	}
-	if c.cookies["maktaba_refresh"] == "" {
+	if c.cookies["__Host-maktaba_refresh"] == "" {
 		t.Fatal("no refresh cookie")
 	}
 	c.token = body["access_token"].(string)
@@ -95,10 +95,10 @@ func TestRegisterVerifyLogin(t *testing.T) {
 func TestRefreshRotationAndReplay(t *testing.T) {
 	e := newEnv(t)
 	c := e.registerVerified("bob@example.test")
-	first := c.cookies["maktaba_refresh"]
+	first := c.cookies["__Host-maktaba_refresh"]
 
 	c.mustStatus(c.do("POST", "/v1/auth/refresh", nil), 200)
-	second := c.cookies["maktaba_refresh"]
+	second := c.cookies["__Host-maktaba_refresh"]
 	if second == "" || second == first {
 		t.Fatal("refresh did not rotate the cookie")
 	}
@@ -106,7 +106,7 @@ func TestRefreshRotationAndReplay(t *testing.T) {
 	// Inside the grace window the old token is a plain miss (two tabs
 	// racing), not a replay.
 	thief := e.client()
-	thief.cookies["maktaba_refresh"] = first
+	thief.cookies["__Host-maktaba_refresh"] = first
 	if r := thief.do("POST", "/v1/auth/refresh", nil); r.code != 401 {
 		t.Fatalf("old token in grace: %d", r.code)
 	}
@@ -116,7 +116,7 @@ func TestRefreshRotationAndReplay(t *testing.T) {
 
 	// Past the grace window it is a replay.
 	e.exec(`UPDATE sessions SET revoked_at = now() - INTERVAL '1 minute' WHERE revoke_reason = 'rotated'`)
-	thief.cookies["maktaba_refresh"] = first
+	thief.cookies["__Host-maktaba_refresh"] = first
 	if r := thief.do("POST", "/v1/auth/refresh", nil); r.code != 401 {
 		t.Fatalf("replay: %d", r.code)
 	}
@@ -133,7 +133,7 @@ func TestRefreshRotationAndReplay(t *testing.T) {
 	// Logout revokes and clears.
 	c.login("bob@example.test", goodPassword)
 	c.mustStatus(c.do("POST", "/v1/auth/logout", nil), http.StatusNoContent)
-	if _, ok := c.cookies["maktaba_refresh"]; ok {
+	if _, ok := c.cookies["__Host-maktaba_refresh"]; ok {
 		t.Fatal("logout left the cookie")
 	}
 }

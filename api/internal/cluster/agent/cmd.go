@@ -28,6 +28,9 @@ var commandNames = map[string]bool{
 	"update.convert": true,
 	// a machine's own log files over a window, for the logs page and the bundle
 	"logs.files": true,
+	// a machine's own memory, disk, load and components in Prometheus's text format, for
+	// the home's dashboards (Epic 53 story 53.12): machine agents only
+	"metrics": true,
 }
 
 // adminCommands are the commands an admin may send a process from the processes page
@@ -37,7 +40,8 @@ var adminCommands = map[string]bool{"drain": true, "undrain": true, "reload_stag
 
 // machineOnly are the commands only a machine's own agent (its supervisor) takes.
 func machineOnly(name string) bool {
-	return (strings.HasPrefix(name, "update.") && name != "update.convert") || name == "home.access" || name == "logs.files"
+	return (strings.HasPrefix(name, "update.") && name != "update.convert") || name == "home.access" || name == "logs.files" ||
+		name == "metrics"
 }
 
 // workerOnly are the commands only a machine's pipeline worker takes (not its machine
@@ -47,6 +51,10 @@ func workerOnly(name string) bool { return name == "update.convert" }
 // bulkyResults are the commands whose answers the event log notes by size only (a
 // machine's log lines are not the hub's events).
 var bulkyResults = map[string]bool{"logs.files": true}
+
+// quietCommands are asked on a timer (the home's /metrics asks each machine every scrape):
+// they stay out of the hub's event log, which would otherwise fill with them.
+var quietCommands = map[string]bool{"metrics": true}
 
 // secretArgs are the commands' arguments the event log never shows.
 var secretArgs = map[string][]string{"home.access": {"password"}, "update.convert": {"download_token"}}
@@ -149,8 +157,11 @@ func (h *Hub) CommandWithin(ctx context.Context, sessionID, name string, args js
 			logged["data"] = fmt.Sprintf("(%d bytes, sealed)", len(d))
 		}
 	}
-	h.event(map[string]any{"event": "cmd", "session": s.ID, "ip": s.IP, "worker_id": s.WorkerID, "id": id,
-		"name": name, "args": logged, "by": by})
+	quiet := quietCommands[name]
+	if !quiet {
+		h.event(map[string]any{"event": "cmd", "session": s.ID, "ip": s.IP, "worker_id": s.WorkerID, "id": id,
+			"name": name, "args": logged, "by": by})
+	}
 	if !s.send(map[string]any{"t": "cmd", "id": id, "name": name, "args": argMap}) {
 		s.mu.Lock()
 		delete(s.cmds, id)
@@ -191,6 +202,9 @@ func (h *Hub) CommandWithin(ctx context.Context, sessionID, name string, args js
 		}
 	}
 	if err != nil {
+		if quiet {
+			return CmdResult{ID: id}, err
+		}
 		h.event(map[string]any{"event": "cmd.result", "session": s.ID, "ip": s.IP, "id": id, "name": name, "ok": false,
 			"detail": err.Error()})
 		return CmdResult{ID: id}, err
@@ -203,6 +217,9 @@ func (h *Hub) CommandWithin(ctx context.Context, sessionID, name string, args js
 		s.mu.Lock()
 		s.logLevel, _ = argMap["level"].(string)
 		s.mu.Unlock()
+	}
+	if quiet {
+		return res, nil
 	}
 	var logDetail any = res.Detail
 	if bulkyResults[name] {

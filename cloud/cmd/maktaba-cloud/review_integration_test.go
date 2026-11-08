@@ -16,7 +16,7 @@ func TestRefreshCookieIsHostOnly(t *testing.T) {
 	c := e.registerVerified("host@example.test")
 	r := c.do("POST", "/v1/auth/refresh", nil)
 	for _, sc := range r.header.Values("Set-Cookie") {
-		if strings.HasPrefix(sc, "maktaba_refresh=") && strings.Contains(strings.ToLower(sc), "domain=") {
+		if strings.HasPrefix(sc, "__Host-maktaba_refresh=") && strings.Contains(strings.ToLower(sc), "domain=") {
 			t.Fatalf("refresh cookie has a Domain: %s", sc)
 		}
 	}
@@ -27,16 +27,16 @@ func TestRefreshCookieIsHostOnly(t *testing.T) {
 func TestRefreshRaceKeepsCookie(t *testing.T) {
 	e := newEnv(t)
 	a := e.registerVerified("race@example.test")
-	old := a.cookies["maktaba_refresh"]
+	old := a.cookies["__Host-maktaba_refresh"]
 	a.mustStatus(a.do("POST", "/v1/auth/refresh", nil), 200)
 	b := e.client()
-	b.cookies["maktaba_refresh"] = old
+	b.cookies["__Host-maktaba_refresh"] = old
 	r := b.do("POST", "/v1/auth/refresh", nil)
 	if r.code != 401 {
 		t.Fatalf("loser: %d", r.code)
 	}
 	for _, sc := range r.header.Values("Set-Cookie") {
-		if strings.HasPrefix(sc, "maktaba_refresh=") {
+		if strings.HasPrefix(sc, "__Host-maktaba_refresh=") {
 			t.Fatalf("loser's response touched the cookie: %s", sc)
 		}
 	}
