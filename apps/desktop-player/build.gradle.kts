@@ -1,8 +1,10 @@
 // Maktaba Player for Windows and Linux (Epic 42.4, Epic 55): the Android and Apple Players' sections.
 // Compose for Desktop on the apps' portable client (`:client`, shared with the Android apps);
 // JavaFX plays the video (H.264 and AAC, as MP4 or HLS: the streaming service's
-// `desktop-player` profile). Installers: `packageReleaseMsi` (Windows), `packageReleaseDeb`
-// and `packageReleaseRpm` (Linux), named and signed by .github/workflows/desktop-release.yml.
+// `desktop-player` profile). Installers: `packageMsi` (Windows), `packageDeb` and `packageRpm`
+// (Linux), named and signed by .github/workflows/desktop-release.yml. Not the `packageRelease*`
+// tasks: those run ProGuard, and the player's crash frames are read at Maktaba as they come
+// (Epic 53 story 53.16; tools/ci/tests/test_desktop_player_release.py keeps it so).
 import org.gradle.internal.os.OperatingSystem
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget

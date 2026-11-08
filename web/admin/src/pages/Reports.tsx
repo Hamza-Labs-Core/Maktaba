@@ -5,7 +5,9 @@
 // Triaged, Fixed in {version}, Closed), a link to a GitHub issue pasted by hand, and a reply
 // the home's admin and the report's sender see. A report holds no title, path, name or
 // address (the home's export scrub) and is kept 90 days. Its Apple crashes read as functions,
-// files and lines where the release's symbol tables are uploaded (/symbols, 53.14); the
+// files and lines where the release's symbol tables are uploaded (/symbols, 53.14), its
+// Android crashes where the release's R8 mapping is, and its desktop crashes as they came
+// (the desktop player is not obfuscated); the
 // binaries without one are named.
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
@@ -56,13 +58,18 @@ export interface CrashFrame {
   raw: string;
   in_app: boolean;
   symbol?: { function: string; file?: string; line?: number };
+  // R8 inlined this frame into the next one (an Android release's mapping, 53.16)
+  inlined?: boolean;
 }
 
 export interface ReportCrash {
   type: string;
   value?: string;
   frames: CrashFrame[];
-  missing?: { code_file: string; debug_id: string }[];
+  // a binary's missing dSYM, or (kind "r8") an Android release's missing mapping
+  missing?: { code_file: string; debug_id: string; kind?: string; version?: string }[];
+  // how the frames read: a dSYM's table, an R8 mapping, or the code's own names (not obfuscated)
+  symbols?: "dsym" | "mapping" | "source";
 }
 
 export interface CloudReportDoc extends CloudReport {
@@ -218,6 +225,13 @@ export function cloudTimeline(d: CloudReportDoc): (Line & { side: "app" | "home"
   return all.sort((a, b) => (Date.parse(a.ts ?? "") || 0) - (Date.parse(b.ts ?? "") || 0));
 }
 
+// how a crash's frames read (ReportCrash.symbols)
+const SYMBOLS_NOTE = {
+  dsym: "admin.reports.symbols.dsym",
+  mapping: "admin.reports.symbols.mapping",
+  source: "admin.reports.symbols.source",
+} as const;
+
 // a frame's place in the code: the function, and the file's name and line when known
 function frameText(f: CrashFrame): string {
   if (!f.symbol) return f.raw;
@@ -243,21 +257,37 @@ function Crashes({ crashes }: { crashes: ReportCrash[] }) {
           }
         >
           <p className="mkc-muted">{t("admin.reports.crashFrames")}</p>
+          {c.symbols && (
+            <p className="mkc-muted" data-testid="crash-symbols">
+              {t(SYMBOLS_NOTE[c.symbols])}
+            </p>
+          )}
           <ol className="mkc-list" data-testid="crash-frames" dir="ltr">
             {c.frames.map((f, k) => (
               <li key={k} className="mkc-list__row mkc-mono">
                 {f.in_app ? <strong>{frameText(f)}</strong> : frameText(f)}
-                {f.symbol && <span className="mkc-muted"> · {f.raw}</span>}
+                {f.inlined && <span className="mkc-muted"> {t("admin.reports.inlined")}</span>}
+                {f.symbol && f.raw && <span className="mkc-muted"> · {f.raw}</span>}
               </li>
             ))}
           </ol>
-          {c.missing && c.missing.length > 0 && (
+          {c.missing && c.missing.some((m) => m.kind !== "r8") && (
             <p className="mkc-muted" data-testid="crash-missing">
               {t("admin.reports.noSymbols", {
-                binaries: c.missing.map((m) => `${m.code_file} (${m.debug_id})`).join(", "),
+                binaries: c.missing
+                  .filter((m) => m.kind !== "r8")
+                  .map((m) => `${m.code_file} (${m.debug_id})`)
+                  .join(", "),
               })}
             </p>
           )}
+          {c.missing
+            ?.filter((m) => m.kind === "r8")
+            .map((m) => (
+              <p key={m.debug_id} className="mkc-muted" data-testid="crash-missing-mapping">
+                {t("admin.reports.noMapping", { app: m.code_file, version: m.version ?? "" })}
+              </p>
+            ))}
         </Card>
       ))}
     </>

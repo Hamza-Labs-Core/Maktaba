@@ -53,6 +53,11 @@
   "admin.reports.crashes": "Crashes",
   "admin.reports.crashFrames": "The crashed thread, the top frame first. The app's own frames are in bold.",
   "admin.reports.noSymbols": "No symbols for {binaries}. Upload the release's dSYMs with maktaba-symbols to read these frames as functions and lines.",
+  "admin.reports.noMapping": "No R8 mapping for {app} {version}. Upload the release's mapping.txt with maktaba-symbols to read these frames as classes, methods and lines.",
+  "admin.reports.inlined": "(inlined)",
+  "admin.reports.symbols.dsym": "Read with the release's dSYMs.",
+  "admin.reports.symbols.mapping": "Read with the release's R8 mapping: the obfuscated frame follows each name.",
+  "admin.reports.symbols.source": "This app is not obfuscated: its frames are its code's own names and lines.",
   "admin.reason": "Reason",
   "admin.total": "{count} total",
   "admin.filter.any": "Any",
@@ -237,12 +242,13 @@
   "admin.denied.title": "Access denied",
   "admin.denied.body": "This page is for Maktaba Cloud service admins.",
   "admin.symbols.title": "Crash symbols",
-  "admin.symbols.about": "The Apple apps' symbols from each release's dSYMs. A report's crash reads as functions and lines only for the binaries listed here. They are uploaded with maktaba-symbols.",
+  "admin.symbols.about": "The Apple apps' symbols from each release's dSYMs, and the Android apps' R8 mappings. A report's crash reads as functions and lines only for the binaries and releases listed here. They are uploaded with maktaba-symbols.",
   "admin.symbols.none": "No symbols uploaded yet.",
   "admin.symbols.binary": "Binary",
   "admin.symbols.arch": "Architecture",
   "admin.symbols.debugId": "UUID",
   "admin.symbols.uploaded": "Uploaded",
   "admin.symbols.size": "Size",
-  "admin.symbols.kb": "{count} KB"
+  "admin.symbols.kb": "{count} KB",
+  "admin.symbols.mapping": "R8 mapping"
 }

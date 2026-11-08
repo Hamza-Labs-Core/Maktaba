@@ -14,6 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
+- **Android and desktop crashes in problem reports read as code (Epic 53 story 53.16).** The
+  operator console reads an Android report's obfuscated Kotlin frames back to their classes,
+  methods and lines with the release's R8 mapping, which each tag's Play bundles run uploads
+  (`maktaba-symbols upload -r8`, with the same `MAKTABA_SYMBOLS_TOKEN` secret, nothing while it
+  is unset), and marks calls R8 inlined. The Android apps keep each frame's line for it. The
+  desktop player is not obfuscated: its frames are shown as its code's own. The cloud rehearsal
+  sends a canary home's reports through its agent and checks they arrive symbolicated.
 - **A native crash on Android keeps its stack (Player, Remote, Android TV).** On Android 12 and
   later, a crash in native code is now kept and sent, when crash reports are on, with its
   signal, its abort message and the crashed thread's frames, read from the crash's tombstone.
