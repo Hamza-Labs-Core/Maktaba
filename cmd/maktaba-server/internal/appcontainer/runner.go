@@ -276,7 +276,8 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 	if err := CheckGrants(now, guarded, own); err != nil {
 		return fail("policy_path", err)
 	}
-	if err := shares.check(shareLocalFn, guarded, own); err != nil {
+	shares, dropped, err := shares.check(shareLocalFn, guarded, own)
+	if err != nil {
 		return fail("policy_path", err)
 	}
 	profile := RunnerProfile(*group)
@@ -336,7 +337,7 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 			// another machine's folder: its ACL is not ours to change, and the AppContainer
 			// cannot reach a share. One the group reads or writes by name is brokered (below);
 			// a job refused anywhere else there runs in the worker (sandbox_refused)
-			if !shares.brokered(g.Path) {
+			if !shares.brokered(g.Path) || dropped.brokered(g.Path) {
 				fmt.Fprintf(stderr, `{"event":"plugin_runner_area_remote","group":%q,"path":%q}`+"\n", *group, g.Path)
 			}
 			continue

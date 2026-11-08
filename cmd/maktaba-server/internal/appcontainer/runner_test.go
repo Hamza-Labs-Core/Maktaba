@@ -452,11 +452,11 @@ func TestARunnersBrokerServesOnlyItsShareFolders(t *testing.T) {
 	// folder that holds or is inside a protected one
 	none := func(string) (string, bool, error) { return "", false, nil }
 	for _, r := range []string{`\\nas\C$\media`, `\\nas\admin$`, `\\localhost\IPC$`, `\\nas`} {
-		if err := (BrokerRoots{{Path: r}}).check(none, nil, ""); err == nil {
+		if _, _, err := (BrokerRoots{{Path: r}}).check(none, nil, ""); err == nil {
 			t.Errorf("%s was brokered", r)
 		}
 	}
-	if err := (BrokerRoots{{Path: `\\nas\media$\shows`}}).check(none, nil, ""); err != nil {
+	if _, _, err := (BrokerRoots{{Path: `\\nas\media$\shows`}}).check(none, nil, ""); err != nil {
 		t.Errorf("a hidden share that is not administrative: %v", err)
 	}
 	dir := mustCanonical(t, t.TempDir())
@@ -465,14 +465,30 @@ func TestARunnersBrokerServesOnlyItsShareFolders(t *testing.T) {
 	at := func(local string) func(string) (string, bool, error) {
 		return func(string) (string, bool, error) { return local, true, nil }
 	}
-	if err := (BrokerRoots{{Path: `\\localhost\d`}}).check(at(dir), []string{secret}, ""); err == nil {
+	if _, _, err := (BrokerRoots{{Path: `\\localhost\d`}}).check(at(dir), []string{secret}, ""); err == nil {
 		t.Error("this machine's share of the folder holding the supervisor's was brokered")
 	}
-	if err := (BrokerRoots{{Path: `\\localhost\s`}}).check(at(filepath.Join(secret, "x")), []string{secret}, ""); err == nil {
+	if _, _, err := (BrokerRoots{{Path: `\\localhost\s`}}).check(at(filepath.Join(secret, "x")), []string{secret}, ""); err == nil {
 		t.Error("this machine's share inside the supervisor's folder was brokered")
 	}
-	if err := (BrokerRoots{{Path: `\\localhost\m`}}).check(at(filepath.Join(dir, "media")), []string{secret}, ""); err != nil {
+	if kept, _, err := (BrokerRoots{{Path: `\\localhost\m`}}).check(at(filepath.Join(dir, "media")), []string{secret}, ""); err != nil || len(kept) != 1 {
 		t.Errorf("this machine's share of a library: %v", err)
+	}
+	// a share of this machine that cannot be looked up is left out (its jobs: the worker)
+	lookupFails := func(string) (string, bool, error) { return "", false, errors.New("access denied") }
+	kept, dropped, err := (BrokerRoots{{Path: `\\localhost\m`}, {Path: `\\nas\media`}}).check(lookupFails2(lookupFails), nil, "")
+	if err != nil || !reflect.DeepEqual(kept, BrokerRoots{{Path: `\\nas\media`}}) || !reflect.DeepEqual(dropped, BrokerRoots{{Path: `\\localhost\m`}}) {
+		t.Errorf("a share that cannot be looked up: kept %+v, dropped %+v, %v", kept, dropped, err)
+	}
+}
+
+// lookupFails2 fails the lookup for this machine's shares only.
+func lookupFails2(fail func(string) (string, bool, error)) func(string) (string, bool, error) {
+	return func(root string) (string, bool, error) {
+		if strings.HasPrefix(strings.ToLower(root), `\\localhost\`) {
+			return fail(root)
+		}
+		return "", false, nil
 	}
 }
 

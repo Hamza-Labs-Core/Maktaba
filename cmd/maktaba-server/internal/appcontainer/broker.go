@@ -180,26 +180,31 @@ func adminShare(root string) bool {
 
 // check refuses a brokered folder on an administrative share, and one on a share this
 // machine serves whose folder holds or is inside a protected folder (as CheckGrants
-// refuses the same folder by its local path): local maps such a share to its folder.
-func (rs BrokerRoots) check(local func(string) (string, bool, error), protect []string, runDir string) error {
+// refuses the same folder by its local path): local maps such a share to its folder. A
+// share of this machine whose folder cannot be looked up (NetShareGetInfo asks for an
+// administrator) is left out of the broker, and answered as dropped: its jobs run in the
+// worker.
+func (rs BrokerRoots) check(local func(string) (string, bool, error), protect []string, runDir string) (BrokerRoots, BrokerRoots, error) {
+	var kept, dropped BrokerRoots
 	for _, r := range rs {
 		if adminShare(r.Path) {
-			return fmt.Errorf("%s: an administrative share is never brokered", r.Path)
+			return nil, nil, fmt.Errorf("%s: an administrative share is never brokered", r.Path)
 		}
 		p, ok, err := local(r.Path)
 		if err != nil {
-			return fmt.Errorf("%s: %w", r.Path, err)
-		}
-		if !ok {
+			dropped = append(dropped, r)
 			continue
 		}
-		c, err := canonical(p)
-		if err != nil {
-			return err
+		if ok {
+			c, err := canonical(p)
+			if err != nil {
+				return nil, nil, err
+			}
+			if err := CheckGrants([]GrantEntry{{Path: c}}, protect, runDir); err != nil {
+				return nil, nil, fmt.Errorf("%s (this machine's %s): %w", r.Path, c, err)
+			}
 		}
-		if err := CheckGrants([]GrantEntry{{Path: c}}, protect, runDir); err != nil {
-			return fmt.Errorf("%s (this machine's %s): %w", r.Path, c, err)
-		}
+		kept = append(kept, r)
 	}
-	return nil
+	return kept, dropped, nil
 }
