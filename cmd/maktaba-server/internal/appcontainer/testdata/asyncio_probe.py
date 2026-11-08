@@ -6,6 +6,7 @@ as JSON to the path given; never raises past a finding."""
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import importlib.util
 import json
 import subprocess
@@ -47,10 +48,8 @@ async def cancelled() -> dict[str, object]:
         sys.executable, "-c", "import time; time.sleep(60)", stdout=subprocess.PIPE
     )
     start = time.perf_counter()
-    try:
+    with contextlib.suppress(TimeoutError):
         await asyncio.wait_for(proc.communicate(), 0.5)
-    except TimeoutError:
-        pass
     code = await asyncio.wait_for(proc.wait(), 10)
     return {"code": code, "seconds": time.perf_counter() - start}
 

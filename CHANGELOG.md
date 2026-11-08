@@ -14,6 +14,14 @@ build fails when the two differ.
 
 ### Changed
 
+- **An offline machine comes first on the Overview (Epic 53 story 53.12).** On the home's
+  dashboards, a joined machine that is offline now ranks first among the machines most in need
+  of attention, and is named as offline: a line on the web page and both Remotes ("Offline:
+  …"), "(offline)" in the machine picker, and a line on its own view saying its lines end at
+  its last values. Which machines are offline is the Machines page's own rule (an approved
+  machine neither it nor any worker of it seen within 60 s); the API passes the list to the log
+  index, and the Overview's answer names them in `machines.offline`. Before, an offline machine
+  kept its last values and ranked last.
 - **Android native crashes in problem reports read as code (Epic 53 story 53.16).** The operator
   console reads a native crash's frames (from its tombstone, Android 12 and later) as functions,
   files and lines with a table of the app's own unstripped native library, keyed by the
@@ -160,6 +168,16 @@ build fails when the two differ.
 
 ### Fixed
 
+- **After an update, the plugin runners wait for the new release's Python packages.** In the
+  Mac app, the plugin runners (light, ml-1, ml-2, index) started while the update was still
+  installing the new release's packages into the venv. Each died at once on a missing module,
+  and after five exits the crash loop marked them failed for five minutes, although the venv
+  was ready a minute later. Every child that runs from the venv (the pipeline's workers and
+  every plugin runner) now waits for the venv step, as the pipeline's workers already did. A
+  waiting runner is not started, so it adds nothing to the crash loop. A test now imports what
+  each supervised Python child imports first, each in a fresh interpreter, so an import cycle
+  like the one that crash-looped the 0.3.96 runners fails CI. The update rehearsal's wave
+  scenarios fail when any supervised process is marked failed after the update.
 - **The Mac server starts after an app update instead of stopping at "could not start".** After
   the update from 0.3.90 to 0.3.96 on 2026-11-08 the Mac app unregistered and registered the
   server's login item again; macOS refused (SMAppServiceErrorDomain 22 from the old app right
@@ -479,6 +497,16 @@ build fails when the two differ.
   `plugin_scope`: the job fails, not retried, and the file stays where it is.
 
 ### Added
+
+- **A runner's tools read a library file on a share on Windows (story 54.23).** A job that
+  hands ffmpeg or ffprobe a file on a share-hosted library (thumbnails, probes, the
+  transcription input) no longer runs in the queue worker. The runner opens that one file
+  through its launcher's broker, with the same checks as its own reads, and hands the tool the
+  open file, for reading only, as its standard input. The tool still runs in the group's
+  AppContainer, reaches no share or other file there, and writes only where the group may.
+  An mp4 with its index at the end and a seek before the input both work. A share path a tool
+  cannot be handed that way (a second share file, an output on the share, another share,
+  another program) is refused, and that job runs in the worker as before.
 
 - **A runner reaches a library on a share on Windows (story 54.23).** A first-party runner on
   Windows runs in an AppContainer, which reaches no SMB share, so every job on a share-hosted

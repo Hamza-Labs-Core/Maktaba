@@ -44,7 +44,7 @@ Tick **Live** to see lines as they are written, newest at the top, within about 
 
 [Administration → Dashboards](/admin/dashboards) draws how the home has been doing: **Overview** (components up, restarts, errors per hour, the API's memory and CPU), **Queue**, **Processing**, **Streaming**, **Storage** (backups and the log files) and **Use** (plays and people per day, the most played videos; counts only, never one person's history). Pick a time from 1 hour to 90 days; point at a chart to read its values, and **Open in Logs** shows the lines of that time. Maktaba keeps a minute's detail for 7 days and an hour's for 30.
 
-With several machines joined, the Overview shows totals across them (components up and down, the least disk and memory free, the highest load) and the five machines most in need of attention, and says how many of how many it shows. Pick a machine under **Machine** to see it on its own, with each of its components that was down or restarted.
+With several machines joined, the Overview shows totals across them (components up and down, the least disk and memory free, the highest load) and the five machines most in need of attention, a machine that is offline first, and says how many of how many it shows. Offline machines are named, and marked under **Machine**; their lines end at their last values. Pick a machine under **Machine** to see it on its own, with each of its components that was down or restarted.
 
 ### Problem reports and crash reports {#reports}
 

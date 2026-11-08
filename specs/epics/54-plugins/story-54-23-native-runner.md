@@ -113,9 +113,45 @@ so a job on a share-hosted library would run in the worker. Three ways were weig
   what the share costs (CI measures it, T10).
 
 A share folder the group writes in full (`files.write`, the file stages) is not brokered, and
-its jobs run in the worker. A tool (ffmpeg) cannot use the runner's handles, so a job that
-hands one a share path is refused (`sandbox_refused`) and runs in the worker; the subtitle
-stage, which reads and writes through Python's own calls, runs in its runner. The runner
+its jobs run in the worker. A tool (ffmpeg, ffprobe) is a child of the runner in the same
+AppContainer and Job Object, so it reaches no share either. The runner hands it the one share
+file it reads, through a handle the broker opened for that file, as its standard input. The
+tool's argument becomes `fd:`, ffmpeg's protocol for a descriptor. The runner opens the file
+through the broker with the same checks as any read, starts the tool with the handle, and
+closes its own copy once the tool has its.
+
+Why this design:
+- **A capability is refused.** `privateNetworkClientServer` or an SMB capability would open
+  every share and host on the network to the whole group, not one file.
+- **A launcher-served pipe (`-i \\.\pipe\...`) is not seekable.** ffmpeg's `pipe:` protocol
+  never seeks. An mp4 whose index is at its end (no `+faststart`, as most recorders leave it)
+  cannot be read through a pipe, and neither can a seek before the input (`-ss`).
+- **A staged copy is not needed.** One staged in the run folder below a size cap costs a full
+  copy for every probe, and a video is never under any useful cap.
+- **A file handle as standard input is seekable.** ffmpeg's `fd:` protocol seeks a
+  descriptor that is a file, so the tool reads the file as it would from its path: a seek to
+  the index at the end, `-ss` before the input, any container. The bytes go through the
+  handle straight to the SMB redirector, as for the runner's own reads.
+- **The launcher does not change.** The broker's checks (ยง3) confine the file. The tool holds
+  one read handle to one file, never a path or a handle to the share root. Its output goes
+  where the AppContainer lets it write: its run folder and granted areas, or the runner's
+  brokered subtitle write.
+
+The routing (`maktaba_plugin_runner/winfiles.py`) wraps `subprocess.Popen`, so
+`subprocess.run` and asyncio's `create_subprocess_exec` (the media helpers) take it. (Inside an AppContainer those asyncio starts go through the runner's anonymous pipes: the Windows row.) A start
+is routed only under all of these conditions:
+- the program is ffmpeg or ffprobe;
+- exactly one argument names a brokered share path, and the whole argument is that path;
+- it is ffmpeg's input (after `-i`), or ffprobe's input (after `-i`, or its last argument);
+- the caller leaves standard input to the runner (none, or `DEVNULL`);
+- no other input is already standard input (`-`, `pipe:`, `fd:`).
+
+Anything else that names a share is refused up front (`sandbox_refused`), and the job runs in
+the worker as before: a second share file, a share path as an output or inside another
+argument (`subtitles=\\nas\...`, `file:\\nas\...`), a share the group is not brokered, or
+another program. The audit hook still refuses a share path that reaches a process start by
+another way (a shell, `os.spawn`). Allowed tools are unchanged (the runner's exec guard). The
+subtitle stage, which reads and writes through Python's own calls, runs in its runner. The runner
 routes its calls on a brokered path (`open`, `os.stat` and `os.path.exists` and the like,
 `os.listdir`, `os.replace`, `os.remove`) to the broker, each raising the audit event the plain
 call raises, so its subtitle-name and job-scope guards see the path as before
@@ -178,6 +214,7 @@ runner's component *Failed* `runner_crash_loop` (an Epic 51 reason code, 54.37 ย
 | T08 | unit | reason codes | words | en + ar for `runner_crash_loop`, `sandbox_unavailable` |
 | T09 | integration (go, CI only, Windows) | a checked folder, or a folder above it, swapped for a junction to a decoy between the last check and the grant or revoke (a test hook) | start the runner | the decoy gets no entry and keeps its own; the start fails closed; without a swap the entry reaches what the folder holds and stops at a junction inside it |
 | T10 | integration (go + py, CI only, Windows, two SMB shares made with `New-SmbShare`) | a group whose library is on `\\localhost\<share>`, started through the launcher with its broker | from inside its AppContainer: read, list, stat a video in any case; write a subtitle; write another name, write or remove the video; a traversal, a junction out of the share, an 8.3 alias, a stream, the other share; a tool on a share path; another process of the AppContainer on the pipe | without the broker no share is reached; with it the library is read and the subtitle written, everything else refused; the read throughput through the handle and outside the sandbox is logged |
+| T11 | integration (go + py, CI only, Windows, the same shares, the Windows app's ffmpeg 8.1.2) | the group's tools on an mp4 on `\\localhost\<share>` whose index is at its end | from inside its AppContainer: a thumbnail with a seek before the input, the transcription input (PCM), ffprobe's duration; thumb_small's asyncio start (through the runner's anonymous pipes) on the share and on a local copy; a second share file, the library folder, the share root, the other share, an output on the share, another program; a tool reaching the share by a path in a concat list; a tool writing outside its folders | each tool reads the file through its handle; the refusals refuse before a start; the tool reaching for the share gets nothing and nothing is written outside; the times inside and in the worker's way (the share path) are logged |
 | T12 | integration (go + py, CI only, Windows) | a captured tool start (asyncio, stdout and stderr PIPE) inside a runner's AppContainer | asyncio's own start; the same through the runner's anonymous pipes; a cancelled communicate | asyncio's own is refused (`WinError 5`, the control); through anonymous pipes the output (4 MiB), error output and exit code come back, and the cancel ends the tool at once |
 
 ## Edge cases
@@ -189,9 +226,10 @@ runner's component *Failed* `runner_crash_loop` (an Epic 51 reason code, 54.37 ย
 - **A Windows home with media on a mapped drive or a share**: an AppContainer cannot reach an
   SMB share, and the launcher never changes a remote folder's ACL. A share folder the group
   reads or writes by name is served by the launcher's file broker (ยง3), so the subtitle stage
-  runs in its runner there. A job the broker refuses, a tool's job on a share path, and any
-  job on a share the group writes in full is refused (`sandbox_refused`) and runs in the worker
-  instead, logged, as the worker runs every job of a runner that is starting or failed.
+  runs in its runner there, and a tool reads its one share input through the broker's handle
+  (ยง3). A job the broker refuses, a tool's start on a share path it cannot be handed that way,
+  and any job on a share the group writes in full is refused (`sandbox_refused`) and runs in
+  the worker instead, logged, as the worker runs every job of a runner that is starting or failed.
 - **A folder swapped for a junction or symbolic link between its check and its grant** (a
   process of the same user, or another group's runner in a folder it may write): the grant or
   revoke is applied by handle to the object that was checked, so it never lands on the

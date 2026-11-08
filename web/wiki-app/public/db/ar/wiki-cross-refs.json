@@ -2,8 +2,8 @@
   "schema_version": 2,
   "generated_for": "Maktaba",
   "totals": {
-    "epics": 56,
-    "stories": 668,
+    "epics": 57,
+    "stories": 681,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -400,6 +400,13 @@
       "title": "عرض المكتبة على التلفاز",
       "description": "عرض المكتبة على التلفاز: تشغيل الكل، والتشغيل العشوائي، والسلاسل، والمجموعات، وقوائم التشغيل.\n\nالمتطلب: في تطبيقات التلفاز (Android TV وApple TV)، يجب أن تتيح المكتبة **تشغيل الكل** و**التشغيل العشوائي**، وأن يمكن تصفّحها **حسب السلسلة وحسب المجموعة وحسب قائمة التشغيل**، كما في تطبيقات Plex للتلفاز. أما اليوم فالمكتبة على التلفاز شبكة واحدة من المقاطع، الأحدث أولًا، بلا ترتيب ولا تصفية ولا طريقة لتشغيل أكثر من مقطع واحد.",
       "readme": "specs/epics/56-tv-library-view/README.md"
+    },
+    {
+      "id": "57",
+      "slug": "parental-controls",
+      "title": "الرقابة الأبوية على iPhone وiPad، عبر «مدة استخدام الجهاز» من Apple",
+      "description": "الرقابة الأبوية على iPhone وiPad، عبر «مدة استخدام الجهاز» من Apple.\n\nالمتطلب: يجب أن يستطيع أحد الوالدين أن يعطي طفله جهاز iPhone أو iPad عليه Maktaba وهو مطمئن إلى أن الطفل لا يرى إلا ما يسمح به. ويجب أن يصح ذلك في كل مكان قد يظهر فيه المحتوى، على شبكة المنزل وعبر Maktaba Cloud، وألّا يستطيع أي تطبيق، معدَّلًا كان أو لا، الالتفاف عليه. أما اليوم فالقيد الوحيد هو المكتبات التي يستطيع المستخدم قراءتها (`library_acl`). وقد عدّت الملحمة 45 الرقابة الأبوية ناقصة وأرجأت قصة الملفات الشخصية برمز PIN (45.23).",
+      "readme": "specs/epics/57-parental-controls/README.md"
     }
   ],
   "stories": [
@@ -7151,6 +7158,123 @@
       "slug": "openapi-roles",
       "title": "OpenAPI واختبارات الأدوار لمسارات المكتبة",
       "story_file": "specs/epics/56-tv-library-view/story-56-14-openapi-roles.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.01",
+      "epic": 57,
+      "num": "01",
+      "slug": "age-tiers",
+      "title": "فئات عمرية لمحتوى الجهاز الرئيسي",
+      "story_file": "specs/epics/57-parental-controls/story-57-01-age-tiers.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.02",
+      "epic": 57,
+      "num": "02",
+      "slug": "restricted-accounts",
+      "title": "الحسابات المقيَّدة والأولياء",
+      "story_file": "specs/epics/57-parental-controls/story-57-02-restricted-accounts.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.03",
+      "epic": 57,
+      "num": "03",
+      "slug": "server-filter",
+      "title": "مرشِّح محتوى واحد على كل واجهة",
+      "story_file": "specs/epics/57-parental-controls/story-57-03-server-filter.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.04",
+      "epic": 57,
+      "num": "04",
+      "slug": "device-signal",
+      "title": "إشارة الجهاز: الفئة العمرية المُعلَنة وحدّ التصنيف في «مدة استخدام الجهاز»",
+      "story_file": "specs/epics/57-parental-controls/story-57-04-device-signal.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.05",
+      "epic": 57,
+      "num": "05",
+      "slug": "restricted-player",
+      "title": "المشغّل المقيَّد على iPhone وiPad",
+      "story_file": "specs/epics/57-parental-controls/story-57-05-restricted-player.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.06",
+      "epic": 57,
+      "num": "06",
+      "slug": "ask-a-parent",
+      "title": "اطلب من أحد الوالدين، ورمز الوالدين",
+      "story_file": "specs/epics/57-parental-controls/story-57-06-ask-a-parent.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.07",
+      "epic": 57,
+      "num": "07",
+      "slug": "family-settings",
+      "title": "إعدادات العائلة للأولياء في المشغّل",
+      "story_file": "specs/epics/57-parental-controls/story-57-07-family-settings.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.08",
+      "epic": 57,
+      "num": "08",
+      "slug": "activity",
+      "title": "النشاط للأولياء",
+      "story_file": "specs/epics/57-parental-controls/story-57-08-activity.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.09",
+      "epic": 57,
+      "num": "09",
+      "slug": "screen-time",
+      "title": "مدة استخدام الجهاز، والمشاركة العائلية، ومتجر App Store",
+      "story_file": "specs/epics/57-parental-controls/story-57-09-screen-time.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.10",
+      "epic": 57,
+      "num": "10",
+      "slug": "live-tv",
+      "title": "البث المباشر تحت الرقابة الأبوية",
+      "story_file": "specs/epics/57-parental-controls/story-57-10-live-tv.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.11",
+      "epic": 57,
+      "num": "11",
+      "slug": "apple-tv",
+      "title": "Apple TV، حيث يأتي تلقائيًّا",
+      "story_file": "specs/epics/57-parental-controls/story-57-11-apple-tv.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.12",
+      "epic": 57,
+      "num": "12",
+      "slug": "existing-homes",
+      "title": "تفعيلها في المنازل القائمة",
+      "story_file": "specs/epics/57-parental-controls/story-57-12-existing-homes.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.13",
+      "epic": 57,
+      "num": "13",
+      "slug": "openapi-roles-rehearsal",
+      "title": "OpenAPI واختبارات الأدوار وتمرين الالتفاف",
+      "story_file": "specs/epics/57-parental-controls/story-57-13-openapi-roles-rehearsal.md",
       "plan_files": []
     }
   ],

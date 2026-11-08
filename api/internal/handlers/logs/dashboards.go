@@ -2,8 +2,10 @@ package logs
 
 import (
 	"database/sql"
+	"log/slog"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -41,9 +43,44 @@ type useDoc struct {
 	Top    []useTop    `json:"top"`
 }
 
+// maxOffline is the most offline machines the logs role takes (logindex.MaxOffline).
+const maxOffline = 1000
+
+// withOffline is the request as the logs role is asked it: on the Overview, offline= names
+// the joined machines that are offline now, from the cluster (the home's to say: a machine
+// that stopped sending keeps its last values in the store, so by them it ranked last). A
+// caller's own offline= never reaches the role. Unreadable, it is left out and logged: the
+// board still answers, ranked by values.
+func (h *Handler) withOffline(r *http.Request, board string) *http.Request {
+	q := r.URL.Query()
+	_, had := q["offline"]
+	if !had && (board != "overview" || h.Offline == nil) {
+		return r
+	}
+	q.Del("offline")
+	if board == "overview" && h.Offline != nil {
+		ids, err := h.Offline(r.Context())
+		if err != nil {
+			slog.Default().Warn("dashboards: offline machines not read", "event", "dashboard_offline_failed",
+				"err", err.Error())
+		}
+		if len(ids) > maxOffline {
+			ids = ids[:maxOffline]
+		}
+		if len(ids) > 0 {
+			q.Set("offline", strings.Join(ids, ","))
+		}
+	}
+	r2 := r.Clone(r.Context())
+	u := *r.URL
+	u.RawQuery = q.Encode()
+	r2.URL = &u
+	return r2
+}
+
 func (h *Handler) dashboard(w http.ResponseWriter, r *http.Request) {
-	if chi.URLParam(r, "board") != "use" {
-		h.proxyIndex("/dashboards/{board}", false)(w, r)
+	if board := chi.URLParam(r, "board"); board != "use" {
+		h.proxyIndex("/dashboards/{board}", false)(w, h.withOffline(r, board))
 		return
 	}
 	rng := r.URL.Query().Get("range")

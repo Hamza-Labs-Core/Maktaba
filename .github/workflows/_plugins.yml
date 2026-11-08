@@ -261,6 +261,25 @@ jobs:
           "MAKTABA_BROKER_OTHER_SHARE=\\localhost\mkother" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "MAKTABA_BROKER_OTHER_DIR=$other" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      # the Windows app's ffmpeg (tools/release/win-app/pins.env), for the runner's tools
+      # on a share file
+      - name: ffmpeg for the runner's tools on a share (54.23)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'ffmpeg.zip'
+          $url = (Select-String -Path tools/release/win-app/pins.env -Pattern '^FFMPEG_URL=(.*)$').Matches[0].Groups[1].Value
+          $sha = (Select-String -Path tools/release/win-app/pins.env -Pattern '^FFMPEG_SHA256=(.*)$').Matches[0].Groups[1].Value
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          if ((Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower() -ne $sha) { throw "ffmpeg.zip: sha256 mismatch" }
+          $dest = Join-Path $env:RUNNER_TEMP 'ffmpeg'
+          Expand-Archive -Path $zip -DestinationPath $dest
+          Remove-Item $zip
+          $bin = (Get-ChildItem -Path $dest -Recurse -Filter ffmpeg.exe | Select-Object -First 1).DirectoryName
+          & (Join-Path $bin 'ffmpeg.exe') -hide_banner -version | Select-Object -First 1
+          "MAKTABA_BROKER_FFMPEG=$(Join-Path $bin 'ffmpeg.exe')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MAKTABA_BROKER_FFPROBE=$(Join-Path $bin 'ffprobe.exe')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: A runner's library on a share, through its broker (54.23)
         if: runner.os == 'Windows'
         working-directory: cmd/maktaba-server
@@ -270,7 +289,7 @@ jobs:
         run: |
           set -euo pipefail
           MAKTABA_BROKER_PYTHON="$(cygpath -w "$(command -v python)")" \
-            go test -count=1 -v -run '^(TestARunnersLibraryOnAShareThroughItsBroker|TestARunnersBrokerServesOnlyItsShareFolders|TestTheRunnerLauncherLeavesSharesAlone)$' ./internal/appcontainer/
+            go test -count=1 -v -run '^(TestARunnersLibraryOnAShareThroughItsBroker|TestARunnersToolsReadAShareFileThroughItsBroker|TestARunnersBrokerServesOnlyItsShareFolders|TestTheRunnerLauncherLeavesSharesAlone)$' ./internal/appcontainer/
 
       # 54.23 on Windows: a stage's captured tool start (asyncio, stdout and stderr PIPE)
       # inside a runner's AppContainer: asyncio's own named pipes are refused there (the

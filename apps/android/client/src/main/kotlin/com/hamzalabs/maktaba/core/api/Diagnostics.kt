@@ -170,9 +170,20 @@ data class BoardSeries(
         get() = labels.orEmpty().split(",").mapNotNull { kv -> kv.substringAfter("=", "").takeIf { it.isNotEmpty() } }.joinToString(" · ")
 }
 
-/** The Overview's machines: how many have lines, the ones shown (most in need of attention first), and all of them. */
+/**
+ * The Overview's machines: how many there are, the ones shown (most in need of attention first, a joined machine that is
+ * offline before any other), all of them, and the offline ones (empty from a home before the list).
+ */
 @Serializable
-data class BoardMachines(val total: Int = 0, val shown: List<String> = emptyList(), val all: List<String> = emptyList())
+data class BoardMachines(
+    val total: Int = 0,
+    val shown: List<String> = emptyList(),
+    val all: List<String> = emptyList(),
+    val offline: List<String> = emptyList(),
+) {
+    /** Whether a machine is one of the offline ones. */
+    fun isOffline(machine: String): Boolean = machine in offline
+}
 
 @Serializable
 data class BoardDoc(

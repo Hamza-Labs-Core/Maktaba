@@ -99,6 +99,9 @@ type Handler struct {
 	AgentAddr string
 	// ShareClient calls the agent (nil: a default with a 90 s timeout).
 	ShareClient *http.Client
+	// Offline is the joined machines that are offline now (the cluster's machine list, as
+	// the Machines page reads it): the Overview ranks them first (story 53.12). nil: none.
+	Offline func(ctx context.Context) ([]string, error)
 
 	forwarder *Forwarder
 }
