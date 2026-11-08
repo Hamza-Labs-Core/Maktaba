@@ -1,6 +1,6 @@
 -- name: store.get_library
 -- mode: read
--- scope: catalog
+-- scope: library $1
 -- tables: libraries
 SELECT id, name, roots, settings
   FROM libraries

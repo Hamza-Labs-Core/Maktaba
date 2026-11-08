@@ -22,17 +22,18 @@ var routeScopes = map[string]string{
 	"data/delete":        "the plugin's own namespace",
 	"notify/admin":       "a notice from the plugin's own strings: no id",
 	"log/write":          "no id: the job's own log",
-	"events/emit":        "subjectScope(read), and the event's declared subject kind",
+	"events/emit":        "subjectScope(read): a granted library and the job's library; and the event's declared subject kind",
 	"queue/request":      "subjectScope(read), the stage's may_request and the lineage's loop check",
 	"trusted/service":    "an allow-listed service call: no id of a row",
 	"compute/embed":      "no id: a model call",
 	"compute/generate":   "no id: a model call",
-	// reads (ids checked by readScope: a granted library)
-	"data/get":            "the plugin's own namespace",
-	"data/list":           "the plugin's own namespace",
+	// reads (README §15.12): readScope is a granted library and, for a first-party job, the
+	// job's library (a video job's own video)
+	"data/get":            "dataSubjectScope: the plugin's own namespace, on a subject of the token's scope (a gone row is no one's)",
+	"data/list":           "dataSubjectScope",
 	"library/video":       "readScope",
-	"library/series":      "a granted library",
-	"library/list":        "a granted library",
+	"library/series":      "a granted library and the job's library (jobLibrary)",
+	"library/list":        "a granted library and the job's library (jobLibrary)",
 	"transcript/segments": "readScope",
 	"transcript/words":    "readScope",
 	"media/open":          "writeScope: a media read acts on the job's subject",
@@ -42,7 +43,7 @@ var routeScopes = map[string]string{
 	"media/frame":         "writeScope",
 	"media/audio":         "writeScope",
 	"media/info":          "readScope",
-	"exports/read":        "another plugin's exported data, by the grant",
+	"exports/read":        "another plugin's exported data, by the grant, on a subject of the token's scope (dataSubjectScope)",
 	"job/grants":          "the token's own",
 	"job/settings":        "the plugin's own settings",
 }

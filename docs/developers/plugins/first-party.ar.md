@@ -143,8 +143,8 @@ INSERT INTO promo_links (video_id, library_id, series_id, season_id, ...) VALUES
 الذي يبيّن أي عمود في أي جدول يحمل أي نوع من المعرّفات: `subject` (فيديو)، أو `library`، أو صفًّا
 تبحث عنه الواجهة البرمجية (`season` و`series` و`transcript` و`segment` و`audio_track`
 و`file_action` و`dup_group` و`clip_group` و`topic_collection` و`audio_cache`
-و`youtube_source` و`youtube_channel` و`youtube_playlist` و`youtube_video`). ويُفشل `check`
-كل كتابة لا تستوفي هذه القواعد:
+و`youtube_source` و`youtube_channel` و`youtube_playlist` و`youtube_video` و`collection`
+و`job` و`job_subject`). ويُفشل `check` كل كتابة لا تستوفي هذه القواعد:
 
 - تربط `UPDATE` أو `DELETE` صفوفها بعمود مالك عبر شرط من شروط `AND` العليا في `WHERE`:
   `col = $N` أو `col = ANY($N)` أو `col IN (SELECT r.c FROM r WHERE …)` وصفوفها الداخلية مربوطة
@@ -168,6 +168,38 @@ reason = "each row's segment_id comes from unnest($5), the conflict target"
 أي مكتبة، أو كان من مكتبة المهمة (ومن فيديو المهمة نفسه في مهمة فيديو)؛ والمهمة التي موضوعها
 الفهرس كله تشمل كل المكتبات. وصف يوتيوب يقع في نطاق كل مكتبة تتابع قناته أو تنزّله. ويُفحص
 المعطى المصفوفة عنصرًا عنصرًا، ويُقارَن كل معرّف بوصفه uuid، لا نصًّا أبدًا.
+
+### النطاق الذي يجب أن تستوفيه القراءة بالمعرّف
+
+تُفحص القراءة بالطريقة نفسها. فحيثما قارنت العبارة عمودًا بـ`$N` (في `WHERE`، أو في `ON` لربط،
+أو في استعلام فرعي، أو في صفوف المصدر لكتابة)، كان ذلك الـ`$N` هو ما يختار صاحب الصف الذي
+تقرؤه، فيسرد `sync` فحصًا له متى حمل العمود نوعًا من المعرّفات، وتشغّله الواجهة البرمجية قبل
+العبارة:
+
+```sql
+-- name: propagate.last_success
+-- mode: read
+-- scope: job_subject $2
+-- tables: processing_jobs
+SELECT id, output_hash FROM processing_jobs WHERE subject_kind = $1 AND subject_id = $2 AND ...
+```
+
+تُحسب كل مقارنة، لا شروط `AND` العليا وحدها كما في الكتابة: `col = $N` و
+`col IS NOT DISTINCT FROM $N` و`col = ANY($N)` و`col IN ($N, $M)` و
+`col IN (SELECT … FROM json_each($N))` (أو `unnest($N)`). وقراءة صف من مكتبة أخرى، أو صف فيديو
+آخر من مهمة فيديو، تُرفض بـ`403 plugin_scope`. وصف المهمة نفسها فحصه `job $N` (مكتبتها، وفيديوها
+إذا كان موضوعها فيديو)، و`subject_id` للمهمة فحصه `job_subject $N` (فيديو أو مكتبة أو مسلسل أو
+موسم، أيّها حمل المعرّف). ويُفشل `check` كل قراءة تقارن `$N` بـ:
+
+- عمود في جدول لا يسرده `scope_tables.toml` (تحت `[tables]` أو `[home]`)؛
+- عمود اسمه اسم معرّف (`id` أو `…_id`) في جدول مسرود وليس عمودًا مالكًا، إلا إذا سرده
+  `[not_ids]` مع سبب استغناء القراءة به عن الفحص (فمعرّف فيديو يوتيوب العام مثلًا لا يسمّي صفًّا
+  تملكه مكتبة واحدة)؛
+- عمود اسمه اسم معرّف لا يستطيع البناء نسبته إلى جدول واحد: أضف إليه اسم جدوله (`t.video_id`).
+
+والترويسة التي فيها فحوص أقل مما تحتاجه مقارناتها قديمة، ويُفشلها `check` حتى يعيد `sync`
+كتابتها. والقراءة التي لا تستطيع شجرة التحليل تحديد أنواعها تُكتب فحوصها يدويًا في
+`statements.toml` مع `reason`، كما في الكتابة.
 
 ## أين تعمل المرحلة: المفتاح
 

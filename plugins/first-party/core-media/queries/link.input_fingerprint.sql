@@ -1,5 +1,5 @@
 -- name: link.input_fingerprint
 -- mode: read
--- scope: catalog
+-- scope: job_subject $1
 -- tables: processing_jobs
 SELECT output_hash FROM processing_jobs WHERE subject_kind = 'library' AND subject_id = $1 AND stage = 'youtube_sync' AND state = 'done' AND outcome IN ('changed','unchanged','skipped_unchanged','imported') ORDER BY id DESC LIMIT 1

@@ -1,5 +1,5 @@
 -- name: swap.swap_in
 -- mode: read
--- scope: catalog
+-- scope: subject $1
 -- tables: videos
 SELECT id, library_id, path, content_hash, size_bytes FROM videos WHERE id = $1

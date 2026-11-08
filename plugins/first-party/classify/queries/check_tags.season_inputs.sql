@@ -1,6 +1,6 @@
 -- name: check_tags.season_inputs
 -- mode: read
--- scope: catalog
+-- scope: season $1
 -- tables: media_metadata_enrichment, series_episodes, series_seasons, videos, youtube_videos
 SELECT COALESCE(yv.title, v.title, v.filename) AS title
   FROM series_episodes e

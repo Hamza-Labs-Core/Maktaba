@@ -157,7 +157,8 @@ INSERT INTO promo_links (video_id, library_id, series_id, season_id, ...) VALUES
 id: `subject` (a video), `library`, or a row the API looks up (`season`, `series`,
 `transcript`, `segment`, `audio_track`, `file_action`, `dup_group`, `clip_group`,
 `topic_collection`, `audio_cache`, `youtube_source`, `youtube_channel`, `youtube_playlist`,
-`youtube_video`). `check` fails a write that does not meet these rules:
+`youtube_video`, `collection`, `job`, `job_subject`). `check` fails a write that does not meet
+these rules:
 
 - an `UPDATE` or `DELETE` ties its rows to an owner column by a top-level `AND` term of its
   `WHERE`: `col = $N`, `col = ANY($N)`, or `col IN (SELECT r.c FROM r WHERE …)` whose inner rows
@@ -184,6 +185,39 @@ library, or when it is the job's library's (and, for a video job, the job's own 
 job whose subject is the catalog spans every library. A YouTube row is in the scope of every
 library that follows its channel or downloads it. An array argument is checked element by
 element, and every id is compared as a uuid, never as text.
+
+### The scope a read by id must meet
+
+A read is checked the same way. Wherever a statement compares a column to a `$N` (in a
+`WHERE`, a join's `ON`, a subquery, or the source rows of a write), that `$N` chooses whose row
+it reads, so `sync` lists a check for it when the column holds a kind of id, and the API runs
+it before the statement:
+
+```sql
+-- name: propagate.last_success
+-- mode: read
+-- scope: job_subject $2
+-- tables: processing_jobs
+SELECT id, output_hash FROM processing_jobs WHERE subject_kind = $1 AND subject_id = $2 AND ...
+```
+
+Every comparison counts, not only the top-level `AND` terms of a write: `col = $N`,
+`col IS NOT DISTINCT FROM $N`, `col = ANY($N)`, `col IN ($N, $M)` and
+`col IN (SELECT … FROM json_each($N))` (or `unnest($N)`). A read of another library's row, or,
+from a video job, of another video's, is `403 plugin_scope`. A job's own row is `job $N` (its
+library, and its video when its subject is one), and a job's `subject_id` is `job_subject $N`
+(a video, a library, a series or a season, whichever has the id). `check` fails a read that
+compares a `$N` to:
+
+- a column of a table `scope_tables.toml` does not list (under `[tables]` or `[home]`);
+- an id-named column (`id`, `…_id`) of a listed table that is no owner column, unless
+  `[not_ids]` lists it with the reason a read by it needs no check (a public YouTube video id,
+  for example, names no one library's row);
+- an id-named column the build cannot place in one table: qualify it (`t.video_id`).
+
+A header with fewer checks than its comparisons need is stale, and `check` fails it until
+`sync` rewrites it. A read the parse tree cannot type gets its checks by hand in
+`statements.toml`, with its `reason`, as a write does.
 
 ## Where a stage runs: the switch
 

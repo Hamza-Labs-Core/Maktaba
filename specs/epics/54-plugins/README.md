@@ -1783,6 +1783,17 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   element, and every id is compared as a uuid, never as text. The worker's relayed job events
   and duplicate merges, and the plugin API's write routes, keep to the job's own job, subject
   and library the same way.
+  Reads by id are checked the same way (2026-11-08): every `$N` a statement compares a column
+  to, anywhere in it (a `WHERE`, a join's `ON`, a subquery, `= ANY`, `IN` a list or
+  `json_each($N)`), is a check of that column's kind, so a read of another library's row (or,
+  from a video job, another video's) is `403 plugin_scope`. A read of a table the registry does
+  not list, or by an id-named column (`id`, `…_id`) with no kind, fails the build unless the
+  registry's `[not_ids]` exempts that column with its reason. A job's own row is a `job`, and a
+  job's `subject_id` a `job_subject` (a video, library, series or season). The plugin API's
+  read routes keep a first-party job (whose token spans every library) to its own library,
+  and a first-party video job to its video; `data` and `exports` keyed by a video, series or
+  library check the token's libraries; the worker's `job_ref` answers a plugin's job about its
+  own job only.
 - **The API holds a plugin's transactions.** Besides one statement in its own transaction,
   the plugin API opens a transaction for an invocation (`trusted/tx`: begin, savepoints,
   commit, rollback), under the plugin's role and `maktaba.origin`, so moved code keeps its

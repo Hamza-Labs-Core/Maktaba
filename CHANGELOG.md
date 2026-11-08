@@ -549,6 +549,19 @@ build fails when the two differ.
   merges the worker writes for a plugin's job, and the plugin API's write routes, keep to the
   job's own job, subject and library too. A write outside the job's scope is refused with
   `plugin_scope`.
+- **A plugin's reads by id stay in its job's scope too (Epic 54, README §15.12).** A
+  first-party plugin's read statements were checked by one video or library argument at most,
+  and many by none: a plugin could read another library's season, series, transcript,
+  collection, job or duplicate group by passing its id, and a first-party job's token reached
+  every library through the plugin API's read routes. Every comparison a statement makes
+  between a column and an argument is now typed by the build, and the API checks each id
+  against the job before the statement runs; the build fails a read of an unlisted table, or
+  by an id column with no kind, unless a written reason exempts it. The `library`,
+  `transcript`, `media` info, `data` and `exports` routes keep a first-party job to its own
+  library (a video job to its own video), `data` and `exports` reads keyed by a video,
+  series or library check that it is in the token's libraries, and the worker answers a
+  plugin's job about its own job only. A read outside the job's scope is refused with
+  `plugin_scope`.
 - **A runner's folder grant on Windows lands only on the folder that was checked (story
   54.23).** The launcher applied a runner group's folder grants and revokes by path, so a
   folder swapped for a junction between its check and its grant had the grant land on the
