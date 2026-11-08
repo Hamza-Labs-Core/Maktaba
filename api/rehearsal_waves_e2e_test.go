@@ -194,6 +194,7 @@ const catalogSubject = "00000000-0000-0000-0000-00000000ca7a"
 func (r *rehearsal) queueWave(db *sql.DB, stages []string, n int) int64 {
 	t := r.t
 	t.Helper()
+	settleCatalogJobs(t, db, stages, 3*time.Minute)
 	var last int64
 	_ = db.QueryRow(`SELECT COALESCE(max(id), 0) FROM processing_jobs`).Scan(&last)
 	queued := 0
@@ -255,6 +256,32 @@ func (r *rehearsal) queueWave(db *sql.DB, stages []string, n int) int64 {
 	}
 	makeDue(t, db, stages, last)
 	return last
+}
+
+// settleCatalogJobs waits until no job of the stages on the catalog subject is open. A
+// catalog stage has that one subject, so a job of it the home queued itself (turning the
+// Plex extension on queues plex_livetv) would take the wave's enqueue into it, a job older
+// than the wave's since that the wave would never see run.
+func settleCatalogJobs(t *testing.T, db *sql.DB, stages []string, d time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for {
+		var open int
+		if err := db.QueryRow(`SELECT count(*) FROM processing_jobs WHERE stage = ANY($1)
+			AND subject_kind = 'catalog' AND subject_id = $2::uuid
+			AND state NOT IN ('done', 'failed', 'cancelled', 'skipped')`,
+			pq.Array(stages), catalogSubject).Scan(&open); err != nil {
+			t.Fatalf("the catalog jobs of %v: %v", stages, err)
+		}
+		if open == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d catalog jobs of %v still open after %s", open, stages, d)
+		}
+		makeDue(t, db, stages, 0)
+		time.Sleep(2 * time.Second)
+	}
 }
 
 // makeDue makes the pending jobs of the stages after since due at once. A stage's debounce
