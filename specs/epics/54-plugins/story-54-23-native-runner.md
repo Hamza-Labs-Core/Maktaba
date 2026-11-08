@@ -41,7 +41,8 @@ At start it:
 3. imports the plugin packages of its group, only now;
 4. opens its dispatch socket `<data>/run/runner-<group>.sock` and sends `Hello` to the queue
    worker with what it serves on this machine: stage names, their `unavailable` reasons (the
-   former `StageImpl.unavailable`), and its concurrency.
+   former `StageImpl.unavailable`), and its concurrency. On Windows it has no socket of its
+   own (§3): it serves the worker through the supervisor's pipes.
 
 ### 2. The protocol
 
@@ -66,10 +67,21 @@ media paths, service door), calling this machine's plugin API socket with the to
 |---|---|---|---|
 | macOS | Seatbelt profile generated from the group's manifests, applied with `sandbox_init_with_parameters` before any plugin import | `(deny network*)` plus the plugin API and dispatch sockets; `net` groups add `(allow network-outbound)` | read: the venv, its packages, `files.read` areas; write: its run folder and `files.write` areas; `exec` binaries only; `gpu` adds the IOKit and Metal rules |
 | Linux | Landlock for files, seccomp-bpf refusing `socket(AF_INET/AF_INET6)` unless the group has `net`, and refusing `ptrace`, `bpf`, `mount`, `keyctl`; `execve` limited by Landlock to the `exec` binaries | as left | Landlock read/write rules for the areas; `/dev/nvidia*` and `/dev/dri` when `gpu` |
-| Windows | a restricted token in a Job Object (kill on close, no breakaway), started by the supervisor; a Windows Filtering Platform filter blocks outbound for the runner's image when the group has no `net` | as left | NTFS and share access through the user's own rights (AppContainer can't reach SMB shares); `exec` enforced by the runner's own allow-list |
+| Windows | the group's own AppContainer (`Maktaba.Runner.<group>`) inside a Job Object (kill on close), the way the plugin host runs (54.03 §4): the supervisor's launcher (`maktaba-server runner-sandbox-run`) asks the runner for its policy (`--policy`), grants the profile its folders and starts it there; the runner checks its token is that AppContainer's and refuses to serve otherwise | no capability without `net`: the Windows Filtering Platform blocks every network path, loopback included; `internetClient` alone for a group with `net` | read: the interpreter, `files.read` areas and the tools' installations; full control: its run folder and `files.write` areas (grants an earlier start made that the policy no longer names are taken back); a folder on another machine is never granted (its ACL is not the home's to change, and an AppContainer cannot reach SMB shares); no child process for a group without `exec` (the Job Object's limit), and for one with `exec` only its tools (the runner's own guard: every AppContainer may run the system's programs); `library.subtitles` by name through the runner's guard, as on Linux |
 
 A runner that cannot apply its sandbox does not run (`sandbox_unavailable`), except on Linux
 without Landlock, where it runs *Degraded* `sandbox_partial` if seccomp is in force (as 54.03).
+
+On Windows a runner cannot listen: an AppContainer process may not create a named pipe, and
+Python on Windows has no `AF_UNIX`. The supervisor serves three pipes per group, under a name
+prefix new to each of its runs: the worker's pipe (admitting only the user Maktaba runs as),
+through which the worker sends `Hello`, `Run` and `Fingerprints`; the runner's back pipe,
+which the runner dials to wait for the worker's connections (the supervisor pairs each
+worker connection with a waiting one and then relays the bytes unchanged, or closes it
+without its ready byte when none waits, so the worker runs the job itself, as when a runner's
+socket refuses it elsewhere); and the runner's API pipe, relayed to the plugin API's socket as
+the plugin host's relay is. The runner's pipes admit that user and the group's AppContainer,
+and no other group's.
 
 ### 4. Groups and the fingerprint runner
 
@@ -132,8 +144,10 @@ runner's component *Failed* `runner_crash_loop` (an Epic 51 reason code, 54.37 �
   `Hello` reports `unavailable` only for reasons today's `unavailable` reports.
 - **A plugin import fails** (a missing ML wheel on a Core install): only that plugin's stages
   report `unavailable: runtime_missing`; the rest of the group serves.
-- **A Windows home with media on a mapped drive**: the runner runs as the same user as today's
-  worker, so the mapping resolves as it does now.
+- **A Windows home with media on a mapped drive or a share**: an AppContainer cannot reach an
+  SMB share, and the launcher never changes a remote folder's ACL; a job whose files the
+  sandbox refuses there (`sandbox_refused`) runs in the worker instead, logged, as the worker
+  runs every job of a runner that is starting or failed.
 
 ## Build plan
 

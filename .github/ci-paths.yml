@@ -269,6 +269,10 @@ plugins:
   - 'plugins/**'
   - 'tools/plugins/**'
   - 'pipeline/src/maktaba_plugin_runner/**'
+  # the runners on Windows (54.23): their launch, pipes and the probe CI runs in them
+  - 'cmd/maktaba-server/internal/supervisor/runners*'
+  - 'cmd/maktaba-server/internal/supervisor/testdata/runner_probe.py'
+  - 'cmd/maktaba-server/cmd_plugins_sandbox.go'
   - 'pipeline/src/maktaba_pipeline/plugins/**'
   - 'pipeline/src/maktaba_pipeline/engine/**'
   - 'pipeline/tests/plugins/**'

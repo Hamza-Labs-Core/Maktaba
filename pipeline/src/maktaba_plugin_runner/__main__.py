@@ -62,6 +62,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--group", required=True)
     ap.add_argument("--api-socket", default=os.environ.get("MAKTABA_PLUGIN_API_SOCKET", ""))
     ap.add_argument("--run-dir", default="")
+    # the Windows launcher's question (maktaba-server runner-sandbox-run): the sandbox it
+    # applies from outside, printed as JSON; no plugin code is imported, nothing is served
+    ap.add_argument("--policy", action="store_true")
     args = ap.parse_args(argv)
     group = args.group
     if group not in GROUPS and not group.replace("-", "").isalnum():
@@ -70,6 +73,14 @@ def main(argv: list[str] | None = None) -> int:
     if leaked:
         log("plugin_runner_env_refused", group=group, keys=leaked)
         return EXIT_ENV
+    if sys.platform == "win32":
+        from .winpipe import API_ENV, BACK_ENV
+
+        # on Windows a runner serves and calls only through the supervisor's pipes
+        missing = [k for k in (BACK_ENV, API_ENV) if not os.environ.get(k)]
+        if missing:
+            log("plugin_runner_env_refused", group=group, missing=missing)
+            return EXIT_ENV
     from maktaba_pipeline.plugins import firstparty
 
     from . import sandbox, trust
@@ -104,6 +115,10 @@ def main(argv: list[str] | None = None) -> int:
         tables, areas=areas, api_socket=args.api_socket, own_socket=str(own), run_dir=run_dir
     )
     try:
+        if args.policy:
+            sys.stdout.write(json.dumps(sandbox.policy_doc(policy)) + "\n")
+            sys.stdout.flush()
+            return 0
         applied = sandbox.apply(policy)
     except sandbox.SandboxUnavailable as exc:
         log("plugin_runner_sandbox_unavailable", group=group, step=exc.step, detail=str(exc))

@@ -28,6 +28,22 @@ func TestThePluginsSandboxCommand(t *testing.T) {
 	}
 }
 
+// Story 54.23: the supervisor's own command for a first-party runner on Windows is
+// registered, hidden, and hands every argument to the launcher unparsed.
+func TestTheRunnerSandboxCommand(t *testing.T) {
+	root := newRootCmd()
+	cmd, rest, err := root.Find([]string{"runner-sandbox-run", "-group", "light", "--", "python", "-m", "maktaba_plugin_runner"})
+	if err != nil || cmd.Name() != "runner-sandbox-run" {
+		t.Fatalf("not found: %v %v", cmd, err)
+	}
+	if !cmd.Hidden || !cmd.DisableFlagParsing {
+		t.Fatalf("hidden %v, flags unparsed %v", cmd.Hidden, cmd.DisableFlagParsing)
+	}
+	if !slices.Equal(rest, []string{"-group", "light", "--", "python", "-m", "maktaba_plugin_runner"}) {
+		t.Fatalf("arguments %v", rest)
+	}
+}
+
 // #710: the install's check of a package runs the host binary itself on macOS and Linux,
 // and the AppContainer launcher around it on Windows (the host refuses to run outside it).
 func TestThePreloadCommandFollowsTheOS(t *testing.T) {

@@ -1,7 +1,9 @@
 package supervisor
 
 import (
+	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -47,13 +49,52 @@ func TestNoRunnerWithoutFirstPartyPlugins(t *testing.T) {
 	if err != nil || len(ps) != 0 {
 		t.Fatalf("%d runners, %v", len(ps), err)
 	}
-	if runtime.GOOS == "windows" {
-		return // no runner on Windows (RunnersHere), and no /tmp socket folder
-	}
 	longCfg := config.Config{}
 	longCfg.Server.DataDir = "/" + strings.Repeat("d", 120)
-	if long := RunnerDir(longCfg); !strings.HasPrefix(long, "/tmp/maktaba-r-") {
+	if long := runnerDir(longCfg, "linux"); !strings.HasPrefix(long, "/tmp/maktaba-r-") {
 		t.Fatalf("a long data folder: %s", long)
+	}
+	// Windows: no socket there, so no /tmp folder; the run folder its AppContainers write
+	if win := runnerDir(longCfg, "windows"); win != filepath.Join(longCfg.Server.DataDir, "run", "runners") {
+		t.Fatalf("Windows: %s", win)
+	}
+}
+
+// Story 54.23 on Windows: a Postgres home runs runners there too (each in its group's
+// AppContainer), and a runner's command is the launcher's runner-sandbox-run around the
+// interpreter, its grants kept outside the run folder the runners write; elsewhere the
+// interpreter itself, which applies its own sandbox.
+func TestARunnerRunsInItsSandboxOnEveryOS(t *testing.T) {
+	cfg := config.Config{}
+	cfg.Database.URL = "postgres://h/db"
+	if !RunnersHere(cfg) {
+		t.Fatalf("a Postgres home on %s runs no runner", runtime.GOOS)
+	}
+	name, args := runnerCommand("windows", `C:\m\maktaba-server.exe`, `C:\m\venv\Scripts\python.exe`, "light",
+		`C:\d\run\plugins\plugin-api.sock`, `C:\d\run\runners`, `C:\d\run\runner-light.grants`)
+	want := []string{"runner-sandbox-run", "-group", "light", "-grants", `C:\d\run\runner-light.grants`, "--",
+		`C:\m\venv\Scripts\python.exe`, "-m", "maktaba_plugin_runner", "--group", "light",
+		"--api-socket", `C:\d\run\plugins\plugin-api.sock`, "--run-dir", `C:\d\run\runners`}
+	if name != `C:\m\maktaba-server.exe` || !slices.Equal(args, want) {
+		t.Fatalf("Windows: %s %v", name, args)
+	}
+	name, args = runnerCommand("linux", "/m/maktaba-server", "/m/venv/bin/python", "light", "/d/run/plugin-api.sock",
+		"/d/run/runners", "/d/run/runner-light.grants")
+	if name != "/m/venv/bin/python" || slices.Contains(args, "runner-sandbox-run") || args[1] != "maktaba_plugin_runner" {
+		t.Fatalf("Linux: %s %v", name, args)
+	}
+}
+
+// The runners' pipes (Windows) are the worker's: a runner's environment has neither the
+// plugin host's relay nor the other runners' pipes.
+func TestARunnersEnvHasNoneOfTheWorkersPipes(t *testing.T) {
+	cfg := config.Config{}
+	cfg.Server.DataDir = t.TempDir()
+	env := RunnerEnv(cfg, []string{"MAKTABA_PLUGIND_PIPE=x", EnvRunnerPipes + "=y", "PATH=/bin"})
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "MAKTABA_PLUGIND_PIPE=") || strings.HasPrefix(kv, EnvRunnerPipes+"=") {
+			t.Fatalf("%s reached the runner", kv)
+		}
 	}
 }
 
@@ -62,9 +103,6 @@ func TestNoRunnerWithoutFirstPartyPlugins(t *testing.T) {
 // ml runner per transcription worker and the index runner, not dormant (their components',
 // transcription and search.semantic, start them).
 func TestTheReleaseBuildsTheRunnersItsPluginsName(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("no runner on Windows")
-	}
 	cfg := config.Config{}
 	cfg.Database.URL = "postgres://h/db"
 	cfg.Server.DataDir = t.TempDir()
@@ -103,9 +141,6 @@ func TestTheReleaseBuildsTheRunnersItsPluginsName(t *testing.T) {
 
 // An ml runner has its worker's slot and knobs, and no network for a model.
 func TestAnMLRunnerHasItsWorkersSlotAndIsOffline(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("no runner on Windows")
-	}
 	cfg := config.Config{}
 	cfg.Database.URL = "postgres://h/db"
 	cfg.Server.DataDir = t.TempDir()

@@ -14,6 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
+- **Maktaba's own stages run in their sandboxed runners on Windows too (story 54.23).** Each
+  runner group now runs on a Windows home in its own AppContainer and Job Object, as the plugin
+  host does: it reads and writes only the folders its group declares, has no network unless
+  its group needs it, and starts no program but its group's tools. The worker reaches it
+  through pipes the server serves. A runner that cannot be sandboxed does not run, and its
+  jobs run in the worker, as before. Media on a network share is never granted to a runner;
+  jobs that need it run in the worker.
 - **The service door reads each dizqueTV programme's item from Plex (`tv.maktaba.dizquetv`).**
   The plugin now names each programme by its Plex rating key only. The door reads the item
   from Plex with the home's token and takes the file, media part and duration from Plex's

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"unsafe"
@@ -25,10 +26,11 @@ const (
 	jobObjectLimitActiveProcess             = 0x00000008
 )
 
-// securityCapabilities is SECURITY_CAPABILITIES: an AppContainer SID and no capabilities.
+// securityCapabilities is SECURITY_CAPABILITIES: an AppContainer SID and its capabilities
+// (none for the plugin host; internetClient for a runner group with net, story 54.23).
 type securityCapabilities struct {
 	AppContainerSid *windows.SID
-	Capabilities    uintptr
+	Capabilities    *windows.SIDAndAttributes
 	CapabilityCount uint32
 	Reserved        uint32
 }
@@ -50,8 +52,80 @@ func SID(profile string) (*windows.SID, error) {
 	return sid, nil
 }
 
+// SIDString is the profile's SID as a string (a runner's pipes admit it, story 54.23).
+func SIDString(profile string) (string, error) {
+	sid, err := SID(profile)
+	if err != nil {
+		return "", err
+	}
+	return sid.String(), nil
+}
+
+// fileRead and fileAll are the masks an inherited grant holds once Windows mapped the
+// generic rights (what a DACL keeps).
+const (
+	fileRead = windows.FILE_GENERIC_READ | windows.FILE_GENERIC_EXECUTE
+	fileAll  = windows.STANDARD_RIGHTS_REQUIRED | windows.SYNCHRONIZE | 0x1FF // FILE_ALL_ACCESS
+)
+
+// hasGrant reports whether the DACL already has the SID's explicit, inheritable allow entry
+// with at least the rights asked, as generic rights or as Windows mapped them (a grant made
+// by an earlier start: no walk of the tree again).
+func hasGrant(dacl *windows.ACL, sid *windows.SID, generic, mapped windows.ACCESS_MASK) bool {
+	if dacl == nil {
+		return false
+	}
+	for i := uint16(0); i < dacl.AceCount; i++ {
+		var ace *windows.ACCESS_ALLOWED_ACE
+		if windows.GetAce(dacl, uint32(i), &ace) != nil {
+			return false
+		}
+		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Header.AceFlags&windows.INHERITED_ACE != 0 {
+			continue
+		}
+		const inherit = windows.OBJECT_INHERIT_ACE | windows.CONTAINER_INHERIT_ACE
+		if ace.Header.AceFlags&inherit != inherit {
+			continue
+		}
+		s := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+		if s.Equals(sid) && (ace.Mask&generic == generic || ace.Mask&mapped == mapped) {
+			return true
+		}
+	}
+	return false
+}
+
+// Revoke takes back every explicit entry of the profile's SID on a folder or file (and so
+// what it inherited below): a runner's area it no longer has (story 54.23).
+func Revoke(profile, path string) error {
+	sid, err := SID(profile)
+	if err != nil {
+		return err
+	}
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return fmt.Errorf("appcontainer: %s: %w", path, err)
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return err
+	}
+	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
+		AccessMode: windows.REVOKE_ACCESS,
+		Trustee: windows.TRUSTEE{
+			TrusteeForm:  windows.TRUSTEE_IS_SID,
+			TrusteeType:  windows.TRUSTEE_IS_WELL_KNOWN_GROUP,
+			TrusteeValue: windows.TrusteeValueFromSID(sid),
+		},
+	}}, dacl)
+	if err != nil {
+		return err
+	}
+	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION, nil, nil, acl, nil)
+}
+
 // Grant gives the profile's SID read and execute (and, with write, full control) on a
-// folder or file, inherited by what it holds.
+// folder or file, inherited by what it holds. A grant already there is left as it is.
 func Grant(profile, path string, write bool) error {
 	sid, err := SID(profile)
 	if err != nil {
@@ -66,8 +140,12 @@ func Grant(profile, path string, write bool) error {
 		return err
 	}
 	mask := windows.ACCESS_MASK(windows.GENERIC_READ | windows.GENERIC_EXECUTE)
+	have := windows.ACCESS_MASK(fileRead)
 	if write {
-		mask = windows.GENERIC_ALL
+		mask, have = windows.GENERIC_ALL, fileAll
+	}
+	if hasGrant(dacl, sid, mask, have) {
+		return nil
 	}
 	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
 		AccessPermissions: mask,
@@ -135,6 +213,9 @@ func Run(profile, exe string, args []string, o Options) (int, error) {
 	var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
 	info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | jobObjectLimitActiveProcess
 	info.BasicLimitInformation.ActiveProcessLimit = 1
+	if o.ProcessLimit > 1 {
+		info.BasicLimitInformation.ActiveProcessLimit = uint32(o.ProcessLimit)
+	}
 	if o.MemoryBytes > 0 {
 		info.BasicLimitInformation.LimitFlags |= windows.JOB_OBJECT_LIMIT_PROCESS_MEMORY
 		info.ProcessMemoryLimit = uintptr(o.MemoryBytes)
@@ -152,6 +233,17 @@ func Run(profile, exe string, args []string, o Options) (int, error) {
 	}
 	defer attrs.Delete()
 	caps := securityCapabilities{AppContainerSid: sid}
+	var capSIDs []windows.SIDAndAttributes
+	for _, c := range o.Capabilities {
+		cs, err := windows.StringToSid(c)
+		if err != nil {
+			return 0, fmt.Errorf("appcontainer: capability %s: %w", c, err)
+		}
+		capSIDs = append(capSIDs, windows.SIDAndAttributes{Sid: cs, Attributes: windows.SE_GROUP_ENABLED})
+	}
+	if len(capSIDs) > 0 {
+		caps.Capabilities, caps.CapabilityCount = &capSIDs[0], uint32(len(capSIDs))
+	}
 	if err := attrs.Update(procThreadAttributeSecurityCapabilities, unsafe.Pointer(&caps), unsafe.Sizeof(caps)); err != nil {
 		return 0, fmt.Errorf("appcontainer: security capabilities: %w", err)
 	}
@@ -179,6 +271,7 @@ func Run(profile, exe string, args []string, o Options) (int, error) {
 		return 0, fmt.Errorf("appcontainer: start %s: %w", exe, err)
 	}
 	defer func() { _ = windows.CloseHandle(pi.Process); _ = windows.CloseHandle(pi.Thread) }()
+	runtime.KeepAlive(capSIDs)
 	if err := windows.AssignProcessToJobObject(job, pi.Process); err != nil {
 		_ = windows.TerminateProcess(pi.Process, 1)
 		return 0, fmt.Errorf("appcontainer: assign to job: %w", err)
@@ -195,4 +288,21 @@ func Run(profile, exe string, args []string, o Options) (int, error) {
 		return 0, err
 	}
 	return int(code), nil
+}
+
+// remotePath reports a folder on another machine: a UNC path, or a drive Windows says is
+// remote (a mapped share).
+func remotePath(p string) bool {
+	if uncPath(p) {
+		return true
+	}
+	vol := filepath.VolumeName(p)
+	if vol == "" {
+		return false
+	}
+	root, err := windows.UTF16PtrFromString(vol + `\`)
+	if err != nil {
+		return false
+	}
+	return windows.GetDriveType(root) == windows.DRIVE_REMOTE
 }
