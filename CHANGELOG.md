@@ -2916,14 +2916,6 @@ build fails when the two differ.
   now answers the refusal and logs it, and the worker reads the fingerprint itself for any
   runner that closes without an answer.
 
-- **A fingerprint a Windows runner may not read is taken by the worker, never left pending
-  (story 54.23).** On Windows, with a library on a share, every plugin runner refuses share
-  paths, and the fingerprint runner closed the connection without an answer when a stage's
-  fingerprint looked at one (the small thumbnail's sidecar look). The worker did not read
-  that as a refusal, so the job failed and went back to pending again and again. The runner
-  now answers the refusal and logs it, and the worker reads the fingerprint itself for any
-  runner that closes without an answer.
-
 - **A Windows runner reads a share through its file broker (story 54.23).** A venv's python
   on Windows is a launcher that starts the real interpreter as its child, and the broker
   serves only the process the launcher started, so it turned every runner away, and the
