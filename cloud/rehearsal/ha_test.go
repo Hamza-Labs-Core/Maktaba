@@ -28,6 +28,10 @@ type haExtra struct {
 	profiles []string
 	env      []string
 	before   func(*ha) // after the old project is gone, before up
+	files    []string  // more compose files after compose-ha.yml (compose-origin.yml)
+	// noEdgeWait skips the wait for the plain-HTTP relay through fipfront: 50.31's scenarios
+	// run production's Caddyfile, which serves relay names over TLS only
+	noEdgeWait bool
 }
 
 type ha struct {
@@ -41,6 +45,9 @@ func (h *ha) composeHA(args ...string) (string, error) {
 	base := []string{"compose", "-p", h.project, "-f", filepath.Join(h.dir, "compose-ha.yml")}
 	var env []string
 	if h.extra != nil {
+		for _, f := range h.extra.files {
+			base = append(base, "-f", filepath.Join(h.dir, f))
+		}
 		for _, p := range h.extra.profiles {
 			base = append(base, "--profile", p)
 		}
@@ -115,7 +122,7 @@ func upHAWith(t *testing.T, scenario string, extra *haExtra) *ha {
 		var b strings.Builder
 		b.WriteString(logs)
 		for _, n := range []string{"node-a", "node-b"} {
-			for _, f := range []string{"patroni.log", "relay.log", "etcd.log", "caddy.log"} {
+			for _, f := range []string{"patroni.log", "relay.log", "etcd.log", "caddy.log", "api.log", "connector.log"} {
 				out, _ := exec.Command("docker", "exec", h.project+"-"+n+"-1", "cat", "/var/log/"+f).CombinedOutput()
 				fmt.Fprintf(&b, "\n===== %s /var/log/%s\n%s", n, f, out)
 			}
@@ -130,14 +137,16 @@ func upHAWith(t *testing.T, scenario string, extra *haExtra) *ha {
 		l := h.leader()
 		return l != "" && h.syncStandby(other(l))
 	})
-	waitFor(t, time.Minute, "the edge through the Floating IP", func() bool {
-		resp, err := http.Get(c.edge + "/readyz")
-		if err != nil {
-			return false
-		}
-		_ = resp.Body.Close()
-		return resp.StatusCode == 200
-	})
+	if extra == nil || !extra.noEdgeWait {
+		waitFor(t, time.Minute, "the edge through the Floating IP", func() bool {
+			resp, err := http.Get(c.edge + "/readyz")
+			if err != nil {
+				return false
+			}
+			_ = resp.Body.Close()
+			return resp.StatusCode == 200
+		})
+	}
 	api := simhome.API()
 	c.api = &httptestServer{URL: api.URL, close: api.Close}
 	return h

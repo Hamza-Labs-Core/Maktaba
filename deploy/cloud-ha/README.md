@@ -92,13 +92,19 @@ nothing opens the api's ports.
 [server]
 env = "production"
 listen_addr = "127.0.0.1:8090"
-admin_listen_addr = "127.0.0.1:8091"   # served once story 50.32 lands
+admin_listen_addr = "127.0.0.1:8091"   # the operator console's own listener (story 50.32)
+admin_host = "admin.maktaba.tv"        # the one name it answers
+user_hosts = ["api.maktaba.tv", "app.maktaba.tv", "maktaba.tv"]
 trusted_proxies = ["127.0.0.1/32", "::1/128"]
 origin_mode = "tunnel"
 ```
 
 The api refuses to start in production with a listener that is not loopback or private, with no
-`trusted_proxies`, or with the old `trust_proxy_headers`.
+`trusted_proxies`, or with the old `trust_proxy_headers`; and anywhere with `admin_listen_addr`
+but no `admin_host` (or the reverse). The Tunnel's ingress sends `admin.maktaba.tv` to 8091 and
+the user names to 8090: each listener answers only its own names (404 otherwise, logged once a
+minute), so an ingress rule pointed at the wrong port serves nothing. `/healthz`, `/readyz` and
+`/metrics` answer on any name, for the node's own probes.
 
 **The fallback**, only if the Tunnel can't be used for a while, by a deploy: put the CA of
 Maktaba's AOP client certificate in `/etc/caddy/maktaba-aop-ca.pem` on both nodes, set

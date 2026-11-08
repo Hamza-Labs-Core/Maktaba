@@ -11,6 +11,7 @@ const LINKS = [
   { to: "/abuse", key: "admin.nav.abuse" },
   { to: "/usage", key: "admin.nav.usage" },
   { to: "/reports", key: "admin.nav.reports" },
+  { to: "/symbols", key: "admin.nav.symbols" },
   { to: "/errors", key: "admin.nav.errors" },
   { to: "/logs", key: "admin.nav.logs" },
   { to: "/audit", key: "admin.nav.audit" },

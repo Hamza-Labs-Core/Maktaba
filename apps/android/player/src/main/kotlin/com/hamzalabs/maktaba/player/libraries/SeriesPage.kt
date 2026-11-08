@@ -1,6 +1,7 @@
 package com.hamzalabs.maktaba.player.libraries
 
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.platform.LocalConfiguration
 import com.hamzalabs.maktaba.core.queue.QueueSource
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -143,7 +144,7 @@ private fun Header(state: SeriesState, client: ApiClient, onContinue: (Episode) 
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.semantics { heading() },
         )
-        val meta = listOfNotNull(pluralStringResource(R.plurals.libraries_episodes, series.episodeCount, series.episodeCount), series.year?.toString())
+        val meta = listOfNotNull(pluralStringResource(R.plurals.libraries_episodes, series.episodeCount, series.episodeCount), series.year?.let { seriesYear(it, LocalConfiguration.current.locales[0]) })
         Text(meta.joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (series.episodeCount > 0 && series.watchedCount > 0) {
             Text(
@@ -233,3 +234,6 @@ private fun EpisodeRow(e: Episode, client: ApiClient, onOpen: () -> Unit, onMark
     }
     HorizontalDivider(Modifier.padding(horizontal = MaktabaTokens.Spacing.s4), color = MaterialTheme.colorScheme.outlineVariant)
 }
+
+/** A series' year in [locale]'s digits, as its episode count is (the plural's `%d`), with no grouping. */
+internal fun seriesYear(year: Int, locale: java.util.Locale): String = String.format(locale, "%d", year)

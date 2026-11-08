@@ -1,0 +1,36 @@
+Heading: تابع المشاهدة
+Button: رحلة إلى مكة, 55:00 | شوهد 45٪
+Heading: أضيف حديثًا
+Button: Scholars of the Silk Road, 43:00
+Button: بيت الحكمة في بغداد, 51:00
+Button: Manuscripts of Timbuktu, 49:00
+Button: رحلة إلى مكة, 55:00
+Button: The Libraries of Cordoba, 58:00
+ScrollBar: 1
+ValueIndicator: 1
+Heading: شوهد مؤخرًا
+Button: رحلة إلى مكة, 55:00 | شوهد 45٪
+Button: The Libraries of Cordoba, 58:00 | شوهد
+Button: تشغيل
+Button: تشغيل عشوائي
+DisclosureTriangle: من الإضافات | 0
+StaticText: عرض
+RadioButton: المقاطع | 1
+RadioButton: المسلسلات | 0
+RadioButton: المجموعات | 0
+RadioButton: قوائم التشغيل | 0
+MenuButton: ترتيب
+MenuButton: اللغة
+MenuButton: المتحدث
+Button: Scholars of the Silk Road, 43:00
+Button: بيت الحكمة في بغداد, 51:00
+Button: Manuscripts of Timbuktu, 49:00
+Button: تفسير سورة الكهف، الجزء ٣, 46:50
+Button: السيرة النبوية، الدرس ١٢, 55:05
+Button: رحلة إلى مكة, 55:00 | شوهد 45٪
+Button: Tafsir al-Kahf, part 2, 45:00 | شوهد 22٪
+Button: Tafsir al-Kahf, part 1, 44:10 | شوهد
+Button: السيرة النبوية، الدرس ١١, 49:40 | شوهد 42٪
+Button: السيرة النبوية، الدرس ١٠, 52:00 | شوهد
+Button: The Fiqh of Fasting, 30:20
+Button: The Libraries of Cordoba, 58:00 | شوهد

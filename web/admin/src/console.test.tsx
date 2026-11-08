@@ -2,7 +2,10 @@
 // when signed out, its own 404, and Arabic right to left.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
-import { setAccessToken } from "@cloud-shared/api";
+import { CloudApiError, setAccessToken } from "@cloud-shared/api";
+import { errorMessage } from "@cloud-shared/ui";
+import { MESSAGES } from "./catalogs";
+import { STAFF_HEADERS } from "./staff";
 import en from "./i18n/en.json";
 import ar from "./i18n/ar.json";
 import { renderAt, session, signedOut, stubFetch, user } from "./test/harness";
@@ -47,5 +50,22 @@ describe("the operator console", () => {
     renderAt("/");
     expect(await screen.findByRole("heading", { name: "لوحة تشغيل مكتبة" })).toBeInTheDocument();
     await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
+  });
+
+  it("sends its CSRF header on changes and explains a refused one in both languages", () => {
+    // the header the admin listener requires (cloud/internal/middleware.StaffHeader)
+    expect(STAFF_HEADERS).toEqual({ "X-Maktaba-Staff": "1" });
+    const refused = new CloudApiError(
+      403,
+      "bad_origin",
+      "This request didn't come from the console.",
+      {}
+    );
+    for (const lang of ["en", "ar"] as const) {
+      const m = MESSAGES[lang];
+      const t = (k: string) => m[k] ?? k;
+      const has = (k: string) => k in m;
+      expect(errorMessage(t as never, has, refused)).toBe(m["admin.badOrigin"]);
+    }
   });
 });

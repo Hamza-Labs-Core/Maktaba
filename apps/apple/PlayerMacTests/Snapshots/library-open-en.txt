@@ -1,0 +1,46 @@
+Heading: Continue Watching
+Button: رحلة إلى مكة, 55:00 | 45% watched
+Heading: Recently Added
+Button: Scholars of the Silk Road, 43:00
+Button: بيت الحكمة في بغداد, 51:00
+Button: Manuscripts of Timbuktu, 49:00
+Button: رحلة إلى مكة, 55:00
+Button: The Libraries of Cordoba, 58:00
+ScrollBar: 0
+ValueIndicator: 0
+Heading: Recently Watched
+Button: رحلة إلى مكة, 55:00 | 45% watched
+Button: The Libraries of Cordoba, 58:00 | Watched
+Button: Play
+Button: Shuffle
+DisclosureTriangle: From plugins | 1
+StaticText: Topics
+StaticText: Topics
+StaticText: Era
+StaticText: 7th century
+StaticText: Speaker
+StaticText: Dr. Example
+Button: Hijra
+Button: Medina
+StaticText: Show
+RadioButton: Videos | 1
+RadioButton: Series | 0
+RadioButton: Collections | 0
+RadioButton: Playlists | 0
+MenuButton: Sort
+MenuButton: Language
+MenuButton: Speaker
+Button: Scholars of the Silk Road, 43:00
+Button: بيت الحكمة في بغداد, 51:00
+Button: Manuscripts of Timbuktu, 49:00
+Button: تفسير سورة الكهف، الجزء ٣, 46:50
+Button: السيرة النبوية، الدرس ١٢, 55:05
+Button: رحلة إلى مكة, 55:00 | 45% watched
+Button: Tafsir al-Kahf, part 2, 45:00 | 22% watched
+Button: Tafsir al-Kahf, part 1, 44:10 | Watched
+Button: السيرة النبوية، الدرس ١١, 49:40 | 42% watched
+Button: السيرة النبوية، الدرس ١٠, 52:00 | Watched
+Button: The Fiqh of Fasting, 30:20
+Button: The Libraries of Cordoba, 58:00 | Watched
+ScrollBar: 0
+ValueIndicator: 0

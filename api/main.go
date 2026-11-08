@@ -308,7 +308,10 @@ func runServe() error {
 	// is already firewalled in production deploys. It carries this
 	// machine's supervisor's update metrics too (story 35.15): one
 	// scrape target per machine.
-	adminMux.Handle("/metrics", metricsHandler(os.Getenv("MAKTABA_SUPERVISOR_URL")))
+	// On a home it carries each joined machine's memory, disk, load and components too
+	// (story 53.12), asked over the cluster channel (hubRef, filled once it is mounted).
+	hubRef := &router.HubRef{} // Epic 35: the update driver's cluster channel (and a machine's log files)
+	adminMux.Handle("/metrics", metricsHandler(os.Getenv("MAKTABA_SUPERVISOR_URL"), newNodeMetrics(hubRef)))
 
 	// Recent-logs endpoint on the admin port, mirroring the streaming
 	// service. The public-facing viewer/export use /api/admin/logs/*
@@ -387,7 +390,6 @@ func runServe() error {
 	// reuses the dedicated stats pool for the connection/job sections so
 	// it never contends with handler traffic. Peer log URLs let the
 	// bundle proxy the streaming + pipeline ring buffers.
-	hubRef := &router.HubRef{} // Epic 35: the update driver's cluster channel (and a machine's log files)
 	forwarder := router.MountLogs(r, router.LogsDeps{
 		DB:                 statsDB,
 		DataDir:            statsDataDir,
