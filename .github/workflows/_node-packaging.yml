@@ -203,7 +203,8 @@ jobs:
             tools/release/trusted-root-age.sh tools/release/tag-guard-test.sh tools/release/release-assets-test.sh \
             tools/release/pkg-repo.sh tools/release/pkg-repo-test.sh tools/release/homebrew-tap.sh \
             tools/release/homebrew-tap-test.sh tools/release/play-version.sh tools/release/play-version-test.sh \
-            tools/release/cloud-guard.sh tools/release/cloud-guard-test.sh
+            tools/release/cloud-guard.sh tools/release/cloud-guard-test.sh \
+            tools/release/postgres-cdn.sh tools/release/postgres-cdn-test.sh
       - name: install-node.sh dry runs
         run: deploy/packaging/node/tests/install-node-dry-run.sh
       # The home-server install.sh refuses a release missing checksums.txt,
@@ -234,6 +235,11 @@ jobs:
       - name: release assets adopt (a bundle and its signature together)
         if: runner.os == 'Linux'
         run: bash tools/release/release-assets-test.sh
+      # The Postgres archives postgres-cdn.yml publishes to Maktaba's CDN: each checked against
+      # its pin before it is uploaded, one already there skipped (a scratch CDN, a stub upload)
+      - name: Postgres archives to the CDN
+        if: runner.os == 'Linux'
+        run: bash tools/release/postgres-cdn-test.sh
 
   # The package repositories packages.yml publishes after a stable release (pkg-repo.sh),
   # built from fake packages with a throwaway key: apt installs through the signed index

@@ -15,6 +15,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appvenv"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ghasset"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/packs"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
@@ -214,6 +215,22 @@ func TestPacksManagerDownloadsFromTheEnvironmentsSource(t *testing.T) {
 	t.Setenv(packs.EnvOllamaRegistry, "http://127.0.0.1:9/ollama")
 	n, ok := newPacksManager(config.Defaults(), "", io.Discard).Net.(*packs.Net)
 	if !ok || n.Releases != "http://127.0.0.1:9/releases" || n.HF != "http://127.0.0.1:9/hf" || n.OllamaRegistry != "http://127.0.0.1:9/ollama" {
+		t.Fatalf("the Manager's network source %+v", n)
+	}
+	if n.API != "" {
+		t.Fatalf("a mirror the environment set is backed by GitHub's API (%s)", n.API)
+	}
+}
+
+// With no mirror set, a release file github.com's door keeps failing for comes through
+// GitHub's API asset route.
+func TestPacksManagerFallsBackToTheGitHubAPI(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("MAKTABA_CONFIG", filepath.Join(home, "server.toml"))
+	t.Setenv(packs.EnvReleasesURL, "")
+	n, ok := newPacksManager(config.Defaults(), "", io.Discard).Net.(*packs.Net)
+	if !ok || n.API != ghasset.DefaultAPI || n.Repo == "" || !strings.HasPrefix(n.Releases, "https://github.com/"+n.Repo+"/") {
 		t.Fatalf("the Manager's network source %+v", n)
 	}
 }

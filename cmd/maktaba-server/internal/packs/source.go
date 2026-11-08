@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ghasset"
 	rv "github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
 
@@ -70,6 +71,23 @@ type Net struct {
 	// the home's catalog keeps, story 51.18): a name not in it is not found, and Releases
 	// is not used.
 	URLs map[string]string
+
+	// Repo is the GitHub repository the release files are in ("owner/name").
+	Repo string
+	// API, when set (with Repo, and URLs nil), is GitHub's API: a release file that
+	// github.com's download door (Releases) keeps failing for, past Tries, is fetched
+	// through the API's asset route (ghasset) instead. A 404 at the door is the answer:
+	// the API is not asked. WithEnv clears it when it points Releases at a mirror.
+	API string
+	// Tries is how many times a release file is asked for at each place on a transient
+	// failure (a 5xx, a timeout, a connection error; 0: 3), Backoff the first wait between
+	// tries (0: 2 s; doubled each time), Sleep the wait (tests replace it). An update's job
+	// (URLs set) asks once, as before.
+	Tries   int
+	Backoff time.Duration
+	Sleep   func(ctx context.Context, d time.Duration) error
+	// Log gets which place delivered a release file after a failure, and each failure.
+	Log io.Writer
 }
 
 // NewNet is the network source of repo ("owner/name") with c (nil: a client with no
@@ -78,7 +96,7 @@ func NewNet(repo string, c *http.Client) *Net {
 	if c == nil {
 		c = &http.Client{Transport: http.DefaultTransport}
 	}
-	return &Net{HTTP: c, Releases: "https://github.com/" + repo + "/releases/download", HF: "https://huggingface.co"}
+	return &Net{HTTP: c, Releases: "https://github.com/" + repo + "/releases/download", HF: "https://huggingface.co", Repo: repo}
 }
 
 // The environment that points the network source elsewhere (a test stack, a mirror on
@@ -103,6 +121,9 @@ func (n *Net) WithEnv(getenv func(string) string) *Net {
 		v := strings.TrimRight(strings.TrimSpace(getenv(o.env)), "/")
 		if strings.HasPrefix(v, "http://") || strings.HasPrefix(v, "https://") {
 			*o.to = v
+			if o.env == EnvReleasesURL {
+				n.API = "" // a mirror the home chose: GitHub is not asked behind it
+			}
 		}
 	}
 	return n
@@ -120,7 +141,12 @@ func (n *Net) releaseURL(version, name string) string {
 func (n *Net) Signed(ctx context.Context, version string) (Signed, error) {
 	var s Signed
 	get := func(name string, optional bool) ([]byte, error) {
-		b, err := n.small(ctx, n.releaseURL(version, name))
+		var b []byte
+		err := n.releaseFile(ctx, version, name, func(u, accept string) error {
+			var err error
+			b, err = n.small(ctx, u, accept)
+			return err
+		})
 		if optional && errors.Is(err, errNotFound) {
 			return nil, nil
 		}
@@ -143,13 +169,16 @@ func (n *Net) Signed(ctx context.Context, version string) (Signed, error) {
 	return s, err
 }
 
-func (n *Net) small(ctx context.Context, u string) ([]byte, error) {
+func (n *Net) small(ctx context.Context, u, accept string) ([]byte, error) {
 	if u == "" {
 		return nil, errNotFound
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
+	}
+	if accept != "" {
+		req.Header.Set("Accept", accept)
 	}
 	return n.fetchSmall(req)
 }
@@ -165,7 +194,7 @@ func (n *Net) fetchSmall(req *http.Request) ([]byte, error) {
 	case resp.StatusCode == http.StatusNotFound:
 		return nil, errNotFound
 	case resp.StatusCode != http.StatusOK:
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+		return nil, &ghasset.StatusError{Code: resp.StatusCode}
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, smallLimit+1))
 	if err != nil {
@@ -178,12 +207,14 @@ func (n *Net) fetchSmall(req *http.Request) ([]byte, error) {
 }
 
 func (n *Net) Pack(ctx context.Context, version, name, dst string, size int64, progress func(int64)) error {
-	return n.resume(ctx, n.releaseURL(version, name), "", dst, size, progress)
+	return n.releaseFile(ctx, version, name, func(u, accept string) error {
+		return n.resume(ctx, u, "", accept, dst, size, progress)
+	})
 }
 
 func (n *Net) Model(ctx context.Context, f ModelFile, dst string, size int64, progress func(int64)) error {
 	if f.Ollama {
-		return n.resume(ctx, n.ollamaURL(f), "", dst, size, progress)
+		return n.resume(ctx, n.ollamaURL(f), "", "", dst, size, progress)
 	}
 	var segs []string
 	for _, s := range strings.Split(f.Path, "/") {
@@ -194,11 +225,12 @@ func (n *Net) Model(ctx context.Context, f ModelFile, dst string, size int64, pr
 	if n.Token != nil {
 		tok = n.Token()
 	}
-	return n.resume(ctx, u, tok, dst, size, progress)
+	return n.resume(ctx, u, tok, "", dst, size, progress)
 }
 
-// resume downloads u to dst from the bytes dst holds (Range), stopping at size.
-func (n *Net) resume(ctx context.Context, u, token, dst string, size int64, progress func(int64)) error {
+// resume downloads u to dst from the bytes dst holds (Range), stopping at size (accept,
+// when set, is the Accept header: an asset route's file).
+func (n *Net) resume(ctx context.Context, u, token, accept, dst string, size int64, progress func(int64)) error {
 	have := int64(0)
 	if info, err := os.Stat(dst); err == nil {
 		have = info.Size()
@@ -226,6 +258,9 @@ func (n *Net) resume(ctx context.Context, u, token, dst string, size int64, prog
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
+	if accept != "" {
+		req.Header.Set("Accept", accept)
+	}
 	resp, err := n.HTTP.Do(req)
 	if err != nil {
 		return err
@@ -241,11 +276,11 @@ func (n *Net) resume(ctx context.Context, u, token, dst string, size int64, prog
 	case http.StatusRequestedRangeNotSatisfiable:
 		// what dst holds is not a start of the file: from the beginning next time
 		_ = os.Truncate(dst, 0)
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
+		return &ghasset.StatusError{Code: resp.StatusCode}
 	case http.StatusNotFound:
 		return errNotFound
 	default:
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
+		return &ghasset.StatusError{Code: resp.StatusCode}
 	}
 	f, err := os.OpenFile(dst, flags, 0o644)
 	if err != nil {
@@ -256,6 +291,75 @@ func (n *Net) resume(ctx context.Context, u, token, dst string, size int64, prog
 		err = cerr
 	}
 	return err
+}
+
+// releaseFile runs do on the release file name of version: at its URL, and for a
+// release's own download (not an update's job: URLs nil) up to Tries times on a
+// transient failure, then, when API is set, through GitHub's API asset route the same
+// way. A 404 at the first place is final (not found). What either delivers is checked
+// against the signed index by the caller, as before.
+func (n *Net) releaseFile(ctx context.Context, version, name string, do func(u, accept string) error) error {
+	u := n.releaseURL(version, name)
+	if n.URLs != nil {
+		return do(u, "")
+	}
+	err := n.retry(ctx, name, "github.com", func() error { return do(u, "") })
+	if err == nil || errors.Is(err, errNotFound) || ctx.Err() != nil || n.API == "" || n.Repo == "" {
+		return err
+	}
+	asset := ""
+	aerr := n.retry(ctx, name, "GitHub's API", func() error {
+		if asset == "" {
+			a, err := ghasset.AssetURL(ctx, n.HTTP, n.API, n.Repo, "v"+version, name)
+			if err != nil {
+				return err
+			}
+			asset = a
+		}
+		return do(asset, "application/octet-stream")
+	})
+	if aerr != nil {
+		return fmt.Errorf("github.com: %w; GitHub's API: %w", err, aerr)
+	}
+	n.logf("[packs] %s downloaded from GitHub's API\n", name)
+	return nil
+}
+
+// retry runs f up to Tries times while it fails transiently (ghasset.Transient), waiting
+// Backoff, then twice that, between tries.
+func (n *Net) retry(ctx context.Context, name, place string, f func() error) error {
+	tries, first := n.Tries, n.Backoff
+	if tries <= 0 {
+		tries = 3
+	}
+	if first <= 0 {
+		first = 2 * time.Second
+	}
+	sleep := n.Sleep
+	if sleep == nil {
+		sleep = ghasset.Sleep
+	}
+	for try := 1; ; try++ {
+		err := f()
+		if err == nil || errors.Is(err, errNotFound) || ctx.Err() != nil {
+			return err
+		}
+		if !ghasset.Transient(err) || try >= tries {
+			n.logf("[packs] %s from %s failed (try %d): %v\n", name, place, try, err)
+			return err
+		}
+		wait := ghasset.Backoff(first, try)
+		n.logf("[packs] %s from %s failed (try %d of %d): %v: again in %s\n", name, place, try, tries, err, wait)
+		if err := sleep(ctx, wait); err != nil {
+			return err
+		}
+	}
+}
+
+func (n *Net) logf(format string, args ...any) {
+	if n.Log != nil {
+		fmt.Fprintf(n.Log, format, args...)
+	}
 }
 
 // copyProgress copies r to w, calling progress with start plus the bytes copied (at most
