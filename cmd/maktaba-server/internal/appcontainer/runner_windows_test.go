@@ -152,7 +152,17 @@ func TestAGrantLandsOnlyOnTheFolderThatWasChecked(t *testing.T) {
 					junction(t, lib, decoyLib)
 				}
 			}
+			wn := walkNote
+			t.Cleanup(func() { walkNote = wn })
+			walkNote = func(p string, err error) { t.Logf("walk: %s: %v", p, err) }
 			code, started, log := launchReal(t, group, RunnerPolicy{Read: []string{media}})
+			if swap == "none" {
+				t.Logf("DEBUG log: %s", log)
+				for _, p := range []string{media, filepath.Dir(show), show} {
+					out, _ := exec.Command("icacls", p).CombinedOutput() //nolint:gosec // the test's temp folder
+					t.Logf("DEBUG %s", out)
+				}
+			}
 			for _, p := range []string{decoy, secret, outside, filepath.Join(outside, "other.txt")} {
 				if found, _ := aceOf(t, p, sid); found {
 					t.Errorf("%s got an entry for the group's profile", p)
