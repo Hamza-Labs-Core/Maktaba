@@ -141,6 +141,14 @@ GitHub `production` environment secrets for it: `RELAY_HOST_A`, `RELAY_HOST_B` (
 addresses), `RELAY_SSH_USER`, `RELAY_SSH_KEY` (the `deploy` user's key, which works only for
 that user).
 
+The release symbol tables' token (story 53.16): `deploy.sh` writes the repository secret
+`MAKTABA_SYMBOLS_TOKEN` (the one the release workflows upload with) to `/etc/maktaba/symbols.token`
+on both nodes (root:maktaba, 0640, over SSH's stdin), and adds
+`MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE=/etc/maktaba/symbols.token` to `/etc/maktaba/cloud.env`; the
+leader's api reads it when step 6 restarts it. Without the secret nothing changes and
+`POST /v1/symbols` answers `503 symbols_off`. Adding the secret is the owner's one step
+([docs/testflight.md](../../docs/testflight.md#crash-symbols-owner)).
+
 ## Backups and restore (story 50.09)
 
 pgBackRest writes the WAL archive (at least every minute) and every backup to **two

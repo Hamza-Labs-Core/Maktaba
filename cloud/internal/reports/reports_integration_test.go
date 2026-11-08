@@ -378,6 +378,109 @@ func TestAReportsCrashIsSymbolicatedWithTheUploadedTables(t *testing.T) {
 	}
 }
 
+// Android (53.16): a report of android.player 0.3.102 has obfuscated Kotlin frames; once that
+// release's R8 mapping is uploaded (kind r8, keyed by the app and version) they read as the
+// code's names and lines. Before, the mapping is named as missing.
+func TestAnAndroidReportsCrashIsRetracedWithTheUploadedMapping(t *testing.T) {
+	rg := newRig(t, true)
+	f, err := os.Open("../symbols/testdata/mapping.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mapping, err := symbols.ParseR8(f, "android.player", "v0.3.102")
+	_ = f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep := sample(2)
+	rep["app"], rep["version"], rep["platform"] = "android.player", "0.3.102", "android"
+	rep["crashes"] = []any{map[string]any{
+		"platform": "java",
+		"exception": map[string]any{"values": []any{map[string]any{"type": "a.b.e", "value": "a.b.e",
+			"stacktrace": map[string]any{"frames": []any{
+				map[string]any{"function": "android.os.Handler.dispatchMessage", "filename": "Handler.java", "lineno": 106},
+				map[string]any{"function": "a.b.c.b", "filename": "SourceFile", "lineno": 5, "in_app": true},
+			}}}}},
+	}}
+	sid := home(t, rg.ctx, rg.db, "homea")
+	body, ct := form(t, rep, nil)
+	if rec := rg.do("POST", "/v1/homes/"+sid+"/reports", "good", body, ct); rec.Code != 201 {
+		t.Fatalf("send: %d", rec.Code)
+	}
+	read := func() symbols.Crash {
+		rec := rg.do("GET", "/v1/admin/reports/1", "", nil, "")
+		var v struct {
+			Crashes []symbols.Crash `json:"crashes"`
+		}
+		if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &v) != nil || len(v.Crashes) != 1 {
+			t.Fatalf("read: %d %s", rec.Code, rec.Body)
+		}
+		return v.Crashes[0]
+	}
+	before := read()
+	if before.Symbols != "" || before.Frames[0].Symbol != nil || before.Frames[0].Raw != "a.b.c.b(SourceFile:5)" ||
+		len(before.Missing) != 1 || before.Missing[0].Kind != symbols.KindR8 || before.Missing[0].Version != "0.3.102" {
+		t.Fatalf("before the upload: %+v", before)
+	}
+	b, err := mapping.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("POST", "/v1/symbols", bytes.NewReader(b))
+	req.Header.Set("Authorization", "Bearer symtok")
+	rec := httptest.NewRecorder()
+	rg.h.ServeHTTP(rec, req)
+	if rec.Code != 201 || !strings.Contains(rec.Body.String(), `"kind":"r8"`) {
+		t.Fatalf("upload: %d %s", rec.Code, rec.Body)
+	}
+	after := read()
+	if after.Symbols != symbols.SymbolsMapping || len(after.Missing) != 0 || after.Type != "com.hamzalabs.maktaba.player.PlaybackError" {
+		t.Fatalf("after the upload: %+v", after)
+	}
+	if f := after.Frames[0]; f.Symbol == nil || f.Symbol.Function != "com.hamzalabs.maktaba.player.PlaybackController.stop" ||
+		f.Symbol.File != "PlaybackController.kt" || f.Symbol.Line != 71 {
+		t.Fatalf("top frame: %+v", f)
+	}
+	// listed under its app, release and kind
+	rec = rg.do("GET", "/v1/admin/symbols", "", nil, "")
+	var l struct{ Tables []symbols.Info }
+	_ = json.Unmarshal(rec.Body.Bytes(), &l)
+	if len(l.Tables) != 1 || l.Tables[0].CodeFile != "android.player" || l.Tables[0].Version != "0.3.102" || l.Tables[0].Arch != "jvm" {
+		t.Fatalf("list: %s", rec.Body)
+	}
+}
+
+// The desktop player is not obfuscated: its report's frames read as they came, marked as
+// read, with no mapping asked for.
+func TestADesktopReportsCrashReadsAsItCame(t *testing.T) {
+	rg := newRig(t, true)
+	rep := sample(3)
+	rep["app"], rep["platform"] = "desktop.player", "windows"
+	rep["crashes"] = []any{map[string]any{
+		"platform": "java",
+		"exception": map[string]any{"values": []any{map[string]any{"type": "java.lang.IllegalStateException",
+			"stacktrace": map[string]any{"frames": []any{
+				map[string]any{"function": "com.hamzalabs.maktaba.desktop.player.Player.open", "filename": "Player.kt", "lineno": 88, "in_app": true},
+			}}}}},
+	}}
+	sid := home(t, rg.ctx, rg.db, "homea")
+	body, ct := form(t, rep, nil)
+	if rec := rg.do("POST", "/v1/homes/"+sid+"/reports", "good", body, ct); rec.Code != 201 {
+		t.Fatalf("send: %d", rec.Code)
+	}
+	rec := rg.do("GET", "/v1/admin/reports/1", "", nil, "")
+	var v struct {
+		Crashes []symbols.Crash `json:"crashes"`
+	}
+	if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &v) != nil || len(v.Crashes) != 1 {
+		t.Fatalf("read: %d %s", rec.Code, rec.Body)
+	}
+	if c := v.Crashes[0]; c.Symbols != symbols.SymbolsSource || len(c.Missing) != 0 ||
+		c.Frames[0].Raw != "com.hamzalabs.maktaba.desktop.player.Player.open(Player.kt:88)" {
+		t.Fatalf("crash: %+v", c)
+	}
+}
+
 func TestOnlyTheServiceAdminReadsReports(t *testing.T) {
 	rg := newRig(t, false)
 	for _, p := range []string{"/v1/admin/reports", "/v1/admin/reports/1", "/v1/admin/reports/1/screenshot", "/v1/admin/symbols"} {

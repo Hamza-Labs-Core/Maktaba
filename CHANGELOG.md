@@ -14,13 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
-- **The Remotes restore a backup and download diagnostics themselves (iPhone, Android).** The
-  recovery screen no longer sends either to the web page. **Restore a backup** lists the home's
-  backups with when each was taken and its size; choosing one asks twice, as the web page does,
-  and the home then restarts to put it back. **Download diagnostics** fetches the web page's
-  bundle and hands it to the share sheet on the iPhone, or saves it where the person chooses on
-  Android; the app keeps no copy. Both use the recovery pass and stop at the first refusal, as
-  the rest of the screen does.
+- **Android and desktop crashes in problem reports read as code (Epic 53 story 53.16).** The
+  operator console reads an Android report's obfuscated Kotlin frames back to their classes,
+  methods and lines with the release's R8 mapping, which each tag's Play bundles run uploads
+  (`maktaba-symbols upload -r8`, with the same `MAKTABA_SYMBOLS_TOKEN` secret, nothing while it
+  is unset), and marks calls R8 inlined. The Android apps keep each frame's line for it. The
+  desktop player is not obfuscated: its frames are shown as its code's own. The cloud rehearsal
+  sends a canary home's reports through its agent and checks they arrive symbolicated.
 - **A native crash on Android keeps its stack (Player, Remote, Android TV).** On Android 12 and
   later, a crash in native code is now kept and sent, when crash reports are on, with its
   signal, its abort message and the crashed thread's frames, read from the crash's tombstone.
@@ -151,6 +151,12 @@ build fails when the two differ.
 
 ### Fixed
 
+- **After an update, a first-party plugin's jobs run in its runner instead of the worker
+  (Epic 54).** The shared plugin runners start when a job needs them and stop when idle, so
+  the first jobs after an update found their runner down and ran inside the pipeline worker.
+  Such a job now waits for the runner it asked for, up to 30 seconds, and runs in the worker
+  only if the runner does not start. A runner that has just started is used by the next job
+  instead of after 15 seconds.
 - **A cloud node that loses the lead no longer keeps trying to take the Floating IP (Epic 50
   story 50.07).** When Hetzner's API refuses the move for a minute, the new leader keeps retrying
   in the background; that retry now stops as soon as Patroni says the node no longer leads, so a
@@ -2192,6 +2198,21 @@ build fails when the two differ.
   through the plugin API to the same model server the settings name, and the book lookup is the
   only classify stage that may reach the network (the encyclopedia). Find metadata stays where
   it was for now. An admin can switch any of these stages back to the worker under **Queues**.
+
+- **Release crash symbols reach Maktaba Cloud with one secret (Epic 53 story 53.16).** Each
+  tag's TestFlight build uploads the symbol tables of its apps' dSYMs (`maktaba-symbols`), and
+  the cloud deploy writes the same `MAKTABA_SYMBOLS_TOKEN` repository secret to the api nodes,
+  so forwarded Apple crash reports read as functions, files and lines in the operator console.
+  Without the secret nothing is uploaded and the release stays green; a failed upload warns and
+  keeps the tables as the run's artifact (`maktaba-symbols upload` also takes them).
+
+- **The Remotes restore a backup and download diagnostics themselves (iPhone, Android).** The
+  recovery screen no longer sends either to the web page. **Restore a backup** lists the home's
+  backups with when each was taken and its size; choosing one asks twice, as the web page does,
+  and the home then restarts to put it back. **Download diagnostics** fetches the web page's
+  bundle and hands it to the share sheet on the iPhone, or saves it where the person chooses on
+  Android; the app keeps no copy. Both use the recovery pass and stop at the first refusal, as
+  the rest of the screen does.
 
 ### Fixed
 

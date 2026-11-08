@@ -1,6 +1,7 @@
-// /symbols — the symbol tables Maktaba keeps of each release's dSYMs (Epic 53 stories 53.14
-// and 53.16), newest first: a forwarded report's Apple crash reads as functions and lines
-// only for the binaries listed here. They are uploaded with `maktaba-symbols upload`.
+// /symbols — the symbol tables Maktaba keeps of each release's dSYMs and of its Android apps'
+// R8 mappings (Epic 53 stories 53.14 and 53.16; a mapping's arch is "jvm", its binary the app),
+// newest first: a forwarded report's Apple or Android crash reads as functions and lines only
+// for what is listed here. They are uploaded with `maktaba-symbols upload`.
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { api } from "@cloud-shared/api";
 import { useI18n } from "@cloud-shared/i18n";
@@ -44,7 +45,9 @@ export function AdminSymbols() {
             {data.data.tables.map((s) => (
               <tr key={s.debug_id}>
                 <td dir="ltr">{s.code_file}</td>
-                <td className="mkc-mono">{s.arch}</td>
+                <td className="mkc-mono">
+                  {s.arch === "jvm" ? t("admin.symbols.mapping") : s.arch}
+                </td>
                 <td className="mkc-mono">{s.version || "—"}</td>
                 <td className="mkc-mono" dir="ltr">
                   {s.debug_id}

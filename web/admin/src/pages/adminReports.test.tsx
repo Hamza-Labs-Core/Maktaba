@@ -162,6 +162,112 @@ describe("admin problem reports", () => {
     );
   });
 
+  it("an Android crash read with the release's R8 mapping, inlined frames marked", async () => {
+    stubFetch({
+      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "GET /v1/admin/reports/41": [
+        200,
+        {
+          ...REPORT,
+          app: "android.player",
+          body: {},
+          crashes: [
+            {
+              type: "com.hamzalabs.maktaba.player.PlaybackError",
+              value: "com.hamzalabs.maktaba.player.PlaybackError",
+              symbols: "mapping",
+              frames: [
+                {
+                  raw: "a.b.c.a(SourceFile:2)",
+                  in_app: true,
+                  inlined: true,
+                  symbol: {
+                    function: "com.hamzalabs.maktaba.core.Queue.next",
+                    file: "Queue.kt",
+                    line: 88,
+                  },
+                },
+                {
+                  raw: "",
+                  in_app: true,
+                  symbol: {
+                    function: "com.hamzalabs.maktaba.player.PlaybackController.play",
+                    file: "PlaybackController.kt",
+                    line: 41,
+                  },
+                },
+                { raw: "android.os.Handler.dispatchMessage(Handler.java:106)", in_app: false },
+              ],
+            },
+            {
+              type: "a.b.e",
+              frames: [{ raw: "a.b.c.b(SourceFile:5)", in_app: true }],
+              missing: [
+                { code_file: "android.player", debug_id: "abcd", kind: "r8", version: "0.3.103" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    renderAt("/reports/41");
+    expect(await screen.findByRole("heading", { name: "Crashes" })).toBeInTheDocument();
+    expect(screen.getByText("com.hamzalabs.maktaba.player.PlaybackError")).toBeInTheDocument();
+    expect(screen.getByTestId("crash-symbols")).toHaveTextContent(
+      "Read with the release's R8 mapping"
+    );
+    const frames = within(screen.getAllByTestId("crash-frames")[0]).getAllByRole("listitem");
+    expect(frames[0]).toHaveTextContent(
+      "com.hamzalabs.maktaba.core.Queue.next (Queue.kt:88) (inlined) · a.b.c.a(SourceFile:2)"
+    );
+    // the caller it was inlined into has no obfuscated frame of its own
+    expect(frames[1]).toHaveTextContent(
+      /^com\.hamzalabs\.maktaba\.player\.PlaybackController\.play \(PlaybackController\.kt:41\)$/
+    );
+    expect(frames[2]).toHaveTextContent(
+      /^android\.os\.Handler\.dispatchMessage\(Handler\.java:106\)$/
+    );
+    expect(screen.getByTestId("crash-missing-mapping")).toHaveTextContent(
+      "No R8 mapping for android.player 0.3.103."
+    );
+    expect(screen.queryByTestId("crash-missing")).not.toBeInTheDocument();
+  });
+
+  it("a desktop crash says the app is not obfuscated", async () => {
+    stubFetch({
+      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "GET /v1/admin/reports/41": [
+        200,
+        {
+          ...REPORT,
+          app: "desktop.player",
+          body: {},
+          crashes: [
+            {
+              type: "java.lang.IllegalStateException",
+              symbols: "source",
+              frames: [
+                {
+                  raw: "com.hamzalabs.maktaba.desktop.player.Player.open(Player.kt:88)",
+                  in_app: true,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    renderAt("/reports/41");
+    expect(await screen.findByTestId("crash-symbols")).toHaveTextContent(
+      "This app is not obfuscated: its frames are its code's own names and lines."
+    );
+    expect(within(screen.getByTestId("crash-frames")).getByRole("listitem")).toHaveTextContent(
+      "com.hamzalabs.maktaba.desktop.player.Player.open(Player.kt:88)"
+    );
+    expect(screen.queryByTestId("crash-missing")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("crash-missing-mapping")).not.toBeInTheDocument();
+  });
+
   it("a report without crashes shows no crash section", async () => {
     stubFetch({
       "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
@@ -187,6 +293,14 @@ describe("admin problem reports", () => {
               uploaded_at: "2026-11-07T12:00:00Z",
               size: 2_500_000,
             },
+            {
+              debug_id: "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+              code_file: "android.tv",
+              arch: "jvm",
+              version: "0.3.102",
+              uploaded_at: "2026-11-07T12:00:00Z",
+              size: 300_000,
+            },
           ],
         },
       ],
@@ -196,6 +310,9 @@ describe("admin problem reports", () => {
     expect(table).toHaveTextContent("9e40f33c5e1e37528634a1cd1b5ae44f");
     expect(table).toHaveTextContent("0.3.98");
     expect(table).toHaveTextContent("2,442 KB");
+    // an Android release's mapping: its app, and "R8 mapping" for its architecture
+    expect(table).toHaveTextContent("android.tv");
+    expect(table).toHaveTextContent("R8 mapping");
     const nav = screen.getByRole("navigation", { name: "Admin" });
     expect(within(nav).getByRole("link", { name: "Crash symbols" })).toHaveAttribute(
       "href",
