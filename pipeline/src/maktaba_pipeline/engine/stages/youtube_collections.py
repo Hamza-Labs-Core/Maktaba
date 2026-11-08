@@ -31,7 +31,7 @@ from ..graph import YOUTUBE_COLLECTIONS_VERSION, StageResult, Subject
 from ..hashing import canonical_hash
 from ..sourced_collections import Desired, sync_sourced
 from ..sql import uid
-from .detect import _playlists
+from ._detect import _playlists
 from .registry import StageImpl
 
 __all__ = ["IMPL", "MIN_CHANNEL", "MIN_PLAYLIST", "plan_youtube_collections"]

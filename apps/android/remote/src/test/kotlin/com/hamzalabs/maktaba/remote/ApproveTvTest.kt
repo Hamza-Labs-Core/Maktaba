@@ -88,6 +88,24 @@ class ApproveTvTest {
         compose.settledUntil { !compose.has("diagnostics") && compose.has("approve-tv") }
     }
 
+    /**
+     * An admin's account menu opens Recovery over every place (Epic 53 story 53.04); a home
+     * without the console (404 here) says so instead of a blank page.
+     */
+    @Test @Config(qualifiers = "w393dp-h916dp-440dpi")
+    fun theAccountMenuOpensRecoveryOverThePlaces() {
+        compose.setContent { RemoteForTest(home, RemoteWindow.RazrFoldCover.info) }
+        compose.settledUntil { compose.has("approve-tv") }
+        compose.onNode(androidx.compose.ui.test.hasContentDescription(compose.activity.getString(CoreR.string.account))).performClick()
+        compose.settledUntil { compose.has("account-recovery") }
+        compose.onNode(hasTestTag("account-recovery")).performClick()
+        compose.settledUntil { compose.has("recovery") && compose.has("recovery-not-here") }
+        assertTrue(home.remote.recovery)
+        assertTrue(home.paths.contains("/recovery/api/state"))
+        compose.onNode(hasTestTag("recovery-back")).performClick()
+        compose.settledUntil { !compose.has("recovery") && compose.has("approve-tv") }
+    }
+
     private fun shoot(window: RemoteWindow, name: String, fontScale: Float = 1f) {
         compose.setContent { RemoteForTest(home, window.info, fontScale) }
         compose.settledUntil { compose.has("group-fingerprint:nas_partial_read") }

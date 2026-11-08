@@ -1297,14 +1297,14 @@
       "licence": "",
       "loops": [],
       "on_demand": false,
-      "placement": "any",
+      "placement": "home",
       "platforms": [
         "darwin-arm64",
         "windows-amd64",
         "linux-amd64",
         "linux-arm64"
       ],
-      "plugin": "",
+      "plugin": "tv.maktaba.dizquetv",
       "processes": [],
       "requires": [
         [

@@ -1,0 +1,12 @@
+# The parity proof of tv.maktaba.dizquetv (issue #827): a season's show, the planned channel and
+# the channel audit, written into a fake dizqueTV behind HTTP. The writes dizqueTV received and
+# what it holds are compared by the test; the rows here, only the columns that hold a time, an
+# id or the report's place masked.
+tables = ["external_links", "channel_audit_channels"]
+
+[ignore]
+external_links = ["id", "created_at", "updated_at"]
+channel_audit_channels = ["id", "audit_id"]
+
+[[cases]]
+name = "a season's show, one planned channel with its lane and filler list, the audit; a channel and a filler list made by hand"

@@ -72,6 +72,45 @@ func TestUploadSendsEachTableWithTheToken(t *testing.T) {
 	}
 }
 
+// The tables extract wrote upload as they are (a release that could not reach the cloud keeps
+// them as an artifact); a file that is not a table is refused before anything is sent.
+func TestUploadTakesExtractedTables(t *testing.T) {
+	var mu sync.Mutex
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		tab, err := symbols.Decode(b)
+		if err != nil {
+			http.Error(w, "no", http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		got = append(got, tab.DebugID)
+		mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	if err := run(context.Background(), []string{"extract", "-o", dir, symbolstest.Fixture(t, "crashy.dwarf")}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	tables, _ := filepath.Glob(filepath.Join(dir, "*.symbols"))
+	t.Setenv("MAKTABA_SYMBOLS_TOKEN", "tok")
+	if err := run(context.Background(), append([]string{"upload", "-url", srv.URL}, tables...), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0]+".symbols" != filepath.Base(tables[0]) {
+		t.Fatalf("uploaded %v from %v", got, tables)
+	}
+	bad := filepath.Join(dir, "bad.symbols")
+	if err := os.WriteFile(bad, []byte("not a table"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(context.Background(), []string{"upload", "-url", srv.URL, bad}, io.Discard); err == nil || len(got) != 2 {
+		t.Fatalf("a file that is not a table: %v, %d sent", err, len(got))
+	}
+}
+
 func TestUsage(t *testing.T) {
 	for _, args := range [][]string{nil, {"what"}, {"extract"}} {
 		if err := run(context.Background(), args, io.Discard); err == nil {

@@ -37,6 +37,9 @@ func main() {
 	bundle := flag.String("bundle", "", "a first-party bundle (tools/plugins/bundle.py's output)")
 	plexURL := flag.String("plex-url", "", "trusted/service: the Plex the home's door forwards to (a fake)")
 	plexToken := flag.String("plex-token", "", "trusted/service: the token the door adds")
+	dizqueURL := flag.String("dizquetv-url", "", "trusted/service: the dizqueTV the home's door reaches (a fake; issue #827)")
+	artBase := flag.String("art-base", "", "trusted/service: the logo host the dizqueTV plugin may check (dz_art_url)")
+	publicBase := flag.String("public-base", "", "trusted/service: the address the TVs reach dizqueTV at (dz_public_url)")
 	flag.Parse()
 	if *dsn == "" || *socket == "" {
 		log.Fatal("plugin-api-dev: -dsn and -socket are needed")
@@ -59,14 +62,19 @@ func main() {
 	defer stop()
 	tokens := plugins.NewTokens(db)
 	s := &plugins.Server{DB: db, Tokens: tokens}
-	if *plexURL != "" {
-		// story 54.35: the home's service door, to a fake Plex
+	if *plexURL != "" || *dizqueURL != "" {
+		// story 54.35: the home's service door, to a fake Plex; issue #827: and a fake dizqueTV
 		s.Service = relay.New(relay.Config{
 			Settings: func(context.Context) (relay.Settings, error) { return relay.DefaultSettings(), nil },
-			Upstream: func(context.Context, *relay.Extension) (relay.Upstream, error) {
-				return relay.Upstream{Enabled: true, URL: *plexURL, Secret: *plexToken}, nil
+			Upstream: func(_ context.Context, ext *relay.Extension) (relay.Upstream, error) {
+				if ext.Name == relay.DizqueTV.Name {
+					return relay.Upstream{Enabled: *dizqueURL != "", URL: *dizqueURL}, nil
+				}
+				return relay.Upstream{Enabled: *plexURL != "", URL: *plexURL, Secret: *plexToken}, nil
 			},
-			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+			ArtBase:    func(context.Context) (string, error) { return *artBase, nil },
+			PublicBase: func(context.Context) (string, error) { return *publicBase, nil },
+			Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 		})
 	}
 	go func() {

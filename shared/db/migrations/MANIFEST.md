@@ -218,7 +218,9 @@ reservations; the permanent gaps are listed below the table).
 | `0211` | `0211_probe_on_the_engine.sql` | [Epic 54](../../specs/epics/54-plugins/README.md) story 54.36 §2 | 0210 | `probe` runs on the engine, no longer as a legacy handler: the seed's `job_stages.legacy` is false for it (as 0100 did for transcribe), so a freshly migrated database matches the graph before a worker's graph sync rewrites the row. SQLite: the same. Data only. |
 | `0212` | `0212_thumbnail_on_the_engine.sql` | [Epic 54](../../specs/epics/54-plugins/README.md) story 54.36 §2 | 0211 | `thumbnail` runs on the engine, no longer as a legacy handler: the seed's `job_stages.legacy` is false for it (as 0100 did for transcribe), so a freshly migrated database matches the graph before a worker's graph sync rewrites the row. SQLite: the same. Data only. |
 | `0213` | `0213_extract_on_the_engine.sql` | [Epic 54](../../specs/epics/54-plugins/README.md) story 54.36 §2 | 0212 | `extract` runs on the engine, no longer as a legacy handler: the seed's `job_stages.legacy` is false for it (as 0100 did for transcribe), so a freshly migrated database matches the graph before a worker's graph sync rewrites the row. SQLite: the same. Data only. |
-| `0214` | `0214_fp_roles.sql` | [Epic 54](../../specs/epics/54-plugins/README.md) stories 54.24, 54.36 | 0213 | Wave 9's first-party plugin roles, from `tools/plugins/roles.py`: `maktaba_fp_core_media` (the stages of `core.pipeline`), and `maktaba_fp_thumbnails` may now write `videos` (the poster's and the sprite's paths), with the earlier waves' as in 0208. `videos.state`, a video's failed stages queued again and the path conversion stay the worker's. Only tables that exist are granted. Where the migration may not make or grant a role it says so and goes on; the worker then runs those stages in-process. SQLite: nothing (no roles). Additive. |
+| `0214` | `0214_fp_roles.sql` | [Epic 54](../../specs/epics/54-plugins/README.md) story 54.35, issue #827 | 0213 | The dizqueTV plugin's role, from `tools/plugins/roles.py`: `maktaba_fp_dizquetv` (its links and the channel audits; its dizqueTV calls go through the home's service door, which builds the programmes on the home), with the earlier waves' as in 0208. Only tables that exist are granted. Where the migration may not make or grant a role it says so and goes on; the worker then runs those stages in-process. SQLite: nothing (no roles). Additive. |
+| `0215` | `0215_fp_roles.sql` | [Epic 54](../../specs/epics/54-plugins/README.md) stories 54.24, 54.31 | 0214 | Wave 4's first-party plugin role, from `tools/plugins/roles.py`: `maktaba_fp_classify` gains the tables of `check_tags`, `check_clips`, `books`, `review_pages`, `detect` and `tag`, with the other plugins' as in 0214. Only tables that exist are granted. Where the migration may not make or grant a role it says so and goes on; the worker then runs those stages in-process. SQLite: nothing (no roles). Additive. |
+| `0216` | `0216_fp_roles.sql` | [Epic 54](../../specs/epics/54-plugins/README.md) stories 54.24, 54.36 | 0215 | Wave 9's first-party plugin roles (with wave 4's and the dizqueTV plugin's as in 0215), from `tools/plugins/roles.py`: `maktaba_fp_core_media` (the stages of `core.pipeline`), and `maktaba_fp_thumbnails` may now write `videos` (the poster's and the sprite's paths), with the earlier waves' as in 0208. `videos.state`, a video's failed stages queued again and the path conversion stay the worker's. Only tables that exist are granted. Where the migration may not make or grant a role it says so and goes on; the worker then runs those stages in-process. SQLite: nothing (no roles). Additive. |
 
 ### Permanent gaps
 
@@ -251,6 +253,11 @@ reservations; the permanent gaps are listed below the table).
    table an earlier one listed, or when its Down does not restore the previous
    definition. A table taken out on purpose is named on a line
    `-- cluster_copy_excluded drops: <table>`.
+7. When a migration moves to a new slot, write it again; do not cut and paste
+   pieces of the old file. migration-lint's `goose-annotations` fails when the
+   `-- +goose` lines are not in the order goose parses them: `Up` first, then
+   `Down`, and every `StatementBegin` closed by a `StatementEnd` before the next
+   one opens.
 
 ## Cross-epic ownership
 

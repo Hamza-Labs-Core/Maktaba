@@ -25,7 +25,10 @@
 # private key's text) or SSH (the command to reach a node: "ssh -i key user@"; NODE_EXEC
 # replaces it entirely: a command given <host> <shell command>), IMAGE
 # (ghcr.io/hamza-labs-core/maktaba-cloud), CLOUDFLARE_TUNNEL_TOKEN (optional: the Tunnel's
-# connector token, written to /etc/maktaba/tunnel.token on both nodes, story 50.31).
+# connector token, written to /etc/maktaba/tunnel.token on both nodes, story 50.31),
+# MAKTABA_SYMBOLS_TOKEN (optional: the token release symbol tables are uploaded with, written
+# to /etc/maktaba/symbols.token on both nodes, story 53.16; the api reads it when step 6
+# restarts it).
 set -euo pipefail
 
 tag="${1:?usage: deploy.sh <tag>}"
@@ -65,6 +68,23 @@ if [ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]; then
             if systemctl is-active -q maktaba-cloud-api.service; then sudo systemctl restart maktaba-cloudflared.service; fi"
     done
     log "the Tunnel's token is on both nodes"
+fi
+
+# The symbol uploaders' token (story 53.16): the MAKTABA_SYMBOLS_TOKEN repository secret the
+# release workflows upload with, so that one secret turns uploads on at both ends. On both nodes
+# (a failover starts the api on the standby), over SSH's stdin, readable by the maktaba user
+# only, and named in cloud.env. Step 6 restarts the leader's api, which reads it then. Without
+# the secret nothing changes: uploads stay off (503 symbols_off).
+if [ -n "${MAKTABA_SYMBOLS_TOKEN:-}" ]; then
+    for h in "${leader}" "${standby}"; do
+        printf '%s' "${MAKTABA_SYMBOLS_TOKEN}" | on "${h}" "set -e; t=/etc/maktaba/symbols.token
+            n=\$(sudo mktemp /etc/maktaba/.symbols.token.XXXXXX); sudo tee \$n >/dev/null
+            sudo chgrp maktaba \$n; sudo chmod 0640 \$n
+            if sudo cmp -s \$n \$t; then sudo rm -f \$n; else sudo mv \$n \$t; fi
+            sudo grep -q '^MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE=' /etc/maktaba/cloud.env ||
+                echo MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE=\$t | sudo tee -a /etc/maktaba/cloud.env >/dev/null"
+    done
+    log "the symbols token is on both nodes"
 fi
 
 fetch() { # the release's binary, from its signed image, under /opt/maktaba-cloud/releases/<tag>

@@ -251,7 +251,9 @@ def test_windows_cuts_the_config_acl_to_the_user(tmp_path: Path) -> None:
         ["icacls", str(path), "/grant", "*S-1-5-32-545:(R)"], check=True, capture_output=True
     )
     node_config._restrict_to_user(path)
-    out = subprocess.run(["icacls", str(path)], check=True, capture_output=True, text=True).stdout
+    out = subprocess.run(
+        ["icacls", str(path)], check=True, capture_output=True, timeout=60, text=True
+    ).stdout
     aces = [
         line.replace(str(path), "", 1).strip()
         for line in out.splitlines()

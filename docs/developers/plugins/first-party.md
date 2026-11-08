@@ -16,12 +16,15 @@
 > `tv.maktaba.repair`, the first stages that reach the network. **Wave 7 has moved**: the
 > channel planner and writer run in `tv.maktaba.livetv`, and staging, swapping, rolling back
 > and cleaning up TV changes in `tv.maktaba.livetv-slots`. **Wave 8 has moved**: the Plex
-> stages run in `tv.maktaba.plex`, through the home's service door; the dizqueTV stages stay
-> in the worker for now. **Wave 9 has moved the core stages**: finding the videos, reading
-> their length, identity, thumbnail and audio fingerprints, linking them to their YouTube pages
-> and the access check run in `tv.maktaba.core-media`; `thumbnail` joins
-> `tv.maktaba.thumbnails` and `extract` joins `tv.maktaba.transcription`. Two stages stay in the
-> core: `component_catchup` and `categorize`.
+> stages run in `tv.maktaba.plex` and the dizqueTV stages in `tv.maktaba.dizquetv`, both
+> through the home's service door. **Wave 4 has moved**: `detect`, `tag`, `check_tags`,
+> `check_clips`, `books` and `review_pages` run in `tv.maktaba.classify`, the model's questions
+> through the plugin API's `compute.generate`; `enrich` stays in the worker for now. **Wave 9
+> has moved the core stages**: finding the videos, reading their length, identity, thumbnail
+> and audio fingerprints, linking them to their YouTube pages and the access check run in
+> `tv.maktaba.core-media`; `thumbnail` joins `tv.maktaba.thumbnails` and `extract` joins
+> `tv.maktaba.transcription`. Two stages stay in the core: `component_catchup` and
+> `categorize`.
 
 Maktaba's own stages (thumbnails, transcription, the classifiers, the YouTube downloads and
 the rest) become **first-party plugins**: the same manifest, the same tokens and the same plugin
@@ -148,6 +151,34 @@ column.
 
 When the release that moved a stage starts, each worker's graph sync sets the stage to run in
 its plugin (a stage set back by hand stays as it was).
+
+## The language model and the encyclopedia: the rest of `tv.maktaba.classify`
+
+Wave 4 (story 54.31) moves the rest of classify: `detect`, `tag`, `check_tags`, `check_clips`,
+`books` and `review_pages` join the wave 1 stages in `tv.maktaba.classify`.
+
+- **The model through the plugin API.** `check_tags` and `check_clips` no longer call the model
+  server themselves. In the runner they ask `compute.generate` with the same messages, format
+  and options. For a first-party stage that names `model_rules = "tagcheck"`, the API forwards
+  them unchanged to `rules.tagcheck`'s server and model, so a node that asks a model on another
+  machine still does, and recorded answers match. A third-party plugin only ever gets the
+  home's own model, and may not send chat messages. A model that is down fails the job as it
+  did before.
+- **One stage in the `net` group.** `books` looks the book up in the encyclopedia
+  (`ar.wikipedia.org`, the manifest's `net`). It sets its own `runner = "net"`. Only the `net`
+  runner gets a socket, so classify's other stages in `light` still have none. A stage that runs
+  outside its plugin's own group brings only the network there: the `net` runner does not get
+  classify's thumbnails or reports folder.
+- **The review pages** read the small thumbnails (`files.read: data.thumbnails`) and write each
+  library's page in the reports folder (`files.write: data.review`).
+- **Parity with the model on.** A fake model server answers both sides over HTTP (the plugin's
+  questions reach it through `compute.generate`). The encyclopedia is a recorded answer, and
+  the test fails if the plugin looks a book up on a host its manifest does not list. The
+  questions, the lookups, the rows, the review pages and the jobs must all be the same.
+
+`enrich` (Find metadata) stays in the worker for now. It reads whatever page a web search
+links to, and its search keys are sealed in the home's secrets, which the plugin API does not
+serve. A declared host list cannot cover either.
 
 ## Files and tools: `tv.maktaba.thumbnails` and `tv.maktaba.subtitles`
 
@@ -310,9 +341,23 @@ service   = ["plex"]              # the services its calls may reach, through th
   settings without secret fields, and `service:plex` in place of the address.
 - **Live TV is the home's.** The door allows the Live TV calls `plex_livetv` makes (DVRs,
   tuners, the channel map, guide reloads) only for a caller on the home.
-- **dizqueTV stays in the worker for now.** Its programmes carry the Plex token in the body,
-  and dizqueTV stores them, so a plugin could read the token back. The dizqueTV stages move
-  once the door builds programmes on the home from Plex item ids.
+- **dizqueTV's programmes are built on the home** (`tv.maktaba.dizquetv`: `dizquetv_show`,
+  `dizquetv_channels`, `dizquetv_audit`, `service = ["dizquetv", "plex"]`). A dizqueTV
+  programme plays from Plex with the token in it, and dizqueTV stores it. So the plugin never
+  writes a raw programme: the door's own operations (`/maktaba/...`) take each Plex item's
+  rating key, read the item from Plex with the home's token (up to 50 keys a request), and
+  build the programme on the home from Plex's answer. Every playable field (the file, the
+  media part, the duration) is Plex's: whatever else the plugin sends is ignored, and a key
+  Plex does not know or cannot play is refused. A channel's
+  programmes are referenced by index into the stored channel or by show id and rating key,
+  and the door fills them in from what dizqueTV holds. Every read is a projection that leaves
+  out any field holding a secret, and a final check refuses an answer that still names the
+  token, in any encoding or in part. Raw writes that could carry a programme are refused.
+  dizqueTV and its clients fetch a channel's pictures (its logo, watermark, offline picture
+  and soundtrack), so the door writes only the home's own: none, the stored one, a file on
+  the logo host (`dz_art_url`) or one uploaded to dizqueTV. Filler time and redirects keep
+  only their duration and target.
+  dizqueTV is reached only from the home: a joined machine never relays it.
 - **Parity** runs the Plex stages against a fake Plex behind HTTP on each side: the calls Plex
   receives (method, path, query and the token) are identical, then N16.
 

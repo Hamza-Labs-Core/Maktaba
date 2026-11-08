@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -75,7 +77,9 @@ fun VideoScreen(
             horizontalArrangement = Arrangement.spacedBy(36.dp),
         ) {
             Poster(api.client, v.id, Modifier.width(380.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            // scrolls: a plugin panel can run below the screen, and the remote's focus on a
+            // marker brings it into view
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 SectionTitle(v.displayTitle)
                 val facts = listOfNotNull(
                     v.durationSec?.let { clock(it) },

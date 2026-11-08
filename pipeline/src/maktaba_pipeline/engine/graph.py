@@ -18,11 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 from ..audio.chromaprint import AUDIO_FP_VERSION
-from ..classify.books import BOOKS_VERSION
 from ..classify.display_title import DISPLAY_TITLE_VERSION
-from ..classify.series_detector import DETECTOR_VERSION
-from ..classify.tag_check import CLIP_CHECK_VERSION, TAG_CHECK_VERSION
-from ..classify.topic_tags import TAGGER_VERSION
 from ..thumbnail.dhash import FRAMES_VERSION
 
 if TYPE_CHECKING:
@@ -393,85 +389,17 @@ GRAPH: tuple[StageDef, ...] = (
     # Epic 54: defined by tv.maktaba.thumbnails's manifest
     _fp("thumb_small"),
     # ---- seasons and libraries lane ------------------------------------
-    StageDef(
-        name="detect",
-        label="Place episodes",
-        subject_kinds=("library",),
-        pool="cpu",
-        lane="seasons",
-        lane_order=1,
-        version=DETECTOR_VERSION,
-        edges=(
-            Edge("tag", "seasons_changed"),
-            Edge("rate_style", "seasons_changed"),
-            Edge("tag", "same"),
-            Edge("plan_channels", "catalog"),
-            Edge("review_pages", "same"),
-            Edge("topic_collections", "same"),
-            Edge("promo_links", "same"),
-            Edge("display_title", "same"),
-        ),
-        may_request=("fingerprint", "fp_gate"),
-        entry_for=("library",),
-        debounce_sec=30,
-        debounce_max_sec=300,
-    ),
+    # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest
+    _fp("detect"),
     # Epic 54 wave 9 (story 54.36): defined by tv.maktaba.core-media's manifest
     _fp("fp_gate"),
-    StageDef(
-        name="tag",
-        label="Tag topics",
-        subject_kinds=("season", "library"),
-        pool="cpu",
-        lane="seasons",
-        lane_order=2,
-        version=TAGGER_VERSION,
-        # a new run rewrites the tags, so the model's and the book's corrections are
-        # applied again (from their cached answers) before a clip group or a channel
-        # reads them
-        edges=(
-            Edge("plan_channels", "catalog"),
-            Edge("check_tags", "same"),
-            Edge("check_clips", "library_of"),
-        ),
-        entry_for=("season",),
-        # transcripts arrive one video at a time: a season's are tagged together
-        debounce_sec=300,
-        debounce_max_sec=3600,
-    ),
+    # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest
+    _fp("tag"),
     # ---- what a language model and the book behind a series say about the tags ----
-    StageDef(
-        name="check_tags",
-        label="Check series tags",
-        subject_kinds=("season",),
-        pool="lookup",
-        lane="seasons",
-        lane_order=3,
-        version=TAG_CHECK_VERSION,
-        edges=(Edge("books", "same"), Edge("plan_channels", "catalog")),
-        entry_for=("season",),
-        # the model server defaults to localhost: the home's own (a node would ask
-        # another model, or none) unless the settings name a shared one
-        placement="home",
-        model_rules="tagcheck",
-    ),
-    StageDef(
-        name="check_clips",
-        label="Check clip tags",
-        subject_kinds=("library",),
-        pool="lookup",
-        lane="seasons",
-        lane_order=3,
-        version=CLIP_CHECK_VERSION,
-        edges=(Edge("clip_groups", "same"), Edge("plan_channels", "catalog")),
-        entry_for=("library",),
-        debounce_sec=30,
-        debounce_max_sec=300,
-        # the model server defaults to localhost: the home's own (a node would ask
-        # another model, or none) unless the settings name a shared one
-        placement="home",
-        model_rules="tagcheck",
-    ),
+    # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest
+    _fp("check_tags"),
+    # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest
+    _fp("check_clips"),
     # ---- the on-air titles the guide and the channel strip show (Story 27.11) ----
     StageDef(
         name="display_title",
@@ -489,17 +417,8 @@ GRAPH: tuple[StageDef, ...] = (
         placement="home",
         model_rules="tagcheck",
     ),
-    StageDef(
-        name="books",
-        label="Books",
-        subject_kinds=("season",),
-        pool="lookup",
-        lane="seasons",
-        lane_order=4,
-        version=BOOKS_VERSION,
-        edges=(Edge("plan_channels", "catalog"),),
-        entry_for=("season",),
-    ),
+    # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest (net group)
+    _fp("books"),
     # ---- what detection left over: topics, promos, clip groups (section 17) ----
     # Epic 54 wave 1 (story 54.28): defined by tv.maktaba.classify's manifest
     _fp("topic_collections"),
@@ -524,19 +443,8 @@ GRAPH: tuple[StageDef, ...] = (
     # Epic 54 wave 1 (story 54.28): defined by tv.maktaba.classify's manifest
     _fp("rate_style"),
     # Its own pool and no edges out: nothing waits for a review page (plan 06-11 section 18).
-    StageDef(
-        name="review_pages",
-        label="Review pages",
-        subject_kinds=("library",),
-        pool="reports",
-        lane="seasons",
-        lane_order=6,
-        version=REVIEW_VERSION,
-        entry_for=("library",),
-        debounce_sec=120,
-        debounce_max_sec=900,
-        placement="home",
-    ),
+    # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest
+    _fp("review_pages"),
     # ---- channels lane -------------------------------------------------
     # Epic 54: defined by tv.maktaba.livetv's manifest
     _fp("plan_channels"),

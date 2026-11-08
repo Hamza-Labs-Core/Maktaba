@@ -10,12 +10,9 @@
 -- maktaba_worker (every joined machine's login role) are members, so every machine's API may
 -- SET ROLE; a member gains no right without it.
 --
--- Waves 1 to 8 as in 0208. Wave 9 (story 54.36 §1): tv.maktaba.core-media (the stages of
--- core.pipeline: scan, probe, content_hash, thumb_hash, link, fingerprint, style_sample,
--- fp_gate, access_check, storage_canonicalize) and tv.maktaba.thumbnails's write of videos
--- (thumbnail saves the poster's and the sprite's paths); extract joins tv.maktaba.transcription,
--- whose role already holds what it reads and writes. videos.state, a video's failed stages queued again and the path conversion stay the
--- worker's, for the plugin's job (the relayed advance, requeue_failed, storage_canonicalize).
+-- Waves 1 to 8 as in 0208. Issue #827: tv.maktaba.dizquetv (its dizqueTV calls go through the
+-- home's service door, which builds the programmes on the home; the role holds only the rows
+-- the dizqueTV stages write: their links and the channel audits).
 --
 -- Where the migration may not make the role (no right to create roles) or not grant it (a
 -- role another database's owner made on a shared Postgres), it says so with a NOTICE and goes
@@ -131,60 +128,6 @@ END;
 $$;
 -- +goose StatementEnd
 
--- tv.maktaba.core-media: maktaba_fp_core_media
--- +goose StatementBegin
-DO $$
-DECLARE
-    t text;
-    sq text;
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_fp_core_media') THEN
-        -- a home whose role may not create roles (Maktaba.app before its cluster
-        -- bootstrap) has none: its stages run in-process (native.choose)
-        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = current_user
-                       AND (rolsuper OR rolcreaterole)) THEN
-            RAISE NOTICE 'maktaba_fp_core_media: not made (no right to create roles)';
-            RETURN;
-        END IF;
-        CREATE ROLE maktaba_fp_core_media NOLOGIN NOINHERIT;
-    END IF;
-    EXECUTE 'REVOKE ALL ON ALL TABLES IN SCHEMA public FROM maktaba_fp_core_media';
-    EXECUTE 'REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM maktaba_fp_core_media';
-    GRANT USAGE ON SCHEMA public TO maktaba_fp_core_media;
-    FOREACH t IN ARRAY ARRAY['app_settings', 'libraries', 'media_field_provenance', 'processing_jobs', 'transcripts'] LOOP
-        -- a table made later (segment_embeddings, with pgvector) is granted then
-        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;
-        EXECUTE format('GRANT SELECT ON %I TO maktaba_fp_core_media', t);
-    END LOOP;
-    FOREACH t IN ARRAY ARRAY['audio_tracks', 'item_checks', 'media_info', 'media_metadata_enrichment', 'series_seasons', 'video_copies', 'video_signals', 'videos', 'youtube_channel_libraries', 'youtube_channels', 'youtube_playlist_items', 'youtube_playlists', 'youtube_source_decisions', 'youtube_sources', 'youtube_videos'] LOOP
-        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;
-        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO maktaba_fp_core_media', t);
-        -- the table's own sequences (serial and identity columns)
-        FOR sq IN SELECT s.relname FROM pg_class s JOIN pg_depend d ON d.objid = s.oid
-                  JOIN pg_class c ON c.oid = d.refobjid
-                 WHERE s.relkind = 'S' AND c.relname = t LOOP
-            EXECUTE format('GRANT USAGE, SELECT, UPDATE ON SEQUENCE %I TO maktaba_fp_core_media', sq);
-        END LOOP;
-    END LOOP;
-    -- every machine's API may SET ROLE to it; membership alone gives no right
-    -- (a role made by another database's owner on a shared Postgres may not be ours to
-    -- grant: then this home's stages run in-process, native.choose)
-    BEGIN
-        EXECUTE format('GRANT maktaba_fp_core_media TO %I', current_user);
-        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_worker') THEN
-            BEGIN
-                EXECUTE 'GRANT maktaba_fp_core_media TO maktaba_worker WITH INHERIT FALSE';
-            EXCEPTION WHEN syntax_error THEN
-                EXECUTE 'GRANT maktaba_fp_core_media TO maktaba_worker';
-            END;
-        END IF;
-    EXCEPTION WHEN insufficient_privilege THEN
-        RAISE NOTICE 'maktaba_fp_core_media: not ours to grant';
-    END;
-END;
-$$;
--- +goose StatementEnd
-
 -- tv.maktaba.dedup: maktaba_fp_dedup
 -- +goose StatementBegin
 DO $$
@@ -234,6 +177,60 @@ BEGIN
         END IF;
     EXCEPTION WHEN insufficient_privilege THEN
         RAISE NOTICE 'maktaba_fp_dedup: not ours to grant';
+    END;
+END;
+$$;
+-- +goose StatementEnd
+
+-- tv.maktaba.dizquetv: maktaba_fp_dizquetv
+-- +goose StatementBegin
+DO $$
+DECLARE
+    t text;
+    sq text;
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_fp_dizquetv') THEN
+        -- a home whose role may not create roles (Maktaba.app before its cluster
+        -- bootstrap) has none: its stages run in-process (native.choose)
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = current_user
+                       AND (rolsuper OR rolcreaterole)) THEN
+            RAISE NOTICE 'maktaba_fp_dizquetv: not made (no right to create roles)';
+            RETURN;
+        END IF;
+        CREATE ROLE maktaba_fp_dizquetv NOLOGIN NOINHERIT;
+    END IF;
+    EXECUTE 'REVOKE ALL ON ALL TABLES IN SCHEMA public FROM maktaba_fp_dizquetv';
+    EXECUTE 'REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM maktaba_fp_dizquetv';
+    GRANT USAGE ON SCHEMA public TO maktaba_fp_dizquetv;
+    FOREACH t IN ARRAY ARRAY['app_settings', 'channel_plans', 'job_stages', 'libraries', 'plex_items', 'processing_jobs', 'season_tags', 'series', 'series_episodes', 'series_seasons', 'video_topic_tags', 'videos'] LOOP
+        -- a table made later (segment_embeddings, with pgvector) is granted then
+        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;
+        EXECUTE format('GRANT SELECT ON %I TO maktaba_fp_dizquetv', t);
+    END LOOP;
+    FOREACH t IN ARRAY ARRAY['channel_audit_channels', 'channel_audits', 'external_links'] LOOP
+        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO maktaba_fp_dizquetv', t);
+        -- the table's own sequences (serial and identity columns)
+        FOR sq IN SELECT s.relname FROM pg_class s JOIN pg_depend d ON d.objid = s.oid
+                  JOIN pg_class c ON c.oid = d.refobjid
+                 WHERE s.relkind = 'S' AND c.relname = t LOOP
+            EXECUTE format('GRANT USAGE, SELECT, UPDATE ON SEQUENCE %I TO maktaba_fp_dizquetv', sq);
+        END LOOP;
+    END LOOP;
+    -- every machine's API may SET ROLE to it; membership alone gives no right
+    -- (a role made by another database's owner on a shared Postgres may not be ours to
+    -- grant: then this home's stages run in-process, native.choose)
+    BEGIN
+        EXECUTE format('GRANT maktaba_fp_dizquetv TO %I', current_user);
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_worker') THEN
+            BEGIN
+                EXECUTE 'GRANT maktaba_fp_dizquetv TO maktaba_worker WITH INHERIT FALSE';
+            EXCEPTION WHEN syntax_error THEN
+                EXECUTE 'GRANT maktaba_fp_dizquetv TO maktaba_worker';
+            END;
+        END IF;
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'maktaba_fp_dizquetv: not ours to grant';
     END;
 END;
 $$;
@@ -583,20 +580,10 @@ BEGIN
     EXECUTE 'REVOKE ALL ON ALL TABLES IN SCHEMA public FROM maktaba_fp_thumbnails';
     EXECUTE 'REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM maktaba_fp_thumbnails';
     GRANT USAGE ON SCHEMA public TO maktaba_fp_thumbnails;
-    FOREACH t IN ARRAY ARRAY['chapters', 'processing_jobs'] LOOP
+    FOREACH t IN ARRAY ARRAY['chapters', 'processing_jobs', 'videos'] LOOP
         -- a table made later (segment_embeddings, with pgvector) is granted then
         CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;
         EXECUTE format('GRANT SELECT ON %I TO maktaba_fp_thumbnails', t);
-    END LOOP;
-    FOREACH t IN ARRAY ARRAY['videos'] LOOP
-        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;
-        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO maktaba_fp_thumbnails', t);
-        -- the table's own sequences (serial and identity columns)
-        FOR sq IN SELECT s.relname FROM pg_class s JOIN pg_depend d ON d.objid = s.oid
-                  JOIN pg_class c ON c.oid = d.refobjid
-                 WHERE s.relkind = 'S' AND c.relname = t LOOP
-            EXECUTE format('GRANT USAGE, SELECT, UPDATE ON SEQUENCE %I TO maktaba_fp_thumbnails', sq);
-        END LOOP;
     END LOOP;
     -- every machine's API may SET ROLE to it; membership alone gives no right
     -- (a role made by another database's owner on a shared Postgres may not be ours to

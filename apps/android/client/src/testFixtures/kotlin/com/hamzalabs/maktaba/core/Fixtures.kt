@@ -16,8 +16,11 @@ fun jwt(expSec: Long, tag: String = "t"): String {
 }
 
 /** The tokens in memory. */
-class MemoryTokens(var accessToken: String? = null, var refreshToken: String? = null) :
-    com.hamzalabs.maktaba.core.session.TokenStore {
+class MemoryTokens(
+    var accessToken: String? = null,
+    var refreshToken: String? = null,
+    override var recoveryPass: String? = null,
+) : com.hamzalabs.maktaba.core.session.TokenStore {
     override val access get() = accessToken
     override val refresh get() = refreshToken
     override fun save(tokens: AuthTokens) {
@@ -27,6 +30,7 @@ class MemoryTokens(var accessToken: String? = null, var refreshToken: String? = 
     override fun clear() {
         accessToken = null
         refreshToken = null
+        recoveryPass = null
     }
 }
 

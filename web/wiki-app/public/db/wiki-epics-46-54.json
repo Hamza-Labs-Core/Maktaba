@@ -5778,7 +5778,7 @@
       "title": "Wave 8: Plex and dizqueTV through the service door",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.35 — Wave 8: Plex and dizqueTV through the service door\n\n> Epic 54 · Phase 4 · Depends on: 54.34 · Needed by: 54.36\n\n**Only the Plex stages move.** dizqueTV stores the programme bodies its stages write, which\ncarry the Plex token, and a plugin could read them back: those stages stay in the worker until\nthe door builds programmes on the home (issue #827).\n\n## Why\n\nThe Plex and dizqueTV extensions hold the home's most sensitive settings (the Plex token) and\ntalk to other products. As first-party plugins they must keep working without ever holding the\nsecret: they call through the home",
+      "content": "# Story 54.35 — Wave 8: Plex and dizqueTV through the service door\n\n> Epic 54 · Phase 4 · Depends on: 54.34 · Needed by: 54.36\n\n**The Plex stages moved first; the dizqueTV stages followed** once the door built programmes\non the home (issue #827): dizqueTV stores the programme bodies its stages write, which carry\nthe Plex token, so the plugin never writes or reads one.\n\n## Why\n\nThe Plex and dizqueTV extensions hold the home's most sensitive settings (the Plex token) and\ntalk to other products. As first-party plugins they must keep working without ever holding the\nsecret: they call through the h",
       "tags": [
         "story",
         "54-plugins",

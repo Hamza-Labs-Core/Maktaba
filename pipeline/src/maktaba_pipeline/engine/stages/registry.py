@@ -43,14 +43,8 @@ class StageImpl:
 CORE_MODULES: dict[str, str] = {
     "component_catchup": "maktaba_pipeline.engine.stages.component_catchup",
     "word_check": "maktaba_pipeline.engine.stages.word_check",
-    "review_pages": "maktaba_pipeline.engine.stages.review_pages",
     "youtube_collections": "maktaba_pipeline.engine.stages.youtube_collections",
     "youtube_tartube": "maktaba_pipeline.engine.stages.youtube_tartube",
-    "detect": "maktaba_pipeline.engine.stages.detect",
-    "tag": "maktaba_pipeline.engine.stages.tag",
-    "check_tags": "maktaba_pipeline.engine.stages.check_tags",
-    "check_clips": "maktaba_pipeline.engine.stages.check_clips",
-    "books": "maktaba_pipeline.engine.stages.books",
     "display_title": "maktaba_pipeline.engine.stages.display_title",
     "enrich": "maktaba_pipeline.engine.stages.enrich",
     # Epic 47 (offline, MP4, no duplicates): shipped. A stage added before its story

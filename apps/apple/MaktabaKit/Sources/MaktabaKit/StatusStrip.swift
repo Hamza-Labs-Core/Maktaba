@@ -3,7 +3,8 @@ import SwiftUI
 
 /// The status strip (Epic 53 story 53.06): the highest line of what is wrong on the home,
 /// "N more" for the rest, Close (it comes back when the state changes), and for an admin
-/// Details, which opens the home's System health or recovery page. On tvOS it is a top
+/// Details, which opens the home's System health or recovery page (or the app's own screen
+/// for it, `statusDetails`). On tvOS it is a top
 /// strip that does not take focus.
 public struct StatusStripView: View {
     /// A line's words in the person's language, with its values (the cloud's maintenance window).
@@ -17,6 +18,7 @@ public struct StatusStripView: View {
     let close: () -> Void
     @State private var open = false
     @Environment(\.openURL) private var openURL
+    @Environment(\.statusDetails) private var statusDetails
 
     public init(lines: [StripLine], home: URL?, close: @escaping () -> Void) {
         self.lines = lines
@@ -36,7 +38,11 @@ public struct StatusStripView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                             #if !os(tvOS)
                             if let url = line.link ?? line.details.flatMap({ link in home.flatMap { URL(string: link, relativeTo: $0) } }) {
-                                Button { openURL(url) } label: { Text("Details", bundle: .module) }
+                                Button {
+                                    // the app's own screen for it (the Remote's recovery screen), else the home's page
+                                    if line.link == nil, let path = line.details, statusDetails?.open(path) == true { return }
+                                    openURL(url)
+                                } label: { Text("Details", bundle: .module) }
                                     .buttonStyle(.borderless)
                             }
                             #endif
@@ -116,6 +122,27 @@ extension View {
     /// The status strip of the home `client` reaches (Epic 53 story 53.06).
     public func homeStatusStrip(client: APIClient, home: URL? = nil, admin: Bool, liveTVOff: Bool = false) -> some View {
         modifier(HomeStatusStrip(client: client, home: home, admin: admin, liveTVOff: liveTVOff))
+    }
+}
+
+/// An app's own screen for a strip line's Details (`StripLine.details`, a path on the home):
+/// `open` answers true when it showed one (the Remote's recovery screen for `/recovery`);
+/// otherwise Details opens the home's page in the browser.
+public struct StatusDetailsAction: Sendable {
+    public let open: @MainActor @Sendable (String) -> Bool
+
+    public init(_ open: @escaping @MainActor @Sendable (String) -> Bool) { self.open = open }
+}
+
+private struct StatusDetailsKey: EnvironmentKey {
+    static let defaultValue: StatusDetailsAction? = nil
+}
+
+extension EnvironmentValues {
+    /// Where the status strip's Details goes in this app (nil: the home's page in the browser).
+    public var statusDetails: StatusDetailsAction? {
+        get { self[StatusDetailsKey.self] }
+        set { self[StatusDetailsKey.self] = newValue }
     }
 }
 

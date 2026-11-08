@@ -12,7 +12,7 @@ from maktaba_pipeline.engine.media import reset_runner
 from maktaba_pipeline.engine.plan_page import PLAN_PAGE, PREVIEW_PAGE, render_plan
 from maktaba_pipeline.engine.plan_preview import PlanPreview
 from maktaba_pipeline.engine.sql import dumps
-from maktaba_pipeline.engine.stages import review_pages
+from maktaba_pipeline.engine.stages import _review_pages as review_pages
 from maktaba_pipeline.grpc_server import PipelineService
 from maktaba_pipeline.runtime import Database
 from tests.stages.test_catalog_stages import _pipeline  # noqa: PLC2701 — the shared world

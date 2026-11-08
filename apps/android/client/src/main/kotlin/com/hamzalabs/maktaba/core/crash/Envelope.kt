@@ -125,10 +125,12 @@ data class KeptCrash(
     val trace: String? = null,
     /** "uncaught", "anr", "native", "low_memory" */
     val mechanism: String = "uncaught",
+    /** a native crash's crashed thread, from its tombstone (Android 12+), top first */
+    val nativeFrames: List<NativeFrame> = emptyList(),
 ) {
     /** The Sentry event; a frame of the app's own package ([ownPackage]) is "in app". */
     fun event(ownPackage: String = "com.hamzalabs.maktaba"): JsonObject = buildJsonObject {
-        put("platform", "java")
+        put("platform", if (nativeFrames.isEmpty()) "java" else "native")
         put("level", "fatal")
         put("timestamp", Instant.ofEpochMilli(at).toString())
         appVersion?.let { put("release", it) }
@@ -141,6 +143,16 @@ data class KeptCrash(
                     put("stacktrace", buildJsonObject {
                         put("frames", buildJsonArray {
                             // oldest first: the home groups on the last own frame
+                            nativeFrames.take(Envelope.MAX_FRAMES).asReversed().forEach { f ->
+                                add(buildJsonObject {
+                                    put("function", f.function?.let { fn -> "$fn+0x${f.functionOffset.toString(16)}" }
+                                        ?: "${f.module} + 0x${f.relPc.toString(16)}")
+                                    put("package", f.module)
+                                    put("instruction_addr", "0x" + f.relPc.toString(16))
+                                    put("addr_mode", "rel:${images.indexOf(f.module)}")
+                                    put("in_app", f.inApp)
+                                })
+                            }
                             frames.take(Envelope.MAX_FRAMES).asReversed().forEach { f ->
                                 add(buildJsonObject {
                                     put("function", f.substringBefore('('))
@@ -157,8 +169,21 @@ data class KeptCrash(
             osVersion?.let { put("os", buildJsonObject { put("version", it) }) }
             device?.let { put("device", buildJsonObject { put("model", it) }) }
         })
+        if (nativeFrames.isNotEmpty()) put("debug_meta", buildJsonObject {
+            put("images", buildJsonArray {
+                images.forEach { m ->
+                    add(buildJsonObject {
+                        put("type", "elf"); put("code_file", m)
+                        nativeFrames.firstOrNull { it.module == m && it.buildId != null }?.let { put("code_id", it.buildId) }
+                    })
+                }
+            })
+        })
         trace?.let { put("extra", buildJsonObject { put("trace", it.take(TRACE_MAX)) }) }
     }
+
+    /** The native frames' libraries, each once, in the order they first appear. */
+    private val images: List<String> get() = nativeFrames.take(Envelope.MAX_FRAMES).map { it.module }.distinct()
 
     fun encode(): String = JSON.encodeToString(serializer(), this)
 
