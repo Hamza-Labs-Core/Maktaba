@@ -18,8 +18,8 @@ import (
 // of 4 components each, with a few in trouble: n07 has 3 components down, n33 one that went
 // from running to failed between the scrapes, n12 and n41 the least disk free, n20 the
 // highest load. n07's c1 restarted twice between the scrapes. Recording them takes about
-// half a second under -race, so they are recorded once (recordFleet) and each test opens its
-// own copy of that index.
+// 0.15 s under -race, so they are recorded once (recordFleet) and each test opens its own
+// copy of that index.
 func overviewFleet(t *testing.T) (*Index, context.Context) {
 	t.Helper()
 	fleetOnce.Do(func() { fleetDB, fleetNow, fleetErr = recordFleet() })
