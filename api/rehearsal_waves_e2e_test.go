@@ -245,6 +245,12 @@ func (r *rehearsal) queueWave(db *sql.DB, stages []string, n int) int64 {
 	if queued == 0 {
 		t.Fatalf("no job of %v queued: the seed has none of their subjects", stages)
 	}
+	// due at once: a stage's debounce (tag and exact_dates wait 300 s for more changes)
+	// is not what the scenario rehearses, and would outlast its five-minute waits
+	if _, err := db.Exec(`UPDATE processing_jobs SET not_before = now() WHERE id > $1 AND stage = ANY($2)
+		AND state = 'pending' AND not_before > now()`, last, pq.Array(stages)); err != nil {
+		t.Fatalf("make the queued jobs due: %v", err)
+	}
 	return last
 }
 
