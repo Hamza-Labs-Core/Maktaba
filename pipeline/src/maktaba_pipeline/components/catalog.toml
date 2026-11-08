@@ -448,6 +448,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "ext.dizquetv"
+plugin    = "tv.maktaba.dizquetv"
 kind      = "extension"
 group     = "integrations"
 title_key = "components.ext.dizquetv.title"

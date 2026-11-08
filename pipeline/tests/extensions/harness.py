@@ -306,6 +306,10 @@ class FakeDizque:
     fillers: dict[str, dict[str, Any]] = field(default_factory=dict)
     channels: dict[int, dict[str, Any]] = field(default_factory=dict)
     server: str | None = "PlexServer"
+    #: the server's address and dizqueTV's own copy of its token, as the real
+    #: ``/api/plex-servers`` answers them (empty: left out)
+    server_uri: str = ""
+    server_token: str = ""
     calls: list[tuple[str, str]] = field(default_factory=list)
     #: GET /api/show/ID returns one program fewer than was saved
     corrupt: bool = False
@@ -358,7 +362,14 @@ class FakeDizque:
             ch = self.channels.get(int(parts[-1]))
             return _NOT_FOUND if ch is None else {k: v for k, v in ch.items() if k != "programs"}
         if path == "/api/plex-servers":
-            return [] if self.server is None else [{"name": self.server}]
+            if self.server is None:
+                return []
+            srv: dict[str, Any] = {"name": self.server}
+            if self.server_uri:
+                srv["uri"] = self.server_uri
+            if self.server_token:
+                srv["accessToken"] = self.server_token
+            return [srv]
         if path == "/api/channel-tools/time-slots":
             return {"programs": doc["programs"], "startTime": "2026-01-01T00:00:00.000Z"}
         if len(parts) == 3 and parts[:2] == ["api", "channel"] and method == "GET":

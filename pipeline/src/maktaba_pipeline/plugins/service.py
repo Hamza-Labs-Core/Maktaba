@@ -1,6 +1,8 @@
 """A first-party plugin's way to Plex (Epic 54 wave 8, story 54.35): through the home's
 service door, which adds the token and scrubs it out of every answer, so the plugin holds
-neither the token nor Plex's address.
+neither the token nor Plex's address. dizqueTV (issue #827) goes the same way, through the
+door's operations, which build every programme on the home and answer every read with a
+projection that holds no secret.
 
 A plugin's stage runs in the ``service`` runner, which has no network at all. Its Plex
 client sends each HTTP exchange as a call: on the home, to the plugin API's
@@ -30,6 +32,7 @@ __all__ = [
     "ServiceTransport",
     "bind",
     "bound",
+    "dizquetv_client",
     "plex_client",
     "plugin_settings",
 ]
@@ -128,6 +131,17 @@ def plex_client(settings: Mapping[str, str]) -> Any:
     if bound():
         return PlexClient(SERVICE_URL.format(name="plex"), "", transport=ServiceTransport("plex"))
     return relay.plex_client(settings)
+
+
+def dizquetv_client(settings: Mapping[str, str]) -> Any:
+    """The dizqueTV client for a job: through the door's operations when a plugin job is
+    bound (issue #827: programmes built on the home, reads projected), else the worker's own
+    (direct, building programmes with the Plex token)."""
+    from ..integrations.dizquetv import DizqueTV, DoorDizqueTV
+
+    if bound():
+        return DoorDizqueTV(ServiceTransport("dizquetv"))
+    return DizqueTV(settings.get("url", ""))
 
 
 @functools.cache

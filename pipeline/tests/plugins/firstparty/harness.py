@@ -629,9 +629,11 @@ async def parity(
     group: str = "light",
     files: dict[str, Path] | None = None,
     plex: tuple[str, str] | None = None,
+    dizquetv: str | None = None,
     monkeypatch: Any,
 ) -> AsyncIterator[Parity]:
-    """``plex``: the (URL, token) the plugin API's service door forwards to (story 54.35)."""
+    """``plex``: the (URL, token) the plugin API's service door forwards to (story 54.35);
+    ``dizquetv``: the dizqueTV its operations reach (issue #827)."""
     import asyncpg  # type: ignore[import-untyped]
 
     from maktaba_pipeline.plugins import firstparty, native
@@ -686,6 +688,7 @@ async def parity(
                 "-bundle",
                 str(tmp / "bundle.json"),
                 *(["-plex-url", plex[0], "-plex-token", plex[1]] if plex else []),
+                *(["-dizquetv-url", dizquetv] if dizquetv else []),
             ],
             stdout=subprocess.PIPE,
             text=True,

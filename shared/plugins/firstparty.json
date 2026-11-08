@@ -1,5 +1,5 @@
 {
- "digest": "7524011cc5afacc56395348f1dc09fbd2f9b85a4b662b3f38ac8422c6f5d8a31",
+ "digest": "3b5f1d82eb97720df80f80f014cf000473de955c4dc3894574f87ab5b627df2b",
  "plugins": [
   {
    "digest": "986816a1b4ccd5017bc0494c3846cc2a8a324d93c45e91ad3a5380134d744ff3",
@@ -1585,6 +1585,23 @@
     "en": {
      "fp.dedup.name": "Duplicates",
      "fp.dedup.summary": "Finds duplicate videos, merges each group into the copy it keeps, and empties or restores the file trash."
+    }
+   }
+  },
+  {
+   "digest": "5617395d3305e67e803bd4c383dddc0548cffadeb0469cedf37d708f8144ca16",
+   "folder": "dizquetv",
+   "id": "tv.maktaba.dizquetv",
+   "manifest": "# tv.maktaba.dizquetv: a first-party plugin of Maktaba (Epic 54, README §15.2), issue #827:\n# dizqueTV through the home's service door, its programmes built on the home. The plugin holds\n# neither the Plex token nor Plex's or dizqueTV's address. It sends Plex ids and token-free\n# records; the door builds every programme with the token and answers every read with a\n# projection that holds no secret.\nschema     = 1\nid         = \"tv.maktaba.dizquetv\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.dizquetv.name\"\nsummary = \"fp.dizquetv.summary\"\n\n[trusted]\nrunner      = \"service\"\ncomponent   = \"ext.dizquetv\"\ndb.read     = [\"app_settings\", \"channel_plans\", \"job_stages\", \"libraries\", \"plex_items\", \"processing_jobs\", \"season_tags\", \"series\", \"series_episodes\", \"series_seasons\", \"video_topic_tags\", \"videos\"]\ndb.write    = [\"channel_audit_channels\", \"channel_audits\", \"external_links\"]\nsettings    = [\"dizquetv\", \"tv\", \"audit\", \"planner\", \"display_titles\"]\nfiles.read  = [\"data.channels\"]\nfiles.write = [\"data.review\"]\nservice     = [\"dizquetv\", \"plex\"]\n\n[[stage]]\nname         = \"dizquetv_show\"\nsubject      = \"season\"\nexport       = \"dizquetv-show\"\nversion      = 1\nlabel        = \"dizqueTV show\"\nsubject_kinds = [\"season\"]\npool         = \"network_tv\"\nlane         = \"seasons\"\nlane_order   = 5\nexternal_write = true\nentry_for    = [\"season\"]\nplacement    = \"home\"\nentry        = \"maktaba_fp_dizquetv.stages.dizquetv_show:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"dizquetv_channels\"\nsubject      = \"catalog\"\nexport       = \"dizquetv-channels\"\nversion      = 1\nlabel        = \"dizqueTV channels\"\nsubject_kinds = [\"catalog\"]\npool         = \"network_tv\"\nlane         = \"channels\"\nlane_order   = 3\nexternal_write = true\nentry_for    = [\"catalog\"]\nplacement    = \"home\"\nedges        = [{ to = \"dizquetv_audit\", map = \"same\" }]\nentry        = \"maktaba_fp_dizquetv.stages.dizquetv_channels:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"dizquetv_audit\"\nsubject      = \"catalog\"\nexport       = \"dizquetv-audit\"\nversion      = 1\nlabel        = \"Channel audit\"\nsubject_kinds = [\"catalog\"]\npool         = \"audits\"\nlane         = \"channels\"\nlane_order   = 4\nentry_for    = [\"catalog\"]\ndebounce_sec = 60\ndebounce_max_sec = 900\nplacement    = \"home\"\nentry        = \"maktaba_fp_dizquetv.stages.dizquetv_audit:IMPL\"\nfingerprint  = { input = true, output = false }\n",
+   "statements": [],
+   "strings": {
+    "ar": {
+     "fp.dizquetv.name": "dizqueTV",
+     "fp.dizquetv.summary": "يبقي برامج dizqueTV وقنواته متوافقة مع الخطة، عبر باب الخدمات في المنزل."
+    },
+    "en": {
+     "fp.dizquetv.name": "dizqueTV",
+     "fp.dizquetv.summary": "Keeps dizqueTV's shows and channels in step with the plan, through the home's service door."
     }
    }
   },
