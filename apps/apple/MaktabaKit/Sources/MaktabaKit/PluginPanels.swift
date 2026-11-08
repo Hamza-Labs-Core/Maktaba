@@ -98,6 +98,15 @@ public enum PanelText {
     }
 
     /// The blocks a platform draws: tvOS shows kv, badges and markers only.
+    /// Built for the Apple TV.
+    public static let isTVPlatform: Bool = {
+        #if os(tvOS)
+        true
+        #else
+        false
+        #endif
+    }()
+
     public static func shown(_ blocks: [PanelBlock], tv: Bool) -> [PanelBlock] {
         tv ? blocks.filter { ["kv", "badges", "markers"].contains($0.type) } : blocks
     }
@@ -139,13 +148,9 @@ public struct PluginPanelView<Route: Hashable>: View {
         self.play = play
     }
 
-    static var isTV: Bool {
-        #if os(tvOS)
-        true
-        #else
-        false
-        #endif
-    }
+    /// The TV's form: its subset of blocks (story 54.20). True on the Apple TV; elsewhere only
+    /// when the environment says so (the Mac-hosted snapshot of the TV form).
+    @Environment(\.pluginPanelsTVForm) private var tv
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -155,7 +160,7 @@ public struct PluginPanelView<Route: Hashable>: View {
                     Text(verbatim: PanelText.plain(panel.plugin, max: 100)).font(.caption).foregroundStyle(.secondary)
                 }
             }
-            ForEach(Array(PanelText.shown(panel.blocks, tv: Self.isTV).enumerated()), id: \.offset) { _, b in
+            ForEach(Array(PanelText.shown(panel.blocks, tv: tv).enumerated()), id: \.offset) { _, b in
                 block(b)
             }
         }
@@ -259,6 +264,7 @@ public struct PluginPanelsSection<Route: Hashable>: View {
     /// Open at first only when the environment says so (the page snapshots, issue #876);
     /// the person's own choice wins from then on.
     @Environment(\.pluginPanelsOpenAtFirst) private var openAtFirst
+    @Environment(\.pluginPanelsTVForm) private var tv
     @State private var chosen: Bool?
 
     private var open: Binding<Bool> {
@@ -277,29 +283,44 @@ public struct PluginPanelsSection<Route: Hashable>: View {
     public var body: some View {
         if !panels.isEmpty {
             #if os(tvOS)
-            VStack(alignment: .leading, spacing: 12) {
-                Text("From plugins", bundle: .module).font(.headline)
-                ForEach(panels) { PluginPanelView<Route>(panel: $0, seek: seek, play: play) }
-            }
+            tvForm
             #else
-            DisclosureGroup(isExpanded: open) {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(panels) { PluginPanelView<Route>(panel: $0, seek: seek, search: search, image: image, play: play) }
-                }
-                .padding(.top, 8)
-            } label: {
-                Text("From plugins", bundle: .module).font(.headline)
-            }
-            .accessibilityIdentifier("plugin-panels")
+            if tv { tvForm } else { list }
             #endif
         }
     }
+
+    /// The Apple TV's form: open, the TV's subset, a marker played by the page; no chips or image.
+    var tvForm: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("From plugins", bundle: .module).font(.headline)
+            ForEach(panels) { PluginPanelView<Route>(panel: $0, seek: seek, play: play) }
+        }
+    }
+
+    #if !os(tvOS)
+    /// "From plugins", collapsed, on the iPhone, iPad and Mac.
+    var list: some View {
+        DisclosureGroup(isExpanded: open) {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(panels) { PluginPanelView<Route>(panel: $0, seek: seek, search: search, image: image, play: play) }
+            }
+            .padding(.top, 8)
+        } label: {
+            Text("From plugins", bundle: .module).font(.headline)
+        }
+        .accessibilityIdentifier("plugin-panels")
+    }
+    #endif
 }
 
 extension EnvironmentValues {
     /// "From plugins" starts open (false: collapsed, as every page shows it). The page
     /// snapshots set it to draw a panel's contents; no screen of the apps does.
     @Entry public var pluginPanelsOpenAtFirst = false
+    /// Panels in the Apple TV's form (story 54.20: the TV's subset, open). True on the Apple
+    /// TV; elsewhere only the Mac-hosted snapshot of that form sets it (test T05).
+    @Entry public var pluginPanelsTVForm = PanelText.isTVPlatform
 }
 
 /// A series' or library's panels (story 54.20 §1): asked for `<kind>:<id>` only while the

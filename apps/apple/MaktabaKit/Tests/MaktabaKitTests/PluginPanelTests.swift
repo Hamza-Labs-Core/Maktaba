@@ -61,4 +61,17 @@ struct PluginPanelTests {
         open.pluginPanelsOpenAtFirst = true
         #expect(open.pluginPanelsOpenAtFirst)
     }
+
+    /// The TV's form (its subset, open, no chips or image) is the Apple TV's own; any other
+    /// platform draws it only when told, as the Mac-hosted snapshot of it does (story 54.20 T05).
+    @Test func theTVFormIsTheAppleTVsUnlessTold() {
+        #if os(tvOS)
+        #expect(EnvironmentValues().pluginPanelsTVForm)
+        #else
+        #expect(EnvironmentValues().pluginPanelsTVForm == false)
+        #endif
+        var tv = EnvironmentValues()
+        tv.pluginPanelsTVForm = true
+        #expect(tv.pluginPanelsTVForm)
+    }
 }
