@@ -27,7 +27,10 @@ version="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["ver
 if ! "$SCRIPT_DIR/bundle.sh" --versions "$version" >/dev/null 2>&1; then
     version="$(node -p 'require("./src-tauri/tauri.conf.json").version')"
 fi
-"$SCRIPT_DIR/bundle.sh" "$version" --config "$BUILD/tauri.linux-app.conf.json"
+# --verbose: tauri-cli 2.12.3 runs linuxdeploy with its output discarded unless verbose
+# (appimage/linuxdeploy.rs), so a failed AppImage said only "failed to run linuxdeploy".
+# It raises tauri's own log level only, not cargo's.
+"$SCRIPT_DIR/bundle.sh" "$version" --verbose --config "$BUILD/tauri.linux-app.conf.json"
 
 "$SCRIPT_DIR/check-app.sh" "$bundle"/appimage/*.AppImage "$bundle"/deb/*.deb "$bundle"/rpm/*.rpm
 du -sh "$bundle"/appimage/*.AppImage "$bundle"/deb/*.deb "$bundle"/rpm/*.rpm
