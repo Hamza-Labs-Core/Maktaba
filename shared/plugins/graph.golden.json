@@ -836,14 +836,7 @@
    "after_topup": false,
    "debounce_max_sec": 0,
    "debounce_sec": 0,
-   "edges": [
-    {
-     "legacy": true,
-     "map": "same",
-     "to": "transcribe",
-     "when": "output_changed"
-    }
-   ],
+   "edges": [],
    "entry_for": [],
    "every_minutes_rule": null,
    "extension": null,
@@ -852,9 +845,11 @@
    "label": "Extract audio",
    "lane": "media",
    "lane_order": 1,
-   "legacy": true,
+   "legacy": false,
    "max_attempts": 3,
-   "may_request": [],
+   "may_request": [
+    "transcribe"
+   ],
    "model_rules": null,
    "name": "extract",
    "placement": "any",
