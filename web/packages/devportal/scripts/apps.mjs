@@ -739,6 +739,18 @@ export const APPS = [
                 "لوحة النظرة العامة في تطبيق الإدارة عن بُعد على آيفون: المكوّنات العاملة والأخطاء في الساعة"
               ),
               shot(
+                "remote-iphone-recovery",
+                "phone",
+                "The Remote's Recovery on an iPhone, in safe mode: the database stopped and the service restarting, made-up data",
+                "الاستعادة في تطبيق الإدارة عن بُعد على آيفون، في الوضع الآمن: قاعدة البيانات متوقفة والخدمة يُعاد تشغيلها، على بيانات مختلَقة"
+              ),
+              shot(
+                "remote-iphone-recovery-restore",
+                "phone",
+                "The Remote's Recovery on an iPhone: choosing one of three backups to restore, with when each was taken and its size, made-up data",
+                "الاستعادة في تطبيق الإدارة عن بُعد على آيفون: اختيار إحدى ثلاث نسخ احتياطية لاستعادتها، بتاريخ أخذ كل منها وحجمها، على بيانات مختلَقة"
+              ),
+              shot(
                 "android-remote-errors",
                 "phone",
                 "The Remote's Errors on an Android phone: two error groups with their last 14 days, made-up data",
