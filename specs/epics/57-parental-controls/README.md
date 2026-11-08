@@ -260,7 +260,7 @@ admin, and a restricted child signed in through the cloud (57.13).
 | `PUT /api/videos/{id}/age-tier`, `PUT /api/{libraries,series,collections,channels}/{id}/age-tier`, `PUT /api/libraries/{id}/youtube/sources/{sid}/age-tier` `{tier \| null}` | admin | 57.01 |
 | `GET /api/parental/ratings` (the tier scale and region tables, for the apps) | any signed-in user | 57.01 |
 | `GET /api/parental/children` (the children this caller may manage) | admin, guardian | 57.02 |
-| `PUT /api/users/{id}/parental` `{max_tier, unrated, allow_only}`; `DELETE` lifts it | admin; guardian of that user (cannot lift: admin only) | 57.02 |
+| `GET /api/users/{id}/parental` (policy, guardians, the sign-ins' signals); `PUT` `{max_tier, unrated, allow_only, version}`; `DELETE` lifts it | admin; guardian of that user (cannot lift: admin only) | 57.02 |
 | `POST /api/users/{id}/parental/guardians` `{guardian_id}`, `DELETE …/{gid}` | admin | 57.02 |
 | `GET/POST/DELETE /api/users/{id}/parental/rules` | admin, guardian of that user | 57.02 |
 | `POST /api/me/age-signal` `{age_range?, movie_ceiling?, tv_ceiling?, region}` → `{tier_limit, refresh: true}` | any signed-in user (their own sign-in) | 57.04 |

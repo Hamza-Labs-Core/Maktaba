@@ -42,7 +42,7 @@ so the answer is 404.
 
 ### 3. Routes
 
-README §6.6: `GET /api/parental/children`, `PUT|DELETE /api/users/{id}/parental`,
+README §6.6: `GET /api/parental/children`, `GET|PUT|DELETE /api/users/{id}/parental` (GET returns the policy, guardians and each sign-in's signal; PUT carries `version`, 409 when stale),
 `POST|DELETE /api/users/{id}/parental/guardians`, `GET|POST|DELETE /api/users/{id}/parental/rules`.
 `POST /api/users` (admin) gains an optional `parental: {max_tier, unrated, allow_only, guardians}`
 so an account can be made restricted from the start. Each change bumps `version`, writes the
