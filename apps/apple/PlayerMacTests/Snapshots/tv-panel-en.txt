@@ -1,0 +1,11 @@
+StaticText: The Night Journey
+StaticText: From plugins
+StaticText: Scenes
+StaticText: Scenes
+StaticText: Era
+StaticText: 1920s
+StaticText: Notes
+StaticText: A journey north through the desert by night, A journey north through the desert by night, A journey north through the desert by night, A journey north through the desert by night, A journey north thr…
+StaticText: Restored
+StaticText: HD
+Button: 12:34, The road north
