@@ -7,13 +7,15 @@ import SwiftUI
 /// metric, a line per label set; time runs left to right in Arabic too (as Arabic charts
 /// do), and each chart says its latest and highest value to VoiceOver. With several machines
 /// the Overview shows totals across them and the five most in need of attention, says how
-/// many of how many it shows, and offers each machine on its own.
+/// many of how many it shows, names the joined machines that are offline (they come first),
+/// and offers each machine on its own.
 struct DashboardsView: View {
     @Environment(RemoteModel.self) private var model
     @State private var board = Board.overview
     @State private var range = BoardRange.day
     @State private var machine = ""
     @State private var machines: [String] = []
+    @State private var offline: [String] = []
     @State private var doc: BoardDoc?
     @State private var problem: String?
 
@@ -37,7 +39,13 @@ struct DashboardsView: View {
                 if board == .overview, machines.count > 1 {
                     Picker("Machine", selection: $machine) {
                         Text("All machines").tag("")
-                        ForEach(machines, id: \.self) { Text(verbatim: $0).tag($0) }
+                        ForEach(machines, id: \.self) { m in
+                            if offline.contains(m) {
+                                Text("\(m) (offline)").tag(m)
+                            } else {
+                                Text(verbatim: m).tag(m)
+                            }
+                        }
                     }
                     .accessibilityIdentifier("dash.machine")
                 }
@@ -49,6 +57,20 @@ struct DashboardsView: View {
                 Text("Showing \(m.shown.count) of \(m.total) machines, those most in need of attention first. Pick a machine to see its own.")
                     .font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("dash.machines.shown")
+            }
+            if let doc, board == .overview, let m = doc.machines, !m.offline.isEmpty {
+                if let one = doc.machine {
+                    if m.isOffline(one) {
+                        Label("This machine is offline. Its lines end at its last values.", systemImage: "bolt.horizontal.circle")
+                            .font(.footnote).foregroundStyle(.red)
+                            .accessibilityIdentifier("dash.offline")
+                    }
+                } else {
+                    Label("Offline: \(m.offline.joined(separator: ", ")). Offline machines come first; their lines end at their last values.",
+                          systemImage: "bolt.horizontal.circle")
+                        .font(.footnote).foregroundStyle(.red)
+                        .accessibilityIdentifier("dash.offline")
+                }
             }
             if let doc, doc.omitted > 0 {
                 Text("\(doc.omitted) more lines did not fit on this board.")
@@ -82,7 +104,10 @@ struct DashboardsView: View {
         do {
             let d = try await model.client.board(board, range: range, machine: machine)
             doc = d
-            if let all = d.machines?.all { machines = all }
+            if let m = d.machines {
+                machines = m.all
+                offline = m.offline
+            }
             problem = nil
         } catch {
             if !(error is CancellationError) { problem = HomeFailure(error).message() }

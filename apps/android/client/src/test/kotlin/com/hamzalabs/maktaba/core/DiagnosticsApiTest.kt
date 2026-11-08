@@ -202,6 +202,22 @@ class DiagnosticsApiTest {
     }
 
     @Test
+    fun theOverviewNamesTheOfflineMachinesFirst() {
+        val json = Json { ignoreUnknownKeys = true }
+        val b = json.decodeFromString<BoardDoc>(
+            """{"board":"overview","machines":{"total":9,"shown":["n45","n70","n07"],"all":["n07","n45","n70"],"offline":["n45","n70"]}}""",
+        )
+        assertEquals(listOf("n45", "n70"), b.machines?.offline)
+        assertEquals("n45", b.machines?.shown?.first())
+        assertTrue(b.machines!!.isOffline("n70"))
+        assertFalse(b.machines!!.isOffline("n07"))
+        // a home before the list: none offline
+        val old = json.decodeFromString<BoardDoc>("""{"board":"overview","machines":{"total":2,"shown":["a","b"],"all":["a","b"]}}""")
+        assertEquals(emptyList<String>(), old.machines?.offline)
+        assertFalse(old.machines!!.isOffline("a"))
+    }
+
+    @Test
     fun theInboxReadsAReportsTimelineAndChangesIt() = runBlocking {
         answer = { r ->
             when (r.url.encodedPath) {

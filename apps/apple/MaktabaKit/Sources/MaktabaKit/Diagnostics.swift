@@ -351,21 +351,28 @@ public struct BoardDoc: Decodable, Sendable {
         public let value: Double
     }
 
-    /// The Overview's machines: how many have lines, the ones shown (most in need of
-    /// attention first), and all of them, for a machine picker.
+    /// The Overview's machines: how many there are, the ones shown (most in need of
+    /// attention first, a joined machine that is offline before any other), all of them,
+    /// for a machine picker, and the offline ones.
     public struct Machines: Decodable, Hashable, Sendable {
         public let total: Int
         public let shown: [String]
         public let all: [String]
+        /// The joined machines that are offline (empty from a home before the list).
+        public let offline: [String]
 
-        enum CodingKeys: String, CodingKey { case total, shown, all }
+        enum CodingKeys: String, CodingKey { case total, shown, all, offline }
 
         public init(from d: Decoder) throws {
             let c = try d.container(keyedBy: CodingKeys.self)
             total = try c.decodeIfPresent(Int.self, forKey: .total) ?? 0
             shown = try c.decodeIfPresent([String].self, forKey: .shown) ?? []
             all = try c.decodeIfPresent([String].self, forKey: .all) ?? []
+            offline = try c.decodeIfPresent([String].self, forKey: .offline) ?? []
         }
+
+        /// Whether a machine is one of the offline ones.
+        public func isOffline(_ machine: String) -> Bool { offline.contains(machine) }
     }
 
     public let board: String

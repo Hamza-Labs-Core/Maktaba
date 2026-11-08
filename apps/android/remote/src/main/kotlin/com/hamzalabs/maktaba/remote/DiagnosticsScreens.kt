@@ -457,9 +457,15 @@ private fun Dashboards(remote: Remote) {
     // on the Overview of several machines: one machine on its own ("" all of them)
     var machine by rememberSaveable { mutableStateOf("") }
     var machines by remember { mutableStateOf(emptyList<String>()) }
+    var offline by remember { mutableStateOf(emptyList<String>()) }
     var picking by remember { mutableStateOf(false) }
     val (state, _) = load(remote, board, range, machine) { board(board, range, machine) }
-    LaunchedEffect(state) { (state as? Loaded.Ready)?.value?.machines?.let { machines = it.all } }
+    LaunchedEffect(state) {
+        (state as? Loaded.Ready)?.value?.machines?.let {
+            machines = it.all
+            offline = it.offline
+        }
+    }
     LazyColumn(Modifier.fillMaxSize().testTag("diag-dashboards")) {
         item {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -475,13 +481,16 @@ private fun Dashboards(remote: Remote) {
                 if (board == Board.Overview && machines.size > 1) {
                     Box {
                         val all = stringResource(R.string.dash_machine_all)
+                        val offlineWord = stringResource(R.string.dash_machine_offline_option)
+                        // a machine's name in the picker, marked when it is offline
+                        val named = { m: String -> if (m in offline) offlineWord.format(m) else m.ifEmpty { all } }
                         OutlinedButton(onClick = { picking = true }, modifier = Modifier.testTag("dash-machine")) {
-                            Text("${stringResource(R.string.dash_machine)}: ${machine.ifEmpty { all }}")
+                            Text("${stringResource(R.string.dash_machine)}: ${named(machine)}")
                         }
                         DropdownMenu(expanded = picking, onDismissRequest = { picking = false }) {
                             (listOf("") + machines).forEach { m ->
                                 DropdownMenuItem(
-                                    text = { Text(m.ifEmpty { all }) },
+                                    text = { Text(named(m)) },
                                     onClick = { machine = m; picking = false },
                                     modifier = Modifier.testTag("dash-machine-${m.ifEmpty { "all" }}"),
                                 )
@@ -497,6 +506,17 @@ private fun Dashboards(remote: Remote) {
         if (board == Board.Overview && doc.showsSomeMachines && counted != null) item {
             Text(stringResource(R.string.dash_machines_shown, counted.shown.size, counted.total), style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(horizontal = 16.dp).testTag("dash-machines-shown"))
+        }
+        // the joined machines that are offline: named on the Overview, or the one asked for
+        val offlineLine = when {
+            board != Board.Overview || counted == null || counted.offline.isEmpty() -> null
+            !doc.machine.isNullOrEmpty() -> if (doc.machine?.let(counted::isOffline) == true) R.string.dash_machine_offline to null else null
+            else -> R.string.dash_machines_offline to counted.offline.joinToString(", ")
+        }
+        if (offlineLine != null) item {
+            val (res, names) = offlineLine
+            Text(if (names == null) stringResource(res) else stringResource(res, names), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp).testTag("dash-offline"))
         }
         if (doc.omitted > 0) item {
             Text(stringResource(R.string.dash_omitted, doc.omitted), style = MaterialTheme.typography.bodySmall,

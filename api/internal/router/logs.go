@@ -1,11 +1,14 @@
 package router
 
 import (
+	"context"
 	"database/sql"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	clusterh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/logs"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
@@ -36,6 +39,20 @@ type LogsDeps struct {
 	Switches logs.Switches
 }
 
+// dashboardMachines is the cluster handler the dashboards' Overview asks which joined
+// machines are offline (story 53.12): MountP31 sets it, after MountLogs ran.
+var dashboardMachines atomic.Pointer[clusterh.Handler]
+
+// offlineMachines are the joined machines that are offline now (none before the cluster
+// is mounted, or on a home without one).
+func offlineMachines(ctx context.Context) ([]string, error) {
+	h := dashboardMachines.Load()
+	if h == nil || h.Store == nil {
+		return nil, nil
+	}
+	return h.OfflineMachines(ctx)
+}
+
 // MountLogs wires the troubleshooting log-collection routes
 // (/api/admin/logs/* and /api/diagnostics/export). The ring buffer is
 // pulled from the process-global installed by mlog.Init. It answers the problem reports'
@@ -56,6 +73,7 @@ func MountLogs(r chi.Router, d LogsDeps) *logs.Forwarder {
 		Peers:      d.Peers,
 		FileSource: d.Files,
 		Switches:   d.Switches,
+		Offline:    offlineMachines,
 	}
 	h.Mount(r)
 	return h.Forwarder()

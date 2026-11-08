@@ -212,3 +212,78 @@ func TestOverviewRouteTakesMachine(t *testing.T) {
 		t.Fatalf("%v %+v", err, d)
 	}
 }
+
+// Story 53.12: a joined machine that is offline sends no fresh values, so by its values it
+// ranked last (n45 here, all well) or was missing (n70, never in the store). Named offline,
+// both rank first among the machines shown, are counted and listed, and keep the bounds.
+func TestOverviewOfflineFirst(t *testing.T) {
+	ix, ctx := overviewFleet(t)
+	doc, err := ix.BoardFor(ctx, "overview", "1h", "", []string{"n70", "n45"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mc := doc.Machines
+	if mc == nil || mc.Total != 51 || len(mc.All) != 51 || strings.Join(mc.Offline, ",") != "n45,n70" {
+		t.Fatalf("machines: %+v, want the 50 in the store and n70, n45 and n70 offline", mc)
+	}
+	if got := strings.Join(mc.Shown, ","); got != "n45,n70,n07,n33,n12" {
+		t.Fatalf("shown %s, want the offline machines first, then the most components down", got)
+	}
+	if len(doc.Series) > MaxSeries || doc.Omitted != 0 {
+		t.Fatalf("%d lines, %d left out", len(doc.Series), doc.Omitted)
+	}
+	for _, s := range doc.Series {
+		if len(s.Points) > MaxPoints {
+			t.Errorf("%s{%s}: %d points", s.Name, s.Labels, len(s.Points))
+		}
+		if labelValue(s.Labels, "machine") == "n70" {
+			t.Errorf("n70 has no lines in the store, yet %s{%s}", s.Name, s.Labels)
+		}
+	}
+	if _, ok := lineOf(doc, "maktaba_host_load1", "machine=n45"); !ok {
+		t.Error("n45's last values are still drawn")
+	}
+	// none offline: the list is there and empty (a client reads it as is)
+	plain, err := ix.Board(ctx, "overview", "1h")
+	if err != nil || plain.Machines == nil || plain.Machines.Offline == nil || len(plain.Machines.Offline) != 0 {
+		t.Fatalf("%v %+v", err, plain.Machines)
+	}
+	// one offline machine on its own: named offline, its lines as they were
+	one, err := ix.BoardFor(ctx, "overview", "1h", "n45", []string{"n45"})
+	if err != nil || strings.Join(one.Machines.Shown, ",") != "n45" || strings.Join(one.Machines.Offline, ",") != "n45" ||
+		len(one.Series) == 0 {
+		t.Fatalf("n45 alone: %v %+v, %d lines", err, one.Machines, len(one.Series))
+	}
+	// the bounds: too many, or an id too long
+	many := make([]string, MaxOffline+1)
+	for i := range many {
+		many[i] = fmt.Sprintf("m%d", i)
+	}
+	if _, err := ix.BoardFor(ctx, "overview", "1h", "", many); err != ErrBoard {
+		t.Errorf("%d offline: %v, want ErrBoard", len(many), err)
+	}
+	if _, err := ix.BoardFor(ctx, "overview", "1h", "", []string{strings.Repeat("x", maxMachineID+1)}); err != ErrBoard {
+		t.Errorf("an offline id past %d bytes: %v, want ErrBoard", maxMachineID, err)
+	}
+	// offline= is the Overview's; another board ignores it
+	if st, err := ix.BoardFor(ctx, "storage", "1h", "", []string{"n45"}); err != nil || st.Machines != nil {
+		t.Errorf("storage with offline=: %v %+v", err, st.Machines)
+	}
+}
+
+// Story 53.12: the log index's /dashboards route passes offline= on.
+func TestOverviewRouteTakesOffline(t *testing.T) {
+	ix, _ := overviewFleet(t)
+	srv := httptest.NewServer(ix.Handler(nil))
+	defer srv.Close()
+	r, err := http.Get(srv.URL + "/dashboards/overview?range=1h&offline=n45,n70")
+	if err != nil || r.StatusCode != 200 {
+		t.Fatalf("%v %v", err, r)
+	}
+	defer r.Body.Close()
+	var d BoardDoc
+	if err := json.NewDecoder(r.Body).Decode(&d); err != nil || d.Machines == nil ||
+		strings.Join(d.Machines.Offline, ",") != "n45,n70" || d.Machines.Shown[0] != "n45" {
+		t.Fatalf("%v %+v", err, d.Machines)
+	}
+}

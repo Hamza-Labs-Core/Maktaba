@@ -200,6 +200,17 @@ extension DiagnosticsOverHTTP {
         #expect(storage.machines == nil && storage.omitted == 0 && !storage.showsSomeMachines)
     }
 
+    @Test func theOverviewNamesTheOfflineMachinesFirst() throws {
+        let json = #"{"board":"overview","machines":{"total":9,"shown":["n45","n70","n07"],"all":["n07","n45","n70"],"offline":["n45","n70"]},"series":[]}"#
+        let b = try JSONDecoder.home.decode(BoardDoc.self, from: Data(json.utf8))
+        #expect(b.machines?.offline == ["n45", "n70"] && b.machines?.shown.first == "n45")
+        #expect(b.machines?.isOffline("n70") == true && b.machines?.isOffline("n07") == false)
+        // a home before the list: none offline
+        let old = #"{"board":"overview","machines":{"total":2,"shown":["a","b"],"all":["a","b"]},"series":[]}"#
+        let o = try JSONDecoder.home.decode(BoardDoc.self, from: Data(old.utf8))
+        #expect(o.machines?.offline == [] && o.machines?.isOffline("a") == false)
+    }
+
     @Test func oneMachineOfManyIsNotSomeMachines() throws {
         let json = #"{"board":"overview","machine":"n07","machines":{"total":37,"shown":["n07"],"all":[]},"series":[]}"#
         let b = try JSONDecoder.home.decode(BoardDoc.self, from: Data(json.utf8))

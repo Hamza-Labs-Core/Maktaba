@@ -1,6 +1,16 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ (offline)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (غير متصل)"
+          }
+        }
+      }
+    },
     "%@ a minute" : {
       "localizations" : {
         "ar" : {
@@ -1879,6 +1889,16 @@
         }
       }
     },
+    "Offline: %@. Offline machines come first; their lines end at their last values." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير متصلة: %@. تأتي الأجهزة غير المتصلة أولاً، وتنتهي خطوطها عند آخر قيمها."
+          }
+        }
+      }
+    },
     "Old enough on" : {
       "localizations" : {
         "ar" : {
@@ -2905,6 +2925,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "لا صفحة استعادة في هذا الجهاز الرئيسي بعد. حدّثه لاستخدامها."
+          }
+        }
+      }
+    },
+    "This machine is offline. Its lines end at its last values." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذا الجهاز غير متصل. تنتهي خطوطه عند آخر قيمه."
           }
         }
       }

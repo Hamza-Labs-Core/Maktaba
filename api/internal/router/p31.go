@@ -52,5 +52,6 @@ func MountP31(r chi.Router, d P31Deps) *clusterh.Handler {
 		return nil
 	}
 	h.Mount(r)
+	dashboardMachines.Store(h) // the dashboards' offline machines (story 53.12)
 	return h
 }

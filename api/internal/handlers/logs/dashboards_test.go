@@ -1,7 +1,9 @@
 package logs
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -97,5 +99,73 @@ func TestDashboardRoutes(t *testing.T) {
 	}
 	if c := call("/api/admin/dashboards/use?range=2y", admin).Code; c != http.StatusBadRequest {
 		t.Errorf("a bad range: %d", c)
+	}
+}
+
+// Story 53.12: a joined machine that is offline ranks first on the Overview. The API asks
+// the cluster which machines are offline and passes them to the role as offline=; a
+// caller's own offline= never reaches it; other boards are passed as asked; it is still
+// admins only.
+func TestDashboardOverviewOffline(t *testing.T) {
+	var seen string
+	role := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.URL.Path + "?" + r.URL.RawQuery
+		_, _ = io.WriteString(w, `{"board":"overview","series":[],"machines":{"total":2,"shown":["n2","n1"],"all":["n1","n2"],"offline":["n2"]}}`)
+	}))
+	defer role.Close()
+	offline, fail := []string{"n2", "n9"}, false
+	h := &Handler{IndexAddr: strings.TrimPrefix(role.URL, "http://"), Offline: func(context.Context) ([]string, error) {
+		if fail {
+			return nil, errors.New("cluster store down")
+		}
+		return offline, nil
+	}}
+	r := chi.NewRouter()
+	h.Mount(r)
+	call := func(path string, p *principal.Principal) *httptest.ResponseRecorder {
+		seen = ""
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if p != nil {
+			req = req.WithContext(principal.WithPrincipal(req.Context(), p))
+		}
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+	if c := call("/api/admin/dashboards/overview?range=1h", &principal.Principal{UserID: "v"}).Code; c != http.StatusForbidden || seen != "" {
+		t.Fatalf("a viewer: %d, the role saw %q", c, seen)
+	}
+	admin := &principal.Principal{UserID: "a", IsAdmin: true}
+	rec := call("/api/admin/dashboards/overview?range=1h", admin)
+	if rec.Code != 200 || seen != "/dashboards/overview?offline=n2%2Cn9&range=1h" {
+		t.Fatalf("overview: %d, the role saw %q", rec.Code, seen)
+	}
+	var doc struct {
+		Machines struct {
+			Shown, Offline []string
+		}
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil || strings.Join(doc.Machines.Offline, ",") != "n2" ||
+		doc.Machines.Shown[0] != "n2" {
+		t.Fatalf("%v %s", err, rec.Body)
+	}
+	// the caller's own offline= is replaced by the cluster's
+	if call("/api/admin/dashboards/overview?range=1h&offline=n1&machine=n2", admin); seen !=
+		"/dashboards/overview?machine=n2&offline=n2%2Cn9&range=1h" {
+		t.Fatalf("a caller's offline=: the role saw %q", seen)
+	}
+	// none offline: none passed, and a caller's dropped
+	offline = []string{}
+	if call("/api/admin/dashboards/overview?range=1h&offline=n1", admin); seen != "/dashboards/overview?range=1h" {
+		t.Fatalf("none offline: the role saw %q", seen)
+	}
+	// the cluster unreadable: the board still answers, ranked by values
+	fail = true
+	if rec := call("/api/admin/dashboards/overview?range=1h", admin); rec.Code != 200 || seen != "/dashboards/overview?range=1h" {
+		t.Fatalf("cluster down: %d, the role saw %q", rec.Code, seen)
+	}
+	// another board: passed as asked, never with offline=
+	if call("/api/admin/dashboards/storage?range=1h&offline=n1", admin); seen != "/dashboards/storage?range=1h" {
+		t.Fatalf("storage: the role saw %q", seen)
 	}
 }
