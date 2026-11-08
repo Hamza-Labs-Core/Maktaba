@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import textwrap
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -643,3 +644,31 @@ def test_a_refused_tool_start_is_a_refusal_not_the_tools_failure(
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", missing)
     assert asyncio.run(media._real_runner(["ffmpeg", "-version"], 5)).returncode == 127
+
+
+def test_a_kill_after_the_tool_exited_never_terminates_its_closed_job() -> None:
+    """The waiter closes a tool's Job Object once it exits, while a kill may come from the
+    loop before it hears of the exit: the kill then terminates nothing (a closed handle's
+    value may already be another tool's job), and the two never overlap."""
+
+    class K32:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, int]] = []
+
+        def TerminateJobObject(self, h: int, _code: int) -> int:  # noqa: N802
+            self.calls.append(("terminate", h))
+            return 1
+
+        def CloseHandle(self, h: int) -> int:  # noqa: N802
+            self.calls.append(("close", h))
+            return 1
+
+    job = winproc._Job.__new__(winproc._Job)
+    job._lock = threading.Lock()
+    job._k32 = k32 = K32()
+    job._handle = 77
+    assert job.terminate()  # running: the kill reaches its job
+    job.close()  # the waiter: the tool exited
+    assert not job.terminate()  # a kill after: nothing terminated
+    job.close()  # closed once
+    assert k32.calls == [("terminate", 77), ("close", 77)]

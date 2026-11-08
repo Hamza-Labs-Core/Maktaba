@@ -9,7 +9,10 @@ starts the tool with ``subprocess.Popen``, whose pipes are anonymous (``CreatePi
 an AppContainer may use): a thread per captured pipe feeds an ``asyncio.StreamReader``, a
 thread waits for the exit. The tool is put in a Job Object of its own (nested in the
 runner's), so a kill (the caller's after a timeout, or a cancelled ``communicate`` or
-``wait``) ends what it started with it.
+``wait``) ends what it started with it. It is put there once ``Popen`` returns, so a process
+it starts in its first instant escapes that job (``Popen`` keeps no thread handle to start it
+suspended and resume it); such a process is still in the runner's own Job Object, and ends
+with the runner.
 
 :func:`install` makes it ``asyncio.create_subprocess_exec`` (a Windows runner, after its
 sandbox). ``subprocess.Popen`` is what it starts with, so the runner's exec guard and its
@@ -40,6 +43,9 @@ class _Job:
     def __init__(self, popen: subprocess.Popen[bytes]) -> None:
         self._handle = 0
         self._k32: Any = None
+        # terminate (the loop's kill) and close (the waiter thread, once the tool exited)
+        # never overlap: a closed handle's value may be a new tool's job by then
+        self._lock = threading.Lock()
         if sys.platform != "win32":
             return
         import ctypes
@@ -64,14 +70,16 @@ class _Job:
         self._handle = job
 
     def terminate(self) -> bool:
-        if not self._handle:
-            return False
-        return bool(self._k32.TerminateJobObject(self._handle, 1))
+        with self._lock:
+            if not self._handle:
+                return False
+            return bool(self._k32.TerminateJobObject(self._handle, 1))
 
     def close(self) -> None:
-        if self._handle:
-            self._k32.CloseHandle(self._handle)
-            self._handle = 0
+        with self._lock:
+            handle, self._handle = self._handle, 0
+            if handle:
+                self._k32.CloseHandle(handle)
 
 
 def _on_loop(loop: asyncio.AbstractEventLoop, fn: Any, *args: Any) -> bool:
