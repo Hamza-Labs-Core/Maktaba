@@ -51,3 +51,20 @@ func TestDBArtBaseReadsThePlannersLogoHost(t *testing.T) {
 		t.Fatalf("stored: %q, %v; want the address, trimmed", got, err)
 	}
 }
+
+// DBPublicBase: the address the TVs reach dizqueTV at is rules.planner.dz_public_url,
+// trimmed; with nothing stored it is empty (dizqueTV's own address).
+func TestDBPublicBaseReadsThePlannersPublicAddress(t *testing.T) {
+	ctx := context.Background()
+	db := appSettingsDB(t)
+	if got, err := DBPublicBase(db)(ctx); err != nil || got != "" {
+		t.Fatalf("nothing stored: %q, %v; want empty", got, err)
+	}
+	if _, err := db.Exec(`INSERT INTO app_settings (key, value) VALUES ('rules.planner', ?)`,
+		`{"dz_public_url": " http://tv.lan:8000 ", "dz_art_url": "https://art.example.com"}`); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := DBPublicBase(db)(ctx); err != nil || got != "http://tv.lan:8000" {
+		t.Fatalf("stored: %q, %v; want the address, trimmed", got, err)
+	}
+}

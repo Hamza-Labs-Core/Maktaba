@@ -168,10 +168,20 @@ def _detail(rk: str, title: str, file: str, duration: int) -> dict[str, Any]:
     }
 
 
-def _plan(keys: list[str]) -> dict[str, Any]:
+def _logos(folder: Path) -> dict[str, str]:
+    """The channel's logo and corner watermark, as local files the stage uploads to dizqueTV
+    (through the door, whose channel write accepts only pictures of the home's own)."""
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "ch-5.png").write_bytes(b"\x89PNG logo")
+    (folder / "wm.png").write_bytes(b"\x89PNG watermark")
+    return {"dz_logo_dir": str(folder), "dz_watermark_file": str(folder / "wm.png")}
+
+
+def _plan(keys: list[str], logos: Path) -> dict[str, Any]:
     eps = [{"plex_rating_key": k, "duration_s": 1500.0, "title": f"Episode {k}"} for k in keys]
     return {
         "planner_version": 1,
+        "config": _logos(logos),
         "lanes": {"L1": {"name": "قصص", "units": [{"episodes": eps}]}},
         "filler_pools": {
             "P1": {
@@ -208,7 +218,7 @@ def _plan(keys: list[str]) -> dict[str, Any]:
     }
 
 
-def seeder() -> Any:
+def seeder(logos: Path) -> Any:
     async def seed(db: Any) -> None:
         import uuid
 
@@ -241,7 +251,7 @@ def seeder() -> Any:
             )  # fmt: skip
             await db.execute(
                 "INSERT INTO channel_plans (planner_version, input_hash, plan) VALUES (1, $1, $2)",
-                "plan-827", json.dumps(_plan(["101", "102", "103"])),
+                "plan-827", json.dumps(_plan(["101", "102", "103"], logos)),
             )  # fmt: skip
             for ext in ("plex", "dizquetv"):
                 await db.execute(
@@ -326,7 +336,7 @@ async def _run(
         stages=STAGES,
         extra=graph,
         group="service",
-        seed=seeder(),
+        seed=seeder(tmp / "logos"),
         plex=(PLEX_URL, TOKEN),
         dizquetv=b_srv.url,
         monkeypatch=monkeypatch,
@@ -361,14 +371,23 @@ async def test_dizquetv_is_identical_through_the_door(
             "SELECT count(*) FROM plugin_invocations WHERE plugin_id = 'tv.maktaba.dizquetv'"
         )
         assert n >= len(STAGES), f"only {n} jobs went through the plugin"
+
         # dizqueTV was told the same changes, the programmes built alike (in-process by the
         # worker, through the plugin by the door), and holds the same
-        assert a_srv.writes() == b_srv.writes()
+        # (each side's dizqueTV has its own address, which an uploaded logo's link carries)
+        def same(srv: _Server, v: Any) -> Any:
+            return json.loads(json.dumps(v, ensure_ascii=False).replace(srv.url, "<dizqueTV>"))
+
+        assert same(a_srv, a_srv.writes()) == same(b_srv, b_srv.writes())
         assert any(m == "PUT" and pth == "/api/show" for m, pth, _ in b_srv.writes())
         assert any(pth == "/api/channel" for _, pth, _ in b_srv.writes())
         assert a_srv.fake.shows == b_srv.fake.shows
         assert a_srv.fake.fillers == b_srv.fake.fillers
-        assert a_srv.fake.channels == b_srv.fake.channels
+        assert same(a_srv, a_srv.fake.channels) == same(b_srv, b_srv.fake.channels)
+        # the logo and the watermark were uploaded and written through the door
+        ch5 = b_srv.fake.channels[5]
+        assert ch5["icon"].startswith(f"{b_srv.url}/images/uploads/maktaba-ch-5.png?v="), ch5
+        assert ch5["watermark"]["url"].startswith(f"{b_srv.url}/images/uploads/maktaba-wm.png?v=")
         # the door wrote the token into every programme it built, and only there
         built = [x for d in b_srv.fake.shows.values() for x in d["content"]]
         assert built and all(

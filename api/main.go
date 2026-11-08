@@ -754,7 +754,8 @@ func runServe() error {
 				// build the programmes on the home
 				Service: relay.New(relay.Config{Settings: relay.DBSettings(appDB),
 					Upstream: relay.DBUpstream(appDB, homeSecrets, os.Getenv), ArtBase: relay.DBArtBase(appDB),
-					Logger: logger})})
+					PublicBase: relay.DBPublicBase(appDB),
+					Logger:     logger})})
 			reaper := &watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),

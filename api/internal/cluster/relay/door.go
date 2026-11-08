@@ -190,6 +190,9 @@ type Config struct {
 	// ArtBase reads rules.planner.dz_art_url: the only web host the dizqueTV plugin's
 	// hosted-logo check may reach (issue #827); nil or "": none.
 	ArtBase func(ctx context.Context) (string, error)
+	// PublicBase reads rules.planner.dz_public_url: the address the TVs reach dizqueTV at,
+	// in the link of a logo uploaded to it (issue #827); nil or "": dizqueTV's own address.
+	PublicBase func(ctx context.Context) (string, error)
 	// Audit receives every call (the hub's events file).
 	Audit      func(Call)
 	Extensions map[string]*Extension

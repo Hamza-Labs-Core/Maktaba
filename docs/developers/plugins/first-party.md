@@ -312,6 +312,10 @@ service   = ["plex"]              # the services its calls may reach, through th
   and the door fills them in from what dizqueTV holds. Every read is a projection that leaves
   out any field holding a secret, and a final check refuses an answer that still names the
   token, in any encoding or in part. Raw writes that could carry a programme are refused.
+  dizqueTV and its clients fetch a channel's pictures (its logo, watermark, offline picture
+  and soundtrack), so the door writes only the home's own: none, the stored one, a file on
+  the logo host (`dz_art_url`) or one uploaded to dizqueTV. Filler time and redirects keep
+  only their duration and target.
   dizqueTV is reached only from the home: a joined machine never relays it.
 - **Parity** runs the Plex stages against a fake Plex behind HTTP on each side: the calls Plex
   receives (method, path, query and the token) are identical, then N16.

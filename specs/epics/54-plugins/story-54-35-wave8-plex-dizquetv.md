@@ -147,7 +147,13 @@ what dizqueTV holds. Every read is a projection: a whitelist of fields, and any 
 value holds a secret is left out, then merged back from the stored document on a write. A
 final check refuses any answer that names the token, dizqueTV's own Plex tokens or Plex's
 address, raw, URL-encoded or in part. If dizqueTV's Plex servers cannot be read, the door
-refuses the call. Raw writes that could carry a programme are refused. The hosted-logo check
+refuses the call, and so does an unreadable Plex upstream. Raw writes that could carry a
+programme are refused. A channel's pictures (logo, watermark, offline picture and soundtrack),
+which dizqueTV and its clients fetch, are written only as the home's own: none, the stored
+value, a file directly under `dz_art_url`, or one uploaded to dizqueTV (at its address or at
+`dz_public_url`), with the file's version as the only query. A pass-through programme keeps
+only its duration, `isOffline`, and a redirect's target. The agent channel's door carries Plex
+only. The hosted-logo check
 is a HEAD of a file under the home's own `dz_art_url` only. Its redirects are followed only
 within that host. Tests: the door's allow-list, refusals and token-leak tests run against a
 fake dizqueTV that stores and echoes its bodies. The plugin's parity test runs a season's

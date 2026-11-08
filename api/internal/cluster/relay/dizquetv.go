@@ -29,6 +29,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -51,6 +52,9 @@ const (
 
 // progFields are what a programme's projection holds: what the stages read (the rating key,
 // the duration, the custom show it belongs to) and what dizqueTV's time-slot tool orders by.
+// Never a picture field (icon, thumb, art …): a programme built under an earlier Plex token
+// keeps that token in its icon, which neither the current token nor plex-servers matches,
+// so only this list keeps it out of an answer.
 var progFields = []string{
 	"ratingKey", "key", "type", "title", "showTitle", "season", "episode", "duration", "durationStr",
 	"customShowId", "customShowName", "customOrder", "isOffline", "serverKey", "date", "year", "rating",
@@ -67,6 +71,23 @@ var chanFields = map[string]bool{
 	"mergeAdjacentPrograms": true, "startTime": true, "duration": true, "fillerCollections": true,
 	"fillerRepeatCooldown": true, "scheduleBackup": true, "maktabaPlan": true,
 }
+
+// pictureFields are a channel's settings dizqueTV's ffmpeg or its clients fetch (the logo is
+// also the watermark's fallback and the guide's): only a picture of the home's own is written.
+var pictureFields = []string{"icon", "offlinePicture", "offlineSoundtrack"}
+
+// wmFields are a watermark's settings, each with its kind (its url is a picture).
+var wmFields = map[string]string{
+	"enabled": "bool", "url": "picture", "width": "number", "verticalMargin": "number",
+	"horizontalMargin": "number", "duration": "number", "position": "position", "fixedSize": "bool",
+	"animated": "bool",
+}
+
+var (
+	// a picture link's only query: the file's version (versioned() in the pipeline)
+	versionRe    = regexp.MustCompile(`^v=[0-9a-f]{1,40}$`)
+	wmPositionRe = regexp.MustCompile(`^[a-z-]{1,20}$`)
+)
 
 // What a token-free programme record may hold, as program_spec builds it from a Plex item.
 var (
@@ -133,8 +154,10 @@ func (d *Door) serveOp(ctx context.Context, s Settings, ext *Extension, rule *Ru
 	if plexExt == nil {
 		plexExt = &Plex
 	}
+	// without the home's token the guard could not check an answer for it: a Plex upstream
+	// that cannot be read refuses the call (Plex not set up reads as empty, not an error)
 	if c.plex, err = d.upstream(ctx, plexExt); err != nil {
-		c.plex = Upstream{}
+		return Result{Err: fail(CodeUnreachable, "the home's Plex settings are unreadable")}
 	}
 	if e := c.secrets(); e != nil {
 		return Result{Err: e}
@@ -841,13 +864,153 @@ func (c *dzCall) fill(e map[string]any, stored []any, i int) (any, *Error) {
 		}
 		return nil, bad("programme %d: show %s holds no item %s", i, sid, clip(keyText(rk), 20))
 	}
-	// filler time, a live broadcast: nothing that plays from Plex
+	// filler time or a redirect to another channel: nothing that plays from Plex, and only
+	// what those need (no picture, no text the guide would show)
 	for _, k := range playsFromPlex {
 		if _, there := e[k]; there {
 			return nil, bad("programme %d: %s is only ever filled by the door", i, k)
 		}
 	}
-	return e, nil
+	d, ok := wholeNumber(e["duration"])
+	if !ok || d < 0 {
+		return nil, bad("programme %d: filler time has no duration", i)
+	}
+	out := map[string]any{"duration": d}
+	if v, there := e["isOffline"]; there {
+		b, ok := v.(bool)
+		if !ok {
+			return nil, bad("programme %d: isOffline is not true or false", i)
+		}
+		out["isOffline"] = b
+	}
+	if t, there := e["type"]; there {
+		if t != "redirect" {
+			return nil, bad("programme %d: only filler time or a redirect is written as sent", i)
+		}
+		n, ok := wholeNumber(e["channel"])
+		if !ok || n < 1 || n > 999999 {
+			return nil, bad("programme %d: a redirect to no channel", i)
+		}
+		out["type"], out["channel"] = "redirect", n
+	}
+	return out, nil
+}
+
+// pictureHosts are the places a channel's picture may be, a file directly under each: the
+// logo host (dz_art_url), and the uploads at dizqueTV's own address and at the address the
+// TVs reach it at (dz_public_url, as the pipeline's art_link writes an uploaded logo's link).
+func (c *dzCall) pictureHosts() ([]string, *Error) {
+	read := func(f func(context.Context) (string, error)) (string, *Error) {
+		if f == nil {
+			return "", nil
+		}
+		got, err := f(c.ctx)
+		if err != nil {
+			return "", fail(CodeNotConfigured, "the planner's dizqueTV addresses are unreadable")
+		}
+		return strings.TrimRight(strings.TrimSpace(got), "/"), nil
+	}
+	hosts := []string{c.base + "/images/uploads"}
+	art, e := read(c.d.cfg.ArtBase)
+	if e != nil {
+		return nil, e
+	}
+	if art != "" {
+		hosts = append(hosts, art)
+	}
+	pub, e := read(c.d.cfg.PublicBase)
+	if e != nil {
+		return nil, e
+	}
+	if pub != "" {
+		hosts = append(hosts, pub+"/images/uploads")
+	}
+	return hosts, nil
+}
+
+// pictureOK: v may be written as a channel's picture: none, the stored value unchanged, or
+// a file directly under one of hosts with at most its version as the query.
+func pictureOK(v, stored any, hosts []string) bool {
+	if v == nil {
+		return true
+	}
+	s, ok := v.(string)
+	if !ok {
+		return false
+	}
+	if s == "" || s == stored {
+		return true
+	}
+	link, query, _ := strings.Cut(s, "?")
+	if query != "" && !versionRe.MatchString(query) {
+		return false
+	}
+	for _, h := range hosts {
+		if artName(h, link) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// checkPictures refuses a channel whose pictures are not the home's own (pictureOK).
+func (c *dzCall) checkPictures(doc, stored map[string]any) *Error {
+	var hosts []string
+	need := func() *Error {
+		if hosts != nil {
+			return nil
+		}
+		var e *Error
+		hosts, e = c.pictureHosts()
+		return e
+	}
+	for _, k := range pictureFields {
+		v, there := doc[k]
+		if !there {
+			continue
+		}
+		if e := need(); e != nil {
+			return e
+		}
+		if !pictureOK(v, stored[k], hosts) {
+			return bad("%s is not a picture of the home's own (none, the stored one, the logo host's or one uploaded to dizqueTV)", k)
+		}
+	}
+	wv, there := doc["watermark"]
+	if !there || wv == nil {
+		return nil
+	}
+	wm, ok := wv.(map[string]any)
+	if !ok {
+		return bad("the watermark is not an object")
+	}
+	storedWM, _ := stored["watermark"].(map[string]any)
+	for k, v := range wm {
+		switch wmFields[k] {
+		case "bool":
+			if _, ok := v.(bool); !ok {
+				return bad("watermark %s is not true or false", k)
+			}
+		case "number":
+			if _, ok := v.(json.Number); !ok {
+				return bad("watermark %s is not a number", k)
+			}
+		case "position":
+			if p, ok := v.(string); !ok || !wmPositionRe.MatchString(p) {
+				return bad("watermark position is not a corner")
+			}
+		case "picture":
+			if e := need(); e != nil {
+				return e
+			}
+			if !pictureOK(v, storedWM["url"], hosts) {
+				return bad("the watermark is not a picture of the home's own (none, the stored one, the logo host's or one uploaded to dizqueTV)")
+			}
+		default:
+			return bad("%q is not a field of a watermark the door writes", clip(k, 40))
+		}
+	}
+	return nil
 }
 
 // writeChannel writes a channel whose programmes are references, filled on the home; the
@@ -886,6 +1049,9 @@ func (c *dzCall) writeChannel(method string, body []byte) (int, []byte, *Error) 
 			return 0, nil, fail(CodeUnreachable, fmt.Sprintf("dizqueTV answered channel %d with %d", num, status))
 		}
 		stored = nil
+	}
+	if e := c.checkPictures(doc, stored); e != nil {
+		return 0, nil, e
 	}
 	var storedProgs []any
 	if stored != nil {
@@ -956,9 +1122,19 @@ func (c *dzCall) art(rawQuery string) Result {
 	if name == "" {
 		return Result{Err: fail(CodeNotAllowed, "only a file under the home's logo host is checked")}
 	}
-	// the request goes to the admin's host with the checked file name, never to the string
-	// the plugin sent
-	hreq, err := http.NewRequestWithContext(c.ctx, http.MethodHead, base+"/"+name, nil)
+	// the request goes to the admin's host (parsed from dz_art_url) with the checked file
+	// name as its last path segment, never to the string the plugin sent
+	target, err := url.Parse(base)
+	if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" {
+		return Result{Err: fail(CodeNotConfigured, "dz_art_url is not a web address")}
+	}
+	file, err := url.PathUnescape(name)
+	if err != nil || strings.ContainsAny(file, "/\\") {
+		return Result{Err: fail(CodeNotAllowed, "only a file under the home's logo host is checked")}
+	}
+	target.Path = path.Join("/", target.Path, file)
+	target.RawPath, target.RawQuery, target.Fragment = "", "", ""
+	hreq, err := http.NewRequestWithContext(c.ctx, http.MethodHead, target.String(), nil)
 	if err != nil {
 		return Result{Err: fail(CodeBadRequest, "request not buildable")}
 	}

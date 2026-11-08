@@ -39,6 +39,7 @@ func main() {
 	plexToken := flag.String("plex-token", "", "trusted/service: the token the door adds")
 	dizqueURL := flag.String("dizquetv-url", "", "trusted/service: the dizqueTV the home's door reaches (a fake; issue #827)")
 	artBase := flag.String("art-base", "", "trusted/service: the logo host the dizqueTV plugin may check (dz_art_url)")
+	publicBase := flag.String("public-base", "", "trusted/service: the address the TVs reach dizqueTV at (dz_public_url)")
 	flag.Parse()
 	if *dsn == "" || *socket == "" {
 		log.Fatal("plugin-api-dev: -dsn and -socket are needed")
@@ -71,8 +72,9 @@ func main() {
 				}
 				return relay.Upstream{Enabled: *plexURL != "", URL: *plexURL, Secret: *plexToken}, nil
 			},
-			ArtBase: func(context.Context) (string, error) { return *artBase, nil },
-			Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+			ArtBase:    func(context.Context) (string, error) { return *artBase, nil },
+			PublicBase: func(context.Context) (string, error) { return *publicBase, nil },
+			Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 		})
 	}
 	go func() {

@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -155,6 +156,7 @@ type dzHarness struct {
 	art     *httptest.Server
 	door    *Door
 	plex    Upstream
+	plexErr error // reading the Plex upstream fails
 	relayOn bool
 	answers []string
 }
@@ -190,10 +192,11 @@ func newDZHarness(t *testing.T) *dzHarness {
 			if ext.Name == "dizquetv" {
 				return Upstream{Enabled: true, URL: h.dzSrv.URL}, nil
 			}
-			return h.plex, nil
+			return h.plex, h.plexErr
 		},
-		ArtBase: func(context.Context) (string, error) { return h.art.URL + "/logos", nil },
-		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ArtBase:    func(context.Context) (string, error) { return h.art.URL + "/logos", nil },
+		PublicBase: func(context.Context) (string, error) { return "https://tv.example.com/", nil },
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	return h
 }
@@ -512,7 +515,7 @@ func TestDizqueTVWriteRefusals(t *testing.T) {
 		return map[string]any{"name": "maktaba-plan · X", "content": []any{s}}
 	}
 	ch := func(progs ...any) map[string]any {
-		return map[string]any{"number": 3, "name": "C", "programs": progs}
+		return map[string]any{"number": 3, "name": "C", "programs": append([]any{}, progs...)}
 	}
 	for name, c := range map[string]struct {
 		method, target string
@@ -537,6 +540,23 @@ func TestDizqueTVWriteRefusals(t *testing.T) {
 		"a file with a scheme":                 {"PUT", "/maktaba/show", bad(func(m map[string]any) { m["file"] = "/x/concat:/etc/passwd|http://a" })},
 		"a file that is not absolute":          {"PUT", "/maktaba/show", bad(func(m map[string]any) { m["file"] = "media/a.mkv" })},
 		"a file that climbs":                   {"PUT", "/maktaba/show", bad(func(m map[string]any) { m["file"] = "/media/../etc/passwd" })},
+		// what dizqueTV and its clients fetch: only the home's own hosts
+		"an offline picture elsewhere":        {"PUT", "/maktaba/channel", withField(ch(), "offlinePicture", "http://elsewhere/x")},
+		"an offline soundtrack elsewhere":     {"PUT", "/maktaba/channel", withField(ch(), "offlineSoundtrack", "http://elsewhere/a.mp3")},
+		"a logo elsewhere":                    {"PUT", "/maktaba/channel", withField(ch(), "icon", "http://10.0.0.1/admin?x=1")},
+		"a logo in a folder of the logo host": {"PUT", "/maktaba/channel", withField(ch(), "icon", h.art.URL+"/logos/sub/a.png")},
+		"a logo next to the logo host":        {"PUT", "/maktaba/channel", withField(ch(), "icon", h.art.URL+"/logos-x/a.png")},
+		"a logo that climbs dizqueTV":         {"PUT", "/maktaba/channel", withField(ch(), "icon", h.dzSrv.URL+"/images/uploads/../../api/x")},
+		"a logo with a query of its own":      {"PUT", "/maktaba/channel", withField(ch(), "icon", h.dzSrv.URL+"/images/uploads/a.png?u=http://x")},
+		"a logo that is not text":             {"PUT", "/maktaba/channel", withField(ch(), "icon", map[string]any{"url": "x"})},
+		"a watermark elsewhere": {"PUT", "/maktaba/channel", withField(ch(), "watermark",
+			map[string]any{"enabled": true, "url": "http://elsewhere/w.png"})},
+		"a watermark field the door does not know": {"PUT", "/maktaba/channel", withField(ch(), "watermark",
+			map[string]any{"enabled": false, "src": "http://elsewhere/w.png"})},
+		"a watermark position that is a link": {"PUT", "/maktaba/channel", withField(ch(), "watermark",
+			map[string]any{"enabled": false, "position": "http://elsewhere/w.png"})},
+		"a filler entry of another kind":  {"PUT", "/maktaba/channel", ch(map[string]any{"duration": 1, "type": "movie"})},
+		"a filler entry with no duration": {"PUT", "/maktaba/channel", ch(map[string]any{"isOffline": true})},
 	} {
 		before := len(h.dz.seen)
 		res, _ := h.do(t, c.method, c.target, c.body)
@@ -555,6 +575,93 @@ func TestDizqueTVWriteRefusals(t *testing.T) {
 	if res, _ := h.do(t, "PUT", "/maktaba/show", map[string]any{"name": "x", "content": []any{spec("1")}}); res.Err == nil ||
 		res.Err.Code != CodeNotConfigured {
 		t.Fatalf("no token: %+v", res)
+	}
+}
+
+func withField(m map[string]any, k string, v any) map[string]any {
+	m[k] = v
+	return m
+}
+
+// A channel's pictures (its logo, its watermark, its offline picture and soundtrack) are
+// fetched by dizqueTV and its clients, so the door writes only the home's own: none, the
+// stored value unchanged, a file directly under dz_art_url, or a picture uploaded to
+// dizqueTV (at its address or at dz_public_url), with the file's version as the only query.
+// A pass-through programme (filler time, a redirect) keeps only what those need.
+func TestDizqueTVChannelPicturesAndPassThroughProgrammes(t *testing.T) {
+	h := newDZHarness(t)
+	h.dz.channels[4] = map[string]any{
+		"number": 4, "name": "C", "programs": []any{}, "offlinePicture": "http://old.example/offline.png",
+		"offlineSoundtrack": "http://192.168.1.4:32400/a.mp3?X-Plex-Token=" + secret,
+	}
+	ex := h.ok(t, "GET", "/maktaba/channel/programless/4", nil)
+	var doc map[string]any
+	_ = json.Unmarshal([]byte(ex), &doc)
+	if doc["offlinePicture"] != "http://old.example/offline.png" {
+		t.Fatalf("the stored offline picture is not shown: %s", ex)
+	}
+	for name, v := range map[string]struct {
+		icon string
+		wm   any
+	}{
+		"uploaded to dizqueTV": {h.dzSrv.URL + "/images/uploads/maktaba-ch4.png?v=0123456789", map[string]any{"enabled": false}},
+		"uploaded, at dz_public_url": {"https://tv.example.com/images/uploads/maktaba-ch4%20b.png", map[string]any{
+			"enabled": true, "url": h.art.URL + "/logos/wm.gif?v=abcdef0123", "width": 12.0, "verticalMargin": 2.0,
+			"horizontalMargin": 2.0, "duration": 0, "position": "top-right", "fixedSize": false, "animated": true,
+		}},
+		"on the logo host": {h.art.URL + "/logos/ch4.png", map[string]any{"enabled": false}},
+		"none":             {"", map[string]any{"enabled": false}},
+	} {
+		doc["icon"], doc["watermark"], doc["programs"] = v.icon, v.wm, []any{}
+		if res, out := h.do(t, "PUT", "/maktaba/channel", doc); res.Err != nil || res.Status >= 300 {
+			t.Fatalf("%s: %+v %s", name, res, out)
+		}
+		got := h.dz.channels[4]
+		if got["icon"] != v.icon || got["offlinePicture"] != "http://old.example/offline.png" {
+			t.Fatalf("%s: dizqueTV holds %v", name, got)
+		}
+		// the hidden soundtrack (it holds the token) survives every rewrite
+		if got["offlineSoundtrack"] != "http://192.168.1.4:32400/a.mp3?X-Plex-Token="+secret {
+			t.Fatalf("%s: the hidden soundtrack was lost: %v", name, got["offlineSoundtrack"])
+		}
+	}
+	// filler time and a redirect keep what they need, and nothing else
+	doc["icon"], doc["watermark"] = "", map[string]any{"enabled": false}
+	doc["programs"] = []any{
+		map[string]any{"duration": 60000, "isOffline": true, "icon": "http://elsewhere/x.png", "title": "x", "summary": "y"},
+		map[string]any{"duration": 30000, "isOffline": true, "type": "redirect", "channel": 9, "icon": "http://elsewhere/r.png"},
+	}
+	h.ok(t, "PUT", "/maktaba/channel", doc)
+	progs := h.dz.channels[4]["programs"].([]any)
+	want := []map[string]any{
+		{"duration": 60000.0, "isOffline": true},
+		{"duration": 30000.0, "isOffline": true, "type": "redirect", "channel": 9.0},
+	}
+	for i, w := range want {
+		got := progs[i].(map[string]any)
+		if len(got) != len(w) {
+			t.Fatalf("programme %d: %v, want %v", i, got, w)
+		}
+		for k, v := range w {
+			if got[k] != v {
+				t.Fatalf("programme %d: %v, want %v", i, got, w)
+			}
+		}
+	}
+}
+
+// When the home's Plex settings cannot be read, the guard would run without the home's
+// token: every operation is refused. Plex simply not set up is not an error (reads go on).
+func TestDizqueTVUnreadablePlexRefuses(t *testing.T) {
+	h := newDZHarness(t)
+	h.plexErr = errors.New("home_secrets unreadable")
+	if res, _ := h.do(t, "GET", "/maktaba/shows", nil); res.Err == nil || res.Err.Code != CodeUnreachable {
+		t.Fatalf("an unreadable Plex upstream answered: %+v", res)
+	}
+	h.plexErr, h.plex = nil, Upstream{}
+	h.door.Forget()
+	if res, _ := h.do(t, "GET", "/maktaba/shows", nil); res.Err != nil {
+		t.Fatalf("Plex not set up: %+v", res)
 	}
 }
 
