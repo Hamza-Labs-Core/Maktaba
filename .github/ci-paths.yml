@@ -309,6 +309,9 @@ runner_stages:
   - 'cmd/maktaba-server/internal/pluginrelay/**'
   - 'api/internal/plugins/**'
   - 'api/tools/plugin-api-dev/**'
+  # the ffmpeg download, retried and checked against its pin
+  - 'tools/release/fetch-pinned.sh'
+  - 'tools/release/win-app/pins.env'
 
 # the cloud's Cloudflare files (Epic 50, 50.30, 50.31, 50.34): the zone and Tunnel files, the
 # published IP ranges, the tools that check and deploy them, and their workflows

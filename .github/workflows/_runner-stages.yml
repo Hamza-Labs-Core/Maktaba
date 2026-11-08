@@ -80,18 +80,44 @@ jobs:
           "MAKTABA_STAGES_E2E_SHARE=\\localhost\mkstages" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "MAKTABA_STAGES_E2E_SHARE_DIR=$lib" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      # the Windows app's ffmpeg (tools/release/win-app/pins.env)
+      # the Windows app's ffmpeg (tools/release/win-app/pins.env): in a cache keyed on its file
+      # name and pin, fetched on a miss with retries and backoff (tools/release/fetch-pinned.sh;
+      # GitHub's release downloads answer 504 for minutes at a time), checked against the pin
+      # on a hit as on a miss
+      - id: ffmpeg-cache-pin
+        run: |
+          . tools/release/win-app/pins.env
+          echo "key=$(tools/release/fetch-pinned.sh --key "$FFMPEG_URL" "$FFMPEG_SHA256")" >>"$GITHUB_OUTPUT"
+          echo "path=build/ci-pinned/ffmpeg-$FFMPEG_VERSION.zip" >>"$GITHUB_OUTPUT"
+      - id: ffmpeg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.ffmpeg-cache-pin.outputs.path }}
+          key: ${{ steps.ffmpeg-cache-pin.outputs.key }}
+      - name: The ffmpeg download, retried
+        env:
+          ZIP: ${{ steps.ffmpeg-cache-pin.outputs.path }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          . tools/release/win-app/pins.env
+          tools/release/fetch-pinned.sh "$FFMPEG_URL" "$FFMPEG_SHA256" "$ZIP"
+      - name: Save the ffmpeg download
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.ffmpeg-cache-pin.outputs.path }}
+          key: ${{ steps.ffmpeg-cache-pin.outputs.key }}
+
       - name: ffmpeg
         shell: pwsh
+        env:
+          ZIP: ${{ steps.ffmpeg-cache-pin.outputs.path }}
         run: |
-          $zip = Join-Path $env:RUNNER_TEMP 'ffmpeg.zip'
-          $url = (Select-String -Path tools/release/win-app/pins.env -Pattern '^FFMPEG_URL=(.*)$').Matches[0].Groups[1].Value
+          $zip = $env:ZIP
           $sha = (Select-String -Path tools/release/win-app/pins.env -Pattern '^FFMPEG_SHA256=(.*)$').Matches[0].Groups[1].Value
-          Invoke-WebRequest -Uri $url -OutFile $zip
           if ((Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower() -ne $sha) { throw "ffmpeg.zip: sha256 mismatch" }
           $dest = Join-Path $env:RUNNER_TEMP 'ffmpeg'
           Expand-Archive -Path $zip -DestinationPath $dest
-          Remove-Item $zip
           $bin = (Get-ChildItem -Path $dest -Recurse -Filter ffmpeg.exe | Select-Object -First 1).DirectoryName
           & (Join-Path $bin 'ffmpeg.exe') -hide_banner -version | Select-Object -First 1
           "MAKTABA_STAGES_E2E_FFMPEG=$(Join-Path $bin 'ffmpeg.exe')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
