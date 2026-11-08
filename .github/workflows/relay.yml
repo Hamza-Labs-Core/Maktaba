@@ -38,6 +38,9 @@ on:
       - 'shared/logkeeper/go/**'
       - 'deploy/cloud-relay/**'
       - '.github/workflows/relay.yml'
+      # the lint job's pinned golangci-lint and the fetch it goes through
+      - 'tools/ci/golangci-lint.sh'
+      - 'tools/release/fetch-pinned.sh'
     tags:
       - 'v*'
   pull_request:
@@ -53,6 +56,9 @@ on:
       - 'shared/logkeeper/go/**'
       - 'deploy/cloud-relay/**'
       - '.github/workflows/relay.yml'
+      # the lint job's pinned golangci-lint and the fetch it goes through
+      - 'tools/ci/golangci-lint.sh'
+      - 'tools/release/fetch-pinned.sh'
   # Manual rollout: pick a tag (or leave blank to deploy `latest`) and
   # run the deploy job against the `production` environment.
   # Or a tag's run by hand, as a pushed tag's (`--ref vX.Y.Z -f tag=vX.Y.Z`), when its push run
@@ -110,10 +116,40 @@ jobs:
         with:
           modules: cloud
 
+      # golangci-lint's pinned release (tools/ci/golangci-lint.sh), cached by its pin; on a miss
+      # fetched by the GitHub API first, retried, its SHA-256 checked (the action's own
+      # download, github.com with no retry, failed main's lint with a 504). The action steps
+      # below run it (install-mode: none); saved on a miss on any ref, as the NSIS toolset is.
+      - name: golangci-lint's cache key
+        id: golangci-key
+        run: echo "key=$(tools/ci/golangci-lint.sh --key)" >>"$GITHUB_OUTPUT"
+      - id: golangci-cache
+        uses: actions/cache/restore@v4
+        with:
+          # the archive alone (bin/ is unpacked from it each run)
+          path: |
+            build/ci-pinned/golangci-lint
+            !build/ci-pinned/golangci-lint/bin
+          key: ${{ steps.golangci-key.outputs.key }}
+      - name: golangci-lint, pinned and retried
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: tools/ci/golangci-lint.sh build/ci-pinned/golangci-lint
+      - name: Save golangci-lint
+        if: steps.golangci-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          # the archive alone (bin/ is unpacked from it each run)
+          path: |
+            build/ci-pinned/golangci-lint
+            !build/ci-pinned/golangci-lint/bin
+          key: ${{ steps.golangci-key.outputs.key }}
+
       - name: golangci-lint (cloud)
         uses: golangci/golangci-lint-action@v9.2.1
         with:
-          version: v2.12.2
+          # the binary golangci-lint.sh put on the PATH (its version is pinned there)
+          install-mode: none
           working-directory: cloud
           args: --timeout=5m
           # its lint cache: pull requests and tags restore main's, only a push to main saves

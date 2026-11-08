@@ -119,7 +119,10 @@ jobs:
       - id: downloads-cache
         uses: actions/cache/restore@v4
         with:
-          path: build/win-app/downloads
+          # a cancelled download's .part is never kept
+          path: |
+            build/win-app/downloads
+            !build/win-app/downloads/*.part
           key: win-app-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/release/win-app/pins.env') }}
           restore-keys: win-app-downloads-${{ runner.os }}-${{ runner.arch }}-
 
@@ -128,6 +131,7 @@ jobs:
       # uses as well; files no pin names any more are dropped. payload.sh then checks each
       # and downloads none.
       - name: The pinned downloads, retried
+        id: prefetch
         if: steps.downloads-cache.outputs.cache-hit != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -143,13 +147,23 @@ jobs:
           for x in "$d"/*; do
             case "$keep" in *" ${x##*/} "*) ;; *) echo "dropping ${x##*/} (no pin names it)"; rm -rf "$x" ;; esac
           done
+          echo complete=true >>"$GITHUB_OUTPUT"
 
+      # saved when a download failed too: fetch-pinned.sh moves a file in only once its SHA-256
+      # is the pin's, so every file here is good. A failed prefetch saved nothing before, and
+      # main's run never got an entry (2026-11-08: pgvector's archive 504'd after the others
+      # had downloaded). A complete folder goes under the pins' key; a partial one under that
+      # key and -partial-<run>, which the exact key never matches and restore-keys finds, so
+      # the next run downloads only what is missing.
       - name: Save the pinned downloads
-        if: steps.downloads-cache.outputs.cache-hit != 'true'
+        if: always() && (steps.prefetch.outcome == 'success' || steps.prefetch.outcome == 'failure')
         uses: actions/cache/save@v4
         with:
-          path: build/win-app/downloads
-          key: win-app-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/release/win-app/pins.env') }}
+          # a cancelled download's .part is never kept
+          path: |
+            build/win-app/downloads
+            !build/win-app/downloads/*.part
+          key: win-app-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/release/win-app/pins.env') }}${{ steps.prefetch.outputs.complete != 'true' && format('-partial-{0}-{1}', github.run_id, github.run_attempt) || '' }}
 
       # tauri's NSIS bundler downloads its toolset from GitHub releases with no retry (a 504
       # failed this job): the two files tauri-cli 2.12.3 pins (nsis/mod.rs: NSIS_URL and

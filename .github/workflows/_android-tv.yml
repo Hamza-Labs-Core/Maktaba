@@ -26,11 +26,9 @@ jobs:
       # The wrapper's jar runs the build: it must be Gradle's own for the version it names,
       # checked here so a wrong jar fails the PR and not the release (play-bundles.yml).
       - name: Gradle wrapper is Gradle's
-        run: |
-          set -euo pipefail
-          version=$(sed -n 's#.*/gradle-\(.*\)-bin.zip#\1#p' gradle/wrapper/gradle-wrapper.properties)
-          want=$(curl -fsSL "https://services.gradle.org/distributions/gradle-${version}-wrapper.jar.sha256")
-          echo "${want}  gradle/wrapper/gradle-wrapper.jar" | sha256sum -c -
+        working-directory: .
+        # Gradle's published SHA-256 of the jar, fetched with retries
+        run: tools/ci/gradle-wrapper.sh check apps/tv/android
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -60,6 +58,30 @@ jobs:
           add-job-summary: on-failure
           # the step above checks the wrapper jar
           validate-wrappers: false
+
+      # The wrapper's distribution before the build, so ./gradlew downloads nothing (its own
+      # download, one try with a 10 s timeout, failed the desktop Player on 2026-11-08): cached
+      # by its pin, saved on a miss on any ref, and on a miss fetched with retries and checked
+      # against distributionSha256Sum, then put where the wrapper looks
+      # (tools/ci/gradle-wrapper.sh). Nothing is fetched when the cache above restored it.
+      - name: Gradle distribution's cache key
+        id: gradle-dist-key
+        working-directory: .
+        run: echo "key=$(tools/ci/gradle-wrapper.sh --key apps/tv/android)" >>"$GITHUB_OUTPUT"
+      - id: gradle-dist-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/ci-pinned/gradle
+          key: ${{ steps.gradle-dist-key.outputs.key }}
+      - name: Gradle distribution, retried
+        working-directory: .
+        run: tools/ci/gradle-wrapper.sh dist apps/tv/android build/ci-pinned/gradle
+      - name: Save the Gradle distribution
+        if: steps.gradle-dist-cache.outputs.cache-hit != 'true' && hashFiles('build/ci-pinned/gradle/*.zip') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: build/ci-pinned/gradle
+          key: ${{ steps.gradle-dist-key.outputs.key }}
 
       - name: Unit tests, lint, build
         run: |

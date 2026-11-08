@@ -108,6 +108,8 @@ lint_go:
   - *make
   - *go
   - '.github/workflows/_lint.yml'
+  # golangci-lint's pinned release (tools/release/fetch-pinned.sh is in *go)
+  - 'tools/ci/golangci-lint.sh'
 
 lint_pipeline:
   - *ci
@@ -596,6 +598,9 @@ android_apps:
   - *ci
   - 'apps/android/**'
   - '.github/workflows/_android-apps.yml'
+  # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
+  - 'tools/ci/gradle-wrapper.sh'
+  - 'tools/release/fetch-pinned.sh'
   - '.github/workflows/play-bundles.yml'
   - 'tools/release/play-version.sh'
   - 'tools/release/play-version-test.sh'
@@ -608,6 +613,9 @@ android_tv:
   - 'apps/android/client/**'
   - 'apps/android/gradle/libs.versions.toml'
   - '.github/workflows/_android-tv.yml'
+  # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
+  - 'tools/ci/gradle-wrapper.sh'
+  - 'tools/release/fetch-pinned.sh'
   - '.github/workflows/play-bundles.yml'
 
 # The desktop Player for Windows and Linux (Epic 42.4): its project, the portable client
@@ -619,6 +627,9 @@ desktop_player:
   - 'apps/android/core/src/main/res/font/**'
   - 'apps/android/gradle/libs.versions.toml'
   - '.github/workflows/_desktop-player.yml'
+  # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
+  - 'tools/ci/gradle-wrapper.sh'
+  - 'tools/release/fetch-pinned.sh'
 
 # The Apple apps' build job: MaktabaKit's tests, a build of the Remote, the Player (iPhone
 # and Mac) and the TV app, their String Catalogs.
