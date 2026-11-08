@@ -763,6 +763,17 @@
     <string name="dash_log_files">ملفات السجلات</string>
     <string name="dash_log_index">فهرس البحث في السجلات</string>
     <string name="dash_backups">نسخ التحديث الاحتياطية</string>
+    <string name="dash_component_down">المكوّنات المتوقفة</string>
+    <string name="dash_machines_components_up">المكوّنات العاملة، كل الأجهزة</string>
+    <string name="dash_machines_components_down">المكوّنات المتوقفة، كل الأجهزة</string>
+    <string name="dash_machines_disk_free_min">أقل مساحة حرة على القرص بين الأجهزة</string>
+    <string name="dash_machines_memory_free_min">أقل ذاكرة متاحة بين الأجهزة</string>
+    <string name="dash_machines_load_max">أعلى متوسط حِمل (دقيقة) بين الأجهزة</string>
+    <string name="dash_machines_restarts">إعادات التشغيل في الدقيقة، كل الأجهزة</string>
+    <string name="dash_machine">الجهاز</string>
+    <string name="dash_machine_all">كل الأجهزة</string>
+    <string name="dash_machines_shown">عرض %1$d من %2$d أجهزة، الأحوج إلى الانتباه أولاً. اختر جهازاً لترى بياناته وحده.</string>
+    <string name="dash_omitted">%1$d خطوط أخرى لم تتسع لها هذه اللوحة.</string>
     <!-- Epic 53 stories 53.04, 53.05: the recovery screen (the console's words) -->
     <string name="recovery_title">الاستعادة</string>
     <string name="recovery_intro">جزء من مكتبة لا يعمل. يمكنك هنا معرفة ما حدث وإصلاحه.</string>

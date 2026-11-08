@@ -40,7 +40,7 @@ CREATE TABLE metric_1h (name TEXT, labels TEXT, hour INTEGER, value REAL, min RE
 
 | Board | Panels |
 |---|---|
-| **Overview** | the 53.03 states now; errors per hour by component (14 d); components by phase over time and restarts per component (from `maktaba_component_*`), with turn-off and hold times marked from the `components` audit rows (`component.disable`, `component.hold`, …); requests per minute and p95 latency (API); CPU, memory, disk free of the home and each machine |
+| **Overview** | the 53.03 states now; errors per hour by component (14 d); components by phase over time and restarts per component (from `maktaba_component_*`), with turn-off and hold times marked from the `components` audit rows (`component.disable`, `component.hold`, …); requests per minute and p95 latency (API); CPU, memory, disk free of the home and each machine (many machines: below) |
 | **Queue** | jobs done and failed per hour per stage; queue depth per stage; time in queue p50/p95; per machine throughput (from `job_events` and the queue metrics) |
 | **Processing** | transcription hours of audio per hour and real-time factor; thumbnails per hour; MP4 conversions and dedup (Epic 47); failures by class (Epic 40) |
 | **Streaming** | sessions now and per hour, direct play vs transcode, transcode real-time factor, bandwidth out (LAN, relay), TV channels on air and their restarts |
@@ -55,10 +55,36 @@ CREATE TABLE metric_1h (name TEXT, labels TEXT, hour INTEGER, value REAL, min RE
 - **Use** shows counts and names only to admins; it never shows one person's history (the
   existing activity page and Profile do that, under their own rules).
 
+#### The Overview with many machines
+
+Each joined machine adds its load, memory, disk free and its components (labelled
+`machine=<node id>`), so past a few machines a line per machine does not fit a board's 50
+lines. The Overview of all machines draws instead:
+
+- totals across the machines (with two or more): components up and down, the least disk free
+  and memory free of any machine, the highest load, restarts per minute;
+- the **five machines most in need of attention now** (most components down, then least disk
+  free, then the highest load per CPU, by their latest values): their components down, load,
+  disk free and memory free;
+- "Showing 5 of 37 machines, those most in need of attention first", and a machine picker:
+  one machine on its own shows its components up and down, load, CPUs, memory and disk, and a
+  line for each component that was not up all the time or that restarted.
+
+The log index sums each machine's components up, its components and its restarts, and the
+totals across machines, as it writes a scrape (`maktaba_machine_*{machine}`,
+`maktaba_machines_*`), so the board reads at most a line per machine, and the full lines only
+of the machines it shows. Summing every component's rows when the board is asked took seconds
+for 50 machines of 45 components over 30 days; read this way the Overview and one machine's
+view answer in tens of milliseconds (`dashboard_30d_machines` in the performance run, budget
+500 ms p95).
+
 ### 3. API
 
 Admin only: `GET /api/admin/dashboards/{board}?range=` returns the board's series in one call
-(≤ 50 series, ≤ 2,000 points each, downsampled by the role). Role tests.
+(≤ 50 series, ≤ 2,000 points each, downsampled by the role). On the Overview,
+`machine=<node id>` answers that machine's lines on their own; the Overview's answer names the
+machines (`machines`: `total`, `shown`, `all`), and `omitted` counts the lines the 50 left out.
+Role tests (the `machine=` query included).
 
 ### 4. On the Remote apps
 
@@ -77,6 +103,10 @@ Overview and Storage on the Remote apps (Apple, Android), read-only.
 | `dash.use` | Use | الاستخدام |
 | `dash.openLogs` | Open in Logs | فتح في السجلات |
 | `dash.noData` | No data for this time yet | لا توجد بيانات لهذه الفترة بعد |
+| `dash.machine` | Machine | الجهاز |
+| `dash.machine.all` | All machines | كل الأجهزة |
+| `dash.machines.shown` | Showing {shown} of {total} machines, those most in need of attention first. Pick a machine to see its own. | عرض {shown} من {total} أجهزة، الأحوج إلى الانتباه أولاً. اختر جهازاً لترى بياناته وحده. |
+| `dash.omitted` | {count} more lines did not fit on this board. | {count} خطوط أخرى لم تتسع لها هذه اللوحة. |
 
 ## Acceptance criteria
 
@@ -103,6 +133,8 @@ Overview and Storage on the Remote apps (Apple, Android), read-only.
 | T05 | role test | nobody, viewer, admin | | 401, 403, 200 |
 | T06 | unit (vitest) | board fixtures | render en/ar | text summaries, RTL |
 | T07 | UI (**CI only**) | dark theme screenshots | | |
+| T08 | unit | 60 machines, a few in trouble | Overview; `machine=` | totals, the five most in need of attention in order, ≤ 50 lines, the machine count; one machine's own lines |
+| T09 | unit (vitest, Apple, Android) | an Overview of 37 machines | render; pick one | "Showing 5 of 37", the picker asks `machine=`, en/ar |
 
 ## Build plan
 

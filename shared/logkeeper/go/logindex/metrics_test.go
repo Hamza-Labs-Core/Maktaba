@@ -296,7 +296,8 @@ func TestScrapeTwoTargetsFirstKeepsASeries(t *testing.T) {
 }
 
 // Story 53.12: the Overview keeps each machine's memory, disk free and load, which the
-// supervisor's /metrics writes and the API's merges in.
+// supervisor's /metrics writes and the API's merges in; the Overview draws the machine's load,
+// disk free and memory free, and the machine's own view (machine=) also its CPUs and memory.
 func TestOverviewKeepsTheHosts(t *testing.T) {
 	root, now := t.TempDir(), t0
 	ix := open(t, root, &now)
@@ -313,18 +314,28 @@ maktaba_host_disk_free_bytes{machine="home"} 214748364800
 			t.Fatal(err)
 		}
 	}
-	doc, err := ix.Board(ctx, "overview", "1h")
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := map[string]string{}
-	for _, s := range doc.Series {
-		got[s.Name] = s.Labels
-	}
-	for _, name := range []string{"maktaba_host_load1", "maktaba_host_cpus", "maktaba_host_memory_bytes",
-		"maktaba_host_memory_free_bytes", "maktaba_host_disk_free_bytes"} {
-		if got[name] != "machine=home" {
-			t.Errorf("%s: %q, want machine=home (overview: %v)", name, got[name], got)
+	for machine, names := range map[string][]string{
+		"":     {"maktaba_host_load1", "maktaba_host_memory_free_bytes", "maktaba_host_disk_free_bytes"},
+		"home": {"maktaba_host_load1", "maktaba_host_cpus", "maktaba_host_memory_bytes", "maktaba_host_memory_free_bytes", "maktaba_host_disk_free_bytes"},
+	} {
+		doc, err := ix.BoardOf(ctx, "overview", "1h", machine)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]string{}
+		for _, s := range doc.Series {
+			got[s.Name] = s.Labels
+			if strings.HasPrefix(s.Name, "maktaba_machines_") {
+				t.Errorf("machine=%q: one machine has no totals across machines, got %s", machine, s.Name)
+			}
+		}
+		for _, name := range names {
+			if got[name] != "machine=home" {
+				t.Errorf("machine=%q: %s: %q, want machine=home (overview: %v)", machine, name, got[name], got)
+			}
+		}
+		if doc.Machines == nil || doc.Machines.Total != 1 || strings.Join(doc.Machines.Shown, ",") != "home" {
+			t.Errorf("machine=%q: machines %+v, want 1 with home shown", machine, doc.Machines)
 		}
 	}
 }
@@ -367,7 +378,8 @@ func TestMetricsIDCapPerMachine(t *testing.T) {
 			loads++
 		}
 	}
-	if loads != 3 || len(doc.Series) != MaxSeries {
-		t.Fatalf("the board has %d machines' load in %d lines; want 3 in %d", loads, len(doc.Series), MaxSeries)
+	if loads != 3 || len(doc.Series) > MaxSeries || doc.Omitted != 0 {
+		t.Fatalf("the board has %d machines' load in %d lines (%d left out); want 3, all within %d", loads,
+			len(doc.Series), doc.Omitted, MaxSeries)
 	}
 }
