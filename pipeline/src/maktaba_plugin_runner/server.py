@@ -201,6 +201,27 @@ def with_services(ctx: Any, msg: dict[str, Any]) -> Any:
     return ctx
 
 
+def job_line(group: str, stage: str, job_id: Any, status: str, seconds: float) -> None:
+    """The runner's own record of a job it ran (its log, which the supervisor keeps): the
+    worker's job id, the stage, how it ended (``ok``, ``failure``, ``refused``,
+    ``sandbox_refused``, ...) and how long the stage's code took."""
+    sys.stderr.write(
+        json.dumps(
+            {
+                "event": "plugin_runner_job",
+                "service": "plugin-runner",
+                "group": group,
+                "stage": stage,
+                "job_id": job_id,
+                "status": status,
+                "ms": round(seconds * 1000, 1),
+            }
+        )
+        + "\n"
+    )
+    sys.stderr.flush()
+
+
 @dataclass
 class Runner:
     group: str
@@ -286,6 +307,7 @@ class Runner:
             )
             return
         job = job_from_wire(msg["job"])
+        started = time.monotonic()
         missing = _use_plan_exporters(msg)
         if missing:
             # the plan would lack what those extensions add: the worker runs the job itself
@@ -347,6 +369,7 @@ class Runner:
                 "code": "plugin_scope",
                 "message": f"{scope.refused[0]}: not a file of this {stage} job's subject",
             }
+        job_line(self.group, stage, job.id, str(out.get("status")), time.monotonic() - started)
         await write_frame(w, {"type": "result", **out})
 
     async def _fingerprints(self, msg: dict[str, Any]) -> dict[str, Any]:

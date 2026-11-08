@@ -79,7 +79,7 @@ async def runner(db: Database) -> AsyncIterator[Path]:
 
 
 async def test_the_runner_writes_what_the_worker_writes(
-    db: Database, toy: bytes, monkeypatch: pytest.MonkeyPatch
+    db: Database, toy: bytes, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from maktaba_pipeline.plugins import native
 
@@ -119,10 +119,25 @@ async def test_the_runner_writes_what_the_worker_writes(
         for r in await db.fetch("SELECT message FROM job_events WHERE job_id = $1", job.id)
     ]
     assert "toy wrote 3 rows" in msgs
+    # the runner's own log names the job it ran (the Windows end to end reads it)
+    assert job_lines(capsys) == [("light", "fp_toy", job.id, "ok")]
+
+
+def job_lines(capsys: pytest.CaptureFixture[str]) -> list[tuple[Any, ...]]:
+    import json
+
+    out = []
+    for line in capsys.readouterr().err.splitlines():
+        with contextlib.suppress(ValueError):
+            d = json.loads(line)
+            if isinstance(d, dict) and d.get("event") == "plugin_runner_job":
+                assert isinstance(d["ms"], float) and d["ms"] >= 0
+                out.append((d["group"], d["stage"], d["job_id"], d["status"]))
+    return out
 
 
 async def test_a_failure_comes_back_as_the_handler_raised_it(
-    db: Database, toy: bytes, monkeypatch: pytest.MonkeyPatch
+    db: Database, toy: bytes, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from fp_toy import stage
 
@@ -153,6 +168,7 @@ async def test_a_failure_comes_back_as_the_handler_raised_it(
         "the toy broke",
         False,
     )
+    assert job_lines(capsys) == [("light", "fp_toy", job.id, "failure")]
 
 
 async def test_an_unregistered_statement_runs_the_job_in_process(

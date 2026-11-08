@@ -97,6 +97,7 @@ jobs:
       unit_tokens: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.unit_tokens == 'true' }}
       desktop_shell: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.desktop_shell == 'true' }}
       plugins: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.plugins == 'true' }}
+      runner_stages: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.runner_stages == 'true' }}
       store: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.store == 'true' }}
       cloudflare: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.cloudflare == 'true' }}
       mdns: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.mdns == 'true' }}
@@ -255,6 +256,13 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.plugins == 'true'
     uses: ./.github/workflows/_plugins.yml
+
+  runner-stages:
+    # Epic 54 (story 54.23): Maktaba's own stages through the worker's plugin path into
+    # their Windows runners, end to end, local and on a share (see _runner-stages.yml)
+    needs: [changes]
+    if: needs.changes.outputs.runner_stages == 'true'
+    uses: ./.github/workflows/_runner-stages.yml
 
   store:
     # Epic 54: the plugin store, its signer and the home's verifiers on the shared vectors,
@@ -565,6 +573,7 @@ jobs:
       - replica
       - components
       - plugins
+      - runner-stages
       - store
       - cloudflare
       - e2e

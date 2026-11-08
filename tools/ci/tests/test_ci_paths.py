@@ -99,6 +99,18 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
             "node-packaging": {"packaging", "release_venv"},
         },
     ),
+    # Epic 54 (story 54.23): a runner's change runs Maktaba's own stages in their Windows
+    # runners, end to end (_runner-stages.yml)
+    "a runner's change runs its stages on Windows": (
+        ["pipeline/src/maktaba_plugin_runner/winproc.py"],
+        {"unit", "integration", "plugins", "runner-stages", "e2e", "node-packaging", "mac-app"},
+        {
+            "lint": {"pipeline"},
+            "unit": {"pipeline"},
+            "integration": {"integration"},
+            "node-packaging": {"packaging", "release_venv"},
+        },
+    ),
     "api only": (
         ["api/internal/handlers/browse/browse.go"],
         GO_SERVER,
@@ -124,8 +136,9 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     # Epic 51 (story 51.01): a change to the graph runs the catalog job beside the pipeline's
     "the stage graph runs the catalog check": (
         ["pipeline/src/maktaba_pipeline/engine/graph.py"],
-        # the engine is also the first-party plugins' (Epic 54 Phase 4): their parity runs
-        {"unit", "integration", "e2e", "node-packaging", "plugins"},
+        # the engine is also the first-party plugins' (Epic 54 Phase 4): their parity runs,
+        # and their stages in their Windows runners (54.23)
+        {"unit", "integration", "e2e", "node-packaging", "plugins", "runner-stages"},
         {
             "lint": {"pipeline", "catalog"},
             "unit": {"pipeline"},

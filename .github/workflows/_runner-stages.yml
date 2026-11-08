@@ -1,0 +1,136 @@
+# Story 54.23 on Windows, end to end with Maktaba's own stages: real first-party stages
+# (thumb_small and convert_mp4's dry run, each capturing its tool's output) run through the
+# worker's real plugin path into their runner groups, in their AppContainers, on a library
+# in a local folder and on one on an SMB share. Everything but the worker's loop is the
+# release's: the supervisor runs the bundled Postgres and the runners on demand through the
+# launcher's runner-sandbox-run (grants, Job Object, the share broker, the pipes), the plugin
+# API's executor and tokens (api/tools/plugin-api-dev) run the stages' statements.
+# cmd/maktaba-server/internal/supervisor/runners_windows_stages_e2e_test.go says what each
+# job must show: it ran in its runner (never the worker's fallback) and made the right
+# output. Its verdict's own tests run on every system in the unit job.
+#
+# Required through ci.yml's ci-success for a change to the runner, the launcher, the engine
+# or the stages' tool helpers (.github/ci-paths.yml, runner_stages); unrelated pull requests
+# skip it. The logs (the supervisor's, Postgres's, each runner's with its launcher's, the
+# plugin API's and the worker's, and the worker's report) are kept on every run.
+
+name: Runner stages (Windows)
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  runner-stages:
+    name: First-party stages in their Windows runners (54.23)
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: cmd/maktaba-server/go.mod
+          cache: false
+
+      # the launcher and the supervisor (cmd/maktaba-server), and the plugin API's dev
+      # server (api), retried; the builds and the test read the cache
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: cmd/maktaba-server api
+
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version-file: pipeline/.python-version
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      # the worker's and the runners' interpreter: the pipeline's own environment (the
+      # runner's trust check reads it as a developer checkout)
+      - name: Pipeline environment
+        working-directory: pipeline
+        run: uv sync --frozen --extra dev
+
+      # the pinned Postgres the app bundles (pgbin), from the launcher job's cache
+      - name: Postgres download
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/pgbin
+          key: pgbin-windows-${{ hashFiles('cmd/maktaba-server/internal/pgbin/pgbin.go') }}
+
+      - name: An SMB share for a library
+        shell: pwsh
+        run: |
+          $lib = Join-Path $env:RUNNER_TEMP 'smb-stages'
+          New-Item -ItemType Directory -Force -Path $lib | Out-Null
+          New-SmbShare -Name 'mkstages' -Path $lib -FullAccess $env:USERNAME | Out-Null
+          Get-ChildItem '\\localhost\mkstages' | Out-Null
+          "MAKTABA_STAGES_E2E_SHARE=\\localhost\mkstages" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MAKTABA_STAGES_E2E_SHARE_DIR=$lib" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      # the Windows app's ffmpeg (tools/release/win-app/pins.env)
+      - name: ffmpeg
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'ffmpeg.zip'
+          $url = (Select-String -Path tools/release/win-app/pins.env -Pattern '^FFMPEG_URL=(.*)$').Matches[0].Groups[1].Value
+          $sha = (Select-String -Path tools/release/win-app/pins.env -Pattern '^FFMPEG_SHA256=(.*)$').Matches[0].Groups[1].Value
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          if ((Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower() -ne $sha) { throw "ffmpeg.zip: sha256 mismatch" }
+          $dest = Join-Path $env:RUNNER_TEMP 'ffmpeg'
+          Expand-Archive -Path $zip -DestinationPath $dest
+          Remove-Item $zip
+          $bin = (Get-ChildItem -Path $dest -Recurse -Filter ffmpeg.exe | Select-Object -First 1).DirectoryName
+          & (Join-Path $bin 'ffmpeg.exe') -hide_banner -version | Select-Object -First 1
+          "MAKTABA_STAGES_E2E_FFMPEG=$(Join-Path $bin 'ffmpeg.exe')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MAKTABA_STAGES_E2E_FFPROBE=$(Join-Path $bin 'ffprobe.exe')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      # the launcher's runner-sandbox-run (aclaunch: appcontainer's code, as the supervisor
+      # runs it from maktaba-server) and the plugin API's dev server
+      - name: Build the launcher and the plugin API's dev server
+        run: |
+          set -euo pipefail
+          (cd cmd/maktaba-server && go build -o "$RUNNER_TEMP/aclaunch-runner.exe" ./internal/appcontainer/aclaunch)
+          (cd api && go build -o "$RUNNER_TEMP/plugin-api-dev.exe" ./tools/plugin-api-dev)
+
+      - name: First-party stages in their runners, local and on a share (54.23)
+        working-directory: cmd/maktaba-server
+        env:
+          MAKTABA_STAGES_E2E_REQUIRE: '1'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/runner-stages-logs"
+          MAKTABA_STAGES_E2E_PYTHON="$(cygpath -w "$GITHUB_WORKSPACE/pipeline/.venv/Scripts/python.exe")" \
+          MAKTABA_PLUGINS_SANDBOX_RUN="$(cygpath -w "$RUNNER_TEMP/aclaunch-runner.exe")" \
+          MAKTABA_PLUGIN_API_DEV="$(cygpath -w "$RUNNER_TEMP/plugin-api-dev.exe")" \
+          MAKTABA_TEST_PG_DOWNLOAD="$(cygpath -w "$RUNNER_TEMP/pgbin")" \
+          MAKTABA_STAGES_E2E_LOGS="$(cygpath -w "$RUNNER_TEMP/runner-stages-logs")" \
+            go test -count=1 -v -timeout 30m -run '^TestFirstPartyStagesRunInTheirRunnersOnWindows$' ./internal/supervisor/
+
+      - name: The logs' ends
+        if: failure()
+        run: |
+          for f in "$RUNNER_TEMP"/runner-stages-logs/*; do
+            [ -f "$f" ] || continue
+            echo "==== $f"
+            tail -n 80 "$f"
+          done
+
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: runner-stages-logs
+          path: ${{ runner.temp }}/runner-stages-logs
+          if-no-files-found: warn
