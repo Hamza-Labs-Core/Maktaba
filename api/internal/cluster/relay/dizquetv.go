@@ -89,24 +89,21 @@ var (
 	wmPositionRe = regexp.MustCompile(`^[a-z-]{1,20}$`)
 )
 
-// What a token-free programme record may hold, as program_spec builds it from a Plex item.
 var (
+	// a Plex item's rating key: the only field of a programme record the door reads
 	ratingKeyRe = regexp.MustCompile(`^[0-9]{1,12}$`)
-	// a Plex picture: /library/metadata/<key>/thumb|art|banner[/<version>]
-	plexPicRe = regexp.MustCompile(`^/library/metadata/[0-9]{1,12}/(thumb|art|banner)(/[0-9]{1,12})?$`)
-	// a Plex media part: dizqueTV streams <server's address><part> with its own token
-	plexPartRe = regexp.MustCompile(`^/library/parts/[0-9]{1,12}(/[0-9]{1,12})?/file(\.[A-Za-z0-9]{1,8})?$`)
 	// one file name under dz_art_url, as hosted_link quotes it
-	winDriveRe = regexp.MustCompile(`^[A-Za-z]:[\\/]`)
-	artNameRe  = regexp.MustCompile(`^[A-Za-z0-9._~%-]{1,255}$`)
-	showIDRe   = regexp.MustCompile(`^` + dzID + `$`)
+	artNameRe = regexp.MustCompile(`^[A-Za-z0-9._~%-]{1,255}$`)
+	showIDRe  = regexp.MustCompile(`^` + dzID + `$`)
 )
 
-// specFields: each field of a programme record and whether it must be there.
+// specFields are the fields a programme record may hold (program_spec's). Only the rating
+// key is read: every other one is Plex's to say, so the door reads it from Plex and ignores
+// what the plugin sent (an older plugin sends them all).
 var specFields = map[string]bool{
-	"title": false, "key": true, "ratingKey": true, "icon": false, "type": true, "duration": true,
-	"durationStr": false, "summary": false, "rating": false, "date": false, "year": false,
-	"plexFile": true, "file": true, "showTitle": false, "season": false, "episode": false, "commercials": false,
+	"title": true, "key": true, "ratingKey": true, "icon": true, "type": true, "duration": true,
+	"durationStr": true, "summary": true, "rating": true, "date": true, "year": true,
+	"plexFile": true, "file": true, "showTitle": true, "season": true, "episode": true, "commercials": true,
 }
 
 // playsFromPlex are the fields that make dizqueTV stream from Plex with its own token: a
@@ -529,23 +526,6 @@ func decodeObject(body []byte) (map[string]any, *Error) {
 	return m, nil
 }
 
-// mediaPath: an absolute path on a media server's disk (POSIX, a drive or a share), as Plex
-// reports a part's file; never a URL (dizqueTV's ffmpeg would fetch it), never a climb.
-func mediaPath(s string) bool {
-	if !strings.HasPrefix(s, "/") && !winDriveRe.MatchString(s) && !strings.HasPrefix(s, `\\`) {
-		return false
-	}
-	if strings.Contains(s, "://") || strings.ContainsRune(s, '\x00') {
-		return false
-	}
-	for _, seg := range strings.FieldsFunc(s, func(r rune) bool { return r == '/' || r == '\\' }) {
-		if seg == ".." {
-			return false
-		}
-	}
-	return true
-}
-
 func plainText(v any, limit int) (string, bool) {
 	s, ok := v.(string)
 	if !ok || len(s) > limit || !utf8.ValidString(s) {
@@ -601,92 +581,132 @@ func (c *dzCall) homeServer() (string, *Error) {
 	return "", fail(CodeNotConfigured, "dizqueTV has no Plex server registered at the home's Plex address")
 }
 
-// build makes the programme from a token-free record: every field checked, the picture's URL
-// (Plex's address, the path, the token) and the server's name added here.
-func (c *dzCall) build(spec map[string]any, server, plexBase string, i int) (map[string]any, *Error) {
-	for k := range spec {
-		if _, ok := specFields[k]; !ok {
-			return nil, bad("programme %d: %q is not a field the door builds from", i, clip(k, 40))
+// plexBatch is how many rating keys one metadata request asks (the Plex allow-list's limit).
+const plexBatch = 50
+
+// plexItems reads each item from the home's Plex (/library/metadata/<keys>, the token in a
+// header), by rating key; a key Plex does not know is absent.
+func (c *dzCall) plexItems(keys []string) (map[string]map[string]any, *Error) {
+	base, err := url.Parse(strings.TrimRight(strings.TrimSpace(c.plex.URL), "/"))
+	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Host == "" {
+		return nil, fail(CodeNotConfigured, "the home's Plex address is not usable")
+	}
+	out := map[string]map[string]any{}
+	var todo []string
+	for _, k := range keys {
+		if _, seen := out[k]; !seen {
+			out[k] = nil
+			todo = append(todo, k)
 		}
 	}
-	for k, req := range specFields {
-		if _, ok := spec[k]; req && !ok {
-			return nil, bad("programme %d: %s is missing", i, k)
+	for len(todo) > 0 {
+		n := min(plexBatch, len(todo))
+		batch := todo[:n]
+		todo = todo[n:]
+		u := *base
+		u.Path = path.Join("/", base.Path, "library", "metadata", strings.Join(batch, ","))
+		u.RawPath, u.RawQuery, u.Fragment = "", "", ""
+		hreq, err := http.NewRequestWithContext(c.ctx, http.MethodGet, u.String(), nil)
+		if err != nil {
+			return nil, fail(CodeBadRequest, "request not buildable")
+		}
+		hreq.Header.Set("Accept", "application/json")
+		hreq.Header.Set("X-Plex-Token", c.plex.Secret)
+		resp, err := c.d.client.Do(hreq)
+		if err != nil {
+			return nil, fail(CodeUnreachable, clip(ScrubString(Plex.QueryParam, c.plex.Secret, err.Error()), 200))
+		}
+		raw, rerr := io.ReadAll(io.LimitReader(resp.Body, c.limit+1))
+		resp.Body.Close()
+		switch {
+		case rerr != nil || int64(len(raw)) > c.limit:
+			return nil, fail(CodeUnreachable, "Plex's answer was cut short or over the limit")
+		case resp.StatusCode == http.StatusNotFound:
+			continue // none of these keys is Plex's
+		case resp.StatusCode >= 300:
+			return nil, fail(CodeUnreachable, fmt.Sprintf("Plex answered the items with %d", resp.StatusCode))
+		}
+		var doc struct {
+			MediaContainer struct {
+				Metadata []map[string]any `json:"Metadata"`
+			} `json:"MediaContainer"`
+		}
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.UseNumber()
+		if err := dec.Decode(&doc); err != nil {
+			return nil, fail(CodeUnreachable, "Plex answered the items with no JSON")
+		}
+		for _, m := range doc.MediaContainer.Metadata {
+			k := keyText(m["ratingKey"])
+			if v, asked := out[k]; asked && v == nil {
+				out[k] = m
+			}
 		}
 	}
-	p := map[string]any{}
-	rk, ok := spec["ratingKey"].(string)
-	if !ok || !ratingKeyRe.MatchString(rk) {
-		return nil, bad("programme %d: the rating key is not a Plex item's", i)
-	}
-	p["ratingKey"] = rk
-	if spec["key"] != "/library/metadata/"+rk {
-		return nil, bad("programme %d: its key is not its item's", i)
-	}
-	p["key"] = spec["key"]
-	switch spec["type"] {
-	case "movie", "episode":
-		p["type"] = spec["type"]
-	default:
-		return nil, bad("programme %d: not a movie or an episode", i)
-	}
-	d, ok := wholeNumber(spec["duration"])
-	if !ok || d <= 0 {
-		return nil, bad("programme %d: no duration", i)
-	}
-	p["duration"] = d
-	part, ok := spec["plexFile"].(string)
-	if !ok || !plexPartRe.MatchString(part) {
-		return nil, bad("programme %d: its part is not a Plex media part", i)
-	}
-	p["plexFile"] = part
-	file, ok := plainText(spec["file"], 4096)
-	if !ok || !mediaPath(file) {
-		return nil, bad("programme %d: its file is not a path", i)
-	}
-	p["file"] = file
-	for _, k := range []string{"title", "summary", "showTitle", "rating", "date", "durationStr"} {
-		v, there := spec[k]
-		if !there {
-			continue
-		}
+	for k, v := range out {
 		if v == nil {
-			p[k] = nil
-			continue
-		}
-		limit := 64 << 10
-		if k == "date" || k == "durationStr" || k == "rating" {
-			limit = 64
-		}
-		s, ok := plainText(v, limit)
-		if !ok {
-			return nil, bad("programme %d: %s is not text", i, k)
-		}
-		p[k] = s
-	}
-	for _, k := range []string{"year", "season", "episode"} {
-		v, there := spec[k]
-		if !there {
-			continue
-		}
-		if v == nil {
-			p[k] = nil
-			continue
-		}
-		n, ok := wholeNumber(v)
-		if !ok {
-			return nil, bad("programme %d: %s is not a number", i, k)
-		}
-		p[k] = n
-	}
-	if cm, there := spec["commercials"]; there {
-		if l, ok := cm.([]any); !ok || len(l) != 0 {
-			return nil, bad("programme %d: commercials are not built through the door", i)
+			delete(out, k)
 		}
 	}
-	// the picture: a Plex path only; the token is added here and never leaves the home
+	return out, nil
+}
+
+// hms is a duration as dizqueTV's page writes it (_hms in the pipeline).
+func hms(ms int64) string {
+	s := ms / 1000
+	return fmt.Sprintf("%02d:%02d:%02d.%d", s/3600, s/60%60, s%60, ms%1000/100)
+}
+
+// fromPlex is the programme of one Plex item, as the pipeline's program_from_plex builds it:
+// every playable field is Plex's, the picture's URL (Plex's address, the path, the token)
+// and the server's name are added here. An item Plex cannot play is refused.
+func (c *dzCall) fromPlex(meta map[string]any, rk, server, plexBase string, i int) (map[string]any, *Error) {
+	get := func(k string) any { return meta[k] }
+	or := func(k string, d any) any {
+		if v, ok := meta[k]; ok {
+			return v
+		}
+		return d
+	}
+	text := func(v any) string { s, _ := v.(string); return s }
+	d, ok := wholeNumber(meta["duration"])
+	typ := text(meta["type"])
+	if !ok || d == 0 || (typ != "movie" && typ != "episode") {
+		return nil, bad("programme %d: Plex cannot play item %s (not a movie or an episode with a duration)", i, rk)
+	}
+	var part map[string]any
+	if media, _ := meta["Media"].([]any); len(media) > 0 {
+		if m0, _ := media[0].(map[string]any); m0 != nil {
+			if parts, _ := m0["Part"].([]any); len(parts) > 0 {
+				part, _ = parts[0].(map[string]any)
+			}
+		}
+	}
+	key, kok := meta["key"].(string)
+	if part == nil || !kok {
+		return nil, bad("programme %d: Plex lists no media part for item %s", i, rk)
+	}
+	var date any
+	if v := get("originallyAvailableAt"); v != nil && v != "" {
+		date = v
+	} else if y := get("year"); y != nil && keyText(y) != "" && keyText(y) != "0" {
+		date = keyText(y) + "-01-01"
+	}
+	p := map[string]any{
+		"title": or("title", ""), "key": key, "ratingKey": rk, "type": typ, "duration": d,
+		"durationStr": hms(d), "summary": or("summary", ""), "rating": get("contentRating"), "date": date,
+		"year": get("year"), "plexFile": part["key"], "file": part["file"],
+	}
+	pic := text(meta["thumb"])
+	if typ == "episode" {
+		p["showTitle"], p["season"], p["episode"] = get("grandparentTitle"), get("parentIndex"), get("index")
+		pic = text(meta["grandparentThumb"])
+	} else {
+		p["showTitle"], p["season"], p["episode"] = or("title", ""), 1, 1
+	}
+	// the picture: the token is added here and never leaves the home
 	p["icon"] = nil
-	if pic, ok := spec["icon"].(string); ok && plexPicRe.MatchString(pic) {
+	if pic != "" {
 		p["icon"] = plexBase + pic + "?X-Plex-Token=" + c.plex.Secret
 	}
 	p["serverKey"] = server
@@ -736,13 +756,36 @@ func (c *dzCall) writeList(method, upath string, body []byte) (int, []byte, *Err
 		return 0, nil, e
 	}
 	plexBase := strings.TrimRight(strings.TrimSpace(c.plex.URL), "/")
-	content := make([]any, 0, len(items))
+	// each programme is named by its rating key; every other field of the record is Plex's to
+	// say, so the door reads it from Plex and ignores what the plugin sent
+	keys := make([]string, 0, len(items))
 	for i, it := range items {
 		spec, ok := it.(map[string]any)
 		if !ok {
 			return 0, nil, bad("programme %d is not an object", i)
 		}
-		p, e := c.build(spec, server, plexBase, i)
+		for k := range spec {
+			if !specFields[k] {
+				return 0, nil, bad("programme %d: %q is not a field the door builds from", i, clip(k, 40))
+			}
+		}
+		rk, ok := spec["ratingKey"].(string)
+		if !ok || !ratingKeyRe.MatchString(rk) {
+			return 0, nil, bad("programme %d: the rating key is not a Plex item's", i)
+		}
+		keys = append(keys, rk)
+	}
+	found, e := c.plexItems(keys)
+	if e != nil {
+		return 0, nil, e
+	}
+	content := make([]any, 0, len(items))
+	for i, rk := range keys {
+		meta, ok := found[rk]
+		if !ok {
+			return 0, nil, bad("programme %d: Plex knows no item %s", i, rk)
+		}
+		p, e := c.fromPlex(meta, rk, server, plexBase, i)
 		if e != nil {
 			return 0, nil, e
 		}

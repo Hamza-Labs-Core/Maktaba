@@ -139,9 +139,12 @@ sandbox test (T02) checks the `service` runner has no network.
 `dizquetv_show`, `dizquetv_channels` and `dizquetv_audit` run in `tv.maktaba.dizquetv`, in the
 `service` runner (`service = ["dizquetv", "plex"]`, roles in `0214_fp_roles`). dizqueTV is
 home-only in the door: a joined machine never relays it. The plugin never writes a raw
-programme. The door's own operations (`/maktaba/...`) take a token-free record of each Plex
-item (`program_spec`), check every field, and build the programme on the home with Plex's
-address, the server's name and the token. A channel's programmes are written as references:
+programme. The door's own operations (`/maktaba/...`) take each Plex item's rating key, read
+the item from Plex with the home's token (`/library/metadata/<keys>`, up to 50 keys a
+request), and build the programme on the home from Plex's answer, as `program_from_plex`
+does in the worker, with Plex's address, the server's name and the token. Every playable
+field (file, media part, duration, key, type) is Plex's: any other field the plugin sends is
+ignored, and a rating key Plex does not know or cannot play is refused. A channel's programmes are written as references:
 an index into the stored channel, or a show id and a rating key, which the door fills in from
 what dizqueTV holds. Every read is a projection: a whitelist of fields, and any field whose
 value holds a secret is left out, then merged back from the stored document on a write. A

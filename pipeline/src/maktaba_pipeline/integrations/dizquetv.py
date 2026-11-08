@@ -158,8 +158,8 @@ class DoorDizqueTV(DizqueTV):
     * a read of a show, filler list, channel or the Plex servers is the door's projection
       (``/maktaba/...``): rating keys, durations and settings, never a programme's picture
       or a server's token;
-    * a programme is written as its token-free Plex record (:func:`program_spec`); the door
-      checks it and builds the programme, the picture's URL with the token included;
+    * a programme is written as its Plex item's rating key; the door reads the item from
+      Plex and builds the programme, the picture's URL with the token included;
     * a channel's programmes are sent as the projections they were read as; the door fills
       each from the stored show (or, by ``maktabaRef``, from the channel as stored).
 
@@ -177,8 +177,12 @@ class DoorDizqueTV(DizqueTV):
         return super().call(method, path, body)
 
     def programme(self, meta: Mapping[str, Any], server: str, plex: Any) -> dict[str, Any] | None:
-        """The token-free record: the door builds the programme from it on the home."""
-        return program_spec(meta)
+        """The item's rating key alone: the door reads the item from Plex on the home and
+        builds the programme from Plex's answer (every playable field is Plex's to say, so
+        the plugin sends none of them). None for an item that cannot be played."""
+        if program_spec(meta) is None:
+            return None
+        return {"ratingKey": str(meta["ratingKey"])}
 
     def can_build(self, plex_settings: Mapping[str, str]) -> bool:
         """The door holds the Plex settings (it refuses a write when they are missing)."""
@@ -249,8 +253,9 @@ def _hms(ms: int) -> str:
 def program_spec(meta: Mapping[str, Any]) -> dict[str, Any] | None:
     """A programme's token-free record from a Plex ``/library/metadata/RK`` item: the
     programme without what names Plex's address or token (``icon`` is the picture's Plex
-    path, there is no ``serverKey``). The home's service door builds the programme from it
-    for a plugin (issue #827); :func:`program_from_plex` does in the worker.
+    path, there is no ``serverKey``): what :func:`program_from_plex` builds on in the worker.
+    The home's service door builds the same programme for a plugin from Plex's own answer
+    (issue #827), as ``fromPlex`` in the door's code.
 
     None for items that cannot be played (no duration, not a movie or episode).
     """
