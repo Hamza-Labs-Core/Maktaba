@@ -157,6 +157,58 @@ final class RemoteDiagnosticsUITests: XCTestCase {
         XCTAssertTrue(element("recovery.done").waitForExistence(timeout: 10), "Done is said")
     }
 
+    /// Restore a backup and the diagnostics download, on the console's routes as the web page:
+    /// the backups listed, one chosen and confirmed twice before the POST, then the bundle
+    /// fetched and handed to the share sheet.
+    func testRecoveryRestoreAndDiagnostics() throws {
+        stubRecovery()
+        launch()
+        try XCTSkipUnless(app.buttons["Queue"].firstMatch.waitForExistence(timeout: 10), "the Remote's screens (the Player has none)")
+        open("home.recovery", homeTab: "Home")
+        XCTAssertTrue(element("recovery.part.core.postgres").waitForExistence(timeout: 15), "the parts")
+        let restore = element("recovery.action.restore")
+        for _ in 0 ..< 8 where !(restore.exists && restore.isHittable) { app.swipeUp(velocity: .slow) }
+        XCTAssertTrue(restore.waitForExistence(timeout: 5))
+        restore.tap()
+        let backup = element("recovery.backup.maktaba-20261106-030000.dump")
+        XCTAssertTrue(backup.waitForExistence(timeout: 10), "the home's backups")
+        XCTAssertTrue(home.seen.contains("GET /recovery/api/backups"))
+        shot("recovery-restore")
+        backup.tap()
+        // the alert's title names the backup, its button says Restore
+        let confirm = app.alerts.buttons["Restore"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "the first confirmation")
+        XCTAssertTrue(app.alerts.staticTexts["Are you sure?"].exists)
+        confirm.tap()
+        XCTAssertTrue(app.alerts.staticTexts["This replaces what is there now. Are you sure?"].waitForExistence(timeout: 5),
+                      "the second confirmation")
+        XCTAssertFalse(home.requests.contains { $0.path == "/recovery/api/action" }, "nothing sent before the second")
+        app.alerts.buttons["Restore"].firstMatch.tap()
+        let posted = { self.home.requests.contains { $0.method == "POST" && $0.path == "/recovery/api/action" } }
+        var end = Date().addingTimeInterval(10)
+        while !posted(), Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
+        let sent = home.requests.last { $0.path == "/recovery/api/action" }
+        let body = sent.flatMap { try? JSONSerialization.jsonObject(with: $0.body) as? [String: Any] }
+        XCTAssertEqual(body?["action"] as? String, "restore")
+        XCTAssertEqual(body?["backup"] as? String, "maktaba-20261106-030000.dump")
+        XCTAssertEqual(body?["confirm"] as? Int, 2)
+        XCTAssertTrue(element("recovery.restoring").waitForExistence(timeout: 10), "what happens next is said")
+
+        let download = element("recovery.action.diagnostics")
+        for _ in 0 ..< 4 where !(download.exists && download.isHittable) { app.swipeUp(velocity: .slow) }
+        download.tap()
+        let fetched = { self.home.seen.contains("GET /recovery/api/diagnostics") }
+        end = Date().addingTimeInterval(10)
+        while !fetched(), Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
+        XCTAssertTrue(fetched(), "the bundle was asked of the home")
+        // the system's share sheet, with the bundle's file
+        let sheet = app.otherElements["ActivityListView"].firstMatch
+        let named = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "maktaba-recovery-")).firstMatch
+        let shown = Date().addingTimeInterval(10)
+        while !(sheet.exists || named.exists), Date() < shown { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
+        XCTAssertTrue(sheet.exists || named.exists, "the share sheet")
+    }
+
     func testRecoveryInArabic() throws {
         stubRecovery()
         launch("ar", locale: "ar_JO")
@@ -166,6 +218,13 @@ final class RemoteDiagnosticsUITests: XCTestCase {
         XCTAssertTrue(element("recovery.part.core.postgres").waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["قاعدة البيانات"].exists, "the groups in Arabic")
         shot("ar-recovery")
+        let restore = element("recovery.action.restore")
+        for _ in 0 ..< 8 where !(restore.exists && restore.isHittable) { app.swipeUp(velocity: .slow) }
+        XCTAssertTrue(restore.label.contains("استعادة نسخة احتياطية"), "Restore a backup, in Arabic: \(restore.label)")
+        restore.tap()
+        XCTAssertTrue(element("recovery.backup.maktaba-20261106-030000.dump").waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["اختر نسخة احتياطية"].exists, "the list's title in Arabic")
+        shot("ar-recovery-restore")
     }
 
     /// A viewer's token (or a revoked pass): the console says 401, the screen says only
@@ -205,6 +264,13 @@ final class RemoteDiagnosticsUITests: XCTestCase {
           {"ts":"\(t(-30))","level":"warn","service":"supervisor","msg":"child_backoff"}],"truncated":false}
         """)
         home.stub("POST", "/recovery/api/action", body: #"{"result":"ok"}"#)
+        home.stub("GET", "/recovery/api/backups", body: """
+        {"backups":[{"name":"maktaba-20261106-030000.dump","at":"\(t(-86400))","size":73400320},
+                    {"name":"maktaba-20261105-030000.dump","at":"\(t(-2 * 86400))","size":72351744},
+                    {"name":"maktaba-20261104-030000.dump","at":"\(t(-3 * 86400))","size":71303168}]}
+        """)
+        // made-up bytes: the app hands them on as they came
+        home.stub("GET", "/recovery/api/diagnostics", body: "made-up diagnostics bundle")
     }
 
 

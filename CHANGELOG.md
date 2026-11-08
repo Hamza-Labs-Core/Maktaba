@@ -14,6 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
+- **The Remotes restore a backup and download diagnostics themselves (iPhone, Android).** The
+  recovery screen no longer sends either to the web page. **Restore a backup** lists the home's
+  backups with when each was taken and its size; choosing one asks twice, as the web page does,
+  and the home then restarts to put it back. **Download diagnostics** fetches the web page's
+  bundle and hands it to the share sheet on the iPhone, or saves it where the person chooses on
+  Android; the app keeps no copy. Both use the recovery pass and stop at the first refusal, as
+  the rest of the screen does.
 - **A native crash on Android keeps its stack (Player, Remote, Android TV).** On Android 12 and
   later, a crash in native code is now kept and sent, when crash reports are on, with its
   signal, its abort message and the crashed thread's frames, read from the crash's tombstone.

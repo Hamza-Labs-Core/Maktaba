@@ -153,6 +153,9 @@ func newHandler(t *testing.T, k *rsa.PrivateKey) (*Handler, *fakeActions) {
 			RestartAll:       func() { fa.all++ },
 			SafeMode:         func(on bool) error { fa.safe = append(fa.safe, on); return nil },
 			Restore:          func(name, _ string) error { fa.restored = name; return nil },
+			Backups: func() ([]Backup, error) {
+				return []Backup{{Name: "maktaba-20261106-030000.dump", At: t0.Add(-24 * time.Hour), Size: 73400320}}, nil
+			},
 		},
 		Record: func(Who, string, string) {},
 		Disk:   func() (int64, int64) { return 10 << 30, 5 << 20 },
@@ -267,6 +270,48 @@ func TestConsole(t *testing.T) {
 	if rec := do(h, http.MethodGet, "/recovery/api/diagnostics", "", admin, nil); rec.Code != http.StatusOK ||
 		rec.Header().Get("Content-Type") != "application/gzip" {
 		t.Fatalf("diagnostics: %d", rec.Code)
+	}
+}
+
+// The Remotes restore a backup and download the diagnostics through these routes with a
+// bearer (their pass or access token): an admin's lists the backups and gets the bundle; no
+// credential, or a viewer's, gets 401 and nothing of the home, and the viewer's try counts
+// toward the lockout.
+func TestBackupsAndDiagnosticsAreAdminOnly(t *testing.T) {
+	k := newKey(t)
+	h, _ := newHandler(t, k)
+	bearer := func(tok string) map[string]string { return map[string]string{"Authorization": "Bearer " + tok} }
+	viewer := sign(t, k, pass("v", false, AudienceRecovery, t0, t0.Add(time.Hour)))
+	admin := sign(t, k, pass("a1", true, AudienceRecovery, t0, t0.Add(time.Hour)))
+	for _, p := range []string{"/recovery/api/backups", "/recovery/api/diagnostics"} {
+		if rec := do(h, http.MethodGet, p, "", nil, nil); rec.Code != http.StatusUnauthorized ||
+			strings.Contains(rec.Body.String(), "maktaba-2026") {
+			t.Fatalf("%s without a credential: %d %s", p, rec.Code, rec.Body.String())
+		}
+		if rec := do(h, http.MethodGet, p, "", nil, bearer(viewer)); rec.Code != http.StatusUnauthorized ||
+			strings.Contains(rec.Body.String(), "maktaba-2026") || rec.Header().Get("Content-Type") == "application/gzip" {
+			t.Fatalf("%s with a viewer's token: %d", p, rec.Code)
+		}
+	}
+	rec := do(h, http.MethodGet, "/recovery/api/backups", "", nil, bearer(admin))
+	var list struct {
+		Backups []Backup `json:"backups"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil || rec.Code != http.StatusOK || len(list.Backups) != 1 ||
+		list.Backups[0].Name != "maktaba-20261106-030000.dump" || list.Backups[0].Size != 73400320 {
+		t.Fatalf("an admin's backups: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = do(h, http.MethodGet, "/recovery/api/diagnostics", "", nil, bearer(admin))
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/gzip" ||
+		!strings.HasPrefix(rec.Header().Get("Content-Disposition"), `attachment; filename="maktaba-recovery-`) {
+		t.Fatalf("an admin's bundle: %d %v", rec.Code, rec.Header())
+	}
+	// the two viewer tries above counted: three more lock the address, an admin's token included
+	for i := 0; i < LockFailures-2; i++ {
+		_ = do(h, http.MethodGet, "/recovery/api/backups", "", nil, bearer(viewer))
+	}
+	if rec := do(h, http.MethodGet, "/recovery/api/backups", "", nil, bearer(admin)); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("locked out after %d refused tries: %d", LockFailures, rec.Code)
 	}
 }
 
