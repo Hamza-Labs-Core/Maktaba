@@ -3,6 +3,7 @@ package plugins
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -122,4 +123,58 @@ func FirstPartyGroupComponents() map[string][]string {
 		sort.Strings(out[g])
 	}
 	return out
+}
+
+// FirstPartyStageGroups answers each first-party stage's runner group: the stage's own
+// runner, else its plugin's [trusted] runner ("" is light, "own" the plugin's folder), as
+// the pipeline's firstparty.runner_group.
+func FirstPartyStageGroups() map[string]string {
+	var doc struct {
+		Plugins []struct {
+			Folder   string `json:"folder"`
+			Manifest string `json:"manifest"`
+		} `json:"plugins"`
+	}
+	if json.Unmarshal(FirstParty, &doc) != nil {
+		return nil
+	}
+	out := map[string]string{}
+	for _, p := range doc.Plugins {
+		var m struct {
+			Trusted struct {
+				Runner string `toml:"runner"`
+			} `toml:"trusted"`
+			Stage []struct {
+				Name   string `toml:"name"`
+				Runner string `toml:"runner"`
+			} `toml:"stage"`
+		}
+		if _, err := toml.Decode(p.Manifest, &m); err != nil {
+			continue
+		}
+		for _, s := range m.Stage {
+			g := s.Runner
+			if g == "" {
+				g = m.Trusted.Runner
+			}
+			switch g {
+			case "":
+				g = "light"
+			case "own":
+				g = p.Folder
+			}
+			out[s.Name] = g
+		}
+	}
+	return out
+}
+
+// RunnerGroupOf answers the group of a runner instance: a group with one runner per
+// transcription slot names its instances <group>-<n> (ml-3); every other instance is its
+// group.
+func RunnerGroupOf(instance string) string {
+	if g, n, ok := strings.Cut(instance, "-"); ok && n != "" && strings.Trim(n, "0123456789") == "" {
+		return g
+	}
+	return instance
 }

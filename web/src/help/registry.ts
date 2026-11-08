@@ -261,6 +261,7 @@ export const SYSTEM_HEALTH_KINDS = [
   "tv_tuner",
   "host_access",
   "components",
+  "plugin_runners",
 ] as const;
 
 export function systemHealthHelp(kind: string): HelpRef {
