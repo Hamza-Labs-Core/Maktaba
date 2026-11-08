@@ -340,6 +340,108 @@ func TestAPolicyPathIsComparedAsTheFilesystemNamesIt(t *testing.T) {
 	}
 }
 
+// A grant's walk on Windows recomputes, for each child of a granted folder, the profile's
+// inherited entries from its parent's as Windows' inheritance rules have it: a folder-wide
+// grant (object and container inherit) reaches every folder and file below; the areas
+// folder's grant (object inherit, no propagate) reaches its files and none of its folders;
+// an inherit-only entry passes on without applying; a junction or symbolic link (a name
+// surrogate) is never walked through, deduplicated or cloud files are; and the
+// filesystem's final name of a handle reads as the path it was checked as.
+func TestAGrantsWalkFollowsWindowsInheritanceAndNoLink(t *testing.T) {
+	const oi, ci, np, io, inh = aceObjectInherit, aceContainerInherit, aceNoPropagate, aceInheritOnly, aceInherited
+	for _, c := range []struct {
+		flags  uint8
+		dir    bool
+		want   uint8
+		passes bool
+	}{
+		{oi | ci, true, inh | oi | ci, true},
+		{oi | ci, false, inh, true},
+		{oi | np, true, 0, false},
+		{oi | np, false, inh, true},
+		{oi, true, inh | io | oi, true},
+		{inh | io | oi, false, inh, true},
+		{inh | io | oi, true, inh | io | oi, true},
+		{ci, false, 0, false},
+		{ci | np, true, inh, true},
+		{0, true, 0, false},
+		{0, false, 0, false},
+	} {
+		got, ok := inheritedFlags(c.flags, c.dir)
+		if ok != c.passes || (ok && got != c.want) {
+			t.Errorf("flags 0x%02x to a child (folder %v): 0x%02x %v, want 0x%02x %v", c.flags, c.dir, got, ok, c.want, c.passes)
+		}
+	}
+	for tag, want := range map[uint32]bool{0xA0000003: true, 0xA000000C: true, 0x80000013: false, 0x9000001A: false, 0x8000001B: false} {
+		if nameSurrogate(tag) != want {
+			t.Errorf("nameSurrogate(0x%08x) = %v", tag, !want)
+		}
+	}
+	for in, want := range map[string]string{`\\?\C:\media\a`: `C:\media\a`, `\\?\UNC\nas\media`: `\\nas\media`, `C:\x`: `C:\x`} {
+		if got := finalPathName(in); got != want {
+			t.Errorf("finalPathName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// A grant or revoke happens only after the path's last check, on the canonical path: the
+// hook between the two (where the Windows tests swap a folder) sees each change's path
+// once, after the policy was checked. A recorded grant whose path is now reached through a
+// link is not taken back there: the start fails closed, the revoke never runs. The areas
+// folder is granted as the filesystem names it.
+func TestAGrantOrRevokeComesAfterItsLastCheck(t *testing.T) {
+	dir := mustCanonical(t, t.TempDir())
+	t.Setenv("MAKTABA_DATA_DIR", dir)
+	media, old := filepath.Join(dir, "media"), filepath.Join(dir, "old")
+	_ = os.MkdirAll(media, 0o700)
+	_ = os.MkdirAll(old, 0o700)
+	grants := filepath.Join(dir, "g.json")
+	b, _ := json.Marshal([]GrantEntry{{Path: old}})
+	_ = os.WriteFile(grants, b, 0o600)
+	pol, _ := json.Marshal(RunnerPolicy{Read: []string{media}})
+	f := &fakeLaunch{policy: string(pol)}
+	f.install(t)
+	ac := afterCheck
+	t.Cleanup(func() { afterCheck = ac })
+	var seen []string
+	afterCheck = func(step, p string) {
+		seen = append(seen, step+" "+p)
+		for _, g := range f.granted {
+			if g.Path == p {
+				t.Errorf("the hook ran after the grant on %s", p)
+			}
+		}
+	}
+	run := filepath.Join(dir, "run")
+	args := []string{"-group", "light", "-run-dir", run, "-grants", grants, "-areas-dir", filepath.Join(dir, ".", "areas"), "--", "python"}
+	if code := LaunchRunner(args, io.Discard); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	want := []string{"revoke " + old, "grant " + media, "grant " + run}
+	if !reflect.DeepEqual(seen, want) {
+		t.Fatalf("hook saw %v, want %v", seen, want)
+	}
+	if !reflect.DeepEqual(f.filesOnly, []string{filepath.Join(dir, "areas")}) {
+		t.Fatalf("the areas folder granted as %v", f.filesOnly)
+	}
+
+	// the recorded folder is now a link to another one: refused before any revoke
+	elsewhere := filepath.Join(dir, "elsewhere")
+	_ = os.MkdirAll(elsewhere, 0o700)
+	_ = os.RemoveAll(old)
+	if err := os.Symlink(elsewhere, old); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	_ = os.WriteFile(grants, b, 0o600)
+	f2 := &fakeLaunch{policy: string(pol)}
+	f2.install(t)
+	var errOut strings.Builder
+	if code := LaunchRunner(args, &errOut); code != RunnerSandboxExit || f2.started || len(f2.revoked) != 0 ||
+		!strings.Contains(errOut.String(), `"step":"revoke"`) {
+		t.Fatalf("a recorded path now a link: exit %d, started %v, revoked %v: %s", code, f2.started, f2.revoked, errOut.String())
+	}
+}
+
 func mustCanonical(t *testing.T, p string) string {
 	t.Helper()
 	c, err := canonical(p)

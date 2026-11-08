@@ -185,7 +185,7 @@ var (
 	// afterCheck runs between a path's last check and the grant or revoke on it (step is
 	// "grant" or "revoke"): the Windows tests swap the folder for a junction there, which
 	// must not redirect the change
-	afterCheck = func(step, path string) {}
+	afterCheck = func(_, _ string) {}
 )
 
 // uncPath reports a \\server\share path (not a \\?\ or \\.\ local device path).
@@ -312,6 +312,11 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 		}
 	}
 	for _, g := range revoke {
+		// a recorded path is taken back only where it still is: one now reached through a
+		// link refuses the start (Revoke checks it again by handle)
+		if again, err := canonical(g.Path); err != nil || pathKey(again) != pathKey(g.Path) {
+			return fail("revoke", fmt.Errorf("%s changed after it was granted", g.Path))
+		}
 		afterCheck("revoke", g.Path)
 		if err := revokeFn(profile, g.Path); err != nil {
 			return fail("revoke", err)
@@ -332,7 +337,8 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 			fmt.Fprintf(stderr, `{"event":"plugin_runner_area_remote","group":%q,"path":%q}`+"\n", *group, g.Path)
 			continue
 		}
-		// resolved again just before the grant: a link made since the check is refused
+		// resolved again just before the grant: a link made since the check is refused, and
+		// Grant checks once more by handle (a link made after this one is refused there)
 		if again, err := canonical(g.Path); err != nil || pathKey(again) != pathKey(g.Path) {
 			return fail("policy_path", fmt.Errorf("%s changed after it was checked", g.Path))
 		}
@@ -345,7 +351,11 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 		if err := os.MkdirAll(*areasDir, 0o700); err != nil {
 			return fail("grant", err)
 		}
-		if err := grantFilesFn(profile, *areasDir); err != nil {
+		areas, err := canonical(*areasDir)
+		if err != nil {
+			return fail("policy_path", err)
+		}
+		if err := grantFilesFn(profile, areas); err != nil {
 			return fail("grant", err)
 		}
 	}
@@ -362,6 +372,48 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 		return fail("start", err)
 	}
 	return code
+}
+
+// The ACE flags a grant's walk reads (Windows' OBJECT_INHERIT_ACE and the rest).
+const (
+	aceObjectInherit    = 0x01
+	aceContainerInherit = 0x02
+	aceNoPropagate      = 0x04
+	aceInheritOnly      = 0x08
+	aceInherited        = 0x10
+)
+
+// inheritedFlags is what an entry with flags on a folder passes to a child of it (a folder
+// or a file), as Windows' inheritance rules have it: ok is false when it passes nothing.
+func inheritedFlags(flags uint8, childDir bool) (uint8, bool) {
+	np := flags&aceNoPropagate != 0
+	if !childDir {
+		return aceInherited, flags&aceObjectInherit != 0
+	}
+	switch {
+	case flags&aceContainerInherit != 0 && np:
+		return aceInherited, true
+	case flags&aceContainerInherit != 0:
+		return aceInherited | flags&(aceObjectInherit|aceContainerInherit), true
+	case flags&aceObjectInherit != 0 && !np:
+		// for the files below the folder, not for the folder itself
+		return aceInherited | aceInheritOnly | aceObjectInherit, true
+	}
+	return 0, false
+}
+
+// nameSurrogate: a reparse tag that names another object (a junction, a symbolic link), as
+// opposed to one that stores the file otherwise (deduplication, cloud files): a grant's
+// walk never goes through one.
+func nameSurrogate(tag uint32) bool { return tag&0x20000000 != 0 }
+
+// finalPathName is GetFinalPathNameByHandle's answer as a path: \\?\C:\x is C:\x, and
+// \\?\UNC\server\share is \\server\share.
+func finalPathName(p string) string {
+	if rest, ok := strings.CutPrefix(p, `\\?\UNC\`); ok {
+		return `\\` + rest
+	}
+	return strings.TrimPrefix(p, `\\?\`)
 }
 
 // dosDevices are names Windows opens as a device in any folder, with any extension.

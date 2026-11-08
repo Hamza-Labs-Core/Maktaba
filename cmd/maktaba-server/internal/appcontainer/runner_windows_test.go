@@ -63,6 +63,19 @@ func aceOf(t *testing.T, path string, sid *windows.SID) (found bool, inherited b
 	return found, inherited
 }
 
+func autoInherited(t *testing.T, path string) bool {
+	t.Helper()
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+	ctrl, _, err := sd.Control()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ctrl&windows.SE_DACL_AUTO_INHERITED != 0
+}
+
 func junction(t *testing.T, link, target string) {
 	t.Helper()
 	if out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput(); err != nil { //nolint:gosec // the test's temp folders
@@ -157,6 +170,10 @@ func TestAGrantLandsOnlyOnTheFolderThatWasChecked(t *testing.T) {
 				if _, inherited := aceOf(t, show, sid); !inherited {
 					t.Errorf("%s: the entry is not marked inherited", show)
 				}
+				// still auto-inherited: Windows' own propagation keeps treating it as a child
+				if !autoInherited(t, show) {
+					t.Errorf("%s lost its auto-inherited flag", show)
+				}
 				return
 			}
 			if code != RunnerSandboxExit || started {
@@ -174,14 +191,15 @@ func TestAGrantLandsOnlyOnTheFolderThatWasChecked(t *testing.T) {
 // grant alone, and the start fails closed. Without a swap the revoke takes the entry back
 // from the folder and from what it holds.
 func TestARevokeLandsOnlyOnTheFolderThatWasChecked(t *testing.T) {
-	for _, swap := range []string{"none", "leaf"} {
+	for _, swap := range []string{"none", "leaf", "ancestor"} {
 		t.Run(swap, func(t *testing.T) {
 			dir := mustCanonical(t, t.TempDir())
 			t.Setenv("MAKTABA_DATA_DIR", dir)
-			old := filepath.Join(dir, "old")
+			lib, otherLib := filepath.Join(dir, "lib"), filepath.Join(dir, "otherlib")
+			old := filepath.Join(lib, "old")
 			oldFile := filepath.Join(old, "a", "show.mkv")
 			mustWrite(t, oldFile)
-			other := filepath.Join(dir, "other")
+			other := filepath.Join(otherLib, "old")
 			otherFile := filepath.Join(other, "keep.txt")
 			mustWrite(t, otherFile)
 			group := "ci-revoke-" + swap
@@ -199,11 +217,20 @@ func TestARevokeLandsOnlyOnTheFolderThatWasChecked(t *testing.T) {
 			ac := afterCheck
 			t.Cleanup(func() { afterCheck = ac })
 			afterCheck = func(step, p string) {
-				if swap == "leaf" && step == "revoke" && pathKey(p) == pathKey(old) {
+				if step != "revoke" || pathKey(p) != pathKey(old) {
+					return
+				}
+				switch swap {
+				case "leaf":
 					if err := os.Rename(old, old+".moved"); err != nil {
 						t.Errorf("swap: %v", err)
 					}
 					junction(t, old, other)
+				case "ancestor":
+					if err := os.Rename(lib, lib+".moved"); err != nil {
+						t.Errorf("swap: %v", err)
+					}
+					junction(t, lib, otherLib)
 				}
 			}
 			code, started, log := launchReal(t, group, RunnerPolicy{}, "-grants", grants)
@@ -227,5 +254,50 @@ func TestARevokeLandsOnlyOnTheFolderThatWasChecked(t *testing.T) {
 				t.Fatalf("a swapped folder: exit %d, started %v: %s", code, started, log)
 			}
 		})
+	}
+}
+
+// The areas folder's grant reaches the files directly in it (the worker's areas.json) and
+// none of its folders (the other groups' run folders); a folder below a grant whose DACL is
+// protected inherits nothing; a grant on a folder that is a junction itself is refused.
+func TestAGrantsWalkStopsWhereWindowsInheritanceStops(t *testing.T) {
+	dir := mustCanonical(t, t.TempDir())
+	profile, sid := testProfile(t, "ci-walk")
+	areas := filepath.Join(dir, "areas")
+	areasFile := filepath.Join(areas, "areas.json")
+	otherRun := filepath.Join(areas, "net", "token")
+	mustWrite(t, areasFile)
+	mustWrite(t, otherRun)
+	if err := GrantFiles(profile, areas); err != nil {
+		t.Fatal(err)
+	}
+	for p, want := range map[string]bool{areas: true, areasFile: true, filepath.Dir(otherRun): false, otherRun: false} {
+		if found, _ := aceOf(t, p, sid); found != want {
+			t.Errorf("%s: an entry %v, want %v", p, found, want)
+		}
+	}
+
+	media := filepath.Join(dir, "media")
+	private := filepath.Join(media, "private")
+	mustWrite(t, filepath.Join(private, "x.txt"))
+	if out, err := exec.Command("icacls", private, "/inheritance:d").CombinedOutput(); err != nil { //nolint:gosec // the test's temp folder
+		t.Fatalf("icacls: %v %s", err, out)
+	}
+	if err := Grant(profile, media, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{private, filepath.Join(private, "x.txt")} {
+		if found, _ := aceOf(t, p, sid); found {
+			t.Errorf("%s (protected) got an entry", p)
+		}
+	}
+
+	link := filepath.Join(dir, "link")
+	junction(t, link, media)
+	if err := Grant(profile, link, false); err == nil {
+		t.Fatal("a junction was granted")
+	}
+	if err := Revoke(profile, link); err == nil {
+		t.Fatal("a junction was revoked")
 	}
 }
