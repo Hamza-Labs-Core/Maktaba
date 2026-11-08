@@ -72,7 +72,7 @@ fi
 printf 'not what was pinned\n' >"$SCRATCH/other"
 if out="$( (fetch "file://$SCRATCH/other" "$want" other.tgz) 2>&1)"; then
     fail "a download that does not match the pin was accepted"
-elif [[ "$out" == *"pins.env says $want"* ]]; then
+elif [[ "$out" == *"the pin says $want"* ]]; then
     ok "a download that does not match the pin stops the build"
 else
     fail "a mismatch stopped with: $out"

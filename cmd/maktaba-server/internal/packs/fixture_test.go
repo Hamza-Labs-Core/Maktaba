@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -57,6 +58,7 @@ type fixture struct {
 	mu       sync.Mutex
 	requests []string // path + " " + Range of each request
 	cutAt    int64    // > 0: the next pack answer stops after this many bytes
+	doorDown int      // > 0: github.com's download door answers this to every request
 
 	m    *Manager
 	root string
@@ -70,6 +72,7 @@ type fixtureOpts struct {
 	edit     func(*rv.ComponentsIndex) // changes to the index before signing
 	modelAlt map[string][]byte         // the model files the index lists (nil: two small ones)
 	extra    map[string][]byte         // release files by name (a pack of its own)
+	api      bool                      // the fake GitHub API (its asset route) is the Net's API
 }
 
 func buildPack(t *testing.T) ([]byte, componentpack.Manifest) {
@@ -186,6 +189,10 @@ func newFixture(t *testing.T, o fixtureOpts) *fixture {
 	id, _ := rv.NewIdentity("")
 	net := NewNet(tRepo, f.srv.Client())
 	net.Releases, net.HF = f.srv.URL+"/releases/download", f.srv.URL+"/hf"
+	net.Sleep = func(context.Context, time.Duration) error { return nil }
+	if o.api {
+		net.API = f.srv.URL + "/api"
+	}
 	f.m = &Manager{Layout: Layout{Root: f.root}, Catalog: components.Default(), Version: tVersion, Platform: tPlatform,
 		Net: net, Trusted: func(context.Context) (root.TrustedMaterial, error) { return tm, nil }, Identity: id,
 		Watermark: rv.IndexWatermarkPath(state), HFHub: f.hub, Log: &f.log}
@@ -195,11 +202,38 @@ func newFixture(t *testing.T, o fixtureOpts) *fixture {
 func (f *fixture) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	f.requests = append(f.requests, r.URL.Path+" "+r.Header.Get("Range"))
-	cut := f.cutAt
+	cut, door := f.cutAt, f.doorDown
 	f.mu.Unlock()
 	var b []byte
 	var ok bool
+	names := make([]string, 0, len(f.served))
+	for n := range f.served {
+		names = append(names, n)
+	}
+	sort.Strings(names)
 	switch {
+	case r.Method != http.MethodGet:
+	case door > 0 && strings.HasPrefix(r.URL.Path, "/releases/download/"):
+		http.Error(w, http.StatusText(door), door)
+		return
+	case r.URL.Path == "/api/repos/"+tRepo+"/releases/tags/v"+tVersion:
+		var assets []map[string]any
+		for i, n := range names {
+			assets = append(assets, map[string]any{"id": i + 1, "name": n})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"assets": assets})
+		return
+	case strings.HasPrefix(r.URL.Path, "/api/repos/"+tRepo+"/releases/assets/"):
+		id, err := strconv.Atoi(strings.TrimPrefix(r.URL.Path, "/api/repos/"+tRepo+"/releases/assets/"))
+		if err != nil || id < 1 || id > len(names) || r.Header.Get("Accept") != "application/octet-stream" ||
+			r.Header.Get("Authorization") != "" {
+			http.NotFound(w, r)
+			return
+		}
+		http.Redirect(w, r, "/assets/"+names[id-1], http.StatusFound)
+		return
+	case strings.HasPrefix(r.URL.Path, "/assets/"):
+		b, ok = f.served[strings.TrimPrefix(r.URL.Path, "/assets/")]
 	case strings.HasPrefix(r.URL.Path, "/releases/download/v"+tVersion+"/"):
 		b, ok = f.served[strings.TrimPrefix(r.URL.Path, "/releases/download/v"+tVersion+"/")]
 	case strings.HasPrefix(r.URL.Path, "/hf/"+tWhisperRepo+"/resolve/"+tWhisperRev+"/"):

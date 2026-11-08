@@ -193,6 +193,18 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A machine can now download Postgres while github.com's download links fail.** A machine
+  that needs Postgres at runtime (a node keeping a copy of its home's database) now tries three
+  places in turn: Maktaba's CDN (plugins-cdn.maktaba.tv, where each release now publishes the
+  pinned archives), GitHub's API, then github.com's download link as before. Each place is
+  tried again a few times after a server error, a timeout or a dropped connection, and a 404
+  moves on at once. Whatever place answers, the archive must match its pinned SHA-256 and size:
+  one that does not is refused, that place is not asked again, and nothing unverified is
+  unpacked. The server log names the place that delivered and each failure. Model and tool
+  packs downloaded from the release now also retry, and fall back to GitHub's API when
+  github.com's download link keeps failing; they are verified against the release's signed
+  index as before, and a mirror set in `MAKTABA_PACKS_URL` is used alone, as before.
+
 - **On the Mac app's first start after an update, a service waiting for the transcription
   tools now shows their install progress.** A service could keep showing "Waiting for the
   transcription tools" while the tools were already installing, until the next progress step,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbin"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 )
 
@@ -302,5 +304,39 @@ func TestALateBeatWithTheSlotCaughtUpFollows(t *testing.T) {
 		if s := m.withSlot(late); s.State != StateBehind {
 			t.Errorf("%s: %+v", c.name, s)
 		}
+	}
+}
+
+// ProgramsFor downloads this platform's pinned Postgres through the downloader it is given
+// (pgbin's sources, tried in order): each source's failure reaches the caller, and nothing is
+// installed under root.
+func TestProgramsForUsesItsDownloader(t *testing.T) {
+	if _, ok := pgbin.Here(); !ok {
+		t.Skip("no pinned Postgres build for this platform")
+	}
+	root := filepath.Join(t.TempDir(), "programs")
+	var asked []string
+	dl := &pgbin.Downloader{Tries: 1, Sources: []pgbin.Source{
+		{Name: "first", Fetch: func(_ context.Context, p pgbin.Pin, _ io.Writer) error {
+			asked = append(asked, "first "+p.Name())
+			return errors.New("refused")
+		}},
+		{Name: "second", Fetch: func(_ context.Context, p pgbin.Pin, w io.Writer) error {
+			asked = append(asked, "second "+p.Name())
+			_, err := w.Write([]byte("not the archive"))
+			return err
+		}},
+	}}
+	var log strings.Builder
+	_, err := ProgramsFor(root, dl, &log)(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "first") || !strings.Contains(err.Error(), "second") {
+		t.Fatalf("err = %v, want both sources named", err)
+	}
+	pin, _ := pgbin.Here()
+	if len(asked) != 2 || asked[0] != "first "+pin.Name() || asked[1] != "second "+pin.Name() {
+		t.Fatalf("asked %v", asked)
+	}
+	if _, serr := os.Stat(filepath.Join(root, pin.Dir())); !os.IsNotExist(serr) {
+		t.Fatalf("an install was left under root: %v", serr)
 	}
 }
