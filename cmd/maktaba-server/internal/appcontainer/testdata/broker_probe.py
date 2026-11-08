@@ -75,6 +75,12 @@ def write(path: str) -> None:
         f.write(b"x")
 
 
+def write_through_read_handle() -> int:
+    with open(video, "rb") as f:
+        return os.write(f.fileno(), b"x")
+
+
+attempt("write_through_read_handle", write_through_read_handle)
 attempt("write_other_name", lambda: write(lib + "\\show\\notes.txt"))
 attempt("write_video", lambda: write(video))
 attempt("remove_video", lambda: os.remove(video))

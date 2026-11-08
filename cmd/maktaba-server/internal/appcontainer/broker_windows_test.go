@@ -23,7 +23,7 @@ import (
 // the broker it reaches no share (its jobs went to the worker); with it, it reads the
 // library's files in any case, lists and stats them, and writes a subtitle (made, renamed,
 // read back), at about the share's own speed (the handle goes straight to the redirector);
-// it writes no other name and removes no video, and reaches nothing by a traversal, a
+// its read handle writes nothing, it writes no other name and removes no video, and reaches nothing by a traversal, a
 // junction in the share leading out, an 8.3 alias, a stream, or the other share; a tool
 // handed a share path is refused (its job runs in the worker), and a process of the same
 // AppContainer that is not the runner is not served.
@@ -163,6 +163,9 @@ func TestARunnersLibraryOnAShareThroughItsBroker(t *testing.T) {
 		if got := outcome(name); got != want {
 			t.Errorf("%s: %s, want %s (%s)", name, got, want, found[name])
 		}
+	}
+	if got := outcome("write_through_read_handle"); got == "ok" || got == "absent" {
+		t.Errorf("a brokered read handle wrote: %s", found["write_through_read_handle"])
 	}
 	if !strings.Contains(string(found["child_on_pipe"]), "closed") {
 		t.Errorf("a process that is not the runner was served: %s", found["child_on_pipe"])

@@ -4,10 +4,12 @@ An AppContainer with no capabilities cannot reach SMB at all, so on Windows the 
 (``maktaba-server runner-sandbox-run``, outside the sandbox) brokers the group's share
 folders: it serves a pipe only this runner's process may use (``MAKTABA_RUNNER_FILES_PIPE``)
 and answers for the folders it names (``MAKTABA_RUNNER_FILES_ROOTS``). For one file the
-runner asks, it checks the path is in those folders and spelled one way, opens it, and
-duplicates the handle into this process: read, or write for a subtitle name in a folder the
-group writes by name. The bytes then go through the handle to the share, never through the
-launcher (cmd/maktaba-server/internal/appcontainer/broker.go).
+runner asks to read, it checks the path is in those folders and spelled one way, opens it,
+and duplicates the handle into this process with read access: the bytes then go through the
+handle to the share, never through the launcher. A subtitle (a subtitle name in a folder the
+group writes by name) is written by the launcher from the bytes this process sends when the
+file closes: the runner holds no handle it could write with
+(cmd/maktaba-server/internal/appcontainer/broker.go).
 
 :func:`install` routes the calls a stage makes on such a path to the broker: ``open``,
 ``os.stat`` (and so ``os.path.exists`` and the like), ``os.listdir``, ``os.replace`` /
@@ -22,8 +24,10 @@ Standard library only.
 
 from __future__ import annotations
 
+import base64
 import builtins
 import errno
+import io
 import json
 import os
 import stat as stat_mod
@@ -38,6 +42,9 @@ PIPE_ENV = "MAKTABA_RUNNER_FILES_PIPE"
 ROOTS_ENV = "MAKTABA_RUNNER_FILES_ROOTS"
 
 Request = Callable[[dict[str, Any]], dict[str, Any]]
+
+#: the broker's cap on a subtitle it writes (MaxBrokeredWrite)
+MAX_WRITE = 16 << 20
 
 
 def _key(path: str) -> str:
@@ -116,14 +123,23 @@ class _Shim:
             return self.open(file, mode, *args, **kwargs)
         write = any(c in mode for c in "wax+")
         sys.audit("open", p, mode, 0)
-        if write and (mode.replace("b", "").replace("t", "") != "w"):
-            # appending, exclusive creation and read-write are not brokered: refused
-            raise PermissionError(
-                errno.EACCES, f"{p}: only a whole subtitle file is written on a share"
+        if write:
+            if mode.replace("b", "").replace("t", "") != "w":
+                # appending, exclusive creation and read-write are not brokered: refused
+                raise PermissionError(
+                    errno.EACCES, f"{p}: only a whole subtitle file is written on a share"
+                )
+            buf = _BrokeredWrite(self, p)
+            if "b" in mode:
+                return buf
+            return io.TextIOWrapper(
+                buf,
+                encoding=kwargs.get("encoding") or "utf-8",
+                errors=kwargs.get("errors"),
+                newline=kwargs.get("newline"),
             )
-        out = self.ask({"op": "open", "path": p, "write": write})
-        flags = (os.O_WRONLY if write else os.O_RDONLY) | getattr(os, "O_BINARY", 0)
-        fd = self.fdopen(int(out["handle"]), flags)
+        out = self.ask({"op": "open", "path": p})
+        fd = self.fdopen(int(out["handle"]), os.O_RDONLY | getattr(os, "O_BINARY", 0))
         return self.open(fd, mode, *args, **kwargs)
 
     def stat_(self, path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
@@ -228,6 +244,31 @@ class _Shim:
                 raise PermissionError(
                     errno.EACCES, f"{text}: a tool cannot reach the share; the worker runs this job"
                 )
+
+
+class _BrokeredWrite(io.BytesIO):
+    """A subtitle being written on a share: its bytes go to the broker when it closes."""
+
+    def __init__(self, shim: _Shim, path: str) -> None:
+        super().__init__()
+        self._shim, self._path, self._sent = shim, path, False
+
+    def close(self) -> None:
+        if self.closed or self._sent:
+            super().close()
+            return
+        self._sent = True
+        try:
+            data = self.getvalue()
+            if len(data) > MAX_WRITE:
+                raise PermissionError(
+                    errno.EACCES, f"{self._path}: a subtitle over {MAX_WRITE} bytes"
+                )
+            self._shim.ask(
+                {"op": "write", "path": self._path, "data": base64.b64encode(data).decode()}
+            )
+        finally:
+            super().close()
 
 
 _installed: list[_Shim] = []

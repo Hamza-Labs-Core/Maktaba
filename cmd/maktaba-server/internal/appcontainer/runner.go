@@ -184,6 +184,11 @@ var (
 	// brokers the share folders the group reads or writes by name (broker.go)
 	remoteFn = remotePath
 	brokerFn = startBroker
+	// shareLocalFn maps a share this machine serves to its folder (a brokered share is
+	// checked against the protected folders by it)
+	shareLocalFn = shareLocalPath
+	// shareFn: a \\server\share path (a mapped drive is remote but not brokered)
+	shareFn = uncPath
 )
 
 // uncPath reports a \\server\share path (not a \\?\ or \\.\ local device path).
@@ -267,8 +272,11 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 		return fail("policy_path", err)
 	}
 	now := p.Grants(data)
-	shares := brokerRootsOf(p, remoteFn)
+	shares := brokerRootsOf(p, func(x string) bool { return remoteFn(x) && shareFn(x) })
 	if err := CheckGrants(now, guarded, own); err != nil {
+		return fail("policy_path", err)
+	}
+	if err := shares.check(shareLocalFn, guarded, own); err != nil {
 		return fail("policy_path", err)
 	}
 	profile := RunnerProfile(*group)

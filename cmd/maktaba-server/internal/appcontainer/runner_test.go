@@ -88,10 +88,12 @@ type fakeLaunch struct {
 
 func (f *fakeLaunch) install(t *testing.T) {
 	t.Helper()
-	ap, gf, rf, run, rem, gff, bf := askPolicy, grantFn, revokeFn, runFn, remoteFn, grantFilesFn, brokerFn
+	ap, gf, rf, run, rem, gff, bf, sf, slf := askPolicy, grantFn, revokeFn, runFn, remoteFn, grantFilesFn, brokerFn, shareFn, shareLocalFn
 	t.Cleanup(func() {
-		askPolicy, grantFn, revokeFn, runFn, remoteFn, grantFilesFn, brokerFn = ap, gf, rf, run, rem, gff, bf
+		askPolicy, grantFn, revokeFn, runFn, remoteFn, grantFilesFn, brokerFn, shareFn, shareLocalFn = ap, gf, rf, run, rem, gff, bf, sf, slf
 	})
+	shareFn = func(p string) bool { return f.remote != "" && p == f.remote }
+	shareLocalFn = func(string) (string, bool, error) { return "", false, nil }
 	brokerFn = func(_ string, roots BrokerRoots) ([]string, func(uint32, uintptr), func(), error) {
 		if f.brokerErr != nil {
 			return nil, nil, nil, f.brokerErr
@@ -423,6 +425,17 @@ func TestARunnersBrokerServesOnlyItsShareFolders(t *testing.T) {
 			t.Errorf("write %s: %v", path, err)
 		}
 	}
+	// Windows' upcase table is not Go's: a root compares by ASCII case only, so U+0130 or
+	// the Kelvin sign never makes a request name a sibling folder as the root
+	uni := BrokerRoots{{Path: "\\\\nas\\media\\\u0130stanbul", WriteNamed: true}, {Path: "\\\\nas\\media\\\u212aids"}}
+	for _, path := range []string{`\\nas\media\istanbul\a.mkv`, `\\nas\media\kids\a.mkv`, "\\\\nas\\media\\\u0130stanbul.mkv"} {
+		if _, _, err := uni.Confine(path, false); err == nil {
+			t.Errorf("%s was confined to %+v", path, uni)
+		}
+	}
+	if _, _, err := uni.Confine("\\\\nas\\media\\\u0130stanbul\\a.mkv", false); err != nil {
+		t.Errorf("the root's own spelling: %v", err)
+	}
 	remote := func(p string) bool { return uncPath(p) }
 	got := brokerRootsOf(RunnerPolicy{
 		Read:       []string{`\\nas\a`, `\\nas\b`, "/local", `\\nas\c`},
@@ -433,6 +446,33 @@ func TestARunnersBrokerServesOnlyItsShareFolders(t *testing.T) {
 	want := BrokerRoots{{Path: `\\nas\a`, WriteNamed: true}, {Path: `\\nas\b`}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("brokered %+v, want %+v", got, want)
+	}
+
+	// an administrative share is never brokered, nor a share this machine serves from a
+	// folder that holds or is inside a protected one
+	none := func(string) (string, bool, error) { return "", false, nil }
+	for _, r := range []string{`\\nas\C$\media`, `\\nas\admin$`, `\\localhost\IPC$`, `\\nas`} {
+		if err := (BrokerRoots{{Path: r}}).check(none, nil, ""); err == nil {
+			t.Errorf("%s was brokered", r)
+		}
+	}
+	if err := (BrokerRoots{{Path: `\\nas\media$\shows`}}).check(none, nil, ""); err != nil {
+		t.Errorf("a hidden share that is not administrative: %v", err)
+	}
+	dir := mustCanonical(t, t.TempDir())
+	secret := filepath.Join(dir, "supervisor")
+	_ = os.MkdirAll(filepath.Join(dir, "media"), 0o700)
+	at := func(local string) func(string) (string, bool, error) {
+		return func(string) (string, bool, error) { return local, true, nil }
+	}
+	if err := (BrokerRoots{{Path: `\\localhost\d`}}).check(at(dir), []string{secret}, ""); err == nil {
+		t.Error("this machine's share of the folder holding the supervisor's was brokered")
+	}
+	if err := (BrokerRoots{{Path: `\\localhost\s`}}).check(at(filepath.Join(secret, "x")), []string{secret}, ""); err == nil {
+		t.Error("this machine's share inside the supervisor's folder was brokered")
+	}
+	if err := (BrokerRoots{{Path: `\\localhost\m`}}).check(at(filepath.Join(dir, "media")), []string{secret}, ""); err != nil {
+		t.Errorf("this machine's share of a library: %v", err)
 	}
 }
 

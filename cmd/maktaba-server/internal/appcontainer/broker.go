@@ -14,11 +14,13 @@ import (
 // anyway, brokers the group's share folders itself: the runner asks over a pipe only it can
 // use (its AppContainer's SID on the pipe's DACL, its process id checked on each
 // connection) for one file of a brokered folder, and the launcher opens that file, after
-// the checks below, and duplicates the handle into the runner's process with read access,
-// or write access for a subtitle name in a folder the group writes by name
-// (library.subtitles). Reads and writes then go through the handle straight to the SMB
-// redirector: no byte passes through the launcher. A folder the group writes in full
-// (files.write) on a share is never brokered: its jobs run in the worker, as before.
+// the checks below, and duplicates the handle into the runner's process with read access:
+// reads then go through the handle straight to the SMB redirector, no byte passes through
+// the launcher. A subtitle (small) is written by the launcher itself from the bytes the
+// runner sends, for a subtitle name in a folder the group writes by name
+// (library.subtitles): the runner never holds a handle it could write with (nor turn into
+// a link). A folder the group writes in full (files.write) on a share is never brokered:
+// its jobs run in the worker, as before.
 
 // EnvFilesPipe and EnvFilesRoots tell the runner its broker (winfiles.py).
 const (
@@ -35,12 +37,16 @@ type BrokerRoot struct {
 
 // BrokerRequest is one line a runner sends its broker.
 type BrokerRequest struct {
-	// Op is open, stat, list, replace or remove
-	Op    string `json:"op"`
-	Path  string `json:"path"`
-	To    string `json:"to,omitempty"`
-	Write bool   `json:"write,omitempty"`
+	// Op is open (to read), stat, list, write, replace or remove
+	Op   string `json:"op"`
+	Path string `json:"path"`
+	To   string `json:"to,omitempty"`
+	// Data is a write's whole file (at most MaxBrokeredWrite bytes)
+	Data []byte `json:"data,omitempty"`
 }
+
+// MaxBrokeredWrite caps a subtitle the broker writes.
+const MaxBrokeredWrite = 16 << 20
 
 // BrokerReply is the broker's answer line.
 type BrokerReply struct {
@@ -68,6 +74,25 @@ var shortAlias = regexp.MustCompile(`^[^.~]{1,6}~[0-9]{1,6}(\.[^.]{0,3})?$`)
 // BrokerRoots are a group's brokered share folders.
 type BrokerRoots []BrokerRoot
 
+// asciiFold compares as Windows does for ASCII letters only: any other character must be
+// the same (Go's Unicode folding and Windows' upcase table disagree, as for U+0130 and the
+// Kelvin sign, which would let a request name a sibling folder as the root).
+func asciiFold(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			b[i] = c + 'a' - 'A'
+		}
+	}
+	return string(b)
+}
+
+// underRoot reports p at or under root, compared by asciiFold.
+func underRoot(p, root string) bool {
+	k, rk := asciiFold(p), asciiFold(strings.TrimRight(root, `\`))
+	return k == rk || strings.HasPrefix(k, rk+`\`)
+}
+
 // Confine answers the brokered folder a requested path is in, and the path as compared:
 // a \\server\share path, spelled one way only (no . or .., no empty part, no stream, no
 // device name, no trailing dot or space, no 8.3 alias), at or under one of the roots (any
@@ -89,9 +114,7 @@ func (rs BrokerRoots) Confine(path string, write bool) (BrokerRoot, string, erro
 	}
 	best := -1
 	for i, r := range rs {
-		rk := strings.ToLower(strings.TrimRight(strings.ReplaceAll(r.Path, "/", `\`), `\`))
-		k := strings.ToLower(p)
-		if (k == rk || strings.HasPrefix(k, rk+`\`)) && (best < 0 || len(rk) > len(strings.TrimRight(rs[best].Path, `\`))) {
+		if underRoot(p, strings.ReplaceAll(r.Path, "/", `\`)) && (best < 0 || len(r.Path) > len(rs[best].Path)) {
 			best = i
 		}
 	}
@@ -101,16 +124,18 @@ func (rs BrokerRoots) Confine(path string, write bool) (BrokerRoot, string, erro
 	root := rs[best]
 	if write {
 		base := parts[len(parts)-1]
-		if !root.WriteNamed || strings.EqualFold(strings.TrimRight(root.Path, `\`), p) || !subtitleName.MatchString(base) {
+		if !root.WriteNamed || asciiFold(strings.TrimRight(root.Path, `\`)) == asciiFold(p) || !subtitleName.MatchString(base) {
 			return BrokerRoot{}, "", fmt.Errorf("%s: only subtitle files are written here: %w", path, errRefused)
 		}
 	}
 	return root, p, nil
 }
 
-// brokerRootsOf is the policy's share folders a broker serves: its read areas and the
-// folders it writes by name; a share in a folder written in full is not brokered.
-func brokerRootsOf(p RunnerPolicy, remote func(string) bool) BrokerRoots {
+// brokerRootsOf is the policy's share folders a broker serves (shared: a folder named by
+// its \\server\share path): its read areas and the folders it writes by name; a share in
+// a folder written in full is not brokered, nor a mapped drive (Confine serves only
+// \\server\share paths).
+func brokerRootsOf(p RunnerPolicy, shared func(string) bool) BrokerRoots {
 	named := map[string]bool{}
 	for _, x := range p.WriteNamed {
 		named[pathKey(x)] = true
@@ -123,7 +148,7 @@ func brokerRootsOf(p RunnerPolicy, remote func(string) bool) BrokerRoots {
 	var out BrokerRoots
 	for _, x := range append(append([]string{}, p.Read...), p.WriteNamed...) {
 		k := pathKey(x)
-		if seen[k] || full[k] || !remote(x) {
+		if seen[k] || full[k] || !shared(x) {
 			continue
 		}
 		seen[k] = true
@@ -140,4 +165,41 @@ func (rs BrokerRoots) brokered(path string) bool {
 		}
 	}
 	return false
+}
+
+// adminShare: a drive's or the system's administrative share (C$, ADMIN$, IPC$), which
+// exposes a whole drive: a library there is never brokered.
+func adminShare(root string) bool {
+	parts := strings.Split(strings.TrimLeft(strings.ReplaceAll(root, "/", `\`), `\`), `\`)
+	if len(parts) < 2 {
+		return true
+	}
+	name := strings.ToUpper(parts[1])
+	return name == "ADMIN$" || name == "IPC$" || name == "PRINT$" || (len(name) == 2 && name[1] == '$')
+}
+
+// check refuses a brokered folder on an administrative share, and one on a share this
+// machine serves whose folder holds or is inside a protected folder (as CheckGrants
+// refuses the same folder by its local path): local maps such a share to its folder.
+func (rs BrokerRoots) check(local func(string) (string, bool, error), protect []string, runDir string) error {
+	for _, r := range rs {
+		if adminShare(r.Path) {
+			return fmt.Errorf("%s: an administrative share is never brokered", r.Path)
+		}
+		p, ok, err := local(r.Path)
+		if err != nil {
+			return fmt.Errorf("%s: %w", r.Path, err)
+		}
+		if !ok {
+			continue
+		}
+		c, err := canonical(p)
+		if err != nil {
+			return err
+		}
+		if err := CheckGrants([]GrantEntry{{Path: c}}, protect, runDir); err != nil {
+			return fmt.Errorf("%s (this machine's %s): %w", r.Path, c, err)
+		}
+	}
+	return nil
 }

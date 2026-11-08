@@ -321,8 +321,7 @@ def _shim(tmp_path: Path, answers: dict[str, dict[str, Any]]) -> tuple[Any, list
         asked.append(req)
         out = dict(answers.get(req["op"], {}))
         if req["op"] == "open" and "error" not in out:
-            flags = os.O_WRONLY | os.O_TRUNC if req["write"] else os.O_RDONLY
-            out["handle"] = os.open(target, flags | getattr(os, "O_BINARY", 0))
+            out["handle"] = os.open(target, os.O_RDONLY | getattr(os, "O_BINARY", 0))
         return out
 
     shim = winfiles._Shim(request, [SHARE], lambda handle, _flags: handle)
@@ -348,7 +347,7 @@ def test_a_share_path_goes_through_the_broker_and_nothing_else_does(
     video = SHARE + "\\a\\ep1.mkv"
     with shim.open_(video, "rb") as f:
         assert f.read() == b"video bytes"
-    assert asked[-1] == {"op": "open", "path": video, "write": False}
+    assert asked[-1] == {"op": "open", "path": video}
     assert events[-1][0] == "open" and events[-1][1][0] == video
     st = shim.stat_("//NAS/Media/Shows/a/ep1.mkv")
     assert st.st_size == 11 and st.st_mtime == 5
@@ -357,7 +356,12 @@ def test_a_share_path_goes_through_the_broker_and_nothing_else_does(
     sub = SHARE + "\\a\\ep1.en.srt"
     with shim.open_(sub + ".maktaba-tmp", "wb") as f:
         f.write(b"1\n")
-    assert asked[-1]["write"] is True
+        assert asked[-1]["op"] == "list"  # nothing is sent before the file closes
+    # the bytes go to the broker, which writes the file: the runner holds no write handle
+    assert asked[-1] == {"op": "write", "path": sub + ".maktaba-tmp", "data": "MQo="}
+    with shim.open_(sub + ".maktaba-tmp", "w", encoding="utf-8") as t:
+        t.write("é")
+    assert asked[-1]["data"] == "w6k="
     shim.replace_(sub + ".maktaba-tmp", sub)
     assert asked[-1] == {"op": "replace", "path": sub + ".maktaba-tmp", "to": sub}
     shim.unlink_(sub)
@@ -369,6 +373,7 @@ def test_a_share_path_goes_through_the_broker_and_nothing_else_does(
         "os.stat",
         "os.stat",
         "os.listdir",
+        "open",
         "open",
         "os.rename",
         "os.remove",
@@ -398,12 +403,12 @@ def test_what_the_broker_refuses_runs_in_the_worker(
     shim, asked = _shim(
         tmp_path,
         {
-            "open": {"error": "only subtitle files are written here", "errno": 13},
+            "write": {"error": "only subtitle files are written here", "errno": 13},
             "stat": {"error": "gone", "errno": 2},
         },
     )
-    with pytest.raises(PermissionError) as refused:
-        shim.open_(SHARE + "\\a\\notes.txt", "wb")
+    with pytest.raises(PermissionError) as refused, shim.open_(SHARE + "\\a\\notes.txt", "wb") as f:
+        f.write(b"x")
     assert sandbox_refused(refused.value)
     with pytest.raises(FileNotFoundError):
         shim.stat_(SHARE + "\\a\\gone.mkv")

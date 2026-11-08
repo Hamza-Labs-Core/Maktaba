@@ -22,3 +22,6 @@ func GrantFiles(_, _ string) error { return ErrUnsupported }
 func startBroker(_ string, _ BrokerRoots) ([]string, func(uint32, uintptr), func(), error) {
 	return nil, nil, nil, ErrUnsupported
 }
+
+// shareLocalPath maps a share this machine serves to its folder (Windows only).
+func shareLocalPath(string) (string, bool, error) { return "", false, nil }

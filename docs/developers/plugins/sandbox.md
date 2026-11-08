@@ -85,8 +85,8 @@ An AppContainer reaches no SMB share, so a library on a share is served by the l
 file broker. The broker uses a pipe that only that runner's process may use. For each file
 the runner asks for, the launcher checks that the path is in the group's share folders and
 spelled one way only, with no junction or symbolic link on the way. It then opens the file
-itself and hands the runner the open handle: read access, or write access for a subtitle
-name. The bytes go straight to the share, so a read costs what the share costs. A share the
+itself and hands the runner the open handle, with read access only. A subtitle is written by
+the launcher from the bytes the runner sends. The bytes go straight to the share, so a read costs what the share costs. A share the
 group writes in full is not brokered, and a tool (ffmpeg) cannot use the runner's handles.
 Those jobs run in the queue worker.
 

@@ -439,7 +439,8 @@ build fails when the two differ.
   library ran in the queue worker. The runner's launcher now brokers the group's share
   folders. For each file the runner asks for over its own pipe, the launcher checks that the
   path is in those folders and spelled one way only, with no junction or link on the way. It
-  then hands the runner the open file: read access, or write access for a subtitle name. The
+  then hands the runner the open file for reading only; a subtitle is written by the launcher
+  from the bytes the runner sends. The
   subtitle stage now runs in its runner on a share. A share the group writes in full, and a
   tool's job on a share, still run in the worker. No network capability is given to the
   runner.

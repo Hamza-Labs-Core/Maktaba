@@ -99,12 +99,18 @@ so a job on a share-hosted library would run in the worker. Three ways were weig
   no `.` or `..`, no empty part, no stream, no device name, no trailing dot or space, and no 8.3
   alias. It opens the folders from the share folder down and then the file, each without
   following a link, and refuses a junction or symbolic link anywhere on the way. It also
-  refuses a file the filesystem names otherwise than asked. Then it duplicates the handle into
-  the runner's process: read access, or, for a subtitle name (the runner's `SUBTITLE_NAME`) in
-  a folder the group writes by name, write access to the bytes only (no attributes, no DACL,
-  no delete). A subtitle is renamed within its own folder (`.maktaba-tmp` to its name) or
-  removed by the launcher after the same checks. The bytes go through the handle straight to
-  the SMB redirector, so a read costs what the share costs (CI measures it, T10).
+  refuses a file the filesystem names otherwise than asked. It compares by ASCII case only:
+  Windows' upcase table is not Go's, so a root never matches a differently folded sibling.
+  Then it duplicates the handle into the runner's process with read access only. A subtitle
+  (the runner's `SUBTITLE_NAME`, in a folder the group writes by name) is written by the
+  launcher itself from the bytes the runner sends when the file closes (at most 16 MiB). The
+  file is opened and checked before a byte changes, so the runner never holds a handle it
+  could write with, or turn into a link. A subtitle is renamed within its own folder
+  (`.maktaba-tmp` to its name) or removed by handle after the same checks. An administrative
+  share (`C$`, `ADMIN$`) is never brokered. A share this machine serves is mapped back to its
+  folder and refused, like the folder itself, when it holds or is inside a protected folder.
+  The bytes of a read go through the handle straight to the SMB redirector, so a read costs
+  what the share costs (CI measures it, T10).
 
 A share folder the group writes in full (`files.write`, the file stages) is not brokered, and
 its jobs run in the worker. A tool (ffmpeg) cannot use the runner's handles, so a job that
