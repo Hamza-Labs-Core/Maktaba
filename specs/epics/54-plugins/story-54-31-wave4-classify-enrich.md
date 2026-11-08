@@ -84,7 +84,7 @@ statements between them, several reading whole libraries), so they use streamed 
 ## As built
 
 - **Six of the seven stages moved.** `detect`, `tag`, `check_tags`, `check_clips`, `books` and
-  `review_pages` run in `tv.maktaba.classify`. Roles are in migration `0210_fp_roles`.
+  `review_pages` run in `tv.maktaba.classify`. Roles are in migration `0215_fp_roles`.
 - **`enrich` stays in the worker.** It reads whatever page a web search result links to (any
   public host, `enrich/web.py` `read_page`), so no declared host list can cover it. Its search
   keys are sealed in `home_secrets`, which the plugin API does not serve. Moving it needs a

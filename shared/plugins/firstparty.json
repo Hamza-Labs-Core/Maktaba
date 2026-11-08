@@ -1,5 +1,5 @@
 {
- "digest": "1d3233a85102d9ff5c35ef781e216b7f1aecbd206aba66b70d3265b3f4cad604",
+ "digest": "5f7a3dd9c17a75ef2c43a1c6aa5ce99307e18e7db55f1053b6740c95bdb5e055",
  "plugins": [
   {
    "digest": "e30e924ae7ba6c7c606654e226d9f5d56e5638543f211a4499108717c9c1b93e",
@@ -2370,6 +2370,404 @@
     "en": {
      "fp.dedup.name": "Duplicates",
      "fp.dedup.summary": "Finds duplicate videos, merges each group into the copy it keeps, and empties or restores the file trash."
+    }
+   }
+  },
+  {
+   "digest": "de6a18122c6bd37475e4a4db51efa9b225b38fcf544321a720896efc3a68e5e2",
+   "folder": "dizquetv",
+   "id": "tv.maktaba.dizquetv",
+   "manifest": "# tv.maktaba.dizquetv: a first-party plugin of Maktaba (Epic 54, README §15.2), issue #827:\n# dizqueTV through the home's service door, its programmes built on the home. The plugin holds\n# neither the Plex token nor Plex's or dizqueTV's address. It sends Plex ids and token-free\n# records; the door builds every programme with the token and answers every read with a\n# projection that holds no secret.\nschema     = 1\nid         = \"tv.maktaba.dizquetv\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.dizquetv.name\"\nsummary = \"fp.dizquetv.summary\"\n\n[trusted]\nrunner      = \"service\"\ncomponent   = \"ext.dizquetv\"\ndb.read     = [\"app_settings\", \"channel_plans\", \"job_stages\", \"libraries\", \"plex_items\", \"processing_jobs\", \"season_tags\", \"series\", \"series_episodes\", \"series_seasons\", \"video_topic_tags\", \"videos\"]\ndb.write    = [\"channel_audit_channels\", \"channel_audits\", \"external_links\"]\nsettings    = [\"dizquetv\", \"tv\", \"audit\", \"planner\", \"display_titles\"]\nfiles.read  = [\"data.channels\"]\nfiles.write = [\"data.review\"]\nservice     = [\"dizquetv\", \"plex\"]\n\n[[stage]]\nname         = \"dizquetv_show\"\nsubject      = \"season\"\nexport       = \"dizquetv-show\"\nversion      = 1\nlabel        = \"dizqueTV show\"\nsubject_kinds = [\"season\"]\npool         = \"network_tv\"\nlane         = \"seasons\"\nlane_order   = 5\nexternal_write = true\nentry_for    = [\"season\"]\nplacement    = \"home\"\nentry        = \"maktaba_fp_dizquetv.stages.dizquetv_show:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"dizquetv_channels\"\nsubject      = \"catalog\"\nexport       = \"dizquetv-channels\"\nversion      = 1\nlabel        = \"dizqueTV channels\"\nsubject_kinds = [\"catalog\"]\npool         = \"network_tv\"\nlane         = \"channels\"\nlane_order   = 3\nexternal_write = true\nentry_for    = [\"catalog\"]\nplacement    = \"home\"\nedges        = [{ to = \"dizquetv_audit\", map = \"same\" }]\nentry        = \"maktaba_fp_dizquetv.stages.dizquetv_channels:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"dizquetv_audit\"\nsubject      = \"catalog\"\nexport       = \"dizquetv-audit\"\nversion      = 1\nlabel        = \"Channel audit\"\nsubject_kinds = [\"catalog\"]\npool         = \"audits\"\nlane         = \"channels\"\nlane_order   = 4\nentry_for    = [\"catalog\"]\ndebounce_sec = 60\ndebounce_max_sec = 900\nplacement    = \"home\"\nentry        = \"maktaba_fp_dizquetv.stages.dizquetv_audit:IMPL\"\nfingerprint  = { input = true, output = false }\n",
+   "statements": [
+    {
+     "mode": "read",
+     "name": "audit.build_lookup",
+     "reads": [
+      "libraries"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "22a69ec006799f06ee09ed6bfbf879efc786e84ddcf45dd535c8042fbab11519",
+     "text": "SELECT id, name FROM libraries",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "audit.item_links",
+     "reads": [
+      "external_links"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "28f34d45c37f87e43f86ea63badb7c82afb0bb55f065edc9b0bf250d6408fb95",
+     "text": "SELECT subject_id, external_id FROM external_links WHERE target = 'plex_item' AND subject_kind = 'video' AND external_id = ANY($1::text[])",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "audit.item_links.2",
+     "reads": [
+      "external_links"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "c5b1d9ef26df654f075b02991f43d3af3f9d0ab4952b9aa3a88acd4111f4069c",
+     "text": "SELECT subject_id, external_id FROM external_links WHERE target = 'plex_item' AND subject_kind = 'video' AND external_id IN (SELECT value FROM json_each($1))",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "audit.last_channels_job",
+     "reads": [
+      "processing_jobs"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "ee574adfc5c9d64cde9bbd2823c054b5714e311e93d8e4e7aa3b79fd50ac6241",
+     "text": "SELECT max(id) AS id FROM processing_jobs WHERE stage = 'dizquetv_channels' AND state = 'done'",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "audit.paths_of",
+     "reads": [
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "018c348f3b66518f447c0a00b168df859460a144a7c39751a7fd2271223e1bde",
+     "text": "SELECT id, path FROM videos WHERE id = ANY($1::uuid[])",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "audit.paths_of.2",
+     "reads": [
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "c7e6130a423312c5fe8ce27189579123f32a987deefd887a50f9232bb7074ad5",
+     "text": "SELECT id, path FROM videos WHERE id IN (SELECT value FROM json_each($1))",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "audit.run_audit",
+     "reads": [
+      "channel_plans"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "fba008db5fdb1f578f92b817d60fb0f826cfdfc03f94fb72277f09aafaac425a",
+     "text": "SELECT input_hash FROM channel_plans ORDER BY id DESC LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "audit.season_tags",
+     "reads": [
+      "season_tags"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "d47d8166aaa4928b0ddff8b3ccd9b4f518090189d42d3a287449f01f2d6b5d17",
+     "text": "SELECT season_id, tag, score, evidence FROM season_tags WHERE season_id = ANY($1::uuid[])",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "audit.season_tags.2",
+     "reads": [
+      "season_tags"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "0fd28dd79cf8d9be8449121342218dc4a4b721a697c17ed776aa1364dedca635",
+     "text": "SELECT season_id, tag, score, evidence FROM season_tags WHERE season_id IN (SELECT value FROM json_each($1))",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "audit.seasons_of",
+     "reads": [
+      "series_episodes",
+      "series_seasons"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "76711ba81ce187bba54c1204c457770bf18a5420f84afcfa5f94e27652be668d",
+     "text": "SELECT e.video_id AS vid, ss.id AS sid, ss.library_id AS lib FROM series_episodes e JOIN series_seasons ss ON ss.series_id = e.series_id  AND ss.season = COALESCE(e.season_override, e.season) WHERE ss.retired_at IS NULL AND e.video_id = ANY($1::uuid[])",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "audit.seasons_of.2",
+     "reads": [
+      "series_episodes",
+      "series_seasons"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "bd3a6d4327219ddf640f01b377ae13195ac932980668d1bdc70d0f68ca87a383",
+     "text": "SELECT e.video_id AS vid, ss.id AS sid, ss.library_id AS lib FROM series_episodes e JOIN series_seasons ss ON ss.series_id = e.series_id  AND ss.season = COALESCE(e.season_override, e.season) WHERE ss.retired_at IS NULL AND e.video_id IN (SELECT value FROM json_each($1))",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "audit.store",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "44ae2dc9b955b51e750c105cac43c8e44bec2682fd56af2fb353990e8f7343c6",
+     "text": "INSERT INTO channel_audits (created_at, plan_hash, window_days, channels, html_path) VALUES ($1,$2,$3,$4,$5) RETURNING id",
+     "writes": [
+      "channel_audits"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "audit.store.2",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "40a972360d69f3a5cf87d2f8bbb6f74af0f8866e9765b4559b94a3a0d23cb3da",
+     "text": "INSERT INTO channel_audit_channels (audit_id, number, name, theme, hours, shares, filler_clips, filler_share, detail) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+     "writes": [
+      "channel_audit_channels"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "audit.store.3",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "900fc8d1c1051ca4f5a890e3219efacd15c9052d17415bd04eea3080c5d7c2da",
+     "text": "DELETE FROM channel_audits WHERE id NOT IN (SELECT id FROM channel_audits ORDER BY id DESC LIMIT $1)",
+     "writes": [
+      "channel_audits"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "audit.video_tags",
+     "reads": [
+      "video_topic_tags"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "bee92f854106c8b4744ee11475c2382263588b9afd39be91b3a6a43fc9b531d9",
+     "text": "SELECT video_id, tag, score FROM video_topic_tags WHERE video_id = ANY($1::uuid[])",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "audit.video_tags.2",
+     "reads": [
+      "video_topic_tags"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "3921cb2f81ebe8027882371d411b0ec783a264344ba26cddd515b393157a7d0c",
+     "text": "SELECT video_id, tag, score FROM video_topic_tags WHERE video_id IN (SELECT value FROM json_each($1))",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "channels.latest_plan",
+     "reads": [
+      "channel_plans"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "6c05ab8f6c104c320146f6e066491d03f72d740c467816392d7489492f13aaf7",
+     "text": "SELECT input_hash, plan FROM channel_plans ORDER BY id DESC LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "channels.with_display_titles",
+     "reads": [
+      "plex_items",
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "eccd467143b3605f7cb82a21a673b6223429f7c07692d1ee7e2e2d2540a3b5e5",
+     "text": "SELECT p.rating_key AS rk, COALESCE(NULLIF(v.display_title_manual, ''), v.display_title) AS t FROM plex_items p JOIN videos v ON v.id = p.video_id WHERE p.rating_key = ANY($1::text[])",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "channels.with_display_titles.2",
+     "reads": [
+      "plex_items",
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "e624c5a901f5e7bd2ac586c95d2113678f6247871bcc4dc43dd01fd973ac8038",
+     "text": "SELECT p.rating_key AS rk, COALESCE(NULLIF(v.display_title_manual, ''), v.display_title) AS t FROM plex_items p JOIN videos v ON v.id = p.video_id WHERE p.rating_key IN (SELECT value FROM json_each($1))",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "links.delete_link",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "36bed7d2d051cc365870b9fd7d8fd3b8e5eea5a492a854e3b2d00efcffa2b2d4",
+     "text": "DELETE FROM external_links WHERE target = $1 AND subject_kind = $2 AND subject_id = $3",
+     "writes": [
+      "external_links"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "links.get_link",
+     "reads": [
+      "external_links"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "c6f1815f2d2c70f8f30d6b706144d1d194347493e4a0a0a90d15d26f2606c549",
+     "text": "SELECT target, subject_kind, subject_id, external_id, title, content_hash, created_by_tool FROM external_links WHERE target = $1 AND subject_kind = $2 AND subject_id = $3",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "links.get_links",
+     "reads": [
+      "external_links"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "0058aa58c075d2b92184d8db0bddd3beeec4f7a3796da02cf097bf0757657251",
+     "text": "SELECT target, subject_kind, subject_id, external_id, title, content_hash, created_by_tool FROM external_links WHERE target = $1 AND subject_kind = $2 AND subject_id = ANY($3::text[])",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "links.get_links.2",
+     "reads": [
+      "external_links"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "b17f0dea9db85af6793f36e8eae42a412e71a303b15cb75afb76787381d52ad6",
+     "text": "SELECT target, subject_kind, subject_id, external_id, title, content_hash, created_by_tool FROM external_links WHERE target = $1 AND subject_kind = $2 AND subject_id IN (SELECT value FROM json_each($3))",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "links.put_link",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "4a7f1c15d0418e42deeaaa564e89d1cdd1aeac76b603eb4da01fd5b32fd53c74",
+     "text": "INSERT INTO external_links (target, subject_kind, subject_id, external_id, title, content_hash, created_by_tool, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (target, subject_kind, subject_id) DO UPDATE SET external_id = EXCLUDED.external_id, title = EXCLUDED.title, content_hash = EXCLUDED.content_hash, created_by_tool = EXCLUDED.created_by_tool, updated_at = EXCLUDED.updated_at",
+     "writes": [
+      "external_links"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "plex_items.details_for",
+     "reads": [
+      "plex_items"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "24ece599e15346f8ccf3e0778d43615619fa694067fc03f2ec6579ba69f52018",
+     "text": "SELECT rating_key, detail FROM plex_items WHERE rating_key = ANY($1::text[])",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "plex_items.details_for.2",
+     "reads": [
+      "plex_items"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "a3386287da6ee619187a08ff869e7f68c1dc490e81f05aeaabdb64067a43fa82",
+     "text": "SELECT rating_key, detail FROM plex_items WHERE rating_key IN (SELECT value FROM json_each($1))",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "rules.read",
+     "reads": [
+      "app_settings"
+     ],
+     "scope": "settings",
+     "scope_arg": 1,
+     "sha256": "ee2788811521c36000e70c683028eea361a5329e30e4566e65e3b99fdc19ea07",
+     "text": "SELECT value FROM app_settings WHERE key = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "seasons.load_members",
+     "reads": [
+      "series_episodes",
+      "series_seasons",
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "30e64c358edfe588e8f2c7bf4f280c00f6a2cd7b878a7505decf756eb88e28a0",
+     "text": "SELECT v.id AS id, v.path AS path, COALESCE(v.title, v.filename) AS title FROM series_episodes e JOIN series_seasons ss ON ss.series_id = e.series_id  AND ss.season = COALESCE(e.season_override, e.season) JOIN videos v ON v.id = e.video_id WHERE ss.id = $1 AND v.deleted_at IS NULL ORDER BY (COALESCE(e.episode_override, e.episode) IS NULL), COALESCE(e.episode_override, e.episode), e.absolute_number, v.id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "seasons.load_season",
+     "reads": [
+      "libraries",
+      "series",
+      "series_seasons"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "1fe2780d4aa59c44a8a0a5653458e9e7ff8bcf56148a34f7450cc3ba2be10b46",
+     "text": "SELECT ss.id AS id, ss.season AS season, ss.kind AS kind, ss.membership_hash AS membership_hash, ss.retired_at AS retired_at, ss.metadata AS metadata, COALESCE(s.name_override, s.name) AS series, COALESCE(l.name, '') AS library, (SELECT count(*) FROM series_seasons x WHERE x.series_id = ss.series_id   AND x.retired_at IS NULL) AS n FROM series_seasons ss JOIN series s ON s.id = ss.series_id LEFT JOIN libraries l ON l.id = ss.library_id WHERE ss.id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "service.write_mode",
+     "reads": [
+      "job_stages"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "f4287bdd3e0dd0bdc88931e039cd78978b4592ed9b91cdfd907da20b3d9fac52",
+     "text": "SELECT write_mode FROM job_stages WHERE stage = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "shows.plex_output",
+     "reads": [
+      "processing_jobs"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "3f392da6810d6414dbeffe1b3759c89ea89103629bf2d4ead3dd4b6f59d5e25a",
+     "text": "SELECT output_hash FROM processing_jobs WHERE stage = 'plex_collection' AND subject_kind = 'season' AND subject_id = $1 AND state = 'done' AND outcome IN ('changed','unchanged','skipped_unchanged') ORDER BY id DESC LIMIT 1",
+     "writes": []
+    }
+   ],
+   "strings": {
+    "ar": {
+     "fp.dizquetv.name": "dizqueTV",
+     "fp.dizquetv.summary": "يبقي برامج dizqueTV وقنواته متوافقة مع الخطة، عبر باب الخدمات في المنزل."
+    },
+    "en": {
+     "fp.dizquetv.name": "dizqueTV",
+     "fp.dizquetv.summary": "Keeps dizqueTV's shows and channels in step with the plan, through the home's service door."
     }
    }
   },

@@ -1,0 +1,76 @@
+# tv.maktaba.dizquetv: a first-party plugin of Maktaba (Epic 54, README §15.2), issue #827:
+# dizqueTV through the home's service door, its programmes built on the home. The plugin holds
+# neither the Plex token nor Plex's or dizqueTV's address. It sends Plex ids and token-free
+# records; the door builds every programme with the token and answers every read with a
+# projection that holds no secret.
+schema     = 1
+id         = "tv.maktaba.dizquetv"
+version    = "0.0.0-dev"
+plugin_api = "1.0"
+maktaba    = ">=0.0.0"
+licence    = "AGPL-3.0-only"
+runtime    = "native-python"
+
+[strings]
+name    = "fp.dizquetv.name"
+summary = "fp.dizquetv.summary"
+
+[trusted]
+runner      = "service"
+component   = "ext.dizquetv"
+db.read     = ["app_settings", "channel_plans", "job_stages", "libraries", "plex_items", "processing_jobs", "season_tags", "series", "series_episodes", "series_seasons", "video_topic_tags", "videos"]
+db.write    = ["channel_audit_channels", "channel_audits", "external_links"]
+settings    = ["dizquetv", "tv", "audit", "planner", "display_titles"]
+files.read  = ["data.channels"]
+files.write = ["data.review"]
+service     = ["dizquetv", "plex"]
+
+[[stage]]
+name         = "dizquetv_show"
+subject      = "season"
+export       = "dizquetv-show"
+version      = 1
+label        = "dizqueTV show"
+subject_kinds = ["season"]
+pool         = "network_tv"
+lane         = "seasons"
+lane_order   = 5
+external_write = true
+entry_for    = ["season"]
+placement    = "home"
+entry        = "maktaba_fp_dizquetv.stages.dizquetv_show:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "dizquetv_channels"
+subject      = "catalog"
+export       = "dizquetv-channels"
+version      = 1
+label        = "dizqueTV channels"
+subject_kinds = ["catalog"]
+pool         = "network_tv"
+lane         = "channels"
+lane_order   = 3
+external_write = true
+entry_for    = ["catalog"]
+placement    = "home"
+edges        = [{ to = "dizquetv_audit", map = "same" }]
+entry        = "maktaba_fp_dizquetv.stages.dizquetv_channels:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "dizquetv_audit"
+subject      = "catalog"
+export       = "dizquetv-audit"
+version      = 1
+label        = "Channel audit"
+subject_kinds = ["catalog"]
+pool         = "audits"
+lane         = "channels"
+lane_order   = 4
+entry_for    = ["catalog"]
+debounce_sec = 60
+debounce_max_sec = 900
+placement    = "home"
+entry        = "maktaba_fp_dizquetv.stages.dizquetv_audit:IMPL"
+fingerprint  = { input = true, output = false }

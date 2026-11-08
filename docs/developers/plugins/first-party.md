@@ -16,11 +16,11 @@
 > `tv.maktaba.repair`, the first stages that reach the network. **Wave 7 has moved**: the
 > channel planner and writer run in `tv.maktaba.livetv`, and staging, swapping, rolling back
 > and cleaning up TV changes in `tv.maktaba.livetv-slots`. **Wave 8 has moved**: the Plex
-> stages run in `tv.maktaba.plex`, through the home's service door; the dizqueTV stages stay
-> in the worker for now. **Wave 4 has moved**: `detect`, `tag`, `check_tags`, `check_clips`,
-> `books` and `review_pages` run in `tv.maktaba.classify`, the model's questions through the
-> plugin API's `compute.generate`; `enrich` stays in the worker for now. The other stages move
-> wave by wave.
+> stages run in `tv.maktaba.plex` and the dizqueTV stages in `tv.maktaba.dizquetv`, both
+> through the home's service door. **Wave 4 has moved**: `detect`, `tag`, `check_tags`,
+> `check_clips`, `books` and `review_pages` run in `tv.maktaba.classify`, the model's questions
+> through the plugin API's `compute.generate`; `enrich` stays in the worker for now. The other
+> stages move wave by wave.
 
 Maktaba's own stages (thumbnails, transcription, the classifiers, the YouTube downloads and
 the rest) become **first-party plugins**: the same manifest, the same tokens and the same plugin
@@ -334,9 +334,20 @@ service   = ["plex"]              # the services its calls may reach, through th
   settings without secret fields, and `service:plex` in place of the address.
 - **Live TV is the home's.** The door allows the Live TV calls `plex_livetv` makes (DVRs,
   tuners, the channel map, guide reloads) only for a caller on the home.
-- **dizqueTV stays in the worker for now.** Its programmes carry the Plex token in the body,
-  and dizqueTV stores them, so a plugin could read the token back. The dizqueTV stages move
-  once the door builds programmes on the home from Plex item ids.
+- **dizqueTV's programmes are built on the home** (`tv.maktaba.dizquetv`: `dizquetv_show`,
+  `dizquetv_channels`, `dizquetv_audit`, `service = ["dizquetv", "plex"]`). A dizqueTV
+  programme plays from Plex with the token in it, and dizqueTV stores it. So the plugin never
+  writes a raw programme: the door's own operations (`/maktaba/...`) take a token-free record
+  of each Plex item, check every field, and build the programme on the home. A channel's
+  programmes are referenced by index into the stored channel or by show id and rating key,
+  and the door fills them in from what dizqueTV holds. Every read is a projection that leaves
+  out any field holding a secret, and a final check refuses an answer that still names the
+  token, in any encoding or in part. Raw writes that could carry a programme are refused.
+  dizqueTV and its clients fetch a channel's pictures (its logo, watermark, offline picture
+  and soundtrack), so the door writes only the home's own: none, the stored one, a file on
+  the logo host (`dz_art_url`) or one uploaded to dizqueTV. Filler time and redirects keep
+  only their duration and target.
+  dizqueTV is reached only from the home: a joined machine never relays it.
 - **Parity** runs the Plex stages against a fake Plex behind HTTP on each side: the calls Plex
   receives (method, path, query and the token) are identical, then N16.
 

@@ -448,6 +448,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "ext.dizquetv"
+plugin    = "tv.maktaba.dizquetv"
 kind      = "extension"
 group     = "integrations"
 title_key = "components.ext.dizquetv.title"
@@ -455,6 +456,7 @@ desc_key  = "components.ext.dizquetv.desc"
 stages    = ["dizquetv_show", "dizquetv_channels", "dizquetv_audit"]
 requires  = ["livetv"]
 settings  = ["rules.dizquetv"]
+placement = "home"
 platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles   = []
 since     = "0.3.66"

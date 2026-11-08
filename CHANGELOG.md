@@ -14,6 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
+- **dizqueTV's stages run as a first-party plugin, and the Plex token never reaches it
+  (`tv.maktaba.dizquetv`).** The custom shows, the planned channels and the channel audit now
+  run in the plugin's `service` runner, which has no network. The home's service door builds
+  every dizqueTV programme from the plugin's Plex item ids, and answers every read without
+  the token, Plex's address or dizqueTV's own Plex tokens. Raw writes that could carry a
+  programme are refused, and dizqueTV is reached from the home only. The shows, channels and
+  audits are the same as before. Issue #827.
 - **A page's counts, dates and episode numbers follow the language it is drawn in (Apple apps,
   Android).** On the Apple apps a series' episode count and year, a video's length and date, and
   an episode's season and number now take the page's language, as its other words do, so a page

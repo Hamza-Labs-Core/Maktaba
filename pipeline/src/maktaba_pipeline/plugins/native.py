@@ -676,13 +676,19 @@ def _service_frame(stage: str, ctx: Any) -> dict[str, Any]:
     (the plugin API's door), ``worker`` on a joined machine (this worker's channel to the
     home's door, as for its own Plex stages)."""
     from .. import relay
-    from .service import plugin_settings
+    from .service import holds_secret, plugin_settings
 
     services = _services_of(stage)
     if not services:
         return {}  # no service: the job gets no extension settings, as before
     settings = getattr(ctx, "settings", None) or {}
-    via = "worker" if any(relay.relayed(settings.get(s, {})) for s in services) else "api"
+    # only a service with a secret is relayed (a machine without it asks the home's door);
+    # dizqueTV keeps none and is home-only (issue #827)
+    via = (
+        "worker"
+        if any(relay.relayed(settings.get(s, {})) for s in services if holds_secret(s))
+        else "api"
+    )
     return {"extension_settings": plugin_settings(settings, services), "service_via": via}
 
 
