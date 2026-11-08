@@ -16,12 +16,18 @@ import (
 //
 //   - totals across all machines (when there are two or more): components up and down,
 //     the lowest disk free and memory free, the highest load, the restarts per minute;
-//   - for the TopMachines machines most in need of attention now (most components down,
-//     then least disk free, then the highest load per CPU, by their latest values), their
-//     components down, load, disk free and memory free;
-//   - in Machines, how many machines the store has lines of, which are shown, and every
-//     machine's id, so a client can say "showing 5 of 37" and offer each machine on its own
-//     (machine=).
+//   - for the TopMachines machines most in need of attention now (offline first, then most
+//     components down, then least disk free, then the highest load per CPU, by their latest
+//     values), their components down, load, disk free and memory free;
+//   - in Machines, how many machines there are (those the store has lines of and the joined
+//     machines that are offline), which are shown, every machine's id and the offline ones,
+//     so a client can say "showing 5 of 37", mark a machine offline and offer each machine on
+//     its own (machine=).
+//
+// Which joined machines are offline is the home's to say (the API passes offline=, from the
+// cluster's machine list: the Machines page's own rule), not the store's: a machine that
+// stopped sending keeps its last values here, so by its values alone it ranked last, and
+// the store cannot tell a machine that is offline from one that was removed.
 //
 // With machine=<id>, it answers that machine's lines only: its components up and down, its
 // load, CPUs, memory and disk, and a line for each component that was not up all the time,
@@ -40,12 +46,17 @@ const TopMachines = 5
 // maxMachineID bounds the machine= parameter (a node id is far shorter).
 const maxMachineID = 128
 
-// MachineCount is the Overview's machines: how many the store has lines of, the ones shown
-// (most in need of attention first), and all of them (sorted), for a machine picker.
+// MaxOffline bounds the offline= machines one board asks with.
+const MaxOffline = 1000
+
+// MachineCount is the Overview's machines: how many there are, the ones shown (most in need
+// of attention first), all of them (sorted), for a machine picker, and the offline ones
+// (sorted).
 type MachineCount struct {
-	Total int      `json:"total"`
-	Shown []string `json:"shown"`
-	All   []string `json:"all"`
+	Total   int      `json:"total"`
+	Shown   []string `json:"shown"`
+	All     []string `json:"all"`
+	Offline []string `json:"offline"`
 }
 
 // The totals across machines Record stores with each scrape (no labels).
@@ -342,11 +353,19 @@ func (ix *Index) perComponent(ctx context.Context, w window, name, kind, machine
 }
 
 // overviewMachines answers the Overview's per-machine lines (see the top of this file).
-func (ix *Index) overviewMachines(ctx context.Context, w window, machine string) ([]Series, *MachineCount, error) {
+// offline are the joined machines that are offline (they rank first and are named as
+// offline, with lines or none).
+func (ix *Index) overviewMachines(ctx context.Context, w window, machine string, offline []string) ([]Series, *MachineCount, error) {
 	seen := map[string]bool{}
 	for _, name := range []string{MachineComponents, MachineRestarts, hostLoad, hostDiskFree, hostMemoryFree} {
 		if err := ix.machinesOf(ctx, w.table, name, seen); err != nil {
 			return nil, nil, err
+		}
+	}
+	isOffline := map[string]bool{}
+	for _, m := range offline {
+		if m != "" {
+			seen[m], isOffline[m] = true, true
 		}
 	}
 	all := make([]string, 0, len(seen))
@@ -354,7 +373,12 @@ func (ix *Index) overviewMachines(ctx context.Context, w window, machine string)
 		all = append(all, m)
 	}
 	sort.Strings(all)
-	count := &MachineCount{Total: len(all), Shown: []string{}, All: all}
+	off := make([]string, 0, len(isOffline))
+	for m := range isOffline {
+		off = append(off, m)
+	}
+	sort.Strings(off)
+	count := &MachineCount{Total: len(all), Shown: []string{}, All: all, Offline: off}
 	var out []Series
 	hostLines := func(m string, names ...string) error {
 		for _, name := range names {
@@ -401,16 +425,17 @@ func (ix *Index) overviewMachines(ctx context.Context, w window, machine string)
 		return out, count, nil
 	}
 
-	// rank the machines by their latest values: most components down, then least disk free,
-	// then the highest load per CPU
+	// rank the machines: offline first, then by their latest values: most components down,
+	// then least disk free, then the highest load per CPU
 	type rank struct {
 		m                string
+		offline          bool
 		down, disk, load float64
 	}
 	ranks := make([]rank, 0, len(all))
 	for _, m := range all {
 		l := "machine=" + m
-		r := rank{m: m, disk: math.Inf(1)}
+		r := rank{m: m, offline: isOffline[m], disk: math.Inf(1)}
 		if n, ok := ix.latest(ctx, MachineComponents, l); ok {
 			u, _ := ix.latest(ctx, MachineComponentsUp, l)
 			r.down = math.Max(0, n-u)
@@ -426,6 +451,9 @@ func (ix *Index) overviewMachines(ctx context.Context, w window, machine string)
 	}
 	sort.SliceStable(ranks, func(i, j int) bool {
 		a, b := ranks[i], ranks[j]
+		if a.offline != b.offline {
+			return a.offline
+		}
 		if a.down != b.down {
 			return a.down > b.down
 		}

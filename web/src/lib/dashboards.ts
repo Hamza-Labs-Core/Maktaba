@@ -1,8 +1,8 @@
 // The dashboards (Epic 53 story 53.12): GET /api/admin/dashboards/{board}?range= answers a
 // board's series in one call (≤ 50 series, ≤ 2,000 points each). Use also lists the week's
 // top videos (counts and titles only). The Overview draws totals across the machines and
-// the five most in need of attention, names them all in `machines`, and answers one machine
-// on its own with `machine=`.
+// the five most in need of attention (a joined machine that is offline first), names them
+// all and the offline ones in `machines`, and answers one machine on its own with `machine=`.
 import { api } from "./api";
 
 export const BOARDS = ["overview", "queue", "processing", "streaming", "storage", "use"] as const;
@@ -25,8 +25,9 @@ export interface BoardDoc {
   top?: { title: string; plays: number }[];
   /** Overview: the one machine asked for. */
   machine?: string;
-  /** Overview: how many machines have lines, the ones shown, and all of them. */
-  machines?: { total: number; shown: string[]; all: string[] };
+  /** Overview: how many machines there are, the ones shown, all of them, and the joined
+   * machines that are offline (ranked first among those shown). */
+  machines?: { total: number; shown: string[]; all: string[]; offline: string[] };
   /** Lines the board's 50 left out. */
   omitted?: number;
 }
@@ -46,6 +47,7 @@ export async function getBoard(board: Board, range: Range, machine = ""): Promis
           total: m.total ?? 0,
           shown: Array.isArray(m.shown) ? m.shown : [],
           all: Array.isArray(m.all) ? m.all : [],
+          offline: Array.isArray(m.offline) ? m.offline : [],
         }
       : undefined,
     omitted: d?.omitted ?? 0,

@@ -210,6 +210,44 @@ class DiagnosticsScreenTest {
         assertTrue(shown("الأحوج إلى الانتباه أولاً"))
     }
 
+    // Story 53.12: a joined machine that is offline is named as offline, first among those shown.
+    private fun showOffline() = show(DiagTab.Dashboards) {
+        val pts = (0 until 24).joinToString(",") { "[${java.time.Instant.now().epochSecond - (23 - it) * 3600},${it % 3}]" }
+        home.answer("/api/admin/dashboards/overview") { r ->
+            val one = r.url.queryParameter("machine")
+            val asked = if (one == null) "" else "\"machine\":\"$one\","
+            val shownIds = if (one == null) "\"n45\",\"n70\",\"n07\",\"n33\",\"n12\"" else "\"$one\""
+            FakeRemoteHome.json("""{"board":"overview","range":"24h",$asked
+              "machines":{"total":9,"shown":[$shownIds],
+                "all":["n07","n12","n20","n33","n41","n45","n50","n60","n70"],"offline":["n45","n70"]},
+              "series":[{"name":"maktaba_machines_components_down","kind":"gauge","points":[$pts]}]}""")
+        }
+    }
+
+    @Test
+    fun offlineMachinesAreNamedAndMarkedInThePicker() {
+        showOffline()
+        compose.settledUntil { compose.has("dash-offline") }
+        assertTrue(shown("Offline: n45, n70"))
+        compose.onNodeWithTag("dash-machine").performClick()
+        compose.settledUntil { compose.has("dash-machine-n45") }
+        assertTrue(shown("n45 (offline)"))
+        compose.onNodeWithTag("dash-machine-n45").performClick()
+        compose.settledUntil { shown("This machine is offline") }
+        // an online machine on its own: no offline line
+        compose.onNodeWithTag("dash-machine").performClick()
+        compose.settledUntil { compose.has("dash-machine-n07") }
+        compose.onNodeWithTag("dash-machine-n07").performClick()
+        compose.settledUntil { !compose.has("dash-offline") && compose.has("dash-panel-maktaba_machines_components_down") }
+    }
+
+    @Test @Config(qualifiers = "ar-w411dp-h891dp-420dpi")
+    fun offlineMachinesInArabic() {
+        showOffline()
+        compose.settledUntil { compose.has("dash-offline") }
+        assertTrue(shown("غير متصلة: n45, n70"))
+    }
+
     @Test
     fun theInbox() {
         show(DiagTab.Reports)

@@ -14,6 +14,14 @@ build fails when the two differ.
 
 ### Changed
 
+- **An offline machine comes first on the Overview (Epic 53 story 53.12).** On the home's
+  dashboards, a joined machine that is offline now ranks first among the machines most in need
+  of attention, and is named as offline: a line on the web page and both Remotes ("Offline:
+  …"), "(offline)" in the machine picker, and a line on its own view saying its lines end at
+  its last values. Which machines are offline is the Machines page's own rule (an approved
+  machine neither it nor any worker of it seen within 60 s); the API passes the list to the log
+  index, and the Overview's answer names them in `machines.offline`. Before, an offline machine
+  kept its last values and ranked last.
 - **Android native crashes in problem reports read as code (Epic 53 story 53.16).** The operator
   console reads a native crash's frames (from its tombstone, Android 12 and later) as functions,
   files and lines with a table of the app's own unstripped native library, keyed by the

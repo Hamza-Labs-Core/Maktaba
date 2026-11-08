@@ -67,12 +67,22 @@ lines. The Overview of all machines draws instead:
 
 - totals across the machines (with two or more): components up and down, the least disk free
   and memory free of any machine, the highest load, restarts per minute;
-- the **five machines most in need of attention now** (most components down, then least disk
-  free, then the highest load per CPU, by their latest values): their components down, load,
-  disk free and memory free;
-- "Showing 5 of 37 machines, those most in need of attention first", and a machine picker:
-  one machine on its own shows its components up and down, load, CPUs, memory and disk, and a
-  line for each component that was not up all the time or that restarted.
+- the **five machines most in need of attention now** (a joined machine that is offline
+  first, then most components down, then least disk free, then the highest load per CPU, by
+  their latest values): their components down, load, disk free and memory free;
+- "Showing 5 of 37 machines, those most in need of attention first", the offline machines
+  named ("Offline: …", and marked in the picker), and a machine picker: one machine on its own
+  shows its components up and down, load, CPUs, memory and disk, and a line for each component
+  that was not up all the time or that restarted (an offline one says so: its lines end at its
+  last values).
+
+Which machines are offline is the cluster's to say, by the Machines page's own rule: an
+approved machine is offline when neither it nor any of its workers was seen within the last
+60 s. The API asks the cluster and passes the list to the log index (`offline=`); a caller's
+own `offline=` never reaches it. The store alone cannot say it: a machine that stopped sending
+keeps its last values there (by them it ranked last), and a machine removed from the cluster
+looks the same as one that is offline. An offline machine the store has no lines of is still
+counted, named and shown, with no lines.
 
 The log index sums each machine's components up, its components and its restarts, and the
 totals across machines, as it writes a scrape (`maktaba_machine_*{machine}`,
@@ -87,8 +97,8 @@ view answer in tens of milliseconds (`dashboard_30d_machines` in the performance
 Admin only: `GET /api/admin/dashboards/{board}?range=` returns the board's series in one call
 (≤ 50 series, ≤ 2,000 points each, downsampled by the role). On the Overview,
 `machine=<node id>` answers that machine's lines on their own; the Overview's answer names the
-machines (`machines`: `total`, `shown`, `all`), and `omitted` counts the lines the 50 left out.
-Role tests (the `machine=` query included).
+machines (`machines`: `total`, `shown`, `all`, `offline`), and `omitted` counts the lines the
+50 left out. Role tests (the `machine=` query included).
 
 ### 4. On the Remote apps
 
@@ -111,6 +121,9 @@ Overview and Storage on the Remote apps (Apple, Android), read-only.
 | `dash.machine.all` | All machines | كل الأجهزة |
 | `dash.machines.shown` | Showing {shown} of {total} machines, those most in need of attention first. Pick a machine to see its own. | عرض {shown} من {total} أجهزة، الأحوج إلى الانتباه أولاً. اختر جهازاً لترى بياناته وحده. |
 | `dash.omitted` | {count} more lines did not fit on this board. | {count} خطوط أخرى لم تتسع لها هذه اللوحة. |
+| `dash.machines.offline` | Offline: {machines}. Offline machines come first; their lines end at their last values. | غير متصلة: {machines}. تأتي الأجهزة غير المتصلة أولاً، وتنتهي خطوطها عند آخر قيمها. |
+| `dash.machine.offline` | This machine is offline. Its lines end at its last values. | هذا الجهاز غير متصل. تنتهي خطوطه عند آخر قيمه. |
+| `dash.machine.offlineOption` | {machine} (offline) | {machine} (غير متصل) |
 
 ## Acceptance criteria
 
@@ -139,6 +152,9 @@ Overview and Storage on the Remote apps (Apple, Android), read-only.
 | T07 | UI (**CI only**) | dark theme screenshots | | |
 | T08 | unit | 60 machines, a few in trouble | Overview; `machine=` | totals, the five most in need of attention in order, ≤ 50 lines, the machine count; one machine's own lines |
 | T09 | unit (vitest, Apple, Android) | an Overview of 37 machines | render; pick one | "Showing 5 of 37", the picker asks `machine=`, en/ar |
+| T10 | unit | the 60 machines, one well but offline and one offline with no lines | Overview with `offline=` | both shown first, counted and named in `offline`; bounds kept (≤ 1,000 ids, each ≤ 128 bytes) |
+| T11 | unit (API, cluster) | approved machines seen now, 5 min ago, never; pending and revoked ones | Overview | the role is asked `offline=` with the two not seen, a caller's own dropped; admins only |
+| T12 | unit (vitest, Apple, Android) | an Overview with offline machines | render; pick one | "Offline: …", "(offline)" in the picker, the one machine's offline line, en/ar |
 
 ## Build plan
 

@@ -413,7 +413,7 @@ type BoardDoc struct {
 	Series []Series `json:"series"`
 	// Machine is the one machine the Overview was asked for (machine=), "" for all.
 	Machine string `json:"machine,omitempty"`
-	// Machines (Overview only) counts the machines with lines and names the ones shown.
+	// Machines (Overview only) counts the machines, names the ones shown and the offline ones.
 	Machines *MachineCount `json:"machines,omitempty"`
 	// Omitted is how many lines MaxSeries left out.
 	Omitted int `json:"omitted,omitempty"`
@@ -438,16 +438,28 @@ func (ix *Index) Board(ctx context.Context, board, rng string) (BoardDoc, error)
 // at most MaxSeries lines. On the Overview, machine names one machine whose lines it answers
 // ("" all machines: totals across them and the TopMachines most in need of attention).
 func (ix *Index) BoardOf(ctx context.Context, board, rng, machine string) (BoardDoc, error) {
+	return ix.BoardFor(ctx, board, rng, machine, nil)
+}
+
+// BoardFor is BoardOf with the joined machines that are offline (the home's cluster says
+// which, story 53.12): on the Overview they rank first and are named in Machines.Offline.
+// At most MaxOffline, each a machine id of at most maxMachineID bytes.
+func (ix *Index) BoardFor(ctx context.Context, board, rng, machine string, offline []string) (BoardDoc, error) {
 	d, ok := Ranges[rng]
 	known := false
 	for _, b := range Boards {
 		known = known || b == board
 	}
-	if !ok || !known || len(machine) > maxMachineID {
+	if !ok || !known || len(machine) > maxMachineID || len(offline) > MaxOffline {
 		return BoardDoc{}, ErrBoard
 	}
+	for _, m := range offline {
+		if len(m) > maxMachineID {
+			return BoardDoc{}, ErrBoard
+		}
+	}
 	if board != "overview" {
-		machine = ""
+		machine, offline = "", nil
 	}
 	allowed, _, _ := AllowedSeries()
 	var names []string
@@ -489,7 +501,7 @@ func (ix *Index) BoardOf(ctx context.Context, board, rng, machine string) (Board
 		}
 	}
 	if board == "overview" {
-		lines, count, err := ix.overviewMachines(ctx, w, machine)
+		lines, count, err := ix.overviewMachines(ctx, w, machine, offline)
 		if err != nil {
 			return doc, err
 		}
