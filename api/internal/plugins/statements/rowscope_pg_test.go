@@ -194,6 +194,13 @@ func TestAReadByIdOfAnotherScopeIsRefused(t *testing.T) {
 			t.Errorf("a job subject that is the library's %s: %v", k, err)
 		}
 	}
+	// a subject of another kind (a duplicate group)
+	if err := e.CheckScopes(ctx, lib, js, []any{b.ids["dup_group"]}); err == nil || err.Code != CodeScope {
+		t.Errorf("a job subject that is another library's duplicate group: %v", err)
+	}
+	if err := e.CheckScopes(ctx, lib, js, []any{a.ids["dup_group"]}); err != nil {
+		t.Errorf("a job subject that is the library's duplicate group: %v", err)
+	}
 	// a video job reads its own video's rows; the same library's other video is not its own
 	for _, kind := range []string{"subject", "job_subject"} {
 		st := &Statement{Name: "rv." + kind, Mode: "read", Scope: kind, ScopeArg: 1}
@@ -208,12 +215,12 @@ func TestAReadByIdOfAnotherScopeIsRefused(t *testing.T) {
 	if err := e.CheckScopes(ctx, vid, jobSt, []any{argFor("job", a.ids["job"])}); err != nil {
 		t.Errorf("a video job reading its own video's job: %v", err)
 	}
-	var other string
+	var otherJob string
 	if err := db.QueryRow(`INSERT INTO processing_jobs (stage, state, subject_kind, subject_id, video_id, library_id)
-		VALUES ('probe', 'done', 'video', $1, $1, $2) RETURNING id::text`, a.video, a.ids["library"]).Scan(&other); err != nil {
+		VALUES ('probe', 'done', 'video', $1, $1, $2) RETURNING id::text`, a.video, a.ids["library"]).Scan(&otherJob); err != nil {
 		t.Fatal(err)
 	}
-	if err := e.CheckScopes(ctx, vid, jobSt, []any{argFor("job", other)}); err == nil || err.Code != CodeScope {
+	if err := e.CheckScopes(ctx, vid, jobSt, []any{argFor("job", otherJob)}); err == nil || err.Code != CodeScope {
 		t.Errorf("a video job reading another video's job: %v", err)
 	}
 }

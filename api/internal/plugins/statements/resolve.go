@@ -42,11 +42,16 @@ var rowKinds = map[string]rowKind{
 	// is no library's)
 	"job": {"int", `SELECT CAST(library_id AS text), CASE WHEN subject_kind = 'video' THEN CAST(subject_id AS text) END
 		FROM processing_jobs WHERE id = CAST($1 AS bigint)`},
-	// a job's subject_id: a video, a library, a series or a season, whichever has the id
-	"job_subject": {"uuid", `SELECT CAST(library_id AS text), CAST(id AS text) FROM videos WHERE id = CAST($1 AS uuid)
+	// a job's subject_id, of any subject kind: the jobs that have it (their library, and
+	// their video for a video subject), and the row it names (a video, a library, a series,
+	// a season or a duplicate group) even before any job has it
+	"job_subject": {"uuid", `SELECT CAST(library_id AS text), CASE WHEN subject_kind = 'video' THEN CAST(subject_id AS text) END
+		FROM processing_jobs WHERE subject_id = CAST($1 AS uuid)
+		UNION ALL SELECT CAST(library_id AS text), CAST(id AS text) FROM videos WHERE id = CAST($1 AS uuid)
 		UNION ALL SELECT CAST(id AS text), NULL FROM libraries WHERE id = CAST($1 AS uuid)
 		UNION ALL SELECT CAST(library_id AS text), NULL FROM series WHERE id = CAST($1 AS uuid)
-		UNION ALL SELECT CAST(library_id AS text), NULL FROM series_seasons WHERE id = CAST($1 AS uuid)`},
+		UNION ALL SELECT CAST(library_id AS text), NULL FROM series_seasons WHERE id = CAST($1 AS uuid)
+		UNION ALL SELECT CAST(library_id AS text), NULL FROM duplicate_groups WHERE id = CAST($1 AS uuid)`},
 	"file_action": {"uuid", `SELECT CAST(library_id AS text), CAST(video_id AS text) FROM file_actions
 		WHERE id = CAST($1 AS uuid)`},
 	"transcript": {"uuid", `SELECT CAST(v.library_id AS text), CAST(v.id AS text) FROM transcripts t
