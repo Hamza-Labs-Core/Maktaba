@@ -236,9 +236,10 @@ func timeTool(t *testing.T, argv ...string) float64 {
 // (fd:). Refused before anything starts: a second share file, the library folder, the share
 // root, another share, a share path as an output, a program that is not ffmpeg or ffprobe.
 // A tool reaching for the share by a path the runner never saw gets nothing, and it writes
-// nowhere but its granted folders. thumb_small's asyncio start is refused there, on the
-// share and on a local copy alike: asyncio's pipes are named pipes, which an AppContainer
-// may not create (a recorded limit). The times are compared with the same tools outside the
+// nowhere but its granted folders. thumb_small's asyncio start (stdout captured, stdin
+// DEVNULL) makes its JPEG there, on the share and on a local copy alike, through the
+// runner's anonymous pipes (winproc: asyncio's own named pipes, and the nul device, are
+// closed to an AppContainer). The times are compared with the same tools outside the
 // sandbox on the share path (the worker's way).
 func TestARunnersToolsReadAShareFileThroughItsBroker(t *testing.T) {
 	share, shareDir, other, otherDir := os.Getenv("MAKTABA_BROKER_SHARE"), os.Getenv("MAKTABA_BROKER_SHARE_DIR"),
@@ -358,12 +359,11 @@ func TestARunnersToolsReadAShareFileThroughItsBroker(t *testing.T) {
 	if s, r := outcome("thumbnail"); s != "ok" || r.Code != 0 || r.JPEG == 0 {
 		t.Errorf("the thumbnail from the share: %s %+v", s, r)
 	}
-	// a recorded limit: asyncio's captured starts on Windows make named pipes, which an
-	// AppContainer may not create, so thumb_small's way is refused there whether its input
-	// is on the share or local (until the runner starts them otherwise)
+	// thumb_small's way (asyncio, the JPEG on stdout) through the runner's anonymous pipes,
+	// from the share (fd:) and from a local copy
 	for _, name := range []string{"thumbnail_pipe", "thumbnail_pipe_local"} {
-		if s, _ := outcome(name); s != "refused" || !strings.Contains(string(found[name]), "WinError 5") {
-			t.Errorf("%s: %s, want refused (asyncio's named pipes)", name, found[name])
+		if s, r := outcome(name); s != "ok" || r.Code != 0 || !r.IsJPEG {
+			t.Errorf("%s: %s, want a JPEG through anonymous pipes", name, found[name])
 		}
 	}
 	if s, r := outcome("probe"); s != "ok" || r.Code != 0 || r.Duration < 19 || r.Duration > 21 {
@@ -394,4 +394,86 @@ func TestARunnersToolsReadAShareFileThroughItsBroker(t *testing.T) {
 	t.Logf("pipe:0 control (the same handle, never seeked): %s", found["pipe_control"])
 	t.Logf("tool_timing: thumbnail %.3fs inside the AppContainer through the broker's handle, %.3fs in the worker's way (the share path); probe %.3fs inside, %.3fs in the worker's way",
 		thumb.Seconds, workerThumb, probe.Seconds, workerProbe)
+}
+
+// Story 54.23 on Windows: a stage's captured tool start inside its runner's AppContainer
+// (testdata/asyncio_probe.py). asyncio's own start (asyncio.create_subprocess_exec with
+// stdout and stderr PIPE) is refused there: its pipes are named pipes it creates, which an
+// AppContainer may not. Through the runner's anonymous pipes (winproc, installed by the
+// runner on Windows) the same start answers its output (4 MiB), its error output and its
+// exit code, and a cancelled communicate ends the tool at once.
+func TestARunnersCapturedToolStartRunsInItsAppContainer(t *testing.T) {
+	python := os.Getenv("MAKTABA_BROKER_PYTHON")
+	if python == "" {
+		if os.Getenv("MAKTABA_BROKER_REQUIRE") == "1" {
+			t.Fatal("MAKTABA_BROKER_PYTHON not set: CI must run this test")
+		}
+		t.Skip("no python named for this test (CI's windows-2022 job names it)")
+	}
+	dir := mustCanonical(t, t.TempDir())
+	t.Setenv("MAKTABA_DATA_DIR", dir)
+	group := "ci-tool-pipes"
+	profile := RunnerProfile(group)
+	t.Cleanup(func() {
+		if name, err := windows.UTF16PtrFromString(profile); err == nil {
+			_, _, _ = userenv.NewProc("DeleteAppContainerProfile").Call(uintptr(unsafe.Pointer(name)))
+		}
+	})
+	pyDirs, err := exec.Command(python, "-c", "import sys,json; print(json.dumps(sorted({sys.prefix, sys.base_prefix, sys.exec_prefix})))").Output() //nolint:gosec // CI's python
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pyRead []string
+	if err := json.Unmarshal(pyDirs, &pyRead); err != nil {
+		t.Fatal(err)
+	}
+	here, _ := filepath.Abs("testdata")
+	winproc, _ := filepath.Abs(filepath.Join("..", "..", "..", "..", "pipeline", "src", "maktaba_plugin_runner", "winproc.py"))
+	run := filepath.Join(dir, "run")
+	raw, _ := json.Marshal(RunnerPolicy{Python: pyRead, Read: []string{here, filepath.Dir(winproc)}, Processes: 4})
+	ap := askPolicy
+	t.Cleanup(func() { askPolicy = ap })
+	askPolicy = func(string, []string, io.Writer) ([]byte, int, error) { return raw, 0, nil }
+
+	result := filepath.Join(run, "asyncio.json")
+	var errOut strings.Builder
+	code := LaunchRunner([]string{"-group", group, "-run-dir", run, "--", python,
+		filepath.Join(here, "asyncio_probe.py"), result, winproc}, &errOut)
+	t.Logf("launcher: %s", errOut.String())
+	if code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	b, err := os.ReadFile(result)
+	if err != nil {
+		t.Fatalf("the probe wrote nothing: %v", err)
+	}
+	t.Logf("probe: %s", b)
+	var found map[string][]json.RawMessage
+	if err := json.Unmarshal(b, &found); err != nil {
+		t.Fatal(err)
+	}
+	type ran struct {
+		Code    int     `json:"code"`
+		Bytes   int     `json:"stdout_bytes"`
+		Stderr  string  `json:"stderr"`
+		Seconds float64 `json:"seconds"`
+	}
+	outcome := func(name string) (string, ran) {
+		var s string
+		var r ran
+		if v := found[name]; len(v) == 2 {
+			_ = json.Unmarshal(v[0], &s)
+			_ = json.Unmarshal(v[1], &r)
+		}
+		return s, r
+	}
+	if s, _ := outcome("asyncio_pipes"); s != "refused" || !strings.Contains(string(found["asyncio_pipes"][1]), "WinError 5") {
+		t.Errorf("asyncio's own pipes in an AppContainer: %s (the control: refused)", found["asyncio_pipes"])
+	}
+	if s, r := outcome("anonymous_pipes"); s != "ok" || r.Code != 7 || r.Bytes != 4<<20 || r.Stderr != "done" {
+		t.Errorf("through anonymous pipes: %s %+v", s, r)
+	}
+	if s, r := outcome("cancelled"); s != "ok" || r.Seconds > 10 {
+		t.Errorf("a cancelled communicate: %s %+v", s, r)
+	}
 }

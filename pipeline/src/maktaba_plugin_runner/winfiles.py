@@ -321,7 +321,10 @@ class _Shim:
                 orig(popen, args, **kwargs)
                 return
             new, path = routed
-            if kwargs.get("stdin") not in (None, subprocess.DEVNULL):
+            stdin = kwargs.get("stdin")
+            # winproc's empty pipe in place of DEVNULL (the nul device an AppContainer may
+            # not open) is a standard input no caller needs, as DEVNULL is
+            if stdin not in (None, subprocess.DEVNULL) and not getattr(stdin, "empty_stdin", False):
                 raise PermissionError(
                     errno.EACCES,
                     f"{path}: the tool's standard input is taken; the worker runs this job",

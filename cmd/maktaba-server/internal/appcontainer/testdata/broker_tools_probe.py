@@ -13,9 +13,7 @@ import subprocess
 import sys
 import time
 
-out_path, winfiles_path, lib, root, other_share, ffmpeg, ffprobe, run, outside = (
-    sys.argv[1:10]
-)
+out_path, winfiles_path, lib, root, other_share, ffmpeg, ffprobe, run, outside = sys.argv[1:10]
 video = lib + "\\show\\ep2.mp4"
 second = lib + "\\show\\ep3.mp4"
 found: dict[str, object] = {}
@@ -41,6 +39,16 @@ def tool(argv: list[str], **kwargs) -> dict[str, object]:  # type: ignore[no-unt
         "stderr": p.stderr[-400:].decode("utf-8", "replace"),
     }
 
+
+# as the runner does on Windows: tools start through anonymous pipes (winproc), then the
+# share routing (winfiles)
+spec = importlib.util.spec_from_file_location(
+    "winproc", os.path.join(os.path.dirname(winfiles_path), "winproc.py")
+)
+assert spec and spec.loader
+winproc = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(winproc)
+winproc.install()
 
 spec = importlib.util.spec_from_file_location("winfiles", winfiles_path)
 assert spec and spec.loader
@@ -119,8 +127,8 @@ async def small() -> dict[str, object]:
 
 attempt("thumbnail_pipe", lambda: asyncio.run(small()))
 
-# the control for thumbnail_pipe: the same asyncio start on a copy in the run folder (no
-# share, no routing): asyncio's subprocess pipes on Windows are named pipes it creates
+# thumbnail_pipe's local twin: the same asyncio start on a copy in the run folder (no share,
+# no routing), through the runner's anonymous pipes as well
 local = os.path.join(run, "local.mp4")
 with open(video, "rb") as src, open(local, "wb") as dst:
     dst.write(src.read())
@@ -238,14 +246,10 @@ def pipe_control() -> dict[str, object]:
 attempt("pipe_control", pipe_control)
 
 # refused before anything starts
-attempt(
-    "second_file", lambda: tool([ffmpeg, "-i", video, "-i", second, "-f", "null", "-"])
-)
+attempt("second_file", lambda: tool([ffmpeg, "-i", video, "-i", second, "-f", "null", "-"]))
 attempt("library_folder", lambda: tool([ffprobe, "-v", "error", lib]))
 attempt("share_root", lambda: tool([ffprobe, "-v", "error", root]))
-attempt(
-    "other_share", lambda: tool([ffprobe, "-v", "error", other_share + "\\secret.mp4"])
-)
+attempt("other_share", lambda: tool([ffprobe, "-v", "error", other_share + "\\secret.mp4"]))
 attempt(
     "output_on_share",
     lambda: tool([ffmpeg, "-i", run + "\\none.mp4", lib + "\\show\\x.jpg"]),

@@ -2827,6 +2827,15 @@ build fails when the two differ.
   tools through anonymous pipes, every first-party stage on Windows runs in the worker, as before
   v0.3.102, and no runner is started for it.
 
+- **A runner on Windows starts its tools again (story 54.23).** Inside a runner's
+  AppContainer, a stage that starts a tool and captures its output (thumbnails, probes,
+  audio and the transcription input) failed: asyncio's pipes on Windows are named pipes,
+  which an AppContainer may not create. The runner now starts its tools through anonymous
+  pipes, with the same results, and a timeout or a cancel ends the tool and what it started.
+  So first-party stages on Windows run in their runners again instead of all in the queue
+  worker. A tool the sandbox refuses to start is now a refusal, so that job runs in the worker,
+  rather than failing as the tool's own exit.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were

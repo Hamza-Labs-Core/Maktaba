@@ -12,13 +12,14 @@ import os
 import subprocess
 import sys
 import textwrap
+import threading
 from pathlib import Path
 from typing import Any
 
 import pytest
 from maktaba_plugin_sdk.native import PluginRefused
 
-from maktaba_plugin_runner import sandbox, winfiles, winpipe
+from maktaba_plugin_runner import sandbox, winfiles, winpipe, winproc
 
 
 def test_the_policy_is_printed_for_the_launcher(tmp_path: Path) -> None:
@@ -590,3 +591,258 @@ def test_a_tool_started_on_a_share_input_gets_the_handle_as_its_stdin(
         check=False,
     )
     assert json.loads(plain.stdout)[0] == ["-i", "/dev/null"]  # no share: untouched
+
+
+# --- a runner's tool starts on Windows: anonymous pipes (winproc) ----------------------
+
+
+_PY = sys.executable
+
+
+def _alive(pid: int) -> bool:
+    if sys.platform == "win32":
+        return False  # only polled on posix; Windows is covered by CI's AppContainer test
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    try:  # a zombie the helper has not reaped yet is not running
+        with open(f"/proc/{pid}/stat") as f:
+            return f.read().split()[2] != "Z"
+    except OSError:
+        return True
+
+
+def test_a_tool_start_through_anonymous_pipes_answers_as_asyncios_does() -> None:
+    """Story 54.23: on Windows a runner starts its tools with winproc's
+    ``create_subprocess_exec`` (``subprocess.Popen``, anonymous pipes: asyncio's own makes
+    named pipes, which an AppContainer may not create). It answers as asyncio's does:
+    ``communicate`` with the exit code set after, ``returncode`` None while it runs,
+    ``stdout.readline`` and ``async for``, ``stderr.read(n)``, ``limit`` for long lines, and
+    a large output on both pipes at once without a deadlock."""
+
+    async def go() -> None:
+        proc = await winproc.create_subprocess_exec(
+            _PY,
+            "-c",
+            "import sys; sys.stdout.write('o'*(8<<20)); sys.stderr.write('e'*(8<<20)); sys.exit(3)",
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        out, err = await asyncio.wait_for(proc.communicate(), 60)
+        assert out is not None and err is not None
+        assert (len(out), len(err), proc.returncode) == (8 << 20, 8 << 20, 3)
+
+        proc = await winproc.create_subprocess_exec(
+            _PY,
+            "-c",
+            "import sys,time; print('a'); print('b'*100000); sys.stdout.flush();"
+            " time.sleep(0.3); print('c')",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            limit=1 << 20,
+        )
+        assert proc.returncode is None and proc.pid > 0
+        assert await proc.stdout.readline() == b"a\n"  # type: ignore[union-attr]
+        lines = [line async for line in proc.stdout]  # type: ignore[union-attr]
+        assert lines == [b"b" * 100000 + b"\n", b"c\n"]
+        assert await proc.stderr.read(4096) == b""  # type: ignore[union-attr]
+        assert await proc.wait() == 0 and proc.returncode == 0
+
+        proc = await winproc.create_subprocess_exec(
+            _PY,
+            "-c",
+            "import sys; sys.stdout.write(sys.stdin.read().upper())",
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+        )
+        out, err = await proc.communicate(b"hello")
+        assert (out, err) == (b"HELLO", None)
+
+    asyncio.run(go())
+
+
+def test_a_tools_input_handle_reaches_it_through_anonymous_pipes(tmp_path: Path) -> None:
+    """A descriptor given as the tool's standard input (the broker's handle for ``fd:``)
+    reaches it: the tool reads and seeks it."""
+    src = tmp_path / "in.bin"
+    src.write_bytes(b"0123456789")
+
+    async def go() -> bytes:
+        fd = os.open(src, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        try:
+            proc = await winproc.create_subprocess_exec(
+                _PY,
+                "-c",
+                "import os,sys; os.lseek(0, 4, 0); sys.stdout.buffer.write(os.read(0, 3))",
+                stdin=fd,
+                stdout=subprocess.PIPE,
+            )
+        finally:
+            os.close(fd)
+        out, _ = await proc.communicate()
+        return out or b""
+
+    assert asyncio.run(go()) == b"456"
+
+
+def test_a_tool_that_times_out_or_is_cancelled_is_killed() -> None:
+    """A caller's timeout (``wait_for`` then ``kill`` and ``wait``, as the media helpers do)
+    ends the tool; a cancelled ``communicate`` or ``wait`` kills it too (on Windows with the
+    Job Object it was put in, so what it started ends with it)."""
+
+    async def timed_out() -> int:
+        proc = await winproc.create_subprocess_exec(
+            _PY, "-c", "import time; time.sleep(60)", stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(proc.communicate(), 0.5)
+        # the cancelled communicate killed it: it exits at once, not in a minute
+        code = await asyncio.wait_for(proc.wait(), 5)
+        proc.kill()  # the caller's own kill after the timeout is harmless
+        assert proc.returncode == code
+        return proc.pid
+
+    pid = asyncio.run(timed_out())
+    assert not _alive(pid)
+
+    async def cancelled() -> int:
+        proc = await winproc.create_subprocess_exec(_PY, "-c", "import time; time.sleep(60)")
+        task = asyncio.ensure_future(proc.wait())
+        await asyncio.sleep(0.3)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await asyncio.sleep(0.5)
+        assert proc.returncode is not None
+        return proc.pid
+
+    pid = asyncio.run(cancelled())
+    assert not _alive(pid)
+
+
+def test_the_runner_starts_tools_through_anonymous_pipes_only_once_installed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Installed (a Windows runner, after its sandbox): ``asyncio.create_subprocess_exec``
+    is winproc's, so every stage's tool start takes it; not installed it is asyncio's own.
+    The exec guard still sees each start (it is ``subprocess.Popen``'s audit event)."""
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", asyncio.create_subprocess_exec)
+    monkeypatch.setattr(
+        asyncio.subprocess, "create_subprocess_exec", asyncio.subprocess.create_subprocess_exec
+    )
+    ours: object = winproc.create_subprocess_exec
+    assert vars(asyncio)["create_subprocess_exec"] is not ours
+    winproc.install()
+    assert vars(asyncio)["create_subprocess_exec"] is ours
+    assert vars(asyncio.subprocess)["create_subprocess_exec"] is ours
+    seen: list[object] = []
+
+    def hook(event: str, args: tuple[object, ...]) -> None:
+        if event == "subprocess.Popen":
+            seen.append(args[1])
+
+    sys.addaudithook(hook)
+
+    async def go() -> bytes:
+        proc = await asyncio.create_subprocess_exec(_PY, "-c", "print('x')", stdout=subprocess.PIPE)
+        out, _ = await proc.communicate()
+        return out
+
+    assert asyncio.run(go()).strip() == b"x"
+    assert any(isinstance(a, (list, tuple)) and "print('x')" in a for a in seen)
+
+
+def test_a_kill_after_the_tool_exited_never_terminates_its_closed_job() -> None:
+    """The waiter closes a tool's Job Object once it exits, while a kill may come from the
+    loop before it hears of the exit: the kill then terminates nothing (a closed handle's
+    value may already be another tool's job), and the two never overlap."""
+
+    class K32:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, int]] = []
+
+        def TerminateJobObject(self, h: int, _code: int) -> int:  # noqa: N802
+            self.calls.append(("terminate", h))
+            return 1
+
+        def CloseHandle(self, h: int) -> int:  # noqa: N802
+            self.calls.append(("close", h))
+            return 1
+
+    job = winproc._Job.__new__(winproc._Job)
+    job._lock = threading.Lock()
+    job._k32 = k32 = K32()
+    job._handle = 77
+    assert job.terminate()  # running: the kill reaches its job
+    job.close()  # the waiter: the tool exited
+    assert not job.terminate()  # a kill after: nothing terminated
+    job.close()  # closed once
+    assert k32.calls == [("terminate", 77), ("close", 77)]
+
+
+def test_devnull_is_never_the_nul_device_for_a_tool(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An AppContainer may not open the ``nul`` device either, so ``DEVNULL`` (what the
+    media helpers pass) is never it: the tool's standard input is an empty pipe, marked so
+    the share routing treats it as ``DEVNULL``, and an output it discards goes to a pipe
+    drained and dropped (a large one never blocks the tool)."""
+    opened: list[str] = []
+    real_open = os.open
+
+    def no_nul(path: Any, *a: Any, **k: Any) -> int:
+        opened.append(str(path))
+        if str(path) == os.devnull:
+            raise PermissionError(13, "Permission denied", path)
+        return real_open(path, *a, **k)
+
+    seen_stdin: list[object] = []
+    real_init = subprocess.Popen.__init__
+
+    def init(popen: Any, args: Any, **kw: Any) -> None:
+        seen_stdin.append(kw.get("stdin"))
+        real_init(popen, args, **kw)
+
+    monkeypatch.setattr(os, "open", no_nul)
+    monkeypatch.setattr(subprocess.Popen, "__init__", init)
+
+    async def go() -> tuple[bytes | None, bytes | None, int | None, object, object]:
+        proc = await winproc.create_subprocess_exec(
+            _PY,
+            "-c",
+            "import sys; d = sys.stdin.read(); sys.stdout.write('x'*(4<<20));"
+            " sys.stderr.write('in=%d' % len(d))",
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        out, err = await asyncio.wait_for(proc.communicate(), 60)
+        return out, err, proc.returncode, proc.stdout, proc.stdin
+
+    out, err, code, stdout, stdin = asyncio.run(go())
+    assert (out, err, code, stdout, stdin) == (None, b"in=0", 0, None, None)
+    assert os.devnull not in opened
+    assert isinstance(seen_stdin[0], winproc.EmptyStdin) and seen_stdin[0].empty_stdin
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the fake tool is a script with a #! line")
+def test_a_share_input_reaches_a_tool_started_through_anonymous_pipes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The two Windows shims together, as a runner installs them: a stage's asyncio start
+    with ``stdin=DEVNULL`` (winproc's empty pipe, not the ``nul`` device) on a share input is
+    routed (winfiles): the tool gets ``fd:`` and the brokered handle, which it seeks."""
+    shim, asked = _shim(tmp_path, {})
+    monkeypatch.setattr(subprocess.Popen, "__init__", shim.popen_init(subprocess.Popen.__init__))
+    monkeypatch.setattr(sys, "audit", lambda *_: None)
+    tool = str(_fake_tool(tmp_path, "ffmpeg"))
+
+    async def go() -> bytes:
+        proc = await winproc.create_subprocess_exec(
+            tool, "-i", VIDEO, "pipe:1", stdin=subprocess.DEVNULL, stdout=subprocess.PIPE
+        )
+        out, _ = await proc.communicate()
+        return out or b""
+
+    assert json.loads(asyncio.run(go())) == [["-i", "fd:", "pipe:1"], "bytes"]
+    assert asked == [{"op": "open", "path": VIDEO}]
