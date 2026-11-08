@@ -162,7 +162,10 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 			}
 		case p.Role == supervisor.RoleOllama:
 			// the model server keeps nothing of the library: it waits on nothing
-		case p.Role == supervisor.RolePipeline && venvStep != nil:
+		case supervisor.RunsFromVenv(*p) && venvStep != nil:
+			// every child that runs from the venv (the pipeline's processes and the
+			// plugin runners) waits until it holds this release's packages: started
+			// before, it dies on a missing module and its exits feed the crash loop
 			if dbStep != nil {
 				p.Prepare = steps(dbStep.prepare, venvStep.prepare)
 			} else {
@@ -1229,8 +1232,8 @@ func reasonCode(reason string) string {
 	return "start_failed"
 }
 
-// venvGate builds the app's venv for every pipeline process (the main worker
-// and the transcription workers) through a sharedStep.
+// venvGate builds the app's venv for every child that runs from it (the pipeline's
+// processes and the plugin runners: supervisor.RunsFromVenv) through a sharedStep.
 type venvGate struct {
 	// updates and version: the start's attempt (update-attempts.md) a failure is recorded on
 	updates, version string

@@ -160,6 +160,16 @@ build fails when the two differ.
 
 ### Fixed
 
+- **After an update, the plugin runners wait for the new release's Python packages.** In the
+  Mac app, the plugin runners (light, ml-1, ml-2, index) started while the update was still
+  installing the new release's packages into the venv. Each died at once on a missing module,
+  and after five exits the crash loop marked them failed for five minutes, although the venv
+  was ready a minute later. Every child that runs from the venv (the pipeline's workers and
+  every plugin runner) now waits for the venv step, as the pipeline's workers already did. A
+  waiting runner is not started, so it adds nothing to the crash loop. A test now imports what
+  each supervised Python child imports first, each in a fresh interpreter, so an import cycle
+  like the one that crash-looped the 0.3.96 runners fails CI. The update rehearsal's wave
+  scenarios fail when any supervised process is marked failed after the update.
 - **A rollback undoes only what the release changed.** When an update rolled back and its
   migrations could not simply be kept, the whole database was put back from the dump taken
   before the update: every table reloaded, every index rebuilt (for the rollback of 0.3.90

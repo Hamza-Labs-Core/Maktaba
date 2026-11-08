@@ -96,6 +96,73 @@ func (m *appMachine) settledProcesses(d time.Duration) []string {
 	return last
 }
 
+// supervisedProcess is a row of the supervisor's GET /processes that says whether the
+// process crash-loops.
+type supervisedProcess struct {
+	Role      string `json:"role"`
+	Instance  string `json:"instance"`
+	State     string `json:"state"`
+	CrashLoop bool   `json:"crash_loop"`
+	Detail    string `json:"detail"`
+	LastExit  *struct {
+		Code   int    `json:"code"`
+		Reason string `json:"reason"`
+		Error  string `json:"error"`
+	} `json:"last_exit"`
+}
+
+// crashLooping is the processes of procs the supervisor marked failed (its crash loop, a
+// start step that failed) or that are in a crash loop, each with why.
+func crashLooping(procs []supervisedProcess) []string {
+	var out []string
+	for _, p := range procs {
+		if p.State != "failed" && !p.CrashLoop {
+			continue
+		}
+		row := fmt.Sprintf("%s/%s state=%s crash_loop=%v", p.Role, p.Instance, p.State, p.CrashLoop)
+		if p.LastExit != nil {
+			row += fmt.Sprintf(" last exit %d (%s)", p.LastExit.Code, p.LastExit.Reason)
+			if p.LastExit.Error != "" {
+				row += ": " + p.LastExit.Error
+			}
+		}
+		if p.Detail != "" {
+			row += "; " + p.Detail
+		}
+		out = append(out, row)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// assertNoCrashLoop fails the scenario when a supervised process of m is marked failed
+// or crash-loops: a release whose children die at start (the 0.3.96 plugin runners: a
+// module missing from a venv still being installed, then a circular import) must not
+// pass its rehearsal. The child's last lines are in the machine's log.
+func (m *appMachine) assertNoCrashLoop(what string) {
+	t := m.r.t
+	t.Helper()
+	c := http.Client{Timeout: 5 * time.Second}
+	resp, err := c.Get(fmt.Sprintf("http://127.0.0.1:%d/processes", m.sup))
+	if err != nil {
+		t.Errorf("%s: %s's supervisor does not answer: %v", what, m.name, err)
+		return
+	}
+	defer resp.Body.Close()
+	var snap struct {
+		Processes []supervisedProcess `json:"processes"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&snap); err != nil {
+		t.Errorf("%s: %s's processes: %v", what, m.name, err)
+		return
+	}
+	if bad := crashLooping(snap.Processes); len(bad) > 0 {
+		t.Errorf("%s: %s has processes marked failed:\n  %s", what, m.name, strings.Join(bad, "\n  "))
+		return
+	}
+	m.r.logf("%s: none of %s's %d processes is marked failed", what, m.name, len(snap.Processes))
+}
+
 func stringsOf(t *testing.T, db *sql.DB, q string) []string {
 	t.Helper()
 	rows, err := db.Query(q)
