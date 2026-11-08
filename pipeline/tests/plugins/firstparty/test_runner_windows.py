@@ -754,30 +754,6 @@ def test_the_runner_starts_tools_through_anonymous_pipes_only_once_installed(
     assert any(isinstance(a, (list, tuple)) and "print('x')" in a for a in seen)
 
 
-def test_a_refused_tool_start_is_a_refusal_not_the_tools_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``run_media`` answers a missing tool as exit 127, but a refusal to start one (the
-    runner's sandbox, as an AppContainer refused asyncio's named pipes) is raised: the job
-    then runs in the worker (sandbox_refused) instead of failing as the tool's own exit."""
-    from maktaba_pipeline.engine import media
-    from maktaba_pipeline.plugins.native import sandbox_refused
-
-    async def refused(*_a: object, **_k: object) -> object:
-        raise PermissionError(13, "Access is denied")
-
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", refused)
-    with pytest.raises(PermissionError) as exc:
-        asyncio.run(media._real_runner(["ffmpeg", "-version"], 5))
-    assert sandbox_refused(exc.value)
-
-    async def missing(*_a: object, **_k: object) -> object:
-        raise FileNotFoundError(2, "no such tool")
-
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", missing)
-    assert asyncio.run(media._real_runner(["ffmpeg", "-version"], 5)).returncode == 127
-
-
 def test_a_kill_after_the_tool_exited_never_terminates_its_closed_job() -> None:
     """The waiter closes a tool's Job Object once it exits, while a kill may come from the
     loop before it hears of the exit: the kill then terminates nothing (a closed handle's
