@@ -662,6 +662,9 @@ jobs:
           RELAY_SSH_HOST: ${{ secrets.RELAY_SSH_HOST }}
           RELAY_SSH_USER: ${{ secrets.RELAY_SSH_USER }}
           RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
+          # the symbol uploaders' token (story 53.16), as the pair gets it: deploy.sh writes it
+          # to the stack's secrets; empty until the owner adds it (uploads stay off)
+          MAKTABA_SYMBOLS_TOKEN: ${{ secrets.MAKTABA_SYMBOLS_TOKEN }}
           MAKTABA_CLOUD_TAG: ${{ steps.tag.outputs.tag }}
         # deploy.sh fails if the SSH secrets are missing: once this job
         # runs, a missing host is a misconfiguration, not a skip.
