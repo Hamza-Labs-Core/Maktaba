@@ -17,6 +17,7 @@ from collections.abc import Sequence
 from datetime import timedelta
 from typing import Any
 
+from .retired import RETIRED_STAGES
 from .sql import dumps, is_pg, now, parse_ts, to_ts
 
 __all__ = [
@@ -188,4 +189,7 @@ async def stages_without_worker(db: Any, *, window_sec: float = LIVE_WINDOW_SEC)
     """Enabled stages that no live worker serves."""
     served = {s for w in await live_workers(db, window_sec=window_sec) for s in w["stages"]}
     rows = await db.fetch("SELECT stage FROM job_stages WHERE enabled ORDER BY stage")
-    return [r["stage"] for r in rows if r["stage"] not in served]
+    # a stage a release removed keeps its row until the cleanup migration: no worker serves it
+    return [
+        r["stage"] for r in rows if r["stage"] not in served and r["stage"] not in RETIRED_STAGES
+    ]

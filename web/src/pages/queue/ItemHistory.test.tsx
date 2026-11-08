@@ -25,20 +25,14 @@ vi.mock("../../lib/api", async () => {
 vi.mock("../../lib/ws", () => ({ subscribe: hub.subscribe }));
 
 import { ItemHistory } from "./ItemHistory";
+import type { AppearsInEntry } from "../../lib/queueApi";
 import { renderAt, routeGet } from "../../test/queueHarness";
-import {
-  events,
-  extensionsFixture,
-  jobRef,
-  libraryHistoryFixture,
-  snapshotFixture,
-} from "../../test/fixtures/queues";
+import { events, jobRef, libraryHistoryFixture, snapshotFixture } from "../../test/fixtures/queues";
 
-function setup(exts = extensionsFixture) {
+function setup() {
   routeGet(get, {
     "/api/queues": snapshotFixture,
     "/api/items/library/lib-1/history": libraryHistoryFixture,
-    "/api/extensions": { extensions: exts },
   });
   post.mockResolvedValue({
     results: [
@@ -83,10 +77,10 @@ describe("ItemHistory", () => {
   it("shows what an automatic write changed", async () => {
     setup();
     const list = await screen.findByRole("list", { name: "What this write changed" });
-    expect(within(list).getByText(/Created collection/)).toBeInTheDocument();
-    expect(within(list).getByText(/Added 3 episodes to/)).toHaveTextContent("Lecture 22");
-    expect(within(list).getByText(/Removed 1 episodes from/)).toBeInTheDocument();
-    expect(within(list).getByText(/Reordered 24 episodes in/)).toBeInTheDocument();
+    expect(within(list).getByText(/Created channel/)).toBeInTheDocument();
+    expect(within(list).getByText(/Added 3 slots to/)).toHaveTextContent("Lecture 22");
+    expect(within(list).getByText(/Removed 1 slots from/)).toBeInTheDocument();
+    expect(within(list).getByText(/Reordered 24 slots in/)).toBeInTheDocument();
   });
 
   it("filters the history: changes only / problems only", async () => {
@@ -125,23 +119,29 @@ describe("ItemHistory", () => {
     expect(await screen.findByRole("button", { name: "Re-queue Plan channels" })).toBeDisabled();
   });
 
-  it("lists Plex and dizqueTV only while those extensions are enabled", async () => {
-    setup();
-    const where = (await screen.findByRole("heading", { name: "Where it appears" })).closest(
-      "section"
-    )!;
-    await within(where).findByText("Plex collection");
-    expect(within(where).queryByText("dizqueTV show")).toBeNull(); // dizquetv disabled in fixture
-    expect(within(where).getByText("Channel slot")).toBeInTheDocument(); // core row stays
-  });
-
-  it("hides every extension row when no extension is enabled", async () => {
-    setup(extensionsFixture.map((e) => ({ ...e, enabled: false })));
+  it("lists the channels and slots it appears in, and drops targets it does not know", async () => {
+    routeGet(get, {
+      "/api/queues": snapshotFixture,
+      "/api/items/library/lib-1/history": {
+        ...libraryHistoryFixture,
+        appears_in: [
+          ...libraryHistoryFixture.appears_in,
+          // a row of a target this web has no words for (an integration since removed)
+          {
+            target: "retired_target" as AppearsInEntry["target"],
+            title: "Old collection",
+            external_id: "old-991",
+          },
+        ],
+      },
+    });
+    renderAt(<ItemHistory />, "/queue/items/library/lib-1", "/queue/items/:kind/:id");
     const where = (await screen.findByRole("heading", { name: "Where it appears" })).closest(
       "section"
     )!;
     await within(where).findByText("Channel slot");
-    expect(within(where).queryByText("Plex collection")).toBeNull();
+    expect(within(where).getByText("Maktaba channel")).toBeInTheDocument();
+    expect(within(where).queryByText("Old collection")).toBeNull();
   });
 
   it("refreshes when a job for this item finishes on the stream", async () => {
@@ -163,14 +163,9 @@ describe("ItemHistory", () => {
     routeGet(get, {
       "/api/queues": snapshotFixture,
       "/api/items/library/lib-1/history": libraryHistoryFixture,
-      "/api/extensions": { extensions: extensionsFixture },
       "/api/items/library/lib-1/collections": {
-        topics: [
-          { id: "t1", name: "السيرة", items: 12, collection: "Islamic lectures - ملف - السيرة" },
-        ],
-        clip_groups: [
-          { id: "g1", kind: "clips", basis: "topic", title: "مقاطع", items: 40, collection: null },
-        ],
+        topics: [{ id: "t1", name: "السيرة", items: 12 }],
+        clip_groups: [{ id: "g1", kind: "clips", basis: "topic", title: "مقاطع", items: 40 }],
         promos: [
           {
             video_id: "v1",
@@ -199,8 +194,9 @@ describe("ItemHistory", () => {
     const panel = (
       await screen.findByRole("heading", { name: "Topics, clips and promos" })
     ).closest("section")!;
-    expect(await within(panel).findByText(/Islamic lectures - ملف - السيرة/)).toBeInTheDocument();
-    expect(within(panel).getByText("not written")).toBeInTheDocument();
+    expect(await within(panel).findByText(/السيرة/)).toBeInTheDocument();
+    expect(within(panel).getByText(/^\W*مقاطع\W*$/)).toBeInTheDocument();
+    expect(within(panel).queryByText("not written")).toBeNull();
     expect(within(panel).getByRole("link", { name: /الحبيب.? S2/ })).toHaveAttribute(
       "href",
       "/queue/items/season/s1"

@@ -7,6 +7,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
 // Two small read endpoints that carry the stand-alone control centre's
@@ -34,8 +35,6 @@ type InsightTotals struct {
 	VideosWithLength  int `json:"videos_with_length"`
 	Series            int `json:"series"`
 	Seasons           int `json:"seasons"`
-	PlexCollections   int `json:"plex_collections"`
-	DizqueTVShows     int `json:"dizquetv_shows"`
 	Channels          int `json:"channels"`
 	StylePinned       int `json:"style_pinned"`
 	YouTubeVideos     int `json:"youtube_videos"`
@@ -61,8 +60,6 @@ SELECT (SELECT count(*) FROM libraries),
        (SELECT count(*) FROM videos WHERE deleted_at IS NULL AND duration_sec IS NOT NULL),
        (SELECT count(*) FROM series),
        (SELECT count(*) FROM series_seasons WHERE retired_at IS NULL),
-       (SELECT count(*) FROM external_links WHERE target = 'plex_collection'),
-       (SELECT count(*) FROM external_links WHERE target = 'dizquetv_show'),
        (SELECT count(*) FROM channels),
        (SELECT count(*) FROM season_style WHERE override_style IS NOT NULL),
        (SELECT count(*) FROM youtube_videos),
@@ -89,7 +86,7 @@ func (h *Handler) Insights(w http.ResponseWriter, r *http.Request) {
 	out := Insights{Styles: map[string]int{}, Genres: []InsightGenre{}}
 	t := &out.Totals
 	if err := h.DB.QueryRowContext(ctx, insightTotalsSQL).Scan(&t.Libraries, &t.Videos, &t.VideosWithLength,
-		&t.Series, &t.Seasons, &t.PlexCollections, &t.DizqueTVShows, &t.Channels, &t.StylePinned,
+		&t.Series, &t.Seasons, &t.Channels, &t.StylePinned,
 		&t.YouTubeVideos, &t.VideosWithoutDate); err != nil {
 		writeErr(w, r, "insights", err)
 		return
@@ -167,13 +164,14 @@ type Pulse struct {
 	StuckCount int        `json:"stuck_count"`
 }
 
-const pulseCountsSQL = `
+var pulseCountsSQL = `
 SELECT count(*) FILTER (WHERE j.state IN ` + inFlightSQL + `),
        count(*) FILTER (WHERE j.state = 'pending' AND (j.not_before IS NULL OR j.not_before <= $1)
                           AND s.enabled AND NOT s.paused),
        max(j.last_heartbeat_at) FILTER (WHERE j.state IN ` + inFlightSQL + `)
   FROM processing_jobs j JOIN job_stages s ON s.stage = j.stage
- WHERE j.state IN ('claimed','running','resuming','pending')`
+ WHERE j.state IN ('claimed','running','resuming','pending')
+   AND ` + components.NotRetiredStageSQL("j.stage")
 
 const pulseLastDoneSQL = `SELECT max(finished_at) FROM processing_jobs WHERE finished_at >= $1`
 
@@ -188,6 +186,7 @@ func pulseStuckQuery() string {
        j.claimed_by, extract(epoch FROM ($1::timestamptz - COALESCE(j.started_at, j.claimed_at)))
   FROM processing_jobs j` + joins + `
  WHERE j.state IN ` + inFlightSQL + `
+   AND ` + components.NotRetiredStageSQL("j.stage") + `
    AND COALESCE(j.last_heartbeat_at, j.claimed_at, j.started_at) < $1::timestamptz - $2::int * interval '1 second'
  ORDER BY 6 DESC
  LIMIT ` + "20" + `

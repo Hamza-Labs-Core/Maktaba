@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 
 from maktaba_pipeline.engine.graph import CATALOG_ID, GRAPH, POOLS
+from maktaba_pipeline.engine.retired import RETIRED_POOLS
 from maktaba_pipeline.engine.sql import loads
 from maktaba_pipeline.engine.sync import stage_enabled_state
 from maktaba_pipeline.runtime import Database
@@ -208,7 +209,9 @@ async def test_seed_matches_graph(db: Database) -> None:
         ), s.name
         assert bool(r["enabled"]) == stage_enabled_state(s, {})[0], s.name
     pools = {r["pool"] for r in await db.fetch("SELECT pool FROM worker_pools")}
-    assert pools == {p.pool for p in POOLS}
+    # the pools only removed stages used stay seeded (slot 0215 drops no rows); no stage uses them
+    assert pools >= RETIRED_POOLS
+    assert pools - RETIRED_POOLS == {p.pool for p in POOLS}
 
 
 @pytest.mark.asyncio

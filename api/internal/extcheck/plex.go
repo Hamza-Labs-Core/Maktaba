@@ -8,17 +8,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 )
 
-// Plex extension names (catalogue: queues.extensionCatalog).
-const (
-	PlexExtension     = "plex"
-	DizqueTVExtension = "dizquetv"
-)
+// PlexExtension is the Plex extension's name (catalogue: queues.extensionCatalog).
+const PlexExtension = "plex"
 
 // PlexTokenSecret is where the Plex token is kept (secrets.ExtensionName).
 var PlexTokenSecret = secrets.ExtensionName(PlexExtension, "token")
@@ -45,12 +41,9 @@ type plexRoot struct {
 }
 
 type plexSection struct {
-	Key      string `json:"key"`
-	Title    string `json:"title"`
-	Type     string `json:"type"`
-	Location []struct {
-		Path string `json:"path"`
-	} `json:"Location"`
+	Key   string `json:"key"`
+	Title string `json:"title"`
+	Type  string `json:"type"`
 }
 
 type plexSections struct {
@@ -98,8 +91,7 @@ func (o *oneOrMany[T]) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// Test runs the checks: reachable, token, server, livetv, maktaba_tuner,
-// dizquetv_tuner, path_map.
+// Test runs the checks: reachable, token, server, livetv, maktaba_tuner.
 func (p *Plex) Test(ctx context.Context) (Result, error) {
 	res := Result{CheckedAt: p.now()}
 	settings, _, err := p.Ext.ExtensionSettings(ctx, PlexExtension)
@@ -118,7 +110,7 @@ func (p *Plex) Test(ctx context.Context) (Result, error) {
 			add(Line{Key: k, Skipped: true, Optional: k != "token", Detail: "not checked"})
 		}
 	}
-	after := []string{"server", "livetv", "maktaba_tuner", "dizquetv_tuner", "path_map"}
+	after := []string{"server", "livetv", "maktaba_tuner"}
 
 	base, err := baseURL(str(settings, "url"))
 	if err != nil {
@@ -196,10 +188,9 @@ func (p *Plex) Test(ctx context.Context) (Result, error) {
 	}
 
 	add(p.serverLine(ctx, c, base, hdr, id))
-	for _, l := range p.liveTVLines(ctx, c, base, hdr, p.dizqueURL(ctx)) {
+	for _, l := range p.liveTVLines(ctx, c, base, hdr) {
 		add(l)
 	}
-	add(p.pathMapLine(ctx, str(settings, "path_map"), sections))
 	finish(&res, "Plex is ready")
 	p.logResult(res)
 	return res, nil
@@ -240,14 +231,6 @@ func (p *Plex) token(ctx context.Context) (string, string, string) {
 	return t, "", ""
 }
 
-func (p *Plex) dizqueURL(ctx context.Context) string {
-	s, _, err := p.Ext.ExtensionSettings(ctx, DizqueTVExtension)
-	if err != nil {
-		return ""
-	}
-	return str(s, "url")
-}
-
 func (p *Plex) serverLine(ctx context.Context, c *http.Client, base *url.URL, hdr map[string]string, id plexIdentity) Line {
 	a, err := p.get(ctx, c, base, "/", hdr)
 	if err != nil {
@@ -280,13 +263,11 @@ func (p *Plex) serverLine(ctx context.Context, c *http.Client, base *url.URL, hd
 	return Line{Key: "server", OK: true, Optional: true, Detail: d, LatencyMS: ms(a.latency)}
 }
 
-// liveTVLines: livetv (the DVRs), maktaba_tuner, dizquetv_tuner.
-func (p *Plex) liveTVLines(ctx context.Context, c *http.Client, base *url.URL, hdr map[string]string, dzURL string) []Line {
+// liveTVLines: livetv (the DVRs), maktaba_tuner. Any other tuner in Plex Live TV is just
+// another tuner: it is not checked.
+func (p *Plex) liveTVLines(ctx context.Context, c *http.Client, base *url.URL, hdr map[string]string) []Line {
 	skipTuners := func(why string) []Line {
-		return []Line{
-			{Key: "maktaba_tuner", Optional: true, Skipped: true, Detail: why},
-			{Key: "dizquetv_tuner", Optional: true, Skipped: true, Detail: why},
-		}
+		return []Line{{Key: "maktaba_tuner", Optional: true, Skipped: true, Detail: why}}
 	}
 	a, err := p.get(ctx, c, base, "/livetv/dvrs", hdr)
 	if err != nil {
@@ -318,18 +299,13 @@ func (p *Plex) liveTVLines(ctx context.Context, c *http.Client, base *url.URL, h
 	}
 
 	deviceID := p.hdhrDeviceID(ctx)
-	var ours, dz *plexDevice
-	var ourDvr, dzDvr string
+	var ours *plexDevice
+	var ourDvr string
 	for _, d := range dvrs {
 		for i := range d.Device {
 			t := d.Device[i]
 			if ours == nil && deviceID != "" && strings.EqualFold(tunerID(t), deviceID) {
 				ours, ourDvr = &t, d.Title
-				continue
-			}
-			text := strings.ToLower(t.Title + " " + t.Make + " " + t.Model)
-			if dz == nil && ((dzURL != "" && SameHost(t.URI, dzURL)) || strings.Contains(text, "dizque")) {
-				dz, dzDvr = &t, d.Title
 			}
 		}
 	}
@@ -342,11 +318,6 @@ func (p *Plex) liveTVLines(ctx context.Context, c *http.Client, base *url.URL, h
 	default:
 		out = append(out, Line{Key: "maktaba_tuner", Optional: true, Code: CodeNotFound,
 			Detail: "Maktaba's tuner " + deviceID + " is not registered in Plex Live TV (TV, Plex: Register)"})
-	}
-	if dz != nil {
-		out = append(out, Line{Key: "dizquetv_tuner", OK: true, Optional: true, Detail: "present" + inDvr(dzDvr)})
-	} else {
-		out = append(out, Line{Key: "dizquetv_tuner", OK: true, Optional: true, Detail: "none registered"})
 	}
 	return out
 }
@@ -378,166 +349,6 @@ func (p *Plex) hdhrDeviceID(ctx context.Context) string {
 		return ""
 	}
 	return strings.TrimSpace(id.String)
-}
-
-// pathMapLine: one library root, through the path map, lands inside a
-// library location Plex knows.
-func (p *Plex) pathMapLine(ctx context.Context, raw string, sections []plexSection) Line {
-	l := Line{Key: "path_map", Optional: true}
-	root := p.sampleRoot(ctx)
-	if root == "" {
-		l.Skipped, l.Detail = true, "no Maktaba library to compare"
-		return l
-	}
-	pm, err := ParsePathMap(raw)
-	if err != nil {
-		l.Code, l.Detail = CodePathMap, "the path map is not valid: "+err.Error()
-		return l
-	}
-	mapped := pm.Rewrite(root)
-	norm := func(s string) string {
-		s = strings.ToLower(strings.ReplaceAll(s, "\\", "/"))
-		if !strings.HasSuffix(s, "/") {
-			s += "/"
-		}
-		return s
-	}
-	m := norm(mapped)
-	for _, s := range sections {
-		for _, loc := range s.Location {
-			lp := norm(loc.Path)
-			if strings.HasPrefix(m, lp) || strings.HasPrefix(lp, m) {
-				l.OK = true
-				l.Detail = fmt.Sprintf("%s → %s is in Plex library %q", root, mapped, s.Title)
-				return l
-			}
-		}
-	}
-	l.Code = CodePathMap
-	if len(pm) == 0 {
-		l.Detail = fmt.Sprintf("%s is not a folder of any Plex library: set the path map (how Plex sees Maktaba's paths)", root)
-	} else {
-		l.Detail = fmt.Sprintf("%s → %s is not a folder of any Plex library", root, mapped)
-	}
-	return l
-}
-
-// sampleRoot is the first root of the first library (by name).
-func (p *Plex) sampleRoot(ctx context.Context) string {
-	if p.DB == nil {
-		return ""
-	}
-	var raw sql.NullString
-	if err := p.DB.QueryRowContext(ctx, `SELECT roots FROM libraries ORDER BY name LIMIT 1`).Scan(&raw); err != nil {
-		return ""
-	}
-	return firstRoot(raw.String)
-}
-
-// firstRoot reads a Postgres TEXT[] literal ({a,"b c"}) or a JSON array.
-func firstRoot(s string) string {
-	s = strings.TrimSpace(s)
-	switch {
-	case strings.HasPrefix(s, "["):
-		var xs []string
-		if json.Unmarshal([]byte(s), &xs) == nil && len(xs) > 0 {
-			return xs[0]
-		}
-		return ""
-	case strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}"):
-		body := s[1 : len(s)-1]
-		if body == "" {
-			return ""
-		}
-		if body[0] == '"' {
-			var b strings.Builder
-			for i := 1; i < len(body); i++ {
-				ch := body[i]
-				if ch == '\\' && i+1 < len(body) {
-					i++
-					b.WriteByte(body[i])
-					continue
-				}
-				if ch == '"' {
-					break
-				}
-				b.WriteByte(ch)
-			}
-			return b.String()
-		}
-		if i := strings.IndexByte(body, ','); i >= 0 {
-			return body[:i]
-		}
-		return body
-	}
-	return s
-}
-
-// PathMap is the Plex extension's path map: database prefix -> Plex prefix
-// (pipeline engine/paths.py PathMap, rewrite only).
-type PathMap [][2]string
-
-// ParsePathMap reads `Y:/=/Volumes/Y/;O:/=/x/` or a JSON object.
-func ParsePathMap(text string) (PathMap, error) {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return nil, nil
-	}
-	pairs := [][2]string{}
-	if strings.HasPrefix(text, "{") {
-		var m map[string]string
-		if err := json.Unmarshal([]byte(text), &m); err != nil {
-			return nil, errors.New("not a JSON object of strings")
-		}
-		for k, v := range m {
-			pairs = append(pairs, [2]string{k, v})
-		}
-	} else {
-		for _, part := range strings.Split(text, ";") {
-			a, b, ok := strings.Cut(part, "=")
-			if ok {
-				pairs = append(pairs, [2]string{strings.TrimSpace(a), strings.TrimSpace(b)})
-			}
-		}
-	}
-	out := PathMap{}
-	for _, pr := range pairs {
-		if pr[0] != "" && pr[1] != "" {
-			out = append(out, [2]string{normPrefix(pr[0]), normPrefix(pr[1])})
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i][0] < out[j][0] })
-	return out, nil
-}
-
-func normPrefix(p string) string {
-	p = strings.ReplaceAll(p, "\\", "/")
-	if !strings.HasSuffix(p, "/") {
-		p += "/"
-	}
-	return p
-}
-
-// Rewrite maps a database path to Plex's view; the longest prefix wins
-// (matched case-insensitively), no match keeps the path.
-func (pm PathMap) Rewrite(dbPath string) string {
-	p := strings.ReplaceAll(dbPath, "\\", "/")
-	best := -1
-	for i, e := range pm {
-		if strings.HasPrefix(strings.ToLower(p), strings.ToLower(e[0])) && (best < 0 || len(e[0]) > len(pm[best][0])) {
-			best = i
-		}
-	}
-	if best < 0 {
-		// a root without its trailing slash still matches its prefix
-		if !strings.HasSuffix(p, "/") {
-			if r := pm.Rewrite(p + "/"); r != p+"/" {
-				return strings.TrimSuffix(r, "/")
-			}
-		}
-		return dbPath
-	}
-	return pm[best][1] + p[len(pm[best][0]):]
 }
 
 func short(id string) string {

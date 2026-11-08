@@ -36,7 +36,6 @@ var causeLabels = map[string]causeInfo{
 	"youtube_unavailable":  {"YouTube video or channel unavailable", ActionRetry},
 	"plex_unreachable":     {"Plex is unreachable", ActionOpenSettings},
 	"plex_auth":            {"Plex rejected the token", ActionOpenSettings},
-	"dizquetv_unreachable": {"dizqueTV is unreachable", ActionOpenSettings},
 	"readback_mismatch":    {"Write did not read back correctly", ActionRetry},
 	// Epic 54: a plugin job's end (story 54.06 §3; the web's words are queue.issues.cause.*)
 	"plugin_trap":       {"The plugin crashed", ActionRetry},

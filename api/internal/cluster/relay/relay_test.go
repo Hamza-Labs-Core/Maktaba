@@ -125,36 +125,27 @@ func (h *harness) call(method, target string) (Result, string) {
 	return res, sink.String()
 }
 
-// Every call the node-placed Plex stages make (PlexClient) is allowed.
-func TestAllowListAcceptsTheStagesCalls(t *testing.T) {
-	uri := "server%3A%2F%2Fabc123%2Fcom.plexapp.plugins.library%2Flibrary%2Fmetadata%2F11%2C12"
-	ok := [][2]string{
-		{"GET", "/identity"},
-		{"GET", "/library/sections"},
-		{"GET", "/library/sections/3/all?type=1"},
-		{"GET", "/library/sections/3/all?type=4"},
-		{"GET", "/library/sections/3/collections"},
-		{"GET", "/library/metadata/11"},
-		{"GET", "/library/metadata/11,12,13"},
-		{"GET", "/library/collections/90/children"},
-		{"POST", "/library/collections?type=1&title=%D9%85%D9%84%D9%81%20one&smart=0&sectionId=3&uri=" + uri},
-		{"PUT", "/library/collections/90/items?uri=" + uri},
-		{"PUT", "/library/collections/90/items/12/move?after=11"},
-		{"PUT", "/library/collections/90/items/12/move"},
-		{"PUT", "/library/metadata/90/prefs?collectionSort=2"},
-		{"PUT", "/library/sections/3/all?type=18&id=90&label[0].tag.tag=maktaba-auto&label.locked=1"},
-		{"DELETE", "/library/metadata/90"},
-	}
-	for _, c := range ok {
-		if _, _, _, err := Plex.Match(c[0], c[1]); err != nil {
-			t.Errorf("%s %s refused: %v", c[0], c[1], err)
-		}
+// A node may make the reachability probe, and nothing else: the Plex sync stages that
+// read and wrote Plex's library are gone, and Live TV is the home's (livetv_test.go).
+func TestAllowListAcceptsTheProbe(t *testing.T) {
+	if _, _, _, err := Plex.Match("GET", "/identity"); err != nil {
+		t.Errorf("GET /identity refused: %v", err)
 	}
 }
 
 func TestAllowListRefusals(t *testing.T) {
 	uri := "server%3A%2F%2Fabc%2Fcom.plexapp.plugins.library%2Flibrary%2Fmetadata%2F11"
 	bad := []struct{ method, target string }{
+		// the library calls of the removed Plex sync stages
+		{"GET", "/library/sections"},
+		{"GET", "/library/sections/3/all?type=1"},
+		{"GET", "/library/sections/3/collections"},
+		{"GET", "/library/metadata/11"},
+		{"GET", "/library/collections/90/children"},
+		{"POST", "/library/collections?type=1&title=x&smart=0&sectionId=3&uri=" + uri},
+		{"PUT", "/library/collections/90/items?uri=" + uri},
+		{"PUT", "/library/metadata/90/prefs?collectionSort=2"},
+		{"DELETE", "/library/metadata/90"},
 		{"GET", "/"},
 		{"GET", "/:/prefs"},
 		{"PUT", "/:/prefs?FriendlyName=x"},
@@ -210,12 +201,12 @@ func TestServeInjectsTheTokenAndNeverReturnsIt(t *testing.T) {
 		}
 		fmt.Fprint(w, `{"ratingKey":"x"}]}}`)
 	}
-	res, body := h.call("GET", "/library/sections/3/all?type=1")
+	res, body := h.call("GET", "/identity")
 	if res.Err != nil || res.Status != 200 {
 		t.Fatalf("result %+v", res)
 	}
 	calls := h.plex.calls()
-	if len(calls) != 1 || calls[0] != "GET /library/sections/3/all?type=1 token="+secret {
+	if len(calls) != 1 || calls[0] != "GET /identity token="+secret {
 		t.Fatalf("plex saw %v", calls)
 	}
 	if strings.Contains(body, secret) || strings.Contains(strings.ToLower(body), "x-plex-token") {
@@ -234,7 +225,7 @@ func TestServeInjectsTheTokenAndNeverReturnsIt(t *testing.T) {
 	h.mu.Lock()
 	audit := h.audit
 	h.mu.Unlock()
-	if len(audit) != 1 || audit[0].Path != "/library/sections/3/all" || audit[0].Status != 200 || audit[0].NodeID != "n-1" ||
+	if len(audit) != 1 || audit[0].Path != "/identity" || audit[0].Status != 200 || audit[0].NodeID != "n-1" ||
 		audit[0].Scrubbed == 0 {
 		t.Fatalf("audit %+v", audit)
 	}
@@ -325,38 +316,10 @@ func TestRefusals(t *testing.T) {
 	if got := h.plex.calls(); len(got) != 0 {
 		t.Fatalf("a refused call reached Plex: %v", got)
 	}
-	big := Request{Ext: "plex", Method: "PUT", Target: "/library/metadata/1/prefs?collectionSort=2", Body: make([]byte, MaxRequestBody+1)}
+	big := Request{Ext: "plex", Method: "GET", Target: "/identity", Body: make([]byte, MaxRequestBody+1)}
 	h.set(func(h *harness) { h.settings.Enabled = true })
 	if res := h.door.Serve(context.Background(), node, big, &bufSink{}); code(res) != CodeTooLarge {
 		t.Fatalf("big body: %+v", res)
-	}
-}
-
-func TestDeleteOnlyRemovesCollections(t *testing.T) {
-	h := newHarness(t)
-	h.plex.handle = func(w http.ResponseWriter, r *http.Request) {
-		typ := "movie"
-		if strings.HasSuffix(r.URL.Path, "/90") {
-			typ = "collection"
-		}
-		if r.Method == http.MethodGet {
-			fmt.Fprintf(w, `{"MediaContainer":{"Metadata":[{"ratingKey":"1","type":%q}]}}`, typ)
-		}
-	}
-	if res, _ := h.call("DELETE", "/library/metadata/5"); res.Err == nil || res.Err.Code != CodeNotAllowed {
-		t.Fatalf("deleting a movie: %+v", res)
-	}
-	if res, _ := h.call("DELETE", "/library/metadata/90"); res.Err != nil || res.Status != 200 {
-		t.Fatalf("deleting a collection: %+v", res)
-	}
-	var deletes []string
-	for _, c := range h.plex.calls() {
-		if strings.HasPrefix(c, "DELETE") {
-			deletes = append(deletes, c)
-		}
-	}
-	if len(deletes) != 1 || !strings.HasPrefix(deletes[0], "DELETE /library/metadata/90 ") {
-		t.Fatalf("deletes %v", deletes)
 	}
 }
 
@@ -416,19 +379,21 @@ func TestInFlightCap(t *testing.T) {
 
 func TestAnswerSizeLimitAndTimeout(t *testing.T) {
 	h := newHarness(t)
+	var slow atomic.Bool
 	h.plex.handle = func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/identity" {
+		if slow.Load() {
 			time.Sleep(300 * time.Millisecond)
 			return
 		}
 		_, _ = w.Write(bytes.Repeat([]byte("x"), 1<<20+64<<10))
 	}
 	h.set(func(h *harness) { h.settings.MaxResponseMB = 1 })
-	res, body := h.call("GET", "/library/sections")
+	res, body := h.call("GET", "/identity")
 	if res.Err == nil || res.Err.Code != CodeTooLarge || len(body) > 1<<20 {
 		t.Fatalf("too large: %+v (%d bytes)", res, len(body))
 	}
 	// the caller's own time limit applies when it is shorter than the setting
+	slow.Store(true)
 	res = h.door.Serve(context.Background(), node, Request{Ext: "plex", Method: "GET", Target: "/identity",
 		Timeout: 150 * time.Millisecond}, &bufSink{})
 	if res.Err == nil || res.Err.Code != CodeTimeout {

@@ -115,7 +115,7 @@ describe("Relay panel", () => {
     const sw = await screen.findByRole("switch", { name: "Relay extension calls for machines" });
     await userEvent.click(sw);
     expect(patch).toHaveBeenCalledWith("/api/rules/relay", { set: { enabled: false }, reset: [] });
-    expect(await screen.findByText("Off: Plex stages run on the home only")).toBeInTheDocument();
+    expect(await screen.findByText("Off: the home refuses the machines' Plex calls")).toBeInTheDocument();
     await userEvent.click(
       screen.getByRole("switch", { name: "Relay extension calls for machines" })
     );
@@ -134,10 +134,10 @@ describe("Relay panel", () => {
     await vi.advanceTimersByTimeAsync(5_000);
     expect(get).toHaveBeenCalledTimes(2);
     await userEvent.click(screen.getByRole("switch", { name }));
-    expect(await screen.findByText("Off: Plex stages run on the home only")).toBeInTheDocument();
+    expect(await screen.findByText("Off: the home refuses the machines' Plex calls")).toBeInTheDocument();
     await act(async () => poll.resolve(status(true)));
     expect(screen.getByRole("switch", { name })).not.toBeChecked();
-    expect(screen.getByText("Off: Plex stages run on the home only")).toBeInTheDocument();
+    expect(screen.getByText("Off: the home refuses the machines' Plex calls")).toBeInTheDocument();
   });
 
   it("says when the home has no door", async () => {

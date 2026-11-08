@@ -305,18 +305,18 @@ describe("QueueDetail (test-cases/queue-detail.md)", () => {
     post.mockImplementation(no);
     put.mockImplementation(no);
     patch.mockImplementation(no);
-    const d = detailFixture("plex_collection");
+    const d = detailFixture("plex_livetv");
     setup(
-      "plex_collection",
+      "plex_livetv",
       {
-        "/api/queues/plex_collection": {
+        "/api/queues/plex_livetv": {
           ...d,
-          failures: [{ ...failureGroupsFixture[0], stage: "plex_collection" }],
+          failures: [{ ...failureGroupsFixture[0], stage: "plex_livetv" }],
         },
       },
       { user: memberUser }
     );
-    expect(await heading("Plex collection")).toBeInTheDocument();
+    expect(await heading("Plex Live TV")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Pause this queue" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Forbidden: admin only");
     await userEvent.click(screen.getByRole("button", { name: /^Retry failed/ }));
@@ -407,36 +407,36 @@ describe("QueueDetail (test-cases/queue-detail.md)", () => {
 
   it("QDT-17: failure group Apply and per-group Retry post for this stage", async () => {
     const g = failureGroupsFixture[0];
-    const d = detailFixture("plex_collection");
-    setup("plex_collection", {
-      "/api/queues/plex_collection": {
+    const d = detailFixture("plex_livetv");
+    setup("plex_livetv", {
+      "/api/queues/plex_livetv": {
         ...d,
         failures: [
-          { ...g, stage: "plex_collection", cause: "review", action: "apply", label: "To apply" },
-          { ...g, stage: "plex_collection", cause: "plex_down", count: 4, label: "Plex down" },
+          { ...g, stage: "plex_livetv", cause: "review", action: "apply", label: "To apply" },
+          { ...g, stage: "plex_livetv", cause: "plex_down", count: 4, label: "Plex down" },
         ],
       },
     });
-    expect(await heading("Plex collection")).toBeInTheDocument();
+    expect(await heading("Plex Live TV")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Apply" }));
-    expect(post).toHaveBeenCalledWith("/api/queues/plex_collection/apply", { all: true });
+    expect(post).toHaveBeenCalledWith("/api/queues/plex_livetv/apply", { all: true });
     await userEvent.click(screen.getByRole("button", { name: "Retry 4" }));
-    expect(post).toHaveBeenCalledWith("/api/queues/plex_collection/retry", {
+    expect(post).toHaveBeenCalledWith("/api/queues/plex_livetv/retry", {
       cause: "plex_down",
     });
     const sec = screen.getByRole("heading", { name: "Failures by cause" }).closest("section")!;
-    expect(within(sec).queryByText("Plex collection", { selector: ".mkt-q-chip" })).toBeNull();
+    expect(within(sec).queryByText("Plex Live TV", { selector: ".mkt-q-chip" })).toBeNull();
   });
 
   it("QDT-18: write mode select patches the stage and reloads", async () => {
-    const d = detailFixture("plex_collection");
+    const d = detailFixture("plex_livetv");
     let mode: "auto" | "review" = "auto";
-    const snap = snapshotWithout("plex_collection");
-    setup("plex_collection", {
+    const snap = snapshotWithout("plex_livetv");
+    setup("plex_livetv", {
       "/api/queues": snap,
-      "/api/queues/plex_collection": () => ({ ...d, info: { ...d.info, write_mode: mode } }),
+      "/api/queues/plex_livetv": () => ({ ...d, info: { ...d.info, write_mode: mode } }),
     });
-    expect(await heading("Plex collection")).toBeInTheDocument();
+    expect(await heading("Plex Live TV")).toBeInTheDocument();
     patch.mockImplementation(async () => {
       mode = "review";
       return {};
@@ -445,7 +445,7 @@ describe("QueueDetail (test-cases/queue-detail.md)", () => {
       screen.getByRole("combobox", { name: "Writes to other systems" }),
       "review"
     );
-    expect(patch).toHaveBeenCalledWith("/api/queues/plex_collection", { write_mode: "review" });
+    expect(patch).toHaveBeenCalledWith("/api/queues/plex_livetv", { write_mode: "review" });
     await waitFor(() =>
       expect(screen.getByRole("combobox", { name: "Writes to other systems" })).toHaveValue(
         "review"

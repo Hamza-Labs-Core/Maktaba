@@ -172,7 +172,7 @@ The jobs waiting in the processing queues. A large number while the library is b
 
 - **What it means:** the service answers but one of its checks fails, for example a connection it needs.
 - **Does Maktaba fix it itself?** Usually yes, once the thing it waits for answers again.
-- **What you can do:** read the reason on the card. For Plex, dizqueTV or storage problems see [Failures](/help/failures).
+- **What you can do:** read the reason on the card. For Plex or storage problems see [Failures](/help/failures).
 
 ### Crash loop {#crash-loop}
 

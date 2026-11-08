@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from maktaba_pipeline.engine import plan_page
 from maktaba_pipeline.engine.stages import review_pages
-from maktaba_pipeline.schedule.channel_audit import html_report
 
 
 def _dark_by_default(page: str) -> None:
@@ -22,7 +21,3 @@ def test_plan_page_is_dark_unless_the_os_asks_for_light() -> None:
 
 def test_review_page_is_dark_unless_the_os_asks_for_light() -> None:
     _dark_by_default(review_pages.render("Lib", [], {}, {}))
-
-
-def test_audit_page_is_dark_unless_the_os_asks_for_light() -> None:
-    _dark_by_default(html_report([], 14))

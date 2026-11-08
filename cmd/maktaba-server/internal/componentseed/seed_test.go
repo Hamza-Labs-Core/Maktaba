@@ -66,7 +66,7 @@ func TestPlanRules(t *testing.T) {
 		{"no llm", func(*Facts) {}, "llm", "installed"},
 		{"plex on", func(f *Facts) { f.Extensions["plex"] = true }, "ext.plex", "enabled"},
 		{"plex row off", func(f *Facts) { f.Extensions["plex"] = false }, "ext.plex", "installed"},
-		{"no dizquetv row", func(*Facts) {}, "ext.dizquetv", "installed"},
+		{"no cloudflare row", func(*Facts) {}, "ext.cloudflare_stream", "installed"},
 		{"cloudflare on", func(f *Facts) { f.Extensions["cloudflare_stream"] = true }, "ext.cloudflare_stream", "enabled"},
 		{"relay wanted: link", func(f *Facts) { f.Relay = true }, "cloud.link", "enabled"},
 		{"relay wanted: relay", func(f *Facts) { f.Relay = true }, "cloud.relay", "enabled"},
@@ -405,7 +405,7 @@ func home(st *store.Store, path string, cfg config.Config, log *bytes.Buffer, en
 func TestHomeSeedsOnce(t *testing.T) {
 	db := sqliteHome(t)
 	for _, q := range []string{
-		`INSERT INTO extensions (name, enabled) VALUES ('plex', 1), ('dizquetv', 0)`,
+		`INSERT INTO extensions (name, enabled) VALUES ('plex', 1), ('cloudflare_stream', 0)`,
 		`INSERT INTO hdhr_device (id, enabled) VALUES (1, 0)`,
 		`INSERT INTO job_stages (stage, enabled, disabled_reason) VALUES ('youtube_sync', 0, 'operator'),
 			('youtube_fetch', 0, 'operator'), ('youtube_backfill', 0, 'operator'), ('youtube_tartube', 0, 'operator'),
@@ -428,7 +428,7 @@ func TestHomeSeedsOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	for id, want := range map[string]string{"livetv.slots": "enabled", "ext.plex": "enabled", "livetv.inprocess": "installed",
-		"youtube": "installed", "ext.dizquetv": "installed", "media.thumbnails": "enabled", "livetv.hdhomerun": "installed",
+		"youtube": "installed", "ext.cloudflare_stream": "installed", "media.thumbnails": "enabled", "livetv.hdhomerun": "installed",
 		"core.api": "enabled"} {
 		if d[id].Want != want {
 			t.Errorf("%s = %q, want %q", id, d[id].Want, want)

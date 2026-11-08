@@ -88,10 +88,6 @@ function VideoCard({ v }: { v: ExplainVideo }) {
         </div>
         <Playlists list={v.playlists} />
         <div>
-          <dt>{t("queue.explain.plex")}</dt>
-          <dd>{v.plex_rating_key ?? "–"}</dd>
-        </div>
-        <div>
           <dt>{t("queue.explain.verdict")}</dt>
           <dd
             className={`mkt-q-explain__verdict mkt-q-explain__verdict--${v.verdict.kind}`}

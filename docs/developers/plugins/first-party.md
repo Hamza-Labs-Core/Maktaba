@@ -15,9 +15,9 @@
 > exact dates run in `tv.maktaba.youtube`, and the repair of broken downloads in
 > `tv.maktaba.repair`, the first stages that reach the network. **Wave 7 has moved**: the
 > channel planner and writer run in `tv.maktaba.livetv`, and staging, swapping, rolling back
-> and cleaning up TV changes in `tv.maktaba.livetv-slots`. **Wave 8 has moved**: the Plex
-> stages run in `tv.maktaba.plex` and the dizqueTV stages in `tv.maktaba.dizquetv`, both
-> through the home's service door. The other stages move wave by wave.
+> and cleaning up TV changes in `tv.maktaba.livetv-slots`. **Wave 8 has moved**: Plex Live
+> TV runs in `tv.maktaba.plex`, through the home's service door (the Plex library sync and
+> the dizqueTV plugin were removed since). The other stages move wave by wave.
 
 Maktaba's own stages (thumbnails, transcription, the classifiers, the YouTube downloads and
 the rest) become **first-party plugins**: the same manifest, the same tokens and the same plugin
@@ -274,8 +274,8 @@ they are.
   air in the same transaction as its lineup, and only the queue engine writes
   `app_settings`. So the worker runs the swap commit and the rollback for the plugin's job
   (`tv_commit`, `tv_rollback` above), for the change the job's payload names.
-- **Extensions add to the plan.** An extension such as the dizqueTV export adds data to each
-  channel of the plan. A runner loads no extension, so the worker sends the names it has
+- **Extensions add to the plan.** An extension may add data to each channel of the plan
+  (a plan exporter; no built-in extension registers one today). A runner loads no extension, so the worker sends the names it has
   registered with every job, and the runner takes the same functions from the extensions it
   finds. A name it cannot load runs the job in the worker.
 - **Parity** plans a library into channels with staging off (written to the air) and on (a
@@ -284,8 +284,8 @@ they are.
 
 ## Services through the home's door: `tv.maktaba.plex`
 
-Wave 8 moves the Plex stages (`plex_index`, `plex_collections_import`, `plex_collection`,
-`plex_groups`, `plex_livetv`) into the `service` runner, which has no network at all.
+Wave 8 moves the Plex stage (`plex_livetv`, Plex Live TV) into the `service` runner, which
+has no network at all.
 
 ```toml
 [trusted]
@@ -303,24 +303,7 @@ service   = ["plex"]              # the services its calls may reach, through th
   settings without secret fields, and `service:plex` in place of the address.
 - **Live TV is the home's.** The door allows the Live TV calls `plex_livetv` makes (DVRs,
   tuners, the channel map, guide reloads) only for a caller on the home.
-- **dizqueTV's programmes are built on the home** (`tv.maktaba.dizquetv`: `dizquetv_show`,
-  `dizquetv_channels`, `dizquetv_audit`, `service = ["dizquetv", "plex"]`). A dizqueTV
-  programme plays from Plex with the token in it, and dizqueTV stores it. So the plugin never
-  writes a raw programme: the door's own operations (`/maktaba/...`) take each Plex item's
-  rating key, read the item from Plex with the home's token (up to 50 keys a request), and
-  build the programme on the home from Plex's answer. Every playable field (the file, the
-  media part, the duration) is Plex's: whatever else the plugin sends is ignored, and a key
-  Plex does not know or cannot play is refused. A channel's
-  programmes are referenced by index into the stored channel or by show id and rating key,
-  and the door fills them in from what dizqueTV holds. Every read is a projection that leaves
-  out any field holding a secret, and a final check refuses an answer that still names the
-  token, in any encoding or in part. Raw writes that could carry a programme are refused.
-  dizqueTV and its clients fetch a channel's pictures (its logo, watermark, offline picture
-  and soundtrack), so the door writes only the home's own: none, the stored one, a file on
-  the logo host (`dz_art_url`) or one uploaded to dizqueTV. Filler time and redirects keep
-  only their duration and target.
-  dizqueTV is reached only from the home: a joined machine never relays it.
-- **Parity** runs the Plex stages against a fake Plex behind HTTP on each side: the calls Plex
+- **Parity** runs the Plex stage against a fake Plex behind HTTP on each side: the calls Plex
   receives (method, path, query and the token) are identical, then N16.
 
 ## The repo layout

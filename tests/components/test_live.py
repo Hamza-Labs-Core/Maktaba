@@ -19,8 +19,10 @@ from components import rig as R
 
 pytestmark = pytest.mark.skipif(not R.PG_URL, reason="MAKTABA_TEST_PG_URL not set")
 
-STAGES = ("content_hash", "transcribe", "plex_index", "component_catchup")
-#: a Plex server the sleepy plex_index never calls: the extension counts as set up
+STAGES = ("content_hash", "transcribe", "plex_livetv", "component_catchup")
+#: a Plex server the sleepy plex_livetv never calls: the extension counts as set up
+#: plex_livetv's one subject: the catalog (queues.CatalogID)
+CATALOG = ["00000000-0000-0000-0000-00000000ca7a"]
 PLEX_ENV = {"MAKTABA_PLEX_URL": "http://plex.invalid:32400", "MAKTABA_PLEX_TOKEN": "ci"}
 #: the catalog's drain grace of a stage group or extension (catalog.toml's default)
 DEFAULT_GRACE_S = 30
@@ -131,26 +133,29 @@ async def _run(r: R.Rig, m: dict[str, Any]) -> None:
 
 async def _plex(r: R.Rig, m: dict[str, Any]) -> None:
     """T13 (story 51.07): Plex switched off and on through its extensions route."""
-    await R.until(lambda: _is(r.stage_row("plex_index"), (True, None)), 30)
-    libraries = await r.libraries(40)
-    await r.enqueue("plex_index", libraries, kind="library")
-    await r.run_now("plex_index")  # its 60 s debounce
-    await R.until(lambda: _running(r, "plex_index", 1), 30)
+    await R.until(lambda: _is(r.stage_row("plex_livetv"), (True, None)), 30)
+    await r.enqueue("plex_livetv", CATALOG, kind="catalog")
+    await r.run_now("plex_livetv")  # its 30 s debounce
+    await R.until(lambda: _running(r, "plex_livetv", 1), 30)
     t_off = await r.extension("plex", False)
     m["ext_N4_rows_s"] = await R.until(
-        lambda: _is(r.stage_row("plex_index"), (False, "extension_disabled")), 10
+        lambda: _is(r.stage_row("plex_livetv"), (False, "extension_disabled")), 10
     )
     m["ext_N5_drain_s"] = await R.until(
-        lambda: _zero(_in_flight(r, "plex_index")), DEFAULT_GRACE_S + 5
+        lambda: _zero(_in_flight(r, "plex_livetv")), DEFAULT_GRACE_S + 5
     )
     await asyncio.sleep(3)
-    m["ext_claims_after_2s"] = await r.claims_after(["plex_index"], t_off + 2)
+    m["ext_claims_after_2s"] = await r.claims_after(["plex_livetv"], t_off + 2)
     assert m["ext_claims_after_2s"] == 0
     t_on = await r.extension("plex", True)
-    await r.run_now("plex_index")
-    m["ext_N2_enable_to_claim_s"] = await R.until(lambda: _claimed_after(r, "plex_index", t_on), 30)
+    # the catalog is one subject: queue it again, whatever the drain did with the first job
+    await r.enqueue("plex_livetv", CATALOG, kind="catalog")
+    await r.run_now("plex_livetv")
+    m["ext_N2_enable_to_claim_s"] = await R.until(
+        lambda: _claimed_after(r, "plex_livetv", t_on), 30
+    )
     assert m["ext_N2_enable_to_claim_s"] <= 5
-    await R.until(lambda: _done(r, "plex_index", libraries), 180)
+    await R.until(lambda: _done(r, "plex_livetv", CATALOG), 180)
 
 
 async def _is(coro: Any, want: Any) -> bool:

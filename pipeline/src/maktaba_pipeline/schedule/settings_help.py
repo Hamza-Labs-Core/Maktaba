@@ -17,7 +17,7 @@ SPECIAL = "Quran at dawn, Friday khutbah"
 QURAN = "Quran channel"
 RAM = "Ramadan"
 WHAT = "Programmes and filler"
-DZ = "dizqueTV"
+DZ = "Schedule and look"
 
 PLANNER_HELP: dict[str, Help] = {
     # the lineup
@@ -399,16 +399,8 @@ PLANNER_HELP: dict[str, Help] = {
     "ramadan_dayparts": Help(RAM, "Ramadan day parts"),
     "ramadan_min_score": Help(RAM, "Ramadan tag score"),
     "ramadan_exclusive": Help(RAM, "Ramadan shows only in Ramadan"),
-    # dizqueTV
+    # schedule and look
     "timezone": Help(DZ, "Time zone", "IANA name (Asia/Riyadh); empty: the server's."),
-    "dz_lateness_ms": Help(
-        DZ,
-        "Allowed lateness (ms)",
-        "How late a slot may start and still play its show: an episode that runs past the "
-        "next slot's start pushes it back. Past this, dizqueTV gives the whole slot to "
-        "filler (an hour and more of clips, no programme). A day: every slot plays its "
-        "next episode, the schedule is programmes around the clock.",
-    ),
     "slot_max_filler_minutes": Help(
         DZ,
         "Most filler at a slot's end (minutes)",
@@ -416,31 +408,16 @@ PLANNER_HELP: dict[str, Help] = {
         "past this many minutes the episode plays anyway, running past the slot's end (the "
         "next slot starts late). 0: never. A nonstop channel keeps its filler to the hour.",
     ),
-    "dz_max_days": Help(DZ, "Schedule length (days)"),
-    "dz_pad_ms": Help(DZ, "Pad (ms)"),
     "dz_filler_cooldown_ms": Help(DZ, "Filler cooldown (ms)"),
     "dz_weight_topic": Help(DZ, "Filler weight: the channel's topic clips"),
     "dz_weight_promos": Help(DZ, "Filler weight: its shows' promos"),
     "dz_weight_breaks": Help(DZ, "Filler weight: breaks (nasheeds, short clips)"),
     "dz_weight_general": Help(DZ, "Filler weight: general clips"),
-    "dz_guide_min_program_s": Help(
-        DZ,
-        "Guide: shortest programme listed (s)",
-        "Programmes at least this long have their own entry in the guide; shorter ones "
-        "count as filler.",
-    ),
-    "dz_guide_max_padding_s": Help(
-        DZ,
-        "Guide: filler shown from (s)",
-        "Filler time at least this long gets its own guide entry (the filler title below); "
-        "shorter filler is added to the programme before it. dizqueTV's own default is 1800.",
-    ),
-    "dz_guide_filler_title": Help(DZ, "Guide: title of filler time"),
     "dz_logo_dir": Help(
         DZ,
         "Channel logos folder",
         "The guide's channel logos: <channel key>.png (quran.png, "
-        "kids.png …), else default.png. Uploaded to dizqueTV with the channels. Empty: none.",
+        "kids.png …), else default.png. Empty: none.",
     ),
     "dz_watermark_file": Help(
         DZ,
@@ -459,26 +436,11 @@ PLANNER_HELP: dict[str, Help] = {
     ),
     "dz_watermark_width": Help(DZ, "Corner logo width (% of the picture)"),
     "dz_watermark_margin": Help(DZ, "Corner logo margin (% from the edges)"),
-    "dz_art_url": Help(
-        DZ,
-        "Logos web address",
-        "Where the logos are served from, e.g. a Cloudflare R2 or Pages address: the "
-        "files sit there under their own names (…/quran.png, …/watermark.gif) and are "
-        "checked before use. Empty: uploaded to dizqueTV and served by it.",
-    ),
-    "dz_public_url": Help(
-        DZ,
-        "dizqueTV address on the network",
-        "How the TVs and Plex reach dizqueTV, e.g. http://192.168.1.20:8002 or a "
-        "Tailscale address; used for the links of logos dizqueTV serves. Empty: the "
-        "address the export uses (localhost works on this PC only).",
-    ),
     "dz_filler_max_items": Help(
         DZ,
         "Filler list size (most clips)",
-        "A dizqueTV filler list "
-        "holds the first this many clips of its pool (own promos, then "
-        "on-topic clips). dizqueTV takes at most 50 MB per request.",
+        "A filler list holds the first this many clips of its pool (own promos, then "
+        "on-topic clips).",
     ),
 }
 
@@ -494,11 +456,10 @@ _MINIMUM: dict[str, float] = {
     "dead_air_warn_minutes": 0, "strip_max_limited_episodes": 0, "fill_target": 0,
     "promote_min_episodes": 1, "extra_min_weeks_left": 0, "show_member_min_share": 0,
     "rank_size_full_hours": 0.1, "quran_rotation_hours": 1, "quran_max_reciters_per_day": 1,
-    "quran_library_min_share": 0, "dz_lateness_ms": 0, "dz_max_days": 1, "dz_pad_ms": 0,
+    "quran_library_min_share": 0,
     "slot_max_filler_minutes": 0,
     "dz_filler_cooldown_ms": 0, "dz_filler_max_items": 1, "max_channels": 1,
     "dz_watermark_width": 1, "dz_watermark_margin": 0,
-    "dz_guide_min_program_s": 0, "dz_guide_max_padding_s": 0,
     "channel_min_days": 0, "channel_day_hours": 0.5, "presenter_max_channels": 0,
     "theme_episode_min_minutes": 0, "theme_episode_min_count": 1, "show_max_channels": 0,
     "break_filler_max_minutes": 0, "dz_weight_topic": 0, "dz_weight_promos": 0,

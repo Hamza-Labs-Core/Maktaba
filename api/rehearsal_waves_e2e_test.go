@@ -48,9 +48,9 @@ type rehearsalWave struct {
 
 // plexOn turns the Plex extension on as an owner does: Settings' PUT
 // /api/extensions/plex with enabled and its URL and token, which also sets the ext.plex
-// component's desired state (story 51.07). Its stages claim only then. Their work is a
-// sleep here, so the address answers nothing (port 9, discard) and the token is a
-// placeholder.
+// component's desired state (story 51.07). Its stage (plex_livetv, the only one since the
+// Plex library sync went) claims only then. Its work is a sleep here, so the address
+// answers nothing (port 9, discard) and the token is a placeholder.
 func plexOn(r *rehearsal, home *appMachine, db *sql.DB) {
 	t := r.t
 	t.Helper()
@@ -60,8 +60,8 @@ func plexOn(r *rehearsal, home *appMachine, db *sql.DB) {
 	if code != http.StatusOK {
 		t.Fatalf("turn the Plex extension on: %d %s", code, body)
 	}
-	waitStagesEnabled(t, db, []string{"plex_groups"}, 3*time.Minute)
-	r.logf("the Plex extension is on; plex_groups claims")
+	waitStagesEnabled(t, db, []string{"plex_livetv"}, 3*time.Minute)
+	r.logf("the Plex extension is on; plex_livetv claims")
 }
 
 // waitStagesEnabled waits until the stages' rows say enabled (the worker's graph sync
@@ -89,7 +89,7 @@ var rehearsalWaves = map[string]rehearsalWave{
 	"16.4": {"16.4", "54.31", []string{"detect", "tag"}, nil},
 	"16.5": {"16.5", "54.32", []string{"dedup_scan"}, nil},
 	"16.6": {"16.6", "54.33", []string{"exact_dates"}, nil},
-	"16.8": {"16.8", "54.35", []string{"plex_groups"}, plexOn},
+	"16.8": {"16.8", "54.35", []string{"plex_livetv"}, plexOn},
 	"16.9": {"16.9", "54.36", []string{"link", "fp_gate"}, nil},
 }
 
@@ -185,6 +185,10 @@ type waveJob struct {
 var subjectTables = map[string]string{"video": "videos", "library": "libraries", "series": "series",
 	"season": "series_seasons"}
 
+// catalogSubject is the one subject of kind catalog (queues.CatalogID): a catalog stage
+// (plex_livetv) gets one job per queueing, whatever n is.
+const catalogSubject = "00000000-0000-0000-0000-00000000ca7a"
+
 // queueWave enqueues up to n jobs of each stage on the seed's subjects of its kind; the
 // newest job id before them. A stage none of whose kinds the seed has is left out (said).
 func (r *rehearsal) queueWave(db *sql.DB, stages []string, n int) int64 {
@@ -195,7 +199,7 @@ func (r *rehearsal) queueWave(db *sql.DB, stages []string, n int) int64 {
 	queued := 0
 	for _, st := range stages {
 		// an extension's stage gets its row from the worker's graph sync, not a migration
-		// (plex_groups): it may come a little after the home serves
+		// (plex_livetv): it may come a little after the home serves
 		var kinds []string
 		deadline := time.Now().Add(3 * time.Minute)
 		for {
@@ -211,6 +215,10 @@ func (r *rehearsal) queueWave(db *sql.DB, stages []string, n int) int64 {
 		var kind string
 		var ids []string
 		for _, k := range kinds {
+			if k == "catalog" {
+				kind, ids = k, []string{catalogSubject}
+				break
+			}
 			table, ok := subjectTables[k]
 			if !ok {
 				continue

@@ -98,7 +98,7 @@ func TestTheHomesPluginIsServedAndNeverSeesTheToken(t *testing.T) {
 		}
 	}
 	// a node is still refused while the relay is off
-	res, _ := h.call("GET", "/library/sections")
+	res, _ := h.call("GET", "/identity")
 	if res.Err == nil || res.Err.Code != CodeOff {
 		t.Fatalf("a node with the relay off: %+v", res)
 	}

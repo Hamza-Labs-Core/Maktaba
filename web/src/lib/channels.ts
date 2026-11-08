@@ -606,7 +606,7 @@ export interface PlexLiveTuner {
   uri: string;
   device_id: string;
   title: string;
-  kind: "maktaba" | "dizquetv" | "other";
+  kind: "maktaba" | "other";
   in_dvr?: boolean;
 }
 
@@ -634,7 +634,6 @@ export interface PlexLiveReport {
     /** in a DVR of its own, which Plex's settings page does not show */
     separate_dvr?: boolean;
   };
-  dizquetv_present?: boolean;
   channels?: { lineup: number; mapped: number | null; in_sync: boolean | null };
   actions?: { register: string; channel_map: string; guide: string };
   warnings?: string[];

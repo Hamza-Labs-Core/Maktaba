@@ -24,7 +24,7 @@ The page has these parts, top to bottom:
 
 1. Open **Start a run**.
 1. Under **Libraries**, pick **All libraries** or **Only the libraries ticked below**.
-1. Under **Write to and read from**, tick what Maktaba may touch: **Season collections in Plex**, **dizqueTV shows and TV channels**, **Read YouTube playlists and dates**, and **Exact upload dates** (slow: one request per video). An extension that is not set up shows **Not set up**; set it up in [Extensions](/admin/extensions) first.
+1. Under **Write to and read from**, tick what Maktaba may touch: **Maktaba's channels in Plex Live TV**, **Read YouTube playlists and dates**, and **Exact upload dates** (slow: one request per video). An extension that is not set up shows **Not set up**; set it up in [Extensions](/admin/extensions) first.
 1. Under **Steps**, choose **Start at**. Leave **the first step** to run each library from its first queues, skipping what has not changed. Pick a step to redo that step and everything after it.
 1. Under **Leave out**, tick steps you do not want to run.
 1. Read the summary line and press **Start run**.
@@ -60,7 +60,7 @@ Queues that use the same resource share a pool of workers (for example **NAS rea
 
 ### Review before writing {#review-mode}
 
-Queues that write to other systems (Plex, dizqueTV, subtitle files next to your videos, repaired files) show **Writes to other systems** on their page:
+Queues that write to other systems (Plex, subtitle files next to your videos, repaired files) show **Writes to other systems** on their page:
 
 - **Automatic**: the change is written as soon as it is ready.
 - **Review first**: the change is prepared but not written. The queue shows **Waiting for your review**, and **Needs attention** shows a group with **Apply**. Press **Apply** to write every waiting change of that queue. A plan that changed since it was prepared is held for review again.
@@ -71,7 +71,7 @@ Click an item's name anywhere (in Needs attention, Next up, the log) to open its
 
 ### Reports {#reports}
 
-**Reports** lists the pages the pipeline writes: **Channel plan**, **Plan preview**, **Channel audit**, **Library review pages** and **Other reports**. Pick one to read it on the page, or **Open in a new tab**. An admin can press **Preview channels** to plan the channels with the saved settings without writing anything, and **Show the stored plan** to see the last real plan.
+**Reports** lists the pages the pipeline writes: **Channel plan**, **Plan preview**, **Library review pages** and **Other reports**. Pick one to read it on the page, or **Open in a new tab**. An admin can press **Preview channels** to plan the channels with the saved settings without writing anything, and **Show the stored plan** to see the last real plan.
 
 ### Keep libraries offline, in MP4 and without duplicates {#offline}
 
@@ -180,7 +180,7 @@ The queue is off: you left it out in **Start a run**, or its extension is switch
 
 ### Not set up {#waiting-not-configured}
 
-The queue belongs to an extension (Plex or dizqueTV) that is not set up yet. Open [Extensions](/admin/extensions), fill in its settings and press **Test connection**.
+The queue belongs to an extension (such as Plex) that is not set up yet. Open [Extensions](/admin/extensions), fill in its settings and press **Test connection**.
 
 ### Its component is off {#waiting-component-off}
 
@@ -218,9 +218,9 @@ Some steps wait a short while after a change so that many changes are handled in
 
 A job failed and Maktaba waits before trying again: about 1 minute after the first failure, 2 after the second, longer after that, never more than about an hour. It retries by itself.
 
-### Plex or dizqueTV not answering, retrying {#waiting-service-retrying}
+### Plex not answering, retrying {#waiting-service-retrying}
 
-Plex or dizqueTV did not answer, so jobs of this queue wait and try again later by themselves. If it lasts, check that the server is running and reachable, and use **Test connection** in [Extensions](/admin/extensions).
+Plex (or another service a queue uses) did not answer, so jobs of this queue wait and try again later by themselves. If it lasts, check that the server is running and reachable, and use **Test connection** in [Extensions](/admin/extensions).
 
 ### Waiting for earlier steps {#waiting-upstream}
 

@@ -112,7 +112,7 @@ func TestAPluginReachesPlexThroughTheDoorWithoutTheToken(t *testing.T) {
 	if code, c, _ := call("plex", "GET", "/livetv/dvrs?X-Plex-Token=mine"); code != 403 || c != CodeServicePath {
 		t.Fatalf("a token in the query: %d %s", code, c)
 	}
-	if code, c, _ := call("dizquetv", "GET", "/api/channels"); code != 403 || c != CodeCapability {
+	if code, c, _ := call("cloudflare_stream", "GET", "/accounts"); code != 403 || c != CodeCapability {
 		t.Fatalf("a service the manifest does not list: %d %s", code, c)
 	}
 

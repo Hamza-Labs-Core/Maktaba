@@ -212,12 +212,14 @@ SELECT w.stage, c.n
         WHERE j.stage = w.stage AND j.state = 'done' AND j.finished_at >= w.since) c
  WHERE c.n > 0`
 
-const runningJobsSQLTail = ` WHERE j.state IN ('claimed','running','resuming')`
+var runningJobsSQLTail = ` WHERE j.state IN ('claimed','running','resuming')
+   AND ` + components.NotRetiredStageSQL("j.stage")
 
-const flowsSQL = `
+var flowsSQL = `
 SELECT triggered_by_stage, stage, count(*)
   FROM processing_jobs
  WHERE created_at > $1 AND triggered_by_stage IS NOT NULL
+   AND ` + components.NotRetiredStageSQL("stage") + ` AND ` + components.NotRetiredStageSQL("triggered_by_stage") + `
  GROUP BY triggered_by_stage, stage`
 
 func (h *Handler) loadLiveCounts(ctx context.Context, now time.Time) (map[string]liveCounts, error) {

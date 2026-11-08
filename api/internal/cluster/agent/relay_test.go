@@ -95,14 +95,14 @@ func TestRelayThroughTheChannel(t *testing.T) {
 	f := newFixture(t, withDoor(srv.URL))
 	a, nodeID := f.node("mac")
 
-	done, body := relayCall(t, a, "r1", "GET", "/library/sections")
+	done, body := relayCall(t, a, "r1", "GET", "/identity")
 	if errCode(done) != "" || done["status"].(float64) != 200 || done["content_type"] != "application/json" {
 		t.Fatalf("done %v", done)
 	}
 	if strings.Contains(body, relaySecret) || !strings.Contains(body, `"thumb":"/t?"`) || len(body) < 3000 {
 		t.Fatalf("body %.200s", body)
 	}
-	if got := plex.calls(); len(got) != 1 || got[0] != "GET /library/sections "+relaySecret {
+	if got := plex.calls(); len(got) != 1 || got[0] != "GET /identity "+relaySecret {
 		t.Fatalf("plex saw %v", got)
 	}
 
@@ -138,7 +138,7 @@ func TestRelayThroughTheChannel(t *testing.T) {
 	for _, h := range st.HomeOnly {
 		homeOnly = append(homeOnly, h.Name)
 	}
-	if strings.Join(homeOnly, ",") != "cloudflare_stream,dizquetv" {
+	if strings.Join(homeOnly, ",") != "cloudflare_stream" {
 		t.Fatalf("home only %v", homeOnly)
 	}
 }

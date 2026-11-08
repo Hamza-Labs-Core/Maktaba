@@ -79,22 +79,10 @@ func TestTheHomesServicesAnswerFromTheNewHome(t *testing.T) {
 	if got := checkService(ctx, db, store, plexService, ""); got.State != NeedsYou || got.Detail != "no_address" {
 		t.Fatalf("Plex without an address: %+v", got)
 	}
-	// dizqueTV off, then answering
-	set("dizquetv", "http://127.0.0.2:1", false)
-	if got := checkService(ctx, db, store, dizquetvService, ""); got.State != NotUsed {
-		t.Fatalf("dizqueTV off: %+v", got)
-	}
-	dz := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/channels" {
-			_, _ = w.Write([]byte(`[]`))
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer dz.Close()
-	set("dizquetv", dz.URL, true)
-	if got := checkService(ctx, db, store, dizquetvService, ""); got.State != Moved {
-		t.Fatalf("dizqueTV: %+v", got)
+	// switched off: not used
+	set("plex", plex.URL, false)
+	if got := checkService(ctx, db, store, plexService, ""); got.State != NotUsed {
+		t.Fatalf("Plex off: %+v", got)
 	}
 }
 

@@ -49,7 +49,7 @@ function setup(data: RulesResponse = fixture()) {
   return renderAt(<RulesSection />, "/settings/rules");
 }
 
-// A TV section shaped like the served schema (tv + dizquetv rules): a
+// A TV section shaped like the served schema (tv + planner rules): a
 // live-broadcast table, a time kept as text, bounded and weight numbers,
 // and a long group whose settings share name prefixes.
 const LIVE_COLUMNS = [
@@ -80,7 +80,7 @@ function withTv(data: RulesResponse = fixture()): RulesResponse {
       label,
       default: d,
       minimum: 0,
-      group: "dizqueTV",
+      group: "Schedule and look",
     });
   data.sections.push({
     key: "tv",
@@ -108,39 +108,39 @@ function withTv(data: RulesResponse = fixture()): RulesResponse {
       }),
       tvField({ name: "loudnorm", kind: "bool", label: "Even loudness", default: true }),
       tvField({
-        name: "dz_lateness_ms",
+        name: "dz_filler_cooldown_ms",
         kind: "int",
-        label: "Allowed lateness (ms)",
+        label: "Filler cooldown (ms)",
         default: 86400000,
         minimum: 0,
-        group: "dizqueTV",
+        group: "Schedule and look",
       }),
       tvField({
-        name: "dz_max_days",
+        name: "dz_filler_max_items",
         kind: "int",
-        label: "Schedule length (days)",
+        label: "Most filler items",
         default: 365,
         minimum: 1,
-        group: "dizqueTV",
+        group: "Schedule and look",
       }),
       tvField({
-        name: "dz_pad_ms",
+        name: "dz_watermark_margin",
         kind: "int",
-        label: "Pad (ms)",
+        label: "Corner logo margin (%)",
         default: 1,
         minimum: 0,
-        group: "dizqueTV",
+        group: "Schedule and look",
       }),
       weight("topic", "Filler weight: the channel's topic clips", 300),
       weight("promos", "Filler weight: its shows' promos", 150),
       weight("breaks", "Filler weight: breaks", 200),
       weight("general", "Filler weight: general clips", 100),
       tvField({
-        name: "dz_art_url",
+        name: "dz_logo_dir",
         kind: "str",
-        label: "Logos web address",
+        label: "Logos folder",
         default: "",
-        group: "dizqueTV",
+        group: "Schedule and look",
       }),
     ],
   });
@@ -386,8 +386,8 @@ describe("RulesSection", { timeout: 20_000 }, () => {
     expect(screen.getByRole("group", { name: "Khutbah day" })).toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "Shortest slot (min)" })).not.toBeInTheDocument();
     await userEvent.clear(search);
-    await userEvent.type(search, "dz_pad");
-    expect(screen.getByRole("group", { name: "Pad (ms)" })).toBeInTheDocument();
+    await userEvent.type(search, "dz_filler");
+    expect(screen.getByRole("group", { name: "Filler cooldown (ms)" })).toBeInTheDocument();
     await userEvent.clear(search);
     await userEvent.type(search, "zzz-nothing");
     expect(screen.getByText("No rule matches “zzz-nothing”.")).toBeInTheDocument();
@@ -502,7 +502,7 @@ describe("RulesSection", { timeout: 20_000 }, () => {
     const topic = await rule("Filler weight: the channel's topic clips");
     fireEvent.change(within(topic).getByRole("slider"), { target: { value: "450" } });
     // a duration in ms says its unit and how long that is
-    const lateness = await rule("Allowed lateness (ms)");
+    const lateness = await rule("Filler cooldown (ms)");
     expect(within(lateness).getByText("ms")).toBeInTheDocument();
     expect(within(lateness).getByText("≈ 1 days")).toBeInTheDocument();
     patch.mockResolvedValue({ section: "tv", changed: [] });
@@ -587,18 +587,18 @@ describe("RulesSection", { timeout: 20_000 }, () => {
   it("folds groups and splits a long group by its settings' shared prefix", async () => {
     setup(withTv());
     await openTv();
-    const heading = await screen.findByRole("heading", { name: "dizqueTV" });
+    const heading = await screen.findByRole("heading", { name: "Schedule and look" });
     // dz_weight_* (the dz_ namespace skipped) form a sub-group named by their labels
     expect(screen.getByRole("heading", { name: "Filler weight" })).toBeInTheDocument();
-    const fold = within(heading).getByRole("button", { name: "dizqueTV" });
+    const fold = within(heading).getByRole("button", { name: "Schedule and look" });
     expect(fold).toHaveAttribute("aria-expanded", "true");
     await userEvent.click(fold);
     expect(fold).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("group", { name: "Pad (ms)" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Corner logo margin (%)" })).not.toBeInTheDocument();
     // the Maktaba TV group stays open
     expect(screen.getByRole("group", { name: "Volume" })).toBeInTheDocument();
     // a search opens every group
-    await userEvent.type(screen.getByRole("searchbox", { name: "Find a rule" }), "dz_pad");
-    expect(screen.getByRole("group", { name: "Pad (ms)" })).toBeInTheDocument();
+    await userEvent.type(screen.getByRole("searchbox", { name: "Find a rule" }), "dz_watermark_m");
+    expect(screen.getByRole("group", { name: "Corner logo margin (%)" })).toBeInTheDocument();
   });
 });

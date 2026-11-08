@@ -25,29 +25,6 @@ func DBSettings(db *sql.DB) func(ctx context.Context) (Settings, error) {
 	}
 }
 
-// DBArtBase reads rules.planner.dz_art_url: the logo host the dizqueTV plugin's hosted-logo
-// check may reach (issue #827).
-func DBArtBase(db *sql.DB) func(ctx context.Context) (string, error) {
-	return plannerURL(db, "dz_art_url")
-}
-
-// DBPublicBase reads rules.planner.dz_public_url: the address the TVs reach dizqueTV at,
-// which an uploaded logo's link carries (issue #827).
-func DBPublicBase(db *sql.DB) func(ctx context.Context) (string, error) {
-	return plannerURL(db, "dz_public_url")
-}
-
-func plannerURL(db *sql.DB, key string) func(ctx context.Context) (string, error) {
-	return func(ctx context.Context) (string, error) {
-		m, err := rules.Effective(ctx, db, "planner")
-		if err != nil {
-			return "", err
-		}
-		s, _ := m[key].(string)
-		return strings.TrimSpace(s), nil
-	}
-}
-
 // DBUpstream reads an extension's row (enabled, its address) and its
 // secret from home_secrets (only the home's API holds the key).
 func DBUpstream(db *sql.DB, store secrets.Store, getenv func(string) string) func(ctx context.Context, ext *Extension) (Upstream, error) {
@@ -68,7 +45,7 @@ func DBUpstream(db *sql.DB, store secrets.Store, getenv func(string) string) fun
 			up.URL = strings.TrimSpace(getenv(ext.URLEnv))
 		}
 		if store == nil || ext.SecretName == "" {
-			return up, nil // dizqueTV keeps no secret of its own
+			return up, nil
 		}
 		v, err := store.Get(ctx, ext.SecretName)
 		switch {

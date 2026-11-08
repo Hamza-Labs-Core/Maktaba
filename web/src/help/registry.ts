@@ -151,7 +151,6 @@ export const KNOWN_CAUSES = [
   "youtube_unavailable",
   "plex_unreachable",
   "plex_auth",
-  "dizquetv_unreachable",
   "readback_mismatch",
   "no_handler",
   "graph_violation",

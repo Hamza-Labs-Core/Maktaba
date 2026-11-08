@@ -171,13 +171,13 @@ func TestPatchStage(t *testing.T) {
 	}{
 		{"disable", `{"enabled":false}`, stageRow("probe", "episodes", 1, "nas_read"), 200, []any{false, nil}},
 		{"enable", `{"enabled":true}`, stageRow("probe", "episodes", 1, "nas_read", withDisabled("operator")), 200, []any{true, nil}},
-		{"write mode on external stage", `{"write_mode":"review"}`, stageRow("plex_collection", "seasons", 4, "network_plex", withExternal()), 200, []any{nil, "review"}},
-		{"write mode auto accepted", `{"write_mode":"auto"}`, stageRow("plex_collection", "seasons", 4, "network_plex", withExternal()), 200, []any{nil, "auto"}},
+		{"write mode on external stage", `{"write_mode":"review"}`, stageRow("plex_livetv", "channels", 3, "network_plex", withExternal()), 200, []any{nil, "review"}},
+		{"write mode auto accepted", `{"write_mode":"auto"}`, stageRow("plex_livetv", "channels", 3, "network_plex", withExternal()), 200, []any{nil, "auto"}},
 		{"write mode on core stage", `{"write_mode":"review"}`, stageRow("probe", "episodes", 1, "nas_read"), 400, nil},
-		{"bad write mode", `{"write_mode":"yolo"}`, stageRow("plex_collection", "seasons", 4, "network_plex", withExternal()), 400, nil},
+		{"bad write mode", `{"write_mode":"yolo"}`, stageRow("plex_livetv", "channels", 3, "network_plex", withExternal()), 400, nil},
 		{"empty body", `{}`, stageRow("probe", "episodes", 1, "nas_read"), 400, nil},
 		{"unknown field", `{"paused":true}`, stageRow("probe", "episodes", 1, "nas_read"), 400, nil},
-		{"cannot enable an unconfigured stage", `{"enabled":true}`, stageRow("plex_collection", "seasons", 4, "network_plex", withExternal(), withDisabled("not_configured")), 409, nil},
+		{"cannot enable an unconfigured stage", `{"enabled":true}`, stageRow("plex_livetv", "channels", 3, "network_plex", withExternal(), withDisabled("not_configured")), 409, nil},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -378,7 +378,7 @@ func TestRetry(t *testing.T) {
 }
 
 func TestApply(t *testing.T) {
-	ext := stageRow("plex_collection", "seasons", 4, "network_plex", withExternal())
+	ext := stageRow("plex_livetv", "channels", 3, "network_plex", withExternal())
 	reviewRows := &queuestest.Rule{Match: "outcome = 'awaiting_review'", Cols: []string{"id", "kind", "sid", "hash"},
 		Rows: [][]driver.Value{{int64(31), "season", uidA, `["d1","d2"]`}, {int64(32), "season", uidB, "[]"}}}
 	tests := []struct {
@@ -565,16 +565,16 @@ func TestExtensions(t *testing.T) {
 		}
 		var out struct{ Extensions []Extension }
 		decode(t, rec, &out)
-		if len(out.Extensions) != 4 || out.Extensions[0].Name != "cloudflare_stream" || out.Extensions[1].Name != "dizquetv" {
+		if len(out.Extensions) != 3 || out.Extensions[0].Name != "cloudflare_stream" || out.Extensions[1].Name != "plex" {
 			t.Fatalf("extensions = %+v", out.Extensions)
 		}
-		plex := out.Extensions[2]
+		plex := out.Extensions[1]
 		if !plex.Enabled || !plex.Configured || plex.Settings["token"] != SecretMask || plex.SecretsSet[0] != "token" {
 			t.Errorf("plex = %+v", plex)
 		}
-		dq := out.Extensions[1]
-		if dq.Enabled || dq.Configured {
-			t.Errorf("dizquetv without a row must be disabled+unconfigured: %+v", dq)
+		cf := out.Extensions[0]
+		if cf.Enabled || cf.Configured {
+			t.Errorf("cloudflare_stream without a row must be disabled+unconfigured: %+v", cf)
 		}
 	})
 
@@ -591,7 +591,7 @@ func TestExtensions(t *testing.T) {
 		}
 		var out struct{ Extensions []Extension }
 		decode(t, rec, &out)
-		cfx, plex := out.Extensions[0], out.Extensions[2]
+		cfx, plex := out.Extensions[0], out.Extensions[1]
 		if !plex.Configured || plex.Settings["token"] != SecretMask || len(plex.SecretsSet) != 1 {
 			t.Errorf("plex = %+v", plex)
 		}

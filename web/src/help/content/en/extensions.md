@@ -1,13 +1,12 @@
 # Extensions
 
-Connect Maktaba to the other services it can work with: Plex, dizqueTV, Cloudflare Stream and web search. Switch each on or off, fill in its settings and test the connection.
+Connect Maktaba to the other services it can work with: Plex (for Live TV), Cloudflare Stream and web search. Switch each on or off, fill in its settings and test the connection.
 
 ## What it is {#what-it-is}
 
 Maktaba works on its own. Extensions are optional add-ons that let it use another service:
 
-- **Plex**: keeps Plex collections in step with the seasons Maktaba finds, and puts Maktaba's channels in Plex Live TV. See [Plex](/help/plex).
-- **dizqueTV**: writes the planned channels into a dizqueTV server and checks what they air. See [dizqueTV](/help/dizquetv).
+- **Plex**: puts Maktaba's channels in Plex Live TV and keeps them up to date. See [Plex](/help/plex).
 - **Cloudflare Stream**: lets people watch the channels away from home and powers simulcast. See [Watching away from home](/help/remote-tv).
 - **Web search**: lets **Find metadata** search the web for a video. See [Metadata](/help/metadata).
 
@@ -31,17 +30,13 @@ The **Enabled** switch at the top right of each card turns the extension on or o
 
 ### Plex {#plex}
 
-Fields: **Plex URL**, **Plex token** and an optional **Path map** (how Plex sees the paths of your files). The easiest way is **Sign in with Plex**:
+Fields: **Plex URL** and **Plex token**. The easiest way is **Sign in with Plex**:
 
 1. Click **Sign in with Plex**. A Plex window opens; sign in there. If no window opens, use the link shown.
 2. Back in Maktaba, under **Choose the Plex server to use**, pick a server and click **Use this server**.
 3. Maktaba saves the address and token and says **Connected to Plex server** with its name.
 
 Then run **Test connection**. More in [Plex](/help/plex).
-
-### dizqueTV {#dizquetv}
-
-One field: **dizqueTV URL**, the address of your dizqueTV server. dizqueTV plays from Plex, so the Plex extension must be set up too. More in [dizqueTV](/help/dizquetv).
 
 ### Cloudflare Stream {#cloudflare}
 
@@ -53,7 +48,7 @@ Fields: a **Google API key** with a **Search engine ID (cx)** for Google Program
 
 ### The extension relay {#relay}
 
-Your Plex token stays on your home server. When another machine of yours runs the Plex steps, it sends its Plex calls through the home, which adds the token, so the token never leaves the home. This is the **Extension relay**, on by default. In [Settings → Rules](/settings/rules), section **Extension relay**, you can switch it off (then those steps run on the home only) or set limits per machine: calls a minute, burst, calls at once, largest answer and time limit per call. See [the rules reference](/help/rules#relay).
+Your Plex token stays on your home server. When another machine of yours runs the Plex Live TV step, it sends its Plex calls through the home, which adds the token, so the token never leaves the home. This is the **Extension relay**, on by default. In [Settings → Rules](/settings/rules), section **Extension relay**, you can switch it off (then that step runs on the home only) or set limits per machine: calls a minute, burst, calls at once, largest answer and time limit per call. See [the rules reference](/help/rules#relay).
 
 ## Checks {#checks}
 
@@ -66,14 +61,6 @@ Your Plex token stays on your home server. When another machine of yours runs th
 - **Server**: the server's name and version (optional).
 - **Live TV**: Live TV is available on the server and how many DVRs it has. It needs Plex Pass on the server owner's account (optional).
 - **Maktaba's tuner in Plex**: whether Maktaba's tuner is added to Plex Live TV (optional).
-- **dizqueTV's tuner in Plex**: whether a dizqueTV tuner is there too (optional, for information).
-- **Path map**: whether your library's folders are folders of a Plex library, using the path map (optional).
-
-### dizqueTV checks {#dizquetv-checks}
-
-- **Server reachable**: Maktaba reached dizqueTV and it answered as dizqueTV, with its version.
-- **Channels**: how many channels dizqueTV has.
-- **Plex servers in dizqueTV**: the Plex servers registered in dizqueTV, and whether one is the same Plex Maktaba uses (optional).
 
 ### Cloudflare Stream checks {#cloudflare-checks}
 
@@ -110,7 +97,7 @@ Its steps wait with **Switched off** and run when you switch it back on. Nothing
 
 ### Does the Plex token reach my other machines? {#faq-relay}
 
-No. With the extension relay on, the home adds the token to their Plex calls; with it off, the Plex steps run on the home only.
+No. With the extension relay on, the home adds the token to their Plex calls; with it off, the Plex Live TV step runs on the home only.
 
 ## When something goes wrong {#troubleshooting}
 
@@ -140,9 +127,9 @@ No. With the extension relay on, the home adds the token to their Plex calls; wi
 
 ### Answered, but not as the expected service {#bad-answer}
 
-- **What it means:** something answered at that address, but it is not Plex or dizqueTV.
+- **What it means:** something answered at that address, but it is not the expected service (for example not Plex).
 - **Does Maktaba fix it itself?** No.
-- **What you can do:** check the port and the address. Plex usually listens on 32400 and dizqueTV on 8000.
+- **What you can do:** check the port and the address. Plex usually listens on 32400.
 
 ### Plex sign-in timed out. Try again. {#plex-signin-timeout}
 

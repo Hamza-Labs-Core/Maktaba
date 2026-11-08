@@ -18,7 +18,6 @@ public enum QueueWords {
         "enrich": "Details lookup",
         "youtube": "YouTube",
         "ext.plex": "Plex",
-        "ext.dizquetv": "dizqueTV",
         "livetv": "Live TV",
     ]
 

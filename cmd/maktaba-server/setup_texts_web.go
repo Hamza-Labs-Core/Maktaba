@@ -143,7 +143,7 @@ var webSetupTexts = map[string][2]string{
 	"setup.models.nasPath":                      {"Folder with the models", "المجلد الذي فيه النماذج"},
 	"setup.models.title":                        {"Transcription models", "نماذج التفريغ"},
 	"setup.plex.enterCode":                      {"Enter this code at {url}:", "أدخل هذا الرمز في {url}:"},
-	"setup.plex.intro":                          {"Sign in to Plex to bring in your Plex libraries and watch history. You can do this later in Settings.", "سجّل الدخول إلى Plex لجلب مكتبات Plex وسجل المشاهدة. يمكنك فعل ذلك لاحقًا من الإعدادات."},
+	"setup.plex.intro":                          {"Sign in to Plex to add Maktaba's channels to Plex Live TV. You can do this later in Settings.", "سجّل الدخول إلى Plex لإضافة قنوات مكتبة إلى Live TV في Plex. يمكنك فعل ذلك لاحقًا من الإعدادات."},
 	"setup.plex.title":                          {"Plex (optional)", "Plex (اختياري)"},
 	"setup.plex.waiting":                        {"Waiting for Plex…", "بانتظار Plex…"},
 	"setup.storage.folder":                      {"Folder", "المجلد"},

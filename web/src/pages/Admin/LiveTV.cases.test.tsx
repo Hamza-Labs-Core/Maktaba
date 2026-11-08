@@ -80,16 +80,21 @@ const plexStatus = {
   dvrs: [
     {
       key: "11",
-      title: "dizqueTV",
+      title: "Antenna",
       lineup: "lineup://x",
       maktaba: false,
       devices: [
-        { key: "3", uri: "http://pc:8000", device_id: "D1", title: "dizqueTV", kind: "dizquetv" },
+        {
+          key: "3",
+          uri: "http://192.0.2.30:5004",
+          device_id: "D1",
+          title: "HDHomeRun antenna",
+          kind: "other",
+        },
       ],
     },
   ],
   maktaba: { tuner_key: null, dvr_key: null, registered: false },
-  dizquetv_present: true,
   channels: { lineup: 3, mapped: null, in_sync: null },
   target: {
     tuner_url: "http://192.0.2.20:8782",
@@ -1284,12 +1289,12 @@ describe("AdminLiveTV (test-cases/admin-live-tv.md)", () => {
     [
       "a DVR with devices null",
       plexWith({ ...plexStatus, dvrs: [{ ...plexStatus.dvrs[0], devices: null }] }),
-      (c) => expect(within(c).getByText("dizqueTV: —")).toBeInTheDocument(),
+      (c) => expect(within(c).getByText("Antenna: —")).toBeInTheDocument(),
     ],
     [
       "a DVR with devices missing",
       plexWith({ ...plexStatus, dvrs: [without(plexStatus.dvrs[0], "devices")] }),
-      (c) => expect(within(c).getByText("dizqueTV: —")).toBeInTheDocument(),
+      (c) => expect(within(c).getByText("Antenna: —")).toBeInTheDocument(),
     ],
     [
       "warnings null",

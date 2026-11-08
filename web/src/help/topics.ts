@@ -39,7 +39,7 @@ export const HELP_CATEGORIES = [
       "components",
     ],
   },
-  { id: "connections", topics: ["extensions", "plex", "dizquetv"] },
+  { id: "connections", topics: ["extensions", "plex"] },
   { id: "rules", topics: ["rules"] },
 ] as const;
 

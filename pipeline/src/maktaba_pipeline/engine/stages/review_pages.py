@@ -1,7 +1,7 @@
 """``review_pages``: one HTML page per library to review its seasons by eye.
 
 Ported from mediaintel's ``report`` step, which runs on its own thread so the
-Plex and dizqueTV writes never wait for it. Here that independence is structural:
+stages that write never wait for it. Here that independence is structural:
 the stage has its own pool (``reports``, one at a time), nothing depends on it
 (no edges out), and it reads only the database and the small thumbnails
 ``thumb_small`` made. A slow page never holds a ``cpu`` or ``network_*`` slot.

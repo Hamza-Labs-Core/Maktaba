@@ -30,10 +30,10 @@ describe("AdminExtensions", () => {
     expect(within(plex).getByText("version 1.2.0")).toBeInTheDocument();
     expect(within(plex).getByText("Configured")).toBeInTheDocument();
     expect(within(plex).getByLabelText(/Server address/)).toHaveValue("http://192.0.2.10:32400");
-    const dz = screen.getByRole("heading", { name: "dizqueTV" }).closest("section")!;
-    expect(within(dz).getByText("Not configured")).toBeInTheDocument();
-    expect(within(dz).getByRole("switch", { name: "Enabled" })).not.toBeChecked();
-    expect(within(dz).getByRole("checkbox", { name: "Also mirror channels" })).toBeInTheDocument();
+    const search = screen.getByRole("heading", { name: "Web search" }).closest("section")!;
+    expect(within(search).getByText("Not configured")).toBeInTheDocument();
+    expect(within(search).getByRole("switch", { name: "Enabled" })).not.toBeChecked();
+    expect(within(search).getByLabelText("Search engine ID (cx)")).toBeInTheDocument();
   });
 
   it("shows secrets masked and write-only", async () => {
@@ -47,23 +47,23 @@ describe("AdminExtensions", () => {
     put.mockResolvedValue(extensionsFixture[0]);
     await userEvent.click(within(plex).getByRole("button", { name: "Save settings" }));
     expect(put).toHaveBeenCalledWith("/api/extensions/plex", {
-      settings: { url: "http://192.0.2.10:32400", path_map: "/data=Z:/" },
+      settings: { url: "http://192.0.2.10:32400" },
     });
     // typing one sends it
     await userEvent.type(token, "new-token");
     await userEvent.click(within(plex).getByRole("button", { name: "Save settings" }));
     expect(put).toHaveBeenLastCalledWith("/api/extensions/plex", {
-      settings: { url: "http://192.0.2.10:32400", path_map: "/data=Z:/", token: "new-token" },
+      settings: { url: "http://192.0.2.10:32400", token: "new-token" },
     });
     expect(await within(plex).findAllByText("Settings saved.")).not.toHaveLength(0);
   });
 
   it("toggles an extension on", async () => {
     setup();
-    const dz = (await screen.findByRole("heading", { name: "dizqueTV" })).closest("section")!;
+    const search = (await screen.findByRole("heading", { name: "Web search" })).closest("section")!;
     put.mockResolvedValue({ ...extensionsFixture[1], enabled: true });
-    await userEvent.click(within(dz).getByRole("switch", { name: "Enabled" }));
-    expect(put).toHaveBeenCalledWith("/api/extensions/dizquetv", { enabled: true });
+    await userEvent.click(within(search).getByRole("switch", { name: "Enabled" }));
+    expect(put).toHaveBeenCalledWith("/api/extensions/web_search", { enabled: true });
   });
 
   it("tests the connection and reports the result", async () => {
@@ -75,7 +75,7 @@ describe("AdminExtensions", () => {
     expect(await within(plex).findByText(/Connection failed: 401 from Plex/)).toBeInTheDocument();
   });
 
-  it("lists each check of a Plex or dizqueTV test inline", async () => {
+  it("lists each check of an extension's test inline", async () => {
     setup();
     const plex = (await screen.findByRole("heading", { name: "Plex" })).closest("section")!;
     post.mockResolvedValue({
@@ -105,17 +105,17 @@ describe("AdminExtensions", () => {
     expect(items[2]).toHaveTextContent("Live TV");
     expect(items[2]).toHaveTextContent("not checked");
 
-    const dz = screen.getByRole("heading", { name: "dizqueTV" }).closest("section")!;
+    const search = screen.getByRole("heading", { name: "Web search" }).closest("section")!;
     post.mockResolvedValue({
       ok: true,
-      message: "dizqueTV is ready",
+      message: "Web search is ready",
       checked_at: "2026-10-19T10:00:00Z",
-      lines: [{ key: "channels", ok: true, detail: "4 channels" }],
+      lines: [{ key: "search", ok: true, detail: "3 results" }],
     });
-    await userEvent.click(within(dz).getByRole("button", { name: "Test connection" }));
-    expect(post).toHaveBeenLastCalledWith("/api/extensions/dizquetv/test");
-    const dzList = await within(dz).findByRole("list", { name: "Connection checks" });
-    expect(within(dzList).getByRole("listitem")).toHaveTextContent("Channels");
+    await userEvent.click(within(search).getByRole("button", { name: "Test connection" }));
+    expect(post).toHaveBeenLastCalledWith("/api/extensions/web_search/test");
+    const searchList = await within(search).findByRole("list", { name: "Connection checks" });
+    expect(within(searchList).getByRole("listitem")).toHaveTextContent("Web search");
   });
 });
 

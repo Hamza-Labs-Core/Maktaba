@@ -14,26 +14,24 @@ import (
 // LibraryCollections is the part of a library's story that is not a season
 // (the stand-alone item page's "Topics, clips and promos"): the topic
 // collections, the clip and stand-alone groups and the promo links of one
-// library, each with the Plex collection written for it when there is one.
+// library.
 
 const promoListMax = 500
 
 // TopicCollection is one topic (playlist) collection.
 type TopicCollection struct {
-	ID         string  `json:"id"`
-	Name       string  `json:"name"`
-	Items      int     `json:"items"`
-	Collection *string `json:"collection"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Items int    `json:"items"`
 }
 
 // ClipGroup is one clip or stand-alone group.
 type ClipGroup struct {
-	ID         string  `json:"id"`
-	Kind       string  `json:"kind"`  // clips | standalone
-	Basis      string  `json:"basis"` // playlist | topic | rest | promo
-	Title      string  `json:"title"`
-	Items      int     `json:"items"`
-	Collection *string `json:"collection"`
+	ID    string `json:"id"`
+	Kind  string `json:"kind"`  // clips | standalone
+	Basis string `json:"basis"` // playlist | topic | rest | promo
+	Title string `json:"title"`
+	Items int    `json:"items"`
 }
 
 // PromoLink is a promo linked to the show it advertises.
@@ -54,23 +52,19 @@ type LibraryCollectionsResponse struct {
 }
 
 const topicsSQL = `
-SELECT t.id::text, t.name, count(i.video_id), el.title
+SELECT t.id::text, t.name, count(i.video_id)
   FROM topic_collections t
   LEFT JOIN topic_items i ON i.topic_id = t.id
-  LEFT JOIN external_links el ON el.target = 'plex_topic' AND el.subject_kind = 'topic'
-                              AND el.subject_id = t.id::text
  WHERE t.library_id = $1::uuid
- GROUP BY t.id, t.name, el.title
+ GROUP BY t.id, t.name
  ORDER BY count(i.video_id) DESC, t.name`
 
 const clipGroupsSQL = `
-SELECT g.id::text, g.kind, g.basis, g.title, count(i.video_id), el.title
+SELECT g.id::text, g.kind, g.basis, g.title, count(i.video_id)
   FROM clip_groups g
   LEFT JOIN clip_group_items i ON i.group_id = g.id
-  LEFT JOIN external_links el ON el.target = 'plex_clip_group' AND el.subject_kind = 'clip_group'
-                              AND el.subject_id = g.id::text
  WHERE g.library_id = $1::uuid
- GROUP BY g.id, g.kind, g.basis, g.title, el.title
+ GROUP BY g.id, g.kind, g.basis, g.title
  ORDER BY g.kind, count(i.video_id) DESC, g.title`
 
 const promosSQL = `
@@ -110,13 +104,11 @@ func (h *Handler) LibraryCollections(w http.ResponseWriter, r *http.Request) {
 	}
 	for rows.Next() {
 		var t TopicCollection
-		var coll sql.NullString
-		if err := rows.Scan(&t.ID, &t.Name, &t.Items, &coll); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Items); err != nil {
 			_ = rows.Close()
 			writeErr(w, r, "topic collections", err)
 			return
 		}
-		t.Collection = nullStrPtr(coll)
 		out.Topics = append(out.Topics, t)
 	}
 	err = rows.Err()
@@ -133,13 +125,11 @@ func (h *Handler) LibraryCollections(w http.ResponseWriter, r *http.Request) {
 	}
 	for rows.Next() {
 		var g ClipGroup
-		var coll sql.NullString
-		if err := rows.Scan(&g.ID, &g.Kind, &g.Basis, &g.Title, &g.Items, &coll); err != nil {
+		if err := rows.Scan(&g.ID, &g.Kind, &g.Basis, &g.Title, &g.Items); err != nil {
 			_ = rows.Close()
 			writeErr(w, r, "clip groups", err)
 			return
 		}
-		g.Collection = nullStrPtr(coll)
 		out.ClipGroups = append(out.ClipGroups, g)
 	}
 	err = rows.Err()

@@ -41,12 +41,6 @@ type Rule struct {
 	HomeOnly bool
 	// Use names the client call that needs it (documentation).
 	Use string
-	// Verify, when set, is checked against the upstream before the call
-	// is forwarded (DELETE only removes collections).
-	Verify string
-	// Op, when set, names an operation the door serves itself instead of forwarding
-	// the call (dizqueTV's, issue #827: a projection read or a programme the door builds).
-	Op string
 }
 
 // KeyRule is a family of query parameters: a name pattern and its value's.
@@ -54,9 +48,6 @@ type KeyRule struct {
 	Name  *regexp.Regexp
 	Value *regexp.Regexp
 }
-
-// VerifyCollection: the rating key in the path must name a collection.
-const VerifyCollection = "collection"
 
 // Extension is a relayable extension: where its secret is, how it is
 // added, and its allow-list.
@@ -84,25 +75,11 @@ var HomeOnly = map[string]string{
 	// the calls are admin operations made by the home's API itself
 	// (api/internal/tvremote): no stage needs them on a node.
 	"cloudflare_stream": "the Cloudflare API token is used by the home's API only (admin operations)",
-	// dizqueTV holds no secret of its own, but its programmes carry the Plex token: the
-	// home's own plugin reaches it through the door's operations (DizqueTV), which build
-	// the programmes on the home; no node is ever relayed to it.
-	"dizquetv": "dizqueTV stages run on the home (programmes carry the Plex token)",
 }
 
 var (
-	digits   = regexp.MustCompile(`^[0-9]{1,12}$`)
-	digitsOK = regexp.MustCompile(`^[0-9]{0,12}$`)
-	flag01   = regexp.MustCompile(`^[01]$`)
-	// a collection member list: server://<machine>/com.plexapp.plugins.library/library/metadata/<keys>
-	memberURI = regexp.MustCompile(`^server://[A-Za-z0-9-]{1,64}/com\.plexapp\.plugins\.library/library/metadata/[0-9]{1,12}(,[0-9]{1,12})*$`)
-	anyTitle  = regexp.MustCompile(`^[^\x00-\x1f]{1,512}$`)
-	labelTag  = regexp.MustCompile(`^[^\x00-\x1f]{1,128}$`)
-	only1     = regexp.MustCompile(`^1$`)
-	only0     = regexp.MustCompile(`^0$`)
-	only18    = regexp.MustCompile(`^18$`)
-	only2     = regexp.MustCompile(`^2$`)
-	itemType  = regexp.MustCompile(`^(1|4)$`)
+	anyTitle = regexp.MustCompile(`^[^\x00-\x1f]{1,512}$`)
+	only1    = regexp.MustCompile(`^1$`)
 	// Live TV: Maktaba's own HDHomeRun tuner and XMLTV guide
 	tunerURL      = regexp.MustCompile(`^https?://[A-Za-z0-9.\-\[\]:]{1,255}(/[^\x00-\x20]{0,512})?$`)
 	language      = regexp.MustCompile(`^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$`)
@@ -121,11 +98,10 @@ func q(pairs ...any) map[string]*regexp.Regexp {
 	return m
 }
 
-// Plex is the Plex extension: every call the node-placed stages
-// (plex_index, plex_collection, plex_groups) and the reachability probe
-// make through maktaba_pipeline.integrations.plex.PlexClient. Live TV
-// (/livetv, /media/grabbers) is absent on purpose: plex_livetv stays on the
-// home beside write_channels, so no node needs it.
+// Plex is the Plex extension (Plex Live TV is the only Plex integration Maktaba keeps): a
+// node may make the reachability probe only; the Live TV calls (/livetv, /media/grabbers)
+// are plex_livetv's, made by its plugin on the home beside write_channels, so they are
+// HomeOnly.
 var Plex = Extension{
 	Name:       "plex",
 	SecretName: "ext.plex.token",
@@ -135,31 +111,7 @@ var Plex = Extension{
 	QueryParam: "X-Plex-Token",
 	Rules: []Rule{
 		{Method: "GET", Path: "/identity", Re: regexp.MustCompile(`^/identity$`),
-			Use: "ping, machine_identifier"},
-		{Method: "GET", Path: "/library/sections", Re: regexp.MustCompile(`^/library/sections$`),
-			Use: "sections"},
-		{Method: "GET", Path: "/library/sections/{key}/all", Re: regexp.MustCompile(`^/library/sections/[0-9]{1,12}/all$`),
-			Query: q("type", itemType), Use: "section_listing"},
-		{Method: "GET", Path: "/library/sections/{key}/collections", Re: regexp.MustCompile(`^/library/sections/[0-9]{1,12}/collections$`),
-			Use: "collections"},
-		{Method: "GET", Path: "/library/metadata/{keys}", Re: regexp.MustCompile(`^/library/metadata/[0-9]{1,12}(,[0-9]{1,12}){0,49}$`),
-			Use: "metadata, item_section, collection_labels"},
-		{Method: "GET", Path: "/library/collections/{key}/children", Re: regexp.MustCompile(`^/library/collections/[0-9]{1,12}/children$`),
-			Use: "collection_children"},
-		{Method: "POST", Path: "/library/collections", Re: regexp.MustCompile(`^/library/collections$`),
-			Query:    q("type", only1, "title", anyTitle, "smart", only0, "sectionId", digits, "uri", memberURI),
-			Required: []string{"type", "title", "smart", "sectionId", "uri"}, Use: "create_collection"},
-		{Method: "PUT", Path: "/library/collections/{key}/items", Re: regexp.MustCompile(`^/library/collections/[0-9]{1,12}/items$`),
-			Query: q("uri", memberURI), Required: []string{"uri"}, Use: "create_collection (add members)"},
-		{Method: "PUT", Path: "/library/collections/{key}/items/{item}/move", Re: regexp.MustCompile(`^/library/collections/[0-9]{1,12}/items/[0-9]{1,12}/move$`),
-			Query: q("after", digitsOK), Use: "create_collection (order)"},
-		{Method: "PUT", Path: "/library/metadata/{key}/prefs", Re: regexp.MustCompile(`^/library/metadata/[0-9]{1,12}/prefs$`),
-			Query: q("collectionSort", only2), Required: []string{"collectionSort"}, Use: "create_collection (custom order)"},
-		{Method: "PUT", Path: "/library/sections/{key}/all (labels of a collection)", Re: regexp.MustCompile(`^/library/sections/[0-9]{1,12}/all$`),
-			Query:    q("type", only18, "id", digits, "label[0].tag.tag", labelTag, "label.locked", flag01),
-			Required: []string{"type", "id", "label[0].tag.tag"}, Use: "add_label"},
-		{Method: "DELETE", Path: "/library/metadata/{key} (collections only)", Re: regexp.MustCompile(`^/library/metadata/[0-9]{1,12}$`),
-			Verify: VerifyCollection, Use: "delete_metadata (a collection)"},
+			Use: "ping"},
 		// Live TV (story 54.35): what plex_livetv calls, from its plugin on the home only
 		// (the stage is home-placed; no node makes these calls)
 		{Method: "GET", Path: "/livetv/dvrs", Re: regexp.MustCompile(`^/livetv/dvrs$`),
@@ -195,72 +147,8 @@ var Plex = Extension{
 	},
 }
 
-var (
-	dzID      = `[A-Za-z0-9_-]{1,64}`
-	dzNumber  = `[0-9]{1,6}`
-	httpURL   = regexp.MustCompile(`^https?://[^\x00-\x20]{1,1000}$`)
-	dzMaxBody = 48 << 20
-)
-
-// DizqueTV is dizqueTV as the home's own tv.maktaba.dizquetv reaches it (issue #827). Every
-// rule is HomeOnly. A programme body is never read or written raw: the reads are the door's
-// projections (Op), with no secret in them, and a show, filler list or channel is written
-// through an operation that builds or fills its programmes on the home (dizquetv.go). The raw
-// calls left answer with what the plugin sent (the time-slot tool), a link, or nothing.
-var DizqueTV = Extension{
-	Name:       "dizquetv",
-	URLKey:     "url",
-	URLEnv:     "MAKTABA_DIZQUETV_URL",
-	QueryParam: "X-Plex-Token",
-	// a channel's programmes (dizqueTV itself takes up to 50 MB)
-	MaxBody: dzMaxBody,
-	Rules: []Rule{
-		{Method: "GET", Path: "/maktaba/channels", Re: regexp.MustCompile(`^/maktaba/channels$`),
-			HomeOnly: true, Op: opChannels, Use: "read_state, read_dizquetv, ping (channel numbers)"},
-		{Method: "GET", Path: "/maktaba/shows", Re: regexp.MustCompile(`^/maktaba/shows$`),
-			HomeOnly: true, Op: opList, Use: "read_state, read_remote (id, name)"},
-		{Method: "GET", Path: "/maktaba/fillers", Re: regexp.MustCompile(`^/maktaba/fillers$`),
-			HomeOnly: true, Op: opList, Use: "read_state (id, name)"},
-		{Method: "GET", Path: "/maktaba/plex-servers", Re: regexp.MustCompile(`^/maktaba/plex-servers$`),
-			HomeOnly: true, Op: opServers, Use: "plex_server_name (names; never a token or an address)"},
-		{Method: "GET", Path: "/maktaba/show/{id}", Re: regexp.MustCompile(`^/maktaba/show/` + dzID + `$`),
-			HomeOnly: true, Op: opReadList, Use: "read_state, read_remote, read-back (programmes projected)"},
-		{Method: "GET", Path: "/maktaba/filler/{id}", Re: regexp.MustCompile(`^/maktaba/filler/` + dzID + `$`),
-			HomeOnly: true, Op: opReadList, Use: "read_state, read_dizquetv, read-back (programmes projected)"},
-		{Method: "GET", Path: "/maktaba/channel/{n}", Re: regexp.MustCompile(`^/maktaba/channel/` + dzNumber + `$`),
-			HomeOnly: true, Op: opReadChannel, Use: "write_channel, read_dizquetv (programmes projected)"},
-		{Method: "GET", Path: "/maktaba/channel/programless/{n}", Re: regexp.MustCompile(`^/maktaba/channel/programless/` + dzNumber + `$`),
-			HomeOnly: true, Op: opReadChannel, Use: "read_state, read-back (settings projected)"},
-		{Method: "PUT", Path: "/maktaba/show", Re: regexp.MustCompile(`^/maktaba/show$`),
-			HomeOnly: true, Op: opWriteList, Use: "apply_show, apply_actions (programmes built on the home)"},
-		{Method: "POST", Path: "/maktaba/show/{id}", Re: regexp.MustCompile(`^/maktaba/show/` + dzID + `$`),
-			HomeOnly: true, Op: opWriteList, Use: "apply_show, apply_actions (programmes built on the home)"},
-		{Method: "PUT", Path: "/maktaba/filler", Re: regexp.MustCompile(`^/maktaba/filler$`),
-			HomeOnly: true, Op: opWriteList, Use: "apply_actions (programmes built on the home)"},
-		{Method: "POST", Path: "/maktaba/filler/{id}", Re: regexp.MustCompile(`^/maktaba/filler/` + dzID + `$`),
-			HomeOnly: true, Op: opWriteList, Use: "apply_actions (programmes built on the home)"},
-		{Method: "POST", Path: "/maktaba/channel", Re: regexp.MustCompile(`^/maktaba/channel$`),
-			HomeOnly: true, Op: opWriteChannel, Use: "write_channel (a new channel; programmes filled on the home)"},
-		{Method: "PUT", Path: "/maktaba/channel", Re: regexp.MustCompile(`^/maktaba/channel$`),
-			HomeOnly: true, Op: opWriteChannel, Use: "write_channel (programmes filled on the home)"},
-		{Method: "HEAD", Path: "/maktaba/art?url=", Re: regexp.MustCompile(`^/maktaba/art$`),
-			Query: q("url", httpURL), Required: []string{"url"}, HomeOnly: true, Op: opArt,
-			Use: "hosted_link (a logo under the home's dz_art_url)"},
-		{Method: "POST", Path: "/api/channel-tools/time-slots", Re: regexp.MustCompile(`^/api/channel-tools/time-slots$`),
-			HomeOnly: true, Op: opRaw, Use: "write_channel (the timeline, from the plugin's projections)"},
-		{Method: "POST", Path: "/api/upload/image", Re: regexp.MustCompile(`^/api/upload/image$`),
-			HomeOnly: true, Op: opRaw, Use: "upload_image (a channel logo)"},
-		{Method: "DELETE", Path: "/api/show/{id}", Re: regexp.MustCompile(`^/api/show/` + dzID + `$`),
-			HomeOnly: true, Op: opRaw, Use: "apply_show, removals"},
-		{Method: "DELETE", Path: "/api/filler/{id}", Re: regexp.MustCompile(`^/api/filler/` + dzID + `$`),
-			HomeOnly: true, Op: opRaw, Use: "removals"},
-		{Method: "DELETE", Path: "/api/channel", Re: regexp.MustCompile(`^/api/channel$`),
-			HomeOnly: true, Op: opRaw, Use: "removals (body: the channel's number)"},
-	},
-}
-
 // Extensions are the relayable extensions by name.
-var Extensions = map[string]*Extension{Plex.Name: &Plex, DizqueTV.Name: &DizqueTV}
+var Extensions = map[string]*Extension{Plex.Name: &Plex}
 
 // Refusal reasons of Match.
 var (

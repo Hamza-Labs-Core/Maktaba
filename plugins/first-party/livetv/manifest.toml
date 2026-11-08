@@ -17,7 +17,7 @@ runner    = "light"
 component = "livetv"
 db.read   = ["app_settings", "channel_art_overrides", "clip_group_items", "clip_groups", "collection_items", "episode_tags", "job_stages", "libraries", "media_metadata_enrichment", "processing_jobs", "promo_links", "season_style", "season_tags", "series", "series_episodes", "series_seasons", "tv_slots", "video_topic_tags", "videos", "youtube_channels", "youtube_videos"]
 db.write  = ["channel_plans", "channel_programs", "channel_schedule_state", "channels", "external_links", "filler_items", "filler_pools", "tv_change_events", "tv_changes", "tv_release_channels", "tv_releases", "tv_routing", "tv_sched_gen_seq"]
-settings  = ["planner", "detect", "tv", "tv_output", "tv_staging", "dizquetv", "display_titles"]
+settings  = ["planner", "detect", "tv", "tv_output", "tv_staging", "display_titles"]
 files.read  = ["data.channels"]
 files.write = ["data.review"]
 
