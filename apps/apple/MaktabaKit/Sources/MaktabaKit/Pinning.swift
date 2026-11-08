@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Security
 
@@ -9,7 +10,8 @@ import Security
 public final class PinnedNames: @unchecked Sendable {
     public static let shared = PinnedNames()
     private let lock = NSLock()
-    private var names: [String: String] = [:]
+    // each home's pins (its server ID: address|port to name); a list replaces its home's own
+    private var homes: [String: [String: String]] = [:]
 
     public init() {}
 
@@ -17,30 +19,50 @@ public final class PinnedNames: @unchecked Sendable {
         host.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased() + "|" + String(port)
     }
 
-    /// Pins `url` (https, an IP address, with its port) to `name`, a home's name for that same
-    /// address (`<encoded ip>.<home id>.<domain>`); anything else is ignored, so a home list can
-    /// never make an address answer for an unrelated name.
-    public func pin(_ url: URL, name: String) {
-        let n = name.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased()
-        guard url.scheme?.lowercased() == "https", let host = url.host(), Self.isIPLiteral(host),
-              Self.namesAddress(n, host: host) else { return }
-        let port = url.port ?? 443
-        lock.withLock { names[Self.key(host, port)] = n }
+    /// The ID a home's names carry (`<encoded ip>.<home id>.<domain>`), from its server ID as the
+    /// cloud derives it (`direct.HomeID`): the first 32 hex digits of SHA-256("direct-v1" + id).
+    public static func homeID(_ serverID: String) -> String {
+        SHA256.hash(data: Data(("direct-v1" + serverID).utf8)).map { String(format: "%02x", $0) }.joined().prefix(32)
+            .description
     }
 
-    /// The name `host`:`port`'s certificate is checked against, when it is pinned.
+    /// Pins the `local_ip` `entries` (URL and tls_name) of the home `serverID`, replacing that
+    /// home's earlier pins. An entry is kept only when its URL is https to an IP address (with its
+    /// port) and its name is this home's name for that same address; anything else is ignored, so
+    /// a home list can never make an address answer for an unrelated name or for another home.
+    public func pinHome(_ serverID: String, _ entries: [(url: URL, name: String)]) {
+        guard !serverID.isEmpty else { return }
+        let hid = Self.homeID(serverID)
+        var kept: [String: String] = [:]
+        for e in entries {
+            let n = e.name.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased()
+            guard e.url.scheme?.lowercased() == "https", let host = e.url.host(), Self.isIPLiteral(host),
+                  Self.namesAddress(n, host: host, homeID: hid) else { continue }
+            kept[Self.key(host, e.url.port ?? 443)] = n
+        }
+        lock.withLock { homes[serverID] = kept.isEmpty ? nil : kept }
+    }
+
+    /// The name `host`:`port`'s certificate is checked against, when one home alone pinned it.
+    /// Two homes on the same private address (each on its own LAN) leave it unpinned: checked by
+    /// IP, so refused, and the app goes on to the home's next connection; a certificate of one
+    /// home is never taken for the other.
     public func name(host: String, port: Int) -> String? {
-        lock.withLock { names[Self.key(host, port)] }
+        let k = Self.key(host, port)
+        let found = lock.withLock { Set(homes.values.compactMap { $0[k] }) }
+        return found.count == 1 ? found.first : nil
     }
 
     /// Forgets every pin (tests; a sign-out keeps them: they name no account).
-    public func clear() { lock.withLock { names.removeAll() } }
+    public func clear() { lock.withLock { homes.removeAll() } }
 
-    /// Whether `name` is a home's name for `host`: four labels or more, the first `host` as the
-    /// cloud encodes it ("192-168-1-20", "fd00--7"; `direct.EncodeIP`).
-    static func namesAddress(_ name: String, host: String) -> Bool {
+    /// Whether `name` is the home `homeID`'s name for `host`: four labels or more, the first
+    /// `host` as the cloud encodes it ("192-168-1-20", "fd00--7"; `direct.EncodeIP`), the second
+    /// `homeID`.
+    static func namesAddress(_ name: String, host: String, homeID: String) -> Bool {
         let labels = name.split(separator: ".", omittingEmptySubsequences: false)
-        guard labels.count >= 4, labels.allSatisfy({ !$0.isEmpty }), let label = labels.first else { return false }
+        guard labels.count >= 4, labels.allSatisfy({ !$0.isEmpty }), labels[1] == homeID,
+              let label = labels.first else { return false }
         let hex = Set("0123456789abcdef-")
         guard label.allSatisfy({ hex.contains($0) }) else { return false }
         let v4 = label.filter { $0 == "-" }.count == 3 && !label.contains("--") && !label.contains(where: { "abcdef".contains($0) })

@@ -570,6 +570,13 @@ build fails when the two differ.
   and its MP4, the ledger rows a restore names), and refuses any other library file with
   `plugin_scope`: the job fails, not retried, and the file stays where it is.
 
+- **A home's LAN address is checked only against that home's own name (Android, Apple apps; Epic
+  50 story 50.15).** An app signed in to two homes that share a private address and port, each on
+  its own network, could check one home's address against the other home's name, and so take the
+  wrong home's certificate there. Each home's address entries are now kept with that home, the
+  name must carry that home's id, and an address two homes list is checked against neither name:
+  the app goes on to the home's next connection.
+
 ### Added
 
 - **A runner's tools read a library file on a share on Windows (story 54.23).** A job that
