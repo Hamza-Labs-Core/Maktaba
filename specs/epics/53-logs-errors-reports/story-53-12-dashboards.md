@@ -23,8 +23,10 @@ CREATE TABLE metric_1h (name TEXT, labels TEXT, hour INTEGER, value REAL, min RE
 ```
 
 - Counters become rates per minute; gauges keep the last value (1 min) and min/max/avg (1 h).
-- **Only an allow-list** of series (`shared/metrics/dashboard-series.json`, about 200 series),
-  so a new high-cardinality metric can't grow the store. Label values per series are capped at 50.
+- **Only an allow-list** of series (`shared/logkeeper/go/logindex/dashboard-series.json`, about
+  200 series), so a new high-cardinality metric can't grow the store. Label sets per series are
+  capped at 50 (`label_cap`); a sample past a cap is not stored and is counted in
+  `maktaba_metric_dropped_total`.
 - 7 days at 1 minute, **30 days** at 1 hour (shortened by the retention decision of
   2026-11-03, to match the errors' 30 days). About 200 × 1,440 rows a day: a few MB, inside
   `logs.db`'s share of the 1 GB cap.
@@ -32,9 +34,11 @@ CREATE TABLE metric_1h (name TEXT, labels TEXT, hour INTEGER, value REAL, min RE
 - The allow-list includes Epic 51's component series, which the supervisor's `/metrics` already
   serves (merged into the API's; story 51.14): `maktaba_component_up{id,machine,phase}`,
   `maktaba_component_restarts_total{id,machine}` and
-  `maktaba_component_transition_seconds{id,to}`. `id` is a catalog id, so its label values are
-  bounded by the catalog (45 ids today); the per-series cap of 50 does not apply to `id`, whose
-  cap is the catalog's own size.
+  `maktaba_component_transition_seconds{id,to}`. `id` is a catalog id, bounded by the catalog
+  (45 ids today). The home's `/metrics` carries every joined machine's component and host series
+  too, each labelled with its `machine`, so an `id` series is capped per machine: up to 200 label
+  sets for each machine (`id_label_cap`), for up to 50 machines (the `label_cap`); a 51st machine's
+  series are dropped and counted like any other.
 
 ### 2. The dashboards (`/admin/dashboards`)
 
@@ -143,7 +147,7 @@ Overview and Storage on the Remote apps (Apple, Android), read-only.
 | File | Change |
 |---|---|
 | `cmd/maktaba-server/internal/logindex/metrics.go` (new) | Scraper, rollups, retention. |
-| `shared/metrics/dashboard-series.json` (new) | The allow-list. |
+| `shared/logkeeper/go/logindex/dashboard-series.json` (new) | The allow-list, with its `label_cap` and `id_label_cap`. |
 | `api/internal/handlers/dashboards/` (new) | §3 (Use reads `watch_sessions` and the API counts from Postgres; the rest from the role). |
 | `web/src/pages/Admin/Dashboards/` (new), `web/src/components/charts/` (new, SVG) | §2. |
 | `apps/apple/Remote/`, `apps/android/remote/` | §4. |

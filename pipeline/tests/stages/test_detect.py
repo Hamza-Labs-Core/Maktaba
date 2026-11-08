@@ -13,7 +13,7 @@ from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import Subject
 from maktaba_pipeline.engine.ids import season_uuid, series_uuid
 from maktaba_pipeline.engine.sql import is_pg, loads, now, to_ts
-from maktaba_pipeline.engine.stages.detect import (
+from maktaba_pipeline.engine.stages._detect import (
     compute_changes,
     distinct_series_key,
     input_fingerprint,
@@ -221,7 +221,7 @@ def test_plan_is_deterministic_and_ids_are_stable() -> None:
     from datetime import date, timedelta
     from uuid import uuid4
 
-    from maktaba_pipeline.engine.stages.detect import Row
+    from maktaba_pipeline.engine.stages._detect import Row
 
     lib = uuid4()
     rows = [

@@ -14,13 +14,12 @@ build fails when the two differ.
 
 ### Changed
 
-- **The Overview dashboard keeps up with many machines (web, Apple and Android Remote).** Past a
-  few joined machines, a line per machine no longer fit a board's 50 lines, and machines were
-  left out without a word. The Overview now shows totals across the machines (components up
-  and down, the least disk and memory free, the highest load, restarts) and the five machines
-  most in need of attention, and says how many of how many it shows. A machine picker opens
-  any one machine on its own, with each of its components that was down or restarted.
-  `GET /api/admin/dashboards/overview` takes `machine=` and names the machines in its answer.
+- **A native crash on Android keeps its stack (Player, Remote, Android TV).** On Android 12 and
+  later, a crash in native code is now kept and sent, when crash reports are on, with its
+  signal, its abort message and the crashed thread's frames, read from the crash's tombstone.
+  Each frame names its library file only, never a folder, and the abort message loses its
+  paths and personal data before it is kept. On Android 11, or a tombstone that cannot be read,
+  the crash is kept with its reason alone, as before. Story 53.14.
 - **The service door reads each dizqueTV programme's item from Plex (`tv.maktaba.dizquetv`).**
   The plugin now names each programme by its Plex rating key only. The door reads the item
   from Plex with the home's token and takes the file, media part and duration from Plex's
@@ -2179,6 +2178,21 @@ build fails when the two differ.
   most every 10 s, and a machine that does not answer within 2 s adds nothing, so a slow machine
   never holds the dashboards back. Component series keep their cap per machine, and come last on a
   board so each machine's memory, disk and load stay within its 50 lines.
+
+- **The rest of classify runs as Maktaba's own plugin (Epic 54 story 54.31).** Placing episodes,
+  tagging topics, the language model's checks of series and clips, the book lookup and the
+  review pages now run in `tv.maktaba.classify`, with the same results. The model's questions go
+  through the plugin API to the same model server the settings name, and the book lookup is the
+  only classify stage that may reach the network (the encyclopedia). Find metadata stays where
+  it was for now. An admin can switch any of these stages back to the worker under **Queues**.
+
+- **The Overview dashboard keeps up with many machines (web, Apple and Android Remote).** Past a
+  few joined machines, a line per machine no longer fit a board's 50 lines, and machines were
+  left out without a word. The Overview now shows totals across the machines (components up
+  and down, the least disk and memory free, the highest load, restarts) and the five machines
+  most in need of attention, and says how many of how many it shows. A machine picker opens
+  any one machine on its own, with each of its components that was down or restarted.
+  `GET /api/admin/dashboards/overview` takes `machine=` and names the machines in its answer.
 
 ### Fixed
 

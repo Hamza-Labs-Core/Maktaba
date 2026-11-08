@@ -1,4 +1,8 @@
-"""``books``: the book behind a lesson series corrects its topics (mediaintel ``books``).
+"""What ``books`` shares with the pipeline (mediaintel's import): the cached lookup, the
+match onto a season's tags and the stage's input fingerprint. The stage itself is
+``tv.maktaba.classify``'s (Epic 54 wave 4, story 54.31), in the ``net`` runner group.
+
+``books``: the book behind a lesson series corrects its topics (mediaintel ``books``).
 
 Subject: a season. Runs after ``check_tags``. A series whose name names a book («شرح بلوغ
 المرام», «كتاب الصيام من بلوغ المرام»): the book is looked up once in the encyclopedia (cached
@@ -11,29 +15,24 @@ Settings: ``rules.books`` (off, encyclopedia, matching, scores, ...).
 
 from __future__ import annotations
 
-import asyncio
 import json
 import time
-import urllib.error
 from typing import Any
 from uuid import UUID
 
 from ... import offline
 from ...classify import books as bk
 from ...classify.topic_tags import branding, chapter_tags
-from ...db.jobs import Job
 from ...rules import read as read_rules
 from ...settings import to_json
-from ..context import StageContext, StageFailure
-from ..graph import StageResult, Subject
+from ..graph import Subject
 from ..hashing import canonical_hash
 from ..sql import uid
 from ._common import load_season
 from ._leftovers import library_name
-from ._tagging import latest_output, read_season_tags, season_tags_digest, write_season_tags
-from .registry import StageImpl
+from ._tagging import latest_output, read_season_tags, write_season_tags
 
-__all__ = ["IMPL", "apply_book", "book_ref", "cached_book", "save_book"]
+__all__ = ["apply_book", "book_ref", "cached_book", "input_fingerprint", "save_book"]
 
 
 async def cached_book(db: Any, name: str, cfg: bk.BooksConfig) -> bk.Book | None:
@@ -136,47 +135,3 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
             "v": bk.BOOKS_VERSION,
         }
     )
-
-
-async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
-    season_id: UUID = job.subject.id
-    cfg: bk.BooksConfig = await ctx.rules("books")
-    got = await book_ref(db, season_id)
-    if got is None:
-        return StageResult(output_hash=canonical_hash("retired"), summary={"book": None})
-    library, ref = got
-    if not cfg.enabled or ref is None:  # off, or the name names no book
-        return StageResult(
-            output_hash=await season_tags_digest(db, season_id),
-            summary={"enabled": cfg.enabled, "book": None},
-        )
-    book = await cached_book(db, ref.name, cfg)
-    looked_up = book is None
-    if book is None and offline.offline():
-        # offline (#640): no lookup; the fingerprint says so, so it runs again once online
-        return StageResult(
-            output_hash=await season_tags_digest(db, season_id),
-            summary={"enabled": cfg.enabled, "book": None, "offline": True},
-        )
-    if book is None:
-        try:
-            book = await asyncio.to_thread(bk.lookup, ref.name, cfg)
-        except (OSError, urllib.error.URLError, ValueError, KeyError) as e:
-            raise StageFailure(
-                "encyclopedia_unavailable", f"{ref.name}: the lookup failed ({e})"
-            ) from e
-        await save_book(db, book)  # a lookup is slow: never repeat it
-        await asyncio.sleep(cfg.request_gap_s)
-    corrected = await apply_book(db, season_id, library, ref, book, cfg)
-    return StageResult(
-        output_hash=await season_tags_digest(db, season_id),
-        summary={
-            "book": book.title or None,
-            "looked_up": looked_up,
-            "found": book.found,
-            "corrected": corrected,
-        },
-    )
-
-
-IMPL = StageImpl(run=run, input_fingerprint=input_fingerprint)

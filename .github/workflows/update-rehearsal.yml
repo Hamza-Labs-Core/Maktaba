@@ -535,6 +535,9 @@ jobs:
           - { id: '16.1', name: wave 1's jobs across a rollback and an update, test: TestUpdateRehearsal16_1Wave1, profile: small, venvs: true }
           - { id: '16.2', name: wave 2's jobs across a rollback and an update, test: TestUpdateRehearsal16_2Wave2, profile: small, venvs: true }
           - { id: '16.3', name: wave 3's jobs across a rollback and an update, test: TestUpdateRehearsal16_3Wave3, profile: small, venvs: true }
+          - { id: '16.4', name: wave 4's jobs across a rollback and an update, test: TestUpdateRehearsal16_4Wave4, profile: small, venvs: true }
+          - { id: '16.5', name: wave 5's jobs across a rollback and an update, test: TestUpdateRehearsal16_5Wave5, profile: small, venvs: true }
+          - { id: '16.6', name: wave 6's jobs across a rollback and an update, test: TestUpdateRehearsal16_6Wave6, profile: small, venvs: true }
           - { id: '16.8', name: wave 8's jobs across a rollback and an update, test: TestUpdateRehearsal16_8Wave8, profile: small, venvs: true }
           # the fault rehearsal (Epic 53 story 53.07, docs/fault-rehearsal.md): one part
           # killed at a time on a home of this commit; the tag guard requires these too
