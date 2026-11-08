@@ -102,7 +102,20 @@ Seed = Callable[[Database], Awaitable[None]]
 
 def plugin_api_dev() -> str | None:
     """The dev API binary (``MAKTABA_PLUGIN_API_DEV``), else built with go for this checkout
-    (``None``: no go here). A build that fails skips the calling test, saying why."""
+    (``None``: no go here), once per test process. A build that fails skips the calling
+    test, saying why."""
+    global _BUILT
+    if _BUILT is None:
+        _BUILT = _plugin_api_dev()
+    return _BUILT
+
+
+#: plugin_api_dev()'s binary, built once per process (the checkout does not change under a
+#: run; each parity test paid go's ~0.6 s cache check before)
+_BUILT: str | None = None
+
+
+def _plugin_api_dev() -> str | None:
     explicit = os.environ.get("MAKTABA_PLUGIN_API_DEV", "").strip()
     if explicit:
         return explicit
@@ -111,7 +124,7 @@ def plugin_api_dev() -> str | None:
         return None
     import hashlib
 
-    # one binary per checkout, built every time (go's cache makes an unchanged one quick):
+    # one binary per checkout, built once per run (go's cache makes an unchanged one quick):
     # a binary left by another worktree or an older checkout serves other routes
     tag = hashlib.sha256(str(API_DIR.resolve()).encode()).hexdigest()[:12]
     out = Path(tempfile.gettempdir()) / f"maktaba-plugin-api-dev-{tag}"
