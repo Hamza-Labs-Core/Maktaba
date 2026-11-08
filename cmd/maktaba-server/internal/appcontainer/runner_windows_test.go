@@ -83,14 +83,43 @@ func junction(t *testing.T, link, target string) {
 	}
 }
 
+// mustWrite makes a file whose DACL is what its folder passes down, as a file a media
+// tool writes has: CreateFile with no security attributes (os.WriteFile has been seen
+// giving a file below two new folders an explicit, protected DACL on the CI runner, and
+// a protected DACL inherits nothing, by a grant's walk or by Windows' own propagation).
 func mustWrite(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+	p16, err := windows.UTF16PtrFromString(path)
+	if err != nil {
 		t.Fatal(err)
 	}
+	h, err := windows.CreateFile(p16, windows.GENERIC_WRITE, 0, nil, windows.CREATE_ALWAYS, windows.FILE_ATTRIBUTE_NORMAL, 0)
+	if err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+	var n uint32
+	err = windows.WriteFile(h, []byte("x"), &n, nil)
+	_ = windows.CloseHandle(h)
+	if err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+}
+
+// inheriting: the object's DACL takes what its parent passes down (not protected).
+func inheriting(t *testing.T, path string) bool {
+	t.Helper()
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+	ctrl, _, err := sd.Control()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ctrl&windows.SE_DACL_PROTECTED == 0
 }
 
 // launchReal runs LaunchRunner with the real grant and revoke and a fake policy run and
@@ -123,8 +152,21 @@ func TestAGrantLandsOnlyOnTheFolderThatWasChecked(t *testing.T) {
 			media := filepath.Join(lib, "media")
 			show := filepath.Join(media, "season 1", "show.mkv")
 			mustWrite(t, show)
-			if out, _ := exec.Command("icacls", show).CombinedOutput(); true { //nolint:gosec // the test's temp folder
-				t.Logf("DEBUG made %s", out)
+			// the walk is tested on a tree that inherits, as Windows makes it
+			if swap == "none" { // DEBUG (temporary): the control word as each way of making a file leaves it
+				viaGo := filepath.Join(filepath.Dir(show), "go.mkv")
+				if err := os.WriteFile(viaGo, []byte("x"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				for _, p := range []string{filepath.Dir(show), show, viaGo} {
+					sd, _ := windows.GetNamedSecurityInfo(p, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+					ctrl, _, _ := sd.Control()
+					t.Logf("DEBUG control 0x%04x %s", ctrl, p)
+				}
+				_ = os.Remove(viaGo)
+			}
+			if !inheriting(t, show) {
+				t.Fatalf("the test's own %s has a protected DACL", show)
 			}
 			decoyLib := filepath.Join(dir, "decoylib")
 			decoy := filepath.Join(decoyLib, "media")
@@ -142,9 +184,6 @@ func TestAGrantLandsOnlyOnTheFolderThatWasChecked(t *testing.T) {
 				if step != "grant" || pathKey(p) != pathKey(media) {
 					return
 				}
-				if out, _ := exec.Command("icacls", show).CombinedOutput(); true { //nolint:gosec // the test's temp folder
-					t.Logf("DEBUG before the grant %s", out)
-				}
 				switch swap {
 				case "leaf":
 					if err := os.Rename(media, media+".moved"); err != nil {
@@ -158,17 +197,7 @@ func TestAGrantLandsOnlyOnTheFolderThatWasChecked(t *testing.T) {
 					junction(t, lib, decoyLib)
 				}
 			}
-			wn := walkNote
-			t.Cleanup(func() { walkNote = wn })
-			walkNote = func(p string, err error) { t.Logf("walk: %s: %v", p, err) }
 			code, started, log := launchReal(t, group, RunnerPolicy{Read: []string{media}})
-			if swap == "none" {
-				t.Logf("DEBUG log: %s", log)
-				for _, p := range []string{media, filepath.Dir(show), show} {
-					out, _ := exec.Command("icacls", p).CombinedOutput() //nolint:gosec // the test's temp folder
-					t.Logf("DEBUG %s", out)
-				}
-			}
 			for _, p := range []string{decoy, secret, outside, filepath.Join(outside, "other.txt")} {
 				if found, _ := aceOf(t, p, sid); found {
 					t.Errorf("%s got an entry for the group's profile", p)
