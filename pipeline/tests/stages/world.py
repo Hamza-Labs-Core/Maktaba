@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import functools
 import random
 import struct
 import uuid
@@ -249,24 +250,42 @@ def make_fake_media(counter: dict[str, int] | None = None) -> None:
     async def runner(args: list[str], timeout: float) -> ProcResult:
         path = args[args.index("-i") + 1] if "-i" in args else ""
         family = path.replace("\\", "/").rsplit("/", 1)[-1].split("_")[0]
-        rng = random.Random(_seed(family))
         if counter is not None:
             counter["calls"] = counter.get("calls", 0) + 1
             counter[family] = counter.get(family, 0) + 1
         if "chromaprint" in args:
-            data = struct.pack("<400I", *[rng.getrandbits(32) for _ in range(400)])
-            return ProcResult(data, b"", 0)
+            return ProcResult(*_fake_output(family, "chromaprint"), 0)
         if "-filter_complex" in args:  # style sampling: stats on stderr, thumbnails on stdout
-            return ProcResult(_thumbs(rng), _style_log(rng).encode(), 0)
+            return ProcResult(*_fake_output(family, "style"), 0)
         if "rawvideo" in args:
-            return ProcResult(bytes(rng.getrandbits(8) for _ in range(72)), b"", 0)
+            return ProcResult(*_fake_output(family, "rawvideo"), 0)
         return ProcResult(b"", b"unsupported in fake", 1)
 
     set_runner(runner)
 
 
+@functools.cache
+def _fake_output(family: str, kind: str) -> tuple[bytes, bytes]:
+    """(stdout, stderr) of one fake call. Each call seeds its generator from the family
+    alone, so the answer depends only on (family, kind) and is made once per process: a
+    parity run samples every video's four style windows on both sides."""
+    rng = random.Random(_seed(family))
+    if kind == "chromaprint":
+        return struct.pack("<400I", *[rng.getrandbits(32) for _ in range(400)]), b""
+    if kind == "style":
+        return _thumbs(rng), _style_log(rng).encode()
+    return _bytes(rng, 72), b""
+
+
+def _bytes(rng: random.Random, n: int) -> bytes:
+    """``bytes(rng.getrandbits(8) for _ in range(n))`` in one call: getrandbits(8) is the top
+    byte of one 32-bit draw, and getrandbits(32 * n) is n such draws, little-endian, so the
+    bytes and the generator's state after are the same."""
+    return rng.getrandbits(32 * n).to_bytes(4 * n, "little")[3::4]
+
+
 def _thumbs(rng: random.Random) -> bytes:
-    return bytes(rng.getrandbits(8) for _ in range(64 * 36 * 40))
+    return _bytes(rng, 64 * 36 * 40)
 
 
 def _style_log(rng: random.Random) -> str:

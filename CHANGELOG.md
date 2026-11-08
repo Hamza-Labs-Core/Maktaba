@@ -2907,6 +2907,16 @@ build fails when the two differ.
   rather than failing as the tool's own exit.
 
 - **A fingerprint a Windows runner may not read is taken by the worker, never left pending
+  (story 54.23).** On Windows, every plugin runner refuses a share path it is not brokered,
+  and the fingerprint runner closed the connection without an answer when a stage's
+  fingerprint was refused (the small thumbnail's sidecar look on a share). The worker did not
+  read that as a refusal, so the job failed and went back to pending again and again. Homes
+  were spared by the share-library guard, which keeps those stages and their fingerprints in
+  the worker; the Windows end to end, which asks the runners anyway, found it. The runner
+  now answers the refusal and logs it, and the worker reads the fingerprint itself for any
+  runner that closes without an answer.
+
+- **A fingerprint a Windows runner may not read is taken by the worker, never left pending
   (story 54.23).** On Windows, with a library on a share, every plugin runner refuses share
   paths, and the fingerprint runner closed the connection without an answer when a stage's
   fingerprint looked at one (the small thumbnail's sidecar look). The worker did not read

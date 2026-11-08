@@ -26,7 +26,7 @@ from maktaba_plugin_sdk.parity import ParityConfig
 
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.media import reset_runner
-from tests.plugins.firstparty.harness import parity
+from tests.plugins.firstparty.harness import parity, plugin_api_dev
 from tests.stages.world import make_fake_media, models_off
 
 pytestmark = [pytest.mark.integration]
@@ -46,6 +46,9 @@ STAGES = [
     "books",
     "review_pages",
 ]
+#: the stages that ask the model or the encyclopedia: with both off (wave 1's library) each
+#: returns before any work, so N16 times them in wave 4's test, where they do it
+MODEL_STAGES = ("check_tags", "check_clips", "books")
 KEYS = {
     "series": ("id",),
     "series_seasons": ("id",),
@@ -84,6 +87,8 @@ def template(pg_template: str) -> str:
         pytest.skip("MAKTABA_TEST_PG_URL not set")
     if not selected():
         pytest.skip("no stage of tv.maktaba.classify selected")
+    # the plugin API's dev server is built here, in setup, not in the timed call
+    plugin_api_dev()
     return pg_template
 
 
@@ -145,7 +150,7 @@ async def test_classify_wave_1_is_identical(template: str, monkeypatch: pytest.M
         problems = await p.compare_n16(
             [(t, KEYS[t]) for t in cfg.tables],
             ignore={k: list(v) for k, v in cfg.ignore.items()},
-            stages=selected(),
+            stages=[s for s in selected() if s not in MODEL_STAGES],
             perf=cfg.perf,
         )
         slowest = p.report("tv.maktaba.classify")
