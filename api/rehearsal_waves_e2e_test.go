@@ -41,11 +41,14 @@ import (
 
 // rehearsalWave is one wave of Phase 4: its scenario, its story and the stages the
 // scenario queues (those of its stages a home without a GPU, a model or a network
-// service claims), and what the home needs before they claim (setup).
+// service claims), and what the home needs before they claim (setup). A wave whose setup
+// gives the seed its stages' subjects sets must: every stage gets a job in every round,
+// and a stage that queued none fails the scenario instead of passing without it.
 type rehearsalWave struct {
 	id, story string
 	stages    []string
 	setup     func(r *rehearsal, home *appMachine, db *sql.DB)
+	must      bool
 }
 
 // plexOn turns the Plex extension on as an owner does: Settings' PUT
@@ -84,15 +87,48 @@ func waitStagesEnabled(t *testing.T, db *sql.DB, stages []string, within time.Du
 	}
 }
 
+// seasonsOn gives the seed a small series with two seasons, as the detect stage writes them:
+// the small seed has no series, and fp_gate claims seasons. Its first library's first four
+// videos are the episodes, two to a season. A detect run that sees them otherwise retires
+// the rows and never deletes them, and the queue takes a retired season's job all the same.
+func seasonsOn(r *rehearsal, _ *appMachine, db *sql.DB) {
+	t := r.t
+	t.Helper()
+	var lib, series string
+	if err := db.QueryRow(`SELECT library_id::text FROM videos WHERE library_id IS NOT NULL
+		GROUP BY library_id HAVING count(*) >= 4 ORDER BY library_id LIMIT 1`).Scan(&lib); err != nil {
+		t.Fatalf("a library of the seed with four videos: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO series (library_id, name) VALUES ($1::uuid, 'Rehearsal series')
+		RETURNING id::text`, lib).Scan(&series); err != nil {
+		t.Fatalf("the rehearsal series: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO series_episodes (series_id, video_id, season, episode)
+		SELECT $1::uuid, id, 1 + (n - 1) / 2, 1 + (n - 1) % 2
+		  FROM (SELECT id, row_number() OVER (ORDER BY id) AS n FROM videos WHERE library_id = $2::uuid
+		         AND id NOT IN (SELECT video_id FROM series_episodes)) v
+		 WHERE n <= 4`, series, lib); err != nil {
+		t.Fatalf("the rehearsal series' episodes: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO series_seasons (id, series_id, library_id, season, kind, name,
+		episode_count, membership_hash, detector_version)
+		SELECT gen_random_uuid(), $1::uuid, $2::uuid, s, 'episodic', 'Rehearsal series, season ' || s, 2,
+		       'rehearsal-' || s, 1
+		  FROM generate_series(1, 2) AS s`, series, lib); err != nil {
+		t.Fatalf("the rehearsal series' seasons: %v", err)
+	}
+	r.logf("the seed has a series with two seasons (library %s): fp_gate claims", lib)
+}
+
 var rehearsalWaves = map[string]rehearsalWave{
-	"16.1": {"16.1", "54.28", []string{"promo_links", "clip_groups", "topic_collections", "rate_style"}, nil},
-	"16.2": {"16.2", "54.29", []string{"thumb_small", "chapter_thumbs", "subtitle_gen"}, nil},
-	"16.3": {"16.3", "54.30", []string{"topic_assign", "chapter_infer"}, nil},
-	"16.4": {"16.4", "54.31", []string{"detect", "tag"}, nil},
-	"16.5": {"16.5", "54.32", []string{"dedup_scan"}, nil},
-	"16.6": {"16.6", "54.33", []string{"exact_dates"}, nil},
-	"16.8": {"16.8", "54.35", []string{"plex_livetv"}, plexOn},
-	"16.9": {"16.9", "54.36", []string{"scan", "probe", "link", "fp_gate"}, nil},
+	"16.1": {"16.1", "54.28", []string{"promo_links", "clip_groups", "topic_collections", "rate_style"}, nil, false},
+	"16.2": {"16.2", "54.29", []string{"thumb_small", "chapter_thumbs", "subtitle_gen"}, nil, false},
+	"16.3": {"16.3", "54.30", []string{"topic_assign", "chapter_infer"}, nil, false},
+	"16.4": {"16.4", "54.31", []string{"detect", "tag"}, nil, false},
+	"16.5": {"16.5", "54.32", []string{"dedup_scan"}, nil, false},
+	"16.6": {"16.6", "54.33", []string{"exact_dates"}, nil, false},
+	"16.8": {"16.8", "54.35", []string{"plex_livetv"}, plexOn, false},
+	"16.9": {"16.9", "54.36", []string{"scan", "probe", "link", "fp_gate"}, seasonsOn, true},
 }
 
 // waveSleep is how long each job of a wave stage sleeps: longer than the claim loop's
@@ -301,6 +337,24 @@ func makeDue(t *testing.T, db *sql.DB, stages []string, since int64) {
 	}
 }
 
+// gotEach fails, for a wave that must, for a stage of it with no job among queued.
+func (r *rehearsal) gotEach(w rehearsalWave, what string, jobs []waveJob, queued map[int64]bool) {
+	if !w.must {
+		return
+	}
+	got := map[string]bool{}
+	for _, j := range jobs {
+		if queued[j.id] {
+			got[j.stage] = true
+		}
+	}
+	for _, st := range w.stages {
+		if !got[st] {
+			r.t.Errorf("%s: no job of %s was queued: the scenario would pass without it", what, st)
+		}
+	}
+}
+
 // waveJobs is the jobs of the stages after id since, with their starts and where they ran.
 func waveJobs(t *testing.T, db *sql.DB, stages []string, since int64) []waveJob {
 	t.Helper()
@@ -489,6 +543,7 @@ func (r *rehearsal) waveScenario(id string) {
 	r.noRestore(home, states)
 	jobs := waitSettled(t, db, w.stages, since, 10*time.Minute)
 	r.checkWaveJobs(id+" through the rollback", jobs, queued, want)
+	r.gotEach(w, id+" through the rollback", jobs, queued)
 
 	// 2. more in flight; the update to this commit, which passes: the flip at update
 	since = r.queueWave(db, w.stages, per)
@@ -504,6 +559,7 @@ func (r *rehearsal) waveScenario(id string) {
 	home.assertNoCrashLoop(id + ": after the update to " + k.cur)
 	jobs = waitSettled(t, db, w.stages, since, 10*time.Minute)
 	r.checkWaveJobs(id+" through the update", jobs, queued, want)
+	r.gotEach(w, id+" through the update", jobs, queued)
 
 	// 3. this commit's runners serve: every stage of the wave is 'plugin', and new jobs run
 	// in the runner
@@ -558,6 +614,7 @@ func (r *rehearsal) waveScenario(id string) {
 	queued = queuedIDs(waveJobs(t, db, w.stages, since))
 	jobs = waitSettled(t, db, w.stages, since, 5*time.Minute)
 	r.checkWaveJobs(id+" after the flip", jobs, queued, want)
+	r.gotEach(w, id+" after the flip", jobs, queued)
 	for _, j := range jobs {
 		if queued[j.id] && j.impl != "plugin" {
 			t.Errorf("%s after the flip: job %d (%s) ran %s on %s, want in its runner", id, j.id, j.stage, j.impl, j.release)
