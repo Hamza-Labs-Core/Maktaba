@@ -84,6 +84,12 @@ keeps its last values there (by them it ranked last), and a machine removed from
 looks the same as one that is offline. An offline machine the store has no lines of is still
 counted, named and shown, with no lines.
 
+Each machine is shown by its name, as the Machines page shows it (a joined machine's name,
+the home's own name for `home`), in the picker, the Offline line and the chart legends; the
+picker keeps the node id as a hint ("Attic NAS (n07)"), and the node id stays the key
+(`machine=`). The API names them from the cluster; the log index knows only ids. A machine
+with no name, or every machine when the cluster can't be read, is shown by its node id.
+
 The log index sums each machine's components up, its components and its restarts, and the
 totals across machines, as it writes a scrape (`maktaba_machine_*{machine}`,
 `maktaba_machines_*`), so the board reads at most a line per machine, and the full lines only
@@ -97,8 +103,10 @@ view answer in tens of milliseconds (`dashboard_30d_machines` in the performance
 Admin only: `GET /api/admin/dashboards/{board}?range=` returns the board's series in one call
 (≤ 50 series, ≤ 2,000 points each, downsampled by the role). On the Overview,
 `machine=<node id>` answers that machine's lines on their own; the Overview's answer names the
-machines (`machines`: `total`, `shown`, `all`, `offline`), and `omitted` counts the lines the
-50 left out. Role tests (the `machine=` query included).
+machines (`machines`: `total`, `shown`, `all`, `offline`), `names` (`{<node id>: <name>}`,
+only the ids the answer mentions; a name is the user's text, shown and nothing else: control
+and bidirectional override characters dropped, at most 64 characters), and `omitted` counts
+the lines the 50 left out. Role tests (the `machine=` query included).
 
 ### 4. On the Remote apps
 
@@ -124,6 +132,7 @@ Overview and Storage on the Remote apps (Apple, Android), read-only.
 | `dash.machines.offline` | Offline: {machines}. Offline machines come first; their lines end at their last values. | غير متصلة: {machines}. تأتي الأجهزة غير المتصلة أولاً، وتنتهي خطوطها عند آخر قيمها. |
 | `dash.machine.offline` | This machine is offline. Its lines end at its last values. | هذا الجهاز غير متصل. تنتهي خطوطه عند آخر قيمه. |
 | `dash.machine.offlineOption` | {machine} (offline) | {machine} (غير متصل) |
+| `dash.machine.option` | {name} ({id}) | {name} ({id}) |
 
 ## Acceptance criteria
 
@@ -155,6 +164,7 @@ Overview and Storage on the Remote apps (Apple, Android), read-only.
 | T10 | unit | the 60 machines, one well but offline and one offline with no lines | Overview with `offline=` | both shown first, counted and named in `offline`; bounds kept (≤ 1,000 ids, each ≤ 128 bytes) |
 | T11 | unit (API, cluster) | approved machines seen now, 5 min ago, never; pending and revoked ones | Overview | the role is asked `offline=` with the two not seen, a caller's own dropped; admins only |
 | T12 | unit (vitest, Apple, Android) | an Overview with offline machines | render; pick one | "Offline: …", "(offline)" in the picker, the one machine's offline line, en/ar |
+| T13 | unit (API, cluster, vitest, Apple, Android) | machines with names, one without, a 200-character name, the cluster down | Overview | `names` for the ids mentioned only, the name bounded, the id when there is none; the picker, Offline line and legends show names, the picker the id as a hint, en/ar |
 
 ## Build plan
 

@@ -337,11 +337,17 @@ public struct BoardDoc: Decodable, Sendable {
         }
 
         /// The legend: its labels' values ("core.api · home").
-        public var legend: String {
+        public var legend: String { legend(names: [:]) }
+
+        /// The legend with its machine named as the Machines page names it ("core.api ·
+        /// Living room"); a machine with no name keeps its id.
+        public func legend(names: [String: String]) -> String {
             guard let labels else { return "" }
             return labels.split(separator: ",").compactMap { kv in
-                let v = kv.split(separator: "=", maxSplits: 1).dropFirst().first.map(String.init) ?? ""
-                return v.isEmpty ? nil : v
+                let parts = kv.split(separator: "=", maxSplits: 1)
+                let v = parts.dropFirst().first.map(String.init) ?? ""
+                if v.isEmpty { return nil }
+                return parts.first == "machine" ? BoardDoc.name(of: v, in: names) : v
             }.joined(separator: " · ")
         }
     }
@@ -384,8 +390,11 @@ public struct BoardDoc: Decodable, Sendable {
     public let machines: Machines?
     /// Lines the board's 50 left out.
     public let omitted: Int
+    /// The Overview's machine ids named as the Machines page names them (empty from a home
+    /// before names: each machine is then named by its id).
+    public let names: [String: String]
 
-    enum CodingKeys: String, CodingKey { case board, range, series, machine, machines, omitted }
+    enum CodingKeys: String, CodingKey { case board, range, series, machine, machines, omitted, names }
 
     public init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
@@ -395,6 +404,15 @@ public struct BoardDoc: Decodable, Sendable {
         machine = try c.decodeIfPresent(String.self, forKey: .machine).flatMap { $0.isEmpty ? nil : $0 }
         machines = try c.decodeIfPresent(Machines.self, forKey: .machines)
         omitted = try c.decodeIfPresent(Int.self, forKey: .omitted) ?? 0
+        names = (try? c.decodeIfPresent([String: String].self, forKey: .names)) ?? [:]
+    }
+
+    /// A machine's name for display: its name, else its node id.
+    public func name(of machine: String) -> String { Self.name(of: machine, in: names) }
+
+    static func name(of machine: String, in names: [String: String]) -> String {
+        guard let n = names[machine], !n.trimmingCharacters(in: .whitespaces).isEmpty else { return machine }
+        return n
     }
 
     /// "Showing 5 of 37": the Overview of all machines shows fewer than it has.

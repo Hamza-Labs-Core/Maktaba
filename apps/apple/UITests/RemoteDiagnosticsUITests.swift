@@ -128,7 +128,8 @@ final class RemoteDiagnosticsUITests: XCTestCase {
 
     /// Story 53.12: with many machines the Overview says how many it shows, and the machine
     /// picker asks the home for one machine's lines (`machine=`); a joined machine that is
-    /// offline is named as offline, in the line and in the picker.
+    /// offline is named as offline, in the line and in the picker. Machines are named as the
+    /// Machines page names them (the answer's names), the picker keeping the node id as a hint.
     func testDashboardsOfManyMachines() throws {
         launch()
         try XCTSkipUnless(app.buttons["Queue"].firstMatch.waitForExistence(timeout: 10), "the Remote's screens (the Player has none)")
@@ -138,6 +139,7 @@ final class RemoteDiagnosticsUITests: XCTestCase {
         home.stub("GET", "/api/admin/dashboards/overview", body: """
         {"board":"overview","range":"24h","step":3600,
          "machines":{"total":37,"shown":["n07","n33","n12","n41","n20"],"all":[\(all)],"offline":["n07"]},
+         "names":{"n07":"Attic NAS"},
          "series":[{"name":"maktaba_machines_components_down","kind":"gauge","points":[\(pts)]},
           {"name":"maktaba_component_down","labels":"machine=n07","kind":"gauge","points":[\(pts)]}]}
         """)
@@ -148,12 +150,13 @@ final class RemoteDiagnosticsUITests: XCTestCase {
         let shown = element("dash.machines.shown")
         XCTAssertTrue(shown.waitForExistence(timeout: 5) && shown.label.contains("Showing 5 of 37 machines"), "how many it shows: \(shown.label)")
         let offline = element("dash.offline")
-        XCTAssertTrue(offline.waitForExistence(timeout: 5) && offline.label.contains("Offline: n07"), "the offline machine: \(offline.label)")
+        XCTAssertTrue(offline.waitForExistence(timeout: 5) && offline.label.contains("Offline: Attic NAS"), "the offline machine, by name: \(offline.label)")
         let picker = element("dash.machine")
         XCTAssertTrue(picker.waitForExistence(timeout: 5), "the machine picker")
         picker.tap()
-        let n07 = app.buttons["n07 (offline)"].firstMatch
-        XCTAssertTrue(n07.waitForExistence(timeout: 5), "n07 in the picker")
+        let n07 = app.buttons["Attic NAS (n07) (offline)"].firstMatch
+        XCTAssertTrue(n07.waitForExistence(timeout: 5), "n07 in the picker, by name with its id")
+        XCTAssertTrue(app.buttons["n08"].firstMatch.exists, "a machine with no name, by its id")
         n07.tap()
         let asked = { self.home.requests.contains { $0.path == "/api/admin/dashboards/overview" && $0.value("machine") == "n07" } }
         let end = Date().addingTimeInterval(10)

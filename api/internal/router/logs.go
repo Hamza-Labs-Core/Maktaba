@@ -53,6 +53,16 @@ func offlineMachines(ctx context.Context) ([]string, error) {
 	return h.OfflineMachines(ctx)
 }
 
+// machineNames are the machines' names as the Machines page shows them (none before the
+// cluster is mounted, or on a home without one: the Overview then names each by its id).
+func machineNames(ctx context.Context, ids []string) (map[string]string, error) {
+	h := dashboardMachines.Load()
+	if h == nil || h.Store == nil {
+		return nil, nil
+	}
+	return h.MachineNames(ctx, ids)
+}
+
 // MountLogs wires the troubleshooting log-collection routes
 // (/api/admin/logs/* and /api/diagnostics/export). The ring buffer is
 // pulled from the process-global installed by mlog.Init. It answers the problem reports'
@@ -74,6 +84,7 @@ func MountLogs(r chi.Router, d LogsDeps) *logs.Forwarder {
 		FileSource: d.Files,
 		Switches:   d.Switches,
 		Offline:    offlineMachines,
+		Names:      machineNames,
 	}
 	h.Mount(r)
 	return h.Forwarder()

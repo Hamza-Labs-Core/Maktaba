@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.104
-up_to_commit: 6eb25a8aa
-built_from: v0.3.103
+tag: v0.3.105
+up_to_commit: 58db24ee2
+built_from: v0.3.104
 ---
 
-# Trail snapshot: v0.3.104
+# Trail snapshot: v0.3.105
 
 ## Keep doing
 
@@ -39,6 +39,8 @@ built_from: v0.3.103
 - Hand over an unfinished scenario with its known bugs and their files listed. (#892)
 - When adding a TLS rule, find every client that can reach a home, not only the API client (both image caches build their own); when a server-supplied value relaxes a check, bind it to what it is for (the address it pins). (#903)
 - Map new API errors through the web app's existing `error.<code>` keys, even when a spec names others, and say so in the PR. (#873)
+- With every merge to main conflicting on the CHANGELOGs, script the round: merge-main, gate, push, watch. (#959)
+- Compile an app locally (no simulator) after an untested UI fix, and run gofmt before every push (the affected-tests gate does not), so neither costs a full CI round. (#970)
 
 **Releases and live**
 - Prove update, rollback, restore and migration paths in CI first: nothing touching update, restore, migration, supervisor, launcher, front door or TV-staging code ships unless `update-rehearsal` passed on that exact commit. One release at a time on the live install. (d20261031-standing-rules, #435, #433, #460, #461)
@@ -53,6 +55,7 @@ built_from: v0.3.103
 - On the PC: restart services only through their sign-in tasks; check an installer's sha256, then the owner runs it. Prove Windows behaviour on CI's runner, not the owner's PC. (d20261025-pc-windows-app-node, #457)
 - Prefer keyless federation over downloaded service-account keys. (#557)
 - No Stripe or Stripe-owned services for any payment, in specs or code; payment providers are pluggable (`PaymentProvider`, each in its own folder), Adyen for Platforms the first real one. Check a brief's suggestion against the trail before building it. (#591, #593, #735)
+- A release step that talks to an optional service gates on its secret being non-empty and warns on failure, so neither a missing secret nor an outage can fail a release. (#957, #961, #967)
 
 **Tests and CI**
 - A code change ships with its tests changed in the same push (affected-tests gate; `No-Test-Change: <reason>` only when the mapped tests cannot run locally). (#516, d20261031-standing-rules, #685)
@@ -125,6 +128,9 @@ built_from: v0.3.103
 - A reference test (snapshot, text dump, screenshot) that draws anything read off the clock fails the day after its references are made: pin the clock (`MockHome.clock`), at noon so the date is the same in every zone, and use no future fixture times on the pinned pages. Bootstrap Apple references from a CI run that fails on purpose ("no reference") and keep only the new images `tools/apple/snapshots.py` copies. (#936, d20261108-snapshot-fixture-clock)
 - Key a start gate on the dependency a child runs from, not on one role, and test that every `python -m maktaba_*` child is gated (`TestEveryPythonChildRunsFromTheVenv`). (d20261108-runners-wait-venv)
 - Read a failed rehearsal row's test output before treating it as a fault: `no tests to run` means the matrix and the checked-out code disagree. (d20261108-rehearsal-matrix-skew)
+- A flake seen twice is fixed in the test, not rerun a third time: compare only what the reference is about (the page's words), not layout state such as scroll position. (#963)
+- Before pushing a change that makes a hot path costlier, run the touched package's tests with `-race -short` against the test-time budget; it can break unrelated pull requests. Size a new test's fixture to what it asserts. (#971, #970)
+- When a fix adds a matrix job, wait for that job by name (`need-check.sh`) before the merge watcher, or the watcher can merge before the job appears. (#961)
 
 ## Stop doing
 
@@ -199,7 +205,12 @@ built_from: v0.3.103
 - Doors (dizqueTV, #942, #948): a door holding the upstream's credentials builds request bodies on the home, reads facts from the upstream itself (the rating key alone, items read from Plex) and answers with projections, with a fail-closed leak check on top. A runner with no network can still reach out through any URL field the upstream fetches (ffmpeg inputs, guide pictures): each such field takes only the home's own hosts. A door's extension list defaults to all; give each door only what its callers need. CodeQL `go/request-forgery`: build the URL from the parsed base plus the checked name. (#942, #948)
 - Decide what a response reveals from the authentication method actually used (`principal.SourceJWT`), never from headers a page script can set. Recovery calls go through their own client (a 401 there is never sign out), and a refused pass stops the polling, or the recovery lockout locks the admin out within a minute. (#918)
 - Apple crash symbolication runs on Linux: Go's `debug/macho` and `debug/dwarf` read DWARF 5 dSYMs, and only a compact table per binary is uploaded (a few MB, not hundreds). The binary lint rejects Mach-O and ELF fixtures: keep them gzipped. (#917)
-
+- The metrics store's key starts `name, labels`, so a time-range read of one name visits every label set (about 2 µs a row in pure-Go SQLite): sums belong in `Record`, which sees one scrape of every machine at once. One machine's label sets are found by skipping through the key by hand. (#960)
+- The Overview's offline rule is the Machines page's (`clusterh.Handler.OfflineMachines`), not a stale sample: the store cannot tell an offline machine from a removed one. A caller's own `offline=` is always dropped. (#970)
+- A forwarded crash report goes from the home to its relay agent (`maktaba-cloudlink`), which posts it to the cloud API with the home's secret; it does not travel through the relay tunnel. The console listener refuses a sign-in without both the console's `Origin` and `X-Maktaba-Staff: 1`. (#961)
+- Symbol tables: Android releases have no binary UUID, so R8 tables are keyed by app and version; native tables by the first 16 bytes of the GNU build id, read only when the whole id matches; a stripped library makes no table, so a crash is never marked read with `.dynsym` names alone. Tombstone caller pcs are looked up as they come; Apple return addresses move back a byte first. The desktop installers run no ProGuard. (#961, #967)
+- The home has no central access check: about 15 packages each scope by library, live channel streams and the HDHomeRun routes are unsigned, a channel with no library is visible to every signed-in user, and the browse row cache assumes rows have no per-user part. (#979)
+- Epic 57's device side is Apple's Screen Time: the effective movie and TV rating limit is readable without Family Controls (iOS 15+, tvOS 26+), watching it needs the entitlement, which needs Apple's approval per extension, so the app re-reads on foreground. Declared Age Range is iOS, iPadOS and macOS 26+ only and a plain capability. (#979)
 
 **CI and releases**
 - Homes' `releaseverify` accepts only a release whose Sigstore certificate's trigger (OID 1.3.6.1.4.1.57264.1.20) is `push`; a dispatched release differs in that claim alone and is refused, and a re-run of a dispatched run stays `workflow_dispatch`. A tag pushed with `GITHUB_TOKEN` starts no run, so tags come from a session's push; v0.3.83 to v0.3.85 have no release, so v0.3.86 is the first published release of their components (`since` says 0.3.86). (#725, #730, #748)
@@ -237,6 +248,8 @@ built_from: v0.3.103
 - The ci_paths guard reads `git ls-files`: run it after committing a new file. A `tools/ci` script the lint job runs on every pull request belongs in `NOT_IN_CI`. An env var over 128 KB fails on Linux (`MAX_ARG_STRLEN`), not on macOS. `pgrep -f PATTERN` through `bash -c` matches its own command line; bracket one letter (`[T]CP-LISTEN`). (#932, #939, #922)
 - Pixel references with a tolerance cannot guard wording; an exact text reference beside them can, and shows the failing line. (#929)
 - Without the bounded waits, a hung `-q` pytest run was cancelled at 15 minutes with no traceback; the stuck cluster test did only aiosqlite work (cause not proven). (#945)
+- `ci-success` fails whenever any other job fails, so a "rerun only if the flaky job is the sole failure" check must leave it out. (#970)
+- In `cloud-rehearsal`, the 4 s aggregate verdict proves nothing alone: read the run's jobs to see that a scenario actually ran. (#967)
 
 **Database and migrations**
 - Number a migration slot only when merging main (slots are taken while a PR builds); a slot above a gap fails migration-lint; `SchemaRev` lives in three places. Check `git ls-tree origin/main shared/db/migrations/` right before each push, not only at the start; at each renumber rebuild `cluster_copy_excluded()` on the newest definition (Up adds, Down restores that one) and raise the three SchemaRev constants together. Slots moved three and four times while a PR waited; a moved migration is written again from its generator (`roles.py sql`, which `roles.py check` compares against every manifest), never sliced from the old file (a slice that kept `--` lines opened `StatementBegin` twice; migration-lint's `goose-annotations` now refuses it). Prove a migration parses with `go run . migrate up` from `api/` on a new database. The store's D1 migrations number separately but still collide within one series. (#669, #692, #678, #672, #657, #693, #762, #767, #778, #781, #815, d20261107-paid-plugins-merge-problems, #925, #949)
@@ -302,6 +315,8 @@ built_from: v0.3.103
 - The apps reach a home's raw LAN address (`local_ip`) by checking its certificate against the entry's pinned `tls_name` (an OkHttp `HostnameVerifier`; `SecPolicyCreateSSL(true, name)` on Apple), which keeps the platform's chain and expiry check; a pin counts only when the name's first label decodes to the URL's own address. Apple refuses a TLS leaf whose validity exceeds its maximum even under a custom anchor, so test certificates are short-lived with a pinned verify date. (#903)
 - `web/`'s tsconfig has no Node types: a test that reads a file imports `node:fs` dynamically. `wrangler deploy --dry-run` with the devportal's pinned version checks a Worker's bundle and config without an account. (#941)
 - Random bytes are not reliably corrupt media; build fixtures from a real header plus seeded junk. (#526, #537)
+- This Mac: the iOS 27.1 runtime has no iPhone device types (make throwaway simulators on iOS 27.0); bash is 3.2 (no `mapfile`; build `-only-testing` arguments as an array); Android screenshots record locally with Homebrew's `openjdk@17` and `-Proborazzi.test.record=true`; ELF fixtures build with `docker run --platform linux/arm64 alpine:3.20`. (#959, #967)
+- The Android apps build no native code of their own; the only `.so` files are prebuilt AndroidX ones Google strips, so native tables appear only once an app builds native code. (#967)
 
 **Apps and UI tests**
 - Under Robolectric a bare `waitUntil` only polls; the v1 compose rule runs effects unconfined. Use settling waits and v2 rules. (#508)
@@ -345,6 +360,10 @@ built_from: v0.3.103
 - SMAppService errors on register or unregister do not mean the login item is gone: check `status` and `launchctl print` first, since launchd may still hold a good job. A Developer ID app's designated requirement survives updates and so does its registration; only ad-hoc builds need re-registering per build. After the updater swaps the bundle, the old process reads the new build through `current_exe`, so anything keyed on "this build" is captured at process start. (d20261108-login-item-relaunch)
 - A `workflow_run` rehearsal takes its matrix from main's head and checks out the rehearsed commit, so a row added to `update-rehearsal.yml` fails any older commit whose CI finishes after the row lands, with `no tests to run`. (d20261108-rehearsal-matrix-skew)
 - Import cycles show only in a fresh interpreter importing in the child's own order (`pipeline/tests/test_child_imports.py` does that in `python -I`; a suite importing `engine.graph` first hid one). A rehearsal that only checks the site serves passes a release whose runners crash-loop; the wave scenarios now fail on any process marked failed after the update (`assertNoCrashLoop`). (d20261108-runners-wait-venv)
+- A SwiftUI `Label` with `.accessibilityIdentifier` can expose the SF Symbol's spoken name as the element's label: use `Text` when a UI test reads the words. (#970)
+- `merge-main.sh` stops on `Localizable.xcstrings` conflicts: merge them as JSON keeping main's case-insensitive key order; Python's `sorted()` reorders the whole file. (#959)
+- Robolectric drives a file picker with `LocalActivityResultRegistryOwner` and a fake `ActivityResultRegistry`; `registerOutputStreamSupplier` captures what the app writes. (#959)
+- The Arabic store keeps only a story's opening excerpt (about 600 characters), so editing deep in a story needs no new Arabic; `generate_wiki.py --check` confirms it. The devportal tests need `npm run build`, which needs `npm ci` in `web/wiki-app`. (#954, #960)
 
 ## Open
 
@@ -368,7 +387,7 @@ built_from: v0.3.103
 - Other whole-list functions may share `cluster_copy_excluded()`'s merge hazard (`maktaba_min_node_schema()` is checked against the MANIFEST); add a lint rule when a second such list appears. (#822)
 - The tag guard requires the cloud rehearsal once 50.07's scenarios are live. (#715)
 - agent-trail's PyPI publishing waits for its trusted publisher; the CLI runs from git. (#702)
-- Epic 53: the desktop Player offers no screenshot (needs screen recording); 53.14 T09 (the simulator does not deliver MetricKit on demand); 53.16's symbolication is built but off until the Apple release workflow runs `maktaba-symbols upload` with a `MAKTABA_SYMBOLS_TOKEN` secret and the cloud's api nodes get the token, then T07 (a canary home's report through the cloud rehearsal); Android native frames are not symbolicated; `docs/app-privacy.md`; native Remote Errors, Logs, Overview and Storage screens (recovery is native; restoring a backup and downloading diagnostics are web-only, and maktaba.dev lacks the iPhone recovery shot); with several machines the Overview's 50 lines leave out component lines, and spec 53.12 still calls the component cap the catalog's size (now per machine). (#896, #905, #688, #689, #691, #732, #745, #774, #782, #824, #915, #917, #918, #952)
+- Epic 53: the desktop Player offers no screenshot (needs screen recording); 53.14 T09 (the simulator does not deliver MetricKit on demand); 53.16 uploads no symbols until the `MAKTABA_SYMBOLS_TOKEN` repository secret is added; the workflow's path to unstripped libraries is unconfirmed on AGP 9.4 (a "no native libraries" notice on a tag run would mean it is wrong); the Crash symbols page shows a native table's build id under the UUID header; `docs/app-privacy.md`; native Remote Errors, Logs and Storage screens; the Overview names machines by node id, its summary series fill only from this release, and the four 60-machine tests run over the 400 ms soft cap. (#896, #905, #688, #689, #691, #732, #745, #774, #782, #824, #915, #917, #918, #952, #957, #959, #960, #961, #967, #970, #978, #954)
 - Epic 53 log bench: the strict Python bench's margin at the reference is about 20% (the secret scrub, about 2.6 µs, is next to look at), and the Go `logbench` keeps its runner factor until it flakes; the `logs` role's CPU and memory on a live home; the log pipeline's numbers on the live Overview. (#690, #740, #802, #838, #866)
 - maktaba.dev shots of the Remote's word review and the phone Players' queue. (#703)
 - DASH top-level segments are not on the stream gate's allow-list. (#474)
@@ -378,6 +397,7 @@ built_from: v0.3.103
 - Dependabot dismissals to revisit when tauri moves to GTK4 and eslint adopts minimatch 11. (d20261102-dependabot-dismissals)
 - The rehearsal could skip, as not applicable, a row whose test does not exist at the rehearsed commit (for example `go test -list` first). (d20261108-rehearsal-matrix-skew)
 - Only the wave scenarios run the crash-loop check: the others use a fake pipeline wheel with no `maktaba_plugin_runner`; a fake runner module there would let every scenario run it. (d20261108-runners-wait-venv)
+- Epic 57 (parental controls, spec only): the build, Phase 1 first (57.01, 57.02, 57.03, 57.10), and a real-device check of whether the effective rating limit reflects the parent's own Content & Privacy Restrictions (57.04 §4), before the Phase 3 release tag. (#979)
 
 ## Missing events
 
@@ -386,18 +406,12 @@ built_from: v0.3.103
 | #784 | 2026-11-07 | fix(update): a busy pipeline no longer rolls an update back |
 | #812 | 2026-11-07 | fix(restore): the vector index is built alone, with memory of its own |
 | #946 | 2026-11-07 | fix(backups): old backups go on their own |
-| #954 | 2026-11-07 | spec 53.12: the label caps as built (per machine for id series) |
-| #957 | 2026-11-07 | 53.16: TestFlight uploads crash symbol tables; the cloud deploy provisions their token |
-| #959 | 2026-11-08 | Remotes: restore a backup and download diagnostics natively (Epic 53) |
-| #960 | 2026-11-07 | Epic 53 story 53.12: the Overview dashboard scales with many machines |
-| #961 | 2026-11-07 | 53.16: Android R8 mappings and desktop stacks in problem reports; rehearsal T07 |
 | #966 | 2026-11-08 | fix(appcontainer): a runner grant or revoke lands only on the folder that was checked (54.23) |
-| #967 | 2026-11-07 | Epic 53 story 53.16: Android native crash frames symbolicated in the operator console |
 | #968 | 2026-11-07 | feat(appcontainer): a runner's library on an SMB share through its launcher's file broker (54.23) |
-| #971 | 2026-11-08 | test(logindex): TestBoards records an hour of scrapes, not three |
 | #973 | 2026-11-08 | fix(supervisor): plugin runners wait for the venv like the pipeline |
+| #974 | 2026-11-08 | feat(plugin-runner): a runner's tools read their one share input through the broker's handle (54.23) |
 | #976 | 2026-11-08 | fix(plugins): first-party stages stay in the worker on Windows (54.23) |
-| #978 | 2026-11-08 | maktaba.dev: the iPhone Remote's recovery screen, with restore (Epic 53) |
+| #977 | 2026-11-08 | fix(plugin-runner): a Windows runner starts its tools through anonymous pipes (54.23) |
 
 ## Index
 
@@ -897,8 +911,19 @@ built_from: v0.3.103
 | 0949-migration-lint-goose-annotations | 2026-11-08 | pr | migration-lint refuses goose annotations out of order |
 | 0952-android-tombstones | 2026-11-08 | pr | Android native crashes keep the crashed thread's frames (story 53.14) |
 | 0953-runner-start-wait | 2026-11-08 | pr | The first jobs after an update ran in the worker beside a runner that was starting |
+| 0954-spec-label-caps | 2026-11-08 | pr | Spec 53.12 states the label caps as built |
 | 0956-runners-on-windows | 2026-11-08 | pr | First-party plugin runners on Windows, each group in its own AppContainer (story 54.23) |
+| 0957-symbols-release-upload | 2026-11-08 | pr | 53.16: the Apple release uploads symbol tables; the cloud deploy provisions their token |
+| 0959-remote-restore-diagnostics | 2026-11-08 | pr | The native Remotes restore a backup and download diagnostics |
+| 0960-overview-many-machines | 2026-11-08 | pr | 53.12: the Overview dashboard scales with many machines |
+| 0961-android-desktop-symbols | 2026-11-08 | pr | 53.16: Android R8 mappings, desktop stacks, and rehearsal T07 |
 | 0962-failed-runners-reported | 2026-11-08 | decision | A home reports a failed plugin runner, to admins only, with the stages that run in the worker |
+| 0963-snapshot-scrollbar | 2026-11-08 | pr | The Mac page snapshots no longer compare the scroll bar |
+| 0967-android-native-symbols | 2026-11-08 | pr | 53.16: Android native crash frames symbolicated |
+| 0970-overview-offline-first | 2026-11-08 | pr | 53.12: an offline machine ranks first on the Overview |
+| 0971-testboards-budget | 2026-11-08 | pr | TestBoards outgrew the unit test-time budget |
+| 0978-iphone-recovery-shots | 2026-11-08 | pr | maktaba.dev shows the iPhone Remote's recovery screen |
+| 0979-epic57-parental-controls | 2026-11-08 | decision | Epic 57 spec: parental controls on iPhone and iPad, on Apple's Screen Time |
 | d20261108-backups-tidy | 2026-11-08 | incident | Old backups were pruned only at an update, and a lone failed dump stayed for good |
 | d20261108-login-item-relaunch | 2026-11-08 | incident | The Mac update to 0.3.96 left the server stopped behind a login item macOS would not re-register |
 | d20261108-rehearsal-matrix-skew | 2026-11-08 | incident | A rehearsal of an older commit ran a scenario that commit does not have |

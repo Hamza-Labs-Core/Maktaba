@@ -247,6 +247,64 @@ describe("Dashboards", () => {
     expect(Array.from(pick.options).map((o) => o.textContent)).toContain("b (غير متصل)");
   });
 
+  it("names each machine as the Machines page does, keyed by its node id", async () => {
+    get.mockImplementation((path: string) =>
+      Promise.resolve({
+        board: "overview",
+        range: "24h",
+        step: 60,
+        machine: path.includes("machine=") ? "n45" : undefined,
+        machines: {
+          total: 3,
+          shown: path.includes("machine=") ? ["n45"] : ["n45", "n07", "home"],
+          all: ["home", "n07", "n45"],
+          offline: ["n45"],
+        },
+        names: { home: "Living room", n07: "Attic NAS", n45: "Office", bad: 7 },
+        series: [
+          {
+            name: "maktaba_host_load1",
+            labels: "machine=n07",
+            kind: "gauge",
+            points: [[1, 2]],
+          },
+        ],
+      })
+    );
+    renderPage(<AdminDashboards />, { path: "/admin/dashboards" });
+    expect(await screen.findByTestId("dash-offline")).toHaveTextContent("Offline: Office.");
+    const pick = screen.getByLabelText(en["dash.machine"]) as HTMLSelectElement;
+    const options = Array.from(pick.options).map((o) => [o.value, o.textContent]);
+    expect(options).toContainEqual(["n07", "Attic NAS (n07)"]);
+    expect(options).toContainEqual(["home", "Living room (home)"]);
+    expect(options).toContainEqual(["n45", "Office (n45) (offline)"]);
+    // the legend and the screen-reader sentence name the machine
+    const panel = (await screen.findAllByTestId("dash-panel"))[0];
+    expect(panel.textContent).toContain("Attic NAS");
+    expect(panel.textContent).not.toContain("n07");
+    // picking by name still asks by node id
+    fireEvent.change(pick, { target: { value: "n45" } });
+    await waitFor(() => expect(String(get.mock.calls.at(-1)?.[0])).toContain("machine=n45"));
+  });
+
+  it("an older home without names shows the node ids, and Arabic keeps the id as the hint", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    get.mockResolvedValue({
+      board: "overview",
+      range: "24h",
+      step: 60,
+      machines: { total: 2, shown: ["a", "b"], all: ["a", "b"], offline: ["b"] },
+      names: { a: "المكتب" },
+      series: [{ name: "maktaba_machines_load1_max", kind: "gauge", points: [[1, 2]] }],
+    });
+    renderPage(<AdminDashboards />, { path: "/admin/dashboards" });
+    expect((await screen.findByTestId("dash-offline")).textContent).toContain("غير متصلة: b");
+    const pick = screen.getByLabelText(ar["dash.machine"]) as HTMLSelectElement;
+    const labels = Array.from(pick.options).map((o) => o.textContent);
+    expect(labels).toContain("المكتب (a)");
+    expect(labels).toContain("b (غير متصل)");
+  });
+
   it("a viewer sees admins only, and no board is asked for", async () => {
     renderPage(<AdminDashboards />, { path: "/admin/dashboards", user: memberUser });
     expect(await screen.findByText(en["common.forbidden.title"])).toBeInTheDocument();

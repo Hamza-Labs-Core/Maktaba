@@ -775,6 +775,7 @@
     <string name="dash_machines_offline">غير متصلة: %1$s. تأتي الأجهزة غير المتصلة أولاً، وتنتهي خطوطها عند آخر قيمها.</string>
     <string name="dash_machine_offline">هذا الجهاز غير متصل. تنتهي خطوطه عند آخر قيمه.</string>
     <string name="dash_machine_offline_option">%1$s (غير متصل)</string>
+    <string name="dash_machine_option">%1$s (%2$s)</string>
     <!-- Epic 53 stories 53.04, 53.05: the recovery screen (the console's words) -->
     <string name="recovery_title">الاستعادة</string>
     <string name="recovery_intro">جزء من مكتبة لا يعمل. يمكنك هنا معرفة ما حدث وإصلاحه.</string>

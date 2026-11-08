@@ -211,6 +211,19 @@ extension DiagnosticsOverHTTP {
         #expect(o.machines?.offline == [] && o.machines?.isOffline("a") == false)
     }
 
+    @Test func theOverviewNamesItsMachinesAsTheMachinesPageDoes() throws {
+        let json = #"{"board":"overview","machines":{"total":2,"shown":["n07","home"],"all":["home","n07"],"offline":[]},"names":{"home":"Living room","n07":"Attic NAS","n09":" "},"series":[{"name":"maktaba_component_down","labels":"id=core.api,machine=n07","kind":"gauge","points":[]}]}"#
+        let b = try JSONDecoder.home.decode(BoardDoc.self, from: Data(json.utf8))
+        #expect(b.name(of: "n07") == "Attic NAS" && b.name(of: "home") == "Living room")
+        // no name, or a blank one: the node id
+        #expect(b.name(of: "n08") == "n08" && b.name(of: "n09") == "n09")
+        #expect(b.series[0].legend(names: b.names) == "core.api · Attic NAS" && b.series[0].legend == "core.api · n07")
+        // a home before names, or names that are not text: every machine by its id
+        let old = #"{"board":"overview","names":{"n07":7},"series":[]}"#
+        let o = try JSONDecoder.home.decode(BoardDoc.self, from: Data(old.utf8))
+        #expect(o.names.isEmpty && o.name(of: "n07") == "n07")
+    }
+
     @Test func oneMachineOfManyIsNotSomeMachines() throws {
         let json = #"{"board":"overview","machine":"n07","machines":{"total":37,"shown":["n07"],"all":[]},"series":[]}"#
         let b = try JSONDecoder.home.decode(BoardDoc.self, from: Data(json.utf8))

@@ -238,3 +238,37 @@ func (h *Handler) OfflineMachines(ctx context.Context) ([]string, error) {
 	sort.Strings(out)
 	return out, nil
 }
+
+// HomeMachine is the machine id the home's own lines carry on the dashboards
+// (shared/components/store.Home).
+const HomeMachine = "home"
+
+// MachineNames are the names the Machines page shows for the machine ids asked (the home's
+// own name for HomeMachine, each joined machine's name for its node id); an id it has no
+// name for is left out. The dashboards' Overview names its machines with them (story
+// 53.12). The names are the user's text: the caller bounds them for display.
+func (h *Handler) MachineNames(ctx context.Context, ids []string) (map[string]string, error) {
+	want := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		want[id] = true
+	}
+	out := map[string]string{}
+	if len(want) == 0 {
+		return out, nil
+	}
+	nodes, err := h.Store.Nodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, n := range nodes {
+		if want[n.ID] && n.Name != "" {
+			out[n.ID] = n.Name
+		}
+	}
+	if want[HomeMachine] && out[HomeMachine] == "" {
+		if id, err := h.Store.Identity(ctx); err == nil && id.Name != "" {
+			out[HomeMachine] = id.Name
+		}
+	}
+	return out, nil
+}
