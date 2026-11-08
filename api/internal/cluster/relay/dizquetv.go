@@ -924,12 +924,16 @@ func (c *dzCall) writeChannel(method string, body []byte) (int, []byte, *Error) 
 
 // ---------------------------------------------------------------- the hosted-logo check
 
-// artLink: link names one file directly under base (no climb, no encoded separator).
-func artLink(base, link string) bool {
+// artName: the one file directly under base that link names (no climb, no encoded
+// separator), or "" when link names anything else.
+func artName(base, link string) string {
 	name, ok := strings.CutPrefix(link, base+"/")
 	low := strings.ToLower(name)
-	return ok && artNameRe.MatchString(name) && !strings.HasPrefix(name, ".") &&
-		!strings.Contains(low, "%2f") && !strings.Contains(low, "%5c") && !strings.Contains(low, "%2e")
+	if !ok || !artNameRe.MatchString(name) || strings.HasPrefix(name, ".") ||
+		strings.Contains(low, "%2f") || strings.Contains(low, "%5c") || strings.Contains(low, "%2e") {
+		return ""
+	}
+	return name
 }
 
 // art answers the status of a HEAD of one file under the home's own dz_art_url (no body):
@@ -948,10 +952,13 @@ func (c *dzCall) art(rawQuery string) Result {
 	if base == "" {
 		return Result{Err: fail(CodeNotConfigured, "no logo host (dz_art_url) is set on the home")}
 	}
-	if !artLink(base, link) {
+	name := artName(base, link)
+	if name == "" {
 		return Result{Err: fail(CodeNotAllowed, "only a file under the home's logo host is checked")}
 	}
-	hreq, err := http.NewRequestWithContext(c.ctx, http.MethodHead, link, nil)
+	// the request goes to the admin's host with the checked file name, never to the string
+	// the plugin sent
+	hreq, err := http.NewRequestWithContext(c.ctx, http.MethodHead, base+"/"+name, nil)
 	if err != nil {
 		return Result{Err: fail(CodeBadRequest, "request not buildable")}
 	}
@@ -960,7 +967,7 @@ func (c *dzCall) art(rawQuery string) Result {
 	// other hop answers the redirect's own status
 	client := *c.d.client
 	client.CheckRedirect = func(r *http.Request, via []*http.Request) error {
-		if len(via) >= 3 || !artLink(base, r.URL.String()) {
+		if len(via) >= 3 || artName(base, r.URL.String()) == "" {
 			return http.ErrUseLastResponse
 		}
 		return nil
