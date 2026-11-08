@@ -18,7 +18,7 @@ from typing import Any
 import pytest
 from maktaba_plugin_sdk.native import PluginRefused
 
-from maktaba_plugin_runner import sandbox, winfiles, winpipe
+from maktaba_plugin_runner import sandbox, winfiles, winpipe, winproc
 
 
 def test_the_policy_is_printed_for_the_launcher(tmp_path: Path) -> None:
@@ -458,3 +458,188 @@ def test_the_broker_pipe_carries_one_line_each_way() -> None:
     with pytest.raises(PermissionError):
         b({"op": "stat", "path": "p"})
     assert winfiles.install_from_env({}) is False
+
+
+# --- a runner's tool starts on Windows: anonymous pipes (winproc) ----------------------
+
+
+_PY = sys.executable
+
+
+def _alive(pid: int) -> bool:
+    if sys.platform == "win32":
+        return False  # only polled on posix; Windows is covered by CI's AppContainer test
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    try:  # a zombie the helper has not reaped yet is not running
+        with open(f"/proc/{pid}/stat") as f:
+            return f.read().split()[2] != "Z"
+    except OSError:
+        return True
+
+
+def test_a_tool_start_through_anonymous_pipes_answers_as_asyncios_does() -> None:
+    """Story 54.23: on Windows a runner starts its tools with winproc's
+    ``create_subprocess_exec`` (``subprocess.Popen``, anonymous pipes: asyncio's own makes
+    named pipes, which an AppContainer may not create). It answers as asyncio's does:
+    ``communicate`` with the exit code set after, ``returncode`` None while it runs,
+    ``stdout.readline`` and ``async for``, ``stderr.read(n)``, ``limit`` for long lines, and
+    a large output on both pipes at once without a deadlock."""
+
+    async def go() -> None:
+        proc = await winproc.create_subprocess_exec(
+            _PY,
+            "-c",
+            "import sys; sys.stdout.write('o'*(8<<20)); sys.stderr.write('e'*(8<<20)); sys.exit(3)",
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        out, err = await asyncio.wait_for(proc.communicate(), 60)
+        assert out is not None and err is not None
+        assert (len(out), len(err), proc.returncode) == (8 << 20, 8 << 20, 3)
+
+        proc = await winproc.create_subprocess_exec(
+            _PY,
+            "-c",
+            "import sys,time; print('a'); print('b'*100000); sys.stdout.flush();"
+            " time.sleep(0.3); print('c')",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            limit=1 << 20,
+        )
+        assert proc.returncode is None and proc.pid > 0
+        assert await proc.stdout.readline() == b"a\n"  # type: ignore[union-attr]
+        lines = [line async for line in proc.stdout]  # type: ignore[union-attr]
+        assert lines == [b"b" * 100000 + b"\n", b"c\n"]
+        assert await proc.stderr.read(4096) == b""  # type: ignore[union-attr]
+        assert await proc.wait() == 0 and proc.returncode == 0
+
+        proc = await winproc.create_subprocess_exec(
+            _PY,
+            "-c",
+            "import sys; sys.stdout.write(sys.stdin.read().upper())",
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+        )
+        out, err = await proc.communicate(b"hello")
+        assert (out, err) == (b"HELLO", None)
+
+    asyncio.run(go())
+
+
+def test_a_tools_input_handle_reaches_it_through_anonymous_pipes(tmp_path: Path) -> None:
+    """A descriptor given as the tool's standard input (the broker's handle for ``fd:``)
+    reaches it: the tool reads and seeks it."""
+    src = tmp_path / "in.bin"
+    src.write_bytes(b"0123456789")
+
+    async def go() -> bytes:
+        fd = os.open(src, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        try:
+            proc = await winproc.create_subprocess_exec(
+                _PY,
+                "-c",
+                "import os,sys; os.lseek(0, 4, 0); sys.stdout.buffer.write(os.read(0, 3))",
+                stdin=fd,
+                stdout=subprocess.PIPE,
+            )
+        finally:
+            os.close(fd)
+        out, _ = await proc.communicate()
+        return out or b""
+
+    assert asyncio.run(go()) == b"456"
+
+
+def test_a_tool_that_times_out_or_is_cancelled_is_killed() -> None:
+    """A caller's timeout (``wait_for`` then ``kill`` and ``wait``, as the media helpers do)
+    ends the tool; a cancelled ``communicate`` or ``wait`` kills it too (on Windows with the
+    Job Object it was put in, so what it started ends with it)."""
+
+    async def timed_out() -> int:
+        proc = await winproc.create_subprocess_exec(
+            _PY, "-c", "import time; time.sleep(60)", stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(proc.communicate(), 0.5)
+        # the cancelled communicate killed it: it exits at once, not in a minute
+        code = await asyncio.wait_for(proc.wait(), 5)
+        proc.kill()  # the caller's own kill after the timeout is harmless
+        assert proc.returncode == code
+        return proc.pid
+
+    pid = asyncio.run(timed_out())
+    assert not _alive(pid)
+
+    async def cancelled() -> int:
+        proc = await winproc.create_subprocess_exec(_PY, "-c", "import time; time.sleep(60)")
+        task = asyncio.ensure_future(proc.wait())
+        await asyncio.sleep(0.3)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await asyncio.sleep(0.5)
+        assert proc.returncode is not None
+        return proc.pid
+
+    pid = asyncio.run(cancelled())
+    assert not _alive(pid)
+
+
+def test_the_runner_starts_tools_through_anonymous_pipes_only_once_installed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Installed (a Windows runner, after its sandbox): ``asyncio.create_subprocess_exec``
+    is winproc's, so every stage's tool start takes it; not installed it is asyncio's own.
+    The exec guard still sees each start (it is ``subprocess.Popen``'s audit event)."""
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", asyncio.create_subprocess_exec)
+    monkeypatch.setattr(
+        asyncio.subprocess, "create_subprocess_exec", asyncio.subprocess.create_subprocess_exec
+    )
+    ours: object = winproc.create_subprocess_exec
+    assert vars(asyncio)["create_subprocess_exec"] is not ours
+    winproc.install()
+    assert vars(asyncio)["create_subprocess_exec"] is ours
+    assert vars(asyncio.subprocess)["create_subprocess_exec"] is ours
+    seen: list[object] = []
+
+    def hook(event: str, args: tuple[object, ...]) -> None:
+        if event == "subprocess.Popen":
+            seen.append(args[1])
+
+    sys.addaudithook(hook)
+
+    async def go() -> bytes:
+        proc = await asyncio.create_subprocess_exec(_PY, "-c", "print('x')", stdout=subprocess.PIPE)
+        out, _ = await proc.communicate()
+        return out
+
+    assert asyncio.run(go()).strip() == b"x"
+    assert any(isinstance(a, (list, tuple)) and "print('x')" in a for a in seen)
+
+
+def test_a_refused_tool_start_is_a_refusal_not_the_tools_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``run_media`` answers a missing tool as exit 127, but a refusal to start one (the
+    runner's sandbox, as an AppContainer refused asyncio's named pipes) is raised: the job
+    then runs in the worker (sandbox_refused) instead of failing as the tool's own exit."""
+    from maktaba_pipeline.engine import media
+    from maktaba_pipeline.plugins.native import sandbox_refused
+
+    async def refused(*_a: object, **_k: object) -> object:
+        raise PermissionError(13, "Access is denied")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", refused)
+    with pytest.raises(PermissionError) as exc:
+        asyncio.run(media._real_runner(["ffmpeg", "-version"], 5))
+    assert sandbox_refused(exc.value)
+
+    async def missing(*_a: object, **_k: object) -> object:
+        raise FileNotFoundError(2, "no such tool")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", missing)
+    assert asyncio.run(media._real_runner(["ffmpeg", "-version"], 5)).returncode == 127

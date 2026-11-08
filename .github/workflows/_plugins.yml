@@ -261,6 +261,21 @@ jobs:
           MAKTABA_BROKER_PYTHON="$(cygpath -w "$(command -v python)")" \
             go test -count=1 -v -run '^(TestARunnersLibraryOnAShareThroughItsBroker|TestARunnersBrokerServesOnlyItsShareFolders|TestTheRunnerLauncherLeavesSharesAlone)$' ./internal/appcontainer/
 
+      # 54.23 on Windows: a stage's captured tool start (asyncio, stdout and stderr PIPE)
+      # inside a runner's AppContainer: asyncio's own named pipes are refused there (the
+      # control); the runner's anonymous pipes (winproc) answer the output, the exit code and
+      # a cancel. Verbose, so the log shows it ran
+      - name: A runner's captured tool start in its AppContainer (54.23)
+        if: runner.os == 'Windows'
+        working-directory: cmd/maktaba-server
+        shell: bash
+        env:
+          MAKTABA_BROKER_REQUIRE: '1'
+        run: |
+          set -euo pipefail
+          MAKTABA_BROKER_PYTHON="$(cygpath -w "$(command -v python)")" \
+            go test -count=1 -v -run '^TestARunnersCapturedToolStartRunsInItsAppContainer$' ./internal/appcontainer/
+
       # 54.23 on Windows: a first-party runner group started as the supervisor starts one,
       # through the launcher's runner-sandbox-run (CI's aclaunch, the same code), in its own
       # AppContainer and Job Object: from inside, only its granted folders, no canary on
