@@ -81,6 +81,15 @@ token is that AppContainer's with no other capability, or exits. Every AppContai
 the system's programs, so the runner's own guard keeps a group with tools to those tools;
 subtitles next to a video are written by name only, as on Linux.
 
+An AppContainer reaches no SMB share, so a library on a share is served by the launcher's
+file broker. The broker uses a pipe that only that runner's process may use. For each file
+the runner asks for, the launcher checks that the path is in the group's share folders and
+spelled one way only, with no junction or symbolic link on the way. It then opens the file
+itself and hands the runner the open handle: read access, or write access for a subtitle
+name. The bytes go straight to the share, so a read costs what the share costs. A share the
+group writes in full is not brokered, and a tool (ffmpeg) cannot use the runner's handles.
+Those jobs run in the queue worker.
+
 The runner cannot listen there (an AppContainer may not create a named pipe, and Python on
 Windows has no unix sockets), so the supervisor serves its pipes: the worker reaches a runner
 through a pipe only the user Maktaba runs as can open, and the runner, from its AppContainer,

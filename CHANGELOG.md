@@ -434,6 +434,15 @@ build fails when the two differ.
 
 ### Added
 
+- **A runner reaches a library on a share on Windows (story 54.23).** A first-party runner on
+  Windows runs in an AppContainer, which reaches no SMB share, so every job on a share-hosted
+  library ran in the queue worker. The runner's launcher now brokers the group's share
+  folders. For each file the runner asks for over its own pipe, the launcher checks that the
+  path is in those folders and spelled one way only, with no junction or link on the way. It
+  then hands the runner the open file: read access, or write access for a subtitle name. The
+  subtitle stage now runs in its runner on a share. A share the group writes in full, and a
+  tool's job on a share, still run in the worker. No network capability is given to the
+  runner.
 - **A forwarded report's Apple crash reads as functions, files and lines (Epic 53 stories 53.14
   and 53.16).** Maktaba Cloud keeps a symbol table of each Apple binary from a release's dSYMs
   (its functions and line table, keyed by the binary's UUID), uploaded with the new
