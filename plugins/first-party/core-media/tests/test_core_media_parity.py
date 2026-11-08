@@ -157,6 +157,13 @@ def library(root: Path) -> Path:
 def seeder(lib_dir: Path) -> Any:
     async def seed(db: Any) -> None:
         await models_off(db)
+        # transcription is another plugin's (its own parity proves it): switched off here, as
+        # on a home without it, so probe's edges queue no transcribe, which would run ffmpeg
+        # on these stand-in files (absent on CI: each job failing and retried, 4x the time)
+        await db.execute(
+            "UPDATE job_stages SET enabled = FALSE, disabled_reason = 'component_off'"
+            " WHERE stage IN ('transcribe', 'extract')"
+        )
         await db.execute(
             "INSERT INTO libraries (id, name, roots) VALUES ($1, 'مكتبة الأساس', $2)",
             str(LIBRARY), [str(lib_dir)],

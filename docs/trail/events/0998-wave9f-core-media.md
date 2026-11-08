@@ -13,9 +13,17 @@ session: 848393e1-ea22-4a25-a90f-b930df232381
 - Its roles took slot 0217 (`0217_fp_roles.sql`, SchemaRev 217). The dizqueTV plugin (0214), wave 4's classify (0215) and the Plex removal (0216) merged first, the last of them while this branch's full suite was running. So the roles body was generated again from today's manifests: Plex Live TV only, no dizqueTV.
 - A parity proof runs each moved stage through both the old handler and the plugin. While it was being built, convert's parity raced the clock on fingerprints that hash a file's time; that was fixed here. An independent review found the scope-check uuid hole, which was fixed on its own (#937).
 
+- CI found two defects that local runs missed:
+  - `maktaba-server stages impl` would have flipped a core stage, because `probe` is now a built-in plugin's. It now refuses a stage whose component isn't switchable, as the API does, and its test covers probe, scan and fp_gate.
+  - The core-media parity took 21 s on CI, over the hard cap. Probe's edges queued `transcribe`, which ran ffmpeg on the stand-in files; with no ffmpeg on CI, each job failed and was retried. Transcription is switched off in that world, as on a home without it: 12.0 s to 4.1 s with no ffmpeg on the machine.
+
 ## What we learned
 - A move this big conflicts with every wave merged meanwhile (registry, graph, import_mediaintel, pyproject lists, guide, roles). Resolve by dropping both sides' moved entries, then rebuild the generated files (`bundle.py --write`, `roles.py sql`) instead of merging them by hand.
 - Run the full Go suites alone. A real-ffmpeg timing test (`TestTwoStationsAligned_RealFFmpeg`) fails when pytest shares the machine, and passes alone.
+
+- First-party plugin tests run on their own (`pytest ../plugins/first-party`) don't load the pipeline's pytest config, so the soft-cap hook never judges them. A test that's over the cap passes locally and fails on CI. Time them the way CI runs them, together with `tests/plugins/firstparty`.
+- A parity world runs every stage the graph queues, including other plugins'. Switch off what isn't under test, or the world depends on the machine's tools.
+- A move that turns core stages into plugin stages changes every check that asks whether a stage is a plugin's. Run `cmd/maktaba-server`'s tests too.
 
 ## Keep doing
 - Re-check main's newest migration just before the push and again before the merge (the watcher's slot guard), and take the next slot then, not when the branch starts.
