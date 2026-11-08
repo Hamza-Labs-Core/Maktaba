@@ -9,6 +9,7 @@ import com.hamzalabs.maktaba.core.api.sendCrashEnvelope
 import com.hamzalabs.maktaba.core.crash.CrashOutbox
 import com.hamzalabs.maktaba.core.crash.Envelope
 import com.hamzalabs.maktaba.core.crash.KeptCrash
+import com.hamzalabs.maktaba.core.crash.Tombstone
 import com.hamzalabs.maktaba.core.session.Home
 import java.io.File
 import java.util.UUID
@@ -63,10 +64,14 @@ object CrashReports {
             val am = context.getSystemService(ActivityManager::class.java)
             val exits = runCatching { am.getHistoricalProcessExitReasons(context.packageName, 0, 10) }.getOrDefault(emptyList())
             for (x in exits.filter { it.timestamp > seen }) {
-                // an ANR's trace is text; a native crash's is a binary tombstone, not kept
+                // an ANR's trace is text; a native crash's is a protobuf tombstone (Android 12+),
+                // of which the signal, the abort message and the crashed thread's frames are kept
                 val trace = if (x.reason != ExitReasons.ANR) null
                 else runCatching { x.traceInputStream?.use { input -> readUpTo(input, KeptCrash.TRACE_MAX) }?.let(::String) }.getOrNull()
-                ExitReasons.kept(x.reason, x.timestamp, x.description, trace, appVersion(context), osVersion(), Build.MODEL)?.let(outbox::keep)
+                val tombstone = if (x.reason != ExitReasons.CRASH_NATIVE) null
+                else runCatching { x.traceInputStream?.use { input -> readUpTo(input, Tombstone.READ_MAX) } }.getOrNull()
+                ExitReasons.kept(x.reason, x.timestamp, x.description, trace, appVersion(context), osVersion(), Build.MODEL,
+                    tombstone = tombstone, ownPackage = context.packageName)?.let(outbox::keep)
                 newest = maxOf(newest, x.timestamp)
             }
         }
@@ -132,15 +137,24 @@ object ExitReasons {
     const val CRASH_NATIVE = 5
     const val ANR = 6
 
-    /** [reason] is an `ApplicationExitInfo.REASON_*`; others (the person swiped it away) are none. */
-    fun kept(reason: Int, at: Long, description: String?, trace: String?, appVersion: String?, osVersion: String?, device: String?): KeptCrash? {
+    /**
+     * [reason] is an `ApplicationExitInfo.REASON_*`; others (the person swiped it away) are none.
+     * A native crash's [tombstone] (Android 12+) gives its signal, abort message and frames; on
+     * Android 11, or a tombstone that does not parse, the crash is kept with its reason alone.
+     */
+    fun kept(reason: Int, at: Long, description: String?, trace: String?, appVersion: String?, osVersion: String?, device: String?,
+             tombstone: ByteArray? = null, ownPackage: String = "com.hamzalabs.maktaba"): KeptCrash? {
         val (type, mechanism) = when (reason) {
             ANR -> "ANR" to "anr"
             CRASH_NATIVE -> "NativeCrash" to "native"
             LOW_MEMORY -> "LowMemory" to "low_memory"
             else -> return null
         }
-        return KeptCrash(at = at, type = type, reason = description.orEmpty().take(500), mechanism = mechanism,
-            trace = trace?.take(KeptCrash.TRACE_MAX), appVersion = appVersion, osVersion = osVersion, device = device)
+        val t = if (reason == CRASH_NATIVE && tombstone != null) Tombstone.parse(tombstone, ownPackage, Redact::scrub) else null
+        val signal = t?.signal?.let { s -> t.code?.let { "$s ($it)" } ?: s }
+        return KeptCrash(at = at, type = t?.signal ?: type,
+            reason = (t?.abortMessage ?: signal ?: description.orEmpty()).take(500), mechanism = mechanism,
+            trace = trace?.take(KeptCrash.TRACE_MAX), appVersion = appVersion, osVersion = osVersion, device = device,
+            nativeFrames = t?.frames.orEmpty())
     }
 }
