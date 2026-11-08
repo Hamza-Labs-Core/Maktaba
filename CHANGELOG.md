@@ -348,6 +348,12 @@ build fails when the two differ.
 
 ### Security
 
+- **The cloud's two web sites each get a Worker in front (Epic 50 story 50.32).**
+  `app.maktaba.tv` and `admin.maktaba.tv` serve their own bundles through a Cloudflare Worker that
+  sets each host's security headers and content policy on every page and API answer. Each lets
+  through only its own API paths: the user site answers the operator console's API with 404
+  before it reaches the cloud, and the console's site serves nothing else, tells search engines
+  to stay away and is never cached.
 - **The cloud's operator console has its own listener and name (Epic 50 story 50.32).** Every
   `/v1/admin/*` route is served only by the api role's admin listener, for `admin.maktaba.tv`
   alone: on the user names each one is the same 404 as a route that doesn't exist. The console
