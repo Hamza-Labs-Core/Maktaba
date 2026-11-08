@@ -65,6 +65,9 @@ type runnerJobLine struct {
 	JobID  int64   `json:"job_id"`
 	Status string  `json:"status"`
 	MS     float64 `json:"ms"`
+	// Broker: what the launcher's broker answered for the job (winfiles.take_counts:
+	// "stat", "open", "stat_missing", "open_refused", "unrouted_refused", ...)
+	Broker map[string]int `json:"broker"`
 }
 
 // runnerJobLines are the job lines of a runner's log (its spool: the launcher's lines and
@@ -190,6 +193,28 @@ func handedToWorker(group string, r stageReport, runnerLog string) []string {
 		p = append(p, fmt.Sprintf("the %s runner's log never names job %d", group, r.JobID))
 	}
 	return p
+}
+
+// brokeredProblems checks a job on a brokered share read it through the launcher's broker:
+// its runner's job line counts at least one answered stat (the source looked up) and one
+// answered open (the tool's input handle), and no refusal of any kind.
+func brokeredProblems(r stageReport, runnerLog string) []string {
+	for _, l := range runnerJobLines(runnerLog) {
+		if l.JobID != r.JobID {
+			continue
+		}
+		var p []string
+		if l.Broker["stat"] < 1 || l.Broker["open"] < 1 {
+			p = append(p, fmt.Sprintf("the share was not read through the broker: its answers %v (want a stat and an open)", l.Broker))
+		}
+		for k, n := range l.Broker {
+			if strings.HasSuffix(k, "_refused") {
+				p = append(p, fmt.Sprintf("the broker refused %s x%d", strings.TrimSuffix(k, "_refused"), n))
+			}
+		}
+		return p
+	}
+	return []string{fmt.Sprintf("no runner job line for job %d", r.JobID)}
 }
 
 // within reports whether path is dir or inside it.
@@ -404,6 +429,32 @@ func TestTheHandOffVerdict(t *testing.T) {
 			r := refused()
 			c.edit(&r)
 			p := handedToWorker("files", r, c.log)
+			if !strings.Contains(strings.Join(p, "\n"), c.want) {
+				t.Fatalf("problems %q, want one saying %q", p, c.want)
+			}
+		})
+	}
+}
+
+// A job on a brokered share passes only when its runner's line shows the broker answered
+// its look-up and its tool's open, with nothing refused.
+func TestTheBrokeredShareVerdict(t *testing.T) {
+	r := goodStageReport()
+	line := func(broker string) string {
+		return `{"event": "plugin_runner_job", "group": "light", "stage": "thumb_small", "job_id": 7, "status": "ok", "ms": 90.0` + broker + "}"
+	}
+	if p := brokeredProblems(r, line(`, "broker": {"stat": 2, "stat_missing": 1, "open": 1}`)); len(p) != 0 {
+		t.Fatalf("a share read through the broker has problems: %q", p)
+	}
+	for name, c := range map[string]struct{ log, want string }{
+		"no broker at all":     {line(""), "not read through the broker"},
+		"only missing answers": {line(`, "broker": {"stat_missing": 8}`), "not read through the broker"},
+		"no tool open":         {line(`, "broker": {"stat": 1}`), "not read through the broker"},
+		"an unrouted call":     {line(`, "broker": {"stat": 1, "open": 1, "unrouted_refused": 1}`), "refused unrouted x1"},
+		"no line for the job":  {goodRunnerLog[:strings.Index(goodRunnerLog, "\n")], "no runner job line"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := brokeredProblems(r, c.log)
 			if !strings.Contains(strings.Join(p, "\n"), c.want) {
 				t.Fatalf("problems %q, want one saying %q", p, c.want)
 			}

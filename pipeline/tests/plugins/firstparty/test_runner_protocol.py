@@ -342,3 +342,18 @@ async def test_the_worker_asks_for_a_runner_that_is_not_up(monkeypatch: pytest.M
         "POST http://127.0.0.1:9/runners/light/start",
     ]
     native._ASKED.clear()
+
+
+def test_the_job_line_names_what_the_broker_answered(capsys: pytest.CaptureFixture[str]) -> None:
+    """On Windows with a share brokered, the runner's job line carries what the launcher's
+    broker answered for the job (CI's runner-stages proof that a share was read through it);
+    without one the line has no such field."""
+    import json
+
+    from maktaba_plugin_runner.server import job_line
+
+    job_line("light", "thumb_small", 5, "ok", 0.02, {"stat": 2, "stat_missing": 1, "open": 1})
+    job_line("light", "thumb_small", 6, "ok", 0.02, {})
+    first, second = (json.loads(x) for x in capsys.readouterr().err.splitlines())
+    assert first["broker"] == {"stat": 2, "stat_missing": 1, "open": 1}
+    assert "broker" not in second

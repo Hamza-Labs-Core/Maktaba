@@ -456,6 +456,58 @@ def test_a_refused_look_is_never_an_absent_file(
         find_sidecar_thumbnail(video)
 
 
+def test_every_look_on_a_share_path_goes_through_the_broker_or_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The lookups Windows answers without ``os.stat`` (``lexists``, ``islink``,
+    ``isjunction``, ``os.access``) go through the broker on a share path; a file call the shim
+    does not route (``os.scandir`` and so ``os.walk`` and ``glob``, ``os.open``, a mkdir, a
+    ``shutil`` copy) is refused there, never answered as an absent file, while the shim's own
+    audited calls pass. What the broker answered is counted for the runner's job line."""
+    from maktaba_pipeline.plugins.native import sandbox_refused
+
+    shim, asked = _shim(tmp_path, {"stat": {"size": 3, "mtime_ns": 1}})
+    # the shim's own audit events go through the installed hook, as in the runner
+    monkeypatch.setattr(sys, "audit", lambda e, *a: shim.exec_hook(e, a))
+    video = SHARE + "\\a\\ep1.mp4"
+    assert shim.lexists_(video) and not shim.islink_(video) and not shim.isjunction_(video)
+    assert shim.access_(video, os.R_OK) and shim.access_(video, os.F_OK)
+    with pytest.raises(PermissionError):
+        shim.access_(video, os.W_OK)
+    assert shim.isfile_(video)  # its own "os.stat" event passes the backstop
+    with shim.open_(video, "rb") as f:  # and its own "open"
+        assert f.read() == b"video bytes"
+    for event, args in (
+        ("os.scandir", (SHARE + "\\a",)),
+        ("open", (video, None, os.O_RDONLY)),  # os.open
+        ("os.mkdir", (SHARE + "\\b", 0o777, -1)),
+        ("glob.glob", (SHARE + "\\a\\*.jpg", False)),
+        ("shutil.copyfile", (str(tmp_path / "x"), SHARE + "\\a\\x")),
+        ("os.listdir", (os.fsencode(SHARE + "\\a"),)),
+    ):
+        with pytest.raises(PermissionError) as refused:
+            shim.exec_hook(event, args)
+        assert sandbox_refused(refused.value), event
+    # a local path, an fd and a share outside the brokered folders are not the shim's
+    shim.exec_hook("os.scandir", (str(tmp_path),))
+    shim.exec_hook("open", (3, "rb", 0))
+    shim.exec_hook("os.scandir", ("\\\\nas\\other",))
+    assert {a["op"] for a in asked} == {"stat", "open"}
+    assert shim.counts == {"stat": 6, "open": 1, "unrouted_refused": 7}
+
+
+def test_the_broker_counts_are_taken_once_per_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``take_counts`` empties the counts (the runner's job line reads what one job made the
+    broker answer); with no broker installed it is empty."""
+    monkeypatch.setattr(winfiles, "_installed", [])
+    assert winfiles.take_counts() == {}
+    shim = winfiles._Shim(lambda req: {"error": "gone", "errno": 2}, [SHARE], lambda h, _f: h)
+    monkeypatch.setattr(winfiles, "_installed", [shim])
+    assert not shim.isfile_(SHARE + "\\a\\ep1.webp")
+    assert winfiles.take_counts() == {"stat_missing": 1}
+    assert winfiles.take_counts() == {}
+
+
 def test_the_broker_pipe_carries_one_line_each_way() -> None:
     """The runner's side of the broker's pipe: a request line out, the answer line back
     (read in pieces as a pipe hands them), and a closed pipe is a refusal."""

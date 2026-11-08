@@ -99,6 +99,14 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 	if first, err := moovFirst(filepath.Join(shareDir, "show", "moov_end.mp4")); err != nil || first {
 		t.Fatalf("the fixture's index must be at its end: moov first %v, %v", first, err)
 	}
+	// the fixture as the stages see it: through the share, not its folder
+	for _, f := range []string{"moov_end.mp4", "moov_end.jpg"} {
+		info, err := os.Stat(share + `\show\` + f)
+		if err != nil || info.Size() == 0 {
+			t.Fatalf("the share does not serve the fixture's %s: %v", f, err)
+		}
+		t.Logf("fixture on the share: %s\\show\\%s, %d bytes", share, f, info.Size())
+	}
 	var cases []stageE2ECase
 	for _, lib := range []string{"local", "share"} {
 		cases = append(cases,
@@ -311,6 +319,9 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 			verdict, choice = handedToWorker, "refused in its runner by design, run by the worker"
 		}
 		problems := verdict(c.group, r, runnerLogs[c.group])
+		if c.Library == "share" && !c.handOff {
+			problems = append(problems, brokeredProblems(r, runnerLogs[c.group])...)
+		}
 		summary := r.summary()
 		switch c.Stage {
 		case "thumb_small":
@@ -330,6 +341,9 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 		for _, l := range runnerJobLines(runnerLogs[c.group]) {
 			if l.JobID == r.JobID {
 				line = fmt.Sprintf("runner %s logged job %d %s %s in %.0f ms", l.Group, l.JobID, l.Stage, l.Status, l.MS)
+				if len(l.Broker) > 0 {
+					line += fmt.Sprintf(", the broker answered %v", l.Broker)
+				}
 			}
 		}
 		out, _ := json.Marshal(summary)
