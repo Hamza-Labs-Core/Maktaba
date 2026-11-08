@@ -44,8 +44,10 @@ def test_the_policy_is_printed_for_the_launcher(tmp_path: Path) -> None:
     assert doc["run_dir"] == "/data/run/runners" and doc["net"] is False
     assert str(tmp_path / "ffmpeg") in doc["tool_dirs"]
     assert sys.prefix in doc["python"] or os.path.realpath(sys.prefix) in doc["python"]
-    assert doc["processes"] >= 2  # the runner and its tools
-    assert sandbox.policy_doc(sandbox.Policy())["processes"] in (1, 2)  # no tools: no child
+    assert doc["processes"] == 33  # the runner and room for its tools
+    # no tools: the runner alone, never room for a venv launcher's child (the launcher
+    # starts the base interpreter itself), whatever interpreter answers --policy
+    assert sandbox.policy_doc(sandbox.Policy())["processes"] == 1
     json.dumps(doc)  # what the launcher reads
 
 
@@ -633,6 +635,66 @@ def test_the_broker_pipe_carries_one_line_each_way() -> None:
     with pytest.raises(PermissionError):
         b({"op": "stat", "path": "p"})
     assert winfiles.install_from_env({}) is False
+
+
+def test_the_broker_hello_comes_first_and_a_refused_one_installs_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``install_from_env`` asks the broker's hello before routing anything: a broker that
+    turns this process away (it closes the pipe on a pid it does not serve, a venv
+    launcher's child) or answers no hello raises ``PermissionError``, and nothing is
+    installed, so the runner can fall back to refusing every share path."""
+    asked: list[dict[str, Any]] = []
+    installed: list[list[str]] = []
+
+    def fake_broker(answer: dict[str, Any] | None) -> Any:
+        class FakeBroker:
+            def __init__(self, _pipe: str) -> None:
+                pass
+
+            def __call__(self, req: dict[str, Any]) -> dict[str, Any]:
+                asked.append(req)
+                if answer is None:
+                    raise PermissionError(errno.EACCES, "the file broker closed its pipe")
+                return answer
+
+        return FakeBroker
+
+    monkeypatch.setattr(winfiles, "install", lambda _b, roots, **_kw: installed.append(roots))
+    env = {
+        winfiles.PIPE_ENV: "\\\\.\\pipe\\x-files",
+        winfiles.ROOTS_ENV: json.dumps([{"path": "\\\\nas\\lib", "write_named": True}]),
+    }
+    monkeypatch.setattr(winfiles, "Broker", fake_broker({"hello": True}))
+    assert winfiles.install_from_env(env) is True
+    assert asked == [{"op": "hello"}] and installed == [["\\\\nas\\lib"]]
+    for answer in (None, {"error": "not an operation", "errno": 13}, {}):
+        asked.clear()
+        installed.clear()
+        monkeypatch.setattr(winfiles, "Broker", fake_broker(answer))
+        with pytest.raises(PermissionError):
+            winfiles.install_from_env(env)
+        assert asked == [{"op": "hello"}] and installed == []
+
+
+def test_a_runner_not_in_the_venv_its_launcher_named_refuses_to_serve(
+    tmp_path: Path,
+) -> None:
+    """The launcher starts a venv's runner as its base interpreter and names the venv
+    (``MAKTABA_RUNNER_VENV``): a runner whose ``sys.prefix`` is not that venv (it did not
+    take ``__PYVENV_LAUNCHER__``) refuses to serve; one not started that way is not judged."""
+    from maktaba_plugin_runner.__main__ import VENV_ENV, venv_problem
+
+    venv, base = tmp_path / "venv", tmp_path / "python"
+    venv.mkdir()
+    base.mkdir()
+    assert venv_problem({}, prefix=str(base)) is None
+    assert venv_problem({VENV_ENV: str(venv)}, prefix=str(venv)) is None
+    assert venv_problem({VENV_ENV: str(venv) + os.sep}, prefix=str(venv)) is None
+    if sys.platform == "win32":
+        assert venv_problem({VENV_ENV: str(venv).upper()}, prefix=str(venv)) is None
+    why = venv_problem({VENV_ENV: str(venv)}, prefix=str(base))
+    assert why is not None and str(venv) in why and str(base) in why
 
 
 def test_a_broken_broker_pipe_is_a_refusal_never_a_missing_file(
