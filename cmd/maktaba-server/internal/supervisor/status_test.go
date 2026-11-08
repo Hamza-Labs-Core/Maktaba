@@ -241,3 +241,25 @@ func hasWord(xs []string, x string) bool { //nolint:unparam // a test helper
 	}
 	return false
 }
+
+// Epic 54: a plugin runner that failed is down in its admin-only group, and changes neither
+// overall, the banner nor features_down: its stages run in the worker, and no viewer
+// feature stops. Idle (on demand, nobody asked) it is off.
+func TestStatusPluginRunnersAdminOnly(t *testing.T) {
+	procs := append(homeProcs(), Process{Role: RolePluginRunner, Instance: "light", OnDemand: true})
+	s, b := boardOf(t, procs...)
+	allRunning(s)
+	setState(s, RolePluginRunner, "light", StateStopped)
+	b.Check(context.Background())
+	if d := b.Doc(); d.Components["plugin_runners"] != StatusOff || d.Overall != StatusOK {
+		t.Fatalf("an idle runner is off: %+v", d)
+	}
+	setState(s, RolePluginRunner, "light", StateFailed)
+	d := b.Doc()
+	if d.Components["plugin_runners"] != StatusDown {
+		t.Fatalf("a failed runner is down: %+v", d)
+	}
+	if d.Overall != StatusOK || d.Banner != "" || len(d.FeaturesDown) != 0 {
+		t.Fatalf("a failed runner changes no viewer state: %+v", d)
+	}
+}

@@ -60,6 +60,19 @@ describe("stripLines (the priority table)", () => {
     ]);
   });
 
+  it("tells only admins about a failed plugin runner, and not while it restarts", () => {
+    const failed: HomeStatus = { ...ok, components: { ...ok.components, plugin_runners: "down" } };
+    expect(stripLines(failed, admin)).toEqual([
+      { key: "plugin_runners", text: "status.pluginRunners", details: "/settings/plugins" },
+    ]);
+    expect(stripLines(failed, viewer)).toEqual([]);
+    for (const st of ["restarting", "starting", "off", "ok"] as const) {
+      expect(
+        stripLines({ ...ok, components: { ...ok.components, plugin_runners: st } }, admin)
+      ).toEqual([]);
+    }
+  });
+
   it("says the database when it is the database", () => {
     const s: HomeStatus = {
       ...ok,

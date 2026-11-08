@@ -37,6 +37,17 @@ import Testing
         #expect(StatusStripRules.lines(tv, online: true, admin: true).first?.details == "/admin/health")
     }
 
+    /// Epic 54: a failed plugin runner is an admin's line, to the Plugins page; a restart is not.
+    @Test func aFailedPluginRunnerIsAnAdminsLine() {
+        let failed = doc { $0.components["plugin_runners"] = "down" }
+        #expect(StatusStripRules.lines(failed, online: true, admin: false).isEmpty)
+        #expect(StatusStripRules.lines(failed, online: true, admin: true)
+            == [StripLine(key: "plugin_runners", text: StripWords.pluginRunners, details: "/settings/plugins")])
+        for st in ["restarting", "starting", "off", "ok"] {
+            #expect(StatusStripRules.lines(doc { $0.components["plugin_runners"] = st }, online: true, admin: true).isEmpty)
+        }
+    }
+
     @Test func liveTVOffIsLeftOutOfThePlaybackSentence() {
         let tv = doc { $0.overall = "degraded"; $0.components["streaming"] = "down" }
         #expect(StatusStripRules.lines(tv, online: true, admin: false, liveTVOff: true).first?.text == StripWords.streamingNoTV)

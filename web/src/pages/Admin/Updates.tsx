@@ -19,6 +19,7 @@ import { CopyField } from "../../components/CopyField";
 import { hrefOf, updateCodeHelp } from "../../help/registry";
 import { UpdatesBackups } from "./UpdatesBackups";
 import { UpdatesSettings } from "../Settings/UpdatesSettings";
+import { RunnersWarning } from "../Settings/RunnersWarning";
 import { useUpdateStatus } from "../../lib/updates";
 import {
   homeNext,
@@ -401,6 +402,7 @@ export function AdminUpdates() {
           {t("updates.settings.stale")}
         </p>
       )}
+      <RunnersWarning />
       {ov.stuck && !running && (
         <div className="mkt-updates__callout" role="alert" data-testid="updates-stuck">
           <p>

@@ -13,7 +13,10 @@ export interface HomeStatus {
   mode: "normal" | "safe" | "recovery";
   overall: "ok" | "degraded" | "down";
   components: Partial<
-    Record<"database" | "api" | "streaming" | "processing" | "search" | "logs", GroupState>
+    Record<
+      "database" | "api" | "streaming" | "processing" | "search" | "logs" | "plugin_runners",
+      GroupState
+    >
   >;
   features_down: string[];
   banner?: string;
@@ -108,7 +111,7 @@ export interface StripLine {
 /**
  * The strip's lines for a status, in priority order (story 53.06 §1): offline; the home
  * restarting or its database down; safe mode; a part a viewer feels (playback, search);
- * admin-only parts (processing). A feature that is off is not an outage: off groups have no
+ * admin-only parts (processing, log search, a failed plugin runner). A feature that is off is not an outage: off groups have no
  * line, and Live TV is left out of the playback sentence when it is off.
  */
 export function stripLines(
@@ -156,6 +159,9 @@ export function stripLines(
   }
   if (opts.admin && bad(g.logs))
     out.push({ key: "logs", text: "status.logs", details: "/admin/health" });
+  // Epic 54: a plugin runner that failed (down, not a restart): its stages run in the worker
+  if (opts.admin && g.plugin_runners === "down")
+    out.push({ key: "plugin_runners", text: "status.pluginRunners", details: "/settings/plugins" });
   return out;
 }
 

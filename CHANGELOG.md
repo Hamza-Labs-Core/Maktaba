@@ -1368,6 +1368,14 @@ build fails when the two differ.
   longer be fooled by a header. The old `server.trust_proxy_headers` is refused at start, and in
   production the API refuses a public listener.
 
+- **A failed plugin runner is reported (Epic 54).** When one of Maktaba's own plugin runners
+  fails, the stages set to run as plugins in it run in the worker, outside their sandbox. No
+  job is lost, but until now only a log line said so. System health has a new Plugin runners
+  line that names the runner, the machine and those stages, on every machine. The Plugins and
+  Updates pages show the same warning, with a link to Components to start the runners again.
+  An admin's status strip, on the web, Apple and Android, says it too. `/status.json` has a new
+  admin-only `plugin_runners` group, which changes neither `overall` nor the banners.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
