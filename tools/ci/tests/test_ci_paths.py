@@ -91,8 +91,18 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
         {"apple-apps": {"build"}},
     ),
     "pipeline only": (
-        ["pipeline/src/maktaba_pipeline/scanner/walk.py"],
+        ["pipeline/src/maktaba_pipeline/orchestrator/advance.py"],
         {"unit", "integration", "e2e", "node-packaging"},
+        {
+            "lint": {"pipeline"},
+            "unit": {"pipeline"},
+            "integration": {"integration"},
+            "node-packaging": {"packaging", "release_venv"},
+        },
+    ),
+    "a pipeline package a first-party plugin imports": (
+        ["pipeline/src/maktaba_pipeline/scanner/walk.py"],
+        {"unit", "integration", "e2e", "node-packaging", "plugins"},
         {
             "lint": {"pipeline"},
             "unit": {"pipeline"},
