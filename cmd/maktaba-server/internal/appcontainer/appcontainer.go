@@ -31,4 +31,8 @@ type Options struct {
 	Capabilities []string
 	// ProcessLimit is the Job Object's active process limit (0: 1, no child process).
 	ProcessLimit int
+	// Started is called with the process's id and handle once it is in its Job Object,
+	// before it runs (a runner's file broker duplicates handles into it, story 54.23); the
+	// handle is valid until Run returns.
+	Started func(pid uint32, process uintptr)
 }

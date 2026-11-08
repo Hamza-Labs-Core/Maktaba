@@ -139,7 +139,10 @@ func TestBoards(t *testing.T) {
 	start := now
 	ix.Scrape(ctx, []string{src.URL}, src.Client()) // over HTTP once
 	samples := parseMetrics(strings.NewReader(scrapeText(1, 1, "")))
-	for i := 0; i < 90; i++ { // then an hour and a half, a scrape a minute
+	// then an hour, a scrape a minute: enough points to see the series kept minute by minute
+	// (each Record also sums every machine's lines since 53.12, so three hours under -race
+	// went past the unit budget's cap)
+	for i := 0; i < 60; i++ {
 		now = now.Add(time.Minute)
 		if err := ix.Record(ctx, samples, now); err != nil {
 			t.Fatal(err)
@@ -156,7 +159,7 @@ func TestBoards(t *testing.T) {
 			t.Errorf("%s: %d points", s.Name, len(s.Points))
 		}
 	}
-	if names["go_goroutines"] < 80 || names["maktaba_errors_per_hour"] != 1 || len(doc.Series) > MaxSeries {
+	if names["go_goroutines"] < 55 || names["maktaba_errors_per_hour"] != 1 || len(doc.Series) > MaxSeries {
 		t.Fatalf("overview: %v (from %v)", names, start)
 	}
 	st, _ := ix.Board(ctx, "storage", "24h")
