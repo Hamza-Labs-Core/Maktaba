@@ -148,6 +148,9 @@ async def _plex(r: R.Rig, m: dict[str, Any]) -> None:
     m["ext_claims_after_2s"] = await r.claims_after(["plex_livetv"], t_off + 2)
     assert m["ext_claims_after_2s"] == 0
     t_on = await r.extension("plex", True)
+    # its stage row opens again first: an enqueue that comes before the worker clears the
+    # gate is refused as disabled (no job is made), as the switch off waited for its row
+    m["ext_N3_rows_on_s"] = await R.until(lambda: _is(r.stage_row("plex_livetv"), (True, None)), 10)
     # the catalog is one subject: queue it again, whatever the drain did with the first job
     await r.enqueue("plex_livetv", CATALOG, kind="catalog")
     await r.run_now("plex_livetv")
