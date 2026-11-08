@@ -101,6 +101,16 @@
         }
       }
     },
+    "%lld more lines did not fit on this board." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld خطوط أخرى لم تتسع لها هذه اللوحة."
+          }
+        }
+      }
+    },
     "%lld need attention" : {
       "localizations" : {
         "ar" : {
@@ -281,6 +291,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "قد تكون كلمة من الآية ناقصة: %@"
+          }
+        }
+      }
+    },
+    "All machines" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كل الأجهزة"
           }
         }
       }
@@ -575,6 +595,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "اللوحة"
+          }
+        }
+      }
+    },
+    "Components down" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المكوّنات المتوقفة"
+          }
+        }
+      }
+    },
+    "Components down, all machines" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المكوّنات المتوقفة، كل الأجهزة"
+          }
+        }
+      }
+    },
+    "Components up, all machines" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المكوّنات العاملة، كل الأجهزة"
           }
         }
       }
@@ -1049,6 +1099,16 @@
         }
       }
     },
+    "Highest load average (1 min) of any machine" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أعلى متوسط حِمل (دقيقة) بين الأجهزة"
+          }
+        }
+      }
+    },
     "Home" : {
       "localizations" : {
         "ar" : {
@@ -1219,6 +1279,26 @@
         }
       }
     },
+    "Least disk free of any machine" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أقل مساحة حرة على القرص بين الأجهزة"
+          }
+        }
+      }
+    },
+    "Least memory free of any machine" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أقل ذاكرة متاحة بين الأجهزة"
+          }
+        }
+      }
+    },
     "Leave safe mode" : {
       "localizations" : {
         "ar" : {
@@ -1365,6 +1445,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تبدو اسمًا"
+          }
+        }
+      }
+    },
+    "Machine" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الجهاز"
           }
         }
       }
@@ -2259,6 +2349,16 @@
         }
       }
     },
+    "Restarts per minute, all machines" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادات التشغيل في الدقيقة، كل الأجهزة"
+          }
+        }
+      }
+    },
     "Restoring a backup and downloading diagnostics are on the recovery page, in a browser." : {
       "localizations" : {
         "ar" : {
@@ -2425,6 +2525,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "عرض"
+          }
+        }
+      }
+    },
+    "Showing %lld of %lld machines, those most in need of attention first. Pick a machine to see its own." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عرض %1$lld من %2$lld أجهزة، الأحوج إلى الانتباه أولاً. اختر جهازاً لترى بياناته وحده."
           }
         }
       }

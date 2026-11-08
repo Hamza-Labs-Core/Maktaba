@@ -44,6 +44,8 @@ Tick **Live** to see lines as they are written, newest at the top, within about 
 
 [Administration → Dashboards](/admin/dashboards) draws how the home has been doing: **Overview** (components up, restarts, errors per hour, the API's memory and CPU), **Queue**, **Processing**, **Streaming**, **Storage** (backups and the log files) and **Use** (plays and people per day, the most played videos; counts only, never one person's history). Pick a time from 1 hour to 90 days; point at a chart to read its values, and **Open in Logs** shows the lines of that time. Maktaba keeps a minute's detail for 7 days and an hour's for 30.
 
+With several machines joined, the Overview shows totals across them (components up and down, the least disk and memory free, the highest load) and the five machines most in need of attention, and says how many of how many it shows. Pick a machine under **Machine** to see it on its own, with each of its components that was down or restarted.
+
 ### Problem reports and crash reports {#reports}
 
 Anyone can send a problem report from **Settings → Privacy → Report a problem**, or from an error screen's **Report this**, which adds that error's reference. Say what happened if you like, pick what it is about and when it happened. **What will be sent** shows everything the report carries before you send it: this app and its version, its log of the last 30 minutes, and its last requests. The home adds its own lines of those requests and the warnings around that time. Your reports and the admin's replies are in **My reports**.

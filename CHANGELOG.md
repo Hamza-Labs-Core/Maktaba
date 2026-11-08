@@ -14,6 +14,22 @@ build fails when the two differ.
 
 ### Changed
 
+- **Android native crashes in problem reports read as code (Epic 53 story 53.16).** The operator
+  console reads a native crash's frames (from its tombstone, Android 12 and later) as functions,
+  files and lines with a table of the app's own unstripped native library, keyed by the
+  library's build ID (`maktaba-symbols extract|upload lib.so`). System libraries' frames stay as
+  they came; an own library without a table is named with its build ID; a crash kept with its
+  reason alone says it has no frames. Each tag's Play bundles run makes the tables from the
+  unstripped libraries and uploads them with the same `MAKTABA_SYMBOLS_TOKEN` secret (nothing
+  while it is unset; a failed upload keeps them as the run's artifact). The cloud rehearsal
+  checks a native crash arrives symbolicated.
+- **Android and desktop crashes in problem reports read as code (Epic 53 story 53.16).** The
+  operator console reads an Android report's obfuscated Kotlin frames back to their classes,
+  methods and lines with the release's R8 mapping, which each tag's Play bundles run uploads
+  (`maktaba-symbols upload -r8`, with the same `MAKTABA_SYMBOLS_TOKEN` secret, nothing while it
+  is unset), and marks calls R8 inlined. The Android apps keep each frame's line for it. The
+  desktop player is not obfuscated: its frames are shown as its code's own. The cloud rehearsal
+  sends a canary home's reports through its agent and checks they arrive symbolicated.
 - **A native crash on Android keeps its stack (Player, Remote, Android TV).** On Android 12 and
   later, a crash in native code is now kept and sent, when crash reports are on, with its
   signal, its abort message and the crashed thread's frames, read from the crash's tombstone.
@@ -151,6 +167,16 @@ build fails when the two differ.
   check, scheduled dumps on or off: the nightly dumps to [backups] keep, the pre-update
   dumps to their count, and a dump of a failed update or a replaced database once it is a
   month old. The newest pre-update dump, the way back from the last update, never expires.
+
+- **A rollback undoes only what the release changed.** When an update rolled back and its
+  migrations could not simply be kept, the whole database was put back from the dump taken
+  before the update: every table reloaded, every index rebuilt (for the rollback of 0.3.90
+  on 2026-11-07, most of a day with the home down) and everything written since the dump
+  lost, though none of that release's 14 migrations lost data. A rollback now runs
+  the release's own Down scripts back to the previous schema when its migrations lose no
+  data on the way up: only the tables they touched change, every other table, index and
+  row stays as it is. The dump goes back only when a migration dropped, deleted, overwrote
+  or recast data, or a Down script fails.
 
 - **After an update, a first-party plugin's jobs run in its runner instead of the worker
   (Epic 54).** The shared plugin runners start when a job needs them and stop when idle, so
@@ -1369,6 +1395,14 @@ build fails when the two differ.
   longer be fooled by a header. The old `server.trust_proxy_headers` is refused at start, and in
   production the API refuses a public listener.
 
+- **A failed plugin runner is reported (Epic 54).** When one of Maktaba's own plugin runners
+  fails, the stages set to run as plugins in it run in the worker, outside their sandbox. No
+  job is lost, but until now only a log line said so. System health has a new Plugin runners
+  line that names the runner, the machine and those stages, on every machine. The Plugins and
+  Updates pages show the same warning, with a link to Components to start the runners again.
+  An admin's status strip, on the web, Apple and Android, says it too. `/status.json` has a new
+  admin-only `plugin_runners` group, which changes neither `overall` nor the banners.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
@@ -2199,6 +2233,29 @@ build fails when the two differ.
   through the plugin API to the same model server the settings name, and the book lookup is the
   only classify stage that may reach the network (the encyclopedia). Find metadata stays where
   it was for now. An admin can switch any of these stages back to the worker under **Queues**.
+
+- **Release crash symbols reach Maktaba Cloud with one secret (Epic 53 story 53.16).** Each
+  tag's TestFlight build uploads the symbol tables of its apps' dSYMs (`maktaba-symbols`), and
+  the cloud deploy writes the same `MAKTABA_SYMBOLS_TOKEN` repository secret to the api nodes,
+  so forwarded Apple crash reports read as functions, files and lines in the operator console.
+  Without the secret nothing is uploaded and the release stays green; a failed upload warns and
+  keeps the tables as the run's artifact (`maktaba-symbols upload` also takes them).
+
+- **Maktaba's own stages run in their sandboxed runners on Windows too (story 54.23).** Each
+  runner group now runs on a Windows home in its own AppContainer and Job Object, as the plugin
+  host does: it reads and writes only the folders its group declares, has no network unless
+  its group needs it, and starts no program but its group's tools. The worker reaches it
+  through pipes the server serves. A runner that cannot be sandboxed does not run, and its
+  jobs run in the worker, as before. Media on a network share is never granted to a runner;
+  jobs that need it run in the worker.
+
+- **The Overview dashboard keeps up with many machines (web, Apple and Android Remote).** Past a
+  few joined machines, a line per machine no longer fit a board's 50 lines, and machines were
+  left out without a word. The Overview now shows totals across the machines (components up
+  and down, the least disk and memory free, the highest load, restarts) and the five machines
+  most in need of attention, and says how many of how many it shows. A machine picker opens
+  any one machine on its own, with each of its components that was down or restarted.
+  `GET /api/admin/dashboards/overview` takes `machine=` and names the machines in its answer.
 
 ### Fixed
 

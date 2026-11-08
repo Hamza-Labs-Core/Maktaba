@@ -1,0 +1,9 @@
+# The api role in the cloud rehearsal (profile "api" of compose.yml; scenario report-symbolicated,
+# Epic 53 story 53.16 T07): its user listener for the homes' agents and the symbol uploads, and
+# the operator console's listener for the service admin, each answering its own names only.
+[server]
+listen_addr = "0.0.0.0:8090"
+admin_listen_addr = "0.0.0.0:8091"
+admin_host = "admin.test"
+admin_origin = "http://admin.test"
+user_hosts = ["api.test"]

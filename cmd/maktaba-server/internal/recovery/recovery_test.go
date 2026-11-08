@@ -322,3 +322,14 @@ func TestWordsHaveArabic(t *testing.T) {
 		t.Errorf("vars: %q", got)
 	}
 }
+
+// Every status group the recovery page can name (supervisor.StatusGroups, the admin-only
+// plugin_runners too) has its words in English and Arabic.
+func TestEveryStatusGroupHasItsWords(t *testing.T) {
+	for _, g := range supervisor.StatusGroups {
+		w, ok := Words["status.group."+g.Name]
+		if !ok || w[0] == "" || w[1] == "" {
+			t.Errorf("status.group.%s has no English and Arabic words: %q", g.Name, w)
+		}
+	}
+}

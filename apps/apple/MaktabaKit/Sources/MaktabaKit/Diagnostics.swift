@@ -351,17 +351,49 @@ public struct BoardDoc: Decodable, Sendable {
         public let value: Double
     }
 
+    /// The Overview's machines: how many have lines, the ones shown (most in need of
+    /// attention first), and all of them, for a machine picker.
+    public struct Machines: Decodable, Hashable, Sendable {
+        public let total: Int
+        public let shown: [String]
+        public let all: [String]
+
+        enum CodingKeys: String, CodingKey { case total, shown, all }
+
+        public init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            total = try c.decodeIfPresent(Int.self, forKey: .total) ?? 0
+            shown = try c.decodeIfPresent([String].self, forKey: .shown) ?? []
+            all = try c.decodeIfPresent([String].self, forKey: .all) ?? []
+        }
+    }
+
     public let board: String
     public let range: String
     public let series: [Series]
+    /// The one machine the Overview was asked for, nil for all of them.
+    public let machine: String?
+    /// The Overview's machines (nil on the other boards, and from a home before them).
+    public let machines: Machines?
+    /// Lines the board's 50 left out.
+    public let omitted: Int
 
-    enum CodingKeys: String, CodingKey { case board, range, series }
+    enum CodingKeys: String, CodingKey { case board, range, series, machine, machines, omitted }
 
     public init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         board = try c.decodeIfPresent(String.self, forKey: .board) ?? ""
         range = try c.decodeIfPresent(String.self, forKey: .range) ?? ""
         series = try c.decodeIfPresent([Series].self, forKey: .series) ?? []
+        machine = try c.decodeIfPresent(String.self, forKey: .machine).flatMap { $0.isEmpty ? nil : $0 }
+        machines = try c.decodeIfPresent(Machines.self, forKey: .machines)
+        omitted = try c.decodeIfPresent(Int.self, forKey: .omitted) ?? 0
+    }
+
+    /// "Showing 5 of 37": the Overview of all machines shows fewer than it has.
+    public var showsSomeMachines: Bool {
+        guard machine == nil, let machines else { return false }
+        return machines.total > machines.shown.count
     }
 
     /// One panel per metric name, in the board's order.
@@ -528,8 +560,11 @@ extension APIClient {
 
     // MARK: dashboards
 
-    public func board(_ board: Board, range: BoardRange) async throws -> BoardDoc {
-        try await get("/api/admin/dashboards/\(board.rawValue)", query: ["range": range.rawValue])
+    /// A board; on the Overview, `machine` asks for one machine's lines on their own.
+    public func board(_ board: Board, range: BoardRange, machine: String? = nil) async throws -> BoardDoc {
+        var query = ["range": range.rawValue]
+        if board == .overview, let machine, !machine.isEmpty { query["machine"] = machine }
+        return try await get("/api/admin/dashboards/\(board.rawValue)", query: query)
     }
 
     // MARK: problem reports

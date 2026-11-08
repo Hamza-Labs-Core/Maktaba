@@ -108,6 +108,8 @@ jobs:
           - direct-remote
           - origin-only-via-edge
           - origin-aop
+          # 53.16 T07: a canary home's reports through its agent, symbolicated with tables made in the job
+          - report-symbolicated
     steps:
       - uses: actions/checkout@v6.0.2
       - uses: actions/setup-go@v6.4.0

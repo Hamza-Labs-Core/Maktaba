@@ -56,7 +56,14 @@ outbox. A forward while `reports.share` is not on answers `409 component_off` wi
   by the api role's sweep.
 - Each report's crash stacks are symbolicated with the release's dSYMs (53.14) and its error
   groups joined to the anonymous `telemetry_error_groups` by fingerprint (README D8), so a group
-  page shows "3 reports" next to its anonymous counts.
+  page shows "3 reports" next to its anonymous counts. An Android crash's obfuscated Kotlin
+  frames are read back with the release's R8 mapping (`mapping.txt`, kept under the app and
+  version a report names); the desktop player is not obfuscated, so its frames read as they
+  come. An Android native crash's frames (a tombstone's, 53.14) are read with a table of the
+  app's own unstripped native library, keyed by the library's GNU build id; system libraries'
+  frames stay as they come, and an own library without a table is named with its build id. The
+  release workflows upload the tables (`maktaba-symbols`) with one repository secret, and do
+  nothing while it is unset.
 - **Service admin view** (`admin.maktaba.tv/reports`, the operator console, story 50.32; the Maktaba service admin only, not home
   admins): list across homes (home, app, version, category, status, age), a report page (the same
   merged timeline as the home's inbox), status (New, Triaged, Fixed in {version}, Closed), a

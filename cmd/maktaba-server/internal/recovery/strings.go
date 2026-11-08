@@ -42,6 +42,7 @@ var Words = map[string][2]string{
 	"status.group.processing":      {"Processing", "المعالجة"},
 	"status.group.search":          {"Search", "البحث"},
 	"status.group.logs":            {"Log search", "البحث في السجلات"},
+	"status.group.plugin_runners":  {"Plugin runners", "مشغّلات الإضافات"},
 	"status.state.ok":              {"working", "يعمل"},
 	"status.state.starting":        {"starting", "يبدأ التشغيل"},
 	"status.state.degraded":        {"having trouble", "يواجه مشكلة"},

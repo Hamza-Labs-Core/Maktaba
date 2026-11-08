@@ -43,6 +43,19 @@ func init() {
 	if mode == "" {
 		return
 	}
+	if strings.HasPrefix(mode, "down") { // a rollback's Down scripts (TestRunMigrateDownTo)
+		if strings.Join(os.Args[1:], " ") != "migrate --timeout 0 --lock-timeout "+migrateLockTimeout+" down-to 191" ||
+			os.Getenv("MAKTABA_DISABLE_DOWN") != "" {
+			fmt.Fprintf(os.Stderr, "unexpected %q (MAKTABA_DISABLE_DOWN=%q)\n", os.Args[1:], os.Getenv("MAKTABA_DISABLE_DOWN"))
+			os.Exit(2)
+		}
+		if mode == "down-fail" {
+			fmt.Fprintln(os.Stderr, "migrate: ERROR 0192_smart_playlists.sql: failed to run SQL migration\nlock timeout")
+			os.Exit(1)
+		}
+		fmt.Println("migrate: OK 0192_smart_playlists.sql (down)")
+		os.Exit(0)
+	}
 	if strings.Join(os.Args[1:], " ") != "migrate --timeout 0 --lock-timeout "+migrateLockTimeout+" up" {
 		fmt.Fprintf(os.Stderr, "unexpected %q\n", os.Args[1:])
 		os.Exit(2)
@@ -1389,6 +1402,53 @@ func TestRunMigrateUp(t *testing.T) {
 	err = runMigrateUp(context.Background(), api("ahead"), io.Discard)
 	if !errors.Is(err, errSchemaAhead) || !strings.Contains(err.Error(), "schema is at 0150") {
 		t.Fatalf("ahead = %v", err)
+	}
+}
+
+// A rollback's Down scripts run as `migrate down-to <schema>` with the api's binary and
+// environment, without an operator's MAKTABA_DISABLE_DOWN (the rollback of 0.3.90, 2026-11-07).
+func TestRunMigrateDownTo(t *testing.T) {
+	spawnsPrograms(t)
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := func(mode string) *exec.Cmd {
+		c := exec.Command(self)
+		c.Env = append(os.Environ(), "MAKTABA_TEST_APPBUNDLE_MIGRATE="+mode, "MAKTABA_DISABLE_DOWN=1")
+		return c
+	}
+	var log strings.Builder
+	if err := runMigrateDownTo(context.Background(), api("down-ok"), 191, &log); err != nil ||
+		!strings.Contains(log.String(), "0192_smart_playlists.sql (down)") {
+		t.Fatalf("ok = %v, log %q", err, log.String())
+	}
+	if err := runMigrateDownTo(context.Background(), api("down-fail"), 191, io.Discard); err == nil ||
+		!strings.Contains(err.Error(), "lock timeout") {
+		t.Fatalf("fail = %v", err)
+	}
+}
+
+// After a rollback whose Down scripts undid the new release's migrations (the record the
+// release before's own: layout.MarkRecordDown), the release before starts as on its own
+// database: nothing dumped, nothing put back, nothing refused.
+func TestAppBundleStartsOnTheSchemaItsDownScriptsLeft(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.2.0", "")
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated, From: "v0.2.0",
+		Release: "v0.3.0", Dump: "/b/pre-0.2.0-to-0.3.0.dump"})
+	if ok, err := layout.MarkRecordDown(apppayload.DatabasePath(cfg.StateDir()), "v0.3.0", "0.2.0", "watch_timeout"); !ok || err != nil {
+		t.Fatalf("MarkRecordDown: %v %v", ok, err)
+	}
+	f := installFakeDB(t, cfg)
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatal(err)
+	}
+	if d, _, r := f.counts(); d != 0 || r != 0 {
+		t.Fatalf("%d dumps, %d restores", d, r)
+	}
+	if rec := recorded(t, cfg); rec.Version != "v0.2.0" || rec.State != apppayload.DatabaseMigrated {
+		t.Fatalf("record %+v", rec)
 	}
 }
 

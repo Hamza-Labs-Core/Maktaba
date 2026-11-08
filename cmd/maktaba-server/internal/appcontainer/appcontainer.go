@@ -26,4 +26,9 @@ type Options struct {
 	Env []string
 	// Dir is the working folder ("" for the caller's).
 	Dir string
+	// Capabilities are capability SIDs the AppContainer holds (none by default: no
+	// network at all); a runner group with net gets internetClient (story 54.23).
+	Capabilities []string
+	// ProcessLimit is the Job Object's active process limit (0: 1, no child process).
+	ProcessLimit int
 }

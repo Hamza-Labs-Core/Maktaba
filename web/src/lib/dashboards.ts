@@ -1,6 +1,8 @@
 // The dashboards (Epic 53 story 53.12): GET /api/admin/dashboards/{board}?range= answers a
 // board's series in one call (≤ 50 series, ≤ 2,000 points each). Use also lists the week's
-// top videos (counts and titles only).
+// top videos (counts and titles only). The Overview draws totals across the machines and
+// the five most in need of attention, names them all in `machines`, and answers one machine
+// on its own with `machine=`.
 import { api } from "./api";
 
 export const BOARDS = ["overview", "queue", "processing", "streaming", "storage", "use"] as const;
@@ -21,13 +23,33 @@ export interface BoardDoc {
   step: number;
   series: BoardSeries[];
   top?: { title: string; plays: number }[];
+  /** Overview: the one machine asked for. */
+  machine?: string;
+  /** Overview: how many machines have lines, the ones shown, and all of them. */
+  machines?: { total: number; shown: string[]; all: string[] };
+  /** Lines the board's 50 left out. */
+  omitted?: number;
 }
 
-export async function getBoard(board: Board, range: Range): Promise<BoardDoc> {
+export async function getBoard(board: Board, range: Range, machine = ""): Promise<BoardDoc> {
+  const q = machine && board === "overview" ? `&machine=${encodeURIComponent(machine)}` : "";
   const d = await api.get<BoardDoc>(
-    `/api/admin/dashboards/${encodeURIComponent(board)}?range=${encodeURIComponent(range)}`
+    `/api/admin/dashboards/${encodeURIComponent(board)}?range=${encodeURIComponent(range)}${q}`
   );
-  return { ...d, series: Array.isArray(d?.series) ? d.series : [], top: d?.top ?? [] };
+  const m = d?.machines;
+  return {
+    ...d,
+    series: Array.isArray(d?.series) ? d.series : [],
+    top: d?.top ?? [],
+    machines: m
+      ? {
+          total: m.total ?? 0,
+          shown: Array.isArray(m.shown) ? m.shown : [],
+          all: Array.isArray(m.all) ? m.all : [],
+        }
+      : undefined,
+    omitted: d?.omitted ?? 0,
+  };
 }
 
 /** The range as milliseconds (the Open in Logs window). */

@@ -170,11 +170,29 @@ data class BoardSeries(
         get() = labels.orEmpty().split(",").mapNotNull { kv -> kv.substringAfter("=", "").takeIf { it.isNotEmpty() } }.joinToString(" · ")
 }
 
+/** The Overview's machines: how many have lines, the ones shown (most in need of attention first), and all of them. */
 @Serializable
-data class BoardDoc(val board: String = "", val range: String = "", val series: List<BoardSeries> = emptyList()) {
+data class BoardMachines(val total: Int = 0, val shown: List<String> = emptyList(), val all: List<String> = emptyList())
+
+@Serializable
+data class BoardDoc(
+    val board: String = "",
+    val range: String = "",
+    val series: List<BoardSeries> = emptyList(),
+    /** The one machine the Overview was asked for (null: all of them). */
+    val machine: String? = null,
+    /** The Overview's machines (null on the other boards, and from a home before them). */
+    val machines: BoardMachines? = null,
+    /** Lines the board's 50 left out. */
+    val omitted: Int = 0,
+) {
     /** One panel per metric name, in the board's order. */
     val panels: List<Pair<String, List<BoardSeries>>>
         get() = series.groupBy { it.name }.toList()
+
+    /** "Showing 5 of 37": the Overview of all machines shows fewer than it has. */
+    val showsSomeMachines: Boolean
+        get() = machine.isNullOrEmpty() && machines != null && machines.total > machines.shown.size
 }
 
 /** The boards the Remote shows (read only). */
@@ -267,8 +285,12 @@ suspend fun ApiClient.linesAround(id: Long): LogSearch =
 
 suspend fun ApiClient.logUserNames(): Map<String, String> = get<UserNames>("/api/admin/logs/users").users.orEmpty()
 
-suspend fun ApiClient.board(board: Board, range: String): BoardDoc =
-    get("/api/admin/dashboards/${board.id}", mapOf("range" to range))
+/** A board; on the Overview, [machine] asks for one machine's lines on their own. */
+suspend fun ApiClient.board(board: Board, range: String, machine: String? = null): BoardDoc =
+    get(
+        "/api/admin/dashboards/${board.id}",
+        if (board == Board.Overview && !machine.isNullOrEmpty()) mapOf("range" to range, "machine" to machine) else mapOf("range" to range),
+    )
 
 /** The admin's inbox, or a viewer's own reports. */
 suspend fun ApiClient.problemReports(): List<ReportSummary> = get<ReportList>("/api/reports").reports.orEmpty()

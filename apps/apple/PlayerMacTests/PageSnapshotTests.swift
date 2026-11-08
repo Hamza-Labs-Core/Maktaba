@@ -284,6 +284,10 @@ import MaktabaKit
     static func collect(_ element: Any, into lines: inout [String]) {
         guard let o = element as? NSObject else { return }
         let role = (ax(o, "accessibilityRole") as? String).map { $0.hasPrefix("AX") ? String($0.dropFirst(2)) : $0 } ?? "?"
+        // a scroll bar (and its value indicator) is no word of the page: its value is the scroll
+        // position and where it sits among the page's elements varies from run to run, which
+        // failed library-open-ar-ax3 now and then (its first row listed before the bar)
+        if role == "ScrollBar" { return }
         var words: [String] = []
         for key in ["accessibilityLabel", "accessibilityValue", "accessibilityTitle"] {
             let w: String? = switch ax(o, key) {

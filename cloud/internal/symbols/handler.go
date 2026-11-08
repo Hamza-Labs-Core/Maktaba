@@ -13,7 +13,9 @@ import (
 
 // Deps are the symbol routes:
 //
-//	POST /v1/symbols          a table (Encode's form), with the symbols token (?version=)
+//	POST /v1/symbols          a table (Encode's form), with the symbols token (?version=): a
+//	                          dSYM's, an Android release's R8 mapping (kind "r8"), or an
+//	                          Android app's native library (kind "elf")
 //	GET  /v1/admin/symbols    the kept tables, for the service admin
 type Deps struct {
 	Store *Store
@@ -67,7 +69,12 @@ func (d *Deps) Upload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_table", err.Error())
 		return
 	}
-	if err := d.Store.Put(r.Context(), t, b, r.URL.Query().Get("version")); err != nil {
+	version := r.URL.Query().Get("version")
+	if t.Kind == KindR8 {
+		// a mapping is its release's: the version it is keyed by is the one listed
+		version = t.Release
+	}
+	if err := d.Store.Put(r.Context(), t, b, version); err != nil {
 		if d.Logger != nil {
 			d.Logger.Error("symbols: put", "err", err)
 		}
@@ -75,11 +82,11 @@ func (d *Deps) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if d.Logger != nil {
-		d.Logger.Info("symbol table uploaded", "debug_id", t.DebugID, "code_file", t.CodeFile, "arch", t.Arch,
+		d.Logger.Info("symbol table uploaded", "debug_id", t.DebugID, "code_file", t.CodeFile, "arch", t.Arch, "kind", t.Kind,
 			"size", len(b), "event", "symbol_table_uploaded")
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"debug_id": t.DebugID, "code_file": t.CodeFile, "arch": t.Arch,
-		"functions": len(t.Funcs)})
+		"kind": t.Kind, "functions": len(t.Funcs), "classes": len(t.Classes)})
 }
 
 // List is the kept tables.

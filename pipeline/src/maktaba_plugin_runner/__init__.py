@@ -25,6 +25,7 @@ __all__ = ["GROUPS", "socket_path"]
 
 import hashlib
 import os
+import sys
 from pathlib import Path
 
 #: the runner groups (README §15.4); a manifest may also ask for its own (``own``)
@@ -37,13 +38,14 @@ _MAX_SOCKET = 100
 def runner_dir() -> Path:
     """Where the runners' sockets are: ``MAKTABA_RUNNER_DIR`` (the supervisor sets it for
     the worker and every runner), else ``<data>/run/runners``, else a short folder under
-    /tmp named after the data folder when that path is too long for a socket."""
+    /tmp named after the data folder when that path is too long for a socket (not on
+    Windows, where a runner has no socket: the supervisor's pipes, :mod:`.winpipe`)."""
     explicit = os.environ.get("MAKTABA_RUNNER_DIR", "").strip()
     if explicit:
         return Path(explicit)
     data = os.environ.get("MAKTABA_DATA_DIR", "").strip() or "."
     d = Path(data) / "run" / "runners"
-    if len(str(d / "runner-service.sock")) > _MAX_SOCKET:
+    if sys.platform != "win32" and len(str(d / "runner-service.sock")) > _MAX_SOCKET:
         d = Path("/tmp") / (
             "maktaba-r-" + hashlib.sha256(str(Path(data).resolve()).encode()).hexdigest()[:12]
         )
