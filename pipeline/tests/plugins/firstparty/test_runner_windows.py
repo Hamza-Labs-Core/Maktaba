@@ -419,6 +419,7 @@ def test_what_the_broker_refuses_runs_in_the_worker(
             shim.open_(SHARE + "\\a\\ep1.en.srt", mode)
     with pytest.raises(PermissionError):
         shim.replace_(str(tmp_path / "x.srt"), SHARE + "\\a\\x.en.srt")
+    # a share path that reaches a process start unrouted (not one tool input) is refused
     with pytest.raises(PermissionError) as tool:
         shim.exec_hook(
             "subprocess.Popen",
@@ -458,3 +459,134 @@ def test_the_broker_pipe_carries_one_line_each_way() -> None:
     with pytest.raises(PermissionError):
         b({"op": "stat", "path": "p"})
     assert winfiles.install_from_env({}) is False
+
+
+VIDEO = SHARE + "\\a\\ep1.mkv"
+
+
+def test_a_tool_reads_its_one_share_input_through_a_brokered_handle(tmp_path: Path) -> None:
+    """Story 54.23: a tool (ffmpeg, ffprobe) given one file of a brokered share folder as its
+    input reads it through a read handle the broker opened for that file, handed to it as
+    its standard input: the argument becomes ``fd:`` (ffmpeg's protocol for a descriptor,
+    seekable when it is a file) and the share path reaches no process. Its other arguments
+    stay as they were; a tool on no share path is left alone."""
+    shim, asked = _shim(tmp_path, {})
+    for argv, at in (
+        (["ffmpeg", "-v", "error", "-nostdin", "-i", VIDEO, "-frames:v", "1", "pipe:1"], 5),
+        (["C:\\tools\\FFmpeg.EXE", "-ss", "12", "-i", VIDEO.upper(), "-y", "C:\\run\\t.jpg"], 4),
+        (["ffprobe", "-v", "error", "-show_format", "-of", "json", VIDEO], 6),
+        (["ffprobe", "-i", "//NAS/media/shows/a/ep1.mkv", "-show_streams"], 2),
+    ):
+        routed = shim.tool_args(argv)
+        assert routed is not None
+        new, path = routed
+        assert new == [*argv[:at], "fd:", *argv[at + 1 :]]
+        assert winfiles._key(path) == winfiles._key(VIDEO)
+    assert shim.tool_args(["ffmpeg", "-i", str(tmp_path / "a.mkv"), "out.jpg"]) is None
+    assert shim.tool_args(["ffmpeg", "-i", "https://example.org/a.mkv", "out.jpg"]) is None
+    assert asked == []  # deciding opens nothing
+
+
+@pytest.mark.parametrize(
+    ("argv", "why"),
+    [
+        (["ffmpeg", "-i", VIDEO, "-i", SHARE + "\\a\\ep2.mkv", "o.mkv"], "a second share file"),
+        (["ffmpeg", "-i", "C:\\x.mkv", VIDEO], "a share path as the output"),
+        (["ffmpeg", "-i", "C:\\x.mkv", "-vf", "subtitles=" + VIDEO, "o.mkv"], "inside an option"),
+        (["ffmpeg", "-i", "file:" + VIDEO, "o.jpg"], "behind a protocol"),
+        (["ffmpeg", "-i", VIDEO, "-i", "pipe:0", "o.mkv"], "standard input taken"),
+        (["ffmpeg", "-i", VIDEO, "-i", "fd:", "o.mkv"], "standard input taken"),
+        (["ffmpeg", "-i", "\\\\nas\\other\\a.mkv", "o.jpg"], "another share"),
+        (["ffmpeg", "-i", "\\\\nas\\media\\showsx\\a.mkv", "o.jpg"], "another share"),
+        (["yt-dlp", "-o", "x", VIDEO], "not a tool that reads a descriptor"),
+        (["python", VIDEO], "not a tool that reads a descriptor"),
+        (["ffprobe", VIDEO, "-show_format"], "a positional input not last"),
+    ],
+)
+def test_a_tool_on_a_share_path_it_cannot_read_through_a_handle_is_refused(
+    tmp_path: Path, argv: list[str], why: str
+) -> None:
+    """Anything but one share file as one tool's input is refused before a broker call, as
+    before (sandbox_refused: the worker runs that job): a second share file (one standard
+    input), a share path as an output or inside another argument, another share (one the
+    group is not brokered), a tool that is not ffmpeg or ffprobe."""
+    from maktaba_pipeline.plugins.native import sandbox_refused
+
+    shim, asked = _shim(tmp_path, {})
+    with pytest.raises(PermissionError) as refused:
+        shim.tool_args(argv)
+    assert sandbox_refused(refused.value), why
+    assert asked == []
+
+
+def _fake_tool(tmp_path: Path, name: str) -> Path:
+    """A tool named like ffmpeg: it prints its arguments, then what its standard input holds
+    from offset 6 (it seeks, as ffmpeg seeks a file for an mp4's index at its end)."""
+    tool = tmp_path / "bin" / name
+    tool.parent.mkdir(exist_ok=True)
+    tool.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "os.lseek(0, 6, os.SEEK_SET)\n"
+        "print(json.dumps([sys.argv[1:], os.read(0, 64).decode()]))\n"
+    )
+    tool.chmod(0o755)
+    return tool
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the fake tool is a script with a #! line")
+def test_a_tool_started_on_a_share_input_gets_the_handle_as_its_stdin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The routing where stages start tools: ``subprocess.run`` and asyncio's
+    ``create_subprocess_exec`` (with ``stdin=DEVNULL``, as the media helpers pass) start the
+    tool with ``fd:`` and the brokered handle as its standard input, which it can seek; the
+    runner's own copy of the handle is closed once the tool has its. A caller that needs the
+    tool's standard input itself (``stdin=PIPE``, ``input=``) is refused."""
+    from maktaba_pipeline.plugins.native import sandbox_refused
+
+    shim, asked = _shim(tmp_path, {})
+    monkeypatch.setattr(subprocess.Popen, "__init__", shim.popen_init(subprocess.Popen.__init__))
+    monkeypatch.setattr(sys, "audit", lambda *_: None)
+    tool = str(_fake_tool(tmp_path, "ffmpeg"))
+    before = len(os.listdir("/dev/fd")) if os.path.isdir("/dev/fd") else None
+
+    out = subprocess.run([tool, "-i", VIDEO, "pipe:1"], capture_output=True, text=True, check=True)
+    assert json.loads(out.stdout) == [["-i", "fd:", "pipe:1"], "bytes"]
+    assert asked == [{"op": "open", "path": VIDEO}]
+
+    async def via_asyncio() -> bytes:
+        proc = await asyncio.create_subprocess_exec(
+            tool,
+            "-ss",
+            "1",
+            "-i",
+            VIDEO,
+            "-f",
+            "null",
+            "-",
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        return stdout
+
+    assert json.loads(asyncio.run(via_asyncio())) == [
+        ["-ss", "1", "-i", "fd:", "-f", "null", "-"],
+        "bytes",
+    ]
+    if before is not None:
+        assert len(os.listdir("/dev/fd")) == before  # no handle left open in the runner
+
+    for kwargs in ({"stdin": subprocess.PIPE}, {"input": b"x"}):
+        with pytest.raises(PermissionError) as refused:
+            subprocess.run([tool, "-i", VIDEO], capture_output=True, check=False, **kwargs)
+        assert sandbox_refused(refused.value)
+    plain = subprocess.run(
+        [tool, "-i", "/dev/null"],
+        capture_output=True,
+        text=True,
+        stdin=subprocess.DEVNULL,
+        check=False,
+    )
+    assert json.loads(plain.stdout)[0] == ["-i", "/dev/null"]  # no share: untouched
