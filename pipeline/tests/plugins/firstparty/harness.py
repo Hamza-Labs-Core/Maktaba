@@ -109,17 +109,94 @@ Seed = Callable[[Database], Awaitable[None]]
 
 def plugin_api_dev() -> str | None:
     """The dev API binary (``MAKTABA_PLUGIN_API_DEV``), else built with go for this checkout
-    (``None``: no go here), once per test process. A build that fails skips the calling
-    test, saying why."""
+    (``None``: no go here), once per test session (process). A build that fails skips the
+    calling test, saying why."""
     global _BUILT
-    if _BUILT is None:
-        _BUILT = _plugin_api_dev()
-    return _BUILT
+    if _BUILT is None or _BUILT[0] != os.getpid():
+        _BUILT = (os.getpid(), _plugin_api_dev())
+    return _BUILT[1]
 
 
-#: plugin_api_dev()'s binary, built once per process (the checkout does not change under a
-#: run; each parity test paid go's ~0.6 s cache check before)
-_BUILT: str | None = None
+#: plugin_api_dev()'s binary, built once per session (the checkout does not change under a
+#: run; each parity test paid go's ~0.6 s cache check before), keyed by the process that
+#: built it (a forked child builds its own)
+_BUILT: tuple[int, str | None] | None = None
+
+#: the file in a session's folder naming the process that owns it: a folder whose process is
+#: gone is a crashed session's, removed by the next session that starts (_sweep)
+_OWNER = ".mk-owner"
+#: this process's session: its pid, its folder (the build), the folders and dev servers it
+#: started; nothing here is shared with another session (parallel worktrees, xdist workers,
+#: CI jobs on one runner)
+_SESSION: dict[str, Any] = {}
+
+
+def session_dir() -> Path:
+    """This test session's own folder, removed when the process ends; on first use, the
+    folders of crashed sessions (their process gone) are removed first."""
+    if _SESSION.get("pid") != os.getpid():
+        _SESSION.clear()
+        _sweep()
+        _SESSION.update(pid=os.getpid(), dirs=[], servers=[])
+        _SESSION["dir"] = session_mkdtemp()
+        import atexit
+
+        atexit.register(_end_session, os.getpid())
+    return Path(_SESSION["dir"])
+
+
+def session_mkdtemp() -> Path:
+    """A fresh folder this session owns (removed when it ends, or by the next session after
+    a crash). Its name stays as short as ``mkdtemp``'s: unix socket paths live in it."""
+    d = Path(tempfile.mkdtemp(prefix="mkp-"))
+    (d / _OWNER).write_text(str(os.getpid()))
+    if _SESSION.get("pid") == os.getpid():
+        _SESSION["dirs"].append(d)
+    return d
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _sweep() -> None:
+    """Remove the folders (and seed part files) of sessions whose process is gone (a run
+    killed before its exit handlers ran). Only POSIX: Windows's ``os.kill`` ends the process
+    it is asked about."""
+    if os.name != "posix":
+        return
+    for d in Path(tempfile.gettempdir()).glob("mkp-*"):
+        try:
+            pid = int((d / _OWNER).read_text().strip())
+        except (OSError, ValueError):
+            continue
+        if pid != os.getpid() and not _alive(pid):
+            shutil.rmtree(d, ignore_errors=True)
+    # a seed's part file (_promote) whose session died before its rename
+    for f in Path(tempfile.gettempdir()).glob("maktaba-plugin-api-dev-*.seed.*.*"):
+        try:
+            pid = int(f.name.rsplit(".", 2)[1])
+        except (IndexError, ValueError):
+            continue
+        if pid != os.getpid() and not _alive(pid):
+            with contextlib.suppress(OSError):
+                f.unlink()
+
+
+def _end_session(pid: int) -> None:
+    if os.getpid() != pid or _SESSION.get("pid") != pid:
+        return
+    for server in list(_SESSION["servers"]):
+        stop_dev_api(server)
+    for d in _SESSION["dirs"]:
+        shutil.rmtree(d, ignore_errors=True)
+    _SESSION.clear()
 
 
 def _plugin_api_dev() -> str | None:
@@ -131,10 +208,16 @@ def _plugin_api_dev() -> str | None:
         return None
     import hashlib
 
-    # one binary per checkout, built once per run (go's cache makes an unchanged one quick):
-    # a binary left by another worktree or an older checkout serves other routes
+    # each session builds its own binary in its own folder: two sessions building at once
+    # never write one file. It starts as a copy of the last binary any session built for this
+    # checkout (the seed), so go's check finds it up to date and does not link again (~3 s);
+    # the seed is only ever replaced whole (os.replace), so a copy is never half a binary
     tag = hashlib.sha256(str(API_DIR.resolve()).encode()).hexdigest()[:12]
-    out = Path(tempfile.gettempdir()) / f"maktaba-plugin-api-dev-{tag}"
+    seed = Path(tempfile.gettempdir()) / f"maktaba-plugin-api-dev-{tag}.seed"
+    out = session_dir() / ("plugin-api-dev.exe" if os.name == "nt" else "plugin-api-dev")
+    with contextlib.suppress(OSError):
+        shutil.copy2(seed, out)
+    before = _stamp(out)
     built = subprocess.run(
         [go, "build", "-o", str(out), "./tools/plugin-api-dev"],
         cwd=API_DIR,
@@ -146,7 +229,97 @@ def _plugin_api_dev() -> str | None:
 
         tail = (built.stderr or built.stdout).strip().splitlines()[-3:]
         pytest.skip("the plugin API's dev server did not build: " + " | ".join(tail))
+    if before is None or _stamp(out) != before:
+        _promote(out, seed)
     return str(out)
+
+
+def _stamp(path: Path) -> tuple[int, int] | None:
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return st.st_size, st.st_mtime_ns
+
+
+def _promote(built: Path, seed: Path) -> None:
+    """Make ``built`` the checkout's seed: copied beside it under a name of this session's,
+    then renamed over it in one step. A session copying the seed meanwhile gets the old one
+    or the new one, whole; one that loses a race on Windows keeps the old seed."""
+    part = seed.with_name(f"{seed.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}")
+    try:
+        shutil.copy2(built, part)
+        os.replace(part, seed)
+    except OSError:
+        with contextlib.suppress(OSError):
+            part.unlink()
+
+
+@dataclass
+class DevAPI:
+    """A plugin API dev server this session started: its process, its unix socket and the
+    mint's address (TCP, port 0: the kernel picks it, the server says which)."""
+
+    proc: subprocess.Popen[str]
+    socket: Path
+    mint: str
+
+
+def start_dev_api(
+    binary: str,
+    *,
+    dsn: str,
+    socket: Path,
+    bundle: Path | None = None,
+    plex: tuple[str, str] | None = None,
+) -> DevAPI:
+    """Start the dev server; return once it says where its mint listens. It exits on its own
+    when this process goes (its stdin, ``-watch-stdin``), and at the session's end."""
+    session_dir()
+    proc = subprocess.Popen(
+        [
+            binary,
+            "-dsn",
+            dsn,
+            "-socket",
+            str(socket),
+            "-mint",
+            "127.0.0.1:0",
+            "-watch-stdin",
+            *(["-bundle", str(bundle)] if bundle else []),
+            *(["-plex-url", plex[0], "-plex-token", plex[1]] if plex else []),
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    server = DevAPI(proc=proc, socket=socket, mint="")
+    _SESSION["servers"].append(server)
+    assert proc.stdout is not None
+    line = proc.stdout.readline()
+    if not line.startswith("ready "):
+        stop_dev_api(server)
+        raise AssertionError(f"the plugin API's dev server did not start: {line!r}")
+    server.mint = line.split()[1]
+    return server
+
+
+def stop_dev_api(server: DevAPI) -> None:
+    """Stop one of this session's dev servers (only its own process)."""
+    proc = server.proc
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(5)
+    for f in (proc.stdin, proc.stdout):
+        if f is not None:
+            with contextlib.suppress(OSError):
+                f.close()
+    with contextlib.suppress(ValueError):
+        _SESSION.get("servers", []).remove(server)
 
 
 #: the keys of the queue's JSON columns that hold when something happened (an enqueue's
@@ -659,8 +832,8 @@ async def parity(
     for n in names:
         await admin.execute(f'CREATE DATABASE "{n}" TEMPLATE "{template}"')
     await admin.close()
-    tmp = Path(tempfile.mkdtemp(prefix="mkp-"))
-    proc: subprocess.Popen[str] | None = None
+    tmp = session_mkdtemp()
+    server: DevAPI | None = None
     tasks: list[asyncio.Task[None]] = []
     sides: list[Database] = []
     try:
@@ -688,24 +861,15 @@ async def parity(
             await b.execute("UPDATE job_stages SET impl = 'plugin' WHERE stage = $1", name)
         (tmp / "bundle.json").write_bytes(bundle)
         api_sock = tmp / "api.sock"
-        proc = subprocess.Popen(
-            [
-                binary,
-                "-dsn",
-                _go_dsn(_swap_db(pg_url, names[1])),
-                "-socket",
-                str(api_sock),
-                "-bundle",
-                str(tmp / "bundle.json"),
-                *(["-plex-url", plex[0], "-plex-token", plex[1]] if plex else []),
-            ],
-            stdout=subprocess.PIPE,
-            text=True,
+        server = await asyncio.to_thread(
+            start_dev_api,
+            binary,
+            dsn=_go_dsn(_swap_db(pg_url, names[1])),
+            socket=api_sock,
+            bundle=tmp / "bundle.json",
+            plex=plex,
         )
-        assert proc.stdout is not None
-        line = await asyncio.to_thread(proc.stdout.readline)
-        assert line.startswith("ready "), line
-        monkeypatch.setenv("MAKTABA_API_URL", "http://" + line.split()[1])
+        monkeypatch.setenv("MAKTABA_API_URL", "http://" + server.mint)
         run_dir = tmp / "runners"
         monkeypatch.setenv("MAKTABA_RUNNER_DIR", str(run_dir))
         served = {s: (firstparty.impl_entry(s) or "") for s in stages}
@@ -748,7 +912,7 @@ async def parity(
             graph=graph,
             tmp=tmp,
             files=dict(files or {}),
-            api_pid=proc.pid,
+            api_pid=server.proc.pid,
             stages=tuple(stages),
         )
     finally:
@@ -759,10 +923,8 @@ async def parity(
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
-        if proc is not None:
-            proc.terminate()
-            with contextlib.suppress(Exception):
-                proc.wait(5)
+        if server is not None:
+            stop_dev_api(server)
         for d in sides:
             await d.close()
         admin = await asyncpg.connect(pg_url)
@@ -770,6 +932,8 @@ async def parity(
             await admin.execute(f'DROP DATABASE IF EXISTS "{n}" WITH (FORCE)')
         await admin.close()
         shutil.rmtree(tmp, ignore_errors=True)
+        with contextlib.suppress(ValueError, KeyError):
+            _SESSION["dirs"].remove(tmp)
 
 
 _ADDRESS = re.compile(r"0x[0-9a-f]{6,}")

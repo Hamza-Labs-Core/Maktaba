@@ -5,7 +5,11 @@
 //
 //	plugin-api-dev -dsn postgres://… -socket /tmp/x/plugin-api.sock -mint 127.0.0.1:0 -bundle firstparty.json
 //
-// It prints "ready <mint address>" on stdout once both listen. Never part of a release.
+// It prints "ready <mint address>" on stdout once both listen. The mint's port 0 has the
+// kernel pick a free one, so test sessions running at once never share an address. With
+// -watch-stdin it exits when its stdin closes: the test process that started it holds the
+// other end, so a test run killed before its clean-up still takes its servers with it.
+// Never part of a release.
 package main
 
 import (
@@ -37,6 +41,7 @@ func main() {
 	bundle := flag.String("bundle", "", "a first-party bundle (tools/plugins/bundle.py's output)")
 	plexURL := flag.String("plex-url", "", "trusted/service: the Plex the home's door forwards to (a fake)")
 	plexToken := flag.String("plex-token", "", "trusted/service: the token the door adds")
+	watchStdin := flag.Bool("watch-stdin", false, "exit when stdin closes (the parent test process is gone)")
 	flag.Parse()
 	if *dsn == "" || *socket == "" {
 		log.Fatal("plugin-api-dev: -dsn and -socket are needed")
@@ -57,6 +62,9 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	if *watchStdin {
+		go stopWhenClosed(os.Stdin, stop)
+	}
 	tokens := plugins.NewTokens(db)
 	s := &plugins.Server{DB: db, Tokens: tokens}
 	if *plexURL != "" {
@@ -107,4 +115,11 @@ func main() {
 	go func() { <-ctx.Done(); _ = srv.Close() }()
 	fmt.Fprintf(os.Stdout, "ready %s\n", l.Addr())
 	_ = srv.Serve(l)
+}
+
+// stopWhenClosed reads r until it ends (the parent closed its end, or died) and then calls
+// stop, so the server shuts down with the test process that started it.
+func stopWhenClosed(r io.Reader, stop func()) {
+	_, _ = io.Copy(io.Discard, r)
+	stop()
 }
