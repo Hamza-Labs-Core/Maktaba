@@ -37,8 +37,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cloud/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -130,14 +128,6 @@ jobs:
           name: web-bundle
           path: web/dist
           retention-days: 14
-
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
 
       - name: Save the pnpm store
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.pnpm-cache.outputs.key != '' && steps.pnpm-cache.outputs.cache-hit != 'true'

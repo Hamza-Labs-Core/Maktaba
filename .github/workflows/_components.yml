@@ -66,8 +66,6 @@ jobs:
       # restore only: main's entries (.github/actions/go-cache); only a push to main saves
       - name: Go caches
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules

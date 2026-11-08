@@ -35,8 +35,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('api/go.sum', 'cmd/maktaba-launcher/go.sum', 'cmd/maktaba-server/go.sum', 'shared/go/layout/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -143,14 +141,6 @@ jobs:
           go test -count=1 -v ./internal/pgbundle ./internal/supervisor
           -run "TestPostgresToken|TestTheSupervisorHoldsARestrictedPostgres|TestRealPostgresOnWindows|TestResolveAutoInsideAnAppPayload|TestAppBundleFFmpegOnWindows"
 
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
-
       - name: Save the postgres download (Windows)
         if: (runner.os == 'Windows') && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.pgbin-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -174,8 +164,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('cmd/maktaba-server/go.sum', 'cmd/maktaba-launcher/go.sum') }}
 
       # The cached nfpm: the key release.yml's package-nfpm restores on a tag (from main's
       # caches, which this job's run on main saves). Keep the version in step with it.
@@ -307,14 +295,6 @@ jobs:
             cmp="$(rpm --eval "%{lua: print(rpm.vercmp('${rpms[i]}', '${rpms[i + 1]}'))}")"
             [ "$cmp" = -1 ] || { echo "::error::rpm orders ${rpms[i]} after ${rpms[i + 1]} ($cmp)"; exit 1; }
           done
-
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
 
       - name: Save the static nfpm
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.nfpm-cache.outputs.cache-hit != 'true'

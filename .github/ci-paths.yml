@@ -124,6 +124,9 @@ lint_pipeline:
   # story 54.33 T02: the nightly check of the hosts yt-dlp contacts (its tests run in lint)
   - 'tools/ci/youtube_hosts.py'
   - '.github/workflows/youtube-hosts-nightly.yml'
+  # the scheduled prune of replaced Actions cache entries (its tests run in lint)
+  - 'tools/ci/cache_prune.py'
+  - '.github/workflows/cache-prune.yml'
   - 'tools/eval-gate/**'
 
 lint_web:
@@ -189,6 +192,8 @@ unit_go:
   - *make
   - *go
   - '.github/workflows/_unit.yml'
+  # it writes its runner's Go cache entry, every module in it first
+  - 'tools/ci/go-cache-fill.sh'
 
 # the pipeline's unit tier, and its cluster tests on Windows
 unit_pipeline:
@@ -582,6 +587,8 @@ mac_app:
   - 'pipeline/src/maktaba_plugin_runner/**'
   - 'pipeline/src/maktaba_pipeline/plugins/native.py'
   - '.github/workflows/_mac-app.yml'
+  # it writes its runner's Go cache entry, every module in it first
+  - 'tools/ci/go-cache-fill.sh'
   # its pinned downloads, retried and checked (the payload's fetch too)
   - 'tools/release/fetch-pinned.sh'
   - '.github/workflows/desktop-release.yml'
@@ -599,6 +606,8 @@ win_app:
   - 'pipeline/uv.lock'
   - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'
   - '.github/workflows/_win-app.yml'
+  # it writes its runner's Go cache entry, every module in it first
+  - 'tools/ci/go-cache-fill.sh'
   # its pinned downloads, retried and checked (the payload's fetch too)
   - 'tools/release/fetch-pinned.sh'
   - '.github/workflows/desktop-release.yml'
@@ -617,6 +626,8 @@ linux_app:
   - 'pipeline/uv.lock'
   - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'
   - '.github/workflows/_linux-app.yml'
+  # it writes its runner's Go cache entry, every module in it first
+  - 'tools/ci/go-cache-fill.sh'
   # the payload's fetch (pinned downloads, retried and checked)
   - 'tools/release/fetch-pinned.sh'
   - 'Makefile'

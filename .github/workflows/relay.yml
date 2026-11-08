@@ -107,8 +107,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('cloud/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -155,14 +153,6 @@ jobs:
           # its lint cache: pull requests and tags restore main's, only a push to main saves
           skip-save-cache: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
-
   test:
     name: test (cloud + postgres)
     runs-on: ubuntu-22.04
@@ -202,8 +192,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('cloud/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -235,14 +223,6 @@ jobs:
         working-directory: cloud
         run: go test -tags=integration -count=1 ./...
 
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
-
   build:
     name: build (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ubuntu-22.04
@@ -265,8 +245,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('cloud/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -301,14 +279,6 @@ jobs:
           name: maktaba-cloud-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
           retention-days: 7
-
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
 
   docker:
     name: docker build + push
@@ -529,8 +499,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('tools/release/go.sum') }}
 
       # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
       - name: Go modules
@@ -586,14 +554,6 @@ jobs:
             (cd tools/release && go run ./cmd/release-order latest --tag "${TAG}"))"
           echo "release ${TAG} is published; the latest: ${latest}"
           echo "deploy=${latest}" >> "$GITHUB_OUTPUT"
-
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
 
   deploy:
     name: deploy to VPS

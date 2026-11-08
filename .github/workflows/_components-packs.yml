@@ -25,11 +25,12 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: tools/release/go.mod
-          cache-dependency-path: |
-            tools/release/go.sum
-            shared/go/releaseverify/go.sum
-            shared/go/componentpack/go.sum
-            shared/components/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules

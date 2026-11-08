@@ -34,11 +34,15 @@ jobs:
           components: clippy, rustfmt
           targets: wasm32-wasip2
 
+      # one Rust cache entry for the plugin host on ubuntu-24.04, shared with the sandbox's
+      # ubuntu-24.04 leg and the update rehearsal's kit (they restore it): this job builds
+      # the most of it (debug and release), and only its push to main writes it
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
             plugind
             plugind/guests
+          shared-key: plugind-ubuntu-24.04
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: The host's format, lint and tests (make plugind-test)
@@ -148,8 +152,11 @@ jobs:
           workspaces: |
             plugind
             plugind/guests
-          key: ${{ matrix.os }}
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          # ubuntu-24.04 restores the plugind job's entry; only windows-2022 writes its own (a
+          # 10-minute leg the cache serves). ubuntu-22.04 and macos-15 write none: they ran in
+          # 4.4 and 6.7 minutes uncached (run 42486732449), and their 0.7 GB went to others
+          shared-key: plugind-${{ matrix.os }}
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == 'windows-2022' }}
 
       - uses: actions/setup-go@v6.4.0
         if: runner.os == 'Windows'

@@ -33,8 +33,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -149,14 +147,6 @@ jobs:
           path: ${{ runner.temp }}/e2e-logs
           if-no-files-found: ignore
 
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
-
   updates:
     # Epic 35 phase B and D (specs/epics/35-cluster-full-nodes-and-updates/install-kinds.md):
     # the home's database safety around an update (a verified dump, the rehearsal on a
@@ -180,8 +170,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum', 'cmd/maktaba-launcher/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -234,11 +222,3 @@ jobs:
           name: e2e-machine-logs
           path: ${{ runner.temp }}/e2e-logs
           if-no-files-found: ignore
-
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
