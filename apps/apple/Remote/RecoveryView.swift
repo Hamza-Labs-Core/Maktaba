@@ -68,6 +68,27 @@ private struct RecoveryList: View {
         }
         .maktabaSurface()
         .refreshable { await recovery.load() }
+        // the last action's outcome, pinned below the list: a part's Restart is far down the list,
+        // and a line at its top would be out of sight (and out of the hierarchy) when it lands
+        .safeAreaInset(edge: .bottom) {
+            if let outcome = recovery.outcome {
+                Group {
+                    switch outcome {
+                    case .done:
+                        Label("Done.", systemImage: "checkmark").accessibilityIdentifier("recovery.done")
+                    case .failed(let why) where !why.isEmpty:
+                        Label("That did not work: \(why)", systemImage: "xmark.octagon").foregroundStyle(.red)
+                            .accessibilityIdentifier("recovery.failed")
+                    case .failed:
+                        Label("That did not work.", systemImage: "xmark.octagon").foregroundStyle(.red)
+                            .accessibilityIdentifier("recovery.failed")
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .background(.thinMaterial)
+            }
+        }
         .alert(recovery.asking.map { title($0.action) } ?? "Recovery", isPresented: Binding(
             get: { recovery.asking != nil },
             set: { if !$0 { recovery.cancel() } }
@@ -95,18 +116,6 @@ private struct RecoveryList: View {
             } else {
                 Label("Part of Maktaba isn't working. You can see what happened and fix it here.",
                       systemImage: "exclamationmark.triangle")
-            }
-            switch recovery.outcome {
-            case .done:
-                Label("Done.", systemImage: "checkmark").accessibilityIdentifier("recovery.done")
-            case .failed(let why) where !why.isEmpty:
-                Label("That did not work: \(why)", systemImage: "xmark.octagon").foregroundStyle(.red)
-                    .accessibilityIdentifier("recovery.failed")
-            case .failed:
-                Label("That did not work.", systemImage: "xmark.octagon").foregroundStyle(.red)
-                    .accessibilityIdentifier("recovery.failed")
-            case nil:
-                EmptyView()
             }
         }
         Section("Status") {
