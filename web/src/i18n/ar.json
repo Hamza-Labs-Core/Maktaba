@@ -6853,6 +6853,7 @@
   "dash.machines.offline": "غير متصلة: {machines}. تأتي الأجهزة غير المتصلة أولاً، وتنتهي خطوطها عند آخر قيمها.",
   "dash.machine.offline": "هذا الجهاز غير متصل. تنتهي خطوطه عند آخر قيمه.",
   "dash.machine.offlineOption": "{machine} (غير متصل)",
+  "dash.machine.option": "{name} ({id})",
   "dash.omitted": "{count} خطوط أخرى لم تتسع لها هذه اللوحة.",
   "dash.series.maktaba_machines_components_up": "المكوّنات العاملة، كل الأجهزة",
   "dash.series.maktaba_machines_components_down": "المكوّنات المتوقفة، كل الأجهزة",

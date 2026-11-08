@@ -6840,6 +6840,7 @@
   "dash.machines.offline": "Offline: {machines}. Offline machines come first; their lines end at their last values.",
   "dash.machine.offline": "This machine is offline. Its lines end at its last values.",
   "dash.machine.offlineOption": "{machine} (offline)",
+  "dash.machine.option": "{name} ({id})",
   "dash.omitted": "{count} more lines did not fit on this board.",
   "dash.series.maktaba_machines_components_up": "Components up, all machines",
   "dash.series.maktaba_machines_components_down": "Components down, all machines",

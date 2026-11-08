@@ -248,6 +248,49 @@ class DiagnosticsScreenTest {
         assertTrue(shown("غير متصلة: n45, n70"))
     }
 
+    // Story 53.12: machines are named as the Machines page names them, keyed by their node id.
+    @Volatile private var askedMachine: String? = null
+
+    private fun showNamed() = show(DiagTab.Dashboards) {
+        val pts = (0 until 24).joinToString(",") { "[${java.time.Instant.now().epochSecond - (23 - it) * 3600},${it % 3}]" }
+        home.answer("/api/admin/dashboards/overview") { r ->
+            val one = r.url.queryParameter("machine")
+            if (one != null) askedMachine = one
+            val asked = if (one == null) "" else "\"machine\":\"$one\","
+            FakeRemoteHome.json("""{"board":"overview","range":"24h",$asked
+              "machines":{"total":3,"shown":["n45","n07","home"],"all":["home","n07","n45"],"offline":["n45"]},
+              "names":{"home":"Living room","n45":"Office"},
+              "series":[{"name":"maktaba_host_load1","labels":"machine=n45","kind":"gauge","points":[$pts]},
+                {"name":"maktaba_host_load1","labels":"machine=n07","kind":"gauge","points":[$pts]}]}""")
+        }
+    }
+
+    @Test
+    fun machinesAreNamedWithTheirIdAsAHint() {
+        showNamed()
+        compose.settledUntil { compose.has("dash-offline") }
+        assertTrue(shown("Offline: Office."))
+        // the legend names the machine; one with no name keeps its id
+        assertTrue(shown("Office · n07"))
+        compose.onNodeWithTag("dash-machine").performClick()
+        compose.settledUntil { compose.has("dash-machine-n45") }
+        assertTrue(shown("Office (n45) (offline)"))
+        assertTrue(shown("Living room (home)"))
+        // picked by name, asked by node id
+        compose.onNodeWithTag("dash-machine-home").performClick()
+        compose.settledUntil { askedMachine == "home" }
+    }
+
+    @Test @Config(qualifiers = "ar-w411dp-h891dp-420dpi")
+    fun machineNamesInArabic() {
+        showNamed()
+        compose.settledUntil { compose.has("dash-offline") }
+        assertTrue(shown("غير متصلة: Office."))
+        compose.onNodeWithTag("dash-machine").performClick()
+        compose.settledUntil { compose.has("dash-machine-n45") }
+        assertTrue(shown("Office (n45) (غير متصل)"))
+    }
+
     @Test
     fun theInbox() {
         show(DiagTab.Reports)

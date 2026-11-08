@@ -218,6 +218,26 @@ class DiagnosticsApiTest {
     }
 
     @Test
+    fun theOverviewNamesItsMachinesAsTheMachinesPageDoes() {
+        val json = Json { ignoreUnknownKeys = true }
+        val b = json.decodeFromString<BoardDoc>(
+            """{"board":"overview","names":{"home":"Living room","n07":"Attic NAS","n09":" "},
+              "series":[{"name":"maktaba_component_down","labels":"id=core.api,machine=n07"}]}""",
+        )
+        assertEquals("Attic NAS", b.nameOf("n07"))
+        assertEquals("Living room", b.nameOf("home"))
+        // no name, or a blank one: the node id
+        assertEquals("n08", b.nameOf("n08"))
+        assertEquals("n09", b.nameOf("n09"))
+        assertEquals("core.api · Attic NAS", b.series[0].legend(b.names))
+        assertEquals("core.api · n07", b.series[0].legend)
+        // a home before names: every machine by its id
+        val old = json.decodeFromString<BoardDoc>("""{"board":"overview"}""")
+        assertEquals(emptyMap<String, String>(), old.names)
+        assertEquals("n07", old.nameOf("n07"))
+    }
+
+    @Test
     fun theInboxReadsAReportsTimelineAndChangesIt() = runBlocking {
         answer = { r ->
             when (r.url.encodedPath) {

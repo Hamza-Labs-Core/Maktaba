@@ -14,6 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
+- **The Overview names each machine (Epic 53 story 53.12).** On the home's dashboards, the
+  machine picker, the Offline line and the chart legends show each machine by its name, as the
+  Machines page shows it (the home by its own name), on the web page and both Remotes; the
+  picker keeps the node id beside the name. The API adds `names` (`{<node id>: <name>}`, only
+  the ids the answer mentions) from the cluster: a name is bounded to 64 characters with control
+  and bidirectional override characters dropped, and a machine with no name, or every machine
+  when the cluster can't be read, keeps its node id. The node id stays the key (`machine=`).
 - **An offline machine comes first on the Overview (Epic 53 story 53.12).** On the home's
   dashboards, a joined machine that is offline now ranks first among the machines most in need
   of attention, and is named as offline: a line on the web page and both Remotes ("Offline:

@@ -49,12 +49,15 @@ func TestDashboardOfflineMachinesFollowTheCluster(t *testing.T) {
 	if ids, err := offlineMachines(ctx); err != nil || len(ids) != 0 {
 		t.Fatalf("no cluster: %v %v", ids, err)
 	}
+	if names, err := machineNames(ctx, []string{"n1"}); err != nil || len(names) != 0 {
+		t.Fatalf("no cluster: names %v %v", names, err)
+	}
 	h := MountP31(chi.NewRouter(), P31Deps{Driver: "sqlite"})
 	if dashboardMachines.Load() != h {
 		t.Fatal("MountP31 did not hand its handler to the dashboards")
 	}
 	store := h.Store.(*cluster.MemoryStore)
-	if err := store.PutPending(ctx, cluster.Node{ID: "n1", Name: "n1", CreatedAt: time.Now()}); err != nil {
+	if err := store.PutPending(ctx, cluster.Node{ID: "n1", Name: "Attic", CreatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Approve(ctx, "n1", "r_n1", nil, "admin", time.Now()); err != nil {
@@ -62,5 +65,8 @@ func TestDashboardOfflineMachinesFollowTheCluster(t *testing.T) {
 	}
 	if ids, err := offlineMachines(ctx); err != nil || len(ids) != 1 || ids[0] != "n1" {
 		t.Fatalf("an approved machine never seen: %v %v, want it offline", ids, err)
+	}
+	if names, err := machineNames(ctx, []string{"n1"}); err != nil || names["n1"] != "Attic" {
+		t.Fatalf("names %v %v, want n1 named Attic", names, err)
 	}
 }

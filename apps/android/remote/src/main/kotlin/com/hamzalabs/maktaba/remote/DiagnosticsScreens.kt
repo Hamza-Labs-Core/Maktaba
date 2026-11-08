@@ -80,6 +80,7 @@ import com.hamzalabs.maktaba.core.api.board
 import com.hamzalabs.maktaba.core.api.errorGroup
 import com.hamzalabs.maktaba.core.api.errorGroups
 import com.hamzalabs.maktaba.core.api.gapsOverASecond
+import com.hamzalabs.maktaba.core.api.machineName
 import com.hamzalabs.maktaba.core.api.problemReport
 import com.hamzalabs.maktaba.core.api.problemReports
 import com.hamzalabs.maktaba.core.api.replyToReport
@@ -458,13 +459,17 @@ private fun Dashboards(remote: Remote) {
     var machine by rememberSaveable { mutableStateOf("") }
     var machines by remember { mutableStateOf(emptyList<String>()) }
     var offline by remember { mutableStateOf(emptyList<String>()) }
+    // each machine id named as the Machines page names it (kept across one machine's answers)
+    var names by remember { mutableStateOf(emptyMap<String, String>()) }
     var picking by remember { mutableStateOf(false) }
     val (state, _) = load(remote, board, range, machine) { board(board, range, machine) }
     LaunchedEffect(state) {
-        (state as? Loaded.Ready)?.value?.machines?.let {
+        val doc = (state as? Loaded.Ready)?.value
+        doc?.machines?.let {
             machines = it.all
             offline = it.offline
         }
+        doc?.names?.takeIf { it.isNotEmpty() }?.let { names = names + it }
     }
     LazyColumn(Modifier.fillMaxSize().testTag("diag-dashboards")) {
         item {
@@ -482,8 +487,13 @@ private fun Dashboards(remote: Remote) {
                     Box {
                         val all = stringResource(R.string.dash_machine_all)
                         val offlineWord = stringResource(R.string.dash_machine_offline_option)
-                        // a machine's name in the picker, marked when it is offline
-                        val named = { m: String -> if (m in offline) offlineWord.format(m) else m.ifEmpty { all } }
+                        val withId = stringResource(R.string.dash_machine_option)
+                        // a machine's name in the picker, its node id as a hint, marked when it is offline
+                        val named = { m: String ->
+                            val name = machineName(names, m)
+                            val label = if (name == m) m.ifEmpty { all } else withId.format(name, m)
+                            if (m in offline) offlineWord.format(label) else label
+                        }
                         OutlinedButton(onClick = { picking = true }, modifier = Modifier.testTag("dash-machine")) {
                             Text("${stringResource(R.string.dash_machine)}: ${named(machine)}")
                         }
@@ -511,7 +521,7 @@ private fun Dashboards(remote: Remote) {
         val offlineLine = when {
             board != Board.Overview || counted == null || counted.offline.isEmpty() -> null
             !doc.machine.isNullOrEmpty() -> if (doc.machine?.let(counted::isOffline) == true) R.string.dash_machine_offline to null else null
-            else -> R.string.dash_machines_offline to counted.offline.joinToString(", ")
+            else -> R.string.dash_machines_offline to counted.offline.joinToString(", ") { machineName(names, it) }
         }
         if (offlineLine != null) item {
             val (res, names) = offlineLine
@@ -524,13 +534,13 @@ private fun Dashboards(remote: Remote) {
         }
         val panels = doc.panels.filter { (_, s) -> s.any { it.points.isNotEmpty() } }
         if (panels.isEmpty()) item { Text(stringResource(R.string.dash_no_data), Modifier.padding(16.dp)) }
-        items(panels, key = { it.first }) { (name, series) -> Panel(name, series) }
+        items(panels, key = { it.first }) { (name, series) -> Panel(name, series, names) }
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Panel(name: String, series: List<BoardSeries>) {
+private fun Panel(name: String, series: List<BoardSeries>, names: Map<String, String> = emptyMap()) {
     val title = seriesTitle(name)?.let { stringResource(it) } ?: name
     val latest = series.sumOf { it.points.lastOrNull()?.getOrNull(1) ?: 0.0 }
     val max = series.flatMap { it.points }.maxOfOrNull { it.getOrNull(1) ?: 0.0 } ?: 0.0
@@ -553,7 +563,7 @@ private fun Panel(name: String, series: List<BoardSeries>) {
                 }
             }
         }
-        if (series.size > 1) Text(series.joinToString(" · ") { it.legend }, style = MaterialTheme.typography.labelSmall)
+        if (series.size > 1) Text(series.joinToString(" · ") { it.legend(names) }, style = MaterialTheme.typography.labelSmall)
     }
 }
 
