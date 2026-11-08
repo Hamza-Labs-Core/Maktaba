@@ -521,6 +521,14 @@ build fails when the two differ.
 
 ### Security
 
+- **The worker checks every live event a first-party plugin's runner asks it to publish
+  (Epic 54).** A runner's `publish` request went onto the `jobs` channel, which every web
+  client and app listens to, with any kind and any payload. The worker now publishes only
+  `job.progress` and `job.log`, each matching its schema, at most 64 KiB, about the runner's
+  own running job, with its subject and library as the job's (compared as uuids). Anything
+  else is refused back to the runner, publishes nothing, and is logged with the plugin, the
+  kind, the reason and the payload's size, never its contents.
+
 - **A first-party plugin's writes stay in its job's library and video (Epic 54, README
   §15.12).** A plugin's write statement named one id the plugin API checked against the job,
   or none, while it reached rows by other ids too: a season's row, a series, a transcript and

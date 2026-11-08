@@ -420,3 +420,66 @@ async def test_a_runner_that_closes_without_a_fingerprint_is_read_in_process(
     monkeypatch.setattr(native, "fingerprints", closed)
     fn = native.fingerprint_fn("fp_toy", "input", inproc)
     assert await fn(None, object()) == "in-process"
+
+
+async def test_a_runners_publish_is_checked_before_the_worker_publishes_it(
+    db: Database, toy: bytes, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The engine relay's ``publish`` (plugins/publish_rules.py): an event about another job
+    comes back to the runner as an error, publishes nothing and is logged with the minted
+    plugin id; the job's own progress, its real job ref, is published."""
+    from structlog.testing import capture_logs
+
+    from maktaba_pipeline.engine.context import StageFailure
+    from maktaba_pipeline.engine.events import job_ref
+    from maktaba_pipeline.plugins import native
+
+    job, rt, _ = await toy_job(db)
+    ctx = await rt.context_for(db, job)
+    ref = await job_ref(db, job.id)
+    assert ref is not None
+
+    async def mint(_job_id: int) -> dict[str, Any]:
+        return {"plugin_id": "tv.maktaba.toy", "invocation_id": "inv_1", "token": "t"}
+
+    monkeypatch.setattr(native, "_mint", mint)
+    monkeypatch.setattr(native, "_end", lambda _i: asyncio.sleep(0))
+    replies: list[dict[str, Any]] = []
+
+    async def fake_runner(r: asyncio.StreamReader, w: asyncio.StreamWriter) -> None:
+        assert (await native.read_frame(r))["type"] == "run"
+        for n, payload in enumerate(({"job": {**ref, "id": job.id + 1}}, {"job": ref}), 1):
+            await native.write_frame(
+                w,
+                {
+                    "type": "engine",
+                    "id": n,
+                    "op": "publish",
+                    "args": {"type": "job.progress", "payload": native.encode_any(payload)},
+                },
+            )
+            replies.append(await native.read_frame(r))
+        await native.write_frame(
+            w,
+            {"type": "result", "status": "failure", "kind": "k", "message": "m",
+             "retryable": False},
+        )  # fmt: skip
+        w.close()
+
+    with tempfile.TemporaryDirectory() as d:
+        sock = Path(d) / "fake.sock"
+        server = await asyncio.start_unix_server(fake_runner, path=str(sock))
+        await db.execute("DELETE FROM events WHERE type = 'job.progress'")
+        with capture_logs() as logs, pytest.raises(StageFailure):
+            await native.run_native(
+                db, job, ctx, connect=lambda: asyncio.open_unix_connection(str(sock))
+            )
+        server.close()
+    assert replies[0]["error"].startswith("plugin_publish_refused: topic")
+    assert "error" not in replies[1]
+    refused = [e for e in logs if e["event"] == "plugin_publish_refused"]
+    assert [(e["plugin"], e["kind"], e["reason"]) for e in refused] == [
+        ("tv.maktaba.toy", "job.progress", "topic")
+    ]
+    rows = await db.fetch("SELECT payload FROM events WHERE type = 'job.progress'")
+    assert len(rows) == 1

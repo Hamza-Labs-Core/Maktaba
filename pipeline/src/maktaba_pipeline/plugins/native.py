@@ -597,10 +597,13 @@ _ENDING: set[asyncio.Future[None]] = set()
 EngineHandler = Callable[[str, dict[str, Any]], Awaitable[Any]]
 
 
-def engine_handler(db: Any, ctx: Any) -> EngineHandler:
+def engine_handler(db: Any, ctx: Any, plugin_id: str = "") -> EngineHandler:
     """What the runner may ask of the worker while one job runs: the job's own progress,
-    log, events and cancel flag, written by the worker with its own database."""
+    log, events and cancel flag, written by the worker with its own database. An event is
+    published only when its kind, size, payload, topic and ids pass
+    :func:`.publish_rules.check_publish`."""
     from ..engine import events
+    from .publish_rules import check_publish
 
     async def handle(op: str, a: dict[str, Any]) -> Any:
         if op == "progress":
@@ -627,7 +630,13 @@ def engine_handler(db: Any, ctx: Any) -> EngineHandler:
             await events.log_event(db, **kw)
             return None
         if op == "publish":
-            await events.publish(db, str(a["type"]), decode_any(a["payload"]))
+            kind = a.get("type")
+            try:
+                payload = decode_any(a.get("payload"))
+            except Exception:  # noqa: BLE001 - an undecodable payload is refused as a schema
+                payload = None  # mismatch (and logged) like any other
+            check_publish(plugin_id or str(ctx.job.stage), kind, payload, ctx.job)
+            await events.publish(db, str(kind), payload)
             return None
         if op == "job_ref":
             ref = await events.job_ref(db, int(a["job_id"]))
@@ -913,7 +922,7 @@ async def run_native(db: Any, job: Any, ctx: Any, *, connect: Any = None) -> Sta
     if group is None or entry is None:
         raise StageFailure("plugin_failed", f"{stage} is not a first-party stage", retryable=False)
     minted = await _mint(int(job.id))
-    handle = engine_handler(db, ctx)
+    handle = engine_handler(db, ctx, str(minted.get("plugin_id") or ""))
     try:
         opener = connect or (lambda: open_runner(group))
         try:
