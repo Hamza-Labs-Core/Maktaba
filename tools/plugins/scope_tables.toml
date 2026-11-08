@@ -1,4 +1,5 @@
-# Who owns a row of each table a first-party plugin writes (Epic 54, README §15.12).
+# Who owns a row of each table a first-party plugin writes or reads by id (Epic 54,
+# README §15.12).
 #
 # tools/plugins/statements_build.py reads this file to work out, from each write
 # statement's parse tree, which scope checks the plugin API must run before the write: a
@@ -15,6 +16,12 @@
 # write it, and the check fails when any other plugin does.
 #
 # A table a plugin writes that is in neither list fails `statements_build.py check`.
+#
+# Reads are checked the same way: wherever a statement compares a column to a $N, the
+# table must be in one of the lists, an owner column's $N is checked (`<kind> $N`), and an
+# id-named column (`id`, `…_id`) that holds no kind the API resolves goes under [not_ids]
+# with the reason a read by it needs no check.
+#
 # Changes here are reviewed with the plugin that needs them.
 
 [tables.videos]
@@ -60,6 +67,41 @@ video_id = "subject"
 id = "file_action"
 library_id = "library"
 video_id = "subject"
+job_id = "job"
+
+[tables.libraries]
+id = "library"
+
+# the queue's jobs: plugins read their own job's flags and earlier runs' hashes. A job's
+# subject_id is a video, library, series or season id (its subject_kind says which).
+[tables.processing_jobs]
+id = "job"
+library_id = "library"
+video_id = "subject"
+subject_id = "job_subject"
+
+[tables.collections]
+id = "collection"
+library_id = "library"
+
+[tables.collection_items]
+collection_id = "collection"
+video_id = "subject"
+
+[tables.playback_state]
+video_id = "subject"
+
+[tables.user_favorites]
+video_id = "subject"
+
+[tables.user_playlist_items]
+video_id = "subject"
+
+[tables.vocabulary]
+library_id = "library"
+
+[tables.vocab_pairs]
+library_id = "library"
 
 [tables.item_requests]
 video_id = "subject"
@@ -206,7 +248,24 @@ library_id = "library"
 youtube_id = "youtube_video"
 channel_id = "youtube_channel"
 
+# --- id-named columns that hold no kind the API resolves -----------------------------------
+
+[not_ids]
+"media_metadata_enrichment.external_id" = "the provider's own id of a public item (a YouTube video id), not a Maktaba row's: a row is tied to its library through video_id"
+"youtube_downloads.youtube_id" = "a public YouTube video id: several libraries may download the same video, so the id names no one library's row; a download is tied to its library through library_id"
+"youtube_playlist_items.youtube_id" = "a public YouTube video id in a public playlist's listing: the listing is shared by every library that follows the playlist's channel, and its rows are tied to a scope through playlist_id"
+
 # --- rows no library owns ---------------------------------------------------------------
+
+[home.app_settings]
+reason = "the home's settings: a plugin reads only the rules sections its manifest lists, by key, through the settings check"
+
+[home.job_stages]
+reason = "the queue's stage definitions (pause flags, budgets), by stage name: no library's rows"
+
+[home.channel_art_overrides]
+reason = "the home's TV channel artwork, by channel"
+catalog_only = true
 
 [home.books]
 reason = "reference data about a published book, keyed by its name: no library's data"

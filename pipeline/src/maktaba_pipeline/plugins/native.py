@@ -630,7 +630,7 @@ def engine_handler(db: Any, ctx: Any) -> EngineHandler:
             await events.publish(db, str(a["type"]), decode_any(a["payload"]))
             return None
         if op == "job_ref":
-            ref = await events.job_ref(db, int(a["job_id"]))
+            ref = await events.job_ref(db, _own_job_id(ctx, a.get("job_id")))
             return encode_any(ref) if ref is not None else None
         if op == "review_digest":
             ctx.review_digests.append(str(a["digest"]))
@@ -842,6 +842,19 @@ def _own_job_event(ctx: Any, kw: dict[str, Any]) -> dict[str, Any]:
         if str(kw.get(k)) != str(own[k]):
             raise EnqueueRefused(f"plugin_scope: {k} {kw.get(k)} is not this job's")
     return {**kw, **own}
+
+
+def _own_job_id(ctx: Any, job_id: Any) -> int:
+    """The job a plugin's job reads through the worker (``job_ref``, README §15.12): its own
+    only; another job's state, subject and library are not its to read."""
+    own = int(ctx.job.id)
+    try:
+        asked = int(job_id)
+    except (TypeError, ValueError):
+        raise EnqueueRefused(f"plugin_scope: job {job_id!r} is not this job's") from None
+    if asked != own:
+        raise EnqueueRefused(f"plugin_scope: job {asked} is not this job's")
+    return own
 
 
 def _services_of(stage: str) -> tuple[str, ...]:

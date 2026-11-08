@@ -101,6 +101,10 @@ answers a capability error.
 
 - **Scope to the job.** `media` and `write` act only on the job's subject, or, for library and
   catalog jobs, on items in granted libraries. Outside scope: `403 plugin_scope`.
+- **Reads by id are scoped too.** `library`, `transcript`, `media.info`, `data` and
+  `exports` reads of a video, a series or a library answer only rows of granted libraries
+  (`data` and `exports` keyed by such a subject included); a row that is gone reads as no
+  data. Outside scope: `403 plugin_scope`.
 - **Capabilities are checked.** Without the grant: `403 plugin_capability`, logged and counted
   toward the circuit breaker.
 - **Core fields are guarded.** `set-field` writes only `description`, `sort_title`, `year`,

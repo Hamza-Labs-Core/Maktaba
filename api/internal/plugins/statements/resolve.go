@@ -1,9 +1,10 @@
 package statements
 
-// Row scopes (Epic 54, README §15.12): a write that addresses a row by an id of its own (a
-// season, a transcript, a YouTube channel) names a check of that kind, and the API looks
-// the row up here, with SQL of its own, to find whose it is. The kinds are those of
-// tools/plugins/scope_tables.toml; the build refuses a write it cannot bind to one.
+// Row scopes (Epic 54, README §15.12): a statement that addresses a row by an id of its own
+// (a season, a transcript, a YouTube channel, a job), to write it or to read it, names a
+// check of that kind, and the API looks the row up here, with SQL of its own, to find whose
+// it is. The kinds are those of tools/plugins/scope_tables.toml; the build refuses a write
+// it cannot bind to one, and a read by a column it cannot type.
 
 import (
 	"context"
@@ -36,6 +37,16 @@ var rowKinds = map[string]rowKind{
 	"topic_collection": {"uuid", `SELECT CAST(library_id AS text), NULL FROM topic_collections WHERE id = CAST($1 AS uuid)`},
 	"dup_group":        {"uuid", `SELECT CAST(library_id AS text), NULL FROM duplicate_groups WHERE id = CAST($1 AS uuid)`},
 	"youtube_source":   {"uuid", `SELECT CAST(library_id AS text), NULL FROM youtube_sources WHERE id = CAST($1 AS uuid)`},
+	"collection":       {"uuid", `SELECT CAST(library_id AS text), NULL FROM collections WHERE id = CAST($1 AS uuid)`},
+	// a queue job: its library, and its video when its subject is one (a catalog job's row
+	// is no library's)
+	"job": {"int", `SELECT CAST(library_id AS text), CASE WHEN subject_kind = 'video' THEN CAST(subject_id AS text) END
+		FROM processing_jobs WHERE id = CAST($1 AS bigint)`},
+	// a job's subject_id: a video, a library, a series or a season, whichever has the id
+	"job_subject": {"uuid", `SELECT CAST(library_id AS text), CAST(id AS text) FROM videos WHERE id = CAST($1 AS uuid)
+		UNION ALL SELECT CAST(id AS text), NULL FROM libraries WHERE id = CAST($1 AS uuid)
+		UNION ALL SELECT CAST(library_id AS text), NULL FROM series WHERE id = CAST($1 AS uuid)
+		UNION ALL SELECT CAST(library_id AS text), NULL FROM series_seasons WHERE id = CAST($1 AS uuid)`},
 	"file_action": {"uuid", `SELECT CAST(library_id AS text), CAST(video_id AS text) FROM file_actions
 		WHERE id = CAST($1 AS uuid)`},
 	"transcript": {"uuid", `SELECT CAST(v.library_id AS text), CAST(v.id AS text) FROM transcripts t

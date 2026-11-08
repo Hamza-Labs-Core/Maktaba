@@ -20,7 +20,8 @@ the job's subject, ``library $N`` one of the token's libraries, ``settings $N`` 
 one of the ``rules.*`` sections the manifest lists; any other kind (``season $N``,
 ``transcript $N``, ``youtube_channel $N``, …: :data:`ROW_SCOPES`) an id of a row the API
 looks up, whose library (and video) must be the job's. A write lists every check its rows
-need, comma separated (``subject $1, season $4``), and the API runs each one; the build
+need, and a read a check for every ``$n`` it compares an id column to, comma separated
+(``subject $1, season $4``), and the API runs each one; the build
 (``tools/plugins/statements_build.py``) works them out from the statement's parse tree and
 ``tools/plugins/scope_tables.toml``. ``catalog`` statements read or write rows that belong
 to no one subject (the series catalog, a plan). A forged argument is ``403 plugin_scope``.
@@ -53,8 +54,11 @@ ROW_SCOPES = (
     "audio_cache",
     "audio_track",
     "clip_group",
+    "collection",
     "dup_group",
     "file_action",
+    "job",
+    "job_subject",
     "segment",
     "season",
     "series",

@@ -52,7 +52,9 @@ func (c *call) videoLibrary(videoID string) (string, *Refusal) {
 	return lib, nil
 }
 
-// readScope: a read of a video in a library the admin granted (54.04 §3).
+// readScope: a read of a video in a library the admin granted (54.04 §3) and, for a
+// first-party job (whose token spans every library), of the job's own scope (README
+// §15.12): a video job's own video, a library job's library.
 func (c *call) readScope(videoID string) *Refusal {
 	lib, ref := c.videoLibrary(videoID)
 	if ref != nil {
@@ -61,7 +63,31 @@ func (c *call) readScope(videoID string) *Refusal {
 	if !c.inv.LibraryAllowed(lib) {
 		return refuse(403, CodeScope, "the video's library is not granted")
 	}
+	if c.inv.Trusted && c.inv.SubjectKind == "video" && !sameUUID(videoID, c.inv.SubjectID) {
+		return refuse(403, CodeScope, "a first-party video job reads its own video only")
+	}
+	return c.jobLibrary(lib, "video")
+}
+
+// jobLibrary: a row of library lib is of the job's library, for a job of one library (a
+// first-party job: its token spans every library, its job one of them; README §15.12).
+func (c *call) jobLibrary(lib, what string) *Refusal {
+	if c.inv.LibraryID != "" && !sameUUID(lib, c.inv.LibraryID) {
+		return refuse(403, CodeScope, "the "+what+" is not of this job's library")
+	}
 	return nil
+}
+
+// dataSubjectScope: a subject a plugin keys data by (its own, or another plugin's exported
+// data) is of the token's scope when it is a row the API resolves (a video, a library, a
+// series or a season; README §15.12). A row that is gone leaks no library's data, and a
+// subject of another kind (the catalog, a plugin's own key) is no row.
+func (c *call) dataSubjectScope(sub subjectRef) *Refusal {
+	_, ref := c.subjectScope(sub, false)
+	if ref != nil && ref.Code == CodeNotFound {
+		return nil
+	}
+	return ref
 }
 
 // writeScope: a write (or a media read) acts on the job's subject only; a library,
@@ -74,21 +100,18 @@ func (c *call) writeScope(videoID string) *Refusal {
 	if !c.inv.LibraryAllowed(lib) {
 		return refuse(403, CodeScope, "the video's library is not granted")
 	}
-	if c.inv.SubjectKind == "video" && videoID != c.inv.SubjectID {
+	if c.inv.SubjectKind == "video" && !sameUUID(videoID, c.inv.SubjectID) {
 		return refuse(403, CodeScope, "a video job acts on its own video only")
 	}
-	// a job of one library (a first-party job's token spans every library for reads) writes
-	// that library's videos only (README §15.12)
-	if c.inv.LibraryID != "" && !sameUUID(lib, c.inv.LibraryID) {
-		return refuse(403, CodeScope, "the video is not of this job's library")
-	}
-	return nil
+	// a job of one library (a first-party job's token spans every library) writes that
+	// library's videos only (README §15.12)
+	return c.jobLibrary(lib, "video")
 }
 
 // subjectScope: a subject a route names, of a kind it resolves (a video, a library, a
-// series or a season), inside the token's libraries and, for a write by a job of one
-// library, that library (README §15.12). Another kind answers ok=false for the route to
-// decide.
+// series or a season), inside the token's libraries and, for a job of one library, that
+// library, to write it or to read it (README §15.12). Another kind answers ok=false for
+// the route to decide.
 func (c *call) subjectScope(sub subjectRef, write bool) (ok bool, ref *Refusal) {
 	var lib sql.NullString
 	switch sub.Kind {
@@ -127,10 +150,7 @@ func (c *call) subjectScope(sub subjectRef, write bool) (ok bool, ref *Refusal) 
 	if !c.inv.LibraryAllowed(lib.String) {
 		return true, refuse(403, CodeScope, "the "+sub.Kind+"'s library is not granted")
 	}
-	if write && c.inv.LibraryID != "" && !sameUUID(lib.String, c.inv.LibraryID) {
-		return true, refuse(403, CodeScope, "the "+sub.Kind+" is not of this job's library")
-	}
-	return true, nil
+	return true, c.jobLibrary(lib.String, sub.Kind)
 }
 
 // sameUUID: two ids name one row, read as uuids (never compared as text).
@@ -173,6 +193,9 @@ func (s *Server) dataRoutes() {
 	s.routes["data/get"] = func(c *call) (any, *Refusal) {
 		sub, k, ref := key(c)
 		if ref != nil {
+			return nil, ref
+		}
+		if ref := c.dataSubjectScope(sub); ref != nil {
 			return nil, ref
 		}
 		var v []byte
@@ -242,6 +265,9 @@ func (s *Server) dataRoutes() {
 			Prefix  string     `json:"prefix"`
 		}
 		if ref := c.decode(&in); ref != nil {
+			return nil, ref
+		}
+		if ref := c.dataSubjectScope(in.Subject); ref != nil {
 			return nil, ref
 		}
 		rows, err := c.s.DB.QueryContext(c.ctx, `SELECT key FROM plugin_data WHERE plugin_id=$1 AND subject_kind=$2 AND subject_id=$3
@@ -325,6 +351,9 @@ func (s *Server) libraryRoutes() {
 		if out.LibraryID == nil || !c.inv.LibraryAllowed(*out.LibraryID) {
 			return nil, refuse(403, CodeScope, "the series' library is not granted")
 		}
+		if ref := c.jobLibrary(*out.LibraryID, "series"); ref != nil {
+			return nil, ref
+		}
 		return out, nil
 	}
 	s.routes["library/list"] = func(c *call) (any, *Refusal) {
@@ -337,6 +366,9 @@ func (s *Server) libraryRoutes() {
 		}
 		if !c.inv.LibraryAllowed(in.Library) {
 			return nil, refuse(403, CodeScope, "the library is not granted")
+		}
+		if ref := c.jobLibrary(in.Library, "library"); ref != nil {
+			return nil, ref
 		}
 		if in.Page < 0 {
 			in.Page = 0
@@ -853,6 +885,9 @@ func (s *Server) otherRoutes() {
 		}
 		if !ok {
 			return nil, refuse(403, CodeCapability, "plugin-data.read:"+in.Plugin)
+		}
+		if ref := c.dataSubjectScope(in.Subject); ref != nil {
+			return nil, ref
 		}
 		var v []byte
 		err := c.s.DB.QueryRowContext(c.ctx, `SELECT value FROM plugin_data WHERE plugin_id=$1 AND subject_kind=$2 AND subject_id=$3
