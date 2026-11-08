@@ -76,7 +76,12 @@ group's profile its folders (read on the interpreter, the read areas and the too
 never full control, on the group's own run folder and the write areas), takes back what an
 earlier start granted that the policy no longer names, and starts the runner. No grant may
 reach the supervisor's own folders or the keys, and no runner can write the file the areas
-are read from. The runner then checks that its
+are read from. Each grant and revoke changes only the folder that was checked: the launcher
+opens it by handle without following a link, refuses it when it is a junction or symbolic
+link or when Windows names it otherwise than checked, and sets its ACL on that handle; what
+the folder already holds gets the entry through handles opened inside it, never through a
+junction or symbolic link. A folder swapped for a junction after its check fails the start
+instead of granting the junction's target. The runner then checks that its
 token is that AppContainer's with no other capability, or exits. Every AppContainer may run
 the system's programs, so the runner's own guard keeps a group with tools to those tools;
 subtitles next to a video are written by name only, as on Linux.

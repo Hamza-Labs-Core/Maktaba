@@ -24,7 +24,7 @@ func TestBackupLoopStopKeepsDump(t *testing.T) {
 	}
 	returned := make(chan struct{})
 	go func() {
-		runBackups(loop, work, time.Millisecond, io.Discard, func() bool { return true }, dump)
+		runBackups(loop, work, time.Millisecond, io.Discard, func() bool { return true }, dump, func() error { return nil })
 		close(returned)
 	}()
 	<-inDump
@@ -53,5 +53,27 @@ func TestBackupLoopNotDue(t *testing.T) {
 		func(context.Context, time.Time) (string, error) {
 			t.Error("dumped when not due")
 			return "", nil
+		}, func() error { return nil })
+}
+
+// Between dumps the loop still prunes: the old backups go at the next check, not at the
+// next dump or update (scheduled dumps off included).
+func TestBackupLoopTidiesWhenNotDue(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	tidied := make(chan struct{}, 1)
+	go runBackups(ctx, ctx, time.Millisecond, io.Discard, func() bool { return false },
+		func(context.Context, time.Time) (string, error) { return "", nil },
+		func() error {
+			select {
+			case tidied <- struct{}{}:
+			default:
+			}
+			return nil
 		})
+	select {
+	case <-tidied:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the loop never pruned between dumps")
+	}
 }

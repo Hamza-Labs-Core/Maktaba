@@ -804,7 +804,15 @@
     <string name="recovery_failed">لم ينجح ذلك.</string>
     <string name="recovery_failed_why">لم ينجح ذلك: %1$s</string>
     <string name="recovery_open_web">افتح صفحة الاستعادة</string>
-    <string name="recovery_web_note">استعادة نسخة احتياطية وتنزيل ملف التشخيص في صفحة الاستعادة، في المتصفح.</string>
+    <string name="recovery_restore">استعادة نسخة احتياطية</string>
+    <string name="recovery_restore_named">استعادة %1$s</string>
+    <string name="recovery_restore_button">استعادة</string>
+    <string name="recovery_choose_backup">اختر نسخة احتياطية</string>
+    <string name="recovery_restore_note">تحلّ الاستعادة النسخة الاحتياطية محلّ قاعدة بيانات المكتبة، وتضيع كل التغييرات التي جرت منذ أخذها.</string>
+    <string name="recovery_restoring">يُعاد تشغيل الجهاز الرئيسي لإرجاع النسخة الاحتياطية.</string>
+    <string name="recovery_no_backups">لم تُعثر على نسخ احتياطية في قرص البيانات.</string>
+    <string name="recovery_diagnostics">تنزيل ملف التشخيص</string>
+    <string name="recovery_diagnostics_saved">حُفظ ملف التشخيص.</string>
     <string name="recovery_group_database">قاعدة البيانات</string>
     <string name="recovery_group_api">خدمة مكتبة</string>
     <string name="recovery_group_streaming">التشغيل</string>

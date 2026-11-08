@@ -599,6 +599,16 @@
         }
       }
     },
+    "Choose a backup" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اختر نسخة احتياطية"
+          }
+        }
+      }
+    },
     "Components down" : {
       "localizations" : {
         "ar" : {
@@ -865,6 +875,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تم."
+          }
+        }
+      }
+    },
+    "Download diagnostics" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تنزيل ملف التشخيص"
           }
         }
       }
@@ -1689,6 +1709,16 @@
         }
       }
     },
+    "No backups were found on the data disk." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم تُعثر على نسخ احتياطية في قرص البيانات."
+          }
+        }
+      }
+    },
     "No data for this time yet" : {
       "localizations" : {
         "ar" : {
@@ -2359,12 +2389,42 @@
         }
       }
     },
-    "Restoring a backup and downloading diagnostics are on the recovery page, in a browser." : {
+    "Restore" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "استعادة نسخة احتياطية وتنزيل ملف التشخيص في صفحة الاستعادة، في المتصفح."
+            "value" : "استعادة"
+          }
+        }
+      }
+    },
+    "Restore %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استعادة %@"
+          }
+        }
+      }
+    },
+    "Restore a backup" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استعادة نسخة احتياطية"
+          }
+        }
+      }
+    },
+    "Restoring replaces the library database with the backup and loses every change made since it was taken." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحلّ الاستعادة النسخة الاحتياطية محلّ قاعدة بيانات المكتبة، وتضيع كل التغييرات التي جرت منذ أخذها."
           }
         }
       }
@@ -2705,6 +2765,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تبديل الجهاز الرئيسي"
+          }
+        }
+      }
+    },
+    "The home is restarting to put the backup back." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يُعاد تشغيل الجهاز الرئيسي لإرجاع النسخة الاحتياطية."
           }
         }
       }

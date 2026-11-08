@@ -4,6 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -49,17 +51,23 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.RecoveryAction
+import com.hamzalabs.maktaba.core.api.RecoveryBackup
 import com.hamzalabs.maktaba.core.api.RecoveryException
 import com.hamzalabs.maktaba.core.api.RecoveryLine
 import com.hamzalabs.maktaba.core.api.RecoveryPart
 import com.hamzalabs.maktaba.core.api.RecoveryState
 import com.hamzalabs.maktaba.core.api.recoveryAction
+import com.hamzalabs.maktaba.core.api.recoveryBackups
+import com.hamzalabs.maktaba.core.api.recoveryDiagnostics
+import com.hamzalabs.maktaba.core.api.recoveryDiagnosticsName
 import com.hamzalabs.maktaba.core.api.recoveryLines
 import com.hamzalabs.maktaba.core.api.recoveryState
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -81,7 +89,19 @@ class RecoveryModel(private val client: ApiClient) {
     sealed interface Outcome {
         data object Done : Outcome
         data class Failed(val why: String) : Outcome
+
+        /** A restore was accepted: the home restarts to put the backup back. */
+        data object Restoring : Outcome
+
+        /** The home has no backup to restore. */
+        data object NoBackups : Outcome
+
+        /** The diagnostics bundle was written where the person chose. */
+        data object Saved : Outcome
     }
+
+    /** Reading the backups or the diagnostics bundle. */
+    enum class Fetching { Backups, Diagnostics }
 
     var phase by mutableStateOf(Phase.Loading)
         private set
@@ -96,6 +116,16 @@ class RecoveryModel(private val client: ApiClient) {
     var asking by mutableStateOf<Asking?>(null)
         private set
     var outcome by mutableStateOf<Outcome?>(null)
+        private set
+
+    /** The backups to choose from while the person picks one to restore (null: not choosing). */
+    var backups by mutableStateOf<List<RecoveryBackup>?>(null)
+        private set
+    var fetching by mutableStateOf<Fetching?>(null)
+        private set
+
+    /** The diagnostics bundle, held only until the person chooses where it goes (or cancels). */
+    var diagnostics by mutableStateOf<ByteArray?>(null)
         private set
 
     /** Reads the state and the lines; what was read stays while the home does not answer for a moment. */
@@ -134,6 +164,83 @@ class RecoveryModel(private val client: ApiClient) {
             load()
             if (phase == Phase.Denied || phase == Phase.NotHere) return
             delay(everyMs)
+            // an action or a read meanwhile may have been turned down: no more tries (each counts)
+            if (phase == Phase.Denied) return
+        }
+    }
+
+    /** Restore a backup: the home's backups, to choose one from (or it says it has none). */
+    suspend fun chooseBackup() {
+        outcome = null
+        fetching = Fetching.Backups
+        try {
+            val list = client.recoveryBackups()
+            if (list.isEmpty()) outcome = Outcome.NoBackups else backups = list
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            fail(e)
+        } finally {
+            fetching = null
+        }
+    }
+
+    /** The person chose [backup]: the restore's first confirmation. */
+    fun pick(backup: RecoveryBackup) {
+        backups = null
+        ask(RecoveryAction.Restore(backup.name))
+    }
+
+    fun closeBackups() {
+        backups = null
+    }
+
+    /** Fetches the diagnostics bundle; the screen then asks where to save it. */
+    suspend fun fetchDiagnostics() {
+        outcome = null
+        fetching = Fetching.Diagnostics
+        try {
+            diagnostics = client.recoveryDiagnostics()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            fail(e)
+        } finally {
+            fetching = null
+        }
+    }
+
+    /** Writes the bundle with [write] (to the document the person chose), then lets it go. */
+    suspend fun saveDiagnostics(write: (ByteArray) -> Unit) {
+        val bytes = diagnostics ?: return
+        diagnostics = null
+        try {
+            withContext(Dispatchers.IO) { write(bytes) }
+            outcome = Outcome.Saved
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLog.failure("recovery diagnostics", e)
+            outcome = Outcome.Failed(e.message.orEmpty())
+        }
+    }
+
+    /** The person cancelled the save: the bundle goes. */
+    fun dropDiagnostics() {
+        diagnostics = null
+    }
+
+    private fun fail(e: Exception) {
+        when (e) {
+            is RecoveryException.Refused -> outcome = Outcome.Failed(e.why)
+            is RecoveryException.Denied -> {
+                outcome = Outcome.Failed("")
+                phase = Phase.Denied
+            }
+            else -> {
+                AppLog.failure("recovery", e)
+                outcome = Outcome.Failed("")
+            }
         }
     }
 
@@ -158,7 +265,7 @@ class RecoveryModel(private val client: ApiClient) {
         running = a.action
         try {
             client.recoveryAction(a.action, a.need)
-            outcome = Outcome.Done
+            outcome = if (a.action is RecoveryAction.Restore) Outcome.Restoring else Outcome.Done
         } catch (e: CancellationException) {
             throw e
         } catch (e: RecoveryException.Confirm) {
@@ -187,8 +294,9 @@ class RecoveryModel(private val client: ApiClient) {
  * The recovery console on the Remote: what the web's recovery page shows and does, from the
  * same routes, which the supervisor answers with the API or the database down. Each group's and
  * part's state with its last error, Restart a part, Restart everything, safe mode on and off,
- * going back a version (confirmed twice), the disk and the last warnings and errors. Restoring a
- * backup and the diagnostics download stay on the web page, linked at the end.
+ * going back a version and restoring a backup (each confirmed twice, as the web page asks), the
+ * diagnostics bundle saved where the person chooses (the system's document picker), the disk and
+ * the last warnings and errors.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -201,6 +309,18 @@ fun RecoveryScreen(remote: Remote, onBack: () -> Unit, everyMs: Long = 10_000) {
         launch { remote.client.refreshRecoveryPass() }
         model.run(everyMs)
     }
+    val context = LocalContext.current
+    // the bundle goes straight into the document the person creates; nothing is kept in the app
+    val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/gzip")) { uri ->
+        if (uri == null) model.dropDiagnostics()
+        else scope.launch {
+            model.saveDiagnostics { bytes ->
+                (context.contentResolver.openOutputStream(uri) ?: error("the document could not be opened")).use { it.write(bytes) }
+            }
+        }
+    }
+    val pending = model.diagnostics
+    LaunchedEffect(pending) { if (pending != null) save.launch(recoveryDiagnosticsName()) }
     BackHandler(onBack = onBack)
     Scaffold(
         modifier = Modifier.testTag("recovery"),
@@ -254,12 +374,45 @@ fun RecoveryScreen(remote: Remote, onBack: () -> Unit, everyMs: Long = 10_000) {
             text = { Text(stringResource(if (a.step > 1) R.string.recovery_confirm_again else R.string.recovery_confirm)) },
             confirmButton = {
                 TextButton(onClick = { scope.launch { model.confirm() } }, modifier = Modifier.testTag("recovery-confirm")) {
-                    Text(actionTitle(a.action))
+                    // Restore (the backup is in the title), else the action's title
+                    Text(if (a.action is RecoveryAction.Restore) stringResource(R.string.recovery_restore_button) else actionTitle(a.action))
                 }
             },
             dismissButton = { TextButton(onClick = { model.cancel() }) { Text(stringResource(R.string.recovery_cancel)) } },
         )
     }
+    model.backups?.let { list -> BackupPicker(list, pick = { model.pick(it) }, cancel = { model.closeBackups() }) }
+}
+
+/** The backups the home can restore, newest first; choosing one asks twice before anything is sent. */
+@Composable
+private fun BackupPicker(backups: List<RecoveryBackup>, pick: (RecoveryBackup) -> Unit, cancel: () -> Unit) {
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = cancel,
+        modifier = Modifier.testTag("recovery-backups"),
+        title = { Text(stringResource(R.string.recovery_choose_backup)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(stringResource(R.string.recovery_restore_note), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                LazyColumn {
+                    items(backups, key = { it.name }) { b ->
+                        TextButton(onClick = { pick(b) }, modifier = Modifier.fillMaxWidth().testTag("recovery-backup-${b.name}")) {
+                            Column(Modifier.fillMaxWidth()) {
+                                Text(b.name, fontFamily = FontFamily.Monospace,
+                                    style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Ltr))
+                                Text(listOfNotNull(b.at?.let(::localTime), if (b.size < 0) null else bytes(context, b.size)).joinToString(" · "),
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = cancel) { Text(stringResource(R.string.recovery_cancel)) } },
+    )
 }
 
 @Composable
@@ -267,6 +420,12 @@ private fun OutcomeBar(o: RecoveryModel.Outcome) {
     Surface(tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth()) {
         when (o) {
             RecoveryModel.Outcome.Done -> Text(stringResource(R.string.recovery_done), Modifier.padding(16.dp).testTag("recovery-done"))
+            RecoveryModel.Outcome.Restoring ->
+                Text(stringResource(R.string.recovery_restoring), Modifier.padding(16.dp).testTag("recovery-restoring"))
+            RecoveryModel.Outcome.NoBackups ->
+                Text(stringResource(R.string.recovery_no_backups), Modifier.padding(16.dp).testTag("recovery-no-backups"))
+            RecoveryModel.Outcome.Saved ->
+                Text(stringResource(R.string.recovery_diagnostics_saved), Modifier.padding(16.dp).testTag("recovery-saved"))
             is RecoveryModel.Outcome.Failed -> Text(
                 if (o.why.isEmpty()) stringResource(R.string.recovery_failed) else stringResource(R.string.recovery_failed_why, o.why),
                 color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp).testTag("recovery-failed"),
@@ -310,6 +469,10 @@ private fun LazyListScope.recoveryRows(s: RecoveryState, model: RecoveryModel, r
                 ActionButton(RecoveryAction.SafeMode, model, ask)
             }
             s.rollbackVersion?.let { ActionButton(RecoveryAction.Rollback(it), model, ask) }
+            FetchButton(RecoveryModel.Fetching.Backups, R.string.recovery_restore, "recovery-action-restore", model) { model.chooseBackup() }
+            FetchButton(RecoveryModel.Fetching.Diagnostics, R.string.recovery_diagnostics, "recovery-action-diagnostics", model) {
+                model.fetchDiagnostics()
+            }
             Text(
                 stringResource(R.string.recovery_disk, bytes(context, s.diskFree), bytes(context, s.logsBytes)),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -335,8 +498,6 @@ private fun LazyListScope.recoveryRows(s: RecoveryState, model: RecoveryModel, r
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 }
             }, modifier = Modifier.testTag("recovery-web")) { Text(stringResource(R.string.recovery_open_web)) }
-            Text(stringResource(R.string.recovery_web_note), style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -349,9 +510,19 @@ private fun Heading(text: Int) {
 
 @Composable
 private fun ActionButton(action: RecoveryAction, model: RecoveryModel, ask: (RecoveryAction) -> Unit) {
-    OutlinedButton(onClick = { ask(action) }, enabled = model.running == null,
+    OutlinedButton(onClick = { ask(action) }, enabled = model.running == null && model.fetching == null,
         modifier = Modifier.fillMaxWidth().testTag("recovery-action-${action.wire}")) {
         Text(if (model.running == action) stringResource(R.string.diag_loading) else actionTitle(action))
+    }
+}
+
+/** Restore a backup and Download diagnostics: a read first (the backups, the bundle), its progress in the button. */
+@Composable
+private fun FetchButton(kind: RecoveryModel.Fetching, label: Int, tag: String, model: RecoveryModel, run: suspend () -> Unit) {
+    val scope = rememberCoroutineScope()
+    OutlinedButton(onClick = { scope.launch { run() } }, enabled = model.running == null && model.fetching == null,
+        modifier = Modifier.fillMaxWidth().testTag(tag)) {
+        Text(stringResource(if (model.fetching == kind) R.string.diag_loading else label))
     }
 }
 
@@ -409,6 +580,7 @@ private fun actionTitle(a: RecoveryAction): String = when (a) {
     RecoveryAction.StaySafe -> stringResource(R.string.recovery_stay_safe)
     RecoveryAction.LeaveSafe -> stringResource(R.string.recovery_leave_safe)
     is RecoveryAction.Rollback -> stringResource(R.string.recovery_rollback, a.version)
+    is RecoveryAction.Restore -> stringResource(R.string.recovery_restore_named, a.backup)
 }
 
 internal fun groupWord(g: String): Int = when (g) {

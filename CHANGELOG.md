@@ -160,6 +160,25 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The Mac server starts after an app update instead of stopping at "could not start".** After
+  the update from 0.3.90 to 0.3.96 on 2026-11-08 the Mac app unregistered and registered the
+  server's login item again; macOS refused (SMAppServiceErrorDomain 22 from the old app right
+  after the install, then 1 on every launch), so the server was never started again and each
+  launch showed "The Maktaba server could not start", though launchd still had the job and it
+  was on in System Settings. A release signed with a Developer ID now keeps its login item
+  across updates (it is registered again only when its plist changes); an app still running
+  from a bundle the install replaced leaves the login item to the new build; and when macOS
+  refuses a registration while the login item is on or launchd has the job, the app starts that
+  job and waits for launchd to run it. The dialog shows only when nothing registered can start;
+  a login item turned off in System Settings still asks to be turned on there.
+- **Old backups go on their own.** The backups folder kept the newest nightly dumps and
+  pre-update dumps, but the other dumps were pruned only when an update ran, and a dump of a
+  failed update or of a database a restore replaced was kept until more of its kind came:
+  one 33 GB dump of a failed update stayed for weeks. The backups loop now prunes at every
+  check, scheduled dumps on or off: the nightly dumps to [backups] keep, the pre-update
+  dumps to their count, and a dump of a failed update or a replaced database once it is a
+  month old. The newest pre-update dump, the way back from the last update, never expires.
+
 - **A rollback undoes only what the release changed.** When an update rolled back and its
   migrations could not simply be kept, the whole database was put back from the dump taken
   before the update: every table reloaded, every index rebuilt (for the rollback of 0.3.90
@@ -408,6 +427,14 @@ build fails when the two differ.
 
 ### Security
 
+- **A runner's folder grant on Windows lands only on the folder that was checked (story
+  54.23).** The launcher applied a runner group's folder grants and revokes by path, so a
+  folder swapped for a junction between its check and its grant had the grant land on the
+  junction's target. Each grant and revoke now opens the folder by handle without following a
+  link, refuses it when it is a junction or Windows names it otherwise than checked, and sets
+  the ACL on that handle; what the folder holds gets the entry through handles opened inside
+  it, never through a junction or symbolic link. Such a swap now fails the runner's start, and
+  the worker runs the group's jobs.
 - **The cloud's two web sites each get a Worker in front (Epic 50 story 50.32).**
   `app.maktaba.tv` and `admin.maktaba.tv` serve their own bundles through a Cloudflare Worker that
   sets each host's security headers and content policy on every page and API answer. Each lets
@@ -2268,6 +2295,14 @@ build fails when the two differ.
   most in need of attention, and says how many of how many it shows. A machine picker opens
   any one machine on its own, with each of its components that was down or restarted.
   `GET /api/admin/dashboards/overview` takes `machine=` and names the machines in its answer.
+
+- **The Remotes restore a backup and download diagnostics themselves (iPhone, Android).** The
+  recovery screen no longer sends either to the web page. **Restore a backup** lists the home's
+  backups with when each was taken and its size; choosing one asks twice, as the web page does,
+  and the home then restarts to put it back. **Download diagnostics** fetches the web page's
+  bundle and hands it to the share sheet on the iPhone, or saves it where the person chooses on
+  Android; the app keeps no copy. Both use the recovery pass and stop at the first refusal, as
+  the rest of the screen does.
 
 ### Fixed
 

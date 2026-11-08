@@ -4,6 +4,9 @@ import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.RecoveryAction
 import com.hamzalabs.maktaba.core.api.RecoveryException
 import com.hamzalabs.maktaba.core.api.recoveryAction
+import com.hamzalabs.maktaba.core.api.recoveryBackups
+import com.hamzalabs.maktaba.core.api.recoveryDiagnostics
+import com.hamzalabs.maktaba.core.api.recoveryDiagnosticsName
 import com.hamzalabs.maktaba.core.api.recoveryLines
 import com.hamzalabs.maktaba.core.api.recoveryState
 import kotlinx.coroutines.runBlocking
@@ -206,5 +209,58 @@ class RecoveryApiTest {
         assertNull(b.recoveryPass)
         a.clear()
         assertNull(a.recoveryPass)
+    }
+
+    // restore and the diagnostics download (after #918, on the same routes as the web page)
+
+    @Test
+    fun readsTheBackupsWithThePass() = runBlocking {
+        on("GET /recovery/api/backups", 200, """{"backups":[{"name":"maktaba-20261106-030000.dump","at":"2026-11-06T03:00:00Z","size":73400320}]}""")
+        val list = ApiClient(server.url("/"), MemoryTokens("a1", recoveryPass = "p1")).recoveryBackups()
+        assertEquals(listOf("maktaba-20261106-030000.dump"), list.map { it.name })
+        assertEquals(73400320L, list[0].size)
+        assertEquals(listOf("p1"), bearers())
+    }
+
+    @Test
+    fun noBackupsIsAnEmptyList() = runBlocking {
+        on("GET /recovery/api/backups", 200, """{"backups":null}""")
+        assertTrue(ApiClient(server.url("/"), MemoryTokens("a1")).recoveryBackups().isEmpty())
+    }
+
+    @Test
+    fun aRestoreNamesItsBackupAndIsConfirmedTwice() = runBlocking {
+        on("POST /recovery/api/action", 200, """{"result":"ok"}""")
+        val action = RecoveryAction.Restore("maktaba-20261106-030000.dump")
+        assertEquals(2, action.confirms)
+        ApiClient(server.url("/"), MemoryTokens("a1", recoveryPass = "p1")).recoveryAction(action, 2)
+        val sent = seen.single()
+        assertEquals("1", sent.headers["X-Maktaba-Recovery"])
+        val body = Json.parseToJsonElement(sent.body!!.utf8()).jsonObject
+        assertEquals("restore", body["action"]!!.jsonPrimitive.content)
+        assertEquals("maktaba-20261106-030000.dump", body["backup"]!!.jsonPrimitive.content)
+        assertEquals(2, body["confirm"]!!.jsonPrimitive.int)
+    }
+
+    @Test
+    fun theDiagnosticsBundleComesAsItIs() = runBlocking {
+        on("GET /recovery/api/diagnostics", 200, "bundle-bytes")
+        val bytes = ApiClient(server.url("/"), MemoryTokens("a1", recoveryPass = "p1")).recoveryDiagnostics()
+        assertEquals("bundle-bytes", String(bytes))
+        assertEquals("maktaba-recovery-20261107-091600.tar.gz", recoveryDiagnosticsName(java.time.Instant.parse("2026-11-07T09:16:00Z")))
+    }
+
+    @Test
+    fun aRefusedPassForTheBundleIsDroppedNeverASignOut() = runBlocking {
+        on("GET /recovery/api/diagnostics", 401, """{"error":"unauthorized"}""")
+        val tokens = MemoryTokens("viewer", recoveryPass = "stale")
+        try {
+            ApiClient(server.url("/"), tokens).recoveryDiagnostics()
+            fail("denied")
+        } catch (_: RecoveryException.Denied) {
+        }
+        assertEquals(listOf("stale", "viewer"), bearers())
+        assertNull(tokens.recoveryPass)
+        assertEquals("viewer", tokens.access)
     }
 }
