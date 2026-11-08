@@ -1,6 +1,13 @@
 package com.hamzalabs.maktaba.remote
 
+import android.net.Uri
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.activity.result.ActivityResultRegistry
+import androidx.activity.result.ActivityResultRegistryOwner
+import androidx.activity.result.contract.ActivityResultContract
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.core.app.ActivityOptionsCompat
 import androidx.compose.material3.Surface
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -28,7 +35,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import java.io.ByteArrayOutputStream
 import org.robolectric.annotation.GraphicsMode
 import java.time.Instant
 
@@ -75,12 +84,36 @@ class RecoveryScreenTest {
               {"ts":"${t(30)}","level":"warn","service":"supervisor","msg":"child_backoff"}],"truncated":false}""")
         }
         home.answer("/recovery/api/action") { r -> synchronized(actions) { actions += r }; FakeRemoteHome.json("""{"result":"ok"}""") }
+        home.answer("/recovery/api/backups") {
+            FakeRemoteHome.json("""{"backups":[
+              {"name":"maktaba-20261106-030000.dump","at":"${t(86400)}","size":73400320},
+              {"name":"maktaba-20261105-030000.dump","at":"${t(2 * 86400)}","size":72351744},
+              {"name":"maktaba-20261104-030000.dump","at":"${t(3 * 86400)}","size":71303168}]}""")
+        }
+        // made-up bytes: the app writes them as they came
+        home.answer("/recovery/api/diagnostics") { FakeRemoteHome.json("made-up diagnostics bundle") }
     }
 
-    private fun show(stateCode: Int = 200) {
+    /** What the system's document picker was asked to create, and the document it gave back. */
+    private var created: String? = null
+    private val document = Uri.parse("content://com.example.documents/document/1")
+
+    /** The document picker: answers [answer] (null: the person cancelled) at once. */
+    private fun registry(answer: Uri?) = object : ActivityResultRegistryOwner {
+        override val activityResultRegistry = object : ActivityResultRegistry() {
+            override fun <I, O> onLaunch(requestCode: Int, contract: ActivityResultContract<I, O>, input: I, options: ActivityOptionsCompat?) {
+                created = input as String
+                dispatchResult(requestCode, answer)
+            }
+        }
+    }
+
+    private fun show(stateCode: Int = 200, picked: Uri? = document) {
         stub(stateCode)
         compose.setContent {
-            MaktabaTheme(ThemeMode.Dark) { Surface { RecoveryScreen(home.remote, onBack = {}, everyMs = 3_600_000) } }
+            CompositionLocalProvider(LocalActivityResultRegistryOwner provides registry(picked)) {
+                MaktabaTheme(ThemeMode.Dark) { Surface { RecoveryScreen(home.remote, onBack = {}, everyMs = 3_600_000) } }
+            }
         }
     }
 
@@ -141,6 +174,74 @@ class RecoveryScreenTest {
         compose.settledUntil { compose.has("recovery-part-core.postgres") }
         assertTrue(compose.onAllNodes(hasText("قاعدة البيانات")).fetchSemanticsNodes().isNotEmpty())
         shot("recovery_dark_ar")
+        scrollTo("recovery-action-restore")
+        compose.onNodeWithTag("recovery-action-restore").performClick()
+        compose.settledUntil { compose.has("recovery-backup-maktaba-20261106-030000.dump") }
+        assertTrue(compose.onAllNodes(hasText("اختر نسخة احتياطية")).fetchSemanticsNodes().isNotEmpty())
+        shot("recovery_restore_dark_ar")
+    }
+
+    @Test
+    fun restoringABackupIsChosenThenConfirmedTwice() {
+        show()
+        compose.settledUntil { compose.has("recovery-part-core.postgres") }
+        scrollTo("recovery-action-restore")
+        compose.onNodeWithTag("recovery-action-restore").performClick()
+        compose.settledUntil { compose.has("recovery-backup-maktaba-20261106-030000.dump") }
+        assertTrue(home.paths.contains("/recovery/api/backups"))
+        shot("recovery_restore_dark_en")
+        compose.onNodeWithTag("recovery-backup-maktaba-20261106-030000.dump").performClick()
+        compose.settledUntil { compose.has("recovery-confirm") }
+        assertTrue(compose.onAllNodes(hasText("Restore maktaba-20261106-030000.dump")).fetchSemanticsNodes().isNotEmpty())
+        assertTrue(compose.onAllNodes(hasText("Are you sure?")).fetchSemanticsNodes().isNotEmpty())
+        compose.onNodeWithTag("recovery-confirm").performClick()
+        compose.settledUntil { compose.onAllNodes(hasText("This replaces what is there now. Are you sure?")).fetchSemanticsNodes().isNotEmpty() }
+        assertTrue("nothing sent before the second confirmation", synchronized(actions) { actions.isEmpty() })
+        compose.onNodeWithTag("recovery-confirm").performClick()
+        compose.settledUntil { synchronized(actions) { actions.isNotEmpty() } }
+        val sent = synchronized(actions) { actions.single() }
+        assertEquals("1", sent.headers["X-Maktaba-Recovery"])
+        assertEquals("restore", body(sent)["action"]!!.jsonPrimitive.content)
+        assertEquals("maktaba-20261106-030000.dump", body(sent)["backup"]!!.jsonPrimitive.content)
+        assertEquals(2, body(sent)["confirm"]!!.jsonPrimitive.int)
+        compose.settledUntil { compose.has("recovery-restoring") }
+        compose.onNodeWithTag("recovery-restoring").assertIsDisplayed()
+    }
+
+    @Test
+    fun noBackupsIsSaid() {
+        show()
+        home.answer("/recovery/api/backups") { FakeRemoteHome.json("""{"backups":[]}""") }
+        compose.settledUntil { compose.has("recovery-part-core.postgres") }
+        scrollTo("recovery-action-restore")
+        compose.onNodeWithTag("recovery-action-restore").performClick()
+        compose.settledUntil { compose.has("recovery-no-backups") }
+        assertTrue(!compose.has("recovery-backups"))
+    }
+
+    @Test
+    fun theDiagnosticsBundleIsSavedWhereThePersonChooses() {
+        val out = ByteArrayOutputStream()
+        shadowOf(compose.activity.contentResolver).registerOutputStreamSupplier(document) { out }
+        show()
+        compose.settledUntil { compose.has("recovery-part-core.postgres") }
+        scrollTo("recovery-action-diagnostics")
+        compose.onNodeWithTag("recovery-action-diagnostics").performClick()
+        compose.settledUntil { compose.has("recovery-saved") }
+        assertTrue(home.paths.contains("/recovery/api/diagnostics"))
+        assertTrue("the web page's name: $created", created!!.matches(Regex("""maktaba-recovery-\d{8}-\d{6}\.tar\.gz""")))
+        assertEquals("made-up diagnostics bundle", out.toString(Charsets.UTF_8))
+    }
+
+    @Test
+    fun aCancelledSaveWritesNothing() {
+        show(picked = null)
+        compose.settledUntil { compose.has("recovery-part-core.postgres") }
+        scrollTo("recovery-action-diagnostics")
+        compose.onNodeWithTag("recovery-action-diagnostics").performClick()
+        compose.settledUntil { created != null }
+        compose.waitForIdle()
+        assertTrue(!compose.has("recovery-saved") && !compose.has("recovery-failed"))
     }
 
     @Test
