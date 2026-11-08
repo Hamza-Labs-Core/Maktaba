@@ -538,13 +538,18 @@ func (r *rehearsal) waveScenario(id string) {
 		queued = queuedIDs(waveJobs(t, db, w.stages, since))
 		jobs = waitSettled(t, db, w.stages, since, 5*time.Minute)
 		r.checkWaveJobs(id+" warming up after the flip", jobs, queued, want)
-		inRunner := map[string]bool{}
+		// the stages that got a job: one whose subject kind the seed lacks (fp_gate's seasons
+		// in the small seed) never queues, and would hold the warm-up to its time limit
+		got, inRunner := map[string]bool{}, map[string]bool{}
 		for _, j := range jobs {
-			if queued[j.id] && j.impl == "plugin" {
-				inRunner[j.stage] = true
+			if queued[j.id] {
+				got[j.stage] = true
+				if j.impl == "plugin" {
+					inRunner[j.stage] = true
+				}
 			}
 		}
-		if len(inRunner) == len(w.stages) || time.Now().After(warm) {
+		if len(inRunner) == len(got) || time.Now().After(warm) {
 			break
 		}
 		time.Sleep(5 * time.Second)
