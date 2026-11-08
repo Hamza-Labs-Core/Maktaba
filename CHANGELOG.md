@@ -358,6 +358,12 @@ build fails when the two differ.
 
 ### Security
 
+- **A home's LAN address is checked only against that home's own name (Android, Apple apps; Epic
+  50 story 50.15).** An app signed in to two homes that share a private address and port, each on
+  its own network, could check one home's address against the other home's name, and so take the
+  wrong home's certificate there. Each home's address entries are now kept with that home, the
+  name must carry that home's id, and an address two homes list is checked against neither name:
+  the app goes on to the home's next connection.
 - **The cloud's two web sites each get a Worker in front (Epic 50 story 50.32).**
   `app.maktaba.tv` and `admin.maktaba.tv` serve their own bundles through a Cloudflare Worker that
   sets each host's security headers and content policy on every page and API answer. Each lets
