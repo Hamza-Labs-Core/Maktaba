@@ -123,6 +123,9 @@ func TestAGrantLandsOnlyOnTheFolderThatWasChecked(t *testing.T) {
 			media := filepath.Join(lib, "media")
 			show := filepath.Join(media, "season 1", "show.mkv")
 			mustWrite(t, show)
+			if out, _ := exec.Command("icacls", show).CombinedOutput(); true { //nolint:gosec // the test's temp folder
+				t.Logf("DEBUG made %s", out)
+			}
 			decoyLib := filepath.Join(dir, "decoylib")
 			decoy := filepath.Join(decoyLib, "media")
 			secret := filepath.Join(decoy, "secret.txt")
@@ -138,6 +141,9 @@ func TestAGrantLandsOnlyOnTheFolderThatWasChecked(t *testing.T) {
 			afterCheck = func(step, p string) {
 				if step != "grant" || pathKey(p) != pathKey(media) {
 					return
+				}
+				if out, _ := exec.Command("icacls", show).CombinedOutput(); true { //nolint:gosec // the test's temp folder
+					t.Logf("DEBUG before the grant %s", out)
 				}
 				switch swap {
 				case "leaf":
