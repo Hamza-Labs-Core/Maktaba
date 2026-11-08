@@ -56,6 +56,7 @@ __all__ = [
     "result_to_wire",
     "run_native",
     "serving",
+    "await_runner",
 ]
 
 _log = get_logger()
@@ -63,6 +64,14 @@ _log = get_logger()
 MAX_FRAME = 256 << 20
 #: how long a runner's hello is believed
 HELLO_TTL = 15.0
+#: how long "the runner did not answer" is believed: a moment, so a runner that has just
+#: started (on demand, after an update) is used by the next job
+HELLO_DOWN_TTL = 1.0
+#: how long a job waits for a runner this worker asked the supervisor for, before it runs
+#: in-process (a shared group's runner is up in seconds)
+RUNNER_START_WAIT_SEC = 30.0
+#: how often the job waiting for it asks the runner's socket
+RUNNER_POLL_SEC = 0.25
 
 
 #: (stage, why) -> how many of a plugin stage's jobs ran in the worker instead (a statement
@@ -120,13 +129,8 @@ async def read_frame(r: asyncio.StreamReader) -> dict[str, Any]:
 _HELLO: dict[str, tuple[float, dict[str, Any] | None]] = {}
 
 
-async def hello(group: str) -> dict[str, Any] | None:
-    """The group's ``hello`` (cached for a few seconds): None when it does not answer."""
-    now = time.monotonic()
-    hit = _HELLO.get(group)
-    if hit is not None and now - hit[0] < HELLO_TTL:
-        return hit[1]
-    out: dict[str, Any] | None = None
+async def _probe(group: str) -> dict[str, Any] | None:
+    """One ``hello`` on the group's socket: None when nothing answers."""
     with contextlib.suppress(
         OSError, asyncio.TimeoutError, asyncio.IncompleteReadError, ValueError
     ):
@@ -135,14 +139,31 @@ async def hello(group: str) -> dict[str, Any] | None:
             await write_frame(w, {"type": "hello"})
             msg = await asyncio.wait_for(read_frame(r), 5)
             if msg.get("type") == "hello":
-                out = msg
+                return msg
         finally:
             w.close()
+    return None
+
+
+async def hello(group: str, *, fresh: bool = False) -> dict[str, Any] | None:
+    """The group's ``hello`` (an answer cached for a few seconds, no answer for a moment):
+    None when it does not answer. ``fresh``: asked now, whatever the cache holds."""
+    now = time.monotonic()
+    hit = _HELLO.get(group)
+    if (
+        not fresh
+        and hit is not None
+        and now - hit[0] < (HELLO_TTL if hit[1] is not None else HELLO_DOWN_TTL)
+    ):
+        return hit[1]
+    out = await _probe(group)
     if out is not None and out.get("bundle") != firstparty.bundle_digest():
         # a runner from another build (an update half done): never trusted with a job
         _log.warning("plugin_runner_bundle_mismatch", group=group, runner=out.get("bundle"))
         out = None
     _HELLO[group] = (now, out)
+    if out is not None:
+        _START_FAILED.discard(group)
     return out
 
 
@@ -156,6 +177,12 @@ _ASKED: dict[str, float] = {}
 _ASKING: set[asyncio.Task[None]] = set()
 #: how often a group not up is asked for again
 ASK_EVERY_SEC = 60.0
+#: the groups whose last ask the supervisor refused (its component off, no such runner)
+_ASK_REFUSED: set[str] = set()
+#: the groups asked for that did not come up within RUNNER_START_WAIT_SEC: their jobs run
+#: in-process without waiting, until the runner answers again (a runner that cannot start
+#: costs one wait, not one per job)
+_START_FAILED: set[str] = set()
 
 
 def want_runner(group: str) -> None:
@@ -170,6 +197,7 @@ def want_runner(group: str) -> None:
     if now - _ASKED.get(group, -ASK_EVERY_SEC) < ASK_EVERY_SEC:
         return
     _ASKED[group] = now
+    _ASK_REFUSED.discard(group)
 
     def post() -> None:
         import urllib.request
@@ -179,6 +207,7 @@ def want_runner(group: str) -> None:
             with urllib.request.urlopen(req, timeout=5) as res:  # noqa: S310 - the local supervisor
                 res.read()
         except Exception:  # noqa: BLE001 - asked again later; the worker runs the job
+            _ASK_REFUSED.add(group)
             _log.debug("plugin_runner_ask_failed", group=group, exc_info=True)
 
     task = asyncio.ensure_future(asyncio.to_thread(post))
@@ -186,15 +215,38 @@ def want_runner(group: str) -> None:
     task.add_done_callback(_ASKING.discard)
 
 
+async def await_runner(group: str) -> dict[str, Any] | None:
+    """The hello of a runner this worker asked the supervisor for, once it is up: waited
+    for until RUNNER_START_WAIT_SEC after the ask. None at once with no ask (no supervisor),
+    a refused one, or a runner that already failed to come up (:data:`_START_FAILED`)."""
+    asked = _ASKED.get(group)
+    if asked is None or group in _START_FAILED:
+        return None
+    while group not in _ASK_REFUSED and time.monotonic() - asked < RUNNER_START_WAIT_SEC:
+        await asyncio.sleep(RUNNER_POLL_SEC)
+        h = await hello(group, fresh=True)
+        if h is not None:
+            return h
+    if group not in _ASK_REFUSED:
+        _START_FAILED.add(group)
+        _log.warning("plugin_runner_start_timeout", group=group, waited=RUNNER_START_WAIT_SEC)
+    return None
+
+
 async def serving(stage: str) -> tuple[bool, str | None]:
     """Whether the stage's runner serves it here, and its unavailable reason if it said one.
-    A runner that is not up is asked for (:func:`want_runner`)."""
+    A runner that is not up is asked for (:func:`want_runner`) and waited for
+    (:func:`await_runner`): a shared group's runner starts on demand, so the first jobs
+    after it stopped (idle, or an update that restarted every process) would otherwise run
+    in-process beside a runner that serves seconds later."""
     group = firstparty.runner_instance(stage)
     if group is None:
         return False, None
     h = await hello(group)
     if h is None:
         want_runner(group)
+        h = await await_runner(group)
+    if h is None:
         return False, None
     stages = h.get("stages") or {}
     if stage not in stages:
