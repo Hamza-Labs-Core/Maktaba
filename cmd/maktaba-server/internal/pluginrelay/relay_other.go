@@ -16,6 +16,9 @@ func Listen(string) (*Listener, error) { return nil, ErrUnsupported }
 // Name is the pipe's name.
 func (*Listener) Name() string { return "" }
 
+// ListenFor is Windows only.
+func ListenFor(string, ...string) (*Listener, error) { return nil, ErrUnsupported }
+
 // Accept is Windows only.
 func (*Listener) Accept() (io.ReadWriteCloser, error) { return nil, ErrUnsupported }
 

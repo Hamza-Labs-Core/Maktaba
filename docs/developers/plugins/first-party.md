@@ -42,8 +42,10 @@ runner refuses to start if any is there. Before it imports a plugin it
    release's signed wheel installed (`plugin_trusted_unsigned` otherwise);
 2. applies its OS sandbox to itself: Seatbelt on macOS; Landlock and seccomp on Linux. The
    sandbox allows only what the group's manifests declare: the files of its areas, its media
-   tools, the GPU, and the network only for a group that lists hosts. On Windows there is no
-   runner and the stages run in the worker, as before.
+   tools, the GPU, and the network only for a group that lists hosts. On Windows the runner
+   runs in its group's own AppContainer and Job Object, which the supervisor's launcher
+   applies before it starts, and the runner refuses to serve outside it (see
+   [the sandbox](sandbox.md)).
 
 The queue worker dispatches a job to the runner with the same kind of per-job token as a
 third-party plugin's. The job's progress, log and events go back to the worker, which is the

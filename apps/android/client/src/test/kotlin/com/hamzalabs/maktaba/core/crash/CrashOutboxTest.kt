@@ -69,7 +69,29 @@ class CrashOutboxTest {
         // oldest first: the crashing frame last
         assertEquals("com.hamzalabs.maktaba.core.api.ApiClient.get", frames.last()["function"]!!.jsonPrimitive.content)
         assertEquals(listOf(false, true, true), frames.map { it["in_app"]!!.jsonPrimitive.content.toBoolean() })
+        // each frame keeps its file and line: Maktaba reads an R8 build's frames back by them (53.16)
+        assertEquals("ApiClient.kt", frames.last()["filename"]!!.jsonPrimitive.content)
+        assertEquals(40, frames.last()["lineno"]!!.jsonPrimitive.content.toInt())
+        assertEquals(listOf(108, 11, 40), frames.map { it["lineno"]!!.jsonPrimitive.content.toInt() })
         assertNull(KeptCrash.fromCrashLog("not a crash", null))
+    }
+
+    @Test
+    fun aFramesFileAndLineAreReadFromItsParentheses() {
+        assertEquals("Player.kt" to 12, KeptCrash.sourceOf("com.x.Player.play(Player.kt:12)"))
+        // an R8 build's frame: the obfuscated line is what its mapping reads back
+        assertEquals("SourceFile" to 4, KeptCrash.sourceOf("a.b.c.a(SourceFile:4)"))
+        assertEquals("Unknown Source" to null, KeptCrash.sourceOf("a.b.c.a(Unknown Source)"))
+        assertEquals("Native Method" to null, KeptCrash.sourceOf("java.lang.Thread.sleep(Native Method)"))
+        assertNull(KeptCrash.sourceOf("com.x.Player.play"))
+        // the desktop Player's frame of a method with no line
+        assertEquals("Thread.java" to null, KeptCrash.sourceOf("java.lang.Thread.sleep0(Thread.java:-2)"))
+        val e = KeptCrash(at = 1, type = "a.b.e", frames = listOf("a.b.c.a(SourceFile:4)", "java.lang.Thread.sleep(Native Method)")).event()
+        val frames = e["exception"]!!.jsonObject["values"]!!.jsonArray[0].jsonObject["stacktrace"]!!.jsonObject["frames"]!!.jsonArray.map { it.jsonObject }
+        assertEquals("Native Method", frames[0]["filename"]!!.jsonPrimitive.content)
+        assertNull(frames[0]["lineno"])
+        assertEquals("a.b.c.a", frames[1]["function"]!!.jsonPrimitive.content)
+        assertEquals(4, frames[1]["lineno"]!!.jsonPrimitive.content.toInt())
     }
 
     @Test

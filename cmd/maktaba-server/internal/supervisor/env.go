@@ -386,6 +386,11 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		// worker mints their jobs' tokens with the same local token
 		if RunnersHere(cfg) {
 			add("MAKTABA_RUNNER_DIR", RunnerDir(cfg))
+			// on Windows the runners are reached through the supervisor's pipes: their
+			// prefix, which each group's name completes (runners_windows.go)
+			if prefix := RunnerPipePrefix(); prefix != "" {
+				add(EnvRunnerPipes, prefix)
+			}
 			add("MAKTABA_SUPERVISOR_TOKEN_FILE", LocalTokenPath(cfg))
 			// where it asks for a shared runner group that is not up (it starts on demand)
 			add("MAKTABA_SUPERVISOR_URL", StateURL(cfg))

@@ -111,6 +111,50 @@ func TestUploadTakesExtractedTables(t *testing.T) {
 	}
 }
 
+// -r8: an Android release's mapping, uploaded as its app's table of that release; extract
+// writes it like a dSYM's, and the kept table uploads as it is.
+func TestUploadAnR8Mapping(t *testing.T) {
+	var got []*symbols.Table
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		tab, err := symbols.Decode(b)
+		if err != nil || r.URL.Query().Get("version") != "0.3.102" {
+			http.Error(w, "no", http.StatusBadRequest)
+			return
+		}
+		got = append(got, tab)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+	m := "../../internal/symbols/testdata/mapping.txt"
+	t.Setenv("MAKTABA_SYMBOLS_TOKEN", "tok")
+	if err := run(context.Background(), []string{"upload", "-url", srv.URL, "-r8", "android.tv", "-version", "0.3.102", m}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Kind != symbols.KindR8 || got[0].CodeFile != "android.tv" || got[0].DebugID != symbols.R8ID("android.tv", "0.3.102") {
+		t.Fatalf("uploaded %+v", got)
+	}
+	dir := t.TempDir()
+	var out strings.Builder
+	if err := run(context.Background(), []string{"extract", "-o", dir, "-r8", "android.tv", "-version", "v0.3.102", m}, &out); err != nil {
+		t.Fatal(err)
+	}
+	kept := filepath.Join(dir, symbols.R8ID("android.tv", "0.3.102")+".symbols")
+	if !strings.Contains(out.String(), "r8 android.tv 0.3.102") {
+		t.Fatalf("extract said %q", out.String())
+	}
+	if err := run(context.Background(), []string{"upload", "-url", srv.URL, "-version", "0.3.102", kept}, io.Discard); err != nil || len(got) != 2 {
+		t.Fatalf("the kept table: %v (%d)", err, len(got))
+	}
+	// no version, or a file that is not a mapping: nothing is sent
+	if err := run(context.Background(), []string{"upload", "-url", srv.URL, "-r8", "android.tv", m}, io.Discard); err == nil {
+		t.Error("-r8 with no version ran")
+	}
+	if err := run(context.Background(), []string{"upload", "-url", srv.URL, "-r8", "android.tv", "-version", "1", "main.go"}, io.Discard); err == nil || len(got) != 2 {
+		t.Errorf("a Go file as a mapping: %v", err)
+	}
+}
+
 func TestUsage(t *testing.T) {
 	for _, args := range [][]string{nil, {"what"}, {"extract"}} {
 		if err := run(context.Background(), args, io.Discard); err == nil {

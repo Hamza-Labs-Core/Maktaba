@@ -3,7 +3,6 @@ package supervisor
 import (
 	"net/http"
 	"net/http/httptest"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,9 +15,6 @@ import (
 // shared group's runner is on demand, stops itself when idle (exit 0) and has its idle
 // timeout; ml and index, their own components' processes, are neither.
 func TestAnIdleHomeRunsNoSharedRunner(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("no runner on Windows")
-	}
 	cfg := config.Config{}
 	cfg.Database.URL = "postgres://h/db"
 	cfg.Server.DataDir = t.TempDir()
