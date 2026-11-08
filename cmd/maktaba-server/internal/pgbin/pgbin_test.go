@@ -93,12 +93,19 @@ func pinFor(raw []byte, zipped bool) Pin {
 	return Pin{Triple: "test-triple", SHA256: hex.EncodeToString(s[:]), Size: int64(len(raw)), Zip: zipped}
 }
 
-func serve(raw []byte, calls *int) Fetcher {
-	return func(_ context.Context, _ string, w io.Writer) error {
+// one is a Downloader of the one source f.
+func one(f func(ctx context.Context, pin Pin, w io.Writer) error) *Downloader {
+	return &Downloader{Sources: []Source{{Name: "test", Fetch: f}}, Sleep: noSleep}
+}
+
+func noSleep(context.Context, time.Duration) error { return nil }
+
+func serve(raw []byte, calls *int) *Downloader {
+	return one(func(_ context.Context, _ Pin, w io.Writer) error {
 		*calls++
 		_, err := w.Write(raw)
 		return err
-	}
+	})
 }
 
 func TestEnsureUnpacksOnce(t *testing.T) {
@@ -214,13 +221,13 @@ func TestEnsureRefusesADownloadLargerThanPinned(t *testing.T) {
 	raw := archive(t, Pin{Triple: "test-triple", Zip: true}, nil)
 	pin := pinFor(raw, true)
 	var refused error
-	more := func(_ context.Context, _ string, w io.Writer) error {
+	more := one(func(_ context.Context, _ Pin, w io.Writer) error {
 		if _, err := w.Write(raw); err != nil {
 			return err
 		}
 		_, refused = w.Write([]byte{0}) // pin.Size+1
 		return refused
-	}
+	})
 	_, err := Ensure(context.Background(), root, pin, more, io.Discard)
 	if !errors.Is(refused, errTooLarge) || !errors.Is(err, errTooLarge) || strings.Contains(err.Error(), "SHA-256") {
 		t.Fatalf("%d bytes for a pin of %d: %v (the write past it: %v)", pin.Size+1, pin.Size, err, refused)
@@ -244,7 +251,8 @@ func TestHTTPFetchRefusesALengthPastThePin(t *testing.T) {
 	}))
 	defer srv.Close()
 	var got bytes.Buffer
-	err := HTTPFetch(srv.Client())(context.Background(), srv.URL, &capped{w: &got, left: 10})
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	err := get(srv.Client(), req, &capped{w: &got, left: 10})
 	if !errors.Is(err, errTooLarge) || got.Len() != 0 {
 		t.Fatalf("%v (%d bytes taken)", err, got.Len())
 	}
@@ -290,7 +298,7 @@ func TestEnsureRefusesAPathOutOfTheInstall(t *testing.T) {
 }
 
 func TestEnsureReportsAFailedDownload(t *testing.T) {
-	failing := func(context.Context, string, io.Writer) error { return errors.New("offline") }
+	failing := one(func(context.Context, Pin, io.Writer) error { return errors.New("offline") })
 	if _, err := Ensure(context.Background(), t.TempDir(), Pin{Triple: "x", SHA256: "y"}, failing, io.Discard); err == nil ||
 		!strings.Contains(err.Error(), "offline") {
 		t.Fatalf("%v", err)

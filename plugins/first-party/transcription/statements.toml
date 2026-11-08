@@ -15,3 +15,8 @@ modules = [
 # the stage's refresh runs before each stage selection (its statements use the worker's own
 # connection)
 worker = ["relisten", "_settle_tries", "_stop_relistens", "_reset_relistens"]
+
+# Scope checks set by hand where the parse tree cannot bind a write (README §15.12)
+[scope."transcribe.forget_gone"]
+checks = ""
+reason = "a fixed text with no argument: it deletes only the retry rows of videos already gone (deleted, missing or superseded), so a plugin cannot point it at a live library's rows"

@@ -193,6 +193,18 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A machine can now download Postgres while github.com's download links fail.** A machine
+  that needs Postgres at runtime (a node keeping a copy of its home's database) now tries three
+  places in turn: Maktaba's CDN (plugins-cdn.maktaba.tv, where each release now publishes the
+  pinned archives), GitHub's API, then github.com's download link as before. Each place is
+  tried again a few times after a server error, a timeout or a dropped connection, and a 404
+  moves on at once. Whatever place answers, the archive must match its pinned SHA-256 and size:
+  one that does not is refused, that place is not asked again, and nothing unverified is
+  unpacked. The server log names the place that delivered and each failure. Model and tool
+  packs downloaded from the release now also retry, and fall back to GitHub's API when
+  github.com's download link keeps failing; they are verified against the release's signed
+  index as before, and a mirror set in `MAKTABA_PACKS_URL` is used alone, as before.
+
 - **On the Mac app's first start after an update, a service waiting for the transcription
   tools now shows their install progress.** A service could keep showing "Waiting for the
   transcription tools" while the tools were already installing, until the next progress step,
@@ -495,6 +507,18 @@ build fails when the two differ.
 
 ### Security
 
+- **A first-party plugin's writes stay in its job's library and video (Epic 54, README
+  §15.12).** A plugin's write statement named one id the plugin API checked against the job,
+  or none, while it reached rows by other ids too: a season's row, a series, a transcript and
+  its segments, an audio track, a file action, a duplicate group, a YouTube source, channel,
+  playlist or video. A plugin, or a compromised runner, could write another library's rows
+  through them. Every write now lists a check for each id that binds the rows it touches,
+  worked out by the build from the statement's parse tree, and the API runs each one, looking
+  rows up to find their library and video; the build fails a write it cannot bind. Lists of
+  ids are checked one by one and every id is compared as a uuid. The job events and duplicate
+  merges the worker writes for a plugin's job, and the plugin API's write routes, keep to the
+  job's own job, subject and library too. A write outside the job's scope is refused with
+  `plugin_scope`.
 - **A runner's folder grant on Windows lands only on the folder that was checked (story
   54.23).** The launcher applied a runner group's folder grants and revokes by path, so a
   folder swapped for a junction between its check and its grant had the grant land on the
@@ -2893,6 +2917,16 @@ build fails when the two differ.
   So first-party stages on Windows run in their runners again instead of all in the queue
   worker. A tool the sandbox refuses to start is now a refusal, so that job runs in the worker,
   rather than failing as the tool's own exit.
+
+- **A fingerprint a Windows runner may not read is taken by the worker, never left pending
+  (story 54.23).** On Windows, every plugin runner refuses a share path it is not brokered,
+  and the fingerprint runner closed the connection without an answer when a stage's
+  fingerprint was refused (the small thumbnail's sidecar look on a share). The worker did not
+  read that as a refusal, so the job failed and went back to pending again and again. Homes
+  were spared by the share-library guard, which keeps those stages and their fingerprints in
+  the worker; the Windows end to end, which asks the runners anyway, found it. The runner
+  now answers the refusal and logs it, and the worker reads the fingerprint itself for any
+  runner that closes without an answer.
 
 ## [0.2.0] - 2026-10-19
 

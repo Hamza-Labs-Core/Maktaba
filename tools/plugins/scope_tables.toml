@@ -1,0 +1,268 @@
+# Who owns a row of each table a first-party plugin writes (Epic 54, README §15.12).
+#
+# tools/plugins/statements_build.py reads this file to work out, from each write
+# statement's parse tree, which scope checks the plugin API must run before the write: a
+# column listed under [tables.<table>] names the kind of id it holds, and every write must
+# bind the rows it touches to such a column with a $N the API checks against the job's
+# token (`<kind> $N` in the statement's `scope:` header). The API resolves each kind with
+# its own lookup (api/internal/plugins/statements/resolve.go): `subject` is a video,
+# `library` a library, and every other kind a row whose library (and video) the lookup
+# answers.
+#
+# A table no library owns goes under [home.<table>] with the reason it needs no check.
+# `catalog_only = true` means its rows belong to the home as a whole: only a plugin whose
+# stages all take the catalog as their subject (a token that spans every library) may
+# write it, and the check fails when any other plugin does.
+#
+# A table a plugin writes that is in neither list fails `statements_build.py check`.
+# Changes here are reviewed with the plugin that needs them.
+
+[tables.videos]
+id = "subject"
+library_id = "library"
+
+[tables.audio_tracks]
+id = "audio_track"
+video_id = "subject"
+
+[tables.audio_cache]
+content_hash = "audio_cache"
+video_id = "subject"
+audio_track_id = "audio_track"
+
+[tables.chapters]
+video_id = "subject"
+
+[tables.clip_checks]
+video_id = "subject"
+
+[tables.clip_groups]
+id = "clip_group"
+library_id = "library"
+
+[tables.clip_group_items]
+group_id = "clip_group"
+video_id = "subject"
+
+[tables.duplicate_groups]
+id = "dup_group"
+library_id = "library"
+keeper_video_id = "subject"
+
+[tables.duplicate_members]
+group_id = "dup_group"
+video_id = "subject"
+
+[tables.episode_tags]
+video_id = "subject"
+
+[tables.file_actions]
+id = "file_action"
+library_id = "library"
+video_id = "subject"
+
+[tables.item_requests]
+video_id = "subject"
+
+[tables.item_checks]
+video_id = "subject"
+
+[tables.library_topics]
+library_id = "library"
+
+[tables.media_info]
+video_id = "subject"
+
+[tables.media_metadata_enrichment]
+video_id = "subject"
+
+[tables.promo_links]
+video_id = "subject"
+library_id = "library"
+series_id = "series"
+season_id = "season"
+
+[tables.relisten_attempts]
+video_id = "subject"
+
+[tables.season_style]
+season_id = "season"
+
+[tables.season_tags]
+season_id = "season"
+
+[tables.segment_embeddings]
+segment_id = "segment"
+video_id = "subject"
+library_id = "library"
+
+[tables.series]
+id = "series"
+library_id = "library"
+
+[tables.series_books]
+season_id = "season"
+
+[tables.series_episodes]
+series_id = "series"
+video_id = "subject"
+
+[tables.series_seasons]
+id = "season"
+series_id = "series"
+library_id = "library"
+
+[tables.subtitle_files]
+video_id = "subject"
+transcript_id = "transcript"
+
+[tables.tag_checks]
+season_id = "season"
+
+[tables.topic_collections]
+id = "topic_collection"
+library_id = "library"
+
+[tables.topic_items]
+topic_id = "topic_collection"
+video_id = "subject"
+
+[tables.transcribe_checkpoints]
+video_id = "subject"
+
+[tables.transcript_edits]
+transcript_id = "transcript"
+
+[tables.transcript_segments]
+id = "segment"
+transcript_id = "transcript"
+
+[tables.transcripts]
+id = "transcript"
+video_id = "subject"
+audio_track_id = "audio_track"
+
+[tables.video_copies]
+video_id = "subject"
+
+[tables.video_embeddings]
+video_id = "subject"
+library_id = "library"
+transcript_id = "transcript"
+
+[tables.video_repairs]
+video_id = "subject"
+library_id = "library"
+
+[tables.video_signals]
+video_id = "subject"
+
+[tables.video_topic_tags]
+video_id = "subject"
+
+[tables.video_topics]
+video_id = "subject"
+library_id = "library"
+
+[tables.word_flags]
+transcript_id = "transcript"
+video_id = "subject"
+library_id = "library"
+audio_track_id = "audio_track"
+
+# YouTube rows describe public videos, channels and playlists that several libraries may
+# follow: the API counts one in a job's scope when the job's library follows its channel or
+# downloads it, or when no library has claimed it (resolve.go).
+[tables.youtube_channels]
+channel_id = "youtube_channel"
+library_id = "library"
+
+[tables.youtube_channel_libraries]
+channel_id = "youtube_channel"
+library_id = "library"
+
+[tables.youtube_downloads]
+library_id = "library"
+source_id = "youtube_source"
+video_id = "subject"
+
+[tables.youtube_playlists]
+playlist_id = "youtube_playlist"
+channel_id = "youtube_channel"
+
+[tables.youtube_playlist_items]
+playlist_id = "youtube_playlist"
+
+[tables.youtube_sources]
+id = "youtube_source"
+library_id = "library"
+
+# a library's decision record: clash_library_id names the other library it clashed with, as
+# information, not an owner
+[tables.youtube_source_decisions]
+library_id = "library"
+
+[tables.youtube_videos]
+youtube_id = "youtube_video"
+channel_id = "youtube_channel"
+
+# --- rows no library owns ---------------------------------------------------------------
+
+[home.books]
+reason = "reference data about a published book, keyed by its name: no library's data"
+
+[home.plex_livetv_state]
+reason = "the one row of the home's Plex Live TV link (id 1)"
+catalog_only = true
+
+[home.channel_plans]
+reason = "the home's TV lineup plans"
+catalog_only = true
+
+[home.channels]
+reason = "the home's TV lineup: a channel's library_id is a source filter, not an owner"
+catalog_only = true
+
+[home.channel_programs]
+reason = "the home's TV schedule, by channel"
+catalog_only = true
+
+[home.channel_schedule_state]
+reason = "the home's TV schedule state, by channel"
+catalog_only = true
+
+[home.external_links]
+reason = "the home's TV links to outside players (Plex, dizqueTV)"
+catalog_only = true
+
+[home.filler_pools]
+reason = "the home's TV filler pools"
+catalog_only = true
+
+[home.filler_items]
+reason = "the home's TV filler pools' items"
+catalog_only = true
+
+[home.tv_changes]
+reason = "the home's TV change requests"
+catalog_only = true
+
+[home.tv_change_events]
+reason = "the home's TV change history"
+catalog_only = true
+
+[home.tv_releases]
+reason = "the home's TV releases"
+catalog_only = true
+
+[home.tv_release_channels]
+reason = "the home's TV releases' channels"
+catalog_only = true
+
+[home.tv_routing]
+reason = "the home's live TV release pointer (scope 'cluster')"
+catalog_only = true
+
+[home.tv_sched_gen_seq]
+reason = "the home's TV schedule generation counter"
+catalog_only = true

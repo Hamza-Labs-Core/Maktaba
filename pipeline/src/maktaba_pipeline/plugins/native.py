@@ -623,7 +623,7 @@ def engine_handler(db: Any, ctx: Any) -> EngineHandler:
                 return True
             return False
         if op == "log_event":
-            kw = {k: decode_any(v) for k, v in a.items()}
+            kw = _own_job_event(ctx, {k: decode_any(v) for k, v in a.items()})
             await events.log_event(db, **kw)
             return None
         if op == "publish":
@@ -779,6 +779,7 @@ async def _relayed_tv(db: Any, ctx: Any, op: str) -> dict[str, Any]:
 async def _relayed_dedup_commit(db: Any, ctx: Any, a: dict[str, Any]) -> dict[str, Any]:
     """A duplicate group's merge, committed by the worker for ``dedup_apply`` in its runner:
     only this job's group (its subject), and only the group's own members."""
+    from ..engine.sql import uid
     from ..library_mgmt.dedup_merge import MergeRefused, commit_merge
 
     gid = str(a["group_id"])
@@ -791,6 +792,11 @@ async def _relayed_dedup_commit(db: Any, ctx: Any, a: dict[str, Any]) -> dict[st
     keeper, losers = str(a["keeper"]), [str(x) for x in a.get("losers") or []]
     if keeper not in members or not set(losers) <= members or keeper in losers:
         raise EnqueueRefused(f"plugin_scope: not the members of group {gid}")
+    # the library the losers' rows move to is the keeper's own (README §15.12): compared as
+    # uuids, never as text
+    owner = await db.fetchval("SELECT library_id FROM videos WHERE id = $1", uid(keeper))
+    if owner is None or not _same_id(owner, a.get("keeper_library")):
+        raise EnqueueRefused(f"plugin_scope: {a.get('keeper_library')} is not the keeper's library")
     try:
         moved = await commit_merge(
             db,
@@ -803,6 +809,39 @@ async def _relayed_dedup_commit(db: Any, ctx: Any, a: dict[str, Any]) -> dict[st
     except MergeRefused as exc:
         return {"refused": [list(x) for x in exc.uncovered]}
     return {"moved": moved}
+
+
+def _same_id(a: Any, b: Any) -> bool:
+    """Two ids name one row: read as uuids when both are (any form Postgres takes), else
+    as text; None only matches None."""
+    from uuid import UUID
+
+    if a is None or b is None:
+        return a is None and b is None
+    try:
+        return UUID(str(a)) == UUID(str(b))
+    except ValueError:
+        return str(a) == str(b)
+
+
+def _own_job_event(ctx: Any, kw: dict[str, Any]) -> dict[str, Any]:
+    """A job event a plugin's job logs through the worker (README §15.12): only of its own
+    job, subject, library and stage, written with the job's own values."""
+    job = ctx.job
+    own = {
+        "job_id": int(job.id),
+        "subject_kind": str(job.subject_kind),
+        "subject_id": job.subject.id,
+        "library_id": job.library_id,
+        "stage": str(job.stage),
+    }
+    for k in ("subject_id", "library_id"):
+        if not _same_id(kw.get(k), own[k]):
+            raise EnqueueRefused(f"plugin_scope: {k} {kw.get(k)} is not this job's")
+    for k in ("job_id", "subject_kind", "stage"):
+        if str(kw.get(k)) != str(own[k]):
+            raise EnqueueRefused(f"plugin_scope: {k} {kw.get(k)} is not this job's")
+    return {**kw, **own}
 
 
 def _services_of(stage: str) -> tuple[str, ...]:
@@ -1011,7 +1050,14 @@ def fingerprint_fn(stage: str, kind: str, inproc: Any) -> Any:
         try:
             (h,) = await fingerprints(stage, kind, [subject])
             return h
-        except (OSError, ConnectionError, Unregistered, ValueError, KeyError) as exc:
+        except (
+            OSError,
+            ConnectionError,
+            asyncio.IncompleteReadError,  # a runner that closed without an answer
+            Unregistered,
+            ValueError,
+            KeyError,
+        ) as exc:
             _log.info("plugin_fingerprint_inproc", stage=stage, why=str(exc)[:200])
             return await inproc(db, subject)
 

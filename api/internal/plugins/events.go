@@ -124,10 +124,8 @@ func (s *Server) eventRoutes() {
 		if in.Subject.Kind != subject {
 			return nil, refuse(403, CodeScope, "the event is about a "+subject)
 		}
-		if in.Subject.Kind == "video" {
-			if ref := c.readScope(in.Subject.ID); ref != nil {
-				return nil, ref
-			}
+		if _, ref := c.subjectScope(in.Subject, false); ref != nil {
+			return nil, ref
 		}
 		if strings.Contains(in.Payload, `"`+LineageKey+`"`) {
 			return nil, refuse(400, CodeInvalid, LineageKey+" is Maktaba's")

@@ -1,0 +1,10 @@
+# The Postgres archives the release publishes to Maktaba's CDN (.github/workflows/postgres-cdn.yml),
+# at <cdn>/<path>, each checked against its SHA-256 and size first: one line per archive,
+# "<path> <sha256> <size>". It is cmd/maktaba-server/internal/pgbin's pins
+# (TestTheCDNListIsThePins keeps them equal); the archives come from
+# https://github.com/theseus-rs/postgresql-binaries/releases/tag/<version>.
+postgres/16.15.0/postgresql-16.15.0-aarch64-apple-darwin.tar.gz 46f6382024d9b633d1f4b4903ffef8c2404e00ae83098d628c00591048cb0512 12107763
+postgres/16.15.0/postgresql-16.15.0-aarch64-unknown-linux-gnu.tar.gz f6d49ffbaea28cf8732785b18afb75bded905667d4ec8e2308a13a30fe0a24d1 10897360
+postgres/16.15.0/postgresql-16.15.0-x86_64-apple-darwin.tar.gz dfae21b2b931f1d8d1103afb6e8e108fdd94c6f407ce24d35b6cd0ad34f286d1 12408962
+postgres/16.15.0/postgresql-16.15.0-x86_64-pc-windows-msvc.zip 98fe43cff00f5aef4a7669adb575655e913dc65b1fdfb997c46fe3c1e07f4efb 46890560
+postgres/16.15.0/postgresql-16.15.0-x86_64-unknown-linux-gnu.tar.gz 77dd669eda3985ea8be26256f6af28d3c8414152ada713797555bb7423b4486a 11087052
