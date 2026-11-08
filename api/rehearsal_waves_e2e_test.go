@@ -92,7 +92,7 @@ var rehearsalWaves = map[string]rehearsalWave{
 	"16.5": {"16.5", "54.32", []string{"dedup_scan"}, nil},
 	"16.6": {"16.6", "54.33", []string{"exact_dates"}, nil},
 	"16.8": {"16.8", "54.35", []string{"plex_livetv"}, plexOn},
-	"16.9": {"16.9", "54.36", []string{"link", "fp_gate"}, nil},
+	"16.9": {"16.9", "54.36", []string{"scan", "probe", "link", "fp_gate"}, nil},
 }
 
 // waveSleep is how long each job of a wave stage sleeps: longer than the claim loop's
@@ -200,7 +200,7 @@ const catalogSubject = "00000000-0000-0000-0000-00000000ca7a"
 func (r *rehearsal) queueWave(db *sql.DB, stages []string, n int) int64 {
 	t := r.t
 	t.Helper()
-	settleCatalogJobs(t, db, stages, 3*time.Minute)
+	settleOpenJobs(t, db, stages, 3*time.Minute)
 	var last int64
 	_ = db.QueryRow(`SELECT COALESCE(max(id), 0) FROM processing_jobs`).Scan(&last)
 	queued := 0
@@ -264,26 +264,25 @@ func (r *rehearsal) queueWave(db *sql.DB, stages []string, n int) int64 {
 	return last
 }
 
-// settleCatalogJobs waits until no job of the stages on the catalog subject is open. A
-// catalog stage has that one subject, so a job of it the home queued itself (turning the
-// Plex extension on queues plex_livetv) would take the wave's enqueue into it, a job older
-// than the wave's since that the wave would never see run.
-func settleCatalogJobs(t *testing.T, db *sql.DB, stages []string, d time.Duration) {
+// settleOpenJobs waits until no job of the stages is open. An enqueue on a subject that has
+// an open job of the stage joins it, so a job the home queued itself (turning the Plex
+// extension on queues plex_livetv on the catalog; a home scans its libraries) would take the
+// wave's enqueue into it, a job older than the wave's since that the wave would never see run.
+func settleOpenJobs(t *testing.T, db *sql.DB, stages []string, d time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(d)
 	for {
 		var open int
 		if err := db.QueryRow(`SELECT count(*) FROM processing_jobs WHERE stage = ANY($1)
-			AND subject_kind = 'catalog' AND subject_id = $2::uuid
 			AND state NOT IN ('done', 'failed', 'cancelled', 'skipped')`,
-			pq.Array(stages), catalogSubject).Scan(&open); err != nil {
-			t.Fatalf("the catalog jobs of %v: %v", stages, err)
+			pq.Array(stages)).Scan(&open); err != nil {
+			t.Fatalf("the open jobs of %v: %v", stages, err)
 		}
 		if open == 0 {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("%d catalog jobs of %v still open after %s", open, stages, d)
+			t.Fatalf("%d jobs of %v still open after %s", open, stages, d)
 		}
 		makeDue(t, db, stages, 0)
 		time.Sleep(2 * time.Second)

@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.107
-up_to_commit: 591af235e
-built_from: v0.3.106
+tag: v0.3.108
+up_to_commit: 56456b922
+built_from: v0.3.107
 ---
 
-# Trail snapshot: v0.3.107
+# Trail snapshot: v0.3.108
 
 ## Keep doing
 
@@ -33,7 +33,7 @@ built_from: v0.3.106
 - Branch stacks point HOME, `MAKTABA_CLUSTER_DIR` and `MAKTABA_ARCHIVE_DIR` at scratch folders. (#621, #623)
 - Use only real PR numbers and shas; attribute history with git (blame, `log -L`, PR file lists). (d20261031-standing-rules, #655)
 - Never quote or attribute the owner's words in repo text; state the requirement neutrally. (#603, #604)
-- Write each PR's event in the PR before it merges; post-merge learnings go in a trail-only PR. Build snapshots in a scratchpad worktree off origin/main and run `trail check` before pushing; check each carried Open item against newer events, and check origin/main's `snapshots/` again right before opening the PR so two sessions do not snapshot the same tag. On a trail-only PR wait for CodeQL (the slowest job), not the lint. The trail's checks are the agent-trail CLI (`uvx --from git+https://github.com/Hamza-Labs-Core/agent-trail@v0 trail check`); `tools/trail/trail.py` is gone. (#655, #532, #706, #726, #739)
+- Write each PR's event in its own trail-only PR, never in the code PR (check `gh pr diff N --name-only` for `docs/trail/` before merging); open it alongside the code PR and merge it after. A generated block (the agent-trail markers) cannot carry a repository's own rule: put the override outside the markers. Build snapshots in a scratchpad worktree off origin/main and run `trail check` before pushing; check each carried Open item against newer events, and check origin/main's `snapshots/` again right before opening the PR so two sessions do not snapshot the same tag. On a trail-only PR wait for CodeQL (the slowest job), not the lint. The trail's checks are the agent-trail CLI (`uvx --from git+https://github.com/Hamza-Labs-Core/agent-trail@v0 trail check`); `tools/trail/trail.py` is gone. (#655, #532, #706, #726, #739, #1020)
 - Keep CI's paths-ignore, `next_tag.py`'s TRAIL_ONLY and `.trail.toml`'s `[trail_only]` paths equal (test_ci_paths.py and test_next_tag.py check it). (#702, #699)
 - Merge main early into a long epic branch: a page added there has to follow a move made on main, and the conflict shows only as an "added by us" file on the old path. Check URLs in docs and runbook lints too. (d20261107-852-admin-console-move)
 - Hand over an unfinished scenario with its known bugs and their files listed. (#892)
@@ -41,6 +41,9 @@ built_from: v0.3.106
 - Map new API errors through the web app's existing `error.<code>` keys, even when a spec names others, and say so in the PR. (#873)
 - With every merge to main conflicting on the CHANGELOGs, script the round: merge-main, gate, push, watch. (#959)
 - Compile an app locally (no simulator) after an untested UI fix, and run gofmt before every push (the affected-tests gate does not), so neither costs a full CI round. (#970)
+- Before building a leftover from a trail line, check whether a later merge built it: an event can be written on a branch that predates it. (#907)
+- Split a fix found by a long-running end-to-end PR into its own small PR, so it merges on its own checks. (#986, #997)
+- When a rule file and a remembered instruction disagree, ask before telling delegates which wins. (#1020)
 
 **Releases and live**
 - Prove update, rollback, restore and migration paths in CI first: nothing touching update, restore, migration, supervisor, launcher, front door or TV-staging code ships unless `update-rehearsal` passed on that exact commit. One release at a time on the live install. (d20261031-standing-rules, #435, #433, #460, #461)
@@ -56,6 +59,7 @@ built_from: v0.3.106
 - Prefer keyless federation over downloaded service-account keys. (#557)
 - No Stripe or Stripe-owned services for any payment, in specs or code; payment providers are pluggable (`PaymentProvider`, each in its own folder), Adyen for Platforms the first real one. Check a brief's suggestion against the trail before building it. (#591, #593, #735)
 - A release step that talks to an optional service gates on its secret being non-empty and warns on failure, so neither a missing secret nor an outage can fail a release. (#957, #961, #967)
+- Check every secret the api reads against both deploy paths (`tools/ci/deploy_secrets.py`) when a secret is added, and test deploy scripts against a fake `ssh` that runs the remote command locally. (#1010)
 
 **Tests and CI**
 - A code change ships with its tests changed in the same push (affected-tests gate; `No-Test-Change: <reason>` only when the mapped tests cannot run locally). (#516, d20261031-standing-rules, #685)
@@ -131,7 +135,7 @@ built_from: v0.3.106
 - A flake seen twice is fixed in the test, not rerun a third time: compare only what the reference is about (the page's words), not layout state such as scroll position. (#963)
 - Before pushing a change that makes a hot path costlier, run the touched package's tests with `-race -short` against the test-time budget; it can break unrelated pull requests. Size a new test's fixture to what it asserts. (#971, #970)
 - When a fix adds a matrix job, wait for that job by name (`need-check.sh`) before the merge watcher, or the watcher can merge before the job appears. (#961)
-- Fetch every pinned GitHub release asset through `tools/release/fetch-pinned.sh`, with the job's `GITHUB_TOKEN` passed to the step. When a download fails, try the same URL from a workstation and by `gh api`: that tells a front-door outage from a bad pin. (#1003)
+- Fetch every pinned GitHub release asset through `tools/release/fetch-pinned.sh`, with the job's `GITHUB_TOKEN` passed to the step. When a download fails, try the same URL from a workstation and by `gh api`: that tells a front-door outage from a bad pin. A tool whose installer downloads for itself gets its pinned copy placed where the installer skips the download (a Gradle wrapper's dist folder, `compose-jb/wix311.zip`). Save a download cache after a failed run too, under a key the exact match never hits. (#1003, #986, #1014)
 - Check, in each app's own tests, any value both the apps and the cloud derive, and hold the same value in a Go test. (#944)
 - Split a production fix out of a test PR the moment the test finds it, and merge it fail-closed on its own. (#988)
 - When an unrelated PR's check fails, find the cause and fix it in its own PR with a test. A flaky test asserting a status is often a real ordering bug: slow one side at the gap to reproduce it. (#1002)
@@ -144,6 +148,8 @@ built_from: v0.3.106
 - When a guard's description changes mid-review, restate the final scope everywhere it was reported, not only in the PR body. (#990)
 - Run a new guard against open wave branches before they merge: on one such branch it found 6 unlisted tables and 8 bare-string `[scope]` overrides the analysis now derives. Prove every declared write check refuses and allows by walking the embedded bundle in a Go test, with one seeded row per kind in two libraries. (#1005)
 - Check every downloaded archive against its pin, whichever place sent it. Start a merge watcher from inside the repository, a couple of minutes after the push: started at once it reads the previous head's checks and stops on their failures, and from outside the repository it cannot read checks at all. (#1007)
+- Lift a sandbox guard one stage at a time, each with an override-off end to end whose verdict fails on any fallback, and a negative control reverted in a commit of its own: a guard hides its path's bugs from production. (#986, #1018, #1019)
+- Give every identity a sandbox boundary relies on a startup self-check, so a refusal shows at start rather than as each job's fallback. (#1018)
 
 ## Stop doing
 
@@ -265,6 +271,10 @@ built_from: v0.3.106
 - Without the bounded waits, a hung `-q` pytest run was cancelled at 15 minutes with no traceback; the stuck cluster test did only aiosqlite work (cause not proven). (#945)
 - `ci-success` fails whenever any other job fails, so a "rerun only if the flaky job is the sole failure" check must leave it out. (#970)
 - In `cloud-rehearsal`, the 4 s aggregate verdict proves nothing alone: read the run's jobs to see that a scenario actually ran. (#967)
+- `actions/cache` derives an entry's version from its path list: a save whose paths differ from its restore's writes an entry the restore never finds. An all-or-nothing cache save never fills during an outage. `/archive/` and the REST tarball are different files with different SHA-256s. (#1014)
+- An EXIT trap's last status becomes the script's exit status: `[ cond ] && cmd` in a trap fails a good run when `cond` is false. A deploy script run from a Mac avoids `chown --reference` and GNU `sed -i`. (#1010)
+- `plugins / first-party`'s classify `detect` N16 budget and `test_a_slower_plugin_fails_n16_with_both_numbers` trip on some shared runners with code that passes elsewhere: a timing gate, not the change under test. (#1018, #1021)
+- An integrity check must not take its trusted source from the file it checks. (#1014)
 
 **Database and migrations**
 - Number a migration slot only when merging main (slots are taken while a PR builds); a slot above a gap fails migration-lint; `SchemaRev` lives in three places. Check `git ls-tree origin/main shared/db/migrations/` right before each push, not only at the start; at each renumber rebuild `cluster_copy_excluded()` on the newest definition (Up adds, Down restores that one) and raise the three SchemaRev constants together. Slots moved three and four times while a PR waited; a moved migration is written again from its generator (`roles.py sql`, which `roles.py check` compares against every manifest), never sliced from the old file (a slice that kept `--` lines opened `StatementBegin` twice; migration-lint's `goose-annotations` now refuses it). Prove a migration parses with `go run . migrate up` from `api/` on a new database. The store's D1 migrations number separately but still collide within one series. (#669, #692, #678, #672, #657, #693, #762, #767, #778, #781, #815, d20261107-paid-plugins-merge-problems, #925, #949)
@@ -332,6 +342,11 @@ built_from: v0.3.106
 - Random bytes are not reliably corrupt media; build fixtures from a real header plus seeded junk. (#526, #537)
 - This Mac: the iOS 27.1 runtime has no iPhone device types (make throwaway simulators on iOS 27.0); bash is 3.2 (no `mapfile`; build `-only-testing` arguments as an array); Android screenshots record locally with Homebrew's `openjdk@17` and `-Proborazzi.test.record=true`; ELF fixtures build with `docker run --platform linux/arm64 alpine:3.20`. (#959, #967)
 - The Android apps build no native code of their own; the only `.so` files are prebuilt AndroidX ones Google strips, so native tables appear only once an app builds native code. (#967)
+- A Windows venv is not one process: its `python.exe` is a launcher. Anything that trusts a pid starts the base interpreter named in `pyvenv.cfg`, refuses the start if it cannot be named, and holds the created process's handle (which also stops pid reuse); a broker accepting by Job Object or process tree would admit the runner's tools. (#986, #1018)
+- A file shim must be total: every lookup Windows answers without `os.stat`, and every call that swallows `OSError`, is another place a refusal reads as absence. A server loop answers every request whatever it raises, and a caller that falls back on a refusal treats a peer that closed without answering as one too. (#986, #997)
+- A read-only broker root is enough for a probe: ffprobe reads its one share input through the `fd:` handle. (#1019)
+- A relay failure (no answer, 502, 503, 504, not `home_reconnecting`) reads the cloud's status at once, at most every 10 s. Running a test once with the old behaviour put back is the cheap proof that it checks the wiring. (#907)
+- A plugin's own events go through `events/emit` (manifest `emits`, schema, 16 KB, scope); the native relay is a separate back channel, so its rule is own job only. (#1021)
 
 **Apps and UI tests**
 - Under Robolectric a bare `waitUntil` only polls; the v1 compose rule runs effects unconfined. Use settling waits and v2 rules. (#508)
@@ -407,11 +422,11 @@ built_from: v0.3.106
 - Docker Postgres on the home Mac was stopped, never removed. (#148)
 - The VPS kernel patch for CVE-2026-98432, and a `SECURITY.md`. (#518)
 - Epic 52: the real gold set and calibration curves; the rehearsal's "one component more" step. (#672)
-- Epic 54 on Windows: no GPU device grants (an `ml` runner may fall back to CPU) until CI has a GPU. While a library root is on a share, every first-party stage that reads or writes the libraries runs in the worker (`windows_share_library`), because a runner's `thumb_small` there ended done with no thumbnail; the root cause, an end to end of the guarded path, and a real first-party stage driven end to end in the AppContainer are still to come, and the guard can then go for the read-only groups. A share the group writes in full (`files.write`) is never brokered. `serving_group("fp")` does not wait for its runner. (#956, #953, #968, #976, #977, #990)
+- Epic 54 on Windows: no GPU device grants (an `ml` runner may fall back to CPU) until CI has a GPU. While a library root is on a share, only `thumb_small`, `chapter_thumbs` and `subtitle_gen` run in their runners (`SHARE_RUNNER_STAGES`); every other library stage stays in the worker (`windows_share_library`). Still to come: a write broker for the full-write groups (convert, dedup, repair, youtube), and runner proof for transcribe and second_listen on a share. A share the group writes in full is served read-only by the broker, and a write op there goes to the worker. `serving_group("fp")` does not wait for its runner. `events/emit` refusals are not logged with the plugin, event and reason, as relay refusals now are. (#956, #953, #968, #976, #977, #990, #986, #1018, #1019, #1021)
 - Epic 54 Phase 2 and paid plugins (signing ships dark, no root keys): Phase 2 is built through the store browser, and buying, entitlements, private paid packages and purchase moves are in; the store is not deployed (its go-live list, with `PAID_URL_KEY`, the email provider, the Cloudflare resources, DNS and secrets, and the 90-day lifecycle rule on `report-logs/`, is in `store/README.md`); once the root keys are committed a release fails while the store's CDN is down (re-run); the isolated runner waits for Containers on the account; Apple snapshot references for the plugin panels (issue #876). (#733, #735, #743, #751, #753, #770, #778, #819, #820, #815, #837, #861, #886)
 - Epic 54 Phase 4: waves 1-3 and 5-8 are in, and the rehearsal's wave rows 16.4–16.9 skip until their plugins merge (each brings its own checks); YouTube's download swap is not file-scoped; the nightly YouTube hosts check meets a bot wall on data-centre runners, and yt-dlp needs a JS runtime the plugin cannot run (issue #900); `rate_style` has no subject in the small seed; the legacy `extract` and `thumbnail` stages with their hand chaining turned into edges (54.29), moving `enrich` (a secrets route for first-party plugins and a rule for its page reads, an owner decision), the rest of wave 9 (54.31, 54.36; scan, `probe`, `thumbnail` and `extract` are on the engine; next the move into `tv.maktaba.core-media`, then the removal one release later if no stage was flipped back; `categorize` has never had a handler, and removing it or keeping it declared is an owner decision), the job-scoped path check (issue #796), every wave's rehearsal scenarios (issue #804), N16 for `tv_stage`, `tv_swap` and `tv_rollback` (the bench cannot rerun a state transition), a runner call for a stage's `refresh` (still run from the worker), and removal of the in-process path; per-plugin `.mkplugin` packages in `checksums.txt` wait for a release-workflow change. (#731, #750, #760, #773, #789, #800, #806, #823, #842, #844, #890, #899, #847, #919, #920, #921, #925, #942, #948)
 - Epic 54 joined machines: a machine's plugin compute always asks the home's models; its own GPU models are not offered to plugins. (#767)
-- Epic 50: the cloud status line is in every app's strip, but Apple and Android read the feed only at start and every 5 minutes, not at once after a failed request; series that 53.17 emits for the status page; W gets the `maktaba-cloud` binary with 50.07 (`deploy.sh` ships to A and B only); 50.15's direct-remote rehearsal passes, but 50.06's scenario table says UPnP where the fake router speaks NAT-PMP; the web home settings' `direct.rebinding` notice for when the LAN name fails and the address works (the apps use the raw-IP entry; the probe cannot tell a blocked name from a LAN firewall on the port; the advice holds either way); 50.19 is in, with the owner's prices, Pro's allowance and the payment provider on the go-live list, the cloud issuing `basic` once homes that read it are out, and the rehearsal's plan numbers removed when real ones are set; 50.31's rehearsal scenarios T06–T08 are in, and the relay check will also require the attacker's (redacted) address once the relay logs its resolved client IP; 50.32 §1, §4 and §5 (§3's app and console Workers are in); 50.33 removes `ConsoleSignIn` in the listener and the Worker; the api and worker in 50.08's blue/green (a restart costs about a second per deploy); 50.33 and 53.18 follow (50.30's edge rules are in: whether Pro accepts `log` as a rate-limit action shows at the first apply, and 50.32's CSP must allow `https://challenges.cloudflare.com`; 50.34's Cloudflare workflows are in; 50.34 deploys both Workers with `cloud-web-deploy.yml` and smoke-checks them) (50.12 to 50.15 parts 1–2, 50.35 and the console's own bundle are in); the direct-name domains, their NS delegation and the ACME EAB accounts are on the go-live list. 50.13's T09 waits for a home stack in the cloud rehearsal; 50.14's absolute numbers, the epic's sizing figures and `RELAY_MEASURED_*` wait for a `loadtest.yml` run on the staging pair. 50.12's incident handling is in; `tunnel_connections_low` and the `staff_*` alerts come with 50.31 and 50.33, and the game day waits for the real pair. `nodecopy`'s tests still build maktaba-api per test. (#727, #739, #752, #780, #791, #798, #808, #825, #845, #856, #865, #871, #877, #883, #895, #897, #858, #852, #906, #892, #867, #873, #903, #922, #928, #941, #952)
+- Epic 50: series that 53.17 emits for the status page; W gets the `maktaba-cloud` binary with 50.07 (`deploy.sh` ships to A and B only); 50.15's direct-remote rehearsal passes, but 50.06's scenario table says UPnP where the fake router speaks NAT-PMP; the web home settings' `direct.rebinding` notice for when the LAN name fails and the address works (the apps use the raw-IP entry; the probe cannot tell a blocked name from a LAN firewall on the port; the advice holds either way); 50.19 is in, with the owner's prices, Pro's allowance and the payment provider on the go-live list, the cloud issuing `basic` once homes that read it are out, and the rehearsal's plan numbers removed when real ones are set; 50.31's rehearsal scenarios T06–T08 are in, and the relay check will also require the attacker's (redacted) address once the relay logs its resolved client IP; 50.32 §1, §4 and §5 (§3's app and console Workers are in); 50.33 removes `ConsoleSignIn` in the listener and the Worker; the api and worker in 50.08's blue/green (a restart costs about a second per deploy); 50.33 and 53.18 follow (50.30's edge rules are in: whether Pro accepts `log` as a rate-limit action shows at the first apply, and 50.32's CSP must allow `https://challenges.cloudflare.com`; 50.34's Cloudflare workflows are in; 50.34 deploys both Workers with `cloud-web-deploy.yml` and smoke-checks them) (50.12 to 50.15 parts 1–2, 50.35 and the console's own bundle are in); the direct-name domains, their NS delegation and the ACME EAB accounts are on the go-live list. 50.13's T09 waits for a home stack in the cloud rehearsal; 50.14's absolute numbers, the epic's sizing figures and `RELAY_MEASURED_*` wait for a `loadtest.yml` run on the staging pair. 50.12's incident handling is in; `tunnel_connections_low` and the `staff_*` alerts come with 50.31 and 50.33, and the game day waits for the real pair. `nodecopy`'s tests still build maktaba-api per test. (#727, #739, #752, #780, #791, #798, #808, #825, #845, #856, #865, #871, #877, #883, #895, #897, #858, #852, #906, #892, #867, #873, #903, #922, #928, #941, #952)
 - An address two of a user's homes share loses its by-IP path for both, which fall back to the LAN name, direct or relay: a deliberate fail-closed trade until there is a per-home client. (#944)
 - Rare web test races of one shape (a check one render too early), listed on issue #697; BigScreen still re-attaches its key listener. (#746)
 - Apple Player references: iPhone- and iPad-only layouts have none, and those UI tests still fill `{{now…}}` from the clock (a new screenshot reference there needs the pin); no tvOS snapshot job (the Apple TV form is drawn on the Mac). (#893, #910, #929, #936, d20261108-snapshot-fixture-clock)
@@ -420,7 +435,7 @@ built_from: v0.3.106
 - Other whole-list functions may share `cluster_copy_excluded()`'s merge hazard (`maktaba_min_node_schema()` is checked against the MANIFEST); add a lint rule when a second such list appears. (#822)
 - The tag guard requires the cloud rehearsal once 50.07's scenarios are live. (#715)
 - agent-trail's PyPI publishing waits for its trusted publisher; the CLI runs from git. (#702)
-- Epic 53: the desktop Player offers no screenshot (needs screen recording); 53.14 T09 (the simulator does not deliver MetricKit on demand); 53.16 uploads no symbols until the `MAKTABA_SYMBOLS_TOKEN` repository secret is added; the first tag after that secret is added shows the native-symbols notice in a real run, and native frames get app-own tables only once the apps build native code; the first symbols list after the deploy unpacks each older table once, one by one; `docs/app-privacy.md`; native Remote Errors, Logs and Storage screens; the Overview's summary series fill only from this release. (d20261108-android-native-symbols-path, #994, #983, #992, #896, #905, #688, #689, #691, #732, #745, #774, #782, #824, #915, #917, #918, #952, #957, #959, #960, #961, #967, #970, #978, #954)
+- Epic 53: the desktop Player offers no screenshot (needs screen recording); 53.14 T09 (the simulator does not deliver MetricKit on demand); 53.16's token now reaches both deploy paths, but no cloud deploy runs yet (`RELAY_DEPLOY` is unset, and the single-VPS stack runs only `--role relay`, while `/v1/symbols` is `--role api`): which path goes live first is undecided, and uploads are confirmed only after that; the first tag after that shows the native-symbols notice in a real run, and native frames get app-own tables only once the apps build native code; the first symbols list after the deploy unpacks each older table once, one by one; `docs/app-privacy.md`; native Remote Errors, Logs and Storage screens; the Overview's summary series fill only from this release. (d20261108-android-native-symbols-path, #994, #983, #992, #896, #905, #688, #689, #691, #732, #745, #774, #782, #824, #915, #917, #918, #952, #957, #959, #960, #961, #967, #970, #978, #954, #1010)
 - Epic 53 log bench: the strict Python bench's margin at the reference is about 20% (the secret scrub, about 2.6 µs, is next to look at), and the Go `logbench` keeps its runner factor until it flakes; the `logs` role's CPU and memory on a live home; the log pipeline's numbers on the live Overview. (#690, #740, #802, #838, #866)
 - maktaba.dev shots of the Remote's word review and the phone Players' queue. (#703)
 - DASH top-level segments are not on the stream gate's allow-list. (#474)
@@ -435,9 +450,10 @@ built_from: v0.3.106
 - One slow iPad shard's warm audits took 15.5 then 14.0 s: on such a runner a test's first audit can still reach XCTest's 15 s deadline. (#1001)
 - `TestRestoreAskedPutsTheBackupBackBeforeAnyRole` fails on the owner's Mac (asides empty) and passes in CI; not yet looked into. (#1002)
 - Plex removal's cleanup migration, a release or more later: the seven stages' rows, the two pools, the dizqueTV extension and component rows, settings keys, `external_links` targets, `plex_items` and the channel audit tables, the `maktaba_fp_dizquetv` role, the retired lists and the `rules.legacy_tv_live` fallback. The mediaintel scripts still write Plex collections on their own. (d20261108-remove-plex-sync)
-- CodeQL's default setup and `golangci-lint-action` download from GitHub releases and cannot use the API route: a rerun is the remedy. linuxdeploy-plugin-appimage is pinned to its `continuous` build of 2026-10-01; when that build moves, the Linux app job warns and tauri downloads it unpinned. (#1003)
+- CodeQL's default setup downloads its own tools and cannot use the API route: a rerun is the remedy. TinyGo and wasm-tools in `_plugins.yml`, and the packs' recipes (`tools/release/packs/`), still use `curl --retry 3`. linuxdeploy-plugin-appimage is pinned to its `continuous` build of 2026-10-01; when that build moves, the Linux app job warns and tauri downloads it unpinned. (#1003, #1014)
 - Write scope: wave 9f (core-media) needs `statements_build.py sync core-media` (7 headers) and its `[scope]` table removed once it is rebased on this; reads by id across libraries are not scoped (first-party tokens read every library); the worker's `publish` relay op still takes any payload. (#1005)
 - Runtime downloads: move the updater and the update catalog to the API route, with an update-rehearsal T-row; the store CDN's bucket (`maktaba-plugins`) and domain do not exist yet, so the publish step warns and skips, and homes go on to the API route (an owner decision, with the release token's write access); CI's WiX download could get the same fallback or be cached. (#1007)
+- Add an option in `.trail.toml` for trail-only events, so AGENTS.md needs no override note. (#1020)
 
 ## Missing events
 
@@ -448,7 +464,8 @@ built_from: v0.3.106
 | #946 | 2026-11-07 | fix(backups): old backups go on their own |
 | #969 | 2026-11-08 | feat: remove Plex sync and dizqueTV; Plex Live TV stays |
 | #973 | 2026-11-08 | fix(supervisor): plugin runners wait for the venv like the pipeline |
-| #1010 | 2026-11-08 | fix(cloud-relay): the single VPS's deploy writes the symbols token (53.16) |
+| #1023 | 2026-11-08 | test(rehearsal): scenario 16.7, wave 7's TV change across an update |
+| #1032 | 2026-11-08 | fix(rehearsal): scenario 12 expects a retired component to have no row after the update |
 
 ## Index
 
@@ -904,6 +921,7 @@ built_from: v0.3.106
 | 0904-log-bench-compare-flake | 2026-11-07 | pr | The log bench's compare test checks both rounds ran, not their speed |
 | 0905-host-metrics | 2026-11-07 | pr | Epic 53 story 53.12 — each machine's memory, disk free and load on the Overview |
 | 0906-rebinding-notice | 2026-11-07 | pr | The home's settings say when the router blocks its LAN name |
+| 0907-cloud-status-recheck | 2026-11-07 | pr | The apps read the cloud's status at once when the relay fails |
 | 0910-page-locale | 2026-11-07 | pr | A page's built strings follow its locale; the page references' bundle trap |
 | 0911-specs-admin-urls | 2026-11-07 | pr | Specs 53.16 and 53.17 name the operator console's URLs (admin.maktaba.tv) |
 | 0915-joined-machines-dashboards | 2026-11-07 | pr | Epic 53 story 53.12 — the home's dashboards carry every joined machine |
@@ -968,18 +986,26 @@ built_from: v0.3.106
 | 0978-iphone-recovery-shots | 2026-11-08 | pr | maktaba.dev shows the iPhone Remote's recovery screen |
 | 0979-epic57-parental-controls | 2026-11-08 | decision | Epic 57 spec: parental controls on iPhone and iPad, on Apple's Screen Time |
 | 0983-overview-machine-names | 2026-11-08 | pr | 53.12: the Overview names machines; lighter 60-machine tests |
+| 0986-runner-stages-windows-e2e | 2026-11-08 | pr | First-party stages end to end in their Windows runners; the venv launcher was the share miss (story 54.23) |
 | 0988-share-refusal-not-missing | 2026-11-08 | pr | A share file a runner's sandbox refuses runs in the worker, never as missing (story 54.23) |
 | 0990-share-media-in-worker | 2026-11-08 | pr | Share media stays in the worker on Windows; v0.3.105's misses run again (story 54.23) |
 | 0992-record-prepared-statements | 2026-11-08 | pr | 53.12: Record prepares its upserts once per scrape; TestOverviewManyMachines under its soft cap |
 | 0993-android-lenient-overview | 2026-11-08 | pr | 53.12: the Android Remote decodes the Overview's optional fields leniently |
 | 0994-symbols-table-type | 2026-11-08 | pr | 53.16: the Crash symbols page names each table's type and key |
 | 0996-classify-parity-fast | 2026-11-08 | pr | Classify's parity proof ran past the soft cap and failed unrelated pull requests |
+| 0997-fingerprint-refusal-answered | 2026-11-08 | pr | A fingerprint a Windows runner refuses is answered, and the worker takes it (story 54.23) |
 | 1000-remote-ui-still-row | 2026-11-08 | pr | The Remote's diagnostics UI tests tap a Home row once it stands still |
 | 1001-player-ui-warmup-audits | 2026-11-08 | pr | Player UI warm-up audits until the process is warm |
 | 1002-shared-step-report-order | 2026-11-08 | pr | A process waiting on the venv showed the waiting text over the install's progress |
 | 1003-pinned-downloads-api-first | 2026-11-08 | pr | Pinned downloads by the GitHub API first, retried and cached |
 | 1005-write-scope-every-id | 2026-11-08 | pr | Every first-party write checks each id that binds its rows (README §15.12) |
 | 1007-resilient-runtime-downloads | 2026-11-08 | pr | A home's Postgres download survives github.com's download door failing |
+| 1010-single-vps-symbols-token | 2026-11-08 | pr | The single VPS's deploy writes the symbol uploaders' token |
+| 1014-ci-downloads-survive-504 | 2026-11-08 | pr | CI's remaining downloads survive github.com's 504s (golangci-lint, archives, caches, e2e, Gradle, WiX) |
+| 1018-runner-identity | 2026-11-08 | pr | A Windows runner is the process its launcher created, or it does not serve (story 54.23) |
+| 1019-share-runners | 2026-11-08 | pr | Thumbnails, chapter frames and subtitles run in their runner on a Windows share; the broker serves full-write shares read-only (story 54.23) |
+| 1020-trail-events-own-prs | 2026-11-08 | pr | Trail events go in their own trail-only pull requests (CLAUDE.md rule 2, AGENTS.md) |
+| 1021-publish-rules | 2026-11-08 | pr | The worker checks each event a plugin's runner asks it to publish |
 | d20261108-android-native-symbols-path | 2026-11-08 | decision | The Play workflow's native-symbols path is right on AGP 9.4; nothing to change |
 | d20261108-backups-tidy | 2026-11-08 | incident | Old backups were pruned only at an update, and a lone failed dump stayed for good |
 | d20261108-codeql-bundle-504 | 2026-11-08 | incident | CodeQL's bundle download failed with HTTP 504 and held every PR for about an hour |
