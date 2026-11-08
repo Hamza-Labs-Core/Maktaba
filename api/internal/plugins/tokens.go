@@ -396,6 +396,18 @@ func (t *Tokens) Check(ctx context.Context, token string) (*Invocation, *Refusal
 	return inv, nil
 }
 
+// claimant answers the plugin a token was minted for, ended or not, for a log line about
+// a refused call; "" when the token is unknown.
+func (t *Tokens) claimant(token string) string {
+	t.mu.Lock()
+	inv := t.byHash[hashToken(token)]
+	t.mu.Unlock()
+	if inv == nil {
+		return ""
+	}
+	return inv.PluginID
+}
+
 // End ends an invocation (the job finished or was cancelled). Answers false if unknown.
 func (t *Tokens) End(ctx context.Context, id string) bool {
 	ok, _ := t.EndCounting(ctx, id)

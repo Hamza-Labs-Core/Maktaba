@@ -529,6 +529,13 @@ build fails when the two differ.
 
 ### Security
 
+- **Every event a plugin's emit refuses is logged (Epic 54).** A plugin's `events/emit` was
+  refused (an undeclared event, a payload its schema refuses or over 16 KB, a subject out of
+  the job's scope, a bad token, a request that does not decode, and the rest) with only the
+  plugin API's general refusal line. Each refusal is now also logged as `plugin_emit_refused`
+  with the plugin, the event, the payload's size in bytes, a reason code and a detail, never
+  the payload. The plugin's answer is unchanged.
+
 - **The worker checks every live event a first-party plugin's runner asks it to publish
   (Epic 54).** A runner's `publish` request went onto the `jobs` channel, which every web
   client and app listens to, with any kind and any payload. The worker now publishes only

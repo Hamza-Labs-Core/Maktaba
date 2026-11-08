@@ -41,11 +41,14 @@ import (
 
 // rehearsalWave is one wave of Phase 4: its scenario, its story and the stages the
 // scenario queues (those of its stages a home without a GPU, a model or a network
-// service claims), and what the home needs before they claim (setup).
+// service claims), and what the home needs before they claim (setup). A wave whose setup
+// gives the seed its stages' subjects sets must: every stage gets a job in every round,
+// and a stage that queued none fails the scenario instead of passing without it.
 type rehearsalWave struct {
 	id, story string
 	stages    []string
 	setup     func(r *rehearsal, home *appMachine, db *sql.DB)
+	must      bool
 }
 
 // plexOn turns the Plex extension on as an owner does: Settings' PUT
@@ -84,15 +87,48 @@ func waitStagesEnabled(t *testing.T, db *sql.DB, stages []string, within time.Du
 	}
 }
 
+// seasonsOn gives the seed a small series with two seasons, as the detect stage writes them:
+// the small seed has no series, and fp_gate claims seasons. Its first library's first four
+// videos are the episodes, two to a season. A detect run that sees them otherwise retires
+// the rows and never deletes them, and the queue takes a retired season's job all the same.
+func seasonsOn(r *rehearsal, _ *appMachine, db *sql.DB) {
+	t := r.t
+	t.Helper()
+	var lib, series string
+	if err := db.QueryRow(`SELECT library_id::text FROM videos WHERE library_id IS NOT NULL
+		GROUP BY library_id HAVING count(*) >= 4 ORDER BY library_id LIMIT 1`).Scan(&lib); err != nil {
+		t.Fatalf("a library of the seed with four videos: %v", err)
+	}
+	if err := db.QueryRow(`INSERT INTO series (library_id, name) VALUES ($1::uuid, 'Rehearsal series')
+		RETURNING id::text`, lib).Scan(&series); err != nil {
+		t.Fatalf("the rehearsal series: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO series_episodes (series_id, video_id, season, episode)
+		SELECT $1::uuid, id, 1 + (n - 1) / 2, 1 + (n - 1) % 2
+		  FROM (SELECT id, row_number() OVER (ORDER BY id) AS n FROM videos WHERE library_id = $2::uuid
+		         AND id NOT IN (SELECT video_id FROM series_episodes)) v
+		 WHERE n <= 4`, series, lib); err != nil {
+		t.Fatalf("the rehearsal series' episodes: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO series_seasons (id, series_id, library_id, season, kind, name,
+		episode_count, membership_hash, detector_version)
+		SELECT gen_random_uuid(), $1::uuid, $2::uuid, s, 'episodic', 'Rehearsal series, season ' || s, 2,
+		       'rehearsal-' || s, 1
+		  FROM generate_series(1, 2) AS s`, series, lib); err != nil {
+		t.Fatalf("the rehearsal series' seasons: %v", err)
+	}
+	r.logf("the seed has a series with two seasons (library %s): fp_gate claims", lib)
+}
+
 var rehearsalWaves = map[string]rehearsalWave{
-	"16.1": {"16.1", "54.28", []string{"promo_links", "clip_groups", "topic_collections", "rate_style"}, nil},
-	"16.2": {"16.2", "54.29", []string{"thumb_small", "chapter_thumbs", "subtitle_gen"}, nil},
-	"16.3": {"16.3", "54.30", []string{"topic_assign", "chapter_infer"}, nil},
-	"16.4": {"16.4", "54.31", []string{"detect", "tag"}, nil},
-	"16.5": {"16.5", "54.32", []string{"dedup_scan"}, nil},
-	"16.6": {"16.6", "54.33", []string{"exact_dates"}, nil},
-	"16.8": {"16.8", "54.35", []string{"plex_livetv"}, plexOn},
-	"16.9": {"16.9", "54.36", []string{"link", "fp_gate"}, nil},
+	"16.1": {"16.1", "54.28", []string{"promo_links", "clip_groups", "topic_collections", "rate_style"}, nil, false},
+	"16.2": {"16.2", "54.29", []string{"thumb_small", "chapter_thumbs", "subtitle_gen"}, nil, false},
+	"16.3": {"16.3", "54.30", []string{"topic_assign", "chapter_infer"}, nil, false},
+	"16.4": {"16.4", "54.31", []string{"detect", "tag"}, nil, false},
+	"16.5": {"16.5", "54.32", []string{"dedup_scan"}, nil, false},
+	"16.6": {"16.6", "54.33", []string{"exact_dates"}, nil, false},
+	"16.8": {"16.8", "54.35", []string{"plex_livetv"}, plexOn, false},
+	"16.9": {"16.9", "54.36", []string{"scan", "probe", "link", "fp_gate"}, seasonsOn, true},
 }
 
 // waveSleep is how long each job of a wave stage sleeps: longer than the claim loop's
@@ -200,7 +236,7 @@ const catalogSubject = "00000000-0000-0000-0000-00000000ca7a"
 func (r *rehearsal) queueWave(db *sql.DB, stages []string, n int) int64 {
 	t := r.t
 	t.Helper()
-	settleCatalogJobs(t, db, stages, 3*time.Minute)
+	settleOpenJobs(t, db, stages, 3*time.Minute)
 	var last int64
 	_ = db.QueryRow(`SELECT COALESCE(max(id), 0) FROM processing_jobs`).Scan(&last)
 	queued := 0
@@ -264,26 +300,25 @@ func (r *rehearsal) queueWave(db *sql.DB, stages []string, n int) int64 {
 	return last
 }
 
-// settleCatalogJobs waits until no job of the stages on the catalog subject is open. A
-// catalog stage has that one subject, so a job of it the home queued itself (turning the
-// Plex extension on queues plex_livetv) would take the wave's enqueue into it, a job older
-// than the wave's since that the wave would never see run.
-func settleCatalogJobs(t *testing.T, db *sql.DB, stages []string, d time.Duration) {
+// settleOpenJobs waits until no job of the stages is open. An enqueue on a subject that has
+// an open job of the stage joins it, so a job the home queued itself (turning the Plex
+// extension on queues plex_livetv on the catalog; a home scans its libraries) would take the
+// wave's enqueue into it, a job older than the wave's since that the wave would never see run.
+func settleOpenJobs(t *testing.T, db *sql.DB, stages []string, d time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(d)
 	for {
 		var open int
 		if err := db.QueryRow(`SELECT count(*) FROM processing_jobs WHERE stage = ANY($1)
-			AND subject_kind = 'catalog' AND subject_id = $2::uuid
 			AND state NOT IN ('done', 'failed', 'cancelled', 'skipped')`,
-			pq.Array(stages), catalogSubject).Scan(&open); err != nil {
-			t.Fatalf("the catalog jobs of %v: %v", stages, err)
+			pq.Array(stages)).Scan(&open); err != nil {
+			t.Fatalf("the open jobs of %v: %v", stages, err)
 		}
 		if open == 0 {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("%d catalog jobs of %v still open after %s", open, stages, d)
+			t.Fatalf("%d jobs of %v still open after %s", open, stages, d)
 		}
 		makeDue(t, db, stages, 0)
 		time.Sleep(2 * time.Second)
@@ -299,6 +334,24 @@ func makeDue(t *testing.T, db *sql.DB, stages []string, since int64) {
 	if _, err := db.Exec(`UPDATE processing_jobs SET not_before = now() WHERE id > $1 AND stage = ANY($2)
 		AND state = 'pending' AND not_before > now()`, since, pq.Array(stages)); err != nil {
 		t.Fatalf("make the wave's jobs due: %v", err)
+	}
+}
+
+// gotEach fails, for a wave that must, for a stage of it with no job among queued.
+func (r *rehearsal) gotEach(w rehearsalWave, what string, jobs []waveJob, queued map[int64]bool) {
+	if !w.must {
+		return
+	}
+	got := map[string]bool{}
+	for _, j := range jobs {
+		if queued[j.id] {
+			got[j.stage] = true
+		}
+	}
+	for _, st := range w.stages {
+		if !got[st] {
+			r.t.Errorf("%s: no job of %s was queued: the scenario would pass without it", what, st)
+		}
 	}
 }
 
@@ -490,6 +543,7 @@ func (r *rehearsal) waveScenario(id string) {
 	r.noRestore(home, states)
 	jobs := waitSettled(t, db, w.stages, since, 10*time.Minute)
 	r.checkWaveJobs(id+" through the rollback", jobs, queued, want)
+	r.gotEach(w, id+" through the rollback", jobs, queued)
 
 	// 2. more in flight; the update to this commit, which passes: the flip at update
 	since = r.queueWave(db, w.stages, per)
@@ -505,6 +559,7 @@ func (r *rehearsal) waveScenario(id string) {
 	home.assertNoCrashLoop(id + ": after the update to " + k.cur)
 	jobs = waitSettled(t, db, w.stages, since, 10*time.Minute)
 	r.checkWaveJobs(id+" through the update", jobs, queued, want)
+	r.gotEach(w, id+" through the update", jobs, queued)
 
 	// 3. this commit's runners serve: every stage of the wave is 'plugin', and new jobs run
 	// in the runner
@@ -539,13 +594,18 @@ func (r *rehearsal) waveScenario(id string) {
 		queued = queuedIDs(waveJobs(t, db, w.stages, since))
 		jobs = waitSettled(t, db, w.stages, since, 5*time.Minute)
 		r.checkWaveJobs(id+" warming up after the flip", jobs, queued, want)
-		inRunner := map[string]bool{}
+		// the stages that got a job: one whose subject kind the seed lacks (fp_gate's seasons
+		// in the small seed) never queues, and would hold the warm-up to its time limit
+		got, inRunner := map[string]bool{}, map[string]bool{}
 		for _, j := range jobs {
-			if queued[j.id] && j.impl == "plugin" {
-				inRunner[j.stage] = true
+			if queued[j.id] {
+				got[j.stage] = true
+				if j.impl == "plugin" {
+					inRunner[j.stage] = true
+				}
 			}
 		}
-		if len(inRunner) == len(w.stages) || time.Now().After(warm) {
+		if len(inRunner) == len(got) || time.Now().After(warm) {
 			break
 		}
 		time.Sleep(5 * time.Second)
@@ -554,6 +614,7 @@ func (r *rehearsal) waveScenario(id string) {
 	queued = queuedIDs(waveJobs(t, db, w.stages, since))
 	jobs = waitSettled(t, db, w.stages, since, 5*time.Minute)
 	r.checkWaveJobs(id+" after the flip", jobs, queued, want)
+	r.gotEach(w, id+" after the flip", jobs, queued)
 	for _, j := range jobs {
 		if queued[j.id] && j.impl != "plugin" {
 			t.Errorf("%s after the flip: job %d (%s) ran %s on %s, want in its runner", id, j.id, j.stage, j.impl, j.release)

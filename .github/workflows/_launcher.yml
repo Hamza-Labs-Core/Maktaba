@@ -75,6 +75,16 @@ jobs:
           go test -count=1 -v ./internal/config
           go test -count=1 -v . -run "PrivateFilesAreTheUsersAlone|PrivateWritesSweepTheirOldTempFiles|ASwitchFolderStaysInTheSwitchoverFolder|WriteNodeConfigKeepsThePipelinesFields|NodeConfigIsolated|ServeStartsNothingOfAHome|ServeWaitsOutAWrite"
 
+      # A restore by hand and the dumps' room on a Mac (the app's home): the restore's
+      # tests failed on a Mac whose disk had less than 5% free and passed on Linux, as no
+      # job ran them on macOS; the room a dump makes is faked, so they pass on any disk.
+      - name: maktaba-server (a restore by hand and the dumps' room on macOS)
+        if: runner.os == 'macOS'
+        working-directory: cmd/maktaba-server
+        run: |
+          go test -count=1 -v . -run "TestRestore"
+          go test -count=1 -v ./internal/pgbundle -run "Room|DiskSpace|Backup|DumpBeforeUpdate|PgDump"
+
       # A role gets its database URLs without their passwords and PGPASSFILE naming the
       # file that holds them (dsn.ProcessEnv): the server's and the api's driver read it on
       # the OS itself. lib/pq before v1.11 skipped it on Windows (every file looks group
