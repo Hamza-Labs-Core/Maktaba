@@ -7,6 +7,7 @@ waiting connections, the worker's way in, and the run folder."""
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 import os
 import subprocess
@@ -521,6 +522,90 @@ def test_a_share_this_runner_is_not_brokered_is_refused_never_missing(
     assert not winfiles.is_share("C:\\m")
 
 
+def test_every_look_on_a_share_path_goes_through_the_broker_or_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The lookups Windows answers without ``os.stat`` (``lexists``, ``islink``,
+    ``isjunction``, ``os.access``) go through the broker on a share path; a file call the shim
+    does not route (``os.scandir`` and so ``os.walk`` and ``glob``, ``os.open``, a mkdir, a
+    ``shutil`` copy) is refused there, never answered as an absent file, while the shim's own
+    audited calls pass. What the broker answered is counted for the runner's job line."""
+    from maktaba_pipeline.plugins.native import sandbox_refused
+
+    shim, asked = _shim(tmp_path, {"stat": {"size": 3, "mtime_ns": 1}})
+    # the shim's own audit events go through the installed hook, as in the runner
+    monkeypatch.setattr(sys, "audit", lambda e, *a: shim.exec_hook(e, a))
+    video = SHARE + "\\a\\ep1.mp4"
+    assert shim.lexists_(video) and not shim.islink_(video) and not shim.isjunction_(video)
+    assert shim.access_(video, os.R_OK) and shim.access_(video, os.F_OK)
+    with pytest.raises(PermissionError):
+        shim.access_(video, os.W_OK)
+    assert shim.isfile_(video)  # its own "os.stat" event passes the backstop
+    with shim.open_(video, "rb") as f:  # and its own "open"
+        assert f.read() == b"video bytes"
+    for event, args in (
+        ("os.scandir", (SHARE + "\\a",)),
+        ("open", (video, None, os.O_RDONLY)),  # os.open
+        ("os.mkdir", (SHARE + "\\b", 0o777, -1)),
+        ("glob.glob", (SHARE + "\\a\\*.jpg", False)),
+        ("shutil.copyfile", (str(tmp_path / "x"), SHARE + "\\a\\x")),
+        ("os.listdir", (os.fsencode(SHARE + "\\a"),)),
+    ):
+        with pytest.raises(PermissionError) as refused:
+            shim.exec_hook(event, args)
+        assert sandbox_refused(refused.value), event
+    # a local path and an fd are not the shim's
+    shim.exec_hook("os.scandir", (str(tmp_path),))
+    shim.exec_hook("open", (3, "rb", 0))
+    assert {a["op"] for a in asked} == {"stat", "open"}
+    assert shim.counts == {"stat": 6, "open": 1, "unrouted_refused": 7}
+
+
+def test_a_local_folder_the_sandbox_refuses_is_never_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A local path the AppContainer has no grant for (a share this machine serves, mapped
+    back to its folder) raises from exists/isfile/isdir/lexists instead of answering False;
+    a missing local file is still False and a present one True."""
+    from maktaba_pipeline.plugins.native import sandbox_refused
+
+    shim, asked = _shim(tmp_path, {})
+    denied = str(tmp_path / "denied" / "a.jpg")
+    real_stat, real_lstat = shim.stat, shim.lstat
+
+    def stat(p: Any, *a: Any, **k: Any) -> os.stat_result:
+        if str(p) == denied:
+            raise PermissionError(13, "Access is denied", denied)
+        out: os.stat_result = real_stat(p, *a, **k)
+        return out
+
+    shim.stat = stat
+    shim.lstat = lambda p, *a, **k: stat(p) if str(p) == denied else real_lstat(p, *a, **k)
+    for look in (shim.exists_, shim.isfile_, shim.isdir_, shim.lexists_):
+        with pytest.raises(PermissionError) as refused:
+            look(denied)
+        assert sandbox_refused(refused.value)
+        assert not look(str(tmp_path / "none.jpg"))
+    (tmp_path / "here.jpg").write_bytes(b"x")
+    assert shim.isfile_(str(tmp_path / "here.jpg")) and shim.isdir_(str(tmp_path))
+    assert not asked
+
+
+def test_the_broker_counts_are_taken_once_per_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``take_counts`` empties the counts (the runner's job line reads what one job made the
+    broker answer); with no broker installed it is empty."""
+    monkeypatch.setattr(winfiles, "_installed", [])
+    assert winfiles.take_counts() == {}
+    shim = winfiles._Shim(lambda req: {"error": "gone", "errno": 2}, [SHARE], lambda h, _f: h)
+    monkeypatch.setattr(winfiles, "_installed", [shim])
+    assert not shim.isfile_(SHARE + "\\a\\ep1.webp")
+    assert not shim.isfile_("C:\\nowhere\\ep1.jpg")
+    assert winfiles.take_counts() == {"stat_missing": 1, "plain_missing": 1}
+    assert winfiles.take_counts() == {}
+    assert winfiles.take_missing() == [SHARE + "\\a\\ep1.webp", "C:\\nowhere\\ep1.jpg"]
+    assert winfiles.take_missing() == []
+
+
 def test_the_broker_pipe_carries_one_line_each_way() -> None:
     """The runner's side of the broker's pipe: a request line out, the answer line back
     (read in pieces as a pipe hands them), and a closed pipe is a refusal."""
@@ -548,6 +633,42 @@ def test_the_broker_pipe_carries_one_line_each_way() -> None:
     with pytest.raises(PermissionError):
         b({"op": "stat", "path": "p"})
     assert winfiles.install_from_env({}) is False
+
+
+def test_a_broken_broker_pipe_is_a_refusal_never_a_missing_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A broker that turned the runner away leaves a pipe whose writes fail: that is a
+    refusal (counted, raised), never an OSError a lookup answers False to, as if the share
+    file were missing."""
+
+    class Broken:
+        def write(self, _b: bytes) -> int:
+            raise BrokenPipeError(errno.EPIPE, "the pipe has been ended")
+
+        def read(self, _n: int) -> bytes:
+            return b""
+
+    class Garbled:
+        def write(self, b: bytes) -> int:
+            return len(b)
+
+        def read(self, _n: int) -> bytes:
+            return b"not json\n"
+
+    def opener_of(pipe: Any) -> Any:
+        return lambda _name: pipe
+
+    pipes: list[Any] = [Broken(), Garbled()]
+    for pipe in pipes:
+        b = winfiles.Broker("\\\\.\\pipe\\x", opener=opener_of(pipe))
+        with pytest.raises(PermissionError):
+            b({"op": "stat", "path": "p"})
+        shim = winfiles._Shim(b, [SHARE], lambda h, _f: h)
+        monkeypatch.setattr(winfiles, "_installed", [shim])
+        with pytest.raises(PermissionError):
+            shim.isfile_(SHARE + "\\a\\ep1.mkv")
+        assert winfiles.take_counts() == {"stat_refused": 1}
 
 
 VIDEO = SHARE + "\\a\\ep1.mkv"

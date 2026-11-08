@@ -79,7 +79,7 @@ async def runner(db: Database) -> AsyncIterator[Path]:
 
 
 async def test_the_runner_writes_what_the_worker_writes(
-    db: Database, toy: bytes, monkeypatch: pytest.MonkeyPatch
+    db: Database, toy: bytes, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from maktaba_pipeline.plugins import native
 
@@ -119,10 +119,25 @@ async def test_the_runner_writes_what_the_worker_writes(
         for r in await db.fetch("SELECT message FROM job_events WHERE job_id = $1", job.id)
     ]
     assert "toy wrote 3 rows" in msgs
+    # the runner's own log names the job it ran (the Windows end to end reads it)
+    assert job_lines(capsys) == [("light", "fp_toy", job.id, "ok")]
+
+
+def job_lines(capsys: pytest.CaptureFixture[str]) -> list[tuple[Any, ...]]:
+    import json
+
+    out = []
+    for line in capsys.readouterr().err.splitlines():
+        with contextlib.suppress(ValueError):
+            d = json.loads(line)
+            if isinstance(d, dict) and d.get("event") == "plugin_runner_job":
+                assert isinstance(d["ms"], float) and d["ms"] >= 0
+                out.append((d["group"], d["stage"], d["job_id"], d["status"]))
+    return out
 
 
 async def test_a_failure_comes_back_as_the_handler_raised_it(
-    db: Database, toy: bytes, monkeypatch: pytest.MonkeyPatch
+    db: Database, toy: bytes, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     from fp_toy import stage
 
@@ -153,6 +168,7 @@ async def test_a_failure_comes_back_as_the_handler_raised_it(
         "the toy broke",
         False,
     )
+    assert job_lines(capsys) == [("light", "fp_toy", job.id, "failure")]
 
 
 async def test_an_unregistered_statement_runs_the_job_in_process(
@@ -326,6 +342,22 @@ async def test_the_worker_asks_for_a_runner_that_is_not_up(monkeypatch: pytest.M
         "POST http://127.0.0.1:9/runners/light/start",
     ]
     native._ASKED.clear()
+
+
+def test_the_job_line_names_what_the_broker_answered(capsys: pytest.CaptureFixture[str]) -> None:
+    """On Windows with a share brokered, the runner's job line carries what the launcher's
+    broker answered for the job (CI's runner-stages proof that a share was read through it);
+    without one the line has no such field."""
+    import json
+
+    from maktaba_plugin_runner.server import job_line
+
+    job_line("light", "thumb_small", 5, "ok", 0.02, {"stat": 2, "stat_missing": 1, "open": 1})
+    job_line("light", "thumb_small", 6, "ok", 0.02, {}, ["C:\\x\\a.jpg"])
+    first, second = (json.loads(x) for x in capsys.readouterr().err.splitlines())
+    assert first["broker"] == {"stat": 2, "stat_missing": 1, "open": 1}
+    assert "broker" not in second and "missing" not in first
+    assert second["missing"] == ["C:\\x\\a.jpg"]
 
 
 async def test_a_fingerprint_the_sandbox_refuses_is_answered_never_dropped(

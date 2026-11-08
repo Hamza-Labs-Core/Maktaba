@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -78,6 +79,7 @@ type fakeLaunch struct {
 	profile   string
 	started   bool
 	opts      Options
+	prog      string
 	grantErr  error
 	remote    string
 	filesOnly []string
@@ -118,8 +120,8 @@ func (f *fakeLaunch) install(t *testing.T) {
 		return nil
 	}
 	revokeFn = func(_, path string) error { f.revoked = append(f.revoked, path); return nil }
-	runFn = func(profile, _ string, _ []string, o Options) (int, error) {
-		f.started, f.opts, f.profile = true, o, profile
+	runFn = func(profile, prog string, _ []string, o Options) (int, error) {
+		f.started, f.opts, f.profile, f.prog = true, o, profile, prog
 		return 0, nil
 	}
 }
@@ -601,4 +603,48 @@ func mustCanonical(t *testing.T, p string) string {
 		t.Fatal(err)
 	}
 	return c
+}
+
+// A venv's python on Windows is a launcher whose child is the runner: the launcher starts
+// the base interpreter itself (the process the broker serves), told its venv; a python of
+// its own, or a venv whose base interpreter is gone, is started as named.
+func TestARunnerInAVenvIsStartedAsItsBaseInterpreter(t *testing.T) {
+	old := venvDirect
+	venvDirect = true
+	t.Cleanup(func() { venvDirect = old })
+	dir := mustCanonical(t, t.TempDir())
+	t.Setenv("MAKTABA_DATA_DIR", dir)
+	home := filepath.Join(dir, "python")
+	base := filepath.Join(home, "python.exe")
+	venvPy := filepath.Join(dir, "venv", "Scripts", "python.exe")
+	for _, p := range []string{base, venvPy} {
+		_ = os.MkdirAll(filepath.Dir(p), 0o700)
+		_ = os.WriteFile(p, []byte("exe"), 0o700)
+	}
+	cfg := filepath.Join(dir, "venv", "pyvenv.cfg")
+	_ = os.WriteFile(cfg, []byte("home = "+home+"\r\ninclude-system-site-packages = false\r\n"), 0o600)
+	pol, _ := json.Marshal(RunnerPolicy{Processes: 2})
+	launch := func(py string) *fakeLaunch {
+		t.Helper()
+		f := &fakeLaunch{policy: string(pol)}
+		f.install(t)
+		var errOut strings.Builder
+		if code := LaunchRunner([]string{"runner-sandbox-run", "-group", "light", "-run-dir", filepath.Join(dir, "run"),
+			"--", py, "-m", "maktaba_plugin_runner"}, &errOut); code != 0 || !f.started {
+			t.Fatalf("exit %d, started %v: %s", code, f.started, errOut.String())
+		}
+		return f
+	}
+	f := launch(venvPy)
+	if f.prog != base || !slices.Contains(f.opts.Env, pyvenvLauncherEnv+"="+venvPy) {
+		t.Fatalf("started %q with %v, want %q told its venv", f.prog, f.opts.Env, base)
+	}
+	f = launch(base)
+	if f.prog != base || slices.ContainsFunc(f.opts.Env, func(kv string) bool { return strings.HasPrefix(kv, pyvenvLauncherEnv+"=") }) {
+		t.Fatalf("a python of its own: started %q with %v", f.prog, f.opts.Env)
+	}
+	_ = os.WriteFile(cfg, []byte("home = "+filepath.Join(dir, "gone")+"\n"), 0o600)
+	if f = launch(venvPy); f.prog != venvPy {
+		t.Fatalf("a venv whose base is gone: started %q", f.prog)
+	}
 }

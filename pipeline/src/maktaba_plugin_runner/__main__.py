@@ -134,6 +134,16 @@ def main(argv: list[str] | None = None) -> int:
         from . import winproc
 
         winproc.install()
+        # which interpreter the launcher started: a venv's runner is its base interpreter,
+        # told its venv (story 54.23), never the venv's launcher with the runner its child
+        log(
+            "plugin_runner_interpreter",
+            group=group,
+            pid=os.getpid(),
+            executable=sys.executable,
+            prefix=sys.prefix,
+            venv=sys.prefix != sys.base_prefix,
+        )
         # the library's share folders, through the launcher's broker (an AppContainer
         # reaches no share): without it, a job refused there runs in the worker
         from . import winfiles
