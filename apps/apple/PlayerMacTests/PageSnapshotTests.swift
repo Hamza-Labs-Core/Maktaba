@@ -66,6 +66,10 @@ import MaktabaKit
      {"type":"chips","value":["Hijra","Medina"]}]}]}
     """#
 
+    /// The day the references were drawn: the fixtures' `{{now…}}` times count from it, so
+    /// "added 20 days ago" shows the same date every day.
+    nonisolated static let clock = Date(timeIntervalSince1970: 1_794_052_800) // 2026-11-07T12:00:00Z
+
     /// The share of pixels that may differ (anti-aliasing), each by more than `channel`.
     static let tolerance = 0.002
     static let channel = 24
@@ -79,6 +83,8 @@ import MaktabaKit
 
     @Test(arguments: cases) func pageMatchesItsReference(_ c: Case) async throws {
         let home = try MockHome()
+        // the fixtures' dates from a fixed day (the one the references were drawn on), not today
+        home.clock = Self.clock
         try home.start()
         let features = MockHome.features.map { #""\#($0)":"on""# }.joined(separator: ",")
         home.stub("GET", "/api/capabilities", body: #"{"etag":"c-snap","features":{\#(features),"plugin_panels":"on"}}"#,
