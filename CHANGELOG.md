@@ -160,6 +160,16 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A rollback undoes only what the release changed.** When an update rolled back and its
+  migrations could not simply be kept, the whole database was put back from the dump taken
+  before the update: every table reloaded, every index rebuilt (for the rollback of 0.3.90
+  on 2026-11-07, most of a day with the home down) and everything written since the dump
+  lost, though none of that release's 14 migrations lost data. A rollback now runs
+  the release's own Down scripts back to the previous schema when its migrations lose no
+  data on the way up: only the tables they touched change, every other table, index and
+  row stays as it is. The dump goes back only when a migration dropped, deleted, overwrote
+  or recast data, or a Down script fails.
+
 - **After an update, a first-party plugin's jobs run in its runner instead of the worker
   (Epic 54).** The shared plugin runners start when a job needs them and stop when idle, so
   the first jobs after an update found their runner down and ran inside the pipeline worker.

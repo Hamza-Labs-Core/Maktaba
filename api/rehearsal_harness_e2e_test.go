@@ -148,6 +148,18 @@ DROP TABLE IF EXISTS rehearsal_probe_next;
 `
 }
 
+func constraintNextMigration(slot int) (string, string) {
+	return fmt.Sprintf("%04d_rehearsal_constraint.sql", slot), `-- +goose Up
+-- The update rehearsal's constraint migration: no data lost, but not rollback-safe for the
+-- schema-keep rule (an older release may write what the CHECK refuses), and past what the
+-- release's API takes (the injected health failure). Its Down script undoes it.
+ALTER TABLE rehearsal_probe ADD CONSTRAINT rehearsal_probe_note_short CHECK (length(note) < 10000);
+
+-- +goose Down
+ALTER TABLE rehearsal_probe DROP CONSTRAINT IF EXISTS rehearsal_probe_note_short;
+`
+}
+
 func destructiveMigration(slot int) (string, string) {
 	return fmt.Sprintf("%04d_rehearsal_destructive.sql", slot), `-- +goose Up
 -- The update rehearsal's destructive migration: the vectors gone, an index and a column

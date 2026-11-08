@@ -642,6 +642,9 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 	c.status.LastExit = &info
 	c.status.PID = 0
 	c.status.StartedAt = nil
+	// gone with its PID: no snapshot shows a running child without a process
+	// (the state the policy picks below follows)
+	c.status.State = StateExited
 	c.cmd = nil
 	c.tree = nil
 	c.ident = 0
