@@ -2,16 +2,17 @@
 """Makes or updates the Mac Player's page references (issue #876) from a CI run.
 
 PageSnapshots (apps/apple/PlayerMacTests/PageSnapshotTests.swift) attaches every page it
-draws to its test. This copies those attachments into apps/apple/PlayerMacTests/Snapshots/
-as <name>.png, the references the next run compares with. Read the images before committing:
-a reference is what the page is meant to look like.
+draws to its test, the image and its words. This copies those attachments into
+apps/apple/PlayerMacTests/Snapshots/ as <name>.png and <name>.txt, the references the next run
+compares with. Read them before committing: a reference is what the page is meant to look like
+and say.
 
     tools/apple/snapshots.py <run id>           # downloads player-ui-tests-mac with gh
     tools/apple/snapshots.py <path/to/mac.xcresult>
     tools/apple/snapshots.py --self-test
 
-Only names PageSnapshots makes are copied (<page>-<panels>-<lang>[-ax3].png, and the Apple TV
-form's tv-panel-<lang>.png).
+Only names PageSnapshots makes are copied (<page>-<panels>-<lang>[-ax3].png or .txt, and the
+Apple TV form's tv-panel-<lang>.png or .txt).
 """
 
 from __future__ import annotations
@@ -27,14 +28,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DEST = ROOT / "apps/apple/PlayerMacTests/Snapshots"
 NAME = re.compile(
-    r"^((?:library|series|video)-(?:none|collapsed|open)-(?:en|ar)(?:-ax3)?|tv-panel-(?:en|ar))(?:[._-].*)?\.png$"
+    r"^((?:library|series|video)-(?:none|collapsed|open)-(?:en|ar)(?:-ax3)?|tv-panel-(?:en|ar))(?:[._-].*)?\.(png|txt)$"
 )
 
 
 def reference_name(suggested: str) -> str | None:
     """The reference a suggested attachment name is for, or None for any other attachment."""
     m = NAME.match(suggested)
-    return f"{m.group(1)}.png" if m else None
+    return f"{m.group(1)}.{m.group(2)}" if m else None
 
 
 def pick(manifest: list[dict]) -> dict[str, str]:
@@ -55,7 +56,7 @@ def pick(manifest: list[dict]) -> dict[str, str]:
 def export(xcresult: Path) -> int:
     with tempfile.TemporaryDirectory() as tmp:
         subprocess.run(
-            ["xcrun", "xcresulttool", "export", "attachments", "--path", str(xcresult), "--output-path", tmp, "--filter", "*.png"],
+            ["xcrun", "xcresulttool", "export", "attachments", "--path", str(xcresult), "--output-path", tmp],
             check=True,
         )
         manifest = json.loads((Path(tmp) / "manifest.json").read_text())
@@ -84,8 +85,11 @@ def self_test() -> int:
     assert reference_name("library-none-en.png") == "library-none-en.png"
     assert reference_name("series-open-ar-ax3.png") == "series-open-ar-ax3.png"
     assert reference_name("video-collapsed-en_0_2F1C.png") == "video-collapsed-en.png"
+    assert reference_name("series-none-ar.txt") == "series-none-ar.txt"
+    assert reference_name("series-none-ar_1_AB.txt") == "series-none-ar.txt"
+    assert reference_name("series-none-ar.json") is None
     assert reference_name("tv-panel-ar.png") == "tv-panel-ar.png"
-    assert reference_name("tv-panel-en_0_1A2B.png") == "tv-panel-en.png"
+    assert reference_name("tv-panel-en_0_1A2B.txt") == "tv-panel-en.txt"
     assert reference_name("tv-panel-fr.png") is None
     assert reference_name("library-open-fr.png") is None
     assert reference_name("Screenshot.png") is None
@@ -93,15 +97,20 @@ def self_test() -> int:
         {"testIdentifier": "PageSnapshots/pageMatchesItsReference(_:)", "attachments": [
             {"exportedFileName": "a.png", "suggestedHumanReadableName": "library-none-en.png"},
             {"exportedFileName": "b.png", "suggestedHumanReadableName": "other.png"},
+            {"exportedFileName": "d.txt", "suggestedHumanReadableName": "library-none-en.txt"},
         ]},
         {"testIdentifier": "PageSnapshots/tvPanelMatchesItsReference(_:)", "attachments": [
-            {"exportedFileName": "d.png", "suggestedHumanReadableName": "tv-panel-ar.png"},
+            {"exportedFileName": "e.png", "suggestedHumanReadableName": "tv-panel-ar.png"},
         ]},
         {"testIdentifier": "PlayerMenus/x()", "attachments": [
             {"exportedFileName": "c.png", "suggestedHumanReadableName": "library-none-ar.png"},
         ]},
     ]
-    assert pick(manifest) == {"a.png": "library-none-en.png", "d.png": "tv-panel-ar.png"}
+    assert pick(manifest) == {
+        "a.png": "library-none-en.png",
+        "d.txt": "library-none-en.txt",
+        "e.png": "tv-panel-ar.png",
+    }
     print("snapshots.py: self-test passed")
     return 0
 

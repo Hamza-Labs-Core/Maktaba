@@ -18,8 +18,13 @@ import MaktabaKit
 /// (`mac.xcresult` in CI's `player-ui-tests-mac` artifact): a reference is made or changed by
 /// committing that attachment: `tools/apple/snapshots.py <run id>` copies them here.
 ///
+/// Beside each image is a text reference, `<name>.txt`: the page's accessibility elements in
+/// order, each one's role and words (label, value, title). It must match exactly, so a wording
+/// change the pixel tolerance lets through (an English phrase on an Arabic page is a few hundred
+/// pixels) fails here. It is attached and copied the same way as the image.
+///
 /// The Apple TV's video page draws MaktabaKit's TV form of the panels; `tvPanelMatchesItsReference`
-/// draws that form here (story 54.20 T05), as `tv-panel-<lang>.png`.
+/// draws that form here (story 54.20 T05), as `tv-panel-<lang>.png` and `.txt`.
 @MainActor @Suite(.serialized) struct PageSnapshots {
     enum Page: String, CaseIterable, Sendable {
         case library, series, video
@@ -91,9 +96,18 @@ import MaktabaKit
         let user = try JSONDecoder().decode(User.self, from: Data(#"{"id":"u1","username":"viewer","is_admin":false}"#.utf8))
         let context = PlayerContext(session: session, user: user, client: client)
 
-        let image = try await Self.draw(Self.screen(c.page, context: context), c: c, home: home)
+        let (image, text) = try await Self.draw(Self.screen(c.page, context: context), c: c, home: home)
         let png = try #require(image.representation(using: .png, properties: [:]))
         Attachment.record(png, named: "\(c.name).png")
+        Attachment.record(Data(text.utf8), named: "\(c.name).txt")
+
+        if let textURL = Bundle(for: SnapshotBundle.self).url(forResource: c.name, withExtension: "txt", subdirectory: "Snapshots"),
+           let refText = try? String(contentsOf: textURL, encoding: .utf8) {
+            let diff = Self.firstDifference(text, refText)
+            #expect(diff == nil, "\(c.name)'s words differ from its text reference: \(diff ?? ""); if the change is meant, commit the attached \(c.name).txt")
+        } else {
+            Issue.record("no text reference for \(c.name): commit the attached \(c.name).txt as PlayerMacTests/Snapshots/\(c.name).txt")
+        }
 
         guard let refURL = Bundle(for: SnapshotBundle.self).url(forResource: c.name, withExtension: "png", subdirectory: "Snapshots"),
               let refData = try? Data(contentsOf: refURL),
@@ -132,9 +146,21 @@ import MaktabaKit
         .preferredColorScheme(.dark)
         .frame(width: size.width, height: size.height)
 
-        let image = try await Self.render(root, size: size)
+        let (image, text) = try await Self.render(root, size: size)
         let png = try #require(image.representation(using: .png, properties: [:]))
         Attachment.record(png, named: "\(name).png")
+        Attachment.record(Data(text.utf8), named: "\(name).txt")
+        // the TV's subset only (no chip), the long value cut at the text rules' length
+        #expect(!text.contains(lang == "ar" ? "تاريخ" : "History"), "no chips in the TV form: \(text)")
+        #expect(text.contains("…"), "the long value ends in an ellipsis: \(text)")
+
+        if let textURL = Bundle(for: SnapshotBundle.self).url(forResource: name, withExtension: "txt", subdirectory: "Snapshots"),
+           let refText = try? String(contentsOf: textURL, encoding: .utf8) {
+            let diff = Self.firstDifference(text, refText)
+            #expect(diff == nil, "\(name)'s words differ from its text reference: \(diff ?? ""); if the change is meant, commit the attached \(name).txt")
+        } else {
+            Issue.record("no text reference for \(name): commit the attached \(name).txt as PlayerMacTests/Snapshots/\(name).txt")
+        }
         guard let refURL = Bundle(for: SnapshotBundle.self).url(forResource: name, withExtension: "png", subdirectory: "Snapshots"),
               let refData = try? Data(contentsOf: refURL),
               let ref = NSBitmapImageRep(data: refData) else {
@@ -164,8 +190,9 @@ import MaktabaKit
         """
     }
 
-    /// A view with no requests, drawn in a borderless dark window of `size` once laid out.
-    static func render(_ view: some View, size: CGSize) async throws -> NSBitmapImageRep {
+    /// A view with no requests, drawn in a borderless dark window of `size` once laid out, and
+    /// its words (as `draw`).
+    static func render(_ view: some View, size: CGSize) async throws -> (NSBitmapImageRep, String) {
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless],
                               backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -179,7 +206,7 @@ import MaktabaKit
         window.displayIfNeeded()
         let rep = try #require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
         hosting.cacheDisplay(in: hosting.bounds, to: rep)
-        return rep
+        return (rep, try await words(of: hosting))
     }
 
     @ViewBuilder static func screen(_ page: Page, context: PlayerContext) -> some View {
@@ -192,7 +219,7 @@ import MaktabaKit
 
     /// The screen in a window of `size`, dark, in the case's language and text size, drawn
     /// once its requests have gone quiet (the panels asked, the fixtures and posters read).
-    static func draw(_ screen: some View, c: Case, home: MockHome) async throws -> NSBitmapImageRep {
+    static func draw(_ screen: some View, c: Case, home: MockHome) async throws -> (NSBitmapImageRep, String) {
         let size = size(of: c.page)
         let root = NavigationStack { screen }
             .environment(\.locale, Locale(identifier: c.lang))
@@ -230,7 +257,56 @@ import MaktabaKit
         window.displayIfNeeded()
         let rep = try #require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
         hosting.cacheDisplay(in: hosting.bounds, to: rep)
-        return rep
+        return (rep, try await words(of: hosting))
+    }
+
+    /// The page's accessibility elements in order, one line each: its role and words. SwiftUI
+    /// builds its accessibility tree only for an assistive client, which asks for it with
+    /// AXEnhancedUserInterface; the test asks the same way, after the image is drawn, and
+    /// stops asking once it has read the tree.
+    static func words(of hosting: NSView) async throws -> String {
+        let enhanced = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        NSApp.accessibilitySetValue(true, forAttribute: enhanced)
+        defer { NSApp.accessibilitySetValue(false, forAttribute: enhanced) }
+        try await Task.sleep(for: .milliseconds(300))
+        var lines: [String] = []
+        collect(hosting, into: &lines)
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// `element`'s line (when it has words) and its children's, depth first.
+    static func collect(_ element: Any, into lines: inout [String]) {
+        guard let o = element as? NSObject else { return }
+        let role = (ax(o, "accessibilityRole") as? String).map { $0.hasPrefix("AX") ? String($0.dropFirst(2)) : $0 } ?? "?"
+        var words: [String] = []
+        for key in ["accessibilityLabel", "accessibilityValue", "accessibilityTitle"] {
+            let w: String? = switch ax(o, key) {
+            case let s as String: s
+            case let n as NSNumber: n.stringValue
+            default: nil
+            }
+            if let w, !w.isEmpty, !words.contains(w) { words.append(w) }
+        }
+        if !words.isEmpty { lines.append("\(role): " + words.joined(separator: " | ")) }
+        for child in (ax(o, "accessibilityChildren") as? [Any]) ?? [] { collect(child, into: &lines) }
+    }
+
+    /// An accessibility getter by name: SwiftUI's elements are not NSAccessibilityElements,
+    /// and Swift sees the getters as both properties and methods, so they are asked by selector.
+    static func ax(_ o: NSObject, _ name: String) -> Any? {
+        let selector = NSSelectorFromString(name)
+        guard o.responds(to: selector) else { return nil }
+        return o.perform(selector)?.takeUnretainedValue()
+    }
+
+    /// The first line where `text` and `reference` differ, both shown; nil when they match.
+    static func firstDifference(_ text: String, _ reference: String) -> String? {
+        let a = text.components(separatedBy: "\n"), b = reference.components(separatedBy: "\n")
+        for i in 0..<max(a.count, b.count) {
+            let x = i < a.count ? a[i] : "(none)", y = i < b.count ? b[i] : "(none)"
+            if x != y { return "line \(i + 1): now \"\(x)\", reference \"\(y)\"" }
+        }
+        return nil
     }
 
     /// The share of pixels where a channel differs by more than `channel` (1 when the sizes differ).
