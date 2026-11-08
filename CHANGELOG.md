@@ -171,6 +171,14 @@ build fails when the two differ.
   refuses a registration while the login item is on or launchd has the job, the app starts that
   job and waits for launchd to run it. The dialog shows only when nothing registered can start;
   a login item turned off in System Settings still asks to be turned on there.
+- **Old backups go on their own.** The backups folder kept the newest nightly dumps and
+  pre-update dumps, but the other dumps were pruned only when an update ran, and a dump of a
+  failed update or of a database a restore replaced was kept until more of its kind came:
+  one 33 GB dump of a failed update stayed for weeks. The backups loop now prunes at every
+  check, scheduled dumps on or off: the nightly dumps to [backups] keep, the pre-update
+  dumps to their count, and a dump of a failed update or a replaced database once it is a
+  month old. The newest pre-update dump, the way back from the last update, never expires.
+
 - **A rollback undoes only what the release changed.** When an update rolled back and its
   migrations could not simply be kept, the whole database was put back from the dump taken
   before the update: every table reloaded, every index rebuilt (for the rollback of 0.3.90
@@ -464,6 +472,16 @@ build fails when the two differ.
 
 ### Added
 
+- **A runner reaches a library on a share on Windows (story 54.23).** A first-party runner on
+  Windows runs in an AppContainer, which reaches no SMB share, so every job on a share-hosted
+  library ran in the queue worker. The runner's launcher now brokers the group's share
+  folders. For each file the runner asks for over its own pipe, the launcher checks that the
+  path is in those folders and spelled one way only, with no junction or link on the way. It
+  then hands the runner the open file for reading only; a subtitle is written by the launcher
+  from the bytes the runner sends. The
+  subtitle stage now runs in its runner on a share. A share the group writes in full, and a
+  tool's job on a share, still run in the worker. No network capability is given to the
+  runner.
 - **A forwarded report's Apple crash reads as functions, files and lines (Epic 53 stories 53.14
   and 53.16).** Maktaba Cloud keeps a symbol table of each Apple binary from a release's dSYMs
   (its functions and line table, keyed by the binary's UUID), uploaded with the new
