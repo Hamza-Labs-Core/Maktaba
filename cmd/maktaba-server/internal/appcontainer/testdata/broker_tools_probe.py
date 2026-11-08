@@ -13,7 +13,9 @@ import subprocess
 import sys
 import time
 
-out_path, winfiles_path, lib, root, other_share, ffmpeg, ffprobe, run, outside = sys.argv[1:10]
+out_path, winfiles_path, lib, root, other_share, ffmpeg, ffprobe, run, outside = (
+    sys.argv[1:10]
+)
 video = lib + "\\show\\ep2.mp4"
 second = lib + "\\show\\ep3.mp4"
 found: dict[str, object] = {}
@@ -68,6 +70,8 @@ def thumbnail() -> dict[str, object]:
             "scale=320:-2",
             "-q:v",
             "2",
+            "-update",
+            "1",
             "-y",
             thumb,
         ]
@@ -115,11 +119,52 @@ async def small() -> dict[str, object]:
 
 attempt("thumbnail_pipe", lambda: asyncio.run(small()))
 
+# the control for thumbnail_pipe: the same asyncio start on a copy in the run folder (no
+# share, no routing): asyncio's subprocess pipes on Windows are named pipes it creates
+local = os.path.join(run, "local.mp4")
+with open(video, "rb") as src, open(local, "wb") as dst:
+    dst.write(src.read())
+
+
+async def small_local() -> dict[str, object]:
+    proc = await asyncio.create_subprocess_exec(
+        ffmpeg,
+        "-v",
+        "error",
+        "-nostdin",
+        "-i",
+        local,
+        "-frames:v",
+        "1",
+        "-f",
+        "image2pipe",
+        "-vcodec",
+        "mjpeg",
+        "pipe:1",
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    out, _ = await proc.communicate()
+    return {"code": proc.returncode, "jpeg": out[:2] == b"\xff\xd8"}
+
+
+attempt("thumbnail_pipe_local", lambda: asyncio.run(small_local()))
+
 
 def probe() -> dict[str, object]:
     start = time.perf_counter()
     p = subprocess.run(
-        [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", video],
+        [
+            ffprobe,
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "csv=p=0",
+            video,
+        ],
         capture_output=True,
         check=False,
     )
@@ -193,11 +238,18 @@ def pipe_control() -> dict[str, object]:
 attempt("pipe_control", pipe_control)
 
 # refused before anything starts
-attempt("second_file", lambda: tool([ffmpeg, "-i", video, "-i", second, "-f", "null", "-"]))
+attempt(
+    "second_file", lambda: tool([ffmpeg, "-i", video, "-i", second, "-f", "null", "-"])
+)
 attempt("library_folder", lambda: tool([ffprobe, "-v", "error", lib]))
 attempt("share_root", lambda: tool([ffprobe, "-v", "error", root]))
-attempt("other_share", lambda: tool([ffprobe, "-v", "error", other_share + "\\secret.mp4"]))
-attempt("output_on_share", lambda: tool([ffmpeg, "-i", run + "\\none.mp4", lib + "\\show\\x.jpg"]))
+attempt(
+    "other_share", lambda: tool([ffprobe, "-v", "error", other_share + "\\secret.mp4"])
+)
+attempt(
+    "output_on_share",
+    lambda: tool([ffmpeg, "-i", run + "\\none.mp4", lib + "\\show\\x.jpg"]),
+)
 attempt("not_a_handle_tool", lambda: tool([sys.executable, "-c", "pass", video]))
 
 # a tool that reaches for the share by itself (a path the runner never saw: a concat list in
@@ -232,7 +284,22 @@ stray = os.path.join(outside, "stray.jpg")
 attempt(
     "write_outside",
     lambda: {
-        **tool([ffmpeg, "-v", "error", "-nostdin", "-i", video, "-frames:v", "1", "-y", stray]),
+        **tool(
+            [
+                ffmpeg,
+                "-v",
+                "error",
+                "-nostdin",
+                "-i",
+                video,
+                "-frames:v",
+                "1",
+                "-update",
+                "1",
+                "-y",
+                stray,
+            ]
+        ),
         "made": os.path.exists(stray),
     },
 )

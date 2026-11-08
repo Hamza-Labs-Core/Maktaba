@@ -274,7 +274,7 @@ func TestARunnersToolsReadAShareFileThroughItsBroker(t *testing.T) {
 	// the worker's way, outside the sandbox: the same tools on the share path (warmed once)
 	thumbArgs := func(in, out string) []string {
 		return []string{ffmpeg, "-hide_banner", "-nostdin", "-threads", "1", "-ss", "10", "-i", in,
-			"-frames:v", "1", "-vf", "scale=320:-2", "-q:v", "2", "-y", out}
+			"-frames:v", "1", "-vf", "scale=320:-2", "-q:v", "2", "-update", "1", "-y", out}
 	}
 	probeArgs := []string{ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", videoUNC}
 	scratch := t.TempDir()
@@ -327,9 +327,12 @@ func TestARunnersToolsReadAShareFileThroughItsBroker(t *testing.T) {
 		t.Fatalf("the probe wrote nothing: %v", err)
 	}
 	t.Logf("probe: %s", b)
-	var found map[string][]json.RawMessage
+	var found map[string]json.RawMessage // each finding a [status, detail] pair; "installed" a bool
 	if err := json.Unmarshal(b, &found); err != nil {
 		t.Fatal(err)
+	}
+	if string(found["installed"]) != "true" {
+		t.Fatalf("the broker shim was not installed: %s", found["installed"])
 	}
 	type ran struct {
 		Code     int     `json:"code"`
@@ -344,7 +347,8 @@ func TestARunnersToolsReadAShareFileThroughItsBroker(t *testing.T) {
 	outcome := func(name string) (string, ran) {
 		var s string
 		var r ran
-		if v := found[name]; len(v) == 2 {
+		var v []json.RawMessage
+		if json.Unmarshal(found[name], &v) == nil && len(v) == 2 {
 			_ = json.Unmarshal(v[0], &s)
 			_ = json.Unmarshal(v[1], &r)
 		}
