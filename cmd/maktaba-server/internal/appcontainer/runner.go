@@ -182,6 +182,10 @@ var (
 	// remoteFn: a folder on another machine (a share, a mapped drive), whose ACL the
 	// launcher never changes; an AppContainer cannot reach SMB shares anyway
 	remoteFn = remotePath
+	// afterCheck runs between a path's last check and the grant or revoke on it (step is
+	// "grant" or "revoke"): the Windows tests swap the folder for a junction there, which
+	// must not redirect the change
+	afterCheck = func(step, path string) {}
 )
 
 // uncPath reports a \\server\share path (not a \\?\ or \\.\ local device path).
@@ -308,6 +312,7 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 		}
 	}
 	for _, g := range revoke {
+		afterCheck("revoke", g.Path)
 		if err := revokeFn(profile, g.Path); err != nil {
 			return fail("revoke", err)
 		}
@@ -331,6 +336,7 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 		if again, err := canonical(g.Path); err != nil || pathKey(again) != pathKey(g.Path) {
 			return fail("policy_path", fmt.Errorf("%s changed after it was checked", g.Path))
 		}
+		afterCheck("grant", g.Path)
 		if err := grantFn(profile, g.Path, g.Write); err != nil {
 			return fail("grant", err)
 		}
