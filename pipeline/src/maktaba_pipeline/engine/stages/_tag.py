@@ -1,5 +1,9 @@
 # ruff: noqa: E501  (long SQL string literals read better unwrapped)
-"""``tag``: topic / format / audience / occasion tags (plan 06-11 section 3.2).
+"""What ``tag`` shares with the pipeline (mediaintel's import): a season's and a library's
+keyword tags, the stored tags and their writes, and the stage's input fingerprint. The stage
+itself is ``tv.maktaba.classify``'s (Epic 54 wave 4, story 54.31).
+
+``tag``: topic / format / audience / occasion tags (plan 06-11 section 3.2).
 
 Runs :mod:`maktaba_pipeline.classify.topic_tags` over what ``detect`` stored; ported from the
 prototype's ``classify_tags._tag_folder``:
@@ -55,25 +59,44 @@ from ...classify.topic_tags import (
     tag_series,
     tag_video,
 )
-from ...db.jobs import Job
 from ...rules import read as read_rules
 from ...settings import to_json
-from ..changes import ChangeSet, apply_or_review
-from ..context import StageContext
-from ..graph import StageResult, Subject
+from ..changes import ChangeSet
+from ..graph import Subject
 from ..hashing import canonical_hash
-from ..propagate import last_success
 from ..sql import dumps, is_pg, loads, uid
 from ._common import load_season, season_episode_ids
-from .registry import StageImpl
 
-__all__ = ["IMPL", "diff_tags", "library_tags"]
+__all__ = [
+    "diff_tags",
+    "drop_departed_episode_tags",
+    "input_fingerprint",
+    "library_tags",
+    "season_tags",
+    "stored_episode_tags",
+    "write_episode_tags",
+]
 
 _EPS = 0.005
 #: ids per ``IN (...)`` query
 _CHUNK = 500
 #: what an episode keeps of its own tags: what it is about, for whom, for when
 _EPISODE_NAMESPACES = ("topic:", "audience:", "occasion:")
+
+#: a list of ids in one parameter, as each dialect takes it: an array on Postgres, a JSON list
+#: on SQLite (fixed texts whatever the list's length: a first-party plugin runs named
+#: statements)
+_PG_UUIDS_1 = "= ANY($1::uuid[])"
+_PG_TEXTS_1 = "= ANY($1::text[])"
+_PG_UUIDS_2 = "= ANY($2::uuid[])"
+_LITE_IN_1 = "IN (SELECT value FROM json_each($1))"
+_LITE_IN_2 = "IN (SELECT value FROM json_each($2))"
+
+
+def _ids_arg(db: Any, ids: Sequence[Any]) -> Any:
+    """The list as the dialect's one parameter."""
+    values = [str(i) for i in ids]
+    return values if is_pg(db) else dumps(values)
 
 
 def diff_tags(
@@ -142,12 +165,12 @@ def _first_per_video(rows: Iterable[Any]) -> dict[str, str]:
 async def _season_transcript_ids(db: Any, video_ids: Sequence[UUID]) -> dict[str, str]:
     if not video_ids:
         return {}
-    marks = ",".join(f"${i + 1}" for i in range(len(video_ids)))
+    inn = _PG_UUIDS_1 if is_pg(db) else _LITE_IN_1
     rows = await db.fetch(
-        "SELECT id, video_id FROM transcripts"
-        f" WHERE is_active AND video_id IN ({marks})"
-        " ORDER BY video_id, audio_track_id, id",
-        *[str(v) for v in video_ids],
+        "SELECT id, video_id FROM transcripts WHERE is_active AND video_id "
+        + inn
+        + " ORDER BY video_id, audio_track_id, id",
+        _ids_arg(db, video_ids),
     )
     return _first_per_video(rows)
 
@@ -176,13 +199,12 @@ async def _transcript_texts(
     limit_s = cfg.transcript_max_minutes * 60.0
     for at in range(0, len(transcript_ids), _BATCH):
         batch = list(transcript_ids[at : at + _BATCH])
-        marks = ",".join(f"${i + 2}" for i in range(len(batch)))
+        inn = _PG_UUIDS_2 if is_pg(db) else _LITE_IN_2
         for r in await db.fetch(
             "SELECT transcript_id AS tid, text FROM transcript_segments"
-            f" WHERE start_sec < $1 AND transcript_id IN ({marks})"
-            " ORDER BY transcript_id, seq",
+            " WHERE start_sec < $1 AND transcript_id " + inn + " ORDER BY transcript_id, seq",
             limit_s,
-            *batch,
+            _ids_arg(db, batch),
         ):
             tid = str(r["tid"])
             if size[tid] >= cfg.transcript_max_chars:
@@ -239,10 +261,10 @@ async def _playlist_titles(db: Any, playlist_ids: Sequence[str]) -> dict[str, st
     out: dict[str, str] = {}
     for i in range(0, len(playlist_ids), _CHUNK):
         part = list(playlist_ids[i : i + _CHUNK])
-        marks = ",".join(f"${n + 1}" for n in range(len(part)))
+        inn = _PG_TEXTS_1 if is_pg(db) else _LITE_IN_1
         for r in await db.fetch(
-            f"SELECT playlist_id, title FROM youtube_playlists WHERE playlist_id IN ({marks})",
-            *part,
+            "SELECT playlist_id, title FROM youtube_playlists WHERE playlist_id " + inn,
+            _ids_arg(db, part),
         ):
             out[str(r["playlist_id"])] = str(r["title"])
     return out
@@ -252,11 +274,12 @@ async def _playlists_of(db: Any, youtube_ids: Sequence[str]) -> dict[str, list[s
     out: dict[str, list[str]] = defaultdict(list)
     for i in range(0, len(youtube_ids), _CHUNK):
         part = list(youtube_ids[i : i + _CHUNK])
-        marks = ",".join(f"${n + 1}" for n in range(len(part)))
+        inn = _PG_TEXTS_1 if is_pg(db) else _LITE_IN_1
         for r in await db.fetch(
-            "SELECT playlist_id, youtube_id FROM youtube_playlist_items"
-            f" WHERE youtube_id IN ({marks}) ORDER BY playlist_id",
-            *part,
+            "SELECT playlist_id, youtube_id FROM youtube_playlist_items WHERE youtube_id "
+            + inn
+            + " ORDER BY playlist_id",
+            _ids_arg(db, part),
         ):
             out[str(r["youtube_id"])].append(str(r["playlist_id"]))
     return out
@@ -267,11 +290,11 @@ async def _youtube_ids(db: Any, video_ids: Sequence[UUID]) -> list[str]:
     out: list[str] = []
     for i in range(0, len(video_ids), _CHUNK):
         part = [str(v) for v in video_ids[i : i + _CHUNK]]
-        marks = ",".join(f"${n + 1}" for n in range(len(part)))
+        inn = _PG_UUIDS_1 if is_pg(db) else _LITE_IN_1
         for r in await db.fetch(
             "SELECT external_id FROM media_metadata_enrichment"
-            f" WHERE provider = 'youtube' AND video_id IN ({marks}) ORDER BY external_id",
-            *part,
+            " WHERE provider = 'youtube' AND video_id " + inn + " ORDER BY external_id",
+            _ids_arg(db, part),
         ):
             out.append(str(r["external_id"]))
     return out
@@ -349,7 +372,7 @@ def _episode_tags(
     return out
 
 
-async def _season_tags(db: Any, season_id: UUID, cfg: TaggerConfig) -> SeasonTagging | None:
+async def season_tags(db: Any, season_id: UUID, cfg: TaggerConfig) -> SeasonTagging | None:
     s = await load_season(db, season_id)
     if s is None or s.retired or s.library_id is None:
         return None
@@ -362,7 +385,7 @@ async def _season_tags(db: Any, season_id: UUID, cfg: TaggerConfig) -> SeasonTag
         [by_video[str(i)] for i in ids if str(i) in by_video], cfg.transcript_max_episodes
     )
     texts = await _transcript_texts(db, chosen, cfg)
-    marks = ",".join(f"${i + 1}" for i in range(len(ids)))
+    inn = _PG_UUIDS_1 if is_pg(db) else _LITE_IN_1
     rows = {
         str(r["id"]): r
         for r in await db.fetch(
@@ -372,8 +395,8 @@ async def _season_tags(db: Any, season_id: UUID, cfg: TaggerConfig) -> SeasonTag
             " m.external_id AS yid FROM videos v"
             " LEFT JOIN media_metadata_enrichment m ON m.video_id = v.id AND m.provider = 'youtube'"
             " LEFT JOIN youtube_videos yv ON yv.youtube_id = m.external_id"
-            f" WHERE v.id IN ({marks})",
-            *[str(i) for i in ids],
+            " WHERE v.id " + inn,
+            _ids_arg(db, ids),
         )
     }
     eps = [rows[str(i)] for i in ids if str(i) in rows]
@@ -413,7 +436,7 @@ async def _season_tags(db: Any, season_id: UUID, cfg: TaggerConfig) -> SeasonTag
     )
 
 
-async def _stored_episode_tags(db: Any, season_id: UUID) -> dict[str, dict[str, float]]:
+async def stored_episode_tags(db: Any, season_id: UUID) -> dict[str, dict[str, float]]:
     out: dict[str, dict[str, float]] = defaultdict(dict)
     for r in await db.fetch(
         "SELECT t.video_id AS vid, t.tag AS tag, t.score AS score FROM episode_tags t"
@@ -426,7 +449,7 @@ async def _stored_episode_tags(db: Any, season_id: UUID) -> dict[str, dict[str, 
     return dict(out)
 
 
-async def _write_episode_tags(
+async def write_episode_tags(
     db: Any,
     old: Mapping[str, Mapping[str, float]],
     new: Mapping[str, Mapping[str, float]],
@@ -456,73 +479,12 @@ DELETE FROM episode_tags WHERE video_id IN (
 """
 
 
-async def _drop_departed_episode_tags(db: Any, library_id: UUID | None) -> None:
+async def drop_departed_episode_tags(db: Any, library_id: UUID | None) -> None:
     """Remove the episode tags of the library's videos that are an episode of no season
     any more (they left theirs): a season only rewrites its own members' tags, so these
     would stay. A video that moved to another season is that season's to rewrite."""
     if library_id is not None:
         await db.execute(_DEPARTED_SQL, uid(library_id))
-
-
-async def _run_season(db: Any, job: Job, ctx: StageContext) -> StageResult:
-    season_id = job.subject.id
-    res = await _season_tags(db, season_id, await ctx.rules("tag"))
-    if res is None:
-        return StageResult(output_hash=canonical_hash("retired"), summary={"tagged": False})
-    new = res.scores
-    out = res.digest()
-    prev = await last_success(db, job)
-    if (
-        prev is not None
-        and str(prev["output_hash"]) == out
-        and await db.fetchval(
-            "SELECT count(*) FROM season_tags WHERE season_id = $1", uid(season_id)
-        )
-    ):
-        # the same keyword tags as last time: the stored ones may carry the model's and the
-        # book's corrections, which a rewrite would drop
-        return StageResult(output_hash=out, summary={"tags": len(new), "kept": True})
-    evidence = {t.tag: t.evidence for t in res.tags}
-    old = {
-        str(r["tag"]): float(r["score"])
-        for r in await db.fetch(
-            "SELECT tag, score FROM season_tags WHERE season_id = $1", uid(season_id)
-        )
-    }
-    old_eps = await _stored_episode_tags(db, season_id)
-    changes = diff_tags("tag:season", old, new)
-
-    async def apply(_cs: ChangeSet) -> None:
-        async with db.transaction():
-            await db.execute("DELETE FROM season_tags WHERE season_id = $1", uid(season_id))
-            for t, score in new.items():
-                await db.execute(
-                    "INSERT INTO season_tags (season_id, tag, score, evidence) VALUES ($1,$2,$3,$4)",
-                    uid(season_id),
-                    t,
-                    score,
-                    dumps({"why": evidence.get(t, "")}),
-                )
-            await _write_episode_tags(db, old_eps, res.episodes)
-            await _drop_departed_episode_tags(db, res.library_id)
-
-    mode = await apply_or_review(ctx, changes, apply)
-    if mode == "review":
-        return StageResult(output_hash=canonical_hash("review"), outcome="awaiting_review")
-    if mode == "noop":
-        async with db.transaction():  # the season's tags stand; its episodes' own may have moved
-            await _write_episode_tags(db, old_eps, res.episodes)
-            await _drop_departed_episode_tags(db, res.library_id)
-    genre = next((t[6:] for t in sorted(new) if t.startswith("genre:")), None)
-    return StageResult(
-        output_hash=out,
-        summary={
-            "tags": len(new),
-            "genre": genre,
-            "episodes_tagged": len(res.episodes),
-            "changes": changes.counts,
-        },
-    )
 
 
 # ------------------------------------------------------------------------- library
@@ -625,75 +587,3 @@ async def library_tags(
             )
             new[str(r["id"])] = {t.tag: float(t.score) for t in tags}
     return new
-
-
-async def _run_library(db: Any, job: Job, ctx: StageContext) -> StageResult:
-    library_id = job.subject.id
-    new = await library_tags(db, library_id, await ctx.rules("detect"), await ctx.rules("tag"))
-    out = canonical_hash(
-        [[v, sorted([t, round(s, 3)] for t, s in tags.items())] for v, tags in sorted(new.items())]
-    )
-    old: dict[str, dict[str, float]] = defaultdict(dict)
-    for r in await db.fetch(
-        "SELECT t.video_id AS vid, t.tag AS tag, t.score AS score FROM video_topic_tags t"
-        " JOIN videos v ON v.id = t.video_id WHERE v.library_id = $1",
-        uid(library_id),
-    ):
-        old[str(r["vid"])][str(r["tag"])] = float(r["score"])
-    prev = await last_success(db, job)
-    if prev is not None and str(prev["output_hash"]) == out and old:
-        # the same keyword tags as last time: the stored ones may carry the model's
-        # corrections (check_clips), which a rewrite would drop
-        return StageResult(output_hash=out, summary={"videos": len(new), "kept": True})
-
-    added: list[dict[str, Any]] = []
-    removed: list[dict[str, Any]] = []
-    changed: list[dict[str, Any]] = []
-    for vid in sorted(set(new) | set(old)):
-        o, n = old.get(vid, {}), new.get(vid, {})
-        if o == n:
-            continue
-        d = diff_tags("tag:video", o, n)
-        entry = {
-            "video_id": vid,
-            "added": [x["tag"] for x in d.added],
-            "removed": [x["tag"] for x in d.removed],
-            "changed": [x["tag"] for x in d.changed],
-        }
-        if not d.added and not d.removed and not d.changed:
-            continue
-        (added if vid not in old else removed if vid not in new else changed).append(entry)
-    changes = ChangeSet(
-        "tag:library", tuple(added), tuple(removed), tuple(changed), (), {"videos": len(new)}
-    )
-
-    async def apply(_cs: ChangeSet) -> None:
-        async with db.transaction():
-            for vid in sorted(set(old) - set(new)):
-                await db.execute("DELETE FROM video_topic_tags WHERE video_id = $1", vid)
-            for vid, tags in new.items():
-                if old.get(vid) == tags:
-                    continue
-                await db.execute("DELETE FROM video_topic_tags WHERE video_id = $1", vid)
-                for t, score in tags.items():
-                    await db.execute(
-                        "INSERT INTO video_topic_tags (video_id, tag, score) VALUES ($1,$2,$3)",
-                        vid,
-                        t,
-                        score,
-                    )
-
-    mode = await apply_or_review(ctx, changes, apply)
-    if mode == "review":
-        return StageResult(output_hash=canonical_hash("review"), outcome="awaiting_review")
-    return StageResult(output_hash=out, summary={"videos": len(new), "changes": changes.counts})
-
-
-async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
-    if job.subject_kind == "season":
-        return await _run_season(db, job, ctx)
-    return await _run_library(db, job, ctx)
-
-
-IMPL = StageImpl(run=run, input_fingerprint=input_fingerprint)
-_ = is_pg
