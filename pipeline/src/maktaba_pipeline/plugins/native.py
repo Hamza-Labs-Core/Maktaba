@@ -1011,7 +1011,14 @@ def fingerprint_fn(stage: str, kind: str, inproc: Any) -> Any:
         try:
             (h,) = await fingerprints(stage, kind, [subject])
             return h
-        except (OSError, ConnectionError, Unregistered, ValueError, KeyError) as exc:
+        except (
+            OSError,
+            ConnectionError,
+            asyncio.IncompleteReadError,  # a runner that closed without an answer
+            Unregistered,
+            ValueError,
+            KeyError,
+        ) as exc:
             _log.info("plugin_fingerprint_inproc", stage=stage, why=str(exc)[:200])
             return await inproc(db, subject)
 

@@ -2906,6 +2906,16 @@ build fails when the two differ.
   worker. A tool the sandbox refuses to start is now a refusal, so that job runs in the worker,
   rather than failing as the tool's own exit.
 
+- **A fingerprint a Windows runner may not read is taken by the worker, never left pending
+  (story 54.23).** On Windows, every plugin runner refuses a share path it is not brokered,
+  and the fingerprint runner closed the connection without an answer when a stage's
+  fingerprint was refused (the small thumbnail's sidecar look on a share). The worker did not
+  read that as a refusal, so the job failed and went back to pending again and again. Homes
+  were spared by the share-library guard, which keeps those stages and their fingerprints in
+  the worker; the Windows end to end, which asks the runners anyway, found it. The runner
+  now answers the refusal and logs it, and the worker reads the fingerprint itself for any
+  runner that closes without an answer.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were
