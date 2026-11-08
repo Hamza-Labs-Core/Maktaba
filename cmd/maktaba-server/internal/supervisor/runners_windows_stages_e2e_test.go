@@ -31,6 +31,9 @@ type stageE2ECase struct {
 	File    string         `json:"file"`
 	Payload map[string]any `json:"payload,omitempty"`
 	group   string
+	// handOff: the runner's sandbox refuses this job by design and the worker runs it
+	// (a share folder the group writes in full is never brokered, spec 54.23 §3)
+	handOff bool
 }
 
 // Story 54.23 on Windows, end to end with Maktaba's own stages (CI's runner-stages job,
@@ -47,7 +50,10 @@ type stageE2ECase struct {
 // thumb_small (ffmpeg, the JPEG on its stdout) and convert_mp4's dry run (ffprobe's JSON on
 // its stdout, of an mp4 whose index is at its end). Each job must have run in its runner
 // (ranInRunner: the plugin chosen, run_native ok, no fallback, a token, the runner's own
-// log line) and made the right output (smallThumbnailProblems, convertPlanProblems).
+// log line) and made the right output (smallThumbnailProblems, convertPlanProblems). The
+// one exception is by design: the files group writes the libraries in full, so its share
+// is never brokered, and convert_mp4 there must be refused in the runner and run by the
+// worker (handedToWorker), never failed as a missing file.
 func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 	env := map[string]string{}
 	var missing []string
@@ -97,8 +103,10 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 	for _, lib := range []string{"local", "share"} {
 		cases = append(cases,
 			stageE2ECase{Name: "thumb_small/" + lib, Stage: "thumb_small", Library: lib, File: `show\moov_end.mp4`, group: "light"},
+			// the files group writes the libraries in full, so its share is never brokered:
+			// on the share the runner refuses the job and hands it to the worker
 			stageE2ECase{Name: "convert_mp4/" + lib, Stage: "convert_mp4", Library: lib, File: `show\moov_end.mp4`,
-				Payload: map[string]any{"dry_run": true}, group: "files"})
+				Payload: map[string]any{"dry_run": true}, group: "files", handOff: lib == "share"})
 	}
 
 	// the folders the stages and the runners' areas name, all in this test's folder
@@ -283,8 +291,9 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 		if !strings.Contains(runnerLogs[g], `"sandbox": "full"`) {
 			t.Errorf("the %s runner did not report its full sandbox", g)
 		}
-		if !strings.Contains(runnerLogs[g], "plugin_runner_files_brokered") {
-			t.Errorf("the %s runner's share was not brokered", g)
+		// light reads the share by name (brokered); files writes it in full (never brokered)
+		if want := map[string]string{"light": "plugin_runner_files_brokered", "files": "plugin_runner_area_remote"}[g]; !strings.Contains(runnerLogs[g], want) {
+			t.Errorf("the %s runner's log has no %s for the share", g, want)
 		}
 	}
 	byName := map[string]stageReport{}
@@ -297,7 +306,11 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 			t.Errorf("%s: not in the worker's report", c.Name)
 			continue
 		}
-		problems := ranInRunner(c.group, r, runnerLogs[c.group])
+		verdict, choice := ranInRunner, "ran in its runner"
+		if c.handOff {
+			verdict, choice = handedToWorker, "refused in its runner by design, run by the worker"
+		}
+		problems := verdict(c.group, r, runnerLogs[c.group])
 		summary := r.summary()
 		switch c.Stage {
 		case "thumb_small":
@@ -320,8 +333,8 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 			}
 		}
 		out, _ := json.Marshal(summary)
-		t.Logf("case %s: job %d, choice plugin, run_native %v, fallbacks %v, tokens %d, state %v; %s; output %s",
-			c.Name, r.JobID, runStatuses(r), r.Fallbacks, r.Invocations, r.Job["state"], line, out)
+		t.Logf("case %s (%s): job %d, choice plugin, run_native %v, fallbacks %v, tokens %d, state %v; %s; output %s",
+			c.Name, choice, r.JobID, runStatuses(r), r.Fallbacks, r.Invocations, r.Job["state"], line, out)
 	}
 }
 

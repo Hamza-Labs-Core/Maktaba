@@ -168,6 +168,15 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A share file a sandboxed runner may not read runs in the worker, never as missing (story
+  54.23).** On Windows, when a runner's sandbox refused a file in a library on a share, two
+  stages treated the refusal as a missing file instead of handing the job to the worker. The
+  small thumbnail ended done with no thumbnail, because its sidecar look found nothing. The MP4
+  conversion failed as a missing file: the files runner never reaches a share, since it writes
+  the libraries in full. Both now report the refusal, and the worker runs the job, as the
+  runner's design says. A Windows CI job now runs both stages on a local library and on an SMB
+  share, through the worker's plugin path into their sandboxed runners.
+
 - **After an update, the plugin runners wait for the new release's Python packages.** In the
   Mac app, the plugin runners (light, ml-1, ml-2, index) started while the update was still
   installing the new release's packages into the venv. Each died at once on a missing module,

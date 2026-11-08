@@ -414,6 +414,8 @@ def test_what_the_broker_refuses_runs_in_the_worker(
     with pytest.raises(FileNotFoundError):
         shim.stat_(SHARE + "\\a\\gone.mkv")
     assert not shim.exists_(SHARE + "\\a\\gone.mkv")
+    assert not shim.isfile_(SHARE + "\\a\\gone.mkv")
+    assert not shim.isdir_(SHARE + "\\a\\gone.mkv")
     n = len(asked)
     for mode in ("ab", "xb", "r+b", "w+b"):
         with pytest.raises(PermissionError):
@@ -431,6 +433,27 @@ def test_what_the_broker_refuses_runs_in_the_worker(
         "subprocess.Popen", ("ffmpeg", ["ffmpeg", "-i", str(tmp_path / "a.mkv")], None, None)
     )
     assert len(asked) == n
+
+
+def test_a_refused_look_is_never_an_absent_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stat the broker refuses raises from ``exists``/``isfile``/``isdir`` instead of
+    answering False: thumb_small looks for a sidecar with ``isfile``, and False there made
+    the job end done with no thumbnail instead of running in the worker."""
+    from maktaba_pipeline.discovery.ytdlp_sidecars import find_sidecar_thumbnail
+    from maktaba_pipeline.plugins.native import sandbox_refused
+
+    monkeypatch.setattr(sys, "audit", lambda *_: None)
+    shim, _ = _shim(tmp_path, {"stat": {"error": "a link or another reparse point", "errno": 13}})
+    video = SHARE + "\\a\\ep1.mp4"
+    for look in (shim.exists_, shim.isfile_, shim.isdir_):
+        with pytest.raises(PermissionError) as refused:
+            look(video)
+        assert sandbox_refused(refused.value)
+    monkeypatch.setattr(os.path, "isfile", shim.isfile_)
+    with pytest.raises(PermissionError):
+        find_sidecar_thumbnail(video)
 
 
 def test_the_broker_pipe_carries_one_line_each_way() -> None:

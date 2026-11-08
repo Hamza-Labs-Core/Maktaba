@@ -144,6 +144,54 @@ func ranInRunner(group string, r stageReport, runnerLog string) []string {
 	return p
 }
 
+// handedToWorker is the verdict for a job its runner's sandbox refuses by design (a share
+// folder the group writes in full is never brokered, spec 54.23 §3): the worker chose the
+// runner, the runner ran the stage and refused it (its own log line says sandbox_refused),
+// run_native raised SandboxRefused once, the worker counted that one fallback and then ran
+// the job itself to done. Anything else fails it: a job that never reached the runner, one
+// the runner failed instead of refusing (a refusal hidden as a missing file), or one the
+// runner ran on a share it must not reach.
+func handedToWorker(group string, r stageReport, runnerLog string) []string {
+	var p []string
+	if r.Error != "" {
+		p = append(p, "the worker's driver failed: "+r.Error)
+	}
+	if r.JobID == 0 {
+		return append(p, "no job ran")
+	}
+	if len(r.Choices) != 1 || r.Choices[0].Impl != "plugin" {
+		p = append(p, fmt.Sprintf("the worker's choices %v: want the runner, once", r.Choices))
+	}
+	if len(r.Runs) != 1 || r.Runs[0].Status != "raised" || !strings.HasPrefix(r.Runs[0].Error, "SandboxRefused:") {
+		p = append(p, fmt.Sprintf("run_native %v: want one SandboxRefused", r.Runs))
+	}
+	want := r.Stage + ":sandbox_refused"
+	if len(r.Fallbacks) != 1 || r.Fallbacks[want] != 1 {
+		p = append(p, fmt.Sprintf("the worker's fallbacks %v: want %s x1", r.Fallbacks, want))
+	}
+	if r.Invocations < 1 {
+		p = append(p, "no plugin token was minted for the job")
+	}
+	if st, _ := r.Job["state"].(string); st != "done" {
+		p = append(p, fmt.Sprintf("the job ended %q (error %v)", st, r.Job["error"]))
+	}
+	found := false
+	for _, l := range runnerJobLines(runnerLog) {
+		if l.JobID != r.JobID {
+			continue
+		}
+		found = true
+		if l.Group != group || l.Stage != r.Stage || l.Status != "sandbox_refused" {
+			p = append(p, fmt.Sprintf("the runner's log: group %s, stage %s, status %s; want %s, %s, sandbox_refused",
+				l.Group, l.Stage, l.Status, group, r.Stage))
+		}
+	}
+	if !found {
+		p = append(p, fmt.Sprintf("the %s runner's log never names job %d", group, r.JobID))
+	}
+	return p
+}
+
 // within reports whether path is dir or inside it.
 func within(dir, path string) bool {
 	rel, err := filepath.Rel(filepath.Clean(dir), filepath.Clean(path))
@@ -308,6 +356,54 @@ func TestTheStageVerdictFailsEveryWorkerFallback(t *testing.T) {
 			r.Job = map[string]any{"state": "done"}
 			c.edit(&r)
 			p := ranInRunner("light", r, c.log)
+			if !strings.Contains(strings.Join(p, "\n"), c.want) {
+				t.Fatalf("problems %q, want one saying %q", p, c.want)
+			}
+		})
+	}
+}
+
+// A job the files runner must refuse (a share it writes in full) passes only as the
+// designed hand-off: refused in the runner, then run by the worker to done.
+func TestTheHandOffVerdict(t *testing.T) {
+	refused := func() stageReport {
+		r := goodStageReport()
+		r.Stage = "convert_mp4"
+		r.Job = map[string]any{"state": "done"}
+		r.Runs[0].Status, r.Runs[0].Error = "raised", `SandboxRefused: [WinError 5] Access is denied: '\\nas\m\a.mp4'`
+		r.Fallbacks = map[string]int{"convert_mp4:sandbox_refused": 1}
+		return r
+	}
+	log := `{"event": "plugin_runner_job", "service": "plugin-runner", "group": "files", "stage": "convert_mp4", "job_id": 7, "status": "sandbox_refused", "ms": 9.0}`
+	if p := handedToWorker("files", refused(), log); len(p) != 0 {
+		t.Fatalf("a designed hand-off has problems: %q", p)
+	}
+	cases := map[string]struct {
+		edit func(*stageReport)
+		log  string
+		want string
+	}{
+		"run in the runner": {func(r *stageReport) {
+			r.Runs[0].Status, r.Runs[0].Error = "ok", ""
+			r.Fallbacks = nil
+		}, strings.Replace(log, "sandbox_refused", "ok", 1), "want one SandboxRefused"},
+		"a refusal hidden as a missing file": {func(r *stageReport) {
+			r.Runs[0].Error = "StageFailure: file_missing: cannot open"
+			r.Fallbacks = nil
+			r.Job["state"] = "failed"
+		}, strings.Replace(log, "sandbox_refused", "failure", 1), "status failure"},
+		"never sent to the runner": {func(r *stageReport) {
+			r.Choices[0].Impl, r.Choices[0].Why = "inproc", "runner_not_serving_here"
+			r.Runs = nil
+		}, log, "want the runner, once"},
+		"the worker's run failed": {func(r *stageReport) { r.Job["state"] = "failed" }, log, `ended "failed"`},
+		"no runner log line":      {func(*stageReport) {}, `{"event": "plugin_runner_serving"}`, "never names job 7"},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := refused()
+			c.edit(&r)
+			p := handedToWorker("files", r, c.log)
 			if !strings.Contains(strings.Join(p, "\n"), c.want) {
 				t.Fatalf("problems %q, want one saying %q", p, c.want)
 			}

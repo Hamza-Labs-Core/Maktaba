@@ -179,12 +179,17 @@ class _Shim:
         sec = ns // 1_000_000_000
         return os.stat_result((mode, 0, 0, 1, 0, 0, size, sec, sec, sec))
 
-    # Python 3.12 on Windows answers these without os.stat (nt._path_exists and the like)
+    # Python 3.12 on Windows answers these without os.stat (nt._path_exists and the like).
+    # A missing file is False, as the plain calls answer; a refusal is raised: answered
+    # False, a stage would go on as if the file were absent (a thumbnail not found, a job
+    # done with the wrong result) instead of running in the worker (sandbox_refused).
     def exists_(self, path: Any) -> bool:
         if self.under(path) is None:
             return self.exists(path)
         try:
             self.stat_(path)
+        except PermissionError:
+            raise  # refused, not absent: the job runs in the worker (sandbox_refused)
         except (OSError, ValueError):
             return False
         return True
@@ -194,6 +199,8 @@ class _Shim:
             return self.isfile(path)
         try:
             return stat_mod.S_ISREG(self.stat_(path).st_mode)
+        except PermissionError:
+            raise
         except (OSError, ValueError):
             return False
 
@@ -202,6 +209,8 @@ class _Shim:
             return self.isdir(path)
         try:
             return stat_mod.S_ISDIR(self.stat_(path).st_mode)
+        except PermissionError:
+            raise
         except (OSError, ValueError):
             return False
 
