@@ -155,6 +155,61 @@ jobs:
           path: ${{ steps.postgres-cache-pin.outputs.path }}
           key: ${{ steps.postgres-cache-pin.outputs.key }}
 
+      # tauri's NSIS bundler downloads its toolset from GitHub releases with no retry (a 504
+      # failed this job): the two files tauri-cli 2.12.3 pins (nsis/mod.rs: NSIS_URL and
+      # NSIS_TAURI_UTILS_URL, checked there by SHA-1 DB14F8AF... and 75197FEE...), here by
+      # SHA-256, cached, retried, and laid out in %LOCALAPPDATA%\tauri\NSIS as the bundler
+      # lays them out, so it finds every file with its hash and downloads nothing. A tauri
+      # that pins others finds NSIS.exe's hash changed and downloads its own, as before.
+      - id: nsis-pin
+        env:
+          NSIS_URL: https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.13/nsis-3.13.zip
+          NSIS_SHA256: ba63dffc4410ee89193e1cb5a41989991bd77c61068da17e3156d136b7b0b3d8
+          UTILS_URL: https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.3/nsis_tauri_utils.dll
+          UTILS_SHA256: 5ba143b5db4a87d32d6e7802e033330aae56cbceabe0d1e3ba41948385ad4709
+        run: |
+          {
+            echo "key=$(tools/ci/fetch-pinned.sh --key "$NSIS_URL" "$NSIS_SHA256")-utils-0.5.3-${UTILS_SHA256:0:16}"
+            echo "nsis_url=$NSIS_URL"
+            echo "nsis_sha256=$NSIS_SHA256"
+            echo "utils_url=$UTILS_URL"
+            echo "utils_sha256=$UTILS_SHA256"
+          } >>"$GITHUB_OUTPUT"
+      - id: nsis-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/ci-pinned/nsis
+          key: ${{ steps.nsis-pin.outputs.key }}
+      - name: tauri's NSIS toolset, retried
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          NSIS_URL: ${{ steps.nsis-pin.outputs.nsis_url }}
+          NSIS_SHA256: ${{ steps.nsis-pin.outputs.nsis_sha256 }}
+          UTILS_URL: ${{ steps.nsis-pin.outputs.utils_url }}
+          UTILS_SHA256: ${{ steps.nsis-pin.outputs.utils_sha256 }}
+        run: |
+          set -euo pipefail
+          d=build/ci-pinned/nsis
+          zip="$(tools/ci/fetch-pinned.sh "$NSIS_URL" "$NSIS_SHA256" "$d/nsis-3.13.zip")"
+          dll="$(tools/ci/fetch-pinned.sh "$UTILS_URL" "$UTILS_SHA256" "$d/nsis_tauri_utils.dll")"
+          tools="$(cygpath -u "$LOCALAPPDATA")/tauri"
+          if [ -e "$tools/NSIS" ]; then
+            echo "tauri's NSIS is already in $tools/NSIS: tauri checks it"
+          else
+            mkdir -p "$tools"
+            unzip -q "$zip" -d "$tools"
+            mv "$tools/nsis-3.13" "$tools/NSIS"
+            mkdir -p "$tools/NSIS/Plugins/x86-unicode/additional"
+            cp "$dll" "$tools/NSIS/Plugins/x86-unicode/additional/nsis_tauri_utils.dll"
+            echo "tauri's NSIS laid out in $tools/NSIS"
+          fi
+      - name: Save tauri's NSIS toolset
+        if: steps.nsis-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/ci-pinned/nsis
+          key: ${{ steps.nsis-pin.outputs.key }}
+
       # make is MinGW's (C:\mingw64\bin) on the image; payload.sh builds the Go binaries with it,
       # and pgvector with the image's Visual C++ (vcvars64, nmake). Here a pgvector that does
       # not build fails the gate; a release (desktop-release) ships without it instead.

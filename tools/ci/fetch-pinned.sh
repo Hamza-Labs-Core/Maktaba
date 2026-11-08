@@ -83,7 +83,7 @@ api_asset_url() {
         json="$(curl -fsS --connect-timeout 30 --max-time 60 ${auth[@]+"${auth[@]}"} \
             -H 'Accept: application/vnd.github+json' "$api_base/repos/$repo/releases/tags/$tag")" ||
             { api_looked=""; log "$name: the API's release $repo $tag did not answer"; return; }
-        api_url="$(jq -r --arg f "$file" '.assets[] | select(.name == $f) | .url' <<<"$json" | head -n1)"
+        api_url="$(jq -r --arg f "$file" 'first(.assets[] | select(.name == $f) | .url) // empty' <<<"$json")"
         [ -n "$api_url" ] || log "$name: the API's release $repo $tag has no asset $file"
     }
 }
