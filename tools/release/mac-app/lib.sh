@@ -10,17 +10,13 @@ sha256() { shasum -a 256 "$1" | awk '{print $1}'; }
 
 # fetch URL SHA256 NAME: the file in the cache, downloaded once, always checked. A
 # cached file that does not match (a partial or a tampered download) is fetched again;
-# a download that does not match stops the build.
+# a download that does not match stops the build. tools/release/fetch-pinned.sh does it:
+# 5 tries 10-80 s apart for a 5xx, 408, 429, reset or timeout, and for a github.com
+# release asset the API's route to it too (GitHub's release downloads answered 504 for
+# minutes on 2026-11-08, past curl's --retry 3).
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fetch() {
-    local url="$1" want="$2" dst="$CACHE/$3" got
-    if [ ! -f "$dst" ] || [ "$(sha256 "$dst")" != "$want" ]; then
-        log "downloading $3"
-        curl -fsSL --retry 3 -o "$dst.part" "$url" || die "$3: download failed ($url)"
-        mv "$dst.part" "$dst"
-    fi
-    got="$(sha256 "$dst")"
-    [ "$got" = "$want" ] || die "$3: sha256 $got, pins.env says $want"
-    printf '%s\n' "$dst"
+    "$LIB_DIR/../fetch-pinned.sh" "$1" "$2" "$CACHE/$3" || die "$3: download failed ($1)"
 }
 
 # check_pins: every piece has an https URL and a SHA-256, and its URL names its version.

@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from maktaba_fp_core_media.stages import thumb_hash
@@ -26,7 +27,7 @@ from maktaba_pipeline.engine.graph import THUMB_SMALL_VERSION, Subject
 from maktaba_pipeline.engine.hashing import canonical_hash
 from maktaba_pipeline.engine.media import ProcResult, reset_runner, set_runner
 from maktaba_pipeline.engine.reconcile import _thumbs_dir_sweep
-from maktaba_pipeline.engine.sql import dumps, loads
+from maktaba_pipeline.engine.sql import dumps, is_pg, loads, to_ts
 from maktaba_pipeline.engine.stages._common import load_video
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.scanner.walker import DEFAULT_IGNORE_DIRNAMES
@@ -269,3 +270,110 @@ def test_the_watcher_ignores_thumbs_and_synology_index_folders(tmp_path: Path) -
         chan / THUMBS_DIR / f"{STEM}.jpg",
     ):
         assert not obs._is_eligible(str(p), allow_no_ext=True), p
+
+
+# ------------------------------------------------------------------ v0.3.105's share misses
+
+
+SHARE_VIDEO = "\\\\nas\\media\\shows\\ep1.mp4"
+
+
+async def _done_thumb_small(db: Database, vid: UUID, summary: dict[str, Any], at: datetime) -> None:
+    await db.execute(
+        "INSERT INTO processing_jobs (subject_kind, subject_id, video_id, stage, state,"
+        " outcome, stage_version, input_hash, output_hash, output_summary, finished_at)"
+        " VALUES ('video', $1, $1, 'thumb_small', 'done', 'changed', 1, 'i', 'o', $2, $3)",
+        str(vid),
+        dumps(summary),
+        to_ts(db, at),
+    )
+
+
+async def _queued(db: Database, stage: str) -> list[Any]:
+    return list(
+        await db.fetch(
+            "SELECT * FROM processing_jobs WHERE stage = $1 AND state = 'pending' ORDER BY id",
+            stage,
+        )
+    )
+
+
+AFTER = datetime(2026, 11, 8, 8, 0, tzinfo=UTC)
+BEFORE = datetime(2026, 11, 8, 6, 0, tzinfo=UTC)
+GRAPH = cast(Any, {"thumb_small": None, "dedup_apply": None})
+
+
+@pytest.mark.asyncio
+async def test_a_share_thumbnail_a_runner_missed_is_made_again_once(db: Database) -> None:
+    """v0.3.105's runner read a refused sidecar look as no thumbnail: such a result on a
+    share since #977 is queued once, forced (its fingerprint is unchanged, so a plain rerun
+    would be skipped); a local video, an older result and a real thumbnail are left alone."""
+    from maktaba_pipeline.engine.reconcile import SHARE_MISS_WHY, _share_miss_sweep
+
+    lib = await make_library(db)
+    missed = await make_video(db, lib, path=SHARE_VIDEO)
+    await _done_thumb_small(db, missed, {"small": None, "reason": "no_thumbnail"}, AFTER)
+    local = await make_video(db, lib, path="C:\\media\\ep2.mp4")
+    await _done_thumb_small(db, local, {"small": None, "reason": "no_thumbnail"}, AFTER)
+    older = await make_video(db, lib, path="\\\\nas\\media\\shows\\ep3.mp4")
+    await _done_thumb_small(db, older, {"small": None, "reason": "no_thumbnail"}, BEFORE)
+    made = await make_video(db, lib, path="\\\\nas\\media\\shows\\ep4.mp4")
+    await _done_thumb_small(db, made, {"small": "/c/small.jpg", "source": "ep4.jpg"}, AFTER)
+
+    assert await _share_miss_sweep(db, GRAPH) == 1
+    queued = await _queued(db, "thumb_small")
+    assert [str(r["subject_id"]) for r in queued] == [str(missed)]
+    assert bool(queued[0]["force"])
+    assert SHARE_MISS_WHY in str(queued[0]["reasons"])
+    assert await _share_miss_sweep(db, GRAPH) == 0  # queued already
+
+    # it ran again and still found none (a video with no thumbnail at all): never again
+    await db.execute(
+        "UPDATE processing_jobs SET state = 'done', finished_at = $2,"
+        " output_summary = $3 WHERE id = $1",
+        int(queued[0]["id"]),
+        to_ts(db, datetime(2026, 11, 8, 9, 0, tzinfo=UTC)),
+        dumps({"small": None, "reason": "no_thumbnail"}),
+    )
+    assert await _share_miss_sweep(db, GRAPH) == 0
+
+
+@pytest.mark.asyncio
+async def test_a_share_merge_failed_as_keeper_unreadable_is_tried_again_once(
+    db: Database,
+) -> None:
+    """A dedup_apply that failed as keeper_unreadable in a library on a share since #977 is
+    queued once more with the approval it carried; one in a local library is left alone."""
+    from maktaba_pipeline.engine.reconcile import _share_miss_sweep
+
+    async def group(roots: list[str]) -> UUID:
+        lib = await make_library(db)
+        await db.execute(
+            "UPDATE libraries SET roots = $2 WHERE id = $1",
+            str(lib),
+            roots if is_pg(db) else dumps(roots),
+        )
+        gid = uuid4()
+        await db.execute(
+            "INSERT INTO duplicate_groups (id, library_id, tier, status, members_key, reason)"
+            " VALUES ($1, $2, 'exact', 'failed', 'k', 'the keeper''s file cannot be read')",
+            str(gid),
+            str(lib),
+        )
+        await db.execute(
+            "INSERT INTO processing_jobs (subject_kind, subject_id, stage, state, stage_version,"
+            " error_cause, payload, finished_at) VALUES ('dup_group', $1, 'dedup_apply',"
+            " 'failed', 1, 'keeper_unreadable: x', $2, $3)",
+            str(gid),
+            dumps({"apply": True, "group_id": str(gid)}),
+            to_ts(db, AFTER),
+        )
+        return gid
+
+    on_share = await group(["\\\\nas\\media\\shows"])
+    await group(["C:\\media"])
+    assert await _share_miss_sweep(db, GRAPH) == 1
+    queued = await _queued(db, "dedup_apply")
+    assert [str(r["subject_id"]) for r in queued] == [str(on_share)]
+    assert loads(queued[0]["payload"]) == {"apply": True, "group_id": str(on_share)}
+    assert await _share_miss_sweep(db, GRAPH) == 0

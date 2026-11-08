@@ -249,11 +249,16 @@
   "admin.symbols.title": "رموز الأعطال",
   "admin.symbols.about": "رموز تطبيقات Apple من ملفات dSYM لكل إصدار، وخرائط R8 لتطبيقات Android، ورموز مكتباتها الأصلية الخاصة (بمعرّف البناء). لا تُقرأ أعطال البلاغ أسماءَ دوالّ وأسطرًا إلا للملفات التنفيذية والإصدارات والمكتبات المدرجة هنا. تُرفع باستخدام maktaba-symbols.",
   "admin.symbols.none": "لم تُرفع أي رموز بعد.",
+  "admin.symbols.kind": "النوع",
+  "admin.symbols.kind.dsym": "dSYM من Apple",
+  "admin.symbols.kind.r8": "خريطة R8",
+  "admin.symbols.kind.elf": "أصلية (بمعرّف البناء)",
+  "admin.symbols.key": "المفتاح",
+  "admin.symbols.copyBuildId": "نسخ معرّف البناء",
+  "admin.symbols.copied": "نُسخ",
   "admin.symbols.binary": "الملف التنفيذي",
   "admin.symbols.arch": "المعمارية",
-  "admin.symbols.debugId": "UUID",
   "admin.symbols.uploaded": "تاريخ الرفع",
   "admin.symbols.size": "الحجم",
-  "admin.symbols.kb": "{count} ك.ب",
-  "admin.symbols.mapping": "خريطة R8"
+  "admin.symbols.kb": "{count} ك.ب"
 }

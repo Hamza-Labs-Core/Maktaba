@@ -285,16 +285,19 @@ func (s *sharedStep) prepare(ctx context.Context, report func(supervisor.Detail)
 	if running == nil {
 		s.running, s.last, shown = make(chan struct{}), supervisor.Detail{}, supervisor.Detail{}
 	}
+	if shown.Code == "" && shown.Text == "" {
+		shown = s.wait
+	}
+	// shown under the lock: a broadcast copies the watchers under it too, so it cannot reach
+	// this process before this first report and then be overwritten by it (a waiter showed
+	// the waiting text over the build's progress)
+	report(shown)
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
 		delete(s.watchers, id)
 		s.mu.Unlock()
 	}()
-	if shown.Code == "" && shown.Text == "" {
-		shown = s.wait
-	}
-	report(shown)
 
 	if running != nil { // another process runs it: wait for its end
 		select {

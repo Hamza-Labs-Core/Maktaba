@@ -373,7 +373,8 @@ func TestAReportsCrashIsSymbolicatedWithTheUploadedTables(t *testing.T) {
 	var l struct{ Tables []symbols.Info }
 	_ = json.Unmarshal(rec.Body.Bytes(), &l)
 	if rec.Code != 200 || len(l.Tables) != 2 || l.Tables[0].DebugID != arm.DebugID || l.Tables[0].Version != "0.3.98" ||
-		l.Tables[0].CodeFile != "crashy.dwarf" || l.Tables[0].Size == 0 {
+		l.Tables[0].CodeFile != "crashy.dwarf" || l.Tables[0].Size == 0 || l.Tables[0].Kind != symbols.ListDSYM ||
+		l.Tables[0].CodeID != "" || strings.Contains(rec.Body.String(), `"code_id"`) {
 		t.Fatalf("list: %d %s", rec.Code, rec.Body)
 	}
 }
@@ -445,7 +446,8 @@ func TestAnAndroidReportsCrashIsRetracedWithTheUploadedMapping(t *testing.T) {
 	rec = rg.do("GET", "/v1/admin/symbols", "", nil, "")
 	var l struct{ Tables []symbols.Info }
 	_ = json.Unmarshal(rec.Body.Bytes(), &l)
-	if len(l.Tables) != 1 || l.Tables[0].CodeFile != "android.player" || l.Tables[0].Version != "0.3.102" || l.Tables[0].Arch != "jvm" {
+	if len(l.Tables) != 1 || l.Tables[0].CodeFile != "android.player" || l.Tables[0].Version != "0.3.102" || l.Tables[0].Arch != "jvm" ||
+		l.Tables[0].Kind != symbols.ListR8 || l.Tables[0].CodeID != "" {
 		t.Fatalf("list: %s", rec.Body)
 	}
 }
@@ -543,8 +545,25 @@ func TestAnAndroidNativeCrashIsReadWithTheUploadedLibraryTable(t *testing.T) {
 	var l struct{ Tables []symbols.Info }
 	_ = json.Unmarshal(rec.Body.Bytes(), &l)
 	if len(l.Tables) != 1 || l.Tables[0].CodeFile != "native.so" || l.Tables[0].Arch != "arm64" ||
-		l.Tables[0].Version != "0.3.103" || l.Tables[0].DebugID != lib.CodeID[:32] {
+		l.Tables[0].Version != "0.3.103" || l.Tables[0].DebugID != lib.CodeID[:32] || l.Tables[0].Kind != symbols.ListELF ||
+		l.Tables[0].CodeID != lib.CodeID || len(lib.CodeID) <= 32 {
 		t.Fatalf("list: %s", rec.Body)
+	}
+	// a table kept before its kind and build id were columns has them filled from the table
+	// the first time the list is read
+	if _, err := rg.db.ExecContext(rg.ctx, `UPDATE symbol_tables SET kind = NULL, code_id = ''`); err != nil {
+		t.Fatal(err)
+	}
+	rec = rg.do("GET", "/v1/admin/symbols", "", nil, "")
+	l.Tables = nil
+	_ = json.Unmarshal(rec.Body.Bytes(), &l)
+	if rec.Code != 200 || len(l.Tables) != 1 || l.Tables[0].Kind != symbols.ListELF || l.Tables[0].CodeID != lib.CodeID {
+		t.Fatalf("list of an older table: %d %s", rec.Code, rec.Body)
+	}
+	var kind, codeID string
+	if err := rg.db.QueryRowContext(rg.ctx, `SELECT kind, code_id FROM symbol_tables`).Scan(&kind, &codeID); err != nil ||
+		kind != symbols.ListELF || codeID != lib.CodeID {
+		t.Fatalf("filled in: %q %q %v", kind, codeID, err)
 	}
 }
 

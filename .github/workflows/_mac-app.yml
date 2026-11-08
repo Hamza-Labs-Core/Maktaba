@@ -83,12 +83,48 @@ jobs:
           # pull requests and tags restore main's build; only a push to main saves
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
-      # the pinned third-party downloads (~110 MB), keyed on their checksums
+      # every pinned download (~110 MB, both flavours') in one cache, keyed on the runner's OS
+      # and arch and on pins.env, so a pin bump misses; an earlier pins.env's entry is
+      # restored as a start (every file is checked against its pin, only what changed
+      # downloads). Saved on a miss on any ref: main's serves every pull request, a pull
+      # request's its own reruns.
       - id: downloads-cache
         uses: actions/cache/restore@v4
         with:
           path: build/mac-app/downloads
-          key: mac-app-downloads-${{ hashFiles('tools/release/mac-app/pins.env') }}
+          key: mac-app-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/release/mac-app/pins.env') }}
+          restore-keys: mac-app-downloads-${{ runner.os }}-${{ runner.arch }}-
+
+      # on a miss, every piece payload.sh downloads (the full flavour's too, so both jobs
+      # save the same set), under payload.sh's names in its download folder, checked and
+      # retried by tools/release/fetch-pinned.sh, which payload.sh's fetch uses as well;
+      # files no pin names any more are dropped. payload.sh then checks each and downloads
+      # none.
+      - name: The pinned downloads, retried
+        if: steps.downloads-cache.outputs.cache-hit != 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          . tools/release/mac-app/pins.env
+          f=tools/release/fetch-pinned.sh d=build/mac-app/downloads
+          $f "$POSTGRES_URL" "$POSTGRES_SHA256" "$d/postgresql-$POSTGRES_VERSION.tar.gz"
+          $f "$PGVECTOR_URL" "$PGVECTOR_SHA256" "$d/pgvector-$PGVECTOR_VERSION.tar.gz"
+          $f "$FFMPEG_URL" "$FFMPEG_SHA256" "$d/ffmpeg-$FFMPEG_VERSION.zip"
+          $f "$FFPROBE_URL" "$FFPROBE_SHA256" "$d/ffprobe-$FFMPEG_VERSION.zip"
+          $f "$PYTHON_URL" "$PYTHON_SHA256" "$d/cpython-$PYTHON_VERSION.tar.gz"
+          $f "$OLLAMA_URL" "$OLLAMA_SHA256" "$d/ollama-$OLLAMA_VERSION-darwin.tgz"
+          keep=" postgresql-$POSTGRES_VERSION.tar.gz pgvector-$PGVECTOR_VERSION.tar.gz ffmpeg-$FFMPEG_VERSION.zip ffprobe-$FFMPEG_VERSION.zip cpython-$PYTHON_VERSION.tar.gz ollama-$OLLAMA_VERSION-darwin.tgz "
+          for x in "$d"/*; do
+            case "$keep" in *" ${x##*/} "*) ;; *) echo "dropping ${x##*/} (no pin names it)"; rm -rf "$x" ;; esac
+          done
+
+      - name: Save the pinned downloads
+        if: steps.downloads-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/mac-app/downloads
+          key: mac-app-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/release/mac-app/pins.env') }}
 
       - name: shellcheck
         run: |
@@ -113,6 +149,8 @@ jobs:
       - name: Build Maktaba.app with the payload, and check it
         env:
           VERSION: v0.0.0-ci.${{ github.run_number }}
+          # the pinned downloads go by the GitHub API first (tools/release/fetch-pinned.sh)
+          GITHUB_TOKEN: ${{ github.token }}
           APPLE_ID: ''
           APPLE_PASSWORD: ''
           APPLE_TEAM_ID: ''
@@ -144,13 +182,6 @@ jobs:
         with:
           path: ${{ steps.pnpm-cache.outputs.path }}
           key: ${{ steps.pnpm-cache.outputs.key }}
-
-      - name: Save the pinned downloads
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.downloads-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: build/mac-app/downloads
-          key: mac-app-downloads-${{ hashFiles('tools/release/mac-app/pins.env') }}
 
   # Epic 51 story 51.17: the release's Core leg, run without a tag, and the Core home's budgets.
   # The same steps and scripts as desktop-release.yml's macos-arm64-core leg (payload.sh
@@ -230,10 +261,48 @@ jobs:
         with:
           workspaces: apps/desktop/src-tauri -> target
 
-      - uses: actions/cache@v4
+      # every pinned download (~110 MB, both flavours') in one cache, keyed on the runner's OS
+      # and arch and on pins.env, so a pin bump misses; an earlier pins.env's entry is
+      # restored as a start (every file is checked against its pin, only what changed
+      # downloads). Saved on a miss on any ref: main's serves every pull request, a pull
+      # request's its own reruns.
+      - id: downloads-cache
+        uses: actions/cache/restore@v4
         with:
           path: build/mac-app/downloads
-          key: mac-app-downloads-${{ hashFiles('tools/release/mac-app/pins.env') }}
+          key: mac-app-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/release/mac-app/pins.env') }}
+          restore-keys: mac-app-downloads-${{ runner.os }}-${{ runner.arch }}-
+
+      # on a miss, every piece payload.sh downloads (the full flavour's too, so both jobs
+      # save the same set), under payload.sh's names in its download folder, checked and
+      # retried by tools/release/fetch-pinned.sh, which payload.sh's fetch uses as well;
+      # files no pin names any more are dropped. payload.sh then checks each and downloads
+      # none.
+      - name: The pinned downloads, retried
+        if: steps.downloads-cache.outputs.cache-hit != 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          . tools/release/mac-app/pins.env
+          f=tools/release/fetch-pinned.sh d=build/mac-app/downloads
+          $f "$POSTGRES_URL" "$POSTGRES_SHA256" "$d/postgresql-$POSTGRES_VERSION.tar.gz"
+          $f "$PGVECTOR_URL" "$PGVECTOR_SHA256" "$d/pgvector-$PGVECTOR_VERSION.tar.gz"
+          $f "$FFMPEG_URL" "$FFMPEG_SHA256" "$d/ffmpeg-$FFMPEG_VERSION.zip"
+          $f "$FFPROBE_URL" "$FFPROBE_SHA256" "$d/ffprobe-$FFMPEG_VERSION.zip"
+          $f "$PYTHON_URL" "$PYTHON_SHA256" "$d/cpython-$PYTHON_VERSION.tar.gz"
+          $f "$OLLAMA_URL" "$OLLAMA_SHA256" "$d/ollama-$OLLAMA_VERSION-darwin.tgz"
+          keep=" postgresql-$POSTGRES_VERSION.tar.gz pgvector-$PGVECTOR_VERSION.tar.gz ffmpeg-$FFMPEG_VERSION.zip ffprobe-$FFMPEG_VERSION.zip cpython-$PYTHON_VERSION.tar.gz ollama-$OLLAMA_VERSION-darwin.tgz "
+          for x in "$d"/*; do
+            case "$keep" in *" ${x##*/} "*) ;; *) echo "dropping ${x##*/} (no pin names it)"; rm -rf "$x" ;; esac
+          done
+
+      - name: Save the pinned downloads
+        if: steps.downloads-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/mac-app/downloads
+          key: mac-app-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/release/mac-app/pins.env') }}
 
       # a key made for this run only: the bundles get their updater signatures as a release's
       # do, and the feed below is checked against its public half
@@ -250,6 +319,9 @@ jobs:
           TAG="$VERSION" UPDATER_KEY=true UPDATER_PUBKEY="$(cat "$key.pub")" node tools/release/tauri-stamp.mjs
 
       - name: Build the Core payload, as the release's Core leg does
+        env:
+          # the pinned downloads go by the GitHub API first (tools/release/fetch-pinned.sh)
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tools/release/mac-app/payload.sh --version "$VERSION" --flavour core

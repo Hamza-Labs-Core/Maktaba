@@ -477,6 +477,50 @@ def test_a_share_folder_is_never_scanned_as_empty(
     assert asked == []
 
 
+def test_a_share_this_runner_is_not_brokered_is_refused_never_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A runner reaches no share by itself: any share path outside its brokered folders
+    (all of them, for a runner with no broker) raises the refusal from every look, so the
+    plain calls never answer False or empty there; the broker is never asked, and local
+    paths, long local paths and devices go to the plain calls."""
+    from maktaba_pipeline.plugins.native import sandbox_refused
+
+    monkeypatch.setattr(sys, "audit", lambda *_: None)
+    for roots in ([SHARE], []):
+        shim, asked = _shim(tmp_path, {})
+        shim.roots = [winfiles._key(r) for r in roots]
+        for other in (
+            "\\\\other\\media\\a.mkv",
+            "//other/media/a.mkv",
+            "\\\\?\\UNC\\other\\m\\a.mkv",
+        ):
+            for look in (
+                shim.exists_,
+                shim.lexists_,
+                shim.isfile_,
+                shim.isdir_,
+                shim.stat_,
+                shim.listdir_,
+                shim.scandir_,
+                shim.open_,
+            ):
+                with pytest.raises(PermissionError) as refused:
+                    look(other)
+                assert sandbox_refused(refused.value)
+        if not roots:
+            with pytest.raises(PermissionError):
+                shim.exists_(SHARE + "\\a\\ep1.mp4")
+        assert asked == []
+        local = tmp_path / "local.mkv"
+        local.write_bytes(b"x")
+        assert shim.exists_(str(local)) and shim.isfile_(str(local))
+        assert not shim.exists_(str(tmp_path / "gone.mkv"))
+    assert winfiles.is_share("\\\\nas\\m") and winfiles.is_share("\\\\?\\unc\\nas\\m")
+    assert not winfiles.is_share("\\\\?\\C:\\m") and not winfiles.is_share("\\\\.\\pipe\\x")
+    assert not winfiles.is_share("C:\\m")
+
+
 def test_the_broker_pipe_carries_one_line_each_way() -> None:
     """The runner's side of the broker's pipe: a request line out, the answer line back
     (read in pieces as a pipe hands them), and a closed pipe is a refusal."""
