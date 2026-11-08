@@ -2231,6 +2231,14 @@ build fails when the two differ.
   jobs run in the worker, as before. Media on a network share is never granted to a runner;
   jobs that need it run in the worker.
 
+- **The Overview dashboard keeps up with many machines (web, Apple and Android Remote).** Past a
+  few joined machines, a line per machine no longer fit a board's 50 lines, and machines were
+  left out without a word. The Overview now shows totals across the machines (components up
+  and down, the least disk and memory free, the highest load, restarts) and the five machines
+  most in need of attention, and says how many of how many it shows. A machine picker opens
+  any one machine on its own, with each of its components that was down or restarted.
+  `GET /api/admin/dashboards/overview` takes `machine=` and names the machines in its answer.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings

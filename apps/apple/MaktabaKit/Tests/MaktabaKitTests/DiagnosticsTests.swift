@@ -177,6 +177,35 @@ extension DiagnosticsOverHTTP {
         #expect(b.panels[0].series[0].points[1].value == 2048)
     }
 
+    @Test func theOverviewOfManyMachinesSaysWhichItShowsAndAsksForOne() async throws {
+        DiagStub.on("GET /api/admin/dashboards/overview", 200, #"""
+        {"board":"overview","range":"24h","step":60,"omitted":2,
+         "machines":{"total":37,"shown":["n07","n33","n12","n41","n20"],"all":["n00","n01","n07"]},
+         "series":[{"name":"maktaba_machines_components_down","kind":"gauge","points":[[1800000000,4]]},
+          {"name":"maktaba_component_down","labels":"machine=n07","kind":"gauge","points":[[1800000000,3]]}]}
+        """#)
+        let c = DiagStub.client()
+        let all = try await c.board(.overview, range: .day)
+        #expect(DiagStub.seen.last?.query == ["range": "24h"])
+        #expect(all.machines?.total == 37 && all.machines?.shown.first == "n07" && all.machines?.all.count == 3)
+        #expect(all.machine == nil && all.omitted == 2 && all.showsSomeMachines)
+        #expect(all.panels.map(\.name) == ["maktaba_machines_components_down", "maktaba_component_down"])
+        #expect(all.panels[1].series[0].legend == "n07")
+        _ = try await c.board(.overview, range: .day, machine: "n07")
+        #expect(DiagStub.seen.last?.query == ["range": "24h", "machine": "n07"])
+        // the machine is the Overview's; Storage is asked without it
+        DiagStub.on("GET /api/admin/dashboards/storage", 200, #"{"board":"storage","range":"24h","series":[]}"#)
+        let storage = try await c.board(.storage, range: .day, machine: "n07")
+        #expect(DiagStub.seen.last?.query == ["range": "24h"])
+        #expect(storage.machines == nil && storage.omitted == 0 && !storage.showsSomeMachines)
+    }
+
+    @Test func oneMachineOfManyIsNotSomeMachines() throws {
+        let json = #"{"board":"overview","machine":"n07","machines":{"total":37,"shown":["n07"],"all":[]},"series":[]}"#
+        let b = try JSONDecoder.home.decode(BoardDoc.self, from: Data(json.utf8))
+        #expect(b.machine == "n07" && !b.showsSomeMachines)
+    }
+
     @Test func theInboxReadsAReportsTimelineAndChangesIt() async throws {
         DiagStub.on("GET /api/reports", 200, #"{"reports":[{"id":27,"at":"2026-11-06T09:00:00Z","name":"Test Viewer","app":"apple.player","category":"playback","status":"new","shared_with_maktaba":false}]}"#)
         DiagStub.on("GET /api/reports/27", 200, #"""

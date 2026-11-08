@@ -164,6 +164,52 @@ class DiagnosticsScreenTest {
         assertTrue(shown("المساحة الحرة على القرص (مجلد البيانات)"))
     }
 
+    // Story 53.12: with many machines the Overview says how many it shows and picks one machine on its own.
+    private val machineQueries = mutableListOf<String?>()
+
+    private fun showMachines() = show(DiagTab.Dashboards) {
+        val pts = (0 until 24).joinToString(",") { "[${java.time.Instant.now().epochSecond - (23 - it) * 3600},${it % 3}]" }
+        val all = (0 until 37).joinToString(",") { "\"n%02d\"".format(it) }
+        home.answer("/api/admin/dashboards/overview") { r ->
+            val one = r.url.queryParameter("machine")
+            synchronized(machineQueries) { machineQueries += one }
+            if (one == null) {
+                FakeRemoteHome.json("""{"board":"overview","range":"24h",
+                  "machines":{"total":37,"shown":["n07","n33","n12","n41","n20"],"all":[$all]},
+                  "series":[{"name":"maktaba_machines_components_down","kind":"gauge","points":[$pts]},
+                    {"name":"maktaba_component_down","labels":"machine=n07","kind":"gauge","points":[$pts]}]}""")
+            } else {
+                FakeRemoteHome.json("""{"board":"overview","range":"24h","machine":"$one","omitted":3,
+                  "machines":{"total":37,"shown":["$one"],"all":[$all]},
+                  "series":[{"name":"maktaba_host_load1","labels":"machine=$one","kind":"gauge","points":[$pts]}]}""")
+            }
+        }
+    }
+
+    @Test
+    fun manyMachinesSayHowManyAreShownAndOneCanBePicked() {
+        showMachines()
+        compose.settledUntil { compose.has("dash-panel-maktaba_machines_components_down") && compose.has("dash-machines-shown") }
+        assertTrue(shown("Showing 5 of 37 machines"))
+        assertTrue(shown("Components down, all machines"))
+        assertFalse(compose.has("dash-omitted"))
+        compose.onNodeWithTag("dash-machine").performClick()
+        compose.settledUntil { compose.has("dash-machine-n07") }
+        compose.onNodeWithTag("dash-machine-n07").performClick()
+        compose.settledUntil { compose.has("dash-omitted") }
+        assertEquals("n07", synchronized(machineQueries) { machineQueries.last() })
+        assertTrue(shown("3 more lines did not fit"))
+        assertFalse(compose.has("dash-machines-shown"))
+    }
+
+    @Test @Config(qualifiers = "ar-w411dp-h891dp-420dpi")
+    fun manyMachinesInArabic() {
+        showMachines()
+        compose.settledUntil { compose.has("dash-machines-shown") }
+        assertTrue(shown("المكوّنات المتوقفة، كل الأجهزة"))
+        assertTrue(shown("الأحوج إلى الانتباه أولاً"))
+    }
+
     @Test
     fun theInbox() {
         show(DiagTab.Reports)
