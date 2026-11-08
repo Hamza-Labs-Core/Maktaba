@@ -13,6 +13,9 @@ prs: [684]
 - `POST /api/auth/recovery-pass` now also returns the pass in the body to a native app, which keeps it to reach recovery while the API is down.
 - **Security review, fixed before merge:** at first the pass went into the body when the request looked native (the `X-Maktaba-Client` header or any `Authorization` header). A script on the web page can set both while riding the session cookie. The body now depends on how the request signed in: only a bearer access token the middleware verified (`principal.SourceJWT`) gets the pass in the body. A cookie session gets only the HttpOnly cookie, whatever headers it sends. There is a test for that case.
 
+- **Found in CI, fixed before merge:** the last action's outcome (Done., or why not) was a line at the top of the list, while a part's Restart and the actions are far down it. It landed out of sight, and off screen a SwiftUI `List` row is not in the accessibility hierarchy, nor is a `LazyColumn` item composed. On both platforms it is now pinned below the list (Apple `safeAreaInset(edge: .bottom)`, Android the Scaffold's `bottomBar`), with the same strings. The Android rollback test checks it shows while the list is still scrolled down.
+- Two flakes it met, both fixed in their tests: the recovery alert's title and its button are both "Restart", so `app.alerts.buttons["Restart"]` matched twice (now `.firstMatch`; the POST it causes is asserted); and the desktop client's `CloudTest` iterated a synchronized list the mock servers append to from their threads (`ConcurrentModificationException` on Windows), now read through a copy taken under its lock.
+
 ## What we learned
 - The recovery lockout counts every refused credential, and the Remotes poll every 10 s. Drop a refused pass and stop polling, or the admin is locked out within a minute.
 - Recovery calls need their own path, not the normal API client: a 401 there means not allowed here, never sign out.
