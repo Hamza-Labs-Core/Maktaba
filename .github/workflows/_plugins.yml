@@ -281,6 +281,7 @@ jobs:
         if: runner.os == 'Windows'
         env:
           ZIP: ${{ steps.ffmpeg-cache-pin.outputs.path }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           . tools/release/win-app/pins.env
           tools/ci/fetch-pinned.sh "$FFMPEG_URL" "$FFMPEG_SHA256" "$ZIP"

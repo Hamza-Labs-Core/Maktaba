@@ -4,13 +4,16 @@ GitHub's release downloads answered 504 for minutes at a time (2026-11-08) and f
 Core bundle-size job and the Windows plugin sandbox. The helper keeps a restored file that
 has the pin (no download), retries a 5xx, 408, 429 or a dropped connection, stops at once
 on any other 4xx, fails on other bytes, and names the URL in an `::error::` when it gives
-up. Here against a local server that answers what each test scripts.
+up. A github.com release download falls back to the API's route to the same asset (504s on
+github.com while the API served the file). Here against a local server that answers what
+each test scripts.
 """
 
 from __future__ import annotations
 
 import hashlib
 import http.server
+import json
 import os
 import re
 import subprocess
@@ -32,10 +35,16 @@ class _Server:
     def __init__(self) -> None:
         self.replies: list[int | str] = []
         self.requests = 0
+        self.api: list[str] = []
+        self.release = True
         server = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self) -> None:  # noqa: N802 (http.server's name)
+                if self.path.startswith("/repos/"):
+                    server.api.append(self.path)
+                    self._api()
+                    return
                 server.requests += 1
                 reply = server.replies.pop(0) if server.replies else 200
                 if reply == "reset":
@@ -47,6 +56,23 @@ class _Server:
                 if reply == 299:  # 200 with other bytes
                     reply, body = 200, b"other bytes"
                 self.send_response(reply)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def _api(self) -> None:
+                if self.path == "/repos/o/r/releases/tags/t" and server.release:
+                    host = f"http://127.0.0.1:{server.httpd.server_address[1]}"
+                    asset = {"name": "cpython-3.12.15+20261003.tar.gz", "url": f"{host}/repos/o/r/releases/assets/7"}
+                    body = json.dumps({"assets": [{"name": "other", "url": "x"}, asset]}).encode()
+                    status = 200
+                elif (
+                    self.path == "/repos/o/r/releases/assets/7" and self.headers["Accept"] == "application/octet-stream"
+                ):
+                    status, body = 200, BODY
+                else:
+                    status, body = 404, b"{}"
+                self.send_response(status)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
@@ -66,8 +92,9 @@ def server() -> Iterator[_Server]:
     s.httpd.shutdown()
 
 
-def _run(*args: str) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, "FETCH_PINNED_DELAYS": "0 0 0 0", "RUNNER_OS": "Windows"}
+def _run(*args: str, **extra: str) -> subprocess.CompletedProcess[str]:
+    env = {**os.environ, "FETCH_PINNED_DELAYS": "0 0 0 0", "RUNNER_OS": "Windows", **extra}
+    env.pop("GITHUB_TOKEN", None)
     return subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True, env=env, timeout=60)
 
 
@@ -146,6 +173,55 @@ def test_the_cache_key_names_tool_version_platform_and_pin() -> None:
     r = _run("--key", url, SHA)
     assert r.returncode == 0, r.stdout
     assert r.stdout.strip() == f"pinned-windows-postgresql-16.15.0-aarch64-apple-darwin.tar.gz-{SHA[:16]}"
+
+
+def _github(server: _Server) -> tuple[str, dict[str, str]]:
+    """A github.com release URL on the test server, and the env that makes it github.com."""
+    base = f"http://127.0.0.1:{server.httpd.server_address[1]}"
+    url = f"{base}/o/r/releases/download/t/cpython-3.12.15%2B20261003.tar.gz"
+    return url, {"FETCH_PINNED_GITHUB": base, "FETCH_PINNED_API": base}
+
+
+def test_a_github_release_504_falls_back_to_the_api_route(server: _Server, tmp_path: Path) -> None:
+    server.replies = [504] * 10
+    url, env = _github(server)
+    dst = tmp_path / "cpython.tar.gz"
+    r = _run(url, SHA, str(dst), **env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert server.requests == 1, "the API route answers in the first attempt"
+    assert server.api == ["/repos/o/r/releases/tags/t", "/repos/o/r/releases/assets/7"]
+    assert dst.read_bytes() == BODY
+    assert "trying the API's route to the same asset" in r.stderr
+
+
+def test_the_api_route_is_looked_up_once_and_retried_with_the_url(server: _Server, tmp_path: Path) -> None:
+    server.replies = [504] * 10
+    server.release = False  # the release lookup answers 404 (it is retried, as a failed lookup)
+    url, env = _github(server)
+    r = _run(url, SHA, str(tmp_path / "f"), **env)
+    assert r.returncode != 0
+    assert server.requests == 5
+    assert all(p == "/repos/o/r/releases/tags/t" for p in server.api)
+    assert "not downloaded after 5 attempts" in r.stdout
+
+
+def test_a_github_release_404_does_not_ask_the_api(server: _Server, tmp_path: Path) -> None:
+    server.replies = [404]
+    url, env = _github(server)
+    r = _run(url, SHA, str(tmp_path / "f"), **env)
+    assert r.returncode != 0
+    assert server.api == []
+
+
+def test_the_api_route_bytes_are_checked_too(server: _Server, tmp_path: Path) -> None:
+    server.replies = [504]
+    url, env = _github(server)
+    other = hashlib.sha256(b"x").hexdigest()
+    dst = tmp_path / "f"
+    r = _run(url, other, str(dst), **env)
+    assert r.returncode != 0
+    assert f"the pin says {other}" in r.stdout
+    assert not dst.exists()
 
 
 # The workflows put each file where payload.sh looks, under the name payload.sh fetches it

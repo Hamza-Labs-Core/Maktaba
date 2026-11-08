@@ -108,6 +108,8 @@ jobs:
       # a restored file with the pin is kept and nothing is downloaded. payload.sh then checks
       # each again and downloads none.
       - name: The pinned downloads, retried
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           . tools/release/mac-app/pins.env
@@ -291,6 +293,8 @@ jobs:
       # a restored file with the pin is kept and nothing is downloaded. payload.sh then checks
       # each again and downloads none.
       - name: The pinned downloads, retried
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           . tools/release/mac-app/pins.env
