@@ -257,6 +257,10 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 		"MAKTABA_RUNNER_DIR="+RunnerDir(cfg),
 		"MAKTABA_DATA_DIR="+cfg.Server.DataDir,
 		"PYTHONUTF8=1",
+		// the worker asks the runners for a stage that reads the libraries even with one on a
+		// share (native.choose otherwise keeps such a stage in the worker on Windows): this
+		// test proves the runner path there
+		"MAKTABA_WINDOWS_SHARE_RUNNERS=1",
 	)
 	worker.Stdout, worker.Stderr = workerLog, workerLog
 	if err := worker.Run(); err != nil {
