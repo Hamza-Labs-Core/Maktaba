@@ -159,6 +159,12 @@ ends well: a job that fails sends nothing. The subscriber reads it with `job::pa
 {"event": "silences.found", "from": "dev.example.silences", "payload": {"silences": 4}}
 ```
 
+Every refused emit is also logged on the home as `plugin_emit_refused`, with your plugin's
+id, the event, the payload's size in bytes, a reason (`unknown_kind`, `schema`, `oversize`,
+`scope`, `token`, `decode`, `lineage`, `quota`, `loop`, `rate`, and so on) and a short detail.
+The payload itself is never logged, so the admin can see why an event was refused without
+reading what it carried.
+
 Requests and events share one budget of 1,000 a job. Emitting needs plugin API 1.2:
 declare `plugin_api = "1.1"`; a 1.0 plugin keeps running unchanged.
 

@@ -152,6 +152,11 @@ events::emit("silences.found", &job::job_subject(), r#"{"silences": 4}"#)?;
 {"event": "silences.found", "from": "dev.example.silences", "payload": {"silences": 4}}
 ```
 
+ويُسجَّل كل إطلاق مرفوض أيضًا على البيت باسم `plugin_emit_refused`، مع معرّف إضافتك والحدث وحجم
+الحمولة بالبايت وسبب (`unknown_kind` و`schema` و`oversize` و`scope` و`token` و`decode` و`lineage`
+و`quota` و`loop` و`rate` وغيرها) وتفصيل قصير. ولا تُسجَّل الحمولة نفسها أبدًا، فيرى المسؤول سبب رفض
+الحدث دون أن يقرأ ما حمله.
+
 وتتقاسم الطلبات والأحداث ميزانية واحدة من 1,000 لكل مهمة. ويحتاج الإطلاق إلى الواجهة البرمجية
 للإضافات 1.1: أعلن `plugin_api = "1.1"`؛ وتبقى إضافة 1.0 تعمل دون تغيير.
 
