@@ -57,7 +57,27 @@ final class RemoteDiagnosticsUITests: XCTestCase {
         let row = element(id)
         for _ in 0 ..< 6 where !(row.exists && row.isHittable) { app.swipeUp(velocity: .slow) }
         XCTAssertTrue(row.waitForExistence(timeout: 10), id)
-        row.tap()
+        // A swipe leaves the list coasting, and a tap on a moving list only stops it: the row is
+        // not selected and the screen stays on Home. Tap once the row stands still, then check the
+        // screen went: the row gone from the screen (a pushed page covers Home's list).
+        for attempt in 1 ... 2 {
+            waitStill(row)
+            row.tap()
+            if row.waitForNonExistence(timeout: 5) || !row.isHittable { return }
+            XCTAssertLessThan(attempt, 2, "\(id) opened nothing after two taps on a still row")
+        }
+    }
+
+    /// Waits (at most 5 s) until the element's frame reads the same twice 0.3 s apart.
+    private func waitStill(_ e: XCUIElement) {
+        var last = e.frame
+        let end = Date().addingTimeInterval(5)
+        while Date() < end {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+            let now = e.frame
+            if now == last { return }
+            last = now
+        }
     }
 
     private func back() { app.navigationBars.buttons.firstMatch.tap() }
