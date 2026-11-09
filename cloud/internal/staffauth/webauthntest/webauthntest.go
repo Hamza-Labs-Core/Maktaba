@@ -94,7 +94,11 @@ func (a *Authenticator) Register(opts *protocol.CredentialCreation) ([]byte, err
 	}
 	pk := opts.Response
 	a.rpID, a.userHandle = a.target(pk.RelyingParty.ID), userHandle(pk.User.ID)
-	x, y := a.key.PublicKey.X.FillBytes(make([]byte, 32)), a.key.PublicKey.Y.FillBytes(make([]byte, 32))
+	raw, err := a.key.PublicKey.Bytes() // uncompressed point: 0x04 || X || Y
+	if err != nil {
+		return nil, err
+	}
+	x, y := raw[1:33], raw[33:65]
 	cose, err := cbor.Marshal(map[int]any{1: 2, 3: -7, -1: 1, -2: x, -3: y})
 	if err != nil {
 		return nil, err
