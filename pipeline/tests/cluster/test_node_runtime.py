@@ -272,6 +272,27 @@ async def test_a_switch_turned_off_leaves_the_set_at_the_next_refresh(db: Databa
 
 
 @pytest.mark.asyncio
+async def test_each_refresh_writes_the_fallbacks_counted_under_the_node(db: Database) -> None:
+    """Story 54.43: the worker adds the in-process fallbacks it counted to stage_fallbacks
+    at each refresh, under this machine's node id; a paused node writes nothing."""
+    from maktaba_pipeline.plugins import native
+
+    native._UNWRITTEN.clear()
+    await sync_graph(db, GRAPH)
+    node_id = await _node(db)
+    agent, _ = await _agent(db, node_id)
+    native.count_fallback("probe", "runner_not_serving_here", 2)
+    await agent.refresh()
+    rows = await db.fetch("SELECT machine, stage, reason, count FROM stage_fallbacks")
+    assert [(r["machine"], r["stage"], r["reason"], int(r["count"])) for r in rows] == [
+        (node_id, "probe", "runner_not_serving_here", 2)
+    ]
+    assert native._UNWRITTEN == {}
+    await agent.write_fallbacks()  # nothing new: nothing written
+    assert await db.fetchval("SELECT count FROM stage_fallbacks") == 2
+
+
+@pytest.mark.asyncio
 async def test_drain_at_the_heartbeat_claims_nothing_new(db: Database) -> None:
     await sync_graph(db, GRAPH)
     node_id = await _node(db)

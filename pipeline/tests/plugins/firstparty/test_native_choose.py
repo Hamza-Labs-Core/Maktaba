@@ -216,3 +216,16 @@ async def test_a_stage_leaves_the_share_guard_only_with_its_end_to_end_case() ->
         assert stage in proven, f"{stage} has no override-off share case in the end to end"
     # and the end to end keeps one guarded case, so the guard itself stays proven
     assert any("guarded: true" in rest for *_x, rest in cases)
+
+
+async def test_on_sqlite_a_first_party_stage_runs_in_the_worker_counted() -> None:
+    """Story 54.43: SQLite has no plugin API, so the choice names ``sqlite``, which the
+    worker counts toward stage_fallbacks; a stage no plugin defines is no fallback."""
+
+    class _SQLite:
+        dialect = "sqlite"
+
+    got = await native.choose(_SQLite(), "plex_livetv")
+    assert (got.impl, got.why) == ("inproc", "sqlite")
+    got = await native.choose(_SQLite(), "component_catchup")
+    assert (got.impl, got.why) == ("inproc", "")

@@ -80,14 +80,3 @@ async def test_a_fingerprint_from_the_worker_is_counted(monkeypatch: pytest.Monk
     assert await fn(None, object()) == "h1"
     assert native._UNWRITTEN[("thumb_hash", "fingerprint_inproc")][0] == 1
     assert native.FALLBACKS == {}
-
-
-async def test_sqlite_runs_a_first_party_stage_in_the_worker_counted() -> None:
-    class _SQLite:
-        dialect = "sqlite"
-
-    got = await native.choose(_SQLite(), "probe")
-    assert (got.impl, got.why) == ("inproc", "sqlite")
-    # a stage no first-party plugin defines is no fallback
-    got = await native.choose(_SQLite(), "component_catchup")
-    assert (got.impl, got.why) == ("inproc", "")
