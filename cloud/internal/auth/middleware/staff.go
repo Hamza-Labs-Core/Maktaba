@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	chimw "github.com/go-chi/chi/v5/middleware"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/audit"
 	cmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
@@ -114,10 +115,10 @@ func (g *StaffGate) Require(role string) func(http.Handler) http.Handler {
 				staffErr(w, http.StatusUnauthorized, "reauth_required", "")
 				return
 			}
-			sw := &statusWriter{ResponseWriter: w, code: http.StatusOK}
-			next.ServeHTTP(sw, r.WithContext(WithOperator(r.Context(), o)))
+			ww := chimw.NewWrapResponseWriter(w, r.ProtoMajor)
+			next.ServeHTTP(ww, r.WithContext(WithOperator(r.Context(), o)))
 			g.audit(r, o, audit.ActionAdminRequest, map[string]any{
-				"method": r.Method, "route": route, "path": r.URL.Path, "status": sw.code,
+				"method": r.Method, "route": route, "path": r.URL.Path, "status": servedStatus(ww),
 			})
 		})
 	}
@@ -196,22 +197,14 @@ func (g *StaffGate) audit(r *http.Request, o Operator, action string, detail map
 	}
 }
 
-type statusWriter struct {
-	http.ResponseWriter
-	code    int
-	written bool
-}
-
-func (s *statusWriter) WriteHeader(code int) {
-	if !s.written {
-		s.code, s.written = code, true
+// servedStatus is the status a handler answered with: the first WriteHeader, else 200 once
+// it wrote (or wrote nothing). chi's wrapper keeps the Flusher and the other interfaces the
+// handler may need, which a plain embedding would hide.
+func servedStatus(ww chimw.WrapResponseWriter) int {
+	if c := ww.Status(); c != 0 {
+		return c
 	}
-	s.ResponseWriter.WriteHeader(code)
-}
-
-func (s *statusWriter) Write(b []byte) (int, error) {
-	s.written = true
-	return s.ResponseWriter.Write(b)
+	return http.StatusOK
 }
 
 // IPAllowList is story 50.33 §7: when allow is set, a request on the admin listener from a

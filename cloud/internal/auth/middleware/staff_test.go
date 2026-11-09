@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	chimw "github.com/go-chi/chi/v5/middleware"
+
 	cmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 )
 
@@ -51,5 +53,40 @@ func TestServiceAdminContext(t *testing.T) {
 	o, ok := ServiceAdmin(WithOperator(context.Background(), Operator{ID: "s1", Email: "ops@example.test", SessionID: "x"}))
 	if !ok || o.ID != "s1" || o.SessionID != "x" {
 		t.Fatalf("operator: %+v %v", o, ok)
+	}
+}
+
+// The admin.request row's status is what the handler answered: its first WriteHeader (a later
+// one is ignored), 200 for a body written without one or for nothing written; and the
+// wrapper keeps the handler's Flusher (a streamed answer still flushes).
+func TestServedStatus(t *testing.T) {
+	for name, tc := range map[string]struct {
+		h    http.HandlerFunc
+		want int
+	}{
+		"header":    {func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) }, 404},
+		"body only": {func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("{}")) }, 200},
+		"nothing":   {func(http.ResponseWriter, *http.Request) {}, 200},
+		"second write": {func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusConflict)
+			w.WriteHeader(http.StatusOK)
+		}, 409},
+		"flushed": {func(w http.ResponseWriter, _ *http.Request) {
+			f, ok := w.(http.Flusher)
+			if !ok {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			_, _ = w.Write([]byte("data: 1\n\n"))
+			f.Flush()
+		}, 200},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/v1/admin/x", nil)
+		rec := httptest.NewRecorder()
+		ww := chimw.NewWrapResponseWriter(rec, req.ProtoMajor)
+		tc.h(ww, req)
+		if got := servedStatus(ww); got != tc.want {
+			t.Errorf("%s: status %d, want %d", name, got, tc.want)
+		}
 	}
 }

@@ -120,7 +120,7 @@ func TestARequestWaitsForTheReadUnderWay(t *testing.T) {
 // moment here).
 func TestTheReplacedKeyGoesOnceItsURLsArePast(t *testing.T) {
 	was := replacedKeyKeep
-	replacedKeyKeep = 400 * time.Millisecond
+	replacedKeyKeep = 150 * time.Millisecond
 	t.Cleanup(func() { replacedKeyKeep = was })
 	path := filepath.Join(t.TempDir(), "stream-signing.key")
 	old := writeStreamKey(t, path)
@@ -130,9 +130,13 @@ func TestTheReplacedKeyGoesOnceItsURLsArePast(t *testing.T) {
 	if c.Lookup(next) == nil || c.Lookup(old) == nil {
 		t.Fatal("both keys, right after the replacement")
 	}
-	time.Sleep(replacedKeyKeep + 300*time.Millisecond)
-	if c.Lookup(old) != nil {
-		t.Fatal("the replaced key still verifies past the URLs it signed")
+	// the read that drops it runs once replacedKeyKeep is past: wait for it, not a fixed
+	// sleep with a margin (that kept this test over its time budget)
+	time.Sleep(replacedKeyKeep)
+	for deadline := time.Now().Add(2 * time.Second); c.Lookup(old) != nil; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the replaced key still verifies past the URLs it signed")
+		}
 	}
 	if c.Lookup(next) == nil {
 		t.Fatal("the key the file holds")

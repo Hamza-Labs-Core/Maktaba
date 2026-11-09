@@ -19,9 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/argon2id"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/cloudlink"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay/simhome"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/staffauth"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/symbols"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/symbols/symbolstest"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/seed"
@@ -146,35 +146,65 @@ func reportSymbolicated(t *testing.T, c *cluster) Result {
 		}},
 	})
 
-	// the service admin, signed in on the console's listener
+	// a staff account holding service_admin (story 50.33): made with `maktaba-cloud staff add`
+	// in the api's container, as on the leader, enrolled with a password and a TOTP factor, then
+	// signed in with both on the console's listener
 	email := "ops@rehearsal.test"
-	hash, err := argon2id.Hash("rehearsal-ops-password", func() argon2id.Params {
-		p := argon2id.DefaultParams()
-		p.Memory, p.Time = 1024, 1
-		return p
-	}())
-	if err != nil {
-		t.Fatal(err)
+	added := c.must("--profile", "api", "exec", "-T", "api", "maktaba-cloud", "staff", "add",
+		"--email", email, "--role", "service_admin", "--config", "/etc/maktaba/cloud.toml")
+	_, enrol, ok := strings.Cut(added, "/enroll#")
+	if !ok {
+		t.Fatalf("staff add printed no enrolment link:\n%s", added)
 	}
-	if _, err := c.db.Exec(`INSERT INTO users (email, password_hash, display_name, email_verified, role)
-        VALUES ($1, $2, 'Ops', true, 'service_admin')`, email, hash); err != nil {
-		t.Fatal(err)
+	enrol = strings.Fields(enrol)[0]
+	staff := func(path string, body any, v any) (int, string) {
+		t.Helper()
+		raw, _ := json.Marshal(body)
+		req, _ := http.NewRequest(http.MethodPost, console+path, bytes.NewReader(raw))
+		req.Header.Set("Content-Type", "application/json")
+		consoleHeaders(req)
+		return call(t, admin, req, v)
 	}
-	body, _ := json.Marshal(map[string]string{"email": email, "password": "rehearsal-ops-password"})
-	req, _ := http.NewRequest(http.MethodPost, console+"/v1/auth/login", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Origin", "http://admin.test")
-	req.Header.Set("X-Maktaba-Staff", "1")
+	var started struct {
+		Secret string `json:"totp_secret"`
+	}
+	if code, b := staff("/v1/staff/enroll/start", map[string]string{"token": enrol}, &started); code != http.StatusOK || started.Secret == "" {
+		t.Fatalf("enrolment start: %d %s", code, b)
+	}
+	// each TOTP step is good once: the sign-in waits for the step after the enrolment's
+	totp := func(at time.Time) string {
+		t.Helper()
+		code, err := staffauth.TOTPCode(started.Secret, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return code
+	}
+	const password = "rehearsal-ops-password-long-enough"
+	enrolledAt := time.Now()
+	if code, b := staff("/v1/staff/enroll/finish", map[string]string{"token": enrol, "password": password,
+		"code": totp(enrolledAt)}, nil); code != http.StatusOK {
+		t.Fatalf("enrolment finish: %d %s", code, b)
+	}
+	var step1 struct {
+		MFAToken string `json:"mfa_token"`
+	}
+	if code, b := staff("/v1/staff/login", map[string]string{"email": email, "password": password}, &step1); code != http.StatusOK || step1.MFAToken == "" {
+		t.Fatalf("the staff sign-in: %d %s", code, b)
+	}
+	next := time.Unix((staffauth.TOTPStep(enrolledAt)+1)*30, 0)
+	time.Sleep(time.Until(next))
 	var login struct {
 		AccessToken string `json:"access_token"`
 	}
-	if code, b := call(t, admin, req, &login); code != http.StatusOK || login.AccessToken == "" {
-		t.Fatalf("the service admin's sign-in: %d %s", code, b)
+	if code, b := staff("/v1/staff/mfa/totp", map[string]string{"mfa_token": step1.MFAToken, "code": totp(time.Now())}, &login); code != http.StatusOK || login.AccessToken == "" {
+		t.Fatalf("the staff second factor: %d %s", code, b)
 	}
 	crashes := func() map[string]symbols.Crash {
 		t.Helper()
 		req, _ := http.NewRequest(http.MethodGet, console+"/v1/admin/reports", nil)
 		req.Header.Set("Authorization", "Bearer "+login.AccessToken)
+		consoleHeaders(req)
 		var list struct {
 			Reports []struct {
 				ID  int64  `json:"id"`
@@ -188,6 +218,7 @@ func reportSymbolicated(t *testing.T, c *cluster) Result {
 		for _, r := range list.Reports {
 			req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/v1/admin/reports/%d", console, r.ID), nil)
 			req.Header.Set("Authorization", "Bearer "+login.AccessToken)
+			consoleHeaders(req)
 			var v struct {
 				Crashes []symbols.Crash `json:"crashes"`
 			}
@@ -273,6 +304,12 @@ func (h hostTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 // call does req, decoding a 2xx JSON answer into v: its status and body.
+// consoleHeaders are what the console's listener requires of every request (50.32).
+func consoleHeaders(req *http.Request) {
+	req.Header.Set("Origin", "http://admin.test")
+	req.Header.Set("X-Maktaba-Staff", "1")
+}
+
 func call(t *testing.T, cl *http.Client, req *http.Request, v any) (int, string) {
 	t.Helper()
 	resp, err := cl.Do(req)
