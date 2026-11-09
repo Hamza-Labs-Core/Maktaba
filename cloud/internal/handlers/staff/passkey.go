@@ -21,8 +21,8 @@ import (
 // Passkeys (story 50.33 §2 2a, §5, part 2). Each ceremony is two calls: begin draws a
 // challenge, kept server-side for 5 minutes (one per account and purpose), and returns the
 // options for navigator.credentials; finish takes the browser's answer, checks it against
-// that challenge once, and acts. A passkey whose counter goes backwards is disabled, the
-// step fails, and the owner is alerted (AlertPasskeyCounter).
+// that challenge once, and acts. A passkey whose counter goes backwards is disabled, every
+// session of the account ends, the step fails, and the owner is alerted (AlertPasskeyCounter).
 
 // AlertPasskeyCounter is the owner alert for a passkey whose counter went backwards (50.10).
 const AlertPasskeyCounter = "staff_passkey_counter"
@@ -140,8 +140,14 @@ func (d *Deps) checkAssertion(r *http.Request, a stores.StaffAccount, purpose st
 		if err := d.Staff.DisablePasskey(ctx, a.ID, cred.ID, d.now()); err != nil && !errors.Is(err, stores.ErrStaffNotFound) {
 			return assertionFailed, err
 		}
-		d.audit(r, a.ID, a.Email, audit.ActionStaffPasskeyCounter, map[string]any{"sign_count": cred.Authenticator.SignCount})
-		d.Logger.Error("staff passkey counter went backwards; passkey disabled", "code", AlertPasskeyCounter, "staff_id", a.ID)
+		// a copy of the key may exist, so a session it opened may be someone else's: every
+		// session of the account ends with it (the refresh cookie then refreshes nothing)
+		if err := d.Staff.RevokeAll(ctx, a.ID, "passkey_counter", d.now()); err != nil {
+			return assertionFailed, err
+		}
+		d.audit(r, a.ID, a.Email, audit.ActionStaffPasskeyCounter, map[string]any{
+			"sign_count": cred.Authenticator.SignCount, "sessions_ended": true})
+		d.Logger.Error("staff passkey counter went backwards; passkey disabled, sessions ended", "code", AlertPasskeyCounter, "staff_id", a.ID)
 		return assertionFailed, nil
 	}
 	rec, err := staffauth.EncodeCredential(cred)

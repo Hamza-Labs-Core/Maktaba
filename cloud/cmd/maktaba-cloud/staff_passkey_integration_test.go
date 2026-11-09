@@ -108,8 +108,8 @@ func (e *env) passkeySignIn(acct passkeyAccount) (*client, resp, string) {
 
 // T05 end to end (story 50.33 part 2): an account enrols with a passkey alone, signs in with
 // it (amr pwd+hwk) and reaches the admin routes; the challenge is good once; a passkey re-check
-// opens a sensitive route; a counter that goes backwards disables the passkey, fails the step,
-// is audited and alerts. Each passkey step is audited as staff.
+// opens a sensitive route; a counter that goes backwards disables the passkey, ends every
+// session of the account, fails the step, is audited and alerts. Each passkey step is audited as staff.
 func TestStaffPasskeys(t *testing.T) {
 	e := newEnv(t)
 	acct := e.enrolPasskey("keys@example.test", stores.StaffRoleServiceAdmin)
@@ -171,6 +171,13 @@ func TestStaffPasskeys(t *testing.T) {
 	}
 	if n := e.count(`SELECT count(*) FROM staff_passkeys WHERE staff_id = $1 AND disabled_at IS NOT NULL`, acct.id); n != 1 {
 		t.Errorf("the passkey is not disabled: %d", n)
+	}
+	// a copy of the key may exist: the sessions it opened end too, the one signed in above with them
+	if r := c.do("GET", "/v1/admin/fleet", nil); r.code != http.StatusUnauthorized {
+		t.Errorf("a session opened with the passkey outlived its counter alert: %d %s", r.code, r.body)
+	}
+	if n := e.count(`SELECT count(*) FROM staff_sessions WHERE staff_id = $1 AND revoked_at IS NULL`, acct.id); n != 0 {
+		t.Errorf("live sessions after the counter alert: %d", n)
 	}
 	if n := e.count(`SELECT count(*) FROM audit_log WHERE action = 'staff.passkey.counter_disabled' AND actor_kind = 'staff' AND actor_id = $1`, acct.id); n != 1 {
 		t.Errorf("the disabling is not audited: %d", n)

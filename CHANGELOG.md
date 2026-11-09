@@ -653,7 +653,8 @@ build fails when the two differ.
   offers the passkey first when the account has one and the browser can use it. Each check
   answers a challenge the cloud keeps for 5 minutes and accepts once, and the passkey must
   confirm the person (a fingerprint, a face or a PIN). A passkey whose counter goes backwards,
-  a sign that its key was copied, is turned off, the step is refused, and the owner is
+  a sign that its key was copied, is turned off, every session of the account ends, the step
+  is refused, and the owner is
   alerted.
 
 ### Added

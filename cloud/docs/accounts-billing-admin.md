@@ -313,7 +313,7 @@ Passkeys are WebAuthn with the console's origin (`server.admin_origin`) as the r
 user verification required and attestation `none` (go-webauthn). Each ceremony's challenge is
 kept server-side for 5 minutes, one per account and purpose, and is deleted as its answer is
 checked. A passkey whose signature counter does not move forward (while in use) may have been
-copied: it is disabled, the step fails, and the owner is paged (`staff_passkey_counter`).
+copied: it is disabled, every session of the account ends, the step fails, and the owner is paged (`staff_passkey_counter`).
 
 ## Mail
 

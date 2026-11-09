@@ -4,7 +4,7 @@
 
 ## When
 
-`staff_lockout` (5 failed sign-in steps in 15 minutes locked the account for 30), `staff_recovery_code_used` (a sign-in spent a recovery code), `staff_passkey_counter` (a passkey answered with a signature counter that did not move forward, so a copy of its key may exist: the cloud disabled that passkey and refused the step; audit action `staff.passkey.counter_disabled`).
+`staff_lockout` (5 failed sign-in steps in 15 minutes locked the account for 30), `staff_recovery_code_used` (a sign-in spent a recovery code), `staff_passkey_counter` (a passkey answered with a signature counter that did not move forward, so a copy of its key may exist: the cloud disabled that passkey, ended every session of the account and refused the step; audit action `staff.passkey.counter_disabled`).
 
 ## Check
 
