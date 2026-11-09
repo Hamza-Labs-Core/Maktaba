@@ -28,7 +28,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from maktaba_plugin_sdk.parity import JOB_COLUMNS, diff_files, diff_rows, files_tree, perf_check
+from maktaba_plugin_sdk.parity import (
+    JOB_COLUMNS,
+    JobTiming,
+    diff_files,
+    diff_rows,
+    files_tree,
+    perf_check,
+)
 
 from maktaba_pipeline.engine.dispatch import EngineRuntime, dispatch_job
 from maktaba_pipeline.engine.graph import StageDef, bound_graph
@@ -102,17 +109,94 @@ Seed = Callable[[Database], Awaitable[None]]
 
 def plugin_api_dev() -> str | None:
     """The dev API binary (``MAKTABA_PLUGIN_API_DEV``), else built with go for this checkout
-    (``None``: no go here), once per test process. A build that fails skips the calling
-    test, saying why."""
+    (``None``: no go here), once per test session (process). A build that fails skips the
+    calling test, saying why."""
     global _BUILT
-    if _BUILT is None:
-        _BUILT = _plugin_api_dev()
-    return _BUILT
+    if _BUILT is None or _BUILT[0] != os.getpid():
+        _BUILT = (os.getpid(), _plugin_api_dev())
+    return _BUILT[1]
 
 
-#: plugin_api_dev()'s binary, built once per process (the checkout does not change under a
-#: run; each parity test paid go's ~0.6 s cache check before)
-_BUILT: str | None = None
+#: plugin_api_dev()'s binary, built once per session (the checkout does not change under a
+#: run; each parity test paid go's ~0.6 s cache check before), keyed by the process that
+#: built it (a forked child builds its own)
+_BUILT: tuple[int, str | None] | None = None
+
+#: the file in a session's folder naming the process that owns it: a folder whose process is
+#: gone is a crashed session's, removed by the next session that starts (_sweep)
+_OWNER = ".mk-owner"
+#: this process's session: its pid, its folder (the build), the folders and dev servers it
+#: started; nothing here is shared with another session (parallel worktrees, xdist workers,
+#: CI jobs on one runner)
+_SESSION: dict[str, Any] = {}
+
+
+def session_dir() -> Path:
+    """This test session's own folder, removed when the process ends; on first use, the
+    folders of crashed sessions (their process gone) are removed first."""
+    if _SESSION.get("pid") != os.getpid():
+        _SESSION.clear()
+        _sweep()
+        _SESSION.update(pid=os.getpid(), dirs=[], servers=[])
+        _SESSION["dir"] = session_mkdtemp()
+        import atexit
+
+        atexit.register(_end_session, os.getpid())
+    return Path(_SESSION["dir"])
+
+
+def session_mkdtemp() -> Path:
+    """A fresh folder this session owns (removed when it ends, or by the next session after
+    a crash). Its name stays as short as ``mkdtemp``'s: unix socket paths live in it."""
+    d = Path(tempfile.mkdtemp(prefix="mkp-"))
+    (d / _OWNER).write_text(str(os.getpid()))
+    if _SESSION.get("pid") == os.getpid():
+        _SESSION["dirs"].append(d)
+    return d
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _sweep() -> None:
+    """Remove the folders (and seed part files) of sessions whose process is gone (a run
+    killed before its exit handlers ran). Only POSIX: Windows's ``os.kill`` ends the process
+    it is asked about."""
+    if os.name != "posix":
+        return
+    for d in Path(tempfile.gettempdir()).glob("mkp-*"):
+        try:
+            pid = int((d / _OWNER).read_text().strip())
+        except (OSError, ValueError):
+            continue
+        if pid != os.getpid() and not _alive(pid):
+            shutil.rmtree(d, ignore_errors=True)
+    # a seed's part file (_promote) whose session died before its rename
+    for f in Path(tempfile.gettempdir()).glob("maktaba-plugin-api-dev-*.seed.*.*"):
+        try:
+            pid = int(f.name.rsplit(".", 2)[1])
+        except (IndexError, ValueError):
+            continue
+        if pid != os.getpid() and not _alive(pid):
+            with contextlib.suppress(OSError):
+                f.unlink()
+
+
+def _end_session(pid: int) -> None:
+    if os.getpid() != pid or _SESSION.get("pid") != pid:
+        return
+    for server in list(_SESSION["servers"]):
+        stop_dev_api(server)
+    for d in _SESSION["dirs"]:
+        shutil.rmtree(d, ignore_errors=True)
+    _SESSION.clear()
 
 
 def _plugin_api_dev() -> str | None:
@@ -124,10 +208,16 @@ def _plugin_api_dev() -> str | None:
         return None
     import hashlib
 
-    # one binary per checkout, built once per run (go's cache makes an unchanged one quick):
-    # a binary left by another worktree or an older checkout serves other routes
+    # each session builds its own binary in its own folder: two sessions building at once
+    # never write one file. It starts as a copy of the last binary any session built for this
+    # checkout (the seed), so go's check finds it up to date and does not link again (~3 s);
+    # the seed is only ever replaced whole (os.replace), so a copy is never half a binary
     tag = hashlib.sha256(str(API_DIR.resolve()).encode()).hexdigest()[:12]
-    out = Path(tempfile.gettempdir()) / f"maktaba-plugin-api-dev-{tag}"
+    seed = Path(tempfile.gettempdir()) / f"maktaba-plugin-api-dev-{tag}.seed"
+    out = session_dir() / ("plugin-api-dev.exe" if os.name == "nt" else "plugin-api-dev")
+    with contextlib.suppress(OSError):
+        shutil.copy2(seed, out)
+    before = _stamp(out)
     built = subprocess.run(
         [go, "build", "-o", str(out), "./tools/plugin-api-dev"],
         cwd=API_DIR,
@@ -139,7 +229,97 @@ def _plugin_api_dev() -> str | None:
 
         tail = (built.stderr or built.stdout).strip().splitlines()[-3:]
         pytest.skip("the plugin API's dev server did not build: " + " | ".join(tail))
+    if before is None or _stamp(out) != before:
+        _promote(out, seed)
     return str(out)
+
+
+def _stamp(path: Path) -> tuple[int, int] | None:
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return st.st_size, st.st_mtime_ns
+
+
+def _promote(built: Path, seed: Path) -> None:
+    """Make ``built`` the checkout's seed: copied beside it under a name of this session's,
+    then renamed over it in one step. A session copying the seed meanwhile gets the old one
+    or the new one, whole; one that loses a race on Windows keeps the old seed."""
+    part = seed.with_name(f"{seed.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}")
+    try:
+        shutil.copy2(built, part)
+        os.replace(part, seed)
+    except OSError:
+        with contextlib.suppress(OSError):
+            part.unlink()
+
+
+@dataclass
+class DevAPI:
+    """A plugin API dev server this session started: its process, its unix socket and the
+    mint's address (TCP, port 0: the kernel picks it, the server says which)."""
+
+    proc: subprocess.Popen[str]
+    socket: Path
+    mint: str
+
+
+def start_dev_api(
+    binary: str,
+    *,
+    dsn: str,
+    socket: Path,
+    bundle: Path | None = None,
+    plex: tuple[str, str] | None = None,
+) -> DevAPI:
+    """Start the dev server; return once it says where its mint listens. It exits on its own
+    when this process goes (its stdin, ``-watch-stdin``), and at the session's end."""
+    session_dir()
+    proc = subprocess.Popen(
+        [
+            binary,
+            "-dsn",
+            dsn,
+            "-socket",
+            str(socket),
+            "-mint",
+            "127.0.0.1:0",
+            "-watch-stdin",
+            *(["-bundle", str(bundle)] if bundle else []),
+            *(["-plex-url", plex[0], "-plex-token", plex[1]] if plex else []),
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    server = DevAPI(proc=proc, socket=socket, mint="")
+    _SESSION["servers"].append(server)
+    assert proc.stdout is not None
+    line = proc.stdout.readline()
+    if not line.startswith("ready "):
+        stop_dev_api(server)
+        raise AssertionError(f"the plugin API's dev server did not start: {line!r}")
+    server.mint = line.split()[1]
+    return server
+
+
+def stop_dev_api(server: DevAPI) -> None:
+    """Stop one of this session's dev servers (only its own process)."""
+    proc = server.proc
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(5)
+    for f in (proc.stdin, proc.stdout):
+        if f is not None:
+            with contextlib.suppress(OSError):
+                f.close()
+    with contextlib.suppress(ValueError):
+        _SESSION.get("servers", []).remove(server)
 
 
 #: the keys of the queue's JSON columns that hold when something happened (an enqueue's
@@ -202,17 +382,17 @@ def _cpu_of(pid: int) -> float | None:
 
 
 #: a timing line of perf_check (N16), as opposed to a difference in what was written
-_PERF_LINE = re.compile(r" p(50|95)( \(CPU\))?: plugin ")
+_PERF_LINE = re.compile(r" p(50|95) \((CPU|wall, paired)\): plugin ")
 
 
 @dataclass
 class Side:
     db: Database
-    times: dict[str, list[float]] = field(default_factory=dict)
-    #: N16's p95 samples: the CPU each benched job cost, this process (the worker and, in
-    #: the harness, the runner) and the plugin API's process; Postgres is left out, as both
-    #: sides run the same queries
-    cpu_times: dict[str, list[float]] = field(default_factory=dict)
+    #: N16's samples per stage, one per job in the order run (the bench's rounds replace the
+    #: drain's): its wall time and the CPU it cost this process (the worker, the runner and
+    #: the stage's code) and the plugin API's (Linux; the bench only), and on the plugin
+    #: side its plugin API calls and their cheapest hop
+    timings: dict[str, list[JobTiming]] = field(default_factory=dict)
     ran: list[str] = field(default_factory=list)
     #: the extensions' settings its jobs get (story 54.35: each side's own fake Plex)
     extension_states: dict[str, Any] = field(default_factory=dict)
@@ -264,9 +444,11 @@ class Parity:
                     " AND parked_on IS NULL"
                 )
                 continue
-            t0 = time.perf_counter()
+            t0, c0 = time.perf_counter(), time.process_time()
             await dispatch_job(side.db, job, runtime=rt, legacy_handlers={})
-            side.times.setdefault(job.stage, []).append(time.perf_counter() - t0)
+            side.timings.setdefault(job.stage, []).append(
+                JobTiming(wall=time.perf_counter() - t0, cpu=time.process_time() - c0)
+            )
             side.ran.append(job.stage)
         raise AssertionError(f"parity: no quiet after {limit} jobs")
 
@@ -334,8 +516,7 @@ class Parity:
         rt = EngineRuntime(graph=self.graph)
         for side in (self.a, self.b):
             for st in stages:
-                side.times[st] = []
-                side.cpu_times[st] = []
+                side.timings[st] = []
         # the worker and the runner share this test's process and loop: a collector pause
         # would land on whichever side runs then, so it is held off while both are timed
         from dataclasses import replace
@@ -412,9 +593,18 @@ class Parity:
                     t1 = time.perf_counter()
                     cpu1, api1 = time.process_time(), _cpu_of(self.api_pid)
                     took = t1 - t0
-                    side.times[st].append(took)
                     at = {k: v for k, v in marks if k.startswith("@")}
                     steps = [(k, v) for k, v in marks if not k.startswith("@")]
+                    hops = [v for k, v in steps if k.startswith("api ")]
+                    api_cpu = api1 - api0 if api0 is not None and api1 is not None else 0.0
+                    side.timings[st].append(
+                        JobTiming(
+                            wall=took,
+                            cpu=(cpu1 - cpu0) + api_cpu,
+                            calls=len(hops),
+                            hop=min(hops, default=0.0),
+                        )
+                    )
                     spans: dict[str, float] = {}
                     if "@start" in at and "@end" in at:
                         named = sum(v for k, v in steps if k.startswith("api ") or k == "relay")
@@ -426,10 +616,6 @@ class Parity:
                             "api": named,
                             "unnamed": (at["@end"] - at["@start"]) - named,
                         }
-                    side.cpu_times[st].append(
-                        (cpu1 - cpu0)
-                        + ((api1 - api0) if api0 is not None and api1 is not None else 0.0)
-                    )
                     self.jobs.append(
                         {
                             "side": "plugin" if side is self.b else "in-process",
@@ -494,8 +680,7 @@ class Parity:
     ) -> list[str]:
         """N16's samples (``bench``) and every difference. A failure that is only the timing
         is measured once more and counts only when the second run fails too: with 11 runs a
-        side, p95 is about the slowest run, and one stall of a shared CI machine (on either
-        side's turn) is not the plugin's cost.
+        side, p95 is about the slowest run.
 
         ``timing_only``: only N16 is judged after the bench (the rows and the queue were
         compared after the drain): for stages that make run-time ids, which the bench's
@@ -519,12 +704,7 @@ class Parity:
         out: list[str] = []
         for s in stages:
             out += perf_check(
-                s,
-                self.a.times.get(s, []),
-                self.b.times.get(s, []),
-                floor_s=PERF_FLOOR_S,
-                inproc_p95=self.a.cpu_times.get(s),
-                plugin_p95=self.b.cpu_times.get(s),
+                s, self.a.timings.get(s, []), self.b.timings.get(s, []), floor_s=PERF_FLOOR_S
             )
         return out
 
@@ -599,17 +779,9 @@ class Parity:
                 files_tree(self.tmp / "files-b" / area),
             )
         if perf:
-            for s in stages:
-                # N16 counts the job's own work: a difference under PERF_FLOOR_S is the plugin
-                # path's fixed cost of a job (its token, the hop to the runner), README §15.12
-                out += perf_check(
-                    s,
-                    self.a.times.get(s, []),
-                    self.b.times.get(s, []),
-                    floor_s=PERF_FLOOR_S,
-                    inproc_p95=self.a.cpu_times.get(s),
-                    plugin_p95=self.b.cpu_times.get(s),
-                )
+            # N16 counts the job's own work: a difference under PERF_FLOOR_S is the plugin
+            # path's fixed cost of a job (its token, the hop to the runner), README §15.12
+            out += self.perf_problems(stages)
         return out
 
     async def fingerprints(self, stage: str, subjects: Sequence[Any]) -> list[str]:
@@ -660,8 +832,8 @@ async def parity(
     for n in names:
         await admin.execute(f'CREATE DATABASE "{n}" TEMPLATE "{template}"')
     await admin.close()
-    tmp = Path(tempfile.mkdtemp(prefix="mkp-"))
-    proc: subprocess.Popen[str] | None = None
+    tmp = session_mkdtemp()
+    server: DevAPI | None = None
     tasks: list[asyncio.Task[None]] = []
     sides: list[Database] = []
     try:
@@ -689,24 +861,15 @@ async def parity(
             await b.execute("UPDATE job_stages SET impl = 'plugin' WHERE stage = $1", name)
         (tmp / "bundle.json").write_bytes(bundle)
         api_sock = tmp / "api.sock"
-        proc = subprocess.Popen(
-            [
-                binary,
-                "-dsn",
-                _go_dsn(_swap_db(pg_url, names[1])),
-                "-socket",
-                str(api_sock),
-                "-bundle",
-                str(tmp / "bundle.json"),
-                *(["-plex-url", plex[0], "-plex-token", plex[1]] if plex else []),
-            ],
-            stdout=subprocess.PIPE,
-            text=True,
+        server = await asyncio.to_thread(
+            start_dev_api,
+            binary,
+            dsn=_go_dsn(_swap_db(pg_url, names[1])),
+            socket=api_sock,
+            bundle=tmp / "bundle.json",
+            plex=plex,
         )
-        assert proc.stdout is not None
-        line = await asyncio.to_thread(proc.stdout.readline)
-        assert line.startswith("ready "), line
-        monkeypatch.setenv("MAKTABA_API_URL", "http://" + line.split()[1])
+        monkeypatch.setenv("MAKTABA_API_URL", "http://" + server.mint)
         run_dir = tmp / "runners"
         monkeypatch.setenv("MAKTABA_RUNNER_DIR", str(run_dir))
         served = {s: (firstparty.impl_entry(s) or "") for s in stages}
@@ -749,7 +912,7 @@ async def parity(
             graph=graph,
             tmp=tmp,
             files=dict(files or {}),
-            api_pid=proc.pid,
+            api_pid=server.proc.pid,
             stages=tuple(stages),
         )
     finally:
@@ -760,10 +923,8 @@ async def parity(
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
-        if proc is not None:
-            proc.terminate()
-            with contextlib.suppress(Exception):
-                proc.wait(5)
+        if server is not None:
+            stop_dev_api(server)
         for d in sides:
             await d.close()
         admin = await asyncpg.connect(pg_url)
@@ -771,6 +932,8 @@ async def parity(
             await admin.execute(f'DROP DATABASE IF EXISTS "{n}" WITH (FORCE)')
         await admin.close()
         shutil.rmtree(tmp, ignore_errors=True)
+        with contextlib.suppress(ValueError, KeyError):
+            _SESSION["dirs"].remove(tmp)
 
 
 _ADDRESS = re.compile(r"0x[0-9a-f]{6,}")

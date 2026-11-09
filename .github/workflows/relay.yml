@@ -38,6 +38,9 @@ on:
       - 'shared/logkeeper/go/**'
       - 'deploy/cloud-relay/**'
       - '.github/workflows/relay.yml'
+      # the lint job's pinned golangci-lint and the fetch it goes through
+      - 'tools/ci/golangci-lint.sh'
+      - 'tools/release/fetch-pinned.sh'
     tags:
       - 'v*'
   pull_request:
@@ -53,6 +56,9 @@ on:
       - 'shared/logkeeper/go/**'
       - 'deploy/cloud-relay/**'
       - '.github/workflows/relay.yml'
+      # the lint job's pinned golangci-lint and the fetch it goes through
+      - 'tools/ci/golangci-lint.sh'
+      - 'tools/release/fetch-pinned.sh'
   # Manual rollout: pick a tag (or leave blank to deploy `latest`) and
   # run the deploy job against the `production` environment.
   # Or a tag's run by hand, as a pushed tag's (`--ref vX.Y.Z -f tag=vX.Y.Z`), when its push run
@@ -101,8 +107,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('cloud/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -110,22 +114,44 @@ jobs:
         with:
           modules: cloud
 
+      # golangci-lint's pinned release (tools/ci/golangci-lint.sh), cached by its pin; on a miss
+      # fetched by the GitHub API first, retried, its SHA-256 checked (the action's own
+      # download, github.com with no retry, failed main's lint with a 504). The action steps
+      # below run it (install-mode: none); saved on a miss on any ref, as the NSIS toolset is.
+      - name: golangci-lint's cache key
+        id: golangci-key
+        run: echo "key=$(tools/ci/golangci-lint.sh --key)" >>"$GITHUB_OUTPUT"
+      - id: golangci-cache
+        uses: actions/cache/restore@v4
+        with:
+          # the archive alone (bin/ is unpacked from it each run)
+          path: |
+            build/ci-pinned/golangci-lint
+            !build/ci-pinned/golangci-lint/bin
+          key: ${{ steps.golangci-key.outputs.key }}
+      - name: golangci-lint, pinned and retried
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: tools/ci/golangci-lint.sh build/ci-pinned/golangci-lint
+      - name: Save golangci-lint
+        if: steps.golangci-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          # the archive alone (bin/ is unpacked from it each run)
+          path: |
+            build/ci-pinned/golangci-lint
+            !build/ci-pinned/golangci-lint/bin
+          key: ${{ steps.golangci-key.outputs.key }}
+
       - name: golangci-lint (cloud)
         uses: golangci/golangci-lint-action@v9.2.1
         with:
-          version: v2.12.2
+          # the binary golangci-lint.sh put on the PATH (its version is pinned there)
+          install-mode: none
           working-directory: cloud
           args: --timeout=5m
           # its lint cache: pull requests and tags restore main's, only a push to main saves
           skip-save-cache: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main') }}
-
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
 
   test:
     name: test (cloud + postgres)
@@ -166,8 +192,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('cloud/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -199,14 +223,6 @@ jobs:
         working-directory: cloud
         run: go test -tags=integration -count=1 ./...
 
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
-
   build:
     name: build (${{ matrix.goos }}/${{ matrix.goarch }})
     runs-on: ubuntu-22.04
@@ -229,8 +245,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('cloud/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -265,14 +279,6 @@ jobs:
           name: maktaba-cloud-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
           retention-days: 7
-
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
 
   docker:
     name: docker build + push
@@ -493,8 +499,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('tools/release/go.sum') }}
 
       # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
       - name: Go modules
@@ -550,14 +554,6 @@ jobs:
             (cd tools/release && go run ./cmd/release-order latest --tag "${TAG}"))"
           echo "release ${TAG} is published; the latest: ${latest}"
           echo "deploy=${latest}" >> "$GITHUB_OUTPUT"
-
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
 
   deploy:
     name: deploy to VPS

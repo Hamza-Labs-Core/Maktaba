@@ -127,8 +127,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('tools/release/go.sum', 'shared/go/releaseverify/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -168,14 +166,6 @@ jobs:
           go run ./cmd/gen-release-json --tag "$tag" --commit "${{ github.sha }}" --dist "$rel" --repo ../.. >"$rel/release.json"
           cat "$rel/release.json"
           go run ./cmd/gen-release-json --check "$rel/release.json" --repo ../..
-
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
 
   installer-tests:
     name: installer tests (${{ matrix.os }})
@@ -263,8 +253,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('tools/release/go.sum') }}
 
       # The static nfpm _launcher.yml builds and main's runs cache, under the same key: a
       # build from source here fetched some 50 modules and their checksums each run, and
@@ -304,14 +292,6 @@ jobs:
         run: REQUIRE=apt,rpm,dnf bash tools/release/pkg-repo-test.sh
       - name: Homebrew formula and cask
         run: bash tools/release/homebrew-tap-test.sh
-
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
 
       - name: Save the static nfpm
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.nfpm-cache.outputs.cache-hit != 'true'
@@ -536,8 +516,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('cmd/maktaba-server/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -597,14 +575,6 @@ jobs:
           go test -count=1 -timeout 20m -run 'TestRealVenvFromARelease$' -v ./internal/appvenv/ | tee "$RUNNER_TEMP/release-venv.out"
           grep -q -- "--- PASS: TestRealVenvFromARelease " "$RUNNER_TEMP/release-venv.out" ||
             { echo "::error::TestRealVenvFromARelease did not pass (or was skipped)"; exit 1; }
-
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
 
   # Maktaba for Windows's first run (Epic 38, story 38.7): the bootstrap's tests on Windows
   # (real venvs, the msvcrt lock, CTRL_BREAK mid-download), then the venv built from the

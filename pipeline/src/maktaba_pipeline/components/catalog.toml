@@ -124,6 +124,9 @@ since      = "0.3.66"
 
 [[component]]
 id         = "core.pipeline"
+# its stages run as tv.maktaba.core-media (wave 9, story 54.36); component_catchup (the
+# engine's) and categorize (a placeholder with no handler) stay the core's
+plugin     = "tv.maktaba.core-media"
 kind       = "stages+process+loop"
 switchable = false
 group      = "core"
@@ -204,8 +207,7 @@ since      = "0.3.66"
 
 [[component]]
 id        = "media.thumbnails"
-# thumb_small and chapter_thumbs (wave 2); the poster stage thumbnail stays the core's until
-# its own move
+# thumb_small and chapter_thumbs (wave 2), the poster stage thumbnail (wave 9, story 54.36)
 plugin    = "tv.maktaba.thumbnails"
 kind      = "stages"
 group     = "media"

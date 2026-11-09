@@ -1,8 +1,8 @@
 {
- "digest": "e7073761cf0328ade0b77d67e89365c2b8ce9c634d126c7124ba65c27aa9168e",
+ "digest": "700f45c69fa231f983752ae450e2c121ea3623ba4730ec6a35ef39ea1b8c0a3b",
  "plugins": [
   {
-   "digest": "a0db803104bfc1139e330f70da6fa6ba9944c1ad37e4b2ba391859c2a7370eda",
+   "digest": "90cee3b8a50fbfef9b0b1d9f12fbf0516ee5098ee7913c1d5133714f73b1b1b3",
    "folder": "classify",
    "id": "tv.maktaba.classify",
    "manifest": "# tv.maktaba.classify: Maktaba's classifiers as a first-party plugin (Epic 54, README §15.2).\n# Wave 1 (story 54.28) moved the stages that read the database and write it, with no file,\n# no model and no network; wave 4 (story 54.31) brings the rest of classify: the model's\n# questions go through the plugin API's compute.generate (model_rules), the encyclopedia\n# lookup runs in the net group.\nschema     = 1\nid         = \"tv.maktaba.classify\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.classify.name\"\nsummary = \"fp.classify.summary\"\n\n[capabilities]\n# the model's questions (check_tags, check_clips) go through compute.generate (54.31 §2)\nrequired = [\"compute.llm\"]\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"classify\"\ndb.read   = [\"app_settings\", \"libraries\", \"media_metadata_enrichment\", \"processing_jobs\", \"transcript_segments\", \"transcripts\", \"video_signals\", \"videos\", \"youtube_channels\", \"youtube_playlist_items\", \"youtube_playlists\", \"youtube_videos\"]\ndb.write  = [\"books\", \"clip_checks\", \"clip_group_items\", \"clip_groups\", \"episode_tags\", \"promo_links\", \"season_style\", \"season_tags\", \"series\", \"series_books\", \"series_episodes\", \"series_seasons\", \"tag_checks\", \"topic_collections\", \"topic_items\", \"video_topic_tags\"]\nsettings  = [\"groups\", \"detect\", \"tag\", \"tagcheck\", \"books\"]\ncompute   = [\"llm\"]\n# review_pages: reads the small thumbnails, writes the library's page in the reports folder\nfiles.read  = [\"data.thumbnails\"]\nfiles.write = [\"data.review\"]\n# books: the encyclopedia (rules.books.wiki_api). Only the net group gets a socket (the\n# runner's sandbox), so this list is books' alone; the CI recording proxy fails a run that\n# reaches any other host (story 54.31 T03)\nnet       = [\"ar.wikipedia.org\"]\n\n[[stage]]\nname         = \"promo_links\"\nsubject      = \"library\"\nexport       = \"promo-links\"\nversion      = 1\nlabel        = \"Promo links\"\nsubject_kinds = [\"library\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 2\nentry_for    = [\"library\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nedges        = [{ to = \"clip_groups\", map = \"same\" }, { to = \"plan_channels\", map = \"catalog\" }]\nentry        = \"maktaba_fp_classify.stages.promo_links:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"clip_groups\"\nsubject      = \"library\"\nexport       = \"clip-groups\"\nversion      = 1\nlabel        = \"Clip groups\"\nsubject_kinds = [\"library\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 3\nentry_for    = [\"library\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nedges        = [{ to = \"plan_channels\", map = \"catalog\" }]\nentry        = \"maktaba_fp_classify.stages.clip_groups:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"topic_collections\"\nsubject      = \"library\"\nexport       = \"topic-collections\"\nversion      = 1\nlabel        = \"Topic collections\"\nsubject_kinds = [\"library\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 2\nentry_for    = [\"library\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nedges        = [{ to = \"clip_groups\", map = \"same\" }, { to = \"plan_channels\", map = \"catalog\" }, { to = \"youtube_collections\", map = \"same\" }]\nentry        = \"maktaba_fp_classify.stages.topic_collections:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"rate_style\"\nsubject      = \"season\"\nexport       = \"rate-style\"\nversion      = 1\nlabel        = \"Rate style\"\nsubject_kinds = [\"season\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 3\nmay_request  = [\"style_sample\"]\nentry_for    = [\"season\"]\ndebounce_sec = 10\ndebounce_max_sec = 120\nedges        = [{ to = \"plan_channels\", map = \"catalog\" }]\nentry        = \"maktaba_fp_classify.stages.rate_style:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"check_tags\"\nsubject      = \"season\"\nexport       = \"check-tags\"\nversion      = 1\nlabel        = \"Check series tags\"\nsubject_kinds = [\"season\"]\npool         = \"lookup\"\nlane         = \"seasons\"\nlane_order   = 3\nentry_for    = [\"season\"]\nedges        = [{ to = \"books\", map = \"same\" }, { to = \"plan_channels\", map = \"catalog\" }]\n# the model server defaults to localhost: the home's own (a node would ask another model,\n# or none) unless the settings name a shared one\nplacement    = \"home\"\nmodel_rules  = \"tagcheck\"\nentry        = \"maktaba_fp_classify.stages.check_tags:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"check_clips\"\nsubject      = \"library\"\nexport       = \"check-clips\"\nversion      = 2\nlabel        = \"Check clip tags\"\nsubject_kinds = [\"library\"]\npool         = \"lookup\"\nlane         = \"seasons\"\nlane_order   = 3\nentry_for    = [\"library\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nedges        = [{ to = \"clip_groups\", map = \"same\" }, { to = \"plan_channels\", map = \"catalog\" }]\n# the model server defaults to localhost: the home's own (a node would ask another model,\n# or none) unless the settings name a shared one\nplacement    = \"home\"\nmodel_rules  = \"tagcheck\"\nentry        = \"maktaba_fp_classify.stages.check_clips:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"review_pages\"\nsubject      = \"library\"\nexport       = \"review-pages\"\nversion      = 1\nlabel        = \"Review pages\"\nsubject_kinds = [\"library\"]\npool         = \"reports\"\nlane         = \"seasons\"\nlane_order   = 6\nentry_for    = [\"library\"]\ndebounce_sec = 120\ndebounce_max_sec = 900\n# the reports folder is the home's (the API serves it)\nplacement    = \"home\"\nentry        = \"maktaba_fp_classify.stages.review_pages:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"detect\"\nsubject      = \"library\"\nexport       = \"detect\"\nversion      = 3\nlabel        = \"Place episodes\"\nsubject_kinds = [\"library\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 1\nmay_request  = [\"fingerprint\", \"fp_gate\"]\nentry_for    = [\"library\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nedges        = [{ to = \"tag\", map = \"seasons_changed\" }, { to = \"rate_style\", map = \"seasons_changed\" }, { to = \"tag\", map = \"same\" }, { to = \"plan_channels\", map = \"catalog\" }, { to = \"review_pages\", map = \"same\" }, { to = \"topic_collections\", map = \"same\" }, { to = \"promo_links\", map = \"same\" }, { to = \"display_title\", map = \"same\" }]\nentry        = \"maktaba_fp_classify.stages.detect:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"tag\"\nsubject      = \"season\"\nexport       = \"tag\"\nversion      = 7\nlabel        = \"Tag topics\"\nsubject_kinds = [\"season\", \"library\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 2\nentry_for    = [\"season\"]\n# transcripts arrive one video at a time: a season's are tagged together\ndebounce_sec = 300\ndebounce_max_sec = 3600\n# a new run rewrites the tags, so the model's and the book's corrections are applied again\n# (from their cached answers) before a clip group or a channel reads them\nedges        = [{ to = \"plan_channels\", map = \"catalog\" }, { to = \"check_tags\", map = \"same\" }, { to = \"check_clips\", map = \"library_of\" }]\nentry        = \"maktaba_fp_classify.stages.tag:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"books\"\nsubject      = \"season\"\nexport       = \"books\"\nversion      = 1\nlabel        = \"Books\"\nsubject_kinds = [\"season\"]\npool         = \"lookup\"\nlane         = \"seasons\"\nlane_order   = 4\nentry_for    = [\"season\"]\nedges        = [{ to = \"plan_channels\", map = \"catalog\" }]\n# the one classify stage that reaches the internet (the encyclopedia)\nrunner       = \"net\"\nentry        = \"maktaba_fp_classify.stages.books:IMPL\"\nfingerprint  = { input = true, output = false }\n",
@@ -155,8 +155,8 @@
      "reads": [
       "tag_checks"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "season",
+     "scope_arg": 1,
      "sha256": "58143f24810a5b08087e58db9783f1ca1fce1e2a3fa4fc422864a9f290292aaa",
      "text": "SELECT input_hash, answer, applied_hash FROM tag_checks WHERE season_id = $1",
      "writes": []
@@ -183,8 +183,8 @@
       "videos",
       "youtube_videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "season",
+     "scope_arg": 1,
      "sha256": "2a6e103bd5905be6c7c80cc68ea5873b5c23836512ec0d541c7e05302802194a",
      "text": "SELECT COALESCE(yv.title, v.title, v.filename) AS title\n  FROM series_episodes e\n  JOIN series_seasons ss ON ss.series_id = e.series_id\n   AND ss.season = COALESCE(e.season_override, e.season)\n  JOIN videos v ON v.id = e.video_id AND v.deleted_at IS NULL\n  LEFT JOIN media_metadata_enrichment m ON m.video_id = v.id AND m.provider = 'youtube'\n  LEFT JOIN youtube_videos yv ON yv.youtube_id = m.external_id\n WHERE ss.id = $1\n ORDER BY COALESCE(e.episode_override, e.episode), v.id",
      "writes": []
@@ -328,8 +328,8 @@
      "reads": [
       "series_seasons"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "season",
+     "scope_arg": 1,
      "sha256": "3605fce40c3e84688526c704e9e472f4ed3cc4785b028c0e1de6df4dd650311d",
      "text": "SELECT id, series_id, library_id, name, kind, season, membership_hash, retired_at, median_duration_s, metadata FROM series_seasons WHERE id = $1",
      "writes": []
@@ -341,8 +341,8 @@
       "series_episodes",
       "series_seasons"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "season",
+     "scope_arg": 1,
      "sha256": "6e025ce782db788eb2aea72e8744846a8f647b2f3b606f95a1bee9e49bd3e15e",
      "text": "SELECT e.video_id AS id FROM series_episodes e JOIN series_seasons ss ON ss.series_id = e.series_id  AND ss.season = COALESCE(e.season_override, e.season) WHERE ss.id = $1 ORDER BY COALESCE(e.episode_override, e.episode), e.video_id",
      "writes": []
@@ -484,8 +484,8 @@
      "reads": [
       "processing_jobs"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "job_subject",
+     "scope_arg": 1,
      "sha256": "a7e694f8f073e4843b0f22cd2ffd7d952cc2c39d0105217abe4524507ad94d43",
      "text": "SELECT output_hash FROM processing_jobs WHERE subject_kind = 'library' AND subject_id = $1 AND stage = 'youtube_sync' AND state = 'done' AND outcome IN ('changed','unchanged','skipped_unchanged','imported') ORDER BY id DESC LIMIT 1",
      "writes": []
@@ -565,8 +565,8 @@
      "reads": [
       "libraries"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "library",
+     "scope_arg": 1,
      "sha256": "e2b8ba9a12b59b9fcbf51a5681b50a64a3ff47ea53020b0173054a97acce4a29",
      "text": "SELECT name FROM libraries WHERE id = $1",
      "writes": []
@@ -705,8 +705,8 @@
      "reads": [
       "processing_jobs"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "job_subject",
+     "scope_arg": 2,
      "sha256": "cf684a390d5cc2a56e31739408e5059003c3bf6911c205bf8241d47fdc850e7e",
      "text": "SELECT id, stage_version, input_hash, output_hash FROM processing_jobs WHERE subject_kind = $1 AND subject_id = $2 AND stage = $3 AND state = 'done' AND id <> $4 AND outcome IN ('changed','unchanged','skipped_unchanged','imported') ORDER BY id DESC LIMIT 1",
      "writes": []
@@ -717,8 +717,8 @@
      "reads": [
       "processing_jobs"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "job_subject",
+     "scope_arg": 1,
      "sha256": "023c3ad6fd578bbf1fea6abd818ad46ae5bc8c3f5bd6568fc612e3f427811fb5",
      "text": "SELECT state, attempts, max_attempts FROM processing_jobs WHERE subject_kind = 'video' AND subject_id = $1 AND stage = 'style_sample' ORDER BY id DESC LIMIT 1",
      "writes": []
@@ -729,8 +729,8 @@
      "reads": [
       "processing_jobs"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "job_subject",
+     "scope_arg": 1,
      "sha256": "b6d2e993222ee961688312a92e589a9ef0488941c0cd8b38e407bab88af0857e",
      "text": "SELECT output_hash FROM processing_jobs WHERE subject_kind = 'video' AND subject_id = $1 AND stage = 'style_sample' AND state = 'done' AND outcome IN ('changed','unchanged','skipped_unchanged','imported') ORDER BY id DESC LIMIT 1",
      "writes": []
@@ -753,8 +753,8 @@
      "reads": [
       "season_style"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "season",
+     "scope_arg": 1,
      "sha256": "718ad44fab360e013c5fca647510b7e5b2632995ada76539af0d9400dfb608e0",
      "text": "SELECT override_style FROM season_style WHERE season_id = $1",
      "writes": []
@@ -765,8 +765,8 @@
      "reads": [
       "season_style"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "season",
+     "scope_arg": 1,
      "sha256": "d46b21bf18644d064010531a106f7f2feef8c4fa53feaf06a899ad771caebb2f",
      "text": "SELECT style, tier, confidence FROM season_style WHERE season_id = $1",
      "writes": []
@@ -911,8 +911,8 @@
      "reads": [
       "youtube_playlists"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "youtube_playlist",
+     "scope_arg": 1,
      "sha256": "d25af40d08b2e12ed3614228ce0a389c4b03fcca28bb6cdfd5bbaefd86f516d8",
      "text": "SELECT playlist_id, title FROM youtube_playlists WHERE playlist_id = ANY($1::text[])",
      "writes": []
@@ -923,8 +923,8 @@
      "reads": [
       "youtube_playlists"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "youtube_playlist",
+     "scope_arg": 1,
      "sha256": "752d5082d15978c9c77f061ada8fc661ea63fd43ab82b073aba5823b4bb383c8",
      "text": "SELECT playlist_id, title FROM youtube_playlists WHERE playlist_id IN (SELECT value FROM json_each($1))",
      "writes": []
@@ -959,8 +959,8 @@
      "reads": [
       "season_tags"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "season",
+     "scope_arg": 1,
      "sha256": "7a2f4963f84d6cbbbdf5bfe89fa686e7626bd593691ee66b7f4bca9464b80691",
      "text": "SELECT count(*) FROM season_tags WHERE season_id = $1",
      "writes": []
@@ -971,8 +971,8 @@
      "reads": [
       "season_tags"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "season",
+     "scope_arg": 1,
      "sha256": "05729ed7a23b7213c1f8dccaee670e79eb4ad1763a7ac3ca8cc4590ec094907c",
      "text": "SELECT tag, score FROM season_tags WHERE season_id = $1",
      "writes": []
@@ -985,8 +985,8 @@
       "videos",
       "youtube_videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "48860e124a92441882eb4a8236b25fdcb624cb8420d2735b6567d28eed0a852a",
      "text": "SELECT v.id AS id, v.path AS path, COALESCE(yv.title, v.title, v.filename) AS title, yv.description AS description, COALESCE(v.duration_sec, yv.duration_s) AS dur, yv.upload_date AS upload_date, yv.date_quality AS dq, m.external_id AS yid FROM videos v LEFT JOIN media_metadata_enrichment m ON m.video_id = v.id AND m.provider = 'youtube' LEFT JOIN youtube_videos yv ON yv.youtube_id = m.external_id WHERE v.id = ANY($1::uuid[])",
      "writes": []
@@ -999,8 +999,8 @@
       "videos",
       "youtube_videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "5f65533304a4b57522ba9231b3bd8fd5c65706fd439550e418d20c8922b4748a",
      "text": "SELECT v.id AS id, v.path AS path, COALESCE(yv.title, v.title, v.filename) AS title, yv.description AS description, COALESCE(v.duration_sec, yv.duration_s) AS dur, yv.upload_date AS upload_date, yv.date_quality AS dq, m.external_id AS yid FROM videos v LEFT JOIN media_metadata_enrichment m ON m.video_id = v.id AND m.provider = 'youtube' LEFT JOIN youtube_videos yv ON yv.youtube_id = m.external_id WHERE v.id IN (SELECT value FROM json_each($1))",
      "writes": []
@@ -1011,8 +1011,8 @@
      "reads": [
       "transcripts"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "3d533f6a95cdc1f1abd303e529a8470d1adad7fee298bc64a4c557c0be1bcf7c",
      "text": "SELECT id, video_id FROM transcripts WHERE is_active AND video_id = ANY($1::uuid[]) ORDER BY video_id, audio_track_id, id",
      "writes": []
@@ -1023,8 +1023,8 @@
      "reads": [
       "transcripts"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "8ace5a8683fba1f3fe12b8b78987902f85fdb1b1361775b2fca95b4368b907e1",
      "text": "SELECT id, video_id FROM transcripts WHERE is_active AND video_id IN (SELECT value FROM json_each($1)) ORDER BY video_id, audio_track_id, id",
      "writes": []
@@ -1049,8 +1049,8 @@
       "series_episodes",
       "series_seasons"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "season",
+     "scope_arg": 1,
      "sha256": "4ec4befbbb90535996e521c6760f7f359000318079f6436591fe489aabed9ffc",
      "text": "SELECT t.video_id AS vid, t.tag AS tag, t.score AS score FROM episode_tags t WHERE t.video_id IN (SELECT e.video_id FROM series_episodes e JOIN series_seasons ss ON ss.series_id = e.series_id  AND ss.season = COALESCE(e.season_override, e.season) WHERE ss.id = $1)",
      "writes": []
@@ -1061,8 +1061,8 @@
      "reads": [
       "transcript_segments"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "transcript",
+     "scope_arg": 2,
      "sha256": "760dc06a301582c8fc91cbb666234faac02d26b0f110e738ede4536dd78c3880",
      "text": "SELECT transcript_id AS tid, text FROM transcript_segments WHERE start_sec < $1 AND transcript_id = ANY($2::uuid[]) ORDER BY transcript_id, seq",
      "writes": []
@@ -1073,8 +1073,8 @@
      "reads": [
       "transcript_segments"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "transcript",
+     "scope_arg": 2,
      "sha256": "319c84f835d7b817fd8049510b5aca963d939714b018dde00e96c8e18ec26d26",
      "text": "SELECT transcript_id AS tid, text FROM transcript_segments WHERE start_sec < $1 AND transcript_id IN (SELECT value FROM json_each($2)) ORDER BY transcript_id, seq",
      "writes": []
@@ -1109,8 +1109,8 @@
      "reads": [
       "media_metadata_enrichment"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "3bdf5ff76b0369aca2dd938a5af09316bce9b4d9b6d089c5de12abbb831c3c77",
      "text": "SELECT external_id FROM media_metadata_enrichment WHERE provider = 'youtube' AND video_id = ANY($1::uuid[]) ORDER BY external_id",
      "writes": []
@@ -1121,8 +1121,8 @@
      "reads": [
       "media_metadata_enrichment"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "90f555e5b6fe8f276c81de1423b46c72038f567a5611cc74a55a902c7e74ab68",
      "text": "SELECT external_id FROM media_metadata_enrichment WHERE provider = 'youtube' AND video_id IN (SELECT value FROM json_each($1)) ORDER BY external_id",
      "writes": []
@@ -1133,8 +1133,8 @@
      "reads": [
       "processing_jobs"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "job_subject",
+     "scope_arg": 2,
      "sha256": "ac5a896df63668391e0d76470742d7722bd37d7cce2626e694a462dfe9de7b47",
      "text": "SELECT output_hash FROM processing_jobs WHERE subject_kind = $1 AND subject_id = $2 AND stage = $3 AND state = 'done' AND outcome IN ('changed','unchanged','skipped_unchanged','imported') ORDER BY id DESC LIMIT 1",
      "writes": []
@@ -1145,8 +1145,8 @@
      "reads": [
       "season_tags"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "season",
+     "scope_arg": 1,
      "sha256": "79862776da436e48f3da4459768ea3cbc2aeeb27fe687261bd499a0ca2280005",
      "text": "SELECT tag, score, evidence FROM season_tags WHERE season_id = $1",
      "writes": []
@@ -1309,7 +1309,7 @@
    }
   },
   {
-   "digest": "34aa3078f4c1890ab72ea6fd146bcb90e8b516af90d59f41fa9aec6e9a771960",
+   "digest": "c0c231e90b22287739b163dae821011b8e36e0163fa24e7fcdce84f80f8240bd",
    "folder": "convert",
    "id": "tv.maktaba.convert",
    "manifest": "# tv.maktaba.convert: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 5\n# (story 54.32): rewrites a library video as MP4 and swaps it in, the original kept in the trash.\nschema     = 1\nid         = \"tv.maktaba.convert\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.convert.name\"\nsummary = \"fp.convert.summary\"\n\n[trusted]\nrunner    = \"files\"\ncomponent = \"library.convert\"\ndb.read   = [\"libraries\", \"media_info\", \"processing_jobs\"]\ndb.write  = [\"audio_tracks\", \"file_actions\", \"video_copies\", \"videos\"]\nsettings  = []\nfiles.read  = [\"library\"]\nfiles.write = [\"library\", \"trash\"]\nexec      = [\"ffmpeg\", \"ffprobe\"]\n\n[[stage]]\nname         = \"convert_mp4\"\nsubject      = \"video\"\nexport       = \"convert-mp4\"\nversion      = 1\nlabel        = \"Convert to MP4\"\nsubject_kinds = [\"video\", \"library\"]\npool         = \"convert\"\nlane         = \"media\"\nlane_order   = 14\nmay_request  = [\"probe\", \"thumbnail\", \"thumb_small\"]\nexternal_write = true\nmax_attempts = 2\nplacement    = \"home\"\nedges        = [{ to = \"dedup_scan\", map = \"same_video\", when = \"always\" }]\nentry        = \"maktaba_fp_convert.stages.convert_mp4:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
@@ -1320,8 +1320,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "ecbe04f6971ee07d657685b11f7a6682a04e4c12497dad189e2c224fa9e3ab87",
      "text": "SELECT id, library_id, path, filename, title, size_bytes, mtime, duration_sec, poster_path, metadata FROM videos WHERE id = $1",
      "writes": []
@@ -1332,8 +1332,8 @@
      "reads": [
       "libraries"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "library",
+     "scope_arg": 1,
      "sha256": "9abbb6d9ac64b65f0e3e985b8552ac47d438b6b72d1b68c2770f49d4ab5c27d6",
      "text": "SELECT settings FROM libraries WHERE id = $1",
      "writes": []
@@ -1368,8 +1368,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "21345110c6afb8caaabbb9e2c50739ed245cf8b4ac91e37548fb080bf6e045ea",
      "text": "SELECT content_hash, poster_path, sprite_path FROM videos WHERE id = $1",
      "writes": []
@@ -1380,8 +1380,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "412c577c04684b85e42de37340901937bc3e6902f98448ce91f92ad934a3519e",
      "text": "SELECT content_hash FROM videos WHERE id = $1",
      "writes": []
@@ -1423,13 +1423,19 @@
      ]
     },
     {
+     "also": [
+      {
+       "arg": 2,
+       "scope": "subject"
+      }
+     ],
      "mode": "read",
      "name": "convert_mp4.verify_failed_before",
      "reads": [
       "file_actions"
      ],
-     "scope": "subject",
-     "scope_arg": 2,
+     "scope": "job",
+     "scope_arg": 1,
      "sha256": "5aec85b2f62813c40e3d33249870d3da1b7e5c7a7a7379ad0411492bbb311424",
      "text": "SELECT count(*) FROM file_actions WHERE job_id = $1 AND video_id = $2 AND kind = 'convert' AND state = 'failed' AND verify IS NOT NULL",
      "writes": []
@@ -1461,6 +1467,10 @@
       {
        "arg": 3,
        "scope": "subject"
+      },
+      {
+       "arg": 4,
+       "scope": "job"
       }
      ],
      "mode": "write",
@@ -1492,34 +1502,46 @@
      "reads": [
       "file_actions"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "file_action",
+     "scope_arg": 1,
      "sha256": "b64d28818d230a6b08d00a16d2cd200b4426670b3728cb198e0efdeff1c829e8",
      "text": "SELECT * FROM file_actions WHERE id = $1",
      "writes": []
     },
     {
+     "also": [
+      {
+       "arg": 2,
+       "scope": "subject"
+      }
+     ],
      "mode": "read",
      "name": "ledger.open_actions",
      "reads": [
       "file_actions",
       "processing_jobs"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "library",
+     "scope_arg": 1,
      "sha256": "48d457d572d8f12e7af3f42f3fc5c8b806145ef46c0846a94ffc163847194e0e",
      "text": "SELECT fa.* FROM file_actions fa WHERE fa.state IN ('planned', 'staged', 'verified', 'swapped') AND ($1::uuid IS NULL OR fa.library_id = $1::uuid) AND ($2::uuid IS NULL OR fa.video_id = $2::uuid) AND ($3::boolean OR NOT EXISTS (SELECT 1 FROM processing_jobs pj WHERE pj.id = fa.job_id AND pj.state IN ('claimed', 'running', 'resuming'))) ORDER BY fa.created_at, fa.id",
      "writes": []
     },
     {
+     "also": [
+      {
+       "arg": 2,
+       "scope": "subject"
+      }
+     ],
      "mode": "read",
      "name": "ledger.open_actions.2",
      "reads": [
       "file_actions",
       "processing_jobs"
      ],
-     "scope": "subject",
-     "scope_arg": 2,
+     "scope": "library",
+     "scope_arg": 1,
      "sha256": "247e2e79f4fd96a59e7dfa516a0b59cf108edc5f857197ee4b04bad395e1c087",
      "text": "SELECT fa.* FROM file_actions fa WHERE fa.state IN ('planned', 'staged', 'verified', 'swapped') AND ($1 IS NULL OR fa.library_id = $1) AND ($2 IS NULL OR fa.video_id = $2) AND ($3 OR NOT EXISTS (SELECT 1 FROM processing_jobs pj WHERE pj.id = fa.job_id AND pj.state IN ('claimed', 'running', 'resuming'))) ORDER BY fa.created_at, fa.id",
      "writes": []
@@ -1548,8 +1570,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "9c90222eae49308bd6dd1dc74f482fb6053cdfe647b7682e4853c000a9a5c553",
      "text": "SELECT path FROM videos WHERE id = $1",
      "writes": []
@@ -1596,8 +1618,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "f036b864180ece87e603847df462c9c38d392793f116e05b31ed3223f27b974c",
      "text": "SELECT id, library_id, path, content_hash, size_bytes FROM videos WHERE id = $1",
      "writes": []
@@ -1632,8 +1654,8 @@
      "reads": [
       "libraries"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "library",
+     "scope_arg": 1,
      "sha256": "766654592d3ff9c847be8128029a90b70256ce3a6654fe4b52332d4d297cbdef",
      "text": "SELECT roots FROM libraries WHERE id = $1",
      "writes": []
@@ -1663,7 +1685,868 @@
    }
   },
   {
-   "digest": "1b63fae038c1d01479be5eedf01495208b3568f830c4d8a16811ca6494023f0a",
+   "digest": "9587569e2e9c34b67d9b710a29921c97c2f0f2e72569be5ed6f8818008ec3e9b",
+   "folder": "core-media",
+   "id": "tv.maktaba.core-media",
+   "manifest": "# tv.maktaba.core-media: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 9\n# (story 54.36 §1): the stages every home always runs, the stages of core.pipeline (not\n# switchable). The engine's component_catchup stays in the core, and so does categorize (a\n# placeholder stage with no handler, declared in the graph). The filesystem watcher and the\n# manual scans stay in the core and only enqueue scan. What only the queue engine may write\n# (videos.state, a stage queued again, the path conversion's pauses) the worker writes for the\n# plugin's job: the relayed advance, requeue_failed and storage_canonicalize.\nschema     = 1\nid         = \"tv.maktaba.core-media\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.core-media.name\"\nsummary = \"fp.core-media.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"core.pipeline\"\ndb.read   = [\"app_settings\", \"libraries\", \"media_field_provenance\", \"processing_jobs\", \"transcripts\"]\ndb.write  = [\"audio_tracks\", \"item_checks\", \"media_info\", \"media_metadata_enrichment\", \"series_seasons\", \"video_copies\", \"video_signals\", \"videos\", \"youtube_channel_libraries\", \"youtube_channels\", \"youtube_playlist_items\", \"youtube_playlists\", \"youtube_source_decisions\", \"youtube_sources\", \"youtube_videos\"]\nfiles.read  = [\"library\", \"data.thumbnails\"]\nfiles.write = []\nexec      = [\"ffprobe\", \"ffmpeg\"]\nsettings  = [\"queue_health\"]\n\n[[stage]]\nname         = \"scan\"\nsubject      = \"library\"\nexport       = \"scan\"\nversion      = 1\nlabel        = \"Scan folders\"\nsubject_kinds = [\"library\"]\npool         = \"nas_read\"\nlane         = \"media\"\nlane_order   = 0\nplacement    = \"any\"\nedges        = [{ to = \"probe\", map = \"videos_changed\", when = \"always\" }]\nentry        = \"maktaba_fp_core_media.stages.scan:IMPL\"\n\n[[stage]]\nname         = \"content_hash\"\nsubject      = \"video\"\nexport       = \"content-hash\"\nversion      = 1\nlabel        = \"File identity\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"episodes\"\nlane_order   = 0\nplacement    = \"any\"\nedges        = [{ to = \"thumb_small\", map = \"same\" }, { to = \"transcribe\", map = \"same\" }, { to = \"thumbnail\", map = \"same\" }]\nentry        = \"maktaba_fp_core_media.stages.content_hash:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"probe\"\nsubject      = \"video\"\nexport       = \"probe\"\nversion      = 1\nlabel        = \"Length\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"episodes\"\nlane_order   = 1\nplacement    = \"any\"\nedges        = [{ to = \"thumb_hash\", map = \"same\" }, { to = \"link\", map = \"same\" }, { to = \"detect\", map = \"library_of\" }]\nentry        = \"maktaba_fp_core_media.stages.probe:IMPL\"\n\n[[stage]]\nname         = \"thumb_hash\"\nsubject      = \"video\"\nexport       = \"thumb-hash\"\nversion      = 1\nlabel        = \"Thumbnail\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"episodes\"\nlane_order   = 2\nplacement    = \"any\"\nedges        = [{ to = \"detect\", map = \"library_of\" }, { to = \"thumb_small\", map = \"same\" }]\nentry        = \"maktaba_fp_core_media.stages.thumb_hash:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"link\"\nsubject      = \"video\"\nexport       = \"link\"\nversion      = 1\nlabel        = \"Link\"\nsubject_kinds = [\"video\"]\npool         = \"cpu\"\nlane         = \"episodes\"\nlane_order   = 3\nplacement    = \"any\"\nedges        = [{ to = \"detect\", map = \"library_of\" }]\nentry        = \"maktaba_fp_core_media.stages.link:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"fingerprint\"\nsubject      = \"video\"\nexport       = \"fingerprint\"\nversion      = 101\nlabel        = \"Fingerprint\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"episodes\"\nlane_order   = 4\nplacement    = \"any\"\nedges        = [{ to = \"detect\", map = \"library_of\" }, { to = \"fp_gate\", map = \"payload_seasons\" }]\nentry        = \"maktaba_fp_core_media.stages.fingerprint:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"style_sample\"\nsubject      = \"video\"\nexport       = \"style-sample\"\nversion      = 1\nlabel        = \"Style sample\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"episodes\"\nlane_order   = 5\nplacement    = \"any\"\nedges        = [{ to = \"rate_style\", map = \"payload_seasons\" }]\nentry        = \"maktaba_fp_core_media.stages.style_sample:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"fp_gate\"\nsubject      = \"season\"\nexport       = \"fp-gate\"\nversion      = 101\nlabel        = \"Samples to candidates\"\nsubject_kinds = [\"season\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 1\nplacement    = \"any\"\nmay_request  = [\"fingerprint\"]\ndebounce_sec = 10\ndebounce_max_sec = 120\nhidden       = true\nentry        = \"maktaba_fp_core_media.stages.fp_gate:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"storage_canonicalize\"\nsubject      = \"catalog\"\nexport       = \"storage-canonicalize\"\nversion      = 1\nlabel        = \"Canonical share paths\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"media\"\nlane_order   = 11\nplacement    = \"home\"\nmax_attempts = 1\nentry        = \"maktaba_fp_core_media.stages.storage_canonicalize:IMPL\"\n\n[[stage]]\nname         = \"access_check\"\nsubject      = \"video\"\nexport       = \"access-check\"\nversion      = 1\nlabel        = \"Access check\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"media\"\nlane_order   = 13\nplacement    = \"any\"\nmax_attempts = 1\nentry        = \"maktaba_fp_core_media.stages.access_check:IMPL\"\n",
+   "statements": [
+    {
+     "mode": "write",
+     "name": "access_check.run",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "5082dc05d86c5d4f3d89214e70bd9f41f461137c5c2f870a1c3ea9649ce062f1",
+     "text": "INSERT INTO item_checks (video_id, ok, error, host, checked_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (video_id) DO UPDATE SET ok = EXCLUDED.ok, error = EXCLUDED.error, host = EXCLUDED.host, checked_at = EXCLUDED.checked_at",
+     "writes": [
+      "item_checks"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "access_check.run.2",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "909b34cb3c44be081537f104bc9b82554aaac72e9e8df5ff15d7abb9bd741f83",
+     "text": "UPDATE videos SET missing_confirmed_at = NULL WHERE id = $1",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "common.load_video",
+     "reads": [
+      "videos"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "ecbe04f6971ee07d657685b11f7a6682a04e4c12497dad189e2c224fa9e3ab87",
+     "text": "SELECT id, library_id, path, filename, title, size_bytes, mtime, duration_sec, poster_path, metadata FROM videos WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "content_hash.run",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "5c0db76d01ca2ac8e7bf9aabb221fa3a998776fcbd21c20686471daa1c0d59f0",
+     "text": "UPDATE videos SET path = $2, filename = $3 WHERE id = $1",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "content_hash.run.2",
+     "reads": [
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "e452036da7b755dc7101d0b4aa14ec7b7a30a93a4d64e364aa055cb7ae8d8dce",
+     "text": "SELECT id FROM videos WHERE library_id = $1 AND content_hash = $2 AND id <> $3",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "content_hash.run.3",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "7bd9e80cbb3f262d3a6774d7219ee510e403acebbf4657c018d43bda9f0d3ba1",
+     "text": "UPDATE videos SET metadata = $2, size_bytes = $3 WHERE id = $1",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "content_hash.run.4",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "3d4178cac8764993dd6bc1beb6b84d7fbdde96e5cb256a0a97d38d6abc97b7b1",
+     "text": "UPDATE videos SET content_hash = $2, size_bytes = $3, metadata = $4 WHERE id = $1",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "copies.promote_copy",
+     "reads": [
+      "videos"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "3ebaeac03e55bb959457411f3e811042ec1a73b9b2c612c1709e2323efffedb0",
+     "text": "SELECT state FROM videos WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "copies.promote_copy.2",
+     "reads": [
+      "video_copies"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "284cef6665cc31d1af7a14b2090fce46d147728d74493d9fd62fca72ffdc00c3",
+     "text": "SELECT path, size_bytes, mtime FROM video_copies WHERE video_id = $1 ORDER BY seen_at DESC, path",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "copies.promote_copy.3",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "7273380bc9c5fd62d8b2c66f860186892e2e04820886adc2781b7840cec4e11d",
+     "text": "UPDATE videos SET path = $2, filename = $3, size_bytes = $4, missing_confirmed_at = NULL, mtime = $5 WHERE id = $1",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "copies.promote_copy.4",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "bb7548c7c3d55afeaf3936cbd20bb22553691c45474f4b39f37649f80c223ae7",
+     "text": "UPDATE videos SET path = $2, filename = $3, size_bytes = $4, missing_confirmed_at = NULL WHERE id = $1",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "copies.reconcile_copies",
+     "reads": [
+      "libraries"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "766654592d3ff9c847be8128029a90b70256ce3a6654fe4b52332d4d297cbdef",
+     "text": "SELECT roots FROM libraries WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "copies.reconcile_copies.2",
+     "reads": [
+      "video_copies",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "5f6f64becf599099fccfc2f36e5d8de2664fcf5a30c5c7bc74cb2c73ab6a75ac",
+     "text": "SELECT c.video_id AS video_id, c.path AS path, v.path AS own, v.state AS state FROM video_copies c JOIN videos v ON v.id = c.video_id WHERE v.library_id = $1 ORDER BY c.video_id",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "copies.record_copy",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "09c2ebf93da9041bddca866413486311f320ce26b3c9649fb9a2aa36c12357d4",
+     "text": "INSERT INTO video_copies (video_id, path, size_bytes, mtime, seen_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (video_id, path) DO UPDATE SET size_bytes = excluded.size_bytes, mtime = excluded.mtime, seen_at = excluded.seen_at",
+     "writes": [
+      "video_copies"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "fp_gate.fingerprinted",
+     "reads": [
+      "video_signals"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "88a7b7f6c3dbfd9afbdb7a8836c65e1aad120adb8c607d832e1891c166328d0a",
+     "text": "SELECT fp_version, fp_partial, audio_head, audio_tail, frame_hashes FROM video_signals WHERE video_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "fp_gate.input_fingerprint",
+     "reads": [
+      "processing_jobs"
+     ],
+     "scope": "job_subject",
+     "scope_arg": 1,
+     "sha256": "bf712b965fa32b94542a118e57cb785d4bec9534ed25fdf72fd5a502fec78ede",
+     "text": "SELECT output_hash FROM processing_jobs WHERE subject_kind = 'video' AND subject_id = $1 AND stage = 'fingerprint' AND state = 'done' AND outcome IN ('changed','unchanged','skipped_unchanged','imported') ORDER BY id DESC LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "fp_gate.live_fingerprint_jobs",
+     "reads": [
+      "processing_jobs"
+     ],
+     "scope": "job_subject",
+     "scope_arg": 1,
+     "sha256": "690942167981b9c85ad008fbe85ad57546bc764207d580965f0ca8f4fa9f4517",
+     "text": "SELECT 1 AS x FROM processing_jobs WHERE subject_kind = 'video' AND subject_id = $1 AND stage = 'fingerprint' AND state IN ('pending','claimed','running','resuming','paused') LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "fp_gate.run",
+     "reads": [
+      "series_seasons"
+     ],
+     "scope": "season",
+     "scope_arg": 1,
+     "sha256": "6cdefe9387fdd26431c3e5a499961fee3c8edc3f05966e919d6639038240eaf0",
+     "text": "SELECT metadata FROM series_seasons WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "fp_gate.run.2",
+     "reads": [],
+     "scope": "season",
+     "scope_arg": 1,
+     "sha256": "bcdce20f10dc7441b89427af0a8f712b814f9f62d95f38f3b56dab3ae30c7c57",
+     "text": "UPDATE series_seasons SET metadata = $2, updated_at = $3 WHERE id = $1",
+     "writes": [
+      "series_seasons"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "fp_gate.season",
+     "reads": [
+      "series_seasons"
+     ],
+     "scope": "season",
+     "scope_arg": 1,
+     "sha256": "90b01df1e0e35f9484156b85c2fd1edf286e9a45b28238f6c4fc0a5b34c8c108",
+     "text": "SELECT metadata, retired_at, library_id FROM series_seasons WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "fp_gate.signal",
+     "reads": [
+      "video_signals"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "4b3f6a39cdff5524f9efc7fdd78c18a03891865b661b269d7da9c5ee08e96f11",
+     "text": "SELECT audio_head, audio_tail, frame_hashes FROM video_signals WHERE video_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "legacy.probe_output",
+     "reads": [
+      "videos"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "d62841f6380aa3aa3f8ed7bbe378ec41e7108ce788f25231bd3dd4d244661984",
+     "text": "SELECT duration_sec, metadata FROM videos WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "link.candidates",
+     "reads": [
+      "youtube_channel_libraries",
+      "youtube_channels",
+      "youtube_videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "b11cfeca65d1913af20c54ead687fb5914916bbb7eb6edd6370380f951cd5036",
+     "text": "SELECT count(*) AS n, max(yv.fetched_at) AS m FROM youtube_videos yv WHERE yv.channel_id IN (SELECT channel_id FROM youtube_channels WHERE library_id = $1 UNION SELECT channel_id FROM youtube_channel_libraries WHERE library_id = $1)",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "link.candidates.2",
+     "reads": [
+      "youtube_channel_libraries",
+      "youtube_channels",
+      "youtube_videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "25f58acbe2dfe754c56e303933aca90c26b23c93026262fefe03f8cbc8717231",
+     "text": "SELECT yv.youtube_id, yv.title, yv.duration_s FROM youtube_videos yv WHERE yv.channel_id IN (SELECT channel_id FROM youtube_channels WHERE library_id = $1 UNION SELECT channel_id FROM youtube_channel_libraries WHERE library_id = $1) ORDER BY yv.youtube_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "link.input_fingerprint",
+     "reads": [
+      "processing_jobs"
+     ],
+     "scope": "job_subject",
+     "scope_arg": 1,
+     "sha256": "a7e694f8f073e4843b0f22cd2ffd7d952cc2c39d0105217abe4524507ad94d43",
+     "text": "SELECT output_hash FROM processing_jobs WHERE subject_kind = 'library' AND subject_id = $1 AND stage = 'youtube_sync' AND state = 'done' AND outcome IN ('changed','unchanged','skipped_unchanged','imported') ORDER BY id DESC LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "link.run",
+     "reads": [
+      "media_metadata_enrichment",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "54a936b07b8eca4cf6e26a64b22736b138a0ff5dfedef6fcb60828028eff83e9",
+     "text": "SELECT m.external_id AS e FROM media_metadata_enrichment m JOIN videos x ON x.id = m.video_id WHERE x.library_id = $1 AND m.provider = 'youtube' AND m.video_id <> $2",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "link.run.2",
+     "reads": [
+      "youtube_videos"
+     ],
+     "scope": "youtube_video",
+     "scope_arg": 1,
+     "sha256": "48f1e87d5a11d60b21b8b3f2c10c8031d0f80cffd85b3c6b29721976632cf15c",
+     "text": "SELECT title, upload_date, date_quality FROM youtube_videos WHERE youtube_id = $1",
+     "writes": []
+    },
+    {
+     "also": [
+      {
+       "arg": 2,
+       "scope": "youtube_channel"
+      }
+     ],
+     "mode": "write",
+     "name": "link.upsert_youtube_video",
+     "reads": [],
+     "scope": "youtube_video",
+     "scope_arg": 1,
+     "sha256": "bbabd48b31849cd3689b5b5c05a6ef34b3fd2e209b0a6d76e108eec69008780f",
+     "text": "INSERT INTO youtube_videos (youtube_id, channel_id, title, upload_date, date_quality, duration_s, description, source, fetched_at) VALUES ($1,$2,$3,$4,$5,$6,$7,'info_json',$8) ON CONFLICT (youtube_id) DO UPDATE SET title = EXCLUDED.title, upload_date = COALESCE(EXCLUDED.upload_date, youtube_videos.upload_date), date_quality = CASE WHEN EXCLUDED.upload_date IS NOT NULL THEN 'exact'   ELSE youtube_videos.date_quality END, duration_s = COALESCE(EXCLUDED.duration_s, youtube_videos.duration_s), channel_id = COALESCE(EXCLUDED.channel_id, youtube_videos.channel_id), description = COALESCE(EXCLUDED.description, youtube_videos.description)",
+     "writes": [
+      "youtube_videos"
+     ]
+    },
+    {
+     "also": [
+      {
+       "arg": 2,
+       "scope": "youtube_channel"
+      }
+     ],
+     "mode": "write",
+     "name": "link.upsert_youtube_video.2",
+     "reads": [],
+     "scope": "youtube_playlist",
+     "scope_arg": 1,
+     "sha256": "0980c075a6436aad5af90456b7f450151b88e7899b84125acdedabc1468708a8",
+     "text": "INSERT INTO youtube_playlists (playlist_id, channel_id, title, is_real, source, fetched_at) VALUES ($1,$2,$3,$4,'info_json',$5) ON CONFLICT (playlist_id) DO UPDATE SET title = EXCLUDED.title",
+     "writes": [
+      "youtube_playlists"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "link.upsert_youtube_video.3",
+     "reads": [],
+     "scope": "youtube_playlist",
+     "scope_arg": 1,
+     "sha256": "913f462957beddad0938ec8461c7ff4aa0f4941d0a5fc10626c095fb2aec8acc",
+     "text": "INSERT INTO youtube_playlist_items (playlist_id, youtube_id, position) VALUES ($1,$2,$3) ON CONFLICT (playlist_id, youtube_id) DO UPDATE SET position = COALESCE(EXCLUDED.position, youtube_playlist_items.position)",
+     "writes": [
+      "youtube_playlist_items"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "link.write_link",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "1f2da90ce591f07383841d8b1c47d5cc2e5610bf28c04e34fbc135177018288f",
+     "text": "DELETE FROM media_metadata_enrichment WHERE video_id = $1 AND provider = 'youtube' AND external_id <> $2",
+     "writes": [
+      "media_metadata_enrichment"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "link.write_link.2",
+     "reads": [
+      "media_field_provenance"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "5f1f7f99d20bc739e02c0778b8bed11221db4dba64f596cead828d342ff5cf6c",
+     "text": "SELECT 1 AS x FROM media_field_provenance WHERE video_id = $1 AND origin = 'user' LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "link.write_link.3",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 2,
+     "sha256": "d05d52c7a7e545dac68b75c316e1af7aac59f61a8193c67c80355b05a7d4281c",
+     "text": "INSERT INTO media_metadata_enrichment (id, video_id, provider, external_id, mapped, confidence, is_accepted, fetched_at) VALUES ($1,$2,'youtube',$3,$4,$5,$6,$7) ON CONFLICT (video_id, provider, external_id) DO UPDATE SET mapped = EXCLUDED.mapped, confidence = EXCLUDED.confidence, fetched_at = EXCLUDED.fetched_at",
+     "writes": [
+      "media_metadata_enrichment"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "missing_files.confirm_missing",
+     "reads": [
+      "processing_jobs",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "7ecd0a28db905597e469ec760e10f83730babff589c5344257f9ae3dacf13c1d",
+     "text": "SELECT DISTINCT v.id AS id, v.path AS path\n  FROM processing_jobs j\n  JOIN videos v ON v.id = j.subject_id\n WHERE j.subject_kind = 'video' AND v.library_id = $1 AND j.state = 'failed'\n   AND j.error_cause LIKE 'file_missing%'\n   AND NOT EXISTS (SELECT 1 FROM processing_jobs n\n                    WHERE n.subject_kind = j.subject_kind AND n.subject_id = j.subject_id\n                      AND n.stage = j.stage AND n.id > j.id)",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "missing_files.confirm_missing.2",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "cc10acbaae38771af0023cd44e8d08faa89cd2bf9b6406e919844ab533b673b3",
+     "text": "UPDATE videos SET missing_confirmed_at = $2 WHERE id = $1 AND missing_confirmed_at IS NULL",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "probe.commit_probe",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "166e864c721475ab6d98096da3c3ad862a869568589e2c092724ffc1e8c71f26",
+     "text": "INSERT INTO media_info\n       (video_id, container, video_codec, width, height, fps, bitrate_kbps,\n        has_subtitles, raw_ffprobe)\nVALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\nON CONFLICT (video_id) DO UPDATE SET\n    container       = EXCLUDED.container,\n    video_codec     = EXCLUDED.video_codec,\n    width           = EXCLUDED.width,\n    height          = EXCLUDED.height,\n    fps             = EXCLUDED.fps,\n    bitrate_kbps    = EXCLUDED.bitrate_kbps,\n    has_subtitles   = EXCLUDED.has_subtitles,\n    raw_ffprobe     = EXCLUDED.raw_ffprobe,\n    probed_at       = now()",
+     "writes": [
+      "media_info"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "probe.commit_probe.2",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "9fab25398eee61b3c02b701e616e34b176ff061a8a90aa5049b42841a6bc8e55",
+     "text": "INSERT INTO audio_tracks\n       (video_id, track_index, codec, channels, sample_rate, language, title,\n        is_default, disposition)\nVALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\nON CONFLICT (video_id, track_index) DO UPDATE SET\n    codec        = EXCLUDED.codec,\n    channels     = EXCLUDED.channels,\n    sample_rate  = EXCLUDED.sample_rate,\n    language     = EXCLUDED.language,\n    title        = EXCLUDED.title,\n    is_default   = EXCLUDED.is_default,\n    disposition  = EXCLUDED.disposition",
+     "writes": [
+      "audio_tracks"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "probe.commit_probe.3",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "fe95ee9a4188e79f2ea21164499535cad7da12285a31058cd86b83daab2e23b4",
+     "text": "UPDATE audio_tracks SET is_default = false\n WHERE video_id = $1 AND track_index >= $2 AND is_default",
+     "writes": [
+      "audio_tracks"
+     ]
+    },
+    {
+     "also": [
+      {
+       "arg": 1,
+       "scope": "subject"
+      }
+     ],
+     "mode": "read",
+     "name": "probe.commit_probe.4",
+     "reads": [
+      "processing_jobs",
+      "transcripts"
+     ],
+     "scope": "job_subject",
+     "scope_arg": 1,
+     "sha256": "24130e514956382b25d56fc42f73573ca949a79d8edec0b13263f40fce5c6aa5",
+     "text": "SELECT 1 WHERE EXISTS (SELECT 1 FROM transcripts WHERE video_id = $1 AND is_active) OR EXISTS (SELECT 1 FROM processing_jobs WHERE subject_kind = 'video' AND subject_id = $1 AND stage = 'transcribe' AND state IN ('pending', 'claimed', 'running', 'resuming', 'paused'))",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "probe.run",
+     "reads": [
+      "videos"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "9c90222eae49308bd6dd1dc74f482fb6053cdfe647b7682e4853c000a9a5c553",
+     "text": "SELECT path FROM videos WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "rules.read",
+     "reads": [
+      "app_settings"
+     ],
+     "scope": "settings",
+     "scope_arg": 1,
+     "sha256": "ee2788811521c36000e70c683028eea361a5329e30e4566e65e3b99fdc19ea07",
+     "text": "SELECT value FROM app_settings WHERE key = $1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "signals.upsert_fingerprint",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "96e599a51b3b73dc51b270b39ada5f3b5f2f2cae7a21e638a32a0a07f1bb5d20",
+     "text": "INSERT INTO video_signals (video_id, audio_head, audio_tail, frame_hashes, fp_version, fp_partial, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (video_id) DO UPDATE SET audio_head = EXCLUDED.audio_head, audio_tail = EXCLUDED.audio_tail, frame_hashes = EXCLUDED.frame_hashes, fp_version = EXCLUDED.fp_version, fp_partial = EXCLUDED.fp_partial, updated_at = EXCLUDED.updated_at",
+     "writes": [
+      "video_signals"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "signals.upsert_style",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "5da8ad0ddbde1ec67930ec6e4f000bed0ff2f10ef3a946db7957f6a48c04ee08",
+     "text": "INSERT INTO video_signals (video_id, style_metrics, style_version, updated_at) VALUES ($1, $2, $3, $4) ON CONFLICT (video_id) DO UPDATE SET style_metrics = EXCLUDED.style_metrics, style_version = EXCLUDED.style_version, updated_at = EXCLUDED.updated_at",
+     "writes": [
+      "video_signals"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "signals.upsert_thumb",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "36c60535e3684652522c2b1277f83384af17806656b296d65bd3312ac52a8d17",
+     "text": "INSERT INTO video_signals (video_id, thumb_dhash, thumb_version, updated_at) VALUES ($1, $2, $3, $4) ON CONFLICT (video_id) DO UPDATE SET thumb_dhash = EXCLUDED.thumb_dhash, thumb_version = EXCLUDED.thumb_version, updated_at = EXCLUDED.updated_at",
+     "writes": [
+      "video_signals"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "store.find_video_by_path",
+     "reads": [
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "9b9d501e7d1be280e2973c6488b6870c7bfea22599127a0af141eb384f82812b",
+     "text": "SELECT id, size_bytes, mtime, content_hash\n  FROM videos\n WHERE library_id = $1\n   AND path       = $2\n LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "store.find_video_by_path.2",
+     "reads": [
+      "video_copies",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "278ec9eb59c3b55a9b4b4621817083689e9dc0a463c1cb6dae26563524ee7b2d",
+     "text": "SELECT c.video_id AS id, c.size_bytes AS size_bytes, c.mtime AS mtime,\n       v.content_hash AS content_hash\n  FROM video_copies c\n  JOIN videos v ON v.id = c.video_id\n WHERE v.library_id = $1\n   AND c.path       = $2\n   AND c.size_bytes = v.size_bytes\n LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "store.get_library",
+     "reads": [
+      "libraries"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "1f70d8d3c32ad050fcef24fa9b5a6868fcfbf3c1b9b375847cde783280b70c15",
+     "text": "SELECT id, name, roots, settings\n  FROM libraries\n WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "store.save_candidate",
+     "reads": [
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "4767cc8ba0b9804303c62120c2f48faa834d6a8d3fae2036b669fc3da255e099",
+     "text": "SELECT id, path FROM videos\n WHERE library_id = $1\n   AND content_hash = $2\n LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "store.save_candidate.2",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "b7ac914df324c6a483ed08c590aed19d6c54f226b18bc38bd2222f5caf64d801",
+     "text": "UPDATE videos SET last_seen_at = $2 WHERE id = $1",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "store.save_candidate.3",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "aa91ee1f888ec109292d52c8844f6bbeb2da08e70cbc65e42ecc8f8c2e258786",
+     "text": "INSERT INTO videos\n       (library_id, content_hash, path, filename, size_bytes, mtime,\n        last_seen_at, state)\nVALUES ($1, $2, $3, $4, $5, $6, $7, 'discovered')\nON CONFLICT (library_id, content_hash) DO UPDATE SET\n    path         = EXCLUDED.path,\n    filename     = EXCLUDED.filename,\n    size_bytes   = EXCLUDED.size_bytes,\n    mtime        = EXCLUDED.mtime,\n    last_seen_at = EXCLUDED.last_seen_at,\n    updated_at   = now()\nRETURNING id, (xmax = 0) AS inserted",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "also": [
+      {
+       "arg": 8,
+       "scope": "subject"
+      }
+     ],
+     "mode": "write",
+     "name": "store.save_candidate.4",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "1260deb4dc06ebe167ae8d9b8d0450109e948c39e3b507e062d64f4fe6b6caca",
+     "text": "INSERT INTO videos\n       (library_id, content_hash, path, filename, size_bytes, mtime,\n        last_seen_at, state, id)\nVALUES ($1, $2, $3, $4, $5, $6, $7, 'discovered', $8)\nON CONFLICT (content_hash) DO UPDATE SET\n    path         = excluded.path,\n    filename     = excluded.filename,\n    size_bytes   = excluded.size_bytes,\n    mtime        = excluded.mtime,\n    last_seen_at = excluded.last_seen_at,\n    updated_at   = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')\n WHERE videos.library_id = excluded.library_id\nRETURNING id",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "store.save_candidate.5",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "8d5e966c20e9c20177c7f745c382d97d7c69809e69ac8cd547500e4b7e51f210",
+     "text": "DELETE FROM video_copies WHERE video_id = $1 AND path = $2",
+     "writes": [
+      "video_copies"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "store.save_candidate.6",
+     "reads": [
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 3,
+     "sha256": "b29f7bade80d88517eb9c7e05e194858ee3b8420fd45899928e67a9f16d41aca",
+     "text": "DELETE FROM video_copies\n WHERE path = $1 AND video_id <> $2\n   AND video_id IN (SELECT id FROM videos WHERE library_id = $3)",
+     "writes": [
+      "video_copies"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "youtube_derive.after_link",
+     "reads": [
+      "youtube_videos"
+     ],
+     "scope": "youtube_video",
+     "scope_arg": 1,
+     "sha256": "d3b681ad93ffa1c0f2ccad3a6d2eaf1eb4c8d6119fe13df4226089b96afd2ede",
+     "text": "SELECT channel_id FROM youtube_videos WHERE youtube_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_derive.after_link.2",
+     "reads": [
+      "youtube_playlist_items",
+      "youtube_playlists"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "6558253bd00a45460376a78855784e065559753ee66a64dee0e0e211457fb42f",
+     "text": "SELECT i.playlist_id AS pid FROM youtube_playlist_items i JOIN youtube_playlists p ON p.playlist_id = i.playlist_id WHERE i.youtube_id = $1 AND p.is_real",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_derive.after_link.3",
+     "reads": [
+      "youtube_source_decisions"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "9f9b7fc3a9fc72a785540faed00db90303abc0e98f192e6cd5e9e838e1e4e3e7",
+     "text": "SELECT seen FROM youtube_source_decisions WHERE library_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "youtube_derive.apply",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "6c35bd58d24a0e4cdcceeba88f08fc3bd8fa821f99e94f5e522e6a5e6d886e5b",
+     "text": "DELETE FROM youtube_channel_libraries WHERE library_id = $1",
+     "writes": [
+      "youtube_channel_libraries"
+     ]
+    },
+    {
+     "also": [
+      {
+       "arg": 2,
+       "scope": "library"
+      }
+     ],
+     "mode": "write",
+     "name": "youtube_derive.apply.2",
+     "reads": [],
+     "scope": "youtube_channel",
+     "scope_arg": 1,
+     "sha256": "e3338ed368c7f0ef744dc640f096a682299d77955b0d8f81ddff11430eaad4dd",
+     "text": "INSERT INTO youtube_channel_libraries (channel_id, library_id, linked_videos, updated_at) VALUES ($1, $2, $3, $4) ON CONFLICT (channel_id, library_id) DO UPDATE SET linked_videos = EXCLUDED.linked_videos, updated_at = EXCLUDED.updated_at",
+     "writes": [
+      "youtube_channel_libraries"
+     ]
+    },
+    {
+     "also": [
+      {
+       "arg": 2,
+       "scope": "library"
+      }
+     ],
+     "mode": "write",
+     "name": "youtube_derive.apply.3",
+     "reads": [],
+     "scope": "youtube_channel",
+     "scope_arg": 1,
+     "sha256": "b70a8b58181f325f53fa99427928f8c15a578f7df7ce99853d664f0f35624f27",
+     "text": "INSERT INTO youtube_channels (channel_id, library_id, url, fetched_at) VALUES ($1, $2, $3, $4) ON CONFLICT (channel_id) DO UPDATE SET library_id = COALESCE(youtube_channels.library_id, EXCLUDED.library_id)",
+     "writes": [
+      "youtube_channels"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "youtube_derive.apply.4",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "24dfd9f7cc1a369b12315e2de9f25fb0ec6b523604c5f878034b037b69f0ba4f",
+     "text": "INSERT INTO youtube_sources (library_id, kind, url, external_id, mode, added_at, derived_at) VALUES ($1, $2, $3, $4, 'off', $5, $5) ON CONFLICT (library_id, kind, external_id) DO NOTHING RETURNING id",
+     "writes": [
+      "youtube_sources"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "youtube_derive.apply.5",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "84170fc43c0c986b84ee875f14785c0a3a3d93782baa100416546f9e24ded71e",
+     "text": "INSERT INTO youtube_source_decisions (library_id, outcome, kind, external_ids, created, clash_external_id, clash_library_id, linked_videos, matched_videos, reason, seen, decided_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (library_id) DO UPDATE SET outcome = EXCLUDED.outcome, kind = EXCLUDED.kind, external_ids = EXCLUDED.external_ids, created = EXCLUDED.created, clash_external_id = EXCLUDED.clash_external_id, clash_library_id = EXCLUDED.clash_library_id, linked_videos = EXCLUDED.linked_videos, matched_videos = EXCLUDED.matched_videos, reason = EXCLUDED.reason, seen = EXCLUDED.seen, decided_at = EXCLUDED.decided_at",
+     "writes": [
+      "youtube_source_decisions"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "youtube_derive.load_evidence",
+     "reads": [
+      "libraries",
+      "media_metadata_enrichment",
+      "videos",
+      "youtube_videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "847f02a7cccf7b8c4549820dbd5766323812690387585c1d05b910d240a9140b",
+     "text": "SELECT v.library_id AS lib, m.external_id AS yid, yv.channel_id AS cid FROM media_metadata_enrichment m JOIN videos v ON v.id = m.video_id JOIN libraries l ON l.id = v.library_id LEFT JOIN youtube_videos yv ON yv.youtube_id = m.external_id WHERE m.provider = 'youtube' AND v.deleted_at IS NULL AND l.deleted_at IS NULL",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_derive.load_evidence.2",
+     "reads": [
+      "media_metadata_enrichment",
+      "youtube_playlist_items",
+      "youtube_playlists"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "e16aa731c9a7983d6b07e247208b97fef2e32a3fae5f752d40910fd79a6e30ba",
+     "text": "SELECT i.youtube_id AS yid, p.playlist_id AS pid, p.title AS title, p.channel_id AS cid FROM youtube_playlist_items i JOIN youtube_playlists p ON p.playlist_id = i.playlist_id WHERE p.is_real AND i.youtube_id IN (SELECT m.external_id FROM  media_metadata_enrichment m WHERE m.provider = 'youtube')",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_derive.load_evidence.3",
+     "reads": [
+      "youtube_sources"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "b41d74f2bb8036c4645826abb6541d36c503e9584ebf92bcc8bbd1d85ef4c665",
+     "text": "SELECT library_id, kind, external_id FROM youtube_sources",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_derive.load_evidence.4",
+     "reads": [
+      "youtube_channels"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "c82d828691f41eae505a0bd07ad9cdc24bf6272660f2b89ec95a747260da0704",
+     "text": "SELECT channel_id, library_id FROM youtube_channels",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_derive.lock",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "4c93380abebe4682f280bc3cc0add2878746496a25db7ea50d857658c49a931f",
+     "text": "SELECT pg_advisory_xact_lock(hashtext($1))",
+     "writes": []
+    }
+   ],
+   "strings": {
+    "ar": {
+     "fp.core-media.name": "الوسائط الأساسية",
+     "fp.core-media.summary": "يعثر على فيديوهاتك ويقرأ مدتها وهويتها وبصماتها الصوتية ويربطها بصفحاتها على يوتيوب."
+    },
+    "en": {
+     "fp.core-media.name": "Core media",
+     "fp.core-media.summary": "Finds your videos, reads their length, identity and audio fingerprints, and links them to their YouTube pages."
+    }
+   }
+  },
+  {
+   "digest": "63deddf9cd393b0b05de2513fa154b0b7aca6af0f8923e1f7b9a6a002b93f0ac",
    "folder": "dedup",
    "id": "tv.maktaba.dedup",
    "manifest": "# tv.maktaba.dedup: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 5\n# (story 54.32): finds duplicates, merges a group into its keeper, empties and restores the file trash.\nschema     = 1\nid         = \"tv.maktaba.dedup\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.dedup.name\"\nsummary = \"fp.dedup.summary\"\n\n[trusted]\nrunner    = \"files\"\ncomponent = \"library.dedup\"\ndb.read   = [\"audio_tracks\", \"libraries\", \"media_info\", \"media_metadata_enrichment\", \"playback_state\", \"processing_jobs\", \"user_favorites\", \"user_playlist_items\", \"video_signals\"]\ndb.write  = [\"duplicate_groups\", \"duplicate_members\", \"file_actions\", \"video_copies\", \"videos\"]\nsettings  = []\nfiles.read  = [\"library\"]\nfiles.write = [\"library\", \"trash\"]\nexec      = [\"ffmpeg\", \"ffprobe\"]\n\n[[stage]]\nname         = \"dedup_scan\"\nsubject      = \"library\"\nexport       = \"dedup-scan\"\nversion      = 1\nlabel        = \"Find duplicates\"\nsubject_kinds = [\"library\", \"video\"]\npool         = \"nas_read\"\nlane         = \"media\"\nlane_order   = 15\nmay_request  = [\"dedup_apply\"]\nentry        = \"maktaba_fp_dedup.stages.dedup_scan:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"dedup_apply\"\nsubject      = \"dup_group\"\nexport       = \"dedup-apply\"\nversion      = 1\nlabel        = \"Merge duplicates\"\nsubject_kinds = [\"dup_group\"]\npool         = \"nas_write\"\nlane         = \"media\"\nlane_order   = 16\nexternal_write = true\nentry        = \"maktaba_fp_dedup.stages.dedup_apply:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"trash_purge\"\nsubject      = \"library\"\nexport       = \"trash-purge\"\nversion      = 1\nlabel        = \"Empty file trash\"\nsubject_kinds = [\"library\"]\npool         = \"nas_write\"\nlane         = \"media\"\nlane_order   = 17\nexternal_write = true\nentry        = \"maktaba_fp_dedup.stages.trash_purge:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"file_restore\"\nsubject      = \"library\"\nexport       = \"file-restore\"\nversion      = 1\nlabel        = \"Restore from trash\"\nsubject_kinds = [\"library\"]\npool         = \"nas_write\"\nlane         = \"media\"\nlane_order   = 18\nexternal_write = true\nmax_attempts = 2\nentry        = \"maktaba_fp_dedup.stages.file_restore:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
@@ -1674,8 +2557,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "ecbe04f6971ee07d657685b11f7a6682a04e4c12497dad189e2c224fa9e3ab87",
      "text": "SELECT id, library_id, path, filename, title, size_bytes, mtime, duration_sec, poster_path, metadata FROM videos WHERE id = $1",
      "writes": []
@@ -1686,8 +2569,8 @@
      "reads": [
       "duplicate_groups"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "dup_group",
+     "scope_arg": 1,
      "sha256": "36a0bc4070b628752d19a49dcf51e9ec0b6892792a3a720e44bd98fbc9fced03",
      "text": "SELECT library_id, tier, status, members_key FROM duplicate_groups WHERE id = $1",
      "writes": []
@@ -1698,8 +2581,8 @@
      "reads": [
       "duplicate_groups"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "dup_group",
+     "scope_arg": 1,
      "sha256": "97ca0c3bd0264b04dc2e08afee674b0ba3c5496584530c95db661633067ab659",
      "text": "SELECT id, library_id, tier, status, keeper_video_id FROM duplicate_groups WHERE id = $1",
      "writes": []
@@ -1711,8 +2594,8 @@
       "duplicate_members",
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "dup_group",
+     "scope_arg": 1,
      "sha256": "93cea9c3aec2cd1172549161358ae9a45a3e41f0539246f24b9c4739e122c455",
      "text": "SELECT m.video_id AS video_id, m.path AS path, m.is_copy AS is_copy, m.score AS score, v.path AS own, v.state AS state, v.library_id AS library_id, v.content_hash AS content_hash, v.size_bytes AS size_bytes FROM duplicate_members m JOIN videos v ON v.id = m.video_id WHERE m.group_id = $1 ORDER BY m.video_id, m.is_copy, m.path",
      "writes": []
@@ -1747,8 +2630,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "4b1580878d65b62dac904467434387b4903b48a185127f2d2fc496e59b61b124",
      "text": "SELECT library_id FROM videos WHERE id = $1",
      "writes": []
@@ -1771,8 +2654,8 @@
      "reads": [
       "libraries"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "library",
+     "scope_arg": 1,
      "sha256": "9abbb6d9ac64b65f0e3e985b8552ac47d438b6b72d1b68c2770f49d4ab5c27d6",
      "text": "SELECT settings FROM libraries WHERE id = $1",
      "writes": []
@@ -1860,8 +2743,8 @@
       "media_info",
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "186ee66c1be2442814a885d67097b23f569badc3decbab6fb5cb8a62cc0f46b3",
      "text": "SELECT v.id AS id, v.library_id AS library_id, v.path AS path, v.created_at AS created_at, mi.container AS container, mi.video_codec AS video_codec, mi.width AS width, mi.height AS height, mi.bitrate_kbps AS bitrate_kbps, mi.raw_ffprobe AS raw_ffprobe FROM videos v LEFT JOIN media_info mi ON mi.video_id = v.id WHERE v.id = ANY($1::uuid[])",
      "writes": []
@@ -1874,8 +2757,8 @@
       "user_favorites",
       "user_playlist_items"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "78260bb07c3b4126dd3182b19784fba7fbc27bf7391fb7800d040c2304039ece",
      "text": "SELECT video_id, COUNT(*) AS n FROM (SELECT video_id FROM playback_state WHERE video_id IN (SELECT value FROM json_each($1)) UNION ALL SELECT video_id FROM user_playlist_items WHERE video_id = ANY($1::uuid[]) UNION ALL SELECT video_id FROM user_favorites WHERE video_id IN (SELECT value FROM json_each($1))) u GROUP BY video_id",
      "writes": []
@@ -1888,8 +2771,8 @@
       "user_favorites",
       "user_playlist_items"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "9c54b73cc71df96d9be5a438166ecdaf7749e84fd25fb3ecbbd9ec67beb72780",
      "text": "SELECT video_id, COUNT(*) AS n FROM (SELECT video_id FROM playback_state WHERE video_id IN (SELECT value FROM json_each($1)) UNION ALL SELECT video_id FROM user_playlist_items WHERE video_id IN (SELECT value FROM json_each($1)) UNION ALL SELECT video_id FROM user_favorites WHERE video_id = ANY($1::uuid[])) u GROUP BY video_id",
      "writes": []
@@ -1902,8 +2785,8 @@
       "user_favorites",
       "user_playlist_items"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "ac153e8b272b5be0eca91d5619e91964f1767577d1e9be17d5cbb5349b40ed3a",
      "text": "SELECT video_id, COUNT(*) AS n FROM (SELECT video_id FROM playback_state WHERE video_id IN (SELECT value FROM json_each($1)) UNION ALL SELECT video_id FROM user_playlist_items WHERE video_id IN (SELECT value FROM json_each($1)) UNION ALL SELECT video_id FROM user_favorites WHERE video_id IN (SELECT value FROM json_each($1))) u GROUP BY video_id",
      "writes": []
@@ -1915,8 +2798,8 @@
       "media_info",
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "da6f600368af6c835fb264e35f3c6c7f3200b2bb6ec57d56b5ce16c3a04551c5",
      "text": "SELECT v.id AS id, v.library_id AS library_id, v.path AS path, v.created_at AS created_at, mi.container AS container, mi.video_codec AS video_codec, mi.width AS width, mi.height AS height, mi.bitrate_kbps AS bitrate_kbps, mi.raw_ffprobe AS raw_ffprobe FROM videos v LEFT JOIN media_info mi ON mi.video_id = v.id WHERE v.id IN (SELECT value FROM json_each($1))",
      "writes": []
@@ -1927,8 +2810,8 @@
      "reads": [
       "audio_tracks"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "83560faff58ad2c193d43dd018a7f7d068b4f95cc16a2ae3d7f5519ba02f2c69",
      "text": "SELECT video_id, codec FROM audio_tracks WHERE video_id = ANY($1::uuid[])",
      "writes": []
@@ -1939,8 +2822,8 @@
      "reads": [
       "audio_tracks"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "6f9bbe39db16241fa33d5434527ed45ab5030fb8775f96296ce3e515b30e7e72",
      "text": "SELECT video_id, codec FROM audio_tracks WHERE video_id IN (SELECT value FROM json_each($1))",
      "writes": []
@@ -1953,8 +2836,8 @@
       "user_favorites",
       "user_playlist_items"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "2721ef6504b1986ff32a6414b2e0020a9b04d40b3b71f0a8f58cdd8c7b152115",
      "text": "SELECT video_id, COUNT(*) AS n FROM (SELECT video_id FROM playback_state WHERE video_id = ANY($1::uuid[]) UNION ALL SELECT video_id FROM user_playlist_items WHERE video_id = ANY($1::uuid[]) UNION ALL SELECT video_id FROM user_favorites WHERE video_id = ANY($1::uuid[])) u GROUP BY video_id",
      "writes": []
@@ -1967,8 +2850,8 @@
       "user_favorites",
       "user_playlist_items"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "98ef0a2346ccaad3bd9e03da0e8920ad07df451ba1112e1d13b83676816dacad",
      "text": "SELECT video_id, COUNT(*) AS n FROM (SELECT video_id FROM playback_state WHERE video_id = ANY($1::uuid[]) UNION ALL SELECT video_id FROM user_playlist_items WHERE video_id = ANY($1::uuid[]) UNION ALL SELECT video_id FROM user_favorites WHERE video_id IN (SELECT value FROM json_each($1))) u GROUP BY video_id",
      "writes": []
@@ -1981,8 +2864,8 @@
       "user_favorites",
       "user_playlist_items"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "4878c52c6f99492c60b04136032531940f6a5927a647ea6da6018804b7d836ed",
      "text": "SELECT video_id, COUNT(*) AS n FROM (SELECT video_id FROM playback_state WHERE video_id = ANY($1::uuid[]) UNION ALL SELECT video_id FROM user_playlist_items WHERE video_id IN (SELECT value FROM json_each($1)) UNION ALL SELECT video_id FROM user_favorites WHERE video_id = ANY($1::uuid[])) u GROUP BY video_id",
      "writes": []
@@ -1995,8 +2878,8 @@
       "user_favorites",
       "user_playlist_items"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "6dbff030333a69cc2f7e853fa17194d359f82d8acef7e6899d62ce1869a168de",
      "text": "SELECT video_id, COUNT(*) AS n FROM (SELECT video_id FROM playback_state WHERE video_id = ANY($1::uuid[]) UNION ALL SELECT video_id FROM user_playlist_items WHERE video_id IN (SELECT value FROM json_each($1)) UNION ALL SELECT video_id FROM user_favorites WHERE video_id IN (SELECT value FROM json_each($1))) u GROUP BY video_id",
      "writes": []
@@ -2009,8 +2892,8 @@
       "user_favorites",
       "user_playlist_items"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "8c7165489ea1f1d9f18938b3349bef1e29de79803e293b4101f215c8462c6b87",
      "text": "SELECT video_id, COUNT(*) AS n FROM (SELECT video_id FROM playback_state WHERE video_id IN (SELECT value FROM json_each($1)) UNION ALL SELECT video_id FROM user_playlist_items WHERE video_id = ANY($1::uuid[]) UNION ALL SELECT video_id FROM user_favorites WHERE video_id = ANY($1::uuid[])) u GROUP BY video_id",
      "writes": []
@@ -2161,8 +3044,8 @@
       "duplicate_groups",
       "duplicate_members"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 2,
      "sha256": "5d36bd24c775e8d3d7c882e1af5edfab04abf7e898900582d77e35043b6d9d82",
      "text": "SELECT d.id FROM duplicate_groups d JOIN duplicate_members m ON m.group_id = d.id WHERE d.status = 'open' AND d.tier = $1 AND m.video_id = ANY($2::uuid[]) ORDER BY d.created_at LIMIT 1",
      "writes": []
@@ -2174,8 +3057,8 @@
       "duplicate_groups",
       "duplicate_members"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 2,
      "sha256": "7fb2fca27249753a9252d5ba4c885ff9bda292240664c0c4badca85177ea3b1c",
      "text": "SELECT d.id FROM duplicate_groups d JOIN duplicate_members m ON m.group_id = d.id WHERE d.status = 'open' AND d.tier = $1 AND m.video_id IN (SELECT value FROM json_each($2)) ORDER BY d.created_at LIMIT 1",
      "writes": []
@@ -2289,6 +3172,10 @@
       {
        "arg": 3,
        "scope": "subject"
+      },
+      {
+       "arg": 4,
+       "scope": "job"
       }
      ],
      "mode": "write",
@@ -2320,34 +3207,46 @@
      "reads": [
       "file_actions"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "file_action",
+     "scope_arg": 1,
      "sha256": "b64d28818d230a6b08d00a16d2cd200b4426670b3728cb198e0efdeff1c829e8",
      "text": "SELECT * FROM file_actions WHERE id = $1",
      "writes": []
     },
     {
+     "also": [
+      {
+       "arg": 2,
+       "scope": "subject"
+      }
+     ],
      "mode": "read",
      "name": "ledger.open_actions",
      "reads": [
       "file_actions",
       "processing_jobs"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "library",
+     "scope_arg": 1,
      "sha256": "48d457d572d8f12e7af3f42f3fc5c8b806145ef46c0846a94ffc163847194e0e",
      "text": "SELECT fa.* FROM file_actions fa WHERE fa.state IN ('planned', 'staged', 'verified', 'swapped') AND ($1::uuid IS NULL OR fa.library_id = $1::uuid) AND ($2::uuid IS NULL OR fa.video_id = $2::uuid) AND ($3::boolean OR NOT EXISTS (SELECT 1 FROM processing_jobs pj WHERE pj.id = fa.job_id AND pj.state IN ('claimed', 'running', 'resuming'))) ORDER BY fa.created_at, fa.id",
      "writes": []
     },
     {
+     "also": [
+      {
+       "arg": 2,
+       "scope": "subject"
+      }
+     ],
      "mode": "read",
      "name": "ledger.open_actions.2",
      "reads": [
       "file_actions",
       "processing_jobs"
      ],
-     "scope": "subject",
-     "scope_arg": 2,
+     "scope": "library",
+     "scope_arg": 1,
      "sha256": "247e2e79f4fd96a59e7dfa516a0b59cf108edc5f857197ee4b04bad395e1c087",
      "text": "SELECT fa.* FROM file_actions fa WHERE fa.state IN ('planned', 'staged', 'verified', 'swapped') AND ($1 IS NULL OR fa.library_id = $1) AND ($2 IS NULL OR fa.video_id = $2) AND ($3 OR NOT EXISTS (SELECT 1 FROM processing_jobs pj WHERE pj.id = fa.job_id AND pj.state IN ('claimed', 'running', 'resuming'))) ORDER BY fa.created_at, fa.id",
      "writes": []
@@ -2376,8 +3275,8 @@
      "reads": [
       "duplicate_members"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "dup_group",
+     "scope_arg": 1,
      "sha256": "e520a365abaa7511b4eb08079d41b488d5644a5aeeb0e7c6859a0b58ffd3c931",
      "text": "SELECT path FROM duplicate_members WHERE group_id = $1",
      "writes": []
@@ -2389,20 +3288,26 @@
       "duplicate_members",
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "dup_group",
+     "scope_arg": 1,
      "sha256": "4c3f1ec0aef3c5d5fac07b4b62f1f91b40d479f940f4c4902d98250d62cf2015",
      "text": "SELECT v.path FROM videos v JOIN duplicate_members m ON m.video_id = v.id WHERE m.group_id = $1",
      "writes": []
     },
     {
+     "also": [
+      {
+       "arg": 2,
+       "scope": "library"
+      }
+     ],
      "mode": "read",
      "name": "scope.restore_paths",
      "reads": [
       "file_actions"
      ],
-     "scope": "library",
-     "scope_arg": 2,
+     "scope": "file_action",
+     "scope_arg": 1,
      "sha256": "5e85b9cf8627afcc61be72ceed46aed4f116a23340a0fb9d00fe0795648a3a51",
      "text": "SELECT old_path, new_path FROM file_actions WHERE id = $1 AND library_id = $2",
      "writes": []
@@ -2437,8 +3342,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "f036b864180ece87e603847df462c9c38d392793f116e05b31ed3223f27b974c",
      "text": "SELECT id, library_id, path, content_hash, size_bytes FROM videos WHERE id = $1",
      "writes": []
@@ -2473,8 +3378,8 @@
      "reads": [
       "libraries"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "library",
+     "scope_arg": 1,
      "sha256": "766654592d3ff9c847be8128029a90b70256ce3a6654fe4b52332d4d297cbdef",
      "text": "SELECT roots FROM libraries WHERE id = $1",
      "writes": []
@@ -2504,7 +3409,7 @@
    }
   },
   {
-   "digest": "ab6a68931457eb9f8292a521c561ad0bb24c9685e5c2622fb2d93dc6634dd7b9",
+   "digest": "f89cc23462b9e6791aec4735205a72d8d752793b34e36c60b81d65e1e2eeb6a4",
    "folder": "livetv",
    "id": "tv.maktaba.livetv",
    "manifest": "# tv.maktaba.livetv: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 7\n# (story 54.34): plans the live TV channels and writes them (or stages them as a TV change).\nschema     = 1\nid         = \"tv.maktaba.livetv\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.livetv.name\"\nsummary = \"fp.livetv.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"livetv\"\ndb.read   = [\"app_settings\", \"channel_art_overrides\", \"clip_group_items\", \"clip_groups\", \"collection_items\", \"episode_tags\", \"job_stages\", \"libraries\", \"media_metadata_enrichment\", \"processing_jobs\", \"promo_links\", \"season_style\", \"season_tags\", \"series\", \"series_episodes\", \"series_seasons\", \"tv_slots\", \"video_topic_tags\", \"videos\", \"youtube_channels\", \"youtube_videos\"]\ndb.write  = [\"channel_plans\", \"channel_programs\", \"channel_schedule_state\", \"channels\", \"external_links\", \"filler_items\", \"filler_pools\", \"tv_change_events\", \"tv_changes\", \"tv_release_channels\", \"tv_releases\", \"tv_routing\", \"tv_sched_gen_seq\"]\nsettings  = [\"planner\", \"detect\", \"tv\", \"tv_output\", \"tv_staging\", \"display_titles\"]\nfiles.read  = [\"data.channels\"]\nfiles.write = [\"data.review\"]\n\n[[stage]]\nname         = \"plan_channels\"\nsubject      = \"catalog\"\nexport       = \"plan-channels\"\nversion      = 5\nlabel        = \"Plan channels\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 1\nentry_for    = [\"catalog\"]\ndebounce_sec = 300\ndebounce_max_sec = 3600\nplacement    = \"home\"\nedges        = [{ to = \"write_channels\", map = \"same\" }]\nentry        = \"maktaba_fp_livetv.stages.plan_channels:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"write_channels\"\nsubject      = \"catalog\"\nexport       = \"write-channels\"\nversion      = 5\nlabel        = \"Write channels\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 2\nplacement    = \"home\"\nentry        = \"maktaba_fp_livetv.stages.write_channels:IMPL\"\nfingerprint  = { input = true, output = false }\n",
@@ -2671,8 +3576,8 @@
       "series_episodes",
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "2b43e13e74bdf6ee37276f5a331c0ab2cbd0c3ce1a11f2ed4706733963d66364",
      "text": "SELECT v.id AS id, COALESCE(NULLIF(v.display_title_manual, ''), v.display_title) AS title, (v.display_title_manual IS NOT NULL AND v.display_title_manual <> '') AS manual, v.display_title IS NOT NULL AS done, COALESCE(s.display_name, s.name_override, s.name) AS series, COALESCE(se.episode_override, se.episode, se.absolute_number) AS ep, se.series_id AS sid FROM videos v LEFT JOIN series_episodes se ON se.video_id = v.id LEFT JOIN series s ON s.id = se.series_id WHERE v.id = ANY($1::uuid[])",
      "writes": []
@@ -2685,8 +3590,8 @@
       "series_episodes",
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "0fb8d879bed0575c744dc9d0fe3d37fa6a0d4567e37d085cc75fde9b410feb15",
      "text": "SELECT v.id AS id, COALESCE(NULLIF(v.display_title_manual, ''), v.display_title) AS title, (v.display_title_manual IS NOT NULL AND v.display_title_manual <> '') AS manual, v.display_title IS NOT NULL AS done, COALESCE(s.display_name, s.name_override, s.name) AS series, COALESCE(se.episode_override, se.episode, se.absolute_number) AS ep, se.series_id AS sid FROM videos v LEFT JOIN series_episodes se ON se.video_id = v.id LEFT JOIN series s ON s.id = se.series_id WHERE v.id IN (SELECT value FROM json_each($1))",
      "writes": []
@@ -3163,8 +4068,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "72f081f305eae77dd969128fd240a1c57dfaa711e5c026e602b51d140e9437e0",
      "text": "SELECT duration_sec FROM videos WHERE id = $1",
      "writes": []
@@ -3187,8 +4092,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "70606d0f92e5522cf4b7556f7191513104b27e5e3fb97030b93ab19953b28aba",
      "text": "SELECT id, title FROM videos WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL",
      "writes": []
@@ -3199,8 +4104,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "1fb1c9d81a2bdd534ebcd52fece4c2f64c7fb85f1b25b472d1349d48ed55165b",
      "text": "SELECT id, title FROM videos WHERE id IN (SELECT value FROM json_each($1)) AND deleted_at IS NULL",
      "writes": []
@@ -3272,8 +4177,8 @@
       "series_episodes",
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "series",
+     "scope_arg": 1,
      "sha256": "4619df04a80dc76b0d352986e9c0b6e7a315b669c92eb49412d7da07835b9677",
      "text": "SELECT v.id, v.title, v.duration_sec FROM series_episodes se JOIN videos v ON v.id = se.video_id WHERE se.series_id = $1::uuid AND v.deleted_at IS NULL AND v.duration_sec IS NOT NULL AND v.duration_sec > 0 ORDER BY COALESCE(se.season_override, se.season, 0), COALESCE(se.episode_override, se.episode, se.absolute_number, 0), v.title",
      "writes": []
@@ -3285,8 +4190,8 @@
       "series_episodes",
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "series",
+     "scope_arg": 1,
      "sha256": "ed3d9984301d3ee7c12b633d298d1a5525a405d0ed8e3f78bb8b40ab3c8b2198",
      "text": "SELECT v.id, v.title, v.duration_sec FROM series_episodes se JOIN videos v ON v.id = se.video_id WHERE se.series_id = $1 AND v.deleted_at IS NULL AND v.duration_sec IS NOT NULL AND v.duration_sec > 0 ORDER BY COALESCE(se.season_override, se.season, 0), COALESCE(se.episode_override, se.episode, se.absolute_number, 0), v.title",
      "writes": []
@@ -3298,8 +4203,8 @@
       "collection_items",
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "collection",
+     "scope_arg": 1,
      "sha256": "7135149ed66947346a7d67fecffd8c4d030a918a08f1ae96d19815731299fdf6",
      "text": "SELECT v.id, v.title, v.duration_sec FROM collection_items ci JOIN videos v ON v.id = ci.video_id WHERE ci.collection_id = $1::uuid AND v.deleted_at IS NULL AND v.duration_sec IS NOT NULL AND v.duration_sec > 0 ORDER BY ci.position, v.title",
      "writes": []
@@ -3311,8 +4216,8 @@
       "collection_items",
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "collection",
+     "scope_arg": 1,
      "sha256": "46b4c85a9b05d51aa35b1c24057a00cd31188e9ced1488e332cdc66271242e85",
      "text": "SELECT v.id, v.title, v.duration_sec FROM collection_items ci JOIN videos v ON v.id = ci.video_id WHERE ci.collection_id = $1 AND v.deleted_at IS NULL AND v.duration_sec IS NOT NULL AND v.duration_sec > 0 ORDER BY ci.position, v.title",
      "writes": []
@@ -3887,8 +4792,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "7551c9dc64f65ee0fec405eaa5464e3e6934c35e8ed0bc0dc7d456ed1369270e",
      "text": "SELECT id FROM videos WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL",
      "writes": []
@@ -3899,8 +4804,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "d26c293cdbf76ef3ffa299ae7a6c4aaf78373f3499431e9959edb799d94719f2",
      "text": "SELECT id FROM videos WHERE id IN (SELECT value FROM json_each($1)) AND deleted_at IS NULL",
      "writes": []
@@ -3978,7 +4883,7 @@
    }
   },
   {
-   "digest": "22571b85ce094ea7cbcc0b50d860917987a32b850eaac94e075950a3a77fd005",
+   "digest": "2a43d1e9f2620a2dc54be478246e0022673e628fb1c3a470bc8df9fbdbda48e0",
    "folder": "livetv-slots",
    "id": "tv.maktaba.livetv-slots",
    "manifest": "# tv.maktaba.livetv-slots: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 7\n# (story 54.34): stages, swaps, rolls back and cleans up TV changes (Epic 33's slots).\nschema     = 1\nid         = \"tv.maktaba.livetv-slots\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.livetv-slots.name\"\nsummary = \"fp.livetv-slots.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"livetv.slots\"\ndb.read   = [\"app_settings\", \"channel_art_overrides\", \"channel_plans\", \"collection_items\", \"filler_items\", \"filler_pools\", \"job_stages\", \"series\", \"series_episodes\", \"tv_slots\", \"videos\"]\ndb.write  = [\"channel_programs\", \"channel_schedule_state\", \"channels\", \"external_links\", \"tv_change_events\", \"tv_changes\", \"tv_release_channels\", \"tv_releases\", \"tv_routing\", \"tv_sched_gen_seq\"]\nsettings  = [\"tv\", \"tv_output\", \"tv_staging\", \"display_titles\"]\nfiles.read  = [\"data.channels\"]\nfiles.write = []\n\n[[stage]]\nname         = \"tv_stage\"\nsubject      = \"catalog\"\nexport       = \"tv-stage\"\nversion      = 1\nlabel        = \"Stage TV change\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 3\nplacement    = \"home\"\nmax_attempts = 2\nentry        = \"maktaba_fp_livetv_slots.stages.tv_stage:IMPL\"\n\n[[stage]]\nname         = \"tv_swap\"\nsubject      = \"catalog\"\nexport       = \"tv-swap\"\nversion      = 1\nlabel        = \"Swap TV change\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 4\nplacement    = \"home\"\nmax_attempts = 1\nentry        = \"maktaba_fp_livetv_slots.stages.tv_swap:IMPL\"\n\n[[stage]]\nname         = \"tv_gc\"\nsubject      = \"catalog\"\nexport       = \"tv-gc\"\nversion      = 1\nlabel        = \"TV staging clean-up\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 5\nplacement    = \"home\"\nentry        = \"maktaba_fp_livetv_slots.stages.tv_gc:IMPL\"\n\n[[stage]]\nname         = \"tv_rollback\"\nsubject      = \"catalog\"\nexport       = \"tv-rollback\"\nversion      = 1\nlabel        = \"Roll back TV change\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 6\nplacement    = \"home\"\nmax_attempts = 2\nentry        = \"maktaba_fp_livetv_slots.stages.tv_rollback:IMPL\"\n",
@@ -4179,8 +5084,8 @@
       "series_episodes",
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "2b43e13e74bdf6ee37276f5a331c0ab2cbd0c3ce1a11f2ed4706733963d66364",
      "text": "SELECT v.id AS id, COALESCE(NULLIF(v.display_title_manual, ''), v.display_title) AS title, (v.display_title_manual IS NOT NULL AND v.display_title_manual <> '') AS manual, v.display_title IS NOT NULL AS done, COALESCE(s.display_name, s.name_override, s.name) AS series, COALESCE(se.episode_override, se.episode, se.absolute_number) AS ep, se.series_id AS sid FROM videos v LEFT JOIN series_episodes se ON se.video_id = v.id LEFT JOIN series s ON s.id = se.series_id WHERE v.id = ANY($1::uuid[])",
      "writes": []
@@ -4193,8 +5098,8 @@
       "series_episodes",
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "0fb8d879bed0575c744dc9d0fe3d37fa6a0d4567e37d085cc75fde9b410feb15",
      "text": "SELECT v.id AS id, COALESCE(NULLIF(v.display_title_manual, ''), v.display_title) AS title, (v.display_title_manual IS NOT NULL AND v.display_title_manual <> '') AS manual, v.display_title IS NOT NULL AS done, COALESCE(s.display_name, s.name_override, s.name) AS series, COALESCE(se.episode_override, se.episode, se.absolute_number) AS ep, se.series_id AS sid FROM videos v LEFT JOIN series_episodes se ON se.video_id = v.id LEFT JOIN series s ON s.id = se.series_id WHERE v.id IN (SELECT value FROM json_each($1))",
      "writes": []
@@ -4685,8 +5590,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "72f081f305eae77dd969128fd240a1c57dfaa711e5c026e602b51d140e9437e0",
      "text": "SELECT duration_sec FROM videos WHERE id = $1",
      "writes": []
@@ -4709,8 +5614,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "70606d0f92e5522cf4b7556f7191513104b27e5e3fb97030b93ab19953b28aba",
      "text": "SELECT id, title FROM videos WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL",
      "writes": []
@@ -4721,8 +5626,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "1fb1c9d81a2bdd534ebcd52fece4c2f64c7fb85f1b25b472d1349d48ed55165b",
      "text": "SELECT id, title FROM videos WHERE id IN (SELECT value FROM json_each($1)) AND deleted_at IS NULL",
      "writes": []
@@ -4794,8 +5699,8 @@
       "series_episodes",
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "series",
+     "scope_arg": 1,
      "sha256": "4619df04a80dc76b0d352986e9c0b6e7a315b669c92eb49412d7da07835b9677",
      "text": "SELECT v.id, v.title, v.duration_sec FROM series_episodes se JOIN videos v ON v.id = se.video_id WHERE se.series_id = $1::uuid AND v.deleted_at IS NULL AND v.duration_sec IS NOT NULL AND v.duration_sec > 0 ORDER BY COALESCE(se.season_override, se.season, 0), COALESCE(se.episode_override, se.episode, se.absolute_number, 0), v.title",
      "writes": []
@@ -4807,8 +5712,8 @@
       "series_episodes",
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "series",
+     "scope_arg": 1,
      "sha256": "ed3d9984301d3ee7c12b633d298d1a5525a405d0ed8e3f78bb8b40ab3c8b2198",
      "text": "SELECT v.id, v.title, v.duration_sec FROM series_episodes se JOIN videos v ON v.id = se.video_id WHERE se.series_id = $1 AND v.deleted_at IS NULL AND v.duration_sec IS NOT NULL AND v.duration_sec > 0 ORDER BY COALESCE(se.season_override, se.season, 0), COALESCE(se.episode_override, se.episode, se.absolute_number, 0), v.title",
      "writes": []
@@ -4820,8 +5725,8 @@
       "collection_items",
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "collection",
+     "scope_arg": 1,
      "sha256": "7135149ed66947346a7d67fecffd8c4d030a918a08f1ae96d19815731299fdf6",
      "text": "SELECT v.id, v.title, v.duration_sec FROM collection_items ci JOIN videos v ON v.id = ci.video_id WHERE ci.collection_id = $1::uuid AND v.deleted_at IS NULL AND v.duration_sec IS NOT NULL AND v.duration_sec > 0 ORDER BY ci.position, v.title",
      "writes": []
@@ -4833,8 +5738,8 @@
       "collection_items",
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "collection",
+     "scope_arg": 1,
      "sha256": "46b4c85a9b05d51aa35b1c24057a00cd31188e9ced1488e332cdc66271242e85",
      "text": "SELECT v.id, v.title, v.duration_sec FROM collection_items ci JOIN videos v ON v.id = ci.video_id WHERE ci.collection_id = $1 AND v.deleted_at IS NULL AND v.duration_sec IS NOT NULL AND v.duration_sec > 0 ORDER BY ci.position, v.title",
      "writes": []
@@ -5266,7 +6171,7 @@
    }
   },
   {
-   "digest": "75fee0496c5802e8345fea17d752c363b4ccc1f3965e34605061a2924ae06329",
+   "digest": "24c7b02b657810e67ca09c5fc1a172cf259823a3d8ac8e162ad87995515ec5eb",
    "folder": "repair",
    "id": "tv.maktaba.repair",
    "manifest": "# tv.maktaba.repair: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 6\n# (story 54.33): downloads a broken video again from where it came from and swaps the good copy in.\nschema     = 1\nid         = \"tv.maktaba.repair\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.repair.name\"\nsummary = \"fp.repair.summary\"\n\n[trusted]\nrunner    = \"net\"\ncomponent = \"library.repair\"\ndb.read   = [\"app_settings\", \"media_metadata_enrichment\", \"processing_jobs\"]\ndb.write  = [\"item_requests\", \"video_repairs\", \"videos\"]\nsettings  = [\"repair\"]\nfiles.read  = [\"library\"]\nfiles.write = [\"library\", \"trash\"]\nexec      = [\"yt-dlp\", \"ffmpeg\", \"ffprobe\"]\nnet       = [\"www.youtube.com\", \"youtube.com\", \"*.googlevideo.com\", \"www.googleapis.com\", \"i.ytimg.com\"]\n\n[[stage]]\nname         = \"repair_broken\"\nsubject      = \"library\"\nexport       = \"repair-broken\"\nversion      = 1\nlabel        = \"Repair broken files\"\nsubject_kinds = [\"library\"]\npool         = \"repairs\"\nlane         = \"media\"\nlane_order   = 10\nmay_request  = [\"probe\", \"content_hash\"]\nexternal_write = true\nmax_attempts = 1\nentry        = \"maktaba_fp_repair.stages.repair_broken:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
@@ -5277,8 +6182,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "ecbe04f6971ee07d657685b11f7a6682a04e4c12497dad189e2c224fa9e3ab87",
      "text": "SELECT id, library_id, path, filename, title, size_bytes, mtime, duration_sec, poster_path, metadata FROM videos WHERE id = $1",
      "writes": []
@@ -5378,7 +6283,7 @@
    }
   },
   {
-   "digest": "df11ff6ab2ae210f7d415105db159733df7e8b0f664298db7b00bc025d18930b",
+   "digest": "08aaac78fd1cc3ca4cb1fa2c970e7de5a8e49a5b312de429418fb625e8e29991",
    "folder": "semantic-search",
    "id": "tv.maktaba.semantic-search",
    "manifest": "# tv.maktaba.semantic-search: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 3\n# (story 54.30): the search index, chapters and topics, in the index runner.\nschema     = 1\nid         = \"tv.maktaba.semantic-search\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.semantic-search.name\"\nsummary = \"fp.semantic-search.summary\"\n\n[trusted]\nrunner    = \"index\"\ncomponent = \"search.semantic\"\ndb.read   = [\"libraries\", \"semantic_store_state\", \"transcript_segments\", \"transcripts\", \"videos\"]\ndb.write  = [\"chapters\", \"library_topics\", \"segment_embeddings\", \"video_embeddings\", \"video_topics\"]\nfiles.read  = [\"models\"]\nfiles.write = [\"data.index\"]\n\n[[stage]]\nname         = \"index\"\nsubject      = \"video\"\nexport       = \"index\"\nversion      = 2\nlabel        = \"Search index\"\nsubject_kinds = [\"video\"]\npool         = \"cpu\"\nlane         = \"speech\"\nlane_order   = 5\nplacement    = \"home\"\nedges        = [{ to = \"chapter_infer\", map = \"same\" }]\nentry        = \"maktaba_fp_semantic_search.stages.index:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"chapter_infer\"\nsubject      = \"video\"\nexport       = \"chapter-infer\"\nversion      = 1\nlabel        = \"Chapters\"\nsubject_kinds = [\"video\"]\npool         = \"cpu\"\nlane         = \"speech\"\nlane_order   = 6\nplacement    = \"home\"\nedges        = [{ to = \"chapter_thumbs\", map = \"same\" }, { to = \"topic_assign\", map = \"same\" }]\nentry        = \"maktaba_fp_semantic_search.stages.chapter_infer:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"topic_assign\"\nsubject      = \"video\"\nexport       = \"topic-assign\"\nversion      = 1\nlabel        = \"Topics\"\nsubject_kinds = [\"video\"]\npool         = \"cpu\"\nlane         = \"speech\"\nlane_order   = 8\nedges        = [{ to = \"topic_recluster\", map = \"library_of\", when = \"always\" }]\nentry        = \"maktaba_fp_semantic_search.stages.topic_assign:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"topic_recluster\"\nsubject      = \"library\"\nexport       = \"topic-recluster\"\nversion      = 1\nlabel        = \"Library topics\"\nsubject_kinds = [\"library\"]\npool         = \"cpu\"\nlane         = \"speech\"\nlane_order   = 9\ndebounce_sec = 1800\ndebounce_max_sec = 21600\nentry        = \"maktaba_fp_semantic_search.stages.topic_recluster:IMPL\"\nfingerprint  = { input = true, output = false }\n",
@@ -5401,8 +6306,8 @@
      "reads": [
       "libraries"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "library",
+     "scope_arg": 1,
      "sha256": "9abbb6d9ac64b65f0e3e985b8552ac47d438b6b72d1b68c2770f49d4ab5c27d6",
      "text": "SELECT settings FROM libraries WHERE id = $1",
      "writes": []
@@ -5483,8 +6388,8 @@
      "reads": [
       "transcript_segments"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "transcript",
+     "scope_arg": 1,
      "sha256": "883493b4904e38c57b2cd4c72bc8738f286f16980987d49515948863d12dbfd6",
      "text": "SELECT seq, text FROM transcript_segments WHERE transcript_id = $1",
      "writes": []
@@ -5495,8 +6400,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "ecbe04f6971ee07d657685b11f7a6682a04e4c12497dad189e2c224fa9e3ab87",
      "text": "SELECT id, library_id, path, filename, title, size_bytes, mtime, duration_sec, poster_path, metadata FROM videos WHERE id = $1",
      "writes": []
@@ -5520,8 +6425,8 @@
      "reads": [
       "transcripts"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "transcript",
+     "scope_arg": 1,
      "sha256": "95dfae63d8194a567b52bd095793a922c13aa0520e8d09247c7bd9f1e3334e72",
      "text": "SELECT COALESCE(revision, 0) FROM transcripts WHERE id = $1",
      "writes": []
@@ -5532,8 +6437,8 @@
      "reads": [
       "transcript_segments"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "transcript",
+     "scope_arg": 1,
      "sha256": "2224240464378bc2f2d15a54d8a5497ea93762f217a34035a1f6618ee7aaf274",
      "text": "SELECT id, seq, start_sec, end_sec, text FROM transcript_segments WHERE transcript_id = $1 ORDER BY seq",
      "writes": []
@@ -5557,8 +6462,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "8f101c9e6513ef84a307db1ce43a9db28450c4a0884f0c0744045bf4a0494ed4",
      "text": "SELECT detected_language FROM videos WHERE id = $1",
      "writes": []
@@ -5581,8 +6486,8 @@
      "reads": [
       "segment_embeddings"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "d8fc0c97571e5046d8e2897f88264cbcec50d8923fec59aa1cb71d7443e78608",
      "text": "SELECT 1 FROM segment_embeddings WHERE video_id = $1::uuid LIMIT 1",
      "writes": []
@@ -5618,21 +6523,27 @@
       "segment_embeddings",
       "transcript_segments"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "0bfeed079aceecf7d1f4c77d8da6e05a998ff574fc18278bc16fcfa0b1510034",
      "text": "SELECT e.segment_id, s.transcript_id, s.seq, s.start_sec, s.end_sec, s.text, e.embedding::text AS embedding FROM segment_embeddings e JOIN transcript_segments s ON s.id = e.segment_id WHERE e.video_id = $1::uuid ORDER BY s.seq",
      "writes": []
     },
     {
+     "also": [
+      {
+       "arg": 2,
+       "scope": "transcript"
+      }
+     ],
      "mode": "read",
      "name": "pgstore.video_vectors.2",
      "reads": [
       "segment_embeddings",
       "transcript_segments"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "b8d7a41f265c960d39971e1eec628bb30d175d57af14ffe0d1cfb271fb5a9546",
      "text": "SELECT e.segment_id, s.transcript_id, s.seq, s.start_sec, s.end_sec, s.text, e.embedding::text AS embedding FROM segment_embeddings e JOIN transcript_segments s ON s.id = e.segment_id WHERE e.video_id = $1::uuid AND s.transcript_id = $2::uuid ORDER BY s.seq",
      "writes": []
@@ -5721,8 +6632,8 @@
      "reads": [
       "libraries"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "library",
+     "scope_arg": 1,
      "sha256": "d1b987a6fa001c5949c91eac2b876c6a2d79d1c456d32997b0afb116b8f5d0a4",
      "text": "SELECT 1 FROM libraries WHERE id = $1",
      "writes": []
@@ -5789,7 +6700,7 @@
    }
   },
   {
-   "digest": "6ed2531cd350b3200ba0410d98081cad1e3a87e46ae2f581d2d05b87ac78bd85",
+   "digest": "2baba704fccfc86cb1573a0cd3d3c0bde4078247655c4aec6486191eea3307be",
    "folder": "subtitles",
    "id": "tv.maktaba.subtitles",
    "manifest": "# tv.maktaba.subtitles: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 2\n# (story 54.29): the first stages that read library files and write files.\nschema     = 1\nid         = \"tv.maktaba.subtitles\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.subtitles.name\"\nsummary = \"fp.subtitles.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"subtitles\"\ndb.read   = [\"transcript_segments\", \"transcripts\", \"videos\"]\ndb.write  = [\"subtitle_files\"]\nfiles.read  = [\"library\"]\nfiles.write = [\"library.subtitles\"]\n\n[[stage]]\nname         = \"subtitle_gen\"\nsubject      = \"video\"\nexport       = \"subtitle-gen\"\nversion      = 1\nlabel        = \"Subtitle files\"\nsubject_kinds = [\"video\"]\npool         = \"nas_write\"\nlane         = \"speech\"\nlane_order   = 4\nexternal_write = true\nentry        = \"maktaba_fp_subtitles.stages.subtitle_gen:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
@@ -5800,8 +6711,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "ecbe04f6971ee07d657685b11f7a6682a04e4c12497dad189e2c224fa9e3ab87",
      "text": "SELECT id, library_id, path, filename, title, size_bytes, mtime, duration_sec, poster_path, metadata FROM videos WHERE id = $1",
      "writes": []
@@ -5824,8 +6735,8 @@
      "reads": [
       "transcript_segments"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "transcript",
+     "scope_arg": 1,
      "sha256": "1b4106f239fd6fbb2def3eb78dec9336147784c4b1f78c6504c319bec9a1a4ec",
      "text": "SELECT start_sec, end_sec, text FROM transcript_segments WHERE transcript_id = $1 ORDER BY seq",
      "writes": []
@@ -5897,10 +6808,10 @@
    }
   },
   {
-   "digest": "4025bfcf185beb9690b1ef9f625fdc653d272cb7ea9316920a9e8980b1264762",
+   "digest": "bc926b0eecd668b895bd17161b9d08056d679f523957e8329d783422ad81be98",
    "folder": "thumbnails",
    "id": "tv.maktaba.thumbnails",
-   "manifest": "# tv.maktaba.thumbnails: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 2\n# (story 54.29): the first stages that read library files and write files.\nschema     = 1\nid         = \"tv.maktaba.thumbnails\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.thumbnails.name\"\nsummary = \"fp.thumbnails.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"media.thumbnails\"\ndb.read   = [\"chapters\", \"processing_jobs\", \"videos\"]\ndb.write  = []\nfiles.read  = [\"library\"]\nfiles.write = [\"data.thumbnails\"]\nexec      = [\"ffmpeg\"]\n\n[[stage]]\nname         = \"thumb_small\"\nsubject      = \"video\"\nexport       = \"thumb-small\"\nversion      = 1\nlabel        = \"Small thumbnail\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"episodes\"\nlane_order   = 6\nentry_for    = [\"video\"]\nplacement    = \"home\"\nedges        = [{ to = \"review_pages\", map = \"library_of\" }]\nentry        = \"maktaba_fp_thumbnails.stages.thumb_small:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"chapter_thumbs\"\nsubject      = \"video\"\nexport       = \"chapter-thumbs\"\nversion      = 1\nlabel        = \"Chapter frames\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"speech\"\nlane_order   = 7\nplacement    = \"home\"\nentry        = \"maktaba_fp_thumbnails.stages.chapter_thumbs:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
+   "manifest": "# tv.maktaba.thumbnails: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 2\n# (story 54.29): the first stages that read library files and write files. Wave 9 (story\n# 54.36 §1): thumbnail, the poster and sprites, once it ran on the engine (54.36 §2); the\n# video's state it advances is written by the worker for the job (the relayed advance).\nschema     = 1\nid         = \"tv.maktaba.thumbnails\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.thumbnails.name\"\nsummary = \"fp.thumbnails.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"media.thumbnails\"\ndb.read   = [\"chapters\", \"processing_jobs\", \"videos\"]\ndb.write  = [\"videos\"]\nfiles.read  = [\"library\"]\nfiles.write = [\"data.thumbnails\"]\nexec      = [\"ffmpeg\"]\n\n[[stage]]\nname         = \"thumbnail\"\nsubject      = \"video\"\nexport       = \"thumbnail\"\nversion      = 1\nlabel        = \"Poster and sprites\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"media\"\nlane_order   = 5\nplacement    = \"home\"\nedges        = [{ to = \"thumb_small\", map = \"same\" }]\nentry        = \"maktaba_fp_thumbnails.stages.thumbnail:IMPL\"\n\n[[stage]]\nname         = \"thumb_small\"\nsubject      = \"video\"\nexport       = \"thumb-small\"\nversion      = 1\nlabel        = \"Small thumbnail\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"episodes\"\nlane_order   = 6\nentry_for    = [\"video\"]\nplacement    = \"home\"\nedges        = [{ to = \"review_pages\", map = \"library_of\" }]\nentry        = \"maktaba_fp_thumbnails.stages.thumb_small:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"chapter_thumbs\"\nsubject      = \"video\"\nexport       = \"chapter-thumbs\"\nversion      = 1\nlabel        = \"Chapter frames\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"speech\"\nlane_order   = 7\nplacement    = \"home\"\nentry        = \"maktaba_fp_thumbnails.stages.chapter_thumbs:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
    "statements": [
     {
      "mode": "read",
@@ -5920,8 +6831,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "412c577c04684b85e42de37340901937bc3e6902f98448ce91f92ad934a3519e",
      "text": "SELECT content_hash FROM videos WHERE id = $1",
      "writes": []
@@ -5932,10 +6843,34 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "ecbe04f6971ee07d657685b11f7a6682a04e4c12497dad189e2c224fa9e3ab87",
      "text": "SELECT id, library_id, path, filename, title, size_bytes, mtime, duration_sec, poster_path, metadata FROM videos WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "handler.commit_thumbnails",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "43487fb05a3dd7b4960bdedb44382e96289d8952f377ae1c32c32c6257cf061e",
+     "text": "UPDATE videos SET poster_path = $2, sprite_path = $3 WHERE id = $1",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "handler.commit_thumbnails.2",
+     "reads": [
+      "videos"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "3ebaeac03e55bb959457411f3e811042ec1a73b9b2c612c1709e2323efffedb0",
+     "text": "SELECT state FROM videos WHERE id = $1",
      "writes": []
     },
     {
@@ -5944,10 +6879,22 @@
      "reads": [
       "processing_jobs"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "job_subject",
+     "scope_arg": 1,
      "sha256": "84b012f766146a4e0e1d1de35a99fd0b805e29e8f5ad5788c524b360a4b1585d",
      "text": "SELECT output_summary FROM processing_jobs WHERE subject_kind = 'video' AND subject_id = $1 AND stage = 'thumb_small' AND state = 'done' AND output_summary IS NOT NULL ORDER BY id DESC LIMIT 5",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "thumbnail.run",
+     "reads": [
+      "videos"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "f518a93cdfbdfe242d5080381585a4e53b763b499bc5cc8c681780adecf2f587",
+     "text": "SELECT path, content_hash, duration_sec FROM videos WHERE id = $1",
      "writes": []
     }
    ],
@@ -5963,10 +6910,10 @@
    }
   },
   {
-   "digest": "0ceb0ca8a301d7e81bafbff1ffaad6e2c371fd7b2a8e85296acf39c646f7b5ba",
+   "digest": "7c271bb0a03c7b46f771bdba093565d3bbf9904743382924ce6a9bce85938813",
    "folder": "transcription",
    "id": "tv.maktaba.transcription",
-   "manifest": "# tv.maktaba.transcription: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 3\n# (story 54.30): Whisper and the second listen, on the GPU, in the ml runner of each\n# transcription worker.\nschema     = 1\nid         = \"tv.maktaba.transcription\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.transcription.name\"\nsummary = \"fp.transcription.summary\"\n\n[trusted]\nrunner    = \"ml\"\ncomponent = \"transcription\"\ndb.read   = [\"app_settings\", \"libraries\", \"library_roots\", \"media_info\", \"processing_jobs\", \"vocab_pairs\", \"vocabulary\"]\ndb.write  = [\"audio_cache\", \"audio_tracks\", \"relisten_attempts\", \"transcribe_checkpoints\", \"transcript_edits\", \"transcript_segments\", \"transcripts\", \"videos\", \"word_flags\"]\nsettings  = [\"transcription\"]\nfiles.read  = [\"library\", \"models\"]\nfiles.write = [\"models\"]\nexec      = [\"ffmpeg\"]\ngpu       = \"preferred\"\n\n[[stage]]\nname         = \"transcribe\"\nsubject      = \"video\"\nexport       = \"transcribe\"\nversion      = 1\nlabel        = \"Transcribe\"\nsubject_kinds = [\"video\"]\npool         = \"gpu\"\nlane         = \"speech\"\nlane_order   = 2\nmay_request  = [\"extract\"]\nstorage      = \"read\"\nedges        = [{ to = \"second_listen\", map = \"same\" }]\nentry        = \"maktaba_fp_transcription.stages.transcribe:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"second_listen\"\nsubject      = \"video\"\nexport       = \"second-listen\"\nversion      = 1\nlabel        = \"Second listen\"\nsubject_kinds = [\"video\"]\npool         = \"listen\"\nlane         = \"speech\"\nlane_order   = 3\nstorage      = \"read\"\nedges        = [{ to = \"subtitle_gen\", map = \"same\" }, { to = \"index\", map = \"same\" }, { to = \"tag\", map = \"season_of\" }, { to = \"tag\", map = \"loose_library_of\" }, { to = \"word_check\", map = \"same\" }]\nentry        = \"maktaba_fp_transcription.stages.second_listen:IMPL\"\nfingerprint  = { input = true, output = false }\n",
+   "manifest": "# tv.maktaba.transcription: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 3\n# (story 54.30): Whisper and the second listen, on the GPU, in the ml runner of each\n# transcription worker. Wave 9 (story 54.36 §1): extract, the WAV a speech backend that reads\n# a file needs (the audio cache, data.cache), once it ran on the engine (54.36 §2).\nschema     = 1\nid         = \"tv.maktaba.transcription\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.transcription.name\"\nsummary = \"fp.transcription.summary\"\n\n[trusted]\nrunner    = \"ml\"\ncomponent = \"transcription\"\ndb.read   = [\"app_settings\", \"libraries\", \"library_roots\", \"media_info\", \"processing_jobs\", \"vocab_pairs\", \"vocabulary\"]\ndb.write  = [\"audio_cache\", \"audio_tracks\", \"relisten_attempts\", \"transcribe_checkpoints\", \"transcript_edits\", \"transcript_segments\", \"transcripts\", \"videos\", \"word_flags\"]\nsettings  = [\"transcription\"]\nfiles.read  = [\"library\", \"models\", \"data.cache\"]\nfiles.write = [\"models\", \"data.cache\"]\nexec      = [\"ffmpeg\"]\ngpu       = \"preferred\"\n\n[[stage]]\nname         = \"extract\"\nsubject      = \"video\"\nexport       = \"extract\"\nversion      = 1\nlabel        = \"Extract audio\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"media\"\nlane_order   = 1\nmay_request  = [\"transcribe\"]\nentry        = \"maktaba_fp_transcription.stages.extract:IMPL\"\n\n[[stage]]\nname         = \"transcribe\"\nsubject      = \"video\"\nexport       = \"transcribe\"\nversion      = 1\nlabel        = \"Transcribe\"\nsubject_kinds = [\"video\"]\npool         = \"gpu\"\nlane         = \"speech\"\nlane_order   = 2\nmay_request  = [\"extract\"]\nstorage      = \"read\"\nedges        = [{ to = \"second_listen\", map = \"same\" }]\nentry        = \"maktaba_fp_transcription.stages.transcribe:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"second_listen\"\nsubject      = \"video\"\nexport       = \"second-listen\"\nversion      = 1\nlabel        = \"Second listen\"\nsubject_kinds = [\"video\"]\npool         = \"listen\"\nlane         = \"speech\"\nlane_order   = 3\nstorage      = \"read\"\nedges        = [{ to = \"subtitle_gen\", map = \"same\" }, { to = \"index\", map = \"same\" }, { to = \"tag\", map = \"season_of\" }, { to = \"tag\", map = \"loose_library_of\" }, { to = \"word_check\", map = \"same\" }]\nentry        = \"maktaba_fp_transcription.stages.second_listen:IMPL\"\nfingerprint  = { input = true, output = false }\n",
    "statements": [
     {
      "mode": "read",
@@ -5974,8 +6921,8 @@
      "reads": [
       "libraries"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "library",
+     "scope_arg": 1,
      "sha256": "9abbb6d9ac64b65f0e3e985b8552ac47d438b6b72d1b68c2770f49d4ab5c27d6",
      "text": "SELECT settings FROM libraries WHERE id = $1",
      "writes": []
@@ -5986,8 +6933,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "ecbe04f6971ee07d657685b11f7a6682a04e4c12497dad189e2c224fa9e3ab87",
      "text": "SELECT id, library_id, path, filename, title, size_bytes, mtime, duration_sec, poster_path, metadata FROM videos WHERE id = $1",
      "writes": []
@@ -5999,8 +6946,8 @@
       "transcript_edits",
       "transcript_segments"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "transcript",
+     "scope_arg": 1,
      "sha256": "213a0f367f8b90be842d6ef1a2644c1fd4631225c9696b3875ce9933ea9c8a70",
      "text": "SELECT e.id, e.segment_seq, e.before, e.after, e.user_id, s.start_sec FROM transcript_edits e JOIN transcript_segments s   ON s.transcript_id = e.transcript_id AND s.seq = e.segment_seq WHERE e.transcript_id = $1 AND e.undone_at IS NULL ORDER BY e.created_at, e.id",
      "writes": []
@@ -6012,8 +6959,8 @@
       "transcripts",
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "transcript",
+     "scope_arg": 1,
      "sha256": "e12eb832ef4d06e46f5607290f372e39be205c1f8d4bc8fed42b429a72b3fac6",
      "text": "SELECT t.video_id, t.audio_track_id, v.library_id FROM transcripts t JOIN videos v ON v.id = t.video_id WHERE t.id = $1",
      "writes": []
@@ -6024,8 +6971,8 @@
      "reads": [
       "transcript_segments"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "transcript",
+     "scope_arg": 1,
      "sha256": "dbb5198b1f85ecb73f6ac2d782c7b6137033bea66462bc88b55d7722fb8fcac6",
      "text": "SELECT seq, start_sec, end_sec, text, word_data FROM transcript_segments WHERE transcript_id = $1 AND end_sec >= $2 AND start_sec <= $3 ORDER BY seq",
      "writes": []
@@ -6093,13 +7040,71 @@
      ]
     },
     {
+     "also": [
+      {
+       "arg": 2,
+       "scope": "subject"
+      },
+      {
+       "arg": 3,
+       "scope": "audio_track"
+      }
+     ],
+     "mode": "write",
+     "name": "extract.commit_extract",
+     "reads": [],
+     "scope": "audio_cache",
+     "scope_arg": 1,
+     "sha256": "2c7ae2edf2a7647853cdc967cd134db61a5e58222842e71fac47ee083053ab16",
+     "text": "INSERT INTO audio_cache (content_hash, video_id, audio_track_id, path, bytes)\nVALUES ($1, $2, $3, $4, $5)\nON CONFLICT (content_hash) DO UPDATE SET\n    video_id       = EXCLUDED.video_id,\n    audio_track_id = EXCLUDED.audio_track_id,\n    path           = EXCLUDED.path,\n    bytes          = EXCLUDED.bytes",
+     "writes": [
+      "audio_cache"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "extract.commit_extract.2",
+     "reads": [],
+     "scope": "audio_track",
+     "scope_arg": 1,
+     "sha256": "17ccccbe49bd1a87c1e34d1402e3519b2b7547055be7d3a837b3b5f7c21f1dfe",
+     "text": "UPDATE audio_tracks SET last_extracted_at = $2 WHERE id = $1",
+     "writes": [
+      "audio_tracks"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "extract.commit_extract.3",
+     "reads": [
+      "videos"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "3ebaeac03e55bb959457411f3e811042ec1a73b9b2c612c1709e2323efffedb0",
+     "text": "SELECT state FROM videos WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "extract.load_selected_track",
+     "reads": [
+      "audio_tracks"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "a7159732c27905699f8daef3fabec3b76da96b56c0ca8cefdac99b26fc1b830f",
+     "text": "SELECT id, track_index, codec, channels, sample_rate, language, title,\n       is_default, disposition\n  FROM audio_tracks\n WHERE video_id = $1\n ORDER BY track_index",
+     "writes": []
+    },
+    {
      "mode": "read",
      "name": "extract.release_audio_cache",
      "reads": [
       "audio_cache"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "audio_cache",
+     "scope_arg": 1,
      "sha256": "47a288bb3509d3676cf0f1c56ad2da37fca133d4a6678df679a9df0414808024",
      "text": "SELECT path FROM audio_cache WHERE content_hash = $1",
      "writes": []
@@ -6115,6 +7120,37 @@
      "writes": [
       "audio_cache"
      ]
+    },
+    {
+     "mode": "read",
+     "name": "extract.run",
+     "reads": [
+      "videos"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "6bcbf858e19a25db6bf4e184ae77f2e67917c4f873690df6cc7abda068ccecae",
+     "text": "SELECT path, content_hash FROM videos WHERE id = $1",
+     "writes": []
+    },
+    {
+     "also": [
+      {
+       "arg": 1,
+       "scope": "subject"
+      }
+     ],
+     "mode": "read",
+     "name": "extract.transcription_handled",
+     "reads": [
+      "processing_jobs",
+      "transcripts"
+     ],
+     "scope": "job_subject",
+     "scope_arg": 1,
+     "sha256": "24130e514956382b25d56fc42f73573ca949a79d8edec0b13263f40fce5c6aa5",
+     "text": "SELECT 1 WHERE EXISTS (SELECT 1 FROM transcripts WHERE video_id = $1 AND is_active) OR EXISTS (SELECT 1 FROM processing_jobs WHERE subject_kind = 'video' AND subject_id = $1 AND stage = 'transcribe' AND state IN ('pending', 'claimed', 'running', 'resuming', 'paused'))",
+     "writes": []
     },
     {
      "mode": "read",
@@ -6146,8 +7182,8 @@
      "reads": [
       "transcript_segments"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "transcript",
+     "scope_arg": 1,
      "sha256": "9809d7975b4f5e11609dd9ca0bbe083fb8586a1d74800b0226bd09b62e33a42a",
      "text": "SELECT seq, start_sec, end_sec, text, confidence, metadata, word_data FROM transcript_segments WHERE transcript_id = $1 ORDER BY seq",
      "writes": []
@@ -6279,8 +7315,8 @@
       "audio_cache",
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "2ba186323c9ad8673aa3f9b2229283516181be7f9a1ce4153009eadc065a5773",
      "text": "SELECT a.path, a.audio_track_id FROM audio_cache a JOIN videos v ON v.content_hash = a.content_hash WHERE v.id = $1",
      "writes": []
@@ -6341,8 +7377,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "412c577c04684b85e42de37340901937bc3e6902f98448ce91f92ad934a3519e",
      "text": "SELECT content_hash FROM videos WHERE id = $1",
      "writes": []
@@ -6365,8 +7401,8 @@
      "reads": [
       "processing_jobs"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "job",
+     "scope_arg": 1,
      "sha256": "364d5c61745eb2646089b38f2a60b1f80b04305f2b29c0ca2d7b7067c89d7eaf",
      "text": "SELECT state, error_cause, error FROM processing_jobs WHERE id = $1",
      "writes": []
@@ -6514,7 +7550,7 @@
    }
   },
   {
-   "digest": "7de1c238ac96ec218e663e6190f29dfaefcad544df20400ea02fbaad635a0a07",
+   "digest": "3fc15322f75ed064cf203787553057c68081fc5a8b8216f5e881ae7ce33e09c3",
    "folder": "youtube",
    "id": "tv.maktaba.youtube",
    "manifest": "# tv.maktaba.youtube: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 6\n# (story 54.33): lists a library's YouTube channels and downloads their videos, newest first, then the back catalogue.\nschema     = 1\nid         = \"tv.maktaba.youtube\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.youtube.name\"\nsummary = \"fp.youtube.summary\"\n\n[trusted]\nrunner    = \"net\"\ncomponent = \"youtube\"\ndb.read   = [\"app_settings\", \"job_stages\", \"libraries\", \"media_metadata_enrichment\", \"processing_jobs\", \"series_episodes\"]\ndb.write  = [\"file_actions\", \"video_copies\", \"videos\", \"youtube_channels\", \"youtube_downloads\", \"youtube_playlist_items\", \"youtube_playlists\", \"youtube_sources\", \"youtube_videos\"]\nsettings  = [\"exactdates\"]\nfiles.read  = [\"library\"]\n# the downloads' work folder (MAKTABA_YT_WORK) is the data.cache area\nfiles.write = [\"library\", \"data.cache\"]\nexec      = [\"yt-dlp\", \"ffmpeg\", \"ffprobe\"]\n# the hosts YouTube's API and yt-dlp's YouTube extractor reach (reviewed; the nightly\n# recording run checks no other is contacted, story 54.33 T02)\nnet       = [\"www.youtube.com\", \"youtube.com\", \"*.googlevideo.com\", \"www.googleapis.com\", \"i.ytimg.com\"]\n\n[[stage]]\nname         = \"youtube_sync\"\nsubject      = \"library\"\nexport       = \"youtube-sync\"\nversion      = 1\nlabel        = \"YouTube listing\"\nsubject_kinds = [\"library\"]\npool         = \"network_yt\"\nlane         = \"sources\"\nlane_order   = 0\nmay_request  = [\"youtube_fetch\", \"youtube_backfill\"]\nentry_for    = [\"library\"]\ndebounce_sec = 300\ndebounce_max_sec = 3600\nedges        = [{ to = \"link\", map = \"videos_of\" }, { to = \"detect\", map = \"same\" }, { to = \"exact_dates\", map = \"same\" }]\nentry        = \"maktaba_fp_youtube.stages.youtube_sync:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"youtube_fetch\"\nsubject      = \"library\"\nexport       = \"youtube-fetch\"\nversion      = 1\nlabel        = \"YouTube downloads\"\nsubject_kinds = [\"library\"]\npool         = \"network_yt\"\nlane         = \"sources\"\nlane_order   = 2\nmay_request  = [\"convert_mp4\", \"youtube_fetch\"]\nexternal_write = true\nentry        = \"maktaba_fp_youtube.stages.youtube_fetch:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"youtube_backfill\"\nsubject      = \"library\"\nexport       = \"youtube-backfill\"\nversion      = 1\nlabel        = \"YouTube back catalogue\"\nsubject_kinds = [\"library\"]\npool         = \"network_yt\"\nlane         = \"sources\"\nlane_order   = 3\nmay_request  = [\"convert_mp4\", \"youtube_backfill\"]\nexternal_write = true\nentry        = \"maktaba_fp_youtube.stages.youtube_backfill:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"exact_dates\"\nsubject      = \"library\"\nexport       = \"exact-dates\"\nversion      = 1\nlabel        = \"Exact dates\"\nsubject_kinds = [\"library\"]\npool         = \"network_yt\"\nlane         = \"sources\"\nlane_order   = 1\nentry_for    = [\"library\"]\ndebounce_sec = 300\ndebounce_max_sec = 3600\nedges        = [{ to = \"detect\", map = \"same\" }]\nentry        = \"maktaba_fp_youtube.stages.exact_dates:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
@@ -6525,8 +7561,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "ecbe04f6971ee07d657685b11f7a6682a04e4c12497dad189e2c224fa9e3ab87",
      "text": "SELECT id, library_id, path, filename, title, size_bytes, mtime, duration_sec, poster_path, metadata FROM videos WHERE id = $1",
      "writes": []
@@ -6638,8 +7674,8 @@
      "reads": [
       "processing_jobs"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "job",
+     "scope_arg": 1,
      "sha256": "d93f2ec3ecd4cc326bff8916d7ac448ae065ac6020278d3c46ab28388d511be7",
      "text": "SELECT pause_requested, cancel_requested\n  FROM processing_jobs\n WHERE id = $1",
      "writes": []
@@ -6671,6 +7707,10 @@
       {
        "arg": 3,
        "scope": "subject"
+      },
+      {
+       "arg": 4,
+       "scope": "job"
       }
      ],
      "mode": "write",
@@ -6690,34 +7730,46 @@
      "reads": [
       "file_actions"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "file_action",
+     "scope_arg": 1,
      "sha256": "b64d28818d230a6b08d00a16d2cd200b4426670b3728cb198e0efdeff1c829e8",
      "text": "SELECT * FROM file_actions WHERE id = $1",
      "writes": []
     },
     {
+     "also": [
+      {
+       "arg": 2,
+       "scope": "subject"
+      }
+     ],
      "mode": "read",
      "name": "ledger.open_actions",
      "reads": [
       "file_actions",
       "processing_jobs"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "library",
+     "scope_arg": 1,
      "sha256": "48d457d572d8f12e7af3f42f3fc5c8b806145ef46c0846a94ffc163847194e0e",
      "text": "SELECT fa.* FROM file_actions fa WHERE fa.state IN ('planned', 'staged', 'verified', 'swapped') AND ($1::uuid IS NULL OR fa.library_id = $1::uuid) AND ($2::uuid IS NULL OR fa.video_id = $2::uuid) AND ($3::boolean OR NOT EXISTS (SELECT 1 FROM processing_jobs pj WHERE pj.id = fa.job_id AND pj.state IN ('claimed', 'running', 'resuming'))) ORDER BY fa.created_at, fa.id",
      "writes": []
     },
     {
+     "also": [
+      {
+       "arg": 2,
+       "scope": "subject"
+      }
+     ],
      "mode": "read",
      "name": "ledger.open_actions.2",
      "reads": [
       "file_actions",
       "processing_jobs"
      ],
-     "scope": "subject",
-     "scope_arg": 2,
+     "scope": "library",
+     "scope_arg": 1,
      "sha256": "247e2e79f4fd96a59e7dfa516a0b59cf108edc5f857197ee4b04bad395e1c087",
      "text": "SELECT fa.* FROM file_actions fa WHERE fa.state IN ('planned', 'staged', 'verified', 'swapped') AND ($1 IS NULL OR fa.library_id = $1) AND ($2 IS NULL OR fa.video_id = $2) AND ($3 OR NOT EXISTS (SELECT 1 FROM processing_jobs pj WHERE pj.id = fa.job_id AND pj.state IN ('claimed', 'running', 'resuming'))) ORDER BY fa.created_at, fa.id",
      "writes": []
@@ -6783,8 +7835,8 @@
      "reads": [
       "libraries"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "library",
+     "scope_arg": 1,
      "sha256": "1f70d8d3c32ad050fcef24fa9b5a6868fcfbf3c1b9b375847cde783280b70c15",
      "text": "SELECT id, name, roots, settings\n  FROM libraries\n WHERE id = $1",
      "writes": []
@@ -6887,8 +7939,8 @@
      "reads": [
       "videos"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "f036b864180ece87e603847df462c9c38d392793f116e05b31ed3223f27b974c",
      "text": "SELECT id, library_id, path, content_hash, size_bytes FROM videos WHERE id = $1",
      "writes": []
@@ -6935,8 +7987,8 @@
      "reads": [
       "libraries"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "library",
+     "scope_arg": 1,
      "sha256": "9abbb6d9ac64b65f0e3e985b8552ac47d438b6b72d1b68c2770f49d4ab5c27d6",
      "text": "SELECT settings FROM libraries WHERE id = $1",
      "writes": []
@@ -7036,8 +8088,8 @@
      "reads": [
       "libraries"
      ],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "library",
+     "scope_arg": 1,
      "sha256": "766654592d3ff9c847be8128029a90b70256ce3a6654fe4b52332d4d297cbdef",
      "text": "SELECT roots FROM libraries WHERE id = $1",
      "writes": []

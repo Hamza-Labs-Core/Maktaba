@@ -108,6 +108,8 @@ lint_go:
   - *make
   - *go
   - '.github/workflows/_lint.yml'
+  # golangci-lint's pinned release (tools/release/fetch-pinned.sh is in *go)
+  - 'tools/ci/golangci-lint.sh'
 
 lint_pipeline:
   - *ci
@@ -122,6 +124,9 @@ lint_pipeline:
   # story 54.33 T02: the nightly check of the hosts yt-dlp contacts (its tests run in lint)
   - 'tools/ci/youtube_hosts.py'
   - '.github/workflows/youtube-hosts-nightly.yml'
+  # the scheduled prune of replaced Actions cache entries (its tests run in lint)
+  - 'tools/ci/cache_prune.py'
+  - '.github/workflows/cache-prune.yml'
   - 'tools/eval-gate/**'
 
 lint_web:
@@ -187,6 +192,8 @@ unit_go:
   - *make
   - *go
   - '.github/workflows/_unit.yml'
+  # it writes its runner's Go cache entry, every module in it first
+  - 'tools/ci/go-cache-fill.sh'
 
 # the pipeline's unit tier, and its cluster tests on Windows
 unit_pipeline:
@@ -277,6 +284,35 @@ plugins:
   - 'cmd/maktaba-server/cmd_plugins_sandbox.go'
   - 'pipeline/src/maktaba_pipeline/plugins/**'
   - 'pipeline/src/maktaba_pipeline/engine/**'
+  # the pipeline code the first-party plugins import, which both sides of the parity suite
+  # run (the in-process handler is the plugin's own entry): one package each, as
+  # tools/ci/firstparty_imports.py derives them (test_ci_paths.py fails on one missing)
+  - 'pipeline/src/maktaba_pipeline/__init__.py'
+  - 'pipeline/src/maktaba_pipeline/audio/**'
+  - 'pipeline/src/maktaba_pipeline/channels/**'
+  - 'pipeline/src/maktaba_pipeline/classify/**'
+  - 'pipeline/src/maktaba_pipeline/cluster/**'
+  - 'pipeline/src/maktaba_pipeline/db/**'
+  - 'pipeline/src/maktaba_pipeline/discovery/**'
+  - 'pipeline/src/maktaba_pipeline/extensions/**'
+  - 'pipeline/src/maktaba_pipeline/identity/**'
+  - 'pipeline/src/maktaba_pipeline/integrations/**'
+  - 'pipeline/src/maktaba_pipeline/library_mgmt/**'
+  - 'pipeline/src/maktaba_pipeline/log/**'
+  - 'pipeline/src/maktaba_pipeline/pipeline/**'
+  - 'pipeline/src/maktaba_pipeline/scanner/**'
+  - 'pipeline/src/maktaba_pipeline/schedule/**'
+  - 'pipeline/src/maktaba_pipeline/search/**'
+  - 'pipeline/src/maktaba_pipeline/sharepath/**'
+  - 'pipeline/src/maktaba_pipeline/stt/**'
+  - 'pipeline/src/maktaba_pipeline/text/**'
+  - 'pipeline/src/maktaba_pipeline/thumbnail/**'
+  - 'pipeline/src/maktaba_pipeline/transcript/**'
+  - 'pipeline/src/maktaba_pipeline/tvrelease/**'
+  - 'pipeline/src/maktaba_pipeline/word_review/**'
+  - 'pipeline/src/maktaba_pipeline/offline.py'
+  - 'pipeline/src/maktaba_pipeline/rules.py'
+  - 'pipeline/src/maktaba_pipeline/settings.py'
   - 'pipeline/tests/plugins/**'
   - 'pipeline/hatch_build.py'
   - 'api/internal/plugins/**'
@@ -285,7 +321,7 @@ plugins:
 
 # Epic 54 (story 54.23): Maktaba's own stages through the worker's plugin path into their
 # Windows runners, end to end (_runner-stages.yml): the runner, the worker's side of the
-# plugin path, the engine, the two stages and the tool helpers they run, the launcher, the
+# plugin path, the engine, the stages and the tool helpers they run, the launcher, the
 # supervisor's runners and pipes, and the plugin API's executor the stages' statements go to
 runner_stages:
   - *ci
@@ -298,11 +334,26 @@ runner_stages:
   - 'pipeline/src/maktaba_pipeline/thumbnail/**'
   - 'pipeline/src/maktaba_pipeline/audio/probe.py'
   - 'pipeline/src/maktaba_pipeline/binaries.py'
+  # the files the stages' entries import, with the package __init__ files the
+  # imports run (tools/ci/firstparty_imports.py; test_ci_paths.py fails on one missing)
+  - 'pipeline/src/maktaba_pipeline/__init__.py'
+  - 'pipeline/src/maktaba_pipeline/db/__init__.py'
+  - 'pipeline/src/maktaba_pipeline/db/jobs.py'
+  - 'pipeline/src/maktaba_pipeline/discovery/__init__.py'
+  - 'pipeline/src/maktaba_pipeline/discovery/ytdlp_sidecars.py'
+  - 'pipeline/src/maktaba_pipeline/identity/__init__.py'
+  - 'pipeline/src/maktaba_pipeline/identity/on_disk.py'
+  - 'pipeline/src/maktaba_pipeline/library_mgmt/__init__.py'
   - 'pipeline/src/maktaba_pipeline/library_mgmt/convert.py'
+  - 'pipeline/src/maktaba_pipeline/library_mgmt/ledger.py'
+  - 'pipeline/src/maktaba_pipeline/library_mgmt/swap.py'
+  - 'pipeline/src/maktaba_pipeline/library_mgmt/trash.py'
   - 'pipeline/src/maktaba_pipeline/library_mgmt/verify.py'
   - 'pipeline/src/maktaba_pipeline/library_mgmt/unicode_open.py'
   - 'plugins/first-party/thumbnails/**'
   - 'plugins/first-party/convert/**'
+  - 'plugins/first-party/subtitles/**'
+  - 'plugins/first-party/dedup/**'
   - 'cmd/maktaba-server/internal/appcontainer/**'
   - 'cmd/maktaba-server/internal/supervisor/runners*'
   - 'cmd/maktaba-server/internal/supervisor/testdata/runner_stages_worker.py'
@@ -580,6 +631,8 @@ mac_app:
   - 'pipeline/src/maktaba_plugin_runner/**'
   - 'pipeline/src/maktaba_pipeline/plugins/native.py'
   - '.github/workflows/_mac-app.yml'
+  # it writes its runner's Go cache entry, every module in it first
+  - 'tools/ci/go-cache-fill.sh'
   # its pinned downloads, retried and checked (the payload's fetch too)
   - 'tools/release/fetch-pinned.sh'
   - '.github/workflows/desktop-release.yml'
@@ -597,6 +650,8 @@ win_app:
   - 'pipeline/uv.lock'
   - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'
   - '.github/workflows/_win-app.yml'
+  # it writes its runner's Go cache entry, every module in it first
+  - 'tools/ci/go-cache-fill.sh'
   # its pinned downloads, retried and checked (the payload's fetch too)
   - 'tools/release/fetch-pinned.sh'
   - '.github/workflows/desktop-release.yml'
@@ -615,6 +670,8 @@ linux_app:
   - 'pipeline/uv.lock'
   - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'
   - '.github/workflows/_linux-app.yml'
+  # it writes its runner's Go cache entry, every module in it first
+  - 'tools/ci/go-cache-fill.sh'
   # the payload's fetch (pinned downloads, retried and checked)
   - 'tools/release/fetch-pinned.sh'
   - 'Makefile'
@@ -626,6 +683,9 @@ android_apps:
   - *ci
   - 'apps/android/**'
   - '.github/workflows/_android-apps.yml'
+  # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
+  - 'tools/ci/gradle-wrapper.sh'
+  - 'tools/release/fetch-pinned.sh'
   - '.github/workflows/play-bundles.yml'
   - 'tools/release/play-version.sh'
   - 'tools/release/play-version-test.sh'
@@ -638,6 +698,9 @@ android_tv:
   - 'apps/android/client/**'
   - 'apps/android/gradle/libs.versions.toml'
   - '.github/workflows/_android-tv.yml'
+  # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
+  - 'tools/ci/gradle-wrapper.sh'
+  - 'tools/release/fetch-pinned.sh'
   - '.github/workflows/play-bundles.yml'
 
 # The desktop Player for Windows and Linux (Epic 42.4): its project, the portable client
@@ -649,6 +712,9 @@ desktop_player:
   - 'apps/android/core/src/main/res/font/**'
   - 'apps/android/gradle/libs.versions.toml'
   - '.github/workflows/_desktop-player.yml'
+  # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
+  - 'tools/ci/gradle-wrapper.sh'
+  - 'tools/release/fetch-pinned.sh'
 
 # The Apple apps' build job: MaktabaKit's tests, a build of the Remote, the Player (iPhone
 # and Mac) and the TV app, their String Catalogs.

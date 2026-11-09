@@ -1,5 +1,5 @@
 -- name: pgstore.has_vectors
 -- mode: read
--- scope: catalog
+-- scope: subject $1
 -- tables: segment_embeddings
 SELECT 1 FROM segment_embeddings WHERE video_id = $1::uuid LIMIT 1

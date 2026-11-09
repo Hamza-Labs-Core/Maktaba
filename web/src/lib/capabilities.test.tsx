@@ -3,6 +3,7 @@
 // capabilities_changed, a viewer's app hides what is off and an admin's says so.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
+import { flushSync } from "react-dom";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { ServerEvent } from "./ws";
 
@@ -29,6 +30,7 @@ import {
   fetchCapabilities,
   readCapabilities,
   useFeature,
+  useOpenFeatureGate,
   type CapabilitiesAnswer,
 } from "./capabilities";
 import { I18nProvider } from "./i18n";
@@ -366,12 +368,41 @@ describe("CapabilitiesProvider", () => {
       client,
       "/guide"
     );
-    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    // the first answer, not just its request: the page is open once the home has answered
+    await waitFor(() => expect(client.snapshot().answered).toBe(true));
     await act(async () => {
       await client.refresh(0);
     });
+    expect(load).toHaveBeenCalledTimes(2);
     expect(client.snapshot().features.live_tv).toBe("off");
     expect(screen.getByText("the guide")).toBeInTheDocument();
+  });
+
+  it("an open page stays when the feature goes off right after the first answer", () => {
+    // The interleaving CI hit once: the first answer renders, then an answer turning the
+    // feature off renders before anything else runs. Each set renders at the store's priority
+    // (flushSync), so a gate kept by a later, lower-priority update is not kept yet.
+    const client = new CapabilitiesClient(
+      () => new Promise<CapabilitiesAnswer>(() => {}),
+      Date.now,
+      true
+    );
+    function Gate() {
+      return <p data-testid="gate">{useOpenFeatureGate("live_tv")}</p>;
+    }
+    wrap(<Gate />, memberUser, client);
+    const env = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    const wasAct = env.IS_REACT_ACT_ENVIRONMENT;
+    env.IS_REACT_ACT_ENVIRONMENT = false; // a browser's scheduling, not act's queue
+    try {
+      flushSync(() => client["set"](readCapabilities(viewerBody({}, "c-1-1"))!));
+      expect(screen.getByTestId("gate")).toHaveTextContent("show");
+      flushSync(() => client["set"](readCapabilities(viewerBody({ live_tv: "off" }, "c-2-1"))!));
+      expect(client.snapshot().features.live_tv).toBe("off");
+      expect(screen.getByTestId("gate")).toHaveTextContent("show");
+    } finally {
+      env.IS_REACT_ACT_ENVIRONMENT = wasAct;
+    }
   });
 
   it("<Feature> hides for a viewer and explains for an admin", async () => {

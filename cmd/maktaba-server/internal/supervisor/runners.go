@@ -50,8 +50,11 @@ func warnf(format string, args ...any) {
 }
 
 // RunnerIdleSec is how long a shared group's runner, started on demand, waits for work
-// before it exits (a variable so tests can shorten it).
-var RunnerIdleSec = 600
+// before it exits (a variable so tests can shorten it). Since wave 9 (story 54.36) core
+// stages such as scan run in a runner, so any work wakes one: it must be gone well inside
+// the idle window Core's footprint is measured after (tools/release/bundle-size/core-home.sh,
+// 120 s), or an idle Core runs more than its four processes. A runner restarts in seconds.
+var RunnerIdleSec = 60
 
 // RunnerGroups are core.plugin_runners' instances (the catalog's processes).
 var RunnerGroups = []string{"light", "files", "net", "service", "fp"}

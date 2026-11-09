@@ -53,6 +53,8 @@ __all__ = [
     "Unregistered",
     "choose",
     "touches_library",
+    "share_guarded",
+    "SHARE_RUNNER_STAGES",
     "hello",
     "result_from_wire",
     "result_to_wire",
@@ -305,6 +307,22 @@ async def stage_impl(db: Any, stage: str) -> str:
 SHARE_RUNNERS_ENV = "MAKTABA_WINDOWS_SHARE_RUNNERS"
 
 
+#: the library stages the Windows end to end proves in their runners on a share with the
+#: worker's default environment (runners_windows_stages_e2e_test.go, a case each with the
+#: override off): they read the share through the launcher's broker and write only the
+#: thumbnail cache or subtitle files by name. Every other library stage stays in the worker
+#: while a library is on a share: those that write the libraries in full (convert, dedup,
+#: repair, youtube; their broker serves reads only), and transcribe and second_listen, which
+#: run in the per-slot ml runners no end to end has run on a share yet.
+SHARE_RUNNER_STAGES = frozenset({"thumb_small", "chapter_thumbs", "subtitle_gen"})
+
+
+def share_guarded(stage: str) -> bool:
+    """On Windows while a library is on a share, ``stage`` runs in the worker: it reads or
+    writes the libraries and the end to end has not proven it in its runner there."""
+    return touches_library(stage) and stage not in SHARE_RUNNER_STAGES
+
+
 def touches_library(stage: str) -> bool:
     """The stage's plugin reads or writes the libraries (``files.read`` or ``files.write``
     names ``library`` or a part of it): thumbnails, subtitles, transcription, convert,
@@ -363,15 +381,14 @@ async def choose(db: Any, stage: str) -> ImplChoice:
         return ImplChoice("inproc")
     if (
         sys.platform == "win32"
-        and touches_library(stage)
+        and share_guarded(stage)
         and os.environ.get(SHARE_RUNNERS_ENV) != "1"
         and await share_library(db)
     ):
-        # a runner reaches a library on a share only through its launcher's broker (none
-        # for a folder written in full), and v0.3.105 showed a look there answered as a
-        # missing file (a small thumbnail done with none): while a library is on a share,
-        # the stages that read or write the libraries run in the worker, which reaches every
-        # share, until the Windows end to end proves the runner path
+        # a runner reaches a library on a share only through its launcher's broker, and
+        # v0.3.105 showed a look there answered as a missing file (a small thumbnail done
+        # with none): while a library is on a share, a library stage the Windows end to end
+        # has not proven in its runner there runs in the worker, which reaches every share
         # (MAKTABA_WINDOWS_SHARE_RUNNERS=1 asks the runners anyway)
         return ImplChoice("inproc", "windows_share_library")
     ok, _ = await serving(stage)
@@ -597,10 +614,13 @@ _ENDING: set[asyncio.Future[None]] = set()
 EngineHandler = Callable[[str, dict[str, Any]], Awaitable[Any]]
 
 
-def engine_handler(db: Any, ctx: Any) -> EngineHandler:
+def engine_handler(db: Any, ctx: Any, plugin_id: str = "") -> EngineHandler:
     """What the runner may ask of the worker while one job runs: the job's own progress,
-    log, events and cancel flag, written by the worker with its own database."""
+    log, events and cancel flag, written by the worker with its own database. An event is
+    published only when its kind, size, payload, topic and ids pass
+    :func:`.publish_rules.check_publish`."""
     from ..engine import events
+    from .publish_rules import check_publish
 
     async def handle(op: str, a: dict[str, Any]) -> Any:
         if op == "progress":
@@ -627,10 +647,16 @@ def engine_handler(db: Any, ctx: Any) -> EngineHandler:
             await events.log_event(db, **kw)
             return None
         if op == "publish":
-            await events.publish(db, str(a["type"]), decode_any(a["payload"]))
+            kind = a.get("type")
+            try:
+                payload = decode_any(a.get("payload"))
+            except Exception:  # noqa: BLE001 - an undecodable payload is refused as a schema
+                payload = None  # mismatch (and logged) like any other
+            check_publish(plugin_id or str(ctx.job.stage), kind, payload, ctx.job)
+            await events.publish(db, str(kind), payload)
             return None
         if op == "job_ref":
-            ref = await events.job_ref(db, int(a["job_id"]))
+            ref = await events.job_ref(db, _own_job_id(ctx, a.get("job_id")))
             return encode_any(ref) if ref is not None else None
         if op == "review_digest":
             ctx.review_digests.append(str(a["digest"]))
@@ -647,6 +673,12 @@ def engine_handler(db: Any, ctx: Any) -> EngineHandler:
             return await _relayed_dedup_commit(db, ctx, {k: decode_any(v) for k, v in a.items()})
         if op in ("tv_commit", "tv_rollback"):
             return await _relayed_tv(db, ctx, op)
+        if op == "advance":
+            return await _relayed_advance(db, ctx, a)
+        if op == "requeue_failed":
+            return await _relayed_requeue_failed(db, ctx, a)
+        if op == "storage_canonicalize":
+            return await _relayed_storage_canonicalize(db, ctx)
         if op == "service_request":
             return await _relayed_service(ctx, a)
         raise ValueError(f"engine op {op!r}")
@@ -776,6 +808,67 @@ async def _relayed_tv(db: Any, ctx: Any, op: str) -> dict[str, Any]:
     return {k: encode_any(v) for k, v in got.items()}
 
 
+#: the video-state trigger each stage's job may apply (story 54.36): ``advance_after_stage``
+#: is the only writer of ``videos.state``, and only the queue engine's process runs it
+_ADVANCE_TRIGGERS = {"probe": "probe", "thumbnail": "thumbnail", "extract": "extract"}
+
+
+async def _relayed_advance(db: Any, ctx: Any, a: dict[str, Any]) -> dict[str, Any]:
+    """A video's state transition, by the worker for ``probe``, ``thumbnail`` or ``extract``
+    in its runner: only the job's own video, and only its stage's trigger (the outcome is
+    checked by the state machine, which refuses a transition it does not have)."""
+    from ..domain.states import Trigger
+    from ..orchestrator.advance import advance_after_stage
+
+    stage = str(ctx.job.stage)
+    trigger = str(a.get("trigger") or "")
+    if _ADVANCE_TRIGGERS.get(stage) != trigger:
+        raise EnqueueRefused(f"plugin_scope: {stage} may not advance a video by {trigger!r}")
+    vid = str(a.get("video_id") or "")
+    own = getattr(ctx.job, "video_id", None)
+    if own is None or str(own) != vid:
+        raise EnqueueRefused(f"plugin_scope: video {vid} is not this {stage} job's")
+    state = await advance_after_stage(
+        db, own, Trigger(trigger), str(a.get("outcome") or ""), log=_log
+    )
+    return {"state": state.value}
+
+
+async def _relayed_requeue_failed(db: Any, ctx: Any, a: dict[str, Any]) -> list[str]:
+    """A video's failed stages queued again, by the worker for ``access_check`` (the job's
+    own video) or ``scan`` (a missing file of the job's library found again)."""
+    from ..engine.requeue import requeue_failed
+    from ..engine.sql import uid
+
+    stage = str(ctx.job.stage)
+    vid = str(a.get("video_id") or "")
+    if stage == "access_check":
+        own = getattr(ctx.job, "video_id", None) or ctx.job.subject.id
+        ok = str(own) == vid
+    elif stage == "scan":
+        lib = getattr(ctx.job, "library_id", None) or ctx.job.subject.id
+        owner = await db.fetchval("SELECT library_id FROM videos WHERE id = $1", uid(vid))
+        ok = owner is not None and str(owner) == str(lib)
+    else:
+        ok = False
+    if not ok:
+        raise EnqueueRefused(f"plugin_scope: {stage} may not queue video {vid} again")
+    # checked above: the job's own video, or a row of its library, so a valid id
+    return await requeue_failed(db, UUID(vid), str(a.get("why") or "requeued"))
+
+
+async def _relayed_storage_canonicalize(db: Any, ctx: Any) -> dict[str, Any]:
+    """The home's path conversion, by the worker for ``storage_canonicalize``'s job: it
+    pauses and resumes stages and writes the share map, which a plugin never may; nothing
+    the plugin sends is used."""
+    from ..sharepath.auto import run_for_job
+
+    if str(ctx.job.stage) != "storage_canonicalize":
+        raise EnqueueRefused(f"plugin_scope: storage_canonicalize is not {ctx.job.stage}'s")
+    got = await run_for_job(db)
+    return {k: encode_any(v) for k, v in got.items()}
+
+
 async def _relayed_dedup_commit(db: Any, ctx: Any, a: dict[str, Any]) -> dict[str, Any]:
     """A duplicate group's merge, committed by the worker for ``dedup_apply`` in its runner:
     only this job's group (its subject), and only the group's own members."""
@@ -842,6 +935,19 @@ def _own_job_event(ctx: Any, kw: dict[str, Any]) -> dict[str, Any]:
         if str(kw.get(k)) != str(own[k]):
             raise EnqueueRefused(f"plugin_scope: {k} {kw.get(k)} is not this job's")
     return {**kw, **own}
+
+
+def _own_job_id(ctx: Any, job_id: Any) -> int:
+    """The job a plugin's job reads through the worker (``job_ref``, README §15.12): its own
+    only; another job's state, subject and library are not its to read."""
+    own = int(ctx.job.id)
+    try:
+        asked = int(job_id)
+    except (TypeError, ValueError):
+        raise EnqueueRefused(f"plugin_scope: job {job_id!r} is not this job's") from None
+    if asked != own:
+        raise EnqueueRefused(f"plugin_scope: job {asked} is not this job's")
+    return own
 
 
 def _services_of(stage: str) -> tuple[str, ...]:
@@ -913,7 +1019,7 @@ async def run_native(db: Any, job: Any, ctx: Any, *, connect: Any = None) -> Sta
     if group is None or entry is None:
         raise StageFailure("plugin_failed", f"{stage} is not a first-party stage", retryable=False)
     minted = await _mint(int(job.id))
-    handle = engine_handler(db, ctx)
+    handle = engine_handler(db, ctx, str(minted.get("plugin_id") or ""))
     try:
         opener = connect or (lambda: open_runner(group))
         try:
@@ -1073,6 +1179,7 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
     """This machine's folders of each ``[trusted]`` file area, as the worker sees them: the
     library roots through this machine's share-path mapping, and the data folders the
     stages' own settings name. A runner applies its sandbox from them."""
+    from ..audio.extract import cache_path_for
     from ..engine.stages._review_pages import reviews_dir
     from ..thumbnail import small
     from ..thumbnail.generator import thumbnail_dir_for
@@ -1103,9 +1210,15 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
         "trash": ";".join(f"{r}/.maktaba/trash" for r in sorted(roots)),
         "data.thumbnails": thumbs,
         "models": ";".join(_model_folders()),
-        # the YouTube downloads' work folder (MAKTABA_YT_WORK, else ~/.maktaba/work/yt)
-        "data.cache": os.path.realpath(
-            os.path.expanduser(os.environ.get("MAKTABA_YT_WORK") or "~/.maktaba/work/yt")
+        # the YouTube downloads' work folder (MAKTABA_YT_WORK, else ~/.maktaba/work/yt) and
+        # the audio cache extract writes its WAV in (audio.extract.cache_path_for, story 54.36)
+        "data.cache": ";".join(
+            [
+                os.path.realpath(
+                    os.path.expanduser(os.environ.get("MAKTABA_YT_WORK") or "~/.maktaba/work/yt")
+                ),
+                os.path.realpath(str(cache_path_for("x").parent)),
+            ]
         ),
         "data.index": os.path.realpath(
             os.path.expanduser(os.environ.get("MAKTABA_CHROMA_DIR") or "~/.maktaba/chroma")

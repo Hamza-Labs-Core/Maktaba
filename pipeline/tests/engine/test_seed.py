@@ -65,7 +65,8 @@ async def test_the_sync_flips_a_moved_stage_to_its_plugin_unless_set_by_hand(db:
 
     await sync_graph(db, GRAPH)
     impl = await db.fetchval("SELECT impl FROM job_stages WHERE stage = 'promo_links'")
-    core = await db.fetchval("SELECT impl FROM job_stages WHERE stage = 'probe'")
+    # a stage the core keeps (probe moved into tv.maktaba.core-media, story 54.36)
+    core = await db.fetchval("SELECT impl FROM job_stages WHERE stage = 'component_catchup'")
     assert core == "inproc"
     if db.dialect != "postgres":
         assert impl == "inproc"  # the runners need Postgres

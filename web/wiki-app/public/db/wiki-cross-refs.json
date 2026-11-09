@@ -2,8 +2,8 @@
   "schema_version": 2,
   "generated_for": "Maktaba",
   "totals": {
-    "epics": 57,
-    "stories": 681,
+    "epics": 58,
+    "stories": 699,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -407,6 +407,13 @@
       "title": "Parental controls on iPhone and iPad, on Apple's Screen Time",
       "description": "Parental controls on iPhone and iPad, on Apple's Screen Time.\n\nRequirement: a parent must be able to hand a child an iPhone or iPad with Maktaba on it and know the child sees only what the parent allows. That has to hold everywhere content can appear, on the home network and through Maktaba Cloud, and no app, modified or not, may get around it. Today the only limit is which libraries a user can read (`library_acl`). Epic 45 listed parental controls as missing and shelved its profiles-with-a-PIN story (45.23).",
       "readme": "specs/epics/57-parental-controls/README.md"
+    },
+    {
+      "id": "58",
+      "slug": "smart-tv-platforms",
+      "title": "Apps for the TVs Maktaba does not reach yet",
+      "description": "Apps for the TVs Maktaba does not reach yet: Fire TV, Google Cast, Samsung, LG and Roku.\n\nRequirement: a household should be able to watch its Maktaba home on the TV it already owns. Today that means an Apple TV, an Android or Google TV, or a phone with AirPlay. The TVs most families own are another matter: - a Samsung (about 17% of TVs worldwide, and 23% of US connected-TV platforms); - an LG (about 7–12%); - a Roku (28% in the US); - an Amazon Fire TV stick (research.md §7); - and in the Middle East, mostly Samsung, LG and Android TV.",
+      "readme": "specs/epics/58-smart-tv-platforms/README.md"
     }
   ],
   "stories": [
@@ -7275,6 +7282,168 @@
       "slug": "openapi-roles-rehearsal",
       "title": "OpenAPI, role tests and the bypass rehearsal",
       "story_file": "specs/epics/57-parental-controls/story-57-13-openapi-roles-rehearsal.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.01",
+      "epic": 58,
+      "num": "01",
+      "slug": "compatibility-contract",
+      "title": "The compatibility contract: API levels, oldest supported apps and the update prompt",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-01-compatibility-contract.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.02",
+      "epic": 58,
+      "num": "02",
+      "slug": "device-playback-caps",
+      "title": "Playback that fits each TV: device-reported capabilities, new profiles and HLS in fMP4",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-02-device-playback-caps.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.03",
+      "epic": 58,
+      "num": "03",
+      "slug": "cloud-tv-code",
+      "title": "Sign a TV in from anywhere: a code through Maktaba Cloud",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-03-cloud-tv-code.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.04",
+      "epic": 58,
+      "num": "04",
+      "slug": "store-review-home",
+      "title": "A home for store reviewers",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-04-store-review-home.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.05",
+      "epic": 58,
+      "num": "05",
+      "slug": "fire-tv",
+      "title": "Fire TV on Fire OS: an Amazon build of the Android TV app",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-05-fire-tv.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.06",
+      "epic": 58,
+      "num": "06",
+      "slug": "cast-senders",
+      "title": "Google Cast senders in the Android Player, the Apple Player and the web",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-06-cast-senders.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.07",
+      "epic": 58,
+      "num": "07",
+      "slug": "cast-receiver",
+      "title": "Maktaba's Cast receiver at cast.maktaba.tv",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-07-cast-receiver.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.08",
+      "epic": 58,
+      "num": "08",
+      "slug": "tv-web-ui",
+      "title": "The TV build of the big-screen view, served by the home at /tv/",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-08-tv-web-ui.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.09",
+      "epic": 58,
+      "num": "09",
+      "slug": "tv-web-launcher",
+      "title": "The web-TV launcher: finding the home, signing in, and the bridge to the TV",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-09-tv-web-launcher.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.10",
+      "epic": 58,
+      "num": "10",
+      "slug": "tizen",
+      "title": "Samsung Tizen: AVPlay, the package and the Samsung store",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-10-tizen.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.11",
+      "epic": 58,
+      "num": "11",
+      "slug": "webos",
+      "title": "LG webOS: the native player, the package and the LG Content Store",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-11-webos.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.12",
+      "epic": 58,
+      "num": "12",
+      "slug": "roku-channel",
+      "title": "Roku: a SceneGraph channel with the TV layout",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-12-roku-channel.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.13",
+      "epic": 58,
+      "num": "13",
+      "slug": "roku-player-certification",
+      "title": "Roku: the player, certification and release",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-13-roku-player-certification.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.14",
+      "epic": 58,
+      "num": "14",
+      "slug": "parental-controls",
+      "title": "Parental controls on the new TVs",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-14-parental-controls.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.15",
+      "epic": 58,
+      "num": "15",
+      "slug": "strings-arabic-rtl",
+      "title": "English and Arabic on every TV: catalogs, mirroring, fonts and Roku's visual text",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-15-strings-arabic-rtl.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.16",
+      "epic": 58,
+      "num": "16",
+      "slug": "ci-per-platform",
+      "title": "CI for each TV: emulators where they exist, real-device checklists where they don't, logs kept",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-16-ci-per-platform.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.17",
+      "epic": 58,
+      "num": "17",
+      "slug": "openapi-roles-rehearsal",
+      "title": "OpenAPI, role tests and the new-clients rehearsal",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-17-openapi-roles-rehearsal.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.18",
+      "epic": 58,
+      "num": "18",
+      "slug": "vega-os",
+      "title": "Amazon Vega OS: a React Native app, built when Vega devices are a real share",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-18-vega-os.md",
       "plan_files": []
     }
   ],

@@ -4,10 +4,14 @@
 (``fetch``, ``fetchrow``, ``fetchval``, ``execute``, ``executemany``) in its own package
 and in the modules its ``statements.toml`` lists, and writes ``queries/<name>.sql`` for
 each, with a header from the statement's parse tree: ``mode`` (read or write), the tables
-it reads and writes, and its ``scope`` (a ``library_id = $n`` or ``video_id = $n`` test
-the API checks against the job's token). Names already given are kept.
+it reads and writes, and its ``scope``: every check the API runs against the job's token,
+one for each id that binds a write's rows and for each ``$n`` a column of an owner table
+is compared to (README §15.12, ``write_scope.py`` and ``scope_tables.toml``). Names
+already given are kept.
 
-``check <plugin>|--all`` (CI) fails when ``queries/`` is not what ``sync`` would write,
+``check <plugin>|--all`` (CI) fails when ``queries/`` is not what ``sync`` would write
+(a header missing a check included), when a read compares a column of an unlisted table,
+or an id-named column with no kind, to a ``$n``,
 when a statement touches a table outside the manifest's ``[trusted] db.read`` /
 ``db.write``, writes a queue table or ``videos.state`` (only the engine writes those,
 README §15.3), or when the code builds a statement's text at run time (an f-string or a
@@ -44,6 +48,7 @@ from maktaba_plugin_sdk.statements import (  # noqa: E402
     parse_file,
     parse_scope,
     render_file,
+    render_scope,
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -322,8 +327,6 @@ def analyse(text: str) -> tuple[str, tuple[str, ...], tuple[str, ...], str, int,
             self.targets: list[str] = []
             self.ctes: set[str] = set()
             self.locks = False
-            self.lib_args: list[int] = []
-            self.video_args: list[int] = []
             self.settings_args: list[int] = []
             self.state_write = False
 
@@ -338,16 +341,6 @@ def analyse(text: str) -> tuple[str, tuple[str, ...], tuple[str, ...], str, int,
 
         def visit_InsertStmt(self, ancestors: Any, node: Any) -> None:  # noqa: N802
             self.targets.append(node.relation.relname)
-            # INSERT … (library_id, …) VALUES ($1, …): the row's library is the scope
-            cols = [getattr(c, "name", "") for c in node.cols or ()]
-            sel = node.selectStmt
-            for vals in getattr(sel, "valuesLists", None) or ():
-                for col, v in zip(cols, vals, strict=False):
-                    if isinstance(v, pg.ParamRef):
-                        if col == "library_id":
-                            self.lib_args.append(v.number)
-                        elif col == "video_id":
-                            self.video_args.append(v.number)
 
         def visit_UpdateStmt(self, ancestors: Any, node: Any) -> None:  # noqa: N802
             self.targets.append(node.relation.relname)
@@ -369,10 +362,6 @@ def analyse(text: str) -> tuple[str, tuple[str, ...], tuple[str, ...], str, int,
                     fields = [getattr(f, "sval", "") for f in col.fields]
                     if fields and fields[-1] == "key" and "app_settings" in self.rels:
                         self.settings_args.append(par.number)
-                    elif fields and fields[-1] == "library_id":
-                        self.lib_args.append(par.number)
-                    elif fields and fields[-1] == "video_id":
-                        self.video_args.append(par.number)
 
     v = V()
     v(stmts)
@@ -384,14 +373,11 @@ def analyse(text: str) -> tuple[str, tuple[str, ...], tuple[str, ...], str, int,
     if v.state_write:
         problems.append("writes videos.state (only the engine writes it)")
     mode = "write" if writes else "read"
+    # the settings key a rules read names; every other check comes from scope_tables.toml
+    # (read_checks, write_checks)
     scope, arg = "catalog", 0
     if "app_settings" in tables and len(set(v.settings_args)) == 1:
         scope, arg = "settings", v.settings_args[0]
-    elif len(set(v.video_args)) == 1:
-        # a video in the job's scope (its own, or one of its library's): the stricter test
-        scope, arg = "subject", v.video_args[0]
-    elif len(set(v.lib_args)) == 1:
-        scope, arg = "library", v.lib_args[0]
     return mode, tuple(sorted(reads)), tuple(sorted(writes)), scope, arg, problems
 
 
@@ -436,27 +422,26 @@ def wanted(plugin: Path) -> tuple[list[Statement], list[str]]:
                 n += 1
                 name = f"{base}.{n}"
             taken.add(name)
-        also: tuple[tuple[str, int], ...] = ()
-        if mode == "write":
-            checks, wprobs = write_checks(k, plugin)
-            forced = _scopes(plugin).get(name)
-            if forced is not None:
-                try:
-                    checks = parse_scope(forced.checks or "catalog", k, path=name)
-                except StatementError as exc:
-                    problems.append(f"statements.toml [scope.{name!r}]: {exc}")
-                if not forced.reason:
-                    problems.append(
-                        f"statements.toml [scope.{name!r}]: a write's checks need a reason"
-                    )
-            else:
-                problems += [f"{x.file}:{x.line} ({name}): {p}" for p in wprobs]
-            scope, arg = checks[0] if checks else ("catalog", 0)
-            also = tuple(checks[1:])
+        # every id that binds a write's rows, and every $N a read compares an owner column
+        # to (README §15.12), with the settings key a rules read names
+        rchecks, rprobs = read_checks(k, plugin)
+        wchecks, wprobs = write_checks(k, plugin) if mode == "write" else ([], [])
+        found = set(rchecks) | set(wchecks)
+        if scope == "settings":
+            found.add(("settings", arg))
+        checks = sorted(found, key=lambda c: (c[1], c[0]))
+        forced = _scopes(plugin).get(name)
+        if forced is not None:
+            try:
+                checks = parse_scope(forced.checks or "catalog", k, path=name)
+            except StatementError as exc:
+                problems.append(f"statements.toml [scope.{name!r}]: {exc}")
+            if not forced.reason:
+                problems.append(f"statements.toml [scope.{name!r}]: set checks need a reason")
         else:
-            forced = _scopes(plugin).get(name)
-            if forced is not None and forced.checks:
-                ((scope, arg),) = parse_scope(forced.checks, k, path=name)[:1]
+            problems += [f"{x.file}:{x.line} ({name}): {p}" for p in wprobs + rprobs]
+        scope, arg = checks[0] if checks else ("catalog", 0)
+        also = tuple(checks[1:])
         out[k] = Statement(name, k, mode, scope, arg, reads, writes, also=also)
     used = {st.name for st in out.values()}
     for name in sorted(set(_scopes(plugin)) - used):
@@ -513,7 +498,7 @@ def tables(plugin: Path | None = None) -> write_scope.Tables:
                     f"{plugin.name}: [tables.{t}] {c}: kind {k!r} is not one the API resolves"
                 )
         owners[str(t)] = {str(c): str(k) for c, k in cols.items()}
-    return write_scope.Tables(owners, _TABLES.home)
+    return write_scope.Tables(owners, _TABLES.home, _TABLES.not_ids)
 
 
 KINDS = ("subject", "library", *ROW_SCOPES)
@@ -521,6 +506,10 @@ KINDS = ("subject", "library", *ROW_SCOPES)
 
 def write_checks(text: str, plugin: Path | None = None) -> tuple[list[tuple[str, int]], list[str]]:
     return write_scope.write_checks(text, tables(plugin))
+
+
+def read_checks(text: str, plugin: Path | None = None) -> tuple[list[tuple[str, int]], list[str]]:
+    return write_scope.read_checks(text, tables(plugin))
 
 
 def catalog_only(plugin: Path) -> bool:
@@ -600,10 +589,11 @@ def check(plugin: Path) -> list[str]:
             problems.append(f"queries/{st.name}.sql is missing or stale (run sync)")
         elif (old.mode, old.reads, old.writes) != (st.mode, st.reads, st.writes):
             problems.append(f"queries/{st.name}.sql: header says {old.mode} {old.tables}")
-        elif st.mode == "write" and old.checks != st.checks:
+        elif old.checks != st.checks:
             problems.append(
-                f"queries/{st.name}.sql: scope says {old.checks or 'catalog'},"
-                f" the write needs {st.checks or 'catalog'} (run sync)"
+                f"queries/{st.name}.sql: scope says {render_scope(old.checks)},"
+                f" the {'write' if st.mode == 'write' else 'read'} needs"
+                f" {render_scope(st.checks)} (run sync)"
             )
     wanted_names = {st.name for st in sts}
     for n in sorted(set(names) - wanted_names):

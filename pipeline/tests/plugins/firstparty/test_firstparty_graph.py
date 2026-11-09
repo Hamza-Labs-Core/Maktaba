@@ -171,3 +171,25 @@ def test_the_statements_of_the_toy_are_what_its_code_runs() -> None:
         env={**__import__("os").environ, "PYTHONPATH": str(TOY / "src")},
     )
     assert out.returncode == 0, out.stderr
+
+
+def test_core_medias_stage_versions_are_the_pipelines_own() -> None:
+    """The graph read these stages' versions from the code that makes their output; since
+    wave 9 (story 54.36) tv.maktaba.core-media's manifest states them. A change to one of
+    the constants (a new fingerprint, a new hash) must change the manifest too, or the done
+    jobs would never run again."""
+    from maktaba_pipeline.classify.production_style import STYLE_VERSION
+    from maktaba_pipeline.engine.graph import CONTENT_HASH_VERSION, LINK_VERSION, SIG_VERSION
+    from maktaba_pipeline.plugins import firstparty
+    from maktaba_pipeline.thumbnail.dhash import DHASH_VERSION
+
+    want = {
+        "content_hash": CONTENT_HASH_VERSION,
+        "thumb_hash": DHASH_VERSION,
+        "link": LINK_VERSION,
+        "fingerprint": SIG_VERSION,
+        "fp_gate": SIG_VERSION,
+        "style_sample": STYLE_VERSION,
+    }
+    got = {s: firstparty.stage_def(s).version for s in want}
+    assert got == want

@@ -2,8 +2,8 @@
   "schema_version": 2,
   "generated_for": "Maktaba",
   "totals": {
-    "epics": 57,
-    "stories": 681,
+    "epics": 58,
+    "stories": 699,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -407,6 +407,13 @@
       "title": "الرقابة الأبوية على iPhone وiPad، عبر «مدة استخدام الجهاز» من Apple",
       "description": "الرقابة الأبوية على iPhone وiPad، عبر «مدة استخدام الجهاز» من Apple.\n\nالمتطلب: يجب أن يستطيع أحد الوالدين أن يعطي طفله جهاز iPhone أو iPad عليه Maktaba وهو مطمئن إلى أن الطفل لا يرى إلا ما يسمح به. ويجب أن يصح ذلك في كل مكان قد يظهر فيه المحتوى، على شبكة المنزل وعبر Maktaba Cloud، وألّا يستطيع أي تطبيق، معدَّلًا كان أو لا، الالتفاف عليه. أما اليوم فالقيد الوحيد هو المكتبات التي يستطيع المستخدم قراءتها (`library_acl`). وقد عدّت الملحمة 45 الرقابة الأبوية ناقصة وأرجأت قصة الملفات الشخصية برمز PIN (45.23).",
       "readme": "specs/epics/57-parental-controls/README.md"
+    },
+    {
+      "id": "58",
+      "slug": "smart-tv-platforms",
+      "title": "تطبيقات لأجهزة التلفاز التي لا يصل إليها Maktaba بعد",
+      "description": "تطبيقات لأجهزة التلفاز التي لا يصل إليها Maktaba بعد: فاير تي في وجوجل كاست وسامسونج وLG وروكو.\n\nالمتطلب: ينبغي أن تستطيع الأسرة مشاهدة جهازها الرئيسي في Maktaba على التلفاز الذي تملكه أصلًا. واليوم يعني ذلك آبل تي في، أو تلفاز أندرويد أو جوجل تي في، أو هاتفًا عبر إير بلاي. أما أجهزة التلفاز التي تملكها معظم الأسر فشأنها مختلف: - سامسونج (نحو 17% من أجهزة التلفاز في العالم، و23% من منصات التلفاز المتصل في الولايات المتحدة)؛ - إل جي (نحو 7–12%)؛ - روكو (‏28% في الولايات المتحدة)؛ - عصا أمازون فاير تي في ‏(research.md §7)؛ - وفي الشرق الأوسط، سامسونج وLG وأندرويد تي في في الغالب.",
+      "readme": "specs/epics/58-smart-tv-platforms/README.md"
     }
   ],
   "stories": [
@@ -7275,6 +7282,168 @@
       "slug": "openapi-roles-rehearsal",
       "title": "OpenAPI واختبارات الأدوار وتمرين الالتفاف",
       "story_file": "specs/epics/57-parental-controls/story-57-13-openapi-roles-rehearsal.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.01",
+      "epic": 58,
+      "num": "01",
+      "slug": "compatibility-contract",
+      "title": "عقد التوافق: مستويات الواجهة البرمجية، وأقدم التطبيقات المدعومة، وطلب التحديث",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-01-compatibility-contract.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.02",
+      "epic": 58,
+      "num": "02",
+      "slug": "device-playback-caps",
+      "title": "تشغيل يناسب كل تلفاز: قدرات يُبلغ عنها الجهاز، وملفات تعريف جديدة، وHLS بمقاطع fMP4",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-02-device-playback-caps.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.03",
+      "epic": 58,
+      "num": "03",
+      "slug": "cloud-tv-code",
+      "title": "تسجيل دخول التلفاز من أي مكان: رمز عبر Maktaba Cloud",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-03-cloud-tv-code.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.04",
+      "epic": 58,
+      "num": "04",
+      "slug": "store-review-home",
+      "title": "جهاز رئيسي لمراجعي المتاجر",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-04-store-review-home.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.05",
+      "epic": 58,
+      "num": "05",
+      "slug": "fire-tv",
+      "title": "فاير تي في على فاير أو إس: نسخة أمازون من تطبيق أندرويد تي في",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-05-fire-tv.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.06",
+      "epic": 58,
+      "num": "06",
+      "slug": "cast-senders",
+      "title": "مُرسِلات جوجل كاست في مشغّل أندرويد ومشغّل آبل والويب",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-06-cast-senders.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.07",
+      "epic": 58,
+      "num": "07",
+      "slug": "cast-receiver",
+      "title": "مستقبِل كاست الخاص بـ Maktaba على cast.maktaba.tv",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-07-cast-receiver.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.08",
+      "epic": 58,
+      "num": "08",
+      "slug": "tv-web-ui",
+      "title": "نسخة التلفاز من عرض الشاشة الكبيرة، يقدّمها الجهاز الرئيسي على ‎/tv/",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-08-tv-web-ui.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.09",
+      "epic": 58,
+      "num": "09",
+      "slug": "tv-web-launcher",
+      "title": "مشغِّل تطبيقات تلفاز الويب: العثور على الجهاز الرئيسي، وتسجيل الدخول، والجسر إلى التلفاز",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-09-tv-web-launcher.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.10",
+      "epic": 58,
+      "num": "10",
+      "slug": "tizen",
+      "title": "سامسونج تايزن: ‏AVPlay والحزمة ومتجر سامسونج",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-10-tizen.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.11",
+      "epic": 58,
+      "num": "11",
+      "slug": "webos",
+      "title": "إل جي ويب أو إس: المشغّل الأصلي والحزمة ومتجر إل جي Content Store",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-11-webos.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.12",
+      "epic": 58,
+      "num": "12",
+      "slug": "roku-channel",
+      "title": "روكو: قناة SceneGraph بتخطيط التلفاز",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-12-roku-channel.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.13",
+      "epic": 58,
+      "num": "13",
+      "slug": "roku-player-certification",
+      "title": "روكو: المشغّل والاعتماد والإصدار",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-13-roku-player-certification.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.14",
+      "epic": 58,
+      "num": "14",
+      "slug": "parental-controls",
+      "title": "الرقابة الأبوية على أجهزة التلفاز الجديدة",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-14-parental-controls.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.15",
+      "epic": 58,
+      "num": "15",
+      "slug": "strings-arabic-rtl",
+      "title": "الإنجليزية والعربية على كل تلفاز: الكتالوجات، وعكس الاتجاه، والخطوط، والنص المرئي في روكو",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-15-strings-arabic-rtl.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.16",
+      "epic": 58,
+      "num": "16",
+      "slug": "ci-per-platform",
+      "title": "التكامل المستمر لكل تلفاز: المحاكيات حيث توجد، وقوائم فحص على الأجهزة الحقيقية حيث لا توجد، مع حفظ السجلات",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-16-ci-per-platform.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.17",
+      "epic": 58,
+      "num": "17",
+      "slug": "openapi-roles-rehearsal",
+      "title": "OpenAPI، واختبارات الأدوار، وتمرين العملاء الجدد",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-17-openapi-roles-rehearsal.md",
+      "plan_files": []
+    },
+    {
+      "id": "58.18",
+      "epic": 58,
+      "num": "18",
+      "slug": "vega-os",
+      "title": "أمازون فيغا أو إس: تطبيق React Native، يُبنى حين تصبح أجهزة فيغا حصة حقيقية",
+      "story_file": "specs/epics/58-smart-tv-platforms/story-58-18-vega-os.md",
       "plan_files": []
     }
   ],

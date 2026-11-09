@@ -425,13 +425,13 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 	}
 	rows.Close()
 	for id := range compBefore {
-		if _, ok := wants[id]; !ok {
+		if _, ok := wants[id]; !ok && !slices.Contains(components.RetiredComponents, id) {
 			t.Errorf("%s's row went in the update (it was %s)", id, compBefore[id])
 		}
 	}
 	for id, want := range map[string]string{
 		"livetv.slots": "enabled", "livetv.inprocess": "installed", "livetv.hdhomerun": "installed",
-		"ext.plex": "enabled", "ext.dizquetv": "installed", "ext.cloudflare_stream": "installed",
+		"ext.plex": "enabled", "ext.cloudflare_stream": "installed",
 		"cloud.link": "installed", "cloud.relay": "installed",
 		"youtube":        "enabled", // one of its four stages off: the others still run
 		"discovery.mdns": "enabled", "backups": "enabled", "telemetry": "enabled", "cluster": "enabled",
@@ -440,6 +440,13 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 	} {
 		if wants[id] != want {
 			t.Errorf("%s = %q, want %q", id, wants[id], want)
+		}
+	}
+	// a removed component (dizqueTV went with the Plex sync) has no row after the update,
+	// whether the previous release seeded one or not
+	for _, id := range components.RetiredComponents {
+		if w, ok := wants[id]; ok {
+			t.Errorf("%s is retired but has a row after the update (%s)", id, w)
 		}
 	}
 

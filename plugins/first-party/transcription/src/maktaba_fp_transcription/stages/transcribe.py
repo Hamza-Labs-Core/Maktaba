@@ -74,8 +74,8 @@ from maktaba_pipeline.engine.hashing import canonical_hash
 from maktaba_pipeline.engine.health import system_memory
 from maktaba_pipeline.engine.sql import dumps, is_pg, loads, now, parse_ts, to_ts, uid
 from maktaba_pipeline.engine.stages._common import load_video, require_video
-from maktaba_pipeline.engine.stages.content_hash import READ_TIMEOUT_S, on_disk
 from maktaba_pipeline.engine.stages.registry import StageImpl
+from maktaba_pipeline.identity.on_disk import READ_TIMEOUT_S, on_disk
 from maktaba_pipeline.log import get_logger
 from maktaba_pipeline.stt import engine
 

@@ -104,6 +104,16 @@ async def advance_after_stage(
     """
     outcome_value = outcome.value if isinstance(outcome, Outcome) else outcome
 
+    relay = getattr(db, "engine_relay", None)
+    if relay is not None:
+        # in a first-party plugin's runner (Epic 54 story 54.36): only the engine writes
+        # videos.state, so the worker applies the transition, for the job's own video and
+        # the trigger of the job's stage only
+        got = await relay.ask(
+            "advance", video_id=str(video_id), trigger=trigger.value, outcome=outcome_value
+        )
+        return State(str(dict(got or {})["state"]))
+
     async with db.transaction():
         row = await db.fetchrow(_LOCK_SQL, video_id)
         if row is None:

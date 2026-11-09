@@ -19,8 +19,12 @@
 > TV runs in `tv.maktaba.plex`, through the home's service door (the Plex library sync and
 > the dizqueTV plugin were removed since). **Wave 4 has moved**: `detect`, `tag`, `check_tags`,
 > `check_clips`, `books` and `review_pages` run in `tv.maktaba.classify`, the model's questions
-> through the plugin API's `compute.generate`; `enrich` stays in the worker for now. The other
-> stages move wave by wave.
+> through the plugin API's `compute.generate`; `enrich` stays in the worker for now. **Wave 9
+> has moved the core stages**: finding the videos, reading their length, identity, thumbnail
+> and audio fingerprints, linking them to their YouTube pages and the access check run in
+> `tv.maktaba.core-media`; `thumbnail` joins `tv.maktaba.thumbnails` and `extract` joins
+> `tv.maktaba.transcription`. Two stages stay in the core: `component_catchup` and
+> `categorize`.
 
 Maktaba's own stages (thumbnails, transcription, the classifiers, the YouTube downloads and
 the rest) become **first-party plugins**: the same manifest, the same tokens and the same plugin
@@ -32,7 +36,7 @@ how they are kept in check, and how a stage moves.
 A first-party plugin runs as Python in `maktaba-plugin-runner`, one process per **runner group**
 (`light`, `files` for the plugins that rewrite or move library files, `ml`, `index`, `net`,
 `service`, and `fp` for fingerprints). A shared group's runner starts when the worker has a
-job for it and stops after ten idle minutes, so an idle home runs none; until it is up, the
+job for it and stops after an idle minute, so an idle home runs none; until it is up, the
 worker runs the job itself. A group whose components are all off is held: nothing starts it.
 A runner has no
 database password and no secrets: the supervisor strips them from its environment and the
@@ -50,6 +54,34 @@ runner refuses to start if any is there. Before it imports a plugin it
 The queue worker dispatches a job to the runner with the same kind of per-job token as a
 third-party plugin's. The job's progress, log and events go back to the worker, which is the
 only one that writes the queue's tables.
+
+### What a runner may publish
+
+A runner's live events (the `publish` request on the job's connection) go onto the `jobs`
+channel that every web client and app reads, so the worker checks each one before it
+publishes it:
+
+| Kind | Payload |
+| --- | --- |
+| `job.progress` | `{"job": JobRef}`: the job's id, stage, state, subject and library, its label, attempts, times and progress document; no other key |
+| `job.log` | `job_id`, `stage`, `level` (`debug`, `info`, `warn` or `error`), `kind`, `message`, and optionally `subject_label` and a `data` object; no other key |
+
+1. **Only these kinds.** `job.started`, `job.finished` and `job.failed` are the worker's
+   own; any other kind is refused (`unknown_kind`).
+2. **At most 64 KiB** of compact JSON (`oversize`).
+3. **The kind's schema**: every required key, no unknown key, each value of its type, strings
+   of at most 4096 characters (`schema`).
+4. **Only its own topic**: the job id and stage the payload names are the running job's
+   (`topic`).
+5. **Only ids in its scope**: a `job.progress` ref's subject kind, subject id and library id
+   are the job's, compared as uuids, the way the plugin API compares a statement's ids
+   (`scope`).
+
+A refused event is an error back to the runner's code (`plugin_publish_refused: <reason>:
+<detail>`), nothing is published, and the worker logs `plugin_publish_refused` with the
+plugin, the kind, the reason and the payload's size; never the payload, which can carry a
+title. The job's progress and log lines have their own requests, which the worker writes
+with the job's own values, so a stage rarely publishes at all.
 
 ## The trusted manifest
 
@@ -125,7 +157,8 @@ INSERT INTO promo_links (video_id, library_id, series_id, season_id, ...) VALUES
 id: `subject` (a video), `library`, or a row the API looks up (`season`, `series`,
 `transcript`, `segment`, `audio_track`, `file_action`, `dup_group`, `clip_group`,
 `topic_collection`, `audio_cache`, `youtube_source`, `youtube_channel`, `youtube_playlist`,
-`youtube_video`). `check` fails a write that does not meet these rules:
+`youtube_video`, `collection`, `job`, `job_subject`). `check` fails a write that does not meet
+these rules:
 
 - an `UPDATE` or `DELETE` ties its rows to an owner column by a top-level `AND` term of its
   `WHERE`: `col = $N`, `col = ANY($N)`, or `col IN (SELECT r.c FROM r WHERE …)` whose inner rows
@@ -152,6 +185,39 @@ library, or when it is the job's library's (and, for a video job, the job's own 
 job whose subject is the catalog spans every library. A YouTube row is in the scope of every
 library that follows its channel or downloads it. An array argument is checked element by
 element, and every id is compared as a uuid, never as text.
+
+### The scope a read by id must meet
+
+A read is checked the same way. Wherever a statement compares a column to a `$N` (in a
+`WHERE`, a join's `ON`, a subquery, or the source rows of a write), that `$N` chooses whose row
+it reads, so `sync` lists a check for it when the column holds a kind of id, and the API runs
+it before the statement:
+
+```sql
+-- name: propagate.last_success
+-- mode: read
+-- scope: job_subject $2
+-- tables: processing_jobs
+SELECT id, output_hash FROM processing_jobs WHERE subject_kind = $1 AND subject_id = $2 AND ...
+```
+
+Every comparison counts, not only the top-level `AND` terms of a write: `col = $N`,
+`col IS NOT DISTINCT FROM $N`, `col = ANY($N)`, `col IN ($N, $M)` and
+`col IN (SELECT … FROM json_each($N))` (or `unnest($N)`). A read of another library's row, or,
+from a video job, of another video's, is `403 plugin_scope`. A job's own row is `job $N` (its
+library, and its video when its subject is one), and a job's `subject_id` is `job_subject $N`
+(a video, a library, a series or a season, whichever has the id). `check` fails a read that
+compares a `$N` to:
+
+- a column of a table `scope_tables.toml` does not list (under `[tables]` or `[home]`);
+- an id-named column (`id`, `…_id`) of a listed table that is no owner column, unless
+  `[not_ids]` lists it with the reason a read by it needs no check (a public YouTube video id,
+  for example, names no one library's row);
+- an id-named column the build cannot place in one table: qualify it (`t.video_id`).
+
+A header with fewer checks than its comparisons need is stale, and `check` fails it until
+`sync` rewrites it. A read the parse tree cannot type gets its checks by hand in
+`statements.toml`, with its `reason`, as a write does.
 
 ## Where a stage runs: the switch
 
@@ -287,6 +353,9 @@ against the job before it writes it with its own database connection:
 | `unsupersede` (a restored duplicate) | the video is a superseded video of the job's library |
 | `tv_commit`, `tv_rollback` (a TV change on the air, or the previous release back) | only `tv_swap` / `tv_rollback` may ask; the worker runs it for the change in the job's own payload, and the plugin sends nothing else |
 | `service_request` (a Plex call on a joined machine) | the service is one the stage's plugin lists; the worker forwards it through its channel to the home's service door |
+| `advance` (a video's state, from `advance_after_stage`) | only `probe`, `thumbnail` and `extract` may ask, each by its own trigger, and only for the job's own video; the state machine checks the outcome |
+| `requeue_failed` (a video's failed stages queued again) | `access_check` for the job's own video, `scan` for a video of the job's library |
+| `storage_canonicalize` (the home's path conversion) | only that stage's job may ask; the worker runs the conversion with its own mounts, and the plugin sends nothing else |
 
 The same code runs in-process, where these calls write directly. Writes go only to the
 library's folders and their trash (`files.write = ["library", "trash"]`), each move recorded
@@ -385,6 +454,43 @@ service   = ["plex"]              # the services its calls may reach, through th
   tuners, the channel map, guide reloads) only for a caller on the home.
 - **Parity** runs the Plex stage against a fake Plex behind HTTP on each side: the calls Plex
   receives (method, path, query and the token) are identical, then N16.
+
+## The core stages: `tv.maktaba.core-media`
+
+Wave 9 moves the stages every home always runs, the stages of `core.pipeline`: `scan`,
+`probe`, `content_hash`, `thumb_hash`, `link`, `fingerprint`, `style_sample`, `fp_gate`,
+`storage_canonicalize` and `access_check`.
+
+```toml
+[trusted]
+runner      = "light"
+component   = "core.pipeline"          # part of the server: never switched off
+files.read  = ["library", "data.thumbnails"]
+files.write = []
+exec        = ["ffprobe", "ffmpeg"]    # chromaprint runs through ffmpeg
+settings    = ["queue_health"]
+```
+
+- **The component stays part of the server.** `core.pipeline` is not switchable: every write
+  to it on `/api/components` is `409 not_switchable`, whichever process runs its stages.
+- **Only the engine writes a video's state.** `probe` (and `thumbnail`, `extract`) move a
+  video along its states through `advance_after_stage`; in a runner the worker applies the
+  transition (`advance` above). The same is true of a failed stage queued again
+  (`requeue_failed`) and of the path conversion, which pauses stages and writes the share map
+  (`storage_canonicalize`).
+- **Each stage sits with its component.** A plugin's stages are its component's, so
+  `thumbnail` runs in `tv.maktaba.thumbnails` (`media.thumbnails`) and `extract` in
+  `tv.maktaba.transcription`. `extract` runs in the `ml` runner; a machine whose workers have
+  no plain `ml` runner runs it in the worker.
+- **What stays in the core.** The filesystem watcher and the manual scans only queue `scan`.
+  `component_catchup` is the engine's own upkeep. `categorize` is a placeholder in the graph
+  with no handler; whether it becomes a stage of this plugin is still to be decided.
+- **No SQL built at run time.** The signal upserts that built their column list per call are
+  three fixed statements, so each is a named statement of its own.
+- **Parity** scans a library of real files, probes it (a talk, a silent video, one ffprobe
+  cannot read), links a video from its yt-dlp sidecar, then runs each video's identity,
+  fingerprint, style sample and access check; the video's state is written by the engine on
+  both sides. Rows, the queue and the job log are compared, then N16.
 
 ## The repo layout
 

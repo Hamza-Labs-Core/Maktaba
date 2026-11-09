@@ -1,10 +1,10 @@
 package statements
 
-// README §15.12: a first-party plugin's write is checked against the job, not bound to it
-// by the plugin's own code. These tests seed one row of every kind the API resolves in two
-// libraries and walk every write statement of the embedded bundle: for each check it
-// declares, another library's id is refused with 403 plugin_scope before any SQL runs,
-// and the job's own id is allowed.
+// README §15.12: a first-party plugin's write, and its read by id, is checked against the
+// job, not bound to it by the plugin's own code. These tests seed one row of every kind the
+// API resolves in two libraries and walk every statement of the embedded bundle: for each
+// check it declares, another library's id is refused with 403 plugin_scope before any SQL
+// runs, and the job's own id is allowed.
 
 import (
 	"context"
@@ -72,6 +72,12 @@ func seedLibrary(t *testing.T, db *sql.DB, tag string) lib {
 	var fa string
 	one(&fa, `INSERT INTO file_actions (library_id, video_id, kind) VALUES ($1, $2, 'convert') RETURNING id::text`, library, video)
 	l.ids["file_action"] = fa
+	var coll, job string
+	one(&coll, `INSERT INTO collections (library_id, name) VALUES ($1, 'c') RETURNING id::text`, library)
+	one(&job, `INSERT INTO processing_jobs (stage, state, subject_kind, subject_id, video_id, library_id)
+		VALUES ('probe', 'done', 'video', $1, $1, $2) RETURNING id::text`, video, library)
+	// a job's subject: here the library's season (a video, a library or a series resolve too)
+	l.ids["collection"], l.ids["job"], l.ids["job_subject"] = coll, job, season
 	var ch string
 	one(&ch, `INSERT INTO youtube_channels (channel_id, library_id, url) VALUES ($1, $2, 'u') RETURNING channel_id`, "UC-"+tag, library)
 	var pl, yv, ac string
@@ -120,24 +126,21 @@ func argFor(kind, id string) any {
 	return id
 }
 
-func TestEveryWriteOfTheBundleChecksEachIdThatBindsItsRows(t *testing.T) {
+func TestEveryStatementOfTheBundleChecksEachIdItIsGiven(t *testing.T) {
 	db, _ := clustertest.ScratchDB(t)
 	tag := fmt.Sprint(time.Now().UnixNano())
 	a, b := seedLibrary(t, db, "a"+tag), seedLibrary(t, db, "b"+tag)
 	e := New(db)
 	ctx := context.Background()
-	writes := 0
+	checked := map[string]int{}
 	for _, p := range embedded(t).Plugins {
 		if err := e.Register(p.ID, p.Statements); err != nil {
 			t.Fatalf("%s: %v", p.ID, err)
 		}
 		for i := range p.Statements {
 			st := &p.Statements[i]
-			if st.Mode != "write" {
-				continue
-			}
 			for _, c := range st.Checks() {
-				writes++
+				checked[st.Mode]++
 				if c.Scope == "settings" {
 					continue
 				}
@@ -149,16 +152,89 @@ func TestEveryWriteOfTheBundleChecksEachIdThatBindsItsRows(t *testing.T) {
 					return e.CheckScopes(ctx, job, st, args)
 				}
 				if err := call(b.ids[c.Scope]); err == nil || err.Status != 403 || err.Code != CodeScope {
-					t.Errorf("%s %s: %s $%d of another library: %v, want 403 %s", p.ID, st.Name, c.Scope, c.Arg, err, CodeScope)
+					t.Errorf("%s %s (%s): %s $%d of another library: %v, want 403 %s", p.ID, st.Name, st.Mode, c.Scope, c.Arg, err, CodeScope)
 				}
 				if err := call(a.ids[c.Scope]); err != nil {
-					t.Errorf("%s %s: %s $%d of the job's library: %v", p.ID, st.Name, c.Scope, c.Arg, err)
+					t.Errorf("%s %s (%s): %s $%d of the job's library: %v", p.ID, st.Name, st.Mode, c.Scope, c.Arg, err)
 				}
 			}
 		}
 	}
-	if writes < 100 {
-		t.Fatalf("only %d checks on the bundle's writes: the walk is not reading it", writes)
+	if checked["write"] < 100 || checked["read"] < 200 {
+		t.Fatalf("only %v checks on the bundle's statements: the walk is not reading it", checked)
+	}
+}
+
+// A read by id is refused before its SQL runs: another library's season, transcript,
+// collection, job or job subject, and another video of the library from a video job.
+func TestAReadByIdOfAnotherScopeIsRefused(t *testing.T) {
+	db, _ := clustertest.ScratchDB(t)
+	tag := fmt.Sprint(time.Now().UnixNano())
+	a, b := seedLibrary(t, db, "a"+tag), seedLibrary(t, db, "b"+tag)
+	e := New(db)
+	ctx := context.Background()
+	lib := Scope{Invocation: "inv_r" + tag, PluginID: "tv.maktaba.t", SubjectKind: "library", SubjectID: a.ids["library"], LibraryID: a.ids["library"]}
+	vid := Scope{Invocation: "inv_rv" + tag, PluginID: "tv.maktaba.t", SubjectKind: "video", SubjectID: a.ids["subject"], LibraryID: a.ids["library"]}
+	for _, kind := range []string{"season", "transcript", "collection", "job", "job_subject", "library", "subject"} {
+		st := &Statement{Name: "r." + kind, Mode: "read", Scope: kind, ScopeArg: 1}
+		if err := e.CheckScopes(ctx, lib, st, []any{argFor(kind, b.ids[kind])}); err == nil || err.Code != CodeScope {
+			t.Errorf("a read of another library's %s: %v", kind, err)
+		}
+		if err := e.CheckScopes(ctx, lib, st, []any{argFor(kind, a.ids[kind])}); err != nil {
+			t.Errorf("a read of the job's library's %s: %v", kind, err)
+		}
+	}
+	// the job's subject is a video, a library or a series too
+	js := &Statement{Name: "r.js", Mode: "read", Scope: "job_subject", ScopeArg: 1}
+	for _, k := range []string{"subject", "library", "series"} {
+		if err := e.CheckScopes(ctx, lib, js, []any{b.ids[k]}); err == nil || err.Code != CodeScope {
+			t.Errorf("a job subject that is another library's %s: %v", k, err)
+		}
+		if err := e.CheckScopes(ctx, lib, js, []any{a.ids[k]}); err != nil {
+			t.Errorf("a job subject that is the library's %s: %v", k, err)
+		}
+	}
+	// a subject of another kind (a duplicate group)
+	if err := e.CheckScopes(ctx, lib, js, []any{b.ids["dup_group"]}); err == nil || err.Code != CodeScope {
+		t.Errorf("a job subject that is another library's duplicate group: %v", err)
+	}
+	if err := e.CheckScopes(ctx, lib, js, []any{a.ids["dup_group"]}); err != nil {
+		t.Errorf("a job subject that is the library's duplicate group: %v", err)
+	}
+	// a deleted duplicate group's jobs stay (no foreign key): their library answers
+	gone := "0b8f8a52-61a4-4d0a-9d8a-9a3f4bd2d0ff"
+	if _, err := db.Exec(`INSERT INTO processing_jobs (stage, state, subject_kind, subject_id, library_id)
+		VALUES ('dedup_apply', 'done', 'dup_group', $1, $2)`, gone, b.ids["library"]); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.CheckScopes(ctx, lib, js, []any{gone}); err == nil || err.Code != CodeScope {
+		t.Errorf("a deleted duplicate group of another library, through its jobs: %v", err)
+	}
+	libB := Scope{Invocation: "inv_rb" + tag, PluginID: "tv.maktaba.t", SubjectKind: "library", SubjectID: b.ids["library"], LibraryID: b.ids["library"]}
+	if err := e.CheckScopes(ctx, libB, js, []any{gone}); err != nil {
+		t.Errorf("a deleted duplicate group of the job's library, through its jobs: %v", err)
+	}
+	// a video job reads its own video's rows; the same library's other video is not its own
+	for _, kind := range []string{"subject", "job_subject"} {
+		st := &Statement{Name: "rv." + kind, Mode: "read", Scope: kind, ScopeArg: 1}
+		if err := e.CheckScopes(ctx, vid, st, []any{a.video}); err == nil || err.Code != CodeScope {
+			t.Errorf("a video job reading another video as %s: %v", kind, err)
+		}
+		if err := e.CheckScopes(ctx, vid, st, []any{a.ids["subject"]}); err != nil {
+			t.Errorf("a video job reading its own video as %s: %v", kind, err)
+		}
+	}
+	jobSt := &Statement{Name: "rv.job", Mode: "read", Scope: "job", ScopeArg: 1}
+	if err := e.CheckScopes(ctx, vid, jobSt, []any{argFor("job", a.ids["job"])}); err != nil {
+		t.Errorf("a video job reading its own video's job: %v", err)
+	}
+	var otherJob string
+	if err := db.QueryRow(`INSERT INTO processing_jobs (stage, state, subject_kind, subject_id, video_id, library_id)
+		VALUES ('probe', 'done', 'video', $1, $1, $2) RETURNING id::text`, a.video, a.ids["library"]).Scan(&otherJob); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.CheckScopes(ctx, vid, jobSt, []any{argFor("job", otherJob)}); err == nil || err.Code != CodeScope {
+		t.Errorf("a video job reading another video's job: %v", err)
 	}
 }
 

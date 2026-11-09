@@ -129,14 +129,16 @@ class _LibDB(_DB):
         (["C:\\media"], ""),
     ],
 )
-async def test_on_windows_library_stages_run_in_the_worker_while_a_library_is_on_a_share(
+async def test_on_windows_unproven_library_stages_run_in_the_worker_while_a_library_is_on_a_share(
     monkeypatch: pytest.MonkeyPatch, roots: list[str] | Exception, why: str
 ) -> None:
     """Story 54.23: v0.3.105's runners read a look on a share as a missing file, so on
-    Windows a stage that reads or writes the libraries runs in the worker while a library
-    is on a share (unknown: the worker too); with local libraries only, or with
-    MAKTABA_WINDOWS_SHARE_RUNNERS=1 (the Windows end to end), it asks its runner. A stage
-    with no library access, and any stage off Windows, asks its runner either way."""
+    Windows a library stage runs in the worker while a library is on a share (unknown: the
+    worker too) unless the Windows end to end proves it in its runner there
+    (SHARE_RUNNER_STAGES: thumb_small, chapter_thumbs, subtitle_gen, which ask their
+    runner); with local libraries only, or with MAKTABA_WINDOWS_SHARE_RUNNERS=1 (the end
+    to end's own cases), every stage asks its runner. A stage with no library access, and
+    any stage off Windows, asks its runner either way."""
 
     async def serving(_s: str) -> tuple[bool, str | None]:
         return True, None
@@ -159,11 +161,58 @@ async def test_on_windows_library_stages_run_in_the_worker_while_a_library_is_on
         got = await native.choose(_LibDB(roots), stage)
         return got.impl, got.why
 
-    for s in ("thumb_small", "convert_mp4"):
-        assert await chosen(s) == (("inproc", why) if why else ("plugin", ""))
+    guarded = (
+        "convert_mp4",
+        "dedup_apply",
+        "dedup_scan",
+        "trash_purge",
+        "file_restore",
+        "repair_broken",
+        "youtube_fetch",
+        "transcribe",
+        "second_listen",
+    )
+    for s in guarded:
+        assert await chosen(s) == (("inproc", why) if why else ("plugin", "")), s
+    for s in ("thumb_small", "chapter_thumbs", "subtitle_gen"):
+        assert await chosen(s) == ("plugin", ""), s
     assert await chosen("plex_livetv") == ("plugin", "")
     monkeypatch.setenv(native.SHARE_RUNNERS_ENV, "1")
-    assert await chosen("thumb_small") == ("plugin", "")
+    assert await chosen("convert_mp4") == ("plugin", "")
     monkeypatch.delenv(native.SHARE_RUNNERS_ENV)
     monkeypatch.setattr(sys, "platform", "linux")
-    assert await chosen("thumb_small") == ("plugin", "")
+    assert await chosen("convert_mp4") == ("plugin", "")
+
+
+async def test_a_stage_leaves_the_share_guard_only_with_its_end_to_end_case() -> None:
+    """SHARE_RUNNER_STAGES: each stage is a library stage whose plugin never writes the
+    libraries in full (its broker would serve that share for reads only), and the Windows
+    end to end runs it on the share with the override off, in its runner (a case with
+    ``ShareRunners: &off`` that is neither a hand-off nor guarded)."""
+    import re
+    from pathlib import Path
+
+    e2e = (
+        Path(__file__).resolve().parents[4]
+        / "cmd/maktaba-server/internal/supervisor/runners_windows_stages_e2e_test.go"
+    ).read_text(encoding="utf-8")
+    cases = re.findall(
+        r"\{Name: \"([^\"]+)\", Stage: \"([^\"]+)\", Library: \"(\w+)\"(.*?)\},\n", e2e, re.S
+    )
+    proven = {
+        stage
+        for _name, stage, lib, rest in cases
+        if lib == "share"
+        and "ShareRunners: &off" in rest
+        and "handOff: true" not in rest
+        and "guarded: true" not in rest
+    }
+    for stage in native.SHARE_RUNNER_STAGES:
+        assert native.touches_library(stage), stage
+        fp = firstparty.by_stage(stage)
+        assert fp is not None
+        writes = (fp.trusted.get("files") or {}).get("write") or []
+        assert "library" not in writes, f"{stage} writes the libraries in full"
+        assert stage in proven, f"{stage} has no override-off share case in the end to end"
+    # and the end to end keeps one guarded case, so the guard itself stays proven
+    assert any("guarded: true" in rest for *_x, rest in cases)

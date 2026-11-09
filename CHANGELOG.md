@@ -14,6 +14,14 @@ build fails when the two differ.
 
 ### Changed
 
+- **On a Windows home with a library on a network share, thumbnails, chapter frames and
+  subtitle files are made in their sandboxed runners again (story 54.23).** Since v0.3.105's
+  missed thumbnails, every step that touches a library ran in the queue worker while a library
+  was on a share. The small thumbnail, the chapter frames and the subtitle files now run in
+  their runners there, reading the share through the runner's file broker. Steps that rewrite
+  library files (convert, duplicates, repair, YouTube downloads) and transcription still run
+  in the worker on a share.
+
 - **Maktaba no longer syncs your library into Plex, and the dizqueTV integration is removed.**
   Maktaba now replaces Plex for watching the library. These are gone:
   - the Plex index, the season collections, the clip-group collections and the import of
@@ -192,6 +200,12 @@ build fails when the two differ.
   days and opens an issue when a cost grows by more than 20 % (Epic 53 story 53.13).
 
 ### Fixed
+
+- **Thumbnails, file reads and audio extraction work again on a home whose library share is
+  mounted elsewhere (`media.path_map`).** Since the thumbnail, probe and extract steps moved
+  into their plugins (v0.3.109), they opened a video by its stored path without the home's
+  path map, so every thumbnail on such a share failed as a missing file. They now open the
+  file through the job's path map; the next scan queues the failed ones again.
 
 - **A Windows plugin runner never starts as a process its file broker turns away (story
   54.23).** The runner's launcher starts the venv's own interpreter directly. If the venv's
@@ -521,18 +535,20 @@ build fails when the two differ.
 
 ### Security
 
-- **The operator console signs in with staff accounts and a second factor (Epic 50 story
-  50.33, part 1).** An operator was a customer account with a role, signed in with an email and
-  a password like any customer. Operators are now separate staff accounts, created only from
-  the leader's CLI (`maktaba-cloud staff add`), that enrol through a one-time link with a
-  password and a TOTP app and get 10 recovery codes. Every admin route checks a staff session
-  with its second factor and the role from the database on each request; a customer's token is
-  refused there. Sessions end after 15 minutes idle and 8 hours in all; suspending, blocking,
-  setting plans, revoking licenses and deleting a user's data need a code from the last 5
-  minutes. Five failed steps lock the account for 30 minutes and alert the owner, as does a
-  recovery code's use. Every sign-in step and admin request is audited as staff, and an optional
-  network allow-list can close the console to other addresses. The old customer role was
-  cleared and `maktaba-cloud admin` points to `staff`. Passkeys come next.
+- **Every event a plugin's emit refuses is logged (Epic 54).** A plugin's `events/emit` was
+  refused (an undeclared event, a payload its schema refuses or over 16 KB, a subject out of
+  the job's scope, a bad token, a request that does not decode, and the rest) with only the
+  plugin API's general refusal line. Each refusal is now also logged as `plugin_emit_refused`
+  with the plugin, the event, the payload's size in bytes, a reason code and a detail, never
+  the payload. The plugin's answer is unchanged.
+
+- **The worker checks every live event a first-party plugin's runner asks it to publish
+  (Epic 54).** A runner's `publish` request went onto the `jobs` channel, which every web
+  client and app listens to, with any kind and any payload. The worker now publishes only
+  `job.progress` and `job.log`, each matching its schema, at most 64 KiB, about the runner's
+  own running job, with its subject and library as the job's (compared as uuids). Anything
+  else is refused back to the runner, publishes nothing, and is logged with the plugin, the
+  kind, the reason and the payload's size, never its contents.
 
 - **A first-party plugin's writes stay in its job's library and video (Epic 54, README
   §15.12).** A plugin's write statement named one id the plugin API checked against the job,
@@ -545,6 +561,19 @@ build fails when the two differ.
   ids are checked one by one and every id is compared as a uuid. The job events and duplicate
   merges the worker writes for a plugin's job, and the plugin API's write routes, keep to the
   job's own job, subject and library too. A write outside the job's scope is refused with
+  `plugin_scope`.
+- **A plugin's reads by id stay in its job's scope too (Epic 54, README §15.12).** A
+  first-party plugin's read statements were checked by one video or library argument at most,
+  and many by none: a plugin could read another library's season, series, transcript,
+  collection, job or duplicate group by passing its id, and a first-party job's token reached
+  every library through the plugin API's read routes. Every comparison a statement makes
+  between a column and an argument is now typed by the build, and the API checks each id
+  against the job before the statement runs; the build fails a read of an unlisted table, or
+  by an id column with no kind, unless a written reason exempts it. The `library`,
+  `transcript`, `media` info, `data` and `exports` routes keep a first-party job to its own
+  library (a video job to its own video), `data` and `exports` reads keyed by a video,
+  series or library check that it is in the token's libraries, and the worker answers a
+  plugin's job about its own job only. A read outside the job's scope is refused with
   `plugin_scope`.
 - **A runner's folder grant on Windows lands only on the folder that was checked (story
   54.23).** The launcher applied a runner group's folder grants and revokes by path, so a
@@ -603,6 +632,19 @@ build fails when the two differ.
   wrong home's certificate there. Each home's address entries are now kept with that home, the
   name must carry that home's id, and an address two homes list is checked against neither name:
   the app goes on to the home's next connection.
+
+- **The operator console signs in with staff accounts and a second factor (Epic 50 story
+  50.33, part 1).** An operator was a customer account with a role, signed in with an email and
+  a password like any customer. Operators are now separate staff accounts, created only from
+  the leader's CLI (`maktaba-cloud staff add`), that enrol through a one-time link with a
+  password and a TOTP app and get 10 recovery codes. Every admin route checks a staff session
+  with its second factor and the role from the database on each request; a customer's token is
+  refused there. Sessions end after 15 minutes idle and 8 hours in all; suspending, blocking,
+  setting plans, revoking licenses and deleting a user's data need a code from the last 5
+  minutes. Five failed steps lock the account for 30 minutes and alert the owner, as does a
+  recovery code's use. Every sign-in step and admin request is audited as staff, and an optional
+  network allow-list can close the console to other addresses. The old customer role was
+  cleared and `maktaba-cloud admin` points to `staff`. Passkeys come next.
 
 ### Added
 
@@ -2444,6 +2486,16 @@ build fails when the two differ.
   at the next 5-minute read, so the status strip says an outage as it starts. Android TV's strip,
   the same shared one, now has a test of its own.
 
+- **The core stages run as a first-party plugin (Epic 54 story 54.36, wave 9).** Finding the
+  videos, reading their length, identity, thumbnail and audio fingerprints, linking them to
+  their YouTube pages, the access check and the share path conversion run in
+  `tv.maktaba.core-media`, in the `light` runner, once the update syncs the graph. `thumbnail`
+  moves into `tv.maktaba.thumbnails` and `extract` into `tv.maktaba.transcription`. A video's
+  state, a failed stage queued again and the path conversion stay the queue engine's: the
+  worker writes them for the plugin's job after checking it. `core.pipeline` stays part of
+  the server and cannot be switched off; `categorize`, `component_catchup`, the watcher and
+  the manual scans stay in the core.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
@@ -2976,6 +3028,10 @@ build fails when the two differ.
   interpreter, told its venv. A broker pipe that fails is a refusal (the job runs in the
   worker), never a missing file, and the broker logs each process it turns away. Library
   stages on a share still run in the worker unless `MAKTABA_WINDOWS_SHARE_RUNNERS=1` is set.
+
+- **An idle Core home is back to its four processes a minute after its last job.** Since the
+  core steps (such as a library scan) run in a plugin runner, any work woke a runner, and it
+  stayed up for ten idle minutes. A runner now exits after one idle minute.
 
 ## [0.2.0] - 2026-10-19
 

@@ -134,3 +134,23 @@ release that still has the in-process code.
 ### Dependencies
 
 54.35 (every other stage already a plugin for a release).
+
+## Built (2026-11-07)
+
+§1 moved `scan`, `probe`, `content_hash`, `thumb_hash`, `link`, `fingerprint`,
+`style_sample`, `fp_gate`, `access_check` and `storage_canonicalize` into
+`tv.maktaba.core-media`, in the `light` runner (its role in slot 0214, which also lets
+`tv.maktaba.thumbnails` write `videos` for `thumbnail`). `thumbnail` joined
+`tv.maktaba.thumbnails` and `extract` joined `tv.maktaba.transcription`, the plugins of their
+components (README §15.2, §15.12). `categorize` stays in the core graph as it is, pending a
+decision on its future; `component_catchup`, the watcher and the manual scans stay too. The
+writes only the queue engine holds are relayed to the worker: a video's state (`advance`),
+a failed stage queued again (`requeue_failed`) and the path conversion
+(`storage_canonicalize`), each checked against the job's stage, video or library. The flip at
+update (the graph sync) sets the moved stages to the plugin on Postgres. Parity (T01) scans a
+library of real files, probes it, links a video from its yt-dlp sidecar and runs each video's
+identity, fingerprint, style sample and access check: rows, `videos.state` included, the
+queue and the job log are identical on both sides, and N16 holds. T05: every write to
+`core.pipeline` is `409 not_switchable`. T06 waits for the update rehearsal's earlier
+scenarios (16.1 to 16.8, issue #804). §4 (removing the in-process path) ships one release
+later.

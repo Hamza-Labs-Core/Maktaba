@@ -445,6 +445,9 @@ var (
 	// the database a restore by hand replaces, set aside before the backup is put back
 	dumpAsideBundled  = func(ctx context.Context, b pgbundle.Bundle, path string) error { return b.DumpTo(ctx, path) }
 	dumpAsideExternal = func(ctx context.Context, t dbsafe.Target, path string) error { return t.Dump(ctx, path) }
+	// the room a dump makes on its disk first (old dumps removed, pgbundle.MakeRoomWith):
+	// it reads this machine's disk, which tests replace
+	makeRoom = pgbundle.MakeRoomWith
 	// the other sessions on the database, ended before an update's migrations
 	endSessionsBundled  = func(ctx context.Context, b pgbundle.Bundle) (int, error) { return b.EndSessions(ctx) }
 	endSessionsExternal = func(ctx context.Context, t dbsafe.Target) (int, error) { return t.EndSessions(ctx) }
@@ -468,7 +471,7 @@ var (
 // beside the others in t.Backups (room made first), the dumps of its kind pruned to keep
 // after it.
 func dumpBeforeUpdateExternal(ctx context.Context, t dbsafe.Target, from, to string, keep int, room pgbundle.RoomPolicy) (string, error) {
-	if err := pgbundle.MakeRoomWith(t.Backups, room); err != nil {
+	if err := makeRoom(t.Backups, room); err != nil {
 		return "", err
 	}
 	path := filepath.Join(t.Backups, pgbundle.UpdateDumpName(from, to))
@@ -579,7 +582,7 @@ func (g *migrationGate) setAsideReplaced(ctx context.Context, rec apppayload.Dat
 		}
 	}
 	path := filepath.Join(dir, prefix+time.Now().UTC().Format("20060102T150405")+".dump")
-	err := pgbundle.MakeRoomWith(dir, g.room)
+	err := makeRoom(dir, g.room)
 	if err == nil {
 		if g.pg != nil {
 			err = dumpAsideBundled(ctx, *g.pg, path)
@@ -588,7 +591,8 @@ func (g *migrationGate) setAsideReplaced(ctx context.Context, rec apppayload.Dat
 		}
 	}
 	if err != nil {
-		fmt.Fprintf(g.log, "[serve] could not set the library database aside before the restore: %v\n", err)
+		fmt.Fprintf(g.log, "[serve] level=warn could not set the library database aside before the restore "+
+			"(it is put back all the same): %v\n", err)
 		return
 	}
 	fmt.Fprintf(g.log, "[serve] the library database the restore replaces is in %s\n", path)

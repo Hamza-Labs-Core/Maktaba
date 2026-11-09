@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from maktaba_fp_thumbnails.stages import thumbnail as thumbnail_stage
 
 from maktaba_pipeline.engine.claim import claim_for_pool
 from maktaba_pipeline.engine.dispatch import EngineRuntime, dispatch_job
@@ -39,7 +40,6 @@ from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import bound_graph
 from maktaba_pipeline.engine.hashing import canonical_hash
 from maktaba_pipeline.engine.media import reset_runner
-from maktaba_pipeline.engine.stages import thumbnail as thumbnail_stage
 from maktaba_pipeline.engine.stages.legacy import _always_changed
 from maktaba_pipeline.handlers import build_real_dispatch
 from maktaba_pipeline.thumbnail import handler as thumbnail_handler

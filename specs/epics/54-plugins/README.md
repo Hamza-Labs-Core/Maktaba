@@ -1402,7 +1402,7 @@ for Maktaba (T13).
 
 | Plugin | Epic 51 component (kind) | Stages | Pools kept | What it needs beyond the plugin API (§15.4) | Wave |
 |---|---|---|---|---|---|
-| `tv.maktaba.core-media` (always on) | `core.pipeline` (`stages+process+loop`, not switchable) | `scan`, `probe`, `content_hash`, `thumb_hash`, `link`, `fingerprint`, `style_sample`, `fp_gate`, `access_check`, `storage_canonicalize`, `categorize` | `nas_read`, `cpu` | read library files; run `ffprobe`, `ffmpeg`, `fpcalc` | 9 |
+| `tv.maktaba.core-media` (always on) | `core.pipeline` (`stages+process+loop`, not switchable) | `scan`, `probe`, `content_hash`, `thumb_hash`, `link`, `fingerprint`, `style_sample`, `fp_gate`, `access_check`, `storage_canonicalize` (`categorize` stays in the core for now, §15.12) | `nas_read`, `cpu` | read library files and the thumbnail cache; run `ffprobe`, `ffmpeg` (chromaprint runs through `ffmpeg`) | 9 |
 | `tv.maktaba.thumbnails` | `media.thumbnails` (`stages`) | `thumbnail`, `thumb_small`, `chapter_thumbs` | `nas_read` | read library files; write the thumbnail folders; `ffmpeg` | 2 |
 | `tv.maktaba.convert` | `library.convert` (`stages`) | `convert_mp4` | `convert` | read and write library files; `ffmpeg` | 5 |
 | `tv.maktaba.dedup` | `library.dedup` (`stages`) | `dedup_scan`, `dedup_apply`, `trash_purge`, `file_restore` | `nas_read`, `nas_write` | read and write library files and the file trash | 5 |
@@ -1783,6 +1783,17 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   element, and every id is compared as a uuid, never as text. The worker's relayed job events
   and duplicate merges, and the plugin API's write routes, keep to the job's own job, subject
   and library the same way.
+  Reads by id are checked the same way (2026-11-08): every `$N` a statement compares a column
+  to, anywhere in it (a `WHERE`, a join's `ON`, a subquery, `= ANY`, `IN` a list or
+  `json_each($N)`), is a check of that column's kind, so a read of another library's row (or,
+  from a video job, another video's) is `403 plugin_scope`. A read of a table the registry does
+  not list, or by an id-named column (`id`, `…_id`) with no kind, fails the build unless the
+  registry's `[not_ids]` exempts that column with its reason. A job's own row is a `job`, and a
+  job's `subject_id` a `job_subject` (a video, library, series or season). The plugin API's
+  read routes keep a first-party job (whose token spans every library) to its own library,
+  and a first-party video job to its video; `data` and `exports` keyed by a video, series or
+  library check the token's libraries; the worker's `job_ref` answers a plugin's job about its
+  own job only.
 - **The API holds a plugin's transactions.** Besides one statement in its own transaction,
   the plugin API opens a transaction for an invocation (`trusted/tx`: begin, savepoints,
   commit, rollback), under the plugin's role and `maktaba.origin`, so moved code keeps its
@@ -1818,19 +1829,30 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   wave 4) instead of running in the `light` runner, which has no network. Wave 1 is
   `promo_links`, `clip_groups`, `topic_collections` and `rate_style`.
 - **N16 counts a job's own work.** Each moved stage's job is run several times on both copies,
-  in turns, and the p50 and p95 ratios are taken over those runs; a difference under 25 ms is
-  the plugin path's fixed cost of one job (its token and the hop to the runner) and does not
-  count. Every statement runs on a connection already set to the plugin's role and origin, so
-  a statement outside a transaction is one round trip to Postgres. p50 is taken over the whole job's wall time
-  and p95 over the CPU each job cost (the worker's process and the plugin API's, from
-  `/proc/<pid>/schedstat` on Linux; Postgres is left out, as both sides run the same
-  queries). On CI a job's wall time stalls now and then for 30-250 ms, on either side and in
-  any span, with the CPU flat (a round trip waiting on the shared Postgres); with eleven runs
-  a side p95 is about the slowest run, so one stall decided it. The median is not moved by a
-  stall and keeps the plugin path's round trips in the gate; the tail is judged by work. A
-  failure that is only the timing is measured once more and counts when the second run fails
-  too. Each run writes its timings (both sides' wall time, CPU, the plugin API's CPU and the
-  run's spans) to the `parity-report` artifact.
+  in turns (one round is the in-process job, then the plugin job). The plugin path's own
+  costs are stated in the measure, not hidden: 25 ms a job (its token and the hop to the
+  runner) and, for each plugin API call, 1 ms of CPU (the SDK's request and the API's
+  token check, statement and answer; 0.56 ms at the median and 1.00 ms at most on CI's
+  slowest runners) and its hop of wall time (the job's cheapest call, at most N18's 2 ms).
+  Beyond them, two checks. The work: the CPU each job cost every process it ran in but
+  Postgres (the worker, the runner and the stage's code, and the plugin API, from
+  `/proc/<pid>/schedstat` on Linux), p50 within 10% and p95 within 15%. A job's CPU does not
+  count the time it waits, so a shared machine's stalls (30-250 ms on CI, on either side
+  and in any span, with the CPU flat) cannot move it. The wait: the median over rounds of
+  the plugin job's wall time minus the in-process job's in the same round is within 10% of
+  the in-process median. A machine slow for a while slows both jobs of a round, so the
+  difference keeps; a stall on one turn moves one difference, which the median does not
+  follow. The percentage counts when it is over 25 ms. A fixed 25 ms with no per-call cost
+  failed `detect` whenever its job ran 29 statements instead of 19 on a slow runner (26 ms
+  over: 29 calls at about 0.9 ms each over the in-process query, 0.58 ms of it the API's
+  CPU), with no stall in it. A plugin that does more work, or makes calls that cost more
+  than stated, fails the CPU check on any machine; one that waits (a sleep, a lock, round
+  trips the in-process job does not make) fails the wall check. Every statement runs on a
+  connection already set to the plugin's role and origin, so a statement outside a
+  transaction is one round trip to Postgres. A failure that is only the timing is measured
+  once more and counts when the second run fails too. Each run writes its timings (both
+  sides' wall time, CPU, the plugin API's CPU and the run's spans) to the `parity-report`
+  artifact.
 - **A runner never judges an update.** Like a TV slot, a plugin runner that does not run (it
   crash loops, or its sandbox is unavailable) is left out of the update's health rules, before
   and after: its stages run in the worker meanwhile, and the Components page shows it.
@@ -1989,3 +2011,33 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   `tag`; refusing the name would only break existing plugins. The trusted-only keys and the
   `dup_group` subject stay refused (`plugin_trusted_field`). `reserved_stages.txt` stays as
   the golden graph's list of names.
+- **Wave 9 places each stage with its component.** A plugin's stages are its component's
+  (the catalog checks it), so `thumbnail` joins `tv.maktaba.thumbnails` (`media.thumbnails`)
+  and `extract` joins `tv.maktaba.transcription`, as the table above lists them, rather than
+  `tv.maktaba.core-media`. `extract` therefore runs in the `ml` runner; a machine whose
+  workers have no plain `ml` runner runs it in the worker (`runner_not_serving_here`).
+- **`categorize` stays in the core until it is decided.** It is a placeholder in the graph
+  with no handler and no job ever runs it; whether it becomes a stage of
+  `tv.maktaba.core-media` or leaves the graph is an open decision, so wave 9 leaves it as it
+  is.
+- **The engine's writes for the core stages are relayed.** `videos.state` (probe's, and
+  `thumbnail`'s and `extract`'s transitions through `advance_after_stage`), a video's failed
+  stages queued again (`access_check`, and `scan` finding a missing file again) and the path
+  conversion (`storage_canonicalize`, which pauses stages and writes the share map) are the
+  queue engine's. In a runner the plugin asks the worker (`advance`, `requeue_failed`,
+  `storage_canonicalize`), which checks the stage, its trigger and the job's video or
+  library before it writes; in-process the same calls write directly.
+- **Shared helpers leave the stage modules.** What another plugin or the core also uses (the
+  file lookup by normalised name and the stand-in hash marker, `identity/on_disk.py`; the
+  thumbnail source and its fingerprint, `thumbnail/sidecar.py`; the failed stages' requeue,
+  `engine/requeue.py`) moved into library modules, since a plugin imports the pipeline,
+  never another plugin. The signal upserts that built their column list per call are three
+  fixed statements.
+- **Some writes by id keep the catalog scope.** A season row by its id (`fp_gate`), the
+  YouTube rows `link` upserts by their YouTube ids and an audio track by its id have no
+  scope kind that names them (the subject is a season, a video, or the track's video
+  through a join); like the earlier waves' writes of this kind, they rely on the role's
+  table grants and the trusted manifest. A scope kind for rows reached through the subject
+  is open.
+- **`fpcalc` is not needed.** The audio fingerprint runs through `ffmpeg`'s chromaprint
+  muxer, so the manifest lists `ffprobe` and `ffmpeg` only.

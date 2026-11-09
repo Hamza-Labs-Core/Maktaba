@@ -1,4 +1,7 @@
 # The shared pipeline modules whose statements tv.maktaba.thumbnails runs (story 54.24 §1)
+# thumbnail (wave 9, story 54.36): the chapters it marks and the paths it saves; the video's
+# state it advances is the worker's (orchestrator.advance, the relayed advance): not listed
 modules = [
     "maktaba_pipeline.engine.stages._common:load_video,require_video",
+    "maktaba_pipeline.thumbnail.handler:_load_chapter_starts,commit_thumbnails",
 ]

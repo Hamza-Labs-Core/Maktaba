@@ -16,6 +16,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/attempts"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dbsafe"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/updater"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
@@ -251,6 +252,46 @@ func TestRestoreAskedPutsTheBackupBackBeforeAnyRole(t *testing.T) {
 				t.Fatalf("a restore by hand recorded update attempts: %+v", got)
 			}
 		})
+	}
+}
+
+// The set aside is best effort (plan-35-05 D2: the person confirmed losing every change
+// since the backup): a disk with no room for it, here and on any machine whatever its
+// free space, skips it with a warning and the backup is put back all the same.
+func TestRestoreAskedGoesOnWhenTheReplacedDatabaseHasNoRoom(t *testing.T) {
+	t.Setenv(envLauncherRoot, "")
+	cfg, payload := appEnv(t, "v0.2.0", "")
+	backups := filepath.Join(cfg.StateDir(), "backups")
+	_ = os.MkdirAll(backups, 0o700)
+	dump := filepath.Join(backups, "maktaba-20261020-0300.dump")
+	_ = os.WriteFile(dump, []byte("dump"), 0o600)
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, From: "v0.2.0",
+		Dump: dump, By: "root", Error: "restore asked by root"})
+	f := installFakeDB(t, cfg)
+	prev := makeRoom
+	t.Cleanup(func() { makeRoom = prev })
+	var asked []string
+	makeRoom = func(dir string, _ pgbundle.RoomPolicy) error {
+		asked = append(asked, dir)
+		return &pgbundle.NoRoomError{Dir: dir, Free: 10 << 30, Need: 46 << 30}
+	}
+	log := &syncBuf{}
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), log)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatalf("the start = %v", err)
+	}
+	if len(asked) != 1 || asked[0] != backups {
+		t.Fatalf("room asked for %v, want the backups folder once", asked)
+	}
+	if len(f.asides) != 0 || len(f.restores) != 1 || f.restores[0] != filepath.Base(dump) {
+		t.Fatalf("asides %v restores %v", f.asides, f.restores)
+	}
+	if !strings.Contains(log.String(), "level=warn could not set the library database aside") ||
+		!strings.Contains(log.String(), "not enough free space") {
+		t.Fatalf("the skipped set aside was not warned of:\n%s", log)
+	}
+	if rec := recorded(t, cfg); rec.State != apppayload.DatabaseMigrated || rec.Version != "v0.2.0" {
+		t.Fatalf("record %+v", rec)
 	}
 }
 

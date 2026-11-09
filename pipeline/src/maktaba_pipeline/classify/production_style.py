@@ -47,7 +47,6 @@ import re
 import statistics
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
-from operator import add, sub
 from typing import Any, Literal
 
 __all__ = [
@@ -338,35 +337,107 @@ def _quantile(xs: Sequence[float], q: float) -> float:
     return s[min(len(s) - 1, int(q * (len(s) - 1) + 0.5))]
 
 
-def _look_vec(thumb: bytes) -> tuple[int, ...]:
-    bw, bh = THUMB_W // _LOOK_W, THUMB_H // _LOOK_H
-    out: list[int] = []
-    for by in range(_LOOK_H):
-        rows = [thumb[(by * bh + r) * THUMB_W : (by * bh + r + 1) * THUMB_W] for r in range(bh)]
-        for bx in range(_LOOK_W):
-            out.append(sum(map(sum, [row[bx * bw : (bx + 1) * bw] for row in rows])) // (bw * bh))
-    return tuple(out)
+# Pixel arithmetic in lanes. These run for every sampled thumbnail of every video (240 a
+# video), and the look search compares each one with every look seen so far, so they work
+# on a whole picture at once: the pixels go into one Python integer, 16 bits a pixel
+# ("lanes", lane i = pixel i), and each step is one big-integer operation (a loop in C)
+# instead of a loop over pixels or blocks in Python. Every lane stays in 0..65535 at every
+# step (the bounds are noted where they matter), so no lane carries into or borrows from
+# its neighbour, and the results are exactly the integers per-pixel loops give.
+
+_LANE = 16
+_BLOCK_W, _BLOCK_H = THUMB_W // _LOOK_W, THUMB_H // _LOOK_H
+_BLOCK_SHIFT = (_BLOCK_W * _BLOCK_H).bit_length() - 1  # block mean = block sum >> shift
+if 1 << _BLOCK_SHIFT != _BLOCK_W * _BLOCK_H or 255 << _BLOCK_SHIFT >= 1 << _LANE:
+    raise RuntimeError("look blocks must hold a power of two of pixels, summing within a lane")
+_GRID = _LOOK_W * _LOOK_H
+_EDGE_SPAN = THUMB_W * (THUMB_H - 1)  # pixels that have a pixel below them
 
 
-def _dist(a: Sequence[int], b: Sequence[int]) -> float:
-    if len(a) != len(b):
-        raise ValueError("look vectors differ in length")
-    total: int = sum(map(abs, map(sub, a, b)))
-    return total / len(a)
+def _lanes(n: int, value: int) -> int:
+    """``n`` lanes, each holding ``value``."""
+    return int.from_bytes(value.to_bytes(2, "little") * n, "little")
+
+
+def _widen(data: bytes) -> int:
+    """One lane per byte of ``data``."""
+    buf = bytearray(2 * len(data))
+    buf[0::2] = data
+    return int.from_bytes(buf, "little")
+
+
+_IMAGE_LOW8 = _lanes(THUMB_W * THUMB_H, 0xFF)
+_GRID_ONES, _GRID_256 = _lanes(_GRID, 1), _lanes(_GRID, 0x100)
+_SPAN_ONES, _SPAN_256 = _lanes(_EDGE_SPAN, 1), _lanes(_EDGE_SPAN, 0x100)
+_SPAN_ALL = (1 << (_LANE * _EDGE_SPAN)) - 1
+# lane i gets bit 15 set exactly when it held at least EDGE_GRADIENT (at most 510 + 32728)
+_EDGE_BIAS = _lanes(_EDGE_SPAN, 0x8000 - EDGE_GRADIENT)
+# the last column has no right neighbour: its lanes are left out of the count
+_EDGE_COUNTED = int.from_bytes(
+    b"".join(b"\x00\x00" if i % THUMB_W == THUMB_W - 1 else b"\x01\x00" for i in range(_EDGE_SPAN)),
+    "little",
+)
+
+
+def _absdiff(a: int, a_256: int, b: int, b_256: int, ones: int) -> int:
+    """Lane-wise ``|a - b|`` of two lane sets holding 0..255.
+
+    ``a_256`` and ``b_256`` are ``a`` and ``b`` with 256 added to every lane (``| x256``,
+    kept by callers that reuse one side), ``ones`` holds 1 in every lane.
+    """
+    p = a_256 - b  # a - b + 256 in every lane, 1..511: no borrow
+    q = b_256 - a
+    # bit 8 of p is set where a >= b, of q where b >= a; the low byte is then the difference
+    # (both are 0 where a == b)
+    return (p & (((p >> 8) & ones) * 0xFF)) + (q & (((q >> 8) & ones) * 0xFF))
+
+
+def _look_vec(thumb: bytes) -> bytes:
+    """Mean of each ``_BLOCK_W``×``_BLOCK_H`` block, one byte each, row-major over the grid."""
+    x = _widen(thumb)
+    row = _LANE * THUMB_W
+    # lane i: the sum of pixel i and the _BLOCK_H - 1 pixels below it (at most 1020)
+    v = x
+    for k in range(1, _BLOCK_H):
+        v += x >> (k * row)
+    # ... and of the _BLOCK_W - 1 lanes to its right: a block's sum at its top-left pixel
+    # (at most 4080, 12 bits)
+    h = v
+    for k in range(1, _BLOCK_W):
+        h += v >> (k * _LANE)
+    raw = ((h >> _BLOCK_SHIFT) & _IMAGE_LOW8).to_bytes(2 * THUMB_W * THUMB_H, "little")
+    # a block's top-left pixel is lane by * _BLOCK_H * THUMB_W + bx * _BLOCK_W: its mean is
+    # the low byte of that lane, at twice that offset
+    step, row_bytes = 2 * _BLOCK_W, 2 * _BLOCK_H * THUMB_W
+    return b"".join(
+        raw[by * row_bytes : by * row_bytes + step * _LOOK_W : step] for by in range(_LOOK_H)
+    )
 
 
 def _edge_share(thumb: bytes) -> float:
-    w, h = THUMB_W, THUMB_H
-    edges = 0
-    # per row in C (map/operator), not per pixel in Python: this runs for every
-    # sampled thumbnail of every season
-    for y in range(h - 1):
-        row, nxt = y * w, (y + 1) * w
-        px = thumb[row : row + w - 1]
-        right = map(abs, map(sub, px, thumb[row + 1 : row + w]))
-        down = map(abs, map(sub, px, thumb[nxt : nxt + w - 1]))
-        edges += sum(map(EDGE_GRADIENT.__le__, map(add, right, down)))
-    return edges / ((w - 1) * (h - 1))
+    """Share of pixels whose gradient (|gx| + |gy|, to the right and below) is an edge."""
+    x = _widen(thumb)
+    px = x & _SPAN_ALL
+    right = (x >> _LANE) & _SPAN_ALL
+    down = (x >> (_LANE * THUMB_W)) & _SPAN_ALL
+    px_256 = px | _SPAN_256
+    grad = _absdiff(px, px_256, right, right | _SPAN_256, _SPAN_ONES) + _absdiff(
+        px, px_256, down, down | _SPAN_256, _SPAN_ONES
+    )
+    edges = (((grad + _EDGE_BIAS) >> 15) & _EDGE_COUNTED).bit_count()
+    return edges / ((THUMB_W - 1) * (THUMB_H - 1))
+
+
+def _edge_shares(thumbs: Sequence[bytes]) -> list[float]:
+    """:func:`_edge_share` of each thumbnail, worked out once per distinct picture."""
+    seen: dict[bytes, float] = {}
+    out: list[float] = []
+    for t in thumbs:
+        e = seen.get(t)
+        if e is None:
+            e = seen[t] = _edge_share(t)
+        out.append(e)
+    return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -386,24 +457,39 @@ def _looks(windows: Sequence[Sequence[bytes]]) -> _LookStats:
     shot) when it never comes back and is never held for ``HELD_S`` — studio
     angles keep coming back, and an on-location presenter holds the shot.
     """
-    reps: list[tuple[int, ...]] = []
+    reps: list[int] = []  # each look's grid, in lanes
+    reps_256: list[int] = []  # ... with 256 added to every lane
+    rep_sums: list[int] = []
     counts: list[int] = []
     runs: list[int] = []
     longest: list[int] = []
     labels: list[int] = []
+    grids: dict[bytes, bytes] = {}  # a frozen picture repeats byte for byte
     changes = revisits = 0
     for thumbs in windows:
         prev = -1
         run = 0
         for th in thumbs:
-            v = _look_vec(th)
+            g = grids.get(th)
+            if g is None:
+                g = grids[th] = _look_vec(th)
+            v, sv = _widen(g), sum(g)
+            v_256 = v | _GRID_256
+            # the distance is the mean |a - b| over the grid, and |sum(a) - sum(b)| is at most
+            # sum(|a - b|): a look whose sum is that far off cannot be nearer than the best
+            # so far, so the per-cell comparison is skipped (same answer, same order)
             best, best_d = -1, LOOK_DISTANCE
-            for i, r in enumerate(reps):
-                d = _dist(v, r)
+            for i, sr in enumerate(rep_sums):
+                if abs(sv - sr) / _GRID >= best_d:
+                    continue
+                diff = _absdiff(v, v_256, reps[i], reps_256[i], _GRID_ONES)
+                d = sum(diff.to_bytes(2 * _GRID, "little")) / _GRID  # lanes are 0..255
                 if d < best_d:
                     best, best_d = i, d
             if best < 0:
                 reps.append(v)
+                reps_256.append(v_256)
+                rep_sums.append(sv)
                 counts.append(0)
                 runs.append(0)
                 longest.append(0)
@@ -478,7 +564,7 @@ def compute_metrics(
         insert_luma=_mean([f.yavg for f in inserts]),
         insert_sat=_mean([f.satavg for f in inserts]),
         # every 2nd thumbnail is plenty for a density estimate
-        edge_density=_mean([_edge_share(t) for t in thumbs[::2]]),
+        edge_density=_mean(_edge_shares(thumbs[::2])),
         width=info.width,
         height=info.height,
         fps=info.fps,

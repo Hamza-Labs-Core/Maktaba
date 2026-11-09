@@ -407,18 +407,20 @@ async def test_switched_off_does_nothing(db: Any, tmp_path: Path) -> None:
 
 
 async def test_the_stage_runs_it_on_the_home_only(db: Any, tmp_path: Path) -> None:
-    from maktaba_pipeline.engine.stages import storage_canonicalize as st
+    from maktaba_fp_core_media.stages import storage_canonicalize as st
+
+    from maktaba_pipeline.sharepath.auto import set_stage_env
 
     home = Home(tmp_path)
     await _seed(db, home, n=1)
-    st.set_env(None)
+    set_stage_env(None)
     res = await st.run(db, None, None)  # type: ignore[arg-type]
     assert res.summary == {"phase": "skipped", "why": "not the home's own machine"}
-    st.set_env(home.env())
+    set_stage_env(home.env())
     try:
         res = await st.run(db, None, None)  # type: ignore[arg-type]
     finally:
-        st.set_env(None)
+        set_stage_env(None)
     assert res.summary is not None and res.summary["phase"] == "done"
     assert await auto.enqueue(db, "test")
 

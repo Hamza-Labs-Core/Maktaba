@@ -11,6 +11,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/adopt"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 )
 
 // TestMain points MAKTABA_NODE_CONFIG at a file that never exists, so no test
@@ -48,6 +49,10 @@ func TestMain(m *testing.M) {
 	// install outside the app (Epic 38 story 38.13); here there is none unless a
 	// test gives its own
 	adoptSys = func() adopt.Sys { return &adoptFakeSys{} }
+	// nor on how full this machine's disk is: a dump's room is 5% of its disk free
+	// (46 GB of a 926 GB Mac's), so a restore's set aside was skipped on a fuller disk
+	// and passed on a CI runner; every disk has room unless a test says otherwise
+	makeRoom = func(string, pgbundle.RoomPolicy) error { return nil }
 	code := m.Run()
 	_ = os.RemoveAll(dir)
 	os.Exit(code)

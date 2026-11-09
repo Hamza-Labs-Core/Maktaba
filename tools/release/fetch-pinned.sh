@@ -11,7 +11,9 @@
 # overrides the waits, for the tests): a 5xx, a 408 or 429, a reset, a refused connection
 # or a timeout is tried again; any other 4xx stops at once (the pin is wrong, not the
 # host). A github.com release download goes by the REST API's route to the same asset
-# first, the github.com URL second, in each try (see api_asset_url). A download whose
+# first, the github.com URL second, in each try (see api_asset_url); a github.com source
+# archive (/archive/...) by codeload.github.com first, the host github.com redirects it to
+# (see codeload_url). A download whose
 # SHA-256 is not the pinned one fails the job, as it always did, whichever route gave it.
 # Every failure ends in an `::error::` that names the URL.
 #
@@ -91,6 +93,29 @@ api_asset_url() {
     }
 }
 
+# A github.com source archive (/OWNER/REPO/archive/REF.tar.gz or .zip, REF a tag as
+# refs/tags/T, or a bare name or commit) is a 302 to codeload.github.com/OWNER/REPO/tar.gz/REF
+# (or /zip/REF), which serves the archive itself: the same bytes (pgvector 0.8.7's
+# tarball's SHA-256 is the pin by both). github.com's front door answered 504 to
+# pgvector's archive for 10 minutes (2026-11-08), so codeload goes first and the URL second.
+# The REST API's tarball (/repos/O/R/tarball/REF) is not a route: its top folder is named
+# O-R-<commit>, not R-<version>, so its bytes are not the pin's.
+# FETCH_PINNED_CODELOAD points it at a test server.
+codeload_base="${FETCH_PINNED_CODELOAD:-https://codeload.github.com}"
+# codeload_url: prints the archive's codeload URL, or nothing
+codeload_url() {
+    local rest repo ref
+    case "$url" in "$gh_base"/*/*/archive/*.tar.gz | "$gh_base"/*/*/archive/*.zip) ;; *) return 0 ;; esac
+    rest="${url#"$gh_base"/}"
+    repo="${rest%%/archive/*}"
+    ref="${rest#*/archive/}"
+    case "$repo" in */*/*) return 0 ;; esac
+    case "$ref" in
+        *.tar.gz) printf '%s/%s/tar.gz/%s\n' "$codeload_base" "$repo" "${ref%.tar.gz}" ;;
+        *.zip) printf '%s/%s/zip/%s\n' "$codeload_base" "$repo" "${ref%.zip}" ;;
+    esac
+}
+
 # get FROM [CURL ARGS...]: one try into $part; sets code and rc
 get() {
     local from="$1"
@@ -124,6 +149,7 @@ attempts=$((${#delays[@]} + 1))
 part="$dst.part"
 auth=()
 [ -z "${GITHUB_TOKEN:-}" ] || auth=(-H "Authorization: Bearer $GITHUB_TOKEN")
+codeload="$(codeload_url)"
 for ((i = 1; i <= attempts; i++)); do
     api_why=""
     api_asset_url
@@ -131,6 +157,11 @@ for ((i = 1; i <= attempts; i++)); do
         log "$name: downloading by the GitHub API, $api_url (attempt $i of $attempts)"
         get "$api_url" -H 'Accept: application/octet-stream' ${auth[@]+"${auth[@]}"} && keep "$api_url"
         if [ "$rc" -eq 0 ]; then api_why="API route HTTP $code"; else api_why="API route curl exit $rc"; fi
+        log "$name: $api_why; trying $url"
+    elif [ -n "$codeload" ]; then
+        log "$name: downloading by codeload, $codeload (attempt $i of $attempts)"
+        get "$codeload" && keep "$codeload"
+        if [ "$rc" -eq 0 ]; then api_why="codeload route HTTP $code"; else api_why="codeload route curl exit $rc"; fi
         log "$name: $api_why; trying $url"
     else
         log "$name: downloading $url (attempt $i of $attempts)"

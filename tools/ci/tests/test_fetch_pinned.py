@@ -5,8 +5,9 @@ Core bundle-size job and the Windows plugin sandbox. The helper keeps a restored
 has the pin (no download), retries a 5xx, 408, 429 or a dropped connection, stops at once
 on any other 4xx, fails on other bytes, and names the URL in an `::error::` when it gives
 up. A github.com release download falls back to the API's route to the same asset (504s on
-github.com while the API served the file). Here against a local server that answers what
-each test scripts.
+github.com while the API served the file), and a github.com source archive to
+codeload.github.com, the host github.com redirects it to (504s on pgvector's archive). Here
+against a local server that answers what each test scripts.
 """
 
 from __future__ import annotations
@@ -38,6 +39,8 @@ class _Server:
         self.api: list[str] = []
         self.asset_replies: list[int] = []
         self.auth: list[str] = []
+        self.codeload: list[str] = []
+        self.codeload_replies: list[int] = []
         self.release = True
         self.asset_name = "cpython-3.12.15+20261003.tar.gz"
         server = self
@@ -47,6 +50,16 @@ class _Server:
                 if self.path.startswith("/repos/"):
                     server.api.append(self.path)
                     self._api()
+                    return
+                if self.path.startswith("/codeload/"):
+                    server.codeload.append(self.path)
+                    server.auth.append(self.headers.get("Authorization", ""))
+                    status = server.codeload_replies.pop(0) if server.codeload_replies else 200
+                    body = BODY if status == 200 else b"Gateway Time-out"
+                    self.send_response(status)
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
                     return
                 server.requests += 1
                 reply = server.replies.pop(0) if server.replies else 200
@@ -278,6 +291,86 @@ def test_the_api_route_bytes_are_checked_too(server: _Server, tmp_path: Path) ->
     assert not dst.exists()
 
 
+def _archive(server: _Server, ref: str = "refs/tags/v0.8.7.tar.gz") -> tuple[str, dict[str, str]]:
+    """A github.com source archive URL on the test server, and the env for github.com and codeload."""
+    base = f"http://127.0.0.1:{server.httpd.server_address[1]}"
+    url = f"{base}/pgvector/pgvector/archive/{ref}"
+    return url, {"FETCH_PINNED_GITHUB": base, "FETCH_PINNED_API": base, "FETCH_PINNED_CODELOAD": f"{base}/codeload"}
+
+
+def test_a_github_archive_goes_by_codeload_first(server: _Server, tmp_path: Path) -> None:
+    server.replies = [504] * 10  # github.com's front door is down: it is not asked at all
+    url, env = _archive(server)
+    dst = tmp_path / "pgvector-0.8.7.tar.gz"
+    r = _run(url, SHA, str(dst), GITHUB_TOKEN="tok-not-printed", **env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert server.requests == 0
+    assert server.api == []
+    assert server.codeload == ["/codeload/pgvector/pgvector/tar.gz/refs/tags/v0.8.7"]
+    assert server.auth == [""]  # codeload serves public archives: the token is not sent there
+    assert dst.read_bytes() == BODY
+    assert "downloading by codeload" in r.stderr
+    assert "tok-not-printed" not in r.stdout + r.stderr
+
+
+@pytest.mark.parametrize(
+    ("ref", "path"),
+    [
+        ("v0.8.7.zip", "/codeload/pgvector/pgvector/zip/v0.8.7"),
+        ("refs/tags/v0.8.7.zip", "/codeload/pgvector/pgvector/zip/refs/tags/v0.8.7"),
+        ("0123abcd.tar.gz", "/codeload/pgvector/pgvector/tar.gz/0123abcd"),
+    ],
+)
+def test_the_codeload_route_of_each_archive_form(server: _Server, tmp_path: Path, ref: str, path: str) -> None:
+    url, env = _archive(server, ref)
+    r = _run(url, SHA, str(tmp_path / "f"), **env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert server.codeload == [path]
+
+
+def test_the_archive_url_is_the_fallback_in_the_same_try(server: _Server, tmp_path: Path) -> None:
+    server.codeload_replies = [504]
+    url, env = _archive(server)
+    dst = tmp_path / "f"
+    r = _run(url, SHA, str(dst), **env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert server.requests == 1
+    assert "codeload route HTTP 504; trying" in r.stderr
+    assert "attempt 2" not in r.stderr
+    assert dst.read_bytes() == BODY
+
+
+def test_both_archive_routes_down_retry_five_times(server: _Server, tmp_path: Path) -> None:
+    server.replies = [504] * 10
+    server.codeload_replies = [504] * 10
+    url, env = _archive(server)
+    r = _run(url, SHA, str(tmp_path / "f"), **env)
+    assert r.returncode != 0
+    assert server.requests == 5
+    assert len(server.codeload) == 5
+    assert "not downloaded after 5 attempts (last: codeload route HTTP 504; HTTP 504)" in r.stderr
+
+
+def test_the_codeload_route_bytes_are_checked_too(server: _Server, tmp_path: Path) -> None:
+    url, env = _archive(server)
+    other = hashlib.sha256(b"x").hexdigest()
+    dst = tmp_path / "f"
+    r = _run(url, other, str(dst), **env)
+    assert r.returncode != 0
+    assert server.requests == 0
+    assert f"the pin says {other}" in r.stderr
+    assert not dst.exists()
+
+
+def test_another_url_has_no_second_route(server: _Server, tmp_path: Path) -> None:
+    # server.url is not on github.com: one request per try, to it alone
+    server.replies = [504, 200]
+    r = _run(server.url, SHA, str(tmp_path / "f"), FETCH_PINNED_CODELOAD=f"{server.url}/codeload")
+    assert r.returncode == 0, r.stderr
+    assert server.requests == 2
+    assert server.codeload == [] and server.api == []
+
+
 # The workflows put each file where payload.sh looks, under the name payload.sh fetches it
 # as: a name that drifted would leave payload.sh downloading it again, unretried.
 FETCH_LINE = re.compile(r'\$f "\$(\w+)_URL" "\$\1_SHA256" "\$d/([^"]+)"')
@@ -294,3 +387,48 @@ def test_the_prefetched_names_are_payload_sh_names(app: str) -> None:
     for piece, name in found:
         assert wanted.get(piece) == name, f"_{app}.yml fetches {piece} as {name}, payload.sh as {wanted.get(piece)}"
     assert {p for p, _ in found} == set(wanted), f"_{app}.yml leaves out {set(wanted) - {p for p, _ in found}}"
+
+
+def _cache_steps() -> Iterator[tuple[str, str, dict[str, str], dict[str, str]]]:
+    """(workflow, job, restore's with, save's with) for each save whose key starts with a restore's."""
+    import yaml
+
+    for wf in sorted((ROOT / ".github/workflows").glob("*.yml")):
+        doc = yaml.safe_load(wf.read_text(encoding="utf-8"))
+        for job_name, job in (doc.get("jobs") or {}).items():
+            steps = job.get("steps") or []
+            restores = [s["with"] for s in steps if str(s.get("uses", "")).startswith("actions/cache/restore@")]
+            for save in (s["with"] for s in steps if str(s.get("uses", "")).startswith("actions/cache/save@")):
+                for restore in restores:
+                    if str(save["key"]).startswith(str(restore["key"])):
+                        yield wf.name, job_name, restore, save
+
+
+def test_a_saved_cache_has_its_restore_s_paths() -> None:
+    # actions/cache's entry version is a hash of its paths: a save with other paths than its
+    # restore writes an entry the restore never finds
+    pairs = list(_cache_steps())
+    names = {(wf, job) for wf, job, _, _ in pairs}
+    assert {("_win-app.yml", "win-app"), ("_lint.yml", "lint")} <= names, names
+    for wf, job, restore, save in pairs:
+        assert str(restore["path"]).split() == str(save["path"]).split(), f"{wf} {job}: {save['key']}"
+
+
+@pytest.mark.parametrize("app", ["mac-app", "win-app", "linux-app"])
+def test_a_failed_download_still_saves_what_came(app: str) -> None:
+    # 2026-11-08: the Windows downloads cache was saved only after every download, and main's
+    # never was: pgvector's archive 504'd after the others had come
+    import yaml
+
+    doc = yaml.safe_load((ROOT / f".github/workflows/_{app}.yml").read_text(encoding="utf-8"))
+    saves = [
+        s
+        for job in doc["jobs"].values()
+        for s in job.get("steps") or []
+        if s.get("name") == "Save the pinned downloads"
+    ]
+    assert saves
+    for s in saves:
+        assert str(s["if"]).startswith("always() && "), s["if"]
+        assert "-partial-{0}-{1}" in s["with"]["key"]
+        assert f"!build/{app}/downloads/*.part" in s["with"]["path"]

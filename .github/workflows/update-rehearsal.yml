@@ -99,6 +99,11 @@ on:
       - 'pipeline/uv.lock'
       - 'plugins/first-party/**'
       - 'plugins/sdk/python/**'
+      # 16.7's TV change: the release build, the swap commit and rollback, the front door's
+      # swap and rollback operations on the slots
+      - 'pipeline/src/maktaba_pipeline/tvrelease/**'
+      - 'streaming/internal/frontdoor/**'
+      - 'streaming/internal/slot/**'
       # the rehearsal itself
       - 'api/rehearsal_*_e2e_test.go'
       - 'api/autoupdate_*e2e_test.go'
@@ -186,8 +191,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum', 'cmd/maktaba-launcher/go.sum', 'tools/release/go.sum') }}
 
       # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
       - name: Go modules
@@ -207,8 +210,10 @@ jobs:
           workspaces: |
             plugind
             plugind/guests
-          # only main's run saves (pull requests and tags read main's entries)
-          save-if: ${{ github.event_name == 'workflow_run' }}
+          # the plugin host's one ubuntu-24.04 entry, which the plugins workflow's plugind job
+          # writes on main (_plugins.yml); restored only here
+          shared-key: plugind-ubuntu-24.04
+          save-if: false
 
       # the release's pack build (tools/rehearsal/build.sh: the tool.yt-dlp pack of each of
       # this commit's releases, scenarios 13 and 14)
@@ -355,14 +360,6 @@ jobs:
           retention-days: 3
           compression-level: 6
 
-      # only main's run writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'workflow_run' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
-
   seed:
     name: seed (${{ matrix.profile }})
     needs: [kit]
@@ -394,8 +391,6 @@ jobs:
         id: go-cache
         if: steps.cache.outputs.cache-hit != 'true'
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('api/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -494,14 +489,6 @@ jobs:
           path: ${{ runner.temp }}/rh-logs
           if-no-files-found: ignore
 
-      # only main's run writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'workflow_run' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
-
   scenario:
     name: ${{ matrix.id }} ${{ matrix.name }}
     needs: [kit, seed]
@@ -539,7 +526,9 @@ jobs:
           - { id: '16.4', name: wave 4's jobs across a rollback and an update, test: TestUpdateRehearsal16_4Wave4, profile: small, venvs: true }
           - { id: '16.5', name: wave 5's jobs across a rollback and an update, test: TestUpdateRehearsal16_5Wave5, profile: small, venvs: true }
           - { id: '16.6', name: wave 6's jobs across a rollback and an update, test: TestUpdateRehearsal16_6Wave6, profile: small, venvs: true }
+          - { id: '16.7', name: wave 7's TV change staged before an update and swapped and rolled back after it, test: TestUpdateRehearsal16_7Wave7, profile: small, venvs: true }
           - { id: '16.8', name: wave 8's jobs across a rollback and an update, test: TestUpdateRehearsal16_8Wave8, profile: small, venvs: true }
+          - { id: '16.9', name: wave 9's core stages across a rollback and an update, test: TestUpdateRehearsal16_9Wave9, profile: small, venvs: true }
           # the fault rehearsal (Epic 53 story 53.07, docs/fault-rehearsal.md): one part
           # killed at a time on a home of this commit; the tag guard requires these too
           - { id: 'F03', name: streaming crash (the status says so; it comes back), test: TestFaultRehearsalF03StreamingCrash, profile: small }
@@ -560,8 +549,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('api/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -755,14 +742,6 @@ jobs:
             ${{ runner.temp }}/rh-logs
             ${{ runner.temp }}/scenario.out
           if-no-files-found: ignore
-
-      # only main's run writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'workflow_run' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
 
   update-rehearsal:
     name: update-rehearsal

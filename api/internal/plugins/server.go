@@ -147,14 +147,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	iface, fn, _ := strings.Cut(rest, "/")
+	// an emit refused before its route runs is logged as the route's own refusals are
+	emit := iface+"/"+fn == emitRoute
 	auth := r.Header.Get("Authorization")
 	token, ok := strings.CutPrefix(auth, "Plugin ")
 	if !ok {
-		writeRefusal(w, refuse(401, CodeToken, "Authorization: Plugin <token>"))
+		ref := refuse(401, CodeToken, "Authorization: Plugin <token>")
+		if emit {
+			s.emitRefusedEarly(r, nil, nil, "", EmitToken, ref)
+		}
+		writeRefusal(w, ref)
 		return
 	}
 	inv, ref := s.Tokens.Check(r.Context(), token)
 	if ref != nil {
+		if emit {
+			s.emitRefusedEarly(r, nil, nil, s.Tokens.claimant(token), EmitToken, ref)
+		}
 		writeRefusal(w, ref)
 		return
 	}
@@ -186,7 +195,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !inv.takeRate(s.Tokens.Now()) {
-		s.refused(w, inv, iface+"/"+fn, refuse(403, CodeRate, "over 200 calls a second"))
+		ref := refuse(403, CodeRate, "over 200 calls a second")
+		if emit {
+			s.emitRefusedEarly(r, nil, inv, inv.PluginID, EmitRate, ref)
+		}
+		s.refused(w, inv, iface+"/"+fn, ref)
 		return
 	}
 	if need := capabilityOf(iface, fn); need != nil {
@@ -203,11 +216,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, MaxBody+1))
 	if err != nil {
-		writeRefusal(w, refuse(400, CodeInvalid, err.Error()))
+		ref := refuse(400, CodeInvalid, err.Error())
+		if emit {
+			s.logEmitRefused(inv, inv.PluginID, emitShape{size: len(body)}, EmitDecode,
+				refuse(ref.Status, ref.Code, "the request could not be read"))
+		}
+		writeRefusal(w, ref)
 		return
 	}
 	if len(body) > MaxBody {
-		s.refused(w, inv, iface+"/"+fn, refuse(413, CodeTooLarge, "request over 6 MB"))
+		ref := refuse(413, CodeTooLarge, "request over 6 MB")
+		if emit {
+			s.logEmitRefused(inv, inv.PluginID, emitShape{size: len(body)}, EmitOversize, ref)
+		}
+		s.refused(w, inv, iface+"/"+fn, ref)
 		return
 	}
 	if len(body) == 0 {
@@ -217,7 +239,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// a machine sends a write to the home, which checks and applies it (54.42 §3)
 		status, ctype, out, err := s.Tokens.Remote.Call(r.Context(), iface+"/"+fn, token, body)
 		if err != nil {
-			s.refused(w, inv, iface+"/"+fn, refuse(503, CodeHomeUnreachable, err.Error()))
+			ref := refuse(503, CodeHomeUnreachable, err.Error())
+			if emit {
+				s.emitRefusedEarly(r, body, inv, inv.PluginID, EmitHomeUnreachable, ref)
+			}
+			s.refused(w, inv, iface+"/"+fn, ref)
 			return
 		}
 		if ctype == "" {
@@ -241,6 +267,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(v)
 	}
+}
+
+// emitRefusedEarly logs an emit refused before its route ran (plugin_emit_refused): body
+// is what was read of the request, nil when nothing was, in which case it reads up to the
+// 6 MB cap for the kind and the size. Nothing of the body is logged.
+func (s *Server) emitRefusedEarly(r *http.Request, body []byte, inv *Invocation, plugin, reason string, ref *Refusal) {
+	if body == nil {
+		body, _ = io.ReadAll(io.LimitReader(r.Body, MaxBody+1))
+	}
+	s.logEmitRefused(inv, plugin, peekEmit(body), reason, ref)
 }
 
 // refused logs and counts a refusal, then answers it (54.04 §5).

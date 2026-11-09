@@ -22,6 +22,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	sharedplugins "github.com/Hamza-Labs-Core/Maktaba/shared/plugins"
 )
 
@@ -85,6 +86,11 @@ func runStagesImpl(ctx context.Context, out io.Writer, db *sql.DB, stage, impl s
 	}
 	if !firstPartyStage(stage) {
 		return fmt.Errorf("%s is not a built-in plugin's stage", stage)
+	}
+	// wave 9 (story 54.36): core.pipeline's stages are a built-in plugin's too, and stay
+	// where they run, as the API refuses a core component's change
+	if c, ok := components.Default().ByStage(stage); ok && !c.Switchable {
+		return fmt.Errorf("%s is %s's, part of Maktaba's core, and cannot be changed", stage, c.ID)
 	}
 	var cur string
 	if err := db.QueryRowContext(ctx, `SELECT impl FROM job_stages WHERE stage = $1`, stage).Scan(&cur); err != nil {

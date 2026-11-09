@@ -3,7 +3,7 @@
   "project": "Maktaba",
   "description": "Self-hosted media intelligence platform: full Plex alternative + every-word-searchable transcripts. See specs/architecture.md.",
   "generated_from": [
-    "specs/epics/** (57 epics, 01 to 57: READMEs, stories, plans)",
+    "specs/epics/** (58 epics, 01 to 58: READMEs, stories, plans)",
     "specs/architecture.md (DB tables)",
     "specs/*.md (15 reviews and audits)",
     "specs/diagrams/*.drawio (14 diagrams)",
@@ -15,13 +15,13 @@
     "diagram": 14,
     "endpoint": 180,
     "entity": 42,
-    "epic": 57,
+    "epic": 58,
     "feature": 3,
     "mockup": 63,
     "phase": 17,
     "plan": 372,
     "review": 15,
-    "story": 681
+    "story": 699
   },
   "parts": [
     "wiki-epics-01-09.json",
@@ -30,7 +30,7 @@
     "wiki-epics-28-36.json",
     "wiki-epics-37-45.json",
     "wiki-epics-46-54.json",
-    "wiki-epics-55-57.json"
+    "wiki-epics-55-58.json"
   ],
   "entries": [
     {
@@ -2945,6 +2945,48 @@
       }
     },
     {
+      "id": "epic-58-smart-tv-platforms",
+      "type": "epic",
+      "title": "Apps for the TVs Maktaba does not reach yet",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "engine": null,
+      "content": "Apps for the TVs Maktaba does not reach yet: Fire TV, Google Cast, Samsung, LG and Roku.\n\nRequirement: a household should be able to watch its Maktaba home on the TV it already owns. Today that means an Apple TV, an Android or Google TV, or a phone with AirPlay. The TVs most families own are another matter: - a Samsung (about 17% of TVs worldwide, and 23% of US connected-TV platforms); - an LG (about 7–12%); - a Roku (28% in the US); - an Amazon Fire TV stick (research.md §7); - and in the Middle East, mostly Samsung, LG and Android TV.",
+      "tags": [
+        "epic",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "story-58.1",
+        "story-58.2",
+        "story-58.3",
+        "story-58.4",
+        "story-58.5",
+        "story-58.6",
+        "story-58.7",
+        "story-58.8",
+        "story-58.9",
+        "story-58.10",
+        "story-58.11",
+        "story-58.12",
+        "story-58.13",
+        "story-58.14",
+        "story-58.15",
+        "story-58.16",
+        "story-58.17",
+        "story-58.18"
+      ],
+      "files": {
+        "readme": "specs/epics/58-smart-tv-platforms/README.md"
+      },
+      "metadata": {
+        "story_count": 18,
+        "plan_count": 0,
+        "mockup_count": 0
+      }
+    },
+    {
       "id": "diagram-api-streaming-stories",
       "type": "diagram",
       "title": "Api Streaming Stories",
@@ -5089,7 +5131,8 @@
         "story-56.9",
         "story-56.14",
         "story-57.1",
-        "story-57.3"
+        "story-57.3",
+        "story-58.17"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6061,7 +6104,10 @@
         "story-54.15",
         "story-55.9",
         "story-57.3",
-        "story-57.10"
+        "story-57.10",
+        "story-58.2",
+        "story-58.13",
+        "story-58.17"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7805,7 +7851,8 @@
         "story-54.40",
         "story-55.2",
         "story-57.5",
-        "story-57.13"
+        "story-57.13",
+        "story-58.1"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7899,7 +7946,9 @@
         "story-54.38",
         "story-54.42",
         "story-55.2",
-        "story-56.13"
+        "story-56.13",
+        "story-58.13",
+        "story-58.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -8860,7 +8909,12 @@
         "story-55.3",
         "story-56.3",
         "story-56.8",
-        "story-56.14"
+        "story-56.14",
+        "story-58.1",
+        "story-58.3",
+        "story-58.7",
+        "story-58.9",
+        "story-58.17"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -10228,6 +10282,7 @@
         "story-27.10",
         "story-29.3",
         "story-29.5",
+        "story-54.36",
         "story-57.3"
       ],
       "files": {
