@@ -85,5 +85,9 @@ def test_no_two_parity_tests_name_one_report() -> None:
             if name in seen:
                 clashes.append(f"{name}: {seen[name]} and {where}")
             seen.setdefault(name, where)
-    assert "tv.maktaba.classify" in seen and "tv.maktaba.core-media" in seen, seen
+    # the scan reads literal names (a name passed through a helper, as core-media's groups,
+    # is claim_report's at run time)
+    assert {"tv.maktaba.classify", "tv.maktaba.classify.wave4", "tv.maktaba.dedup"} <= set(seen), (
+        seen
+    )
     assert clashes == []
