@@ -1,6 +1,6 @@
 # Story 54.36 — Wave 9: the core stages, and removing the in-process path
 
-> Epic 54 · Phase 4 · Depends on: 54.35 · Needed by: —
+> Epic 54 · Phase 4 · Depends on: 54.35 (§4 also on 54.43) · Needed by: —
 
 ## Why
 
@@ -47,17 +47,65 @@ The filesystem watcher (`watcher/`) and manual scans are loops in the core that 
 
 ### 4. Removing the in-process path
 
-One release after these stages flip (and only if no stage of any wave is flipped back):
+§4 does not start one release after these stages flip. It waits until **all** of (a) to (e)
+hold, each checked again in the code and on a live home right before it starts. Until then,
+the in-process code stays, and so do the per-stage switch, the flip route
+(`PUT /api/queues/{stage}/impl`) and the CLI (`maktaba-server stages impl`): the switch is an
+admin's only lever when a plugin stage misbehaves, and its target, the in-process code, stays
+anyway. The release after wave 9 (v0.3.109, PR #998) checked them on 2026-11-09: no stage of
+any wave was flipped back (every `job_stages` row has an empty `impl_changed_by`), and none of
+(a) to (e) held.
 
-1. delete `engine/stages/` modules, `handlers.py`'s stage handlers and `CORE_MODULES`;
-2. delete `GRAPH`'s remaining `StageDef`s (none left) and keep `graph.py` as types and pools;
-3. drop `job_stages.impl` in a contract migration, and the flip route and CLI (54.25);
+**(a) Every stage of `GRAPH` has a plugin, or is kept in the core on purpose.** Kept in the
+core: `component_catchup` (an engine stage of `core.pipeline`, §1). The stages still
+`inproc` on 2026-11-09, and what each waits on:
+
+| Stage | Where it is | Waits on |
+|---|---|---|
+| `component_catchup` | `engine/stages/component_catchup.py` | nothing: kept in the core |
+| `enrich` | `engine/stages/enrich.py` | an owner decision (54.31: it reads any page a search result links to, which no declared host list covers) |
+| `categorize` | `GRAPH` (legacy, no handler) | an owner decision: removed, or kept declared |
+| `word_check` | `engine/stages/word_check.py` | conversion into a first-party plugin |
+| `display_title` | `engine/stages/display_title.py` | conversion into `tv.maktaba.classify` (it asks the language model, 54.31) |
+| `youtube_collections` | `engine/stages/youtube_collections.py` | conversion (it builds series from the library as a whole) |
+| `youtube_tartube` | `engine/stages/youtube_tartube.py` | conversion (the Tartube import, likewise) |
+| `dizquetv_audit`, `dizquetv_channels`, `dizquetv_show` | nowhere: retired (`engine/retired.py`, `shared/components/retired.go`); their code went with the dizqueTV extension, slot 0215 kept their rows | a cleanup migration that deletes their `job_stages`, `processing_jobs`, `worker_pools` and component rows (with the retired Plex stages' rows); they need no plugin |
+
+**(b) A SQLite home has a path that is not in-process, or SQLite homes have an announced end
+of support.** SQLite is the default database of a fresh single-host install
+(`config.Defaults`), and on SQLite the worker runs every first-party stage in-process
+(`plugins/native.py`, `choose`: the plugin API and its per-plugin roles are Postgres only).
+
+**(c) The Windows share fallback is retired.** On Windows, while a library is on a share, a
+library stage that the Windows end to end has not proven in its runner runs in the worker
+(`windows_share_library`, after v0.3.105). Retiring it needs share access in the runner's
+sandbox, proven by that end to end for every library stage.
+
+**(d) The Chroma index store is retired, or `index` and `chapter_infer` run over it from the
+runner.** While the search index is Chroma (a folder one process may open), the two stay in
+the worker beside the query server (`index_store_chroma`).
+
+**(e) The in-process fallbacks are counted where a person can read them** (story 54.43): each
+machine's count per stage and reason is kept in the database and shown to admins, so "this
+home never falls back" is a reading, not an assumption. The reading must show no fallback on
+the live home for a full release before §4 starts.
+
+Once (a) to (e) hold, §4 is:
+
+1. delete `engine/stages/` modules, `handlers.py`'s stage handlers and `CORE_MODULES`
+   (except the stages kept in the core);
+2. delete `GRAPH`'s remaining moved `StageDef`s and keep `graph.py` as types, pools and the
+   stages kept in the core;
+3. drop `job_stages.impl` with the flip route and the CLI (54.25): one release stops using
+   the column, and the contract migration that drops it ships in the release after
+   (Epic 35's rule), taking its migration slot at merge;
 4. the import contract (54.27) now forbids `maktaba_pipeline` from importing any plugin, and
    the pipeline wheel no longer depends on the ML extras;
 5. `graph-golden` stays: the assembled graph must still equal the golden file.
 
 A stage flipped back by the owner blocks step 1 for that stage's code only; the release notes
-say which and why.
+say which and why. The update rehearsal's rows that flip `impl` (16.x, 16.7 among them) are
+rewritten in step 3's first release to prove what they still can across releases.
 
 ## Acceptance criteria
 
@@ -72,7 +120,7 @@ say which and why.
 - **Given** the removal release,
   **when** the pipeline wheel is built,
   **then** it contains no stage code, imports no plugin, and every stage of
-  `graph.golden.json` is served by a first-party plugin.
+  `graph.golden.json` is served by a first-party plugin or is a stage kept in the core.
 - **Given** the `core-media` plugin,
   **when** an admin tries to disable it,
   **then** `409 component_not_switchable`, as `core.pipeline` answers today.
@@ -124,7 +172,7 @@ say which and why.
 
 ### Rollout
 
-The release flips the eleven at update. The removal (§4) ships one release later.
+The release flips the eleven at update. The removal (§4) ships once §4's (a) to (e) hold.
 
 ### Rollback
 
@@ -152,5 +200,5 @@ library of real files, probes it, links a video from its yt-dlp sidecar and runs
 identity, fingerprint, style sample and access check: rows, `videos.state` included, the
 queue and the job log are identical on both sides, and N16 holds. T05: every write to
 `core.pipeline` is `409 not_switchable`. T06 waits for the update rehearsal's earlier
-scenarios (16.1 to 16.8, issue #804). §4 (removing the in-process path) ships one release
-later.
+scenarios (16.1 to 16.8, issue #804). §4 (removing the in-process path) waits for its preconditions (a) to (e), checked on
+2026-11-09 after v0.3.109 to v0.3.112 shipped: none held yet, and no stage was flipped back.

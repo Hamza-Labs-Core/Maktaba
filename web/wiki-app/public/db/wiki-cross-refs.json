@@ -3,7 +3,7 @@
   "generated_for": "Maktaba",
   "totals": {
     "epics": 58,
-    "stories": 699,
+    "stories": 700,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -6949,6 +6949,15 @@
       "slug": "joined-machines",
       "title": "Third-party plugins on joined machines",
       "story_file": "specs/epics/54-plugins/story-54-42-joined-machines.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.43",
+      "epic": 54,
+      "num": "43",
+      "slug": "fallback-counts",
+      "title": "Counting the in-process fallbacks",
+      "story_file": "specs/epics/54-plugins/story-54-43-fallback-counts.md",
       "plan_files": []
     },
     {

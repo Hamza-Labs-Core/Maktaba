@@ -19,6 +19,8 @@ import (
 	"net/mail"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/abuse"
@@ -291,11 +293,18 @@ type loginReq struct {
 
 // dummyHash is verified against when the email is unknown, so a miss
 // costs the same argon2id time as a wrong password and response time
-// does not reveal whether an account exists.
-var dummyHash = func() string {
+// does not reveal whether an account exists. It is made at the first
+// sign-in, not at start: argon2id takes 64 MiB, which every role of the
+// binary (the relay too) would otherwise hold from its start.
+var dummyHash = sync.OnceValue(func() string {
+	dummyHashMade.Add(1)
 	h, _ := argon2id.Hash("maktaba-timing-equaliser", argon2id.DefaultParams())
 	return h
-}()
+})
+
+// dummyHashMade counts how often dummyHash was made, so a test can tell
+// that the package's init did not make it.
+var dummyHashMade atomic.Int32
 
 // Login validates credentials and issues tokens. Unknown email and
 // wrong password both answer the same 401.
@@ -313,7 +322,7 @@ func (d *Deps) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if errors.Is(err, stores.ErrUserNotFound) || !u.PasswordHash.Valid {
-		_ = argon2id.Verify(req.Password, dummyHash)
+		_ = argon2id.Verify(req.Password, dummyHash())
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "")
 		return
 	}
