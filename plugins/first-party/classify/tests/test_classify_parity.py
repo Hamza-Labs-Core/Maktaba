@@ -270,7 +270,8 @@ async def test_classify_wave_4_asks_the_model_and_the_book_the_same(
             problems = await p.compare_n16(
                 tables, ignore=ignore, stages=selected(), perf=cfg.perf, timing_only=True
             )
-            slowest = p.report("tv.maktaba.classify")
+            # its own report: wave 1's library is two shows, this one's a single show
+            slowest = p.report("tv.maktaba.classify.wave4")
     finally:
         fake.close()
     assert problems == [], "\n".join(problems[:20]) + "\nslowest plugin jobs:\n" + slowest
