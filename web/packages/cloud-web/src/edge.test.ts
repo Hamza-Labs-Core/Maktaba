@@ -6,14 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { handle, type Env, type Site } from "./edge";
 import { APP_CSP, APP_SITE } from "./site";
-import { ADMIN_CSP, ADMIN_SITE, CONSOLE_SIGN_IN } from "../../admin-web/src/site";
-
-// read from disk without Node's types in web/'s tsconfig (as src/styles/posters.test.ts does;
-// vitest runs in web/)
-const FS = "node:fs";
-const { readFileSync } = (await import(/* @vite-ignore */ FS)) as {
-  readFileSync: (path: string, encoding: "utf8") => string;
-};
+import { ADMIN_CSP, ADMIN_SITE } from "../../admin-web/src/site";
 
 const FILES: Record<string, [string, string]> = {
   "/index.html": ["<!doctype html>app", "text/html; charset=utf-8"],
@@ -113,13 +106,13 @@ describe("app.maktaba.tv (maktaba-cloud-web)", () => {
 });
 
 describe("admin.maktaba.tv (maktaba-admin-web)", () => {
-  it("passes the console's API, /healthz and the sign-in routes until 50.33, nothing else", async () => {
+  it("passes the console's API and /healthz, nothing else", async () => {
     const { req, origin } = rig(ADMIN_SITE);
     const passed = [
       ["GET", "/v1/admin/accounts"],
       ["POST", "/v1/staff/login"],
+      ["POST", "/v1/staff/refresh"],
       ["GET", "/healthz"],
-      ...[...CONSOLE_SIGN_IN].map((s) => s.split(" ")),
     ];
     for (const [m, p] of passed) expect([p, (await req(m, p)).status]).toEqual([p, 200]);
     expect(origin).toEqual(passed.map(([m, p]) => `${m} ${p}`));
@@ -130,6 +123,11 @@ describe("admin.maktaba.tv (maktaba-admin-web)", () => {
       ["GET", "/v1/account/sessions"],
       ["PATCH", "/v1/account/me"],
       ["GET", "/v1/auth/login"],
+      // the customer sign-in the console used before staff accounts (50.33): no longer passed
+      ["POST", "/v1/auth/login"],
+      ["POST", "/v1/auth/refresh"],
+      ["POST", "/v1/auth/logout"],
+      ["GET", "/v1/account/me"],
       ["GET", "/readyz"],
     ]) {
       const res = await req(m, p);
@@ -169,16 +167,5 @@ describe("admin.maktaba.tv (maktaba-admin-web)", () => {
     const { req } = rig(ADMIN_SITE);
     const res = await req("GET", "/robots.txt");
     expect(await res.text()).toBe("User-agent: *\nDisallow: /\n");
-  });
-});
-
-describe("the console's sign-in routes until 50.33", () => {
-  it("are the admin listener's own list (cloud/cmd/maktaba-cloud ConsoleSignIn)", () => {
-    const go = readFileSync("../cloud/cmd/maktaba-cloud/role_api.go", "utf8");
-    const block = go.slice(go.indexOf("var ConsoleSignIn"));
-    const listed = [
-      ...block.slice(0, block.indexOf("}\n")).matchAll(/"([A-Z]+ \/[^"]+)": true/g),
-    ].map((m) => m[1]);
-    expect(listed.sort()).toEqual([...CONSOLE_SIGN_IN].sort());
   });
 });

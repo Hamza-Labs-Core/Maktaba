@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/audit"
@@ -99,11 +100,13 @@ func (d *Deps) now() time.Time {
 }
 
 // dummyHash is verified against for an unknown or unusable account, so a miss costs the same
-// argon2id time as a wrong password (§6, timing).
-var dummyHash = func() string {
+// argon2id time as a wrong password (§6, timing). It is made at the first sign-in, not at
+// start: argon2id takes 64 MiB, which every role of the binary (the relay too) would
+// otherwise hold from its start.
+var dummyHash = sync.OnceValue(func() string {
 	h, _ := argon2id.Hash("maktaba-staff-timing-equaliser", argon2id.DefaultParams())
 	return h
-}()
+})
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -209,13 +212,13 @@ func (d *Deps) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil || a.Status != "active" || a.PasswordHash == "" {
-		_ = argon2id.Verify(req.Password, dummyHash)
+		_ = argon2id.Verify(req.Password, dummyHash())
 		d.audit(r, a.ID, a.Email, audit.ActionStaffPasswordFailed, nil)
 		writeErr(w, http.StatusUnauthorized, "invalid_credentials")
 		return
 	}
 	if isLocked, until := (staffauth.Lockout{LockedUntil: a.LockedUntil}).Locked(now); isLocked {
-		_ = argon2id.Verify(req.Password, dummyHash)
+		_ = argon2id.Verify(req.Password, dummyHash())
 		locked(w, until, now)
 		return
 	}

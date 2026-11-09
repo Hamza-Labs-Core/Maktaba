@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/argon2id"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/staffauth"
 )
 
@@ -51,5 +52,17 @@ func TestLocked(t *testing.T) {
 	locked(rec, now.Add(90*time.Second), now)
 	if rec.Code != http.StatusLocked || rec.Header().Get("Retry-After") != "91" || !strings.Contains(rec.Body.String(), "account_locked") {
 		t.Fatalf("%d %v %s", rec.Code, rec.Header(), rec.Body.String())
+	}
+}
+
+// The timing equaliser is a real argon2id hash, made once, at the first use rather than at
+// start (64 MiB that every role of the binary would otherwise hold).
+func TestDummyHash(t *testing.T) {
+	h := dummyHash()
+	if h != dummyHash() {
+		t.Fatal("made twice")
+	}
+	if argon2id.Verify("maktaba-staff-timing-equaliser", h) != nil || argon2id.Verify("another", h) == nil {
+		t.Fatal("not a hash of its phrase")
 	}
 }
