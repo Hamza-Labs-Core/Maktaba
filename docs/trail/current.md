@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.110
-up_to_commit: f0c280cc3
-built_from: v0.3.109
+tag: v0.3.111
+up_to_commit: fd4bdfb4d
+built_from: v0.3.110
 ---
 
-# Trail snapshot: v0.3.110
+# Trail snapshot: v0.3.111
 
 ## Keep doing
 
@@ -498,6 +498,7 @@ built_from: v0.3.109
 | #1047 | 2026-11-08 | test(restore): the restore's tests no longer depend on the disk's free space |
 | #1057 | 2026-11-08 | ci(ci-paths): the first-party proofs run for the pipeline code their stages import |
 | #1059 | 2026-11-08 | test(plugins): N16 states the plugin path's per-call cost and judges CPU and paired wall time |
+| #1062 | 2026-11-08 | fix(plugins): moved stages open the file through the job's path map |
 
 ## Index
 
