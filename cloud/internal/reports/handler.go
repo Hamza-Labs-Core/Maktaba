@@ -429,7 +429,7 @@ func (d *AdminDeps) entry(r *http.Request, action string, id int64, detail map[s
 	e := audit.Entry{Action: action, TargetKind: "problem_report", TargetID: strconv.FormatInt(id, 10), Detail: detail,
 		IP: middleware.GetClientIP(r.Context())}
 	if u, ok := authmw.ServiceAdmin(r.Context()); ok {
-		e.ActorID, e.ActorEmail = u.ID, u.Email
+		e.ActorKind, e.ActorID, e.ActorEmail = audit.ActorStaff, u.ID, u.Email
 	}
 	return e
 }

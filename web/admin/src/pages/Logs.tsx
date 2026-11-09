@@ -10,7 +10,7 @@ import { Button } from "@ds/components/Button/Button";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { Input } from "@ds/components/Input/Input";
 import { Select } from "@ds/components/Select/Select";
-import { api, withQuery } from "@cloud-shared/api";
+import { api, withQuery } from "../api";
 import { useI18n } from "@cloud-shared/i18n";
 import { LoadError, Loading, Page, useLoad } from "@cloud-shared/ui";
 

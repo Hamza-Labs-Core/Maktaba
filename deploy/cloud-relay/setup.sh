@@ -133,6 +133,18 @@ if is_placeholder "$(get_env MAKTABA_CLOUD_TOKEN_SECRET)"; then
 	set_env MAKTABA_CLOUD_TOKEN_SECRET "$(openssl rand -base64 48 | tr -d '\n')"
 fi
 
+# The operator console's staff keys (story 50.33): its access-token secret (a different key from
+# the customers') and the 32-byte key that seals each staff TOTP secret. The api role needs
+# both when it serves the admin listener; the relay role ignores them.
+if is_placeholder "$(get_env MAKTABA_CLOUD_STAFF_TOKEN_SECRET)"; then
+	log "Generating MAKTABA_CLOUD_STAFF_TOKEN_SECRET..."
+	set_env MAKTABA_CLOUD_STAFF_TOKEN_SECRET "$(openssl rand -base64 48 | tr -d '\n')"
+fi
+if is_placeholder "$(get_env MAKTABA_CLOUD_STAFF_SECRET_KEY)"; then
+	log "Generating MAKTABA_CLOUD_STAFF_SECRET_KEY..."
+	set_env MAKTABA_CLOUD_STAFF_SECRET_KEY "$(openssl rand -hex 32)"
+fi
+
 # Postgres password — hex so it needs no URL-encoding in the DB URL.
 # Keep POSTGRES_PASSWORD and MAKTABA_CLOUD_DB_URL in lock-step.
 if is_placeholder "$(get_env POSTGRES_PASSWORD)"; then

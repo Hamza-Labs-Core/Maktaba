@@ -89,3 +89,36 @@ func TestTurnstileOnTheAuthRoutes(t *testing.T) {
 		t.Fatalf("providers: %s", r.body)
 	}
 }
+
+// Story 50.33 §2 with 50.30: the console's sign-in asks for a token from the console's own
+// origin, and fails closed. GET /v1/staff/config serves the site key for the widget.
+func TestTurnstileOnStaffSignIn(t *testing.T) {
+	ts := &fakeSiteverify{used: map[string]bool{}}
+	e := newEnvOpts(t, nil, ts)
+	acct := e.enrolStaff("ops@example.test", "service_admin")
+	c := e.client() // the harness sends the console's Origin to the admin router
+	if got := c.mustStatus(c.do(http.MethodGet, "/v1/staff/config", nil), http.StatusOK).json(t)["turnstile_site_key"]; got != "test-site-key" {
+		t.Fatalf("site key: %v", got)
+	}
+	login := func(tok string) resp {
+		return e.client().do(http.MethodPost, "/v1/staff/login",
+			map[string]any{"email": acct.email, "password": goodStaffPassword, "turnstile_token": tok})
+	}
+	for _, tok := range []string{"", "bad"} {
+		if r := login(tok); r.code != http.StatusForbidden || r.errCode() != "turnstile_failed" {
+			t.Fatalf("token %q: %d %s", tok, r.code, r.body)
+		}
+	}
+	if e.count(`SELECT count(*) FROM audit_log WHERE action = 'staff.signin.turnstile_failed' AND actor_kind = 'staff'`) != 2 {
+		t.Error("the refused bot checks are not audited")
+	}
+	if r := login("good-staff"); r.code != http.StatusOK {
+		t.Fatalf("a good token: %d %s", r.code, r.body)
+	}
+	ts.mu.Lock()
+	ts.down = true
+	ts.mu.Unlock()
+	if r := login("good-2"); r.code != http.StatusServiceUnavailable || r.errCode() != "turnstile_unavailable" {
+		t.Fatalf("siteverify down: %d %s", r.code, r.body)
+	}
+}

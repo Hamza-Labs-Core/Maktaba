@@ -160,14 +160,20 @@ func (d *Deps) DeleteUserData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if d.Audit != nil {
-		e := audit.Entry{Action: audit.ActionAdminErase, TargetKind: "user", TargetID: id,
-			Detail: map[string]any{"push_log_rows": rep.PushRows}, IP: middleware.GetClientIP(r.Context())}
-		if admin, ok := authmw.ServiceAdmin(r.Context()); ok {
-			e.ActorID, e.ActorEmail = admin.ID, admin.Email
-		}
-		_ = d.Audit.Write(r.Context(), e)
+		_ = d.Audit.Write(r.Context(), eraseEntry(r.Context(), id, rep.PushRows))
 	}
 	writeJSON(w, http.StatusOK, rep)
+}
+
+// eraseEntry is the audit row of an erasure: the staff account StaffGate admitted is its
+// actor, marked actor_kind staff (story 50.33 §8).
+func eraseEntry(ctx context.Context, userID string, pushRows int64) audit.Entry {
+	e := audit.Entry{Action: audit.ActionAdminErase, TargetKind: "user", TargetID: userID,
+		Detail: map[string]any{"push_log_rows": pushRows}, IP: middleware.GetClientIP(ctx)}
+	if admin, ok := authmw.ServiceAdmin(ctx); ok {
+		e.ActorKind, e.ActorID, e.ActorEmail = audit.ActorStaff, admin.ID, admin.Email
+	}
+	return e
 }
 
 func (d *Deps) live(r *http.Request) (int, int) {

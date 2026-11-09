@@ -51,7 +51,7 @@ func TestErrorsJoinTheHomesGroupsWithTheirReports(t *testing.T) {
 	if got := admin.do("GET", "/v1/admin/logs/search?q=x", nil); got.code != http.StatusServiceUnavailable || got.errCode() != "logs_unavailable" {
 		t.Fatalf("logs without W: %d %s", got.code, got.body)
 	}
-	if got := user.do("GET", "/v1/admin/errors", nil); got.code != http.StatusForbidden {
+	if got := user.do("GET", "/v1/admin/errors", nil); got.code != http.StatusUnauthorized {
 		t.Fatalf("a home admin's token: %d", got.code)
 	}
 }

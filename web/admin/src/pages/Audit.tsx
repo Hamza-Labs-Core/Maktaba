@@ -1,11 +1,12 @@
-// /audit — the audit log, newest first, 50 per page.
+// /audit — the audit log, newest first, 50 per page. /signins is the same list fixed to the
+// staff's own sign-in events (story 50.33 §8: actor_kind=staff, actions under staff.signin.).
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { Input } from "@ds/components/Input/Input";
-import { api, withQuery } from "@cloud-shared/api";
+import { api, withQuery } from "../api";
 import { useI18n } from "@cloud-shared/i18n";
 import { LoadError, Loading, Page, useLoad } from "@cloud-shared/ui";
 import { detailText } from "./AccountDetail";
@@ -13,6 +14,8 @@ import { Pager } from "./shared";
 
 export interface AuditEntry {
   id: string;
+  /** user, staff or cli (story 50.33 §8). */
+  actor_kind?: string;
   actor_id?: string;
   actor_email?: string;
   action: string;
@@ -26,15 +29,39 @@ export interface AuditEntry {
 const PAGE = 50;
 
 export function AdminAudit() {
+  const { t } = useI18n();
+  return <AuditView title={t("admin.audit.title")} />;
+}
+
+/** /signins: every staff sign-in step, kept or refused. */
+export function StaffSignins() {
+  const { t } = useI18n();
+  return (
+    <AuditView
+      title={t("staff.audit.signins")}
+      fixed={{ actor_kind: "staff", action: "staff.signin." }}
+    />
+  );
+}
+
+/** The audit list; `fixed` filters are always sent, and the action filter then stays hidden. */
+export function AuditView({
+  title,
+  fixed,
+}: {
+  title: string;
+  fixed?: { actor_kind?: string; action?: string };
+}) {
   const { t, n, formatDate } = useI18n();
   const [params, setParams] = useSearchParams();
   const actor = params.get("actor") ?? "";
-  const action = params.get("action") ?? "";
+  const action = fixed?.action ?? params.get("action") ?? "";
   const target = params.get("target") ?? "";
   const page = Math.max(1, Number(params.get("page")) || 1);
   const [draft, setDraft] = useState({ actor, action, target });
 
   const path = withQuery("/v1/admin/audit", {
+    actor_kind: fixed?.actor_kind,
     actor,
     action,
     target,
@@ -46,7 +73,10 @@ export function AdminAudit() {
   function apply(e: FormEvent) {
     e.preventDefault();
     const p = new URLSearchParams();
-    for (const [k, v] of Object.entries(draft)) if (v.trim()) p.set(k, v.trim());
+    for (const [k, v] of Object.entries(draft)) {
+      if (k === "action" && fixed?.action) continue;
+      if (v.trim()) p.set(k, v.trim());
+    }
     setParams(p, { replace: true });
   }
 
@@ -57,18 +87,20 @@ export function AdminAudit() {
   }
 
   return (
-    <Page title={t("admin.audit.title")}>
+    <Page title={title}>
       <form className="mkc-filters" onSubmit={apply} role="search">
         <Input
           label={t("admin.audit.actor")}
           value={draft.actor}
           onChange={(e) => setDraft({ ...draft, actor: e.target.value })}
         />
-        <Input
-          label={t("admin.audit.action")}
-          value={draft.action}
-          onChange={(e) => setDraft({ ...draft, action: e.target.value })}
-        />
+        {!fixed?.action && (
+          <Input
+            label={t("admin.audit.action")}
+            value={draft.action}
+            onChange={(e) => setDraft({ ...draft, action: e.target.value })}
+          />
+        )}
         <Input
           label={t("admin.audit.target")}
           value={draft.target}

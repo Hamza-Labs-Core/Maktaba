@@ -15,6 +15,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
 
 // Epic 50 story 50.32 §1: the operator console's routes exist only on the admin listener,
@@ -97,7 +98,7 @@ func TestTheAdminListenerAnswersOnlyItsName(t *testing.T) {
 }
 
 // T03: the user router has no admin or staff route at all, and the admin router nothing
-// but the console's, the probes and, until 50.33, the console's sign-in (ConsoleSignIn).
+// but the console's (its /v1/staff/* sign-in included) and the probes.
 func TestTheRoutersDoNotShareRoutes(t *testing.T) {
 	e := newEnv(t)
 	_ = chi.Walk(e.router, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
@@ -107,7 +108,7 @@ func TestTheRoutersDoNotShareRoutes(t *testing.T) {
 		return nil
 	})
 	_ = chi.Walk(e.admin, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
-		if !server.IsAdminPath(route) && route != "/healthz" && route != "/readyz" && !ConsoleSignIn[method+" "+route] {
+		if !server.IsAdminPath(route) && route != "/healthz" && route != "/readyz" {
 			t.Errorf("the admin router serves %s %s", method, route)
 		}
 		return nil
@@ -160,27 +161,48 @@ func TestTheUserListenerAnswersItsNames(t *testing.T) {
 	}
 }
 
-// Until 50.33 the console signs in on its own host with the account routes: the login and
-// refresh need the console's Origin like any other change, and the session cookie is the
-// host-only __Host- one, so it is never sent to a user name.
+// The console signs in on its own host with the staff routes (story 50.33): the sign-in
+// needs the console's Origin like any other change, and the session cookie is the host-only
+// __Host-maktaba_staff one, Strict, so it is never sent to a user name. The customer sign-in
+// is not on the console's listener at all.
 func TestTheConsoleSignsInOnItsOwnHost(t *testing.T) {
 	e := newEnv(t)
-	e.serviceAdmin("ops@example.test")
+	acct := e.enrolStaff("ops@example.test", stores.StaffRoleServiceAdmin)
 	anon := e.client()
-	login := map[string]any{"email": "ops@example.test", "password": goodPassword}
-	if code, got := anon.at(e.admin, testAdminHost, http.MethodPost, "/v1/auth/login", login, nil); code != http.StatusForbidden || !strings.Contains(got, "bad_origin") {
+	login := map[string]any{"email": acct.email, "password": goodStaffPassword}
+	if code, got := anon.at(e.admin, testAdminHost, http.MethodPost, "/v1/staff/login", login, nil); code != http.StatusForbidden || !strings.Contains(got, "bad_origin") {
 		t.Fatalf("login without the console's Origin: %d %s, want 403 bad_origin", code, got)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/v1/auth/login", strings.NewReader(`{"email":"ops@example.test","password":"`+goodPassword+`"}`))
-	req.Host = testAdminHost
-	req.RemoteAddr = "198.51.100.20:40000"
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Origin", "https://"+testAdminHost)
-	req.Header.Set("X-Maktaba-Staff", "1")
-	rec := httptest.NewRecorder()
-	e.admin.ServeHTTP(rec, req)
+	for _, p := range []string{"/v1/auth/login", "/v1/auth/refresh", "/v1/account/me"} {
+		if code, _ := anon.at(e.admin, testAdminHost, http.MethodPost, p, login, map[string]string{"Origin": "https://" + testAdminHost, "X-Maktaba-Staff": "1"}); code != http.StatusNotFound && code != http.StatusMethodNotAllowed {
+			t.Errorf("%s on the console's listener: %d, want 404", p, code)
+		}
+	}
+	post := func(path string, body string, cookie *http.Cookie) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		req.Host = testAdminHost
+		req.RemoteAddr = "198.51.100.20:40000"
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", "https://"+testAdminHost)
+		req.Header.Set("X-Maktaba-Staff", "1")
+		if cookie != nil {
+			req.AddCookie(cookie)
+		}
+		rec := httptest.NewRecorder()
+		e.admin.ServeHTTP(rec, req)
+		return rec
+	}
+	rec := post("/v1/staff/login", `{"email":"ops@example.test","password":"`+goodStaffPassword+`"}`, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("login from the console: %d %s", rec.Code, rec.Body.String())
+	}
+	var step1 struct {
+		MFAToken string `json:"mfa_token"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &step1)
+	rec = post("/v1/staff/mfa/totp", `{"mfa_token":"`+step1.MFAToken+`","code":"`+e.totp(acct)+`"}`, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("the second factor from the console: %d %s", rec.Code, rec.Body.String())
 	}
 	var res struct {
 		AccessToken string `json:"access_token"`
@@ -188,19 +210,18 @@ func TestTheConsoleSignsInOnItsOwnHost(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &res)
 	var cookie *http.Cookie
 	for _, c := range rec.Result().Cookies() {
-		if c.Name == "__Host-maktaba_refresh" {
+		if c.Name == "__Host-maktaba_staff" {
 			cookie = c
 		}
 	}
-	if cookie == nil || cookie.Domain != "" || cookie.Path != "/" || !cookie.Secure || !cookie.HttpOnly {
+	if cookie == nil || cookie.Domain != "" || cookie.Path != "/" || !cookie.Secure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode {
 		t.Fatalf("the console's session cookie: %+v", cookie)
 	}
 	staff := &client{e: e, ip: "198.51.100.20", token: res.AccessToken}
-	if code, got := staff.at(e.admin, testAdminHost, http.MethodGet, "/v1/account/me", nil, nil); code != http.StatusOK || !strings.Contains(got, "ops@example.test") {
-		t.Fatalf("GET /v1/account/me on the console: %d %s", code, got)
+	if code, got := staff.at(e.admin, testAdminHost, http.MethodGet, "/v1/staff/me", nil, nil); code != http.StatusOK || !strings.Contains(got, "ops@example.test") {
+		t.Fatalf("GET /v1/staff/me on the console: %d %s", code, got)
 	}
-	// nothing else of the account surface is on the console's listener
-	if code, _ := staff.at(e.admin, testAdminHost, http.MethodGet, "/v1/account/sessions", nil, nil); code != http.StatusNotFound {
-		t.Errorf("GET /v1/account/sessions on the console: %d, want 404", code)
+	if rec := post("/v1/staff/refresh", "", cookie); rec.Code != http.StatusOK {
+		t.Fatalf("refresh from the console: %d %s", rec.Code, rec.Body.String())
 	}
 }

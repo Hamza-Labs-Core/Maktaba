@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { setAccessToken } from "@cloud-shared/api";
-import { renderAt, session, stubFetch, user } from "../test/harness";
+import { setStaffToken } from "../api";
+import { renderAt, staffSession, stubFetch } from "../test/harness";
 
-beforeEach(() => setAccessToken(null));
+beforeEach(() => setStaffToken(null));
 afterEach(() => vi.unstubAllGlobals());
 
 const DENIED: [number, unknown] = [403, { error: "admin_access_denied", message: "denied" }];
@@ -13,7 +13,7 @@ describe("admin console", () => {
   it("renders Access denied when the API answers 403", async () => {
     // the URL is reachable by anyone; the API is the authority
     stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "user" })),
+      "POST /v1/staff/refresh": staffSession([]),
       "GET /v1/admin/accounts": DENIED,
     });
     renderAt("/accounts");
@@ -23,7 +23,7 @@ describe("admin console", () => {
 
   it("renders Access denied on the overview too", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "POST /v1/staff/refresh": staffSession(),
       "GET /v1/admin/fleet": DENIED,
       "GET /v1/admin/revenue": DENIED,
     });
@@ -33,7 +33,7 @@ describe("admin console", () => {
 
   it("sends search, filters and paging to the accounts list", async () => {
     const f = stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "POST /v1/staff/refresh": staffSession(),
       "GET /v1/admin/accounts": [
         200,
         {
@@ -74,7 +74,7 @@ describe("admin console", () => {
   it("requires a reason to suspend, and posts it", async () => {
     let status = "active";
     const f = stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "POST /v1/staff/refresh": staffSession(),
       "GET /v1/admin/accounts/u2": () =>
         new Response(
           JSON.stringify({
@@ -124,7 +124,7 @@ describe("admin console", () => {
   it("sets a plan by hand with a reason", async () => {
     let plan = "free";
     const f = stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "POST /v1/staff/refresh": staffSession(),
       "GET /v1/admin/accounts/u4": () =>
         new Response(
           JSON.stringify({
@@ -172,7 +172,7 @@ describe("admin console", () => {
 
   it("keeps the dialog open with the error when suspending is refused", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "POST /v1/staff/refresh": staffSession(),
       "GET /v1/admin/accounts/u3": [
         200,
         {
@@ -206,7 +206,7 @@ describe("admin console", () => {
 
   it("renders Access denied on the usage page", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "user" })),
+      "POST /v1/staff/refresh": staffSession([]),
       "GET /v1/admin/usage": DENIED,
     });
     renderAt("/usage");
@@ -243,7 +243,7 @@ describe("admin console", () => {
       vitals: [{ metric: "LCP", p75: 1834.4, samples: 90 }],
     };
     const f = stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "POST /v1/staff/refresh": staffSession(),
       "GET /v1/admin/usage": [200, usage],
     });
     renderAt("/usage");
@@ -261,7 +261,7 @@ describe("admin console", () => {
 
   it("links the usage page from the admin nav", async () => {
     stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "POST /v1/staff/refresh": staffSession(),
       "GET /v1/admin/usage": DENIED,
     });
     renderAt("/usage");

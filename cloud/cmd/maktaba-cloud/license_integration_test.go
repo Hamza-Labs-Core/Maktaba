@@ -83,8 +83,8 @@ func TestPlanLicenseOnTheRealRouter(t *testing.T) {
 	}
 	e.exec(`UPDATE users SET status = 'active' WHERE id = $1`, uid)
 
-	// the admin routes need the role
-	if got := owner.do("POST", "/v1/admin/licenses/cloud-"+id+"/revoke", map[string]string{"reason": "x"}); got.code != http.StatusForbidden {
+	// the admin routes need a staff session: a customer's token is none (story 50.33)
+	if got := owner.do("POST", "/v1/admin/licenses/cloud-"+id+"/revoke", map[string]string{"reason": "x"}); got.code != http.StatusUnauthorized {
 		t.Fatalf("an account revoked a license: %d", got.code)
 	}
 	if got := agent.do("GET", "/v1/admin/licenses", nil); got.code != http.StatusUnauthorized {

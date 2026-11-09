@@ -21,12 +21,16 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	authmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/symbols"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/symbols/symbolstest"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/migrations"
 )
+
+// testOperator is the staff account the rig's gate admits.
+var testOperator = authmw.Operator{ID: "6f1c2a4e-3b5d-4c7e-9f80-1a2b3c4d5e6f", Email: "ops@example.test", SessionID: "s1"}
 
 // Against Postgres (MAKTABA_CLOUD_DB_URL), in a scratch database of its own.
 func testDB(t *testing.T) (*sql.DB, context.Context) {
@@ -114,7 +118,8 @@ func newRig(t *testing.T, admitted bool) *rig {
 				writeErr(w, http.StatusForbidden, "admin_access_denied", "")
 				return
 			}
-			next.ServeHTTP(w, req)
+			// as StaffGate admits a staff account (story 50.33): the handlers audit it as staff
+			next.ServeHTTP(w, req.WithContext(authmw.WithOperator(req.Context(), testOperator)))
 		})
 	}
 	rg.syms = &symbols.Deps{Store: &symbols.Store{DB: d}, Token: "symtok", Gate: gate}
@@ -249,10 +254,17 @@ func TestTheServiceAdminTriagesAndRepliesAndTheHomeFetchesIt(t *testing.T) {
 	if c := post("/reply", `{"reply":"Fixed in 0.3.96, thank you."}`); c != 204 {
 		t.Fatalf("reply: %d", c)
 	}
-	var audits int
+	var audits, staffRows int
 	_ = rg.db.QueryRow(`SELECT count(*) FROM audit_log WHERE target_kind = 'problem_report'`).Scan(&audits)
 	if audits != 3 {
 		t.Fatalf("audit rows: %d", audits)
+	}
+	// each triage row names the staff account that acted, as a staff actor (story 50.33 §8)
+	_ = rg.db.QueryRow(`SELECT count(*) FROM audit_log WHERE target_kind = 'problem_report'
+		AND actor_kind = 'staff' AND actor_id::text = $1 AND actor_email = $2`,
+		testOperator.ID, testOperator.Email).Scan(&staffRows)
+	if staffRows != 3 {
+		t.Fatalf("staff audit rows: %d of 3", staffRows)
 	}
 	// home a fetches its answer; home b has none
 	rec := rg.do("GET", "/v1/homes/"+a+"/reports/replies?since=2026-11-07T00:00:00Z", "good", nil, "")

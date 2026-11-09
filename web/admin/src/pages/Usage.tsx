@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Card } from "@ds/components/Card/Card";
 import { Select } from "@ds/components/Select/Select";
-import { api, withQuery } from "@cloud-shared/api";
+import { api, withQuery } from "../api";
 import { useI18n } from "@cloud-shared/i18n";
 import { LoadError, Loading, Page, useLoad } from "@cloud-shared/ui";
 

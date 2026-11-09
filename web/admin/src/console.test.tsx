@@ -1,16 +1,16 @@
-// Story 50.32: the operator console on its own: its catalogs in both languages (T09), a sign-in
-// when signed out, its own 404, and Arabic right to left.
+// Story 50.32: the operator console on its own: its catalogs in both languages (T09), the staff
+// sign-in when signed out (story 50.33), its own 404, and Arabic right to left.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
-import { CloudApiError, setAccessToken } from "@cloud-shared/api";
+import { CloudApiError, setStaffToken } from "./api";
 import { errorMessage } from "@cloud-shared/ui";
 import { MESSAGES } from "./catalogs";
 import { STAFF_HEADERS } from "./staff";
 import en from "./i18n/en.json";
 import ar from "./i18n/ar.json";
-import { renderAt, session, signedOut, stubFetch, user } from "./test/harness";
+import { renderAt, staffSession, staffSignedOut, stubFetch } from "./test/harness";
 
-beforeEach(() => setAccessToken(null));
+beforeEach(() => setStaffToken(null));
 afterEach(() => {
   vi.unstubAllGlobals();
   localStorage.clear();
@@ -27,17 +27,17 @@ describe("the operator console", () => {
   });
 
   it("asks a signed-out visitor to sign in and calls no admin API", async () => {
-    const f = stubFetch({ "POST /v1/auth/refresh": signedOut });
+    const f = stubFetch({ "POST /v1/staff/refresh": staffSignedOut });
     renderAt("/accounts");
-    expect(
-      await screen.findByRole("heading", { name: "Maktaba operator console" })
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Staff sign-in" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeInTheDocument();
+    // the customer sign-in is gone from the console
+    expect(f.calls.filter((c) => c.path.startsWith("/v1/auth/"))).toEqual([]);
     expect(f.calls.filter((c) => c.path.startsWith("/v1/admin/"))).toEqual([]);
   });
 
   it("answers an unknown path with its own 404", async () => {
-    stubFetch({ "POST /v1/auth/refresh": session(user({ role: "service_admin" })) });
+    stubFetch({ "POST /v1/staff/refresh": staffSession() });
     renderAt("/nowhere");
     expect(
       await screen.findByRole("heading", { name: "This page doesn't exist." })
@@ -46,9 +46,10 @@ describe("the operator console", () => {
 
   it("is right to left in Arabic", async () => {
     localStorage.setItem("mkt:cloud:locale", "ar");
-    stubFetch({ "POST /v1/auth/refresh": signedOut });
+    stubFetch({ "POST /v1/staff/refresh": staffSignedOut });
     renderAt("/");
-    expect(await screen.findByRole("heading", { name: "لوحة تشغيل مكتبة" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "تسجيل دخول الفريق" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "لوحة تشغيل مكتبة" })).toBeInTheDocument();
     await waitFor(() => expect(document.documentElement.dir).toBe("rtl"));
   });
 

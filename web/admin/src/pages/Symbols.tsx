@@ -8,7 +8,7 @@
 import { useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
-import { api } from "@cloud-shared/api";
+import { api } from "../api";
 import { useI18n } from "@cloud-shared/i18n";
 import { LoadError, Loading, Page, useLoad } from "@cloud-shared/ui";
 

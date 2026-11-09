@@ -344,10 +344,6 @@ func (d *Deps) setStatus(w http.ResponseWriter, r *http.Request, status string) 
 	action := audit.ActionAdminUnsuspend
 	if status == stores.StatusSuspended {
 		action = audit.ActionAdminSuspend
-		if target.Role == stores.RoleServiceAdmin {
-			writeErr(w, http.StatusConflict, "cannot_suspend_admin", "a service admin cannot be suspended; revoke the role first")
-			return
-		}
 	}
 	tx, err := d.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -677,12 +673,6 @@ func (d *Deps) Block(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if req.SubjectKind == "user" {
-		if u, err := d.lookup(r.Context(), req.Subject); err == nil && u.Role == stores.RoleServiceAdmin {
-			writeErr(w, http.StatusConflict, "cannot_suspend_admin", "a service admin cannot be blocked; revoke the role first")
-			return
-		}
-	}
 	var exp *time.Time
 	if req.ExpiresInHours > 0 {
 		t := d.now().Add(time.Duration(req.ExpiresInHours) * time.Hour)
@@ -733,7 +723,7 @@ func (d *Deps) AuditLog(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	limit, offset := pageParams(r, audit.MaxPage, audit.MaxPage)
 	entries, total, err := d.Audit.List(r.Context(), audit.Filter{
-		ActorID: q.Get("actor"), Action: q.Get("action"), TargetID: q.Get("target"), Limit: limit, Offset: offset,
+		ActorKind: q.Get("actor_kind"), ActorID: q.Get("actor"), Action: q.Get("action"), TargetID: q.Get("target"), Limit: limit, Offset: offset,
 	})
 	if err != nil {
 		d.fail(w, r, "audit list", err)
@@ -754,7 +744,7 @@ func (d *Deps) entry(r *http.Request, action, target string, detail map[string]a
 		}
 	}
 	if u, ok := authmw.ServiceAdmin(r.Context()); ok {
-		e.ActorID, e.ActorEmail = u.ID, u.Email
+		e.ActorKind, e.ActorID, e.ActorEmail = audit.ActorStaff, u.ID, u.Email
 	}
 	return e
 }

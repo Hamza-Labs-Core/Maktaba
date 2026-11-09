@@ -149,6 +149,15 @@ leader's api reads it when step 6 restarts it. Without the secret nothing change
 `POST /v1/symbols` answers `503 symbols_off`. Adding the secret is the owner's one step
 ([docs/testflight.md](../../docs/testflight.md#crash-symbols-owner)).
 
+The operator console's staff keys (story 50.33): `/etc/maktaba/cloud.env` on both nodes carries
+`MAKTABA_CLOUD_STAFF_TOKEN_SECRET` (`openssl rand -base64 48`, never the customers'
+`MAKTABA_CLOUD_TOKEN_SECRET`) and `MAKTABA_CLOUD_STAFF_SECRET_KEY` (`openssl rand -hex 32`, which
+seals each staff TOTP secret: lose it and every staff account needs `staff reset-mfa`). The api
+refuses to start with `admin_listen_addr` set and either missing. Both go in the encrypted
+secrets backup (`bin/backup-secrets`). The optional network allow-list is `cloud.toml`'s
+`[admin] ip_allowlist = ["198.51.100.0/24"]` (empty: off); changed by a config deploy, and on the
+leader over SSH with an api restart if it locks the owner out.
+
 ## Backups and restore (story 50.09)
 
 pgBackRest writes the WAL archive (at least every minute) and every backup to **two

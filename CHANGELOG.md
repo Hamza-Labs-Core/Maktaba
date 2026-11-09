@@ -633,6 +633,19 @@ build fails when the two differ.
   name must carry that home's id, and an address two homes list is checked against neither name:
   the app goes on to the home's next connection.
 
+- **The operator console signs in with staff accounts and a second factor (Epic 50 story
+  50.33, part 1).** An operator was a customer account with a role, signed in with an email and
+  a password like any customer. Operators are now separate staff accounts, created only from
+  the leader's CLI (`maktaba-cloud staff add`), that enrol through a one-time link with a
+  password and a TOTP app and get 10 recovery codes. Every admin route checks a staff session
+  with its second factor and the role from the database on each request; a customer's token is
+  refused there. Sessions end after 15 minutes idle and 8 hours in all; suspending, blocking,
+  setting plans, revoking licenses and deleting a user's data need a code from the last 5
+  minutes. Five failed steps lock the account for 30 minutes and alert the owner, as does a
+  recovery code's use. Every sign-in step and admin request is audited as staff, and an optional
+  network allow-list can close the console to other addresses. The old customer role was
+  cleared and `maktaba-cloud admin` points to `staff`. Passkeys come next.
+
 ### Added
 
 - **A runner's tools read a library file on a share on Windows (story 54.23).** A job that

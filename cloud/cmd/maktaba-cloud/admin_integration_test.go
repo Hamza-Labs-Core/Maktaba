@@ -9,9 +9,11 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/staffauth"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
 
@@ -40,20 +42,35 @@ func concrete(route, id string) string {
 	return strings.NewReplacer("{id}", id).Replace(route)
 }
 
-// The service-admin console is enforced server-side: no token is 401,
-// a normal cloud account is 403 on every admin route — including one
-// whose email is at the old operator domain — and only an account with
-// the service_admin role (granted from the CLI) gets through. Denied
-// attempts are audited.
+// T01 (story 50.33): the console is enforced server-side on every admin route the router
+// serves. No session is 401; a customer's token is 401 (it is no staff token: another key,
+// another audience); a staff account without service_admin is 403 admin_access_denied; a
+// staff token minted without a second factor is 403 mfa_required; a service admin is served,
+// except that a sensitive route is 401 reauth_required until a fresh MFA check (T07). Every
+// refusal of a presented credential is audited, and every request served is admin.request.
 func TestAdminRoutesRequireServiceAdmin(t *testing.T) {
 	e := newEnv(t)
-	victim := e.registerVerified("victim@example.test")
-	_ = victim
+	e.registerVerified("victim@example.test")
 	victimID := e.userID("victim@example.test")
-	user := e.registerVerified("user@example.test")
+	customer := e.registerVerified("user@example.test")
 	domainUser := e.registerVerified("mallory@hamzalabs.com")
-	admin := e.serviceAdmin("ops@example.test")
+	noRole := e.staff("helper@example.test", "")
+	adminAcct := e.enrolStaff("ops@example.test", stores.StaffRoleServiceAdmin)
+	admin := e.staffSignIn(adminAcct)
 	anon := e.client()
+
+	// a token for the admin's own live session, minted without a second factor (a bug or a
+	// forged signing path: sign-in can't produce one)
+	var sid string
+	if err := e.pool.DB.QueryRow(`SELECT id FROM staff_sessions WHERE staff_id = $1 AND revoked_at IS NULL`, adminAcct.id).Scan(&sid); err != nil {
+		t.Fatal(err)
+	}
+	pwdOnly := e.client()
+	tok, err := staffauth.NewSigner([]byte(testStaffTokenSecret)).Issue(adminAcct.id, sid, []string{staffauth.AMRPassword}, time.Now(), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pwdOnly.token = tok
 
 	routes := adminRoutes(t, e.admin)
 	// the problem reports homes sent (53.16): a home admin's cloud token reads none of them
@@ -68,50 +85,89 @@ func TestAdminRoutesRequireServiceAdmin(t *testing.T) {
 	if r := anon.do("POST", "/v1/symbols", nil); r.code != http.StatusServiceUnavailable || r.errCode() != "symbols_off" {
 		t.Errorf("an upload with no symbols token set up = %d %s", r.code, r.errCode())
 	}
+	body := map[string]any{"reason": "role test", "subject_kind": "ip", "subject": "203.0.113.9"}
 	for _, rt := range routes {
 		method, path := rt[0], concrete(rt[1], victimID)
-		body := map[string]any{"reason": "role test", "subject_kind": "ip", "subject": "203.0.113.9"}
-		if r := anon.do(method, path, body); r.code != http.StatusUnauthorized {
-			t.Errorf("anonymous %s %s = %d, want 401", method, path, r.code)
+		if r := anon.do(method, path, body); r.code != http.StatusUnauthorized || r.errCode() != "no_session" {
+			t.Errorf("anonymous %s %s = %d %s, want 401 no_session", method, path, r.code, r.body)
 		}
-		for name, c := range map[string]*client{"user": user, "operator-domain user": domainUser} {
-			if r := c.do(method, path, body); r.code != http.StatusForbidden || r.errCode() != "admin_access_denied" {
-				t.Errorf("%s %s %s = %d %s, want 403 admin_access_denied", name, method, path, r.code, r.body)
+		for name, c := range map[string]*client{"customer": customer, "operator-domain customer": domainUser} {
+			if r := c.do(method, path, body); r.code != http.StatusUnauthorized || r.errCode() != "no_session" {
+				t.Errorf("%s %s %s = %d %s, want 401 no_session", name, method, path, r.code, r.body)
 			}
 		}
+		if r := noRole.do(method, path, body); r.code != http.StatusForbidden || r.errCode() != "admin_access_denied" {
+			t.Errorf("staff without the role %s %s = %d %s, want 403 admin_access_denied", method, path, r.code, r.body)
+		}
+		if r := pwdOnly.do(method, path, body); r.code != http.StatusForbidden || r.errCode() != "mfa_required" {
+			t.Errorf("a token without MFA %s %s = %d %s, want 403 mfa_required", method, path, r.code, r.body)
+		}
 	}
-	denied := e.count(`SELECT count(*) FROM audit_log WHERE action = 'admin.access_denied'`)
-	if denied != 2*len(routes) {
-		t.Errorf("denied attempts audited %d, want %d", denied, 2*len(routes))
+	denied := e.count(`SELECT count(*) FROM audit_log WHERE action = 'admin.access_denied' AND actor_kind = 'staff'`)
+	if want := 4 * len(routes); denied != want {
+		t.Errorf("refusals audited %d, want %d (two customers, the staff account without the role, the token without MFA)", denied, want)
 	}
 	if victimSusp := e.count(`SELECT count(*) FROM users WHERE id = $1 AND status = 'suspended'`, victimID); victimSusp != 0 {
 		t.Fatal("a denied request changed state")
 	}
 
-	// The service admin gets through every route (the unblock of a
-	// subject that is not listed is a 404, which is still past the gate).
+	// T07: a sensitive route needs an MFA check in the last 5 minutes. The admin's last one is
+	// put 6 minutes back: every sensitive route is 401 reauth_required, the others served.
+	e.exec(`UPDATE staff_sessions SET auth_time = now() - interval '6 minutes' WHERE id = $1`, sid)
+	served := func(r resp) bool {
+		// the cloud's log routes answer 503 logs_unavailable with no index on W (53.17): past
+		// the gate, and saying why; the unblock of a subject not listed is a 404, past it too
+		if r.code == http.StatusServiceUnavailable && r.errCode() == "logs_unavailable" {
+			return true
+		}
+		return r.code != http.StatusUnauthorized && r.code != http.StatusForbidden && r.code < 500
+	}
+	sensitive := 0
 	for _, rt := range routes {
 		method, path := rt[0], concrete(rt[1], victimID)
-		body := map[string]any{"reason": "role test", "subject_kind": "ip", "subject": "203.0.113.9"}
 		r := admin.do(method, path, body)
-		// the cloud's log routes answer 503 logs_unavailable with no index on W (53.17): past
-		// the gate, and saying why
-		if r.code == http.StatusServiceUnavailable && r.errCode() == "logs_unavailable" {
+		if staffauth.IsSensitive(method, rt[1]) {
+			sensitive++
+			if r.code != http.StatusUnauthorized || r.errCode() != "reauth_required" {
+				t.Errorf("sensitive %s %s with a 6-minute-old check = %d %s, want 401 reauth_required", method, path, r.code, r.body)
+			}
 			continue
 		}
-		if r.code == http.StatusUnauthorized || r.code == http.StatusForbidden || r.code >= 500 {
+		if !served(r) {
 			t.Errorf("service admin %s %s = %d %s", method, path, r.code, r.body)
 		}
 	}
+	if sensitive != len(staffauth.Sensitive) {
+		t.Errorf("the router serves %d of the %d sensitive routes", sensitive, len(staffauth.Sensitive))
+	}
+	// a fresh TOTP check opens them, and is audited
+	re := admin.mustStatus(admin.do("POST", "/v1/staff/reauth/totp", map[string]string{"code": e.totp(adminAcct)}), http.StatusOK).json(t)
+	admin.token, _ = re["access_token"].(string)
+	for _, rt := range routes {
+		if !staffauth.IsSensitive(rt[0], rt[1]) {
+			continue
+		}
+		if r := admin.do(rt[0], concrete(rt[1], victimID), body); !served(r) {
+			t.Errorf("sensitive %s %s after the re-check = %d %s", rt[0], rt[1], r.code, r.body)
+		}
+	}
+	if e.count(`SELECT count(*) FROM audit_log WHERE action = 'staff.reauth' AND actor_id = $1`, adminAcct.id) != 1 {
+		t.Error("the re-check is not audited")
+	}
+	// every request served is an admin.request row naming the account, the route and the status
+	if n := e.count(`SELECT count(*) FROM audit_log WHERE action = 'admin.request' AND actor_kind = 'staff'
+		AND actor_id = $1 AND detail ? 'route' AND detail ? 'status'`, adminAcct.id); n < len(routes) {
+		t.Errorf("admin.request rows %d, want at least %d", n, len(routes))
+	}
 
-	// Revoking the role takes effect on the next request (the role is
-	// read from the database, not the token).
+	// Revoking the role takes effect at once (the role is read from the database, not the
+	// token), and ends the account's sessions (§4).
 	var out bytes.Buffer
-	if err := adminRole(context.Background(), stores.NewUsers(e.pool.DB), auditLogFor(e), "revoke", "ops@example.test", &out); err != nil {
+	if err := e.staffCLI(&out).run(context.Background(), "revoke", "ops@example.test", stores.StaffRoleServiceAdmin); err != nil {
 		t.Fatal(err)
 	}
-	if r := admin.do("GET", "/v1/admin/fleet", nil); r.code != http.StatusForbidden {
-		t.Fatalf("revoked admin: %d", r.code)
+	if r := admin.do("GET", "/v1/admin/fleet", nil); r.code != http.StatusUnauthorized {
+		t.Fatalf("revoked admin: %d %s", r.code, r.body)
 	}
 }
 
@@ -122,8 +178,9 @@ func TestAdminSuspendAndConsole(t *testing.T) {
 	const email = "target@example.test"
 	target := e.registerVerified(email)
 	tid := e.userID(email)
-	admin := e.serviceAdmin("ops@example.test")
-	aid := e.userID("ops@example.test")
+	adminAcct := e.enrolStaff("ops@example.test", stores.StaffRoleServiceAdmin)
+	admin := e.staffSignIn(adminAcct)
+	aid := adminAcct.id
 
 	list := admin.mustStatus(admin.do("GET", "/v1/admin/accounts?q=TARGET@", nil), 200).json(t)
 	if list["total"].(float64) != 1 || list["accounts"].([]any)[0].(map[string]any)["id"] != tid {
@@ -139,8 +196,9 @@ func TestAdminSuspendAndConsole(t *testing.T) {
 	if r := admin.do("POST", "/v1/admin/accounts/"+tid+"/suspend", map[string]string{"reason": "  "}); r.code != 400 || r.errCode() != "reason_required" {
 		t.Fatalf("no reason: %d %s", r.code, r.body)
 	}
-	if r := admin.do("POST", "/v1/admin/accounts/"+aid+"/suspend", map[string]string{"reason": "oops"}); r.code != 409 || r.errCode() != "cannot_suspend_admin" {
-		t.Fatalf("suspend admin: %d %s", r.code, r.body)
+	// a staff account is no cloud account: there is none to suspend by its id
+	if r := admin.do("POST", "/v1/admin/accounts/"+aid+"/suspend", map[string]string{"reason": "oops"}); r.code != 404 {
+		t.Fatalf("suspend a staff id: %d %s", r.code, r.body)
 	}
 	admin.mustStatus(admin.do("POST", "/v1/admin/accounts/"+tid+"/suspend", map[string]string{"reason": "abuse report #12"}), http.StatusNoContent)
 
@@ -174,7 +232,7 @@ func TestAdminSuspendAndConsole(t *testing.T) {
 	// Fleet, servers, revenue, abuse, audit read correctly.
 	e.exec(`INSERT INTO servers (owner_user_id, name, slug, server_secret_hash) VALUES ($1,'Box','tgt-box','x')`, tid)
 	f := admin.mustStatus(admin.do("GET", "/v1/admin/fleet", nil), 200).json(t)
-	if f["users_total"].(float64) != 2 || f["servers_total"].(float64) != 1 {
+	if f["users_total"].(float64) != 1 || f["servers_total"].(float64) != 1 {
 		t.Fatalf("fleet: %v", f)
 	}
 	sv := admin.mustStatus(admin.do("GET", "/v1/admin/servers?status=offline", nil), 200).json(t)
@@ -189,9 +247,6 @@ func TestAdminSuspendAndConsole(t *testing.T) {
 		t.Fatalf("revenue: %v", rev)
 	}
 
-	if r := admin.do("POST", "/v1/admin/abuse/block", map[string]any{"subject_kind": "user", "subject": aid, "reason": "x"}); r.code != 409 {
-		t.Fatalf("block admin: %d", r.code)
-	}
 	admin.mustStatus(admin.do("POST", "/v1/admin/abuse/block", map[string]any{"subject_kind": "user", "subject": tid, "reason": "spam", "expires_in_hours": 2}), http.StatusNoContent)
 	if r := e.client().do("POST", "/v1/auth/login", map[string]string{"email": email, "password": goodPassword}); r.code != 403 || r.errCode() != "blocked" {
 		t.Fatalf("blocked user login: %d %s", r.code, r.body)
@@ -214,32 +269,25 @@ func TestAdminSuspendAndConsole(t *testing.T) {
 	}
 }
 
-// The role can only be granted from the CLI, to a verified active
-// account.
-func TestAdminCLIGrant(t *testing.T) {
+// T08 (story 50.33 §5): every state-changing admin route the router serves is either in
+// staffauth.Sensitive (it needs a fresh MFA check) or in staffauth.NotSensitive with the
+// reason it doesn't. A new mutating route that is in neither fails here, by name.
+func TestEveryMutatingAdminRouteIsClassified(t *testing.T) {
 	e := newEnv(t)
-	users := stores.NewUsers(e.pool.DB)
-	c := e.client()
-	c.mustStatus(c.do("POST", "/v1/auth/register", map[string]string{"email": "new@example.test", "password": goodPassword}), http.StatusAccepted)
-	var out bytes.Buffer
-	if err := adminRole(context.Background(), users, auditLogFor(e), "grant", "new@example.test", &out); err == nil {
-		t.Fatal("granted to an unverified account")
+	for _, rt := range adminRoutes(t, e.admin) {
+		method, route := rt[0], rt[1]
+		if method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions {
+			continue
+		}
+		key := method + " " + route
+		if !staffauth.Sensitive[key] && staffauth.NotSensitive[key] == "" {
+			t.Errorf("%s changes state but is neither in staffauth.Sensitive nor in NotSensitive with a reason", key)
+		}
 	}
-	if err := adminRole(context.Background(), users, auditLogFor(e), "grant", "nobody@example.test", &out); err == nil {
-		t.Fatal("granted to a missing account")
-	}
-	e.serviceAdmin("ops@example.test")
-	out.Reset()
-	if err := adminRole(context.Background(), users, auditLogFor(e), "list", "", &out); err != nil || !strings.Contains(out.String(), "ops@example.test") {
-		t.Fatalf("list: %v %q", err, out.String())
-	}
-	if e.count(`SELECT count(*) FROM audit_log WHERE action = 'role.grant' AND actor_email = 'cli'`) != 1 {
-		t.Fatal("grant not audited")
-	}
-	// No HTTP route can set the role: a PATCH carrying role is ignored.
-	u := e.registerVerified("climber@example.test")
-	u.do("PATCH", "/v1/account/me", map[string]string{"role": "service_admin"})
-	if r := u.do("GET", "/v1/admin/fleet", nil); r.code != 403 {
-		t.Fatalf("self-promotion: %d", r.code)
+	for key := range staffauth.Sensitive {
+		method, route, _ := strings.Cut(key, " ")
+		if !slices.Contains(adminRoutes(t, e.admin), [2]string{method, route}) {
+			t.Errorf("staffauth.Sensitive names %s, which the router does not serve", key)
+		}
 	}
 }

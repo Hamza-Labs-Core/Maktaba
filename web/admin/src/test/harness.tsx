@@ -15,3 +15,23 @@ export function renderAt(path: string) {
     </Providers>
   );
 }
+
+/** A staff refresh route that restores a session for a staff account with these roles. */
+export function staffSession(
+  roles: string[] = ["service_admin"],
+  email = "ops@example.com"
+): [number, unknown] {
+  return [
+    200,
+    {
+      access_token: "staff-tok",
+      expires_in: 600,
+      idle_ends_at: "2026-11-08T12:15:00Z",
+      capped_at: "2026-11-08T20:00:00Z",
+      staff: { id: "s1", email, roles },
+    },
+  ];
+}
+
+/** A staff refresh route with no session (no cookie). */
+export const staffSignedOut: [number, unknown] = [401, { error: "no_session" }];

@@ -128,6 +128,20 @@ groups:
         annotations:
           summary: "{{ $labels.service }} errors at 5× their usual rate"
           runbook_url: docs/runbooks/cloud/errors.md
+      # the console's staff accounts (story 50.33 §6): each is an error line with its code,
+      # written by the api role (cloud/internal/handlers/staff), and pages at once
+      - alert: staff_lockout
+        expr: sum by (service) (increase(maktaba_errors_total{code="staff_lockout"}[10m])) > 0
+        labels: {severity: sev2}
+        annotations:
+          summary: "A staff account was locked after 5 failed sign-in steps"
+          runbook_url: docs/runbooks/cloud/staff-security.md
+      - alert: staff_recovery_code_used
+        expr: sum by (service) (increase(maktaba_errors_total{code="staff_recovery_code_used"}[10m])) > 0
+        labels: {severity: sev2}
+        annotations:
+          summary: "A staff account signed in with a recovery code"
+          runbook_url: docs/runbooks/cloud/staff-security.md
       - alert: log_forward_lagging
         expr: max by (node) (maktaba_log_forward_lag_seconds) > 60
         for: 5m

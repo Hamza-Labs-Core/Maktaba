@@ -125,6 +125,10 @@ services:
       MAKTABA_CLOUD_DB_URL: postgres://maktaba:rehearsal@10.50.0.10:5432/maktaba?sslmode=disable
       MAKTABA_CLOUD_PUBLIC_URL: http://api.test
       MAKTABA_CLOUD_TOKEN_SECRET: rehearsal-token-secret-at-least-32-bytes
+      # the console's staff sign-in (story 50.33): the api refuses to start its admin listener
+      # without both; rehearsal-only values, the key the hex of "rehearsal-staff-secret-key-32byt"
+      MAKTABA_CLOUD_STAFF_TOKEN_SECRET: rehearsal-staff-token-secret-at-least-32-bytes
+      MAKTABA_CLOUD_STAFF_SECRET_KEY: 72656865617273616c2d73746166662d7365637265742d6b65792d3332627974
       MAKTABA_CLOUD_BILLING_PROVIDER: none
       MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE: /run/maktaba/symbols.token
     volumes:

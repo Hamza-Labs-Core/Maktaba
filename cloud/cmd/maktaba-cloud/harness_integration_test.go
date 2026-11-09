@@ -37,6 +37,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	cmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/staffauth"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/turnstile"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/migrations"
@@ -50,9 +51,12 @@ import (
 // the production default payment provider, "none".
 
 const (
-	testTokenSecret   = "integration-test-secret-at-least-32-bytes!"
-	testWebhookSecret = "test-webhook-secret"
-	testWebURL        = "https://app.example.test"
+	testTokenSecret = "integration-test-secret-at-least-32-bytes!"
+	// the console's staff keys (story 50.33): a different token secret, and a 32-byte key
+	testStaffTokenSecret = "integration-staff-secret-at-least-32-bytes"
+	testStaffSecretKey   = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+	testWebhookSecret    = "test-webhook-secret"
+	testWebURL           = "https://app.example.test"
 )
 
 type env struct {
@@ -150,6 +154,8 @@ func newEnvFull(t *testing.T, pay *fakeProvider, ts turnstile.Verifier, adjust f
 	cfg.Server.AdminListenAddr = "127.0.0.1:0"
 	cfg.Server.AdminHost = testAdminHost
 	cfg.Auth.TokenSecret = testTokenSecret
+	cfg.Auth.StaffTokenSecret = testStaffTokenSecret
+	cfg.Auth.StaffSecretKey = testStaffSecretKey
 	cfg.Mail.Driver = "log"
 	cfg.Billing.Provider = "none"
 	cfg.OAuthGoogle.ClientID = "google-test-client"
@@ -399,16 +405,95 @@ func (e *env) count(q string, args ...any) int {
 	return n
 }
 
-// serviceAdmin registers an account and grants it the role through the
-// CLI path.
+// serviceAdmin is a signed-in console operator (story 50.33): a staff account added from the
+// CLI with service_admin, enrolled with a password and a TOTP app, signed in with both. Its
+// session's MFA check is fresh, so the sensitive routes answer too for the next 5 minutes.
 func (e *env) serviceAdmin(email string) *client {
 	e.t.Helper()
-	c := e.registerVerified(email)
-	var out bytes.Buffer
-	if err := adminRole(context.Background(), stores.NewUsers(e.pool.DB), auditLogFor(e), "grant", email, &out); err != nil {
+	return e.staff(email, stores.StaffRoleServiceAdmin)
+}
+
+// staffAccount is a test's enrolled staff account: its TOTP secret mints the codes.
+type staffAccount struct {
+	id, email, secret string
+}
+
+// enrolStaff adds a staff account from the CLI (with role, or none for "") and enrols it
+// through the console's routes.
+func (e *env) enrolStaff(email, role string) staffAccount {
+	e.t.Helper()
+	ctx := context.Background()
+	st := &stores.Staff{DB: e.pool.DB}
+	var link string
+	if role == "" {
+		a, err := st.Create(ctx, email, nil)
+		if err != nil {
+			e.t.Fatal(err)
+		}
+		raw, _ := staffauth.NewRawToken()
+		if err := st.NewEnrolment(ctx, a.ID, staffauth.TokenHash(raw), time.Now().Add(time.Hour)); err != nil {
+			e.t.Fatal(err)
+		}
+		link = raw
+	} else {
+		var out bytes.Buffer
+		if err := e.staffCLI(&out).run(ctx, "add", email, role); err != nil {
+			e.t.Fatal(err)
+		}
+		_, link, _ = strings.Cut(out.String(), "/enroll#")
+		link = strings.TrimSpace(link)
+	}
+	c := e.client()
+	st0 := c.mustStatus(c.do("POST", "/v1/staff/enroll/start", map[string]string{"token": link}), http.StatusOK).json(e.t)
+	secret, _ := st0["totp_secret"].(string)
+	acct := staffAccount{email: email, secret: secret}
+	a, err := st.ByEmail(ctx, email)
+	if err != nil {
 		e.t.Fatal(err)
 	}
+	acct.id = a.ID
+	c.mustStatus(c.do("POST", "/v1/staff/enroll/finish", map[string]string{
+		"token": link, "password": goodStaffPassword, "code": e.totp(acct)}), http.StatusOK)
+	return acct
+}
+
+// goodStaffPassword passes the staff password rule (14 to 256 characters, not breached).
+const goodStaffPassword = "correct-horse-battery-staple-9"
+
+// totp is a code for acct's factor. Each code's step is good once, so the test forgets the
+// last one used first: a test signs in and re-checks faster than a step goes by.
+func (e *env) totp(acct staffAccount) string {
+	e.t.Helper()
+	e.exec(`UPDATE staff_totp SET last_step = 0 WHERE staff_id = $1`, acct.id)
+	code, err := staffauth.TOTPCode(acct.secret, time.Now())
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return code
+}
+
+// staffSignIn signs acct in on a new client: the password, then a TOTP code. The client
+// carries the staff access token and the staff cookie.
+func (e *env) staffSignIn(acct staffAccount) *client {
+	e.t.Helper()
+	c := e.client()
+	r := c.mustStatus(c.do("POST", "/v1/staff/login", map[string]string{"email": acct.email, "password": goodStaffPassword}), http.StatusOK).json(e.t)
+	mfa, _ := r["mfa_token"].(string)
+	s := c.mustStatus(c.do("POST", "/v1/staff/mfa/totp", map[string]string{"mfa_token": mfa, "code": e.totp(acct)}), http.StatusOK).json(e.t)
+	c.token, _ = s["access_token"].(string)
 	return c
+}
+
+// staff is a signed-in staff account holding role ("" for none).
+func (e *env) staff(email, role string) *client {
+	e.t.Helper()
+	return e.staffSignIn(e.enrolStaff(email, role))
+}
+
+// staffCLI is `maktaba-cloud staff` against the test's database.
+func (e *env) staffCLI(out io.Writer) staffCmd {
+	return staffCmd{Staff: &stores.Staff{DB: e.pool.DB}, Audit: auditLogFor(e), Out: out,
+		EnrolURL: "https://" + testAdminHost + "/enroll#", Now: time.Now}
 }
 
 // ---- fake payment provider ----------------------------------------------

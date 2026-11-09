@@ -33,6 +33,14 @@ type Config struct {
 	Auth        AuthConfig
 	Direct      DirectConfig
 	Turnstile   TurnstileConfig
+	Admin       AdminConfig
+}
+
+// AdminConfig is the operator console's own settings (Epic 50 story 50.33 §7).
+type AdminConfig struct {
+	// IPAllowlist is admin.ip_allowlist: when set, the admin listener answers only client IPs
+	// inside one of these prefixes (403 ip_not_allowed otherwise). Empty, the default, is off.
+	IPAllowlist []netip.Prefix
 }
 
 // TurnstileConfig is the bot check on the auth pages (Epic 50 story 50.30 §4): off by default
@@ -114,6 +122,11 @@ type ServerConfig struct {
 // sourced from a secrets manager / Docker secret at runtime.
 type AuthConfig struct {
 	TokenSecret string // env: MAKTABA_CLOUD_TOKEN_SECRET
+	// StaffTokenSecret signs the console's staff access tokens (story 50.33 §2), a different
+	// key from TokenSecret's; StaffSecretKey (32 bytes, hex or base64) seals each staff TOTP
+	// secret at rest. Both come from the environment only.
+	StaffTokenSecret string // env: MAKTABA_CLOUD_STAFF_TOKEN_SECRET
+	StaffSecretKey   string // env: MAKTABA_CLOUD_STAFF_SECRET_KEY
 }
 
 type DBConfig struct {
@@ -316,6 +329,12 @@ func applyEnvOverrides(c *Config) {
 	if v := os.Getenv("MAKTABA_CLOUD_TOKEN_SECRET"); v != "" {
 		c.Auth.TokenSecret = v
 	}
+	if v := os.Getenv("MAKTABA_CLOUD_STAFF_TOKEN_SECRET"); v != "" {
+		c.Auth.StaffTokenSecret = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_STAFF_SECRET_KEY"); v != "" {
+		c.Auth.StaffSecretKey = v
+	}
 	if v := os.Getenv("MAKTABA_CLOUD_TURNSTILE_SECRET"); v != "" {
 		c.Turnstile.Secret = v
 	}
@@ -494,6 +513,12 @@ func assign(c *Config, section, key, val string) error {
 		c.Server.AdminHost = strings.ToLower(val)
 	case "server.admin_origin":
 		c.Server.AdminOrigin = strings.TrimSuffix(val, "/")
+	case "admin.ip_allowlist":
+		ps, err := ParsePrefixes(parseList(val))
+		if err != nil {
+			return fmt.Errorf("config: admin.ip_allowlist: %w", err)
+		}
+		c.Admin.IPAllowlist = ps
 	case "server.user_hosts":
 		for _, h := range parseList(val) {
 			c.Server.UserHosts = append(c.Server.UserHosts, strings.ToLower(h))
