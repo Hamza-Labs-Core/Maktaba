@@ -71,6 +71,10 @@ var copyReviewed = []string{
 	// vocabulary hold transcript words, ids and times, no secret; a promoted copy keeps
 	// the review queue
 	"language_packs", "transcript_edits", "vocab_pairs", "vocabulary", "word_flags",
+	// slot 0218 (story 54.43): each machine's count of the jobs that ran in its worker
+	// instead of a plugin runner (machine ids, stage names, counts and times, no secret);
+	// a promoted copy keeps the reading
+	"stage_fallbacks",
 }
 
 // Every table of a migrated database is either reviewed as copied or left out.
