@@ -43,7 +43,7 @@ func TestStaffStore(t *testing.T) {
 	if _, err := s.Enrolment(ctx, link, now.Add(staffauth.EnrolTTL)); !errors.Is(err, ErrStaffTokenGone) {
 		t.Errorf("an expired link: %v", err)
 	}
-	if err := s.FinishEnrolment(ctx, link, a.ID, "hash", []string{"h1"}, now); err == nil {
+	if err := s.FinishEnrolment(ctx, link, a.ID, "hash", true, []string{"h1"}, now); err == nil {
 		t.Fatal("enrolment finished without a TOTP factor")
 	}
 	if err := s.PutTOTP(ctx, a.ID, "sealed-1"); err != nil {
@@ -52,10 +52,10 @@ func TestStaffStore(t *testing.T) {
 	if m, _ := s.Methods(ctx, a.ID); len(m) != 0 {
 		t.Errorf("an unconfirmed secret is a method: %v", m)
 	}
-	if err := s.FinishEnrolment(ctx, link, a.ID, "pwhash", []string{"h1", "h2"}, now); err != nil {
+	if err := s.FinishEnrolment(ctx, link, a.ID, "pwhash", true, []string{"h1", "h2"}, now); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.FinishEnrolment(ctx, link, a.ID, "pwhash", nil, now); !errors.Is(err, ErrStaffTokenGone) {
+	if err := s.FinishEnrolment(ctx, link, a.ID, "pwhash", true, nil, now); !errors.Is(err, ErrStaffTokenGone) {
 		t.Errorf("the link worked twice: %v", err)
 	}
 	a, _ = s.ByEmail(ctx, email)

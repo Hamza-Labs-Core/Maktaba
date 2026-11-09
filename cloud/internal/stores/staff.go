@@ -31,6 +31,8 @@ var (
 	ErrStaffReplay = errors.New("stores: rotated staff cookie replayed")
 	// ErrStaffRotatedRecently is a cookie rotated within the grace: a second tab lost the race.
 	ErrStaffRotatedRecently = errors.New("stores: staff cookie rotated moments ago")
+	// ErrStaffNoFactor is an enrolment finished with neither a TOTP code nor a passkey.
+	ErrStaffNoFactor = errors.New("stores: enrolment without a second factor")
 )
 
 // StaffRoleServiceAdmin is the role every /v1/admin/* route requires today.
@@ -241,9 +243,10 @@ func (s *Staff) Enrolment(ctx context.Context, tokenHash string, now time.Time) 
 	return s.ByID(ctx, id)
 }
 
-// FinishEnrolment sets the password, confirms the TOTP factor, stores the recovery codes and
-// spends the link, in one transaction: an enrolment is whole or not at all.
-func (s *Staff) FinishEnrolment(ctx context.Context, tokenHash, id, passwordHash string, recoveryHashes []string, now time.Time) error {
+// FinishEnrolment sets the password, confirms the TOTP factor (withTOTP) or else drops the
+// unconfirmed one and requires a passkey, stores the recovery codes and spends the link, in
+// one transaction: an enrolment is whole or not at all, and never without a second factor.
+func (s *Staff) FinishEnrolment(ctx context.Context, tokenHash, id, passwordHash string, withTOTP bool, recoveryHashes []string, now time.Time) error {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -257,12 +260,25 @@ func (s *Staff) FinishEnrolment(ctx context.Context, tokenHash, id, passwordHash
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrStaffTokenGone
 	}
-	res, err = tx.ExecContext(ctx, `UPDATE staff_totp SET confirmed_at = $2 WHERE staff_id = $1`, id, now)
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return errors.New("stores: enrolment without a TOTP factor")
+	if withTOTP {
+		res, err = tx.ExecContext(ctx, `UPDATE staff_totp SET confirmed_at = $2 WHERE staff_id = $1`, id, now)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return ErrStaffNoFactor
+		}
+	} else {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM staff_totp WHERE staff_id = $1 AND confirmed_at IS NULL`, id); err != nil {
+			return err
+		}
+		var passkeys int
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM staff_passkeys WHERE staff_id = $1 AND disabled_at IS NULL`, id).Scan(&passkeys); err != nil {
+			return err
+		}
+		if passkeys == 0 {
+			return ErrStaffNoFactor
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM staff_recovery_codes WHERE staff_id = $1`, id); err != nil {
 		return err

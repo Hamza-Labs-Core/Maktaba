@@ -118,6 +118,9 @@ const (
 	ActionStaffIdleEnded      = "staff.session.idle_ended"
 	ActionStaffCapped         = "staff.session.capped"
 	ActionStaffReplay         = "staff.session.replay"
+	// passkeys (part 2): one added at enrolment, one disabled because its counter went back
+	ActionStaffPasskeyAdded   = "staff.passkey.added"
+	ActionStaffPasskeyCounter = "staff.passkey.counter_disabled"
 	// the CLI's changes to staff accounts (actor_kind cli)
 	ActionStaffAdded    = "staff.added"
 	ActionStaffGranted  = "staff.role.grant"

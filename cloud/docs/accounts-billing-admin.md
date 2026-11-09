@@ -281,8 +281,8 @@ maktaba-cloud staff list
 Each writes an audit row with `actor_kind = 'cli'`; a role change ends the account's sessions.
 `maktaba-cloud admin` is gone and prints a pointer to `staff`. The link opens
 `admin.maktaba.tv/enroll#<token>` (the token stays in the fragment): the person sets a password
-(14–256 characters, the breached-password check), adds a TOTP app and gets 10 one-use recovery
-codes. Until enrolment finishes the account can't sign in.
+(14–256 characters, the breached-password check), adds a passkey, a TOTP app or both, and gets
+10 one-use recovery codes. Until enrolment finishes the account can't sign in.
 
 ### Staff sign-in — `/v1/staff/*` (the admin listener only)
 
@@ -290,12 +290,14 @@ codes. Until enrolment finishes the account can't sign in.
 |---|---|---|
 | `GET /v1/staff/config` | — | `{turnstile_site_key}` for the console's bot-check widget (`""` when off; the widget's hostnames must include `admin.maktaba.tv`) |
 | `POST /v1/staff/login` | `{email, password, turnstile_token}` | `200 {mfa_token, methods}`; a wrong email, password or a disabled account: the same `401 invalid_credentials` after the same argon2id work; `403 mfa_required` (no factor); `423 account_locked` (`Retry-After`); `429 too_many_attempts` |
+| `POST /v1/staff/mfa/passkey/begin`, `/mfa/passkey/finish` | `{mfa_token}`, then `{mfa_token, credential}` | the WebAuthn options (`{publicKey}`), drawing no attempt; then the session (amr `pwd`,`hwk`); `401 mfa_failed`; `400 passkey_expired` (no live challenge: 5 minutes, good once); `400 no_passkey` |
 | `POST /v1/staff/mfa/totp`, `/mfa/recovery` | `{mfa_token, code}` | the session; `401 mfa_failed`; `401 mfa_token_invalid` (5 minutes, the same client IP, 5 attempts) |
 | `POST /v1/staff/refresh` | — (cookie) | the session, the cookie rotated; `401 {no_session, reason: idle\|capped}`; a rotated cookie presented again ends every session of the account |
 | `POST /v1/staff/logout`, `/sessions/revoke-all` | — | `204` |
 | `GET /v1/staff/me`, `/sessions` | — | the account, its roles and factors; its live sessions |
-| `POST /v1/staff/reauth/totp` | `{code}` | a fresh MFA check: the session's sensitive actions open for 5 minutes |
-| `POST /v1/staff/enroll/start`, `/enroll/finish` | `{token}`, `{token, password, code}` | the TOTP secret and its `otpauth://` link; the 10 recovery codes, once |
+| `POST /v1/staff/reauth/totp`, `/reauth/passkey/begin` then `/reauth/passkey/finish` | `{code}`; —, then `{credential}` | a fresh MFA check: the session's sensitive actions open for 5 minutes |
+| `POST /v1/staff/enroll/start`, `/enroll/finish` | `{token}`, `{token, password, code}` | the TOTP secret and its `otpauth://` link; the 10 recovery codes, once. With a passkey added, `code` may be empty (the unconfirmed TOTP secret is dropped); with neither, `400 mfa_required` |
+| `POST /v1/staff/enroll/passkey/begin`, `/enroll/passkey/finish` | `{token}`, then `{token, name, credential}` | the registration options; then the passkey is kept (`409 passkey_exists`, `400 passkey_failed`) |
 
 The session is `{access_token, expires_in, idle_ends_at, capped_at, staff}` plus the host-only,
 Strict `__Host-maktaba_staff` cookie. The access token lasts 10 minutes and is signed with
@@ -305,8 +307,13 @@ without an admin request, and 8 hours after its sign-in whatever the activity. 5
 a recovery code's use pages too (`staff_recovery_code_used`). Sign-in, the codes and the
 re-check are limited to burst 5 then 1 per 12 s per IP. TOTP secrets are sealed with
 AES-256-GCM under `MAKTABA_CLOUD_STAFF_SECRET_KEY`. `[admin] ip_allowlist` (CIDRs, empty: off)
-refuses every other client IP on the admin listener with `403 ip_not_allowed`. Passkeys come in
-the story's second part.
+refuses every other client IP on the admin listener with `403 ip_not_allowed`.
+
+Passkeys are WebAuthn with the console's origin (`server.admin_origin`) as the relying party,
+user verification required and attestation `none` (go-webauthn). Each ceremony's challenge is
+kept server-side for 5 minutes, one per account and purpose, and is deleted as its answer is
+checked. A passkey whose signature counter does not move forward (while in use) may have been
+copied: it is disabled, the step fails, and the owner is paged (`staff_passkey_counter`).
 
 ## Mail
 
@@ -373,10 +380,10 @@ and the cloud web app.
   notify old one).
 - **Avatar upload** (25.5 `413 avatar_too_large`): only an https URL can be
   set.
-- **Staff passkeys** (50.33 part 2): staff sign in with a password and a TOTP
-  app (recovery codes behind it); WebAuthn passkeys for sign-in and the
-  re-check, and the console's passkey enrolment, are next. Admin step-up
-  re-auth, staff accounts, MFA and short sessions are done (50.33).
+- ~~**Staff passkeys**~~ (50.33 part 2): done: passkeys for sign-in, the
+  re-check and enrolment, beside TOTP and recovery codes. A signed-in staff
+  account adding or removing passkeys itself (outside enrolment) is not built:
+  `staff reset-mfa` and a new enrolment do it.
 - **Force-disconnect a server / tunnel revoke frames** (25.20, 25.5): owned
   by the relay work.
 - ~~**Server-scoped entitlements** and the home pulling them~~: done as

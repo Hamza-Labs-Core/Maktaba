@@ -20,6 +20,10 @@ const ERROR_KEYS: Record<string, string> = {
   admin_access_denied: "staff.forbidden",
   enrolment_link_expired: "staff.enroll.linkExpired",
   reauth_required: "staff.reauth.body",
+  passkey_expired: "staff.passkey.expired",
+  passkey_failed: "staff.passkey.addFailed",
+  passkey_exists: "staff.passkey.exists",
+  no_passkey: "staff.passkey.none",
 };
 
 function withErrors(catalog: Record<string, string>): Record<string, string> {

@@ -2,9 +2,10 @@
 // carries its token in the URL fragment, which the browser never sends: it goes only in the
 // POST bodies here. POST /v1/staff/enroll/start draws a TOTP secret for the authenticator app
 // (shown as a key to type in and an otpauth link; the web workspace has no QR library); the
-// person then sets a password (14–256 characters) and types a code from the app
-// (POST /v1/staff/enroll/finish), and gets 10 recovery codes, shown once. Passkeys come in a
-// later part.
+// person may add a passkey (POST /v1/staff/enroll/passkey/begin, then /finish with the
+// browser's answer), then sets a password (14–256 characters) and types a code from the app,
+// or no code once a passkey is added (POST /v1/staff/enroll/finish): §1 asks for a passkey, an
+// app, or both. They get 10 recovery codes, shown once.
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
@@ -13,6 +14,12 @@ import { Input } from "@ds/components/Input/Input";
 import { useI18n } from "@cloud-shared/i18n";
 import { Banner, Loading, useErrorMessage } from "@cloud-shared/ui";
 import { api, CloudApiError } from "../api";
+import {
+  createPasskey,
+  PasskeyCancelled,
+  passkeysSupported,
+  type CreationOptionsJSON,
+} from "../passkey";
 
 interface Started {
   email: string;
@@ -45,6 +52,10 @@ export function Enroll() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // passkeys added through this link (§1: one is enough without the app)
+  const [passkeys, setPasskeys] = useState(0);
+  const [adding, setAdding] = useState(false);
+  const canPasskey = passkeysSupported();
   // each start draws a new secret, so it runs once (React's dev double effect included)
   const started = useRef(false);
 
@@ -89,6 +100,30 @@ export function Enroll() {
     }
   }
 
+  async function addPasskey() {
+    setError(null);
+    setAdding(true);
+    try {
+      const opts = await api.post<CreationOptionsJSON>(
+        "/v1/staff/enroll/passkey/begin",
+        { token },
+        { auth: false }
+      );
+      const credential = await createPasskey(opts);
+      const r = await api.post<{ passkeys: number }>(
+        "/v1/staff/enroll/passkey/finish",
+        { token, credential },
+        { auth: false }
+      );
+      setPasskeys(r.passkeys);
+    } catch (err) {
+      if (err instanceof CloudApiError && err.status === 410) setState({ kind: "expired" });
+      else setError(err instanceof PasskeyCancelled ? t("staff.passkey.failed") : message(err));
+    } finally {
+      setAdding(false);
+    }
+  }
+
   async function copy(secret: string) {
     try {
       await navigator.clipboard.writeText(secret);
@@ -130,6 +165,22 @@ export function Enroll() {
       body = (
         <>
           <p>{t("staff.enroll.intro", { email: s.email })}</p>
+          <h2>{t("staff.enroll.passkey")}</h2>
+          {passkeys > 0 ? (
+            <Banner tone="success">{t("staff.enroll.passkeyAdded", { count: passkeys })}</Banner>
+          ) : (
+            !canPasskey && <p>{t("staff.passkey.unsupported")}</p>
+          )}
+          {canPasskey && (
+            <Button
+              type="button"
+              variant="secondary"
+              loading={adding}
+              onClick={() => void addPasskey()}
+            >
+              {t(passkeys > 0 ? "staff.enroll.passkeyAnother" : "staff.enroll.passkey")}
+            </Button>
+          )}
           <h2>{t("staff.enroll.totp")}</h2>
           <p>
             <a href={s.totp_uri}>{t("staff.enroll.openApp")}</a>
@@ -158,13 +209,17 @@ export function Enroll() {
               onChange={(e) => setPassword(e.currentTarget.value)}
             />
             <Input
-              label={t("staff.enroll.code")}
+              label={t(passkeys > 0 ? "staff.enroll.codeOptional" : "staff.enroll.code")}
               inputMode="numeric"
               autoComplete="one-time-code"
               value={code}
               onChange={(e) => setCode(e.currentTarget.value)}
             />
-            <Button type="submit" loading={busy} disabled={!password || !code.trim()}>
+            <Button
+              type="submit"
+              loading={busy}
+              disabled={!password || (!code.trim() && passkeys === 0)}
+            >
               {t("staff.enroll.submit")}
             </Button>
           </form>

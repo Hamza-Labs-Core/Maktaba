@@ -142,6 +142,12 @@ groups:
         annotations:
           summary: "A staff account signed in with a recovery code"
           runbook_url: docs/runbooks/cloud/staff-security.md
+      - alert: staff_passkey_counter
+        expr: sum by (service) (increase(maktaba_errors_total{code="staff_passkey_counter"}[10m])) > 0
+        labels: {severity: sev2}
+        annotations:
+          summary: "A staff passkey's counter went backwards; the passkey was disabled"
+          runbook_url: docs/runbooks/cloud/staff-security.md
       - alert: log_forward_lagging
         expr: max by (node) (maktaba_log_forward_lag_seconds) > 60
         for: 5m

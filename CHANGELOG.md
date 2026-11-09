@@ -646,6 +646,16 @@ build fails when the two differ.
   network allow-list can close the console to other addresses. The old customer role was
   cleared and `maktaba-cloud admin` points to `staff`. Passkeys come next.
 
+- **Operators can sign in to the console with a passkey (Epic 50 story 50.33, part 2).** A
+  staff account can now add a passkey when it enrols, instead of or beside the authenticator
+  app, and use it for the second sign-in step and for the fresh check that suspending,
+  blocking, setting plans, revoking licenses and deleting a user's data ask for. The console
+  offers the passkey first when the account has one and the browser can use it. Each check
+  answers a challenge the cloud keeps for 5 minutes and accepts once, and the passkey must
+  confirm the person (a fingerprint, a face or a PIN). A passkey whose counter goes backwards,
+  a sign that its key was copied, is turned off, the step is refused, and the owner is
+  alerted.
+
 ### Added
 
 - **A runner's tools read a library file on a share on Windows (story 54.23).** A job that
