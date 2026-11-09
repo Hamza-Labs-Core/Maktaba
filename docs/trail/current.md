@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.111
-up_to_commit: fd4bdfb4d
-built_from: v0.3.110
+tag: v0.3.112
+up_to_commit: 2dd0d18b2
+built_from: v0.3.111
 ---
 
-# Trail snapshot: v0.3.111
+# Trail snapshot: v0.3.112
 
 ## Keep doing
 
@@ -163,6 +163,13 @@ built_from: v0.3.110
 - `affected-tests` maps a Go file to Go tests, and a Python end-to-end test does not count: a new Go flag needs its own Go test. (#1049)
 - A no-payload log test puts a marker string in the payload and looks for it in the log. A child session that cannot wait on CI says so and hands the merge back. (#1048)
 - For a speed-up that must keep its outputs, keep the old algorithm in the tests next to a fixture of its answers, and guard it with counted work and a CPU-time ratio measured in one process, not a wall-clock limit. (#1050)
+- Fake host resources (disk room, free ports) in `TestMain` and give the real read one test of its own. A test that fails on one machine only is first a question of what that machine has that the runner lacks; reproduce it anywhere by patching the one host reading. (#1047)
+- When a suite runs code through an indirection (a manifest `entry`, a Go test table), derive its path filter from the imports and test that derivation; only direct imports make a useful filter. (#1057)
+- Before changing a timing gate, judge the old and new rule offline on stored CI samples and say how many runs each would have failed. (#1059)
+- Give every artifact a test writes a name unique to that test, and make the writer refuse a name already taken. Before hunting shared state behind an order-dependent number, check that the number comes from the test you think. (#1066)
+- When moving code across a process boundary, list the module-level state it reads and pin each with a test that leaves the global empty, plus a guard against importing it. (#1062)
+- Read each failing job's log before touching code: four of six failures on one PR had different causes. (#1027)
+- Revoke sessions, not just the credential, when a credential looks cloned. (#1067)
 
 ## Stop doing
 
@@ -197,6 +204,7 @@ built_from: v0.3.110
 - Piping `watch-merge2.sh` into `tail`: it hides the exit code, so read its last output line instead. (#983)
 - Bringing main in with a plain `git merge origin/main`, even when no conflict is expected: use `tools/dev/merge-main.sh`. (#1025)
 - A merge watcher that requires a check by its exact name: CI's names change between runs (`ci / plugins / first-party` and `plugins / first-party`); match without the workflow prefix. (#998)
+- Killing a helper process by name (`pkill -n`) after a local regression run: on a shared machine it can hit another session's dev server. Kill only PIDs the run recorded. (#1066)
 
 ## What we learned
 
@@ -288,7 +296,7 @@ built_from: v0.3.110
 - In `cloud-rehearsal`, the 4 s aggregate verdict proves nothing alone: read the run's jobs to see that a scenario actually ran. (#967)
 - `actions/cache` derives an entry's version from its path list: a save whose paths differ from its restore's writes an entry the restore never finds. An all-or-nothing cache save never fills during an outage. `/archive/` and the REST tarball are different files with different SHA-256s. (#1014)
 - An EXIT trap's last status becomes the script's exit status: `[ cond ] && cmd` in a trap fails a good run when `cond` is false. A deploy script run from a Mac avoids `chown --reference` and GNU `sed -i`. (#1010)
-- `plugins / first-party`'s classify `detect` N16 budget and `test_a_slower_plugin_fails_n16_with_both_numbers` trip on some shared runners with code that passes elsewhere: a timing gate, not the change under test. (#1018, #1021)
+- `test_a_slower_plugin_fails_n16_with_both_numbers` trips on some shared runners with code that passes elsewhere (#1018, #1021); classify `detect`'s N16 failures were a real per-call cost that a fixed allowance could not hold. (#1059)
 - An integrity check must not take its trusted source from the file it checks. (#1014)
 
 **Database and migrations**
@@ -436,6 +444,11 @@ built_from: v0.3.110
 - Epic 58 platform facts: Roku states no right-to-left text; Samsung Public Seller accounts launch only in the US; Samsung MSE caps at FHD (4K needs AVPlay); Cast receivers take no HEVC in MPEG-TS; neither Tizen nor webOS gives a web app mDNS or SSDP. The wiki generator's Latin-share rule trips on brand-heavy excerpts (transliterate outside code spans), a new epic renames the chunk files, and `docs/wiki/epics/epic-NN-*.md` and the INDEX row are written by hand. (#1038)
 - A refusal's detail text can leak the payload: an error that echoes its input carries user data into the log. (#1048)
 - On small fixed-size images Python's big integers act as a wide vector unit: one int with a 16-bit lane per pixel beat `map`/`operator` chains 3 to 6 times with no dependency, and `to_bytes()` + `sum()` beats the multiply-by-ones trick at these sizes. A fixture from random inputs uses stdlib `random.Random`: numpy's `Generator` streams are not promised stable. (#1050)
+- A best-effort step that skips itself quietly hides a test's real precondition: the restore test saw empty `asides`, not a lack of room. (#1047)
+- A fixed allowance over a cost that scales with call count looks flaky. N16 now states the per-call cost and judges CPU (which ignores stalls) and paired wall time (which cancels a slow machine); the runner runs inside the test process, so `time.process_time()` covers worker, runner and plugin code. (#1059)
+- Moving a stage out of process drops every process-wide setting it read: the parity suite ran with no path map, so both sides agreed on the wrong answer and only the live home's NFS map exposed it. An `item_permanent` failure across a whole share is a deployment-shape bug first. (#1062)
+- A package-level value that does real work runs in every role of a multi-role binary: keep expensive ones lazy; load-small's per-tunnel memory comparison catches what unit tests cannot. A stopgap carried through several layers goes from all of them in one PR. (#1027)
+- A delegated agent cannot wait on PR checks, so stacked PRs need the coordinator to drive merges in order. Go 1.26 deprecates raw `ecdsa` coordinates: use `PublicKey.Bytes()` or `ecdsa.ParseUncompressedPublicKey`. (#1067)
 
 ## Open
 
@@ -472,7 +485,6 @@ built_from: v0.3.110
 - Epic 57 (parental controls, spec only): the build, Phase 1 first (57.01, 57.02, 57.03, 57.10), and a real-device check of whether the effective rating limit reflects the parent's own Content & Privacy Restrictions (57.04 §4), before the Phase 3 release tag. (#979)
 - Classify parity: every parity open still clones two databases and starts the dev server (about 1 s). In `compute_metrics`, `statistics.pstdev` is about 20 % of what is left for a season; replacing it would change the last bits of three metrics, so it stays. (#996, #1050)
 - One slow iPad shard's warm audits took 15.5 then 14.0 s: on such a runner a test's first audit can still reach XCTest's 15 s deadline. (#1001)
-- `TestRestoreAskedPutsTheBackupBackBeforeAnyRole` fails on the owner's Mac (asides empty) and passes in CI; not yet looked into. (#1002)
 - Plex removal's cleanup migration, a release or more later: the seven stages' rows, the two pools, the dizqueTV extension and component rows, settings keys, `external_links` targets, `plex_items` and the channel audit tables, the `maktaba_fp_dizquetv` role, the retired lists and the `rules.legacy_tv_live` fallback. The mediaintel scripts still write Plex collections on their own. (d20261108-remove-plex-sync)
 - CodeQL's default setup downloads its own tools and cannot use the API route: a rerun is the remedy. TinyGo and wasm-tools in `_plugins.yml`, and the packs' recipes (`tools/release/packs/`), still use `curl --retry 3`. linuxdeploy-plugin-appimage has no tagged release and stays pinned to a `continuous` build; the step warns when it moves. The first release after this one's Linux legs are the first to run `tauri-tools.sh` in `desktop-release.yml`: check that they restore main's entry and bundle with no runtime download. (#1003, #1014, #1034)
 - Plugin scope: the worker's `publish` relay op still takes any payload. The `job` kind lets any job read a catalog job's row (no library's; flags and hashes only, harmless today). (#1005, #1025)
@@ -482,7 +494,9 @@ built_from: v0.3.110
 - Caches: compare job times on main's second run after the new entries exist (unit near 8.7 min) and re-measure usage; whether the rehearsal's `full` seed (2.7 GB) needs a cache is a question for its job's time. (#1036)
 - Plugin event emits: the `unavailable` and `home_unreachable` refusals are logged but have no test. (#1048)
 - Core-media's parity test takes 5.2-7.2 s on a Mac, over the 5 s soft cap, on main as well; the read checks from #1025 are the likely cause. (#1049)
-- CI's `plugins` job's path filter skips shared pipeline code that first-party stages call, such as `classify/production_style.py`. (#1050)
+- The customer auth handler (`cloud/internal/handlers/auth`) still computes its argon2id timing hash at init, so every role holds that 64 MiB. (#1027, #1067)
+- No sweep was made of other process-wide state the moved first-party stages may read; the guard covers only `to_local`. (#1062)
+- N16: CPU p95 over 11 runs is their maximum, and a rare job costing about 4x CPU in both processes came within 0.8 ms of failing `topic_assign`; the plugin API's ~0.58 ms of CPU a call is the bulk of the per-call cost. (#1059)
 
 ## Missing events
 
@@ -495,10 +509,7 @@ built_from: v0.3.110
 | #973 | 2026-11-08 | fix(supervisor): plugin runners wait for the venv like the pipeline |
 | #1023 | 2026-11-08 | test(rehearsal): scenario 16.7, wave 7's TV change across an update |
 | #1042 | 2026-11-08 | fix(web): an open screen keeps its feature gate when the feature goes off right after the first answer |
-| #1047 | 2026-11-08 | test(restore): the restore's tests no longer depend on the disk's free space |
-| #1057 | 2026-11-08 | ci(ci-paths): the first-party proofs run for the pipeline code their stages import |
-| #1059 | 2026-11-08 | test(plugins): N16 states the plugin path's per-call cost and judges CPU and paired wall time |
-| #1062 | 2026-11-08 | fix(plugins): moved stages open the file through the job's path map |
+| #1068 | 2026-11-09 | test(plugins): core-media's parity fits its soft cap; every parity test starts faster |
 
 ## Index
 
@@ -1046,10 +1057,13 @@ built_from: v0.3.110
 | 1036-cache-budget | 2026-11-08 | pr | One Go cache entry per runner and Go version, free cache cuts, and a prune of stale entries |
 | 1038-epic58-smart-tv-platforms | 2026-11-08 | decision | Epic 58 spec: apps for the TVs Maktaba does not reach yet (Fire TV, Google Cast, Samsung, LG, Roku) |
 | 1041-rehearsal-16-9-core-stages | 2026-11-08 | pr | Rehearsal 16.9 takes wave 9's core stages through a rollback and an update |
+| 1047-restore-tests-disk-room | 2026-11-08 | pr | The restore's tests no longer depend on the disk's free space |
 | 1048-emit-refusal-log | 2026-11-08 | pr | Every refused plugin event emit is logged with its plugin, kind, size and reason |
 | 1049-dev-api-per-session | 2026-11-08 | pr | Each test session builds and runs its own plugin-API dev server |
 | 1050-compute-metrics-lanes | 2026-11-08 | pr | compute_metrics runs 4 to 7 times faster with exactly the same outputs |
 | 1053-rehearsal-rows-every-stage | 2026-11-08 | pr | Every 16.x rehearsal row has a job of each of its stages in every round |
+| 1057-ci-paths-firstparty-imports | 2026-11-08 | pr | The first-party proofs run for the pipeline code their stages import |
+| 1059-n16-per-call-cost | 2026-11-08 | pr | N16 states the plugin path's per-call cost and judges CPU and paired wall time |
 | d20261108-android-native-symbols-path | 2026-11-08 | decision | The Play workflow's native-symbols path is right on AGP 9.4; nothing to change |
 | d20261108-backups-tidy | 2026-11-08 | incident | Old backups were pruned only at an update, and a lone failed dump stayed for good |
 | d20261108-ci-cache-eviction-linuxdeploy | 2026-11-08 | incident | After #1014, a pinned tool's cache was evicted within an hour, and the aarch64 AppImage bundle failed once in linuxdeploy |
@@ -1059,4 +1073,8 @@ built_from: v0.3.110
 | d20261108-remove-plex-sync | 2026-11-08 | decision | Plex sync and dizqueTV removed; Plex Live TV stays |
 | d20261108-runners-wait-venv | 2026-11-08 | incident | The 0.3.96 plugin runners started before the venv and crash-looped |
 | d20261108-snapshot-fixture-clock | 2026-11-08 | incident | The Mac page snapshots took their fixture dates from the clock |
+| 1027-staff-signin-unstalled | 2026-11-09 | pr | Staff sign-in for the operator console, unstalled and merged |
+| 1062-moved-stages-path-map | 2026-11-09 | pr | Moved stages open the file through the job's path map |
+| 1066-n16-report-per-test | 2026-11-09 | pr | Each N16 report belongs to one test; classify's wave 4 writes its own |
+| 1067-staff-passkeys | 2026-11-09 | pr | Staff passkeys for the operator console (story 50.33, part 2) |
 
