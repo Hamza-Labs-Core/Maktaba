@@ -460,9 +460,20 @@ async def test_a_first_party_stage_runs_in_process_unless_its_runner_serves_here
     assert impl is not None and impl.run is not None
     await sync_graph(db, [s])
     assert await run._native_impl(db, "probe", get_impl("probe")) is None
+    native._UNWRITTEN.clear()
+    native.FALLBACKS.clear()
     assert await run._native_impl(db, "fp_toy", impl) is None  # impl is inproc
     if db.dialect != "postgres":
+        # story 54.43: on SQLite every job is counted, toward stage_fallbacks only (parity's
+        # in-memory table does not take it)
+        assert native._UNWRITTEN[("fp_toy", "sqlite")][0] == 1
+        assert native.FALLBACKS == {}
+        native._UNWRITTEN.clear()
         return
+    # on Postgres a job is never counted as SQLite's
+    assert ("fp_toy", "sqlite") not in native._UNWRITTEN
+    native._UNWRITTEN.clear()
+    native.FALLBACKS.clear()
     await db.execute("UPDATE job_stages SET impl = 'plugin' WHERE stage = 'fp_toy'")
     assert await run._native_impl(db, "fp_toy", impl) is None  # no runner here
 

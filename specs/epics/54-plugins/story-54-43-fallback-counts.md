@@ -66,7 +66,7 @@ counted", with every string and reason label in English and Arabic.
   **then** 200 with each row, its machine's name and the total.
 - **Given** no one signed in, a viewer or a cloud-linked play sign-in,
   **when** they call `GET /api/queues/fallbacks`,
-  **then** 403 before any query runs, as every queue route answers.
+  **then** 401, 403 and 403, and no row is read.
 - **Given** the Queue detail page of a stage with counted fallbacks,
   **when** an admin opens it in English or Arabic,
   **then** each reason, machine, count and last time is shown in that language.
@@ -79,7 +79,7 @@ counted", with every string and reason label in English and Arabic.
 | T02 | unit (py) | a flush that raises | flush again | both counts written; nothing raised |
 | T03 | unit (py) | `fp` runner down | fingerprint | `fingerprint_inproc` counted |
 | T04 | integration (PG, go) | rows | `GET /api/queues/fallbacks`, `?stage=` | rows, names, total; narrowed |
-| T05 | role test (go) | the route | no one / viewer / cloud-linked play / admin | 403 / 403 / 403 / 200 |
+| T05 | role test (go) | the route | no one / viewer / cloud-linked play / admin | 401 / 403 / 403 / 200 |
 | T06 | unit (web) | Queue detail | render with and without rows | rows and the empty line, en + ar |
 | T07 | migration (`RollbackSafe`) | the slot | up, down, up | clean |
 
@@ -120,3 +120,13 @@ Release rollback; the Down script drops the table.
 ### Dependencies
 
 54.25 (the switch and `native.choose`).
+
+## Built (2026-11-09)
+
+Slot 0218 makes `stage_fallbacks` (Postgres and SQLite). The worker keeps its in-memory
+`FALLBACKS` for parity, and a second count of every reason (`_UNWRITTEN`) that
+`native.write_fallbacks` adds to the table at each `WorkerAgent.refresh` and when the worker
+stops. `fingerprint_inproc` and `sqlite` are counted toward the table only, so a parity run
+does not fail on them. `GET /api/queues/fallbacks` has the home's placement (it reads
+`cluster_nodes`). The route is not in `shared/api/openapi.json`, which describes no queue
+route; the guide `docs/developers/plugins/first-party.md` (and its Arabic) documents it.

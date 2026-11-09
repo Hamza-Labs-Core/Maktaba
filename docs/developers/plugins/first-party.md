@@ -234,6 +234,14 @@ them with their checkpoints: no attempt is spent), sets the stage and resumes. N
 or rerun. A machine whose runner does not serve the stage runs it in the worker, which writes
 the same data.
 
+Each such fallback is counted: per machine, stage and reason, the worker adds what it counted
+to `stage_fallbacks` every 30 seconds. An admin reads them with `GET /api/queues/fallbacks`
+(`?stage=` for one stage) or under **Ran in the worker instead** on the stage's page. The
+reasons are `runner_not_serving_here`, `windows_share_library`, `role_unusable`,
+`index_store_chroma`, `runner_areas_stale`, `unregistered`, `sandbox_refused`,
+`fingerprint_inproc` (the fingerprint runner did not answer) and `sqlite` (on SQLite every
+built-in plugin stage runs in the worker). A stage set to `inproc` by hand is not counted.
+
 ## The parity proof
 
 Each wave must prove its stages do **exactly** what they did. `tools/plugins/parity.py` runs

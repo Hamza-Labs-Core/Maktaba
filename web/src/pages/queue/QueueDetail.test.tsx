@@ -125,6 +125,7 @@ describe("QueueDetail", () => {
       "/api/queues/link/rate": rateFixture,
       "/api/queues/libraries": { items: librariesFixture },
       "/api/activity": { items: [], next: null },
+      "/api/queues/fallbacks": { fallbacks: [], total: 0 },
     });
     put.mockResolvedValue({
       stage: "link",
@@ -141,12 +142,15 @@ describe("QueueDetail", () => {
     await waitFor(() =>
       expect(put).toHaveBeenCalledWith("/api/queues/link/impl", { impl: "inproc" })
     );
+    // story 54.43: the stage's in-process fallbacks are shown beside the switch
+    expect(await screen.findByText("No in-process fallbacks counted.")).toBeInTheDocument();
   });
 
   it("shows no built-in plugin box for the core's own stages", async () => {
     setup("link");
     await screen.findByRole("heading", { level: 1 });
     expect(screen.queryByTestId("queue-builtin-plugin")).toBeNull();
+    expect(screen.queryByTestId("queue-fallbacks")).toBeNull();
   });
 
   it("says who paused the queue and when", async () => {

@@ -250,7 +250,9 @@ async def _native_impl(db: Any, name: str, inproc: Any) -> Any:
 
     choice = await native.choose(db, name)
     if choice.impl != "plugin":
-        if choice.why:
+        if choice.why == "sqlite":
+            native.count_fallback(name, choice.why)  # every job of a SQLite home: no parity
+        elif choice.why:
             native.note_fallback(name, choice.why)
         return None
 
