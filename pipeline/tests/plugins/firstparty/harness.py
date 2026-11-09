@@ -106,6 +106,26 @@ def _instrument() -> None:
 
 Seed = Callable[[Database], Awaitable[None]]
 
+#: N16 report name -> the test that wrote it in this process: two tests writing one name
+#: would replace each other's file, and the report would show whichever ran last (classify's
+#: two waves both wrote ``tv.maktaba.classify``: detect read 29 calls or 19 by test order)
+_REPORTED: dict[str, str] = {}
+
+
+def _current_test() -> str:
+    """The running test's node id (pytest's ``PYTEST_CURRENT_TEST`` without its phase)."""
+    return os.environ.get("PYTEST_CURRENT_TEST", "").rsplit(" (", 1)[0]
+
+
+def claim_report(name: str, test: str) -> None:
+    """Take ``name`` for ``test``; a second test asking for a name already taken fails,
+    naming both, instead of overwriting the first test's report."""
+    owner = _REPORTED.setdefault(name, test)
+    if owner != test:
+        raise AssertionError(
+            f"N16 report {name!r} is already written by {owner}; give {test} its own name"
+        )
+
 
 def plugin_api_dev() -> str | None:
     """The dev API binary (``MAKTABA_PLUGIN_API_DEV``), else built with go for this checkout
@@ -637,8 +657,10 @@ class Parity:
         """N16's samples, every run (passing or not): per stage and side the p50 and p95 of
         the wall time, this process's CPU, the plugin API's CPU and the plugin job's spans.
         Written to ``$MAKTABA_PARITY_REPORT_DIR/<name>.{txt,json}`` when set (CI keeps it as
-        an artifact) and answered."""
+        an artifact) and answered. Each name belongs to one test (claim_report)."""
         import json as _json
+
+        claim_report(name, _current_test())
 
         def q(xs: list[float], f: float) -> float:
             xs = sorted(xs)
