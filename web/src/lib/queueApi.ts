@@ -660,6 +660,33 @@ export interface LogLine {
   data: Record<string, unknown> | null;
 }
 
+/** One row of GET /api/queues/fallbacks (Epic 54, story 54.43): jobs (or fingerprints) of
+ * a first-party stage that ran in the pipeline worker instead of its plugin runner. */
+export interface StageFallback {
+  /** "home", or a joined machine's cluster node id */
+  machine: string;
+  /** the node's name; null for the home */
+  machine_name: string | null;
+  stage: string;
+  reason: string;
+  count: number;
+  first_at: string;
+  last_at: string;
+}
+
+/** The reasons the worker counts (pipeline plugins/native.py); any other shows as written. */
+export const FALLBACK_REASONS = [
+  "runner_not_serving_here",
+  "windows_share_library",
+  "role_unusable",
+  "index_store_chroma",
+  "runner_areas_stale",
+  "unregistered",
+  "sandbox_refused",
+  "fingerprint_inproc",
+  "sqlite",
+] as const;
+
 export interface QueueDetailData {
   info: StageInfo;
   summary: QueueSummary;
@@ -944,6 +971,11 @@ export const queueApi = {
   pause: (stage: string, interrupt = false) =>
     api.post<void>(`/api/queues/${q(stage)}/pause${interrupt ? "?interrupt=true" : ""}`),
   resume: (stage: string) => api.post<void>(`/api/queues/${q(stage)}/resume`),
+  /** GET /api/queues/fallbacks (Epic 54, story 54.43): admin only. */
+  fallbacks: (stage?: string) =>
+    api.get<{ fallbacks: StageFallback[]; total: number }>(
+      `/api/queues/fallbacks${stage ? qs({ stage }) : ""}`
+    ),
   /** PUT /api/queues/{stage}/impl (Epic 54, story 54.25): admin only, audited. */
   setImpl: (stage: string, impl: "inproc" | "plugin") =>
     api.put<{ stage: string; impl: string; plugin: string | null; paused: number }>(

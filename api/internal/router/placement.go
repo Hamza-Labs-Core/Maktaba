@@ -134,6 +134,8 @@ func buildPlacement() placement.Table {
 		// Epic 40: the failures page reads the ignores and the checks, its actions write
 		"/api/queues/failures",
 		"/api/queues/failures/actions",
+		// story 54.43: the in-process fallbacks name the machines (cluster_nodes)
+		"/api/queues/fallbacks",
 		// Epic 47: the offline pipelines' lists (the ledger, downloads, duplicates)
 		"/api/queues/offline-summary",
 		"/api/queues/offline-items",

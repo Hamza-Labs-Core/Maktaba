@@ -150,6 +150,7 @@ func (h *Handler) mount(r chi.Router) {
 	r.Get("/api/queues/pulse", h.Pulse)
 	r.Get("/api/queues/running", h.Running)
 	r.Get("/api/queues/failures", h.Failures)
+	r.Get("/api/queues/fallbacks", h.Fallbacks)
 	// Epic 47: keep libraries offline, in MP4 and without duplicates (offline*.go,
 	// ytsources.go, fileactions.go, duplicates.go)
 	r.Post("/api/libraries/{id}/convert", h.ConvertLibrary)

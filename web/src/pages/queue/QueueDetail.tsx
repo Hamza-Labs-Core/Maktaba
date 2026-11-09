@@ -19,6 +19,7 @@ import type {
 import { runMachine, useJobStream, useQueuesSnapshot, useWorkers } from "../../lib/useQueueStream";
 import { ActivityLog } from "../../components/queue/ActivityLog";
 import { IssueList, groupKey } from "../../components/queue/IssueList";
+import { FallbackCounts } from "../../components/queue/FallbackCounts";
 import { NextUp } from "../../components/queue/NextUp";
 import { PoolStepper } from "../../components/queue/PoolStepper";
 import { RateChart } from "../../components/queue/RateChart";
@@ -401,6 +402,8 @@ export function QueueDetail() {
           </label>
         </div>
       )}
+
+      {info.plugin && <FallbackCounts stage={stage} />}
 
       <div className="mkt-q-hero">
         <RingGauge

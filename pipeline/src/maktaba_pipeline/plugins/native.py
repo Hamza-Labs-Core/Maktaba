@@ -33,6 +33,7 @@ import struct
 import sys
 import time
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -48,6 +49,8 @@ from . import firstparty
 __all__ = [
     "FALLBACKS",
     "note_fallback",
+    "count_fallback",
+    "write_fallbacks",
     "ImplChoice",
     "SandboxRefused",
     "Unregistered",
@@ -84,8 +87,65 @@ RUNNER_POLL_SEC = 0.25
 FALLBACKS: dict[tuple[str, str], int] = {}
 
 
+#: (stage, why) -> (count, first time, latest time) of the fallbacks counted since the last
+#: :func:`write_fallbacks` (story 54.43): what the worker still has to add to
+#: ``stage_fallbacks``. Every reason of :data:`FALLBACKS`, plus ``fingerprint_inproc`` and
+#: ``sqlite`` (:func:`count_fallback`), which a parity run does not fail on.
+_UNWRITTEN: dict[tuple[str, str], tuple[int, datetime, datetime]] = {}
+
+
 def note_fallback(stage: str, why: str) -> None:
     FALLBACKS[(stage, why)] = FALLBACKS.get((stage, why), 0) + 1
+    count_fallback(stage, why)
+
+
+def count_fallback(stage: str, why: str, n: int = 1) -> None:
+    """Count ``n`` fallbacks of ``stage`` for ``why`` toward ``stage_fallbacks`` only."""
+    at = datetime.now(UTC)
+    held = _UNWRITTEN.get((stage, why))
+    _UNWRITTEN[(stage, why)] = (n, at, at) if held is None else (held[0] + n, held[1], at)
+
+
+#: the machine name of the home's own worker in ``stage_fallbacks`` (a joined machine's is
+#: its cluster node id)
+HOME_MACHINE = "home"
+
+
+async def write_fallbacks(db: Any, machine: str | None) -> int:
+    """Add the fallbacks counted since the last call to ``stage_fallbacks`` (story 54.43),
+    one statement per (stage, reason); how many rows were written. A row that cannot be
+    written stays counted for the next call, added to whatever is counted meanwhile; this
+    never raises."""
+    from ..engine.sql import to_ts
+
+    written = 0
+    for key in list(_UNWRITTEN):
+        n, first, last = _UNWRITTEN[key]
+        stage, why = key
+        try:
+            await db.execute(
+                "INSERT INTO stage_fallbacks (machine, stage, reason, count, first_at, last_at)"
+                " VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (machine, stage, reason)"
+                " DO UPDATE SET count = stage_fallbacks.count + EXCLUDED.count,"
+                " last_at = EXCLUDED.last_at",
+                machine or HOME_MACHINE,
+                stage,
+                why,
+                n,
+                to_ts(db, first),
+                to_ts(db, last),
+            )
+        except Exception:  # noqa: BLE001 - a database before slot 0218, or one that is away
+            _log.debug("stage_fallbacks_unwritten", stage=stage, reason=why, exc_info=True)
+            continue
+        # what was counted while the statement ran stays for the next call
+        now_held = _UNWRITTEN.get(key)
+        if now_held is not None and now_held[0] > n:
+            _UNWRITTEN[key] = (now_held[0] - n, last, now_held[2])
+        else:
+            _UNWRITTEN.pop(key, None)
+        written += 1
+    return written
 
 
 class Unregistered(Exception):
@@ -375,8 +435,11 @@ async def share_library(db: Any) -> bool:
 
 async def choose(db: Any, stage: str) -> ImplChoice:
     """Where this job of ``stage`` runs on this machine."""
-    if firstparty.by_stage(stage) is None or getattr(db, "dialect", "") != "postgres":
+    if firstparty.by_stage(stage) is None:
         return ImplChoice("inproc")
+    if getattr(db, "dialect", "") != "postgres":
+        # the plugin API and its per-plugin roles are Postgres only (story 54.36 §4 (b))
+        return ImplChoice("inproc", "sqlite")
     if await stage_impl(db, stage) != "plugin":
         return ImplChoice("inproc")
     if (
@@ -1165,6 +1228,7 @@ def fingerprint_fn(stage: str, kind: str, inproc: Any) -> Any:
             KeyError,
         ) as exc:
             _log.info("plugin_fingerprint_inproc", stage=stage, why=str(exc)[:200])
+            count_fallback(stage, "fingerprint_inproc")
             return await inproc(db, subject)
 
     return fn

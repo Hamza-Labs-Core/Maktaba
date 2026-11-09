@@ -460,6 +460,7 @@ class WorkerAgent:
         self.selector.ahead = await stages_ahead(self.db, self.graph)
         if not self.paused:
             await refresh_stages(self.db, self.graph, self.selector.served)
+            await self.write_fallbacks()
         if self.node_id is not None:
             if self.paused or time.monotonic() - self._last_schema >= self.storage_check_sec:
                 await self.check_schema()
@@ -614,6 +615,15 @@ class WorkerAgent:
         )
         self._pause_changed()
         await self.apply()
+
+    async def write_fallbacks(self) -> None:
+        """Add this machine's in-process fallbacks counted since the last write to
+        ``stage_fallbacks`` (story 54.43). A paused node writes nothing; never raises."""
+        if self.paused:
+            return
+        from ..plugins import native
+
+        await native.write_fallbacks(self.db, self.node_id)
 
     async def run_refresher(self, interval: float = STAGE_REFRESH_SEC) -> None:
         while not self.shutdown.is_set():

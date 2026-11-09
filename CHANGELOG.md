@@ -665,6 +665,13 @@ build fails when the two differ.
 
 ### Added
 
+- **Admins can see when a built-in plugin's step ran in the queue worker instead (story
+  54.43).** A queue step whose plugin runner cannot take a job on a machine runs in the queue
+  worker. The worker now counts each of these, per machine and reason, and keeps the counts in
+  the database. An admin reads them under **Ran in the worker instead** on the step's page
+  under Queues, or through `GET /api/queues/fallbacks`. Removing the in-process path waits for
+  a full release with none counted on the home.
+
 - **A runner's tools read a library file on a share on Windows (story 54.23).** A job that
   hands ffmpeg or ffprobe a file on a share-hosted library (thumbnails, probes, the
   transcription input) no longer runs in the queue worker. The runner opens that one file

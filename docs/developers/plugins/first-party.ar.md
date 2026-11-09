@@ -215,6 +215,14 @@ maktaba-server stages impl promo_links inproc
 يوقفها مؤقتًا مع نقاط تفتيشها: لا تُحتسب محاولة)، ثم يضبط المرحلة ويستأنف. لا تضيع مهمة ولا تُعاد.
 والجهاز الذي لا يخدم مشغّلُه المرحلةَ يشغّلها داخل العامل، فيكتب البيانات نفسها.
 
+وكل رجوع من هذا النوع يُحسب: لكل جهاز ومرحلة وسبب، يضيف العامل ما حسبه إلى `stage_fallbacks` كل
+30 ثانية. ويقرؤها المشرف عبر `GET /api/queues/fallbacks` (و`?stage=` لمرحلة واحدة) أو تحت
+**عمل في العامل بدلًا من ذلك** في صفحة المرحلة. والأسباب هي `runner_not_serving_here`
+و`windows_share_library` و`role_unusable` و`index_store_chroma` و`runner_areas_stale`
+و`unregistered` و`sandbox_refused` و`fingerprint_inproc` (لم يُجب مشغّل البصمات) و`sqlite`
+(على SQLite تعمل كل مرحلة من الإضافات الأساسية داخل العامل). والمرحلة المضبوطة على `inproc` يدويًا
+لا تُحسب.
+
 ## برهان التطابق
 
 على كل موجة أن تبرهن أن مراحلها تفعل **بالضبط** ما كانت تفعله. يشغّل `tools/plugins/parity.py`

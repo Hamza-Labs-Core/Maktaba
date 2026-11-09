@@ -582,6 +582,10 @@ async def run(
         for task in background:
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await task
+        if agent is not None:
+            # the fallbacks counted since the last refresh (story 54.43)
+            with contextlib.suppress(Exception):
+                await agent.write_fallbacks()
         if cfg.engine:
             with contextlib.suppress(Exception):
                 await deregister_worker(database, worker_id)
