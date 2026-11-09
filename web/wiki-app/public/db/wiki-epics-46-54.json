@@ -5809,7 +5809,7 @@
       "title": "Wave 9: the core stages, and removing the in-process path",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.36 — Wave 9: the core stages, and removing the in-process path\n\n> Epic 54 · Phase 4 · Depends on: 54.35 · Needed by: —\n\n## Why\n\nThe last wave moves the stages every home always runs (scan, probe and the identity stages),\nthen deletes what made the migration safe: the in-process handlers, `CORE_MODULES` and the\nswitch. After it, the pipeline worker is the queue engine plus dispatch, and every stage is a\nplugin (README §15.3, F19).\n\n## Description\n\n### 1. The stages\n\nAll in **`tv.maktaba.core-media`**, the plugin of the `core.pipeline` component (kind\n`stages+process+loop`, `switchabl",
+      "content": "# Story 54.36 — Wave 9: the core stages, and removing the in-process path\n\n> Epic 54 · Phase 4 · Depends on: 54.35 (§4 also on 54.43) · Needed by: —\n\n## Why\n\nThe last wave moves the stages every home always runs (scan, probe and the identity stages),\nthen deletes what made the migration safe: the in-process handlers, `CORE_MODULES` and the\nswitch. After it, the pipeline worker is the queue engine plus dispatch, and every stage is a\nplugin (README §15.3, F19).\n\n## Description\n\n### 1. The stages\n\nAll in **`tv.maktaba.core-media`**, the plugin of the `core.pipeline` component (kind\n`stages+proces",
       "tags": [
         "story",
         "54-plugins",
@@ -5817,8 +5817,11 @@
       ],
       "related": [
         "epic-54-plugins",
+        "entity-processing_jobs",
         "entity-videos",
         "ep-get-queues",
+        "ep-get-queues-stage",
+        "ep-patch-queues-stage",
         "ep-get-components"
       ],
       "files": {
@@ -5828,9 +5831,12 @@
       },
       "api_endpoints": [
         "GET /queues",
+        "GET /queues/{stage}",
+        "PATCH /queues/{stage}",
         "GET /components"
       ],
       "db_tables": [
+        "processing_jobs",
         "videos"
       ],
       "metadata": {
@@ -6033,6 +6039,35 @@
       "db_tables": [],
       "metadata": {
         "slug": "joined-machines"
+      }
+    },
+    {
+      "id": "story-54.43",
+      "type": "story",
+      "title": "Counting the in-process fallbacks",
+      "epic": "54-plugins",
+      "phase": 5,
+      "content": "# Story 54.43 — Counting the in-process fallbacks\n\n> Epic 54 · Phase 4 · Depends on: 54.25 · Needed by: 54.36 §4\n\n## Why\n\nA first-party stage whose `job_stages.impl` is `plugin` still runs in the pipeline worker when\nits runner cannot take the job on this machine: the runner is not serving here, its role or\nsandbox is stale, the library is on a Windows share, the search index is Chroma, the plugin\nran a statement it does not have, or its sandbox refused a file. On SQLite every first-party\nstage runs in the worker. The worker counts these in memory only (`plugins/native.py`,\n`FALLBACKS`), so th",
+      "tags": [
+        "story",
+        "54-plugins",
+        "phase-5"
+      ],
+      "related": [
+        "epic-54-plugins",
+        "ep-get-queues"
+      ],
+      "files": {
+        "story": "specs/epics/54-plugins/story-54-43-fallback-counts.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /queues"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "fallback-counts"
       }
     }
   ]

@@ -1162,6 +1162,7 @@ wave is one release with its stages flipped at update and a per-stage switch bac
 | 54.40 | [Published events, cross-plugin triggers and run-time lineage](story-54-40-events-lineage.md) | 1 | 54.04, 54.06, 54.08, 54.39 |
 | 54.41 | [The flow chart](story-54-41-flow-chart.md) | 1 | 54.13, 54.39 |
 | 54.42 | [Third-party plugins on joined machines](story-54-42-joined-machines.md) | 1 | 54.07, 54.09, 54.37, 54.38, 54.40, Epic 35, Epic 53 |
+| 54.43 | [Counting the in-process fallbacks](story-54-43-fallback-counts.md) | 4 | 54.25 |
 
 54.37 and 54.38 cover what Epic 51 does not provide: its catalog is fixed per release with no
 run-time entries, and its packs code installs only first-party `asset` packs verified against
@@ -1246,6 +1247,8 @@ graph LR
   S33 --> S34[54.34 wave 7]
   S34 --> S35[54.35 wave 8]
   S35 --> S36[54.36 wave 9]
+  S25 --> S43[54.43 fallback counts]
+  S43 --> S36
   S01 --> S39[54.39 flows]
   S06 --> S39
   S07 --> S39
