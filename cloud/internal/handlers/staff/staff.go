@@ -3,8 +3,8 @@
 // in with a password and then a second factor, its session lasts at most 8 hours (15 minutes
 // idle), and its access token is signed with a key no customer token uses.
 //
-// Passkeys (§2 2a) and the passkey re-check come in the story's second part; until then a
-// staff account's factor is a TOTP app, with recovery codes behind it.
+// The second factor is a passkey (passkey.go), a TOTP app, or both, with recovery codes behind
+// them.
 package staff
 
 import (
@@ -14,8 +14,11 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/go-webauthn/webauthn/webauthn"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/audit"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/argon2id"
@@ -54,6 +57,8 @@ type Deps struct {
 	Signer *staffauth.Signer
 	// Box seals each TOTP secret (MAKTABA_CLOUD_STAFF_SECRET_KEY).
 	Box *staffauth.Box
+	// WebAuthn is the passkeys' relying party (staffauth.NewWebAuthn); nil turns them off.
+	WebAuthn *webauthn.WebAuthn
 	// Gate admits the routes a signed-in staff account calls about itself.
 	Gate *middleware.StaffGate
 	// Turnstile is the bot check on sign-in (50.30); its WebOrigins name the console.
@@ -77,14 +82,20 @@ func Mount(r interface {
 	r.Post("/v1/staff/login", d.Login)
 	r.Post("/v1/staff/mfa/totp", d.MFATOTP)
 	r.Post("/v1/staff/mfa/recovery", d.MFARecovery)
+	r.Post("/v1/staff/mfa/passkey/begin", d.MFAPasskeyBegin)
+	r.Post("/v1/staff/mfa/passkey/finish", d.MFAPasskeyFinish)
 	r.Post("/v1/staff/refresh", d.Refresh)
 	r.Post("/v1/staff/logout", d.Logout)
 	r.Post("/v1/staff/enroll/start", d.EnrollStart)
 	r.Post("/v1/staff/enroll/finish", d.EnrollFinish)
+	r.Post("/v1/staff/enroll/passkey/begin", d.EnrollPasskeyBegin)
+	r.Post("/v1/staff/enroll/passkey/finish", d.EnrollPasskeyFinish)
 	r.Method(http.MethodGet, "/v1/staff/me", d.Gate.Session(http.HandlerFunc(d.Me)))
 	r.Method(http.MethodGet, "/v1/staff/sessions", d.Gate.Session(http.HandlerFunc(d.Sessions)))
 	r.Method(http.MethodPost, "/v1/staff/sessions/revoke-all", d.Gate.Session(http.HandlerFunc(d.RevokeAll)))
 	r.Method(http.MethodPost, "/v1/staff/reauth/totp", d.Gate.Session(http.HandlerFunc(d.ReauthTOTP)))
+	r.Method(http.MethodPost, "/v1/staff/reauth/passkey/begin", d.Gate.Session(http.HandlerFunc(d.ReauthPasskeyBegin)))
+	r.Method(http.MethodPost, "/v1/staff/reauth/passkey/finish", d.Gate.Session(http.HandlerFunc(d.ReauthPasskeyFinish)))
 }
 
 // RateLimitedPrefixes are the routes §6's per-IP limit covers: burst 5, then 1 per 12 s.
@@ -330,7 +341,7 @@ func (d *Deps) MFATOTP(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "mfa_failed")
 		return
 	}
-	d.signIn(w, r, a, req.MFAToken, map[string]any{"method": "totp"})
+	d.signIn(w, r, a, req.MFAToken, staffauth.AMRTOTP, map[string]any{"method": "totp"})
 }
 
 // MFARecovery is §2 step 2c: the code is spent and the owner alerted. A recovery code counts
@@ -368,12 +379,13 @@ func (d *Deps) MFARecovery(w http.ResponseWriter, r *http.Request) {
 	}
 	d.audit(r, a.ID, a.Email, audit.ActionStaffRecoveryUsed, map[string]any{"left": len(codes) - 1})
 	d.Logger.Error("staff recovery code used", "code", AlertRecoveryUsed, "staff_id", a.ID, "left", len(codes)-1)
-	d.signIn(w, r, a, req.MFAToken, map[string]any{"method": "recovery"})
+	d.signIn(w, r, a, req.MFAToken, staffauth.AMRTOTP, map[string]any{"method": "recovery"})
 }
 
-// signIn ends a successful MFA step: the mfa_token is spent, a session starts, its cookie is
-// set and its first access token returned.
-func (d *Deps) signIn(w http.ResponseWriter, r *http.Request, a stores.StaffAccount, mfaToken string, detail map[string]any) {
+// signIn ends a successful MFA step: the mfa_token is spent, a session starts with amr
+// ["pwd", factor] (staffauth.AMRPasskey or AMRTOTP), its cookie is set and its first access
+// token returned.
+func (d *Deps) signIn(w http.ResponseWriter, r *http.Request, a stores.StaffAccount, mfaToken, factor string, detail map[string]any) {
 	ctx := r.Context()
 	now := d.now()
 	if err := d.Staff.SpendMFAToken(ctx, staffauth.TokenHash(mfaToken)); err != nil {
@@ -385,7 +397,7 @@ func (d *Deps) signIn(w http.ResponseWriter, r *http.Request, a stores.StaffAcco
 		d.fail(w, "cookie", err)
 		return
 	}
-	amr := []string{staffauth.AMRPassword, staffauth.AMRTOTP}
+	amr := []string{staffauth.AMRPassword, factor}
 	sess, err := d.Staff.NewSession(ctx, a.ID, staffauth.TokenHash(raw), amr, cmw.GetClientIP(ctx), truncate(r.UserAgent(), 256), now)
 	if err != nil {
 		d.fail(w, "session", err)
@@ -609,19 +621,11 @@ func (d *Deps) ReauthTOTP(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	ctx := r.Context()
-	o, _ := middleware.ServiceAdmin(ctx)
-	a, err := d.Staff.ByID(ctx, o.ID)
-	if err != nil {
-		d.fail(w, "lookup", err)
+	a, ok := d.reauthAccount(w, r)
+	if !ok {
 		return
 	}
-	now := d.now()
-	if isLocked, until := (staffauth.Lockout{LockedUntil: a.LockedUntil}).Locked(now); isLocked {
-		locked(w, until, now)
-		return
-	}
-	good, err := d.checkTOTP(ctx, a, req.Code, true)
+	good, err := d.checkTOTP(r.Context(), a, req.Code, true)
 	if err != nil {
 		d.fail(w, "totp", err)
 		return
@@ -631,7 +635,15 @@ func (d *Deps) ReauthTOTP(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnauthorized, "mfa_failed")
 		return
 	}
-	if err := d.Staff.Reauthed(ctx, o.SessionID, staffauth.AMRTOTP, now); err != nil {
+	d.reauthed(w, r, a, staffauth.AMRTOTP, "totp")
+}
+
+// reauthed ends a good re-check with factor: the session's auth_time moves to now, the event
+// is audited, and a new access token carries it.
+func (d *Deps) reauthed(w http.ResponseWriter, r *http.Request, a stores.StaffAccount, factor, method string) {
+	ctx := r.Context()
+	o, _ := middleware.ServiceAdmin(ctx)
+	if err := d.Staff.Reauthed(ctx, o.SessionID, factor, d.now()); err != nil {
 		d.fail(w, "reauth", err)
 		return
 	}
@@ -640,7 +652,7 @@ func (d *Deps) ReauthTOTP(w http.ResponseWriter, r *http.Request) {
 		d.fail(w, "session", err)
 		return
 	}
-	d.audit(r, a.ID, a.Email, audit.ActionStaffReauth, map[string]any{"method": "totp"})
+	d.audit(r, a.ID, a.Email, audit.ActionStaffReauth, map[string]any{"method": method})
 	d.issue(w, a, sess)
 }
 
@@ -718,8 +730,9 @@ func PasswordProblem(p string) string {
 	}
 }
 
-// EnrollFinish sets the password and confirms the TOTP factor with a code from the app; the
-// answer carries the 10 recovery codes, shown once. The person then signs in.
+// EnrollFinish sets the password and confirms the second factor: a code from the TOTP app,
+// or, with no code, the passkey added at EnrollPasskeyFinish (§1: a passkey, a TOTP app, or
+// both). The answer carries the 10 recovery codes, shown once. The person then signs in.
 func (d *Deps) EnrollFinish(w http.ResponseWriter, r *http.Request) {
 	var req enrollReq
 	if !decode(w, r, &req) {
@@ -734,14 +747,17 @@ func (d *Deps) EnrollFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	good, err := d.checkTOTP(ctx, a, req.Code, false)
-	if err != nil {
-		d.fail(w, "totp", err)
-		return
-	}
-	if !good {
-		writeErr(w, http.StatusBadRequest, "mfa_failed")
-		return
+	withTOTP := strings.TrimSpace(req.Code) != ""
+	if withTOTP {
+		good, err := d.checkTOTP(ctx, a, req.Code, false)
+		if err != nil {
+			d.fail(w, "totp", err)
+			return
+		}
+		if !good {
+			writeErr(w, http.StatusBadRequest, "mfa_failed")
+			return
+		}
 	}
 	hash, err := argon2id.Hash(req.Password, argon2id.DefaultParams())
 	if err != nil {
@@ -753,14 +769,22 @@ func (d *Deps) EnrollFinish(w http.ResponseWriter, r *http.Request) {
 		d.fail(w, "recovery codes", err)
 		return
 	}
-	if err := d.Staff.FinishEnrolment(ctx, staffauth.TokenHash(req.Token), a.ID, hash, hashes, d.now()); err != nil {
+	if err := d.Staff.FinishEnrolment(ctx, staffauth.TokenHash(req.Token), a.ID, hash, withTOTP, hashes, d.now()); err != nil {
 		if errors.Is(err, stores.ErrStaffTokenGone) {
 			writeErr(w, http.StatusGone, "enrolment_link_expired")
+			return
+		}
+		if errors.Is(err, stores.ErrStaffNoFactor) {
+			writeErr(w, http.StatusBadRequest, "mfa_required")
 			return
 		}
 		d.fail(w, "finish enrolment", err)
 		return
 	}
-	d.audit(r, a.ID, a.Email, audit.ActionStaffEnrolled, map[string]any{"methods": []string{"totp"}})
+	methods, err := d.Staff.Methods(ctx, a.ID)
+	if err != nil {
+		d.Logger.Error("staff: methods after enrolment", "err", err)
+	}
+	d.audit(r, a.ID, a.Email, audit.ActionStaffEnrolled, map[string]any{"methods": methods})
 	writeJSON(w, http.StatusOK, map[string]any{"recovery_codes": codes})
 }

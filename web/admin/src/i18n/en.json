@@ -300,7 +300,7 @@
   "staff.sessions.none": "No signed-in devices.",
   "staff.sessions.signOutAllTitle": "Sign out on every device?",
   "staff.sessions.signOutAllBody": "Every session of your staff account ends, this one included.",
-  "staff.enroll.intro": "Setting up {email}. Add the key below to your authenticator app, then choose a password and enter the app's code.",
+  "staff.enroll.intro": "Setting up {email}. Add a passkey, the authenticator app below, or both; then choose a password.",
   "staff.enroll.openApp": "Open in your authenticator app",
   "staff.enroll.secret": "Or type this key into the app:",
   "staff.enroll.copy": "Copy the key",
@@ -314,5 +314,14 @@
   "error.password_too_short": "Use at least 14 characters.",
   "error.password_too_long": "Use at most 256 characters.",
   "error.password_breached": "That password has appeared in a data breach. Choose another.",
-  "error.password_invalid": "That password can't be used. Choose another."
+  "error.password_invalid": "That password can't be used. Choose another.",
+  "staff.passkey.failed": "The passkey check didn't finish. Try again, or use another way.",
+  "staff.passkey.unsupported": "This browser can't use passkeys. Use the authenticator app instead.",
+  "staff.passkey.expired": "The passkey check took too long. Try again.",
+  "staff.passkey.addFailed": "This passkey couldn't be added. Try again.",
+  "staff.passkey.exists": "This passkey is already added.",
+  "staff.passkey.none": "This account has no passkey. Use a code instead.",
+  "staff.enroll.passkeyAdded": "Passkey added ({count} in all). You can add the authenticator app too, or finish now.",
+  "staff.enroll.passkeyAnother": "Add another passkey",
+  "staff.enroll.codeOptional": "Code from the app (optional with a passkey)"
 }

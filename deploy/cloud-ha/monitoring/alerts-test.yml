@@ -131,3 +131,19 @@ tests:
       - eval_time: 4m
         alertname: staff_recovery_code_used
         exp_alerts: []
+  # story 50.33 part 2: a passkey whose counter went backwards pages the owner at once
+  - interval: 1m
+    input_series:
+      - series: 'maktaba_errors_total{job="cloud",service="cloud.api",code="staff_passkey_counter"}'
+        values: '0 0 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: staff_passkey_counter
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: staff_passkey_counter
+        exp_alerts:
+          - exp_labels: {severity: sev2, service: cloud.api}
+            exp_annotations:
+              summary: "A staff passkey's counter went backwards; the passkey was disabled"
+              runbook_url: docs/runbooks/cloud/staff-security.md

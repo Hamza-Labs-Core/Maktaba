@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-webauthn/webauthn/webauthn"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/abuse"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/audit"
@@ -113,6 +114,14 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	staffSigner, staffBox, err := staffKeys(cfg)
 	if err != nil {
 		return apiRouters{}, nil, err
+	}
+	// passkeys (50.33 §2): the console's origin is the relying party (with the admin listener
+	// off nothing is served, and no relying party is needed)
+	var staffRP *webauthn.WebAuthn
+	if cfg.Server.AdminListenAddr != "" {
+		if staffRP, err = staffauth.NewWebAuthn(cfg.Server.AdminOriginOrDefault()); err != nil {
+			return apiRouters{}, nil, fmt.Errorf("passkeys: %w", err)
+		}
 	}
 
 	// The payment provider is not chosen yet; "none" takes no payments.
@@ -335,7 +344,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		g.Use(prefixRateLimit(ratelimit.NewLimiter(5, 1.0/12), staffh.RateLimitedPrefixes))
 		g.Use(authRateLimit(ratelimit.NewLimiter(30, 5), []string{"/v1/staff/refresh"}))
 		staffh.Mount(g, &staffh.Deps{
-			Staff: staffStore, Signer: staffSigner, Box: staffBox, Gate: staffGate,
+			Staff: staffStore, Signer: staffSigner, Box: staffBox, Gate: staffGate, WebAuthn: staffRP,
 			Turnstile: staffTurnstile(cfg, tsGuard, o.Turnstile), TurnstileSiteKey: cfg.Turnstile.SiteKey,
 			Audit: auditLog, Logger: logger, Secure: true,
 		})
