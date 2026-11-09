@@ -20,7 +20,6 @@ from maktaba_pipeline.audio.probe import probe as ffprobe
 from maktaba_pipeline.db.jobs import Job
 from maktaba_pipeline.engine.context import StageContext, StageFailure
 from maktaba_pipeline.engine.graph import StageResult
-from maktaba_pipeline.engine.paths import to_local
 from maktaba_pipeline.engine.stages.legacy import _probe_output
 from maktaba_pipeline.engine.stages.registry import StageImpl
 from maktaba_pipeline.log import get_logger
@@ -44,7 +43,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
             retryable=False,
         )
     try:
-        result = await ffprobe(to_local(str(row["path"])))  # this host's mount of the NAS
+        result = await ffprobe(ctx.local_path(str(row["path"])))  # the job's path map
         state = await commit_probe(
             cast("_ProbeDB", db),
             video_id=job.video_id,

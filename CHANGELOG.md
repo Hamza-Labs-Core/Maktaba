@@ -201,6 +201,12 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Thumbnails, file reads and audio extraction work again on a home whose library share is
+  mounted elsewhere (`media.path_map`).** Since the thumbnail, probe and extract steps moved
+  into their plugins (v0.3.109), they opened a video by its stored path without the home's
+  path map, so every thumbnail on such a share failed as a missing file. They now open the
+  file through the job's path map; the next scan queues the failed ones again.
+
 - **A Windows plugin runner never starts as a process its file broker turns away (story
   54.23).** The runner's launcher starts the venv's own interpreter directly. If the venv's
   `pyvenv.cfg` cannot be read, or names no usable interpreter, the launcher no longer falls

@@ -28,7 +28,6 @@ from maktaba_pipeline.db.jobs import Job
 from maktaba_pipeline.engine.context import StageContext, StageFailure
 from maktaba_pipeline.engine.graph import Request, StageResult
 from maktaba_pipeline.engine.hashing import canonical_hash
-from maktaba_pipeline.engine.paths import to_local
 from maktaba_pipeline.engine.stages.registry import StageImpl
 from maktaba_pipeline.log import get_logger
 
@@ -85,7 +84,9 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         else:
             dest = Path(
                 await decode(
-                    to_local(str(row["path"])), selected.track.index, content_hash=content_hash
+                    ctx.local_path(str(row["path"])),
+                    selected.track.index,
+                    content_hash=content_hash,
                 )
             )
             try:

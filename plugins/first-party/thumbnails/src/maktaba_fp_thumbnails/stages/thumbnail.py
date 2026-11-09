@@ -17,7 +17,6 @@ from maktaba_pipeline.db.jobs import Job
 from maktaba_pipeline.engine.context import StageContext, StageFailure
 from maktaba_pipeline.engine.graph import StageResult
 from maktaba_pipeline.engine.hashing import canonical_hash
-from maktaba_pipeline.engine.paths import to_local
 from maktaba_pipeline.engine.stages.registry import StageImpl
 from maktaba_pipeline.log import get_logger
 from maktaba_pipeline.thumbnail.generator import ThumbnailError
@@ -52,7 +51,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     try:
         chapters = await _load_chapter_starts(cast("_ChapterReadDB", db), job.video_id)
         made = await generate(
-            to_local(str(row["path"])),  # this host's mount of the NAS
+            ctx.local_path(str(row["path"])),  # the job's path map
             duration_sec=duration,
             content_hash=str(row["content_hash"]),
             chapters=chapters,
