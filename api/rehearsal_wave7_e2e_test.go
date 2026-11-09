@@ -278,9 +278,29 @@ func (r *rehearsal) wave7Scenario() {
 	// 1. on the previous release: the change drafted and staged in-process, then approved to
 	// swap hours from now
 	if want[k.prev]["tv_stage"] {
+		// the release's own flip first: its worker's graph sync moves each first-party stage
+		// nobody set by hand to its plugin as it starts (engine/sync.py, _flip_first_party).
+		// A request for inproc before that finds the stage still inproc, and a release
+		// before the API recorded such a request as the admin's (pinImpl) answered 200,
+		// changed nothing, and the sync then moved the stage to its plugin: the change's
+		// stage ran in its runner (the failure on PR 1068's run)
+		waitFor(t, "tv_stage moved to its plugin by "+k.prev+"'s graph sync", 3*time.Minute, func() bool {
+			return stageImpls(db, []string{"tv_stage"})["tv_stage"] == "plugin"
+		})
 		code, body := a.adminJSON("PUT", "/api/queues/tv_stage/impl", map[string]any{"impl": "inproc"})
 		if code != http.StatusOK {
 			t.Fatalf("tv_stage in-process on %s: %d %s", k.prev, code, body)
+		}
+		// the switch is observable and held: inproc, set by hand, so no later sync moves it
+		var impl string
+		var pinned bool
+		if err := db.QueryRow(`SELECT impl, impl_changed_at IS NOT NULL FROM job_stages WHERE stage = 'tv_stage'`).
+			Scan(&impl, &pinned); err != nil {
+			t.Fatal(err)
+		}
+		if impl != "inproc" || !pinned {
+			t.Fatalf("tv_stage after the switch to inproc on %s: impl %s, set by hand %v; want inproc set by hand",
+				k.prev, impl, pinned)
 		}
 		r.logf("tv_stage switched to inproc on %s (its plugin is built in there)", k.prev)
 	}
