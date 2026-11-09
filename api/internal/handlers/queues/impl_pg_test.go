@@ -1,6 +1,7 @@
 package queues
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -89,5 +90,74 @@ func TestFlipKeepsEveryJob(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &d)
 	if d.Info.Plugin == nil || *d.Info.Plugin != "tv.maktaba.toy" || d.Info.Impl != "inproc" {
 		t.Fatalf("detail %+v", d.Info)
+	}
+}
+
+// updateFlip is the statement the pipeline's graph sync runs at each start
+// (pipeline/src/maktaba_pipeline/engine/sync.py, _flip_first_party): a first-party stage
+// nobody set by hand moves to its plugin.
+const updateFlip = `UPDATE job_stages SET impl = 'plugin' WHERE stage = ANY($1::text[])
+	AND impl = 'inproc' AND impl_changed_at IS NULL`
+
+// Update rehearsal 16.7's failure: an admin asked for inproc while the stage was still
+// inproc from before the worker's first graph sync; the request answered 200 and changed
+// nothing, the sync then moved the stage to its plugin, and the next job ran in the runner.
+// A request for the impl a stage already has records it as the admin's, so the sync keeps it.
+func TestPutImplKeepsAnUnchangedChoiceThroughTheUpdateFlip(t *testing.T) {
+	raw, err := os.ReadFile("../../plugins/firstparty/testdata/toy.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer firstparty.UseBundle(raw)()
+	db, _ := clustertest.ScratchDB(t)
+	if _, err := db.Exec(`INSERT INTO job_stages (stage, label, subject_kinds, pool, lane) VALUES ('fp_toy','Toy','{library}','cpu','seasons')`); err != nil {
+		t.Fatal(err)
+	}
+	r := chi.NewRouter()
+	h := &Handler{DB: db, FlipGrace: 300 * time.Millisecond}
+	h.Mount(r)
+	rec := extCall(t, r, extAdmin(), "PUT", "/api/queues/fp_toy/impl", map[string]any{"impl": "inproc"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	var st ImplState
+	_ = json.Unmarshal(rec.Body.Bytes(), &st)
+	if st.Impl != "inproc" || st.Paused != 0 {
+		t.Fatalf("answered %+v", st)
+	}
+	if _, err := db.Exec(updateFlip, "{fp_toy}"); err != nil {
+		t.Fatal(err)
+	}
+	var impl string
+	var by sql.NullString
+	if err := db.QueryRow(`SELECT impl, impl_changed_by FROM job_stages WHERE stage = 'fp_toy'`).Scan(&impl, &by); err != nil {
+		t.Fatal(err)
+	}
+	if impl != "inproc" || !by.Valid || by.String == "" {
+		t.Fatalf("after the update's flip the stage runs %s (changed by %v), want inproc as the admin asked", impl, by)
+	}
+	// no flip happened, so none is audited
+	var audits int
+	_ = db.QueryRow(`SELECT count(*) FROM audit_log WHERE action = 'stage.impl' AND target_id = 'fp_toy'`).Scan(&audits)
+	if audits != 0 {
+		t.Fatalf("%d flips audited, want none", audits)
+	}
+
+	// a stage the sync moved after the caller read it is not held: PutImpl flips it back
+	if _, err := db.Exec(`UPDATE job_stages SET impl = 'plugin', impl_changed_at = NULL WHERE stage = 'fp_toy'`); err != nil {
+		t.Fatal(err)
+	}
+	held, now, err := pinImpl(t.Context(), db, "fp_toy", "inproc", "admin")
+	if err != nil || held || now != "plugin" {
+		t.Fatalf("pin of inproc on a plugin stage: held %v now %q err %v", held, now, err)
+	}
+	// and one already pinned stays held, keeping who set it
+	if _, err := db.Exec(`UPDATE job_stages SET impl = 'inproc', impl_changed_at = now(), impl_changed_by = 'cli' WHERE stage = 'fp_toy'`); err != nil {
+		t.Fatal(err)
+	}
+	held, _, err = pinImpl(t.Context(), db, "fp_toy", "inproc", "admin")
+	_ = db.QueryRow(`SELECT impl_changed_by FROM job_stages WHERE stage = 'fp_toy'`).Scan(&by)
+	if err != nil || !held || by.String != "cli" {
+		t.Fatalf("pin of a pinned stage: held %v by %v err %v", held, by, err)
 	}
 }

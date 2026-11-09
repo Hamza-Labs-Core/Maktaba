@@ -3,7 +3,8 @@ package queues
 // PUT /api/queues/{stage}/impl {impl}: where one of Maktaba's own stages runs (Epic 54,
 // story 54.25 §3): "inproc" (its code in the pipeline worker) or "plugin" (the same code
 // in its first-party plugin's runner). Admin only, audited, idempotent; the CLI's
-// `maktaba-server stages impl <stage> <impl>` calls it.
+// `maktaba-server stages impl <stage> <impl>` calls it. A request for the impl the stage
+// already has still records it as the admin's (impl_changed_at), so an update keeps it.
 //
 // A flip never loses or reruns a job:
 //
@@ -15,6 +16,7 @@ package queues
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -76,8 +78,16 @@ func (h *Handler) PutImpl(w http.ResponseWriter, r *http.Request) {
 	}
 	out := ImplState{Stage: stage, Impl: in.Impl, Plugin: plugin}
 	if cur == in.Impl {
-		common.WriteJSON(w, r, http.StatusOK, out) // idempotent: the current state
-		return
+		held, now, err := pinImpl(ctx, h.DB, stage, in.Impl, actor(r))
+		if err != nil {
+			writeErr(w, r, "pin stage", err)
+			return
+		}
+		if held {
+			common.WriteJSON(w, r, http.StatusOK, out) // idempotent: the current state, now the admin's
+			return
+		}
+		cur = now // the update's flip moved it between the read and the pin: flip it back
 	}
 	paused, err := h.flip(ctx, stage, in.Impl, actor(r))
 	if err != nil {
@@ -173,6 +183,29 @@ func (h *Handler) flip(ctx context.Context, stage, impl, by string) (int64, erro
 	}
 	done = true
 	return int64(len(ids)), nil
+}
+
+// pinImpl records a request for the impl a stage already has as an admin's choice. The
+// pipeline's graph sync moves each first-party stage to its plugin at an update
+// (engine/sync.py, _flip_first_party) unless impl_changed_at is set: a request for
+// inproc that found the stage still inproc and left impl_changed_at empty was undone by
+// the next sync, and the stage's next job ran in its runner after the request answered
+// inproc (update rehearsal 16.7). held is false only when the stage no longer has impl
+// (a sync moved it after the caller read it); now is the impl it has then.
+func pinImpl(ctx context.Context, db *sql.DB, stage, impl, by string) (held bool, now string, err error) {
+	res, err := db.ExecContext(ctx, `UPDATE job_stages SET impl_changed_at = now(), impl_changed_by = $3
+		WHERE stage = $1 AND impl = $2 AND impl_changed_at IS NULL`, stage, impl, by)
+	if err != nil {
+		return false, "", err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		return true, impl, nil
+	}
+	// a statement of its own: it reads what a sync that held the row committed
+	if err := db.QueryRowContext(ctx, `SELECT impl FROM job_stages WHERE stage = $1`, stage).Scan(&now); err != nil {
+		return false, "", err
+	}
+	return now == impl, now, nil
 }
 
 func sleep(ctx context.Context, d time.Duration) bool {

@@ -201,6 +201,12 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A stage you set to run in the queue worker stays there after Maktaba restarts or
+  updates.** Choosing where one of Maktaba's own stages runs (Queues page, or
+  `maktaba-server stages impl`) did nothing when the stage already ran where you asked, and
+  then the next start of the queue worker moved it to its plugin runner anyway. That choice is
+  now recorded as yours, so it is kept.
+
 - **Thumbnails, file reads and audio extraction work again on a home whose library share is
   mounted elsewhere (`media.path_map`).** Since the thumbnail, probe and extract steps moved
   into their plugins (v0.3.109), they opened a video by its stored path without the home's

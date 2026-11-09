@@ -97,8 +97,23 @@ func runStagesImpl(ctx context.Context, out io.Writer, db *sql.DB, stage, impl s
 		return fmt.Errorf("no queue %s: %w", stage, err)
 	}
 	if cur == impl {
-		fmt.Fprintf(out, "%s already runs %s\n", stage, impl)
-		return nil
+		// still recorded as a person's choice (impl_changed_at), or the next update's graph
+		// sync moves a first-party stage to its plugin anyway (engine/sync.py,
+		// _flip_first_party; the API's pinImpl does the same)
+		res, err := db.ExecContext(ctx, `UPDATE job_stages SET impl_changed_at = now(), impl_changed_by = 'cli'
+			WHERE stage = $1 AND impl = $2 AND impl_changed_at IS NULL`, stage, impl)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			if err := db.QueryRowContext(ctx, `SELECT impl FROM job_stages WHERE stage = $1`, stage).Scan(&cur); err != nil {
+				return err
+			}
+		}
+		if cur == impl {
+			fmt.Fprintf(out, "%s already runs %s\n", stage, impl)
+			return nil
+		}
 	}
 	if _, err := db.ExecContext(ctx, `UPDATE job_stages SET flipping = TRUE WHERE stage = $1`, stage); err != nil {
 		return err
