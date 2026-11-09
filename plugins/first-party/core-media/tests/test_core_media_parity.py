@@ -7,23 +7,32 @@ with two audio tracks, a silent one, one it cannot read), and what probe's edges
 (thumb_hash, link from a yt-dlp ``.info.json``); then each video's identity, fingerprint,
 style sample and access check. ``videos.state`` is written by the engine on both sides: in
 the runner, probe's transition is the worker's (the relayed advance). Every row, job and
-log line is compared, then the job times (N16)."""
+log line is compared, then the job times (N16).
+
+N16 runs each stage's job 11 times a side; the nine stages timed in one test took 7 s on
+CI, over the integration tier's 5 s soft cap. So each test builds the world and times one
+group of stages (TIMED): every test compares every row, job and file of its world, and
+the three together time every stage."""
 
 from __future__ import annotations
 
+import contextlib
+import hashlib
 import json
 import os
 import sys
 import types
 import uuid
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from maktaba_pipeline.engine import media as engine_media
 from maktaba_pipeline.engine.enqueue import enqueue_job
-from maktaba_pipeline.engine.media import reset_runner
+from maktaba_pipeline.engine.media import ProcResult, reset_runner
 from tests.plugins.firstparty.harness import SameIds, parity, plugin_api_dev
 from tests.stages.world import make_fake_media, models_off
 
@@ -43,6 +52,13 @@ STAGES = [
 ALSO = ["thumbnail"]
 #: the stages queued by hand for each video once the scan and probe's edges have run
 LATER = ("content_hash", "fingerprint", "style_sample", "access_check")
+#: N16's groups, one test each: the scan and what it queues, timed on the world after the
+#: scan; the others on the world after LATER ran too
+FOUND = ("scan", "probe", "thumb_hash", "link")
+TIMED = {
+    "identity": ("content_hash", "fingerprint", "thumbnail"),
+    "checks": ("style_sample", "access_check"),
+}
 KEYS = {
     "videos": ("id",),
     "media_info": ("video_id",),
@@ -130,6 +146,19 @@ def media(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]:
         }
 
     monkeypatch.setattr(probe_mod, "run_ffprobe", fake_ffprobe)
+
+    # thumb_small's 320 px copy (ffmpeg's JPEG on stdout), made from the source's bytes:
+    # each side's copy in data.thumbnails compares, where the fake's refusal failed each
+    # job three times and wrote nothing
+    fake_ffmpeg = engine_media._runner
+
+    async def with_small(args: list[str], timeout: float) -> ProcResult:
+        if "image2pipe" in args:
+            src = Path(args[args.index("-i") + 1])
+            return ProcResult(b"small " + hashlib.sha256(src.read_bytes()).digest(), b"", 0)
+        return await fake_ffmpeg(args, timeout)
+
+    engine_media.set_runner(with_small)
     yield
     reset_runner()
 
@@ -175,11 +204,21 @@ def seeder(lib_dir: Path) -> Any:
     return seed
 
 
-@pytest.mark.asyncio
-@pytest.mark.usefixtures("media")
-async def test_core_media_wave_9_is_identical(
+@dataclass
+class World:
+    p: Any  # the harness's Parity
+    cfg: Any  # the plugin's ParityConfig
+    tables: list[tuple[str, tuple[str, ...]]]
+    ignore: dict[str, Sequence[str]]
+    ids: SameIds
+
+
+@contextlib.asynccontextmanager
+async def world(
     template: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+) -> AsyncIterator[World]:
+    """The parity run of the library: the scan, probe, and what probe's edges queue, run on
+    both sides, the two compared."""
     from maktaba_fp_core_media.stages import link
     from maktaba_plugin_sdk.parity import ParityConfig
 
@@ -194,14 +233,11 @@ async def test_core_media_wave_9_is_identical(
     thumbs.mkdir()
     monkeypatch.setattr(small, "ROOT", str(thumbs))
     cfg = ParityConfig.load(HERE.parent / "parity.toml")
-    tables = [(t, KEYS[t]) for t in cfg.tables]
-    ignore = {k: list(v) for k, v in cfg.ignore.items()}
-    stages = selected()
     async with parity(
         PG_URL,
         template,
         bundle=firstparty._raw(),
-        stages=stages,
+        stages=selected(),
         group="light",
         setup_sql=SAME_VIDEO_IDS,
         seed=seeder(lib_dir),
@@ -210,11 +246,52 @@ async def test_core_media_wave_9_is_identical(
         files={"library": lib_dir, "data.thumbnails": thumbs},
         monkeypatch=monkeypatch,
     ) as p:
+        w = World(
+            p=p,
+            cfg=cfg,
+            tables=[(t, KEYS[t]) for t in cfg.tables],
+            ignore={k: list(v) for k, v in cfg.ignore.items()},
+            ids=ids,
+        )
         # 1. the scan, probe, and what probe's edges queue
         await p.run(before_side=ids.reset)
         assert p.a.ran == p.b.ran, "the two sides ran different jobs"
-        rows = await p.compare(tables, ignore=ignore, perf=False)
+        rows = await p.compare(w.tables, ignore=w.ignore, perf=False)
         assert rows == [], "\n".join(rows[:30])
+        yield w
+
+
+async def n16(w: World, timed: Sequence[str], report: str) -> None:
+    """N16 over ``timed`` (those of them selected), and every row again after its runs."""
+    stages = [s for s in timed if s in selected()]
+    problems = await w.p.compare_n16(w.tables, ignore=w.ignore, stages=stages, perf=w.cfg.perf)
+    slowest = w.p.report(report)
+    assert problems == [], "\n".join(problems[:20]) + "\nslowest plugin jobs:\n" + slowest
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("media")
+async def test_core_media_wave_9_finds_the_files_identically(
+    template: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with world(template, tmp_path, monkeypatch) as w:
+        p = w.p
+        for s in FOUND:
+            if s in selected():
+                assert s in p.b.ran, f"{s} never ran"
+        assert await p.b.db.fetchval("SELECT count(*) FROM youtube_videos") == 1
+        await n16(w, FOUND, PLUGIN)
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("media")
+@pytest.mark.parametrize("group", sorted(TIMED))
+async def test_core_media_wave_9_is_identical(
+    group: str, template: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stages = selected()
+    async with world(template, tmp_path, monkeypatch) as w:
+        p = w.p
         # 2. each video's identity, fingerprint, style sample and access check, and the
         # thumbnail its identity queues; one video is indexed (as transcription leaves it),
         # so its thumbnail moves it on (INDEXED -> THUMBNAILED), the worker's write
@@ -227,11 +304,11 @@ async def test_core_media_wave_9_is_identical(
                     await enqueue_job(
                         side.db, subject_kind="video", subject_id=vid["id"], stage=stage
                     )
-        await p.run(before_side=ids.reset)
+        await p.run(before_side=w.ids.reset)
         assert p.a.ran == p.b.ran, "the two sides ran different jobs"
         for s in stages:
             assert s in p.b.ran, f"{s} never ran"
-        rows = await p.compare(tables, ignore=ignore, perf=False)
+        rows = await p.compare(w.tables, ignore=w.ignore, perf=False)
         assert rows == [], "\n".join(rows[:30])
         # the world is what it says: probe's transition written by the engine (the relayed
         # advance) on the plugin side, as in-process; one video probe could not read
@@ -258,6 +335,11 @@ async def test_core_media_wave_9_is_identical(
             "SELECT count(*) FROM plugin_invocations WHERE plugin_id = $1", PLUGIN
         )
         assert n >= len(stages), f"only {n} jobs went through the plugin"
-        problems = await p.compare_n16(tables, ignore=ignore, stages=stages, perf=cfg.perf)
-        slowest = p.report(PLUGIN)
-    assert problems == [], "\n".join(problems[:20]) + "\nslowest plugin jobs:\n" + slowest
+        await n16(w, TIMED[group], f"{PLUGIN}.{group}")
+
+
+def test_the_groups_time_every_stage_once() -> None:
+    """Split for the soft cap, N16 still times every stage of the world, each once."""
+    groups = [FOUND, *TIMED.values()]
+    timed = [s for g in groups for s in g]
+    assert sorted(timed) == sorted(STAGES + ALSO), timed

@@ -817,8 +817,6 @@ async def parity(
     monkeypatch: Any,
 ) -> AsyncIterator[Parity]:
     """``plex``: the (URL, token) the plugin API's service door forwards to (story 54.35)."""
-    import asyncpg  # type: ignore[import-untyped]
-
     from maktaba_pipeline.plugins import firstparty, native
     from maktaba_plugin_runner.server import Runner
 
@@ -828,15 +826,27 @@ async def parity(
 
         pytest.skip("go is needed for the plugin API's dev server")
     names = ["maktaba_pa_" + uuid.uuid4().hex[:8], "maktaba_pb_" + uuid.uuid4().hex[:8]]
-    admin = await asyncpg.connect(pg_url)
-    for n in names:
-        await admin.execute(f'CREATE DATABASE "{n}" TEMPLATE "{template}"')
-    await admin.close()
     tmp = session_mkdtemp()
     server: DevAPI | None = None
     tasks: list[asyncio.Task[None]] = []
     sides: list[Database] = []
+    api_sock = tmp / "api.sock"
+    (tmp / "bundle.json").write_bytes(bundle)
+    # the dev server starts (~0.3 s) while the databases are copied, set up and seeded: it
+    # reads only the bundle as it starts, and connects to B's database at its first call
+    starting = asyncio.ensure_future(
+        asyncio.to_thread(
+            start_dev_api,
+            binary,
+            dsn=_go_dsn(_swap_db(pg_url, names[1])),
+            socket=api_sock,
+            bundle=tmp / "bundle.json",
+            plex=plex,
+        )
+    )
     try:
+        # the two copies of the template, each on its own connection, at once
+        await _each_admin(pg_url, [f'CREATE DATABASE "{n}" TEMPLATE "{template}"' for n in names])
         for n in names:
             d = await Database.connect(_swap_db(pg_url, n))
             sides.append(d)
@@ -859,16 +869,7 @@ async def parity(
         )
         for name in stages:
             await b.execute("UPDATE job_stages SET impl = 'plugin' WHERE stage = $1", name)
-        (tmp / "bundle.json").write_bytes(bundle)
-        api_sock = tmp / "api.sock"
-        server = await asyncio.to_thread(
-            start_dev_api,
-            binary,
-            dsn=_go_dsn(_swap_db(pg_url, names[1])),
-            socket=api_sock,
-            bundle=tmp / "bundle.json",
-            plex=plex,
-        )
+        server = await starting
         monkeypatch.setenv("MAKTABA_API_URL", "http://" + server.mint)
         run_dir = tmp / "runners"
         monkeypatch.setenv("MAKTABA_RUNNER_DIR", str(run_dir))
@@ -923,17 +924,33 @@ async def parity(
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
+        if server is None:
+            # the setup failed before it waited for the dev server: stopped all the same
+            with contextlib.suppress(Exception):
+                server = await starting
         if server is not None:
             stop_dev_api(server)
         for d in sides:
             await d.close()
-        admin = await asyncpg.connect(pg_url)
-        for n in names:
-            await admin.execute(f'DROP DATABASE IF EXISTS "{n}" WITH (FORCE)')
-        await admin.close()
+        await _each_admin(pg_url, [f'DROP DATABASE IF EXISTS "{n}" WITH (FORCE)' for n in names])
         shutil.rmtree(tmp, ignore_errors=True)
         with contextlib.suppress(ValueError, KeyError):
             _SESSION["dirs"].remove(tmp)
+
+
+async def _each_admin(pg_url: str, statements: Sequence[str]) -> None:
+    """Run each statement on its own admin connection, all at once (the two sides'
+    databases are made, and dropped, independently)."""
+    import asyncpg  # type: ignore[import-untyped]
+
+    async def one(sql: str) -> None:
+        admin = await asyncpg.connect(pg_url)
+        try:
+            await admin.execute(sql)
+        finally:
+            await admin.close()
+
+    await asyncio.gather(*(one(sql) for sql in statements))
 
 
 _ADDRESS = re.compile(r"0x[0-9a-f]{6,}")

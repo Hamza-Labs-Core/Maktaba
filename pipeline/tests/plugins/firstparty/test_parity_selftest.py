@@ -194,3 +194,50 @@ def test_a_file_that_differs_fails_naming_the_file(tmp_path: Path) -> None:
     (tmp_path / "b" / "x" / "2.jpg").write_bytes(b"same")
     out = diff_files("data.thumbnails", files_tree(tmp_path / "a"), files_tree(tmp_path / "b"))
     assert len(out) == 1 and out[0].startswith("file data.thumbnails/x/1.jpg: in-process ")
+
+
+@asyncio_test
+async def test_a_setup_that_fails_stops_the_dev_server_and_drops_both_databases(
+    toy: bytes, monkeypatch: pytest.MonkeyPatch, template: str
+) -> None:
+    """The dev server starts while the databases are made: a setup that fails before the
+    harness waits for it still stops it, and drops both databases."""
+    from maktaba_pipeline.plugins import firstparty
+    from tests.plugins.firstparty import harness
+
+    started: list[Any] = []
+    real_start = harness.start_dev_api
+
+    def start(*a: Any, **kw: Any) -> Any:
+        started.append(real_start(*a, **kw))
+        return started[-1]
+
+    ran: list[str] = []
+    real_admin = harness._each_admin
+
+    async def admin(url: str, statements: Any) -> None:
+        ran.extend(statements)
+        await real_admin(url, statements)
+
+    monkeypatch.setattr(harness, "start_dev_api", start)
+    monkeypatch.setattr(harness, "_each_admin", admin)
+
+    async def broken(db: Any) -> None:
+        raise RuntimeError("the seed broke")
+
+    with pytest.raises(RuntimeError, match="the seed broke"):
+        async with parity(
+            PG_URL,
+            template,
+            bundle=toy,
+            stages=["fp_toy"],
+            extra=[firstparty.stage_def("fp_toy")],
+            setup_sql=[TOY_TABLE_PG],
+            seed=broken,
+            monkeypatch=monkeypatch,
+        ):
+            pass
+    assert len(started) == 1 and started[0].proc.poll() is not None, "the dev server runs on"
+    made = [s.split('"')[1] for s in ran if s.startswith("CREATE DATABASE")]
+    dropped = [s.split('"')[1] for s in ran if s.startswith("DROP DATABASE")]
+    assert len(made) == 2 and dropped == made, ran
