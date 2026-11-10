@@ -212,6 +212,14 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Maktaba's own database starts again after a power cut or a killed container.** After an
+  unclean stop (a power cut, `docker kill`, a NAS switched off), the bundled Postgres could
+  refuse to start, over and over, on a lock file the stopped database left behind
+  (`.s.PGSQL.<port>.lock`): the stopped database's process number now belonged to another
+  process. Maktaba now removes such a lock before it starts the database, but only when no
+  database runs on that data, and never while a leftover database process still holds its
+  memory.
+
 - **A stage you set to run in the queue worker stays there after Maktaba restarts or
   updates.** Choosing where one of Maktaba's own stages runs (Queues page, or
   `maktaba-server stages impl`) did nothing when the stage already ran where you asked, and
