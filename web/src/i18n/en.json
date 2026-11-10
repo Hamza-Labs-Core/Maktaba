@@ -7764,6 +7764,7 @@
   "machine.video.software_only": "This home converts video in software. Players will play files as they are whenever they can.",
   "machine.video.device_failed": "The render device {device} could not encode: {error}",
   "machine.video.group_add": "The render device is there, but user {uid} can't open it: add group {gid} to the container (group_add).",
+  "machine.video.group_add.dsm": "The render device is there, but user {uid} can't open it: in Container Manager → Project → maktaba, stop the project, add group {gid} under group_add in its YAML, then build it again.",
   "machine.defaults.transcodes": "Video conversions at once: {software} in software (up to {height}p), {hardware} on a GPU",
   "stream.wait_transcode": "Another video is being converted on this home. Yours will start when it finishes."
 }

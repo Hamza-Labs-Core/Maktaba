@@ -57,8 +57,11 @@ export function VideoLines({
   v,
   t,
   locale,
+  platform,
 }: {
   v: VideoStatus;
+  /** the machine's platform (dsm: the render group's fix in Container Manager's words) */
+  platform?: string;
   t: (k: string, p?: Record<string, string | number>) => string;
   locale: string;
 }) {
@@ -78,7 +81,10 @@ export function VideoLines({
   }
   const why =
     v.reason === "group_add"
-      ? t("machine.video.group_add", { uid: v.uid ?? "?", gid: v.gid ?? "?" })
+      ? t(platform === "dsm" ? "machine.video.group_add.dsm" : "machine.video.group_add", {
+          uid: v.uid ?? "?",
+          gid: v.gid ?? "?",
+        })
       : v.reason === "device_failed"
         ? t("machine.video.device_failed", { device: v.device || "?", error: v.error || "?" })
         : v.reason === "no_device"
@@ -331,10 +337,10 @@ function MachinePanel({ pollMs }: { pollMs: number }) {
         : []),
       ...(d.video
         ? [
-            [t("machine.video"), <VideoLines v={d.video} t={t} locale={locale} />] as [
-              string,
-              React.ReactNode,
-            ],
+            [
+              t("machine.video"),
+              <VideoLines v={d.video} t={t} locale={locale} platform={d.machine?.platform} />,
+            ] as [string, React.ReactNode],
           ]
         : []),
       [

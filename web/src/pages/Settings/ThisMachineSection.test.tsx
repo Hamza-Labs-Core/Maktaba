@@ -307,6 +307,7 @@ describe("ThisMachineSection", () => {
     const software = { encoder: "software", software_only: true };
     open({
       ...DOC,
+      machine: { ...DOC.machine, platform: "docker" },
       video: {
         ...software,
         reason: "group_add",
@@ -322,6 +323,24 @@ describe("ThisMachineSection", () => {
     );
     expect(v).toHaveTextContent(
       "This home converts video in software. Players will play files as they are whenever they can."
+    );
+  });
+
+  it("on DSM, names the render group's fix in Container Manager's words (59.09)", async () => {
+    open({
+      ...DOC,
+      machine: { ...DOC.machine, platform: "dsm" },
+      video: {
+        encoder: "software",
+        software_only: true,
+        reason: "group_add",
+        device: "/dev/dri/renderD128",
+        uid: 1026,
+        gid: 937,
+      },
+    });
+    expect(await screen.findByTestId("machine-video")).toHaveTextContent(
+      "in Container Manager → Project → maktaba, stop the project, add group 937 under group_add"
     );
   });
 

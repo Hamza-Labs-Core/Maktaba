@@ -1,0 +1,37 @@
+# Maktaba on a Synology NAS: Container Manager → Project → Create, name maktaba, path
+# docker/maktaba, this file pasted as the project's YAML. maktaba.tv/install/synology fills
+# in the user, the shares, the memory limit and (optionally) this NAS's address and time
+# zone from your answers; the guide there says how to make the DSM user and its folders.
+#
+# Generated from cloud/installers/docker/docker-compose.yml by deploy/nas/generate.py
+# (Epic 59 story 59.09): edit those, not this file.
+
+# This version: J4125 models (Quick Sync).
+
+services:
+  maktaba:
+    image: ghcr.io/hamza-labs-core/maktaba-server:latest
+    container_name: maktaba
+    # the DSM user made for Maktaba (its uid, and the users group, 100)
+    user: "1026:100"
+    network_mode: host
+    restart: unless-stopped
+    stop_grace_period: 90s
+    # the memory tier's limit: Light 4g, Standard 6g, Strong 16g
+    mem_limit: 6g
+    environment:
+      MAKTABA_PLATFORM: dsm
+      # MAKTABA_HOST_IP: 192.168.1.20   # this NAS's address on your network
+      # TZ: Asia/Riyadh                 # your time zone
+    volumes:
+      # everything Maktaba keeps (an SSD volume's folder when there is one)
+      - /volume1/docker/maktaba:/var/lib/maktaba
+      # each share at its own path; :ro where Maktaba may only read
+      - /volume1/Movies:/volume1/Movies:ro
+      - /volume1/Recordings:/volume1/Recordings
+    # J4125 (Quick Sync): the render device and its group, so the DSM user may open it.
+    # The group's id differs from NAS to NAS: over SSH, stat -c %g /dev/dri/renderD128
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "937"
