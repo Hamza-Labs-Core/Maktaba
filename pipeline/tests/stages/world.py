@@ -159,6 +159,17 @@ async def models_off(db: Any) -> None:
     await set_rules(db, "books", {"enabled": False})
 
 
+async def identity_known(db: Any) -> None:
+    """Every video's identity stage marked done (a stand-in row), so its first probe asks for
+    none: the parity tests compare a stage with the legacy handler, which never asked (the
+    request itself is tests/stages/test_scanned_video_poster.py's)."""
+    await db.execute(
+        "INSERT INTO processing_jobs (subject_kind, subject_id, video_id, stage, state,"
+        " outcome, stage_version, input_hash, output_hash)"
+        " SELECT 'video', id, id, 'content_hash', 'done', 'imported', 1, 'i', 'o' FROM videos"
+    )
+
+
 async def core_runtime(db: Any, *, models: bool = False) -> EngineRuntime:
     """The engine with the core graph. The language model and book checks are off unless
     ``models``: a test that turns them on stands in for the model server itself."""

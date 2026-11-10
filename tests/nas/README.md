@@ -114,12 +114,8 @@ it is reported as pending (⏳) until that story is in `landed`.
    the server still sees a local client (Docker Desktop has no host network). Pick a port no
    other program on the machine listens on.
 
-**Waiting for a fix** (found by these cells; each `needs` names it until its fix merges):
-
-| Need | What the cells found |
-|---|---|
-| `poster-queue` | in a fresh container no `content_hash` job is queued for the scanned clips, and `thumbnail` (the poster) only follows `content_hash`: `thumb_small` runs and writes nothing, and no poster is served after 15 minutes |
-| `plugin-cache-grant` | stages run in the plugin runners are refused `$HOME/.maktaba/cache` (`plugin_sandbox_refused`, `/var/lib/maktaba/.maktaba/cache`): the image's `HOME` is the volume, and the runners' grants do not cover it; they fall back to running in process |
+**Waiting for a fix** (found by these cells; each `needs` names it until its fix merges): none
+now. A new one goes in a table here (`| Need | What the cells found |`) until its fix merges.
 
 **VA-API (59.05):** `vaapi-fallback` (VA-API asked for, no `/dev/dri`), `vaapi-fake-device`
 (`/dev/null` as the render node: the test encode fails) and `vaapi-no-group` (a node the user may

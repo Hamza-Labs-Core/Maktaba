@@ -44,6 +44,7 @@ def template(pg_template: str) -> str:
 def seeder(root: Path, media: dict[str, bytes]) -> Any:
     from maktaba_pipeline.engine.sql import dumps
     from tests.library_mgmt.epic47_world import World
+    from tests.stages.world import identity_known
 
     async def seed(db: Any) -> None:
         with pytest.MonkeyPatch.context() as mp:
@@ -61,6 +62,9 @@ def seeder(root: Path, media: dict[str, bytes]) -> Any:
                     " VALUES ($1, 1, 'opus', 'ar')",
                     str(vid),
                 )
+            # a library already processed: each video's identity is known, so the probe the
+            # conversion asks for queues none (Epic 59: only a first probe does)
+            await identity_known(db)
             await enqueue_job(db, subject_kind="library", subject_id=lib, stage="convert_mp4")
 
     return seed
