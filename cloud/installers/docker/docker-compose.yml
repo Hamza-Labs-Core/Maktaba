@@ -47,6 +47,14 @@ services:
       # your library, as the setup's library screens name it (read-write: the cluster's folder
       # lives beside the media on a share; the media itself is never written)
       - ${MAKTABA_MEDIA:-./media}:/media
+    # Hardware video on an Intel or AMD chip (a J4125 or N100 NAS, an AMD APU): pass the render
+    # device and its group, so Maktaba's user may open it. The group's id differs from NAS to
+    # NAS; find it on the host with: stat -c %g /dev/dri/renderD128
+    # Settings -> This machine then shows "Video: hardware (iHD), H.264 and HEVC", or why not.
+    # devices:
+    #   - /dev/dri:/dev/dri
+    # group_add:
+    #   - "937"   # the render device's group id, from the stat command above
     # NVIDIA GPUs (the second listen, faster transcription) need the NVIDIA container toolkit:
     # deploy:
     #   resources:

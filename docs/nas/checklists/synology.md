@@ -52,14 +52,14 @@ follows the Synology guide on maktaba.tv (Epic 59 story 59.09); the result goes 
 
 ## Hardware
 
-### 8. Quick Sync on the J4125
-- **Do:** J4125 only: play an HEVC file on a browser that needs a transcode; open Settings → This machine.
-- **See:** video uses the GPU (QSV or VA-API, iHD driver); the playback's transcode is hardware; CPU stays under half in Resource Monitor.
-- **Screenshots:** `synology/08-quick-sync.en.png`, `synology/08-quick-sync.ar.png`
+### 8. VA-API on the J4125
+- **Do:** J4125 only: in the project's compose file pass `/dev/dri` and add the render group (`group_add`, the id from `stat -c %g /dev/dri/renderD128` over SSH); open Settings → This machine, then play a 1080p HEVC file on a browser that needs a transcode; note whether HEVC decode works in the container (`ffmpeg -hwaccel vaapi` in the server log's transcode line) and the speed from the log's `vod_transcode` lines.
+- **See:** This machine says "Video: hardware (iHD), H.264 and HEVC"; playback is smooth and the transcode runs at 2× real time or faster; CPU stays under half in Resource Monitor. Without `group_add`, This machine names the group to add and video is software.
+- **Screenshots:** `synology/08-vaapi.en.png`, `synology/08-vaapi.ar.png`
 
 ### 9. Software video on the Ryzen
 - **Do:** Ryzen model only: open Settings → This machine and play the same HEVC file.
-- **See:** This machine says video is software-only and direct play matters; the transcode is limited to the tier's size.
+- **See:** This machine says "Video: software", that no render device is available to the container, and that this home converts video in software, so players play files as they are when they can; the transcode is at most the tier's size, and a second one waits with "Another video is being converted on this home".
 - **Screenshots:** `synology/09-software-only.en.png`, `synology/09-software-only.ar.png`
 
 ### 10. The DSM kernel's Landlock result

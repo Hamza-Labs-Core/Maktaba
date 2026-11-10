@@ -34,10 +34,19 @@ ARG COMMIT=unknown
 # ffmpeg is the distribution's (on Linux every role runs the system's; Debian's has libx264);
 # tini is PID 1: it reaps what the server's children leave and passes docker stop on;
 # libnss-wrapper names a uid /etc/passwd lacks (story 59.01: the image runs as any uid:gid,
-# and initdb, postgres and Python's pwd look the user up), as the official Postgres image does
-RUN apt-get update \
+# and initdb, postgres and Python's pwd look the user up), as the official Postgres image does;
+# on amd64 the VA-API drivers a NAS's chip needs (story 59.05): iHD (Broadwell and newer: J4125,
+# N100; Debian's non-free component, for that package alone), i965 (older Intel), Mesa (AMD),
+# and vainfo, which streaming reads the profiles with (THIRD_PARTY_NOTICES)
+RUN set -eu; va=""; \
+    if [ "$(dpkg --print-architecture)" = amd64 ]; then \
+      printf 'Types: deb\nURIs: http://deb.debian.org/debian\nSuites: bookworm bookworm-updates\nComponents: non-free\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n' \
+        > /etc/apt/sources.list.d/non-free.sources; \
+      va="intel-media-va-driver-non-free i965-va-driver mesa-va-drivers vainfo"; \
+    fi; \
+    apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-       ca-certificates ffmpeg libnss-wrapper tini tzdata \
+       ca-certificates ffmpeg libnss-wrapper tini tzdata $va \
     && rm -rf /var/lib/apt/lists/*
 
 # the default user for a plain `docker run`; nothing depends on it: the image runs as whatever
