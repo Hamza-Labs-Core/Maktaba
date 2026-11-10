@@ -196,7 +196,12 @@ export function QueueDetail() {
   const descKey = `queue.stage.${stage}.desc`;
   const desc = t(descKey);
   const reason = (r: WaitingReason) =>
-    r ? t(`queue.waiting.${r}`, { time: fmt.dur(summary.oldest_waiting_sec) }) : "";
+    r
+      ? t(`queue.waiting.${r}`, {
+          time: fmt.dur(summary.oldest_waiting_sec),
+          at: summary.quiet_at ?? "",
+        })
+      : "";
   const paused = info.paused;
   const retryGroups = detail.failures.filter((g) => g.action === "retry");
   const feeds = [...new Set(info.edges.map((e) => e.to))];

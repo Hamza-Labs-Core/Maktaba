@@ -103,6 +103,7 @@ export type WaitingReason =
   | "debouncing"
   | "backoff"
   | "service_retrying"
+  | "quiet_hours"
   | "upstream"
   | "disabled"
   | "not_configured"
@@ -135,6 +136,8 @@ export interface QueueSummary {
   served_by?: string[];
   /** true when work is waiting but no live worker serves this stage. */
   no_worker?: boolean;
+  /** Epic 59: with waiting_reason quiet_hours, when the window opens ("01:00"). */
+  quiet_at?: string | null;
   /** External service (e.g. "plex") whose failures put waiting rows into backoff. */
   retrying_service?: string | null;
   /** Epic 51: the component that owns the stage, while it waits on it (component_off / component_held). */

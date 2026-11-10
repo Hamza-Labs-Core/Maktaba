@@ -136,8 +136,10 @@ type checkResult struct {
 	Runs []setupRole    `json:"runs"`
 	// Tier is the hardware tier the machine starts on (Epic 59 story 59.04: light,
 	// standard, strong; "" when the memory is unknown), TierReason why.
-	Tier       string          `json:"tier,omitempty"`
-	TierReason hostinfo.Reason `json:"tier_reason,omitempty"`
+	// DataDisk is the data folder's disk (Epic 59 story 59.02; nil: not read).
+	DataDisk   *hostinfo.DataDisk `json:"data_disk,omitempty"`
+	Tier       string             `json:"tier,omitempty"`
+	TierReason hostinfo.Reason    `json:"tier_reason,omitempty"`
 	// SecondListen: with refine on, whether this machine can run the second
 	// listen (the screens ask for its Hugging Face sign-in only then).
 	SecondListen *secondListen `json:"second_listen,omitempty"`
@@ -231,6 +233,7 @@ func stepCheck(s *setupRun, _ json.RawMessage) (any, error) {
 		res.Warn("disk_tight", "Less than 40 GB free: the database, the models and the caches grow with the library.",
 			"free_bytes", disk, "comfortable_bytes", uint64(2*setupNeedDisk))
 	}
+	checkDataDir(root, &res)
 	m := hostMachine()
 	switch {
 	case ram > 0 && ram < setupMinRAM && hostinfo.IsNAS(m.Platform):

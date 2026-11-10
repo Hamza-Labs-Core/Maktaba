@@ -2303,7 +2303,14 @@
       ],
       "related": [
         "epic-59-nas",
-        "ep-get-jobs"
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-jobs",
+        "ep-get-jobs-id",
+        "ep-get-queues"
       ],
       "files": {
         "story": "specs/epics/59-nas/story-59-02-data-and-database.md",
@@ -2311,7 +2318,14 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /jobs"
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /jobs",
+        "GET /jobs/{id}",
+        "GET /queues"
       ],
       "db_tables": [],
       "metadata": {

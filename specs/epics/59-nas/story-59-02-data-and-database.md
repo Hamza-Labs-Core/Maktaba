@@ -108,12 +108,12 @@ Memory per tier (59.04):
 
 | Key | English | Arabic |
 |---|---|---|
-| `setup.data.rotational` | The database is on spinning disks. Maktaba will work, but browsing and search are faster on an SSD, and the disks will not sleep while Maktaba runs. | قاعدة البيانات على أقراص دوّارة. سيعمل Maktaba، لكن التصفح والبحث أسرع على قرص SSD، ولن تدخل الأقراص في وضع السكون ما دام Maktaba يعمل. |
-| `setup.data.fuse` | Your data folder is on a merged share ({path}). Put it on a cache pool or a single disk (for example /mnt/cache/appdata/maktaba). | مجلد بياناتك على مشاركة مدمجة ({path}). ضعه على مجمّع التخزين المؤقت أو على قرص واحد (مثل ‎/mnt/cache/appdata/maktaba). |
-| `setup.data.fs_refused` | Maktaba can't keep its database on {fstype} ({path}). Choose a folder on a local disk. | لا يستطيع Maktaba حفظ قاعدة بياناته على نظام الملفات {fstype} ‏({path}). اختر مجلدًا على قرص محلي. |
-| `setup.data.ask_ssd` | Is Maktaba's data folder on an SSD? | هل مجلد بيانات Maktaba على قرص SSD؟ |
+| `setup.check.note.data_rotational` | The database is on spinning disks. Maktaba will work, but browsing and search are faster on an SSD, and the disks will not sleep while Maktaba runs. | قاعدة البيانات على أقراص دوّارة. سيعمل Maktaba، لكن التصفح والبحث أسرع على قرص SSD، ولن تدخل الأقراص في وضع السكون ما دام Maktaba يعمل. |
+| `setup.check.note.data_fuse` | Your data folder is on a merged share ({path}). Put it on a cache pool or a single disk (for example /mnt/cache/appdata/maktaba). | مجلد بياناتك على مشاركة مدمجة ({path}). ضعه على مجمّع التخزين المؤقت أو على قرص واحد (مثل ‎/mnt/cache/appdata/maktaba). |
+| `setup.check.note.data_fs_refused` | Maktaba can't keep its database on {fstype} ({path}). Choose a folder on a local disk. | لا يستطيع Maktaba حفظ قاعدة بياناته على نظام الملفات {fstype} ‏({path}). اختر مجلدًا على قرص محلي. |
+| `machine.disk.ask` | Is Maktaba's data folder on an SSD? | هل مجلد بيانات Maktaba على قرص SSD؟ |
 | `library.sweep_keeps_awake` | A regular scan keeps the disks of this library awake. | الفحص الدوري يُبقي أقراص هذه المكتبة مستيقظة. |
-| `queue.waiting_quiet_hours` | Waiting for quiet hours ({time}) | بانتظار ساعات الهدوء ({time}) |
+| `queue.waiting.quiet_hours` | Waiting for quiet hours ({at}) | بانتظار ساعات الهدوء ({at}) |
 | `queue.run_now` | Run now | شغّل الآن |
 | `settings.quiet_hours` | Quiet hours: heavy work runs only in this window | ساعات الهدوء: لا تعمل المهام الثقيلة إلا في هذه الفترة |
 
@@ -124,6 +124,17 @@ Memory per tier (59.04):
   not the cluster. The hold applies only to jobs the NAS itself would run.
 - **Time zone:** quiet hours use the home's time zone (`TZ`, or the NAS's `/etc/localtime` when
   mounted). The compose files pass `TZ`.
+
+## As built
+
+- A held job is a `paused` job with `paused_reason = 'quiet_hours:<HH:MM>'` and `not_before` at
+  the window's start (the engine's `JobDeferred`, so claiming it again is no new attempt),
+  not a new job state: the queue's waiting reason `quiet_hours` names it. Heavy is decided
+  when a worker claims the job (`engine/quiet.py`), from the window in
+  `MAKTABA_QUIET_HOURS`. Run now sets `run_now` in the job's payload and clears the wait
+  (`POST /api/queues/jobs/{id}/run-now`, `POST /api/libraries/{id}/run-now`).
+- When the data disk cannot be read, setup says so and Settings → This machine asks
+  (`[server] data_disk`); until then the database is tuned for spinning disks.
 
 ## Build plan
 
