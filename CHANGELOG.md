@@ -212,6 +212,16 @@ build fails when the two differ.
 
 ### Fixed
 
+- **On a fresh install, reports and thumbnails are written by their sandboxed runners from
+  the first job (Epic 59).** A runner's sandbox grants only folders that exist when it starts,
+  and on a fresh install (the server image's empty volume, where the home folder is the
+  volume) Maktaba's own cache folders were not made yet: the first report or thumbnail a
+  runner wrote was refused, the stage ran in the queue worker instead, and the server log
+  recorded a permission error. The queue worker now makes its own data folders (the
+  thumbnail, audio and report caches, the download work folder and the search index) before
+  it names them to the runners, by their real paths, wherever the home folder is, on macOS
+  and Linux. A library's folders are never made or written by this.
+
 - **Maktaba's own database starts again after a power cut or a killed container.** After an
   unclean stop (a power cut, `docker kill`, a NAS switched off), the bundled Postgres could
   refuse to start, over and over, on a lock file the stopped database left behind
