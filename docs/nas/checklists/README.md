@@ -8,7 +8,7 @@ for TrueNAS; no self-hosted runner):
 
 | Checklist | Device | What only a device shows |
 |---|---|---|
-| [synology.md](synology.md) | J4125 DS (Quick Sync), Ryzen DS (no GPU) | Container Manager's project install, DSM's ACL dialogs, real Quick Sync, the DSM kernel's Landlock result, disk sleep on DSM |
+| [synology.md](synology.md) | DS425+ (J4125, Quick Sync), DS923+ (Ryzen, no GPU), DS223 (ARM, 2 GB) | Container Manager's project install, DSM's ACL dialogs, real Quick Sync, the DSM kernel's Landlock and cgroup version, disk sleep on DSM, the guide's DSM screenshots |
 | [truenas.md](truenas.md) | N100 on TrueNAS SCALE 25.04 and 25.10 | the app install from the catalog, the Apps preset and ACL editor, ARC as available memory, VA-API on the N100 |
 | [unraid.md](unraid.md) | any Unraid box (or a VM with a USB key) | the Community Applications template, the cache-pool data path, shfs media, user 99:100 |
 
@@ -23,7 +23,7 @@ for TrueNAS; no self-hosted runner):
 
 Each step says what to do and what to see. A step passes only when what you see matches. Take
 the step's screenshots in the **dark theme**, once with the app in English and once in Arabic,
-saved under `docs/nas/checklists/screenshots/` at the path the step lists (`synology/03-project.en.png`).
+saved under `docs/nas/checklists/screenshots/` at the path the step lists (`synology/04-project.en.png`).
 
 The result is a dated file in [results/](results/README.md): one per run, with `docker logs`
 and the setup report attached. A failed step is a bug: open it with the result file linked.

@@ -193,6 +193,7 @@ func TestDSMDataFolder(t *testing.T) {
 		{"600 590 0:44 /@syno/SSD\\040apps/maktaba /var/lib/maktaba rw - btrfs /dev/md3 rw", "SSD apps", "SSD apps/maktaba"},
 		{"600 590 0:44 /@docker/volumes/maktaba/_data /var/lib/maktaba rw - btrfs /dev/md2 rw", "docker", "docker/maktaba"},
 		{"600 590 0:44 /docker/maktaba /elsewhere rw - btrfs /dev/md2 rw", "docker", "docker/maktaba"},
+		{"600 590 8:1 /var/lib/docker/volumes/maktaba/_data /var/lib/maktaba rw - ext4 /dev/sda1 rw", "docker", "docker/maktaba"},
 	} {
 		if err := os.WriteFile(mi, []byte(c.line+"\n"), 0o644); err != nil {
 			t.Fatal(err)

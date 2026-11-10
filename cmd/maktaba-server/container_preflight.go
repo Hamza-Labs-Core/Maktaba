@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -259,8 +260,8 @@ func dsmDataFolder(mountinfo, volume string) (share, folder string) {
 				parts = append(parts, s)
 			}
 		}
-		// a named volume (/@docker/volumes/...) is in no shared folder
-		if len(parts) > 0 && !strings.HasPrefix(parts[0], "@") {
+		// a named volume (/@docker/volumes/<name>/_data) is in no shared folder
+		if len(parts) > 0 && !strings.HasPrefix(parts[0], "@") && !slices.Contains(parts, "_data") {
 			share, folder = parts[0], strings.Join(parts, "/")
 		}
 	}

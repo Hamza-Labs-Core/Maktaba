@@ -16,6 +16,7 @@ checklists, [`docs/nas/checklists/`](../../docs/nas/checklists/README.md).
 | `check_checklists.py` | the device checklists' lint: every step has its expected result and its screenshots in both languages |
 | `test_harness.py` | this folder's own tests (the plan job runs them) |
 | `stt-baseline.json` | each speech model and architecture's word error rate on the bundled clips (59.06) |
+| `test_synology.py` | the Synology project's files (`deploy/nas/synology/`, 59.09): written by `deploy/nas/generate.py` from the plain compose (`--check`), only keys Docker 24.0.2 takes, the DSM shape, the GPU lines only in the J4125 file |
 
 `tools/ci/tests/test_nas_workflow.py` checks the workflow's triggers: a change to the Dockerfile
 runs every cell, a change to `web/` alone runs nothing.
@@ -68,6 +69,12 @@ runs every cell, a change to `web/` alone runs nothing.
 | `postgres_pss_512m` | the bundled Postgres's processes hold under 512 MiB together (the sum of `Pss` in each one's `smaps_rollup`, kept as `postgres-pss.txt`), the Light tier's tuning applied (59.02) |
 | `isolation_container` | without Landlock and user namespaces the plugin isolation level is Container (`GET /api/server/machine`'s `plugin_isolation` and `GET /api/plugins/isolation`); the test plugin (`--plugin`, plugind's hello guest that the amd64 image job packs as the `nas-plugin` artifact), installed and turned on by the admin, stays off with `isolation_held`; `PUT /api/plugins/isolation` without the password is 401, with it 200; the plugin then runs, and `plugins.host` is Degraded with `sandbox_partial` (plugind's required layers on, its optional ones missing). The answers are kept as `api-plugin-isolation.json` (59.07) |
 | `refused_write`, `refused_privileged` | the container exits 78 with its message (59.01) |
+| `refused_write_dsm` | the same with `MAKTABA_PLATFORM=dsm`: the message adds DSM's screens (Control Panel → Shared Folder, File Station's Permission) in both languages (59.09) |
+| `platform_dsm` | `GET /api/server/machine` names the platform `dsm` (59.09) |
+| `dsm_skipped` | the share holds DSM's `@eaDir`, `#recycle` and `#snapshot`, each with a real clip: the scan finds exactly the fixtures, none of those (59.03, 59.09) |
+| `fix_dsm` | every root that needs a fix (Read only, No access) has DSM's, `library.fix.dsm`, naming its shared folder (`/volume1/Movies/en` → Movies) (59.09) |
+| `dsm_shares` | the compose file's shares as the guide grants them: Movies (`:ro`) Read only, Recordings (Read/Write for the DSM user) Read and write (59.09) |
+| `compose_engine` | the compose cell's file was taken unchanged by the engine it names (`docker compose config`, then `up`), its version and API recorded (59.09) |
 | `stt_light_off` | on the Light tier speech is off by default, its reason `light`, the model base, in the quiet hours only; on arm64 no second listen (59.06) |
 | `stt_engine` | the speech engine (the stt extra's aarch64 pins, `pipeline/constraints-stt.txt`) goes into the pipeline's venv and imports, with no torch and no transformers: on arm64 from the payload's wheelhouse alone (`--no-index`), on amd64 from PyPI; its pip log is `stt-install.log` (59.06) |
 | `stt_measure` | an admin's Measure again (`POST /api/server/speech/measure`): the server transcribes the bundled Arabic and English clips with the tier's model; the real-time factor and each clip's word error rate are reported (`stt:wer`, `api-speech.json`), and a rise of more than 5 points over [`stt-baseline.json`](stt-baseline.json) for that model and architecture fails (no entry yet: recorded only) (59.06) |
@@ -80,7 +87,8 @@ it is reported as pending (⏳) until that story is in `landed`.
 1. Add it to `cells.json`: `name`, `about`, `arches` (`amd64`, `arm64`), and its shape: `user`,
    `data`, `media`, `noaccess_root`, `docker` (extra `docker run` arguments such as `--memory=4g`
    or `--device /dev/dri`), `env`, `seccomp` (a profile in this folder), `expect: "refused"`,
-   `kill_restart`, `quiet_hours_ahead` (a one-hour quiet window opening three hours from now,
+   `kill_restart`, `media.path` (where the library is mounted, `/volume1/Media` by default),
+   `media.dsm_extras` (DSM's `@eaDir`, `#recycle` and `#snapshot` in it), `quiet_hours_ahead` (a one-hour quiet window opening three hours from now,
    UTC; every other cell has none, `[schedule] quiet_hours = ""`), `speech` (story 59.06:
    `[transcription] speech = "on"` and the tier's model instead of the cells' tiny one); then
    `asserts`.
@@ -118,5 +126,25 @@ it is reported as pending (⏳) until that story is in `landed`.
 (`/dev/null` as the render node: the test encode fails) and `vaapi-no-group` (a node the user may
 not open): each ends in libx264 with its reason in Settings. Real VA-API is in the device
 checklists (J4125, N100).
+
+**Synology (59.09):** `dsm` is a DiskStation as the guide sets it up: the DSM user
+1026:100, `MAKTABA_PLATFORM=dsm`, a 6 GB limit, no Landlock (DSM's 4.4 and 5.10 kernels), the
+share at its own path (`/volume1/Movies`, `:ro`) with DSM's folders in it, and a share the user
+has no permission on. `synology-compose` runs `deploy/nas/synology/compose.yaml` itself, unchanged,
+on Container Manager's engine: a `compose` cell (`{"file": ..., "engine": "24.0.2", "api":
+"1.43"}`) starts `docker:<engine>-dind`, loads the commit's image into it under the file's
+image name, makes the file's host paths inside it (`/volume1/docker/maktaba` owned 0:100 0770,
+`/volume1/Movies` with the fixtures owned by a DSM admin, 1024:100, `/volume1/Recordings`
+0:100 0770), runs setup with `docker compose run --rm maktaba setup` and starts it with
+`docker compose up -d`; a relay in the engine's network namespace hands the API to the
+harness, so the server sees a local client. Its artifact adds `compose-config.yaml`,
+`engine.json` and `dind.log`. `dsm-data-denied` is the DSM user on a data folder it cannot
+write.
+
+**What the Synology cells cannot imitate:** cgroup v1. DSM 7.2 on its 4.4 kernels (the J4125
+and the older Intel models) mounts cgroup v1, and GitHub's runners boot with cgroup v2 only:
+a container cannot change its host's hierarchy. The v1 memory limit
+(`memory.limit_in_bytes`, its "no limit" near 2^63) is read by 59.04's unit tests
+(`cmd/maktaba-server/internal/hostinfo`), and the device checklist records what a DS425+ reads.
 
 **Later phases add cells:** `bridge` and `offline` (59.08, 59.01), and the update legs (`update-rehearsal-container`, 59.12).

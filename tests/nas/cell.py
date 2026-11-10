@@ -187,10 +187,16 @@ def pss_sum(listing: str) -> tuple[int, int]:
     return total, n
 
 
+# The daemon docker() talks to: the runner's own, or (the compose cells) the Docker engine
+# in a docker:<engine>-dind container, tcp://127.0.0.1:<port>; outer() is always the runner's.
+TARGET: dict[str, str] = {}
+
+
 def docker(*args: str, input: str | None = None, check: bool = True, timeout: float | None = 600,
-           capture: bool = True) -> subprocess.CompletedProcess[str]:
+           capture: bool = True, outer: bool = False) -> subprocess.CompletedProcess[str]:
     cmd = ["docker", *args]
-    p = subprocess.run(cmd, input=input, text=True, capture_output=capture, timeout=timeout)
+    env = None if outer or not TARGET else {**os.environ, **TARGET}
+    p = subprocess.run(cmd, input=input, text=True, capture_output=capture, timeout=timeout, env=env)
     if check and p.returncode != 0:
         raise RuntimeError(f"{shlex.join(cmd)} exited {p.returncode}: {(p.stderr or '').strip()[-800:]}")
     return p
@@ -202,6 +208,21 @@ def as_root(image: str, script: str, *mounts: str) -> None:
     for m in mounts:
         args += ["-v", m]
     docker(*args, image, "-c", script)
+
+
+# DSM's own folders in a share (story 59.03's skipped names; 59.09): its index (@eaDir, a
+# video's poster and a preview clip in it), its recycle bin and a snapshot, each holding a
+# copy of a real clip that a scan must never find.
+DSM_FOLDERS = ("@eaDir", "#recycle", "#snapshot")
+
+
+def dsm_extras(d: str) -> str:
+    """A shell line adding DSM's folders to the library at d (after the fixtures' copy)."""
+    clip = f'"$(ls {d}/en/*.mp4 | head -n 1)"'
+    return (f"mkdir -p '{d}/en/@eaDir/lesson.mp4' '{d}/en/#recycle' '{d}/ar/#snapshot/GMT+03-2026.11.01-02.00.00/ar'"
+            f" && cp {clip} '{d}/en/@eaDir/lesson.mp4/SYNOVIDEO_PREVIEW.mp4'"
+            f" && cp {clip} '{d}/en/#recycle/deleted.mp4'"
+            f" && cp {clip} '{d}/ar/#snapshot/GMT+03-2026.11.01-02.00.00/ar/kept.mp4'")
 
 
 # --- HTTP ---------------------------------------------------------------------------------
@@ -338,8 +359,14 @@ class Cell:
         return int((self.user or "1000:1000").split(":")[0])
 
     @property
+    def media(self) -> str:
+        """Where the library is mounted: /volume1/Media, or the cell's `media.path` (the
+        Synology cells' /volume1/Movies, the compose file's share)."""
+        return str(self.spec.get("media", {}).get("path", MEDIA))
+
+    @property
     def roots(self) -> list[str]:
-        roots = [f"{MEDIA}/{lib}" for lib in LIBRARIES]
+        roots = [f"{self.media}/{lib}" for lib in LIBRARIES]
         if self.spec.get("noaccess_root"):
             roots.append(NOACCESS)
         return roots
@@ -349,7 +376,7 @@ class Cell:
     def mounts(self) -> list[str]:
         media = self.spec.get("media", {})
         m = ["-v", f"{self.vol('data')}:{VOLUME}",
-             "-v", f"{self.vol('media')}:{MEDIA}" + (":ro" if media.get("ro") else "")]
+             "-v", f"{self.vol('media')}:{self.media}" + (":ro" if media.get("ro") else "")]
         if self.spec.get("noaccess_root"):
             m += ["-v", f"{self.vol('noaccess')}:{NOACCESS}"]
         return m
@@ -388,7 +415,8 @@ class Cell:
         m_owner = media.get("owner", "1000:1000")
         m_mode = media.get("mode", "0755")
         as_root(self.image,
-                f"cp -a /src/. /d/ && chown -R {m_owner} /d && chmod -R u=rwX,go=rX /d && chmod {m_mode} /d",
+                f"cp -a /src/. /d/ && {dsm_extras('/d') if media.get('dsm_extras') else 'true'}"
+                f" && chown -R {m_owner} /d && chmod -R u=rwX,go=rX /d && chmod {m_mode} /d",
                 f"{self.fixtures}:/src:ro", f"{self.vol('media')}:/d")
         if self.spec.get("noaccess_root"):
             as_root(self.image, "mkdir -p /d/hidden && chown -R 0:0 /d && chmod 000 /d",
@@ -488,7 +516,7 @@ class Cell:
         access)."""
         assert self.api is not None
         have = {r for lib in self.libraries() for r in lib.get("roots") or []}
-        wanted = [(LIBRARY_NAMES[k], f"{MEDIA}/{k}") for k in LIBRARIES]
+        wanted = [(LIBRARY_NAMES[k], f"{self.media}/{k}") for k in LIBRARIES]
         if self.spec.get("noaccess_root"):
             wanted.append((LIBRARY_NAMES["noaccess"], NOACCESS))
         for name, root in wanted:
@@ -574,7 +602,7 @@ class Cell:
         self.scans += 1
 
     def counted(self) -> dict[str, int]:
-        return {k: len(self.under(f"{MEDIA}/{k}")) for k in LIBRARIES}
+        return {k: len(self.under(f"{self.media}/{k}")) for k in LIBRARIES}
 
     def assert_first_scan(self) -> str:
         """The first scan after the libraries were made finds every clip (no second scan)."""
@@ -591,7 +619,7 @@ class Cell:
         grant a moment later): the scan is asked again each minute, and the count recorded."""
         libs = self.libraries()
         roots = sorted(r for lib in libs for r in lib.get("roots") or [])
-        want_roots = sorted(f"{MEDIA}/{k}" for k in LIBRARIES)
+        want_roots = sorted(f"{self.media}/{k}" for k in LIBRARIES)
         if not set(want_roots) <= set(roots):
             raise AssertionError(f"the libraries' roots are {roots}, not {want_roots}")
         deadline = time.monotonic() + 12 * 60
@@ -611,7 +639,7 @@ class Cell:
                 raise AssertionError(f"after {self.scans} scans: {got} of {LIBRARIES}")
 
     def hevc_video(self) -> dict[str, Any]:
-        for v in self.under(f"{MEDIA}/en"):
+        for v in self.under(f"{self.media}/en"):
             if "HEVC" in (v.get("path") or ""):
                 return v
         raise AssertionError("the HEVC clip is not in the library")
@@ -620,7 +648,7 @@ class Cell:
         assert self.api is not None
         api = self.api
         def poster() -> str:
-            for v in self.under(f"{MEDIA}/ar"):
+            for v in self.under(f"{self.media}/ar"):
                 s, b = api.get(f"/api/videos/{v['id']}/poster?size=small", raw=True)
                 if s == 200 and len(b) > 100:
                     return f"{v.get('filename')}: {len(b)} bytes"
@@ -773,9 +801,9 @@ class Cell:
         return d
 
     def media_libraries(self) -> list[dict[str, Any]]:
-        libs = [lib for lib in self.libraries() if any(r.startswith(MEDIA + "/") for r in lib.get("roots") or [])]
+        libs = [lib for lib in self.libraries() if any(r.startswith(self.media + "/") for r in lib.get("roots") or [])]
         if not libs:
-            raise AssertionError(f"no library under {MEDIA}")
+            raise AssertionError(f"no library under {self.media}")
         return libs
 
     def assert_access_ro(self) -> str:
@@ -1085,6 +1113,86 @@ class Cell:
 
     # -- cells that must not start
 
+    # -- story 59.09: Synology
+
+    def assert_platform_dsm(self) -> str:
+        """GET /api/server/machine names the platform dsm, from MAKTABA_PLATFORM."""
+        m = self.machine().get("machine") or {}
+        if m.get("platform") != "dsm":
+            raise AssertionError(f"platform {m.get('platform')!r} ({m.get('platform_from')!r}), not dsm")
+        return f"dsm ({m.get('platform_from')})"
+
+    def assert_dsm_skipped(self) -> str:
+        """DSM's index, recycle bin and snapshots in a share (@eaDir, #recycle, #snapshot, each
+        with a real clip in it) are never library content: the scan finds the fixtures, exactly."""
+        found = self.videos()
+        bad = [v.get("path") for v in found if any(f"/{d}/" in (v.get("path") or "") for d in DSM_FOLDERS)]
+        if bad:
+            raise AssertionError(f"{len(bad)} videos from DSM's folders, first: {bad[0]}")
+        got = self.counted()
+        if got != LIBRARIES:
+            raise AssertionError(f"found {got}, want exactly {LIBRARIES}")
+        return f"{', '.join(DSM_FOLDERS)} skipped; {got}"
+
+    def share(self, path: str) -> str:
+        """/volume1/Movies/en → Movies."""
+        return path.strip("/").split("/")[1]
+
+    def assert_fix_dsm(self) -> str:
+        """Each root that needs one (Read only, No access) has DSM's fix (library.fix.dsm),
+        naming its shared folder."""
+        seen = []
+        libs = [lib for lib in self.libraries() if any(r.startswith("/volume") for r in lib.get("roots") or [])]
+        for lib in libs:
+            for root in self.check_access(lib).get("roots") or []:
+                if root.get("access") == "rw":
+                    continue
+                fix = root.get("fix") or {}
+                want = self.share(root.get("path") or "")
+                if fix.get("key") != "library.fix.dsm" or (fix.get("params") or {}).get("share") != want:
+                    raise AssertionError(f"{root.get('path')}: fix {fix}, want library.fix.dsm for {want}")
+                seen.append(f"{root.get('path')} → {want} ({root.get('access')})")
+        if not seen:
+            raise AssertionError("no library on a DSM share")
+        return "; ".join(seen)
+
+    def assert_dsm_shares(self) -> str:
+        """The compose file's two shares as the guide grants them: Movies (:ro, Read only for
+        the DSM user) shows Read only, Recordings (Read/Write) Read and write."""
+        assert self.api is not None
+        ro = self.assert_access_ro()
+        root = "/volume1/Recordings"
+        lib = next((x for x in self.libraries() if root in (x.get("roots") or [])), None)
+        if lib is None:
+            s, d = self.api.call("POST", "/api/libraries", {"name": "Recordings", "roots": [root]})
+            if s not in (200, 201) or not isinstance(d, dict):
+                raise AssertionError(f"POST /api/libraries {root}: {s} {d}")
+            lib = d
+        rep = self.check_access(lib)
+        if rep.get("access") != "rw":
+            raise AssertionError(f"{root}: access {rep.get('access')!r}, not rw: {rep}")
+        return f"{ro}; Recordings: read and write"
+
+    def assert_compose_engine(self) -> str:
+        """The compose file was taken unchanged by Docker 24.0.x (`docker compose config`, then
+        `up`): what Container Manager runs on DSM 7.2."""
+        info = getattr(self, "engine", {})
+        if not info:
+            raise AssertionError("not a compose cell")
+        want = str(self.spec["compose"]["engine"])
+        if not info.get("version", "").startswith(want):
+            raise AssertionError(f"engine {info.get('version')}, not {want}")
+        return f"Docker {info['version']} (API {info.get('api')}), compose {info.get('compose')}: config and up"
+
+    def assert_refused_write_dsm(self) -> str:
+        """On DSM the write-denied message adds DSM's own screens, in both languages."""
+        self.assert_refused_write()
+        _, text = self.refused
+        for want in ("Control Panel → Shared Folder →", "File Station →", "لوحة التحكم ← المجلد المشترك"):
+            if want not in text:
+                raise AssertionError(f"the message does not name {want!r}: {text[-500:]}")
+        return "exit 78 with DSM's screens in English and Arabic"
+
     def expect_refused(self) -> None:
         log("start, expecting a refusal")
         p = docker("run", "--name", self.container, *self.shape(), *self.network(), self.image,
@@ -1199,6 +1307,133 @@ class Cell:
         (self.out / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def free_port() -> int:
+    import socket
+
+    with socket.socket() as so:
+        so.bind(("127.0.0.1", 0))
+        return int(so.getsockname()[1])
+
+
+@dataclass
+class ComposeCell(Cell):
+    """A cell started from a NAS's compose file as the NAS starts it (story 59.09): the file
+    unchanged, run by the Docker engine the NAS has (`compose.engine`, Container Manager's
+    24.0.2 on DSM 7.2) in a docker:<engine>-dind container, with the file's own host paths
+    made inside it (the data folder, its shares with the fixtures, DSM's folders) and the
+    file's image the commit's. The API is reached through a relay in the engine's network
+    namespace, so the server sees a local client as on the host network."""
+
+    engine: dict[str, str] = field(default_factory=dict)
+    dind_port: int = 0
+    api_port: int = 0
+
+    @property
+    def file(self) -> Path:
+        return HERE.parents[1] / self.spec["compose"]["file"]
+
+    @property
+    def dind(self) -> str:
+        return f"nascell-{self.name}-dind"
+
+    @property
+    def container(self) -> str:
+        return "maktaba"  # the file's container_name
+
+    def compose(self, *args: str, **kw: Any) -> subprocess.CompletedProcess[str]:
+        return docker("compose", "-p", "maktaba", "-f", str(self.file), *args, **kw)
+
+    def shape(self) -> list[str]:
+        return ["compose", "-f", self.spec.get("compose", {}).get("file", "?"), "up"]
+
+    def prepare(self) -> None:
+        engine = str(self.spec["compose"]["engine"])
+        log(f"Docker {engine} in a dind container")
+        self.teardown(quiet=True)
+        self.dind_port, self.api_port = free_port(), free_port()
+        docker("run", "-d", "--privileged", "--name", self.dind, "-e", "DOCKER_TLS_CERTDIR=",
+               "-p", f"127.0.0.1:{self.dind_port}:2375", "-p", f"127.0.0.1:{self.api_port}:28088",
+               f"docker:{engine}-dind", outer=True)
+        TARGET.update({"DOCKER_HOST": f"tcp://127.0.0.1:{self.dind_port}",
+                       "DOCKER_API_VERSION": str(self.spec["compose"].get("api", "1.43"))})
+
+        def up() -> bool:
+            return docker("version", "-f", "{{.Server.Version}}", check=False, timeout=20).returncode == 0
+
+        wait("the dind engine", up, 120, every=2)
+        self.engine = {
+            "version": docker("version", "-f", "{{.Server.Version}}").stdout.strip(),
+            "api": docker("version", "-f", "{{.Server.APIVersion}}").stdout.strip(),
+            "compose": docker("compose", "version", "--short").stdout.strip(),
+        }
+        log(f"engine {self.engine}")
+        # the file as Container Manager reads it, before anything else
+        cfg = self.compose("config", check=False)
+        (self.out / "compose-config.yaml").write_text((cfg.stdout or "") + (cfg.stderr or ""), encoding="utf-8")
+        if cfg.returncode != 0:
+            raise AssertionError(f"docker compose config: {cfg.stderr.strip()[-600:]}")
+        # the commit's image under the file's name
+        log("the image into the engine")
+        save = subprocess.Popen(["docker", "save", self.image], stdout=subprocess.PIPE)
+        load = subprocess.run(["docker", "load"], stdin=save.stdout, capture_output=True, text=True,
+                              env={**os.environ, **TARGET}, timeout=900)
+        save.wait(timeout=60)
+        if save.returncode != 0 or load.returncode != 0:
+            raise RuntimeError(f"docker save | load: {load.stderr[-400:]}")
+        ref = re.search(r"^\s*image:\s*(\S+)", self.file.read_text(encoding="utf-8"), re.M)
+        if not ref:
+            raise AssertionError(f"no image in {self.file}")
+        docker("tag", self.image, ref.group(1))
+        # the file's host paths, inside the engine's container, as DSM has them
+        docker("cp", f"{self.fixtures}/.", f"{self.dind}:/fixtures", outer=True)
+        data = self.spec.get("data", {})
+        media = self.spec.get("media", {})
+        as_root(self.image,
+                f"mkdir -p /h/docker/maktaba /h/Recordings && chown {data.get('owner', '0:100')} /h/docker/maktaba"
+                f" && chmod {data.get('mode', '0770')} /h/docker/maktaba"
+                f" && chown 0:100 /h/Recordings && chmod 0770 /h/Recordings"
+                f" && mkdir -p /h/Movies && cp -a /src/. /h/Movies/ && {dsm_extras('/h/Movies')}"
+                f" && chown -R {media.get('owner', '1024:100')} /h/Movies && chmod -R u=rwX,go=rX /h/Movies",
+                "/volume1:/h", "/fixtures:/src:ro")
+        docker("run", "--rm", "-i", "--entrypoint", "sh", "--user", "1026:100",
+               "-v", f"/volume1/docker/maktaba:{VOLUME}", self.image, "-c",
+               f"umask 077 && mkdir -p {CONFIG_DIR} && cat > {CONFIG_DIR}/server.toml",
+               input=server_toml(self.quiet_window(), speech=bool(self.spec.get("speech"))))
+
+    def setup(self) -> None:
+        answers = {
+            "admin": {"username": ADMIN, "password": self.password},
+            "libraries": {"roots": self.roots, "path_map": []},
+            "models": {"source": "huggingface", "hf_token": ""},
+            "plex": {"action": "skip"},
+        }
+        log("setup --answers (docker compose run --rm maktaba setup)")
+        t0 = time.monotonic()
+        p = self.compose("run", "--rm", "-T", "maktaba", "setup", "--answers", "/dev/stdin", "--lang", "en",
+                         *self.bundle(), input=json.dumps(answers), check=False, timeout=45 * 60)
+        (self.out / "setup.log").write_text((p.stdout or "") + (p.stderr or ""), encoding="utf-8")
+        self.timing("setup", t0)
+        if p.returncode != 0:
+            raise AssertionError(f"setup exited {p.returncode}: {(p.stdout + p.stderr).strip()[-600:]}")
+
+    def start(self) -> None:
+        log("docker compose up -d")
+        self.compose("up", "-d", "--pull", "never")
+        docker("run", "-d", "--name", "maktaba-relay", "--network", "host", "alpine/socat",
+               "TCP-LISTEN:28088,fork,reuseaddr", "TCP:127.0.0.1:8088")
+        self.api = API(f"http://127.0.0.1:{self.api_port}")
+
+    def collect(self) -> None:
+        super().collect()
+        p = docker("logs", "-t", self.dind, check=False, outer=True, timeout=120)
+        (self.out / "dind.log").write_text((p.stdout or "") + (p.stderr or ""), encoding="utf-8")
+        (self.out / "engine.json").write_text(json.dumps(self.engine, indent=2), encoding="utf-8")
+
+    def teardown(self, quiet: bool = False) -> None:
+        docker("rm", "-f", "-v", self.dind, check=False, outer=True)
+        TARGET.clear()
+
+
 def urljoin(base: str, ref: str) -> str:
     from urllib.parse import urljoin as _j
 
@@ -1220,7 +1455,8 @@ def main(argv: list[str] | None = None) -> int:
     if spec is None:
         print(f"no cell {args.cell!r} in {CELLS}", file=sys.stderr)
         return 2
-    cell = Cell(spec=spec, image=args.image, fixtures=args.fixtures.resolve(), out=args.out.resolve(),
+    kind = ComposeCell if spec.get("compose") else Cell
+    cell = kind(spec=spec, image=args.image, fixtures=args.fixtures.resolve(), out=args.out.resolve(),
                 local_port=args.local, landed=list(matrix.get("landed", [])),
                 plugin=args.plugin.resolve() if args.plugin else None)
     try:
