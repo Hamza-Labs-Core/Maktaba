@@ -81,9 +81,16 @@ The form's questions:
   `truenas/apps`' community train under the project's GitHub account.
 - **Until it merges**, the guide offers the same compose as a **Custom App** (Apps → Discover →
   Custom App → Install via YAML), with the questions as comments.
-- **Keeping it current:** each release updates the app's version in our repo, and a release step
-  opens the bump PR to `truenas/apps`. This is the catalog's normal flow, and nobody needs to
-  remember it.
+- **Keeping it current:** each release renders the app pinned to its own image
+  (`tools/release/truenas_app.py`), as it renders the published Docker compose file, rather than
+  committing a new pin to main (such a commit would itself be the next release candidate). The
+  release page carries the Custom App YAML pinned the same way, and, once the app is in the
+  catalog, a release step opens the bump PR to `truenas/apps`. This is the catalog's normal
+  flow, and nobody needs to remember it.
+- **Setup and health:** the household runs the setup from the app's Shell (`maktaba-server
+  container setup`); a container not set up says so in TrueNAS's words. The image has no curl,
+  so the healthcheck is `maktaba-server healthcheck`: healthy while the container waits for its
+  first setup, then only when the web app answers.
 
 ## Acceptance criteria
 
@@ -132,3 +139,7 @@ has no Arabic). Maktaba's own screens are in both languages.
 | `tools/release/` | the catalog bump PR step |
 | `cmd/maktaba-server/internal/mediaaccess/` (from 59.03) | TrueNAS wording |
 | `docs/nas/checklists/truenas.md` (new, in 59.15's folder) | device checklist |
+| `cmd/maktaba-server/` | the `healthcheck` command; the setup hint and the write-denied fix in TrueNAS's words |
+| `tests/nas/truenas_app.py`, `tests/nas/truenas/` | the catalog's tooling against the app: render, lint, metadata, deploy |
+| `.github/workflows/release.yml`, `packages.yml` | the Custom App YAML on each release; the catalog bump PR |
+| `docs/nas/guides/truenas{,.ar}.md` (new) | the maktaba.tv guide's source |

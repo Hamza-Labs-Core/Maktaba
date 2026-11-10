@@ -530,6 +530,13 @@ that release embeds the same two files. Once the root lists keys, an unreachable
 list that does not verify, has expired or is older than the committed copy fails the release
 (re-run it once the store is back); while the root lists none, it embeds nothing and says so.
 
+The release also publishes the TrueNAS Custom App YAML pinned to its image
+(`maktaba-truenas-custom-app.yaml`, `tools/release/truenas_app.py render`, Epic 59 story 59.10),
+as it pins the Docker compose file. Neither is committed back to main: a commit after each tag
+would be the next release candidate, and every release would make another. Once the Maktaba app
+is in TrueNAS's catalog, `packages.yml` opens each release's bump pull request there
+([deploy/nas/truenas](../deploy/nas/truenas/README.md#releases)).
+
 A merge that got no run of its own (main's runs replace a pending one) is released with the
 next green commit's tag. A CI run that failed only on the flaky iPhone/iPad shards is not green
 here, though the tag guard would let it through: the next green commit is tagged instead, or a
