@@ -292,15 +292,17 @@ async def test_core_media_wave_9_is_identical(
     stages = selected()
     async with world(template, tmp_path, monkeypatch) as w:
         p = w.p
-        # 2. each video's identity, fingerprint, style sample and access check, and the
-        # thumbnail its identity queues; one video is indexed (as transcription leaves it),
-        # so its thumbnail moves it on (INDEXED -> THUMBNAILED), the worker's write
+        # 2. each video's identity, fingerprint, style sample and access check, and its
+        # thumbnail; one video is indexed (as transcription leaves it), so its thumbnail
+        # moves it on (INDEXED -> THUMBNAILED), the worker's write. The first probe already
+        # asked for the identity (Epic 59), so this one is unchanged and queues no thumbnail
+        # of its own: the thumbnail is queued here
         for side in (p.a, p.b):
             await side.db.execute(
                 "UPDATE videos SET state = 'indexed' WHERE filename = 'talk_a.mp4'"
             )
             for vid in await side.db.fetch("SELECT id FROM videos ORDER BY path"):
-                for stage in LATER:
+                for stage in (*LATER, "thumbnail"):
                     await enqueue_job(
                         side.db, subject_kind="video", subject_id=vid["id"], stage=stage
                     )
