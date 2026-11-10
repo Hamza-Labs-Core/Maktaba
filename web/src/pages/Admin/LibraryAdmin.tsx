@@ -108,6 +108,7 @@ function LibraryAdminInner() {
       .catch((e) => setManageErr(problemMessage(e, t("common.error"))));
   }, [t]);
 
+  const [runNowSaid, setRunNowSaid] = useState("");
   const loadQueues = useCallback(() => {
     const q = encodeURIComponent(id);
     const mine = ++queuesSeq.current;
@@ -183,6 +184,17 @@ function LibraryAdminInner() {
   const closeAndReload = () => {
     setDialog(null);
     changed();
+  };
+  // Epic 59 story 59.02: the library's work held for the quiet hours, started now
+  const runNow = async () => {
+    if (!lib) return;
+    try {
+      await api.post(`/api/libraries/${encodeURIComponent(lib.id)}/run-now`);
+      setRunNowSaid(t("libpage.queues.runNowDone"));
+      loadQueues();
+    } catch {
+      setRunNowSaid(t("common.error"));
+    }
   };
   const runOffline = (a: OfflineAction) =>
     lib && setOffline({ action: a, libraries: [{ id: lib.id, name: lib.name }] });
@@ -266,6 +278,11 @@ function LibraryAdminInner() {
           />
         }
       />
+      {runNowSaid && (
+        <p role="status" className="mkt-muted">
+          {runNowSaid}
+        </p>
+      )}
       <QueueSection
         h={h}
         status={queuesState}
@@ -275,6 +292,7 @@ function LibraryAdminInner() {
         failures={failures}
         onOffline={runOffline}
         onRequeue={() => setDialog("requeue")}
+        onRunNow={() => void runNow()}
       />
       <Section id="youtube" title={t("libpage.youtube.title")} desc={t("libpage.youtube.desc")}>
         <YouTubeSourcesPanel library={{ id: lib.id, name: lib.name }} onChanged={loadQueues} />

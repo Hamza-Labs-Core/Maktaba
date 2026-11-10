@@ -271,8 +271,20 @@ export type MachineDoc =
       /** the memory was raised and the defaults moved up at this start */
       moved_up: boolean;
       reason: { tier: Tier; memory_gb: number; gpu: string };
-      defaults: { pipeline_workers: number };
+      defaults: {
+        pipeline_workers: number;
+        shared_buffers: string;
+        work_mem: string;
+        quiet_hours: string;
+      };
       nas: boolean;
+      /** Epic 59 story 59.02: the window as saved ("" none), set in server.toml or the tier's */
+      quiet_hours: string;
+      quiet_set: boolean;
+      quiet_default: string;
+      /** the database is tuned for spinning disks, and how that was known */
+      rotational: boolean;
+      disk_how: "rotational" | "ssd" | "asked" | "unknown";
     };
 
 /** A PUT answer is the GET document without available. */
@@ -309,6 +321,12 @@ export const serverSettingsApi = {
   machine: async () => api.get<MachineDoc>("/api/server/machine"),
   saveTier: async (tier: Tier | "auto") =>
     asMachineDoc(await api.put<unknown>("/api/server/machine", { tier })),
+  /** Epic 59 story 59.02: quiet hours ("" none; quiet_default: the tier's), the data disk's answer */
+  saveMachine: async (body: {
+    quiet_hours?: string;
+    quiet_default?: boolean;
+    data_disk?: "ssd" | "rotational" | "auto";
+  }) => asMachineDoc(await api.put<unknown>("/api/server/machine", body)),
   /** Answers while the server is up (public; used to see it come back). */
   ping: async () => api.get<unknown>("/api/system/version"),
 };

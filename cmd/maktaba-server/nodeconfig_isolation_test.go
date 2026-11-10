@@ -11,7 +11,9 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/adopt"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/storage"
 )
 
 // TestMain points MAKTABA_NODE_CONFIG at a file that never exists, so no test
@@ -27,6 +29,11 @@ func TestMain(m *testing.M) {
 	// ...and for the TV slots' streaming binary (serve_tvheld_test.go)
 	if code, ok := runFakeSlot(); ok {
 		os.Exit(code)
+	}
+	// setup's check reads a neutral data disk, whatever disk the tests' temp folders are
+	// on (a tmpfs /tmp would be refused); setup_datadir_test.go drives the real cases
+	dataDiskFacts = func(string) (storage.Disk, hostinfo.DataDisk, error) {
+		return storage.Disk{FSType: "ext4", Suitable: true, Local: true}, hostinfo.DataDisk{Kind: hostinfo.DiskSSD}, nil
 	}
 	dir, err := os.MkdirTemp("", "maktaba-nodecfg-")
 	if err != nil {

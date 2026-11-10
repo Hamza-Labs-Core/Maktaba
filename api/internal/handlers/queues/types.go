@@ -140,8 +140,11 @@ const (
 	// external service (Plex) did not answer ("Plex not
 	// answering, retrying"); QueueSummary.RetryingService names it.
 	WaitServiceRetrying WaitingReason = "service_retrying"
-	WaitUpstream        WaitingReason = "upstream"
-	WaitIdle            WaitingReason = "idle"
+	// WaitQuietHours: heavy jobs wait for this machine's quiet hours (Epic 59 story
+	// 59.02); QueueSummary.QuietAt is when the window opens.
+	WaitQuietHours WaitingReason = "quiet_hours"
+	WaitUpstream   WaitingReason = "upstream"
+	WaitIdle       WaitingReason = "idle"
 )
 
 // Counts are the per-stage job counters.
@@ -186,6 +189,8 @@ type QueueSummary struct {
 	// whose failures put this stage's waiting rows into backoff; nil when
 	// none did. Set even while other rows run, so the card can say so.
 	RetryingService *string `json:"retrying_service"`
+	// QuietAt: with waiting_reason quiet_hours, when the window opens ("01:00").
+	QuietAt *string `json:"quiet_at,omitempty"`
 	// Component is the catalog component that owns the stage (Epic 51), set while the
 	// stage waits because of it (component_off / component_held); nil otherwise.
 	Component *string `json:"component"`

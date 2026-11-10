@@ -46,8 +46,18 @@ const DOC = {
   can_restart: true,
   moved_up: false,
   reason: { tier: "standard", memory_gb: 6, gpu: "" },
-  defaults: { pipeline_workers: 2 },
+  defaults: {
+    pipeline_workers: 2,
+    shared_buffers: "512MB",
+    work_mem: "8MB",
+    quiet_hours: "01:00-06:00",
+  },
   nas: true,
+  quiet_hours: "01:00-06:00",
+  quiet_set: false,
+  quiet_default: "01:00-06:00",
+  rotational: true,
+  disk_how: "rotational",
 };
 
 function open(doc: unknown = DOC, user = undefined as typeof memberUser | undefined) {
@@ -177,6 +187,46 @@ describe("ThisMachineSection", () => {
         "This machine's details are not available: the server runs without its supervisor."
       )
     ).toBeInTheDocument();
+  });
+
+  // Epic 59 story 59.02: the tier's Postgres memory and quiet hours; the window is saved
+  // (and back to the tier's); a disk that cannot be read is asked about
+  it("shows and saves the quiet hours", async () => {
+    open();
+    expect(await screen.findByText("Database memory: 512MB")).toBeInTheDocument();
+    expect(screen.getByText("Quiet hours: 01:00-06:00")).toBeInTheDocument();
+    expect(screen.getByText("The database is tuned for spinning disks.")).toBeInTheDocument();
+    const input = screen.getByRole("textbox", { name: /Quiet hours/ });
+    expect(input).toHaveValue("01:00-06:00");
+    put.mockResolvedValue({
+      ...DOC,
+      quiet_hours: "22:00-06:00",
+      quiet_set: true,
+      restart_needed: true,
+    });
+    await userEvent.clear(input);
+    await userEvent.type(input, "22:00-06:00");
+    await userEvent.click(screen.getByRole("button", { name: "Save quiet hours" }));
+    expect(put).toHaveBeenCalledWith("/api/server/machine", { quiet_hours: "22:00-06:00" });
+    put.mockResolvedValue({ ...DOC });
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Use the tier's (01:00-06:00)" })
+    );
+    expect(put).toHaveBeenLastCalledWith("/api/server/machine", { quiet_default: true });
+  });
+
+  it("asks whether an unread data disk is an SSD", async () => {
+    open({ ...DOC, data_disk: { kind: "unknown", fs_type: "zfs" }, disk_how: "unknown" });
+    const ask = await screen.findByLabelText("Is Maktaba's data folder on an SSD?");
+    put.mockResolvedValue({
+      ...DOC,
+      data_disk: { kind: "unknown", fs_type: "zfs" },
+      disk_how: "asked",
+      rotational: false,
+    });
+    await userEvent.selectOptions(ask, "ssd");
+    expect(put).toHaveBeenCalledWith("/api/server/machine", { data_disk: "ssd" });
+    expect(await screen.findByText("As you answered (zfs)")).toBeInTheDocument();
   });
 
   it("rounds GB as people read them", () => {

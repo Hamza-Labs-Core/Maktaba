@@ -92,7 +92,6 @@ it is reported as pending (⏳) until that story is in `landed`.
 |---|---|
 | `scan-grant-race` | a scan asked right after a library is made walks nothing: the `light` runner's sandbox has no grant for the new root yet (EACCES, `files_walked=0`); the runner restarts with it a moment later. `scan` asks again each minute; `first_scan` waits |
 | `poster-queue` | in a fresh container no `content_hash` job is queued for the scanned clips, and `thumbnail` (the poster) only follows `content_hash`: `thumb_small` runs and writes nothing, and no poster is served after 15 minutes |
-| `pg-stale-lock` | after `docker kill` (a power cut) the bundled Postgres crash-loops on a stale `.s.PGSQL.54329.lock` in the data volume: the old postmaster's PID is reused in the new container |
 
 **Later phases add cells:** VA-API without a device (`vaapi-fallback`, 59.05), speech on arm64
 (`arm64` with speech on, 59.06), the plugin isolation level on the no-Landlock cells (59.07),
