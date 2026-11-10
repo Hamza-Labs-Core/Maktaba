@@ -269,7 +269,9 @@ artifact list are in [`deploy/packaging/`](deploy/packaging/README.md).
 Prefer containers? [`cloud/installers/docker/docker-compose.yml`](cloud/installers/docker/docker-compose.yml)
 runs Maktaba in one container (`ghcr.io/hamza-labs-core/maktaba-server`, multi-arch):
 `docker compose up -d`, then `docker compose run --rm maktaba setup` once. It updates itself
-on its volume like every other install. (`deploy/compose/docker-compose.yml` is the
+on its volume like every other install. It runs as whichever user you set (`user:` in the
+compose file; on a NAS, the user that owns your folders; never root), and its first start needs
+no internet. (`deploy/compose/docker-compose.yml` is the
 development and CI stack, built from source.)
 
 ---

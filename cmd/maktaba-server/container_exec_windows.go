@@ -6,3 +6,6 @@ import "errors"
 func execProcess(string, []string, []string) error {
 	return errors.New("maktaba-server container runs in the Docker image (Linux)")
 }
+
+// ownerOf: no uid on Windows.
+func ownerOf(string) (int, bool) { return 0, false }

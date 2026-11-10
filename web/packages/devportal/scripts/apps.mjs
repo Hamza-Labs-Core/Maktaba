@@ -1053,6 +1053,16 @@ export const APPS = [
                     "ملف `.AppImage` أو `.deb` أو `.rpm`؛ وعلى حاسوب بلا واجهة رسومية يثبّت الأمر `install.sh --app` الخادم وحده"
                   ),
                 ],
+                [
+                  t(
+                    "Docker, on a NAS or a server (x86-64 and ARM64)",
+                    "Docker، على جهاز NAS أو خادم (x86-64 وARM64)"
+                  ),
+                  t(
+                    "the image `ghcr.io/hamza-labs-core/maktaba-server` with the project's compose file: it runs as whichever user the NAS gives it (never root), and its first start needs no internet. If that user cannot write the data folder, it stops at once and its log names the folder, the user and the fix",
+                    "الصورة `ghcr.io/hamza-labs-core/maktaba-server` مع ملف compose الخاص بالمشروع: تعمل بأي مستخدم يعطيه لها جهاز الـNAS (ولا تعمل بصلاحيات الجذر أبدًا)، ولا يحتاج تشغيلها الأول إلى الإنترنت. وإن لم يستطع ذلك المستخدم الكتابة في مجلد البيانات توقفت فورًا وذكر سجلها المجلد والمستخدم وطريقة الإصلاح"
+                  ),
+                ],
               ],
             },
           },

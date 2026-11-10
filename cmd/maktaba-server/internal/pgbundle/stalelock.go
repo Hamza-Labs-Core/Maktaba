@@ -17,8 +17,16 @@ import (
 // takes it over). One whose PID is a postgres nobody runs any more (its server was
 // killed and the system adopted it: macOS, where no launcher reaps what the server left)
 // is stopped first, or Postgres would refuse to start forever; any other postgres is left
-// to Postgres (it says another postmaster runs).
+// to Postgres (it says another postmaster runs). A lock whose shared memory a process
+// still holds (a backend of the postmaster that wrote it) is never removed: Postgres's own
+// check, which a removed lock would skip. Then the socket's lock: clearStaleSocketLock.
 func (b Bundle) ClearStaleLock() {
+	b.clearStaleDataLock()
+	b.clearStaleSocketLock()
+}
+
+// clearStaleDataLock is ClearStaleLock's postmaster.pid.
+func (b Bundle) clearStaleDataLock() {
 	path := filepath.Join(b.Data, "postmaster.pid")
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -39,10 +47,64 @@ func (b Bundle) ClearStaleLock() {
 		}
 		return
 	}
+	if shmInUse(string(raw)) {
+		fmt.Fprintf(os.Stderr, "[postgres] %s names process %d (%s now), but its shared memory is still in use: kept\n",
+			path, pid, name)
+		return
+	}
 	if err := os.Remove(path); err == nil {
 		fmt.Fprintf(os.Stderr, "[postgres] %s named process %d, which is %s now (the postmaster that wrote it did not "+
 			"end cleanly): removed\n", path, pid, name)
 	}
+}
+
+// clearStaleSocketLock removes the unix socket's lock (.s.PGSQL.<port>.lock, in the data
+// directory) when its PID is a live process but no postmaster holds this cluster. Postgres
+// takes over a socket lock only when its PID is no process (or its own, or its parent's):
+// it has no shared memory check for this one. In a container started again after a kill
+// (a power cut, docker kill), the old postmaster's PID is soon another process's in the
+// new PID namespace, and Postgres refused to start forever ("lock file already exists").
+// A postmaster takes its data directory's lock (postmaster.pid) before its socket's, so
+// while postmaster.pid names no live postgres (clearStaleDataLock has run) no postmaster
+// owns this socket: the lock is left from the one that did not end cleanly.
+func (b Bundle) clearStaleSocketLock() {
+	if b.Port <= 0 {
+		return
+	}
+	path := filepath.Join(b.Data, ".s.PGSQL."+strconv.Itoa(b.Port)+".lock")
+	pid, ok := lockPID(path)
+	if !ok || pid == os.Getpid() {
+		return
+	}
+	if _, alive := lookProcess(pid); !alive || b.holdsData() {
+		return
+	}
+	if err := os.Remove(path); err == nil {
+		fmt.Fprintf(os.Stderr, "[postgres] %s named process %d, but no postmaster holds %s (the one that wrote it "+
+			"did not end cleanly): removed\n", path, pid, b.Data)
+	}
+}
+
+// lockPID is the PID on a lock file's first line (ok false: no file, or no PID).
+func lockPID(path string) (int, bool) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return 0, false
+	}
+	first, _, _ := strings.Cut(string(raw), "\n")
+	pid, err := strconv.Atoi(strings.TrimSpace(first))
+	return pid, err == nil && pid > 0
+}
+
+// holdsData: the cluster's postmaster.pid names a live process that is a postgres, or one
+// this system cannot name (Running, through the lookups tests replace).
+func (b Bundle) holdsData() bool {
+	pid, ok := lockPID(filepath.Join(b.Data, "postmaster.pid"))
+	if !ok {
+		return false
+	}
+	name, alive := lookProcess(pid)
+	return alive && (name == "" || isPostgres(name))
 }
 
 // The process lookups ClearStaleLock makes (tests replace them).

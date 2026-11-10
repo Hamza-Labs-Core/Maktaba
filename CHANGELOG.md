@@ -212,15 +212,13 @@ build fails when the two differ.
 
 ### Fixed
 
-- **A library a scan or a download finds gets its posters, small thumbnails, transcripts and
-  lengths (Epic 59).** The poster, the small thumbnail and the transcript followed the file's
-  identity step, which only a library imported from mediaintel ever queued: on a fresh
-  install no clip got a poster or a transcript, and no scanned clip got its length either
-  (the length step read it and did not save it). A clip's first length reading now queues
-  its identity step once (not after an MP4 conversion, so a converted file is not
-  transcribed again) and saves the length; and once this release runs, the queue gives every
-  clip probed before it that never had that step its poster and transcript, in the
-  background.
+- **Maktaba's own database starts again after a power cut or a killed container.** After an
+  unclean stop (a power cut, `docker kill`, a NAS switched off), the bundled Postgres could
+  refuse to start, over and over, on a lock file the stopped database left behind
+  (`.s.PGSQL.<port>.lock`): the stopped database's process number now belonged to another
+  process. Maktaba now removes such a lock before it starts the database, but only when no
+  database runs on that data, and never while a leftover database process still holds its
+  memory.
 
 - **A stage you set to run in the queue worker stays there after Maktaba restarts or
   updates.** Choosing where one of Maktaba's own stages runs (Queues page, or
@@ -2541,6 +2539,16 @@ build fails when the two differ.
   the server and cannot be switched off; `categorize`, `component_catchup`, the watcher and
   the manual scans stay in the core.
 
+- **The Docker image runs as whichever user a NAS gives it, and its first start needs no
+  internet (story 59.01).** Set the container's user (compose's `user:`, TrueNAS's Run As,
+  Unraid's `--user`, a DSM user such as 1026:100) and every process runs as that user; a user
+  the image does not know gets a name, so the bundled database starts. The image refuses root,
+  a privileged container and the Docker socket, and if the user cannot write the data folder it
+  stops at once (exit 78) with a message, in English and Arabic, naming the folder, the user and
+  the fix, instead of restarting over and over. The Linux payload now carries the core Python
+  packages for its architecture, so setup builds the pipeline's environment from them with no
+  download; a home set up without speech to text downloads no model either.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
@@ -3077,6 +3085,16 @@ build fails when the two differ.
 - **An idle Core home is back to its four processes a minute after its last job.** Since the
   core steps (such as a library scan) run in a plugin runner, any work woke a runner, and it
   stayed up for ten idle minutes. A runner now exits after one idle minute.
+
+- **A library a scan or a download finds gets its posters, small thumbnails, transcripts and
+  lengths (Epic 59).** The poster, the small thumbnail and the transcript followed the file's
+  identity step, which only a library imported from mediaintel ever queued: on a fresh
+  install no clip got a poster or a transcript, and no scanned clip got its length either
+  (the length step read it and did not save it). A clip's first length reading now queues
+  its identity step once (not after an MP4 conversion, so a converted file is not
+  transcribed again) and saves the length; and once this release runs, the queue gives every
+  clip probed before it that never had that step its poster and transcript, in the
+  background.
 
 ## [0.2.0] - 2026-10-19
 

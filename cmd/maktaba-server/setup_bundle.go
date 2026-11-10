@@ -200,6 +200,20 @@ func choiceVenvSpec(stateDir string) (extras string, none bool) {
 	return ch.VenvExtras()
 }
 
+// choiceNeedsModels: the components chosen at setup hold a transcription or search model
+// (needsModels on the choice's set), so setup's download step fetches them. A home with no
+// choice (one set up before story 51.17) does, as before. Story 59.01: a Core home (speech
+// to text off) downloads none, and its first start completes with no network.
+func choiceNeedsModels(stateDir string) bool {
+	ch, ok, err := componentseed.ReadChoice(stateDir)
+	if err != nil || !ok {
+		return true
+	}
+	return slices.ContainsFunc(ch.Enabled, func(id string) bool {
+		return strings.HasPrefix(id, "model.") && !strings.HasPrefix(id, "model.llm.")
+	})
+}
+
 // setupBundleFlag is `setup --bundle <name>`: the bundle step's answer, from the command
 // line (custom takes no ticks here: it starts from Core; Settings > Components adds them).
 func setupBundleFlag(bundle string, out io.Writer) error {
