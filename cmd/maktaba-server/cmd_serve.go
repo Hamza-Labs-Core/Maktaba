@@ -340,6 +340,16 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 		}
 	}
 	sopts := supervisor.Options{Config: cfg, BinDir: opts.binDir, ReleaseDir: releaseDir}
+	// Epic 59 story 59.06: speech to text by the tier, and its measure when it needs one
+	if wholeMachine && containsRole(roles, supervisor.RolePipeline) {
+		sp := supervisor.SpeechOf(cfg, speechHardware())
+		runningSpeech = &sp
+		fmt.Fprintf(os.Stderr, "[serve] speech to text %s, model %s (tier default %s%s; quiet hours only: %v)\n",
+			map[bool]string{true: "on", false: "off"}[sp.On], sp.Model, sp.Default,
+			map[bool]string{true: ", " + sp.Reason, false: ""}[sp.Reason != ""], sp.QuietOnly)
+		speechMeasurer = newSpeechRunner(sopts, os.Stderr)
+		go speechMeasurer.watch(ctx)
+	}
 	// Epic 54: the plugin host (plugins.host), built dormant on a home that runs plugins;
 	// the reconciler starts it while a plugin is on (story 54.37 §4)
 	if wholeMachine && supervisor.PluginsHere(cfg) && containsRole(roles, supervisor.RolePipeline) {

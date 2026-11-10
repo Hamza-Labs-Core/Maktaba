@@ -9,6 +9,8 @@ import (
 const (
 	EnvQuietHours   = "MAKTABA_QUIET_HOURS"
 	EnvQuietSprites = "MAKTABA_QUIET_SPRITES"
+	// EnvQuietSpeech: every transcription waits for the window (the Light tier, story 59.06)
+	EnvQuietSpeech = "MAKTABA_QUIET_SPEECH"
 )
 
 // QuietEnv is the window heavy work waits for on this machine ([schedule] quiet_hours,
@@ -18,7 +20,7 @@ func QuietEnv(cfg config.Config) []string {
 	tier, _ := hostinfo.ParseTier(cfg.Server.Tier)
 	d := hostinfo.DefaultsFor(tier, hostinfo.Machine{})
 	if tier == "" {
-		d.QuietHours, d.SpritesInQuietHours = "", false // no tier read: today's (none)
+		d.QuietHours, d.SpritesInQuietHours, d.SpeechInQuietHours = "", false, false // no tier read: today's (none)
 	}
 	w := config.QuietHoursOf(cfg, d.QuietHours)
 	if w == "" {
@@ -27,6 +29,9 @@ func QuietEnv(cfg config.Config) []string {
 	out := []string{EnvQuietHours + "=" + w}
 	if d.SpritesInQuietHours {
 		out = append(out, EnvQuietSprites+"=1")
+	}
+	if d.SpeechInQuietHours {
+		out = append(out, EnvQuietSpeech+"=1")
 	}
 	return out
 }

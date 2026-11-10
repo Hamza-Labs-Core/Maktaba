@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 )
 
 // fakeMachine makes PlanSTT see an Apple Silicon Mac (or not: an x86_64 Windows or
@@ -27,6 +28,9 @@ func fakeMachine(t *testing.T, apple bool, gb uint64) {
 		appleSilicon, totalMemory, numCPU, cudaWhisper, sttInstalled, secondListenModel = prevA, prevM, prevC, prevW, prevS, prevL
 		venvTorch = prevT
 	})
+	prevSM := speechMachine
+	t.Cleanup(func() { speechMachine = prevSM })
+	speechMachine = func() hostinfo.Machine { return hostinfo.Machine{Arch: "amd64", CPU: hostinfo.CPU{AVX2: true}} }
 	appleSilicon = func() bool { return apple }
 	totalMemory = func() uint64 { return gb << 30 }
 	numCPU = func() int { return 8 }

@@ -514,6 +514,12 @@ type TranscriptionSection struct {
 	// dropbox-dash/faster-whisper-large-v3-turbo elsewhere). On Windows and Linux
 	// an MLX model is replaced by the CTranslate2 one, with a line in the log.
 	Model string `toml:"model"`
+	// Speech (Epic 59 story 59.06): "on" or "off"; empty: the hardware tier's default (off
+	// on Light until turned on, on elsewhere). Off, no worker transcribes on this machine
+	// (transcribe and second_listen are left to other machines; queued files wait). Model
+	// also takes a size (tiny, base, small, medium, large-v3-turbo), and empty picks the
+	// tier's on Windows and Linux.
+	Speech string `toml:"speech"`
 	// Refine: "on" (default) lets a second listen correct Whisper's words
 	// (MAKTABA_STT_REFINE); "off" stores them as they are. On Windows and Linux it
 	// runs on the NVIDIA GPU (story 38.9) as a stage of its own after Whisper's:

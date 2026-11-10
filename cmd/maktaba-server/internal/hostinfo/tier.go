@@ -75,7 +75,8 @@ const (
 	ModelTurbo = "large-v3-turbo"
 )
 
-// turboGPUMiB is the GPU memory large-v3-turbo needs on a Light machine's GPU.
+// turboGPUMiB is the GPU memory large-v3-turbo needs on a GPU (the supervisor's smallest
+// GPU plan: a smaller card transcribes on the CPU).
 const turboGPUMiB = 4096
 
 // Defaults is what a tier sets. A zero number means today's default (no cap).
@@ -95,9 +96,13 @@ type Defaults struct {
 	SoftwareTranscodes int `json:"software_transcodes"`
 	SoftwareMaxHeight  int `json:"software_max_height"`
 	HardwareTranscodes int `json:"hardware_transcodes"`
-	// Speech to text (59.06): on by default, and the model.
-	SpeechOn    bool   `json:"speech_on"`
-	SpeechModel string `json:"speech_model"`
+	// Speech to text (59.06): on by default, the model, why that model (SpeechLight,
+	// SpeechCUDA, SpeechNoAVX2, SpeechARM; "": the tier's own) and whether transcription
+	// waits for the quiet hours even for a single new file (Light).
+	SpeechOn           bool   `json:"speech_on"`
+	SpeechModel        string `json:"speech_model"`
+	SpeechReason       string `json:"speech_reason,omitempty"`
+	SpeechInQuietHours bool   `json:"speech_in_quiet_hours,omitempty"`
 	// QuietHours is when heavy work runs (59.02; "": any time); SpritesInQuietHours
 	// holds thumbnail sprites to it.
 	QuietHours          string `json:"quiet_hours"`
@@ -108,14 +113,19 @@ type Defaults struct {
 const DefaultQuietHours = "01:00-06:00"
 
 // DefaultsFor is what tier t sets on machine m (the GPU and CPU features adjust speech).
+//
+// Speech (story 59.06): Light is off until turned on, then base, in the quiet hours only;
+// Standard small (int8 on the CPU), base on a CPU without AVX2 (an older Atom with AVX but
+// not AVX2 counts as without) or on ARM; Strong large-v3-turbo with AVX2 or CUDA, else small.
+// A CUDA GPU (SpeechRaisedByGPU) raises any tier to large-v3-turbo.
 func DefaultsFor(t Tier, m Machine) Defaults {
-	cuda := m.CUDAMiB()
 	switch t {
 	case TierLight:
 		d := Defaults{Tier: t, SharedBuffers: "256MB", WorkMem: "4MB", MaintenanceWorkMem: "64MB",
 			PipelineWorkers: 1, SoftwareTranscodes: 1, SoftwareMaxHeight: 720, HardwareTranscodes: 2,
-			SpeechModel: ModelBase, QuietHours: DefaultQuietHours, SpritesInQuietHours: true}
-		if cuda >= turboGPUMiB {
+			SpeechModel: ModelBase, SpeechReason: SpeechLight, SpeechInQuietHours: true,
+			QuietHours: DefaultQuietHours, SpritesInQuietHours: true}
+		if SpeechRaisedByGPU(m) {
 			d.SpeechModel = ModelTurbo
 		}
 		return d
@@ -124,18 +134,30 @@ func DefaultsFor(t Tier, m Machine) Defaults {
 			PipelineWorkers: 2, SoftwareTranscodes: 2, SoftwareMaxHeight: 1080, HardwareTranscodes: 4,
 			SpeechOn: true, SpeechModel: ModelSmall, QuietHours: DefaultQuietHours}
 		switch {
-		case cuda > 0:
-			d.SpeechModel = ModelTurbo
+		case SpeechRaisedByGPU(m):
+			d.SpeechModel, d.SpeechReason = ModelTurbo, SpeechCUDA
+		case m.Arch == "arm64":
+			d.SpeechModel, d.SpeechReason = ModelBase, SpeechARM
 		case !m.CPU.AVX2:
-			d.SpeechModel = ModelBase
+			d.SpeechModel, d.SpeechReason = ModelBase, SpeechNoAVX2
 		}
 		return d
 	}
 	d := Defaults{Tier: TierStrong, SharedBuffersPct: 25, WorkMem: "16MB", MaintenanceWorkMem: "256MB",
 		SpeechOn: true, SpeechModel: ModelSmall}
 	d.SharedBuffers = StrongSharedBuffers(m.Memory.LimitBytes)
-	if cuda > 0 || m.CPU.AVX2 {
+	switch {
+	case SpeechRaisedByGPU(m):
 		d.SpeechModel = ModelTurbo
+		if !m.CPU.AVX2 {
+			d.SpeechReason = SpeechCUDA
+		}
+	case m.CPU.AVX2:
+		d.SpeechModel = ModelTurbo
+	case m.Arch == "arm64":
+		d.SpeechReason = SpeechARM
+	default:
+		d.SpeechReason = SpeechNoAVX2
 	}
 	return d
 }
