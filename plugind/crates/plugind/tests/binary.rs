@@ -225,3 +225,41 @@ fn linux_partial_sandbox_still_runs() {
     child.kill().unwrap();
     let _ = child.wait();
 }
+
+/// Epic 59 story 59.07: --sandbox-check applies the sandbox a start would and prints what
+/// it applied, binding no socket and leaving no step file: what the server's isolation
+/// level reads before any plugin runs. A missing optional layer is partial; a failed
+/// required step is unavailable, 78.
+#[test]
+#[cfg_attr(windows, ignore = "the host runs only inside an AppContainer: covered by plugins-sandbox")]
+fn sandbox_check_prints_what_a_start_applies() {
+    let check = |env: &[(&str, &str)]| {
+        let h = home();
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_maktaba-plugind"));
+        cmd.arg("--data").arg(&h.data).arg("--sandbox-check");
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+        let out = cmd.output().unwrap();
+        assert!(!h.data.join("run/plugins/plugind.sock").exists(), "a check bound the socket");
+        assert!(!h.data.join("run/plugins/sandbox_unavailable").exists(), "a check left the step file");
+        let doc: serde_json::Value = serde_json::from_slice(&out.stdout)
+            .unwrap_or_else(|e| panic!("{e}: {}", String::from_utf8_lossy(&out.stdout)));
+        (out.status.code(), doc)
+    };
+    let (code, doc) = check(&[]);
+    assert_eq!(code, Some(0), "{doc}");
+    assert!(doc["sandbox"] == "full" || doc["sandbox"] == "partial", "{doc}");
+    assert!(doc["missing"].is_array(), "{doc}");
+    if cfg!(target_os = "linux") {
+        let (code, doc) = check(&[("MAKTABA_PLUGIND_FAIL_STEP", "landlock")]);
+        assert_eq!(code, Some(0), "{doc}");
+        assert_eq!(doc["sandbox"], "partial", "{doc}");
+        assert!(doc["missing"].as_array().unwrap().iter().any(|m| m == "landlock"), "{doc}");
+    }
+    let step = if cfg!(target_os = "linux") { "seccomp" } else { "seatbelt" };
+    let (code, doc) = check(&[("MAKTABA_PLUGIND_FAIL_STEP", step)]);
+    assert_eq!(code, Some(78), "{doc}");
+    assert_eq!(doc["sandbox"], "unavailable", "{doc}");
+    assert_eq!(doc["step"], step, "{doc}");
+}

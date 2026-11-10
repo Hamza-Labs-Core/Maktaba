@@ -4,6 +4,7 @@ gated as the Go loader does (the shared goldens of ``shared/components/testdata`
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -190,3 +191,35 @@ def test_read_gives_a_revoked_plugin_the_revoked_gate() -> None:
         out = done.value
     assert out["plugin.dev.example.bad"][0] == "revoked"
     assert out["plugin.dev.example.ok"][0] == ""
+
+
+class _IsolationDB(_GateDB):
+    """plugingate.read's tables with a policy and each machine's isolation level."""
+
+    def __init__(self, policy: Mapping[str, object], levels: Mapping[str, object]) -> None:
+        super().__init__("free", None)
+        self.policy, self.levels = policy, levels
+
+    async def fetchrow(self, q: str, *a: object) -> dict[str, object] | None:  # type: ignore[override]
+        if a and a[0] == plugingate.POLICY_KEY:
+            return {"value": json.dumps(self.policy)}
+        if a and a[0] == plugingate.ISOLATION_KEY:
+            return {"value": json.dumps(self.levels)}
+        return None
+
+
+def test_a_container_level_machine_holds_third_party_plugins_until_allowed() -> None:
+    """Epic 59 story 59.07 (the pipeline's half, as the supervisor's runner): on a machine
+    whose level is Container a plugin waits isolation_held until the policy allows
+    container-only isolation; another machine's level, or none written, holds nothing."""
+    levels = {"home": {"level": "container", "missing": ["landlock"]}, "nas-b": {"level": "full"}}
+    cases = [
+        ({}, "home", "isolation_held"),
+        ({"allow_container_isolation": True}, "home", ""),
+        ({}, "nas-b", ""),
+        ({}, "unknown-machine", ""),
+        ({}, None, ""),
+    ]
+    for policy, machine, want in cases:
+        got = _run(plugingate.read(_IsolationDB(policy, levels), "0.3.83", machine=machine))
+        assert got["plugin.dev.example.pro"][0] == want, (policy, machine)

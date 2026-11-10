@@ -718,3 +718,33 @@ func TestPluginStateMergesTheParts(t *testing.T) {
 	part("pipeline", components.PhaseRunning, "")
 	check("both running", components.PhaseRunning, "")
 }
+
+// Epic 59 story 59.07: the home's level is Container when any machine's is; the switch is
+// SetContainerIsolation's, audited once per change; SetPolicy keeps it.
+func TestContainerIsolationSwitch(t *testing.T) {
+	f := newLC(t)
+	ctx := context.Background()
+	if iso, err := LoadIsolation(ctx, f.db); err != nil || iso.Level != "" || iso.Held || len(iso.Machines) != 0 {
+		t.Fatalf("before any server wrote: %+v %v", iso, err)
+	}
+	if _, err := f.db.Exec(`INSERT INTO app_settings (key, value) VALUES ($1, '{"home": {"level": "full", "missing": []}, "nas": {"level": "container", "missing": ["landlock"]}}')`, IsolationKey); err != nil {
+		t.Fatal(err)
+	}
+	iso, err := LoadIsolation(ctx, f.db)
+	if err != nil || iso.Level != IsolationContainer || !iso.Held || len(iso.Machines) != 2 || iso.Machines[0].Machine != "home" {
+		t.Fatalf("one Container machine: %+v %v", iso, err)
+	}
+	if iso, err = f.l.SetContainerIsolation(ctx, true, admin); err != nil || !iso.Allowed || iso.Held {
+		t.Fatalf("allowed: %+v %v", iso, err)
+	}
+	if _, err := f.l.SetContainerIsolation(ctx, true, admin); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.count(t, `SELECT count(*) FROM audit_log WHERE action = 'plugin.isolation'`); n != 1 {
+		t.Fatalf("audit rows %d, want 1 (a repeat changes nothing)", n)
+	}
+	f.allowUnreviewed(t)
+	if p, err := LoadPolicy(ctx, f.db); err != nil || !p.AllowContainerIsolation || !p.AllowUnreviewed {
+		t.Fatalf("SetPolicy reset the switch: %+v %v", p, err)
+	}
+}

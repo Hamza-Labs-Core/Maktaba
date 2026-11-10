@@ -42,11 +42,12 @@ struct Flags {
     plugin_version: String,
     probes: bool,
     no_sandbox: bool,
+    sandbox_check: bool,
 }
 
 fn usage(msg: &str) -> ! {
     eprintln!("maktaba-plugind: {msg}");
-    eprintln!("usage: maktaba-plugind --data <dir> [--plugins-dir d] [--cache-dir d] [--run-dir d] [--api-socket p] [--dispatch-socket p] [--pool n]");
+    eprintln!("usage: maktaba-plugind --data <dir> [--plugins-dir d] [--cache-dir d] [--run-dir d] [--api-socket p] [--dispatch-socket p] [--pool n] [--sandbox-check]");
     std::process::exit(2)
 }
 
@@ -64,6 +65,7 @@ fn flags() -> Flags {
         plugin_version: String::new(),
         probes: false,
         no_sandbox: false,
+        sandbox_check: false,
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -79,6 +81,9 @@ fn flags() -> Flags {
             "--preload" => f.preload = Some(val().into()),
             "--plugin-id" => f.plugin_id = val(),
             "--plugin-version" => f.plugin_version = val(),
+            // Epic 59 story 59.07: apply the sandbox as a start would, print what it applied
+            // ({"sandbox": "full"|"partial", "missing": [...]}) and exit; no socket, no plugin
+            "--sandbox-check" => f.sandbox_check = true,
             "--version" => {
                 println!(
                     "maktaba-plugind {} (wasmtime {})",
@@ -121,7 +126,7 @@ fn main() {
     let (plugins_dir, cache_dir, run_dir) = (real(&plugins_dir), real(&cache_dir), real(&run_dir));
     // the only listener, bound before the sandbox closes everything else (a preload binds
     // none: it answers on stdout)
-    let listener = if f.preload.is_some() {
+    let listener = if f.preload.is_some() || f.sandbox_check {
         None
     } else {
         match plugind_core::uds::bind(&dispatch_socket) {
@@ -146,6 +151,10 @@ fn main() {
     } else {
         match sandbox::apply(&paths) {
             Ok(a) => a,
+            Err(e) if f.sandbox_check => {
+                println!("{}", serde_json::json!({"sandbox": "unavailable", "step": e.step, "detail": e.detail}));
+                std::process::exit(sandbox::EXIT_UNAVAILABLE);
+            }
             Err(e) => {
                 eprintln!("{e}");
                 // the supervisor reads the failed step from here (its status params)
@@ -154,6 +163,10 @@ fn main() {
             }
         }
     };
+    if f.sandbox_check {
+        println!("{}", serde_json::json!({"sandbox": applied.level, "missing": applied.missing}));
+        std::process::exit(0);
+    }
     #[cfg(feature = "escape-probes")]
     if f.probes {
         println!("SANDBOX {} missing={}", applied.level, applied.missing.join(","));
