@@ -235,7 +235,10 @@ func TestSupersedeOnlyWhenTheNewerRunStarts(t *testing.T) {
 	a := r.node(t, "n1", "alpha", "darwin-arm64", "1.4.0")
 	a.asks, a.appSlow = true, true
 	_, _ = r.f.svc.Tick(ctx)
-	r.stepN(40)
+	r.stepUntil(40, func() bool { return a.state() == MOrdered }) // no more steps than it takes (the unit tier's cap)
+	if a.state() != MOrdered {
+		t.Fatalf("alpha never waited on its app: %s", a.state())
+	}
 	old := r.active(t)
 	seed(t, r.f.store, rel("1.6.0", func(x *Release) {
 		x.Assets = []Asset{{Name: "release.json", URL: "https://github.test/release.json"}}
