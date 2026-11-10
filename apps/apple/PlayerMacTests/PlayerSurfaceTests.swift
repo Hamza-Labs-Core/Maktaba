@@ -195,7 +195,7 @@ import MaktabaKit
     static let transcodeBusy = #"{"type":"https://maktaba.tv/problems/transcode-busy","title":"Another video is being converted","status":503,"code":"transcode_busy"}"#
 
     static func video() throws -> Video {
-        try JSONDecoder().decode(Video.self, from: Data(#"{"id":"v1","title":"The Message","duration_sec":4}"#.utf8))
+        try JSONDecoder().decode(Video.self, from: Data(#"{"id":"v1","library_id":"lib1","filename":"message.mp4","title":"The Message","duration_sec":4}"#.utf8))
     }
 
     /// How many stream opens `home` was asked for.
