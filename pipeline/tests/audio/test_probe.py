@@ -357,3 +357,16 @@ def test_commit_probe_corrects_convert_mp4_s_codec() -> None:
 
     row = db.audio_tracks[tid]
     assert (row.codec, row.channels, row.sample_rate, row.language) == ("aac", 6, 44100, "eng")
+
+
+@pytest.mark.parametrize(
+    ("duration", "want"),
+    [("1500.25", 1500.25), ("4.000000", 4.0), (None, None), ("N/A", None), ("0", None),
+     ("-3", None), ("nan", None), ("inf", None)],
+)  # fmt: skip
+def test_parse_reads_the_length(duration: str | None, want: float | None) -> None:
+    """Epic 59: the container's length is the video's (probe saves it as duration_sec)."""
+    fmt: dict[str, str] = {"format_name": "mov,mp4"}
+    if duration is not None:
+        fmt["duration"] = duration
+    assert parse_ffprobe_json({"streams": [], "format": fmt}).media.duration_sec == want

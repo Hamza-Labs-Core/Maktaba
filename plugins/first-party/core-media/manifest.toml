@@ -68,6 +68,7 @@ lane         = "episodes"
 lane_order   = 1
 placement    = "any"
 edges        = [{ to = "thumb_hash", map = "same" }, { to = "link", map = "same" }, { to = "detect", map = "library_of" }]
+may_request  = ["content_hash"]
 entry        = "maktaba_fp_core_media.stages.probe:IMPL"
 
 [[stage]]

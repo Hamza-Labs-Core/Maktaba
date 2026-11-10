@@ -83,6 +83,8 @@ class ReconcileReport:
     yt_derive: int = 0
     #: jobs queued again whose result a Windows runner read wrong on a share (54.23)
     share_miss: int = 0
+    #: probed videos whose identity stage never ran, queued it (posters, transcripts)
+    identity: int = 0
 
 
 async def reconcile_once(
@@ -138,6 +140,7 @@ async def _pass(
     thumbs = await _thumbs_dir_sweep(db, graph)
     derived = await _youtube_derive(db, t)
     share_miss = await _share_miss_sweep(db, graph)
+    identity = await _identity_sweep(db, graph)
     return ReconcileReport(
         True,
         propagated,
@@ -150,6 +153,7 @@ async def _pass(
         thumbs,
         derived,
         share_miss,
+        identity,
     )
 
 
@@ -597,6 +601,45 @@ async def _share_miss_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
     return n
 
 
+#: the reason of the ``content_hash`` jobs :func:`_identity_sweep` queues
+IDENTITY_SWEEP_WHY = "probed, its identity stage never ran: no poster or transcript followed"
+
+
+async def _identity_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
+    """A ``content_hash`` once for each video whose latest probe succeeded and that never
+    had one. The poster (``thumbnail``), the small copy and the transcript follow
+    ``content_hash``, and until the first probe asked for it (Epic 59) only an imported
+    video was ever given one: every video a scan or a download found had no poster and no
+    transcript. A video that has any ``content_hash`` job is left alone, so the sweep ends
+    by itself; the stage reads only the head and tail of each file."""
+    if "content_hash" not in graph or "probe" not in graph:
+        return 0
+    rows = await db.fetch(
+        "SELECT j.subject_id AS sid FROM processing_jobs j"
+        " JOIN videos v ON v.id = j.subject_id"
+        " WHERE j.stage = 'probe' AND j.subject_kind = 'video' AND j.state = 'done'"
+        f" AND j.outcome IN {SUCCESS} AND v.deleted_at IS NULL"
+        " AND j.id = (SELECT max(k.id) FROM processing_jobs k WHERE k.subject_kind = 'video'"
+        "  AND k.subject_id = j.subject_id AND k.stage = 'probe')"
+        " AND NOT EXISTS (SELECT 1 FROM processing_jobs h WHERE h.subject_kind = 'video'"
+        "  AND h.subject_id = j.subject_id AND h.stage = 'content_hash')"
+        " ORDER BY j.id LIMIT $1",
+        SWEEP_BATCH,
+    )
+    n = 0
+    for r in rows:
+        res = await enqueue_job(
+            db,
+            subject_kind="video",
+            subject_id=UUID(str(r["sid"])),
+            stage="content_hash",
+            priority=SWEEP_PRIORITY,
+            reason={"why": IDENTITY_SWEEP_WHY, "by": "system"},
+        )
+        n += 1 if res.job_id is not None else 0
+    return n
+
+
 async def _semantic_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
     """An ``index`` for each video whose latest index job succeeded, whose active
     transcript has words, and that has no vector in ``segment_embeddings``, once search
@@ -648,7 +691,7 @@ async def run_reconciler(
             if report.leader and (
                 report.propagated or report.yt_refresh or report.version_sweep
                 or report.library_sweep or report.periodic or report.semantic_missing
-                or report.thumbs_dir or report.yt_derive
+                or report.thumbs_dir or report.yt_derive or report.identity
             ):  # fmt: skip
                 _log.info(
                     "reconciled",
@@ -660,6 +703,7 @@ async def run_reconciler(
                     semantic_missing=report.semantic_missing,
                     thumbs_dir=report.thumbs_dir,
                     yt_derive=report.yt_derive,
+                    identity=report.identity,
                 )
         except Exception:  # noqa: BLE001 - the reconciler must never take the worker down
             _log.exception("reconcile_failed")

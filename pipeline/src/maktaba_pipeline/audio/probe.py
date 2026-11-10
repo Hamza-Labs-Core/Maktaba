@@ -79,6 +79,8 @@ class MediaInfo:
     bitrate_kbps: int | None
     has_subtitles: bool
     raw_ffprobe: dict[str, Any] = field(default_factory=dict)
+    #: the container's length in seconds (``format.duration``), None when ffprobe gives none
+    duration_sec: float | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -136,6 +138,7 @@ def parse_ffprobe_json(payload: dict[str, Any]) -> ProbeResult:
         bitrate_kbps=bitrate_kbps,
         has_subtitles=has_subtitles,
         raw_ffprobe=payload,
+        duration_sec=_duration(fmt),
     )
 
     # Audio-stream index runs over the *audio* streams only — ffmpeg's
@@ -166,6 +169,15 @@ def parse_ffprobe_json(payload: dict[str, Any]) -> ProbeResult:
         audio_rank += 1
 
     return ProbeResult(media=media, audio=audio)
+
+
+def _duration(fmt: dict[str, Any]) -> float | None:
+    """``format.duration`` as seconds; None when missing, unparseable or not positive."""
+    try:
+        d = float(fmt.get("duration"))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return d if d > 0 and d == d and d != float("inf") else None
 
 
 async def run_ffprobe(
@@ -302,6 +314,9 @@ _TRANSCRIPTION_HANDLED_SQL = (
 )
 
 
+_SET_DURATION = "UPDATE videos SET duration_sec = $2 WHERE id = $1"
+
+
 async def commit_probe(
     db: _ProbeDB,
     *,
@@ -356,6 +371,10 @@ async def commit_probe(
             )
         if result.audio:
             await db.execute(_CLEAR_STALE_DEFAULT, video_id, len(result.audio))
+        if result.media.duration_sec is not None:
+            # the video's length: the poster's frame, the sprite's spacing, the player and
+            # the channels read it; a scanned video has no other source for it
+            await db.execute(_SET_DURATION, video_id, result.media.duration_sec)
 
     # Idempotency: a re-probe on an already-advanced row is a no-op
     # for the FSM. The UPSERTs above rewrite the same facts; we just
