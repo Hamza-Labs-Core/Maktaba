@@ -160,7 +160,7 @@ func Cloudflare(r *http.Request, trusted []netip.Prefix) string {
 }
 
 // trustedHop reports whether the home believes what ip forwards: loopback always (this
-// machine's own proxies), else the configured list.
+// machine's own proxies), else the configured list, else extra (nil is none).
 func trustedHop(trusted []netip.Prefix, extra func(netip.Addr) bool, ip netip.Addr) bool {
 	return ip.IsLoopback() || Contains(trusted, ip) || extra != nil && extra(ip)
 }

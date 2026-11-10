@@ -22,18 +22,40 @@ const trustedNodesEvery = 30 * time.Second
 const trustedNodesSQL = `SELECT DISTINCT remote_addr FROM cluster_nodes
   WHERE state = 'approved' AND remote_addr IS NOT NULL AND remote_addr <> ''`
 
+// trustedNodesStale is how old a read may get before the set stops counting: a database that
+// stopped answering takes the trust away (fail closed) rather than keeping a removed node's.
+const trustedNodesStale = 3 * trustedNodesEvery
+
+// nodeSet is one read of the approved nodes' addresses and when it was made.
+type nodeSet struct {
+	addrs map[netip.Addr]bool
+	at    time.Time
+}
+
 // trustedNodes is the approved nodes' addresses, as last read.
 type trustedNodes struct {
-	set atomic.Pointer[map[netip.Addr]bool]
+	set atomic.Pointer[nodeSet]
+	now func() time.Time // time.Now when nil (tests set it)
 }
 
-// Has reports whether ip is an approved node's address (clientip.MiddlewareWith's extra).
+func (n *trustedNodes) clock() time.Time {
+	if n.now != nil {
+		return n.now()
+	}
+	return time.Now()
+}
+
+// Has reports whether ip is an approved node's address (clientip.MiddlewareWith's extra). A
+// read older than trustedNodesStale counts as none.
 func (n *trustedNodes) Has(ip netip.Addr) bool {
-	m := n.set.Load()
-	return m != nil && (*m)[ip.Unmap()]
+	s := n.set.Load()
+	if s == nil || n.clock().Sub(s.at) > trustedNodesStale {
+		return false
+	}
+	return s.addrs[ip.Unmap()]
 }
 
-// load reads the set once; an error keeps the last one.
+// load reads the set once; on an error the last read stays until it is stale.
 func (n *trustedNodes) load(ctx context.Context, db *sql.DB) error {
 	rows, err := db.QueryContext(ctx, trustedNodesSQL)
 	if err != nil {
@@ -53,21 +75,31 @@ func (n *trustedNodes) load(ctx context.Context, db *sql.DB) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	n.set.Store(&m)
+	n.set.Store(&nodeSet{addrs: m, at: n.clock()})
 	return nil
 }
 
-// run reads the set every interval until ctx ends (a database without the table yet, or
-// one not answering, keeps the last set and is said once).
+// run reads the set every interval until ctx ends. The first failure of a run of them is a
+// warning (a database without the table yet, or one not answering), and the read that ends
+// it is said too.
 func (n *trustedNodes) run(ctx context.Context, db *sql.DB, every time.Duration, logger *slog.Logger) {
-	said := false
+	failing := false
 	for {
 		qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		err := n.load(qctx, db)
 		cancel()
-		if err != nil && !said && logger != nil {
-			logger.Debug("approved nodes' addresses not read (their forwarded clients are not believed yet)", "error", err)
-			said = true
+		switch {
+		case err != nil && !failing:
+			failing = true
+			if logger != nil {
+				logger.Warn("approved nodes' addresses not read; their forwarded clients stop being believed once the last read is stale",
+					"error", err, "stale_after", trustedNodesStale)
+			}
+		case err == nil && failing:
+			failing = false
+			if logger != nil {
+				logger.Info("approved nodes' addresses read again")
+			}
 		}
 		select {
 		case <-ctx.Done():

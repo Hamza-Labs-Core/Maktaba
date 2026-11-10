@@ -54,4 +54,22 @@ func TestTrustedNodes(t *testing.T) {
 			t.Errorf("%s: %v, want %v", addr, got, want)
 		}
 	}
+	// a database that stops answering: the last read counts until it is stale, then nothing
+	now := time.Now()
+	n.now = func() time.Time { return now }
+	if err := n.load(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	if err := n.load(context.Background(), db); err == nil {
+		t.Fatal("closed database, no error")
+	}
+	now = now.Add(trustedNodesStale - time.Second)
+	if !n.Has(netip.MustParseAddr("192.168.1.30")) {
+		t.Fatal("a fresh read stopped counting")
+	}
+	now = now.Add(2 * time.Second)
+	if n.Has(netip.MustParseAddr("192.168.1.30")) {
+		t.Fatal("a stale read still trusted")
+	}
 }

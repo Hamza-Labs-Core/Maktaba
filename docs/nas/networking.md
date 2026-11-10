@@ -83,7 +83,8 @@ Unraid) serves Maktaba under a name of yours, it needs:
 - **`X-Forwarded-For` and `X-Forwarded-Proto`** set by the proxy.
 
 Maktaba believes `X-Forwarded-For` only from a proxy it trusts: one on the NAS itself (it
-reaches Maktaba over loopback) is always trusted. A proxy at another address (a container on a
+reaches Maktaba over loopback) is always trusted, and so are the home's approved machines, which
+forward the requests of the clients signed in through them. A proxy at another address (a container on a
 bridge, another machine) goes in **Settings → Storage & discovery → Trusted proxies** (its
 address, or its network such as `172.17.0.0/16`), `[server] trusted_proxies` in server.toml.
 From any other address the header is ignored, and the logs show the proxy's address instead
