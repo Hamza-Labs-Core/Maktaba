@@ -24,6 +24,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/homemirror"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/machineagent"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/mdns"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
@@ -154,6 +155,15 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	fileCfg := cfg
 	if opts.role == "" || opts.role == "all" {
 		cfg = bootConfig(cfg, os.Stderr)
+		// Epic 59 story 59.04: the hardware tier, before anything sized by it is built
+		mt := resolveTier(&cfg, config.Path(), os.Stderr)
+		runningTier.Store(&mt)
+		// Epic 59 story 59.02: what this start runs with, for Settings → This machine
+		quiet := config.QuietHoursOf(cfg, hostinfo.DefaultsFor(mt.Tier, mt.Machine).QuietHours)
+		rot, how := pgbundle.DataRotational(cfg, filepath.Join(cfg.StateDir(), "postgres"))
+		runningQuiet.Store(&quiet)
+		runningDisk.Store(&rot)
+		fmt.Fprintf(os.Stderr, "[serve] quiet hours %q; database disk %s (tuned for spinning disks: %v)\n", quiet, how, rot)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

@@ -462,9 +462,12 @@ async def choose(db: Any, stage: str) -> ImplChoice:
     if stage in CHROMA_STAGES and not await _postgres_index(db):
         return ImplChoice("inproc", "index_store_chroma")
     if files_stage(stage):
+        want = _AREAS_WRITTEN[-1] if _AREAS_WRITTEN else ""
+        if stage in AREAS_FIRST_STAGES:
+            want = await _areas_now(db) or want
         group = firstparty.runner_instance(stage) or ""
         h = await hello(group)
-        if not _AREAS_WRITTEN or (h or {}).get("areas") != _AREAS_WRITTEN[-1]:
+        if not want or (h or {}).get("areas") != want:
             # the runner's sandbox is from other folders than this machine's now (a library
             # was added): this job runs here while the runner restarts on the new areas
             return ImplChoice("inproc", "runner_areas_stale")
@@ -1368,6 +1371,26 @@ async def write_areas(db: Any, path_map: Any = None) -> str:
         os.replace(tmp, d / AREAS_FILE)
         _AREAS_WRITTEN.append(digest)
     return digest
+
+
+#: the stages whose job is often the first of a library just made or whose folders just
+#: changed: the scan. The areas are written afresh before one is placed (else only at the
+#: worker's 30 s refresh), so a scan asked right after a library is added runs in the worker
+#: while the runner restarts with the new root; it reached the runner first and walked
+#: nothing (its sandbox had no grant for the root yet). One read of the libraries per scan.
+AREAS_FIRST_STAGES = frozenset({"scan"})
+
+
+async def _areas_now(db: Any) -> str:
+    """The areas' digest from the libraries as they are now, written for the runners when
+    it changed (``write_areas``); "" when they could not be read (the last written stands)."""
+    from ..engine.paths import active_path_map
+
+    try:
+        return await write_areas(db, active_path_map())
+    except Exception:  # noqa: BLE001 - the areas of the last refresh
+        _log.warning("plugin_runner_areas_failed", exc_info=True)
+        return ""
 
 
 def files_stage(stage: str) -> bool:

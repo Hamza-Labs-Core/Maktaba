@@ -573,6 +573,11 @@ addr = "127.0.0.1:%d"
 # every line on the output the checks read (53.02: server.log is warn+ by default)
 server_log = "all"
 
+# no quiet hours (Epic 59 story 59.02): a runner's tier would hold heavy work (a first scan,
+# convert, dedup) until 01:00; the scenarios run it now. Releases before it keep the key.
+[schedule]
+quiet_hours = ""
+
 [tv]
 slots = "%s"
 %s

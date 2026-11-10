@@ -666,6 +666,11 @@ linux_app:
   - 'cmd/maktaba-launcher/**'
   - 'deploy/packaging/node/build-release.sh'
   - 'deploy/docker/server/**'
+  # the image's entrypoint (story 59.01: its preflight, its bootstrap), checked on the image
+  # by docker-nas.sh
+  - 'cmd/maktaba-server/cmd_container.go'
+  - 'cmd/maktaba-server/container_*.go'
+  - 'cmd/maktaba-server/internal/appvenv/**'
   - 'pipeline/pyproject.toml'
   - 'pipeline/uv.lock'
   - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'

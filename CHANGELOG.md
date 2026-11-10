@@ -14,6 +14,29 @@ build fails when the two differ.
 
 ### Changed
 
+- **On a NAS, heavy work waits for quiet hours and Postgres is tuned to the machine (story
+  59.02).** On the Light and Standard tiers a library's first scan, a transcription backlog,
+  convert and duplicates, and bulk thumbnail sprites wait for 01:00–06:00, so the NAS stays
+  quick for the household; the queue says "Waiting for quiet hours (01:00)", and **Run now**
+  on the queue's page or the library page starts the work at once. The window is editable in Settings → This
+  machine. The bundled Postgres gets its memory from the tier (256 MB on Light, 512 MB on
+  Standard, a quarter of memory up to 4 GB on Strong) and, on spinning disks, settings for
+  them; `[postgres] settings` in server.toml wins. Setup refuses a data folder on a network
+  share or a FUSE file system and names the file system, gives Unraid's merged share the
+  cache-pool advice, and says when the database is on spinning disks. A library with a
+  regular scan says that it keeps the disks awake.
+
+- **Maktaba sizes itself to the machine it runs on, and Settings → This machine shows how
+  (story 59.04).** At each start the server reads the memory it may use (a container's limit,
+  not the host's RAM; on TrueNAS the ZFS cache counts as free), the processor's cores (a
+  container's CPU quota included) and features, the graphics and the data disk, and picks a
+  tier: Light under 6 GB (8 GB on ARM), Standard under 16 GB, Strong above. Light runs one
+  pipeline worker and Standard two; a count you set yourself keeps its value. An admin can
+  pick another tier on the new page, which applies at the next restart. Setup now needs 3.5 GB
+  of memory instead of 4 GB, so a "4 GB" NAS fits; on a NAS with less, it says to run the
+  home on another computer and keep the media on the NAS. The diagnostics bundle carries the
+  same reading.
+
 - **On a Windows home with a library on a network share, thumbnails, chapter frames and
   subtitle files are made in their sandboxed runners again (story 54.23).** Since v0.3.105's
   missed thumbnails, every step that touches a library ran in the queue worker while a library
@@ -200,6 +223,20 @@ build fails when the two differ.
   days and opens an issue when a cost grows by more than 20 % (Epic 53 story 53.13).
 
 ### Fixed
+
+- **The first scan of a library you just added finds its files.** A scan that started right
+  after a library was added could run in a plugin runner that had not yet been given access to
+  the new folder: it found nothing (Permission denied in the log), and only a later scan found
+  the files. That scan now runs in the queue worker while the runner restarts with access to
+  the new folder.
+
+- **Maktaba's own database starts again after a power cut or a killed container.** After an
+  unclean stop (a power cut, `docker kill`, a NAS switched off), the bundled Postgres could
+  refuse to start, over and over, on a lock file the stopped database left behind
+  (`.s.PGSQL.<port>.lock`): the stopped database's process number now belonged to another
+  process. Maktaba now removes such a lock before it starts the database, but only when no
+  database runs on that data, and never while a leftover database process still holds its
+  memory.
 
 - **A stage you set to run in the queue worker stays there after Maktaba restarts or
   updates.** Choosing where one of Maktaba's own stages runs (Queues page, or
@@ -2530,6 +2567,16 @@ build fails when the two differ.
   worker writes them for the plugin's job after checking it. `core.pipeline` stays part of
   the server and cannot be switched off; `categorize`, `component_catchup`, the watcher and
   the manual scans stay in the core.
+
+- **The Docker image runs as whichever user a NAS gives it, and its first start needs no
+  internet (story 59.01).** Set the container's user (compose's `user:`, TrueNAS's Run As,
+  Unraid's `--user`, a DSM user such as 1026:100) and every process runs as that user; a user
+  the image does not know gets a name, so the bundled database starts. The image refuses root,
+  a privileged container and the Docker socket, and if the user cannot write the data folder it
+  stops at once (exit 78) with a message, in English and Arabic, naming the folder, the user and
+  the fix, instead of restarting over and over. The Linux payload now carries the core Python
+  packages for its architecture, so setup builds the pipeline's environment from them with no
+  download; a home set up without speech to text downloads no model either.
 
 ### Fixed
 

@@ -32,17 +32,29 @@ ARG VERSION=dev
 ARG COMMIT=unknown
 
 # ffmpeg is the distribution's (on Linux every role runs the system's; Debian's has libx264);
-# tini is PID 1: it reaps what the server's children leave and passes docker stop on
+# tini is PID 1: it reaps what the server's children leave and passes docker stop on;
+# libnss-wrapper names a uid /etc/passwd lacks (story 59.01: the image runs as any uid:gid,
+# and initdb, postgres and Python's pwd look the user up), as the official Postgres image does
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-       ca-certificates ffmpeg tini tzdata \
+       ca-certificates ffmpeg libnss-wrapper tini tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-# an ordinary user: the setup refuses root, and the runtime is the user's own
+# the default user for a plain `docker run`; nothing depends on it: the image runs as whatever
+# uid:gid it is started with (compose's user:, TrueNAS's Run As, Unraid's --user). The
+# entrypoint refuses root, a privileged container and the Docker socket, checks that the
+# volume takes a write (else it stops, exit 78, naming the folder, the uid and the fix) and,
+# for a uid with no entry here, writes a passwd and group under the volume (.nss) for
+# libnss_wrapper. No PUID/PGID, no root step, no chown.
 RUN groupadd --gid 1000 maktaba \
     && useradd --uid 1000 --gid 1000 --home-dir /var/lib/maktaba --create-home --shell /usr/sbin/nologin maktaba
 
 COPY --from=payload /server /opt/maktaba/server
+# any uid runs the install: every path under /opt/maktaba readable (and every folder and
+# executable runnable) by others, nothing there written (payload.sh gives these modes and
+# files.sha256 records them; a chmod here would copy the whole payload into a second layer)
+RUN bad="$(find /opt/maktaba ! -type l \( ! -perm -o=r -o -perm /go=w -o \( -type d ! -perm -o=x \) \) | head -n 5)" \
+    && if [ -n "$bad" ]; then echo "not readable by every user, or writable: $bad" >&2; exit 1; fi
 
 # every path of the install under the volume: config (server.toml), data (the runtime, the
 # database), state (logs), caches

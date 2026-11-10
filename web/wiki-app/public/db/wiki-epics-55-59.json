@@ -1910,7 +1910,16 @@
       ],
       "related": [
         "epic-59-nas",
-        "ep-get-jobs"
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-jobs",
+        "ep-get-jobs-id",
+        "ep-get-queues",
+        "ep-get-queues-stage",
+        "ep-patch-queues-stage"
       ],
       "files": {
         "story": "specs/epics/59-nas/story-59-02-data-and-database.md",
@@ -1918,7 +1927,16 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /jobs"
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /jobs",
+        "GET /jobs/{id}",
+        "GET /queues",
+        "GET /queues/{stage}",
+        "PATCH /queues/{stage}"
       ],
       "db_tables": [],
       "metadata": {
@@ -2299,7 +2317,10 @@
         "ep-get-jobs",
         "ep-get-jobs-id",
         "ep-get-settings",
-        "ep-put-settings"
+        "ep-put-settings",
+        "ep-get-queues",
+        "ep-get-queues-stage",
+        "ep-patch-queues-stage"
       ],
       "files": {
         "story": "specs/epics/59-nas/story-59-16-openapi-roles.md",
@@ -2315,7 +2336,10 @@
         "GET /jobs",
         "GET /jobs/{id}",
         "GET /settings",
-        "PUT /settings"
+        "PUT /settings",
+        "GET /queues",
+        "GET /queues/{stage}",
+        "PATCH /queues/{stage}"
       ],
       "db_tables": [],
       "metadata": {

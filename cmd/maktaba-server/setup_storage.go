@@ -90,6 +90,11 @@ func stepStorage(s *setupRun, in json.RawMessage) (any, error) {
 		return nil, failStep("storage_unwritable", "data_dir", "Cannot read the disk of %s: %v", dir, err).
 			with("error", err.Error())
 	}
+	if mergedShare(disk.FSType) {
+		// Epic 59 story 59.02: Unraid's /mnt/user and mergerfs pool disks through FUSE
+		return nil, failStep("storage_fuse", "data_dir", "Your data folder is on a merged share (%s). Put it on a cache "+
+			"pool or a single disk (for example /mnt/cache/appdata/maktaba).", dir).with("path", dir, "fs_type", disk.FSType)
+	}
 	if !disk.Suitable {
 		return nil, failStep("storage_not_local", "data_dir", "%s is on a %s disk (%s): the library database needs a "+
 			"disk of this computer", dir, disk.FSType, disk.Mount).with("fs_type", disk.FSType)

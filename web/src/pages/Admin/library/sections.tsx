@@ -232,6 +232,7 @@ export function QueueSection({
   onOffline,
   onRequeue,
   readOnly,
+  onRunNow,
 }: {
   h: LibraryHealth | null;
   /** the read of the library rows (h is null until it answers) */
@@ -244,6 +245,8 @@ export function QueueSection({
   onRequeue: () => void;
   /** why the library actions are off: it is read-only for Maktaba (story 59.03) */
   readOnly?: string;
+  /** Epic 59 story 59.02: start the library's work held for the quiet hours */
+  onRunNow?: () => void;
 }) {
   const { t, n } = useI18n();
   const fmt = useFmt();
@@ -259,6 +262,11 @@ export function QueueSection({
           <Button size="sm" variant="secondary" onClick={onRequeue}>
             {t("queue.libs.requeue")}
           </Button>
+          {onRunNow && (
+            <Button size="sm" variant="secondary" onClick={onRunNow}>
+              {t("queue.run_now")}
+            </Button>
+          )}
           {OFFLINE_ACTIONS.map((a) => (
             <Button
               key={a}
@@ -582,8 +590,14 @@ export function SettingsSection({
 }) {
   const { t, n } = useI18n();
   const keys = Object.keys(lib.settings ?? {});
+  const sweep = Number(lib.settings?.sweep_interval_sec ?? 0);
   return (
     <Section id="settings" title={t("libpage.settings.title")} desc={t("libpage.settings.desc")}>
+      {sweep > 0 && (
+        <p className="mkt-muted" data-testid="sweep-awake">
+          {t("library.sweep_keeps_awake")}
+        </p>
+      )}
       <dl className="mkt-lp-facts">
         <Fact label={t("libpage.settings.name")} value={<bdi>{lib.name}</bdi>} />
         <Fact label={t("libpage.settings.folders")} value={n(lib.roots.length)} />

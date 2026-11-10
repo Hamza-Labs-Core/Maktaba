@@ -222,6 +222,10 @@ A job failed and Maktaba waits before trying again: about 1 minute after the fir
 
 Plex (or another service a queue uses) did not answer, so jobs of this queue wait and try again later by themselves. If it lasts, check that the server is running and reachable, and use **Test connection** in [Extensions](/admin/extensions).
 
+### Waiting for quiet hours {#waiting-quiet-hours}
+
+On this machine heavy work runs only in its quiet hours (01:00 to 06:00 by default on a small machine or a NAS), so the NAS stays quick for the household and its disks can rest: a library's first scan, a transcription backlog, convert and duplicates, thumbnail sprites in bulk. Playback and a single new file never wait. **Run now** on the queue's page or the library page starts it at once. The window is in **Settings → This machine**.
+
 ### Waiting for earlier steps {#waiting-upstream}
 
 Nothing is queued here yet, but steps before this one are still running and will pass work on. Nothing to do.

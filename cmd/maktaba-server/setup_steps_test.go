@@ -17,6 +17,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/storage"
 )
 
 // setupEnv is one install's folders for the setup tests: server.toml (which
@@ -105,7 +106,10 @@ func pendingOf(t *testing.T, e *setupEnv) setupPending {
 func TestSetupCheck(t *testing.T) {
 	e := newSetupEnv(t)
 	prevFacts, prevGPUs := hostFacts, hostGPUs
-	t.Cleanup(func() { hostFacts, hostGPUs = prevFacts, prevGPUs })
+	prevMachine := hostMachine
+	t.Cleanup(func() { hostFacts, hostGPUs, hostMachine = prevFacts, prevGPUs, prevMachine })
+	hostMachine = func() hostinfo.Machine { return hostinfo.Machine{Platform: hostinfo.PlatformLinux} }
+	fakeDataDisk(t, storage.Disk{FSType: "ext4", Suitable: true, Local: true}, hostinfo.DataDisk{Kind: hostinfo.DiskSSD}, nil)
 	hostGPUs = func() []hostinfo.GPU { return []hostinfo.GPU{{Name: "NVIDIA GeForce RTX 2080 SUPER", MemoryMB: 8192}} }
 
 	hostFacts = func(string) (uint64, uint64) { return 32 << 30, 500 << 30 }
@@ -158,6 +162,30 @@ func TestSetupCheck(t *testing.T) {
 	if d["ok"] != false || probs["disk_low"]["need_bytes"] != float64(setupNeedDisk) || probs["ram_low"]["have_bytes"] != float64(2<<30) {
 		t.Fatalf("little disk and memory: %v", d)
 	}
+	if probs["nas_memory_refused"] != nil {
+		t.Fatalf("the NAS text off a NAS: %v", d)
+	}
+
+	// Epic 59 story 59.04: on a NAS the refusal says to keep the media there and run the
+	// home elsewhere; a "4 GB" NAS (3.7 GiB) goes on, on the Light tier
+	hostMachine = func() hostinfo.Machine { return hostinfo.Machine{Platform: hostinfo.PlatformDSM} }
+	hostFacts = func(string) (uint64, uint64) { return 3 << 30, 500 << 30 }
+	_, _, ev = runStep(t, "check", map[string]any{})
+	d = data(t, ev)
+	probs = codes("problems")
+	if nas := probs["nas_memory_refused"]; d["ok"] != false || nas == nil || nas["n"] != float64(3) || probs["ram_low"] != nil {
+		t.Fatalf("3 GiB on a NAS: %v", d)
+	}
+	hostFacts = func(string) (uint64, uint64) { return 37 << 30 / 10, 500 << 30 }
+	_, _, ev = runStep(t, "check", map[string]any{})
+	d = data(t, ev)
+	probs = codes("problems")
+	reason, _ := d["tier_reason"].(map[string]any)
+	if probs["nas_memory_refused"] != nil || probs["ram_low"] != nil || d["tier"] != "light" || reason["memory_gb"] != 3.7 {
+		t.Fatalf("3.7 GiB on a NAS: %v", d)
+	}
+	hostMachine = func() hostinfo.Machine { return hostinfo.Machine{Platform: hostinfo.PlatformLinux} }
+
 	hostFacts = func(string) (uint64, uint64) { return 6 << 30, 30 << 30 }
 	_, _, ev = runStep(t, "check", map[string]any{})
 	d = data(t, ev)

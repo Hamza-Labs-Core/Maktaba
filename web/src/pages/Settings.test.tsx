@@ -487,11 +487,12 @@ describe("Settings account (test-cases/settings-account.md)", () => {
     ["Plugins", "/settings/plugins"],
     ["Advanced", "/settings/advanced"],
     ["Storage & discovery", "/settings/storage"],
+    ["This machine", "/settings/machine"],
     ["Subscription", "/settings/subscription"],
     ["About", "/settings/about"],
   ];
 
-  it("SAC-12: the tab nav lists all twelve tabs with the right hrefs", () => {
+  it("SAC-12: the tab nav lists all thirteen tabs with the right hrefs", () => {
     for (const path of ["/settings", "/settings/rules"]) {
       const { unmount } = renderSettings(path);
       const nav = screen.getByRole("navigation", { name: "Settings" });
@@ -501,14 +502,17 @@ describe("Settings account (test-cases/settings-account.md)", () => {
     }
   });
 
-  it("SAC-12b: Components, Plugins and Storage & discovery are an admin's tabs only", () => {
+  it("SAC-12b: Components, Plugins, Storage & discovery and This machine are an admin's tabs only", () => {
     renderSettings("/settings", { user: memberUser });
     const nav = screen.getByRole("navigation", { name: "Settings" });
     const links = within(nav).getAllByRole("link");
     expect(links.map((l) => l.getAttribute("href"))).toEqual(
       TABS.map(([, href]) => href).filter(
         (h) =>
-          h !== "/settings/storage" && h !== "/settings/components" && h !== "/settings/plugins"
+          h !== "/settings/storage" &&
+          h !== "/settings/machine" &&
+          h !== "/settings/components" &&
+          h !== "/settings/plugins"
       )
     );
   });

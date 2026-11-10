@@ -32,6 +32,15 @@ pipeline's own thresholds, asked of ``nvidia-smi``), else the default; ``--torch
 otherwise. Elsewhere the default set always (Linux's PyPI torch has CUDA already). A GPU
 added later changes the choice, and so the constraints: the next run builds again.
 
+The payload's wheelhouse (Epic 59, story 59.01): a Linux payload carries, beside the wheel,
+``wheels/`` with a wheel for every pin of its core constraints (``constraints-core.txt``,
+the runtime with no ML extras) and ``wheels/wheelhouse.json`` naming the constraints it
+covers (``constraints_sha256``). Building from constraints it covers, pip installs from it
+alone (``--no-index --find-links <payload>/wheels``): a first start needs no internet and
+downloads nothing. With other constraints (the ML extras) pip takes what it can from it and
+the rest from PyPI. Every package is checked against its hash whatever serves it. A built
+venv is never copied instead: venvs are not relocatable.
+
 Progress goes to stdout as one JSON object per line (UTF-8) and to a status file
 (rewritten whole on every change) that a process that did not start this one can read.
 Two runs never build at once: the second waits on a lock, then finds nothing to do.
@@ -374,6 +383,10 @@ class Target:
     constraints: Path
     constraints_sha256: str
     extras: tuple[str, ...]
+    #: the payload's wheelhouse beside the wheel (``wheels/``), when it has one
+    wheelhouse: Path | None = None
+    #: the wheelhouse holds every pin of these constraints: pip asks no index
+    offline: bool = False
 
     @property
     def python_minor(self) -> str:
@@ -417,15 +430,51 @@ def make_target(python: Path, wheel: Path, constraints: Path, extras: str) -> Ta
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", e):
             raise BootstrapError(f"not an extra: {e!r}")
     resolved = python.resolve()
+    cons_sha = sha256_file(constraints)
+    house, offline = find_wheelhouse(wheel.resolve().parent, cons_sha)
     return Target(
         python=resolved,
         python_version=python_version(resolved),
         wheel=wheel.resolve(),
         wheel_sha256=sha256_file(wheel),
         constraints=constraints.resolve(),
-        constraints_sha256=sha256_file(constraints),
+        constraints_sha256=cons_sha,
         extras=names,
+        wheelhouse=house,
+        offline=offline,
     )
+
+
+#: the payload's wheelhouse, beside the wheel, and the file naming what it covers
+WHEELHOUSE_DIR = "wheels"
+WHEELHOUSE_INDEX = "wheelhouse.json"
+
+
+def find_wheelhouse(pipeline: Path, constraints_sha256: str) -> tuple[Path | None, bool]:
+    """The wheelhouse in the pipeline folder ``pipeline`` (``wheels/`` with its
+    ``wheelhouse.json``), and whether it covers the constraints whose SHA-256 is given
+    (every pin there: pip needs no index). ``(None, False)`` when there is none, or its
+    index cannot be read."""
+    house = pipeline / WHEELHOUSE_DIR
+    try:
+        doc = json.loads((house / WHEELHOUSE_INDEX).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None, False
+    covered = doc.get("constraints_sha256") if isinstance(doc, dict) else None
+    if isinstance(covered, str):
+        covered = [covered]
+    if not isinstance(covered, list):
+        return None, False
+    return house, constraints_sha256 in covered
+
+
+def _sources(target: Target) -> list[str]:
+    """pip's package sources for ``target``: the wheelhouse, alone when it covers the
+    constraints (no index), else beside the index; none without one."""
+    if target.wheelhouse is None:
+        return []
+    args = ["--find-links", str(target.wheelhouse)]
+    return ["--no-index", *args] if target.offline else args
 
 
 # --- the decision ------------------------------------------------------------------------
@@ -863,11 +912,27 @@ def create_venv(venv: Path, target: Target, rep: Reporter, *, upgrade: bool = Fa
 
 def install_deps(venv: Path, target: Target, rep: Reporter) -> None:
     total = count_requirements(target.constraints)
+    if target.offline:
+        how = "from the payload's wheelhouse (no download)"
+    elif target.wheelhouse is not None:
+        how = "from the payload's wheelhouse and PyPI"
+    else:
+        how = "(the first run downloads ~1-2 GB)"
+    # the log (stderr: the app's venv.log) says where the packages came from
+    sys.stderr.write(f"[venv] installing {total} pinned packages {how}\n")
+    sys.stderr.flush()
     run_step(
-        _pip(venv, "--require-hashes", "--no-deps", "-r", str(target.constraints)),
+        _pip(
+            venv,
+            *_sources(target),
+            "--require-hashes",
+            "--no-deps",
+            "-r",
+            str(target.constraints),
+        ),
         rep,
         "deps",
-        f"installing {total} pinned packages (the first run downloads ~1-2 GB)",
+        f"installing {total} pinned packages {how}",
         total=total,
     )
 
@@ -881,7 +946,15 @@ def install_wheel(venv: Path, target: Target, rep: Reporter) -> None:
     )
     try:
         run_step(
-            _pip(venv, "--require-hashes", "--no-deps", "--force-reinstall", "-r", str(req)),
+            _pip(
+                venv,
+                *_sources(target),
+                "--require-hashes",
+                "--no-deps",
+                "--force-reinstall",
+                "-r",
+                str(req),
+            ),
             rep,
             "wheel",
             f"installing {target.wheel.name}",

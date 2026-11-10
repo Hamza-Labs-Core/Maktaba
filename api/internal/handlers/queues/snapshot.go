@@ -23,6 +23,10 @@ type liveCounts struct {
 	// BackoffCause is the error_cause of a backing-off row whose failure
 	// was an unreachable service ("plex_unreachable"), if any.
 	BackoffCause *string
+	// Quiet are the heavy jobs given back until this machine's quiet hours, which open at
+	// QuietAt ("01:00"; Epic 59 story 59.02).
+	Quiet   int
+	QuietAt *string
 }
 
 func (c *liveCounts) live() int { return c.Pending + c.Running + c.Paused }
@@ -97,6 +101,9 @@ func summarizeStage(in stageInputs) QueueSummary {
 	if in.Live.Running == 0 {
 		s.WaitingReason = waitingReason(in)
 	}
+	if r := s.WaitingReason; r != nil && *r == WaitQuietHours {
+		s.QuietAt = in.Live.QuietAt
+	}
 	if r := s.WaitingReason; r != nil && (*r == WaitComponentOff || *r == WaitComponentHeld) {
 		s.Component = stageComponent(s.Stage)
 	}
@@ -142,6 +149,8 @@ func waitingReason(in stageInputs) *WaitingReason {
 		return pick(WaitNoWorker)
 	case in.Live.Ready > 0 && in.PoolBusy >= in.PoolSize:
 		return pick(WaitPoolFull)
+	case in.Live.Quiet > 0 && in.Live.Ready == 0:
+		return pick(WaitQuietHours)
 	case in.Live.Pending > 0 && in.Live.Ready == 0 && in.Live.Backoff == 0:
 		return pick(WaitDebouncing)
 	case in.Live.Pending > 0 && in.Live.Ready == 0 && retryingService(in.Live.BackoffCause) != nil:
@@ -179,7 +188,10 @@ SELECT stage,
        min(created_at),
        min(created_at) FILTER (WHERE state = 'pending' AND (not_before IS NULL OR not_before <= $1)),
        max(error_cause) FILTER (WHERE state = 'pending' AND not_before > $1 AND attempts > 0
-                                  AND error_cause LIKE '%unreachable')
+                                  AND error_cause LIKE '%unreachable'),
+       -- Epic 59 story 59.02: heavy jobs given back until the quiet hours (quiet_hours:<HH:MM>)
+       count(*) FILTER (WHERE state = 'paused' AND not_before > $1 AND paused_reason LIKE 'quiet_hours:%'),
+       max(paused_reason) FILTER (WHERE state = 'paused' AND not_before > $1 AND paused_reason LIKE 'quiet_hours:%')
   FROM processing_jobs
  WHERE state IN ('pending','claimed','running','resuming','paused')
  GROUP BY stage`
@@ -233,9 +245,13 @@ func (h *Handler) loadLiveCounts(ctx context.Context, now time.Time) (map[string
 		var stage string
 		var c liveCounts
 		var since, oldest sql.NullTime
-		var cause sql.NullString
-		if err := rows.Scan(&stage, &c.Pending, &c.Ready, &c.Backoff, &c.Running, &c.Paused, &since, &oldest, &cause); err != nil {
+		var cause, quiet sql.NullString
+		if err := rows.Scan(&stage, &c.Pending, &c.Ready, &c.Backoff, &c.Running, &c.Paused, &since, &oldest, &cause,
+			&c.Quiet, &quiet); err != nil {
 			return nil, err
+		}
+		if at, ok := strings.CutPrefix(quiet.String, "quiet_hours:"); quiet.Valid && ok && at != "" {
+			c.QuietAt = &at
 		}
 		c.Since, c.Oldest = nullTimePtr(since), nullTimePtr(oldest)
 		if cause.Valid {

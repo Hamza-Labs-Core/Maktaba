@@ -219,6 +219,80 @@ function asBackupsDoc(d: unknown): BackupsDoc {
   return ("available" in o ? o : { ...o, available: true }) as BackupsDoc;
 }
 
+/** Epic 59 story 59.04: a hardware tier, and "auto" (detected from the memory). */
+export type Tier = "light" | "standard" | "strong";
+
+/** What the server found about this machine (GET /api/server/machine). */
+export interface MachineInfo {
+  platform: string;
+  platform_from: "env" | "detected";
+  arch: string;
+  memory: {
+    /** what Maktaba may use: a container's limit, else the RAM */
+    limit_bytes: number;
+    total_bytes: number;
+    cgroup_limit_bytes?: number;
+    /** MemAvailable plus what the ZFS cache gives back */
+    available_bytes: number;
+    arc_reclaimable_bytes?: number;
+    arc_unread?: boolean;
+  };
+  cpu: {
+    cores: number;
+    online: number;
+    quota?: number;
+    model?: string;
+    avx2: boolean;
+    avx512f: boolean;
+  };
+  gpu: {
+    render: { path: string; driver?: string }[];
+    nvidia: { name: string; memory_mb: number }[];
+  };
+  kernel: { release?: string; landlock: number; userns?: boolean };
+}
+
+export type MachineDoc =
+  | { available: false; reason: string }
+  | {
+      available: true;
+      machine: MachineInfo;
+      data_disk: { kind: "rotational" | "ssd" | "unknown"; fs_type?: string; mount?: string };
+      /** running now */
+      tier: Tier;
+      /** what the memory gives */
+      detected: Tier;
+      /** an admin picked the running tier */
+      chosen: boolean;
+      /** what server.toml keeps for the next start */
+      saved: Tier | "auto";
+      restart_needed: boolean;
+      can_restart: boolean;
+      /** the memory was raised and the defaults moved up at this start */
+      moved_up: boolean;
+      reason: { tier: Tier; memory_gb: number; gpu: string };
+      defaults: {
+        pipeline_workers: number;
+        shared_buffers: string;
+        work_mem: string;
+        quiet_hours: string;
+      };
+      nas: boolean;
+      /** Epic 59 story 59.02: the window as saved ("" none), set in server.toml or the tier's */
+      quiet_hours: string;
+      quiet_set: boolean;
+      quiet_default: string;
+      /** the database is tuned for spinning disks, and how that was known */
+      rotational: boolean;
+      disk_how: "rotational" | "ssd" | "asked" | "unknown";
+    };
+
+/** A PUT answer is the GET document without available. */
+function asMachineDoc(d: unknown): MachineDoc {
+  const o = (d ?? {}) as Record<string, unknown>;
+  return ("available" in o ? o : { ...o, available: true }) as MachineDoc;
+}
+
 /** The addresses and public URLs, in the order the page shows them. */
 export const ADDRESS_KEYS = ["listen", "web_listen", "stream_addr"] as const;
 export const URL_KEYS = ["public_url", "web_public_url"] as const;
@@ -244,6 +318,15 @@ export const serverSettingsApi = {
     asBackupsDoc(
       await api.delete<unknown>(`/api/server/backups/dumps/${encodeURIComponent(name)}`)
     ),
+  machine: async () => api.get<MachineDoc>("/api/server/machine"),
+  saveTier: async (tier: Tier | "auto") =>
+    asMachineDoc(await api.put<unknown>("/api/server/machine", { tier })),
+  /** Epic 59 story 59.02: quiet hours ("" none; quiet_default: the tier's), the data disk's answer */
+  saveMachine: async (body: {
+    quiet_hours?: string;
+    quiet_default?: boolean;
+    data_disk?: "ssd" | "rotational" | "auto";
+  }) => asMachineDoc(await api.put<unknown>("/api/server/machine", body)),
   /** Answers while the server is up (public; used to see it come back). */
   ping: async () => api.get<unknown>("/api/system/version"),
 };

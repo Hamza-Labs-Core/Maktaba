@@ -92,7 +92,9 @@ func (s *setupRun) updatePending(fn func(*setupPending)) error {
 const (
 	setupNeedRAM  = 8 << 30  // what the server and one transcription worker need
 	setupNeedDisk = 20 << 30 // the venv, the models, the database to start with
-	setupMinRAM   = 4 << 30  // below this the pipeline cannot run beside the rest
+	// setupMinRAM: below this the pipeline cannot run beside the rest. 3.5 GiB, measured
+	// against the memory limit (Epic 59 story 59.04): a "4 GB" NAS reports 3.6–3.8 GiB.
+	setupMinRAM = hostinfo.MinMemory
 )
 
 type setupNeed struct {
@@ -133,6 +135,12 @@ type checkResult struct {
 	// GPUs are the NVIDIA GPUs transcription can use (Windows and Linux).
 	GPUs []hostinfo.GPU `json:"gpus"`
 	Runs []setupRole    `json:"runs"`
+	// Tier is the hardware tier the machine starts on (Epic 59 story 59.04: light,
+	// standard, strong; "" when the memory is unknown), TierReason why.
+	// DataDisk is the data folder's disk (Epic 59 story 59.02; nil: not read).
+	DataDisk   *hostinfo.DataDisk `json:"data_disk,omitempty"`
+	Tier       string             `json:"tier,omitempty"`
+	TierReason hostinfo.Reason    `json:"tier_reason,omitempty"`
 	// SecondListen: with refine on, whether this machine can run the second
 	// listen (the screens ask for its Hugging Face sign-in only then).
 	SecondListen *secondListen `json:"second_listen,omitempty"`
@@ -169,10 +177,14 @@ var platformChecks []func(ctx context.Context, res *checkResult)
 // it (config.LocalForeignNodeConfig; tests replace it).
 var foreignNodeConfig = config.LocalForeignNodeConfig
 
-// hostFacts are what check reads about this machine (tests replace it).
+// hostFacts are what check reads about this machine (tests replace it): the memory
+// Maktaba may use (a container's limit, else the RAM) and the disk's free space.
 var hostFacts = func(dir string) (ram, disk uint64) {
-	return hostinfo.TotalMemory(), hostinfo.FreeDisk(dir)
+	return hostinfo.MemoryLimit(), hostinfo.FreeDisk(dir)
 }
+
+// hostMachine is the hardware reading check reports its tier from (tests replace it).
+var hostMachine = hostinfo.Detect
 
 // hostGPUs are the NVIDIA GPUs check reports (tests replace it).
 var hostGPUs = hostinfo.NVIDIA
@@ -204,6 +216,13 @@ func stepCheck(s *setupRun, _ json.RawMessage) (any, error) {
 		Warnings: []checkNote{},
 		GPUs:     []hostinfo.GPU{},
 	}
+	// Epic 59 story 59.04: the tier this machine starts on, and why
+	if ram > 0 {
+		m := hostMachine()
+		m.Memory.LimitBytes = ram
+		tier := hostinfo.TierFor(ram, runtime.GOARCH)
+		res.Tier, res.TierReason = string(tier), hostinfo.ReasonFor(tier, m)
+	}
 	if code, msg := setupPlatform(runtime.GOOS, runtime.GOARCH); code != "" {
 		res.Problem(code, msg, "os", runtime.GOOS, "arch", runtime.GOARCH)
 	}
@@ -215,7 +234,14 @@ func stepCheck(s *setupRun, _ json.RawMessage) (any, error) {
 		res.Warn("disk_tight", "Less than 40 GB free: the database, the models and the caches grow with the library.",
 			"free_bytes", disk, "comfortable_bytes", uint64(2*setupNeedDisk))
 	}
+	checkDataDir(root, &res)
+	m := hostMachine()
 	switch {
+	case ram > 0 && ram < setupMinRAM && hostinfo.IsNAS(m.Platform):
+		// Epic 59 story 59.04: a NAS too small to be the home can still keep the media
+		res.Problem("nas_memory_refused", fmt.Sprintf("This NAS has %v GB of memory for Maktaba. Maktaba needs at least 4 GB. "+
+			"Run the Maktaba home on another computer and keep your media on this NAS: that computer will read it from here.",
+			hostinfo.GB(ram)), "n", hostinfo.GB(ram), "have_bytes", ram, "need_bytes", setupMinRAM)
 	case ram > 0 && ram < setupMinRAM:
 		res.Problem("ram_low", fmt.Sprintf("This machine has %s of memory: Maktaba needs at least %s.",
 			humanBytes(ram), humanBytes(setupMinRAM)), "have_bytes", ram, "need_bytes", setupMinRAM)
