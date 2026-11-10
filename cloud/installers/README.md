@@ -13,8 +13,9 @@ installers/
   macos/         # signed/notarized .dmg + sparkle feed
   windows/       # MSI via WiX + Authenticode
   linux/         # .deb, .rpm, .pkg.tar.zst (debian/redhat/arch families)
-  docker/        # the Docker install's compose file (image: deploy/docker/server, amd64 + arm64)
-  nas/           # Synology .spk, QNAP .qpkg
+  docker/        # the Docker install's compose file (image: deploy/docker/server, amd64 + arm64),
+                 # also the NAS base (Epic 59): QNAP, UGREEN, ASUSTOR, Portainer take it as it is;
+                 # deploy/nas/ holds what is made from it (the Unraid template, 59.11)
   rpi/           # Raspberry Pi images: 64-bit Lite + Maktaba overlay
   cloud-vps/     # one-click templates: DigitalOcean / Hetzner / Linode
 ```
@@ -22,7 +23,7 @@ installers/
 Every installer's job is the same:
 
 1. Place the `maktaba-server` binary + config at the platform-conventional path.
-2. Register a service unit (launchd / systemd / SCM / Synology pkg-svc).
+2. Register a service unit (launchd / systemd / SCM).
 3. Run the **first-run setup wizard** which:
    a. Generates a host keypair.
    b. Asks the user for the **8-char claim code** they get from
@@ -75,7 +76,7 @@ Each installer ships an uninstaller that:
 | 25.28 | Windows MSI | scaffold |
 | 25.29 | Linux .deb/.rpm | scaffold |
 | 25.30 | Docker image | built (`ghcr.io/hamza-labs-core/maktaba-server`, updates itself) |
-| 25.31 | NAS .spk/.qpkg | scaffold |
+| 25.31 | NAS | replaced by Epic 59 (`specs/epics/59-nas`): the Docker compose above, the Unraid template in `deploy/nas/unraid` |
 | 25.32 | Raspberry Pi image | scaffold |
 | 25.33 | Cloud VPS templates | scaffold |
 | 25.34 | Auto-update | scaffold |

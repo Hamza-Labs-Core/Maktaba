@@ -26,6 +26,15 @@ The API is reached on 127.0.0.1: on CI the cell runs on the host network, a NAS'
 on a bridge network with PORT published, and a relay in the cell's network namespace hands
 it to 127.0.0.1:8088 inside, so the server sees a local client either way.
 
+Two kinds of cell start the published install files instead of a `docker run` of their own
+(story 59.11): `"compose": {"blocks": [...]}` fills in cloud/installers/docker/docker-compose.yml
+as a household does (those blocks on, the cell's image, user and volumes in place of the
+file's) and runs it with `docker compose` (setup through `docker compose run --rm -T maktaba
+setup`, then `up -d`); `"template": "unraid"` renders deploy/nas/unraid/maktaba.xml to the
+`docker run` arguments Unraid makes (its user, environment, stop timeout and paths, the data
+and media paths pointed at the cell's volumes; /dev/dri only where the runner has one). A
+compose cell needs the host network (no --local).
+
 An assertion or a cell whose `needs` are not all in cells.json's `landed` is skipped and
 reported as pending. Exit 0 when every assertion that ran passed, 1 otherwise, 2 on a
 usage error.
@@ -52,6 +61,9 @@ from typing import Any, Callable
 
 HERE = Path(__file__).resolve().parent
 CELLS = HERE / "cells.json"
+sys.path.insert(0, str(HERE))
+
+import install_files  # noqa: E402  (tests/nas: the published compose's blocks, the Unraid template)
 
 # Where the image keeps everything (deploy/docker/server/Dockerfile)
 VOLUME = "/var/lib/maktaba"
@@ -354,7 +366,15 @@ class Cell:
 
     @property
     def user(self) -> str:
-        return self.spec.get("user", "")
+        if self.spec.get("user"):
+            return self.spec["user"]
+        if self.spec.get("template") == "unraid":
+            return install_files.read_template().user()
+        return ""
+
+    @property
+    def compose(self) -> dict[str, Any] | None:
+        return self.spec.get("compose")
 
     @property
     def uid(self) -> int:
@@ -379,6 +399,8 @@ class Cell:
 
     def shape(self) -> list[str]:
         """docker run arguments every container of this cell gets."""
+        if self.spec.get("template") == "unraid":
+            return self.unraid_shape()
         a: list[str] = []
         if self.user:
             a += ["--user", self.user]
@@ -398,6 +420,51 @@ class Cell:
     def bridged(self) -> bool:
         """The cell runs on Docker's default bridge (story 59.08), its ports published."""
         return self.spec.get("network") == "bridge"
+
+    def unraid_shape(self) -> list[str]:
+        """The Unraid template as dockerMan runs it (59.11), its paths on the cell's volumes and
+        its network left to network(); the cell's own user must be the template's."""
+        t = install_files.read_template()
+        if self.spec.get("user") and self.spec["user"] != t.user():
+            raise AssertionError(f"the cell's user {self.spec['user']} is not the template's {t.user()}")
+        media = [c.name for c in t.by_type("Path") if c.target != VOLUME]
+        paths = {c.name: (self.vol("data"), VOLUME) for c in t.by_type("Path") if c.target == VOLUME}
+        paths[media[0]] = (self.vol("media"), MEDIA)
+        args = install_files.render(t, paths=paths, devices=Path("/dev/dri").is_dir(), image="-")[:-1]
+        i = args.index("--net")
+        return args[:i] + args[i + 2:]
+
+    def compose_text(self) -> str:
+        """The published compose file filled in for this cell, as maktaba.tv's install page
+        fills it in: the cell's blocks on, its image, user and volumes in the file's places."""
+        if self.local_port:
+            raise AssertionError("a compose cell runs on the host network (no --local)")
+        for k in ("seccomp", "docker", "env", "noaccess_root"):
+            if self.spec.get(k):
+                raise AssertionError(f"a compose cell takes no {k!r}")
+        text = install_files.enable(install_files.COMPOSE.read_text(encoding="utf-8"),
+                                    tuple((self.compose or {}).get("blocks", [])))
+        media = self.spec.get("media", {})
+        subs = [
+            ("image: ghcr.io/hamza-labs-core/maktaba-server:latest", f"image: {self.image}"),
+            ("container_name: maktaba", f"container_name: {self.container}"),
+            ("- maktaba:/var/lib/maktaba", f"- data:{VOLUME}"),
+            ("- /srv/media:/srv/media", f"- media:{MEDIA}" + (":ro" if media.get("ro") else "")),
+            ("\nvolumes:\n  maktaba:\n", "\nvolumes:\n"
+             f"  data:\n    external: true\n    name: {self.vol('data')}\n"
+             f"  media:\n    external: true\n    name: {self.vol('media')}\n"),
+        ]
+        if self.user:
+            subs.append(('user: "1000:1000"', f'user: "{self.user}"'))
+        for old, new in subs:
+            if text.count(old) != 1:
+                raise AssertionError(f"the published compose file no longer has {old.strip()!r} once")
+            text = text.replace(old, new)
+        return text
+
+    def compose_cmd(self, *args: str, **kw: Any) -> subprocess.CompletedProcess[str]:
+        f = self.out / "docker-compose.yml"
+        return docker("compose", "-p", self.container, "-f", str(f), *args, **kw)
 
     def network(self) -> list[str]:
         if self.local_port:
@@ -432,6 +499,8 @@ class Cell:
         if self.spec.get("noaccess_root"):
             as_root(self.image, "mkdir -p /d/hidden && chown -R 0:0 /d && chmod 000 /d",
                     f"{self.vol('noaccess')}:/d")
+        if self.compose is not None:
+            (self.out / "docker-compose.yml").write_text(self.compose_text(), encoding="utf-8")
         # server.toml before setup (as e2e.sh writes it), as the cell's user
         if self.spec.get("expect") != "refused":
             run = ["run", "--rm", "-i", "--entrypoint", "sh"]
@@ -457,9 +526,13 @@ class Cell:
         }
         log("setup --answers (headless, in a throwaway container)")
         t0 = time.monotonic()
-        p = docker("run", "--rm", "-i", *self.shape(), *self.setup_network(),
-                   self.image, "setup", "--answers", "/dev/stdin", "--lang", "en", *self.bundle(),
-                   input=json.dumps(answers), check=False, timeout=45 * 60)
+        if self.compose is not None:
+            p = self.compose_cmd("run", "--rm", "-T", "maktaba", "setup", "--answers", "/dev/stdin", "--lang", "en",
+                                 *self.bundle(), input=json.dumps(answers), check=False, timeout=45 * 60)
+        else:
+            p = docker("run", "--rm", "-i", *self.shape(), *self.setup_network(),
+                       self.image, "setup", "--answers", "/dev/stdin", "--lang", "en", *self.bundle(),
+                       input=json.dumps(answers), check=False, timeout=45 * 60)
         (self.out / "setup.log").write_text((p.stdout or "") + (p.stderr or ""), encoding="utf-8")
         self.timing("setup", t0)
         if p.returncode != 0:
@@ -474,6 +547,10 @@ class Cell:
         if self.spec.get("avahi"):
             self.start_avahi()
         log("start the server container")
+        if self.compose is not None:
+            self.compose_cmd("up", "-d", "--pull", "never")
+            self.api = API("http://127.0.0.1:8088")
+            return
         docker("run", "-d", "--name", self.container, *self.shape(), *self.network(), self.image)
         if self.local_port:
             docker("run", "-d", "--name", self.container + "-relay", "--network", f"container:{self.container}",
@@ -1238,6 +1315,14 @@ class Cell:
         return (f"container (missing {','.join(iso.get('missing') or [])}); held, then {running.get('phase')} "
                 f"after the admin's yes; plugins.host degraded, sandbox_partial ({missing})")
 
+    def assert_platform(self) -> str:
+        """GET /api/server/machine names the platform the install file set (MAKTABA_PLATFORM)."""
+        m = self.machine().get("machine") or {}
+        want = self.spec.get("platform", "")
+        if m.get("platform") != want or m.get("platform_from") != "env":
+            raise AssertionError(f"platform {m.get('platform')!r} ({m.get('platform_from')!r}), not {want!r} from the environment")
+        return f"{want} (MAKTABA_PLATFORM)"
+
     def assert_tier_standard(self) -> str:
         return self.tier_is("standard")
 
@@ -1304,6 +1389,8 @@ class Cell:
                     (out / name).write_text(json.dumps({"error": str(e)}), encoding="utf-8")
 
     def teardown(self, quiet: bool = False) -> None:
+        if self.compose is not None and (self.out / "docker-compose.yml").is_file():
+            self.compose_cmd("down", "--remove-orphans", check=False)
         for c in (self.container + "-relay", self.container, self.avahi):
             docker("rm", "-f", c, check=False)
         for v in ("data", "media", "noaccess", "dbus"):
@@ -1345,14 +1432,28 @@ class Cell:
                 self.report()
         return all(r["ok"] is not False for r in self.results)
 
+    def shape_or_error(self) -> list[str]:
+        try:
+            return self.shape()
+        except Exception as e:  # noqa: BLE001 - the report is written whatever went wrong
+            return [f"(no shape: {e})"]
+
+    def how(self) -> str:
+        """How the cell started its container, for the summary."""
+        if self.compose is not None:
+            blocks = ", ".join(self.compose.get("blocks", [])) or "none"
+            return f"`docker compose up` of the published compose file (blocks on: {blocks}; kept as docker-compose.yml)"
+        return f"`docker run {shlex.join(self.shape_or_error())}`"
+
     def report(self) -> None:
         ok = all(r["ok"] is not False for r in self.results)
         report = {"cell": self.name, "about": self.spec.get("about", ""), "image": self.image, "ok": ok,
-                  "shape": self.shape() if self.spec else [], "results": self.results}
+                  "shape": self.shape_or_error() if self.compose is None else [], "compose": self.compose,
+                  "results": self.results}
         (self.out / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
         mark = {True: "✅", False: "❌", None: "⏳"}
         lines = [f"### {mark[ok]} `{self.name}`: {self.spec.get('about', '')}", "",
-                 f"`docker run {shlex.join(self.shape())}`", "", "| Assertion | Result |", "|---|---|"]
+                 self.how(), "", "| Assertion | Result |", "|---|---|"]
         for r in self.results:
             detail = str(r["detail"]).replace("|", "\\|").replace("\n", " ")[:300]
             lines.append(f"| {r['name']} | {mark[r['ok']]} {detail} |")

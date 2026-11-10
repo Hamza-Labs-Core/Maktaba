@@ -98,6 +98,7 @@ NOT_IN_CI: dict[str, str] = {
     ".github/workflows/update-rehearsal.yml": "its own workflow and path filter",
     ".github/workflows/nas.yml": "its own workflow and path filter (nas-shapes, Epic 59 story 59.15)",
     "tests/nas/**": "nas.yml (nas-shapes): its harness, run there with its own tests",
+    "deploy/nas/**": "nas.yml (nas-shapes): the NAS install files (the Unraid template, story 59.11), checked by its plan job and started by its cells",
     ".github/workflows/_tag-guard.yml": "the tag workflows' first job",
     ".github/workflows/_pr-body-check.yml": "pr-body-check runs on every pull request",
     ".github/workflows/coverage-map.yml": "runs after CI on main (the affected-tests map)",
