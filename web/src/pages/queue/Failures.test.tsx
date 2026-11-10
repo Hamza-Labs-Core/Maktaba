@@ -3,10 +3,20 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { deferred } from "../../test/deferred";
 
-const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
+const { get, post, readOnly } = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: vi.fn(),
+  readOnly: { ids: new Set<string>() },
+}));
 vi.mock("../../lib/api", async () => {
   const actual = await vi.importActual<typeof import("../../lib/api")>("../../lib/api");
   return { ...actual, api: { ...actual.api, get, post } };
+});
+// story 59.03: which libraries are read-only for Maktaba (its own read is the manage list)
+vi.mock("../../lib/libraryAccess", async () => {
+  const actual =
+    await vi.importActual<typeof import("../../lib/libraryAccess")>("../../lib/libraryAccess");
+  return { ...actual, useReadOnlyLibraries: () => readOnly.ids };
 });
 
 import type { FailureItem, FailureList } from "../../lib/queueApi";
@@ -90,6 +100,7 @@ const list: FailureList = {
 };
 
 beforeEach(() => {
+  readOnly.ids = new Set();
   get.mockReset();
   post.mockReset();
   routeGet(get, { "/api/queues/failures": list });
@@ -326,5 +337,36 @@ describe("helpers", () => {
     expect(matchingCount(s, "all")).toBe(7);
     expect(matchingCount(s, "ignored")).toBe(4);
     expect(matchingCount(undefined, "")).toBeUndefined();
+  });
+});
+
+// Story 59.03: a job that could not write in its library's folders.
+describe("the failures page, a library read-only for Maktaba", () => {
+  const denied = item({
+    job_id: 21,
+    label: "Lesson 21",
+    path: "/volume1/Movies/x.mkv",
+    signature: "nas_readonly:/volume1/Movies/x.en.srt",
+    message: "permission denied: /volume1/Movies/x.en.srt",
+    reason: "unexplained",
+  });
+
+  it("says which path Maktaba couldn't write and links to the library's access", async () => {
+    routeGet(get, { "/api/queues/failures": { ...list, items: [denied] } });
+    renderAt(<Failures />, "/queue/failures", "/queue/failures");
+    const link = await screen.findByRole("link", {
+      name: /Maktaba couldn't write .*\/volume1\/Movies\/x\.en\.srt.*See this library's access\./,
+    });
+    expect(link).toHaveAttribute("href", `/admin/libraries/${LIB}#folders`);
+  });
+
+  it("offers no download again on a read-only library, and says why", async () => {
+    readOnly.ids = new Set([LIB]);
+    routeGet(get, { "/api/queues/failures": list });
+    renderAt(<Failures />, "/queue/failures", "/queue/failures");
+    const row = (await screen.findByText(/Lesson 1/)).closest("tr")!;
+    const again = within(row).getByRole("button", { name: "Download again" });
+    expect(again).toBeDisabled();
+    expect(again).toHaveAttribute("title", "This library is read-only for Maktaba");
   });
 });

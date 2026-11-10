@@ -233,6 +233,8 @@ export interface LibraryActionResponse {
   enqueued: number;
   coalesced: number;
   skipped: number;
+  /** with all=true: libraries left out because they are read-only for Maktaba (story 59.03) */
+  skipped_read_only?: number;
 }
 
 export interface SourceProblem {

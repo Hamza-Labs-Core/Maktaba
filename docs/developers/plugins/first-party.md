@@ -328,6 +328,50 @@ The parity proof of a file-writing plugin gives each side the same files to star
 compares the files each side leaves (`files` in `parity.toml`, a sha256 per file), along with
 the rows, jobs and log lines.
 
+### A library that is read-only for Maktaba
+
+On a NAS, Maktaba's user often may read a library's folders but not write them. Maktaba
+checks each library's folders (at setup, when a library is added or its folders change, from
+**Check access** on the library's page, and after a write fails on a permission) and keeps
+one of three states: `rw` (read and write), `ro` (read only) or `none` (it cannot list the
+folder). A library never checked counts as `rw`. A read-only library is supported, not an
+error, and the manifest decides what runs there:
+
+- **A stage whose `files.write` names `library` or `trash` is not run** on a library that is
+  `ro` or `none`: the conversion, merging duplicates, restoring from the trash, the YouTube
+  downloads and the repair. Nothing in its folders is touched.
+- **`library.subtitles` still runs.** On a read-only library its subtitle files are written to
+  the database (`subtitle_files.content`, by video and language) instead of beside the video,
+  and streaming serves them like side-car files: a side-car file beside the video first, then
+  the row.
+- **Reading stages are unchanged**: scans, thumbnails, transcripts and playback only read.
+
+The admin API refuses an action that would write in such a library with a problem `409`,
+`type` `https://maktaba.tv/problems/library-read-only` and `code` `library_read_only`, before it
+queues anything:
+
+| Route | |
+|---|---|
+| `POST /api/libraries/{id}/convert`, `/dedup-scan` | conversion, the duplicate search |
+| `POST /api/libraries/{id}/youtube/refresh`, `/youtube/backfill`, `/youtube/retry`, `/youtube/tartube`, `/youtube/sources` | YouTube downloads into this library |
+| `POST /api/libraries/{id}/empty-trash` | removing the missing videos' records and files |
+| `DELETE /api/videos/{id}`, `DELETE /api/libraries/{id}?purge=true` | deleting files |
+| `POST /api/queues/duplicates/{gid}/apply`, `POST /api/queues/file-actions/{id}/restore` | a merge, a restore |
+
+With `all=true`, `convert`, `dedup-scan` and `youtube/refresh` leave read-only libraries out
+instead: their results carry `"outcome": "library_read_only"` and the answer counts them in
+`skipped_read_only`. A scan of a library that is `none` answers `409` `library_no_access`.
+
+Each library's JSON carries `access` (`rw`, `ro`, `none`, or `null` when never checked),
+`access_checked_at` and `access_partial` (some sampled files, or a later write, failed). An
+admin reads the details with `GET /api/libraries/{id}/access` and checks again with
+`POST /api/libraries/{id}/check-access`. Both answer, per folder, its state, up to five files
+it could not read, whether the folder is mounted read-only in the container, and the fix in
+the platform's terms (`fix.key` is `library.fix.dsm`, `library.fix.truenas`,
+`library.fix.unraid` or `library.fix.other`, with string `params`), along with the last five
+writes that failed, the user and group Maktaba runs as (`runs_as`) and the detected
+`platform`.
+
 ## Heavy work: the ml and index runners
 
 `tv.maktaba.transcription` (Whisper and the second listen) and `tv.maktaba.semantic-search`

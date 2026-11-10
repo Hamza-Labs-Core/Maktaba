@@ -52,6 +52,7 @@ import { PermissionList, usePermissions } from "../../components/MacPermissions/
 import { tauriPermissionsApi, type PermissionsApi } from "../../lib/macPermissions";
 import { codedText, diskProblem, type Translate } from "./codedText";
 import { platformWords } from "./platform";
+import { accessKey, fixText, type RootAccess, type RunsAs } from "../../lib/libraryAccess";
 
 export const PLEX_POLL_MS = 3000;
 const HF_TOKENS_URL = "https://huggingface.co/settings/tokens";
@@ -995,12 +996,32 @@ export function parsePathMap(text: string): { from: string; to: string }[] | nul
   return out;
 }
 
+/** The libraries step's answer: each folder's access (story 59.03; absent from an older server). */
+export interface LibrariesStepResult {
+  roots?: Partial<RootAccess>[];
+  runs_as?: RunsAs | null;
+  platform?: string;
+}
+
+/** The folders worth stopping on: any that is not plainly read and write. */
+function rootsToShow(r: LibrariesStepResult | null): Partial<RootAccess>[] | null {
+  const roots = Array.isArray(r?.roots) ? r.roots : [];
+  const checked = roots.filter((x) => typeof x?.access === "string");
+  if (checked.length === 0) return null;
+  return checked.some((x) => x.access !== "rw" || x.partial) ? checked : null;
+}
+
 function Libraries({ api, step, platform, next, back }: StepProps) {
   const { t } = useI18n();
   const examples = EXAMPLE_PATHS[platform];
   const [roots, setRoots] = useState("");
   const [map, setMap] = useState("");
   const [mapError, setMapError] = useState(false);
+  // story 59.03: what Maktaba may do in the folders, when one is read-only or partly unreadable
+  const [checked, setChecked] = useState<{
+    roots: Partial<RootAccess>[];
+    runsAs: RunsAs | null;
+  } | null>(null);
   const s = useStep(api);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -1011,8 +1032,54 @@ function Libraries({ api, step, platform, next, back }: StepProps) {
       .split("\n")
       .map((r) => r.trim())
       .filter(Boolean);
-    if (await s.run("libraries", { roots: list, path_map: pathMap })) next();
+    const r = await s.run<LibrariesStepResult>("libraries", { roots: list, path_map: pathMap });
+    if (!r) return;
+    const show = rootsToShow(r);
+    if (show) setChecked({ roots: show, runsAs: r.runs_as ?? null });
+    else next();
   };
+  if (checked) {
+    return (
+      <Frame title={t("setup.libraries.title")} step={step} error={null} onBack={back}>
+        <div className="mkt-setup__form">
+          <h3>{t("setup.libraries.access")}</h3>
+          {checked.runsAs && (
+            <p>
+              {t("library.access.runs_as", {
+                // ids as the system writes them (no grouping, Latin digits)
+                uid: String(checked.runsAs.uid),
+                gid: String(checked.runsAs.gid),
+              })}
+            </p>
+          )}
+          <ul className="mkt-setup__roots">
+            {checked.roots.map((r) => {
+              const fix = fixText(r.fix, t);
+              return (
+                <li key={r.path}>
+                  <bdi dir="ltr">{r.path}</bdi>
+                  {": "}
+                  <strong>{t(accessKey(r.access, !!r.partial))}</strong>
+                  {r.partial && r.access === "ro" && <> · {t("library.access.partial")}</>}
+                  {r.mount_read_only && (
+                    <p className="mkt-setup__note">{t("library.access.mount_ro")}</p>
+                  )}
+                  {fix && <p className="mkt-setup__note">{fix}</p>}
+                </li>
+              );
+            })}
+          </ul>
+          <p className="mkt-setup__note">{t("setup.libraries.accessNote")}</p>
+          <div className="mkt-setup__actions">
+            <Button variant="secondary" onClick={() => setChecked(null)}>
+              {t("common.edit")}
+            </Button>
+            <Button onClick={next}>{t("setup.next")}</Button>
+          </div>
+        </div>
+      </Frame>
+    );
+  }
   return (
     <Frame title={t("setup.libraries.title")} step={step} error={s.formError} onBack={back}>
       <form className="mkt-setup__form" onSubmit={submit}>
