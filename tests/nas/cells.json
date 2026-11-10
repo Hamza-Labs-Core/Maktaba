@@ -137,7 +137,7 @@
       "arches": ["amd64"],
       "env": {"MAKTABA_HWACCEL_PREFER": "vaapi"},
       "needs": ["59.05"],
-      "asserts": ["ready", "video_no_device", "transcode_auto"]
+      "asserts": ["ready", "video_no_device", "scan", "transcode_auto"]
     },
     {
       "name": "vaapi-fake-device",
@@ -145,15 +145,15 @@
       "arches": ["amd64"],
       "docker": ["--device", "/dev/null:/dev/dri/renderD128"],
       "needs": ["59.05"],
-      "asserts": ["ready", "video_device_failed", "transcode_auto"]
+      "asserts": ["ready", "video_device_failed", "scan", "transcode_auto"]
     },
     {
       "name": "vaapi-no-group",
-      "about": "/dev/dri passed without its group: the render node cannot be opened, Settings names group_add",
+      "about": "/dev/dri passed without its group: a node the user may not open (the host's /dev/kmsg, 0644 root, read-only in the device cgroup), Settings names group_add",
       "arches": ["amd64"],
-      "docker": ["--device", "/dev/null:/dev/dri/renderD128:r"],
+      "docker": ["--device", "/dev/kmsg:/dev/dri/renderD128:r"],
       "needs": ["59.05"],
-      "asserts": ["ready", "video_group_add", "transcode_auto"]
+      "asserts": ["ready", "video_group_add", "scan", "transcode_auto"]
     },
     {
       "name": "restart-after-kill",

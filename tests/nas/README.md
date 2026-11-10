@@ -55,7 +55,7 @@ runs every cell, a change to `web/` alone runs nothing.
 | `thumbnail` | an Arabic clip's poster is served |
 | `transcode` | a forced software transcode of the HEVC clip serves its master playlist, a rendition and a first segment |
 | `transcode_auto` | the same on the encoder the server picked (no `force_software`): libx264 once VA-API fell back (59.05) |
-| `video_no_device`, `video_device_failed`, `video_group_add` | `GET /api/server/machine`'s `video` (the streaming role's verdict, 59.05) is software with that reason: no render node; one whose test encode failed (`/dev/null` as `renderD128`), its error kept; one the user may not open (read-only in the device cgroup), the uid named |
+| `video_no_device`, `video_device_failed`, `video_group_add` | `GET /api/server/machine`'s `video` (the streaming role's verdict, 59.05) is software with that reason: no render node; one whose test encode failed (`/dev/null` as `renderD128`), its error kept; one the user may not open (the host's `/dev/kmsg`, 0644 root and read-only in the device cgroup: `/dev/null` is in Docker's default allow list, so `:r` does not narrow it), the uid named |
 | `no_oom` | not OOM-killed, `memory.current` under `memory.max`, no `oom_kill` event |
 | `media_untouched` | the library holds exactly the fixtures afterwards: nothing written in it |
 | `logs_clean` | no permission error in `server.log` |
@@ -103,8 +103,8 @@ it is reported as pending (⏳) until that story is in `landed`.
 | `plugin-cache-grant` | stages run in the plugin runners are refused `$HOME/.maktaba/cache` (`plugin_sandbox_refused`, `/var/lib/maktaba/.maktaba/cache`): the image's `HOME` is the volume, and the runners' grants do not cover it; they fall back to running in process |
 
 **VA-API (59.05):** `vaapi-fallback` (VA-API asked for, no `/dev/dri`), `vaapi-fake-device`
-(`/dev/null` as the render node: the test encode fails) and `vaapi-no-group` (the node not
-openable): each ends in libx264 with its reason in Settings. Real VA-API is in the device
+(`/dev/null` as the render node: the test encode fails) and `vaapi-no-group` (a node the user may
+not open): each ends in libx264 with its reason in Settings. Real VA-API is in the device
 checklists (J4125, N100).
 
 **Later phases add cells:** speech on arm64
