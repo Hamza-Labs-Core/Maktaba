@@ -40,3 +40,21 @@ describe("QueueCard: plex_livetv and a stalling Plex", () => {
     expect(serviceName("other")).toBe("other");
   });
 });
+
+// Epic 59 story 59.02: heavy work held for this machine's quiet hours says when they open.
+describe("QueueCard: quiet hours", () => {
+  it("says the work waits for the quiet hours", () => {
+    const summary = {
+      ...queueSummary("scan", { counts: { paused: 1 }, waiting_reason: "quiet_hours" }),
+      quiet_at: "01:00",
+    };
+    renderAt(
+      <QueueCard info={stageInfo({ stage: "scan", label: "Scan" })} summary={summary} />,
+      "/queue"
+    );
+    expect(screen.getByRole("link", { name: "Waiting for quiet hours (01:00)" })).toHaveAttribute(
+      "href",
+      "/help/processing#waiting-quiet-hours"
+    );
+  });
+});

@@ -39,6 +39,9 @@ func TestMutations_RequireAdmin(t *testing.T) {
 		{"POST", "/api/queue/retrigger", `{"items":[]}`},
 		{"PUT", "/api/extensions/plex", `{"enabled":true}`},
 		{"POST", "/api/extensions/plex/test", ""},
+		{"POST", "/api/queues/jobs/7/run-now", ""},
+		{"POST", "/api/queues/scan/run-now", ""},
+		{"POST", "/api/libraries/11111111-1111-4111-8111-111111111111/run-now", ""},
 	}
 	for _, rt := range routes {
 		for name, p := range map[string]bool{"anonymous": false, "non-admin": true} {

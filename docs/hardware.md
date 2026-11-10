@@ -280,7 +280,7 @@ from the **memory it may use** alone: a container's cgroup limit (v2 `memory.max
 ZFS cache gives back (`arcstats`: `size − c_min`), so a healthy TrueNAS box does not look full.
 CPU cores are capped by the cgroup's quota (`cpu.max`).
 
-| Tier | Memory limit | Pipeline workers | Postgres memory (59.02) | Speech to text (59.06) |
+| Tier | Memory limit | Pipeline workers | Postgres memory | Speech to text (59.06) |
 |---|---|---|---|---|
 | **Light** | under 6 GiB (under 8 GiB on arm64) | 1 | 256 MB | off; `base` when turned on |
 | **Standard** | under 16 GiB | 2 | 512 MB | `small` (`base` without AVX2) |
@@ -296,7 +296,20 @@ CPU cores are capped by the cgroup's quota (`cpu.max`).
   page says so.
 - Setup refuses under **3.5 GiB** of memory limit (a "4 GB" NAS reports 3.6–3.8 GiB). On a NAS
   the refusal says to run the home on another computer and keep the media on the NAS.
-- The rows marked with a story number apply as those stories ship.
+- Postgres memory is passed as `-c` server arguments with `max_connections` (300 on every
+  tier). On spinning disks it also gets `random_page_cost=4`, `effective_io_concurrency=2`,
+  `checkpoint_timeout=15min` and `wal_compression=on`. The disk is found from
+  `/proc/self/mountinfo` through dm and md to `queue/rotational`; when it cannot be read (a
+  ZFS dataset in a container) it counts as spinning until an admin answers in **Settings →
+  This machine** (`[server] data_disk`). `[postgres] settings = { shared_buffers = "1GB" }`
+  is passed last and wins.
+- **Quiet hours** (`[schedule] quiet_hours`, default `01:00-06:00` on Light and Standard,
+  none on Strong; `""` is none): a library's first scan, a transcription backlog over 10,
+  convert and dedup, and thumbnail sprites over 50 (all of them on Light) wait for the window
+  on the machine that claims them; playback and a single new file never do. **Run now** on
+  the job or the library starts it at once. A regular sweep (`sweep_interval_sec`) keeps the
+  disks awake, and the library page says so.
+- Speech (59.06) and transcode (59.05) rows apply as those stories ship.
 
 ## 4. Settings that change the load
 

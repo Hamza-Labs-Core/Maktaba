@@ -22,7 +22,7 @@ Each must be admin-only, documented in OpenAPI, and covered in the role tables.
 | `PUT /api/server/machine` (the tier) | 59.04 | admin |
 | `POST /api/libraries/{id}/access-check` | 59.03 | admin |
 | `GET /api/libraries/{id}` (gains `access`, `access_checked_at`) | 59.03 | as today (the new fields only to admins) |
-| `POST /api/jobs/{id}/run-now`, `POST /api/libraries/{id}/run-now` | 59.02 | admin |
+| `POST /api/queues/jobs/{id}/run-now`, `POST /api/queues/{stage}/run-now`, `POST /api/libraries/{id}/run-now` | 59.02 | admin |
 | `PUT /api/settings/schedule` (quiet hours) | 59.02 | admin |
 | `PUT /api/plugins/isolation-consent` | 59.07 | admin; audit-logged |
 | `GET /api/system/updates` (gains runtime vs image) | 59.12 | public, as today; the new fields only to admins |

@@ -17,6 +17,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/storage"
 )
 
 // setupEnv is one install's folders for the setup tests: server.toml (which
@@ -108,6 +109,7 @@ func TestSetupCheck(t *testing.T) {
 	prevMachine := hostMachine
 	t.Cleanup(func() { hostFacts, hostGPUs, hostMachine = prevFacts, prevGPUs, prevMachine })
 	hostMachine = func() hostinfo.Machine { return hostinfo.Machine{Platform: hostinfo.PlatformLinux} }
+	fakeDataDisk(t, storage.Disk{FSType: "ext4", Suitable: true, Local: true}, hostinfo.DataDisk{Kind: hostinfo.DiskSSD}, nil)
 	hostGPUs = func() []hostinfo.GPU { return []hostinfo.GPU{{Name: "NVIDIA GeForce RTX 2080 SUPER", MemoryMB: 8192}} }
 
 	hostFacts = func(string) (uint64, uint64) { return 32 << 30, 500 << 30 }
