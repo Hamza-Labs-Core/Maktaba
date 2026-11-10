@@ -30,8 +30,8 @@
     },
     {
       "name": "compose-plain",
-      "about": "the published Docker compose filled in as on QNAP, UGREEN or ASUSTOR: a household user, the memory block on (6g)",
-      "arches": ["amd64", "arm64"],
+      "about": "the published Docker compose filled in as on QNAP, UGREEN or ASUSTOR (x86-64: an N100 or Celeron box): a household user, the memory block on (6g, Standard; on arm64 6g is Light, the tier rule)",
+      "arches": ["amd64"],
       "user": "1000:100",
       "compose": {"blocks": ["memory"]},
       "platform": "docker",

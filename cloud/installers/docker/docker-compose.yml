@@ -43,7 +43,8 @@ services:
     stop_grace_period: 90s
     # [memory] The memory Maktaba may use; it plans for this, not for the machine's RAM, and
     # leaves the rest to the NAS. 4g is the Light tier (a 4 to 8 GB NAS), 6g Standard (8 to
-    # 16 GB), 16g Strong (16 GB or more). Without it Maktaba plans for all the machine's RAM.
+    # 16 GB), 16g Strong (16 GB or more); on ARM, under 8g is Light. Without it Maktaba plans
+    # for all the machine's RAM.
     # Below 3.5 GiB setup refuses: such a box serves Maktaba better as storage.
     # mem_limit: 6g
     environment:

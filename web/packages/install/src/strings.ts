@@ -29,7 +29,7 @@ export const STRINGS = {
     "tier.strong": "Strong, 16 GB (24 GB or more)",
     "tier.none": "No limit (Maktaba may use all the memory)",
     "tier.hint":
-      "Maktaba plans for this much and leaves the rest to the NAS. Under 3.5 GB it does not run: the NAS then serves best as storage for a Maktaba on another computer.",
+      "Maktaba plans for this much and leaves the rest to the NAS. Under 3.5 GB it does not run: the NAS then serves best as storage for a Maktaba on another computer. On an ARM NAS, anything under 8 GB is Light.",
     data: "Maktaba's data folder on the NAS",
     "data.hint":
       "Fast local storage (an SSD pool if you have one), never a network share or a USB stick. Empty: a Docker volume.",
@@ -95,7 +95,7 @@ export const STRINGS = {
     "tier.strong": "قوية، 16 غيغابايت (24 غيغابايت فأكثر)",
     "tier.none": "بلا حدّ (يستطيع Maktaba استخدام الذاكرة كلها)",
     "tier.hint":
-      "يخطّط Maktaba لهذا القدر ويترك الباقي لجهاز التخزين. وتحت 3.5 غيغابايت لا يعمل، والأفضل حينها أن يكون الجهاز مخزنًا لـ Maktaba يعمل على حاسوب آخر.",
+      "يخطّط Maktaba لهذا القدر ويترك الباقي لجهاز التخزين. وتحت 3.5 غيغابايت لا يعمل، والأفضل حينها أن يكون الجهاز مخزنًا لـ Maktaba يعمل على حاسوب آخر. وعلى جهاز تخزين بمعالج ARM يكون كل ما دون 8 غيغابايت خفيفًا.",
     data: "مجلد بيانات Maktaba على الجهاز",
     "data.hint":
       "تخزين محلي سريع (مجمّع SSD إن وُجد)، وليس مجلدًا مشتركًا عبر الشبكة ولا ذاكرة USB أبدًا. إن تركته فارغًا يُستخدم مجلد Docker.",
