@@ -236,8 +236,9 @@ class Run:
                 return p.returncode == 0 and "answered 200" in p.stdout
             wait("the web app answering (the healthcheck)", ready, 20 * 60, every=10)
 
-            uids = self.sh("t06", ["docker", "top", ctr, "-eo", "uid,comm"]).stdout.split("\n")[1:]
-            others = [u for u in uids if u.strip() and u.split()[0] != "568"]
+            # docker top needs the pid column
+            rows = self.sh("t06", ["docker", "top", ctr, "-eo", "pid,uid,comm"]).stdout.split("\n")[1:]
+            others = [r for r in rows if r.strip() and r.split()[1] != "568"]
             if others:
                 raise AssertionError(f"processes not as 568: {others}")
 
