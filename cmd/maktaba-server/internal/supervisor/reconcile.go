@@ -51,19 +51,19 @@ const CondReconciled = "Reconciled"
 
 // Reason codes the supervisor reports (the catalog's reasons).
 const (
-	reasonCrashLoop      = "crash_loop"
-	reasonDependencyOff  = "dependency_off"
-	reasonHeld           = "held"
-	reasonLicence        = "licence_missing"
-	reasonPlatform       = "platform_unsupported"
-	reasonMemory         = "not_enough_memory"
-	reasonNotInPayload   = "not_in_payload"
-	reasonReconcileOff   = "reconcile_off"
-	ReasonBootFlag       = "boot_flag"
-	ReasonEnvOverride    = "env_override"
+	reasonCrashLoop     = "crash_loop"
+	reasonDependencyOff = "dependency_off"
+	reasonHeld          = "held"
+	reasonLicence       = "licence_missing"
+	reasonPlatform      = "platform_unsupported"
+	reasonMemory        = "not_enough_memory"
+	reasonNotInPayload  = "not_in_payload"
+	reasonReconcileOff  = "reconcile_off"
+	ReasonBootFlag      = "boot_flag"
+	ReasonEnvOverride   = "env_override"
 	// ReasonBridgeNetwork: a container on a Docker bridge, where multicast reaches no
 	// device (Epic 59 story 59.08)
-	ReasonBridgeNetwork = "bridge_network"
+	ReasonBridgeNetwork  = "bridge_network"
 	condTrue, condFalse  = "true", "false"
 	condUnknown          = "unknown"
 	reconcileTick        = time.Second
