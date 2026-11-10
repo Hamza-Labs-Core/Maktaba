@@ -33,6 +33,7 @@ const S = {
     stream_addr: ":8090",
     public_url: "",
     web_public_url: "",
+    trusted_proxies: [] as string[],
   },
 };
 const DOC = {
@@ -187,6 +188,47 @@ describe("StorageSettings", () => {
       })
     );
     expect(await screen.findByText(/waiting for a restart/)).toBeInTheDocument();
+  });
+
+  // Epic 59 story 59.08: the reverse proxies whose forwarded client address is believed
+  it("saves the trusted proxies, one per line, and shows a refused entry", async () => {
+    const user = userEvent.setup();
+    open();
+    put.mockRejectedValueOnce(
+      problem(422, "invalid settings", {
+        errors: [
+          {
+            field: "server.trusted_proxies[1]",
+            message: '"nas.local" is not an IP address or a CIDR',
+          },
+        ],
+      })
+    );
+    const box = await screen.findByLabelText(/^Trusted proxies/);
+    expect(box).toHaveValue("");
+    expect(box).toHaveAttribute("dir", "ltr");
+    expect(box).toHaveAccessibleDescription(/one per line/);
+    await user.type(box, "192.168.1.5{Enter}{Enter} nas.local ");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(put).toHaveBeenCalledWith("/api/server/settings", {
+        server: { trusted_proxies: ["192.168.1.5", "nas.local"] },
+      })
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText(/^Trusted proxies/)).toHaveAccessibleDescription(
+        /nas\.local" is not an IP address/
+      )
+    );
+    expect(screen.queryByText(/server\.trusted_proxies/)).toBeNull();
+  });
+
+  it("leaves the trusted proxies out for a server that has none to set", async () => {
+    const older: Partial<typeof S.server> = { ...S.server };
+    delete older.trusted_proxies;
+    open({ ...DOC, saved: { ...S, server: older }, running: { ...S, server: older } });
+    await screen.findByLabelText(/^Server address/);
+    expect(screen.queryByLabelText(/^Trusted proxies/)).toBeNull();
   });
 
   it("shows each refused value next to its field", async () => {

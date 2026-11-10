@@ -16,6 +16,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/packs"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pluginrelay"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
@@ -232,6 +233,20 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 			add("MAKTABA_JWT_PRIVATE_KEY_PEM", string(priv))
 			add("MAKTABA_JWT_PUBLIC_KEY_PEM", string(pub))
 		}
+	}
+
+	// Epic 59 story 59.08: the reverse proxies whose X-Forwarded-For the api and streaming
+	// believe (besides loopback); a bad entry stops the role here with the key named
+	if role == RoleAPI || role == RoleStreaming {
+		ps, err := cfg.Server.TrustedProxyList()
+		if err != nil {
+			return nil, err
+		}
+		list := make([]string, 0, len(ps))
+		for _, p := range ps {
+			list = append(list, p.String())
+		}
+		add(clientip.EnvTrustedProxies, strings.Join(list, ","))
 	}
 
 	switch role {

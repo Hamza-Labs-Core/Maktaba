@@ -47,6 +47,10 @@ export interface ServerSettings {
     stream_addr: string;
     public_url: string;
     web_public_url: string;
+    /** [server] trusted_proxies (Epic 59 story 59.08): addresses or CIDRs of a reverse
+     * proxy in front, whose forwarded client address is believed. Absent from a server
+     * older than it. */
+    trusted_proxies?: string[];
   };
 }
 

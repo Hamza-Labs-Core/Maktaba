@@ -18,6 +18,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -32,6 +33,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 	health "github.com/Hamza-Labs-Core/Maktaba/shared/health/go"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
@@ -140,6 +142,12 @@ func runServe() error {
 	if err := procattr.ContainSelf(); err != nil {
 		logger.Warn("child processes are not contained; they may outlive a crash",
 			"err", err.Error(), "event", "procattr_contain_failed")
+	}
+
+	// Epic 59 story 59.08: the reverse proxies whose forwarded client address is believed
+	// ([server] trusted_proxies); a bad entry refuses to start, as the cloud's does
+	if _, err := clientip.FromEnv(); err != nil {
+		return err
 	}
 
 	publicAddr := os.Getenv("MAKTABA_HTTP_ADDR")
@@ -659,6 +667,8 @@ func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backe
 		Subtitles:   storedSubtitles(pool),
 		Now:         time.Now,
 		ExtraMounts: extraMounts,
+		// runServe refused a bad list before anything was built
+		TrustedProxies: trustedProxies(),
 	}), nil
 }
 
@@ -731,4 +741,12 @@ func storedSubtitles(pool *pgxpool.Pool) handlers.StoredSubtitles {
 		return nil
 	}
 	return subtitles.NewPGStore(pool)
+}
+
+// trustedProxies is [server] trusted_proxies (MAKTABA_TRUSTED_PROXIES): the reverse proxies
+// whose X-Forwarded-For the public mux believes besides loopback. runServe refuses to start
+// on a bad entry; here one is no list.
+func trustedProxies() []netip.Prefix {
+	ps, _ := clientip.FromEnv()
+	return ps
 }

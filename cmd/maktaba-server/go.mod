@@ -7,6 +7,7 @@ go 1.25.8
 godebug multipathtcp=0
 
 require (
+	github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip v0.0.0
 	github.com/BurntSushi/toml v1.6.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify v0.0.0
 	github.com/godbus/dbus/v5 v5.1.0
@@ -136,3 +137,5 @@ replace github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack => ../../shar
 replace github.com/Hamza-Labs-Core/Maktaba/shared/plugins => ../../shared/plugins
 
 replace github.com/Hamza-Labs-Core/Maktaba/shared/go/mediaaccess => ../../shared/go/mediaaccess
+
+replace github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip => ../../shared/go/clientip

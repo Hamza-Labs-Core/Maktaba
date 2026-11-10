@@ -3,6 +3,7 @@ package frontdoor
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -403,7 +404,7 @@ func TestTrackerForgetsSilentClients(t *testing.T) {
 	tr.Now = func() time.Time { return now }
 	for i := 0; i < 500; i++ {
 		r := httptest.NewRequest(http.MethodGet, "/", nil)
-		r.Header.Set("X-Forwarded-For", uuid.NewString())
+		r.RemoteAddr = fmt.Sprintf("10.0.%d.%d:5000", i/256, i%256)
 		tr.TouchHLS(uuid.New(), r)
 	}
 	if got := len(tr.Snapshot()); got != 500 {
