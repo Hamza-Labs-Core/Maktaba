@@ -14,6 +14,19 @@ build fails when the two differ.
 
 ### Changed
 
+- **Speech to text on an ARM NAS, and the model a NAS can carry (story 59.06).** Speech to
+  text now runs on Linux ARM machines, such as an ARM Synology. The machine's tier picks the
+  model: on a Light machine speech is off until an admin turns it on with one tap in Settings →
+  This machine (then `base`, in the quiet hours only); Standard uses `small`, or `base` on a
+  processor without AVX2 and on ARM; Strong keeps `large-v3-turbo`, and an NVIDIA GPU raises
+  any tier to it. The page says why, shows each model's size and that smaller ones make more
+  mistakes, especially in Arabic, and shows how fast this machine transcribes, measured on two
+  bundled 30-second clips (Arabic and English) when speech is turned on and after a model
+  change. With audio waiting, it estimates how long the backlog takes and, past 30 days,
+  suggests the next smaller model with both estimates. On a NAS transcription runs at low
+  priority with one thread per two cores, and no more speech workers start than the memory
+  holds. The second listen stays on x86_64 with an NVIDIA GPU.
+
 - **On a NAS, heavy work waits for quiet hours and Postgres is tuned to the machine (story
   59.02).** On the Light and Standard tiers a library's first scan, a transcription backlog,
   convert and duplicates, and bulk thumbnail sprites wait for 01:00–06:00, so the NAS stays

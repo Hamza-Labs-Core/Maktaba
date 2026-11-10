@@ -283,7 +283,7 @@ CPU cores are capped by the cgroup's quota (`cpu.max`).
 | Tier | Memory limit | Pipeline workers | Postgres memory | Speech to text (59.06) |
 |---|---|---|---|---|
 | **Light** | under 6 GiB (under 8 GiB on arm64) | 1 | 256 MB | off; `base` when turned on |
-| **Standard** | under 16 GiB | 2 | 512 MB | `small` (`base` without AVX2) |
+| **Standard** | under 16 GiB | 2 | 512 MB | `small` (`base` without AVX2, or on ARM) |
 | **Strong** | 16 GiB and more | as planned above | 25%, at most 4 GB | `large-v3-turbo` with CUDA or AVX2 |
 
 - The tier sets defaults, never limits: a value set in `server.toml` (`[transcription] workers`,
@@ -309,7 +309,51 @@ CPU cores are capped by the cgroup's quota (`cpu.max`).
   on the machine that claims them; playback and a single new file never do. **Run now** on
   the job or the library starts it at once. A regular sweep (`sweep_interval_sec`) keeps the
   disks awake, and the library page says so.
-- Speech (59.06) and transcode (59.05) rows apply as those stories ship.
+- Transcode (59.05) rows apply as that story ships.
+
+### Speech to text on a NAS (Epic 59 story 59.06)
+
+- **ARM:** the `stt` extra installs CTranslate2 and faster-whisper on Linux aarch64 too (int8 on
+  the CPU through CTranslate2's ARM backend). Torch and transformers, which only the second
+  listen uses, stay x86_64 with CUDA: on ARM the second listen is unavailable, and Settings
+  says so. The aarch64 Linux payload carries the speech engine's wheels in its wheelhouse
+  (`pipeline/constraints-stt.txt`, no torch: about 90 MB).
+- **The model** comes from the tier (the table above): `[transcription] speech = "on"|"off"`
+  and `model = "tiny"|"base"|"small"|"medium"|"large-v3-turbo"` in `server.toml`, or
+  **Settings → This machine**, override it; empty is the tier's. A CUDA GPU of 4 GB or more
+  raises any tier to `large-v3-turbo` when the memory limit holds its worker. Apple Silicon
+  keeps `large-v3-turbo` on its GPU (MLX). The smaller sizes are catalog packs
+  (`model.whisper-tiny`, `-base`, `-small`: 78, 148 and 486 MB), pinned like the others.
+- **Running politely** (Light and Standard): a transcribing process runs at `nice 10`
+  (`MAKTABA_STT_NICE`) with one CTranslate2 thread per two cores; on Light every
+  transcription, a single new file's too, waits for the quiet hours (`MAKTABA_QUIET_SPEECH`).
+  A speech worker takes the model and 300 MB; no more workers start than a quarter of the
+  memory limit holds (6 GB: one worker of `small`), and the log says why.
+- **The measure:** when speech is on and this machine has no measure of its model (speech
+  turned on, or a model change), the server transcribes the two bundled 30-second clips
+  (`stt/assets/`: Arabic read from *Kalila wa Dimna* by a LibriVox volunteer, English spoken
+  by eSpeak NG; public domain) with this machine's model, threads and priority, and keeps the
+  real-time factor and each clip's word error rate in `<state>/stt/speed.json`. A run during
+  which the rest of the system kept the CPU over 80% busy is repeated once, then marked busy.
+  Settings shows the speed, and with the audio waiting for transcription the estimate: the
+  backlog's hours ÷ the real-time factor ÷ the hours a day it may run (the quiet window's
+  length where there is one). Over 30 days it suggests the next smaller model, its estimate
+  scaled by the models' relative CPU cost (tiny 0.5, base 1, small 3, large-v3-turbo 5,
+  medium 8: faster-whisper's own CPU int8 numbers), or speech off when none is smaller.
+
+Measured (**measured**, 2026-11-10: the stt extra's aarch64 wheels in a `linux/arm64`
+container on an Apple M-series Mac, 2 threads; a NAS's ARM cores are several times slower,
+which is why the box measures itself):
+
+| Model | English clip | Arabic clip | English WER | Arabic WER |
+|---|---|---|---|---|
+| tiny | 21.6× | 15.7× | 0.12 | 0.76 |
+| base | 19.3× | 13.8× | 0.09 | 0.46 |
+| small | 9.9× | 5.2× | 0.03 | 0.30 |
+
+The word error rates are the NAS cells' baseline (`tests/nas/stt-baseline.json`): the
+`arm64-stt` cell transcribes both clips with `base` on GitHub's arm64 runner and fails on a
+rise of more than 5 points.
 
 ## 4. Settings that change the load
 

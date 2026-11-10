@@ -15,6 +15,7 @@ checklists, [`docs/nas/checklists/`](../../docs/nas/checklists/README.md).
 | `seccomp-no-landlock-{enosys,eperm}.json` | a kernel without Landlock (`landlock_*` answer ENOSYS, or EPERM as older Docker default profiles do) and without user namespaces (`unshare` and `clone(CLONE_NEWUSER)` answer EPERM) |
 | `check_checklists.py` | the device checklists' lint: every step has its expected result and its screenshots in both languages |
 | `test_harness.py` | this folder's own tests (the plan job runs them) |
+| `stt-baseline.json` | each speech model and architecture's word error rate on the bundled clips (59.06) |
 
 `tools/ci/tests/test_nas_workflow.py` checks the workflow's triggers: a change to the Dockerfile
 runs every cell, a change to `web/` alone runs nothing.
@@ -64,6 +65,9 @@ runs every cell, a change to `web/` alone runs nothing.
 | `quiet_hold` | outside the cell's quiet hours a new library's first scan waits: the scan queue (`GET /api/queues`) says `quiet_hours` and when the window opens, and no clip is found; the admin's `POST /api/queues/scan/run-now` then starts it: the held jobs run and none stays paused; every clip is then found as in `scan` (59.02) |
 | `postgres_pss_512m` | the bundled Postgres's processes hold under 512 MiB together (the sum of `Pss` in each one's `smaps_rollup`, kept as `postgres-pss.txt`), the Light tier's tuning applied (59.02) |
 | `refused_write`, `refused_privileged` | the container exits 78 with its message (59.01) |
+| `stt_light_off` | on the Light tier speech is off by default, its reason `light`, the model base, in the quiet hours only; on arm64 no second listen (59.06) |
+| `stt_engine` | the speech engine (the stt extra's aarch64 pins, `pipeline/constraints-stt.txt`) goes into the pipeline's venv and imports, with no torch and no transformers: on arm64 from the payload's wheelhouse alone (`--no-index`), on amd64 from PyPI; its pip log is `stt-install.log` (59.06) |
+| `stt_measure` | an admin's Measure again (`POST /api/server/speech/measure`): the server transcribes the bundled Arabic and English clips with the tier's model; the real-time factor and each clip's word error rate are reported (`stt:wer`, `api-speech.json`), and a rise of more than 5 points over [`stt-baseline.json`](stt-baseline.json) for that model and architecture fails (no entry yet: recorded only) (59.06) |
 
 An assertion still waiting for its story is written `{"name": "tier_light", "needs": ["59.04"]}`:
 it is reported as pending (⏳) until that story is in `landed`.
@@ -74,7 +78,9 @@ it is reported as pending (⏳) until that story is in `landed`.
    `data`, `media`, `noaccess_root`, `docker` (extra `docker run` arguments such as `--memory=4g`
    or `--device /dev/dri`), `env`, `seccomp` (a profile in this folder), `expect: "refused"`,
    `kill_restart`, `quiet_hours_ahead` (a one-hour quiet window opening three hours from now,
-   UTC; every other cell has none, `[schedule] quiet_hours = ""`); then `asserts`.
+   UTC; every other cell has none, `[schedule] quiet_hours = ""`), `speech` (story 59.06:
+   `[transcription] speech = "on"` and the tier's model instead of the cells' tiny one); then
+   `asserts`.
 2. A new assertion is a method `assert_<name>` of `Cell` in `cell.py` returning a short detail,
    raising `AssertionError` to fail. Use `self.api` (signed in as the admin) and `docker(...)`.
 3. A cell or assertion for a story not merged yet carries `needs: ["59.NN"]`; the story's pull
@@ -100,6 +106,5 @@ it is reported as pending (⏳) until that story is in `landed`.
 | `poster-queue` | in a fresh container no `content_hash` job is queued for the scanned clips, and `thumbnail` (the poster) only follows `content_hash`: `thumb_small` runs and writes nothing, and no poster is served after 15 minutes |
 | `plugin-cache-grant` | stages run in the plugin runners are refused `$HOME/.maktaba/cache` (`plugin_sandbox_refused`, `/var/lib/maktaba/.maktaba/cache`): the image's `HOME` is the volume, and the runners' grants do not cover it; they fall back to running in process |
 
-**Later phases add cells:** VA-API without a device (`vaapi-fallback`, 59.05), speech on arm64
-(`arm64` with speech on, 59.06), the plugin isolation level on the no-Landlock cells (59.07),
+**Later phases add cells:** VA-API without a device (`vaapi-fallback`, 59.05), the plugin isolation level on the no-Landlock cells (59.07),
 `bridge` and `offline` (59.08, 59.01), and the update legs (`update-rehearsal-container`, 59.12).

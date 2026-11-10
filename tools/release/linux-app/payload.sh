@@ -10,6 +10,7 @@
 #                                        $ORIGIN rpath
 #   python/    CPython 3.12              python-build-standalone, stdlib precompiled
 #   pipeline/  maktaba_pipeline-<v>-py3-none-any.whl constraints.txt constraints-core.txt
+#              constraints-stt.txt (the stt extra's pins alone, story 59.06)
 #              wheels/   a wheel for every pin of constraints-core.txt, for this architecture,
 #                        and wheelhouse.json (Epic 59 story 59.01: the venv of a first start
 #                        builds offline from it, --no-index --find-links); on aarch64 also
@@ -282,9 +283,9 @@ PYTHONDONTWRITEBYTECODE=1 "$PY" -I -B -m pip download --quiet --disable-pip-vers
 # NAS has them without PyPI. On x86_64 the stt extra brings torch (the second listen): its
 # wheels stay in runtime.ml's pack.
 WH_STT=""
+cp "${cons_stt[0]}" "$OUT/pipeline/constraints-stt.txt"
 if [ "$ARCH" = aarch64 ]; then
     log "wheelhouse: the speech engine (constraints-stt.txt, linux-$ARCH)"
-    cp "${cons_stt[0]}" "$OUT/pipeline/constraints-stt.txt"
     PYTHONDONTWRITEBYTECODE=1 "$PY" -I -B -m pip download --quiet --disable-pip-version-check --no-deps \
         --only-binary=:all: --require-hashes -r "$OUT/pipeline/constraints-stt.txt" -d "$OUT/pipeline/wheels" \
         || die "pip download of constraints-stt.txt's wheels for linux-$ARCH"

@@ -1,0 +1,7 @@
+{
+  "_doc": "Story 59.06: each model and architecture's word error rate on the bundled clips (pipeline/src/maktaba_pipeline/stt/assets), as the speech measure reports it. tests/nas/cell.py fails a cell whose rate rose more than 5 points over its entry. base/aarch64 was measured on linux/arm64 with the stt extra's aarch64 wheels at 2 threads; add an entry from a cell's report (stt:wer) when a model or architecture has none.",
+  "base/aarch64": {
+    "en": 0.0896,
+    "ar": 0.46
+  }
+}

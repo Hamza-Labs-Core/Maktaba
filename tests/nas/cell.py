@@ -84,9 +84,53 @@ quiet_hours = "{quiet}"
 """
 
 
-def server_toml(quiet: str = "") -> str:
-    """The cells' server.toml; `quiet` is its [schedule] quiet_hours ("" for none)."""
-    return SERVER_TOML_TEMPLATE.replace("{quiet}", quiet)
+def server_toml(quiet: str = "", speech: bool = False) -> str:
+    """The cells' server.toml; `quiet` is its [schedule] quiet_hours ("" for none). A speech
+    cell (story 59.06) turns speech on and keeps the tier's model."""
+    out = SERVER_TOML_TEMPLATE.replace("{quiet}", quiet)
+    if speech:
+        out = out.replace('model = "Systran/faster-whisper-tiny"', 'speech = "on"')
+    return out
+
+
+#: Story 59.06: each model and architecture's word error rate on the bundled clips, the first
+#: runs' (a rise of more than STT_WER_RISE over it fails the cell)
+STT_BASELINE = HERE / "stt-baseline.json"
+STT_WER_RISE = 0.05
+#: the speech engine's packages, the stt extra's on Linux aarch64 (no torch, no transformers)
+STT_ENGINE = "ctranslate2 faster_whisper"
+
+
+def stt_engine_requirements(constraints: str) -> str:
+    """The pins of constraints-stt.txt that make the speech engine on Linux aarch64 (their
+    marker names aarch64; the core venv has the rest), markers dropped so that pip installs
+    them on either architecture, hashes kept."""
+    out: list[str] = []
+    block: list[str] = []
+
+    def flush() -> None:
+        if block and "platform_machine == 'aarch64'" in block[0]:
+            head = block[0].split(" ;", 1)[0]
+            tail = " \\" if block[0].rstrip().endswith("\\") else ""
+            out.extend([head + tail, *block[1:]])
+        block.clear()
+
+    for line in constraints.splitlines():
+        if line and not line[0].isspace():
+            flush()
+            if line.startswith("#") or line.startswith("--"):
+                continue
+        if line.strip() and not line.startswith("#"):
+            block.append(line)
+    flush()
+    return "\n".join(out) + "\n"
+
+
+def wer_rise(baseline: dict[str, Any], key: str, clips: list[dict[str, Any]]) -> list[str]:
+    """The clips whose word error rate rose more than STT_WER_RISE over `baseline[key]`."""
+    base = baseline.get(key) or {}
+    return [f"{c['lang']} {c['wer']:.3f} over {base[c['lang']]:.3f}" for c in clips
+            if c.get("lang") in base and c.get("wer", 1) > base[c["lang"]] + STT_WER_RISE]
 
 
 SERVER_TOML = server_toml()
@@ -327,7 +371,7 @@ class Cell:
                 run += ["--user", self.user]
             docker(*run, "-v", f"{self.vol('data')}:{VOLUME}", self.image, "-c",
                    f"umask 077 && mkdir -p {CONFIG_DIR} && cat > {CONFIG_DIR}/server.toml",
-                   input=server_toml(self.quiet_window()))
+                   input=server_toml(self.quiet_window(), speech=bool(self.spec.get("speech"))))
 
     def quiet_window(self) -> str:
         """The cell's [schedule] quiet_hours: none, or with `quiet_hours_ahead` a window that
@@ -354,8 +398,9 @@ class Cell:
             raise AssertionError(f"setup exited {p.returncode}: {(p.stdout + p.stderr).strip()[-600:]}")
 
     def bundle(self) -> list[str]:
-        """59.01's core bundle: the venv from the payload's wheelhouse, no speech wheels."""
-        return ["--bundle", "core"] if "59.01" in self.landed and not self.spec.get("speech") else []
+        """59.01's core bundle: the venv from the payload's wheelhouse, no speech wheels (a
+        speech cell adds the speech engine itself: assert_stt_engine)."""
+        return ["--bundle", "core"] if "59.01" in self.landed else []
 
     def start(self) -> None:
         log("start the server container")
@@ -795,6 +840,107 @@ class Cell:
         if defaults.get("tier") not in (None, want):
             raise AssertionError(f"the defaults are {defaults.get('tier')!r}'s, not {want!r}'s")
         return f"{tier}: limit {limit >> 20 if limit else 0} MiB, Postgres {defaults.get('shared_buffers')}, {defaults.get('pipeline_workers')} worker(s)"
+
+    # -- speech to text (story 59.06)
+
+    def exec_sh(self, script: str, timeout: int = 1800) -> Any:
+        """A shell script in the running container, as the cell's user."""
+        user = ["-u", self.user] if self.user else []
+        return docker("exec", *user, self.container, "sh", "-c", script, check=False, timeout=timeout)
+
+    def venv_python(self) -> str:
+        p = self.exec_sh(f"find {VOLUME} -maxdepth 5 -path '*/venv/bin/python' | head -n 1")
+        py = p.stdout.strip()
+        if not py:
+            raise AssertionError(f"no pipeline venv under {VOLUME}: {p.stderr.strip()[-300:]}")
+        return py
+
+    def assert_stt_engine(self) -> str:
+        """T06: the speech engine goes into the pipeline's venv and imports, with no torch and
+        no transformers (the second listen is x86_64 + CUDA). On arm64 from the payload's
+        wheelhouse alone (--no-index: no internet needed); on amd64, where the payload carries
+        no speech wheels, the same pins from PyPI."""
+        py = self.venv_python()
+        arch = self.exec_sh("uname -m").stdout.strip()
+        wheels = "/opt/maktaba/server/pipeline/wheels"
+        cons = docker("exec", self.container, "cat", "/opt/maktaba/server/pipeline/constraints-stt.txt",
+                      check=False)
+        if cons.returncode != 0:
+            raise AssertionError("the payload has no pipeline/constraints-stt.txt")
+        reqs = stt_engine_requirements(cons.stdout)
+        where = ["--no-index", "--find-links", wheels] if arch == "aarch64" else []
+        user = ["-u", self.user] if self.user else []
+        p = docker("exec", "-i", *user, self.container, py, "-m", "pip", "install", "--quiet",
+                   "--disable-pip-version-check", "--no-deps", "--require-hashes", *where, "-r", "/dev/stdin",
+                   input=reqs, check=False, timeout=1800)
+        (self.out / "stt-install.log").write_text(p.stdout + p.stderr, encoding="utf-8")
+        if p.returncode != 0:
+            raise AssertionError(f"pip install of the speech engine ({arch}): {(p.stdout + p.stderr).strip()[-600:]}")
+        probe = ("import importlib.util as u, ctranslate2, faster_whisper;"
+                 "bad=[m for m in ('torch','transformers') if u.find_spec(m)];"
+                 "assert not bad, bad;"
+                 "print(ctranslate2.__version__, sorted(ctranslate2.get_supported_compute_types('cpu')))")
+        p = docker("exec", *user, self.container, py, "-c", probe, check=False)
+        if p.returncode != 0:
+            raise AssertionError(f"the speech engine does not import: {(p.stdout + p.stderr).strip()[-600:]}")
+        how = "offline, from the payload's wheelhouse" if where else "from PyPI"
+        return f"{arch}: ctranslate2 {p.stdout.strip()}, {how}; no torch, no transformers"
+
+    def speech(self) -> dict[str, Any]:
+        assert self.api is not None
+        s, d = self.api.get("/api/server/speech")
+        if s != 200 or not isinstance(d, dict) or not d.get("available"):
+            raise AssertionError(f"GET /api/server/speech: {s} {d}")
+        (self.out / "api-speech.json").write_text(json.dumps(d, indent=2, ensure_ascii=False), encoding="utf-8")
+        return d
+
+    def assert_stt_measure(self) -> str:
+        """T01, T05: the server's speech measure (an admin's Measure again) transcribes the
+        Arabic and English clips with the tier's model; each word error rate is recorded and
+        compared with the baseline of its model and architecture (stt-baseline.json): a rise
+        of more than 5 points fails. No baseline yet: recorded only."""
+        assert self.api is not None
+        d = self.speech()
+        sp = d.get("speech") or {}
+        if not sp.get("on"):
+            raise AssertionError(f"speech is off: {sp}")
+        s, body = self.api.call("POST", "/api/server/speech/measure")
+        if s not in (202, 409):
+            raise AssertionError(f"POST /api/server/speech/measure: {s} {body}")
+
+        def done() -> bool:
+            m = self.speech().get("measure") or {}
+            return not self.speech().get("measuring") and m.get("model") == sp.get("repo") and (
+                bool(m.get("error")) or (m.get("rtf") or 0) > 0)
+
+        wait("the speech measure", done, 30 * 60, every=15)
+        d = self.speech()
+        m = d.get("measure") or {}
+        if m.get("error"):
+            raise AssertionError(f"the measure of {m.get('model')}: {m['error']}")
+        clips = m.get("clips") or []
+        if sorted(c.get("lang") for c in clips) != ["ar", "en"]:
+            raise AssertionError(f"the clips measured: {clips}")
+        arch = m.get("arch") or "?"
+        key = f"{sp.get('model')}/{arch}"
+        baseline = json.loads(STT_BASELINE.read_text(encoding="utf-8")) if STT_BASELINE.is_file() else {}
+        wers = ", ".join(f"{c['lang']} WER {c['wer']:.3f} at {c['rtf']}×" for c in clips)
+        self.results.append({"name": "stt:wer", "ok": True, "detail": f"{key}: {wers}"})
+        risen = wer_rise(baseline, key, clips)
+        if risen:
+            raise AssertionError(f"{key}: word error rate rose over the baseline: {'; '.join(risen)}")
+        note = "" if key in baseline else f"; no baseline for {key} yet: add it to stt-baseline.json"
+        return f"{key}: {m.get('rtf')}× real time on {m.get('threads')} threads; {wers}{note}"
+
+    def assert_stt_light_off(self) -> str:
+        """Q7: on the Light tier speech is off by default, with its reason; this cell turned
+        it on (server.toml), and the tier's model is base, in the quiet hours only."""
+        sp = self.speech().get("speech") or {}
+        if sp.get("default_on") or sp.get("reason") != "light" or sp.get("model") != "base" or not sp.get("quiet_only"):
+            raise AssertionError(f"Light's speech: {sp}")
+        if sp.get("arch") == "arm64" and sp.get("second_listen"):
+            raise AssertionError("the second listen is offered on arm64")
+        return f"off by default ({sp.get('reason')}), base, quiet hours only; second listen {sp.get('second_listen')}"
 
     def assert_tier_light(self) -> str:
         return self.tier_is("light")
