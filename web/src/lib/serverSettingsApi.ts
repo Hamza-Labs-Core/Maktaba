@@ -287,6 +287,77 @@ export type MachineDoc =
       disk_how: "rotational" | "ssd" | "asked" | "unknown";
     };
 
+/** Epic 59 story 59.06: a Whisper size as the server offers it. */
+export interface SpeechModel {
+  name: string;
+  repo: string;
+  download_mb: number;
+  worker_mb: number;
+  cost: number;
+}
+
+/** How long the waiting audio takes with one model. */
+export interface SpeechEstimate {
+  model: string;
+  /** audio seconds per wall second */
+  rtf: number;
+  /** measured on this machine (else scaled from the measured model) */
+  measured: boolean;
+  hours_per_day: number;
+  days: number;
+}
+
+/** Speech to text on this machine (GET /api/server/speech). */
+export type SpeechDoc =
+  | { available: false; reason: string }
+  | {
+      available: true;
+      /** as server.toml saves it: what the next start runs */
+      speech: {
+        on: boolean;
+        on_set: boolean;
+        model: string;
+        model_set: boolean;
+        repo: string;
+        default: string;
+        default_on: boolean;
+        /** why the tier picked its model: light, cuda, no_avx2, arm */
+        reason?: "light" | "cuda" | "no_avx2" | "arm";
+        engine: "ct2" | "mlx";
+        offered: string[];
+        quiet_only: boolean;
+        polite: boolean;
+        second_listen: boolean;
+        arch: string;
+      };
+      restart_needed: boolean;
+      can_restart: boolean;
+      measure: null | {
+        model: string;
+        size: string | null;
+        device?: string;
+        threads?: number;
+        rtf?: number;
+        busy?: boolean;
+        measured_at?: string;
+        error?: string;
+      };
+      measuring: boolean;
+      quiet_hours: string;
+      models: SpeechModel[];
+      advice?: {
+        backlog: { files: number; hours: number } | null;
+        estimate: SpeechEstimate | null;
+        suggest?: SpeechEstimate;
+        suggest_off?: boolean;
+      };
+    };
+
+function asSpeechDoc(d: unknown): SpeechDoc {
+  const o = (d ?? {}) as Record<string, unknown>;
+  return ("available" in o ? o : { ...o, available: true }) as SpeechDoc;
+}
+
 /** A PUT answer is the GET document without available. */
 function asMachineDoc(d: unknown): MachineDoc {
   const o = (d ?? {}) as Record<string, unknown>;
@@ -327,6 +398,11 @@ export const serverSettingsApi = {
     quiet_default?: boolean;
     data_disk?: "ssd" | "rotational" | "auto";
   }) => asMachineDoc(await api.put<unknown>("/api/server/machine", body)),
+  /** Epic 59 story 59.06: speech to text by tier, its measured speed, the backlog's estimate */
+  speech: async () => api.get<SpeechDoc>("/api/server/speech"),
+  saveSpeech: async (body: { speech?: "on" | "off" | "auto"; model?: string }) =>
+    asSpeechDoc(await api.put<unknown>("/api/server/speech", body)),
+  measureSpeech: async () => asSpeechDoc(await api.post<unknown>("/api/server/speech/measure")),
   /** Answers while the server is up (public; used to see it come back). */
   ping: async () => api.get<unknown>("/api/system/version"),
 };

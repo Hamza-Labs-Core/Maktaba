@@ -4,7 +4,8 @@
 // hardware tier it set its defaults from, with why ("Standard: 8 GB, no GPU for video").
 // An admin can pick another tier, or go back to detecting it; the pick applies when the
 // server starts again, which the admin can do here. Story 59.02 adds the quiet hours
-// (heavy work waits for them) and, when the data disk cannot be read, whether it is an SSD.
+// (heavy work waits for them) and, when the data disk cannot be read, whether it is an SSD;
+// story 59.06 speech to text (SpeechSection).
 //
 //   GET /api/server/machine   the document ({available: false} without a supervisor)
 //   PUT /api/server/machine   {tier: "light"|"standard"|"strong"|"auto"}
@@ -20,6 +21,7 @@ import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
 import { serverSettingsApi, type MachineDoc, type Tier } from "../../lib/serverSettingsApi";
 import { LinesPlaceholder } from "../../components/Placeholders";
+import { SpeechSection } from "./SpeechSection";
 import "../../styles/libraryAdmin.css";
 import "../../styles/updates.css";
 
@@ -364,6 +366,7 @@ function MachinePanel({ pollMs }: { pollMs: number }) {
             </Button>
           )}
         </section>
+        <SpeechSection restarting={restarting} onRestart={() => void restart()} />
         <dl className="mkt-about__facts" aria-label={t("settings.section.machine")}>
           {rows.map(([label, value]) => (
             <div key={label}>
