@@ -863,23 +863,25 @@ class Cell:
                        lambda: (p := plugin_state()).get("phase") in ("running", "degraded") and p, 5 * 60)
 
         def host_partial() -> dict[str, Any] | None:
-            s, d = api.get("/api/components")
-            rows = d.get("components", []) if s == 200 and isinstance(d, dict) else []
-            for row in rows:
-                if row.get("id") == "plugins.host" and row.get("reason") == "sandbox_partial":
-                    return row
+            # Degraded keeps Ready true, so the list's reason (a false condition's) is empty:
+            # sandbox_partial is on the Ready condition of the home's part rows in the detail
+            s, d = api.get("/api/components/plugins.host")
+            if s != 200 or not isinstance(d, dict) or d.get("phase") != "degraded":
+                return None
+            for m in d.get("machines") or []:
+                for part in m.get("parts") or []:
+                    for c in part.get("conditions") or []:
+                        if c.get("reason") == "sandbox_partial":
+                            return {"phase": d.get("phase"), "machine": m.get("machine"), "condition": c}
             return None
 
         host = wait("plugins.host Degraded, sandbox_partial (plugind's required layers on)", host_partial, 5 * 60)
-        # Maktaba's own runners that ran: each one reported partial too (none may have run yet)
-        s, d = api.get("/api/components")
-        partial = sorted(r.get("id", "") for r in (d.get("components", []) if isinstance(d, dict) else [])
-                         if r.get("reason") == "sandbox_partial")
         (self.out / "api-plugin-isolation.json").write_text(json.dumps(
-            {"machine": iso, "home": home, "held": held, "running": running, "host": host, "partial": partial},
-            indent=1), encoding="utf-8")
+            {"machine": iso, "home": home, "held": held, "running": running, "host": host}, indent=1),
+            encoding="utf-8")
+        missing = (host.get("condition") or {}).get("params", {}).get("missing", "")
         return (f"container (missing {','.join(iso.get('missing') or [])}); held, then {running.get('phase')} "
-                f"after the admin's yes; sandbox_partial: {', '.join(partial)}")
+                f"after the admin's yes; plugins.host degraded, sandbox_partial ({missing})")
 
     def assert_tier_standard(self) -> str:
         return self.tier_is("standard")
