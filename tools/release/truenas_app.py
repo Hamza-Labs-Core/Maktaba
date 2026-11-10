@@ -21,8 +21,11 @@ tag), and that copy is what goes out:
 
 The catalog's own version (`version`) must grow with every change the catalog takes; it is
 derived from Maktaba's (vX.Y.Z → (X+1).Y.Z: v0.3.121 → 1.3.121), so every release's copy is
-newer than the last. packages.yml's `truenas-catalog` job opens the release's bump pull request
-to truenas/apps with the rendered copy, once the app is in the catalog.
+newer than the last. release.yml renders the copy (with the server image's digest) and publishes
+it as release assets signed by checksums.txt: maktaba-truenas-custom-app.yaml and
+maktaba-truenas-app-<version>.tar.gz. Once the app is in the catalog, packages.yml's
+`truenas-catalog` job verifies that archive and opens the bump pull request to truenas/apps with
+its files; it checks out and runs no code (it runs on workflow_run, with a token).
 
 Standard library only: the files are edited line by line, keeping their comments and layout.
 """

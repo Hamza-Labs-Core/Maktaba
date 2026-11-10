@@ -68,12 +68,17 @@ not commit a new pin to main (that commit would be the next release candidate, a
 would make another). Each release renders its own copy instead, as it renders the published
 Docker compose file ([`tools/release/truenas_app.py`](../../../tools/release/truenas_app.py)):
 
-- `release.yml` publishes `maktaba-truenas-custom-app.yaml`, the Custom App pinned to the
-  release's image, beside `maktaba-docker-compose.yml`.
+- `release.yml` (on the tag) renders both, pinned to the server image's `tag@digest`, and
+  publishes them as release assets, signed with the rest by `checksums.txt`:
+  `maktaba-truenas-custom-app.yaml` (beside `maktaba-docker-compose.yml`) and
+  `maktaba-truenas-app-<version>.tar.gz` (the app's folder), with `app_version` the release and
+  the catalog's `version` derived from it (vX.Y.Z → (X+1).Y.Z, so it grows with every release).
 - `packages.yml`'s `truenas-catalog` job, once the app is in the catalog
   (`vars.TRUENAS_APP_IN_CATALOG`), opens the release's bump pull request to truenas/apps from the
-  project's fork: the app pinned to the image's `tag@digest`, `app_version` the release, and the
-  catalog's `version` derived from it (vX.Y.Z → (X+1).Y.Z, so it grows with every release).
+  project's fork. It runs on `workflow_run` with a token, so it checks out and runs no code of the
+  repository: it verifies the release's app archive against the Sigstore-signed `checksums.txt`
+  (release.yml at the tag), checks that it holds only the app's own files, and copies them in as
+  data.
 
 `python3 tools/release/truenas_app.py check` (run by `tools/ci/tests/test_truenas_app.py`) keeps
 `ix_values.yaml`, `app.yaml` and `custom-app.yaml` on the same release.

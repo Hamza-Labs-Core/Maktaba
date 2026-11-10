@@ -105,3 +105,24 @@ def test_the_apps_shape() -> None:
     assert custom["environment"]["MAKTABA_PLATFORM"] == "truenas"
     assert custom["stop_grace_period"] == "90s"
     assert custom["healthcheck"]["test"][-1] == "healthcheck"
+
+
+def test_the_catalog_job_checks_out_and_runs_no_code() -> None:
+    """packages.yml runs on workflow_run with a token (the packages environment): its
+    truenas-catalog job must not check out the repository or run its code (CodeQL's untrusted
+    checkout). It takes the release's own app archive, verified against the signed checksums."""
+    jobs = yaml.safe_load((ROOT / ".github/workflows/packages.yml").read_text(encoding="utf-8"))["jobs"]
+    job = jobs["truenas-catalog"]
+    assert job["permissions"] == {"contents": "read"}
+    for step in job["steps"]:
+        uses = str(step.get("uses", ""))
+        assert not uses.startswith("actions/checkout"), step
+        run = str(step.get("run", ""))
+        for code in ("python", "tools/", "go run", "bash ", "make ", "npm ", "pnpm "):
+            assert code not in run, (code, step.get("name"))
+    runs = "\n".join(str(s.get("run", "")) for s in job["steps"])
+    assert "cosign verify-blob" in runs and "sha256sum --check" in runs
+    assert "maktaba-truenas-app-${ver}.tar.gz" in runs
+    release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    assert 'dist/maktaba-truenas-app-${ver}.tar.gz' in release
+    assert "truenas_app.py render --tag \"${TAG}\" --digest" in release

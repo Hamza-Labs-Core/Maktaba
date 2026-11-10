@@ -57,10 +57,14 @@ The source pins the release it was last changed for. A release never commits a n
 (that commit would be the next release candidate, and every release would make another); it
 renders its own copy with `tools/release/truenas_app.py render --tag vX.Y.Z`:
 
-- the release page carries `maktaba-truenas-custom-app.yaml`, pinned to the release's image;
+- the release page carries `maktaba-truenas-custom-app.yaml` and `maktaba-truenas-app-<version>.tar.gz`,
+  both pinned to the image's `tag@digest` and signed with the rest by `checksums.txt`. The
+  catalog's `version` is derived from Maktaba's (vX.Y.Z → (X+1).Y.Z), so it grows with every
+  release;
 - once the app is in the catalog, `packages.yml` opens the release's bump pull request to
-  truenas/apps with the app pinned to the image's `tag@digest`. The catalog's `version` is
-  derived from Maktaba's (vX.Y.Z → (X+1).Y.Z), so it grows with every release.
+  truenas/apps. That job runs on `workflow_run` with a token, so it checks out and runs no code:
+  it verifies the release's app archive against the signed checksums and copies its files in
+  as data.
 
 The app goes into the catalog's community train under the project's GitHub account once the
 device checklist (`docs/nas/checklists/truenas.md`) passes on TrueNAS 25.04 and 25.10; the
