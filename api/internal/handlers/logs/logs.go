@@ -13,6 +13,7 @@
 //	pipeline-logs.jsonl  proxied from the pipeline's /logs/recent
 //	error-summary.json   deduplicated error counts (last N unique errors)
 //	health-check.json    current cross-service health snapshot
+//	machine.json         admin: the hardware and its tier (the supervisor's /config/machine)
 //	files/*.log          admin: this machine's server.log, app.log, launcher.log over
 //	                     ?since/until (node-<id>/files/*.log: that machine's, ?node=)
 //
@@ -247,6 +248,7 @@ func (h *Handler) export(w http.ResponseWriter, r *http.Request, scopeUserID str
 	// omits them (cross-user data).
 	if scopeUserID == "" {
 		files["jobs.json"] = mustJSON(h.activeJobs(ctx))
+		files["machine.json"] = h.machineInfo(ctx)
 		for k, v := range h.bundleFiles(ctx, "", "", r.URL.Query()) {
 			files[k] = v
 		}

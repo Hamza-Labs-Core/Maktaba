@@ -14,6 +14,17 @@ build fails when the two differ.
 
 ### Changed
 
+- **Maktaba sizes itself to the machine it runs on, and Settings → This machine shows how
+  (story 59.04).** At each start the server reads the memory it may use (a container's limit,
+  not the host's RAM; on TrueNAS the ZFS cache counts as free), the processor's cores (a
+  container's CPU quota included) and features, the graphics and the data disk, and picks a
+  tier: Light under 6 GB (8 GB on ARM), Standard under 16 GB, Strong above. Light runs one
+  pipeline worker and Standard two; a count you set yourself keeps its value. An admin can
+  pick another tier on the new page, which applies at the next restart. Setup now needs 3.5 GB
+  of memory instead of 4 GB, so a "4 GB" NAS fits; on a NAS with less, it says to run the
+  home on another computer and keep the media on the NAS. The diagnostics bundle carries the
+  same reading.
+
 - **On a Windows home with a library on a network share, thumbnails, chapter frames and
   subtitle files are made in their sandboxed runners again (story 54.23).** Since v0.3.105's
   missed thumbnails, every step that touches a library ran in the queue worker while a library

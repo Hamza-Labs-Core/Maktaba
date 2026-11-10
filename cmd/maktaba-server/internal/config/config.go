@@ -433,6 +433,13 @@ type ServerSection struct {
 	// the index worker's semantic search (gRPC) and its logs and liveness port
 	PipelineSearchAddr    string `toml:"pipeline_search_addr"`
 	PipelineIndexLogsAddr string `toml:"pipeline_index_logs_addr"`
+	// Tier is this machine's hardware tier (Epic 59 story 59.04): "light", "standard" or
+	// "strong", which sets defaults (Postgres memory, workers, transcodes, speech, quiet
+	// hours); a setting set in this file keeps its value. TierChosen says how: "admin"
+	// (picked in Settings → This machine, kept as it is) or "" (detected from the memory
+	// limit at each start, written here so a move up can be told).
+	Tier       string `toml:"tier,omitempty"`
+	TierChosen string `toml:"tier_chosen,omitempty"`
 }
 
 // MDNSOn reports whether the machine advertises itself (anything but

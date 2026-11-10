@@ -55,7 +55,7 @@ TrueNAS's app install, real Quick Sync, a real DSM kernel.
 
 **Logs kept in every run:**
 - `docker logs`, plus the server log, each worker's log and plugind's log from the volume;
-- the setup report and `GET /api/system/machine`;
+- the setup report and `GET /api/server/machine`;
 - all of these go to the job's artifacts and are linked in its summary, pass or fail.
 
 **Device checklists** (`docs/nas/checklists/{synology,truenas,unraid}.md`):

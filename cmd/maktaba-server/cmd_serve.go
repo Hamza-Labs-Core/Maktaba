@@ -154,6 +154,9 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	fileCfg := cfg
 	if opts.role == "" || opts.role == "all" {
 		cfg = bootConfig(cfg, os.Stderr)
+		// Epic 59 story 59.04: the hardware tier, before anything sized by it is built
+		mt := resolveTier(&cfg, config.Path(), os.Stderr)
+		runningTier.Store(&mt)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
