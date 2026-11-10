@@ -330,3 +330,28 @@ a:hover {
   margin-block: 0.5rem;
   border: 1px solid var(--mk-border, #ddd);
 }
+
+/* the install guides (Epic 59 story 59.09) */
+.mkc-guide {
+  max-inline-size: 60rem;
+}
+.mkc-scroll {
+  overflow-x: auto;
+}
+.mkc-guide pre {
+  overflow-x: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-subtle);
+  font-size: var(--font-size-sm);
+  white-space: pre;
+}
+.mkc-guide fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.mkc-guide__share {
+  align-items: flex-end;
+}

@@ -16,6 +16,7 @@ import { Account } from "./pages/Account";
 import { Billing } from "./pages/Billing";
 import { LinkHome } from "./pages/LinkHome";
 import { Homes } from "./pages/Homes";
+import { InstallSynology } from "./pages/InstallSynology";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
@@ -126,6 +127,9 @@ export function AppRoutes() {
         <Route path="forgot-password" element={<ForgotPassword />} />
         <Route path="reset-password" element={<ResetPassword />} />
         <Route path="signed-in" element={<SignedIn />} />
+        {/* the install guides, for everyone (Epic 59 story 59.09); /ar/... opens in Arabic */}
+        <Route path="install/synology" element={<InstallSynology />} />
+        <Route path="ar/install/synology" element={<InstallSynology lang="ar" />} />
         <Route element={<RequireAuth />}>
           <Route path="account" element={<Account />} />
           <Route path="billing" element={<Billing />} />

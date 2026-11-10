@@ -14,8 +14,9 @@ const cloudAPI = process.env.CLOUD_API_URL || "http://localhost:8090";
 
 export default defineConfig({
   root: path.resolve(__dirname, "cloud"),
-  // the home app's public/ (service worker, manifest) is not the cloud's
-  publicDir: false,
+  // the home app's public/ (service worker, manifest) is not the cloud's: the cloud's own
+  // static files (the install guides' screenshots, story 59.09) are under cloud/public
+  publicDir: path.resolve(__dirname, "cloud/public"),
   plugins: [react()],
   resolve: {
     alias: {
