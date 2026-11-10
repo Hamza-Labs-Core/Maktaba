@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.116
-up_to_commit: 3fcb1c789
-built_from: v0.3.115
+tag: v0.3.117
+up_to_commit: d6c1f61dd
+built_from: v0.3.116
 ---
 
-# Trail snapshot: v0.3.116
+# Trail snapshot: v0.3.117
 
 ## Keep doing
 
@@ -375,12 +375,14 @@ built_from: v0.3.115
 - A relay failure (no answer, 502, 503, 504, not `home_reconnecting`) reads the cloud's status at once, at most every 10 s. Running a test once with the old behaviour put back is the cheap proof that it checks the wiring. (#907)
 - A plugin's own events go through `events/emit` (manifest `emits`, schema, 16 KB, scope); the native relay is a separate back channel, so its rule is own job only. (#1021)
 - NAS (Epic 59 spec): the image's `/etc/passwd` has only uid 1000 and the bundled Postgres's `initdb` fails for any uid without an entry (needs `nss_wrapper`); a privileged container is invisible in `CapEff` when not root (read `CapBnd`); `pgbundle`'s `-c max_connections=300` beats `postgresql.auto.conf`, and the home alone uses about 130 connections. btrfs and ZFS give `stat` an anonymous device number (find the disk through `/proc/self/mountinfo` and `slaves/`); ZFS's ARC is not in `MemAvailable` (`arcstats` has it); setup's memory floor reads `sysinfo`, which ignores the cgroup limit. Beside the host's avahi-daemon a container's responder needs `SO_REUSEADDR` (`SO_REUSEPORT` shares only within one uid). The rehearsal covers the Mac layout, not the Docker image. (#1087)
+- Machine facts (`internal/hostinfo`) are read from files under a root, so fixture trees drive every test: the cgroup v2/v1 memory limit and CPU quota, `MemAvailable` plus the ZFS ARC above `c_min`, the data disk through dm and md slaves to `queue/rotational`. The tier follows the memory limit alone (`TierFor`, `DefaultsFor`); the supervisor's STT plan counts transcribe-only workers beside the main worker, so a tier's pipeline-worker cap is `Workers` minus one. A route under `/api/system/` is reachable with a temporary password (`AllowedWhilePasswordChange`), so supervisor-backed settings go under `/api/server/` (`/api/server/machine`). (#1089)
 
 **Apps and UI tests**
 - Under Robolectric a bare `waitUntil` only polls; the v1 compose rule runs effects unconfined. Use settling waits and v2 rules. (#508)
 - Lazy grids anchor on the first visible key, so out-of-order answers open a page scrolled. A BackHandler always composed keeps its old order. (#529, #523)
 - A read that started before a write must not overwrite it on screen: one `ReadOrder` per platform. (#613, #616, #624)
 - SwiftUI: an identifier on a wrapping Section replaces its children's; a `LazyHStack` in a horizontal scroll can stay 0 pt; not every `INFOPLIST_KEY_*` is generated (check the built Info.plist); a `.task` on a view that draws nothing never starts, so put it on a container that always exists. On Android and Apple alike an empty lazy-list or grid item still takes the list's spacing: add the item only with content, on every platform at once. (#541, #569, #579, #787, d20261107-paid-plugins-merge-problems)
+- The Arabic catalogs call the product «مكتبة», never "Maktaba"; Settings' tab test (SAC-12) lists every tab, so a new tab updates it. (#1089)
 - Apple localization: `LocalizedStringKey` lookups with values need `String(format: localized(key), args)` and positional `%1$@` in both languages; a line's values belong in its close signature so a new value reopens a closed strip. Edit `.xcstrings` and the wiki's Arabic JSON in place, inserting entries as text: a JSON round trip that re-sorts rewrites hundreds of lines (Python's sort is not Xcode's, and MaktabaKit's catalog is not fully sorted). (#752, #732, #742, #824)
 - Android unit tests use OkHttp 5's `mockwebserver3` (`MockResponse.Builder()`, `server.close()`); local gradle needs `JAVA_HOME` (Homebrew openjdk@17) and `ANDROID_HOME=~/Library/Android/sdk`. The `client` module is plain JVM (`:client:test`), `core` and `player` are Android (`testDebugUnitTest`); `home.features()` in the Player is composable, so read it in the screen body and key the effect on it. A Kotlin backticked test name cannot contain a period. (#752, #742)
 - XCUITest does not close the app after a test; settings leak between tests; the `.textClipped` audit relays at 12 text sizes; the simulator can drop taps. On a loaded runner one look at the app's tree can take 4 s, so `waitUntil` takes at least three looks as well as its seconds; a long-press waits for Home to go quiet (`waitUntilHomeIsQuiet`); a looped test's failing variant is the one whose screenshot is missing. A mock's delay is no hold when the client has its own timeout (`ImageCache` gives a fetch 15 s): make the app never ask. (#539, #582, #580, #626, #661, #803)
@@ -501,7 +503,7 @@ built_from: v0.3.115
 - Plugin event emits: the `unavailable` and `home_unreachable` refusals are logged but have no test. (#1048)
 - Parity tests still over the 5 s soft cap on CI: classify's waves 1 and 4, repair, the N16 self-test and livetv staging; core-media's now fits. (#1049, #1068)
 - No sweep was made of other process-wide state the moved first-party stages may read; the guard covers only `to_local`. (#1062)
-- Epic 59 (Maktaba on a NAS, spec only; replaces Epic 25's NAS plan): the build, Phase 1 first (59.01–59.04, 59.15); facts each story checks on real devices (DSM kernels and Landlock, DSM's responder, J4125 HEVC decode on DSM 7.2.2+, Avahi on TrueNAS 25.04+). (#1087)
+- Epic 59 (Maktaba on a NAS, spec only; replaces Epic 25's NAS plan): the build, Phase 1 first (59.01–59.04, 59.15); facts each story checks on real devices (DSM kernels and Landlock, DSM's responder, J4125 HEVC decode on DSM 7.2.2+, Avahi on TrueNAS 25.04+); 59.04's hardware tiers are in, and 59.02, 59.05 (transcode limits), 59.06 (the speech model) and 59.07 (kernel facts) build on `DefaultsFor` and `DataDiskOf`; a `--memory=4g` container reaching Light is 59.15's container rehearsal. (#1087, #1089)
 - N16: CPU p95 over 11 runs is their maximum, and a rare job costing about 4x CPU in both processes came within 0.8 ms of failing `topic_assign`; the plugin API's ~0.58 ms of CPU a call is the bulk of the per-call cost. (#1059)
 
 ## Missing events
@@ -515,7 +517,10 @@ built_from: v0.3.115
 | #973 | 2026-11-08 | fix(supervisor): plugin runners wait for the venv like the pipeline |
 | #1023 | 2026-11-08 | test(rehearsal): scenario 16.7, wave 7's TV change across an update |
 | #1042 | 2026-11-08 | fix(web): an open screen keeps its feature gate when the feature goes off right after the first answer |
-| #1089 | 2026-11-10 | Epic 59 story 59.04: hardware detection and tiers, Settings → This machine |
+| #1090 | 2026-11-10 | Story 59.01: the server image runs as any uid:gid, never root, first start offline |
+| #1091 | 2026-11-10 | Epic 59 story 59.15: nas-shapes, the server image in NAS shapes (phase 1) |
+| #1094 | 2026-11-10 | fix(pgbundle): bundled Postgres starts again after a power cut or docker kill |
+| #1096 | 2026-11-10 | Epic 59 story 59.02: the data folder and the database on a NAS, quiet hours |
 
 ## Index
 
@@ -1089,4 +1094,5 @@ built_from: v0.3.115
 | 1078-54-36-preconditions | 2026-11-09 | pr | Story 54.36 §4 waits for its real preconditions; story 54.43 counts the in-process fallbacks |
 | 1080-fallback-counts | 2026-11-09 | pr | The in-process fallbacks are counted per machine and shown to admins (story 54.43) |
 | 1087-epic59-nas | 2026-11-10 | decision | Epic 59 spec: Maktaba on a NAS (Synology, TrueNAS, Unraid and plain Docker) |
+| 1089-epic59-hardware-tiers | 2026-11-10 | pr | Epic 59 story 59.04: hardware detection and tiers, Settings → This machine |
 
