@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
 )
 
@@ -80,7 +81,7 @@ func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			if !Loopback(req.RemoteAddr) {
+			if !Loopback(clientip.Peer(req)) {
 				http.Error(w, "a TV slot answers this machine only", http.StatusForbidden)
 				return
 			}

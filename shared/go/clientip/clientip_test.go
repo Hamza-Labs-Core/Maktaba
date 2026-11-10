@@ -1,6 +1,7 @@
 package clientip
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -170,26 +171,76 @@ func TestHost(t *testing.T) {
 	}
 }
 
-// Beside the list, the home trusts addresses it learns as it runs (its approved nodes):
-// a node's forwarded client is believed, another LAN peer's is not.
-func TestForwardedWithExtra(t *testing.T) {
-	node := netip.MustParseAddr("192.168.1.30")
-	extra := func(ip netip.Addr) bool { return ip == node }
+// A node's address is never trusted for what it forwards: only a client attested in the
+// context (the api's check of the node's signature) replaces the peer, and wins over any
+// header; the peer stays readable through Peer.
+func TestMiddlewareAttested(t *testing.T) {
+	var seen, peer string
+	h := Middleware(nil)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		seen, peer = r.RemoteAddr, Peer(r)
+	}))
 	r := httptest.NewRequest("GET", "/", nil)
 	r.RemoteAddr = "192.168.1.30:50000"
 	r.Header.Set("X-Forwarded-For", "192.168.1.77")
-	if ip, used := ForwardedWith(r, nil, extra); !used || ip.String() != "192.168.1.77" {
-		t.Fatalf("from the node: %v %v", ip, used)
-	}
-	r.RemoteAddr = "192.168.1.31:50000"
-	if ip, used := ForwardedWith(r, nil, extra); used || ip.String() != "192.168.1.31" {
-		t.Fatalf("from another peer: %v %v", ip, used)
-	}
-	var seen string
-	h := MiddlewareWith(nil, extra)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { seen = r.RemoteAddr }))
-	r.RemoteAddr = "192.168.1.30:50000"
 	h.ServeHTTP(httptest.NewRecorder(), r)
-	if seen != "192.168.1.77" {
-		t.Fatalf("middleware: %q", seen)
+	if seen != "192.168.1.30:50000" || peer != seen {
+		t.Fatalf("unattested node: %q %q", seen, peer)
+	}
+	ctx := WithAttested(r.Context(), netip.MustParseAddr("::ffff:192.168.1.88"))
+	h.ServeHTTP(httptest.NewRecorder(), r.WithContext(ctx))
+	if seen != "192.168.1.88" || peer != "192.168.1.30:50000" {
+		t.Fatalf("attested: %q %q", seen, peer)
+	}
+	// an attested client wins over a trusted proxy's header too
+	r.RemoteAddr = "127.0.0.1:40000"
+	h.ServeHTTP(httptest.NewRecorder(), r.WithContext(ctx))
+	if seen != "192.168.1.88" || peer != "127.0.0.1:40000" {
+		t.Fatalf("attested behind loopback: %q %q", seen, peer)
+	}
+	if ip, ok := Attested(WithAttested(r.Context(), netip.Addr{})); ok || ip.IsValid() {
+		t.Fatalf("an invalid address is no attestation: %v", ip)
+	}
+	if _, ok := Attested(r.Context()); ok {
+		t.Fatal("a bare context is no attestation")
+	}
+}
+
+// A link-local IPv6 client keeps its own address: the zone a proxy wrote is dropped, not
+// a reason to refuse the hop; text that is no address still stops the walk.
+func TestForwardedZone(t *testing.T) {
+	r := httptest.NewRequest("GET", "/", nil)
+	r.RemoteAddr = "127.0.0.1:40000"
+	for in, want := range map[string]string{
+		"fe80::1%eth0":              "fe80::1",
+		"[fe80::2%en0]:51000":       "fe80::2",
+		"192.168.1.9, fe80::3%eth0": "fe80::3",
+		"::ffff:192.168.1.10%eth0":  "192.168.1.10",
+	} {
+		r.Header.Set("X-Forwarded-For", in)
+		if ip, used := Forwarded(r, nil); !used || ip.String() != want {
+			t.Fatalf("%q: %v %v", in, ip, used)
+		}
+	}
+	for _, bad := range []string{"fe80::1%", "fe80::zz%eth0", "[fe80::1%eth0]:x"} {
+		r.Header.Set("X-Forwarded-For", bad)
+		if ip, used := Forwarded(r, nil); used || ip.String() != "127.0.0.1" {
+			t.Fatalf("garbage %q: %v %v", bad, ip, used)
+		}
+	}
+}
+
+// A /0 trusts every peer's header: refused, naming the entry.
+func TestParseEntryRefusesEveryone(t *testing.T) {
+	for _, v := range []string{"0.0.0.0/0", "::/0", " 10.0.0.0/0 ", "::ffff:0.0.0.0/96"} {
+		_, err := ParseEntry(v)
+		if !errors.Is(err, ErrEveryAddress) || !strings.Contains(err.Error(), strings.TrimSpace(v)) {
+			t.Fatalf("%q: %v", v, err)
+		}
+		if _, err := ParseList([]string{"192.168.1.5", v}); err == nil || !strings.Contains(err.Error(), "entry 1") {
+			t.Fatalf("list %q: %v", v, err)
+		}
+	}
+	if p, err := ParseEntry("10.0.0.0/1"); err != nil || p.Bits() != 1 {
+		t.Fatalf("/1: %v %v", p, err)
 	}
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cache"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/config"
@@ -76,10 +77,11 @@ func buildOfflineTV(bg *background, logger *slog.Logger, cfg config.Config, copy
 	return loopbackOnly(http.StripPrefix(offlinePrefix, r))
 }
 
-// loopbackOnly answers this machine's own programs only (the web port's proxy).
+// loopbackOnly answers this machine's own programs only (the web port's proxy), judged on
+// the connection's own address (clientip.Peer), never the resolved client.
 func loopbackOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		host, _, err := net.SplitHostPort(clientip.Peer(r))
 		if ip := net.ParseIP(host); err != nil || ip == nil || !ip.IsLoopback() {
 			http.NotFound(w, r)
 			return

@@ -92,18 +92,20 @@ func NewWith(link homelink.Link, logger *slog.Logger, o Options) http.Handler {
 			// the node is the edge for these headers: only what it sets itself goes on
 			for _, h := range []string{delegation.HeaderVia, delegation.HeaderNode, delegation.HeaderKey,
 				delegation.HeaderTs, delegation.HeaderNonce, delegation.HeaderSig, delegation.HeaderBody, delegation.HeaderDelegatedSession,
-				delegation.HeaderOriginNode} {
+				delegation.HeaderOriginNode, delegation.HeaderForwardedClient, delegation.HeaderForwardedClientSig} {
 				pr.Out.Header.Del(h)
 			}
 			pr.SetXForwarded()
-			// X-Forwarded-For is the client this node resolved (its router's client-address
-			// middleware already walked what its own trusted proxies forwarded), never the
-			// chain a client wrote. The home believes it from its approved nodes' addresses
-			// (api/trusted_nodes.go), or when this node's address is in
-			// its [server] trusted_proxies (Epic 59 story 59.08); otherwise the home sees the
-			// node's address, and the node's own logs and limits keep the client's.
+			// The client this node resolved (its router's client-address middleware already
+			// walked what its own trusted proxies forwarded), never the chain a client wrote
+			// (Epic 59 story 59.08). X-Maktaba-Forwarded-Client carries it to the home, signed
+			// with this node's delegation key by the link's signer (or on its authenticated
+			// cluster link): the home believes it from that signature alone, never from the
+			// node's address. X-Forwarded-For says it too, for a home that has this node in its
+			// [server] trusted_proxies; any other home sees the node's address.
 			if c := clientip.Host(pr.In.RemoteAddr); c != "" {
 				pr.Out.Header.Set("X-Forwarded-For", c)
+				pr.Out.Header.Set(delegation.HeaderForwardedClient, c)
 			}
 			pr.Out.Header.Set("X-Forwarded-Host", host)
 			if c, err := pr.In.Cookie(SessionCookie); err == nil && c.Value != "" {

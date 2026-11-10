@@ -14,6 +14,21 @@ build fails when the two differ.
 
 ### Changed
 
+- **The home believes the client a machine forwards only from that machine's signature over
+  it, never from its address, and a trusted proxy list cannot trust everyone (story 59.08).**
+  A machine proxying a user's request to the home now signs the client's address with its
+  delegation key, bound to the request's own signature, or sends it on its authenticated
+  cluster link; the home takes that client and no longer trusts any machine's IP address
+  from when it joined, which a reused DHCP address, a carrier NAT or an unlisted proxy could
+  have shared. A revoked or removed machine loses this on its next request; one on an older
+  version shows as its own address, and an older home ignores the new headers. This needs no
+  setting and does not depend on Trusted proxies. `0.0.0.0/0` and `::/0` are refused in
+  `[server] trusted_proxies` and in Settings, which name the entry; the docs point a proxy in
+  a container to its own address rather than the Docker network, whose gateway carries other
+  machines' connections. Streaming's checks for this machine's own callers read the
+  connection's address, so a forwarded `127.0.0.1` passes for none of them, and a zoned
+  link-local client address (`fe80::1%eth0`) keeps its own key.
+
 - **On a NAS, apps find the home beside the NAS's own names, a bridge network says how to
   connect, and forwarded addresses are believed only from trusted proxies (story 59.08).** In
   a container Maktaba answers mDNS under its own name, `<nas>-maktaba.local`, beside the NAS's

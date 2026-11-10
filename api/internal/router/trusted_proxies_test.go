@@ -8,6 +8,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 )
 
 // T05 (Epic 59 story 59.08): the API believes X-Forwarded-For only from loopback or a proxy
@@ -80,5 +81,32 @@ func TestT05RateLimitKeyIgnoresForgedHeaders(t *testing.T) {
 	}
 	if codes[len(codes)-1] != http.StatusTooManyRequests {
 		t.Fatalf("a forged X-Forwarded-For got its own bucket: %v", codes)
+	}
+}
+
+// Epic 59 story 59.08: a client attested in the context (delegation.Accept checked a node's
+// signature over it, before the router) is the request's address whatever the headers say,
+// with no list; the per-IP limit keys on it, so two users behind one node are two buckets.
+func TestAttestedClientBeatsHeaders(t *testing.T) {
+	r := New(Deps{IdempotencyStore: idempotency.NewMemoryStore(), IPRatePerMin: 1})
+	var addr, peer string
+	r.Get("/api/t05", func(w http.ResponseWriter, req *http.Request) {
+		addr, peer = req.RemoteAddr, clientip.Peer(req)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	serve := func(client string) int {
+		req := httptest.NewRequest(http.MethodGet, "/api/t05", nil)
+		req.RemoteAddr = "192.168.1.30:41000"
+		req.Header.Set("X-Forwarded-For", "6.6.6.6")
+		req = req.WithContext(clientip.WithAttested(req.Context(), netip.MustParseAddr(client)))
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if c := serve("192.168.1.77"); c != http.StatusNoContent || addr != "192.168.1.77" || peer != "192.168.1.30:41000" {
+		t.Fatalf("attested: %d %q %q", c, addr, peer)
+	}
+	if c := serve("192.168.1.78"); c != http.StatusNoContent {
+		t.Fatalf("a second user behind the node shares the first one's bucket: %d", c)
 	}
 }

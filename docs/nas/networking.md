@@ -83,12 +83,23 @@ Unraid) serves Maktaba under a name of yours, it needs:
 - **`X-Forwarded-For` and `X-Forwarded-Proto`** set by the proxy.
 
 Maktaba believes `X-Forwarded-For` only from a proxy it trusts: one on the NAS itself (it
-reaches Maktaba over loopback) is always trusted, and so are the home's approved machines, which
-forward the requests of the clients signed in through them. A proxy at another address (a container on a
-bridge, another machine) goes in **Settings → Storage & discovery → Trusted proxies** (its
-address, or its network such as `172.17.0.0/16`), `[server] trusted_proxies` in server.toml.
-From any other address the header is ignored, and the logs show the proxy's address instead
-of the client's.
+reaches Maktaba over loopback) is always trusted. A proxy at another address (a container on a
+bridge, another machine) goes in **Settings → Storage & discovery → Trusted proxies**,
+`[server] trusted_proxies` in server.toml. From any other address the header is ignored, and
+the logs show the proxy's address instead of the client's.
+
+For a proxy in a container, enter that container's own address (Maktaba's log shows it as the
+peer of a refused header), never the whole Docker network such as `172.17.0.0/16`. A network
+includes its gateway (`172.17.0.1`), and Docker's port publishing (docker-proxy) delivers
+connections from other machines from that gateway address, with whatever header the client
+wrote. `0.0.0.0/0` and `::/0` are refused: they would believe everyone.
+
+The home's approved machines are a separate matter, with no setting: a machine forwarding the
+requests of the clients signed in through it signs the client's address with its own key, and
+the home believes that signature alone. It never trusts a machine's IP address for this, it
+cannot be turned off, and it does not depend on Trusted proxies: an empty list still shows each
+client behind a machine. A machine that is revoked or removed loses it on its next request. A
+machine on an older version shows as its own address until it is updated.
 
 An nginx server block (Nginx Proxy Manager's Advanced tab takes the `location` blocks):
 
@@ -137,8 +148,8 @@ upload stops or a video stalls only behind the proxy, use the home's HTTPS name 
 
 **TrueNAS.** TrueNAS has no proxy of its own for apps: install one from the catalog (Nginx Proxy
 Manager, Caddy or Traefik) with the settings above, and add its address to Trusted proxies
-when it runs on a bridge (its container address, as Maktaba's log shows it, or the Docker
-network's range).
+when it runs on a bridge (its container address, as Maktaba's log shows it; not the Docker
+network's range, which includes the gateway).
 
 ## The firewall
 

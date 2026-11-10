@@ -14,10 +14,14 @@
 //     home's [server] trusted_proxies (a reverse proxy in front, a NAS's for example).
 //     Middleware rewrites r.RemoteAddr to it, as chi's RealIP did, and keeps the
 //     connection's own address for Peer.
+//   - Attested is a client an approved node vouched for with its delegation key (the
+//     home's api checks that signature and puts the client here, WithAttested): Middleware
+//     prefers it to any header. A node's address is never trusted for what it forwards.
 package clientip
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -49,7 +53,7 @@ func ParseCIDRs(vs []string) ([]netip.Prefix, error) {
 
 // ParseList reads addresses or CIDRs: a bare address is that one address (/32, or /128 for
 // IPv6), an IPv4-mapped IPv6 address its IPv4 one. Blank entries are skipped. The error
-// names the first entry that is neither, by its index.
+// names the first entry that is neither, or that is a /0 (ParseEntry), by its index.
 func ParseList(vs []string) ([]netip.Prefix, error) {
 	out := make([]netip.Prefix, 0, len(vs))
 	for i, v := range vs {
@@ -64,8 +68,21 @@ func ParseList(vs []string) ([]netip.Prefix, error) {
 	return out, nil
 }
 
-// ParseEntry reads one address or CIDR (ParseList); a blank entry is the zero Prefix.
+// ParseEntry reads one address or CIDR (ParseList); a blank entry is the zero Prefix. A /0
+// (0.0.0.0/0, ::/0) is refused: it would believe every peer's forwarding header, which is
+// the same as believing none of them is a lie.
 func ParseEntry(v string) (netip.Prefix, error) {
+	p, err := parseEntry(v)
+	if err == nil && p.IsValid() && p.Bits() == 0 {
+		return netip.Prefix{}, fmt.Errorf("%q %w", strings.TrimSpace(v), ErrEveryAddress)
+	}
+	return p, err
+}
+
+// ErrEveryAddress is ParseEntry's refusal of a /0.
+var ErrEveryAddress = errors.New("trusts every address; name the proxy's own address instead")
+
+func parseEntry(v string) (netip.Prefix, error) {
 	s := strings.TrimSpace(v)
 	if s == "" {
 		return netip.Prefix{}, nil
@@ -160,9 +177,9 @@ func Cloudflare(r *http.Request, trusted []netip.Prefix) string {
 }
 
 // trustedHop reports whether the home believes what ip forwards: loopback always (this
-// machine's own proxies), else the configured list, else extra (nil is none).
-func trustedHop(trusted []netip.Prefix, extra func(netip.Addr) bool, ip netip.Addr) bool {
-	return ip.IsLoopback() || Contains(trusted, ip) || extra != nil && extra(ip)
+// machine's own proxies), else the configured list.
+func trustedHop(trusted []netip.Prefix, ip netip.Addr) bool {
+	return ip.IsLoopback() || Contains(trusted, ip)
 }
 
 // Forwarded is the home's client address and whether a forwarding header gave it. From a
@@ -172,12 +189,6 @@ func trustedHop(trusted []netip.Prefix, extra func(netip.Addr) bool, ip netip.Ad
 // that wrote it. With no X-Forwarded-For, a single valid X-Real-IP. From any other peer the
 // headers are ignored and the answer is the peer.
 func Forwarded(r *http.Request, trusted []netip.Prefix) (netip.Addr, bool) {
-	return ForwardedWith(r, trusted, nil)
-}
-
-// ForwardedWith is Forwarded with extra trusted beside the list: addresses the home learns
-// as it runs (its approved nodes, which forward their clients' requests to it). nil is none.
-func ForwardedWith(r *http.Request, trusted []netip.Prefix, extra func(netip.Addr) bool) (netip.Addr, bool) {
 	peer := PeerAddr(r.RemoteAddr)
 	if !peer.IsValid() {
 		return peer, false
@@ -187,7 +198,7 @@ func ForwardedWith(r *http.Request, trusted []netip.Prefix, extra func(netip.Add
 	if len(xff) == 0 && realIP == "" {
 		return peer, false
 	}
-	if !trustedHop(trusted, extra, peer) {
+	if !trustedHop(trusted, peer) {
 		fwdIgnored.note("X-Forwarded-For from an untrusted peer ignored", peer)
 		return peer, false
 	}
@@ -203,7 +214,7 @@ func ForwardedWith(r *http.Request, trusted []netip.Prefix, extra func(netip.Add
 				break
 			}
 			last, used = ip, true
-			if !trustedHop(trusted, extra, ip) {
+			if !trustedHop(trusted, ip) {
 				break
 			}
 		}
@@ -216,14 +227,16 @@ func ForwardedWith(r *http.Request, trusted []netip.Prefix, extra func(netip.Add
 }
 
 // hopAddr reads one forwarded address: a bare address, or one with a port ("[v6]:port",
-// "v4:port").
+// "v4:port"). A link-local IPv6 address's zone (fe80::1%eth0) is dropped: it names the
+// proxy's interface, not the client, and kept it would refuse the hop and fold every such
+// client onto the proxy's address.
 func hopAddr(s string) (netip.Addr, bool) {
 	s = strings.TrimSpace(s)
-	if ip, err := netip.ParseAddr(s); err == nil && ip.Zone() == "" {
-		return ip.Unmap(), true
+	if ip, err := netip.ParseAddr(s); err == nil {
+		return ip.WithZone("").Unmap(), true
 	}
-	if ap, err := netip.ParseAddrPort(s); err == nil && ap.Addr().Zone() == "" {
-		return ap.Addr().Unmap(), true
+	if ap, err := netip.ParseAddrPort(s); err == nil {
+		return ap.Addr().WithZone("").Unmap(), true
 	}
 	return netip.Addr{}, false
 }
@@ -236,19 +249,36 @@ func Client(r *http.Request, trusted []netip.Prefix) string {
 
 type peerKey struct{}
 
-// Middleware resolves each request's client (Forwarded) and, when a forwarding header gave
-// it, rewrites r.RemoteAddr to that bare address, as chi's RealIP did; everything after it
-// (the logs, the rate limits) reads the client. The connection's own address stays readable
-// through Peer, for a check on this machine's own callers.
-func Middleware(trusted []netip.Prefix) func(http.Handler) http.Handler {
-	return MiddlewareWith(trusted, nil)
+type attestedKey struct{}
+
+// WithAttested marks ctx with a client a verified party vouched for: the home's api puts
+// here the client an approved node signed with its delegation key, or sent over its
+// authenticated cluster link. Only that check may call it; an invalid ip is ignored.
+func WithAttested(ctx context.Context, ip netip.Addr) context.Context {
+	if !ip.IsValid() {
+		return ctx
+	}
+	return context.WithValue(ctx, attestedKey{}, ip.WithZone("").Unmap())
 }
 
-// MiddlewareWith is Middleware with extra trusted beside the list (ForwardedWith).
-func MiddlewareWith(trusted []netip.Prefix, extra func(netip.Addr) bool) func(http.Handler) http.Handler {
+// Attested is the client WithAttested put in ctx (false: none).
+func Attested(ctx context.Context) (netip.Addr, bool) {
+	ip, ok := ctx.Value(attestedKey{}).(netip.Addr)
+	return ip, ok && ip.IsValid()
+}
+
+// Middleware resolves each request's client and, when one other than the peer is known,
+// rewrites r.RemoteAddr to that bare address, as chi's RealIP did; everything after it
+// (the logs, the rate limits) reads the client. An attested client (WithAttested) wins;
+// otherwise the forwarding headers of a trusted peer (Forwarded). The connection's own
+// address stays readable through Peer, for a check on this machine's own callers.
+func Middleware(trusted []netip.Prefix) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip, used := ForwardedWith(r, trusted, extra)
+			ip, used := Attested(r.Context())
+			if !used {
+				ip, used = Forwarded(r, trusted)
+			}
 			if used {
 				peer := r.RemoteAddr
 				r = r.WithContext(context.WithValue(r.Context(), peerKey{}, peer))

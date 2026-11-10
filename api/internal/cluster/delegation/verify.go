@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +20,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/linkctx"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 )
 
 // Rejection reasons (logged, and the problem's code).
@@ -88,62 +90,68 @@ func unsignedAllowed(r *http.Request) bool {
 // Verify checks r's signature and returns the node id. The body (when signed) is read
 // and put back.
 func (v *Verifier) Verify(r *http.Request) (string, error) {
+	nodeID, _, err := v.verify(r)
+	return nodeID, err
+}
+
+// verify is Verify that also answers the key the request was signed with.
+func (v *Verifier) verify(r *http.Request) (string, []byte, error) {
 	nodeID := r.Header.Get(HeaderNode)
 	keyID := r.Header.Get(HeaderKey)
 	tsRaw := r.Header.Get(HeaderTs)
 	sigRaw := r.Header.Get(HeaderSig)
 	nonce := r.Header.Get(HeaderNonce)
 	if nodeID == "" || keyID == "" || tsRaw == "" || sigRaw == "" || nonce == "" || len(nonce) > 64 {
-		return "", v.reject(r, nodeID, ReasonMissing)
+		return "", nil, v.reject(r, nodeID, ReasonMissing)
 	}
 	u, err := uuid.Parse(nodeID)
 	if err != nil {
-		return "", v.reject(r, nodeID, ReasonUnknownNode)
+		return "", nil, v.reject(r, nodeID, ReasonUnknownNode)
 	}
 	nodeID = u.String()
 	ts, err := strconv.ParseInt(tsRaw, 10, 64)
 	if err != nil {
-		return "", v.reject(r, nodeID, ReasonMissing)
+		return "", nil, v.reject(r, nodeID, ReasonMissing)
 	}
 	now := v.now()
 	if d := now.Sub(time.Unix(ts, 0)); d > MaxSkew || d < -MaxSkew {
-		return "", v.reject(r, nodeID, ReasonSkew)
+		return "", nil, v.reject(r, nodeID, ReasonSkew)
 	}
 	if v.Member != nil && !v.Member(r.Context(), nodeID) {
-		return "", v.reject(r, nodeID, ReasonUnknownNode)
+		return "", nil, v.reject(r, nodeID, ReasonUnknownNode)
 	}
 	secret, ok := v.Keys.Lookup(r.Context(), nodeID, keyID)
 	if !ok {
-		return "", v.reject(r, nodeID, ReasonUnknownKey)
+		return "", nil, v.reject(r, nodeID, ReasonUnknownKey)
 	}
 	bodyHash := EmptyBodyHash
 	if strings.EqualFold(r.Header.Get(HeaderBody), "unsigned") {
 		if !unsignedAllowed(r) {
-			return "", v.reject(r, nodeID, ReasonUnsigned)
+			return "", nil, v.reject(r, nodeID, ReasonUnsigned)
 		}
 		bodyHash = UnsignedPayload
 	} else if r.Body != nil && r.Body != http.NoBody {
 		b, err := io.ReadAll(io.LimitReader(r.Body, maxSignedBody+1))
 		_ = r.Body.Close()
 		if err != nil || int64(len(b)) > maxSignedBody {
-			return "", v.reject(r, nodeID, ReasonUnsigned)
+			return "", nil, v.reject(r, nodeID, ReasonUnsigned)
 		}
 		r.Body = io.NopCloser(bytes.NewReader(b))
 		bodyHash = hexSHA256(b)
 	}
 	sig, err := base64.StdEncoding.DecodeString(sigRaw)
 	if err != nil {
-		return "", v.reject(r, nodeID, ReasonBadSig)
+		return "", nil, v.reject(r, nodeID, ReasonBadSig)
 	}
 	want, _ := base64.StdEncoding.DecodeString(Sign(secret, r.Method, pathQuery(r), ts, nonce, bodyHash,
 		SessionHash(r.Header.Get(HeaderDelegatedSession))))
 	if !hmac.Equal(sig, want) {
-		return "", v.reject(r, nodeID, ReasonBadSig)
+		return "", nil, v.reject(r, nodeID, ReasonBadSig)
 	}
 	if !v.fresh(nodeID+"|"+tsRaw+"|"+nonce, now) {
-		return "", v.reject(r, nodeID, ReasonReplay)
+		return "", nil, v.reject(r, nodeID, ReasonReplay)
 	}
-	return nodeID, nil
+	return nodeID, secret, nil
 }
 
 // fresh records a (node, ts, sig) and reports whether it was new within the window.
@@ -195,10 +203,15 @@ func Accept(v *Verifier, sessionCookie string) func(http.Handler) http.Handler {
 					return
 				}
 				r.Header.Del(HeaderVia)
-				next.ServeHTTP(w, r.WithContext(WithNode(r.Context(), nodeID)))
+				// the link is the machine's own authenticated channel: what it says the
+				// client was is its word, with no signature needed
+				ctx := attest(r.Context(), r, nil, "")
+				next.ServeHTTP(w, r.WithContext(WithNode(ctx, nodeID)))
 				return
 			}
 			if !Signed(r) {
+				// a forwarded client is a node's to give: from anyone else it is dropped
+				stripForwardedClient(r)
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -210,7 +223,7 @@ func Accept(v *Verifier, sessionCookie string) func(http.Handler) http.Handler {
 				writeReject(w, ReasonUnknownNode)
 				return
 			}
-			nodeID, err := v.Verify(r)
+			nodeID, secret, err := v.verify(r)
 			if err != nil {
 				var re *RejectError
 				reason := ReasonBadSig
@@ -225,9 +238,41 @@ func Accept(v *Verifier, sessionCookie string) func(http.Handler) http.Handler {
 			}
 			// the marker is ours now: the router's StripVia must not see a forged one
 			r.Header.Del(HeaderVia)
-			next.ServeHTTP(w, r.WithContext(WithNode(r.Context(), nodeID)))
+			ctx := attest(r.Context(), r, secret, r.Header.Get(HeaderSig))
+			next.ServeHTTP(w, r.WithContext(WithNode(ctx, nodeID)))
 		})
 	}
+}
+
+// attest reads the client a node forwarded (X-Maktaba-Forwarded-Client) into the context
+// (clientip.WithAttested), where the router's client-address middleware takes it: over the
+// link (secret nil) as the machine sent it, over signed HTTP only when its HMAC, bound to
+// the request signature sig, holds with the request's key. Either way the headers are
+// removed; a missing, unsigned or wrong one leaves the node's own address as the client.
+func attest(ctx context.Context, r *http.Request, secret []byte, sig string) context.Context {
+	c := r.Header.Get(HeaderForwardedClient)
+	got := r.Header.Get(HeaderForwardedClientSig)
+	stripForwardedClient(r)
+	if c == "" {
+		return ctx
+	}
+	ip, err := netip.ParseAddr(c)
+	if err != nil || ip.Zone() != "" {
+		return ctx
+	}
+	if secret != nil {
+		mac, err := base64.StdEncoding.DecodeString(got)
+		want, _ := base64.StdEncoding.DecodeString(ForwardedClientSig(secret, sig, c))
+		if err != nil || got == "" || !hmac.Equal(mac, want) {
+			return ctx
+		}
+	}
+	return clientip.WithAttested(ctx, ip)
+}
+
+func stripForwardedClient(r *http.Request) {
+	r.Header.Del(HeaderForwardedClient)
+	r.Header.Del(HeaderForwardedClientSig)
 }
 
 // delegatedSession puts the user's session the machine acts for in the request's cookie

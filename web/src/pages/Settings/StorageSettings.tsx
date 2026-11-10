@@ -198,9 +198,16 @@ function StorageInner({ pollMs, onReload }: { pollMs: number; onReload: () => vo
   }
 
   async function save() {
-    setSaving(true);
     setErrors({});
     setFormError(null);
+    // a /0 would believe every machine's forwarded address: refused here before the server
+    // refuses it too (Epic 59 story 59.08)
+    const everyone = proxies.find((p) => /\/0+$/.test(p));
+    if (serverChanges.trusted_proxies && everyone) {
+      setErrors({ trusted_proxies: t("storage.error.trusted_proxies_every", { entry: everyone }) });
+      return;
+    }
+    setSaving(true);
     try {
       const body: Parameters<typeof serverSettingsApi.save>[0] = {};
       if (Object.keys(mediaChanges).length > 0) body.media = mediaChanges;

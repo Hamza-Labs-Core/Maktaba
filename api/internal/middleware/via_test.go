@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
@@ -105,6 +106,24 @@ func TestRefuseRelayToMachines(t *testing.T) {
 		h.ServeHTTP(rec, r)
 		if rec.Code != c.want {
 			t.Errorf("%s relay=%v: %d, want %d", c.path, c.relay, rec.Code, c.want)
+		}
+	}
+}
+
+// Epic 59 story 59.08: FromLoopback judges the connection's own address, so it holds after
+// the client-address middleware: a remote client a trusted chain resolves to 127.0.0.1 is
+// not loopback, this machine's caller is whatever it forwards.
+func TestFromLoopbackAfterTheClientAddress(t *testing.T) {
+	trusted := []netip.Prefix{netip.MustParsePrefix("192.168.1.5/32")}
+	var got bool
+	h := clientip.Middleware(trusted)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { got = FromLoopback(r) }))
+	for peer, want := range map[string]bool{"192.168.1.5:5000": false, "127.0.0.1:5000": true, "[::1]:5000": true} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.RemoteAddr = peer
+		req.Header.Set("X-Forwarded-For", "127.0.0.1, 127.0.0.1")
+		h.ServeHTTP(httptest.NewRecorder(), req)
+		if got != want {
+			t.Errorf("%s: %v", peer, got)
 		}
 	}
 }

@@ -206,6 +206,9 @@ func TestValidate(t *testing.T) {
 		{"trusted proxies: a name and a bad CIDR", func(s *Editable) {
 			s.Server.TrustedProxies = []string{"192.168.1.5", "nas.local", "10.0.0.0/33"}
 		}, []string{"server.trusted_proxies[1]", "server.trusted_proxies[2]"}},
+		{"trusted proxies: every address (a /0)", func(s *Editable) {
+			s.Server.TrustedProxies = []string{"0.0.0.0/0", "192.168.1.5", "::/0"}
+		}, []string{"server.trusted_proxies[0]", "server.trusted_proxies[2]"}},
 		{"path map", func(s *Editable) {
 			s.Media.PathMap = []PathPair{{"/Volumes/O/", filepath.Join(dir, "share")}, {"O:/", filepath.Join(dir, "share")}}
 		}, nil},
@@ -317,6 +320,25 @@ func TestTrustedProxiesSetting(t *testing.T) {
 	back.Server.TrustedProxies = []string{"192.168.1.5", "nas"}
 	if _, err := back.Server.TrustedProxyList(); err == nil || !strings.Contains(err.Error(), "server.trusted_proxies[1]") {
 		t.Fatalf("bad entry: %v", err)
+	}
+	// a /0 believes every peer: refused when the file is read, naming the entry
+	for _, every := range []string{"0.0.0.0/0", "::/0"} {
+		back.Server.TrustedProxies = []string{"192.168.1.5", every}
+		_, err := back.Server.TrustedProxyList()
+		if err == nil || !strings.Contains(err.Error(), "server.trusted_proxies[1]") || !strings.Contains(err.Error(), every) ||
+			!strings.Contains(err.Error(), "trusts every address") {
+			t.Fatalf("%s: %v", every, err)
+		}
+	}
+	// and through the settings document, with a message that says why
+	var msg string
+	for _, fe := range (Checks{}).Validate(Editable{Server: EditableServer{TrustedProxies: []string{"0.0.0.0/0"}}}, Editable{}, Editable{}) {
+		if fe.Field == "server.trusted_proxies[0]" {
+			msg = fe.Message
+		}
+	}
+	if !strings.Contains(msg, "trusts every address") || !strings.Contains(msg, "0.0.0.0/0") {
+		t.Fatalf("validate a /0: %q", msg)
 	}
 	// an empty list is no key in the file
 	c.Server.TrustedProxies = nil
