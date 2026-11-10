@@ -95,6 +95,8 @@ NOT_IN_CI: dict[str, str] = {
     ".github/workflows/trusted-root.yml": "its own scheduled workflow",
     ".github/workflows/components-nightly.yml": "its own scheduled workflow (components-chaos)",
     ".github/workflows/update-rehearsal.yml": "its own workflow and path filter",
+    ".github/workflows/nas.yml": "its own workflow and path filter (nas-shapes, Epic 59 story 59.15)",
+    "tests/nas/**": "nas.yml (nas-shapes): its harness, run there with its own tests",
     ".github/workflows/_tag-guard.yml": "the tag workflows' first job",
     ".github/workflows/_pr-body-check.yml": "pr-body-check runs on every pull request",
     ".github/workflows/coverage-map.yml": "runs after CI on main (the affected-tests map)",

@@ -35,12 +35,7 @@ func TestAStaleLockOfAnotherProgramGoes(t *testing.T) {
 	}
 	b.ClearStaleLock() // none: nothing to do
 
-	other := exec.Command(os.Args[0], "-test.run=^TestStaleLockHelper$")
-	other.Env = append(os.Environ(), "MAKTABA_TEST_STALE_LOCK_HELPER=1")
-	if err := other.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = other.Process.Kill(); _ = other.Wait() })
+	other := startHelper(t)
 	write(strconv.Itoa(other.Process.Pid))
 	b.ClearStaleLock()
 	if there() {
@@ -65,3 +60,18 @@ func TestAStaleLockOfAnotherProgramGoes(t *testing.T) {
 		t.Fatal("a lock naming this process was removed")
 	}
 }
+
+// startHelper runs TestStaleLockHelper as another program, killed at the test's end.
+func startHelper(t *testing.T) *exec.Cmd {
+	t.Helper()
+	other := exec.Command(os.Args[0], "-test.run=^TestStaleLockHelper$")
+	other.Env = append(os.Environ(), "MAKTABA_TEST_STALE_LOCK_HELPER=1")
+	if err := other.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = other.Process.Kill(); _ = other.Wait() })
+	return other
+}
+
+// helperProcess is a running helper's PID.
+func helperProcess(t *testing.T) int { t.Helper(); return startHelper(t).Process.Pid }

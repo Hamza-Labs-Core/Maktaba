@@ -221,6 +221,24 @@ describe("LibraryAdmin", () => {
     }
   });
 
+  it("Run now starts the library's work held for the quiet hours (Epic 59)", async () => {
+    post.mockResolvedValue({ jobs: 3 });
+    open();
+    await ready();
+    await userEvent.click(within(section("Queue status")).getByRole("button", { name: "Run now" }));
+    expect(post).toHaveBeenCalledWith(`/api/libraries/${ID}/run-now`);
+    expect(await screen.findByText("The library's waiting work starts now.")).toBeInTheDocument();
+  });
+
+  it("says so when Run now fails", async () => {
+    post.mockRejectedValue(new Error("boom"));
+    open();
+    await ready();
+    await userEvent.click(within(section("Queue status")).getByRole("button", { name: "Run now" }));
+    expect(post).toHaveBeenCalledWith(`/api/libraries/${ID}/run-now`);
+    expect(await screen.findByText("Something went wrong.")).toBeInTheDocument();
+  });
+
   it("saves the conversion settings inside the library's settings, keeping the rest", async () => {
     expect(convertSettings(undefined)).toEqual({ allow_reencode: false, auto: false });
     expect(convertSettings({ convert: [] })).toEqual({ allow_reencode: false, auto: false });

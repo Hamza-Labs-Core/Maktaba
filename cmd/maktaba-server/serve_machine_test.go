@@ -138,3 +138,43 @@ func TestConfigMachineRoutes(t *testing.T) {
 		t.Fatalf("DELETE: %d", rec.Code)
 	}
 }
+
+// Epic 59 story 59.02: the quiet hours and the data disk's answer are saved from the web;
+// a window that does not parse is refused; null goes back to the tier's default.
+func TestConfigMachineQuietHoursAndDisk(t *testing.T) {
+	fakeMachineOf(t, 8)
+	path := tomlWith(t, "")
+	cfg, _, _ := config.LoadFrom(path)
+	mt := resolveTier(&cfg, path, &bytes.Buffer{})
+	runningTier.Store(&mt)
+	quiet := "01:00-06:00"
+	runningQuiet.Store(&quiet)
+	t.Cleanup(func() { runningQuiet.Store(nil) })
+	h := (&configAdmin{path: path, token: "tok"}).adminHandler(http.NotFoundHandler())
+
+	var doc machineDoc
+	rec := machineCall(h, "GET", "")
+	if json.Unmarshal(rec.Body.Bytes(), &doc) != nil || doc.QuietHours != "01:00-06:00" || doc.QuietSet || doc.RestartNeeded {
+		t.Fatalf("GET %s", rec.Body)
+	}
+	if rec := machineCall(h, "PUT", `{"quiet_hours":"25:00-06:00"}`); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("a bad window: %d %s", rec.Code, rec.Body)
+	}
+	rec = machineCall(h, "PUT", `{"quiet_hours":"22:00-06:00","data_disk":"ssd"}`)
+	if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &doc) != nil || doc.QuietHours != "22:00-06:00" || !doc.QuietSet ||
+		!doc.RestartNeeded || doc.DiskHow != "asked" || doc.Rotational {
+		t.Fatalf("PUT %d %s", rec.Code, rec.Body)
+	}
+	saved, _, _ := config.LoadFrom(path)
+	if saved.Schedule.QuietHours == nil || *saved.Schedule.QuietHours != "22:00-06:00" || saved.Server.DataDisk != "ssd" {
+		t.Fatalf("saved %+v %+v", saved.Schedule, saved.Server)
+	}
+	rec = machineCall(h, "PUT", `{"quiet_hours":""}`)
+	if json.Unmarshal(rec.Body.Bytes(), &doc) != nil || doc.QuietHours != "" || !doc.QuietSet {
+		t.Fatalf("none: %s", rec.Body)
+	}
+	rec = machineCall(h, "PUT", `{"quiet_default":true,"data_disk":"auto"}`)
+	if json.Unmarshal(rec.Body.Bytes(), &doc) != nil || doc.QuietHours != "01:00-06:00" || doc.QuietSet || doc.DiskHow == "asked" {
+		t.Fatalf("back to the default: %s", rec.Body)
+	}
+}

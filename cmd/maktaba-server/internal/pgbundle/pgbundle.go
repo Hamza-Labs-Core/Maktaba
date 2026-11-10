@@ -63,6 +63,9 @@ type Bundle struct {
 	// UpdateKeep is how many pre-update dumps Tidy keeps when no update recorded its
 	// rules.updates.backups_keep ([backups] update_keep, else [postgres] update_dumps).
 	UpdateKeep int
+	// Tuning are the "-c" settings for this machine (tuning.go): the hardware tier's
+	// memory, the spinning-disk values, the household's [postgres] settings last.
+	Tuning []string
 }
 
 // Resolve reports whether this install runs the bundled Postgres, and where.
@@ -115,6 +118,7 @@ func Resolve(cfg config.Config, exe string) (Bundle, bool, error) {
 		TLS:         !strings.EqualFold(strings.TrimSpace(cfg.Postgres.TLS), "off"),
 		// the networks the machines connect from
 		MachinesFrom: cfg.Postgres.MachinesFrom,
+		Tuning:       Tuning(cfg, filepath.Join(root, "postgres")),
 	}, true, nil
 }
 
@@ -253,6 +257,11 @@ func (b Bundle) serverArgs(lan bool) []string {
 		"-c", "max_replication_slots=40", "-c", "max_wal_senders=40", "-c", "max_worker_processes=24",
 		"-c", "max_logical_replication_workers=12", "-c", "max_sync_workers_per_subscription=8",
 		"-c", "log_timezone=UTC"}
+	// Epic 59 story 59.02: the tier's memory and the disk's values, the household's last
+	// (as -c arguments, so postgresql.auto.conf cannot override them)
+	for _, kv := range b.Tuning {
+		args = append(args, "-c", kv)
+	}
 	if b.TLS && b.TLSReady() {
 		args = append(args, "-c", "ssl=on", "-c", "ssl_cert_file="+b.serverCert(), "-c", "ssl_key_file="+b.serverKey())
 		// the machines' client certificates from the home's cluster CA (story 35.16), only

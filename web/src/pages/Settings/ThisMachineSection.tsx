@@ -3,7 +3,8 @@
 // limits, the processor and its features, the GPUs, the data disk, the platform) and the
 // hardware tier it set its defaults from, with why ("Standard: 8 GB, no GPU for video").
 // An admin can pick another tier, or go back to detecting it; the pick applies when the
-// server starts again, which the admin can do here.
+// server starts again, which the admin can do here. Story 59.02 adds the quiet hours
+// (heavy work waits for them) and, when the data disk cannot be read, whether it is an SSD.
 //
 //   GET /api/server/machine   the document ({available: false} without a supervisor)
 //   PUT /api/server/machine   {tier: "light"|"standard"|"strong"|"auto"}
@@ -11,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
+import { Input } from "@ds/components/Input/Input";
 import { Select } from "@ds/components/Select/Select";
 import { useToast } from "@ds/components/Toast/Toast";
 import { ApiError } from "../../lib/api";
@@ -55,6 +57,7 @@ function MachinePanel({ pollMs }: { pollMs: number }) {
   const [doc, setDoc] = useState<MachineDoc | null>(null);
   const [failed, setFailed] = useState(false);
   const [pick, setPick] = useState<Tier | "auto">("auto");
+  const [quiet, setQuiet] = useState("");
   const [busy, setBusy] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const alive = useRef(true);
@@ -65,7 +68,10 @@ function MachinePanel({ pollMs }: { pollMs: number }) {
       if (!alive.current) return;
       setDoc(d);
       setFailed(false);
-      if (d.available) setPick(d.saved);
+      if (d.available) {
+        setPick(d.saved);
+        setQuiet(d.quiet_hours);
+      }
     } catch {
       if (alive.current) setFailed(true);
     }
@@ -111,11 +117,14 @@ function MachinePanel({ pollMs }: { pollMs: number }) {
     );
   }
 
-  async function save() {
+  async function save(change?: Parameters<typeof serverSettingsApi.saveMachine>[0]) {
     setBusy(true);
     try {
-      const d = await serverSettingsApi.saveTier(pick);
+      const d = change
+        ? await serverSettingsApi.saveMachine(change)
+        : await serverSettingsApi.saveTier(pick);
       setDoc(d);
+      if (d.available) setQuiet(d.quiet_hours);
       toast.show({ tone: "success", message: t("machine.tier.saved") });
     } catch (err) {
       toast.show({
@@ -242,8 +251,35 @@ function MachinePanel({ pollMs }: { pollMs: number }) {
           </>
         ),
       ],
-      [t("machine.disk"), t(`machine.disk.${disk.kind}`, { fs: disk.fs_type || "?" })],
+      [
+        t("machine.disk"),
+        <>
+          {d.disk_how === "asked"
+            ? t("machine.disk.asked", { fs: disk.fs_type || "?" })
+            : t(`machine.disk.${disk.kind}`, { fs: disk.fs_type || "?" })}
+          {d.rotational && (
+            <span className="mkt-muted mkt-libadmin__small" style={{ display: "block" }}>
+              {t("machine.disk.tunedRotational")}
+            </span>
+          )}
+          {(disk.kind === "unknown" || d.disk_how === "asked") && (
+            <Select
+              label={t("machine.disk.ask")}
+              value={d.disk_how === "asked" ? (d.rotational ? "rotational" : "ssd") : "auto"}
+              disabled={busy || restarting}
+              onChange={(e) =>
+                void save({ data_disk: e.currentTarget.value as "ssd" | "rotational" | "auto" })
+              }
+              options={(["auto", "ssd", "rotational"] as const).map((v) => ({
+                value: v,
+                label: t(`machine.disk.answer.${v}`),
+              }))}
+            />
+          )}
+        </>,
+      ],
     ];
+    const window = (w: string) => w || t("machine.quiet.none");
 
     return (
       <div className="mkt-settings__panel" data-testid="this-machine">
@@ -266,6 +302,8 @@ function MachinePanel({ pollMs }: { pollMs: number }) {
                 ? t("machine.defaults.workers", { n: num(d.defaults.pipeline_workers) })
                 : t("machine.defaults.workersAny")}
             </li>
+            <li>{t("machine.defaults.postgres", { value: d.defaults.shared_buffers })}</li>
+            <li>{t("machine.defaults.quiet", { window: window(d.defaults.quiet_hours) })}</li>
           </ul>
           <Select
             label={t("machine.tier.pick")}
@@ -296,6 +334,34 @@ function MachinePanel({ pollMs }: { pollMs: number }) {
                 </Button>
               )}
             </p>
+          )}
+        </section>
+        <section className="mkt-storage__reach" aria-labelledby="mkt-machine-quiet">
+          <h3 id="mkt-machine-quiet">{t("settings.quiet_hours")}</h3>
+          <Input
+            label={t("settings.quiet_hours")}
+            description={t("machine.quiet.help")}
+            value={quiet}
+            dir="ltr"
+            placeholder="01:00-06:00"
+            disabled={busy || restarting}
+            onChange={(e) => setQuiet(e.currentTarget.value)}
+          />
+          <Button
+            variant="secondary"
+            disabled={busy || restarting || (d.quiet_set && quiet.trim() === d.quiet_hours)}
+            onClick={() => void save({ quiet_hours: quiet.trim() })}
+          >
+            {t("machine.quiet.save")}
+          </Button>
+          {d.quiet_set && (
+            <Button
+              variant="ghost"
+              disabled={busy || restarting}
+              onClick={() => void save({ quiet_default: true })}
+            >
+              {t("machine.quiet.default", { window: window(d.quiet_default) })}
+            </Button>
           )}
         </section>
         <dl className="mkt-about__facts" aria-label={t("settings.section.machine")}>

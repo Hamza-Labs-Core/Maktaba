@@ -50,6 +50,7 @@ type Config struct {
 	Components    ComponentsSection    `toml:"components,omitempty"`
 	Plugins       PluginsSection       `toml:"plugins,omitempty"`
 	Logs          LogsSection          `toml:"logs,omitempty"`
+	Schedule      ScheduleSection      `toml:"schedule,omitempty"`
 
 	// DatabaseURLSet: server.toml sets [database] url (Load), or a caller chose
 	// one to keep (setup); Save writes the url only then. Unset, a Mac with the
@@ -116,6 +117,10 @@ type PostgresSection struct {
 	// the newest ones, the last update's always; 0 (default): 3. The nightly
 	// dumps are kept apart (the newest 7).
 	UpdateDumps int `toml:"update_dumps"`
+	// Settings are Postgres settings the household sets (Epic 59 story 59.02), such as
+	// { shared_buffers = "1GB" }: passed to the server last, they win over the hardware
+	// tier's and the spinning-disk values.
+	Settings map[string]string `toml:"settings,omitempty"`
 }
 
 // DefaultUpdateDumps is how many pre-update dumps stay when [postgres]
@@ -440,6 +445,19 @@ type ServerSection struct {
 	// limit at each start, written here so a move up can be told).
 	Tier       string `toml:"tier,omitempty"`
 	TierChosen string `toml:"tier_chosen,omitempty"`
+	// DataDisk is the household's answer when the disk under the data folder cannot be
+	// read (a ZFS dataset in a container, Epic 59 story 59.02): "ssd" or "rotational"
+	// ("": detected; not detected and not answered counts as rotational).
+	DataDisk string `toml:"data_disk,omitempty"`
+}
+
+// ScheduleSection is the [schedule] table (Epic 59 story 59.02).
+type ScheduleSection struct {
+	// QuietHours is when heavy work runs ("01:00-06:00"; across midnight works):
+	// a library's first scan, a transcription backlog, convert and dedup, thumbnail
+	// sprites in bulk. "" means none. Unset (nil): the hardware tier's (01:00-06:00 on
+	// Light and Standard, none on Strong).
+	QuietHours *string `toml:"quiet_hours,omitempty"`
 }
 
 // MDNSOn reports whether the machine advertises itself (anything but

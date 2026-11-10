@@ -14,6 +14,18 @@ build fails when the two differ.
 
 ### Changed
 
+- **On a NAS, heavy work waits for quiet hours and Postgres is tuned to the machine (story
+  59.02).** On the Light and Standard tiers a library's first scan, a transcription backlog,
+  convert and duplicates, and bulk thumbnail sprites wait for 01:00–06:00, so the NAS stays
+  quick for the household; the queue says "Waiting for quiet hours (01:00)", and **Run now**
+  on the queue's page or the library page starts the work at once. The window is editable in Settings → This
+  machine. The bundled Postgres gets its memory from the tier (256 MB on Light, 512 MB on
+  Standard, a quarter of memory up to 4 GB on Strong) and, on spinning disks, settings for
+  them; `[postgres] settings` in server.toml wins. Setup refuses a data folder on a network
+  share or a FUSE file system and names the file system, gives Unraid's merged share the
+  cache-pool advice, and says when the database is on spinning disks. A library with a
+  regular scan says that it keeps the disks awake.
+
 - **Maktaba sizes itself to the machine it runs on, and Settings → This machine shows how
   (story 59.04).** At each start the server reads the memory it may use (a container's limit,
   not the host's RAM; on TrueNAS the ZFS cache counts as free), the processor's cores (a
@@ -212,11 +224,13 @@ build fails when the two differ.
 
 ### Fixed
 
-- **The first scan of a library you just added finds its files.** A scan that started right
-  after a library was added could run in a plugin runner that had not yet been given access to
-  the new folder: it found nothing (Permission denied in the log), and only a later scan found
-  the files. That scan now runs in the queue worker while the runner restarts with access to
-  the new folder.
+- **Maktaba's own database starts again after a power cut or a killed container.** After an
+  unclean stop (a power cut, `docker kill`, a NAS switched off), the bundled Postgres could
+  refuse to start, over and over, on a lock file the stopped database left behind
+  (`.s.PGSQL.<port>.lock`): the stopped database's process number now belonged to another
+  process. Maktaba now removes such a lock before it starts the database, but only when no
+  database runs on that data, and never while a leftover database process still holds its
+  memory.
 
 - **A stage you set to run in the queue worker stays there after Maktaba restarts or
   updates.** Choosing where one of Maktaba's own stages runs (Queues page, or
@@ -2537,6 +2551,16 @@ build fails when the two differ.
   the server and cannot be switched off; `categorize`, `component_catchup`, the watcher and
   the manual scans stay in the core.
 
+- **The Docker image runs as whichever user a NAS gives it, and its first start needs no
+  internet (story 59.01).** Set the container's user (compose's `user:`, TrueNAS's Run As,
+  Unraid's `--user`, a DSM user such as 1026:100) and every process runs as that user; a user
+  the image does not know gets a name, so the bundled database starts. The image refuses root,
+  a privileged container and the Docker socket, and if the user cannot write the data folder it
+  stops at once (exit 78) with a message, in English and Arabic, naming the folder, the user and
+  the fix, instead of restarting over and over. The Linux payload now carries the core Python
+  packages for its architecture, so setup builds the pipeline's environment from them with no
+  download; a home set up without speech to text downloads no model either.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
@@ -3073,6 +3097,12 @@ build fails when the two differ.
 - **An idle Core home is back to its four processes a minute after its last job.** Since the
   core steps (such as a library scan) run in a plugin runner, any work woke a runner, and it
   stayed up for ten idle minutes. A runner now exits after one idle minute.
+
+- **The first scan of a library you just added finds its files.** A scan that started right
+  after a library was added could run in a plugin runner that had not yet been given access to
+  the new folder: it found nothing (Permission denied in the log), and only a later scan found
+  the files. That scan now runs in the queue worker while the runner restarts with access to
+  the new folder.
 
 ## [0.2.0] - 2026-10-19
 

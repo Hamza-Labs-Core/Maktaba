@@ -995,6 +995,10 @@ export const APPS = [
                 "يضبط نفسه على الحاسوب أو الحاوية التي يعمل فيها. ففي كل تشغيل يقرأ الذاكرة المسموح له باستعمالها (حدّ الحاوية لا ذاكرة الجهاز المضيف، مع احتساب تخزين ZFS المؤقت على أجهزة TrueNAS ذاكرةً حرّة)، والمعالج وميزاته، والرسوميات، وقرص البيانات، ثم يختار **فئة**: **خفيف** لأقل من 6 غيغابايت (8 غيغابايت على ARM)، و**قياسي** لأقل من 16 غيغابايت، و**قوي** لما فوق ذلك. وتضبط الفئة الإعدادات الافتراضية، مثل عدد عمّال المعالجة؛ أما ما تضبطه بنفسك فيبقى على قيمتك. وتعرض صفحة **الإعدادات ← هذا الجهاز** ما وجده وسبب اختياره الفئة (مثل *قياسي: 6 غيغابايت، رسوميات Intel*)، ويستطيع المدير فيها اختيار فئة أخرى. ويحتاج الإعداد إلى 3.5 غيغابايت على الأقل، فيتّسع له خادم تخزين شبكي «بذاكرة 4 غيغابايت»."
               ),
               t(
+                "On a small machine or a NAS, heavy work waits for **quiet hours** (01:00 to 06:00 by default on the Light and Standard tiers): a library's first scan, a transcription backlog, convert and duplicates. The queue says so, and **Run now**, on the queue's page or the library page, starts it at once. The bundled database is tuned to the tier's memory and to spinning disks; `[postgres] settings` in server.toml wins. Setup refuses a data folder on a network share or a merged share (Unraid's `/mnt/user`) and says which file system it found.",
+                "على حاسوب صغير أو خادم تخزين شبكي، تنتظر المهام الثقيلة **ساعات الهدوء** (من 01:00 إلى 06:00 افتراضيًا في الفئتين الخفيفة والقياسية): الفحص الأول لمكتبة، وتراكم التفريغ، والتحويل وكشف التكرار. ويقول الطابور ذلك، ويبدأ **شغّل الآن**، في صفحة الطابور أو صفحة المكتبة، العمل فورًا. وتُضبط قاعدة البيانات المرفقة على ذاكرة الفئة وعلى الأقراص الدوّارة، ويغلب `[postgres] settings` في server.toml. ويرفض الإعداد مجلد بيانات على مشاركة شبكية أو مشاركة مدمجة (`/mnt/user` في Unraid) ويقول أي نظام ملفات وجد."
+              ),
+              t(
                 "Can run with no outbound call at all: `maktaba-server serve --offline` (or `MAKTABA_OFFLINE=1`) turns off the update check, pack and model downloads, usage data and the link to Maktaba Cloud at once.",
                 "ويمكن تشغيله دون أي اتصال صادر: يوقف الأمر `maktaba-server serve --offline` (أو `MAKTABA_OFFLINE=1`) التحقق من التحديثات وتنزيل الحزم والنماذج وبيانات الاستخدام والربط بسحابة مكتبة دفعةً واحدة."
               ),
@@ -1051,6 +1055,16 @@ export const APPS = [
                   t(
                     "the `.AppImage`, `.deb` or `.rpm`; on a computer without a desktop, `install.sh --app` installs the server alone",
                     "ملف `.AppImage` أو `.deb` أو `.rpm`؛ وعلى حاسوب بلا واجهة رسومية يثبّت الأمر `install.sh --app` الخادم وحده"
+                  ),
+                ],
+                [
+                  t(
+                    "Docker, on a NAS or a server (x86-64 and ARM64)",
+                    "Docker، على جهاز NAS أو خادم (x86-64 وARM64)"
+                  ),
+                  t(
+                    "the image `ghcr.io/hamza-labs-core/maktaba-server` with the project's compose file: it runs as whichever user the NAS gives it (never root), and its first start needs no internet. If that user cannot write the data folder, it stops at once and its log names the folder, the user and the fix",
+                    "الصورة `ghcr.io/hamza-labs-core/maktaba-server` مع ملف compose الخاص بالمشروع: تعمل بأي مستخدم يعطيه لها جهاز الـNAS (ولا تعمل بصلاحيات الجذر أبدًا)، ولا يحتاج تشغيلها الأول إلى الإنترنت. وإن لم يستطع ذلك المستخدم الكتابة في مجلد البيانات توقفت فورًا وذكر سجلها المجلد والمستخدم وطريقة الإصلاح"
                   ),
                 ],
               ],

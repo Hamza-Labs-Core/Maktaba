@@ -1,0 +1,133 @@
+{
+  "_doc": "The nas-shapes matrix (story 59.15). tests/nas/README.md says what each field means and how to add a cell. A cell runs once its `needs` are all in `landed`; an assertion likewise.",
+  "landed": ["59.04", "59.01", "pg-stale-lock"],
+  "cells": [
+    {
+      "name": "uid-1000",
+      "about": "the image's default user, every assertion of a plain install",
+      "arches": ["amd64", "arm64"],
+      "asserts": ["ready", "only_uid", "scan", {"name": "first_scan", "needs": ["scan-grant-race"]}, {"name": "thumbnail", "needs": ["poster-queue"]}, "transcode", "no_oom", {"name": "logs_clean", "needs": ["plugin-cache-grant"]}]
+    },
+    {
+      "name": "uid-568",
+      "about": "TrueNAS's apps user, its data folder owned by 568",
+      "arches": ["amd64", "arm64"],
+      "user": "568:568",
+      "data": {"owner": "568:568", "mode": "0750"},
+      "needs": ["59.01"],
+      "asserts": ["ready", "only_uid", "scan"]
+    },
+    {
+      "name": "uid-unraid",
+      "about": "Unraid's nobody:users",
+      "arches": ["amd64", "arm64"],
+      "user": "99:100",
+      "data": {"owner": "99:100", "mode": "0750"},
+      "needs": ["59.01"],
+      "asserts": ["ready", "only_uid", "scan"]
+    },
+    {
+      "name": "uid-dsm",
+      "about": "a Synology DSM user, its data folder owned by root and group-writable by users (100)",
+      "arches": ["amd64", "arm64"],
+      "user": "1026:100",
+      "data": {"owner": "0:100", "mode": "0770"},
+      "needs": ["59.01"],
+      "asserts": ["ready", "only_uid", "scan"]
+    },
+    {
+      "name": "uid-unnamed",
+      "about": "a uid no passwd file names: nss_wrapper names it, initdb and Postgres start",
+      "arches": ["amd64"],
+      "user": "4321:4321",
+      "data": {"owner": "4321:4321", "mode": "0750"},
+      "needs": ["59.01"],
+      "asserts": ["ready", "only_uid"]
+    },
+    {
+      "name": "data-denied",
+      "about": "a data folder the user cannot write: the container stops with exit 78 and says why, in both languages",
+      "arches": ["amd64"],
+      "user": "568:568",
+      "data": {"owner": "0:0", "mode": "0755"},
+      "expect": "refused",
+      "needs": ["59.01"],
+      "asserts": ["refused_write"]
+    },
+    {
+      "name": "privileged",
+      "about": "--privileged: refused, exit 78",
+      "arches": ["amd64"],
+      "docker": ["--privileged"],
+      "expect": "refused",
+      "needs": ["59.01"],
+      "asserts": ["refused_privileged"]
+    },
+    {
+      "name": "media-ro",
+      "about": "the library mounted read-only",
+      "arches": ["amd64"],
+      "media": {"ro": true},
+      "asserts": ["ready", "scan", "media_untouched", {"name": "access_ro", "needs": ["59.03"]}, {"name": "convert_409", "needs": ["59.03"]}]
+    },
+    {
+      "name": "media-foreign",
+      "about": "the library owned by another uid (2000), readable but not writable",
+      "arches": ["amd64"],
+      "media": {"owner": "2000:2000", "mode": "0755"},
+      "asserts": ["ready", "scan", "media_untouched", {"name": "access_ro", "needs": ["59.03"]}]
+    },
+    {
+      "name": "media-none",
+      "about": "a second root the user cannot list (mode 000)",
+      "arches": ["amd64"],
+      "noaccess_root": true,
+      "needs": ["59.03"],
+      "asserts": ["ready", "scan", "access_none"]
+    },
+    {
+      "name": "mem-4g",
+      "about": "a 4 GB NAS",
+      "arches": ["amd64"],
+      "docker": ["--memory=4g"],
+      "asserts": ["ready", "scan", "no_oom", {"name": "tier_light", "needs": ["59.04"]}, {"name": "postgres_pss_512m", "needs": ["59.02"]}]
+    },
+    {
+      "name": "mem-3.7g",
+      "about": "a \"4 GB\" NAS after the kernel's share: setup goes on, on the Light tier (the 3.5 GiB floor)",
+      "arches": ["amd64"],
+      "docker": ["--memory=3700m"],
+      "needs": ["59.04"],
+      "asserts": ["ready", "no_oom", "tier_light"]
+    },
+    {
+      "name": "mem-6g",
+      "about": "a 6 GB NAS",
+      "arches": ["amd64"],
+      "docker": ["--memory=6g"],
+      "asserts": ["ready", "scan", "no_oom", {"name": "tier_standard", "needs": ["59.04"]}]
+    },
+    {
+      "name": "no-landlock-enosys",
+      "about": "a kernel without Landlock (landlock_* answer ENOSYS) and no user namespaces (unshare answers EPERM)",
+      "arches": ["amd64"],
+      "seccomp": "seccomp-no-landlock-enosys.json",
+      "asserts": ["ready", "scan", "no_oom", {"name": "isolation_container", "needs": ["59.07"]}]
+    },
+    {
+      "name": "no-landlock-eperm",
+      "about": "the same with EPERM for landlock_* (older Docker default profiles)",
+      "arches": ["amd64"],
+      "seccomp": "seccomp-no-landlock-eperm.json",
+      "asserts": ["ready", "scan", "no_oom", {"name": "isolation_container", "needs": ["59.07"]}]
+    },
+    {
+      "name": "restart-after-kill",
+      "about": "a power cut: the container killed (SIGKILL) and started again on the same volume",
+      "arches": ["amd64"],
+      "kill_restart": true,
+      "needs": ["pg-stale-lock"],
+      "asserts": ["ready", "scan"]
+    }
+  ]
+}
