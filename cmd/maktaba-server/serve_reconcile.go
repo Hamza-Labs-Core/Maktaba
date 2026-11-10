@@ -198,6 +198,9 @@ func startPlugins(cfg config.Config, po *pluginsOptions, rec *supervisor.Reconci
 	st.Version = version.Version
 	pr := &plugins.Runner{Files: files, DB: db, DSN: dsn, Machine: machine, Version: version.Version,
 		Catalog: rec, Status: st, Host: po.host, RunDir: paths.Run, Off: rec.Off, Log: log, Home: po.home, GPU: po.gpu}
+	// Epic 59 story 59.07: the kernel's sandbox facts make this machine's isolation level
+	kernel := detectMachine().Kernel
+	pr.Kernel = &kernel
 	if sup != nil {
 		pr.PipelineStarted = func() time.Time {
 			for _, p := range sup.Snapshot().Processes {

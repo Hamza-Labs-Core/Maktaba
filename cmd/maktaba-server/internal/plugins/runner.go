@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
@@ -54,6 +56,11 @@ type state struct {
 	grants          map[string][]string
 	keepOff         map[string]bool
 	allowUnreviewed bool
+	// allowContainer is the policy's allow_container_isolation and isolation this
+	// machine's level (Epic 59 story 59.07): on Container, third-party plugins wait
+	// (isolation_held) until the admin allows it
+	allowContainer bool
+	isolation      Isolation
 	// entitledUntil is, per plugin, the latest valid_until of its entitlements (story 54.19
 	// §6: checked offline when the API fetched them); at is when the state was read
 	entitledUntil map[string]time.Time
@@ -112,17 +119,26 @@ type Runner struct {
 	// its own copies when the home's row is gone).
 	Home HomeFiles
 	GPU  bool
+	// Kernel is this machine's kernel as hostinfo read it (Epic 59 story 59.07), and GOOS
+	// its system ("": runtime.GOOS): with the plugin host's report they make this
+	// machine's isolation level. nil: the level is not computed (full, nothing held).
+	Kernel *hostinfo.Kernel
+	GOOS   string
 
-	mu       sync.Mutex
-	st       *state
-	desired  map[string]store.Desired
-	wake     chan struct{}
-	loaded   string // the installed set the pipeline loaded (id@version@digest …)
-	primed   bool
-	recov    bool
-	absentAt map[string]time.Time // when a want absent was first seen
-	failed   map[string]*Refusal  // a removal that failed, by id
-	written  []store.Status
+	mu sync.Mutex
+	// iso is this machine's level as last computed; published whether it is written to
+	// plugins.isolation
+	iso       *Isolation
+	published bool
+	st        *state
+	desired   map[string]store.Desired
+	wake      chan struct{}
+	loaded    string // the installed set the pipeline loaded (id@version@digest …)
+	primed    bool
+	recov     bool
+	absentAt  map[string]time.Time // when a want absent was first seen
+	failed    map[string]*Refusal  // a removal that failed, by id
+	written   []store.Status
 }
 
 func (r *Runner) logf(format string, args ...any) {
@@ -224,7 +240,8 @@ func (st *state) gate(id, version string) (string, map[string]any) {
 	}
 	return components.PluginGate(components.PluginGateInput{ServerVersion: version, Range: m.Maktaba,
 		PluginAPI: m.PluginAPI, Required: m.Capabilities.Required, Granted: st.grants[id],
-		ReviewLevel: in.ReviewLevel, AllowUnreviewed: st.allowUnreviewed, Revoked: in.Revoked, EntitlementMissing: missing})
+		ReviewLevel: in.ReviewLevel, AllowUnreviewed: st.allowUnreviewed, Revoked: in.Revoked, EntitlementMissing: missing,
+		IsolationHeld: st.isolation.Level == LevelContainer && !st.allowContainer})
 }
 
 // reasonHeld is the reason a held component's row gives (the reconciler's and the
@@ -326,6 +343,7 @@ func (r *Runner) Pass(ctx context.Context) {
 		}
 		return
 	}
+	st.isolation = r.isolationNow(ctx)
 	r.mu.Lock()
 	desired := r.desired
 	r.mu.Unlock()
@@ -348,6 +366,61 @@ func (r *Runner) Pass(ctx context.Context) {
 	r.swapCatalog(st)
 	r.restartIfChanged(st)
 	r.report(ctx, st, desired)
+}
+
+// isolationNow is this machine's level (Epic 59 story 59.07): the kernel's facts and the
+// plugin host's last report. A host that reported partial keeps the level at Container
+// for this start, even once it stopped. A changed level is written to plugins.isolation
+// and logged.
+func (r *Runner) isolationNow(ctx context.Context) Isolation {
+	if r.Kernel == nil {
+		return Isolation{Level: LevelFull, Missing: []string{}}
+	}
+	goos := r.GOOS
+	if goos == "" {
+		goos = runtime.GOOS
+	}
+	plugind, missing := "", []string(nil)
+	if r.Host != nil {
+		if h, _, ok := r.Host.Last(); ok {
+			plugind, missing = h.Sandbox, h.SandboxMissing
+		}
+	}
+	r.mu.Lock()
+	prev, written := r.iso, r.published
+	r.mu.Unlock()
+	if prev != nil && prev.Plugind == "partial" && plugind != "partial" {
+		plugind, missing = "partial", prev.Missing
+	}
+	iso := LevelOf(goos, *r.Kernel, plugind, missing)
+	current.Store(&iso)
+	r.mu.Lock()
+	r.iso = &iso
+	r.mu.Unlock()
+	if written && prev != nil && reflect.DeepEqual(*prev, iso) {
+		return iso
+	}
+	if err := publishIsolation(ctx, r.DB, r.Machine, iso); err != nil {
+		if ctx.Err() == nil {
+			r.logf("level=warn the isolation level is not written (tried again): %v", err)
+		}
+		r.mu.Lock()
+		r.published = false
+		r.mu.Unlock()
+		return iso
+	}
+	r.mu.Lock()
+	r.published = true
+	r.mu.Unlock()
+	if prev != nil && reflect.DeepEqual(*prev, iso) {
+		return iso
+	}
+	lvl := "info"
+	if iso.Level != LevelFull {
+		lvl = "warn"
+	}
+	r.logf("level=%s plugin isolation %s (missing: %s; plugind: %q)", lvl, iso.Level, strings.Join(iso.Missing, ","), iso.Plugind)
+	return iso
 }
 
 func (r *Runner) load(ctx context.Context) (*state, error) {
@@ -410,10 +483,11 @@ func (r *Runner) load(ctx context.Context) (*state, error) {
 	var pol []byte
 	if err := r.DB.QueryRowContext(ctx, `SELECT value FROM app_settings WHERE key = $1`, PolicyKey).Scan(&pol); err == nil {
 		var p struct {
-			AllowUnreviewed bool `json:"allow_unreviewed"`
+			AllowUnreviewed         bool `json:"allow_unreviewed"`
+			AllowContainerIsolation bool `json:"allow_container_isolation"`
 		}
 		if json.Unmarshal(pol, &p) == nil {
-			st.allowUnreviewed = p.AllowUnreviewed
+			st.allowUnreviewed, st.allowContainer = p.AllowUnreviewed, p.AllowContainerIsolation
 		}
 	}
 	return st, nil

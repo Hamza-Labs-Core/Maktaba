@@ -36,6 +36,9 @@ class GateInput:
     allow_unreviewed: bool = False
     revoked: bool = False
     entitlement_missing: bool = False
+    #: the machine's isolation level is Container and the policy does not allow plugins
+    #: with container-only isolation (Epic 59 story 59.07)
+    isolation_held: bool = False
 
 
 def unreviewed(level: str) -> bool:
@@ -100,6 +103,8 @@ def plugin_gate(g: GateInput) -> tuple[str, dict[str, Any]]:
         return "entitlement_missing", {}
     if unreviewed(g.review_level) and not g.allow_unreviewed:
         return "unreviewed_disallowed", {}
+    if g.isolation_held:
+        return "isolation_held", {}
     missing = [c for c in g.required if c not in g.granted]
     if missing:
         return "grants_needed", {"capabilities": ",".join(missing)}
