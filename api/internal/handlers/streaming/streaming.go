@@ -115,6 +115,9 @@ type Capabilities struct {
 	MaxBitrateKbps      int      `json:"max_bitrate_kbps"`
 	SupportedContainers []string `json:"supported_containers"`
 	TranscodeSlots      Slots    `json:"transcode_slots"`
+	// SoftwareOnly: this home converts video in software only (no GPU encoder works): a
+	// player plays files as they are, or remuxed, whenever it can (Epic 59 story 59.05).
+	SoftwareOnly bool `json:"software_only"`
 }
 
 // Slots is the transcoder capacity snapshot.
@@ -211,6 +214,16 @@ func streamingNotFound(err error) bool {
 // ProblemInsufficientStorage: the streaming service has too little free on its
 // cache's disk to prepare (transcode) the video.
 const ProblemInsufficientStorage = "https://maktaba.tv/problems/insufficient-storage"
+
+// ProblemTranscodeBusy: every transcode this home runs at once is taken (its hardware
+// tier's limit in software, Epic 59 story 59.05): the player waits and asks again.
+const ProblemTranscodeBusy = "https://maktaba.tv/problems/transcode-busy"
+
+// streamingBusy reports whether the streaming service refused a transcode because every
+// slot is taken (it answers "resource-exhausted" in band).
+func streamingBusy(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "resource-exhausted")
+}
 
 // streamingNoDiskSpace reports whether the streaming service refused a transcode
 // for want of disk space (it answers "insufficient-storage" in band).
@@ -415,6 +428,14 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 				Title:  "not enough disk space to prepare this video",
 				Detail: "the server that streams it has too little free on its disk to transcode it"}
 			httperror.Write(w, r, e.With("code", "insufficient_storage"))
+			return
+		}
+		if streamingBusy(err) && !relayCapped {
+			// another video is being converted: the player says so and asks again
+			w.Header().Set("Retry-After", "10")
+			httperror.Write(w, r, (&httperror.Error{Type: ProblemTranscodeBusy, Status: http.StatusServiceUnavailable,
+				Title:  "another video is being converted on this home",
+				Detail: "this one starts when it finishes"}).With("code", "transcode_busy"))
 			return
 		}
 		if err != nil && relayCapped {

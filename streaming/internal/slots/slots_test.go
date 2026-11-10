@@ -102,3 +102,36 @@ func TestAllocator_AutoDeriveCap(t *testing.T) {
 		t.Fatal("auto-derive should be at least 1")
 	}
 }
+
+// T07 (Epic 59 story 59.05): on a Light machine in software one transcode runs at a time; a
+// second waits (queued) and starts once the first ends; a working GPU encoder raises the cap.
+func TestAllocator_TierLimit(t *testing.T) {
+	limit := 1
+	a := NewAllocator(AllocatorConfig{QueueDepth: 4, Limit: func() int { return limit }})
+	d, hold := a.Decide(Request{AcceptQueue: true})
+	if d != DecisionAdmit || a.MaxConcurrent() != 1 {
+		t.Fatalf("first: %s, cap %d", d, a.MaxConcurrent())
+	}
+	if d, _ := a.Decide(Request{AcceptQueue: true}); d != DecisionQueue {
+		t.Fatalf("second: %s, want queue", d)
+	}
+	if d, _ := a.Decide(Request{}); d != DecisionExhausted {
+		t.Fatalf("second, no queue: %s", d)
+	}
+	_ = a.Release(hold)
+	a.Dequeue()
+	if d, _ := a.Decide(Request{}); d != DecisionAdmit {
+		t.Fatalf("after the first ended: %s", d)
+	}
+	limit = 2 // the verdict moved to VA-API: the hardware cap
+	if d, _ := a.Decide(Request{}); d != DecisionAdmit {
+		t.Fatalf("hardware cap: %s", d)
+	}
+	// an operator's own cap wins; a limit of 0 is the cores' share
+	if n := (AllocatorConfig{MaxTranscode: 5, Limit: func() int { return 1 }}).Effective(); n != 5 {
+		t.Errorf("max_concurrent: %d", n)
+	}
+	if n := (AllocatorConfig{Limit: func() int { return 0 }}).Effective(); n != (AllocatorConfig{}).Effective() {
+		t.Errorf("no tier limit: %d", n)
+	}
+}
