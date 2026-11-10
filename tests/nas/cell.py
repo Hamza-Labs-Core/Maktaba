@@ -679,6 +679,85 @@ class Cell:
             raise AssertionError(f"files written in the library: {extra[:10]}")
         return f"{len(listing)} entries, as the fixtures"
 
+    # -- story 59.03: media permissions
+
+    def check_access(self, lib: dict[str, Any]) -> dict[str, Any]:
+        """POST /api/libraries/{id}/check-access (the page's Check access): the access panel."""
+        assert self.api is not None
+        s, d = self.api.call("POST", f"/api/libraries/{lib['id']}/check-access")
+        if s != 200 or not isinstance(d, dict):
+            raise AssertionError(f"POST /api/libraries/{lib['id']}/check-access: {s} {d}")
+        return d
+
+    def media_libraries(self) -> list[dict[str, Any]]:
+        libs = [lib for lib in self.libraries() if any(r.startswith(MEDIA + "/") for r in lib.get("roots") or [])]
+        if not libs:
+            raise AssertionError(f"no library under {MEDIA}")
+        return libs
+
+    def assert_access_ro(self) -> str:
+        """A library Maktaba may read but not write shows Read only, with the fix in the
+        platform's words; a :ro mount is named as one. Nothing is written in it
+        (media_untouched)."""
+        ro_mount = bool(self.spec.get("media", {}).get("ro"))
+        seen = []
+        for lib in self.media_libraries():
+            rep = self.check_access(lib)
+            if rep.get("access") != "ro":
+                raise AssertionError(f"{lib['name']}: access {rep.get('access')!r}, not ro: {rep}")
+            for root in rep.get("roots") or []:
+                if root.get("access") != "ro" or not root.get("fix"):
+                    raise AssertionError(f"{lib['name']}: root {root}")
+                if ro_mount and not root.get("mount_read_only"):
+                    raise AssertionError(f"{root.get('path')}: a :ro mount not named as one")
+            listed = next((x for x in self.libraries() if x["id"] == lib["id"]), {})
+            if listed.get("access") != "ro":
+                raise AssertionError(f"GET /api/libraries: {lib['name']} access {listed.get('access')!r}")
+            seen.append(lib["name"])
+        return f"read only{' (mount :ro)' if ro_mount else ''}: {', '.join(seen)}"
+
+    def assert_convert_409(self) -> str:
+        """A writing action on a read-only library answers 409 library_read_only and queues
+        nothing."""
+        assert self.api is not None
+        for lib in self.media_libraries():
+            for body in ({}, {"dry_run": True}):
+                s, d = self.api.call("POST", f"/api/libraries/{lib['id']}/convert", body)
+                code = d.get("code") if isinstance(d, dict) else None
+                if s != 409 or code != "library_read_only":
+                    raise AssertionError(f"POST /api/libraries/{lib['id']}/convert {body}: {s} {d}")
+        return "convert: 409 library_read_only"
+
+    def assert_access_none(self) -> str:
+        """A folder Maktaba cannot list: adding it is refused (not-readable); a library whose
+        folder loses access later shows No access after Check access, and no scan runs."""
+        assert self.api is not None
+        detail = next((r["detail"] for r in self.results if r["name"] == f"library:{NOACCESS}"), "")
+        lib = next((x for x in self.libraries() if NOACCESS in (x.get("roots") or [])), None)
+        if lib is None:
+            if "422" not in detail:
+                raise AssertionError(f"adding {NOACCESS} (mode 000): {detail or 'never asked'}, not 422")
+            # the folder is opened, added, and closed again
+            as_root(self.image, "chmod 755 /d", f"{self.vol('noaccess')}:/d")
+            try:
+                s, d = self.api.call("POST", "/api/libraries", {"name": LIBRARY_NAMES["noaccess"], "roots": [NOACCESS]})
+                if s not in (200, 201) or not isinstance(d, dict):
+                    raise AssertionError(f"POST /api/libraries {NOACCESS} (opened): {s} {d}")
+                lib = d
+            finally:
+                as_root(self.image, "chmod 000 /d", f"{self.vol('noaccess')}:/d")
+        rep = self.check_access(lib)
+        if rep.get("access") != "none":
+            raise AssertionError(f"{NOACCESS}: access {rep.get('access')!r} after Check access, not none: {rep}")
+        roots = rep.get("roots") or []
+        if not roots or roots[0].get("access") != "none" or not roots[0].get("fix"):
+            raise AssertionError(f"{NOACCESS}: roots {roots}")
+        s, d = self.api.call("POST", f"/api/libraries/{lib['id']}/scan")
+        code = d.get("code") if isinstance(d, dict) else None
+        if s != 409 or code != "library_no_access":
+            raise AssertionError(f"POST /api/libraries/{lib['id']}/scan on no access: {s} {d}")
+        return f"adding refused ({detail}); after losing access: none, scan 409 library_no_access"
+
     def assert_logs_clean(self) -> str:
         """No permission error in the server's log: every path it uses is its own."""
         p = docker("exec", self.container, "sh", "-c",
