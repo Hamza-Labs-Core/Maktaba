@@ -140,7 +140,12 @@ import MaktabaKit
         defer { home.stop() }
         home.stub("POST", "/api/stream/sessions", status: 503, body: Self.transcodeBusy, headers: ["Retry-After": "1"])
         let url = try #require(URL(string: home.url))
-        let playback = Playback(client: APIClient(home: url, tokens: TokenStore(app: "test.mac.busy", home: url)))
+        // signed in: once a slot is free, the stream goes to AVPlayer with the user's token
+        // (`playbackHeaders`), and an empty store would end there signed out
+        home.stub("POST", "/api/auth/login", body: #"{"access_token":"\#(MockHome.accessToken)","refresh_token":"ui-refresh"}"#)
+        let client = APIClient(home: url, tokens: TokenStore(app: "test.mac.busy", home: url))
+        _ = try await client.signIn(username: "tester", password: "pw")
+        let playback = Playback(client: client)
         defer { playback.stop() }
         playback.play(try Self.video(), from: 0)
 
@@ -156,7 +161,9 @@ import MaktabaKit
 
         // a slot is free: the fixture's session opens and plays, the sentence goes
         home.reset()
-        try await Self.until(seconds: 20) { playback.player != nil }
+        try await Self.until(seconds: 20) { playback.player != nil || playback.failure != nil }
+        #expect(playback.failure == nil, "no error once a slot is free: \(String(describing: playback.failure))")
+        #expect(playback.player != nil)
         #expect(playback.waiting == nil)
         #expect(playback.failure == nil)
     }
