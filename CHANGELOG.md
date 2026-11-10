@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **The Apple and Android apps wait for a busy NAS instead of failing (story 59.05).** When
+  every conversion slot of the home is taken (a Light-tier NAS converts one video at a time),
+  the player says "Another video is being converted on this home. Yours will start when it
+  finishes." and asks again every 10 seconds by itself, with no error screen; the video starts
+  as soon as a slot is free. Elsewhere the same answer reads as that sentence, with Try again.
 - **On a NAS, heavy work waits for quiet hours and Postgres is tuned to the machine (story
   59.02).** On the Light and Standard tiers a library's first scan, a transcription backlog,
   convert and duplicates, and bulk thumbnail sprites wait for 01:00–06:00, so the NAS stays

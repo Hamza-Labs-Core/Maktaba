@@ -380,3 +380,31 @@ actor Waits {
         #expect(HomeFailure(kind: .relay(.homeBusy)).actions == [.tryAgain, .back])
     }
 }
+
+/// Epic 59 story 59.05: a stream open that finds every transcode slot taken (503
+/// `transcode_busy`, `Retry-After: 10`) is its own kind: one sentence in English and Arabic,
+/// and the player asks again by itself after the home's wait.
+@Suite struct TranscodeBusy {
+    @Test func noTranscodeSlotFreeIsTranscodeBusy() {
+        let body = #"{"type":"https://maktaba.tv/problems/transcode-busy","title":"Another video is being converted","status":503,"code":"transcode_busy"}"#
+        #expect(APIError.status(503, body, retryAfter: 10).kind == .transcodeBusy(retryAfter: 10))
+        #expect(APIError.status(503, #"{"type":"https://home.example/problems/transcode-busy","status":503}"#).kind == .transcodeBusy(retryAfter: nil))
+        // another 503 stays busy; the code on another status is the server's
+        #expect(APIError.status(503, #"{"status":503,"code":"draining"}"#, retryAfter: 3).kind == .busy(retryAfter: 3))
+        #expect(APIError.status(500, #"{"status":500,"code":"transcode_busy"}"#).kind == .server)
+        let en = ErrorStrings(.en), ar = ErrorStrings(.ar)
+        #expect(en.sentence(.transcodeBusy(retryAfter: 10)) == "Another video is being converted on this home. Yours will start when it finishes.")
+        #expect(ar.sentence(.transcodeBusy(retryAfter: nil), video: true) == "يجري تحويل فيديو آخر على هذا الجهاز الرئيسي، وسيبدأ الفيديو الخاص بك عند انتهائه.")
+        #expect(HomeFailure(kind: .transcodeBusy(retryAfter: 10)).actions == [.tryAgain, .back])
+        #expect(HomeFailure(kind: .transcodeBusy(retryAfter: 10)).symbol == "hourglass")
+    }
+
+    @Test func thePlayerAsksAgainAfterTheHomesWait() {
+        #expect(ErrorKind.transcodeBusy(retryAfter: 10).transcodeRetrySeconds == 10)
+        #expect(ErrorKind.transcodeBusy(retryAfter: nil).transcodeRetrySeconds == 10)
+        #expect(ErrorKind.transcodeBusy(retryAfter: 0).transcodeRetrySeconds == 1)
+        #expect(ErrorKind.transcodeBusy(retryAfter: 3600).transcodeRetrySeconds == 60)
+        #expect(ErrorKind.busy(retryAfter: 10).transcodeRetrySeconds == nil)
+        #expect(ErrorKind.relay(.homeBusy).transcodeRetrySeconds == nil)
+    }
+}
