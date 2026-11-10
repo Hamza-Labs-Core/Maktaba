@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.120
-up_to_commit: 4f595fec1
-built_from: v0.3.119
+tag: v0.3.121
+up_to_commit: dd5dbe9e8
+built_from: v0.3.120
 ---
 
-# Trail snapshot: v0.3.120
+# Trail snapshot: v0.3.121
 
 ## Keep doing
 
@@ -525,7 +525,9 @@ built_from: v0.3.119
 | #1092 | 2026-11-10 | feat(nas): media permissions check and read-only libraries (story 59.03) |
 | #1094 | 2026-11-10 | fix(pgbundle): bundled Postgres starts again after a power cut or docker kill |
 | #1095 | 2026-11-10 | fix(pipeline): the first scan of a new library waits for the runner's grant |
+| #1109 | 2026-11-10 | feat(plugins): isolation levels and the admin's yes for container-only isolation (Epic 59 story 59.07) |
 | #1110 | 2026-11-10 | feat(nas): VA-API on NAS chips, the tier's transcode limits, Settings' video line (59.05) |
+| #1111 | 2026-11-10 | feat(apps): a busy NAS's transcode_busy waits in the Apple and Android players (59.05) |
 
 ## Index
 

@@ -3158,6 +3158,16 @@ build fails when the two differ.
   core steps (such as a library scan) run in a plugin runner, any work woke a runner, and it
   stayed up for ten idle minutes. A runner now exits after one idle minute.
 
+- **On a fresh install, reports and thumbnails are written by their sandboxed runners from
+  the first job (Epic 59).** A runner's sandbox grants only folders that exist when it starts,
+  and on a fresh install (the server image's empty volume, where the home folder is the
+  volume) Maktaba's own cache folders were not made yet: the first report or thumbnail a
+  runner wrote was refused, the stage ran in the queue worker instead, and the server log
+  recorded a permission error. The queue worker now makes its own data folders (the
+  thumbnail, audio and report caches, the download work folder and the search index) before
+  it names them to the runners, by their real paths, wherever the home folder is, on macOS
+  and Linux. A library's folders are never made or written by this.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were
