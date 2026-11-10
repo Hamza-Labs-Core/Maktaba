@@ -1,6 +1,6 @@
 {
   "_doc": "The nas-shapes matrix (story 59.15). tests/nas/README.md says what each field means and how to add a cell. A cell runs once its `needs` are all in `landed`; an assertion likewise.",
-  "landed": ["59.04", "59.01", "pg-stale-lock"],
+  "landed": ["59.04", "59.01", "pg-stale-lock", "59.02", "scan-grant-race"],
   "cells": [
     {
       "name": "uid-1000",
@@ -120,6 +120,16 @@
       "arches": ["amd64"],
       "seccomp": "seccomp-no-landlock-eperm.json",
       "asserts": ["ready", "scan", "no_oom", {"name": "isolation_container", "needs": ["59.07"]}]
+    },
+    {
+      "name": "quiet-hours-hold",
+      "about": "quiet hours that open later today: a new library's first scan waits for them, and Run now starts it",
+      "arches": ["amd64"],
+      "docker": ["--memory=4g"],
+      "env": {"TZ": "UTC"},
+      "quiet_hours_ahead": true,
+      "needs": ["59.02"],
+      "asserts": ["ready", "quiet_hold", "no_oom"]
     },
     {
       "name": "restart-after-kill",

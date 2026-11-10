@@ -27,7 +27,8 @@ runs every cell, a change to `web/` alone runs nothing.
    `media.owner`, `media.mode` and `media.ro`, and `/volume1/Private` (mode 000) when the cell has
    `noaccess_root`.
 2. **server.toml** first, as the cell's user: the smallest Whisper, no second listen, no
-   language model.
+   language model, no quiet hours (the Light and Standard tiers' default, 01:00-06:00, holds
+   a library's first scan until then; `quiet-hours-hold` checks that hold).
 3. **Setup, headless**: `docker run --rm -i <shape> IMAGE setup --answers /dev/stdin`, what
    `docker compose run --rm maktaba setup` runs, the admin's password only on stdin.
 4. **The server**: `docker run -d <shape> --network host IMAGE`. Ready is the public health route,
@@ -42,7 +43,7 @@ runs every cell, a change to `web/` alone runs nothing.
    `cgroup-memory.txt`, `setup.log`, `state-logs/` (server.log, venv.log), `data-logs/` (every
    role's log segments: api, streaming, pipeline and its workers, the plugin runners, postgres,
    supervisor), `launcher.log`, the API's view (`api-processes.json`, `api-libraries.json`,
-   `api-machine.json` (`GET /api/server/machine`, 59.04), `api-version.json`), `report.json` and `summary.md`.
+   `api-machine.json` (`GET /api/server/machine`, 59.04), `api-version.json`), `postgres-pss.txt` on the cells that check it, `report.json` and `summary.md`.
 
 ## Assertions
 
@@ -57,6 +58,8 @@ runs every cell, a change to `web/` alone runs nothing.
 | `media_untouched` | the library holds exactly the fixtures afterwards: nothing written in it |
 | `logs_clean` | no permission error in `server.log` |
 | `tier_light`, `tier_standard` | `GET /api/server/machine` (59.04) reads the container's memory limit as Docker set it, and the tier and its defaults are that tier's |
+| `quiet_hold` | outside the cell's quiet hours a new library's first scan waits: the scan queue (`GET /api/queues`) says `quiet_hours` and when the window opens, and no clip is found; the admin's `POST /api/queues/scan/run-now` then starts it: the held jobs run and none stays paused; every clip is then found as in `scan` (59.02) |
+| `postgres_pss_512m` | the bundled Postgres's processes hold under 512 MiB together (the sum of `Pss` in each one's `smaps_rollup`, kept as `postgres-pss.txt`), the Light tier's tuning applied (59.02) |
 | `refused_write`, `refused_privileged` | the container exits 78 with its message (59.01) |
 
 An assertion still waiting for its story is written `{"name": "tier_light", "needs": ["59.04"]}`:
@@ -67,7 +70,8 @@ it is reported as pending (⏳) until that story is in `landed`.
 1. Add it to `cells.json`: `name`, `about`, `arches` (`amd64`, `arm64`), and its shape: `user`,
    `data`, `media`, `noaccess_root`, `docker` (extra `docker run` arguments such as `--memory=4g`
    or `--device /dev/dri`), `env`, `seccomp` (a profile in this folder), `expect: "refused"`,
-   `kill_restart`; then `asserts`.
+   `kill_restart`, `quiet_hours_ahead` (a one-hour quiet window opening three hours from now,
+   UTC; every other cell has none, `[schedule] quiet_hours = ""`); then `asserts`.
 2. A new assertion is a method `assert_<name>` of `Cell` in `cell.py` returning a short detail,
    raising `AssertionError` to fail. Use `self.api` (signed in as the admin) and `docker(...)`.
 3. A cell or assertion for a story not merged yet carries `needs: ["59.NN"]`; the story's pull
@@ -90,7 +94,6 @@ it is reported as pending (⏳) until that story is in `landed`.
 
 | Need | What the cells found |
 |---|---|
-| `scan-grant-race` | a scan asked right after a library is made walks nothing: the `light` runner's sandbox has no grant for the new root yet (EACCES, `files_walked=0`); the runner restarts with it a moment later. `scan` asks again each minute; `first_scan` waits |
 | `poster-queue` | in a fresh container no `content_hash` job is queued for the scanned clips, and `thumbnail` (the poster) only follows `content_hash`: `thumb_small` runs and writes nothing, and no poster is served after 15 minutes |
 | `plugin-cache-grant` | stages run in the plugin runners are refused `$HOME/.maktaba/cache` (`plugin_sandbox_refused`, `/var/lib/maktaba/.maktaba/cache`): the image's `HOME` is the volume, and the runners' grants do not cover it; they fall back to running in process |
 
