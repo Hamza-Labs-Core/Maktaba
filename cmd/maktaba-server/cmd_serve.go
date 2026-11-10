@@ -167,6 +167,9 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 		runningQuiet.Store(&quiet)
 		runningDisk.Store(&rot)
 		fmt.Fprintf(os.Stderr, "[serve] quiet hours %q; database disk %s (tuned for spinning disks: %v)\n", quiet, how, rot)
+		// Epic 59 story 59.08: on a Docker bridge multicast stays on the bridge, so no app
+		// or TV finds the home by itself: mDNS (mdnsLoop, the API's) and SSDP are off
+		bridgeOff(mt.Machine.Network, cfg.PublicWebURL(), os.Stderr)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -714,6 +717,10 @@ func servePorts(cfg *config.Config, found bool, role string, noWeb bool) error {
 		return nil
 	}
 	moved, err := reconcilePorts(cfg, config.Path(), o, os.Stderr, found)
+	// Epic 59 story 59.08: Settings → This machine shows what moved, and who holds the port
+	if moves := portMovesOf(moved); len(moves) > 0 {
+		runningPortMoves.Store(&moves)
+	}
 	if err == nil && len(moved) > 0 && !found {
 		fmt.Fprintf(os.Stderr, "  port: no server.toml at %s; the new address(es) hold for this run only\n", config.Path())
 	}

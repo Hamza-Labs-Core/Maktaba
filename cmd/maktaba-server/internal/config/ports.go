@@ -42,6 +42,12 @@ type PortChange struct {
 	Key      string // server.toml key: web_listen, listen, stream_addr
 	From, To string // the old and the new address
 	Reason   string // why it moved
+	// OldPort and NewPort are the ports of From and To; Taken: another program holds
+	// OldPort (not a platform's preferred port), and Holder names it when the system
+	// lets us see it (Epic 59 story 59.08: a NAS's own UI on 8080).
+	OldPort, NewPort int
+	Taken            bool
+	Holder           string
 }
 
 func (p PortChange) String() string {
@@ -153,8 +159,9 @@ func (c *Config) ReconcilePorts(p PortProbe, o PortOptions) ([]PortChange, error
 			return changes, fmt.Errorf("%s %s is in use by another program and no port of %d-%d is free: set %s in server.toml",
 				b.key, addr, FallbackPortLow, FallbackPortHigh, b.key)
 		}
-		changes = append(changes, c.move(b, addr, joinBind(host, next), port, next,
-			fmt.Sprintf("port %d is in use by another program", port)))
+		ch := c.move(b, addr, joinBind(host, next), port, next, fmt.Sprintf("port %d is in use by another program", port))
+		ch.Taken = true
+		changes = append(changes, ch)
 		delete(used, port)
 		used[next] = true
 	}
@@ -169,7 +176,7 @@ func (c *Config) move(b bind, from, to string, oldPort, newPort int, reason stri
 	case "web_listen":
 		c.Server.WebPublicURL = repointURL(c.Server.WebPublicURL, oldPort, newPort)
 	}
-	return PortChange{Key: b.key, From: from, To: to, Reason: reason}
+	return PortChange{Key: b.key, From: from, To: to, Reason: reason, OldPort: oldPort, NewPort: newPort}
 }
 
 // repointURL replaces the port of u when it is oldPort (a public URL that named

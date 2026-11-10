@@ -2,6 +2,7 @@ package config
 
 import (
 	"net"
+	"os"
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
@@ -32,10 +33,18 @@ func (c Config) PublicStreamURL() string {
 	return "http://" + net.JoinHostPort(host, port)
 }
 
-// detectLANIP picks the address the default route leaves from (a UDP
-// "dial" sends nothing), falling back to the first private IPv4 on an
-// up interface, then loopback.
+// EnvHostIP is the address the household reaches this machine at, set by a container's
+// compose file or template (Epic 59 story 59.08): on a bridge network the container's own
+// address is the bridge's, which no device reaches.
+const EnvHostIP = "MAKTABA_HOST_IP"
+
+// detectLANIP is MAKTABA_HOST_IP when it holds an address, else the address the default
+// route leaves from (a UDP "dial" sends nothing), falling back to the first private IPv4
+// on an up interface, then loopback.
 func detectLANIP() string {
+	if ip := net.ParseIP(strings.TrimSpace(os.Getenv(EnvHostIP))); ip != nil {
+		return ip.String()
+	}
 	if conn, err := net.Dial("udp4", "192.0.2.1:9"); err == nil {
 		defer func() { _ = conn.Close() }()
 		if a, ok := conn.LocalAddr().(*net.UDPAddr); ok && a.IP != nil && !a.IP.IsLoopback() {

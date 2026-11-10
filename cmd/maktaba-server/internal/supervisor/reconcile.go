@@ -61,6 +61,9 @@ const (
 	reasonReconcileOff   = "reconcile_off"
 	ReasonBootFlag       = "boot_flag"
 	ReasonEnvOverride    = "env_override"
+	// ReasonBridgeNetwork: a container on a Docker bridge, where multicast reaches no
+	// device (Epic 59 story 59.08)
+	ReasonBridgeNetwork = "bridge_network"
 	condTrue, condFalse  = "true", "false"
 	condUnknown          = "unknown"
 	reconcileTick        = time.Second
