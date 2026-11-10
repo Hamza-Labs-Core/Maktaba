@@ -273,7 +273,7 @@ stages    = ["extract", "transcribe", "second_listen"]
 # each transcription worker claims the GPU stages and runs them in its own ml runner (Epic 54
 # wave 3: the model is in the runner); the legacy extract stays in the worker for now
 processes = ["pipeline/stt-*", "plugin-runner/ml", "plugin-runner/ml-*"]
-requires  = ["runtime.ml", "any:model.whisper-turbo|model.whisper-large-v3|model.whisper-medium"]
+requires  = ["runtime.ml", "any:model.whisper-turbo|model.whisper-large-v3|model.whisper-medium|model.whisper-small|model.whisper-base|model.whisper-tiny"]
 wants     = ["model.cohere-arabic"]
 settings  = ["rules.transcription", "toml:transcription.workers"]
 platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
@@ -822,6 +822,72 @@ files      = [
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = []
 since      = "0.3.66"
+
+[[component]]
+id         = "model.whisper-small"
+kind       = "asset"
+group      = "models"
+title_key  = "components.model.whisper-small.title"
+desc_key   = "components.model.whisper-small.desc"
+requires   = ["runtime.ml"]
+# Epic 59 story 59.06: the NAS tiers' smaller models (CTranslate2 only: Apple Silicon keeps
+# large-v3-turbo on its GPU)
+source     = "hf:Systran/faster-whisper-small@536b0662742c02347bc0e980a01041f333bce120"
+in_payload = false
+# pinned by tools/release/cmd/pin-models
+files      = [
+  { path = "config.json", sha256 = "b55496ac7940a7ae47d2c01eab40edfd8701feec1229d9cce3b40014383fb828", size = 2370 },
+  { path = "model.bin", sha256 = "3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671", size = 483546902 },
+  { path = "tokenizer.json", sha256 = "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab", size = 2203239 },
+  { path = "vocabulary.txt", sha256 = "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913", size = 459861 },
+]
+platforms  = ["windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = []
+since      = "0.3.120"
+
+[[component]]
+id         = "model.whisper-base"
+kind       = "asset"
+group      = "models"
+title_key  = "components.model.whisper-base.title"
+desc_key   = "components.model.whisper-base.desc"
+requires   = ["runtime.ml"]
+# Epic 59 story 59.06: the NAS tiers' smaller models (CTranslate2 only: Apple Silicon keeps
+# large-v3-turbo on its GPU)
+source     = "hf:Systran/faster-whisper-base@ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66"
+in_payload = false
+# pinned by tools/release/cmd/pin-models
+files      = [
+  { path = "config.json", sha256 = "56a6d8110d311f19c8f0471e562832c7527f146b567275bfca59fcf7c184da9a", size = 2309 },
+  { path = "model.bin", sha256 = "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9", size = 145217532 },
+  { path = "tokenizer.json", sha256 = "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab", size = 2203239 },
+  { path = "vocabulary.txt", sha256 = "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913", size = 459861 },
+]
+platforms  = ["windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = []
+since      = "0.3.120"
+
+[[component]]
+id         = "model.whisper-tiny"
+kind       = "asset"
+group      = "models"
+title_key  = "components.model.whisper-tiny.title"
+desc_key   = "components.model.whisper-tiny.desc"
+requires   = ["runtime.ml"]
+# Epic 59 story 59.06: the NAS tiers' smaller models (CTranslate2 only: Apple Silicon keeps
+# large-v3-turbo on its GPU)
+source     = "hf:Systran/faster-whisper-tiny@d90ca5fe260221311c53c58e660288d3deb8d356"
+in_payload = false
+# pinned by tools/release/cmd/pin-models
+files      = [
+  { path = "config.json", sha256 = "a73a28cdfe1c43ccc7202fa333d1f89c202477271407ae9a7f19afa52039cac8", size = 2249 },
+  { path = "model.bin", sha256 = "dcb76c6586fc06cbdac6dd21f14cfd129cc4cdd9dce19bf4ffa62e59cbe6e6d1", size = 75538270 },
+  { path = "tokenizer.json", sha256 = "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab", size = 2203239 },
+  { path = "vocabulary.txt", sha256 = "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913", size = 459861 },
+]
+platforms  = ["windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = []
+since      = "0.3.120"
 
 [[component]]
 id         = "model.cohere-arabic"

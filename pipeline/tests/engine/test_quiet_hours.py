@@ -174,3 +174,27 @@ async def test_what_is_heavy() -> None:
         )
         == 0
     )
+
+
+# Story 59.06: on the Light tier (MAKTABA_QUIET_SPEECH) speech runs in quiet hours only, a
+# single new file's too; elsewhere a single new file's transcript still runs at once.
+@pytest.mark.asyncio
+async def test_light_transcribes_in_quiet_hours_only() -> None:
+    light = QuietHours.from_env(
+        {
+            "MAKTABA_QUIET_HOURS": "01:00-06:00",
+            "MAKTABA_QUIET_SPRITES": "1",
+            "MAKTABA_QUIET_SPEECH": "1",
+        }
+    )
+    assert light == QuietHours(60, 360, sprites=True, speech=True)
+    assert await quiet.is_heavy(D(1, True), J("transcribe"), light)
+    standard = QuietHours.from_env(
+        {"MAKTABA_QUIET_HOURS": "01:00-06:00", "MAKTABA_QUIET_SPEECH": "0"}
+    )
+    assert standard is not None and not standard.speech
+    assert not await quiet.is_heavy(D(1, True), J("transcribe"), standard)
+    at = datetime(2026, 11, 10, 14, 0)
+    assert await quiet.hold_seconds(D(1, True), J("transcribe"), quiet=light, at=at) == 11 * 3600
+    night = datetime(2026, 11, 10, 2, 0)
+    assert await quiet.hold_seconds(D(1, True), J("transcribe"), quiet=light, at=night) == 0

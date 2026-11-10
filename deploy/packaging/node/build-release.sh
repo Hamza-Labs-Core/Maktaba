@@ -12,6 +12,9 @@
 #                                               whose NVIDIA GPU runs the second listen
 #   maktaba-pipeline-<ver>-constraints-core.txt the runtime's pins with no extras (Epic 51
 #                                               story 51.17): a Core venv, no torch, no MLX
+#   maktaba-pipeline-<ver>-constraints-stt.txt  the stt extra's pins alone (Epic 59 story
+#                                               59.06): the Linux aarch64 payload carries
+#                                               their wheels (the speech engine, no torch)
 #   maktaba-node-<ver>.tar.gz / .zip            the node installer (this directory) with
 #                                               the wheel, both constraints and
 #                                               release.conf, which makes the installer
@@ -115,6 +118,7 @@ cp "$WORK/wheel/$WHEEL" "$OUT/$WHEEL"
 CONSTRAINTS="maktaba-pipeline-$PEP_VERSION-constraints.txt"
 CONSTRAINTS_CUDA="maktaba-pipeline-$PEP_VERSION-constraints-cuda.txt"
 CONSTRAINTS_CORE="maktaba-pipeline-$PEP_VERSION-constraints-core.txt"
+CONSTRAINTS_STT="maktaba-pipeline-$PEP_VERSION-constraints-stt.txt"
 extras=()
 # (a Windows Python prints CRLF: strip the CR, or uv rejects the extra's name)
 while IFS=$'\r' read -r e; do extras+=(--extra "$e"); done < <(
@@ -186,6 +190,18 @@ grep -v '^--extra-index-url ' "$OUT/$CONSTRAINTS_CORE" >"$WORK/$CONSTRAINTS_CORE
 mv "$WORK/$CONSTRAINTS_CORE.pypi" "$OUT/$CONSTRAINTS_CORE"
 if grep -qE '^(torch|mlx|mlx-whisper|faster-whisper|transformers)==' "$OUT/$CONSTRAINTS_CORE"; then
     die "$CONSTRAINTS_CORE pins an ML package: the runtime alone must not"
+fi
+
+# the speech engine's set (Epic 59 story 59.06): the stt extra alone, from PyPI. On Linux
+# aarch64 its markers keep CTranslate2 and faster-whisper and leave out torch and
+# transformers (the second listen is x86_64 + CUDA): small enough for the payload's wheelhouse
+(extras=(--extra stt) && export_pins "$CONSTRAINTS_STT")
+grep -v '^--extra-index-url ' "$OUT/$CONSTRAINTS_STT" >"$WORK/$CONSTRAINTS_STT.pypi"
+mv "$WORK/$CONSTRAINTS_STT.pypi" "$OUT/$CONSTRAINTS_STT"
+grep -qE "^ctranslate2==[^ ]* ;.*platform_machine == 'aarch64'" "$OUT/$CONSTRAINTS_STT" \
+    || die "$CONSTRAINTS_STT pins no CTranslate2 for Linux aarch64 (the stt extra)"
+if grep -E '^(torch|transformers)==' "$OUT/$CONSTRAINTS_STT" | grep -q "aarch64"; then
+    die "$CONSTRAINTS_STT pins torch or transformers on Linux aarch64: the second listen is x86_64 only"
 fi
 
 # --- the installer bundle ------------------------------------------------------------------------
