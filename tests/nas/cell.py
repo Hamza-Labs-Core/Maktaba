@@ -233,6 +233,10 @@ def _json(b: bytes) -> Any:
         return b[:500].decode("utf-8", "replace")
 
 
+# the render node the VA-API cells (59.05) give the container
+RENDER_NODE = "/dev/dri/renderD128"
+
+
 def wait(what: str, check: Callable[[], Any], seconds: float, every: float = 5) -> Any:
     """Call check until it returns something truthy; raise after seconds."""
     deadline = time.monotonic() + seconds
@@ -579,11 +583,20 @@ class Cell:
         return wait("a poster for an Arabic clip", poster, 15 * 60, every=15)
 
     def assert_transcode(self) -> str:
+        return self.transcode(force_software=True)
+
+    def assert_transcode_auto(self) -> str:
+        """A transcode on the encoder the server picked (59.05): libx264 after VA-API fell back."""
+        return self.transcode(force_software=False)
+
+    def transcode(self, force_software: bool) -> str:
         assert self.api is not None
         api = self.api
         v = self.hevc_video()
-        s, d = api.call("POST", "/api/stream/sessions",
-                        {"video_id": v["id"], "force_transcode": True, "force_software": True})
+        body: dict[str, Any] = {"video_id": v["id"], "force_transcode": True}
+        if force_software:
+            body["force_software"] = True
+        s, d = api.call("POST", "/api/stream/sessions", body)
         if s not in (200, 201) or not isinstance(d, dict):
             raise AssertionError(f"POST /api/stream/sessions: {s} {d}")
         if d.get("mode") != "transcode" or not d.get("manifest_url"):
@@ -819,6 +832,43 @@ class Cell:
         if defaults.get("tier") not in (None, want):
             raise AssertionError(f"the defaults are {defaults.get('tier')!r}'s, not {want!r}'s")
         return f"{tier}: limit {limit >> 20 if limit else 0} MiB, Postgres {defaults.get('shared_buffers')}, {defaults.get('pipeline_workers')} worker(s)"
+
+    def video(self) -> dict[str, Any]:
+        """The streaming role's video verdict in GET /api/server/machine (59.05), once written."""
+        return wait("the video verdict", lambda: self.machine().get("video"), 120, every=3)
+
+    def video_software(self, reason: str) -> dict[str, Any]:
+        v = self.video()
+        if v.get("encoder") != "software" or not v.get("software_only") or v.get("reason") != reason:
+            raise AssertionError(f"video {v}, want software ({reason})")
+        return v
+
+    def render_nodes(self) -> list[str]:
+        return [r.get("path", "") for r in ((self.machine().get("machine") or {}).get("gpu") or {}).get("render") or []]
+
+    def assert_video_no_device(self) -> str:
+        """No /dev/dri: VA-API is not tried, Settings says no_device, libx264 encodes."""
+        if nodes := self.render_nodes():
+            raise AssertionError(f"render nodes in a cell without any: {nodes}")
+        self.video_software("no_device")
+        return "software, no_device"
+
+    def assert_video_device_failed(self) -> str:
+        """A render node that is not a GPU (/dev/null): its test encode fails, the reason is kept."""
+        if RENDER_NODE not in self.render_nodes():
+            raise AssertionError(f"{RENDER_NODE} not among {self.render_nodes()}")
+        v = self.video_software("device_failed")
+        if v.get("device") != RENDER_NODE or not v.get("error"):
+            raise AssertionError(f"the failed device's reason: {v}")
+        return f"software, {RENDER_NODE} could not encode: {v.get('error', '')[:120]}"
+
+    def assert_video_group_add(self) -> str:
+        """A render node this user may not open: the fix names the user and group_add."""
+        v = self.video_software("group_add")
+        uid = (self.user or "1000:1000").split(":")[0]
+        if v.get("device") != RENDER_NODE or str(v.get("uid")) != uid:
+            raise AssertionError(f"the group_add reason: {v}, want {RENDER_NODE} and uid {uid}")
+        return f"software, user {uid} can't open {RENDER_NODE}: add group {v.get('gid')}"
 
     def assert_tier_light(self) -> str:
         return self.tier_is("light")

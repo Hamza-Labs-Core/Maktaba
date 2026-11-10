@@ -237,6 +237,29 @@ type EncodePlan struct {
 	// start): -ss before -i (an accurate seek, the output starting there), the
 	// output's timestamps the source's (HLS; a DASH transcode starts at 0).
 	Start int
+	// VAAPIDevice is the render node the h264_vaapi rungs encode on (story
+	// 59.05; "" none); HWDecode: the device decodes the source too, its frames
+	// staying on it (-hwaccel_output_format vaapi) and scaled there
+	// (scale_vaapi). Without it the CPU decodes, and each VA-API rung uploads
+	// its scaled frames (hwupload).
+	VAAPIDevice string
+	HWDecode    bool
+	// Burn is a filter drawn on the CPU over the picture before it is scaled
+	// (a burned-in subtitle's subtitles=…): frames on the device come down for
+	// it and go back up (hwdownload … hwupload).
+	Burn string
+}
+
+// WithVAAPI is the plan for a VA-API verdict on dev: its rungs on h264_vaapi
+// (PlanFor's), the device decoding the source when it lists the source's
+// codec at its bit depth (pixFmt, the catalogue's) and nothing is done to it
+// on the CPU first (a tone-map): else the CPU decodes it (10-bit H.264, AV1 on
+// an older chip).
+func (p EncodePlan) WithVAAPI(dev VAAPIDevice, sourceCodec, pixFmt string) EncodePlan {
+	p.VAAPIDevice = dev.Path
+	p.Decode = ""
+	p.HWDecode = p.ToneMap == "" && dev.Decodes(sourceCodec, TenBit(pixFmt))
+	return p
 }
 
 // segmentSeconds is the HLS and DASH segment length; every rung has a key frame
@@ -329,14 +352,19 @@ func rungArgs(i int, rung Rendition, enc string, p EncodePlan) Args {
 		"-map", video,
 		"-c:v:" + n, enc,
 		"-b:v:" + n, itoa(rung.BitrateKbps) + "k",
-		"-pix_fmt:v:" + n, "yuv420p",
+	}
+	if enc != "h264_vaapi" {
+		// a VA-API rung's frames are on the device, 8-bit 4:2:0 (nv12) there
+		a = append(a, "-pix_fmt:v:"+n, "yuv420p")
+	}
+	a = append(a,
 		// High, the profile the master playlist names (hlsVideoCodec): NVENC and
 		// QuickSync would otherwise pick their own
-		"-profile:v:" + n, "high",
-		"-force_key_frames:v:" + n, "expr:gte(t,n_forced*" + itoa(segmentSeconds) + ")",
-	}
+		"-profile:v:"+n, "high",
+		"-force_key_frames:v:"+n, "expr:gte(t,n_forced*"+itoa(segmentSeconds)+")",
+	)
 	if p.ToneMap == "" {
-		a = append(a, "-filter:v:"+n, FitScale(rung.Height))
+		a = append(a, "-filter:v:"+n, rungFilter(rung.Height, enc, p))
 	}
 	if p := presetForEncoder(enc); p != "" {
 		a = append(a, "-preset:v:"+n, p)
@@ -347,9 +375,52 @@ func rungArgs(i int, rung Rendition, enc string, p EncodePlan) Args {
 	return a
 }
 
+// rungFilter is a rung's video filter: FitScale's size, and for VA-API the
+// frames brought to where its encoder takes them. Frames decoded on the device
+// are scaled there (scale_vaapi, to nv12), and downloaded for a libx264 rung;
+// frames decoded on the CPU are scaled there and uploaded for a VA-API rung.
+// A burned-in overlay (Burn) is drawn on the CPU first.
+func rungFilter(short int, enc string, p EncodePlan) string {
+	vaapi := enc == "h264_vaapi"
+	if p.HWDecode {
+		if p.Burn != "" {
+			// down for the overlay, up again for the device's scaler
+			return "hwdownload,format=nv12," + p.Burn + ",format=nv12,hwupload," + vaapiScale(short) + vaapiDown(vaapi)
+		}
+		return vaapiScale(short) + vaapiDown(vaapi)
+	}
+	f := FitScale(short)
+	if p.Burn != "" {
+		f = p.Burn + "," + f
+	}
+	if vaapi {
+		f += ",format=nv12,hwupload"
+	}
+	return f
+}
+
+// vaapiScale is FitScale on the device, to 8-bit 4:2:0.
+func vaapiScale(short int) string {
+	return "scale_vaapi=" + strings.TrimPrefix(FitScale(short), "scale=") + ":format=nv12"
+}
+
+// vaapiDown brings a device's frames to memory for a rung that is not VA-API's.
+func vaapiDown(vaapi bool) string {
+	if vaapi {
+		return ""
+	}
+	return ",hwdownload,format=nv12"
+}
+
 func inputArgs(input string, p EncodePlan) Args {
 	args := Args{"-y", "-hide_banner", "-loglevel", "warning"}
-	if p.Decode != "" {
+	if p.VAAPIDevice != "" {
+		// the device the VA-API filters and encoder use (and its decoder's)
+		args = append(args, "-vaapi_device", p.VAAPIDevice)
+		if p.HWDecode {
+			args = append(args, "-hwaccel", "vaapi", "-hwaccel_output_format", "vaapi")
+		}
+	} else if p.Decode != "" {
 		args = append(args, "-hwaccel", p.Decode)
 	}
 	if p.Start > 0 {
@@ -369,7 +440,11 @@ func videoGraph(ladder []Rendition, p EncodePlan) Args {
 	for i, rung := range ladder {
 		n := itoa(i)
 		splits += "[s" + n + "]"
-		fits += ";[s" + n + "]" + FitScale(rung.Height) + "[v" + n + "]"
+		up := ""
+		if encoderAt(p, i) == "h264_vaapi" {
+			up = ",format=nv12,hwupload" // tone-mapped on the CPU, encoded on the device
+		}
+		fits += ";[s" + n + "]" + FitScale(rung.Height) + up + "[v" + n + "]"
 	}
 	return Args{"-filter_complex", "[0:v:0]" + p.ToneMap + ",split=" + itoa(rungs) + splits + fits}
 }
@@ -560,6 +635,8 @@ func encoderForHWAccel(hwaccel string) string {
 		return "h264_nvenc"
 	case "qsv":
 		return "h264_qsv"
+	case "vaapi":
+		return "h264_vaapi"
 	default:
 		return "libx264"
 	}

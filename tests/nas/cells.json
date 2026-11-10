@@ -1,6 +1,6 @@
 {
   "_doc": "The nas-shapes matrix (story 59.15). tests/nas/README.md says what each field means and how to add a cell. A cell runs once its `needs` are all in `landed`; an assertion likewise.",
-  "landed": ["59.04", "59.01", "pg-stale-lock", "59.02", "scan-grant-race", "59.03", "59.07"],
+  "landed": ["59.04", "59.01", "pg-stale-lock", "59.02", "scan-grant-race", "59.03", "59.05", "59.07"],
   "cells": [
     {
       "name": "uid-1000",
@@ -130,6 +130,30 @@
       "quiet_hours_ahead": true,
       "needs": ["59.02"],
       "asserts": ["ready", "quiet_hold", "no_oom"]
+    },
+    {
+      "name": "vaapi-fallback",
+      "about": "VA-API asked for, no render device (a NAS without /dev/dri passed): libx264, the reason recorded",
+      "arches": ["amd64"],
+      "env": {"MAKTABA_HWACCEL_PREFER": "vaapi"},
+      "needs": ["59.05"],
+      "asserts": ["ready", "video_no_device", "scan", "transcode_auto"]
+    },
+    {
+      "name": "vaapi-fake-device",
+      "about": "a render node that is no GPU (/dev/null as renderD128): its test encode fails, libx264 takes over",
+      "arches": ["amd64"],
+      "docker": ["--device", "/dev/null:/dev/dri/renderD128"],
+      "needs": ["59.05"],
+      "asserts": ["ready", "video_device_failed", "scan", "transcode_auto"]
+    },
+    {
+      "name": "vaapi-no-group",
+      "about": "/dev/dri passed without its group: a node the user may not open (the host's /dev/kmsg, 0644 root, read-only in the device cgroup), Settings names group_add",
+      "arches": ["amd64"],
+      "docker": ["--device", "/dev/kmsg:/dev/dri/renderD128:r"],
+      "needs": ["59.05"],
+      "asserts": ["ready", "video_group_add", "scan", "transcode_auto"]
     },
     {
       "name": "restart-after-kill",

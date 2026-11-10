@@ -14,17 +14,17 @@ build fails when the two differ.
 
 ### Changed
 
-- **A home in a container says how isolated its plugins are, and asks before running
-  third-party plugins with less (story 59.07).** Each machine computes its plugin isolation
-  level at start: Full with Landlock and user namespaces, Container without them (most NAS
-  kernels, Docker's default seccomp profile). Settings → This machine and the Plugins page say
-  which, in one line. On the Container level a third-party plugin can be installed and turned
-  on but stays off, with the reason, until an admin turns on **Allow plugins with
-  container-only isolation on this home** (Settings → Plugins; the password typed again,
-  written to the audit log; `PUT /api/plugins/isolation`). Maktaba's own plugins keep running,
-  reported partial. The plugin host's required layers are unchanged; before any plugin runs it
-  is asked what they apply on this machine (`maktaba-plugind --sandbox-check`). A dedup or convert runner
-  started before a library's trash folder existed may now move a file into it.
+- **A NAS converts video on its own chip, and says when it can't (story 59.05).** On an Intel
+  J4125 or N100, or an AMD APU, streaming now uses VA-API (`h264_vaapi`, HEVC where the driver
+  lists it) once a 2-second 1080p test encode works: after NVIDIA and Quick Sync, before Quick
+  Sync on a NAS or in a container. The server image carries the VA-API drivers on amd64 (iHD
+  from Debian's non-free component, i965, Mesa; `THIRD_PARTY_NOTICES`), and the compose file
+  shows how to pass `/dev/dri` with its group (`group_add`). Settings → This machine shows the
+  video: "Video: hardware (iHD), H.264 and HEVC", or software with why (no render device, the
+  group to add, the device's own error). With no GPU the tier's limits apply (one conversion
+  at 720p at most on Light, two at 1080p on Standard), players are told the home converts in
+  software, and a conversion past the limit waits with "Another video is being converted on
+  this home" and starts by itself.
 
 - **On a NAS, heavy work waits for quiet hours and Postgres is tuned to the machine (story
   59.02).** On the Light and Standard tiers a library's first scan, a transcription backlog,
@@ -2589,6 +2589,18 @@ build fails when the two differ.
   the fix, instead of restarting over and over. The Linux payload now carries the core Python
   packages for its architecture, so setup builds the pipeline's environment from them with no
   download; a home set up without speech to text downloads no model either.
+
+- **A home in a container says how isolated its plugins are, and asks before running
+  third-party plugins with less (story 59.07).** Each machine computes its plugin isolation
+  level at start: Full with Landlock and user namespaces, Container without them (most NAS
+  kernels, Docker's default seccomp profile). Settings → This machine and the Plugins page say
+  which, in one line. On the Container level a third-party plugin can be installed and turned
+  on but stays off, with the reason, until an admin turns on **Allow plugins with
+  container-only isolation on this home** (Settings → Plugins; the password typed again,
+  written to the audit log; `PUT /api/plugins/isolation`). Maktaba's own plugins keep running,
+  reported partial. The plugin host's required layers are unchanged; before any plugin runs it
+  is asked what they apply on this machine (`maktaba-plugind --sandbox-check`). A dedup or convert runner
+  started before a library's trash folder existed may now move a file into it.
 
 ### Fixed
 
