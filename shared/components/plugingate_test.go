@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"testing"
 )
 
@@ -87,5 +88,28 @@ func TestServesPluginAPI12(t *testing.T) {
 	in := PluginGateInput{ServerVersion: "0.7.0", Range: ">=0.6.0", PluginAPI: "1.2", ReviewLevel: "store"}
 	if reason, why := PluginGate(in); reason != "" {
 		t.Fatalf("a 1.2 plugin is gated: %s %v", reason, why)
+	}
+}
+
+// Epic 59 story 59.07: the isolation hold is a reason of its own, in the catalog, after
+// what no admin's yes would change here and the unreviewed opt-in, before the grants.
+func TestIsolationHeldGate(t *testing.T) {
+	base := PluginGateInput{ServerVersion: "0.7.0", Range: ">=0.6.0", PluginAPI: "1.0", ReviewLevel: "store",
+		Required: []string{"media.read"}, IsolationHeld: true}
+	if r, _ := PluginGate(base); r != ReasonIsolationHeld {
+		t.Fatalf("held: %q", r)
+	}
+	revoked := base
+	revoked.Revoked = true
+	if r, _ := PluginGate(revoked); r != ReasonRevoked {
+		t.Fatalf("revoked first: %q", r)
+	}
+	allowed := base
+	allowed.IsolationHeld = false
+	if r, _ := PluginGate(allowed); r != ReasonGrantsNeeded {
+		t.Fatalf("after the admin's yes the grants decide: %q", r)
+	}
+	if !slices.Contains(PluginReasons, ReasonIsolationHeld) || !Default().IsReason(ReasonIsolationHeld) {
+		t.Fatal("isolation_held is not a plugin reason in the catalog")
 	}
 }
