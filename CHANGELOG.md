@@ -14,11 +14,18 @@ build fails when the two differ.
 
 ### Changed
 
-- **The Apple and Android apps wait for a busy NAS instead of failing (story 59.05).** When
-  every conversion slot of the home is taken (a Light-tier NAS converts one video at a time),
-  the player says "Another video is being converted on this home. Yours will start when it
-  finishes." and asks again every 10 seconds by itself, with no error screen; the video starts
-  as soon as a slot is free. Elsewhere the same answer reads as that sentence, with Try again.
+- **A NAS converts video on its own chip, and says when it can't (story 59.05).** On an Intel
+  J4125 or N100, or an AMD APU, streaming now uses VA-API (`h264_vaapi`, HEVC where the driver
+  lists it) once a 2-second 1080p test encode works: after NVIDIA and Quick Sync, before Quick
+  Sync on a NAS or in a container. The server image carries the VA-API drivers on amd64 (iHD
+  from Debian's non-free component, i965, Mesa; `THIRD_PARTY_NOTICES`), and the compose file
+  shows how to pass `/dev/dri` with its group (`group_add`). Settings → This machine shows the
+  video: "Video: hardware (iHD), H.264 and HEVC", or software with why (no render device, the
+  group to add, the device's own error). With no GPU the tier's limits apply (one conversion
+  at 720p at most on Light, two at 1080p on Standard), players are told the home converts in
+  software, and a conversion past the limit waits with "Another video is being converted on
+  this home" and starts by itself.
+
 - **On a NAS, heavy work waits for quiet hours and Postgres is tuned to the machine (story
   59.02).** On the Light and Standard tiers a library's first scan, a transcription backlog,
   convert and duplicates, and bulk thumbnail sprites wait for 01:00–06:00, so the NAS stays
@@ -2582,6 +2589,12 @@ build fails when the two differ.
   the fix, instead of restarting over and over. The Linux payload now carries the core Python
   packages for its architecture, so setup builds the pipeline's environment from them with no
   download; a home set up without speech to text downloads no model either.
+
+- **The Apple and Android apps wait for a busy NAS instead of failing (story 59.05).** When
+  every conversion slot of the home is taken (a Light-tier NAS converts one video at a time),
+  the player says "Another video is being converted on this home. Yours will start when it
+  finishes." and asks again every 10 seconds by itself, with no error screen; the video starts
+  as soon as a slot is free. Elsewhere the same answer reads as that sentence, with Try again.
 
 ### Fixed
 

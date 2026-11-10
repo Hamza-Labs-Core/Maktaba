@@ -53,8 +53,8 @@ major. The install is the Maktaba app (Epic 59 story 59.10); the result goes in
 ## Hardware and updates
 
 ### 8. VA-API on the N100
-- **Do:** play an HEVC file on a browser that needs a transcode.
-- **See:** the transcode is hardware (VA-API, iHD) on This machine and in the playback's info.
+- **Do:** with the app's GPU setting passing the N100's `/dev/dri` (the render group added), open Settings → This machine, then play a 1080p HEVC file on a browser that needs a transcode; note the speed from the server log's `vod_transcode` lines.
+- **See:** This machine says "Video: hardware (iHD), H.264 and HEVC"; playback is smooth and the transcode runs at 2× real time or faster.
 - **Screenshots:** `truenas/08-vaapi.en.png`, `truenas/08-vaapi.ar.png`
 
 ### 9. Plugin isolation

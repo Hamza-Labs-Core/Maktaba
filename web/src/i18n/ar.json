@@ -7721,5 +7721,14 @@
   "machine.disk.asked": "كما أجبت ({fs})",
   "machine.disk.tunedRotational": "قاعدة البيانات مضبوطة للأقراص الدوّارة.",
   "machine.defaults.postgres": "ذاكرة قاعدة البيانات: {value}",
-  "machine.defaults.quiet": "ساعات الهدوء: {window}"
+  "machine.defaults.quiet": "ساعات الهدوء: {window}",
+  "machine.video": "الفيديو",
+  "machine.video.vaapi": "الفيديو: عتادي ({driver})، {codecs}",
+  "machine.video.software": "الفيديو: برمجي",
+  "machine.video.no_device": "لا يتوفر جهاز عرض لهذه الحاوية.",
+  "machine.video.software_only": "يحوّل هذا الجهاز الرئيسي الفيديو برمجيًا، وستشغّل المشغّلات الملفات كما هي كلما أمكنها ذلك.",
+  "machine.video.device_failed": "تعذّر على جهاز العرض {device} الترميز: {error}",
+  "machine.video.group_add": "جهاز العرض موجود، لكن المستخدم {uid} لا يستطيع فتحه: أضف المجموعة {gid} إلى الحاوية (group_add).",
+  "machine.defaults.transcodes": "تحويلات الفيديو في آنٍ واحد: {software} برمجيًا (حتى {height}p)، و{hardware} على معالج الرسوميات",
+  "stream.wait_transcode": "يجري تحويل فيديو آخر على هذا الجهاز الرئيسي، وسيبدأ الفيديو الخاص بك عند انتهائه."
 }

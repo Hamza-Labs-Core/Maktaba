@@ -118,6 +118,10 @@ export const PROBLEM_VIDEO_UNAVAILABLE_OFFLINE =
   "https://maktaba.tv/problems/video-unavailable-offline";
 /** Too little free on the streaming server's disk to prepare (transcode) a video. */
 export const PROBLEM_INSUFFICIENT_STORAGE = "https://maktaba.tv/problems/insufficient-storage";
+/** Every transcode the home runs at once is taken (Epic 59 story 59.05): wait and ask again. */
+export const PROBLEM_TRANSCODE_BUSY = "https://maktaba.tv/problems/transcode-busy";
+/** How long the player waits before asking again for a busy home's transcode. */
+export const TRANSCODE_BUSY_RETRY_MS = 10_000;
 
 export type NodeUnavailableCode = "paused" | "home_unreachable";
 

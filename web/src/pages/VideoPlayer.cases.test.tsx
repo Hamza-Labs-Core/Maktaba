@@ -206,6 +206,37 @@ describe("VideoPlayer (test-cases/video-player.md)", () => {
     expect(within(alert).getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });
 
+  it("VPL-07d: a home whose transcodes are all taken says so and asks again by itself", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let calls = 0;
+      servePost(() => {
+        calls += 1;
+        if (calls === 1)
+          throw new ApiError({
+            type: "https://maktaba.tv/problems/transcode-busy",
+            title: "another video is being converted on this home",
+            status: 503,
+            code: "transcode_busy",
+          });
+        return SESSION;
+      });
+      renderPlayer("/videos/vid-1/watch", { history: ["/library"] });
+      const wait = await screen.findByTestId("player-waiting");
+      expect(wait).toHaveTextContent(
+        "Another video is being converted on this home. Yours will start when it finishes."
+      );
+      expect(screen.queryByRole("alert")).toBeNull();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      await waitFor(() => expect(posts("/api/stream/sessions")).toHaveLength(2));
+      await waitFor(() => expect(screen.queryByTestId("player-waiting")).toBeNull());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("VPL-07b: a video this machine cannot read while the home is unreachable says so", async () => {
     servePost(() =>
       Promise.reject(

@@ -229,6 +229,79 @@ describe("ThisMachineSection", () => {
     expect(await screen.findByText("As you answered (zfs)")).toBeInTheDocument();
   });
 
+  // Epic 59 story 59.05: the video verdict, in both languages
+  it("shows VA-API's driver and codecs", async () => {
+    open({
+      ...DOC,
+      defaults: {
+        ...DOC.defaults,
+        software_transcodes: 2,
+        software_max_height: 1080,
+        hardware_transcodes: 4,
+      },
+      video: {
+        encoder: "vaapi",
+        vaapi: { device: "/dev/dri/renderD128", driver: "iHD" },
+        codecs: ["H.264", "HEVC"],
+        software_only: false,
+      },
+    });
+    expect(await screen.findByTestId("machine-video")).toHaveTextContent(
+      "Video: hardware (iHD), H.264 and HEVC"
+    );
+    expect(
+      screen.getByText("Video conversions at once: 2 in software (up to 1080p), 4 on a GPU")
+    ).toBeInTheDocument();
+  });
+
+  it("says why video is in software: the group to add, no device, a failed device", async () => {
+    const software = { encoder: "software", software_only: true };
+    open({
+      ...DOC,
+      video: {
+        ...software,
+        reason: "group_add",
+        device: "/dev/dri/renderD128",
+        uid: 1026,
+        gid: 937,
+      },
+    });
+    const v = await screen.findByTestId("machine-video");
+    expect(v).toHaveTextContent("Video: software");
+    expect(v).toHaveTextContent(
+      "The render device is there, but user 1026 can't open it: add group 937 to the container (group_add)."
+    );
+    expect(v).toHaveTextContent(
+      "This home converts video in software. Players will play files as they are whenever they can."
+    );
+  });
+
+  it("names a device that failed its test encode, in Arabic", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    open({
+      ...DOC,
+      video: {
+        encoder: "software",
+        software_only: true,
+        reason: "device_failed",
+        device: "/dev/dri/renderD128",
+        error: "Failed to initialise VAAPI connection",
+      },
+    });
+    const v = await screen.findByTestId("machine-video");
+    expect(v).toHaveTextContent("الفيديو: برمجي");
+    expect(v).toHaveTextContent(
+      "تعذّر على جهاز العرض /dev/dri/renderD128 الترميز: Failed to initialise VAAPI connection"
+    );
+  });
+
+  it("says when no render device is in the container", async () => {
+    open({ ...DOC, video: { encoder: "software", software_only: true, reason: "no_device" } });
+    expect(await screen.findByTestId("machine-video")).toHaveTextContent(
+      "No render device is available to this container."
+    );
+  });
+
   it("rounds GB as people read them", () => {
     expect(gb(3.7 * G)).toBe(3.7);
     expect(gb(31.6 * G)).toBe(32);

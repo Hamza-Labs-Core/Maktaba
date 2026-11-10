@@ -42,6 +42,8 @@ import {
   api,
   ApiError,
   PROBLEM_INSUFFICIENT_STORAGE,
+  PROBLEM_TRANSCODE_BUSY,
+  TRANSCODE_BUSY_RETRY_MS,
   PROBLEM_VIDEO_UNAVAILABLE_OFFLINE,
 } from "../lib/api";
 import {
@@ -96,6 +98,8 @@ interface Failure {
   error: ClassifiedError;
   /** i18n key of a sentence that says more than the kind's (a full disk). */
   sentence?: string;
+  /** another video is being converted on the home: the player waits and asks again */
+  waiting?: boolean;
 }
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -230,7 +234,9 @@ export function VideoPlayer({
         ? { sentence: "homeOffline.video" }
         : e instanceof ApiError && e.problem.type === PROBLEM_INSUFFICIENT_STORAGE
           ? { sentence: "player.diskFull" }
-          : {}),
+          : e instanceof ApiError && e.problem.type === PROBLEM_TRANSCODE_BUSY
+            ? { sentence: "stream.wait_transcode", waiting: true }
+            : {}),
     }),
     []
   );
@@ -292,6 +298,15 @@ export function VideoPlayer({
       }
     };
   }, [videoId, startAt, failure, reload]);
+
+  // Epic 59 story 59.05: the home's transcodes are all taken (a Light home converts one at a
+  // time in software): ask again until this one starts.
+  const waiting = err?.waiting === true;
+  useEffect(() => {
+    if (!waiting) return;
+    const id = window.setTimeout(() => setReload((x) => x + 1), TRANSCODE_BUSY_RETRY_MS);
+    return () => window.clearTimeout(id);
+  }, [waiting, err]);
 
   // Chapter ticks for the scrubber.
   useEffect(() => {
@@ -677,6 +692,13 @@ export function VideoPlayer({
     );
   };
 
+  if (err?.waiting)
+    return (
+      <div className="mkt-player__loading" role="status" data-testid="player-waiting">
+        {backButton}
+        <p>{t("stream.wait_transcode")}</p>
+      </div>
+    );
   if (err) return failedView(err);
   if (!session)
     return (
