@@ -35,18 +35,22 @@ TrueNAS's app install, real Quick Sync, a real DSM kernel.
 | `uid-dsm` | ubuntu-24.04 | `--user 1026:100`, volume group-writable by 100 | ready |
 | `media-ro` | ubuntu-24.04 | media `:ro` | Read only; subtitles in data; convert 409 |
 | `media-none` | ubuntu-24.04 | a second root mode 000 | No access; no scan for it |
-| `mem-4g` | ubuntu-24.04 | `--memory=4g` | Light; Postgres RSS < 512 MB |
+| `mem-4g` | ubuntu-24.04 | `--memory=4g` | Light; Postgres PSS sum < 512 MB; `memory.current` under the limit |
+| `mem-3.7g` | ubuntu-24.04 | `--memory=3700m` | setup continues on Light (the 3.5 GiB floor) |
 | `mem-6g-stt` | ubuntu-24.04 | `--memory=6g`, speech on | Standard; a clip transcribed |
 | `arm64` | ubuntu-24.04-arm | default + speech on (`base`) | ready; a clip transcribed (59.06) |
-| `no-landlock` | ubuntu-24.04 | a seccomp profile returning `ENOSYS` for `landlock_*` and `EPERM` for `unshare` | isolation level Container; third-party plugin held (59.07) |
+| `no-landlock-enosys` | ubuntu-24.04 | a seccomp profile returning `ENOSYS` for `landlock_*` and `EPERM` for `unshare` | isolation level Container; plugind `partial`; third-party plugin held (59.07) |
+| `no-landlock-eperm` | ubuntu-24.04 | the same with `EPERM` for `landlock_*` (older Docker default profiles) | same |
+| `uid-unnamed` | ubuntu-24.04 | `--user 4321:4321`, no passwd entry | `nss_wrapper` names it; Postgres ready (59.01) |
 | `bridge` | ubuntu-24.04 | bridge network, published ports | ready; setup says mDNS is off |
 | `offline` | ubuntu-24.04 | `--network none` after pull | ready without PyPI (59.01) |
 | `vaapi-fallback` | ubuntu-24.04 | `MAKTABA_HWACCEL_PREFER=vaapi`, no device | test encode fails → libx264, reason recorded |
 | `privileged` | ubuntu-24.04 | `--privileged` | refused, exit 78 |
 
 - **arm64:** GitHub's arm64 runner runs the arm64 image natively, so there is no emulation.
+- **The update legs** of 59.12 run on this harness, as `update-rehearsal-container`.
 - **TrueNAS app checks:** `truenas/apps`' own app tests (its `ci` script, render and lint) run
-  against `apps/maktaba` in our repo (59.10).
+  against `deploy/nas/truenas/ix-dev/community/maktaba` in our repo (59.10).
 - **The Unraid template:** XML schema check plus a render test.
 
 **Logs kept in every run:**
@@ -98,5 +102,5 @@ screenshots.
 |---|---|
 | `.github/workflows/nas.yml` (new) | the matrix, paths filter, artifacts |
 | `tests/nas/` (new) | the fixture library, cell scripts, assertions |
-| `tests/nas/seccomp-no-landlock.json` (new) | the profile |
+| `tests/nas/seccomp-no-landlock-{enosys,eperm}.json` (new) | the two profiles |
 | `docs/nas/checklists/` (new) | device checklists and results folder |

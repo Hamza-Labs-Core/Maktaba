@@ -32,7 +32,11 @@ No published benchmark gives NAS numbers (research.md §6), so Maktaba must meas
 |---|---|---|
 | Light | `base` (off until turned on) | `tiny`, `base` |
 | Standard | `small` int8; `base` without AVX2 | `tiny` … `medium` |
-| Strong | `large-v3-turbo` (CUDA, or AVX2 CPU with ≥ 16 GB) | all |
+| Strong | `large-v3-turbo` (CUDA, or an AVX2 CPU) | all |
+
+- **A CUDA GPU** raises the default to `large-v3-turbo` on any tier whose memory limit holds the
+  worker (the model plus 300 MB), since the work runs on the GPU. A render device for video
+  does not change the speech model.
 
 - Models download from the existing model source: Hugging Face, the NAS copy, or the home's
   cache.
@@ -60,8 +64,11 @@ No published benchmark gives NAS numbers (research.md §6), so Maktaba must meas
 
 ## Acceptance criteria
 
-- **Given** the arm64 image with speech on, **then** a 30-second Arabic clip is transcribed, and
-  its text matches the reference with WER below 35% on `base`.
+- **Given** the arm64 image with speech on, **then** the 30-second Arabic and English clips are
+  transcribed, and each result's word error rate against its reference is recorded in the CI
+  report. The first runs set a baseline per model and architecture; from then on, a rise of more
+  than 5 points over the baseline fails the run. `base` is weak on Arabic, so no fixed threshold
+  is set before the baseline exists.
 - **Given** a Standard tier on a CPU without AVX2, **then** the default model is `base`, and
   Settings says why.
 - **Given** a measured factor and a backlog estimated over 30 days, **then** Settings suggests the
@@ -72,7 +79,7 @@ No published benchmark gives NAS numbers (research.md §6), so Maktaba must meas
 
 | ID | Type | Setup | Action | Expected |
 |---|---|---|---|---|
-| T01 | CI `arm64` cell (59.15) | arm64 image, `base` | transcribe the Arabic and English clips | text produced; WER under 35% Arabic, 25% English |
+| T01 | CI `arm64` cell (59.15) | arm64 image, `base` | transcribe the Arabic and English clips | text produced; WER recorded; no rise over 5 points from the stored baseline |
 | T02 | pipeline unit | tier × avx2 table | default model | matches the table |
 | T03 | pipeline unit | factor 0.5×, backlog 900 h | estimate | over 30 days → suggests next smaller |
 | T04 | pipeline unit | limit 6 GB, `small` | plan workers | one |
@@ -84,10 +91,12 @@ No published benchmark gives NAS numbers (research.md §6), so Maktaba must meas
 
 | Key | English | Arabic |
 |---|---|---|
-| `stt.speed.faster` | This NAS transcribes about {x}× faster than real time with {model}. | يفرّغ هذا الخادم الكلام أسرع من الزمن الفعلي بنحو {x} مرة باستخدام {model}. |
-| `stt.speed.slower` | This NAS transcribes about {x}× slower than real time with {model}. | يفرّغ هذا الخادم الكلام أبطأ من الزمن الفعلي بنحو {x} مرة باستخدام {model}. |
-| `stt.backlog.estimate` | Your {hours} hours of audio would take about {days} days. | ستستغرق ساعاتك الصوتية البالغة {hours} ساعة نحو {days} يومًا. |
-| `stt.backlog.suggest` | {model} would take about {days} days. A computer with a GPU can also join this home and do the work. | سيستغرق {model} نحو {days} يومًا. ويمكن أيضًا لحاسوب مزوّد بمعالج رسوميات أن ينضم إلى هذا الجهاز الرئيسي ويقوم بالعمل. |
+| `stt.speed.faster` | This NAS transcribes faster than real time with {model} (speed: {x}×). | يفرّغ خادم التخزين الشبكي هذا الكلام أسرع من الزمن الفعلي باستخدام {model} (السرعة: {x}×). |
+| `stt.speed.slower` | This NAS transcribes slower than real time with {model} (speed: {x}×). | يفرّغ خادم التخزين الشبكي هذا الكلام أبطأ من الزمن الفعلي باستخدام {model} (السرعة: {x}×). |
+| `stt.speed.busy` | Measured while the NAS was busy, so the real speed may be higher. | قيست السرعة وخادم التخزين الشبكي مشغول، لذا قد تكون السرعة الفعلية أعلى. |
+| `stt.backlog.estimate` | Audio waiting: {hours} h. Estimated time: {days} d. | الصوت المنتظر (بالساعات): {hours}. الوقت المقدّر (بالأيام): {days}. |
+| `stt.backlog.suggest` | With {model}, estimated time: {days} d. A computer with a GPU can also join this home and do the work. | باستخدام {model}، الوقت المقدّر (بالأيام): {days}. ويمكن أيضًا لحاسوب مزوّد بمعالج رسوميات أن ينضم إلى هذا الجهاز الرئيسي ويقوم بالعمل. |
+| `stt.model.offline` | The model couldn't be downloaded. Copy it from another Maktaba computer (NAS copy), or put it in the models folder of Maktaba's data folder. | تعذّر تنزيل النموذج. انسخه من حاسوب Maktaba آخر (نسخة خادم التخزين)، أو ضعه في مجلد النماذج داخل مجلد بيانات Maktaba. |
 | `stt.model.note` | Smaller models are faster but make more mistakes, especially in Arabic. | النماذج الأصغر أسرع لكنها تخطئ أكثر، لا سيما في العربية. |
 | `stt.no_avx2` | This processor lacks AVX2, so a smaller model was chosen. | يفتقر هذا المعالج إلى AVX2، لذا اختير نموذج أصغر. |
 | `stt.second_listen.unavailable_arm` | The second listen is not available on ARM processors. | الاستماع الثاني غير متاح على معالجات ARM. |
@@ -95,10 +104,10 @@ No published benchmark gives NAS numbers (research.md §6), so Maktaba must meas
 ## Edge cases
 
 - **No internet for the model download:** the NAS copy source (setup's existing step) or a model
-  folder the household places in the data dir. The message names both.
+  folder the household places in the data dir. `stt.model.offline` names both.
 - **A CPU with AVX but not AVX2** (older Atoms): treated like no-AVX2.
 - **The measurement runs while other work is busy:** it is repeated once if the CPU was over 80%
-  busy, and labelled "measured while busy" if it still was.
+  busy, and shown with `stt.speed.busy` if it still was.
 
 ## Build plan
 
@@ -107,6 +116,6 @@ No published benchmark gives NAS numbers (research.md §6), so Maktaba must meas
 | `pipeline/pyproject.toml` | `stt` extra on aarch64 (ctranslate2, faster-whisper) |
 | `pipeline/src/maktaba_pipeline/stt/engine.py` | model by tier, threads, nice |
 | `pipeline/src/maktaba_pipeline/stt/benchmark.py` (new) | the measured factor, estimates |
-| `pipeline/src/maktaba_pipeline/stt/assets/` | the two 30-second clips with licence notes |
+| `pipeline/src/maktaba_pipeline/stt/assets/` (new) | the two 30-second clips with licence notes |
 | `.github/workflows/release.yml` | aarch64 `runtime.ml` |
-| `web/` | speech panel |
+| `web/src/i18n/{en,ar}.json`, `web/` | strings; speech panel |

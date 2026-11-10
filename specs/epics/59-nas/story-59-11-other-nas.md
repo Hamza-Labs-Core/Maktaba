@@ -18,7 +18,8 @@ Two leftovers in the repo mislead:
 
 ## Description
 
-**The plain compose file** (`deploy/nas/compose/compose.yaml`, published at
+**The plain compose file** is the existing published Docker compose,
+`cloud/installers/docker/docker-compose.yml` (release already rewrites it to the pinned tag), published at
 maktaba.tv/install/docker):
 - the same shape as Synology's (59.09), with `MAKTABA_PLATFORM: docker`;
 - `user:` commented with how to choose it (`id <user>`);
@@ -26,13 +27,14 @@ maktaba.tv/install/docker):
 - commented blocks for:
   - `/dev/dri` + `group_add` (Intel/AMD);
   - NVIDIA (`deploy.resources.reservations.devices`);
-  - the D-Bus socket;
+  - the D-Bus socket, with its cost stated (59.08);
   - a bridge-network variant (59.08).
-- The maktaba.tv install page fills it in from the household's answers, as for Synology. The
-  plain file is the source for every other platform's file.
+- The maktaba.tv install page fills it in from the household's answers, as for Synology. It is
+  the one source: a release step derives the Synology files (59.09) from it, and the TrueNAS app
+  (59.10) and Unraid template are checked against it in CI so their settings do not drift.
 
 **Unraid** (`deploy/nas/unraid/maktaba.xml`, submitted to Community Applications):
-- Repository `ghcr.io/hamza-labs-core/maktaba-server:stable`, Network Type `host`.
+- Repository `ghcr.io/hamza-labs-core/maktaba-server:latest` (the highest stable release), Network Type `host`.
 - Extra Parameters: `--user 99:100 --stop-timeout 90`.
 - Config paths:
   - `/var/lib/maktaba` → `/mnt/cache/appdata/maktaba`, with the description "keep this on a
@@ -41,16 +43,17 @@ maktaba.tv/install/docker):
   - more media paths can be added.
 - Device `/dev/dri` (optional). Variables `TZ` and `MAKTABA_PLATFORM=unraid`.
 - Icon and the support link (maktaba.tv).
-- Unraid's media under `/mnt/user` is shfs (FUSE). That is fine for media; 59.02 warns only when
-  the **data** dir is there.
+- Unraid's media under `/mnt/user` is shfs (FUSE). That is fine for media; 59.02 refuses it only
+  for the **data** dir.
 
 **QNAP and UGREEN** use the plain compose through their container apps: Container Station on
 QNAP, App Center's Docker on UGREEN. The guide has one short section for each, naming where the
 compose file goes and how to find the user's uid.
-- QNAP's own conventions (its port 8080 for QTS on some models) are checked by the device
-  checklist when a QNAP is available.
-- Until then, the guide says the QNAP section is untested, and 59.08's port pre-check gives the
-  answer when 8080 is taken.
+- QTS uses 8080 for its own UI, which collides with Maktaba's cluster API port. `ReconcilePorts`
+  moves Maktaba's port, and setup shows the new one (59.08). The moved port is kept in
+  `server.toml`, so nodes find it at the same port after restarts.
+- The device checklist covers QNAP when one is available. Until then, the guide says the QNAP
+  section is untested.
 
 **What is removed:**
 - `cloud/installers/nas/` (the Synology `INFO` and QNAP `qpkg.cfg` scaffolds) and its README
@@ -59,7 +62,7 @@ compose file goes and how to find the user's uid.
   top, with a link. It is kept for history; nothing else in it changes.
 - The development compose's image names are fixed to what release publishes
   (`ghcr.io/hamza-labs-core/maktaba-{api,streaming,pipeline,web}`). A header comment says it is for
-  development, not for a NAS, and points to `deploy/nas/compose/`.
+  development, not for a NAS, and points to `cloud/installers/docker/docker-compose.yml`.
 
 ## Acceptance criteria
 
@@ -95,7 +98,7 @@ None in the product beyond 59.03 and 59.08. Guides are in 59.14.
 
 | File | Change |
 |---|---|
-| `deploy/nas/compose/compose.yaml` (new) | the plain file |
+| `cloud/installers/docker/docker-compose.yml` | the plain file: commented GPU, NVIDIA, D-Bus and bridge blocks; `MAKTABA_PLATFORM` |
 | `deploy/nas/unraid/maktaba.xml` (new) | the template |
 | `cloud/installers/nas/` | removed; README updated |
 | `deploy/compose/docker-compose.yml` | image names, header comment |

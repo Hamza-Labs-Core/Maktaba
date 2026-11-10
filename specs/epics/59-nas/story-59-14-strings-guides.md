@@ -18,17 +18,26 @@ households install and learn Maktaba. maktaba.dev is the developer wiki.
 ## Description
 
 **Strings.**
-- Each story's strings table is the source. Keys go into the web's catalogs (`en.json`,
-  `ar.json`), the server's message catalog (for container-start messages printed before the web
-  is up), and the plugin i18n files where a plugin's text changes.
+- Each story's strings table is the source. Keys go into the web's catalogs
+  (`web/src/i18n/en.json`, `ar.json`), the server's bilingual text (`setup_app_text.go`,
+  `setup_texts_web.go`, which already carry setup's English and Arabic, and the container-start
+  messages printed before the web is up), and the plugin i18n files where a plugin's text
+  changes.
+- **The product's name in Arabic:** the tables write it as Maktaba, as the wiki does. In the web
+  catalog, the strings use the name the catalog already uses for the product, with its grammatical
+  agreement, so the app stays consistent.
+- **No counted nouns.** The catalogs have no plural forms, and Arabic has six, so strings put
+  numbers after a label ("Left out: {n}", "Estimated time (days): {days}") rather than before a
+  noun. A later catalog change that adds plurals may rewrite them.
 - Container-start messages (59.01, 59.08) print English, then Arabic, on two lines. They are
   read in a NAS's log viewer, which cannot switch language.
 - **NAS menu names:** DSM and TrueNAS names (Control Panel → Shared Folder; Datasets →
   Permissions) are given in Arabic as the Arabic DSM UI shows them where DSM has an Arabic UI
   (**to check** on a DSM set to Arabic). Otherwise they stay as the English name in quotes after
   an Arabic description.
-- The existing parity check (`web/packages/devportal/scripts/parity.mjs` and the web catalogs'
-  key-parity test) fails a missing Arabic key.
+- The web catalogs' key-parity test fails a missing Arabic key. The devportal's Latin-share check
+  (`web/packages/devportal/scripts/parity.mjs`) belongs to maktaba.dev; the maktaba.tv guides get
+  the same check wired into their build.
 
 **The guides on maktaba.tv** (`/install/nas`, `/install/synology`, `/install/truenas`,
 `/install/unraid`, `/install/docker`, each with `/ar/…`):
@@ -75,7 +84,7 @@ NAS notes.
 | ID | Type | Setup | Action | Expected |
 |---|---|---|---|---|
 | T01 | web unit | catalogs | parity | all Epic 59 keys in both |
-| T02 | site build | guides | build + parity.mjs | both languages; Latin share under the limit |
+| T02 | site build | guides | build + the Latin-share check | both languages; Latin share under the limit |
 | T03 | Go unit | container messages | render | two lines, English then Arabic |
 | T04 | Playwright | install page | fill and generate | compose matches fixture; no network request with answers |
 | T05 | Playwright | guides, `dir=rtl` | screenshot dark | mirrored layout |
@@ -88,15 +97,16 @@ The strings tables of 59.01–59.13.
 
 - **A DSM set to a language other than English or Arabic:** the guide's menu names are given in
   English with a note.
-- **Model table drift:** the table is data (`site/data/nas-models.json`), checked once per release
+- **Model table drift:** the table is data (`nas-models.json` in the guides' source), checked once per release
   cycle. Maktaba itself never trusts it (59.04 detects).
 
 ## Build plan
 
 | File | Change |
 |---|---|
-| `web/…/i18n/{en,ar}.json` | Epic 59 keys |
-| `cmd/maktaba-server/internal/messages/` | bilingual container messages |
-| maktaba.tv site: `/install/*` pages, `nas-models.json`, the install page | guides |
+| `web/src/i18n/{en,ar}.json` | Epic 59 keys |
+| `cmd/maktaba-server/setup_app_text.go`, `setup_texts_web.go` | bilingual setup and container messages |
+| maktaba.tv: `/install/*` pages, `nas-models.json`, the install page | guides. The repo has no maktaba.tv install site yet; this story settles where its source lives (beside the site's current source) before the pages are written |
+| the guides' build | the Latin-share check from `parity.mjs` |
 | `docs/wiki/epics/epic-59-nas.md`, `docs/wiki/db/ar/epic-59.json` | wiki |
 | `docs/hardware.md`, `docs/updates.md` | NAS sections |

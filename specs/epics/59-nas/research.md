@@ -24,7 +24,7 @@ One `maktaba-server serve`, started by `maktaba-launcher`, supervises the rest
 |---|---|---|---|---|---|
 | Headless payload (Epic 39, `headless.md`) | a systemd **user** service with linger | bundled 16.15 + pgvector 0.8.7 | the distribution's | yes | needs glibc ≥ 2.35 and a systemd user manager; refuses root |
 | `.deb`/`.rpm` (`nfpm.yaml`) | user `maktaba`, `/var/lib/maktaba` | SQLite or your own | your own | no | unit has `ProtectSystem=strict`, `PrivateDevices=true` (blocks `/dev/dri` and writes next to media) |
-| **Single image** `ghcr.io/hamza-labs-core/maktaba-server` (`deploy/docker/server/Dockerfile`) | **uid/gid 1000, fixed** | bundled, on the volume | Debian 12's (5.1) | **yes**: the runtime on the volume, the launcher's 3-minute guard | amd64 + arm64, cosign-signed; one volume `/var/lib/maktaba`; ports 8088, 8080, 8081, 54329 |
+| **Single image** `ghcr.io/hamza-labs-core/maktaba-server` (`deploy/docker/server/Dockerfile`) | **uid/gid 1000, fixed**, the only uid in `/etc/passwd` | bundled, on the volume | Debian 12's (5.1) | **yes**: the runtime on the volume, the launcher's 3-minute guard | amd64 + arm64, cosign-signed; one volume `/var/lib/maktaba`; ports 8088, 8080, 8081, 54329 |
 | Multi-service compose (`deploy/compose/docker-compose.yml`) | per service | `pgvector/pgvector:0.8.7-pg16` | per image | no | image names `ghcr.io/maktaba/<svc>` are **not** what release publishes (`maktaba-{api,…}`); the pipeline image has no `stt` extra, so no transcription |
 
 The single image is the bootstrap of the headless install: its entrypoint
@@ -49,9 +49,10 @@ an older one never does (`docs/updates.md:305-326`). Its own compose
 ### 1.4 Plugins (Epic 54)
 
 - **Third-party plugins** are WebAssembly in `maktaba-plugind` (Wasmtime). WASI gets no sockets
-  and no filesystem. On Linux plugind adds no-new-privs, user, network and IPC namespaces where
-  allowed, Landlock, and a seccomp filter allowing only `AF_UNIX`. A **required** layer that
-  fails exits with 78 (`plugind/README.md`).
+  and no filesystem. On Linux plugind **requires** no-new-privs, rlimits and its own seccomp
+  filter allowing only `AF_UNIX`; a required layer that fails exits with 78. User, network and
+  IPC namespaces and Landlock are **optional**, reported as `partial` when missing
+  (`plugind/crates/plugind/src/sandbox/linux.rs`).
 - **First-party plugins** are trusted Python, served by
   `python -m maktaba_plugin_runner --group <g>` from the one pipeline venv. There is no
   per-plugin venv. That venv is built **on first run** with `python -m venv` and
@@ -90,25 +91,29 @@ What the first-party plugins touch (their manifests):
 
 ### 1.6 Files
 
-- **Change detection is polling:** each library's `settings.sweep_interval_sec` enqueues a
-  `scan` (`engine/reconcile.py:314-345`). A watchdog-based watcher exists but nothing uses it.
-  This is right for a NAS (see §2.4).
-- **The walker skips** `@eaDir` and `.maktaba` (`scanner/walker.py:58-62`). It does **not** skip
-  `#recycle`, `#snapshot`, `.zfs` or `.snapshot`.
+- **No file watching:** each library's `settings.sweep_interval_sec` can enqueue a periodic
+  `scan` (`engine/reconcile.py:314-345`), and its default is 0, no periodic sweep
+  (`library_mgmt/config.py`). A watchdog-based watcher exists but nothing uses it. This is right
+  for a NAS (see §2.4).
+- **The walker skips** `@eaDir` and every dot-folder (`scanner/walker.py`), so `.zfs`,
+  `.snapshot` and `.maktaba` are skipped. It does **not** skip `#recycle`, `#snapshot` or
+  `lost+found`.
 - **Writes into the library:** subtitles beside the video; Epic 47 convert and dedup; the trash
   at `<root>/.maktaba/trash/` by atomic rename (a move across devices is refused), purged after
   30 days (`library_mgmt/trash.py`); the cluster record and a models copy under
   `<share>/maktaba/`.
-- **The data dir must be local:** network, FAT and exFAT are refused as `target_not_local`
-  (`internal/storage/disk.go:80-95`).
+- **The data dir must be local:** network, FAT, exFAT and FUSE (Unraid's shfs) are refused as
+  `target_not_local` (`internal/storage/disk.go:80-95`, `disk_linux.go`).
 
 ### 1.7 Cluster (Epics 31, 35, 37)
 
 - One **home** holds Postgres and the queue. Other machines pair and become **full nodes** with a
   logical-replication copy that can take over (Epic 37).
 - The specs treat a NAS as **storage**: every machine reads media from it through its own mounts,
-  matched by the canonical `smb://server/share` resolver (story 31.03). The resolver already knows
-  Synology's `/volume1/<share>` (`pipeline/src/maktaba_pipeline/sharepath/`).
+  matched by the canonical `smb://server/share` resolver (story 31.03). The resolver maps NFS
+  mount exports, including Synology's `/volume1/<share>` exports, but has no rule for a local root
+  on the home itself (`pipeline/src/maktaba_pipeline/sharepath/resolver.py`). A Go copy lives in
+  `api/internal/sharepath`.
 - Discovery: mDNS `_maktaba._tcp` through Avahi, systemd-resolved or the in-process responder
   (`internal/mdns/announce.go`); `--home URL` skips it. The TV front door also uses SSDP.
 
@@ -116,12 +121,15 @@ What the first-party plugins touch (their manifests):
 
 The headless and Docker installs update the runtime on the volume: Sigstore and checksum checks,
 a new runtime, `current` moved under the launcher's guard (confirmed within 3 minutes or switched
-back), pre-update dumps. `update-rehearsal.yml` gates every tag. `MAKTABA_UPDATE_DISABLE=1` is
-for households whose image tool (Watchtower) manages updates.
+back), pre-update dumps. `update-rehearsal.yml` gates every tag; it runs Go end-to-end tests of
+the Mac app's layout, not the Docker image. `:latest` is the highest stable release, and release
+rewrites the published compose to a pinned tag. `MAKTABA_UPDATE_DISABLE=1` is for households
+whose image tool (Watchtower) manages updates. `GET /api/system/updates` is public.
 
 ### 1.9 Resources
 
-Setup refuses under 4 GiB of RAM, warns under 8 GiB, needs 20 GiB of disk
+Setup refuses under 4 GiB of total memory read through `sysinfo` (`internal/hostinfo`), which
+ignores a container's cgroup limit; warns under 8 GiB; needs 20 GiB of disk
 (`setup_steps.go:92-94`). The Full bundle wants 16 GiB (`setup_bundle.go:28`). Linux tiers in
 `docs/hardware.md:250-275` start at 16 GB. Torch's CUDA libraries add about 3 GB to every x86_64
 venv.
@@ -204,8 +212,9 @@ venv.
   Control Panel → Login Portal → Advanced → Reverse Proxy, with Let's Encrypt.
 - DSM runs its own PostgreSQL, so **host port 5432 is often taken** (community reports). Maktaba
   uses 54329, which does not clash.
-- **(unverified)** DSM's own mDNS responder (Bonjour) is on by default. A host-network container
-  must coexist with it on 5353.
+- **(unverified)** DSM runs avahi-daemon for Bonjour by default. A host-network container must
+  coexist with it on 5353. On Linux, `SO_REUSEADDR` lets several sockets of different uids each
+  receive multicast on 5353; `SO_REUSEPORT` works only between sockets of the same uid.
 - Immich's Synology guide pins a compose subnet so DSM's firewall rule keeps matching
   ([Immich](https://docs.immich.app/install/synology)).
 - **(unverified)** DSM kernels: 4.4 on older models, 5.10 on newer ones. Landlock needs 5.13, so

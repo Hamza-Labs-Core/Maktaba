@@ -15,15 +15,15 @@ runs plugins with a stated isolation level, and updates itself safely, in Englis
 | | |
 |---|---|
 | Runtime | the one signed, self-updating `maktaba-server` image on every NAS; no native SPK or QPKG |
-| User | runs as whatever uid:gid it is given (TrueNAS 568, Unraid 99:100, a DSM user); no root entrypoint, no PUID/PGID; refuses root, privileged and the Docker socket |
-| Permissions | each library checked (read and write / read only / no access) with the fix in the NAS's own words; read-only libraries supported, subtitles kept in the data dir |
-| Data | on local storage, SSD first; Postgres tuned by tier and for spinning disks; quiet hours for heavy work; 6-hour sweeps for disk sleep |
-| Hardware | detected, not assumed: cgroup memory limit, ZFS ARC counted as available, AVX2, render devices; Light / Standard / Strong tiers set defaults |
+| User | runs as whatever uid:gid it is given (TrueNAS 568, Unraid 99:100, a DSM user), named through `nss_wrapper` for the bundled Postgres; no root entrypoint, no PUID/PGID; refuses root, privileged (bounding capabilities) and the Docker socket |
+| Permissions | each library checked (read and write / read only / no access) with the fix in the NAS's own words, never at every start; read-only libraries mounted `:ro` and supported, their subtitles kept in the database |
+| Data | on local storage, SSD first (disks found through mountinfo, asked on ZFS); Postgres memory by tier and tuned for spinning disks; quiet hours for heavy work; no periodic sweep by default, for disk sleep |
+| Hardware | detected, not assumed: cgroup memory and CPU limits, ZFS ARC counted as available, AVX2, render devices; Light / Standard / Strong tiers by memory alone set defaults; a 3.5 GiB floor |
 | Video and speech | VA-API joins NVENC and QSV behind the test encode; speech to text on arm64; the model chosen by a measured speed |
-| Plugins | the image carries its venv (first start offline); isolation levels Full / Container; third-party plugins on Container need the admin's yes |
+| Plugins | the payload carries a wheelhouse (first start and updates offline); isolation levels Full / Container from plugind's `full`/`partial`; third-party plugins on Container held until the admin's yes |
 | Platforms | a Container Manager project on Synology, a community app on TrueNAS, a Community Applications template on Unraid, plain compose elsewhere |
 | Cluster | media mounted at the host's own path so canonical share paths match nodes without a path map; a Light NAS should be the home or storage |
-| Updates | self-update beside catalog image updates (newer wins, older never replaces); NAS legs in the update rehearsal |
+| Updates | self-update beside catalog image updates (newer wins, older never replaces); a container rehearsal with NAS shapes |
 | Out | TrueNAS CORE, NAS under 4 GB, 32-bit ARM, managing the NAS itself, a storage-only role |
 
 ## Stories

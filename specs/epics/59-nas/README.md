@@ -57,15 +57,15 @@ Checked on `main` at 9c415c0fd (2026-11-10). Details and paths are in research.m
 
 | Area | Today |
 |---|---|
-| Image | `ghcr.io/hamza-labs-core/maktaba-server`, amd64 + arm64, signed, self-updating on its volume; **uid 1000 fixed**; one volume |
-| Data and Postgres | bundled Postgres 16 + pgvector on the volume; refuses network and FAT targets; no tuning for RAM or spinning disks |
+| Image | `ghcr.io/hamza-labs-core/maktaba-server`, amd64 + arm64, signed, self-updating on its volume; **uid 1000 fixed**, the only uid in its `/etc/passwd` (the bundled Postgres's `initdb` needs one); no root or privileged check in the container entrypoint (only setup refuses root); one volume |
+| Data and Postgres | bundled Postgres 16 + pgvector on the volume; refuses network, FAT and FUSE (Unraid's shfs) targets; `max_connections=300` on the command line (the home alone uses about 130); no tuning for RAM or spinning disks |
 | Media | mounted read-write; subtitles, convert, dedup, trash and YouTube write into libraries; no check of what the container may write |
-| Scans | polling sweeps (good for a NAS); walker skips `@eaDir`, not `#recycle`, `#snapshot`, `.zfs` |
-| Hardware | setup refuses < 4 GiB, warns < 8; one profile; memory read from `MemAvailable` (blind to ZFS ARC) |
+| Scans | no periodic sweep by default (`sweep_interval_sec: 0`; good for disk sleep); scans on demand and on schedule; the walker skips `@eaDir` and every dot-folder (`.zfs`, `.snapshot`, …), not `#recycle`, `#snapshot` or `lost+found` |
+| Hardware | setup refuses < 4 GiB of total memory (`sysinfo`, blind to the cgroup limit), warns < 8; one profile; free memory read from `MemAvailable` (blind to ZFS ARC) |
 | Video | NVENC → QSV → libx264; **no VA-API** |
 | Speech to text | faster-whisper on x86_64 only; `large-v3-turbo` by default; **none on arm64** |
-| Plugins | runners from one venv built **at first run from PyPI**; Landlock + seccomp sandbox, `sandbox_partial` without Landlock; plugind exits 78 when a required layer fails |
-| Networking | host network for mDNS; ports 8088, 8080, 8081, 54329 |
+| Plugins | runners from one venv built **at first run from PyPI**; Landlock + seccomp sandbox, `sandbox_partial` without Landlock; plugind already treats namespaces and Landlock as optional (reported `partial`) and requires only no-new-privs, rlimits and its own seccomp filter, so third-party plugins run with less isolation **without the admin being asked** |
+| Networking | host network for mDNS; announces through Avahi (`avahi-publish-service`) or its own zeroconf responder; ports 8088, 8080, 8081, 54329, moved by `ReconcilePorts` when taken; no trusted-proxy setting on the home |
 | NAS packaging | Synology `INFO` and QNAP `qpkg.cfg` scaffolds; an old plan for Helm and PUID/PGID |
 
 ### Gap list
@@ -77,11 +77,13 @@ Checked on `main` at 9c415c0fd (2026-11-10). Details and paths are in research.m
 - **G3** Defaults assume a 16 GB desktop. A 4 GB NAS swaps or gets killed.
 - **G4** No hardware video on AMD and most Intel NAS chips (no VA-API), and no speech to text on
   ARM.
-- **G5** First start needs PyPI for the venv, and plugin sandboxing on a NAS kernel is unknown.
+- **G5** First start needs PyPI for the venv, and a home on a NAS kernel runs third-party plugins
+  with partial isolation without telling the admin.
 - **G6** No install path a NAS owner would recognise: no Container Manager project, no TrueNAS
   app, no Unraid template.
 - **G7** Postgres on spinning disks is slow and keeps the array awake, and nothing tells the
   household.
+- **G8** A uid missing from the image's `/etc/passwd` cannot initialise the bundled Postgres.
 
 ## 3. Goals
 
@@ -117,7 +119,7 @@ Checked on `main` at 9c415c0fd (2026-11-10). Details and paths are in research.m
 - **TrueNAS CORE (FreeBSD).** In sustaining mode; there is no Linux userland to run the image.
 - **QNAP QPKG and Unraid plugins.** Both platforms run containers; the scaffolds in
   `cloud/installers/nas/` are removed (59.11).
-- **NAS models under 4 GB of RAM, and 32-bit ARM.** Setup says so and points to running the home
+- **NAS models under 4 GB of RAM (3.5 GiB reported), and 32-bit ARM.** Setup says so and points to running the home
   on another computer, with the NAS as storage (as today).
 - **A storage-only cluster role.** A NAS that only holds files is already served by SMB and NFS
   and the canonical share paths of story 31.03. A NAS either is the home, a full node, or storage
@@ -134,7 +136,7 @@ Checked on `main` at 9c415c0fd (2026-11-10). Details and paths are in research.m
 
 | Platform | How the household installs it | Runs as | Data | GPU | Order |
 |---|---|---|---|---|---|
-| **Plain Docker / compose** | `compose.yaml` from maktaba.tv (59.11) | `user:` of the household's choice | a local path or named volume | `/dev/dri` or NVIDIA lines, commented | 1 (the base the others reuse) |
+| **Plain Docker / compose** | the published Docker compose (`cloud/installers/docker/docker-compose.yml`), filled in by maktaba.tv (59.11) | `user:` of the household's choice | a local path or named volume | `/dev/dri` or NVIDIA lines, commented | 1 (the base the others reuse) |
 | **Synology DSM 7.2+** | Container Manager → Project, from Maktaba's compose (59.09) | a DSM user made for Maktaba, granted the shares | `/volume1/docker/maktaba` or an SSD volume | `/dev/dri` + render gid on J4125 models | 2 |
 | **TrueNAS 25.04+** | the **community** app in `truenas/apps` (59.10); a custom-app YAML until it lands | `apps` (568) | a dataset with the Apps preset, on an SSD pool when there is one | Intel/AMD "allocate GPU", NVIDIA checkbox | 2 (with Synology) |
 | **Unraid** | a Community Applications template (59.11) | 99:100 | `/mnt/user/appdata/maktaba` (cache pool) | `/dev/dri` | 3 |
@@ -172,22 +174,29 @@ NAS (Synology / TrueNAS / Unraid / …)
 
 - **The image runs as whatever uid:gid it is started with** (`user:` in compose, the Run As
   setting in TrueNAS, `--user` in Unraid). It has no root step, no PUID/PGID entrypoint and no
-  chown at start. On a volume it cannot write, it stops with a message naming the path, the uid
-  and the fix.
+  chown at start. `initdb` and `postgres` need the uid to have a name, so the entrypoint gives
+  it one with `nss_wrapper` (what the official Postgres image does) when `/etc/passwd` has none.
+  On a volume it cannot write, it stops with a message naming the path, the uid and the fix.
   - Rejected: a root entrypoint that drops to PUID/PGID. It runs root code on every start, and
     TrueNAS and Kubernetes-style platforms set the user themselves.
-- **Media folders are checked at setup and on every library save.** A probe file is written and
-  removed in `<root>/.maktaba/`. Each root is shown as Read and write, Read only or No access.
+- **Media folders are checked at setup, on every library save, on Check access and after a
+  failed write**, not at every start (a probe would wake sleeping disks). A probe file is written
+  and removed in `<root>/.maktaba/`. Each root is shown as Read and write, Read only or No access.
+- **A read-only library should be mounted `:ro`.** Inside a container without Landlock, only the
+  mount guarantees Maktaba cannot write; the check then reports it, and the guides say so.
   - Each state has a fix in the NAS's terms: on DSM, "give the user `maktaba` Read/Write on the
     shared folder Movies"; on TrueNAS, "add an ACL entry for user 568 with Modify on the dataset
     tank/media".
 - **A read-only library is a supported state, not an error.** Features that write declare it in
   their manifests (`files.write = ["library.*"]`), and each takes the path below on a read-only
   library.
+- **The cluster's folder and the model copy** live under `<share>/maktaba/` today. A NAS home
+  whose shares are all read-only names one writable folder for them at setup (59.13); without
+  one, nodes download models themselves and joining says why.
 
 | Feature | On a read-only library |
 |---|---|
-| Subtitles (`library.subtitles`) | written to the data dir (`data.subtitles`), served by the API the same way |
+| Subtitles (`library.subtitles`) | stored in the database (a new `subtitle_files` table), so node replicas and a node taking over have them; streaming serves them like side-car files |
 | Convert, dedup, YouTube downloads, repair | refused for that library, with "This library is read-only for Maktaba" and the fix |
 | Trash | delete is unavailable; nothing is removed |
 | Everything else | unchanged (scans, thumbnails, transcripts, streaming read only) |
@@ -201,33 +210,42 @@ NAS (Synology / TrueNAS / Unraid / …)
   it shows "The database is on spinning disks: Maktaba will work, but browsing and search are
   faster on an SSD, and the disks will not sleep while Maktaba runs." It then tunes Postgres:
   `random_page_cost=4`, `effective_io_concurrency=2`, and a longer checkpoint timeout.
-- **Postgres is sized by the hardware tier** (6.4), not fixed:
-  - `shared_buffers`, `work_mem` and `max_connections` per tier, with replication slots only
-    when a node joins.
-  - The bundled `max_connections=300` stays for homes with nodes.
+- **Postgres memory is sized by the hardware tier** (6.4), not fixed: `shared_buffers`,
+  `work_mem` and `maintenance_work_mem` per tier, passed on the command line with the existing
+  server arguments. `max_connections` stays 300: the home alone uses about 130, and lowering it
+  would need every pool resized and measured first. A household override key
+  (`[postgres] settings`) wins over the tier.
 - **Disk sleep:**
   - Heavy work runs in **quiet hours** (default 01:00–06:00 on Light and Standard tiers): the
     first scan of a new library, transcription backlogs, convert.
-  - Media disks are touched only by scans, playback and those jobs. The sweep interval on a NAS
-    defaults to 6 hours, not 15 minutes.
+  - Media disks are touched only by scans, playback and those jobs. The default stays no
+    periodic sweep (`sweep_interval_sec: 0`); a household that sets one is told it keeps disks
+    awake.
 
 ### 6.4 Hardware tiers (59.04)
 
 Detected at setup and at every start, and shown in Settings → This machine:
-- **Memory:** cgroup memory limit, `MemTotal`, and `MemAvailable` plus reclaimable ZFS ARC
+- **Memory:** the cgroup memory limit (v2 `memory.max`, v1 `memory.limit_in_bytes`, where v1's
+  "no limit" is a huge number), `MemTotal`, and `MemAvailable` plus reclaimable ZFS ARC
   (`/proc/spl/kstat/zfs/arcstats`: `size − c_min`).
-- **CPU:** cores, architecture, AVX2 and AVX-512 flags.
+- **CPU:** cores (capped by the cgroup's `cpu.max` quota), architecture, AVX2 and AVX-512 flags.
 - **Devices:** `/dev/dri/renderD*` with its driver, and NVIDIA devices.
 - **Disk:** whether the data disk is rotational.
 - **Kernel:** Landlock and user-namespace support.
 
 | Tier | Rule | Defaults |
 |---|---|---|
-| **Light** | 4–6 GB usable, or arm64 with < 8 GB | Postgres 256 MB; 1 pipeline worker; speech to text **off** (can be turned on with `base`, quiet hours only); 1 software transcode at ≤ 720p; thumbnails in quiet hours |
-| **Standard** | 6–16 GB, no usable GPU | Postgres 512 MB; 2 workers; speech to text `small` int8 (or `base` without AVX2), quiet hours; 2 transcodes |
-| **Strong** | ≥ 16 GB, or a usable GPU | today's defaults; `large-v3-turbo` with CUDA or AVX2; transcodes limited by the GPU |
+| **Light** | memory < 6 GiB, or arm64 with < 8 GiB | Postgres 256 MB; 1 pipeline worker; speech to text **off** (can be turned on with `base`, quiet hours only); 1 software transcode at ≤ 720p; thumbnails in quiet hours |
+| **Standard** | 6 GiB ≤ memory < 16 GiB | Postgres 512 MB; 2 workers; speech to text `small` int8 (or `base` without AVX2), quiet hours; 2 transcodes |
+| **Strong** | memory ≥ 16 GiB | today's defaults; `large-v3-turbo` with CUDA or AVX2; transcodes limited by the GPU |
 
-- **Under 4 GB:** setup refuses, as today, with the NAS-specific message of §4.
+- **Memory** here is the container's limit (the cgroup's, else `MemTotal`), not what is free.
+- **The tier is set by memory alone.** A CUDA GPU raises the speech model to `large-v3-turbo`
+  on any tier with the memory for it; a VA-API or Quick Sync device raises transcode limits
+  only. Neither changes quiet hours or Postgres.
+
+- **Under 3.5 GiB:** setup refuses, with the NAS-specific message of §4. The floor moves from
+  4 GiB to 3.5 GiB because a "4 GB" NAS reports about 3.6–3.8 GiB after the kernel's share.
 - **Tiers are defaults, not limits.** Every setting stays changeable in Settings.
 - **Memory limit in compose:** the image's compose files set `mem_limit` from the tier the
   household picks on maktaba.tv's install page. Maktaba reads its cgroup limit, so it never plans
@@ -238,7 +256,10 @@ Detected at setup and at every start, and shown in Settings → This machine:
 - **Video:**
   - Streaming gains **VA-API** (`h264_vaapi`, `hevc_vaapi` where the driver lists it), tried
     after NVENC and QSV, kept only after its test encode like the others.
-  - The image adds `intel-media-va-driver` (iHD) and `mesa-va-drivers`.
+  - The image adds `intel-media-va-driver-non-free` (iHD, from Debian's non-free component),
+    `i965-va-driver` and `mesa-va-drivers`. Debian 12's ffmpeg uses libmfx for QSV, which does
+    not cover newer Intel GPUs such as the N100's, so on those chips VA-API is the hardware
+    path.
   - The compose files pass `/dev/dri` and the render group (`group_add`).
   - On a Ryzen or ARM NAS, Maktaba says plainly that transcoding is software-only and that
     direct play matters (Epic 58's device-reported capabilities).
@@ -251,21 +272,23 @@ Detected at setup and at every start, and shown in Settings → This machine:
 
 ### 6.6 Plugins in a container (59.07)
 
-- **First start needs no internet beyond pulling the image.** The image carries the built
-  pipeline venv (or its wheelhouse) for its architecture, so `venv_bootstrap` never reaches PyPI
-  on a NAS.
+- **First start needs no internet beyond pulling the image.** The Linux payload carries a
+  wheelhouse for its architecture, and `venv_bootstrap` installs from it with
+  `--no-index --find-links`. A self-updated runtime carries its own wheelhouse, so updates do not
+  need PyPI either.
 - **Isolation levels:** the container is the outer boundary, and inside it plugind and the
   runners keep their layers where the kernel allows. The home reports one of these:
 
 | Level | When | First-party runners | Third-party plugins |
 |---|---|---|---|
 | **Full** | Landlock + seccomp + user namespaces | as on Linux today | allowed |
-| **Container** | no Landlock (DSM's kernels are likely 4.4 and 5.10) or no user namespaces (Docker's default seccomp) | run, reported `sandbox_partial` | **off until an admin turns on "Allow plugins with container-only isolation"**, with what that means in both languages |
+| **Container** | no Landlock (DSM's kernels are likely 4.4 and 5.10) or no user namespaces (Docker's default seccomp) | run, reported `sandbox_partial` | **held until an admin turns on "Allow plugins with container-only isolation"**, with what that means in both languages |
 | **None** | the container itself is privileged or has the Docker socket | refused to start: Maktaba will not run privileged | refused |
 
-- plugind's "required layers" become per-level. On the Container level, no-new-privs, the Wasm
-  sandbox (no WASI sockets, no filesystem) and Docker's own seccomp profile are required.
-  Landlock and namespaces are best-effort. A required layer that fails still exits 78.
+- plugind's layers stay as they are today: no-new-privs, rlimits, the Wasm sandbox (no WASI
+  sockets, no filesystem) and plugind's own seccomp filter are required, and namespaces and
+  Landlock are optional, reported as `partial`. The new work is policy: the server holds
+  third-party plugins while plugind reports `partial`, until the admin's yes.
 - **Network grants** (YouTube, classify) work through the container's network. Grants are
   unchanged.
 
@@ -276,13 +299,21 @@ Detected at setup and at every start, and shown in Settings → This machine:
 - The bundled Postgres listens on loopback until a node joins. The node's pairing opens it with
   TLS, as today.
 - **mDNS next to the NAS's own responder:**
-  - When the host's Avahi D-Bus socket is mounted, Maktaba announces through it.
-  - Otherwise its in-process responder shares 5353 (`SO_REUSEPORT`).
+  - By default Maktaba uses its existing zeroconf responder under its own name
+    (`<host>-maktaba`), bound to 5353 with `SO_REUSEADDR`. On Linux every such socket receives
+    the multicast queries; `SO_REUSEPORT` would not help, since it shares a port only between
+    sockets of the same uid.
+  - Mounting the host's system D-Bus socket lets Maktaba publish through the host's Avahi (its
+    existing `avahi-publish-service` path). It is documented as an option, not a default: the
+    socket reaches every system service D-Bus policy allows, and `:ro` does not stop
+    `connect()`.
   - Both paths are tested (59.15).
 - **Bridge network is supported.** It has no mDNS: apps reach the home by its address, its
   per-home HTTPS name (50.15) or the cloud code (58.03). Setup says which of these will work.
 - **HTTPS:** Maktaba's own per-home name is the default. A DSM or TrueNAS reverse proxy in front
-  is documented (headers, WebSocket, upload size) but not required.
+  is documented (headers, WebSocket, upload size) but not required. The home gains a
+  `[server] trusted_proxies` setting, so forwarded client addresses are believed only from the
+  proxy.
 
 ### 6.8 Updates (59.12)
 
@@ -291,20 +322,25 @@ Detected at setup and at every start, and shown in Settings → This machine:
 - Catalogs move the image tag too (TrueNAS app updates, Unraid, Watchtower). A newer image goes
   on the volume at its next start, and an older image never replaces a newer runtime, so the two
   can disagree only in the safe direction.
+- Guides and templates use `:latest`, which already means the highest stable release. Release
+  already rewrites the published Docker compose to a pinned tag, and the NAS files follow that
+  rule.
 - The TrueNAS app pins a version tag and moves on each release (as every catalog app does). It
   does not set `MAKTABA_UPDATE_DISABLE`, so homes get security fixes in their window, before the
   catalog's review.
-- The update rehearsal gains a **NAS leg**: uid 568, read-only media, a 4 GB memory limit,
-  arm64, no Landlock.
+- The update rehearsal today runs Go end-to-end tests of the Mac app's layout, not the image.
+  This epic adds a **container rehearsal** for the image with NAS shapes: uid 568, read-only
+  media, a 4 GB memory limit, arm64, restarts mid-update.
 
 ### 6.9 A NAS in a cluster (59.13)
 
 - **NAS as home:** the default this epic builds.
   - Computers with a GPU can join as full nodes (Epic 35), taking transcription and transcodes.
   - **Media is mounted in the container at the same path as on the host** (`/volume1/Movies`
-    stays `/volume1/Movies`; `/mnt/tank/media` stays `/mnt/tank/media`). Synology's
-    `/volume1/<share>` then maps to `smb://<nas>/<share>` with the existing resolver, and a Mac
-    node's `/Volumes/Movies` matches without a path map.
+    stays `/volume1/Movies`; `/mnt/tank/media` stays `/mnt/tank/media`). A new resolver rule
+    maps a local root on the home itself, such as Synology's `/volume1/<share>`, to
+    `smb://<nas>/<share>` (today the resolver maps only NFS mount exports), and a Mac node's
+    `/Volumes/Movies` then matches without a path map.
   - For mounts at other paths, setup asks each one's share name.
 - **NAS as full node** of a home elsewhere: allowed on Standard and Strong tiers. On Light, setup
   says a Light NAS should be the home or storage, not a node.
@@ -357,7 +393,7 @@ nothing runs against the live home. Story 59.15 has the full table. In short:
 | Any uid | the image started as 1000, 568, 99:100 and 1026:100 (a DSM user) on amd64 and arm64 | — |
 | Permissions | read-only media mount, no-access mount, a mount owned by another uid | DSM ACL grants, TrueNAS Apps preset |
 | Memory | `--memory=4g` and `6g` with the full first-run flow; tier chosen and respected | DSM with 4 GB, TrueNAS with ARC full |
-| No Landlock | a seccomp profile and a kernel flag that hide Landlock; Container level reported | a DSM model's real kernel |
+| No Landlock | seccomp profiles that answer `landlock_*` with `ENOSYS`, and with `EPERM`; Container level reported | a DSM model's real kernel |
 | VA-API | the code path with a fake device list; test-encode fallback | J4125 (DSM), N100 (UGREEN or TrueNAS) |
 | arm64 speech | a 30-second clip transcribed on GitHub's arm64 runner | DS223 or DS423 |
 | TrueNAS app | `truenas/apps`' own CI for the app, run in our CI | TrueNAS 25.04 and 25.10 install |
@@ -376,8 +412,8 @@ report.
   and the NAS stays responsive during the first scan.
 - A TrueNAS 25.10 box installs the community app as uid 568 with its data on an SSD pool. It
   reports its memory correctly with the ZFS cache full, and transcribes with `small`.
-- A DS223 (arm64, 2 GB) is refused with the NAS message. A UGREEN DXP4800 Plus (N100, 8 GB)
-  transcribes with `small` and transcodes with VA-API.
+- A DS223 (arm64, 2 GB) is refused with the NAS message. A UGREEN DXP4800 Plus (N100, 8 GB,
+  Standard) transcribes with `small` and transcodes with VA-API.
 - A Mac joins a NAS home as a full node and takes transcription jobs on the same files with no
   path map.
 - A third-party plugin on a DSM home stays off until the admin allows container-only isolation.
@@ -391,30 +427,35 @@ report.
 1. **Docker on every NAS, one image.** Rejected: a native Synology SPK of the server (no systemd
    user manager, per-model libraries, a second install to rehearse), a QNAP QPKG, and the
    multi-service compose stack (it does not self-update or transcribe).
-2. **The image runs as the uid it is given; no root entrypoint, no PUID/PGID.** Rejected: a root
-   entrypoint that chowns and drops privileges (root code on every start, and catalogs set the
-   user themselves).
+2. **The image runs as the uid it is given; no root entrypoint, no PUID/PGID; `nss_wrapper`
+   names a uid `/etc/passwd` lacks.** Rejected: a root entrypoint that chowns and drops
+   privileges (root code on every start, and catalogs set the user themselves), and a
+   world-writable `/etc/passwd`.
 3. **Read-only libraries are supported.** Writing features degrade per library, with the reason
    shown. Rejected: requiring write access to every library, which many households would refuse
    for their originals.
-4. **Subtitles fall back to the data dir** on a read-only library. Rejected: skipping subtitles
-   there.
+4. **Subtitles on a read-only library are kept in the database**, so replicas have them.
+   Rejected: skipping them, and the data dir (a node taking over would lose them).
 5. **Hardware tiers set defaults; nothing is hard-limited.** Rejected: one profile for all, and
    per-model tables (wrong for expanded RAM and for new models). Detection decides.
-6. **ZFS ARC counts as available memory.** Rejected: `MemAvailable` alone, which reports a healthy
+6. **ZFS ARC counts as available memory, and tiers follow the memory limit alone.** Rejected:
+   tiers raised by any GPU (a 6 GB J4125 would get the heaviest defaults), and `MemAvailable`
+   alone, which reports a healthy
    TrueNAS box as full.
 7. **VA-API joins NVENC and QSV** behind the same test encode. Rejected: QSV only (AMD and many
    Intel container setups expose only VA-API).
 8. **Speech on arm64 with CTranslate2's CPU kernels**, the model chosen by measured speed.
    Rejected: no speech on ARM, and whisper.cpp as a second engine (a second engine to keep in
    step with the transcript pipeline).
-9. **The image carries its built venv.** Rejected: building it from PyPI at first start, which
-   fails on NAS boxes without outbound internet and takes many minutes on slow CPUs.
-10. **Isolation levels, with third-party plugins off on the Container level until the admin
+9. **The payload carries a wheelhouse, installed with `--no-index`.** Rejected: building the venv
+   from PyPI at first start (fails without outbound internet, slow on NAS CPUs), and copying a
+   built venv (venvs are not relocatable).
+10. **Isolation levels, with third-party plugins held on the Container level until the admin
     says yes.** Rejected: refusing third-party plugins on every NAS without Landlock (most DSM
-    models), and silently running them with less isolation.
-11. **Host network by default, bridge supported.** Rejected: bridge only (no mDNS, so TVs and apps
-    lose discovery).
+    models), and running them with less isolation without asking (today's behaviour).
+11. **Host network by default, bridge supported; Maktaba's own responder, the host's D-Bus only
+    by choice.** Rejected: bridge only (no mDNS, so TVs and apps lose discovery), and mounting
+    the system D-Bus socket by default.
 12. **The TrueNAS community app, the Synology compose project, the Unraid template.** Rejected:
     SynoCommunity first (its "unverified" warning, and a native package to maintain) and a
     TrueNAS custom-app YAML only (no catalog updates).
@@ -434,7 +475,7 @@ None blocks the epic. Each has a default the stories use.
 | Q1 | Is the platform order right? | plain compose, then Synology and TrueNAS together, then Unraid and the rest (§5) |
 | Q2 | Submit the app to TrueNAS's community train under the project's GitHub account? | yes, once 59.10's checklist passes on 25.04 and 25.10 |
 | Q3 | Publish a thin Synology package (SPK) that only installs the Container Manager project, through SynoCommunity? | no for now; revisit if households ask for it in Package Center (59.09) |
-| Q4 | Smallest NAS supported | 4 GB usable RAM, x86_64 or arm64; below that, setup refuses with the NAS-as-storage advice |
+| Q4 | Smallest NAS supported | a "4 GB" NAS (3.5 GiB reported), x86_64 or arm64; below that, setup refuses with the NAS-as-storage advice |
 | Q5 | Quiet hours default | 01:00–06:00 on Light and Standard, editable |
 | Q6 | Buy test devices (a J4125 Synology, a Ryzen Synology, an N100 box for TrueNAS) for the device checklists? | yes, one each, used by hand before each platform's release; no self-hosted runner (59.15) |
 | Q7 | Turn speech to text off by default on Light? | yes, with a one-tap turn-on that shows the measured speed |

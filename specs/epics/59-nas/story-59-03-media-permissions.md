@@ -1,6 +1,6 @@
 # Story 59.03 — Media permissions: check, explain, and work with read-only libraries
 
-> Epic 59 · Phase 1 · Depends on: 59.01 · Needed by: 59.07, 59.09, 59.10, 59.11, 59.13
+> Epic 59 · Phase 1 · Depends on: 59.01, 59.04 (platform detection) · Needed by: 59.07, 59.09, 59.10, 59.11, 59.13
 
 ## Why
 
@@ -29,9 +29,14 @@ setup. Nothing tells the household which folder, which user or what to change.
 
 - It also samples up to 50 files across the tree (breadth-first, stopping at 2 seconds) and
   reports `partial` when some are unreadable, with up to 5 example paths.
-- It runs at setup, when a library is added or edited, at each start, and from the library page's
-  **Check access** button. The result is stored per library (`libraries.access`,
-  `access_checked_at`).
+- It runs at setup, when a library is added or edited, from the library page's **Check access**
+  button, and after a write fails with a permission error. It does **not** run at every start:
+  a probe write would wake a sleeping disk. The result is stored per library
+  (`libraries.access`, `access_checked_at`).
+- **Read-only should be a mount, not just an ACL.** Inside a container without Landlock (59.07),
+  only a `:ro` mount guarantees nothing writes. The guides mount read-only libraries `:ro`, and
+  when the check finds `ro` the library page says whether the mount itself is read-only (from
+  `/proc/self/mountinfo`).
 
 **Explaining it.** The library page and setup show the state and who Maktaba runs as ("user 568,
 group 568"). When the platform is detected (59.04: DSM, TrueNAS, Unraid, other), they show the
@@ -52,21 +57,30 @@ The share or dataset name is worked out from the path where possible (`/volume1/
 - The plugin host resolves `files.write` grants per library. A stage whose manifest writes
   `library.*` is not scheduled on a read-only library, except for subtitles. Each feature's
   behaviour is in the README (§6.2):
-  - **Subtitles:** `library.subtitles` resolves to `<data>/subtitles/<library-id>/<relative
-    path>`. The API's subtitle lookup checks the data dir after the side-car path, so players
-    see the same tracks. Existing side-car subtitles beside the video are still read.
+  - **Subtitles:** on a read-only library, `library.subtitles` writes go to a new database table,
+    `subtitle_files` (video id, language, format, text). Subtitle files are small, and keeping them
+    in the database means node replicas and a node taking over (Epic 37) have them too, which a
+    folder on the home would not. Streaming's subtitle lookup
+    (`streaming/internal/handlers/subtitle.go`, `sidecar.go`) checks the table after the
+    side-car path, so players see the same tracks. Existing side-car subtitles beside the video
+    are still read.
   - **Convert, dedup, YouTube into this library, repair:** the action is disabled on the library
     with "This library is read-only for Maktaba" and the fix. Admin API calls return 409
-    `library_read_only`. The convert list (the Queue button) leaves these files out and shows how
+    `library_read_only`. The convert list (the Queue button) leaves these files out and says how
     many it left out.
   - **Delete:** unavailable. The API returns 409 `library_read_only`, and the web hides the
     button with a tooltip giving the reason.
 - A library whose access changes (`ro` → `rw` after the household's fix) is picked up by
-  **Check access** or the next start. Nothing needs re-adding.
+  **Check access**. Nothing needs re-adding.
+- **The cluster's folder and the model copy** (`<share>/maktaba/`, `stt/model_share.py`) need a
+  writable share. On a NAS home whose libraries are all read-only, setup asks for one writable
+  folder for them (59.13). Without one, nodes download models themselves, and pairing a node
+  says why.
 
-**Folders the walker skips**, added to `scanner/walker.py`: `#recycle`, `#snapshot` (DSM),
-`.zfs`, `.snapshot`, `.Trash-*`, `.AppleDouble`, `lost+found`. Both lists are in one place and
-shared with the convert list.
+**Folders the walker skips.** The walker already skips `@eaDir` and every dot-folder
+(`scanner/walker.py`), which covers `.zfs`, `.snapshot`, `.Trash-*` and `.AppleDouble`. This
+story adds `#recycle`, `#snapshot` (DSM) and `lost+found`, in the same list, which the convert
+list shares.
 
 ## Acceptance criteria
 
@@ -76,7 +90,8 @@ shared with the convert list.
   **then** 409 `library_read_only`, and no file is touched.
 - **Given** a root the user cannot list, **then** the library shows No access, and no scan runs
   for it.
-- **Given** a share with `#recycle` and `@eaDir`, **then** neither appears in the library.
+- **Given** a share with `#recycle`, `#snapshot` and `lost+found`, **then** none appears in the
+  library.
 
 ## Test cases
 
@@ -85,11 +100,12 @@ shared with the convert list.
 | T01 | Go unit | temp dirs with modes 755/555/000 as a non-root user | Check | rw / ro / none |
 | T02 | Go unit | 3 of 50 sampled files mode 000 | Check | partial + 3 examples |
 | T03 | Go unit | `.maktaba` absent, ro | Check | nothing created |
-| T04 | pipeline unit | ro library, subtitles stage | run | written under `data/subtitles/<lib>/…` |
-| T05 | Go handler | subtitle lookup with both side-car and data copies | GET | side-car first, then data |
+| T04 | pipeline unit | ro library, subtitles stage | run | a `subtitle_files` row; nothing written in the library |
+| T05 | Go handler (streaming) | subtitle lookup with both a side-car file and a row | GET | side-car first, then the row |
 | T06 | Go handler (59.16) | ro library | convert, delete, YouTube target | 409 `library_read_only` |
-| T07 | pipeline unit | walker over a tree with `#recycle`, `#snapshot`, `.zfs` | scan | none indexed |
-| T08 | CI container (59.15) | media mounted `:ro` | full first run | ready; subtitles in data; no EACCES in logs |
+| T07 | pipeline unit | walker over a tree with `#recycle`, `#snapshot`, `lost+found` | scan | none indexed |
+| T10 | Go unit | library check at server start | start | no probe write |
+| T08 | CI container (59.15) | media mounted `:ro` | full first run | ready; subtitles in the table; no EACCES in logs |
 | T09 | web unit | ro library page | render | Read only, fix text, buttons disabled with reason |
 
 ## Strings
@@ -107,15 +123,17 @@ shared with the convert list.
 | `library.fix.truenas` | In Datasets → {dataset} → Permissions, add an ACL entry for user {uid} with Modify (or Read). | من مجموعات البيانات ← {dataset} ← الأذونات، أضف إدخال ACL للمستخدم {uid} بصلاحية التعديل (أو القراءة). |
 | `library.fix.unraid` | In Shares → {share}, check that user nobody (99) can read it. | من المشاركات ← {share}، تأكد من أن المستخدم nobody ‏(99) يستطيع قراءتها. |
 | `library.fix.other` | Give user {uid} read (and write, if you want Maktaba to save subtitles and conversions there) on {path}. | امنح المستخدم {uid} صلاحية القراءة (والكتابة إن أردت أن يحفظ Maktaba الترجمات والتحويلات هناك) على {path}. |
-| `convert.skipped_read_only` | {n} files are in read-only libraries and were left out | {n} ملفًا في مكتبات للقراءة فقط وقد استُبعدت |
+| `convert.skipped_read_only` | Left out because their libraries are read-only: {n} | استُبعدت لأن مكتباتها للقراءة فقط: {n} |
+| `library.access.mount_ro` | The folder is mounted read-only in the container. | المجلد مربوط للقراءة فقط داخل الحاوية. |
+| `job.permission_denied` | Maktaba couldn't write {path}. See this library's access. | تعذّر على Maktaba الكتابة في {path}. راجع صلاحيات هذه المكتبة. |
 
 ## Edge cases
 
 - **Root squash on an NFS mount inside the NAS:** the check sees what the container sees.
   Nothing is special-cased.
 - **Write allowed on the root, denied in subfolders:** a write that fails later is reported
-  against that library as `partial` with the path. The job's failure says "permission denied" and
-  links to the library's access panel.
+  against that library as `partial` with the path. The job's failure shows `job.permission_denied`
+  and links to the library's access panel.
 - **ACL changes while running:** the next check picks them up. No restart is needed.
 
 ## Build plan
@@ -124,8 +142,9 @@ shared with the convert list.
 |---|---|
 | `cmd/maktaba-server/internal/mediaaccess/` (new) | Check, sampling, platform fix text |
 | `api/internal/handlers/libraries/` | access fields, Check access endpoint, 409s |
-| `api/internal/handlers/subtitles/` | data-dir fallback lookup |
+| `streaming/internal/handlers/subtitle.go`, `sidecar.go` | `subtitle_files` fallback lookup |
 | `pipeline/src/maktaba_plugin_runner/` | `library.*` grant resolution per library access |
 | `pipeline/src/maktaba_pipeline/scanner/walker.py` | the skip list |
-| migration | `libraries.access`, `access_checked_at` |
-| `web/` | access panel, disabled actions with reasons |
+| migration | `libraries.access`, `access_checked_at`; `subtitle_files` |
+| `pipeline/src/maktaba_pipeline/stt/model_share.py`, cluster folder | the writable-folder choice on a NAS home |
+| `web/src/i18n/{en,ar}.json`, `web/` | strings; access panel, disabled actions with reasons |

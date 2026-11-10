@@ -22,9 +22,10 @@ TrueNAS CORE (FreeBSD) is not a target.
 
 ## Description
 
-**The app** (`deploy/nas/truenas/apps/maktaba/`, in `truenas/apps`' layout: `app.yaml`,
-`questions.yaml`, `templates/docker-compose.yaml`, `ix_values.yaml`, `README.md`,
-`item.yaml`).
+**The app** (`deploy/nas/truenas/ix-dev/community/maktaba/`, in `truenas/apps`' source layout:
+`app.yaml`, `questions.yaml`, `ix_values.yaml`, `item.yaml`, `README.md`,
+`templates/docker-compose.yaml` and `templates/test_values/*.yaml`; the exact file set is taken
+from the catalog's contributing guide at the commit 59.15 pins).
 
 The form's questions:
 
@@ -33,7 +34,7 @@ The form's questions:
 | Maktaba | Time zone | the system's |
 | User | Run as user / group | 568 / 568 |
 | Network | Host network | on (mDNS); off → web port 8088 published, bridge text (59.08) |
-| Storage | **Data** | ixVolume, or a host path (recommended: a dataset on an SSD pool, Apps preset) |
+| Storage | **Data** | a host path: a dataset on an SSD pool with the Apps preset (the default the form asks for); ixVolume offered as the alternative |
 | Storage | **Media** (list) | host paths, each mounted at its own host path (59.13), read-only toggle per path |
 | Resources | Memory limit | 8 GB; tier follows (59.04) |
 | Resources | GPU | none / Intel-AMD (`/dev/dri`) / NVIDIA |
@@ -41,14 +42,17 @@ The form's questions:
 - **The compose template** sets:
   - `user: "{uid}:{gid}"`, `network_mode: host`, `stop_grace_period: 90s`;
   - environment: `MAKTABA_PLATFORM=truenas`, `TZ`, `MAKTABA_HOST_IP` from the node's IP;
-  - the D-Bus socket mounted read-only for Avahi (59.08);
+  - no D-Bus socket (Maktaba's own responder, 59.08);
   - `/proc/spl/kstat/zfs/arcstats`, which is readable in the container by default; the template
     adds no mask over it, so 59.04 can read the ARC;
   - `devices` and `group_add` for Intel/AMD GPUs;
   - the catalog's NVIDIA resource block for NVIDIA.
-- **No init container chowns anything.** The app's README and its form text say to use the
-  Apps preset or add an ACL entry for the run-as user. Immich's and Jellyfin's apps follow
-  the same rule.
+- **Maktaba's image chowns nothing.** For host paths, the app's README and form text say to use
+  the Apps preset or add an ACL entry for the run-as user.
+- **ixVolume** is created root-owned, and 59.01's write check would fail on it. When the household
+  picks ixVolume, the app uses the catalog library's own permissions step for ixVolumes, which
+  sets the owner to the run-as user before Maktaba starts. That step is the catalog's code and
+  runs as the catalog's container, not as Maktaba's image, which still never runs as root.
 - **Image tag:** the app pins the release's exact version, so catalog updates move it (59.12).
 
 **Permissions in TrueNAS words.**
@@ -97,7 +101,8 @@ The form's questions:
 
 | ID | Type | Setup | Action | Expected |
 |---|---|---|---|---|
-| T01 | CI | `truenas/apps` tooling at a pinned commit | render + lint `apps/maktaba` with each test values file | pass |
+| T01 | CI | `truenas/apps` tooling at a pinned commit | render + lint `ix-dev/community/maktaba` with each test values file | pass |
+| T06 | CI | test values with ixVolume data, run as 568 | render + start | the permissions step owns the volume; Maktaba's write check passes |
 | T02 | CI `uid-568` cell | 568, group-writable data | first run | ready |
 | T03 | Go unit | `MAKTABA_PLATFORM=truenas`, `/mnt/tank/media` | fix text | names dataset tank/media |
 | T04 | Go unit | arcstats fixture | memory | ARC counted |
@@ -110,9 +115,9 @@ has no Arabic). Maktaba's own screens are in both languages.
 
 ## Edge cases
 
-- **ixVolume for data:** works, but it lives in the apps dataset, possibly on HDDs. The form's
-  help text recommends a dataset on an SSD pool, and 59.02's rotational check reports what it
-  finds.
+- **ixVolume for data:** works through the catalog's permissions step, but it lives in the apps
+  dataset, possibly on HDDs. The form's help text recommends a dataset on an SSD pool, and
+  59.02's rotational check reports what it finds.
 - **Apps pool moved or the app reinstalled:** the data dataset keeps the home. Reinstalling with
   the same host path picks it up.
 - **24.10 (end of life):** not tested. The app's `min_version` is 25.04.
@@ -121,9 +126,9 @@ has no Arabic). Maktaba's own screens are in both languages.
 
 | File | Change |
 |---|---|
-| `deploy/nas/truenas/apps/maktaba/` (new) | the app in `truenas/apps`' layout |
+| `deploy/nas/truenas/ix-dev/community/maktaba/` (new) | the app in `truenas/apps`' source layout |
 | `deploy/nas/truenas/custom-app.yaml` (new) | the Custom App version |
-| `.github/workflows/nas.yml` (59.15) | the catalog tooling job |
+| `.github/workflows/nas.yml` (from 59.15) | the catalog tooling job |
 | `tools/release/` | the catalog bump PR step |
-| `cmd/maktaba-server/internal/mediaaccess/` | TrueNAS wording |
-| `docs/nas/checklists/truenas.md` (59.15) | device checklist |
+| `cmd/maktaba-server/internal/mediaaccess/` (from 59.03) | TrueNAS wording |
+| `docs/nas/checklists/truenas.md` (new, in 59.15's folder) | device checklist |

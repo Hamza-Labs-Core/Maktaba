@@ -13,20 +13,21 @@ When the NAS becomes the home, its own files are local, at `/volume1/Movies` on 
 Two mount styles give different results:
 - **One catch-all mount** (`${MAKTABA_MEDIA}:/media`), as in the current Docker compose: the
   container sees `/media/Movies`, which matches nothing, and every node needs a path map.
-- **Each share at its own host path:** the existing resolver already maps `/volume<N>/<share>` to
-  `smb://<nas>/<share>`.
+- **Each share at its own host path:** the paths match the NAS's own, but the resolver still has
+  to learn them. Today it maps only NFS mount exports (`sharepath/resolver.py`); a local root on
+  the home itself has no rule.
 
 A weak NAS should also not take node duties it cannot carry.
 
 ## Description
 
 **Mount at the host path.** Every NAS compose file and template mounts each share at the same
-path inside the container (59.09–59.11). The NAS's own paths then go through the existing
-canonical resolver:
+path inside the container (59.09–59.11). New resolver rules then map the NAS's own local paths
+to canonical shares:
 
 | Platform | Path in the container | Canonical |
 |---|---|---|
-| DSM | `/volume1/Movies` | `smb://<nas>/Movies` (resolver rule exists) |
+| DSM | `/volume1/Movies` | `smb://<nas>/Movies` (new rule: `/volume<N>/<share>`) |
 | TrueNAS | `/mnt/tank/media` | the SMB share whose path is `/mnt/tank/media`, as the household names it at setup (TrueNAS share names are not derivable from the path) |
 | Unraid | `/mnt/user/Movies` | `smb://<nas>/Movies` (new rule: `/mnt/user/<share>`) |
 | Other | any | asked at setup |
@@ -39,6 +40,13 @@ canonical resolver:
   from the NAS's own; nodes will match them by the share name you gave."
 - `<nas>` is the NAS's mDNS name or IP, as the nodes mount it. Setup offers both and keeps them
   as aliases. The resolver already accepts several server names for one share.
+- **The rules live in three places that must agree:** the pipeline's `sharepath/`, the API's Go
+  copy (`api/internal/sharepath`), and the shared fixtures (`shared/testdata/sharepath/`), which
+  gain DSM, TrueNAS and Unraid cases that both test suites read.
+- **A writable folder for the cluster.** The cluster's folder and the model copy live under
+  `<share>/maktaba/`. On a NAS home, setup suggests the first writable library share and lets the
+  household pick another (for example a `maktaba` shared folder). When none is writable, pairing a
+  node shows `cluster.no_writable_share`, and nodes download models themselves.
 
 **Roles by tier:**
 - **NAS as home:** the default, on any tier.
@@ -90,8 +98,9 @@ canonical resolver:
 |---|---|---|
 | `setup.share.confirm` | Maktaba found this library as the share {share} on {server}. Is that how your other computers open it? | وجد Maktaba هذه المكتبة على أنها المشاركة {share} على {server}. هل هكذا تفتحها حواسيبك الأخرى؟ |
 | `setup.share.local_only` | This folder isn't shared on the network, so other Maktaba computers can't work on it. | هذا المجلد غير مشارك على الشبكة، لذا لا تستطيع حواسيب Maktaba الأخرى العمل عليه. |
-| `settings.share.other_path` | These libraries use a mount at a different path from the NAS's own; nodes will match them by the share name you gave. | تستخدم هذه المكتبات نقطة ربط بمسار يختلف عن مسار الخادم نفسه، وستطابقها العُقد باسم المشاركة الذي أدخلته. |
-| `cluster.join.light_nas` | A Light NAS should be the Maktaba home or just storage. As a node it would slow the NAS down without helping the home much. | يُستحسن أن يكون الخادم من الفئة الخفيفة جهاز Maktaba الرئيسي أو مجرد مساحة تخزين. أما بصفته عقدة فسيبطئ الخادم دون أن يفيد الجهاز الرئيسي كثيرًا. |
+| `settings.share.other_path` | These libraries use a mount at a different path from the NAS's own; nodes will match them by the share name you gave. | تستخدم هذه المكتبات نقطة ربط بمسار يختلف عن مسار خادم التخزين نفسه، وستطابقها العُقد باسم المشاركة الذي أدخلته. |
+| `cluster.join.light_nas` | A Light NAS should be the Maktaba home or just storage. As a node it would slow the NAS down without helping the home much. | يُستحسن أن يكون خادم التخزين الشبكي من الفئة الخفيفة جهاز Maktaba الرئيسي أو مجرد مساحة تخزين. أما بصفته عقدة فسيبطئ خادم التخزين دون أن يفيد الجهاز الرئيسي كثيرًا. |
+| `cluster.no_writable_share` | No shared folder on this NAS is writable for Maktaba, so nodes will download speech models themselves. Give Maktaba Read/Write on one shared folder to share them. | لا توجد على خادم التخزين الشبكي هذا مشاركة يستطيع Maktaba الكتابة فيها، لذا ستنزّل العُقد نماذج الكلام بنفسها. امنح Maktaba صلاحية القراءة والكتابة على مشاركة واحدة لتتشاركها. |
 
 ## Edge cases
 
@@ -104,8 +113,10 @@ canonical resolver:
 
 | File | Change |
 |---|---|
-| `pipeline/src/maktaba_pipeline/sharepath/` | Unraid rule; TrueNAS from setup names; aliases |
+| `pipeline/src/maktaba_pipeline/sharepath/` | local-root rules (DSM, Unraid); TrueNAS from setup names; aliases |
+| `api/internal/sharepath/` | the same rules in Go |
+| `shared/testdata/sharepath/` | DSM, TrueNAS and Unraid fixtures for both suites |
 | `cmd/maktaba-server/setup_steps.go` | share step on a NAS home |
-| `cmd/maktaba-server/internal/cluster/` | Light-tier join warning |
+| the pairing step (`cmd/maktaba-server`, Epic 35's join flow) | Light-tier warning; the writable-folder check |
 | compose files (59.09–59.11) | per-share mounts at host paths |
 | `cloud/installers/docker/docker-compose.yml` | drop the `/media` catch-all in favour of per-share lines |

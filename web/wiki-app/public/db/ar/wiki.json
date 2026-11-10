@@ -11849,7 +11849,6 @@
         "story-7.17",
         "story-7.22",
         "story-12.10",
-        "story-59.10",
         "story-12.4"
       ],
       "files": {
@@ -12324,7 +12323,8 @@
         "story-4.1",
         "story-4.3",
         "story-4.4",
-        "story-9.15"
+        "story-9.15",
+        "story-59.3"
       ],
       "files": {
         "schema": "specs/architecture.md#8-database-schema",

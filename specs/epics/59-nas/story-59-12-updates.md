@@ -1,6 +1,6 @@
 # Story 59.12 — Updates on a NAS: self-update beside catalog updates, the NAS leg of the rehearsal
 
-> Epic 59 · Phase 4 · Depends on: 59.01, 59.10, 59.11 · Needed by: 59.15
+> Epic 59 · Phase 4 · Depends on: 59.01, 59.10, 59.11, 59.15 (the container harness) · Needed by: 59.16
 
 ## Why
 
@@ -33,11 +33,11 @@ arm64, and a container restarted by the NAS in the middle of an update.
 - **Settings → Updates on a NAS platform** shows the runtime version, the image version, and
   which one is running, with the reason.
 
-**Tags.**
-- Release publishes `:<version>` and moves `:stable` (README §5).
-- The Synology, Unraid and plain compose files use `:stable`.
+**Tags.** No new tag.
+- `:latest` already means the highest stable release (`release.yml`).
+- Release already rewrites the published Docker compose to the pinned `:<version>`. The Synology
+  files derived from it (59.09) carry the same pin, and the Unraid template uses `:latest`.
 - The TrueNAS app pins `:<version>` and is bumped through the catalog (59.10).
-- `:latest` keeps its current meaning, which is unchanged by this story.
 
 **Disk and memory during an update.**
 - **Disk:** the pre-update check needs free space on the data volume for the new runtime
@@ -57,18 +57,21 @@ arm64, and a container restarted by the NAS in the middle of an update.
   moved, or moved but unconfirmed) and resolves it as the guard would: an unconfirmed `current`
   goes back to `previous`. This is today's guard rule, proven here under NAS restarts.
 
-**The NAS leg of `update-rehearsal.yml`.** The existing rehearsal runs again, with:
+**A container rehearsal with NAS shapes.** Today's `update-rehearsal.yml` runs Go end-to-end
+tests of the Mac app's layout, not the Docker image. This story adds a new job,
+`update-rehearsal-container`, on 59.15's container harness. It is required for tagging alongside
+the existing rehearsal, and has these legs:
 
 | Leg | Shape |
 |---|---|
 | `nas-568` | `--user 568:568`, media `:ro`, data group-writable |
 | `nas-4g` | `--memory=4g`, Light, a 20k-item fixture database |
-| `nas-arm64` | arm64 runner |
+| `nas-arm64` | arm64 runner; the rehearsal's kit and seed jobs, amd64-only today, gain arm64 builds |
 | `nas-restart` | `docker restart` at each step of the update (staged, moved, before confirm) |
-| `nas-image-older` | volume on N+1, image N started |
+| `nas-image-older` | volume on N+1, image N started (N+1 is a build of the commit under test with its version raised, as the existing rehearsal does for its forced bad release) |
 
 - Each leg passes: update N−1 → N, then a forced bad release that the guard rolls back, then
-  restore. These are the same assertions as the existing rehearsal.
+  restore. These are the existing rehearsal's assertions, run against the image.
 - The rehearsal stays the gate for tagging. No release path is tested on the live home (updates
   are proven in CI first).
 
@@ -115,8 +118,9 @@ arm64, and a container restarted by the NAS in the middle of an update.
 
 | File | Change |
 |---|---|
-| `.github/workflows/update-rehearsal.yml` | the five NAS legs |
-| `cmd/maktaba-server/container.go` | image-older message; Settings data |
-| `cmd/maktaba-server/internal/update/` | disk pre-check with the dump size; stopping heavy workers on Light/Standard |
-| `.github/workflows/release.yml` | `:stable` tag move |
-| `web/` | Updates panel lines |
+| `.github/workflows/update-rehearsal.yml` | the `update-rehearsal-container` job with the five legs; arm64 kit and seed |
+| `tests/nas/` (from 59.15) | the update legs' scripts |
+| `cmd/maktaba-server/cmd_container.go` | image-older message; Settings data |
+| `cmd/maktaba-server/internal/updater/`, `internal/selfupdate/` | disk pre-check with the dump size; stopping heavy workers on Light/Standard |
+| `api/internal/handlers/systemstatus/` | `GET /api/system/updates` stays public; the runtime and image fields go only to admins (59.16) |
+| `web/src/i18n/{en,ar}.json`, `web/` | strings; Updates panel lines |

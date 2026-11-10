@@ -1902,7 +1902,7 @@
       "title": "The data volume and the database on a NAS: local, SSD first, tuned for spinning disks, quiet hours",
       "epic": "59-nas",
       "phase": 5,
-      "content": "# Story 59.02 — The data volume and the database on a NAS: local, SSD first, tuned for spinning disks, quiet hours\n\n> Epic 59 · Phase 1 · Depends on: 59.01, 59.04 · Needed by: 59.09, 59.10, 59.11\n\n## Why\n\nThe bundled Postgres lives on the data volume. On a NAS that volume can be:\n- an SSD pool;\n- an HDD RAID array;\n- a network share someone mounted by mistake.\n\nPostgres has three problems on a NAS:\n- **Wrong tuning:** it is sized for a cluster (`max_connections=300`, 40 replication slots) and\n  tuned for SSDs.\n- **No sleep:** on an HDD array, browsing and search are slow, and the array never s",
+      "content": "# Story 59.02 — The data volume and the database on a NAS: local, SSD first, tuned for spinning disks, quiet hours\n\n> Epic 59 · Phase 1 · Depends on: 59.01, 59.04 · Needed by: 59.09, 59.10, 59.11\n\n## Why\n\nThe bundled Postgres lives on the data volume. On a NAS that volume can be:\n- an SSD pool;\n- an HDD RAID array;\n- a network share someone mounted by mistake.\n\nPostgres has three problems on a NAS:\n- **Wrong tuning:** its memory settings are Postgres's defaults, the same on a 4 GB NAS as on a\n  64 GB workstation, and nothing changes for spinning disks.\n- **No sleep:** on an HDD array, browsing",
       "tags": [
         "story",
         "59-nas",
@@ -1931,7 +1931,7 @@
       "title": "Media permissions: check, explain, and work with read-only libraries",
       "epic": "59-nas",
       "phase": 5,
-      "content": "# Story 59.03 — Media permissions: check, explain, and work with read-only libraries\n\n> Epic 59 · Phase 1 · Depends on: 59.01 · Needed by: 59.07, 59.09, 59.10, 59.11, 59.13\n\n## Why\n\nOn a NAS, the container's user sees each share through the NAS's ACLs. Many households will\ngive Maktaba read-only access to their originals, and some shares will not be readable at all.\nToday Maktaba assumes it can write into every library:\n- subtitles are written beside the video;\n- convert, dedup, YouTube downloads and repair write into libraries;\n- the trash renames files into `<root>/.maktaba/trash`.\n\nA missin",
+      "content": "# Story 59.03 — Media permissions: check, explain, and work with read-only libraries\n\n> Epic 59 · Phase 1 · Depends on: 59.01, 59.04 (platform detection) · Needed by: 59.07, 59.09, 59.10, 59.11, 59.13\n\n## Why\n\nOn a NAS, the container's user sees each share through the NAS's ACLs. Many households will\ngive Maktaba read-only access to their originals, and some shares will not be readable at all.\nToday Maktaba assumes it can write into every library:\n- subtitles are written beside the video;\n- convert, dedup, YouTube downloads and repair write into libraries;\n- the trash renames files into `<root",
       "tags": [
         "story",
         "59-nas",
@@ -1939,6 +1939,7 @@
       ],
       "related": [
         "epic-59-nas",
+        "entity-subtitle_files",
         "ep-get-libraries",
         "ep-post-libraries"
       ],
@@ -1951,7 +1952,9 @@
         "GET /libraries",
         "POST /libraries"
       ],
-      "db_tables": [],
+      "db_tables": [
+        "subtitle_files"
+      ],
       "metadata": {
         "slug": "media-permissions"
       }
@@ -1962,7 +1965,7 @@
       "title": "Hardware detection and tiers: memory (with ZFS ARC), CPU features, GPUs, disks",
       "epic": "59-nas",
       "phase": 5,
-      "content": "# Story 59.04 — Hardware detection and tiers: memory (with ZFS ARC), CPU features, GPUs, disks\n\n> Epic 59 · Phase 1 · Depends on: — · Needed by: 59.02, 59.05, 59.06, 59.07, 59.09, 59.10, 59.13\n\n## Why\n\nMaktaba's defaults assume a desktop with 16 GB (`docs/hardware.md`, the Full bundle). NAS boxes\nrange from 4 GB with four ARM cores to 32 GB with a GPU, and they share their memory with the\nNAS's own system.\n\nTwo readings mislead today:\n- **Memory on TrueNAS:** it is read from `MemAvailable`, which does not count the ZFS ARC, and\n  the ARC fills nearly all RAM. A healthy TrueNAS box looks full.\n",
+      "content": "# Story 59.04 — Hardware detection and tiers: memory (with ZFS ARC), CPU features, GPUs, disks\n\n> Epic 59 · Phase 1 · Depends on: — · Needed by: 59.02, 59.05, 59.06, 59.07, 59.09, 59.10, 59.13\n\n## Why\n\nMaktaba's defaults assume a desktop with 16 GB (`docs/hardware.md`, the Full bundle). NAS boxes\nrange from 4 GB with four ARM cores to 32 GB with a GPU, and they share their memory with the\nNAS's own system.\n\nTwo readings mislead today:\n- **Free memory on TrueNAS:** it is read from `MemAvailable`, which does not count the ZFS ARC,\n  and the ARC fills nearly all RAM. A healthy TrueNAS box looks f",
       "tags": [
         "story",
         "59-nas",
@@ -1988,7 +1991,7 @@
       "title": "Hardware video on NAS chips: VA-API, Quick Sync and the render device",
       "epic": "59-nas",
       "phase": 5,
-      "content": "# Story 59.05 — Hardware video on NAS chips: VA-API, Quick Sync and the render device\n\n> Epic 59 · Phase 2 · Depends on: 59.01, 59.04 · Needed by: 59.09, 59.10, 59.11\n\n## Why\n\nStreaming tries NVENC, then QSV, then libx264, keeping each only after a test encode\n(`streaming/internal/ffmpeg/hwaccel.go`). Most NAS chips give a container only `/dev/dri`:\n- the J4125 in Synology Plus models;\n- the N100 and N5105 in UGREEN, QNAP and ASUSTOR boxes;\n- AMD APUs in some TrueNAS builds.\n\nOn those devices VA-API is the path that works most reliably. QSV in a container also needs\nIntel's media driver, and t",
+      "content": "# Story 59.05 — Hardware video on NAS chips: VA-API, Quick Sync and the render device\n\n> Epic 59 · Phase 2 · Depends on: 59.01, 59.04 · Needed by: 59.09, 59.10, 59.11\n\n## Why\n\nStreaming tries NVENC, then QSV, then libx264, keeping each only after a test encode\n(`streaming/internal/ffmpeg/hwaccel.go`). Most NAS chips give a container only `/dev/dri`:\n- the J4125 in Synology Plus models;\n- the N100 and N5105 in UGREEN, QNAP and ASUSTOR boxes;\n- AMD APUs in some TrueNAS builds.\n\nOn those devices VA-API is the path that works most reliably. QSV in a container also needs\nIntel's media driver, which",
       "tags": [
         "story",
         "59-nas",
@@ -2040,7 +2043,7 @@
       "title": "Plugins in a container: isolation levels, plugind's layers, the admin's yes",
       "epic": "59-nas",
       "phase": 5,
-      "content": "# Story 59.07 — Plugins in a container: isolation levels, plugind's layers, the admin's yes\n\n> Epic 59 · Phase 2 · Depends on: 59.01, 59.03, 59.04 · Needed by: 59.09, 59.10, 59.15\n\n## Why\n\nEpic 54 has two kinds of plugin, each with its own isolation:\n- **First-party plugins** run as trusted Python in plugin runners, inside a Landlock + seccomp\n  sandbox. Without Landlock a runner runs as `sandbox_partial`.\n- **Third-party plugins** run as WebAssembly in `maktaba-plugind`, with namespaces, Landlock and\n  seccomp. A required layer that fails makes plugind exit 78.\n\nInside a NAS container, two th",
+      "content": "# Story 59.07 — Plugins in a container: isolation levels, plugind's layers, the admin's yes\n\n> Epic 59 · Phase 2 · Depends on: 59.01, 59.03, 59.04 · Needed by: 59.09, 59.10\n\n## Why\n\nEpic 54 has two kinds of plugin, each with its own isolation:\n- **First-party plugins** run as trusted Python in plugin runners, inside a Landlock + seccomp\n  sandbox. Without Landlock a runner runs as `sandbox_partial`.\n- **Third-party plugins** run as WebAssembly in `maktaba-plugind`. Its required layers are\n  no-new-privs, rlimits and its own seccomp filter; a required layer that fails makes plugind\n  exit 78. N",
       "tags": [
         "story",
         "59-nas",
@@ -2066,7 +2069,7 @@
       "title": "Networking on a NAS: host or bridge, mDNS beside the NAS's responder, HTTPS, reverse proxies",
       "epic": "59-nas",
       "phase": 5,
-      "content": "# Story 59.08 — Networking on a NAS: host or bridge, mDNS beside the NAS's responder, HTTPS, reverse proxies\n\n> Epic 59 · Phase 3 · Depends on: 59.01 · Needed by: 59.09, 59.10, 59.11\n\n## Why\n\nMaktaba's apps and TVs find a home by mDNS (`_maktaba._tcp`), and the TV front door also answers\nSSDP. Both need the host network. A NAS already runs its own services that Maktaba must sit\nbeside:\n- an mDNS responder (Avahi on TrueNAS and Unraid, Bonjour on DSM);\n- nginx on 80/443;\n- its own UI;\n- on DSM, its own Postgres on 5432.\n\nSome households run every container on a bridge network for tidiness, or m",
+      "content": "# Story 59.08 — Networking on a NAS: host or bridge, mDNS beside the NAS's responder, HTTPS, reverse proxies\n\n> Epic 59 · Phase 3 · Depends on: 59.01 · Needed by: 59.09, 59.10, 59.11\n\n## Why\n\nMaktaba's apps and TVs find a home by mDNS (`_maktaba._tcp`), and the TV front door also answers\nSSDP. Both need the host network. A NAS already runs its own services that Maktaba must sit\nbeside:\n- an mDNS responder (avahi-daemon on DSM and Unraid; whether TrueNAS 25.04+ still runs one is\n  checked on the device checklist);\n- nginx on 80/443;\n- its own UI;\n- on DSM, its own Postgres on 5432.\n\nSome househ",
       "tags": [
         "story",
         "59-nas",
@@ -2131,8 +2134,7 @@
         "phase-5"
       ],
       "related": [
-        "epic-59-nas",
-        "entity-devices"
+        "epic-59-nas"
       ],
       "files": {
         "story": "specs/epics/59-nas/story-59-10-truenas.md",
@@ -2140,9 +2142,7 @@
         "mockups": []
       },
       "api_endpoints": [],
-      "db_tables": [
-        "devices"
-      ],
+      "db_tables": [],
       "metadata": {
         "slug": "truenas"
       }
@@ -2179,7 +2179,7 @@
       "title": "Updates on a NAS: self-update beside catalog updates, the NAS leg of the rehearsal",
       "epic": "59-nas",
       "phase": 5,
-      "content": "# Story 59.12 — Updates on a NAS: self-update beside catalog updates, the NAS leg of the rehearsal\n\n> Epic 59 · Phase 4 · Depends on: 59.01, 59.10, 59.11 · Needed by: 59.15\n\n## Why\n\nThe image updates itself on its volume. The steps are:\n- the release is verified in process;\n- a new runtime is installed;\n- `current` is moved under the launcher's guard, which confirms within 3 minutes or switches\n  back;\n- a pre-update dump is taken first.\n\nCatalogs move the image too:\n- TrueNAS app updates;\n- Unraid's update check;\n- Watchtower;\n- a household pressing \"pull\" in Container Manager.\n\nThe image's r",
+      "content": "# Story 59.12 — Updates on a NAS: self-update beside catalog updates, the NAS leg of the rehearsal\n\n> Epic 59 · Phase 4 · Depends on: 59.01, 59.10, 59.11, 59.15 (the container harness) · Needed by: 59.16\n\n## Why\n\nThe image updates itself on its volume. The steps are:\n- the release is verified in process;\n- a new runtime is installed;\n- `current` is moved under the launcher's guard, which confirms within 3 minutes or switches\n  back;\n- a pre-update dump is taken first.\n\nCatalogs move the image too:\n- TrueNAS app updates;\n- Unraid's update check;\n- Watchtower;\n- a household pressing \"pull\" in Co",
       "tags": [
         "story",
         "59-nas",
@@ -2283,7 +2283,7 @@
       "title": "OpenAPI and role tests for the new admin routes",
       "epic": "59-nas",
       "phase": 5,
-      "content": "# Story 59.16 — OpenAPI and role tests for the new admin routes\n\n> Epic 59 · Phase 4 (each route lands with its story) · Depends on: 59.02, 59.03, 59.04, 59.07\n\n## Why\n\nEvery role rule is enforced by the server, with a role test. Hiding a button is not a rule. This\nepic adds routes that read the machine, change what may run, or run heavy work now:\n- **reading the machine:** the hardware report, the library access check;\n- **changing what may run:** the plugin isolation switch, the tier;\n- **running heavy work now:** Run now past quiet hours.\n\nEach must be admin-only, documented in OpenAPI, and",
+      "content": "# Story 59.16 — OpenAPI and role tests for the new admin routes\n\n> Epic 59 · Each route and its role test land with the story that adds it (Phases 1–4); this story is the checklist · Depends on: 59.02, 59.03, 59.04, 59.07, 59.12\n\n## Why\n\nEvery role rule is enforced by the server, with a role test. Hiding a button is not a rule. This\nepic adds routes that read the machine, change what may run, or run heavy work now:\n- **reading the machine:** the hardware report, the library access check;\n- **changing what may run:** the plugin isolation switch, the tier;\n- **running heavy work now:** Run now p",
       "tags": [
         "story",
         "59-nas",

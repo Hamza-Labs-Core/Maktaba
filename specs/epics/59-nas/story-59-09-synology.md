@@ -38,11 +38,12 @@ screenshots):
    The install page fills in the uid, the shares and the memory tier from the household's answers.
 5. **Start it** and open `http://<nas>:8088` to finish setup.
 
-**The Synology compose file** (`deploy/nas/synology/compose.yaml`, published to maktaba.tv):
+**The Synology compose file** (`deploy/nas/synology/compose.yaml`, derived from the published
+Docker compose, `cloud/installers/docker/docker-compose.yml`, and published to maktaba.tv):
 ```yaml
 services:
   maktaba:
-    image: ghcr.io/hamza-labs-core/maktaba-server:stable
+    image: ghcr.io/hamza-labs-core/maktaba-server:0.3.120   # the release's pinned tag
     container_name: maktaba
     user: "1026:100"                      # the DSM user maktaba (filled in by the install page)
     network_mode: host
@@ -62,8 +63,9 @@ services:
     group_add:                            # J4125 version only: the render group of /dev/dri
       - "937"
 ```
-- **`:stable`** is a floating tag moved by each release (59.12). The self-update keeps the home
-  current in its window either way.
+- **The tag** is the release's own version, written by release as it already does for the
+  published Docker compose. A household may use `:latest`, which already means the highest
+  stable release. The self-update keeps the home current in its window either way (59.12).
 - **Version gate:** the file is checked by Container Manager's Docker 24.0.2. Keys newer than
   that compose version are not used.
 
@@ -84,6 +86,8 @@ services:
 - **Skipped folders:** `#recycle`, `#snapshot` and `@eaDir` are skipped (59.03).
 - **No inotify:** Maktaba uses no inotify watches, so DSM's 8192 limit is never touched. The
   guide says so, because other apps' guides ask households to raise it.
+- **mDNS:** DSM runs avahi-daemon. Maktaba's own responder sits beside it (59.08); the D-Bus
+  option is not used on DSM.
 - **Kernel facts:** Landlock is recorded per model on the device checklist. The expected result
   is Container isolation (59.07).
 - **J4125 HEVC:** the checklist records whether HEVC decode works through VA-API on DSM 7.2.2+
@@ -141,8 +145,8 @@ DSM fix strings are in 59.03. The guide's text is in 59.14.
 
 | File | Change |
 |---|---|
-| `deploy/nas/synology/compose.yaml`, `compose.j4125.yaml` (new) | the two files |
-| maktaba.tv install page (`web/…/site`) | answers → filled compose |
-| `cmd/maktaba-server/internal/mediaaccess/` | DSM wording |
-| `docs/nas/checklists/synology.md` (59.15) | device checklist |
+| `deploy/nas/synology/compose.yaml`, `compose.j4125.yaml` (new) | the two files, derived from `cloud/installers/docker/docker-compose.yml` by a release step |
+| maktaba.tv install page (new; where the site's source lives is settled with 59.14) | answers → filled compose |
+| `cmd/maktaba-server/internal/mediaaccess/` (from 59.03) | DSM wording |
+| `docs/nas/checklists/synology.md` (new, in 59.15's folder) | device checklist |
 | `cloud/installers/nas/synology/` | removed |
