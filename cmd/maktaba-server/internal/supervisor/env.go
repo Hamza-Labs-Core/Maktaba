@@ -400,6 +400,12 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		// Its /healthz (event-loop heartbeat) is the pipeline's liveness
 		// probe.
 		add("MAKTABA_PIPELINE_LOGS_ADDR", pipelineLogs(cfg))
+		// Epic 59 story 59.02: heavy work this machine claims waits for its quiet hours
+		// ([schedule] quiet_hours, else the hardware tier's); on Light, thumbnail sprites too
+		for _, kv := range QuietEnv(cfg) {
+			k, v, _ := strings.Cut(kv, "=")
+			add(k, v)
+		}
 		// [transcription]: the models the transcribe stage loads (Epic 36 story 36.4)
 		for _, kv := range sttEnv(cfg) {
 			if k, _, _ := strings.Cut(kv, "="); os.Getenv(k) == "" {

@@ -16,6 +16,8 @@ from .context import JobCancelled, JobDeferred, StageContext, StageFailure
 from .events import job_ref, log_event, publish
 from .graph import GraphViolation, StageDef, StageResult
 from .propagate import finalize_success, last_success
+from .quiet import QUIET_REASON, QuietHours
+from .quiet import hold_seconds as quiet_hold_seconds
 from .sql import now, to_ts
 from .stages.registry import get_impl
 
@@ -96,6 +98,13 @@ async def _execute(
     job_events.claimed(job)
 
     try:
+        # Epic 59 story 59.02: heavy work this machine claims outside its quiet hours is
+        # given back until the window opens (engine/quiet.py)
+        wait = await quiet_hold_seconds(db, job)
+        if wait > 0:
+            window = QuietHours.from_env()
+            start = window.start_text if window is not None else ""
+            raise JobDeferred(f"{QUIET_REASON}:{start}", wait)
         input_hash: str | None = None
         if impl.input_fingerprint is not None:
             input_hash = await impl.input_fingerprint(db, job.subject)

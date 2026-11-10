@@ -14,6 +14,18 @@ build fails when the two differ.
 
 ### Changed
 
+- **On a NAS, heavy work waits for quiet hours and Postgres is tuned to the machine (story
+  59.02).** On the Light and Standard tiers a library's first scan, a transcription backlog,
+  convert and duplicates, and bulk thumbnail sprites wait for 01:00–06:00, so the NAS stays
+  quick for the household; the queue says "Waiting for quiet hours (01:00)", and **Run now**
+  on the queue's page or the library page starts the work at once. The window is editable in Settings → This
+  machine. The bundled Postgres gets its memory from the tier (256 MB on Light, 512 MB on
+  Standard, a quarter of memory up to 4 GB on Strong) and, on spinning disks, settings for
+  them; `[postgres] settings` in server.toml wins. Setup refuses a data folder on a network
+  share or a FUSE file system and names the file system, gives Unraid's merged share the
+  cache-pool advice, and says when the database is on spinning disks. A library with a
+  regular scan says that it keeps the disks awake.
+
 - **Maktaba sizes itself to the machine it runs on, and Settings → This machine shows how
   (story 59.04).** At each start the server reads the memory it may use (a container's limit,
   not the host's RAM; on TrueNAS the ZFS cache counts as free), the processor's cores (a

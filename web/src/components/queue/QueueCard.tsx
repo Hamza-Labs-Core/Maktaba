@@ -147,6 +147,7 @@ export function QueueCard({
           time: fmt.dur(summary.oldest_waiting_sec),
           stage: info.label,
           service: service ?? "",
+          at: summary.quiet_at ?? "",
           component: summary.component ? componentTitle(summary.component, t) : "",
         })}
       </Link>

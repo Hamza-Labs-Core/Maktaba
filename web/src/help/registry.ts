@@ -186,6 +186,7 @@ export const WAITING_REASONS = [
   "debouncing",
   "backoff",
   "service_retrying",
+  "quiet_hours",
   "upstream",
   "idle",
 ] as const;

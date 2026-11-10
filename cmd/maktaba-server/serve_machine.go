@@ -8,7 +8,9 @@ package main
 // admin's pick (PUT): it applies at the next restart, as the other settings there do.
 //
 //	GET /config/machine   the machine, the tier and why, its defaults, the data disk
-//	PUT /config/machine   {"tier": "light"|"standard"|"strong"|"auto"}: auto detects again
+//	PUT /config/machine   {"tier": "light"|"standard"|"strong"|"auto"}: auto detects again;
+//	                      {"quiet_hours": "01:00-06:00"|""} or {"quiet_default": true};
+//	                      {"data_disk": "ssd"|"rotational"|"auto"} (59.02)
 
 import (
 	"encoding/json"
@@ -16,11 +18,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 )
 
 // TierChosenAdmin is [server] tier_chosen's value when an admin picked the tier.
@@ -38,8 +42,14 @@ type machineTier struct {
 	MovedUp bool
 }
 
-// runningTier is this serve's tier (nil before serve resolves it, and in a single role).
-var runningTier atomic.Pointer[machineTier]
+// runningTier is this serve's tier (nil before serve resolves it, and in a single role);
+// runningQuiet and runningDisk its quiet hours and whether Postgres was tuned for
+// spinning disks (Epic 59 story 59.02).
+var (
+	runningTier  atomic.Pointer[machineTier]
+	runningQuiet atomic.Pointer[string]
+	runningDisk  atomic.Pointer[bool]
+)
 
 // detectMachine reads the hardware (tests replace it).
 var detectMachine = hostinfo.Detect
@@ -105,6 +115,16 @@ type machineDoc struct {
 	Defaults      hostinfo.Defaults `json:"defaults"`
 	// NAS: the platform is a NAS's own system.
 	NAS bool `json:"nas"`
+	// QuietHours (Epic 59 story 59.02): the window heavy work waits for, as server.toml
+	// saves it ("" none), whether [schedule] quiet_hours sets it (QuietSet; else the tier's
+	// default, QuietDefault, applies).
+	QuietHours   string `json:"quiet_hours"`
+	QuietSet     bool   `json:"quiet_set"`
+	QuietDefault string `json:"quiet_default"`
+	// Rotational: the database is tuned for spinning disks; DiskHow how that was known
+	// (rotational, ssd, asked, unknown).
+	Rotational bool   `json:"rotational"`
+	DiskHow    string `json:"disk_how"`
 }
 
 // machineDocOf is the document for what runs (mt) and what server.toml saves (file).
@@ -119,11 +139,21 @@ func machineDocOf(mt machineTier, file config.Config, canRestart bool) machineDo
 		CanRestart: canRestart,
 	}
 	next := tierOf(file.Server, mt.Machine)
+	d.QuietDefault = hostinfo.DefaultsFor(next.Tier, mt.Machine).QuietHours
+	d.QuietSet = file.Schedule.QuietHours != nil
+	d.QuietHours = config.QuietHoursOf(file, d.QuietDefault)
+	d.Rotational, d.DiskHow = pgbundle.DataRotational(file, filepath.Join(file.StateDir(), "postgres"))
 	d.Saved = "auto"
 	if next.Chosen {
 		d.Saved = string(next.Tier)
 	}
 	d.RestartNeeded = next.Tier != mt.Tier || next.Chosen != mt.Chosen
+	if run := runningQuiet.Load(); run != nil && *run != d.QuietHours {
+		d.RestartNeeded = true
+	}
+	if run := runningDisk.Load(); run != nil && *run != d.Rotational {
+		d.RestartNeeded = true
+	}
 	return d
 }
 
@@ -149,18 +179,50 @@ func (c *configAdmin) machineRoutes(w http.ResponseWriter, r *http.Request) bool
 		}
 		writeConfigJSON(w, http.StatusOK, machineDocOf(*mt, file, canRestart))
 	case http.MethodPut:
+		// every field is optional: the tier, the quiet hours (null: the tier's default),
+		// the data disk's answer ("auto": detected)
 		var body struct {
-			Tier string `json:"tier"`
+			Tier         *string         `json:"tier"`
+			QuietHours   json.RawMessage `json:"quiet_hours"`
+			QuietDefault bool            `json:"quiet_default"`
+			DataDisk     *string         `json:"data_disk"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<12)).Decode(&body); err != nil {
 			writeConfigJSON(w, http.StatusBadRequest, map[string]string{"error": "the body: " + err.Error()})
 			return true
 		}
-		pick := strings.ToLower(strings.TrimSpace(body.Tier))
-		t, ok := hostinfo.ParseTier(pick)
-		if !ok && pick != "auto" {
-			writeConfigJSON(w, http.StatusUnprocessableEntity, map[string]any{
-				"errors": map[string]string{"tier": "light, standard, strong or auto"}})
+		errs := map[string]string{}
+		var pick string
+		var tier hostinfo.Tier
+		tierOK := false
+		if body.Tier != nil {
+			pick = strings.ToLower(strings.TrimSpace(*body.Tier))
+			if tier, tierOK = hostinfo.ParseTier(pick); !tierOK && pick != "auto" {
+				errs["tier"] = "light, standard, strong or auto"
+			}
+		}
+		var quiet *string
+		if len(body.QuietHours) > 0 && string(body.QuietHours) != "null" {
+			var q string
+			if err := json.Unmarshal(body.QuietHours, &q); err != nil {
+				errs["quiet_hours"] = "a window such as 01:00-06:00, or empty for none"
+			} else if _, _, _, err := config.ParseQuietHours(q); err != nil {
+				errs["quiet_hours"] = err.Error()
+			} else {
+				q = strings.TrimSpace(q)
+				quiet = &q
+			}
+		}
+		disk := ""
+		if body.DataDisk != nil {
+			switch disk = strings.ToLower(strings.TrimSpace(*body.DataDisk)); disk {
+			case "ssd", "rotational", "auto":
+			default:
+				errs["data_disk"] = "ssd, rotational or auto"
+			}
+		}
+		if len(errs) > 0 {
+			writeConfigJSON(w, http.StatusUnprocessableEntity, map[string]any{"errors": errs})
 			return true
 		}
 		c.mu.Lock()
@@ -170,16 +232,30 @@ func (c *configAdmin) machineRoutes(w http.ResponseWriter, r *http.Request) bool
 			writeConfigJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return true
 		}
-		if ok {
-			file.Server.Tier, file.Server.TierChosen = string(t), TierChosenAdmin
-		} else {
+		switch {
+		case tierOK:
+			file.Server.Tier, file.Server.TierChosen = string(tier), TierChosenAdmin
+		case pick == "auto":
 			file.Server.Tier, file.Server.TierChosen = string(mt.Detected), ""
+		}
+		switch {
+		case quiet != nil:
+			file.Schedule.QuietHours = quiet
+		case body.QuietDefault:
+			file.Schedule.QuietHours = nil
+		}
+		switch disk {
+		case "ssd", "rotational":
+			file.Server.DataDisk = disk
+		case "auto":
+			file.Server.DataDisk = ""
 		}
 		if err := file.SaveTo(c.path); err != nil {
 			writeConfigJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return true
 		}
-		fmt.Fprintf(os.Stderr, "[serve] hardware tier set from the web: %s (applies at the next start)\n", pick)
+		fmt.Fprintf(os.Stderr, "[serve] this machine's settings changed from the web (tier %q, quiet hours %v, data disk %q); "+
+			"they apply at the next start\n", pick, quiet != nil || body.QuietDefault, disk)
 		writeConfigJSON(w, http.StatusOK, machineDocOf(*mt, file, canRestart))
 	default:
 		http.Error(w, "method", http.StatusMethodNotAllowed)

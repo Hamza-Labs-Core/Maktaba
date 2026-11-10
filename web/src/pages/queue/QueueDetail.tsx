@@ -196,7 +196,12 @@ export function QueueDetail() {
   const descKey = `queue.stage.${stage}.desc`;
   const desc = t(descKey);
   const reason = (r: WaitingReason) =>
-    r ? t(`queue.waiting.${r}`, { time: fmt.dur(summary.oldest_waiting_sec) }) : "";
+    r
+      ? t(`queue.waiting.${r}`, {
+          time: fmt.dur(summary.oldest_waiting_sec),
+          at: summary.quiet_at ?? "",
+        })
+      : "";
   const paused = info.paused;
   const retryGroups = detail.failures.filter((g) => g.action === "retry");
   const feeds = [...new Set(info.edges.map((e) => e.to))];
@@ -283,6 +288,23 @@ export function QueueDetail() {
                 {t("queue.detail.pause")}
               </Button>
             </>
+          )}
+          {summary.waiting_reason === "quiet_hours" && (
+            // Epic 59 story 59.02: heavy work held for the quiet hours, started now
+            <Button
+              variant="secondary"
+              loading={action.busy === "run-now"}
+              onClick={() =>
+                void action
+                  .run(
+                    "run-now",
+                    save(() => queueApi.runNow(stage))
+                  )
+                  .then(afterAction)
+              }
+            >
+              {t("queue.run_now")}
+            </Button>
           )}
           <Button
             variant="secondary"
