@@ -4920,7 +4920,7 @@
       "title": "Implementation Plan — Story 25.31 NAS support (Synology, QNAP, TrueNAS, Unraid)",
       "epic": "25-cloud-relay",
       "phase": 5,
-      "content": "# Implementation Plan — Story 25.31 NAS support (Synology, QNAP, TrueNAS, Unraid)\n\n> Companion to [story-25-31-nas-support.md](story-25-31-nas-support.md).\n\n## 0. Scope and placement\n\n| Concern | Decision |\n|---|---|\n| Runtime | The Docker image from 25.30 — every NAS package is *vendor glue*, not a separate build. |\n| Synology | `.spk` package via per-platform Synology SDK; pulls Docker image at install. |\n| QNAP | QPKG via QDK. |\n| TrueNAS SCALE | Helm chart + catalog manifest. |\n| Unraid | Community Apps XML template. |\n| Permissions | Each vendor's default media-share UID/GID injected via ",
+      "content": "# Implementation Plan — Story 25.31 NAS support (Synology, QNAP, TrueNAS, Unraid)\n\n> **Replaced by Epic 59** ([Maktaba on a NAS](../59-nas/README.md)). Kept for history; nothing\n> below changed.\n\n> Companion to [story-25-31-nas-support.md](story-25-31-nas-support.md).\n\n## 0. Scope and placement\n\n| Concern | Decision |\n|---|---|\n| Runtime | The Docker image from 25.30 — every NAS package is *vendor glue*, not a separate build. |\n| Synology | `.spk` package via per-platform Synology SDK; pulls Docker image at install. |\n| QNAP | QPKG via QDK. |\n| TrueNAS SCALE | Helm chart + catalog manifest. |\n",
       "tags": [
         "plan",
         "25-cloud-relay"

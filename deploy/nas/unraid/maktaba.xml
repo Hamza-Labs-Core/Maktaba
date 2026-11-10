@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Maktaba's Unraid template (Community Applications), Epic 59 story 59.11.
+  It is the published Docker compose (cloud/installers/docker/docker-compose.yml) in Unraid's
+  form: the same image, host network, a non-root user (Unraid's nobody:users, 99:100), the data
+  folder on a pool (never the array's /mnt/user, which is shfs: setup refuses it for the data),
+  the media at its own path. tests/nas/install_files.py checks it against the compose file and
+  renders it to `docker run` arguments, as Unraid does; the uid-unraid cell starts those.
+  deploy/nas/unraid/README.md says how it is submitted to Community Applications.
+-->
+<Container version="2">
+  <Name>Maktaba</Name>
+  <Repository>ghcr.io/hamza-labs-core/maktaba-server:latest</Repository>
+  <Registry>https://github.com/Hamza-Labs-Core/Maktaba/pkgs/container/maktaba-server</Registry>
+  <Network>host</Network>
+  <MyIP/>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://maktaba.tv/install/unraid</Support>
+  <Project>https://maktaba.tv</Project>
+  <ReadMe>https://github.com/Hamza-Labs-Core/Maktaba/blob/main/deploy/nas/unraid/README.md</ReadMe>
+  <Overview>Maktaba is a home media library in Arabic and English: movies, series, recordings and live TV, with search inside what is said, subtitles made by speech to text, and apps for phones, tablets and TVs. One container runs everything (the web app, the API, live TV, the pipeline and its own Postgres) and updates itself in a quiet window, each release verified before it is installed.[br][br]Keep the data folder on a cache pool or a single disk (not the array's /mnt/user share). Media folders are mounted at the same path inside, so machines that join this home find the same shares; set a folder's access mode to Read Only where Maktaba must never write. For hardware video on Intel or AMD, keep /dev/dri and add --group-add with the render group's id to Extra Parameters (stat -c %g /dev/dri/renderD128).</Overview>
+  <Category>MediaServer:Video MediaServer:Other</Category>
+  <WebUI>http://[IP]:[PORT:8088]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/Hamza-Labs-Core/Maktaba/main/deploy/nas/unraid/maktaba.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/Hamza-Labs-Core/Maktaba/main/web/public/icons/icon-512.png</Icon>
+  <ExtraParams>--user 99:100 --stop-timeout 90</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <Requires>A pool for the data folder (a cache SSD or a single disk). 4 GB of memory or more.</Requires>
+  <Config Name="Data" Target="/var/lib/maktaba" Default="/mnt/cache/appdata/maktaba" Mode="rw" Description="Everything Maktaba keeps: its settings, the database, the runtime it updates, logs and models. Keep this on a cache pool or a single disk, never /mnt/user (the array's shfs): setup refuses it there." Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/maktaba</Config>
+  <Config Name="Media" Target="/mnt/user/Media" Default="/mnt/user/Media" Mode="rw" Description="A media share, mounted at the same path inside (set Container Path to the same path as Host Path). Read Only where Maktaba must never write: that library shows Read only and conversions are off there. Add one Path per share." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/Media</Config>
+  <Config Name="Render device" Target="/dev/dri" Default="/dev/dri" Mode="" Description="Hardware video on Intel or AMD (Quick Sync, VA-API). Add --group-add with the render group's id to Extra Parameters: stat -c %g /dev/dri/renderD128" Type="Device" Display="always" Required="false" Mask="false">/dev/dri</Config>
+  <Config Name="Time zone" Target="TZ" Default="Etc/UTC" Mode="" Description="Your time zone, for the quiet hours (heavy work at night on smaller machines), e.g. Asia/Riyadh." Type="Variable" Display="always" Required="false" Mask="false">Etc/UTC</Config>
+  <Config Name="Platform" Target="MAKTABA_PLATFORM" Default="unraid" Mode="" Description="Tells Maktaba it runs on Unraid, so its messages name Unraid's menus." Type="Variable" Display="advanced-hide" Required="true" Mask="false">unraid</Config>
+</Container>

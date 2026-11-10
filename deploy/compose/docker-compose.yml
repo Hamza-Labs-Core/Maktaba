@@ -1,4 +1,7 @@
-# Maktaba canonical compose stack (Story 22.3).
+# Maktaba's development stack (Story 22.3): one container per service, built from this
+# checkout, for development and the e2e tests. It is not for a NAS or a home server: to run
+# Maktaba with Docker, use cloud/installers/docker/docker-compose.yml (one container that runs
+# everything and updates itself; maktaba.tv/install/docker), which every NAS install reuses.
 #
 # `docker compose -f deploy/compose/docker-compose.yml up -d --wait`
 # brings the full stack to "all healthy" on a fresh host (TC1; AC2).
@@ -12,8 +15,10 @@
 # `../..` walks back to the repo root.
 #
 # Image tags default to `:dev` so a fresh `docker compose build && up`
-# works without pulling from ghcr.io. Releases override
-# MAKTABA_VERSION to pin a published tag.
+# works without pulling from ghcr.io. The names are the ones release
+# publishes (release.yml's build-images); MAKTABA_VERSION=vX.Y.Z pulls
+# that release's images (tests/nas/install_files.py checks the names
+# resolve).
 
 name: maktaba
 
@@ -76,7 +81,7 @@ services:
       retries: 20
 
   api:
-    image: ghcr.io/maktaba/api:${MAKTABA_VERSION:-dev}
+    image: ghcr.io/hamza-labs-core/maktaba-api:${MAKTABA_VERSION:-dev}
     build:
       context: ../..
       dockerfile: api/Dockerfile
@@ -145,7 +150,7 @@ services:
       start_period: 15s
 
   streaming:
-    image: ghcr.io/maktaba/streaming:${MAKTABA_VERSION:-dev}
+    image: ghcr.io/hamza-labs-core/maktaba-streaming:${MAKTABA_VERSION:-dev}
     build:
       context: ../..
       dockerfile: streaming/Dockerfile
@@ -181,7 +186,7 @@ services:
       start_period: 15s
 
   pipeline:
-    image: ghcr.io/maktaba/pipeline:${MAKTABA_VERSION:-dev}
+    image: ghcr.io/hamza-labs-core/maktaba-pipeline:${MAKTABA_VERSION:-dev}
     build:
       context: ../..
       dockerfile: pipeline/Dockerfile
@@ -228,7 +233,7 @@ services:
       start_period: 30s
 
   web:
-    image: ghcr.io/maktaba/web:${MAKTABA_VERSION:-dev}
+    image: ghcr.io/hamza-labs-core/maktaba-web:${MAKTABA_VERSION:-dev}
     build:
       context: ../..
       dockerfile: web/Dockerfile

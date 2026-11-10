@@ -13,6 +13,7 @@ export default tseslint.config(
       "dist",
       "dist-cloud",
       "dist-admin",
+      "dist-install",
       "node_modules",
       "mockups",
       "wiki-app",
