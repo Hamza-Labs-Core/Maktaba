@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/mediaaccess"
 )
 
@@ -23,9 +24,10 @@ func TestSetupLibrariesShowsAccess(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Server.DataDir = e.state
 	s := &setupRun{ctx: context.Background(), cfg: cfg, out: json.NewEncoder(io.Discard), log: io.Discard}
-	old := nasPlatform
-	nasPlatform = func() string { return "truenas" }
-	t.Cleanup(func() { nasPlatform = old })
+	// the platform comes from story 59.04's detection
+	old := hostMachine
+	hostMachine = func() hostinfo.Machine { return hostinfo.Machine{Platform: hostinfo.PlatformTrueNAS} }
+	t.Cleanup(func() { hostMachine = old })
 
 	rw, ro := filepath.Join(e.dir, "rw"), filepath.Join(e.dir, "ro")
 	for _, d := range []string{rw, ro} {

@@ -16,7 +16,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
@@ -101,7 +100,7 @@ func (h *Handler) platform() string {
 	if h.Platform != nil {
 		return h.Platform()
 	}
-	return os.Getenv("MAKTABA_PLATFORM")
+	return mediaaccess.PlatformFromEnv()
 }
 
 func (h *Handler) runsAs() mediaaccess.RunsAs {

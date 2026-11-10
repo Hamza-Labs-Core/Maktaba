@@ -133,7 +133,7 @@ type Handler struct {
 	// Access checks a root's media permissions (story 59.03); nil is mediaaccess.Check.
 	Access AccessChecker
 	// Platform is the NAS platform the fix text speaks of (dsm, truenas, unraid, ...);
-	// nil reads MAKTABA_PLATFORM.
+	// nil is mediaaccess.PlatformFromEnv (what maktaba-server detected at its start).
 	Platform func() string
 	// RunsAs is the user Maktaba runs as; nil is this process's.
 	RunsAs func() mediaaccess.RunsAs
