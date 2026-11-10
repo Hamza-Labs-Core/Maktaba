@@ -1078,8 +1078,8 @@ export const APPS = [
                 [
                   t("Synology NAS (DSM 7.2 and newer)", "جهاز Synology NAS ‏(DSM 7.2 وما بعده)"),
                   t(
-                    "a Container Manager project: [maktaba.tv/install/synology](https://maktaba.tv/install/synology) fills in its YAML from your answers (the DSM user made for Maktaba, the shared folders and which are read only, the memory, Quick Sync on a J4125 model) in the page, and walks through DSM's user, folder and permission screens. The release attaches both versions, `maktaba-synology-compose.yaml` and `maktaba-synology-compose.j4125.yaml`. On DSM the permission fixes and the container's messages name DSM's own screens, and DSM's `@eaDir`, `#recycle` and `#snapshot` folders are never library content",
-                    "مشروع في Container Manager: تملأ صفحة [maktaba.tv/install/synology](https://maktaba.tv/install/synology) ملف YAML الخاص به من إجاباتك (مستخدم DSM المخصص لـ«مكتبة»، والمجلدات المشتركة وأيّها للقراءة فقط، والذاكرة، وQuick Sync على طرز J4125) داخل الصفحة نفسها، وتشرح خطوة بخطوة شاشات المستخدم والمجلد والأذونات في DSM. ويرفق الإصدار النسختين `maktaba-synology-compose.yaml` و`maktaba-synology-compose.j4125.yaml`. وعلى DSM تذكر طرق إصلاح الأذونات ورسائل الحاوية شاشات DSM نفسها، ولا تُعدّ مجلدات DSM ‏`@eaDir` و`#recycle` و`#snapshot` من محتوى المكتبة أبدًا"
+                    "a Container Manager project: [maktaba.tv/install/synology](https://maktaba.tv/install/synology/) fills in its YAML from your answers (the DSM user made for Maktaba, the shared folders and which are read only, the memory, Quick Sync on a J4125 model) in the page, and walks through DSM's user, folder and permission screens. The release attaches both versions, `maktaba-synology-compose.yaml` and `maktaba-synology-compose.j4125.yaml`. On DSM the permission fixes and the container's messages name DSM's own screens, and DSM's `@eaDir`, `#recycle` and `#snapshot` folders are never library content",
+                    "مشروع في Container Manager: تملأ صفحة [maktaba.tv/install/synology](https://maktaba.tv/ar/install/synology/) ملف YAML الخاص به من إجاباتك (مستخدم DSM المخصص لـ«مكتبة»، والمجلدات المشتركة وأيّها للقراءة فقط، والذاكرة، وQuick Sync على طرز J4125) داخل الصفحة نفسها، وتشرح خطوة بخطوة شاشات المستخدم والمجلد والأذونات في DSM. ويرفق الإصدار النسختين `maktaba-synology-compose.yaml` و`maktaba-synology-compose.j4125.yaml`. وعلى DSM تذكر طرق إصلاح الأذونات ورسائل الحاوية شاشات DSM نفسها، ولا تُعدّ مجلدات DSM ‏`@eaDir` و`#recycle` و`#snapshot` من محتوى المكتبة أبدًا"
                   ),
                 ],
               ],
@@ -1094,7 +1094,7 @@ export const APPS = [
           {
             shots: [
               shot(
-                "cloud-install-synology",
+                "install-synology",
                 "wide",
                 "maktaba.tv's Synology install page: a DS425+ with 6 GB, and the Container Manager project's YAML made from the answers",
                 "صفحة تثبيت Synology على maktaba.tv: جهاز DS425+ بذاكرة 6 GB، وملف YAML لمشروع Container Manager المصنوع من الإجابات"

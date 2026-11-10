@@ -730,9 +730,9 @@ build fails when the two differ.
   models in software, 2 GB ARM models as storage only), the DSM user made for Maktaba, its folder
   and its shares, and a form that writes the project's YAML in the page from the answers (the
   uid, the shared folders and which are read only, the memory tier's limit, Quick Sync and the
-  render group, the NAS's address and time zone); nothing is sent anywhere. Each release
-  attaches `maktaba-synology-compose.yaml` and `maktaba-synology-compose.j4125.yaml`, derived
-  from the Docker compose. On DSM a data folder the user cannot write stops the container with
+  render group, the time zone); nothing is sent anywhere. Each release
+  attaches `maktaba-synology-compose.yaml` and `maktaba-synology-compose.j4125.yaml`, made
+  from the published Docker compose as the page makes them. On DSM a data folder the user cannot write stops the container with
   DSM's own screens in its message (Control Panel → Shared Folder, File Station's Permission),
   and a render device the user cannot open is fixed in Container Manager's words. The guide's
   DSM screenshots are added once taken on a DiskStation (the device checklist lists them).

@@ -1,8 +1,7 @@
 // Story 59.09: the guide's DSM screenshots, listed by the device checklist.
 import { describe, expect, it } from "vitest";
-import { SCREENS } from "./synologyGuide";
-import en from "../i18n/en.json";
-import ar from "../i18n/ar.json";
+import { SCREENS, screenSrc } from "./synologyGuide";
+import { SYN } from "./synologyStrings";
 
 // read from disk, as posters.test.ts does (vitest runs in web/)
 const FS = "node:fs";
@@ -20,14 +19,14 @@ describe("the Synology guide's DSM screenshots", () => {
     }
   });
 
-  it("have their files once marked ready, and a description in both catalogs", () => {
+  it("have their files once marked ready, and a description in both languages", () => {
     for (const s of SCREENS) {
-      for (const lang of ["en", "ar"]) {
-        const file = `cloud/public/install/synology/${s.id}.${lang}.png`;
+      for (const lang of ["en", "ar"] as const) {
+        expect(screenSrc(s.id, lang)).toBe(`/install/synology/${s.id}.${lang}.png`);
+        const file = `packages/install/public${screenSrc(s.id, lang)}`;
         if (s.ready) expect(existsSync(file), file).toBe(true);
+        expect(SYN[lang][`shot.${s.id}`]).toBeTruthy();
       }
-      expect((en as Record<string, string>)[`install.syn.shot.${s.id}`]).toBeTruthy();
-      expect((ar as Record<string, string>)[`install.syn.shot.${s.id}`]).toBeTruthy();
     }
   });
 });

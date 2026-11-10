@@ -119,8 +119,8 @@ kernel's cgroup and Landlock, disk sleep.
 DSM's own screens, for maktaba.tv/install/synology. Take each on the DS425+ in the dark theme
 where DSM has one, once with DSM in English and once in the language the Arabic page shows
 (Arabic if DSM offers it; else English, and say so in the result file). Save them under
-`screenshots/synology/` and also as `web/cloud/public/install/synology/<name>.<en|ar>.png`
-(e.g. `guide-user.en.png`), then mark each one ready in `web/cloud/src/install/synologyGuide.ts`
+`screenshots/synology/` and also as `web/packages/install/public/install/synology/<name>.<en|ar>.png`
+(e.g. `guide-user.en.png`), then mark each one ready in `web/packages/install/src/synologyGuide.ts`
 (`SCREENS`): the page shows a screenshot only once it is marked.
 
 ### 18. The DSM user

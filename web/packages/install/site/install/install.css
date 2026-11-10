@@ -144,3 +144,55 @@ footer {
   margin-top: 2rem;
   color: var(--muted);
 }
+/* /install/synology (story 59.09): the guide's sections around the answers and the file */
+#guide > section,
+#guide > .grid {
+  margin-bottom: 1.5rem;
+}
+#guide .grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 900px) {
+  #guide .grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  }
+}
+.table-wrap {
+  overflow-x: auto;
+}
+table.models {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.92rem;
+}
+table.models th,
+table.models td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.4rem 0.6rem;
+  text-align: start;
+}
+#guide .media-row {
+  grid-template-columns: 1fr auto auto;
+}
+#guide .media-row button {
+  margin: 0;
+}
+label.check {
+  font-weight: 600;
+}
+.step {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.25rem 1rem 1rem;
+  margin-bottom: 0.75rem;
+}
+img.shot {
+  display: block;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-top: 0.5rem;
+}

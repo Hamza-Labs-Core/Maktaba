@@ -1,31 +1,87 @@
-# Maktaba on a Synology NAS: Container Manager → Project → Create, name maktaba, path
-# docker/maktaba, this file pasted as the project's YAML. maktaba.tv/install/synology fills
-# in the user, the shares, the memory limit and (optionally) this NAS's address and time
-# zone from your answers; the guide there says how to make the DSM user and its folders.
-#
-# Generated from cloud/installers/docker/docker-compose.yml by deploy/nas/generate.py
-# (Epic 59 story 59.09): edit those, not this file.
-
-# This version: models without a GPU for video (Ryzen, ARM, other Intel).
+# Maktaba on a Synology NAS (DSM 7.2 or newer): Container Manager → Project → Create, name
+# maktaba, path docker/maktaba, this file pasted as the project's YAML. maktaba.tv/install/synology
+# fills in the DSM user, the shares, the memory and the time zone from your answers, and says how
+# to make the user and its folders. Made from the published Docker compose
+# (cloud/installers/docker/docker-compose.yml), as deploy/nas/generate.py makes it.
+# This version: models without Quick Sync (Ryzen, ARM, other Intel).
 
 services:
   maktaba:
     image: ghcr.io/hamza-labs-core/maktaba-server:latest
     container_name: maktaba
-    # the DSM user made for Maktaba (its uid, and the users group, 100)
-    user: "1026:100"
-    network_mode: host
     restart: unless-stopped
+    # The user Maktaba runs as (any uid:gid; never root): 1000:1000 is the image's own. On a
+    # NAS, set the user that owns the folders you mount. Find it on the host with: id <user>
+    # (uid=1000(you) gid=100(users) ... is "1000:100"). QNAP and UGREEN: a user you made for
+    # Maktaba; Unraid: 99:100; TrueNAS: 568:568; Synology: a DSM user such as 1026:100.
+    # The data folder below must be writable by it: if it is not, the container stops at once
+    # and its log says which folder, which user and the fix.
+    user: "1026:100"
+    # the launcher drains the server on a stop (the pipeline's jobs, then Postgres)
     stop_grace_period: 90s
-    # the memory tier's limit: Light 4g, Standard 6g, Strong 16g
+    # [memory] The memory Maktaba may use; it plans for this, not for the machine's RAM, and
+    # leaves the rest to the NAS. 4g is the Light tier (a 4 to 8 GB NAS), 6g Standard (8 to
+    # 16 GB), 16g Strong (16 GB or more); on ARM, under 8g is Light. Without it Maktaba plans
+    # for all the machine's RAM.
+    # Below 3.5 GiB setup refuses: such a box serves Maktaba better as storage.
     mem_limit: 6g
     environment:
       MAKTABA_PLATFORM: dsm
-      # MAKTABA_HOST_IP: 192.168.1.20   # this NAS's address on your network
-      # TZ: Asia/Riyadh                 # your time zone
+      # your time zone, for the quiet hours (heavy work at night on Light and Standard)
+      TZ: Etc/UTC
+      # MAKTABA_UPDATE_DISABLE: "1"   # the image is updated by something else (see above)
+      # [bridge] this machine's address on your network, for the apps on a bridge network
+      # MAKTABA_HOST_IP: 192.168.1.20
+    # The host's network (Linux): the machines and apps of your network find this home (mDNS)
+    # and reach it at this machine's own address, as with any other install. Maktaba answers
+    # mDNS beside the NAS's own responder. Ports: 8088 web, 8080 cluster API, 8081 live TV,
+    # 54329 Postgres; one taken by the NAS (QNAP's QTS uses 8080) is moved, and setup shows
+    # the new one.
+    network_mode: host
+    # [bridge] Docker Desktop (Mac, Windows) has no host network, and some households keep
+    # every container on a bridge: delete the network_mode line above and turn this block on.
+    # Apps cannot find Maktaba by themselves on a bridge; they connect by its address
+    # (MAKTABA_HOST_IP above), its HTTPS name or a code from Maktaba Cloud. No machine can
+    # join a bridge home, so the Postgres port is not published.
+    # ports:
+    #   - "8088:8088"   # the web app
+    #   - "8080:8080"   # the API the apps use
+    #   - "8081:8081"   # live TV
     volumes:
-      # everything Maktaba keeps (an SSD volume's folder when there is one)
+      # Everything Maktaba keeps: server.toml, the runtime it updates, the database, logs,
+      # models. A named volume here; on a NAS a folder on fast local storage (an SSD pool if
+      # you have one, never a network share or a USB stick), e.g.
+      #   - /share/Container/maktaba:/var/lib/maktaba   (QNAP)
+      #   - /volume1/docker/maktaba:/var/lib/maktaba    (UGREEN, ASUSTOR)
       - /volume1/docker/maktaba:/var/lib/maktaba
-      # each share at its own path; :ro where Maktaba may only read
+      # Your library, each folder at its own path on the host (the same path inside), so a
+      # machine that joins this home finds the same share. Read-only (:ro) where Maktaba must
+      # never write: those libraries show "Read only" and conversions are off there. Add one
+      # line per folder.
       - /volume1/Movies:/volume1/Movies:ro
       - /volume1/Recordings:/volume1/Recordings
+      # An install made with an earlier version of this file mounted its library at /media:
+      # keep that line as it was (- ${MAKTABA_MEDIA:-./media}:/media), or its libraries'
+      # folders move.
+      # [dbus] The host's Avahi publishes Maktaba instead of its own responder. The socket
+      # reaches every system service the host's D-Bus policy lets this user talk to, and :ro
+      # does not narrow that, so it is off unless you want the NAS's own mDNS to carry it.
+      # - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
+    # [dri] Hardware video on an Intel or AMD chip (a J4125 or N100 NAS, an AMD APU): pass the
+    # render device and its group, so Maktaba's user may open it. The group's id differs from
+    # NAS to NAS; find it on the host with: stat -c %g /dev/dri/renderD128
+    # Settings -> This machine then shows "Video: hardware (iHD), H.264 and HEVC", or why not.
+    # devices:
+    #   - /dev/dri:/dev/dri
+    # group_add:
+    #   - "937"   # the render device's group id, from the stat command above
+    # [nvidia] NVIDIA GPUs (faster transcription, the second listen) need the NVIDIA
+    # container toolkit on the host:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+

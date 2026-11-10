@@ -18,7 +18,7 @@ checklists, [`docs/nas/checklists/`](../../docs/nas/checklists/README.md).
 | `stt-baseline.json` | each speech model and architecture's word error rate on the bundled clips (59.06) |
 | `install_files.py` | the NAS install files' checks (59.11): the published compose's `# [name]` blocks (no block, each, all: `docker compose config` with `--docker`), the Unraid template's schema, its render to `docker run` arguments and its drift from the compose file, the development compose's images under release's names (resolved with `--docker`); the plan job runs it |
 | `test_install_files.py` | its tests, and the compose and template cells' shapes |
-| `test_synology.py` | the Synology project's files (`deploy/nas/synology/`, 59.09): written by `deploy/nas/generate.py` from the plain compose (`--check`), only keys Docker 24.0.2 takes, the DSM shape, the GPU lines only in the J4125 file |
+| `test_synology.py` | the Synology project's files (`deploy/nas/synology/`, 59.09): written by `deploy/nas/generate.py` from the published compose, as the install page fills it in (`--check`), only keys Docker 24.0.2 takes, the DSM shape, the GPU lines only in the J4125 file |
 
 `tools/ci/tests/test_nas_workflow.py` checks the workflow's triggers: a change to the Dockerfile
 runs every cell, a change to `web/` alone runs nothing.
@@ -135,7 +135,7 @@ checklists (J4125, N100).
 1026:100, `MAKTABA_PLATFORM=dsm`, a 6 GB limit, no Landlock (DSM's 4.4 and 5.10 kernels), the
 share at its own path (`/volume1/Movies`, `:ro`) with DSM's folders in it, and a share the user
 has no permission on. `synology-compose` runs `deploy/nas/synology/compose.yaml` itself, unchanged,
-on Container Manager's engine: a `compose` cell (`{"file": ..., "engine": "24.0.2", "api":
+on Container Manager's engine: a `compose_file` cell (`{"file": ..., "engine": "24.0.2", "api":
 "1.43"}`) starts `docker:<engine>-dind`, loads the commit's image into it under the file's
 image name, makes the file's host paths inside it (`/volume1/docker/maktaba` owned 0:100 0770,
 `/volume1/Movies` with the fixtures owned by a DSM admin, 1024:100, `/volume1/Recordings`

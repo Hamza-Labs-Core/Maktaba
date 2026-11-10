@@ -4,9 +4,11 @@ Standard library only (nas.yml's plan job runs it with the runner's python3):
 
     python3 -m unittest discover -s tests/nas -p 'test_*.py' -v
 
-The files are written by deploy/nas/generate.py from the plain Docker compose; these tests
-fail a stale file, a key Container Manager's Docker 24.0.2 does not take, and a drift from
-the plain compose. That Docker 24.0.2 runs the file is the synology-compose cell's job.
+The files are written by deploy/nas/generate.py from the published Docker compose, its
+[memory] block on (and [dri] for the J4125 file), as maktaba.tv/install/synology fills it in
+(web/packages/install/src/synology.test.ts checks the page gives exactly these files); these
+tests fail a stale file, a key Container Manager's Docker 24.0.2 does not take, and a drift from
+the published compose. That Docker 24.0.2 runs the file is the synology-compose cell's job.
 """
 
 from __future__ import annotations
