@@ -161,8 +161,8 @@ func Cloudflare(r *http.Request, trusted []netip.Prefix) string {
 
 // trustedHop reports whether the home believes what ip forwards: loopback always (this
 // machine's own proxies), else the configured list.
-func trustedHop(trusted []netip.Prefix, ip netip.Addr) bool {
-	return ip.IsLoopback() || Contains(trusted, ip)
+func trustedHop(trusted []netip.Prefix, extra func(netip.Addr) bool, ip netip.Addr) bool {
+	return ip.IsLoopback() || Contains(trusted, ip) || extra != nil && extra(ip)
 }
 
 // Forwarded is the home's client address and whether a forwarding header gave it. From a
@@ -172,6 +172,12 @@ func trustedHop(trusted []netip.Prefix, ip netip.Addr) bool {
 // that wrote it. With no X-Forwarded-For, a single valid X-Real-IP. From any other peer the
 // headers are ignored and the answer is the peer.
 func Forwarded(r *http.Request, trusted []netip.Prefix) (netip.Addr, bool) {
+	return ForwardedWith(r, trusted, nil)
+}
+
+// ForwardedWith is Forwarded with extra trusted beside the list: addresses the home learns
+// as it runs (its approved nodes, which forward their clients' requests to it). nil is none.
+func ForwardedWith(r *http.Request, trusted []netip.Prefix, extra func(netip.Addr) bool) (netip.Addr, bool) {
 	peer := PeerAddr(r.RemoteAddr)
 	if !peer.IsValid() {
 		return peer, false
@@ -181,7 +187,7 @@ func Forwarded(r *http.Request, trusted []netip.Prefix) (netip.Addr, bool) {
 	if len(xff) == 0 && realIP == "" {
 		return peer, false
 	}
-	if !trustedHop(trusted, peer) {
+	if !trustedHop(trusted, extra, peer) {
 		fwdIgnored.note("X-Forwarded-For from an untrusted peer ignored", peer)
 		return peer, false
 	}
@@ -197,7 +203,7 @@ func Forwarded(r *http.Request, trusted []netip.Prefix) (netip.Addr, bool) {
 				break
 			}
 			last, used = ip, true
-			if !trustedHop(trusted, ip) {
+			if !trustedHop(trusted, extra, ip) {
 				break
 			}
 		}
@@ -235,9 +241,14 @@ type peerKey struct{}
 // (the logs, the rate limits) reads the client. The connection's own address stays readable
 // through Peer, for a check on this machine's own callers.
 func Middleware(trusted []netip.Prefix) func(http.Handler) http.Handler {
+	return MiddlewareWith(trusted, nil)
+}
+
+// MiddlewareWith is Middleware with extra trusted beside the list (ForwardedWith).
+func MiddlewareWith(trusted []netip.Prefix, extra func(netip.Addr) bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip, used := Forwarded(r, trusted)
+			ip, used := ForwardedWith(r, trusted, extra)
 			if used {
 				peer := r.RemoteAddr
 				r = r.WithContext(context.WithValue(r.Context(), peerKey{}, peer))

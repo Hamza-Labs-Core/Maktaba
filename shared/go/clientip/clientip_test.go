@@ -169,3 +169,27 @@ func TestHost(t *testing.T) {
 		}
 	}
 }
+
+// Beside the list, the home trusts addresses it learns as it runs (its approved nodes):
+// a node's forwarded client is believed, another LAN peer's is not.
+func TestForwardedWithExtra(t *testing.T) {
+	node := netip.MustParseAddr("192.168.1.30")
+	extra := func(ip netip.Addr) bool { return ip == node }
+	r := httptest.NewRequest("GET", "/", nil)
+	r.RemoteAddr = "192.168.1.30:50000"
+	r.Header.Set("X-Forwarded-For", "192.168.1.77")
+	if ip, used := ForwardedWith(r, nil, extra); !used || ip.String() != "192.168.1.77" {
+		t.Fatalf("from the node: %v %v", ip, used)
+	}
+	r.RemoteAddr = "192.168.1.31:50000"
+	if ip, used := ForwardedWith(r, nil, extra); used || ip.String() != "192.168.1.31" {
+		t.Fatalf("from another peer: %v %v", ip, used)
+	}
+	var seen string
+	h := MiddlewareWith(nil, extra)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { seen = r.RemoteAddr }))
+	r.RemoteAddr = "192.168.1.30:50000"
+	h.ServeHTTP(httptest.NewRecorder(), r)
+	if seen != "192.168.1.77" {
+		t.Fatalf("middleware: %q", seen)
+	}
+}

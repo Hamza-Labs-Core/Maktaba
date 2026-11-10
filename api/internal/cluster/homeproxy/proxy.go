@@ -98,7 +98,8 @@ func NewWith(link homelink.Link, logger *slog.Logger, o Options) http.Handler {
 			pr.SetXForwarded()
 			// X-Forwarded-For is the client this node resolved (its router's client-address
 			// middleware already walked what its own trusted proxies forwarded), never the
-			// chain a client wrote. The home believes it only when this node's address is in
+			// chain a client wrote. The home believes it from its approved nodes' addresses
+			// (api/trusted_nodes.go), or when this node's address is in
 			// its [server] trusted_proxies (Epic 59 story 59.08); otherwise the home sees the
 			// node's address, and the node's own logs and limits keep the client's.
 			if c := clientip.Host(pr.In.RemoteAddr); c != "" {

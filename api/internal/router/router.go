@@ -109,6 +109,9 @@ type Deps struct {
 	// trusted_proxies, Epic 59 story 59.08) whose X-Forwarded-For is believed, besides
 	// loopback (this machine's own proxies) which always is. Empty: loopback only.
 	TrustedProxies []netip.Prefix
+	// TrustedHop trusts addresses learned as the home runs, beside TrustedProxies: its
+	// approved nodes, which forward their clients' requests (nil: none).
+	TrustedHop func(netip.Addr) bool
 }
 
 // New builds the API's chi.Mux with the canonical middleware stack and
@@ -136,7 +139,7 @@ func New(d Deps) chi.Router {
 	// from anyone else it is the client's own text and the peer address stands. The API
 	// listens on the LAN, so chi's RealIP (which believed it from every peer) let a LAN
 	// client pick its own address.
-	r.Use(clientip.Middleware(d.TrustedProxies))
+	r.Use(clientip.MiddlewareWith(d.TrustedProxies, d.TrustedHop))
 	r.Use(mw.RequestID)
 	// Recoverer carries the central HLB-300 error-report hook. With a
 	// nil d.ErrorReporter this is exactly the old mw.Recoverer (no

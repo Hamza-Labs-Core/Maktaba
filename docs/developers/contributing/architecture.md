@@ -63,7 +63,9 @@ that header is text the client can write.
 
 The middleware believes `X-Forwarded-For` (else `X-Real-IP`) only from a trusted peer:
 loopback, which is this machine's own proxies (the web port's, the relay agent, direct
-access), and the reverse proxies listed in server.toml:
+access), the home's approved nodes (each forwards its own clients' requests to the home; the
+API reads their addresses from `cluster_nodes` every 30 s), and the reverse proxies listed in
+server.toml:
 
 ```toml
 [server]

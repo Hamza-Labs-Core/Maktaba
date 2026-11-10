@@ -14,6 +14,19 @@ build fails when the two differ.
 
 ### Changed
 
+- **On a NAS, apps find the home beside the NAS's own names, a bridge network says how to
+  connect, and forwarded addresses are believed only from trusted proxies (story 59.08).** In
+  a container Maktaba answers mDNS under its own name, `<nas>-maktaba.local`, beside the NAS's
+  avahi-daemon, and never claims the NAS's name. Mounting the host's D-Bus socket (an option
+  in the compose file) publishes the home through the NAS's own Avahi instead. On a Docker
+  bridge, mDNS and SSDP are off. Setup and Settings → This machine say that apps connect by
+  the address, the HTTPS name or a Maktaba Cloud code, and `docker-compose.bridge.yml` ships
+  with the release. A port another program holds (QNAP's UI on 8080) moves, with the holder
+  named in setup, the log and Settings. `[server] trusted_proxies` (Settings → Storage &
+  discovery) lists the reverse proxies whose `X-Forwarded-For` the API and streaming believe,
+  besides this machine's own and the home's approved nodes. Before this, any peer's header was
+  believed.
+
 - **A NAS converts video on its own chip, and says when it can't (story 59.05).** On an Intel
   J4125 or N100, or an AMD APU, streaming now uses VA-API (`h264_vaapi`, HEVC where the driver
   lists it) once a 2-second 1080p test encode works: after NVIDIA and Quick Sync, before Quick
