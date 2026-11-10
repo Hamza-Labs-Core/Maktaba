@@ -19,6 +19,7 @@ on:
       - 'cloud/**'
       - 'shared/log/go/**'
       - 'shared/logkeeper/go/**'
+      - 'shared/go/clientip/**'
       - 'deploy/cloud-ha/**'
       - 'deploy/cloud-relay/**'
       - 'deploy/caddy/**'
