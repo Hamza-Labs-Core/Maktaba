@@ -509,7 +509,7 @@ class Cell:
 
     def browse(self) -> list[list[str]]:
         """avahi-browse's resolved services (=;iface;proto;name;type;domain;host;addr;port;txt)."""
-        out = self.avahi_sh("timeout 20 avahi-browse -a -r -t -p 2>/dev/null || true")
+        out = self.avahi_sh("timeout 20 avahi-browse -a -r -t -p -k 2>/dev/null || true")
         return [line.split(";") for line in out.splitlines() if line.startswith("=;")]
 
     def host_name(self) -> str:
@@ -528,7 +528,7 @@ class Cell:
         try:
             wait("the NAS's share and Maktaba in avahi-browse", both, 5 * 60, every=10)
         finally:
-            (self.out / "avahi-browse.txt").write_text(self.avahi_sh("timeout 20 avahi-browse -a -r -t -p || true"),
+            (self.out / "avahi-browse.txt").write_text(self.avahi_sh("timeout 20 avahi-browse -a -r -t -p -k || true"),
                                                        encoding="utf-8")
         return found["_maktaba._tcp"]
 

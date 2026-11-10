@@ -150,6 +150,21 @@ class Networking(unittest.TestCase):
         self.assertTrue(any(a.startswith("MAKTABA_HOST_IP=") for a in c.shape()))
         self.assertEqual(self.mk({}).setup_network(), ["--network", "host"])
 
+    def test_browse_asks_for_raw_service_types(self) -> None:
+        # without -k avahi-browse prints _smb._tcp as "Microsoft Windows Network", and the
+        # mDNS cells waited 300 s for a type they never saw (the first CI run of #1119)
+        c = self.mk({"avahi": "sibling"})
+        cmds: list[str] = []
+        line = "=;eth0;IPv4;NAS share;_smb._tcp;local;nas.local;10.0.0.2;445;"
+
+        def sh(cmd: str) -> str:
+            cmds.append(cmd)
+            return line + "\n+;eth0;IPv4;NAS share;_smb._tcp;local\n"
+
+        c.avahi_sh = sh  # type: ignore[method-assign]
+        self.assertEqual(c.browse(), [line.split(";")])
+        self.assertIn(" -k", cmds[0])
+
     def test_the_networking_cells_are_in_the_matrix(self) -> None:
         names = {c["name"]: c for c in cell.load_cells()["cells"]}
         for n in ("mdns-own", "mdns-dbus", "bridge"):
