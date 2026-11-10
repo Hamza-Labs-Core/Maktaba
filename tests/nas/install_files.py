@@ -31,6 +31,7 @@ import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
+from urllib.parse import urlparse
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -231,7 +232,8 @@ def check_template(t: Template) -> list[str]:
         errs.append("MAKTABA_PLATFORM is not unraid")
     if "TZ" not in env:
         errs.append("no TZ")
-    if not t.fields.get("Support", "").startswith("https://maktaba.tv"):
+    support = urlparse(t.fields.get("Support", ""))
+    if support.scheme != "https" or support.hostname != "maktaba.tv":
         errs.append("the support link is not maktaba.tv")
     return errs
 

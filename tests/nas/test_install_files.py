@@ -99,6 +99,11 @@ class Unraid(unittest.TestCase):
                                        if c.target == f.DATA else c for c in self.t.configs])
         self.assertTrue(any("cache pool" in e for e in f.check_template(bad)))
 
+    def test_the_support_link_is_maktaba_tv_itself(self) -> None:
+        for url in ("https://maktaba.tv.evil.example/x", "http://maktaba.tv/x", "https://evil.example/https://maktaba.tv"):
+            bad = replace(self.t, fields={**self.t.fields, "Support": url})
+            self.assertTrue(any("support link" in e for e in f.check_template(bad)), url)
+
     def test_root_is_refused(self) -> None:
         bad = replace(self.t, fields={**self.t.fields, "ExtraParams": "--stop-timeout 90"})
         self.assertTrue(any("99:100" in e for e in f.check_template(bad)))
