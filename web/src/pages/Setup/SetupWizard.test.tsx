@@ -1414,7 +1414,7 @@ describe("SetupWizard, folder access (story 59.03)", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "التالي" }));
     expect(
-      await screen.findByText("يعمل Maktaba بصفته المستخدم 568 والمجموعة 568")
+      await screen.findByText("تعمل مكتبة بصفة المستخدم 568 والمجموعة 568")
     ).toBeInTheDocument();
     expect(screen.getByText("قراءة فقط")).toBeInTheDocument();
     expect(

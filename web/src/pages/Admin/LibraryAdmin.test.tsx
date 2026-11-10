@@ -236,7 +236,10 @@ describe("LibraryAdmin", () => {
     await ready();
     await userEvent.click(within(section("Queue status")).getByRole("button", { name: "Run now" }));
     expect(post).toHaveBeenCalledWith(`/api/libraries/${ID}/run-now`);
-    expect(await screen.findByText("Something went wrong.")).toBeInTheDocument();
+    // the Run now line (the folder access panel says its own, unanswered here)
+    expect(
+      await screen.findByText("Something went wrong.", { selector: "p[role=status]" })
+    ).toBeInTheDocument();
   });
 
   it("saves the conversion settings inside the library's settings, keeping the rest", async () => {
@@ -496,7 +499,7 @@ describe("LibraryAdmin, folder access (story 59.03)", () => {
       const folders = screen.getByRole("region", { name: "الوصول إلى المجلدات" });
       expect(await within(folders).findAllByText("قراءة فقط")).not.toHaveLength(0);
       expect(
-        within(folders).getByText(/يعمل Maktaba بصفته المستخدم .*1026.* والمجموعة .*100/)
+        within(folders).getByText(/تعمل مكتبة بصفة المستخدم .*1026.* والمجموعة .*100/)
       ).toBeInTheDocument();
       expect(
         within(folders).getByText(/من لوحة التحكم ← المجلد المشترك ← Movies ← تعديل ← الأذونات/)
