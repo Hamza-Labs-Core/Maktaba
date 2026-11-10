@@ -51,6 +51,7 @@ type Config struct {
 	Plugins       PluginsSection       `toml:"plugins,omitempty"`
 	Logs          LogsSection          `toml:"logs,omitempty"`
 	Schedule      ScheduleSection      `toml:"schedule,omitempty"`
+	Streaming     StreamingSection     `toml:"streaming,omitempty"`
 
 	// DatabaseURLSet: server.toml sets [database] url (Load), or a caller chose
 	// one to keep (setup); Save writes the url only then. Unset, a Mac with the
@@ -458,6 +459,14 @@ type ScheduleSection struct {
 	// sprites in bulk. "" means none. Unset (nil): the hardware tier's (01:00-06:00 on
 	// Light and Standard, none on Strong).
 	QuietHours *string `toml:"quiet_hours,omitempty"`
+}
+
+// StreamingSection is the [streaming] table: the video transcodes' device (Epic 59 story
+// 59.05).
+type StreamingSection struct {
+	// RenderDevice is the /dev/dri render node VA-API uses ("/dev/dri/renderD129"); "": the
+	// first whose test encode works. The streaming role's MAKTABA_RENDER_DEVICE.
+	RenderDevice string `toml:"render_device,omitempty"`
 }
 
 // MDNSOn reports whether the machine advertises itself (anything but

@@ -44,12 +44,21 @@ type AllocatorConfig struct {
 	// before we surface ErrExhausted. 0 disables the queue
 	// entirely (only direct-cap or exhausted are returned).
 	QueueDepth int
+	// Limit, when MaxTranscode is 0, is the cap now (0: auto-derive): the
+	// hardware tier's, software's or a GPU encoder's as the verdict is (Epic 59
+	// story 59.05).
+	Limit func() int
 }
 
 // Effective returns the resolved MaxTranscode (auto-derive if 0).
 func (c AllocatorConfig) Effective() int {
 	if c.MaxTranscode > 0 {
 		return c.MaxTranscode
+	}
+	if c.Limit != nil {
+		if n := c.Limit(); n > 0 {
+			return n
+		}
 	}
 	n := runtime.NumCPU() / 4
 	if n < 1 {

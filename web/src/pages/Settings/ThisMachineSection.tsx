@@ -4,8 +4,10 @@
 // hardware tier it set its defaults from, with why ("Standard: 8 GB, no GPU for video").
 // An admin can pick another tier, or go back to detecting it; the pick applies when the
 // server starts again, which the admin can do here. Story 59.02 adds the quiet hours
-// (heavy work waits for them) and, when the data disk cannot be read, whether it is an SSD;
-// story 59.06 speech to text (SpeechSection).
+// (heavy work waits for them) and, when the data disk cannot be read, whether it is an SSD.
+// Story 59.05 adds the video: the encoder the transcodes use (VA-API's driver and codecs),
+// or why they are in software (no render device, a group to add, a device that failed).
+// Story 59.06 adds speech to text (SpeechSection).
 //
 //   GET /api/server/machine   the document ({available: false} without a supervisor)
 //   PUT /api/server/machine   {tier: "light"|"standard"|"strong"|"auto"}
@@ -19,7 +21,12 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { ApiError } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
-import { serverSettingsApi, type MachineDoc, type Tier } from "../../lib/serverSettingsApi";
+import {
+  serverSettingsApi,
+  type MachineDoc,
+  type Tier,
+  type VideoStatus,
+} from "../../lib/serverSettingsApi";
 import { LinesPlaceholder } from "../../components/Placeholders";
 import { SpeechSection } from "./SpeechSection";
 import "../../styles/libraryAdmin.css";
@@ -38,6 +45,62 @@ const RESTART_POLL_MAX = 90;
 
 type Available = Extract<MachineDoc, { available: true }>;
 
+/** The hardware encoders' names, as Settings shows them beside "hardware". */
+const ENCODER_NAMES: Record<string, string> = {
+  nvenc: "NVENC",
+  qsv: "Quick Sync",
+  videotoolbox: "VideoToolbox",
+};
+
+/** The video row: the encoder and its codecs, else software and why. */
+export function VideoLines({
+  v,
+  t,
+  locale,
+}: {
+  v: VideoStatus;
+  t: (k: string, p?: Record<string, string | number>) => string;
+  locale: string;
+}) {
+  const list = (items: string[]) =>
+    new Intl.ListFormat(locale === "ar" ? "ar" : "en", { type: "conjunction" }).format(items);
+  if (v.encoder !== "software") {
+    const driver =
+      v.encoder === "vaapi" ? v.vaapi?.driver || "VA-API" : (ENCODER_NAMES[v.encoder] ?? v.encoder);
+    return (
+      <span data-testid="machine-video">
+        {t("machine.video.vaapi", {
+          driver,
+          codecs: list(v.codecs?.length ? v.codecs : ["H.264"]),
+        })}
+      </span>
+    );
+  }
+  const why =
+    v.reason === "group_add"
+      ? t("machine.video.group_add", { uid: v.uid ?? "?", gid: v.gid ?? "?" })
+      : v.reason === "device_failed"
+        ? t("machine.video.device_failed", { device: v.device || "?", error: v.error || "?" })
+        : v.reason === "no_device"
+          ? t("machine.video.no_device")
+          : "";
+  return (
+    <span data-testid="machine-video">
+      {t("machine.video.software")}
+      {why && (
+        <span className="mkt-muted mkt-libadmin__small" style={{ display: "block" }}>
+          {why}
+        </span>
+      )}
+      {v.software_only && (
+        <span className="mkt-muted mkt-libadmin__small" style={{ display: "block" }}>
+          {t("machine.video.software_only")}
+        </span>
+      )}
+    </span>
+  );
+}
+
 export function ThisMachineSection({ pollMs = RESTART_POLL_MS }: { pollMs?: number } = {}) {
   const { user } = useAuth();
   const { t } = useI18n();
@@ -54,7 +117,7 @@ export function ThisMachineSection({ pollMs = RESTART_POLL_MS }: { pollMs?: numb
 }
 
 function MachinePanel({ pollMs }: { pollMs: number }) {
-  const { t, n } = useI18n();
+  const { t, n, locale } = useI18n();
   const toast = useToast();
   const [doc, setDoc] = useState<MachineDoc | null>(null);
   const [failed, setFailed] = useState(false);
@@ -253,6 +316,14 @@ function MachinePanel({ pollMs }: { pollMs: number }) {
           </>
         ),
       ],
+      ...(d.video
+        ? [
+            [t("machine.video"), <VideoLines v={d.video} t={t} locale={locale} />] as [
+              string,
+              React.ReactNode,
+            ],
+          ]
+        : []),
       [
         t("machine.disk"),
         <>
@@ -306,6 +377,15 @@ function MachinePanel({ pollMs }: { pollMs: number }) {
             </li>
             <li>{t("machine.defaults.postgres", { value: d.defaults.shared_buffers })}</li>
             <li>{t("machine.defaults.quiet", { window: window(d.defaults.quiet_hours) })}</li>
+            {(d.defaults.software_transcodes ?? 0) > 0 && (
+              <li>
+                {t("machine.defaults.transcodes", {
+                  software: num(d.defaults.software_transcodes ?? 0),
+                  height: String(d.defaults.software_max_height ?? 0),
+                  hardware: num(d.defaults.hardware_transcodes ?? 0),
+                })}
+              </li>
+            )}
           </ul>
           <Select
             label={t("machine.tier.pick")}

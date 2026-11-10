@@ -149,6 +149,7 @@ func (s *Server) handleGetCapabilities(ctx context.Context, _ map[string]any) (m
 		"supported_containers": c.SupportedContainers,
 		"transcode_used":       c.TranscodeUsed,
 		"transcode_capacity":   c.TranscodeCapacity,
+		"software_only":        c.SoftwareOnly,
 	}, nil
 }
 

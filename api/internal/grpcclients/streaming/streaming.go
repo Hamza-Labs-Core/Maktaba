@@ -48,6 +48,8 @@ type Capabilities struct {
 	MaxBitrateKbps      int
 	SupportedContainers []string
 	TranscodeSlots      Slots
+	// SoftwareOnly: every transcode on that machine is in software (Epic 59 story 59.05).
+	SoftwareOnly bool
 }
 
 // Slots reports transcoder capacity.

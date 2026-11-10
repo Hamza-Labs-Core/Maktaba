@@ -46,6 +46,11 @@ type Job struct {
 	// Colour is the source's colour from the catalogue (CatalogueColour), nil
 	// when it does not settle HDR or not: then the runner probes the file.
 	Colour *Colour
+	// VAAPI is the render node a VA-API verdict encodes on (Choice.VAAPIDevice;
+	// story 59.05), SourcePixFmt the source's pixel format (the catalogue's):
+	// the device decodes only what it lists at that bit depth.
+	VAAPI        *VAAPIDevice
+	SourcePixFmt string
 
 	// toneMap: the runner's tone-mapping for an HDR source (toneMapFor)
 	toneMap string
@@ -592,6 +597,9 @@ func (e *execRunner) Start(ctx context.Context, job Job) (*Handle, error) {
 // early is run again in software.
 func (e *execRunner) run(ctx context.Context, h *Handle, job Job, hw string) error {
 	rungs := len(job.Ladder)
+	if hw == string(HWAccelVAAPI) && job.VAAPI == nil {
+		hw = "" // a VA-API verdict without its device: nothing to encode on
+	}
 	hwRungs := 0
 	var releases []func(refused bool)
 	if hw != "" {
@@ -620,6 +628,9 @@ func (e *execRunner) run(ctx context.Context, h *Handle, job Job, hw string) err
 	plan := PlanFor(hw, hwRungs, rungs, job.SourceCodec, !job.NoAudio)
 	plan.ToneMap = job.toneMap
 	plan.Start = job.StartSec
+	if hw == string(HWAccelVAAPI) && hwRungs > 0 {
+		plan = plan.WithVAAPI(*job.VAAPI, job.SourceCodec, job.SourcePixFmt)
+	}
 	var args Args
 	if strings.EqualFold(job.Format, "dash") {
 		args = DASHArgs(job.InputPath, job.OutputDir, job.Ladder, plan)

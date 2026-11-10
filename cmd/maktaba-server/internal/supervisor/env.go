@@ -323,6 +323,12 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		if cfg.Media.TranscodeMinFreeGiB != 0 && os.Getenv("MAKTABA_TRANSCODE_MIN_FREE_GIB") == "" {
 			add("MAKTABA_TRANSCODE_MIN_FREE_GIB", strconv.Itoa(cfg.Media.TranscodeMinFreeGiB))
 		}
+		// Epic 59 story 59.05: the tier's transcode limits, the render node, VA-API first
+		// on a NAS, where the video verdict goes
+		for _, kv := range VideoEnv(cfg) {
+			k, v, _ := strings.Cut(kv, "=")
+			add(k, v)
+		}
 		add("MAKTABA_ADMIN_ADDR", streamingAdmin(cfg))
 		add("MAKTABA_STREAMING_GRPC_ADDR", streamingGRPC(cfg))
 		// story 35.16: the home's front door reads a machine's channel over that

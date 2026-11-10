@@ -14,18 +14,17 @@ build fails when the two differ.
 
 ### Changed
 
-- **Speech to text on an ARM NAS, and the model a NAS can carry (story 59.06).** Speech to
-  text now runs on Linux ARM machines, such as an ARM Synology. The machine's tier picks the
-  model: on a Light machine speech is off until an admin turns it on with one tap in Settings →
-  This machine (then `base`, in the quiet hours only); Standard uses `small`, or `base` on a
-  processor without AVX2 and on ARM; Strong keeps `large-v3-turbo`, and an NVIDIA GPU raises
-  any tier to it. The page says why, shows each model's size and that smaller ones make more
-  mistakes, especially in Arabic, and shows how fast this machine transcribes, measured on two
-  bundled 30-second clips (Arabic and English) when speech is turned on and after a model
-  change. With audio waiting, it estimates how long the backlog takes and, past 30 days,
-  suggests the next smaller model with both estimates. On a NAS transcription runs at low
-  priority with one thread per two cores, and no more speech workers start than the memory
-  holds. The second listen stays on x86_64 with an NVIDIA GPU.
+- **A NAS converts video on its own chip, and says when it can't (story 59.05).** On an Intel
+  J4125 or N100, or an AMD APU, streaming now uses VA-API (`h264_vaapi`, HEVC where the driver
+  lists it) once a 2-second 1080p test encode works: after NVIDIA and Quick Sync, before Quick
+  Sync on a NAS or in a container. The server image carries the VA-API drivers on amd64 (iHD
+  from Debian's non-free component, i965, Mesa; `THIRD_PARTY_NOTICES`), and the compose file
+  shows how to pass `/dev/dri` with its group (`group_add`). Settings → This machine shows the
+  video: "Video: hardware (iHD), H.264 and HEVC", or software with why (no render device, the
+  group to add, the device's own error). With no GPU the tier's limits apply (one conversion
+  at 720p at most on Light, two at 1080p on Standard), players are told the home converts in
+  software, and a conversion past the limit waits with "Another video is being converted on
+  this home" and starts by itself.
 
 - **On a NAS, heavy work waits for quiet hours and Postgres is tuned to the machine (story
   59.02).** On the Light and Standard tiers a library's first scan, a transcription backlog,
@@ -2590,6 +2589,19 @@ build fails when the two differ.
   the fix, instead of restarting over and over. The Linux payload now carries the core Python
   packages for its architecture, so setup builds the pipeline's environment from them with no
   download; a home set up without speech to text downloads no model either.
+
+- **Speech to text on an ARM NAS, and the model a NAS can carry (story 59.06).** Speech to
+  text now runs on Linux ARM machines, such as an ARM Synology. The machine's tier picks the
+  model: on a Light machine speech is off until an admin turns it on with one tap in Settings →
+  This machine (then `base`, in the quiet hours only); Standard uses `small`, or `base` on a
+  processor without AVX2 and on ARM; Strong keeps `large-v3-turbo`, and an NVIDIA GPU raises
+  any tier to it. The page says why, shows each model's size and that smaller ones make more
+  mistakes, especially in Arabic, and shows how fast this machine transcribes, measured on two
+  bundled 30-second clips (Arabic and English) when speech is turned on and after a model
+  change. With audio waiting, it estimates how long the backlog takes and, past 30 days,
+  suggests the next smaller model with both estimates. On a NAS transcription runs at low
+  priority with one thread per two cores, and no more speech workers start than the memory
+  holds. The second listen stays on x86_64 with an NVIDIA GPU.
 
 ### Fixed
 

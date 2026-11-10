@@ -7747,5 +7747,14 @@
   "components.model.whisper-base.title": "Whisper base",
   "components.model.whisper-base.desc": "A small speech model for a NAS with little memory.",
   "components.model.whisper-tiny.title": "Whisper tiny",
-  "components.model.whisper-tiny.desc": "The smallest speech model: the fastest, with the most mistakes."
+  "components.model.whisper-tiny.desc": "The smallest speech model: the fastest, with the most mistakes.",
+  "machine.video": "Video",
+  "machine.video.vaapi": "Video: hardware ({driver}), {codecs}",
+  "machine.video.software": "Video: software",
+  "machine.video.no_device": "No render device is available to this container.",
+  "machine.video.software_only": "This home converts video in software. Players will play files as they are whenever they can.",
+  "machine.video.device_failed": "The render device {device} could not encode: {error}",
+  "machine.video.group_add": "The render device is there, but user {uid} can't open it: add group {gid} to the container (group_add).",
+  "machine.defaults.transcodes": "Video conversions at once: {software} in software (up to {height}p), {hardware} on a GPU",
+  "stream.wait_transcode": "Another video is being converted on this home. Yours will start when it finishes."
 }

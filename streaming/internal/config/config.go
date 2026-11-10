@@ -57,11 +57,26 @@ type FFmpegConfig struct {
 
 type HWAccelConfig struct {
 	Prefer string
+	// PreferVAAPI tries VA-API before QuickSync (a NAS, a container: the
+	// supervisor sets MAKTABA_HWACCEL_VAAPI_FIRST); RenderDevice is the admin's
+	// render node ([streaming] render_device; "": the first that works).
+	PreferVAAPI  bool
+	RenderDevice string
+	// StatusFile is where the video verdict is written for Settings → This
+	// machine ("": nowhere).
+	StatusFile string
 }
 
 type TranscodeConfig struct {
 	MaxConcurrent int
 	QueueDepth    int
+	// The hardware tier's limits (Epic 59 stories 59.04, 59.05), when
+	// MaxConcurrent sets none: SoftwareMax transcodes at once in software, of
+	// SoftwareMaxHeight lines at most, HardwareMax on a working GPU encoder (0:
+	// none, the cores' share).
+	SoftwareMax       int
+	SoftwareMaxHeight int
+	HardwareMax       int
 	// MinFreeGiB is the free space on the cache's disk below which no
 	// transcode starts (a transcode keeps every segment until its session
 	// closes) and the sweep removes the closed sessions' folders it keeps: that
@@ -105,12 +120,18 @@ func Load() Config {
 			ProbeBinary: envStr("MAKTABA_FFPROBE_BIN", "ffprobe"),
 		},
 		HWAccel: HWAccelConfig{
-			Prefer: envStr("MAKTABA_HWACCEL_PREFER", "auto"),
+			Prefer:       envStr("MAKTABA_HWACCEL_PREFER", "auto"),
+			PreferVAAPI:  envStr("MAKTABA_HWACCEL_VAAPI_FIRST", "") == "1",
+			RenderDevice: envStr("MAKTABA_RENDER_DEVICE", ""),
+			StatusFile:   envStr("MAKTABA_VIDEO_STATUS_FILE", ""),
 		},
 		Transcode: TranscodeConfig{
-			MaxConcurrent: envInt("MAKTABA_TRANSCODE_MAX_CONCURRENT", 0),
-			QueueDepth:    envInt("MAKTABA_TRANSCODE_QUEUE_DEPTH", 4),
-			MinFreeGiB:    envInt("MAKTABA_TRANSCODE_MIN_FREE_GIB", 0),
+			MaxConcurrent:     envInt("MAKTABA_TRANSCODE_MAX_CONCURRENT", 0),
+			QueueDepth:        envInt("MAKTABA_TRANSCODE_QUEUE_DEPTH", 4),
+			SoftwareMax:       envInt("MAKTABA_TRANSCODE_SOFTWARE_MAX", 0),
+			SoftwareMaxHeight: envInt("MAKTABA_TRANSCODE_SOFTWARE_MAX_HEIGHT", 0),
+			HardwareMax:       envInt("MAKTABA_TRANSCODE_HARDWARE_MAX", 0),
+			MinFreeGiB:        envInt("MAKTABA_TRANSCODE_MIN_FREE_GIB", 0),
 		},
 		Database: DatabaseConfig{
 			URL: envStr("MAKTABA_DATABASE_URL", ""),
