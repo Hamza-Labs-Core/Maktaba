@@ -36,6 +36,8 @@ on:
       # the shared logger the cloud builds with (Epic 53 story 53.01)
       - 'shared/log/go/**'
       - 'shared/logkeeper/go/**'
+      # the client-address resolver it builds with (Epic 59 story 59.08)
+      - 'shared/go/clientip/**'
       - 'deploy/cloud-relay/**'
       - '.github/workflows/relay.yml'
       # the lint job's pinned golangci-lint and the fetch it goes through
@@ -54,6 +56,8 @@ on:
       # the shared logger the cloud builds with (Epic 53 story 53.01)
       - 'shared/log/go/**'
       - 'shared/logkeeper/go/**'
+      # the client-address resolver it builds with (Epic 59 story 59.08)
+      - 'shared/go/clientip/**'
       - 'deploy/cloud-relay/**'
       - '.github/workflows/relay.yml'
       # the lint job's pinned golangci-lint and the fetch it goes through

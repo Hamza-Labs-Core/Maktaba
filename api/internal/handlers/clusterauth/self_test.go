@@ -10,9 +10,9 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	chimw "github.com/go-chi/chi/v5/middleware"
 
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 )
 
 // /api/cluster/self is public: the home's machines that cannot log in to its database go
@@ -55,8 +55,8 @@ func TestSelfUpdatesAutoLocalOnly(t *testing.T) {
 	}
 	t.Setenv("MAKTABA_SUPERVISOR_TOKEN_FILE", tok)
 	r := chi.NewRouter()
-	r.Use(mw.MarkLocalCaller) // as the router's chain does, before RealIP
-	r.Use(chimw.RealIP)       //nolint:staticcheck // SA1019: as the router chains it
+	r.Use(mw.MarkLocalCaller) // as the router's chain does, before the client address
+	r.Use(clientip.Middleware(nil))
 	on := true
 	MountSelf(r, func(context.Context) SelfInfo { return SelfInfo{Role: "home", UpdatesAuto: &on} })
 	get := func(remote string, headers map[string]string) bool {

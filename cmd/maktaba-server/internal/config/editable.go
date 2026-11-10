@@ -2,7 +2,7 @@ package config
 
 // The settings an admin changes from the web (Epic 45, Settings → Storage &
 // discovery): [media] path_map and roots, and the [server] addresses, public
-// URLs and mdns. The supervisor's /config/settings serves and changes them;
+// URLs, mdns and trusted proxies. The supervisor's /config/settings serves and changes them;
 // everything else in server.toml stays as it is.
 
 import (
@@ -16,6 +16,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 )
 
 // PathPair is one [media] path_map entry: a prefix the database stores and
@@ -39,6 +41,8 @@ type EditableServer struct {
 	StreamAddr   string `json:"stream_addr"`
 	PublicURL    string `json:"public_url"`
 	WebPublicURL string `json:"web_public_url"`
+	// TrustedProxies is [server] trusted_proxies (Epic 59 story 59.08): addresses or CIDRs.
+	TrustedProxies []string `json:"trusted_proxies"`
 }
 
 // Editable is the settings document (S in the spec).
@@ -60,6 +64,8 @@ func EditableOf(c Config) Editable {
 			StreamAddr:   c.Server.StreamAddr,
 			PublicURL:    c.Server.PublicURL,
 			WebPublicURL: c.Server.WebPublicURL,
+			// never nil, so two documents compare equal when their values do
+			TrustedProxies: append([]string{}, c.Server.TrustedProxies...),
 		},
 	}
 }
@@ -148,6 +154,8 @@ type SettingsPatch struct {
 		StreamAddr   *string `json:"stream_addr"`
 		PublicURL    *string `json:"public_url"`
 		WebPublicURL *string `json:"web_public_url"`
+		// TrustedProxies replaces the list; blank entries are dropped
+		TrustedProxies *[]string `json:"trusted_proxies"`
 	} `json:"server"`
 }
 
@@ -199,6 +207,18 @@ func (p SettingsPatch) Apply(s *Editable) []string {
 		str("server.stream_addr", sv.StreamAddr, &s.Server.StreamAddr)
 		str("server.public_url", sv.PublicURL, &s.Server.PublicURL)
 		str("server.web_public_url", sv.WebPublicURL, &s.Server.WebPublicURL)
+		if sv.TrustedProxies != nil {
+			list := []string{}
+			for _, v := range *sv.TrustedProxies {
+				if v = strings.TrimSpace(v); v != "" {
+					list = append(list, v)
+				}
+			}
+			if strings.Join(list, "\x00") != strings.Join(s.Server.TrustedProxies, "\x00") {
+				changed = append(changed, "server.trusted_proxies")
+			}
+			s.Server.TrustedProxies = list
+		}
 	}
 	return changed
 }
@@ -216,6 +236,7 @@ func (s Editable) Into(c *Config) {
 	c.Server.StreamAddr = s.Server.StreamAddr
 	c.Server.PublicURL = s.Server.PublicURL
 	c.Server.WebPublicURL = s.Server.WebPublicURL
+	c.Server.TrustedProxies = append([]string(nil), s.Server.TrustedProxies...)
 }
 
 // FieldError names a bad value: the field as the document spells it
@@ -286,6 +307,12 @@ func (c Checks) Validate(next, saved, running Editable) []FieldError {
 	} {
 		if err := checkPublicURL(u.v); err != nil {
 			add(u.field, "%s", err)
+		}
+	}
+
+	for i, v := range next.Server.TrustedProxies {
+		if p, err := clientip.ParseEntry(v); err != nil || !p.IsValid() {
+			add(fmt.Sprintf("server.trusted_proxies[%d]", i), "%q is not an IP address or a CIDR (192.168.1.5, 192.168.1.0/24)", v)
 		}
 	}
 

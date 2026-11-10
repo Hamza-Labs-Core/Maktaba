@@ -28,7 +28,7 @@ ENV CGO_ENABLED=0 \
     LANG=C.UTF-8
 
 # streaming/go.mod has `replace` directives that point at
-# ../shared/components, ../shared/{health,log}/go and ../shared/go/ports; copy each shared module's go.mod
+# ../shared/components, ../shared/{health,log}/go, ../shared/go/ports and ../shared/go/clientip; copy each shared module's go.mod
 # (only) so `go mod download` can resolve the replace targets without
 # pulling in the full shared/ source tree.
 COPY streaming/go.mod ./streaming/
@@ -37,6 +37,7 @@ COPY shared/components/go.mod ./shared/components/
 COPY shared/health/go/go.mod ./shared/health/go/
 COPY shared/log/go/go.mod    ./shared/log/go/
 COPY shared/go/ports/go.mod  ./shared/go/ports/
+COPY shared/go/clientip/go.mod ./shared/go/clientip/
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     cd streaming && go mod download

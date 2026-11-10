@@ -1007,6 +1007,10 @@ export const APPS = [
                 "يحوّل الفيديو على شريحة خادم التخزين الشبكي نفسها: فعلى Intel J4125 أو N100 أو معالج AMD برسوميات مدمجة يستعمل **VA-API** بعد أن ينجح ترميز تجريبي مدته ثانيتان، بعد NVIDIA وQuick Sync (وقبل Quick Sync على خادم التخزين الشبكي). مرّر `/dev/dri` إلى الحاوية وأضف مجموعة جهاز العرض (`group_add`، ورقمها من `stat -c %g /dev/dri/renderD128`)؛ فتعرض صفحة **الإعدادات ← هذا الجهاز** *الفيديو: عتادي (iHD)، H.264 وHEVC*، أو سبب كون الفيديو برمجيًا: لا جهاز عرض، أو المجموعة الواجب إضافتها، أو خطأ الجهاز نفسه. ومن دون معالج رسوميات تسري حدود الفئة (تحويل واحد بدقة 720p على الأكثر في الخفيفة، واثنان بدقة 1080p في القياسية)، وتُبلَّغ المشغّلات أن الجهاز الرئيسي يحوّل برمجيًا فتشغّل الملفات كما هي، وينتظر التحويل الزائد عن الحد مع رسالة بدل أن يتقطع."
               ),
               t(
+                "Behind a reverse proxy (a NAS's, for example), **Settings → Storage & discovery → Trusted proxies** lists its address: forwarded client addresses are believed from it alone, so the logs and limits see each real client and nobody else on the network can claim another address.",
+                "خلف وكيل عكسي (وكيل خادم التخزين الشبكي مثلًا)، تُدرَج عنوانه في **الإعدادات ← التخزين والاكتشاف ← الوكلاء الموثوقون**: فلا تُصدَّق عناوين العملاء المُمرَّرة إلا منه، فترى السجلات والحدود كل عميل حقيقي، ولا يستطيع غيره على الشبكة ادّعاء عنوان آخر."
+              ),
+              t(
                 "Can run with no outbound call at all: `maktaba-server serve --offline` (or `MAKTABA_OFFLINE=1`) turns off the update check, pack and model downloads, usage data and the link to Maktaba Cloud at once.",
                 "ويمكن تشغيله دون أي اتصال صادر: يوقف الأمر `maktaba-server serve --offline` (أو `MAKTABA_OFFLINE=1`) التحقق من التحديثات وتنزيل الحزم والنماذج وبيانات الاستخدام والربط بسحابة مكتبة دفعةً واحدة."
               ),

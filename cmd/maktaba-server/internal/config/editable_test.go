@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -140,19 +141,9 @@ func TestApplyNamesChangedKeys(t *testing.T) {
 	s := Editable{Media: EditableMedia{PathMap: []PathPair{}, Roots: []string{"/a"}},
 		Server: EditableServer{MDNS: true, Listen: ":8080", WebListen: ":8088"}}
 	var p SettingsPatch
-	listen, mdns, roots := " :8080 ", false, []string{"/a", "/b"}
-	p.Server = &struct {
-		MDNS         *bool   `json:"mdns"`
-		Listen       *string `json:"listen"`
-		WebListen    *string `json:"web_listen"`
-		StreamAddr   *string `json:"stream_addr"`
-		PublicURL    *string `json:"public_url"`
-		WebPublicURL *string `json:"web_public_url"`
-	}{MDNS: &mdns, Listen: &listen}
-	p.Media = &struct {
-		PathMap *[]PathPair `json:"path_map"`
-		Roots   *[]string   `json:"roots"`
-	}{Roots: &roots}
+	if err := json.Unmarshal([]byte(`{"server":{"mdns":false,"listen":" :8080 "},"media":{"roots":["/a","/b"]}}`), &p); err != nil {
+		t.Fatal(err)
+	}
 	changed := p.Apply(&s)
 	if !reflect.DeepEqual(changed, []string{"media.roots", "server.mdns"}) {
 		t.Fatalf("changed = %v", changed)
@@ -209,6 +200,12 @@ func TestValidate(t *testing.T) {
 		{"public url creds", func(s *Editable) { s.Server.WebPublicURL = "http://u:p@h" }, []string{"server.web_public_url"}},
 		{"public url scheme", func(s *Editable) { s.Server.WebPublicURL = "ftp://h" }, []string{"server.web_public_url"}},
 		{"public url bare", func(s *Editable) { s.Server.WebPublicURL = "h:8088" }, []string{"server.web_public_url"}},
+		{"trusted proxies", func(s *Editable) {
+			s.Server.TrustedProxies = []string{"192.168.1.5", "10.0.0.0/8", "2001:db8::/32"}
+		}, nil},
+		{"trusted proxies: a name and a bad CIDR", func(s *Editable) {
+			s.Server.TrustedProxies = []string{"192.168.1.5", "nas.local", "10.0.0.0/33"}
+		}, []string{"server.trusted_proxies[1]", "server.trusted_proxies[2]"}},
 		{"path map", func(s *Editable) {
 			s.Media.PathMap = []PathPair{{"/Volumes/O/", filepath.Join(dir, "share")}, {"O:/", filepath.Join(dir, "share")}}
 		}, nil},
@@ -276,5 +273,57 @@ func TestOnlyChanged(t *testing.T) {
 	}
 	if got := OnlyChanged(errs, []string{"server.listen"}); len(got) != 1 || got[0].Field != "server.listen" {
 		t.Fatalf("%v", got)
+	}
+}
+
+// Epic 59 story 59.08: [server] trusted_proxies through the settings document: blank lines
+// dropped, the change named, written to the file and read back.
+func TestTrustedProxiesSetting(t *testing.T) {
+	t.Parallel()
+	c := Defaults()
+	s := EditableOf(c)
+	if s.Server.TrustedProxies == nil || len(s.Server.TrustedProxies) != 0 {
+		t.Fatalf("default: %#v", s.Server.TrustedProxies)
+	}
+	var p SettingsPatch
+	if err := json.Unmarshal([]byte(`{"server":{"trusted_proxies":[" 192.168.1.5 ","","10.0.0.0/8"]}}`), &p); err != nil {
+		t.Fatal(err)
+	}
+	if changed := p.Apply(&s); !reflect.DeepEqual(changed, []string{"server.trusted_proxies"}) {
+		t.Fatalf("changed = %v", changed)
+	}
+	if !reflect.DeepEqual(s.Server.TrustedProxies, []string{"192.168.1.5", "10.0.0.0/8"}) {
+		t.Fatalf("applied = %v", s.Server.TrustedProxies)
+	}
+	if changed := p.Apply(&s); len(changed) != 0 {
+		t.Fatalf("the same list again: %v", changed)
+	}
+	s.Into(&c)
+	path := filepath.Join(t.TempDir(), "server.toml")
+	if err := c.SaveTo(path); err != nil {
+		t.Fatal(err)
+	}
+	back, _, err := LoadFrom(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(EditableOf(back).Server.TrustedProxies, []string{"192.168.1.5", "10.0.0.0/8"}) {
+		t.Fatalf("read back = %v", back.Server.TrustedProxies)
+	}
+	ps, err := back.Server.TrustedProxyList()
+	if err != nil || len(ps) != 2 || ps[0].String() != "192.168.1.5/32" {
+		t.Fatalf("parsed = %v %v", ps, err)
+	}
+	back.Server.TrustedProxies = []string{"192.168.1.5", "nas"}
+	if _, err := back.Server.TrustedProxyList(); err == nil || !strings.Contains(err.Error(), "server.trusted_proxies[1]") {
+		t.Fatalf("bad entry: %v", err)
+	}
+	// an empty list is no key in the file
+	c.Server.TrustedProxies = nil
+	if err := c.SaveTo(path); err != nil {
+		t.Fatal(err)
+	}
+	if raw, _ := os.ReadFile(path); strings.Contains(string(raw), "trusted_proxies") {
+		t.Fatalf("an empty list was written:\n%s", raw)
 	}
 }

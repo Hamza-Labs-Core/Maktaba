@@ -18,6 +18,7 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
@@ -450,6 +452,28 @@ type ServerSection struct {
 	// read (a ZFS dataset in a container, Epic 59 story 59.02): "ssd" or "rotational"
 	// ("": detected; not detected and not answered counts as rotational).
 	DataDisk string `toml:"data_disk,omitempty"`
+	// TrustedProxies are the reverse proxies in front of Maktaba (a NAS's, Epic 59 story
+	// 59.08), each an address or a CIDR: the api and streaming believe a forwarded client
+	// address (X-Forwarded-For) only from these and from loopback (this machine's own
+	// proxies). Empty: loopback only. The roles get it as MAKTABA_TRUSTED_PROXIES and
+	// refuse to start on a bad entry.
+	TrustedProxies []string `toml:"trusted_proxies,omitempty"`
+}
+
+// TrustedProxyList is [server] trusted_proxies parsed; the error names the entry
+// (server.trusted_proxies[i]).
+func (s ServerSection) TrustedProxyList() ([]netip.Prefix, error) {
+	out := make([]netip.Prefix, 0, len(s.TrustedProxies))
+	for i, v := range s.TrustedProxies {
+		p, err := clientip.ParseEntry(v)
+		if err != nil {
+			return nil, fmt.Errorf("server.trusted_proxies[%d]: %w", i, err)
+		}
+		if p.IsValid() {
+			out = append(out, p)
+		}
+	}
+	return out, nil
 }
 
 // ScheduleSection is the [schedule] table (Epic 59 story 59.02).

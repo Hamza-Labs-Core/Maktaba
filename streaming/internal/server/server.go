@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/auth"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cache"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/capability"
@@ -52,19 +54,24 @@ type Deps struct {
 	// 27.5) without this package importing them. Each is called with the
 	// public mux. Nil/empty is a no-op (the no-DB local path).
 	ExtraMounts []func(chi.Router)
+
+	// TrustedProxies are the reverse proxies in front of the home ([server]
+	// trusted_proxies, Epic 59 story 59.08) whose X-Forwarded-For is believed, besides
+	// loopback (the web port's proxy and gate) which always is. Empty: loopback only.
+	TrustedProxies []netip.Prefix
 }
 
 // New builds the chi router for the public byte-pumping mux.
 func New(deps Deps) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	// SA1019: RealIP is deprecated because it trusts client-supplied
-	// X-Forwarded-For / X-Real-IP headers. The streaming server is
-	// expected to sit behind a trusted reverse proxy that sets those
-	// headers — RealIP's intended deployment — so we keep it
-	// deliberately. Operators exposing it directly must strip inbound
-	// forwarding headers at their edge.
-	r.Use(middleware.RealIP) //nolint:staticcheck // SA1019: intentional behind a trusted proxy (see comment above)
+	// The client address (Epic 59 story 59.08): X-Forwarded-For (else X-Real-IP) is
+	// believed only from loopback (the web port's proxy and stream gate) or a proxy in
+	// [server] trusted_proxies, walked right to left past the trusted hops; from anyone
+	// else (a TV on the LAN) the peer address stands. chi's RealIP believed it from every
+	// peer. The connection's own address stays readable (clientip.Peer) for the checks on
+	// this machine's own callers.
+	r.Use(clientip.Middleware(deps.TrustedProxies))
 	r.Use(middleware.Recoverer)
 
 	leeway := deps.Cfg.LeewayDuration()

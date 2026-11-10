@@ -5380,6 +5380,8 @@
   "storage.field.public_url.help": "The server's address from outside your home, for example https://maktaba.example.com. Empty if none.",
   "storage.field.web_public_url": "Public web app URL",
   "storage.field.web_public_url.help": "This web app's address from outside your home. Empty if none.",
+  "storage.field.trusted_proxies": "Trusted proxies: forwarded client addresses are believed only from these",
+  "storage.field.trusted_proxies.help": "The addresses or networks of a reverse proxy in front of Maktaba (your NAS's, for example), one per line, such as 192.168.1.5 or 192.168.1.0/24. Empty if none.",
   "storage.restart.needed": "Saved changes are waiting for a restart.",
   "storage.restart.button": "Restart the server",
   "storage.restart.manual": "This server cannot restart itself. Quit Maktaba and open it again (from the Mac app's menu, or the way you started it).",

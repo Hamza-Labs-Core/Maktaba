@@ -23,6 +23,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homelink"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 )
 
 // HeaderTimeout bounds the wait for the home's answer headers on JSON calls (EC2);
@@ -86,7 +87,6 @@ func NewWith(link homelink.Link, logger *slog.Logger, o Options) http.Handler {
 	rp := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			host := pr.In.Host
-			xff := pr.In.Header.Values("X-Forwarded-For")
 			pr.SetURL(target)
 			pr.Out.Host = host
 			// the node is the edge for these headers: only what it sets itself goes on
@@ -95,10 +95,15 @@ func NewWith(link homelink.Link, logger *slog.Logger, o Options) http.Handler {
 				delegation.HeaderOriginNode} {
 				pr.Out.Header.Del(h)
 			}
-			if len(xff) > 0 {
-				pr.Out.Header["X-Forwarded-For"] = xff
-			}
 			pr.SetXForwarded()
+			// X-Forwarded-For is the client this node resolved (its router's client-address
+			// middleware already walked what its own trusted proxies forwarded), never the
+			// chain a client wrote. The home believes it only when this node's address is in
+			// its [server] trusted_proxies (Epic 59 story 59.08); otherwise the home sees the
+			// node's address, and the node's own logs and limits keep the client's.
+			if c := clientip.Host(pr.In.RemoteAddr); c != "" {
+				pr.Out.Header.Set("X-Forwarded-For", c)
+			}
 			pr.Out.Header.Set("X-Forwarded-Host", host)
 			if c, err := pr.In.Cookie(SessionCookie); err == nil && c.Value != "" {
 				if strings.HasPrefix(c.Value, LocalSessionPrefix) {
