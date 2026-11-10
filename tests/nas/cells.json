@@ -1,6 +1,6 @@
 {
   "_doc": "The nas-shapes matrix (story 59.15). tests/nas/README.md says what each field means and how to add a cell. A cell runs once its `needs` are all in `landed`; an assertion likewise.",
-  "landed": ["59.04"],
+  "landed": ["59.04", "poster-queue"],
   "cells": [
     {
       "name": "uid-1000",
