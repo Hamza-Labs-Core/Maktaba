@@ -392,6 +392,8 @@ jobs:
       contents: read
       actions: read
     steps:
+      - uses: actions/checkout@v6.0.2
+
       - name: Every cell's result, with its logs
         env:
           GH_TOKEN: ${{ github.token }}
@@ -410,23 +412,13 @@ jobs:
             echo "| Job | Result | Logs |"
             echo "|---|---|---|"
           } >>"$GITHUB_STEP_SUMMARY"
-          if [ "$RUN" = true ]; then
-            jobs="$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100" --paginate)"
-            arts="$(gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts?per_page=100" --paginate)"
-            printf '%s\n%s\n' "$jobs" "$arts" | python3 -c '
-          import json, os, sys
-          docs = [json.loads(line) for line in sys.stdin if line.strip()]
-          jobs = [j for d in docs for j in d.get("jobs", [])]
-          arts = {a["name"]: a for d in docs for a in d.get("artifacts", [])}
-          repo, run = os.environ["REPO"], os.environ["RUN_ID"]
-          for j in sorted(jobs, key=lambda j: j["name"]):
-              if not j["name"].startswith("cell "):
-                  continue
-              cell, arch = j["name"][5:].rsplit(" (", 1)
-              art = arts.get(f"nas-cell-{cell}-{arch.rstrip(\")\")}")
-              link = f"[artifact](https://github.com/{repo}/actions/runs/{run}/artifacts/{art[\"id\"]})" if art else "none"
-              print(f"| [{j[\"name\"]}]({j[\"html_url\"]}) | {j[\"conclusion\"] or j[\"status\"]} | {link} |")
-          ' >>"$GITHUB_STEP_SUMMARY"
+          # the table is best-effort: the verdict below reads the jobs' results alone
+          if [ "$RUN" = true ] && ! {
+            gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100" --paginate >"$RUNNER_TEMP/jobs.json"
+            gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts?per_page=100" --paginate >"$RUNNER_TEMP/artifacts.json"
+            python3 tests/nas/summary.py "$RUNNER_TEMP/jobs.json" "$RUNNER_TEMP/artifacts.json" "$REPO" "$RUN_ID" >>"$GITHUB_STEP_SUMMARY"
+          }; then
+            echo "(the table of cells could not be built: see the run's jobs and artifacts)" >>"$GITHUB_STEP_SUMMARY"
           fi
           [ "$PLAN" = success ] || { echo "the plan failed"; exit 1; }
           if [ "$RUN" != true ]; then echo "no cell to run for this change"; exit 0; fi

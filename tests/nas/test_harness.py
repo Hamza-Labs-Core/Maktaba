@@ -18,6 +18,7 @@ sys.path.insert(0, str(HERE))
 import cell  # noqa: E402
 import check_checklists  # noqa: E402
 import plan  # noqa: E402
+import summary  # noqa: E402
 
 MATRIX = cell.load_cells()
 # Every story whose cells and assertions the harness knows (README §7 phases); a new needs
@@ -124,6 +125,17 @@ class Pending(unittest.TestCase):
             c = cell.Cell(spec={"name": "x"}, image="img", fixtures=Path(d), out=Path(d), local_port=None, landed=[])
             c.check("no_such_thing")
             self.assertIs(c.results[-1]["ok"], False)
+
+
+class Summary(unittest.TestCase):
+    def test_rows_link_each_cell_to_its_logs(self) -> None:
+        jobs = summary.objects('{"jobs": [{"name": "cell uid-568 (arm64)", "conclusion": "failure", "html_url": "u"},'
+                               ' {"name": "plan", "conclusion": "success"}]}\n{"jobs": [{"name": "cell mem-3.7g (amd64)",'
+                               ' "conclusion": "success", "html_url": "v"}]}')
+        arts = [{"name": "nas-cell-uid-568-arm64", "id": 7}]
+        got = summary.rows([j for d in jobs for j in d["jobs"]], arts, "o/r", "9")
+        self.assertEqual(got, ["| [cell mem-3.7g (amd64)](v) | success | none |",
+                               "| [cell uid-568 (arm64)](u) | failure | [logs](https://github.com/o/r/actions/runs/9/artifacts/7) |"])
 
 
 class Seccomp(unittest.TestCase):
