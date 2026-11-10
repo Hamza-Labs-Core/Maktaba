@@ -4,6 +4,7 @@ only where the plugin's Postgres role is usable by this machine's login (Epic 54
 
 from __future__ import annotations
 
+import json
 import sys
 from typing import Any
 
@@ -229,3 +230,93 @@ async def test_on_sqlite_a_first_party_stage_runs_in_the_worker_counted() -> Non
     assert (got.impl, got.why) == ("inproc", "sqlite")
     got = await native.choose(_SQLite(), "component_catchup")
     assert (got.impl, got.why) == ("inproc", "")
+
+
+class _LibrariesDB:
+    """A home whose libraries change: ``roots`` is what ``SELECT roots FROM libraries``
+    answers now; each read is counted."""
+
+    dialect = "postgres"
+
+    def __init__(self, roots: list[str]) -> None:
+        self.roots = roots
+        self.library_reads = 0
+
+    async def fetchval(self, sql: str, *args: Any) -> Any:
+        if "job_stages" in sql:
+            return "plugin"
+        return True  # the plugin's role is usable
+
+    async def fetch(self, sql: str, *args: Any) -> list[dict[str, Any]]:
+        if "FROM libraries" in sql:
+            self.library_reads += 1
+            return [{"roots": [r]} for r in self.roots]
+        raise RuntimeError("no such table here")  # the planner's rules: none
+
+
+async def test_the_first_scan_of_a_library_just_made_waits_for_the_runners_grant(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """A scan asked right after a library is added reached the light runner, whose sandbox
+    had no grant for the new root yet (the areas were written only at the worker's 30 s
+    refresh): Permission denied, nothing walked, the runner restarting with the root a
+    moment later. The scan now writes the areas afresh before it is placed: it runs in the
+    worker until the runner says it holds them, and so does every files stage after it."""
+    monkeypatch.setenv("MAKTABA_RUNNER_DIR", str(tmp_path / "runners"))
+    (tmp_path / "old").mkdir()
+    (tmp_path / "new").mkdir()
+    db = _LibrariesDB([str(tmp_path / "old")])
+    monkeypatch.setattr(native, "_AREAS_WRITTEN", [])
+    runner_holds = await native.write_areas(db)  # the last refresh; the runner started on it
+
+    async def serving(_s: str) -> tuple[bool, str | None]:
+        return True, None
+
+    async def hello(_g: str) -> dict[str, Any]:
+        return {"areas": runner_holds}
+
+    monkeypatch.setattr(native, "serving", serving)
+    monkeypatch.setattr(native, "hello", hello)
+    native._ROLE_OK.clear()
+
+    assert (await native.choose(db, "scan")).impl == "plugin"  # nothing changed: the runner
+
+    db.roots.append(str(tmp_path / "new"))  # an admin adds a library; then asks its scan
+    reads = db.library_reads
+    got = await native.choose(db, "scan")
+    assert (got.impl, got.why) == ("inproc", "runner_areas_stale")
+    assert db.library_reads == reads + 1
+    written = json.loads((tmp_path / "runners" / native.AREAS_FILE).read_text())
+    assert str((tmp_path / "new").resolve()) in written["areas"]["library"].split(";")
+    # the jobs the scan queues (probe reads the new files) wait for the runner too, with no
+    # read of the libraries of their own
+    got = await native.choose(db, "probe")
+    assert (got.impl, got.why) == ("inproc", "runner_areas_stale")
+    assert db.library_reads == reads + 1
+
+    runner_holds = written["digest"]  # the runner restarted on the new areas.json
+    assert (await native.choose(db, "scan")).impl == "plugin"
+    assert (await native.choose(db, "probe")).impl == "plugin"
+
+
+async def test_a_scan_whose_libraries_cannot_be_read_keeps_the_last_areas(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The fresh write failing (write_areas raising) is not a reason to run the scan in the
+    worker: the areas of the last refresh decide, as before."""
+
+    async def serving(_s: str) -> tuple[bool, str | None]:
+        return True, None
+
+    async def hello(_g: str) -> dict[str, Any]:
+        return {"areas": "a"}
+
+    async def broken(*_a: Any) -> str:
+        raise OSError("no")
+
+    monkeypatch.setattr(native, "serving", serving)
+    monkeypatch.setattr(native, "hello", hello)
+    monkeypatch.setattr(native, "write_areas", broken)
+    monkeypatch.setattr(native, "_AREAS_WRITTEN", ["a"])
+    native._ROLE_OK.clear()
+    assert (await native.choose(_LibrariesDB([]), "scan")).impl == "plugin"

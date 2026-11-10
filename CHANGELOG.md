@@ -212,6 +212,12 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The first scan of a library you just added finds its files.** A scan that started right
+  after a library was added could run in a plugin runner that had not yet been given access to
+  the new folder: it found nothing (Permission denied in the log), and only a later scan found
+  the files. That scan now runs in the queue worker while the runner restarts with access to
+  the new folder.
+
 - **A stage you set to run in the queue worker stays there after Maktaba restarts or
   updates.** Choosing where one of Maktaba's own stages runs (Queues page, or
   `maktaba-server stages impl`) did nothing when the stage already ran where you asked, and
