@@ -20,4 +20,9 @@ export const SCREENS: Screen[] = [
   { id: "guide-firewall", step: "after", ready: false },
 ];
 
-export const screenSrc = (id: string, locale: string) => `/install/synology/${id}.${locale}.png`;
+/** A screenshot's address, built from fixed values only (never text read from the page). */
+export function screenSrc(id: string, locale: string): string {
+  const screen = SCREENS.find((s) => s.id === id);
+  if (!screen) return "";
+  return `/install/synology/${screen.id}.${locale === "ar" ? "ar" : "en"}.png`;
+}
