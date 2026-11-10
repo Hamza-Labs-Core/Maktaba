@@ -2602,6 +2602,12 @@ build fails when the two differ.
   is asked what they apply on this machine (`maktaba-plugind --sandbox-check`). A dedup or convert runner
   started before a library's trash folder existed may now move a file into it.
 
+- **The Apple and Android apps wait for a busy NAS instead of failing (story 59.05).** When
+  every conversion slot of the home is taken (a Light-tier NAS converts one video at a time),
+  the player says "Another video is being converted on this home. Yours will start when it
+  finishes." and asks again every 10 seconds by itself, with no error screen; the video starts
+  as soon as a slot is free. Elsewhere the same answer reads as that sentence, with Try again.
+
 - **Speech to text on an ARM NAS, and the model a NAS can carry (story 59.06).** Speech to
   text now runs on Linux ARM machines, such as an ARM Synology. The machine's tier picks the
   model: on a Light machine speech is off until an admin turns it on with one tap in Settings →

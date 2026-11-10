@@ -41,7 +41,18 @@ struct WatchView: View {
                         HomeErrorView(failure) { act($0) }
                             .accessibilityIdentifier("player.error")
                     } else {
-                        ProgressView().tint(.white)
+                        VStack(spacing: 16) {
+                            ProgressView().tint(.white)
+                            // no transcode slot free (story 59.05): it asks again by itself
+                            if let waiting = playback.waiting {
+                                Text(waiting.message(video: true))
+                                    .font(.body)
+                                    .foregroundStyle(.white)
+                                    .multilineTextAlignment(.center)
+                                    .accessibilityIdentifier("player.waiting")
+                            }
+                        }
+                        .padding(32)
                     }
                 }
                 VStack {

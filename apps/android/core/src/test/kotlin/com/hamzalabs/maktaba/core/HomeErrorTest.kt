@@ -159,4 +159,20 @@ class HomeErrorTest {
         assertEquals(listOf(ErrorAction.TryAgain, ErrorAction.Back), all(ErrorKind.RelayStreamLimit))
         assertEquals(listOf(ErrorAction.TryAgain, ErrorAction.Back), all(ErrorKind.RelayHomeBusy))
     }
+
+    /** Epic 59 story 59.05: no transcode slot free is its own kind, sentence and wait. */
+    @Test
+    fun noTranscodeSlotFreeIsTranscodeBusy() {
+        val body = """{"type":"https://maktaba.tv/problems/transcode-busy","title":"Another video is being converted","status":503,"code":"transcode_busy"}"""
+        assertEquals(ErrorKind.TranscodeBusy, kind(503, body))
+        assertEquals("the slug alone", ErrorKind.TranscodeBusy, kind(503, """{"type":"https://home.example/problems/transcode-busy","status":503}"""))
+        assertEquals("another 503", Busy, kind(503, """{"status":503,"code":"draining"}"""))
+        assertEquals("transcode_busy on another status", Server, kind(500, """{"status":500,"code":"transcode_busy"}"""))
+        assertEquals(com.hamzalabs.maktaba.core.R.string.error_transcode_busy, ErrorKind.TranscodeBusy.sentence())
+        assertEquals(com.hamzalabs.maktaba.core.R.string.error_transcode_busy, ErrorKind.TranscodeBusy.sentence(video = true))
+        assertEquals(
+            listOf(ErrorAction.TryAgain, ErrorAction.Back),
+            errorActions(ErrorKind.TranscodeBusy, canRetry = true, canSignIn = true, canChooseHome = true, canGoBack = true),
+        )
+    }
 }

@@ -160,6 +160,27 @@ class WatchScreenTest {
         assertTrue(streams.progress().last().second.int("position_sec")!! >= 2)
     }
 
+    /**
+     * Story 59.05: a home with no transcode slot free is no error screen: the waiting sentence
+     * shows over the spinner, and the stream that opens 10 s later replaces it.
+     */
+    @Test
+    fun aBusyHomeShowsTheWaitingSentenceUntilTheStreamOpens() {
+        streams.busy.set(1)
+        open(Route.Watch("v1", startSec = 0))
+        until { shown("waiting") }
+        val sentence = compose.activity.getString(com.hamzalabs.maktaba.core.R.string.error_transcode_busy)
+        compose.onNodeWithTag("waiting").assertIsDisplayed()
+        compose.onNodeWithText(sentence).assertIsDisplayed()
+        assertTrue("no error screen while it waits", !shown("error-state"))
+        assertEquals("asked once so far", 1, streams.opens().size)
+        // the home's Retry-After: 10 s on, it asks again and the stream plays
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(10))
+        untilPlaying()
+        assertEquals("asked again once", 2, streams.opens().size)
+        assertTrue("playing: the sentence is gone", !shown("waiting"))
+    }
+
     @Test
     fun aFinishedVideoAndAGivenStartOpenWhereAsked() {
         home.answer("/api/videos/v1") {

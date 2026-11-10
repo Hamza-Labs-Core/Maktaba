@@ -22,6 +22,10 @@ public enum ErrorKind: Equatable, Hashable, Sendable {
     case off
     /// Maktaba Cloud's relay refused this plan's play (Epic 50 story 50.19).
     case relay(RelayRefusal)
+    /// 503 `transcode_busy`: every transcode slot of the home is taken (Epic 59 story 59.05: a
+    /// Light-tier NAS converts one video at a time). The player asks again by itself, after
+    /// `retryAfter` seconds when the home said.
+    case transcodeBusy(retryAfter: Int?)
 
     /// The kind of an answer with `status` and its problem+json (nil: not one).
     public static func of(status: Int, problem: Problem?, retryAfter: Int? = nil) -> ErrorKind {
@@ -37,6 +41,9 @@ public enum ErrorKind: Equatable, Hashable, Sendable {
             return .relay(.streamLimit(n))
         }
         if status == 503 && reason == "home_busy" { return .relay(.homeBusy) }
+        if status == 503 && (code == "transcode_busy" || slug == "transcode-busy") {
+            return .transcodeBusy(retryAfter: retryAfter)
+        }
         switch status {
         case 401: return .signedOut
         case 403: return .noAccess
@@ -47,6 +54,15 @@ public enum ErrorKind: Equatable, Hashable, Sendable {
         case 504 where code == "home_timeout": return .unreachable
         default: return .server
         }
+    }
+}
+
+extension ErrorKind {
+    /// Story 59.05: the seconds before a stream open the home had no transcode slot for is
+    /// asked again (its `Retry-After`, else 10, kept within 1...60); nil for any other kind.
+    public var transcodeRetrySeconds: Int? {
+        guard case let .transcodeBusy(after) = self else { return nil }
+        return min(max(after ?? 10, 1), 60)
     }
 }
 
@@ -214,7 +230,7 @@ public struct HomeFailure: Equatable, Sendable {
         switch kind {
         case .signedOut: [.signInAgain, .back]
         case .unreachable: [.tryAgain, .chooseAnotherHome, .back]
-        case .notReady, .busy, .server, .relay(.streamLimit), .relay(.homeBusy): [.tryAgain, .back]
+        case .notReady, .busy, .server, .relay(.streamLimit), .relay(.homeBusy), .transcodeBusy: [.tryAgain, .back]
         case .notFound, .noAccess, .off, .relay(.needsPlan): [.back]
         }
     }
@@ -233,6 +249,7 @@ public struct HomeFailure: Equatable, Sendable {
         case .relay(.needsPlan): "icloud.slash"
         case .relay(.streamLimit): "rectangle.stack"
         case .relay(.homeBusy): "clock"
+        case .transcodeBusy: "hourglass"
         }
     }
 }

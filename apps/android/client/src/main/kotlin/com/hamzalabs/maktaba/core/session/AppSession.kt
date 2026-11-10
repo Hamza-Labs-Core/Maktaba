@@ -892,7 +892,7 @@ class AppSession(
             if (password && e is ApiException.Status && e.code in 400..403) return FailReason.WrongPassword
             return when (e.errorKind()) {
                 ErrorKind.Unreachable -> FailReason.NoAnswer
-                ErrorKind.Busy -> FailReason.Busy
+                ErrorKind.Busy, ErrorKind.TranscodeBusy -> FailReason.Busy
                 else -> FailReason.Other
             }
         }

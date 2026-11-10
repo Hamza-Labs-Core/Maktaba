@@ -59,6 +59,7 @@ fun ErrorKind.sentence(video: Boolean = false): Int = when (this) {
     ErrorKind.RelayNeedsPlan -> R.string.error_relay_needs_plan
     ErrorKind.RelayStreamLimit -> R.string.error_relay_stream_limit
     ErrorKind.RelayHomeBusy -> R.string.error_relay_home_busy
+    ErrorKind.TranscodeBusy -> R.string.error_transcode_busy
 }
 
 /**
@@ -130,6 +131,7 @@ val ErrorKind.icon: ImageVector
         ErrorKind.RelayNeedsPlan -> Icons.Outlined.CloudOff
         ErrorKind.RelayStreamLimit -> Icons.Outlined.Block
         ErrorKind.RelayHomeBusy -> Icons.Outlined.Schedule
+        ErrorKind.TranscodeBusy -> Icons.Outlined.HourglassTop
     }
 
 /** What a person can do about a failure, the first being what most helps (a TV focuses it). */
