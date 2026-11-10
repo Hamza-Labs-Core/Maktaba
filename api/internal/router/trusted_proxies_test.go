@@ -54,7 +54,7 @@ func TestT05ForwardedForFromTrustedPeersOnly(t *testing.T) {
 
 	// with no list the NAS proxy is a LAN peer like any other
 	r = New(Deps{IdempotencyStore: idempotency.NewMemoryStore()})
-	r.Get("/api/t05", func(w http.ResponseWriter, req *http.Request) { addr = req.RemoteAddr })
+	r.Get("/api/t05", func(_ http.ResponseWriter, req *http.Request) { addr = req.RemoteAddr })
 	req := httptest.NewRequest(http.MethodGet, "/api/t05", nil)
 	req.RemoteAddr = "192.168.1.5:41000"
 	req.Header.Set("X-Forwarded-For", "203.0.113.9")
