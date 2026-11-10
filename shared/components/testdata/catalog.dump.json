@@ -692,7 +692,10 @@
         [
           "model.whisper-turbo",
           "model.whisper-large-v3",
-          "model.whisper-medium"
+          "model.whisper-medium",
+          "model.whisper-small",
+          "model.whisper-base",
+          "model.whisper-tiny"
         ]
       ],
       "resources": {
@@ -2440,6 +2443,141 @@
       "wants": []
     },
     {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.model.whisper-small.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "models",
+      "id": "model.whisper-small",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "on_demand": false,
+      "placement": "any",
+      "platforms": [
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "plugin": "",
+      "processes": [],
+      "requires": [
+        [
+          "runtime.ml"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.121",
+      "source": "hf:Systran/faster-whisper-small@536b0662742c02347bc0e980a01041f333bce120",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.model.whisper-small.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.model.whisper-base.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "models",
+      "id": "model.whisper-base",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "on_demand": false,
+      "placement": "any",
+      "platforms": [
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "plugin": "",
+      "processes": [],
+      "requires": [
+        [
+          "runtime.ml"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.121",
+      "source": "hf:Systran/faster-whisper-base@ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.model.whisper-base.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.model.whisper-tiny.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "models",
+      "id": "model.whisper-tiny",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "on_demand": false,
+      "placement": "any",
+      "platforms": [
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "plugin": "",
+      "processes": [],
+      "requires": [
+        [
+          "runtime.ml"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.121",
+      "source": "hf:Systran/faster-whisper-tiny@d90ca5fe260221311c53c58e660288d3deb8d356",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.model.whisper-tiny.title",
+      "wants": []
+    },
+    {
       "bundles": [
         "full",
         "worker"
@@ -3361,6 +3499,9 @@
     "model.whisper-turbo",
     "model.whisper-large-v3",
     "model.whisper-medium",
+    "model.whisper-small",
+    "model.whisper-base",
+    "model.whisper-tiny",
     "transcription",
     "subtitles",
     "runtime.lang",

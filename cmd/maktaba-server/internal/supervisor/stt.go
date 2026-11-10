@@ -3,6 +3,7 @@ package supervisor
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"os/exec"
@@ -52,6 +53,14 @@ type STTPlan struct {
 	// worker's own size of the per-worker gpu pool (MAKTABA_POOL_GPU), the files it takes
 	// at once, whatever the cluster's pool says (that one is sized for the home's GPU)
 	gpu bool
+
+	// Epic 59 story 59.06: SpeechOff, speech to text is off on this machine (no worker
+	// transcribes: the main worker leaves transcribe and the second listen to others);
+	// Nice, a transcribing process's niceness (MAKTABA_STT_NICE; 0: unchanged); Capped,
+	// why fewer workers start than were asked for ("": not capped), for the log.
+	SpeechOff bool
+	Nice      int
+	Capped    string
 }
 
 // sttTiers size the plan from the RAM, largest first. The top tier is what the
@@ -390,6 +399,28 @@ func planSTT(cfg config.Config, venvTorchRuns func() bool) STTPlan {
 	if operatorKeepsTranscribeOff() {
 		plan.Workers = 0
 	}
+	// Epic 59 story 59.06: speech off (the Light tier until turned on, or [transcription]
+	// speech = "off") runs no worker; on Light and Standard one CTranslate2 thread per two
+	// cores at nice 10, and no more speech workers than a quarter of the memory limit holds
+	if !appleSilicon() {
+		sp := SpeechOf(cfg, speechMachine())
+		if !sp.On {
+			plan.Workers, plan.SpeechOff = 0, true
+		}
+		if sp.Polite {
+			plan.Nice = SpeechNice
+			if !plan.gpu && t.CPUThreads <= 0 {
+				plan.CPUThreads = max(1, numCPU()/2)
+			}
+		}
+		if plan.Workers > 1 {
+			if fit := hostinfo.SpeechWorkersFit(totalMemory(), sp.Model); fit > 0 && plan.Workers > fit {
+				plan.Capped = fmt.Sprintf("%d speech workers of %s (%d MB each: the model and 300 MB) do not fit in a quarter of the memory limit (%.1f GB): %d start",
+					plan.Workers, sp.Model, speechWorkerMB(sp.Model), hostinfo.GB(totalMemory()), fit)
+				plan.Workers = fit
+			}
+		}
+	}
 	if n := plan.Workers; n > base {
 		plan = shareBudget(plan, base, n, gpuGB, ownPrecision, t.CPUThreads > 0)
 	}
@@ -664,7 +695,7 @@ const GPUStages = "transcribe,second_listen"
 // operator's own environment excludes); without them on the CTranslate2 engine it
 // gets their knobs, for when it transcribes itself.
 func (p STTPlan) mainEnv(env []string) []string {
-	if p.Workers > 0 {
+	if p.SpeechOff || p.Workers > 0 {
 		exclude := withStage(os.Getenv("MAKTABA_PIPELINE_EXCLUDE_STAGES"), "transcribe")
 		env = setEnv(env, "MAKTABA_PIPELINE_EXCLUDE_STAGES", withStage(exclude, "second_listen"))
 	}
@@ -675,12 +706,10 @@ func (p STTPlan) mainEnv(env []string) []string {
 // from [transcription] (MAKTABA_STT_MODEL, MAKTABA_STT_REFINE,
 // MAKTABA_STT_REFINE_MODEL; unset keeps the pipeline's defaults).
 func sttEnv(cfg config.Config) []string {
-	var env []string
 	t := cfg.Transcription
-	// an old short name (setup wrote "large-v3") is not a model the pipeline loads
-	if m := strings.TrimSpace(t.Model); strings.Contains(m, "/") {
-		env = append(env, "MAKTABA_STT_MODEL="+m)
-	}
+	// the model: an operator's repo or folder, a size, or the hardware tier's (story 59.06);
+	// an old short name (setup wrote "large-v3") is the tier's too
+	env := speechEnv(SpeechOf(cfg, speechMachine()))
 	switch strings.ToLower(strings.TrimSpace(t.Refine)) {
 	case "off", "false", "no", "0":
 		env = append(env, "MAKTABA_STT_REFINE=0")
@@ -716,6 +745,7 @@ func (p STTPlan) knobEnv() []string {
 	add("MAKTABA_STT_DEVICE", p.Device)
 	add("MAKTABA_STT_COMPUTE_TYPE", p.ComputeType)
 	add("MAKTABA_STT_CPU_THREADS", num(float64(p.CPUThreads)))
+	add("MAKTABA_STT_NICE", num(float64(p.Nice)))
 	if p.gpu {
 		// the gpu pool is per worker: this GPU's batch, not the cluster's size
 		add("MAKTABA_POOL_GPU", num(float64(p.Batch)))
@@ -734,4 +764,10 @@ func (p STTPlan) mainKnobEnv() []string {
 		return nil
 	}
 	return p.knobEnv()
+}
+
+// speechWorkerMB is a speech worker's memory with model (0: not a size).
+func speechWorkerMB(model string) int {
+	s, _ := hostinfo.SpeechModelNamed(model)
+	return s.WorkerMB
 }

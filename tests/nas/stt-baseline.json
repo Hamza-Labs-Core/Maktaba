@@ -1,0 +1,11 @@
+{
+  "_doc": "Story 59.06: each model and architecture's word error rate on the bundled clips (pipeline/src/maktaba_pipeline/stt/assets), as the speech measure reports it on the NAS cells' GitHub runners (CTranslate2's kernels differ by CPU, so an entry comes from the runner, not a developer's machine). tests/nas/cell.py fails a cell whose rate rose more than 5 points over its entry. Set from the first runs of PR 1112 (head e0a8940): base/aarch64 on ubuntu-22.04-arm (arm64-stt, Light, 2 threads), small/x86_64 on ubuntu-22.04 (mem-6g-stt, Standard, 2 threads). A model or architecture with no entry is recorded only: add its entry from the cell's stt:wer line.",
+  "base/aarch64": {
+    "en": 0.075,
+    "ar": 0.52
+  },
+  "small/x86_64": {
+    "en": 0.03,
+    "ar": 0.26
+  }
+}

@@ -97,6 +97,10 @@ func TestRemoveRefusedWhileRequired(t *testing.T) {
 	// two Whisper models on disk: either can go, not both
 	rows := allOn()
 	rows = with(rows, "model.whisper-medium", components.WantAbsent)
+	// the NAS tiers' smaller sizes (story 59.06) are in the same group
+	for _, id := range []string{"model.whisper-small", "model.whisper-base", "model.whisper-tiny"} {
+		rows = with(rows, id, components.WantAbsent)
+	}
 	if _, err := planOf(t, rows, Request{Changes: []Change{want("model.whisper-turbo", components.WantAbsent)}}, nil); err != nil {
 		t.Fatalf("another enabled Whisper model is there: %v", err)
 	}

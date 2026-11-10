@@ -83,7 +83,7 @@ func TestAccessors(t *testing.T) {
 	}
 	reqs := c.Requires("transcription")
 	if len(reqs) != 2 || !slices.Equal(reqs[0].AnyOf, []string{"runtime.ml"}) ||
-		!slices.Equal(reqs[1].AnyOf, []string{"model.whisper-turbo", "model.whisper-large-v3", "model.whisper-medium"}) {
+		!slices.Equal(reqs[1].AnyOf, []string{"model.whisper-turbo", "model.whisper-large-v3", "model.whisper-medium", "model.whisper-small", "model.whisper-base", "model.whisper-tiny"}) {
 		t.Fatalf("Requires(transcription) = %v", reqs)
 	}
 	if deps := c.Dependents("livetv"); !slices.Contains(deps, "livetv.slots") || !slices.Contains(deps, "ext.cloudflare_stream") {

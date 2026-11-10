@@ -372,6 +372,30 @@ def cpu_threads_default() -> int:
     return min(16, max(2, (os.cpu_count() or 4) // 2))
 
 
+#: Epic 59 story 59.06: the priority a transcribing process runs at (``MAKTABA_STT_NICE``; the
+#: supervisor sets 10 on the Light and Standard tiers, so a NAS keeps serving its files)
+ENV_NICE = "MAKTABA_STT_NICE"
+
+
+def be_polite() -> int | None:
+    """Lower this process's priority to ``MAKTABA_STT_NICE`` (never raise it), once the model
+    is about to load; the niceness it runs at, or None when unset or not possible here
+    (Windows)."""
+    raw = os.environ.get(ENV_NICE, "").strip()
+    if not raw or not hasattr(os, "getpriority"):
+        return None
+    try:
+        want = max(0, min(19, int(raw)))
+        now = os.getpriority(os.PRIO_PROCESS, 0)
+        if now < want:
+            os.setpriority(os.PRIO_PROCESS, 0, want)
+            _log.info("stt.nice", nice=want, was=now)
+        return max(now, want)
+    except (OSError, ValueError) as exc:
+        _log_once("stt.nice_failed", f"{ENV_NICE}={raw} not applied: {exc}")
+        return None
+
+
 _LOGGED: set[str] = set()
 
 
@@ -469,6 +493,7 @@ def load(settings: WhisperSettings) -> Loaded:
     With ``auto``, a GPU with too little memory free (:func:`gpu_short`) leaves it to the
     CPU, and so does a load that fails on the GPU, for the rest of the process."""
     _add_dll_dirs()
+    be_polite()
     folder = model_dir(settings.model)
     auto = (settings.device or "auto").strip().lower() == "auto"
     device, index = choose_device(settings.device)

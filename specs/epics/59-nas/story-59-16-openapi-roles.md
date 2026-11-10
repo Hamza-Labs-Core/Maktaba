@@ -20,6 +20,9 @@ Each must be admin-only, documented in OpenAPI, and covered in the role tables.
 |---|---|---|
 | `GET /api/server/machine` | 59.04 | admin |
 | `PUT /api/server/machine` (the tier) | 59.04 | admin |
+| `GET /api/server/speech` (speech by tier, the measured speed, the backlog's estimate) | 59.06 | admin |
+| `PUT /api/server/speech` (speech on or off, the model) | 59.06 | admin; audit-logged |
+| `POST /api/server/speech/measure` | 59.06 | admin; audit-logged |
 | `POST /api/libraries/{id}/access-check` | 59.03 | admin |
 | `GET /api/libraries/{id}` (gains `access`, `access_checked_at`) | 59.03 | as today (the new fields only to admins) |
 | `POST /api/queues/jobs/{id}/run-now`, `POST /api/queues/{stage}/run-now`, `POST /api/libraries/{id}/run-now` | 59.02 | admin |

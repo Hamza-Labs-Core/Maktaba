@@ -1,6 +1,6 @@
 {
   "_doc": "The nas-shapes matrix (story 59.15). tests/nas/README.md says what each field means and how to add a cell. A cell runs once its `needs` are all in `landed`; an assertion likewise.",
-  "landed": ["59.04", "59.01", "pg-stale-lock", "59.02", "scan-grant-race", "59.03", "59.05", "59.07"],
+  "landed": ["59.04", "59.01", "pg-stale-lock", "59.02", "scan-grant-race", "59.03", "59.05", "59.06", "59.07"],
   "cells": [
     {
       "name": "uid-1000",
@@ -106,6 +106,24 @@
       "arches": ["amd64"],
       "docker": ["--memory=6g"],
       "asserts": ["ready", "scan", "no_oom", {"name": "tier_standard", "needs": ["59.04"]}]
+    },
+    {
+      "name": "arm64-stt",
+      "about": "speech to text on an ARM NAS with 6 GB (Light: off until turned on, then base): the engine from the payload's wheelhouse with no internet, the Arabic and English clips transcribed, word error rates against the baseline",
+      "arches": ["arm64"],
+      "docker": ["--memory=6g"],
+      "speech": true,
+      "needs": ["59.06"],
+      "asserts": ["ready", "stt_light_off", "stt_engine", "stt_measure", "no_oom"]
+    },
+    {
+      "name": "mem-6g-stt",
+      "about": "a 6 GB NAS transcribing (Standard: small int8 on the CPU), not OOM-killed",
+      "arches": ["amd64"],
+      "docker": ["--memory=6g"],
+      "speech": true,
+      "needs": ["59.06"],
+      "asserts": ["ready", "tier_standard", "stt_engine", "stt_measure", "no_oom"]
     },
     {
       "name": "no-landlock-enosys",
