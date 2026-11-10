@@ -1,5 +1,8 @@
 # Implementation Plan — Story 25.31 NAS support (Synology, QNAP, TrueNAS, Unraid)
 
+> **Replaced by Epic 59** ([Maktaba on a NAS](../59-nas/README.md)). Kept for history; nothing
+> below changed.
+
 > Companion to [story-25-31-nas-support.md](story-25-31-nas-support.md).
 
 ## 0. Scope and placement

@@ -66,13 +66,24 @@ def test_the_story_paths_start_the_cells() -> None:
         "pipeline/src/maktaba_pipeline/scanner/walker.py",
         "pipeline/src/maktaba_pipeline/stt/whisper.py",
         "plugind/crates/host/src/lib.rs",
-        "cloud/installers/nas/synology/INFO",
+        "deploy/nas/unraid/maktaba.xml",
+        "cloud/installers/docker/docker-compose.yml",
         "tests/nas/cell.py",
         "tests/nas/cells.json",
         ".github/workflows/nas.yml",
     ):
         assert _any(cells, f), f
         assert _any(_doc()["pull_request"]["paths"], f), f
+
+
+def test_the_dev_compose_runs_only_the_plan() -> None:
+    # its images are checked by the plan job (story 59.11); it is not the image the cells run
+    f = "deploy/compose/docker-compose.yml"
+    assert _any(_doc()["pull_request"]["paths"], f)
+    assert not _any(_plan_filters()["cells"], f)
+    jobs = yaml.safe_load(NAS.read_text(encoding="utf-8"))["jobs"]
+    runs = "\n".join(str(s.get("run", "")) for s in jobs["plan"]["steps"])
+    assert "tests/nas/install_files.py --docker" in runs
 
 
 def test_the_checklists_alone_run_only_their_lint() -> None:

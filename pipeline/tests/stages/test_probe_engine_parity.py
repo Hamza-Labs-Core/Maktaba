@@ -40,7 +40,7 @@ from maktaba_pipeline.engine.sync import sync_graph
 from maktaba_pipeline.handlers import build_real_dispatch
 from maktaba_pipeline.runtime import Database
 from tests.stages.test_scan_engine_parity import _drain, _side
-from tests.stages.world import make_fake_media
+from tests.stages.world import identity_known, make_fake_media
 
 pytestmark = [pytest.mark.integration]
 
@@ -172,6 +172,7 @@ async def test_probe_on_the_engine_saves_and_queues_what_the_handler_did(
             db, job, runtime=EngineRuntime(graph=new_graph), legacy_handlers=handlers
         )
         assert await db.fetchval("SELECT count(*) FROM processing_jobs WHERE stage = 'probe'") == 3
+        await identity_known(db)
     finally:
         await db.close()
     out: dict[str, dict[str, list[dict[str, Any]]]] = {}

@@ -210,7 +210,7 @@ automatically.
 | 25.28 | Windows MSI | installers/windows |
 | 25.29 | Linux .deb/.rpm | installers/linux |
 | 25.30 | Docker image | installers/docker |
-| 25.31 | NAS pkgs | installers/nas |
+| 25.31 | NAS (replaced by Epic 59) | installers/docker, deploy/nas |
 | 25.32 | RPi image | installers/rpi |
 | 25.33 | one-click cloud VPS | installers/cloud-vps |
 | 25.34 | auto-update | installers/auto-update.md |

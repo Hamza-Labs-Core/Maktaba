@@ -10,7 +10,9 @@
 #   plan      what changed: whether the cells run (the image, the server, streaming's ffmpeg,
 #             the pipeline's runner, scanner and speech code, plugind, the NAS install files,
 #             the harness) and whether arm64 is required (the image, streaming or the
-#             pipeline's speech); the harness's own tests and the checklists' lint
+#             pipeline's speech); the harness's own tests and the checklists' lint; the NAS
+#             install files checked (tests/nas/install_files.py: the published compose's
+#             variants, the Unraid template, the development compose's images, 59.11)
 #   image     the Linux payload of this commit (tools/release/linux-app/payload.sh, on the
 #             payload's glibc baseline, ubuntu-22.04 and its arm runner) in the server image
 #             (deploy/docker/server/Dockerfile), saved as an artifact per architecture
@@ -46,8 +48,8 @@ on:
       - 'docs/nas/checklists/**'
       - 'deploy/docker/server/**'
       - 'cloud/installers/docker/**'
-      - 'cloud/installers/nas/**'
       - 'deploy/nas/**'
+      - 'deploy/compose/docker-compose.yml'
       - 'deploy/nas/truenas/**'
       - 'tests/nas/truenas_app.py'
       - 'tests/nas/truenas/**'
@@ -76,8 +78,8 @@ on:
       - 'docs/nas/checklists/**'
       - 'deploy/docker/server/**'
       - 'cloud/installers/docker/**'
-      - 'cloud/installers/nas/**'
       - 'deploy/nas/**'
+      - 'deploy/compose/docker-compose.yml'
       - 'deploy/nas/truenas/**'
       - 'tests/nas/truenas_app.py'
       - 'tests/nas/truenas/**'
@@ -107,6 +109,7 @@ on:
 
 permissions:
   contents: read
+  packages: read # the plan job resolves the development compose's images (59.11)
 
 concurrency:
   group: nas-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
@@ -135,7 +138,6 @@ jobs:
               - 'tests/nas/**'
               - 'deploy/docker/server/**'
               - 'cloud/installers/docker/**'
-              - 'cloud/installers/nas/**'
               - 'deploy/nas/**'
               - 'tools/release/linux-app/**'
               - 'deploy/packaging/node/build-release.sh'
@@ -175,6 +177,18 @@ jobs:
         run: |
           python3 -m unittest discover -s tests/nas -p 'test_*.py' -v
           python3 tests/nas/check_checklists.py docs/nas/checklists
+
+      # Story 59.11: the published compose with no block, each block and every block on
+      # (`docker compose config`), the Unraid template's schema, render and drift, and the
+      # development compose's images resolved in the registry (release's names)
+      - name: Sign in to the registry (the development images are read)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+
+      - name: The NAS install files
+        run: python3 tests/nas/install_files.py --docker
 
       - name: The matrix
         id: plan

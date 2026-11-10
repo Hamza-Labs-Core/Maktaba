@@ -50,7 +50,7 @@ from maktaba_pipeline.engine.stages.legacy import _always_changed
 from maktaba_pipeline.handlers import build_real_dispatch
 from tests.stages.test_probe_engine_parity import _differences, _fork
 from tests.stages.test_scan_engine_parity import _side
-from tests.stages.world import make_fake_media
+from tests.stages.world import identity_known, make_fake_media
 
 pytestmark = [pytest.mark.integration]
 
@@ -195,6 +195,10 @@ async def test_extract_on_the_engine_saves_and_queues_what_the_handler_did(
     base = f"maktaba_extract_base_{tag}"
     db = await _side(pg_template, base, new_graph, root)
     try:
+        # the scan first, then every video's identity marked known (the parity is extract's:
+        # the poster and transcript chain the first probe starts is not compared here)
+        await _drain_except(db, new_graph, handlers, set(new_graph) - {"scan"})
+        await identity_known(db)
         await _drain_except(db, new_graph, handlers, {"extract", "transcribe"})
         for row in await db.fetch("SELECT id, path FROM videos ORDER BY path"):
             await enqueue_job(db, subject_kind="video", subject_id=row["id"], stage="extract")

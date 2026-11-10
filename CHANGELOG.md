@@ -14,18 +14,15 @@ build fails when the two differ.
 
 ### Changed
 
-- **Maktaba as a TrueNAS app (story 59.10).** TrueNAS 25.04 and newer gets Maktaba's app in the
-  catalog's own format (`deploy/nas/truenas`), ready for its community train: it runs as `apps`
-  (568), keeps its data on a dataset with the Apps preset (an SSD pool when there is one) or an
-  ixVolume the catalog's permissions step hands to 568, mounts each media folder at its own path
-  with a read-only toggle, uses the host network, and offers TrueNAS's GPU choice (Intel/AMD for
-  VA-API, NVIDIA). Until the app is in the catalog, each release carries
-  `maktaba-truenas-custom-app.yaml` to install as a Custom App. The setup runs from the app's
-  Shell (`maktaba-server container setup`); a new `maktaba-server healthcheck` keeps the app
-  healthy while it waits for that setup. On TrueNAS a data folder Maktaba cannot write says
-  "Edit the dataset's permissions and add an ACL entry for user 568 with Modify, or use the Apps
-  preset." CI runs the catalog's own tooling on the app (render, metadata, ports, deploy), and the
-  maktaba.tv guide and device checklist cover TrueNAS 25.04 and 25.10.
+- **Maktaba on QNAP, UGREEN, ASUSTOR and Unraid (story 59.11).** The published Docker compose
+  (`maktaba-docker-compose.yml`) is now the NAS file: it names the container `maktaba`, sets
+  `MAKTABA_PLATFORM=docker` and `TZ`, mounts each media folder at its own path (an install made
+  with the earlier file keeps its `/media` line), and has optional blocks for the memory limit
+  by tier (`mem_limit` 4g, 6g or 16g), hardware video (`/dev/dri` and its group), NVIDIA, the
+  host's D-Bus and a bridge network. maktaba.tv/install/docker fills it in from a few answers
+  in the page, in English and Arabic, and sends nothing. Unraid gets a Community Applications
+  template (99:100, the data on the cache pool, `/dev/dri`). The old Synology and QNAP package
+  scaffolds are gone, and the development compose names the images release publishes.
 
 - **A NAS converts video on its own chip, and says when it can't (story 59.05).** On an Intel
   J4125 or N100, or an AMD APU, streaming now uses VA-API (`h264_vaapi`, HEVC where the driver
@@ -2634,6 +2631,19 @@ build fails when the two differ.
   priority with one thread per two cores, and no more speech workers start than the memory
   holds. The second listen stays on x86_64 with an NVIDIA GPU.
 
+- **Maktaba as a TrueNAS app (story 59.10).** TrueNAS 25.04 and newer gets Maktaba's app in the
+  catalog's own format (`deploy/nas/truenas`), ready for its community train: it runs as `apps`
+  (568), keeps its data on a dataset with the Apps preset (an SSD pool when there is one) or an
+  ixVolume the catalog's permissions step hands to 568, mounts each media folder at its own path
+  with a read-only toggle, uses the host network, and offers TrueNAS's GPU choice (Intel/AMD for
+  VA-API, NVIDIA). Until the app is in the catalog, each release carries
+  `maktaba-truenas-custom-app.yaml` to install as a Custom App. The setup runs from the app's
+  Shell (`maktaba-server container setup`); a new `maktaba-server healthcheck` keeps the app
+  healthy while it waits for that setup. On TrueNAS a data folder Maktaba cannot write says
+  "Edit the dataset's permissions and add an ACL entry for user 568 with Modify, or use the Apps
+  preset." CI runs the catalog's own tooling on the app (render, metadata, ports, deploy), and the
+  maktaba.tv guide and device checklist cover TrueNAS 25.04 and 25.10.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
@@ -3180,6 +3190,16 @@ build fails when the two differ.
   thumbnail, audio and report caches, the download work folder and the search index) before
   it names them to the runners, by their real paths, wherever the home folder is, on macOS
   and Linux. A library's folders are never made or written by this.
+
+- **A library a scan or a download finds gets its posters, small thumbnails, transcripts and
+  lengths (Epic 59).** The poster, the small thumbnail and the transcript followed the file's
+  identity step, which only a library imported from mediaintel ever queued: on a fresh
+  install no clip got a poster or a transcript, and no scanned clip got its length either
+  (the length step read it and did not save it). A clip's first length reading now queues
+  its identity step once (not after an MP4 conversion, so a converted file is not
+  transcribed again) and saves the length; and once this release runs, the queue gives every
+  clip probed before it that never had that step its poster and transcript, in the
+  background.
 
 ## [0.2.0] - 2026-10-19
 

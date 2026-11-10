@@ -374,3 +374,28 @@ async def test_the_leader_lock_ends_with_its_connection(db: Database) -> None:
         await crashed.close()
     assert (await reconcile_once(db, graph)).leader is True
     assert await advisory_locks(db) == 0
+
+
+@pytest.mark.asyncio
+async def test_a_pass_gives_a_probed_video_its_identity_once(db: Database) -> None:
+    """Epic 59: a video probed before its first probe asked for ``content_hash`` (every
+    scanned or downloaded one) gets it from a pass, once: the poster and the transcript
+    follow it. A video that has had one is left alone."""
+    await sync_graph(db, CORE_GRAPH)
+    graph = {s.name: s for s in CORE_GRAPH}
+    lib = await make_library(db)
+    probed, known = await make_video(db, lib), await make_video(db, lib)
+    for v in (probed, known):
+        await db.execute(
+            "INSERT INTO processing_jobs (subject_kind, subject_id, video_id, stage, state,"
+            " outcome, stage_version, input_hash, output_hash) VALUES"
+            " ('video', $1, $1, 'probe', 'done', 'changed', 1, 'i', 'o')",
+            str(v),
+        )
+    await enqueue_job(db, subject_kind="video", subject_id=known, stage="content_hash")
+    assert (await reconcile_once(db, graph)).identity == 1
+    assert (await reconcile_once(db, graph)).identity == 0
+    rows = await db.fetch(
+        "SELECT subject_id FROM processing_jobs WHERE stage = 'content_hash' ORDER BY id"
+    )
+    assert [str(r["subject_id"]) for r in rows] == [str(known), str(probed)]

@@ -9,7 +9,13 @@ what they were; its summary (new) says how many audio tracks it found and the vi
 state. The ffprobe call, the saved facts (``commit_probe``: media info, audio tracks, the
 video's state) and the failure kinds are the handler's, unchanged. On the engine the probe
 never queues ``extract`` (the engine's transcribe asks for it when its backend reads a
-file), as before."""
+file), as before.
+
+A video whose identity stage (``content_hash``) never ran gets it once, asked for here: a
+video the scanner or a download found has its hash from the walk, but the poster, the
+small thumbnail and the transcript follow ``content_hash`` (an imported video's import
+queues it). Asked only when it never ran, so a probe after an MP4 conversion does not
+hash the file again and transcribe it again."""
 
 from __future__ import annotations
 
@@ -19,12 +25,15 @@ from maktaba_pipeline.audio.probe import _ProbeDB, commit_probe
 from maktaba_pipeline.audio.probe import probe as ffprobe
 from maktaba_pipeline.db.jobs import Job
 from maktaba_pipeline.engine.context import StageContext, StageFailure
-from maktaba_pipeline.engine.graph import StageResult
+from maktaba_pipeline.engine.graph import Request, StageResult
 from maktaba_pipeline.engine.stages.legacy import _probe_output
 from maktaba_pipeline.engine.stages.registry import StageImpl
 from maktaba_pipeline.log import get_logger
 
-__all__ = ["IMPL"]
+__all__ = ["IDENTITY_WHY", "IMPL"]
+
+#: the reason of the ``content_hash`` a first probe asks for
+IDENTITY_WHY = "first probe: the poster and the transcript follow the file's identity"
 
 _log = get_logger()
 
@@ -52,10 +61,19 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         )
     except Exception as exc:  # ffprobe, the file, a write: another run may succeed
         raise StageFailure("probe_failed", str(exc), retryable=True) from exc
+    identity = await db.fetchval(
+        "SELECT count(*) FROM processing_jobs WHERE subject_kind = 'video'"
+        " AND subject_id = $1 AND stage = 'content_hash'",
+        job.video_id,
+    )
+    requests: tuple[Request, ...] = ()
+    if not identity:
+        requests = (Request("content_hash", "video", job.video_id, IDENTITY_WHY),)
     # outcome None: changed when the length or frame size differs from the last success,
     # as the legacy bookkeeping decided it
     return StageResult(
         output_hash=await _probe_output(db, job.subject),
+        requests=requests,
         summary={"audio_tracks": len(result.audio), "state": state},
     )
 

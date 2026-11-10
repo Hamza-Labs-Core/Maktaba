@@ -16,7 +16,7 @@ for TrueNAS; no self-hosted runner):
 
 - before a platform's first release;
 - after each DSM major (7.2 → 7.3 …) and each TrueNAS major (25.04 → 25.10 …);
-- after a change to the platform's install files (`deploy/nas/`, `cloud/installers/nas/`) that
+- after a change to the platform's install files (`deploy/nas/`, `cloud/installers/docker/`) that
   CI cannot check, when the change's pull request says so.
 
 ## How
