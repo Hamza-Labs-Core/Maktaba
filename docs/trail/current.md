@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.117
-up_to_commit: d6c1f61dd
-built_from: v0.3.116
+tag: v0.3.118
+up_to_commit: 6093314cc
+built_from: v0.3.117
 ---
 
-# Trail snapshot: v0.3.117
+# Trail snapshot: v0.3.118
 
 ## Keep doing
 
@@ -120,7 +120,7 @@ built_from: v0.3.116
 - Join a library's worker thread when closing a resource whose end the process counts (aiosqlite's `close()` returns just before its thread ends). (#868)
 - Read a runtime's start-up code before choosing a stub for it, and probe a platform on a real runner (a throwaway branch whose workflow runs only on its own pushes) before choosing a cross-process transport. (#851, #863)
 - Before blaming a change for a local failure, run the same test on a clean origin/main checkout (a full disk failed restore tests on both). (#856)
-- Before cutting what a log carries by default, search the tests and harnesses that read it (`log.String()` in the e2e tests, every harness that writes a `server.toml`); harnesses log every line (`[logs] server_log = "all"`), or a check for an absent line passes for nothing. Run the affected-tests gate again after the last file joins a commit. (d20261107-server-log-warn-e2e)
+- Before cutting what a log carries by default, search the tests and harnesses that read it (`log.String()` in the e2e tests, every harness that writes a `server.toml`); harnesses log every line (`[logs] server_log = "all"`), or a check for an absent line passes for nothing. Run the affected-tests gate again after the last file joins a commit. A default that changes when work runs reaches every harness that starts a real home: tier quiet hours held the rehearsal's `dedup_scan` until it timed out, so harnesses set `[schedule] quiet_hours = ""` (an unknown key is safe on older releases). (d20261107-server-log-warn-e2e, #1096)
 - A test of a mechanism does not also check speed: a p99 of a few thousand calls on a shared runner cannot be bounded, even against the same code; speed belongs in the bench's own verdict on one runner. (#904)
 - Before a dashboard lists a series, check something exports it, and test the board from a scrape of the real exporter's names. Search a module's tests for an exact URL before changing what it carries. (#896)
 - For each security rule in a Caddyfile, check the adapted route order, not just `caddy validate`: every Caddyfile with a deny rule gets a `tests/deny-first.sh <json> <host> <status>` call in the CI step that validates it, and the static lint over all of them keeps the files that broke as fixtures. When a bug's cause is a pattern, search every config of the same kind and add a repo-wide check. Split a security fix found inside a bigger PR into its own small PR from fresh main, with a test that fails on the old file. (#927, #930, #932)
@@ -374,7 +374,8 @@ built_from: v0.3.116
 - A read-only broker root is enough for a probe: ffprobe reads its one share input through the `fd:` handle. (#1019)
 - A relay failure (no answer, 502, 503, 504, not `home_reconnecting`) reads the cloud's status at once, at most every 10 s. Running a test once with the old behaviour put back is the cheap proof that it checks the wiring. (#907)
 - A plugin's own events go through `events/emit` (manifest `emits`, schema, 16 KB, scope); the native relay is a separate back channel, so its rule is own job only. (#1021)
-- NAS (Epic 59 spec): the image's `/etc/passwd` has only uid 1000 and the bundled Postgres's `initdb` fails for any uid without an entry (needs `nss_wrapper`); a privileged container is invisible in `CapEff` when not root (read `CapBnd`); `pgbundle`'s `-c max_connections=300` beats `postgresql.auto.conf`, and the home alone uses about 130 connections. btrfs and ZFS give `stat` an anonymous device number (find the disk through `/proc/self/mountinfo` and `slaves/`); ZFS's ARC is not in `MemAvailable` (`arcstats` has it); setup's memory floor reads `sysinfo`, which ignores the cgroup limit. Beside the host's avahi-daemon a container's responder needs `SO_REUSEADDR` (`SO_REUSEPORT` shares only within one uid). The rehearsal covers the Mac layout, not the Docker image. (#1087)
+- NAS (Epic 59 spec): the image's `/etc/passwd` has only uid 1000 and the bundled Postgres's `initdb` fails for any uid without an entry (needs `nss_wrapper`); a privileged container is invisible in `CapEff` when not root (read `CapBnd`); `pgbundle`'s `-c max_connections=300` beats `postgresql.auto.conf`, and the home alone uses about 130 connections. btrfs and ZFS give `stat` an anonymous device number (find the disk through `/proc/self/mountinfo` and `slaves/`); ZFS's ARC is not in `MemAvailable` (`arcstats` has it); setup's memory floor reads `sysinfo`, which ignores the cgroup limit. Beside the host's avahi-daemon a container's responder needs `SO_REUSEADDR` (`SO_REUSEPORT` shares only within one uid). The rehearsal covers the Mac layout, not the Docker image. Quiet hours (59.02) give a heavy job back as `JobDeferred` (`paused`, `not_before` at the window); the claim query takes a `paused` job whose `not_before` is NULL, so Run now only clears `not_before`, and a manual pause is told by `pause_requested`. `[postgres] settings` goes last among the `-c` arguments and wins. (#1087, #1096)
+- The Arabic wiki store keeps a summary of each story, so a change to a story's As built section regenerates the wiki JSON with no new Arabic text; `--check` says which. Run `trail check` on a checkout of its own: a worktree whose checkout is switched mid-run checks the wrong tree. (#1096)
 - Machine facts (`internal/hostinfo`) are read from files under a root, so fixture trees drive every test: the cgroup v2/v1 memory limit and CPU quota, `MemAvailable` plus the ZFS ARC above `c_min`, the data disk through dm and md slaves to `queue/rotational`. The tier follows the memory limit alone (`TierFor`, `DefaultsFor`); the supervisor's STT plan counts transcribe-only workers beside the main worker, so a tier's pipeline-worker cap is `Workers` minus one. A route under `/api/system/` is reachable with a temporary password (`AllowedWhilePasswordChange`), so supervisor-backed settings go under `/api/server/` (`/api/server/machine`). (#1089)
 
 **Apps and UI tests**
@@ -407,7 +408,7 @@ built_from: v0.3.116
 - maktaba.dev: `rewriteHref` joins an absolute `/path` onto the source folder, so generated pages link in-site pages by full URL. It builds with npm, not pnpm; a new guide is one line in `GUIDES` and one in `src/site.test.ts`. `media.info` is gated in `server.go`'s `capabilityOf`, not in `capabilities.toml`. (#704, #723)
 - Screenshots without a stack: the desktop Player through `runDesktopComposeUiTest` plus `captureToImage` (wrap `Shell` in the window's `Surface`); the web through vite and playwright-core with `/api/*` from a route table and `mkt:usage:consent` set first; Apple TV shots are in CI's `tv-ui-tests` artifact. The devportal lazy-loads images, so scroll each into view to check it. (#703)
 - Plugins: stages load at the pipeline worker's start, so a changed installed set needs the supervisor's `Restart`; the pipeline needs `MAKTABA_SUPERVISOR_TOKEN_FILE`; a deep data folder pushes `<data>/run/*.sock` past macOS's 104-byte `sun_path`; Wasmtime under the hardened runtime needs `allow-jit` and `allow-unsigned-executable-memory`; a new catalog group needs its place in the web's `GROUP_ORDER`. (#707)
-- The affected-tests gate maps from main's coverage: tests in a new file count for an old source only when the coverage map names its package, schema-revision constants still need a `No-Test-Change` trailer, and shared JSON tables map to no test (add a direct test beside the row); `tools/ci/tests` needs PyYAML. On the Mac with under 20 GB free some cmd/maktaba-server tests fail on main too; `make compat-prev` needs `psql` on PATH. Put a module's new tests in the existing files the gate maps to it, not a new file. (#707, #731, #1080)
+- The affected-tests gate maps from main's coverage: tests in a new file count for an old source only when the coverage map names its package, schema-revision constants still need a `No-Test-Change` trailer, and shared JSON tables map to no test (add a direct test beside the row); `tools/ci/tests` needs PyYAML. On the Mac with under 20 GB free some cmd/maktaba-server tests fail on main too; `make compat-prev` needs `psql` on PATH. Put a module's new tests in the existing files the gate maps to it, not a new file; otherwise the gate asks for a mapped test or a `No-Test-Change` trailer naming the new file. (#707, #731, #1080, #1096)
 - `@maktaba/flowchart` is the SDK's source reached by a tsconfig and Vite alias, so every build copying `web/` alone needs it too (`web/Dockerfile`, `cloud/Dockerfile`'s web stage, the dev compose mounts); only the e2e image build shows it. Node 22 imports an erasable-syntax TypeScript file with `--experimental-strip-types`, so the portal draws with the SDK's source. The web draws charts with React's SVG elements from a geometry model, so no plugin string is set as markup. (#763)
 - The home's auth gate must list the machine routes (`/internal/cluster/plugins/`, `/internal/cluster/plugin-api/`) beside the delegation middleware, or a signed machine gets 401. A CPU budget on a shared CI runner is timed as the process's own CPU time (getrusage, `process.cpuUsage`), not wall clock. A stopped `make compat-prev` can leave `api/internal/compatprobe`; it is now git-ignored and the script cleans up on INT and TERM. The first-party parity self-test fails locally on main with a dev API binary; CI is its judge. (#767)
 - Repository rules bind every new workflow: each tag workflow takes a `tag` input, each artifact download is a three-attempt chain naming its artifact, each file sits under a ci-paths filter (`ci_paths.py guard`). A D1 `CHECK` on a status cannot widen without a table rebuild: add a column (`flow_state`). The shared flow checker's lookup is synchronous: run it, load what it asked for, run again until it asks for nothing new. (#770)
@@ -503,7 +504,7 @@ built_from: v0.3.116
 - Plugin event emits: the `unavailable` and `home_unreachable` refusals are logged but have no test. (#1048)
 - Parity tests still over the 5 s soft cap on CI: classify's waves 1 and 4, repair, the N16 self-test and livetv staging; core-media's now fits. (#1049, #1068)
 - No sweep was made of other process-wide state the moved first-party stages may read; the guard covers only `to_local`. (#1062)
-- Epic 59 (Maktaba on a NAS, spec only; replaces Epic 25's NAS plan): the build, Phase 1 first (59.01–59.04, 59.15); facts each story checks on real devices (DSM kernels and Landlock, DSM's responder, J4125 HEVC decode on DSM 7.2.2+, Avahi on TrueNAS 25.04+); 59.04's hardware tiers are in, and 59.02, 59.05 (transcode limits), 59.06 (the speech model) and 59.07 (kernel facts) build on `DefaultsFor` and `DataDiskOf`; a `--memory=4g` container reaching Light is 59.15's container rehearsal. (#1087, #1089)
+- Epic 59 (Maktaba on a NAS, spec only; replaces Epic 25's NAS plan): the build, Phase 1 first (59.01–59.04, 59.15); facts each story checks on real devices (DSM kernels and Landlock, DSM's responder, J4125 HEVC decode on DSM 7.2.2+, Avahi on TrueNAS 25.04+); 59.04's hardware tiers and 59.02 (data folder, tuned Postgres, quiet hours) are in, and 59.05 (transcode limits), 59.06 (the speech model) and 59.07 (kernel facts) build on `DefaultsFor` and `DataDiskOf`; a `--memory=4g` container reaching Light, with Postgres's PSS under 512 MB at 20,000 items (T09), is 59.15's container rehearsal. (#1087, #1089, #1096)
 - N16: CPU p95 over 11 runs is their maximum, and a rare job costing about 4x CPU in both processes came within 0.8 ms of failing `topic_assign`; the plugin API's ~0.58 ms of CPU a call is the bulk of the per-call cost. (#1059)
 
 ## Missing events
@@ -520,7 +521,7 @@ built_from: v0.3.116
 | #1090 | 2026-11-10 | Story 59.01: the server image runs as any uid:gid, never root, first start offline |
 | #1091 | 2026-11-10 | Epic 59 story 59.15: nas-shapes, the server image in NAS shapes (phase 1) |
 | #1094 | 2026-11-10 | fix(pgbundle): bundled Postgres starts again after a power cut or docker kill |
-| #1096 | 2026-11-10 | Epic 59 story 59.02: the data folder and the database on a NAS, quiet hours |
+| #1100 | 2026-11-10 | ci(nas): the 59.01 cells and restart-after-kill run (story 59.15) |
 
 ## Index
 
@@ -1095,4 +1096,4 @@ built_from: v0.3.116
 | 1080-fallback-counts | 2026-11-09 | pr | The in-process fallbacks are counted per machine and shown to admins (story 54.43) |
 | 1087-epic59-nas | 2026-11-10 | decision | Epic 59 spec: Maktaba on a NAS (Synology, TrueNAS, Unraid and plain Docker) |
 | 1089-epic59-hardware-tiers | 2026-11-10 | pr | Epic 59 story 59.04: hardware detection and tiers, Settings → This machine |
-
+| 1096-epic59-data-and-database | 2026-11-10 | pr | Epic 59 story 59.02: the data folder and the database on a NAS, quiet hours |
