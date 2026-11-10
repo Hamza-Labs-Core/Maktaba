@@ -42,6 +42,7 @@ COPY shared/components/go.mod ./shared/components/
 COPY shared/errrpt/go/go.mod  ./shared/errrpt/go/
 COPY shared/go/componentpack/go.mod ./shared/go/componentpack/
 COPY shared/go/layout/go.mod ./shared/go/layout/
+COPY shared/go/mediaaccess/go.mod ./shared/go/mediaaccess/
 COPY shared/go/pagetheme/go.mod ./shared/go/pagetheme/
 COPY shared/go/ports/go.mod ./shared/go/ports/
 COPY shared/go/releaseverify/go.mod ./shared/go/releaseverify/

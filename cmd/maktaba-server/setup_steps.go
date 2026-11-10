@@ -16,6 +16,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/mediaaccess"
 )
 
 // setupPending is what the setup steps collected, until `finish` applies it
@@ -382,6 +383,30 @@ type rootCheck struct {
 	Path     string `json:"path"`
 	Exists   bool   `json:"exists"`
 	Readable bool   `json:"readable"`
+	// story 59.03: the media-permission check of a readable root (rw or ro, partial with
+	// examples, whether its mount is read-only) and the fix in the platform's words
+	Access        mediaaccess.Access `json:"access,omitempty"`
+	Partial       bool               `json:"partial"`
+	Unreadable    []string           `json:"unreadable,omitempty"`
+	MountReadOnly bool               `json:"mount_read_only"`
+	Fix           *mediaaccess.Fix   `json:"fix"`
+}
+
+// nasPlatform is the NAS platform the fix text speaks of (story 59.04's detection).
+var nasPlatform = func() string { return os.Getenv("MAKTABA_PLATFORM") }
+
+// checkRootAccess fills c with root's media-permission check: setup is one of the times
+// the check runs (it writes a probe, so never at every start).
+func checkRootAccess(c *rootCheck, who mediaaccess.RunsAs) {
+	res := mediaaccess.Check(c.Path)
+	c.Access, c.Partial, c.Unreadable, c.MountReadOnly = res.Access, res.Partial, res.Unreadable, res.MountReadOnly
+	if res.Access == mediaaccess.None {
+		c.Readable = false
+	}
+	if res.Access != mediaaccess.ReadWrite || res.Partial {
+		f := mediaaccess.FixFor(nasPlatform(), c.Path, who)
+		c.Fix = &f
+	}
 }
 
 // localPath is a path of this machine, whole: a drive letter's folder (a bare
@@ -432,6 +457,7 @@ func stepLibraries(s *setupRun, in json.RawMessage) (any, error) {
 	}
 	var roots []string
 	var checks []rootCheck
+	who := mediaaccess.CurrentUser()
 	for _, r := range req.Roots {
 		if strings.TrimSpace(r) == "" {
 			continue
@@ -453,13 +479,17 @@ func stepLibraries(s *setupRun, in json.RawMessage) (any, error) {
 		if c.Exists {
 			_, err := os.ReadDir(clean)
 			c.Readable = err == nil
+			if c.Readable {
+				checkRootAccess(&c, who)
+			}
 		}
 		checks = append(checks, c)
 		switch {
 		case !c.Exists:
 			return nil, failStep("root_missing", "roots", "%s is not a folder on this machine.", clean).with("path", clean)
 		case !c.Readable:
-			return nil, failStep("root_unreadable", "roots", "Maktaba cannot read %s.", clean).with("path", clean)
+			return nil, failStep("root_unreadable", "roots", "Maktaba cannot read %s.", clean).
+				with("path", clean, "uid", who.UID, "gid", who.GID)
 		}
 		roots = append(roots, clean)
 	}
@@ -501,5 +531,6 @@ func stepLibraries(s *setupRun, in json.RawMessage) (any, error) {
 	}); err != nil {
 		return nil, err
 	}
-	return map[string]any{"roots": checks}, nil
+	// a read-only root is supported (story 59.03): the step shows it, with who Maktaba runs as
+	return map[string]any{"roots": checks, "runs_as": who, "platform": nasPlatform()}, nil
 }

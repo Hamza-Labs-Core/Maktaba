@@ -49,6 +49,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/session"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slots"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/subtitles"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/transcripts"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/version"
@@ -607,6 +608,7 @@ func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backe
 		Layout:      layout,
 		Files:       handlers.OSFileOpener{},
 		Transcripts: transcripts,
+		Subtitles:   storedSubtitles(pool),
 		Now:         time.Now,
 		ExtraMounts: extraMounts,
 	}), nil
@@ -673,4 +675,12 @@ func buildProbeStores(ctx context.Context, logger *slog.Logger, lazy bool) (prob
 	logger.Info("probe: Postgres-backed media_info reads wired", "event", "probe_pg_backend")
 	streamer := transcripts.NewPGStreamer(pool)
 	return backend, streamer, pool, up, func() { pool.Close() }
+}
+
+// storedSubtitles reads the subtitles kept in the database (story 59.03); none without one.
+func storedSubtitles(pool *pgxpool.Pool) handlers.StoredSubtitles {
+	if pool == nil {
+		return nil
+	}
+	return subtitles.NewPGStore(pool)
 }

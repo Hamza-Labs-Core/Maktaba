@@ -1249,10 +1249,19 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
     from ..thumbnail.generator import thumbnail_dir_for
 
     roots: set[str] = set()
+    # story 59.03: the write grants resolve per library: a library read-only for Maktaba
+    # (libraries.access ro or none) is in no write area (library.write, library.subtitles,
+    # trash); a stage that writes it is refused before it runs (engine/library_access.py)
+    writable: set[str] = set()
     try:
-        rows = await db.fetch("SELECT roots FROM libraries")
-    except Exception:  # noqa: BLE001 - a database without libraries: no library area
-        rows = []
+        rows = await db.fetch("SELECT roots, access FROM libraries")
+    except Exception:  # noqa: BLE001 - an older schema: every library writable, as before
+        try:
+            rows = [
+                {**dict(r), "access": None} for r in await db.fetch("SELECT roots FROM libraries")
+            ]
+        except Exception:  # noqa: BLE001 - a database without libraries: no library area
+            rows = []
     for r in rows:
         raw = r["roots"]
         if isinstance(raw, str):
@@ -1262,16 +1271,21 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
                 raw = [raw]
         for root in raw or ():
             local = path_map.to_local(str(root)) if path_map is not None else str(root)
-            roots.add(os.path.realpath(local) if os.path.isabs(local) else local)
+            real = os.path.realpath(local) if os.path.isabs(local) else local
+            roots.add(real)
+            if r["access"] not in ("ro", "none"):
+                writable.add(real)
     # the cache the thumbnail stages write (maktaba_pipeline.thumbnail.small.ROOT)
     thumbs = str(thumbnail_dir_for("x", root=small.ROOT).parent)
     lib = ";".join(sorted(roots))
-    # library.subtitles is the library's folders, written only by subtitle names
+    lib_write = ";".join(sorted(writable))
+    # library.subtitles is the writable libraries' folders, written only by subtitle names
     return {
         "library": lib,
-        "library.subtitles": lib,
-        # each root's trash (library_mgmt.trash.TRASH_DIR)
-        "trash": ";".join(f"{r}/.maktaba/trash" for r in sorted(roots)),
+        "library.write": lib_write,
+        "library.subtitles": lib_write,
+        # each writable root's trash (library_mgmt.trash.TRASH_DIR)
+        "trash": ";".join(f"{r}/.maktaba/trash" for r in sorted(writable)),
         "data.thumbnails": thumbs,
         "models": ";".join(_model_folders()),
         # the YouTube downloads' work folder (MAKTABA_YT_WORK, else ~/.maktaba/work/yt) and

@@ -11,6 +11,14 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../../../lib/api";
 import { useI18n } from "../../../lib/i18n";
 import { libraryAdminApi, problemMessage, type ManagedLibrary } from "../../../lib/libraryAdminApi";
+import {
+  accessKey,
+  accessTone,
+  fixText,
+  libraryAccessApi,
+  libraryAccessErrorText,
+  type LibraryAccessReport,
+} from "../../../lib/libraryAccess";
 import { forgetAnswers, VIDEO_ANSWERS } from "../../../lib/pageCache";
 import type { FailureItem, OfflineSummary, StageInfo } from "../../../lib/queueApi";
 import { useFmt } from "../../../components/queue/format";
@@ -21,6 +29,7 @@ import { StageChart } from "../../../components/libdash/StageChart";
 import { ringState } from "../../../components/libdash/LibraryTile";
 import type { LibraryHealth } from "../../../components/libdash/health";
 import type { Activity } from "../../../components/libdash/useLibraryBoard";
+import { JobPermissionNote } from "../../../components/LibraryAccessNotes";
 
 export function Section({
   id,
@@ -222,6 +231,7 @@ export function QueueSection({
   failures,
   onOffline,
   onRequeue,
+  readOnly,
 }: {
   h: LibraryHealth | null;
   /** the read of the library rows (h is null until it answers) */
@@ -232,6 +242,8 @@ export function QueueSection({
   failures: { items: FailureItem[]; total: number } | null;
   onOffline: (a: OfflineAction) => void;
   onRequeue: () => void;
+  /** why the library actions are off: it is read-only for Maktaba (story 59.03) */
+  readOnly?: string;
 }) {
   const { t, n } = useI18n();
   const fmt = useFmt();
@@ -248,13 +260,21 @@ export function QueueSection({
             {t("queue.libs.requeue")}
           </Button>
           {OFFLINE_ACTIONS.map((a) => (
-            <Button key={a} size="sm" variant="secondary" onClick={() => onOffline(a)}>
+            <Button
+              key={a}
+              size="sm"
+              variant="secondary"
+              disabled={!!readOnly}
+              title={readOnly}
+              onClick={() => onOffline(a)}
+            >
               {t(`queue.offline.action.${a}`)}
             </Button>
           ))}
         </>
       }
     >
+      <ReadOnlyNote reason={readOnly} />
       {h === null ? (
         <QueueWait status={status} onRetry={onRetry} />
       ) : (
@@ -329,6 +349,7 @@ export function QueueSection({
                     <span className="mkt-lp-fails__msg" dir="auto">
                       {f.message}
                     </span>
+                    <JobPermissionNote item={f} />
                   </li>
                 ))}
               </ul>
@@ -368,11 +389,13 @@ export function ConvertSection({
   summary,
   onSaved,
   onConvert,
+  readOnly,
 }: {
   lib: ManagedLibrary;
   summary: OfflineSummary | null;
   onSaved: () => void;
   onConvert: () => void;
+  readOnly?: string;
 }) {
   const { t, n } = useI18n();
   const toast = useToast();
@@ -404,11 +427,18 @@ export function ConvertSection({
       title={t("libpage.convert.title")}
       desc={t("libpage.convert.desc")}
       actions={
-        <Button size="sm" variant="secondary" onClick={onConvert}>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={!!readOnly}
+          title={readOnly}
+          onClick={onConvert}
+        >
           {t("queue.offline.action.convert")}
         </Button>
       }
     >
+      <ReadOnlyNote reason={readOnly} />
       <dl className="mkt-lp-facts">
         <Fact
           label={t("libpage.convert.left")}
@@ -451,10 +481,12 @@ export function DuplicatesSection({
   libId,
   summary,
   onScan,
+  readOnly,
 }: {
   libId: string;
   summary: OfflineSummary | null;
   onScan: () => void;
+  readOnly?: string;
 }) {
   const { t, n } = useI18n();
   const d = summary?.duplicates ?? null;
@@ -464,11 +496,18 @@ export function DuplicatesSection({
       title={t("libpage.dups.title")}
       desc={t("libpage.dups.desc")}
       actions={
-        <Button size="sm" variant="secondary" onClick={onScan}>
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={!!readOnly}
+          title={readOnly}
+          onClick={onScan}
+        >
           {t("queue.offline.action.dedup")}
         </Button>
       }
     >
+      <ReadOnlyNote reason={readOnly} />
       {d === null ? (
         <p className="mkt-muted">{t("libdash.loading")}</p>
       ) : d === 0 ? (
@@ -662,6 +701,154 @@ export function AccessSection({ lib }: { lib: ManagedLibrary }) {
             </Button>
           </div>
         </form>
+      )}
+    </Section>
+  );
+}
+
+/** Why a section's actions are off: the library is read-only for Maktaba, and the fix. */
+export function ReadOnlyNote({ reason }: { reason?: string }) {
+  const { t } = useI18n();
+  if (!reason) return null;
+  return (
+    <p className="mkt-q-banner mkt-q-banner--warn mkt-lp-readonly" role="note">
+      {reason} <a href="#folders">{t("libpage.nav.folders")}</a>
+    </p>
+  );
+}
+
+/**
+ * What Maktaba itself may do in the library's folders (story 59.03): the state,
+ * the user it runs as, per folder the fix in the platform's terms, the files it
+ * could not read and the writes that failed, and Check access.
+ */
+export function FolderAccessSection({
+  report,
+  failed,
+  onChecked,
+}: {
+  /** null while it loads */
+  report: LibraryAccessReport | null;
+  /** the read failed (an older API, or the home is unreachable) */
+  failed: boolean;
+  onChecked: (r: LibraryAccessReport) => void;
+}) {
+  const { t, formatDate } = useI18n();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const check = async () => {
+    if (!report) return;
+    setBusy(true);
+    try {
+      const r = await libraryAccessApi.check(report.library_id);
+      toast.show({ tone: "success", message: t("libpage.folders.checked") });
+      onChecked(r);
+    } catch (e) {
+      toast.show({
+        tone: "error",
+        message: libraryAccessErrorText(e, t) ?? problemMessage(e, t("common.error")),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const roots = Array.isArray(report?.roots) ? report.roots : [];
+  const failures = Array.isArray(report?.write_failures) ? report.write_failures : [];
+  return (
+    <Section
+      id="folders"
+      title={t("libpage.folders.title")}
+      desc={t("libpage.folders.desc")}
+      actions={
+        <Button size="sm" variant="secondary" loading={busy} disabled={!report} onClick={check}>
+          {t("library.access.check")}
+        </Button>
+      }
+    >
+      {report === null ? (
+        failed ? (
+          <p className="mkt-q-error">{t("common.error")}</p>
+        ) : (
+          <p className="mkt-muted">{t("libdash.loading")}</p>
+        )
+      ) : (
+        <>
+          <ul className="mkt-lp-health">
+            <li>
+              <Badge tone={accessTone(report.access, report.partial)}>
+                {t(accessKey(report.access, report.partial))}
+              </Badge>
+            </li>
+            {report.partial && report.access === "ro" && (
+              <li>
+                <Badge tone="warn">{t("library.access.partial")}</Badge>
+              </li>
+            )}
+            <li className="mkt-muted">
+              {report.checked_at
+                ? t("libpage.folders.checkedAt", { when: formatDate(report.checked_at) })
+                : t("libpage.folders.never")}
+            </li>
+          </ul>
+          {report.runs_as && (
+            <p className="mkt-lp-runsas">
+              {t("library.access.runs_as", {
+                // ids as the system writes them (no grouping, Latin digits)
+                uid: String(report.runs_as.uid),
+                gid: String(report.runs_as.gid),
+              })}
+            </p>
+          )}
+          <ul className="mkt-lp-roots">
+            {roots.map((r) => {
+              const fix = fixText(r.fix, t);
+              const unreadable = Array.isArray(r.unreadable) ? r.unreadable : [];
+              return (
+                <li key={r.path}>
+                  <bdi dir="ltr" className="mkt-libadmin__path">
+                    {r.path}
+                  </bdi>{" "}
+                  <Badge tone={accessTone(r.access, r.partial)}>
+                    {t(accessKey(r.access, r.partial))}
+                  </Badge>
+                  {r.partial && r.access === "ro" && (
+                    <>
+                      {" "}
+                      <Badge tone="warn">{t("library.access.partial")}</Badge>
+                    </>
+                  )}
+                  {r.mount_read_only && <p className="mkt-muted">{t("library.access.mount_ro")}</p>}
+                  {fix && <p className="mkt-lp-fix">{fix}</p>}
+                  {unreadable.length > 0 && (
+                    <>
+                      <p className="mkt-muted">{t("libpage.folders.unreadable")}</p>
+                      <ul className="mkt-lp-paths">
+                        {unreadable.map((u) => (
+                          <li key={u}>
+                            <bdi dir="ltr">{u}</bdi>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          {failures.length > 0 && (
+            <>
+              <h3 className="mkt-lp-sub">{t("libpage.folders.writeFailures")}</h3>
+              <ul className="mkt-lp-paths">
+                {failures.map((f) => (
+                  <li key={`${f.path}@${f.at}`}>
+                    <bdi dir="ltr">{f.path}</bdi>{" "}
+                    <span className="mkt-muted">{formatDate(f.at)}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </>
       )}
     </Section>
   );

@@ -1338,6 +1338,91 @@ describe("SetupWizard", () => {
   });
 });
 
+// Story 59.03: the libraries step's answer says what Maktaba may do in each folder.
+describe("SetupWizard, folder access (story 59.03)", () => {
+  beforeEach(() => localStorage.clear());
+  const answer = {
+    roots: [
+      {
+        path: "/mnt/tank/media",
+        access: "rw",
+        partial: false,
+        unreadable: [],
+        mount_read_only: false,
+        fix: null,
+      },
+      {
+        path: "/mnt/tank/originals",
+        access: "ro",
+        partial: false,
+        unreadable: [],
+        mount_read_only: true,
+        fix: {
+          key: "library.fix.truenas",
+          params: {
+            dataset: "tank/originals",
+            uid: "568",
+            share: "",
+            name: "",
+            path: "/mnt/tank/originals",
+          },
+        },
+      },
+    ],
+    runs_as: { uid: 568, gid: 568, name: "apps" },
+    platform: "truenas",
+  };
+  const submit = async () => {
+    await userEvent.type(
+      screen.getByLabelText("Folders (one per line)"),
+      "/mnt/tank/media\n/mnt/tank/originals"
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  };
+
+  it("shows each folder's state, the user and the fix before going on", async () => {
+    renderWizard(fakeApi({ libraries: vi.fn(() => answer) }), "libraries");
+    await submit();
+    expect(await screen.findByText("Maktaba runs as user 568, group 568")).toBeInTheDocument();
+    expect(screen.getByText("Read and write")).toBeInTheDocument();
+    expect(screen.getByText("Read only")).toBeInTheDocument();
+    expect(
+      screen.getByText("The folder is mounted read-only in the container.")
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "In Datasets → tank/originals → Permissions, add an ACL entry for user 568 with Modify (or Read)."
+      )
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByRole("heading", { name: "Choose what to run" })).toBeInTheDocument();
+  });
+
+  it("every folder read and write goes straight on", async () => {
+    const rw = { ...answer, roots: [answer.roots[0]] };
+    renderWizard(fakeApi({ libraries: vi.fn(() => rw) }), "libraries");
+    await submit();
+    expect(await screen.findByRole("heading", { name: "Choose what to run" })).toBeInTheDocument();
+  });
+
+  it("in Arabic", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    renderWizard(fakeApi({ libraries: vi.fn(() => answer) }), "libraries");
+    await userEvent.type(
+      screen.getByRole("textbox", { name: /المجلدات|مجلد/ }),
+      "/mnt/tank/originals"
+    );
+    await userEvent.click(screen.getByRole("button", { name: "التالي" }));
+    expect(
+      await screen.findByText("يعمل Maktaba بصفته المستخدم 568 والمجموعة 568")
+    ).toBeInTheDocument();
+    expect(screen.getByText("قراءة فقط")).toBeInTheDocument();
+    expect(
+      screen.getByText(/من مجموعات البيانات ← tank\/originals ← الأذونات/)
+    ).toBeInTheDocument();
+  });
+});
+
 describe("parsePathMap", () => {
   it("reads 'from => to' lines and rejects anything else", () => {
     expect(parsePathMap("")).toEqual([]);

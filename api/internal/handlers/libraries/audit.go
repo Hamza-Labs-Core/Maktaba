@@ -42,6 +42,8 @@ const (
 	// epic 45: the management page's merge and empty-trash (API-only events)
 	EventLibraryMerged = "library-merged"
 	EventTrashEmptied  = "trash-emptied"
+	// epic 59 story 59.03: an admin's Check access
+	EventAccessChecked = "access-checked"
 )
 
 // AuditPayloadMaxBytes mirrors the Python AC EC: payloads larger than

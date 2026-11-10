@@ -31,6 +31,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/search"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libaccess"
 )
 
 // SourceResolver resolves a pasted channel or playlist URL
@@ -302,6 +303,10 @@ func (h *Handler) AddSource(w http.ResponseWriter, r *http.Request) {
 	opts, e := req.validate(true)
 	if e != nil {
 		httperror.Write(w, r, e)
+		return
+	}
+	// story 59.03: a source downloads into the library
+	if !libaccess.Guard(w, r, h.DB, id) {
 		return
 	}
 	ctx := r.Context()

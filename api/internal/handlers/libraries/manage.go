@@ -83,6 +83,11 @@ type ManagedLibrary struct {
 	YouTube LibraryYouTube `json:"youtube"`
 	// CollectionMode is how the library grid shows collections (story 56.08).
 	CollectionMode string `json:"collection_mode,omitempty"`
+	// Access, as on Library (story 59.03): the admin pages leave writing actions off
+	// on a read-only library.
+	Access          *string    `json:"access"`
+	AccessCheckedAt *time.Time `json:"access_checked_at"`
+	AccessPartial   bool       `json:"access_partial"`
 }
 
 // ConflictMember is a library of a conflict group.
@@ -170,6 +175,7 @@ func (h *Handler) Manage(w http.ResponseWriter, r *http.Request) {
 			ID: l.ID, Name: l.Name, Settings: l.Settings, CreatedAt: l.CreatedAt, UpdatedAt: l.UpdatedAt,
 			Roots: []ManagedRoot{}, Counts: counts[l.ID], Conflicts: []RootConflict{},
 			CollectionMode: l.CollectionMode,
+			Access:         l.Access, AccessCheckedAt: l.AccessCheckedAt, AccessPartial: l.AccessPartial,
 		}
 		for _, root := range l.Roots {
 			mr := ManagedRoot{Path: root, LocalPath: libpaths.ToLocal(root), Reachable: true}
@@ -194,26 +200,17 @@ func (h *Handler) Manage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) allLibraries(ctx context.Context) ([]Library, error) {
-	rows, err := h.DB.QueryContext(ctx, `
-		SELECT id, name, roots, settings, created_at, updated_at, collection_mode FROM libraries ORDER BY name, id
-	`)
+	rows, err := h.DB.QueryContext(ctx, `SELECT `+libraryCols+` FROM libraries ORDER BY name, id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []Library
 	for rows.Next() {
-		var l Library
-		var roots stringArray
-		var settings []byte
-		if err := rows.Scan(&l.ID, &l.Name, &roots, &settings, &l.CreatedAt, &l.UpdatedAt, &l.CollectionMode); err != nil {
+		l, err := scanLibrary(rows)
+		if err != nil {
 			return nil, err
 		}
-		l.Roots = roots
-		if len(settings) == 0 {
-			settings = []byte(`{}`)
-		}
-		l.Settings = settings
 		out = append(out, l)
 	}
 	return out, rows.Err()

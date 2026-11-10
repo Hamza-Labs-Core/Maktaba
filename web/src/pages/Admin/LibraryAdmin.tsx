@@ -15,6 +15,12 @@ import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { libraryAdminApi, problemMessage, type ManageResponse } from "../../lib/libraryAdminApi";
 import { forgetAnswers, VIDEO_ANSWERS } from "../../lib/pageCache";
 import { queueApi } from "../../lib/queueApi";
+import {
+  fixText,
+  isReadOnly,
+  libraryAccessApi,
+  type LibraryAccessReport,
+} from "../../lib/libraryAccess";
 import { useTitledStages } from "../../lib/stageWords";
 import type { FailureItem, LibraryQueueRow, OfflineSummary, StageInfo } from "../../lib/queueApi";
 import { AdminGate } from "../../components/AdminGate";
@@ -43,6 +49,7 @@ import {
   AccessSection,
   ConvertSection,
   DuplicatesSection,
+  FolderAccessSection,
   OverviewSection,
   QueueSection,
   type QueueReadState,
@@ -63,6 +70,7 @@ export const LIBRARY_SECTIONS = [
   "duplicates",
   "trash",
   "settings",
+  "folders",
   "access",
 ] as const;
 
@@ -97,6 +105,17 @@ function LibraryAdminInner() {
   const [series, setSeries] = useState<number | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [offline, setOffline] = useState<OfflineActionTarget | null>(null);
+  // story 59.03: what Maktaba itself may do in the library's folders
+  const [access, setAccess] = useState<LibraryAccessReport | null>(null);
+  const [accessFailed, setAccessFailed] = useState(false);
+
+  const loadAccess = useCallback(() => {
+    setAccessFailed(false);
+    libraryAccessApi
+      .get(id)
+      .then((r) => setAccess(r ?? null))
+      .catch(() => setAccessFailed(true));
+  }, [id]);
 
   const loadManage = useCallback(() => {
     libraryAdminApi
@@ -160,9 +179,18 @@ function LibraryAdminInner() {
   useEffect(() => {
     loadManage();
     loadQueues();
-  }, [loadManage, loadQueues]);
+    loadAccess();
+  }, [loadManage, loadQueues, loadAccess]);
 
   const lib = manage?.items.find((l) => l.id === id) ?? null;
+  // a library read-only for Maktaba (ro or none): no action that writes in its
+  // folders, each with the reason and the fix (the API answers 409 library_read_only)
+  const readOnly = useMemo(() => {
+    const state = access ? access.access : lib?.access;
+    if (!isReadOnly(state)) return undefined;
+    const fix = (access?.roots ?? []).map((r) => fixText(r.fix, t)).find(Boolean) ?? "";
+    return fix ? `${t("library.read_only")}. ${fix}` : t("library.read_only");
+  }, [access, lib?.access, t]);
   const h = useMemo(() => (row ? libraryHealth(row, summary ?? undefined) : null), [row, summary]);
 
   // open at the #section the address names, once the page has drawn it
@@ -275,9 +303,14 @@ function LibraryAdminInner() {
         failures={failures}
         onOffline={runOffline}
         onRequeue={() => setDialog("requeue")}
+        readOnly={readOnly}
       />
       <Section id="youtube" title={t("libpage.youtube.title")} desc={t("libpage.youtube.desc")}>
-        <YouTubeSourcesPanel library={{ id: lib.id, name: lib.name }} onChanged={loadQueues} />
+        <YouTubeSourcesPanel
+          library={{ id: lib.id, name: lib.name }}
+          onChanged={loadQueues}
+          readOnly={readOnly}
+        />
       </Section>
       {/* Epic 52: the library's word review settings */}
       <WordReviewSettings libraryId={lib.id} />
@@ -286,8 +319,14 @@ function LibraryAdminInner() {
         summary={summary}
         onSaved={loadManage}
         onConvert={() => runOffline("convert")}
+        readOnly={readOnly}
       />
-      <DuplicatesSection libId={lib.id} summary={summary} onScan={() => runOffline("dedup")} />
+      <DuplicatesSection
+        libId={lib.id}
+        summary={summary}
+        onScan={() => runOffline("dedup")}
+        readOnly={readOnly}
+      />
       <TrashSection lib={lib} summary={summary} onEmptyMissing={() => setDialog("trash")} />
       <SettingsSection
         lib={lib}
@@ -295,6 +334,15 @@ function LibraryAdminInner() {
         onEdit={() => setDialog("edit")}
         onMerge={() => setDialog("merge")}
         onRemove={() => setDialog("remove")}
+      />
+      <FolderAccessSection
+        report={access}
+        failed={accessFailed}
+        onChecked={(r) => {
+          setAccess(r);
+          forgetAnswers("libraries", "admin:libraries");
+          loadManage();
+        }}
       />
       <AccessSection lib={lib} />
 
