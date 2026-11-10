@@ -14,6 +14,17 @@ build fails when the two differ.
 
 ### Changed
 
+- **A home in a container says how isolated its plugins are, and asks before running
+  third-party plugins with less (story 59.07).** Each machine computes its plugin isolation
+  level at start: Full with Landlock and user namespaces, Container without them (most NAS
+  kernels, Docker's default seccomp profile). Settings → This machine and the Plugins page say
+  which, in one line. On the Container level a third-party plugin can be installed and turned
+  on but stays off, with the reason, until an admin turns on **Allow plugins with
+  container-only isolation on this home** (Settings → Plugins; the password typed again,
+  written to the audit log; `PUT /api/plugins/isolation`). Maktaba's own plugins keep running,
+  reported partial. The plugin host's required layers are unchanged. A dedup or convert runner
+  started before a library's trash folder existed may now move a file into it.
+
 - **On a NAS, heavy work waits for quiet hours and Postgres is tuned to the machine (story
   59.02).** On the Light and Standard tiers a library's first scan, a transcription backlog,
   convert and duplicates, and bulk thumbnail sprites wait for 01:00–06:00, so the NAS stays

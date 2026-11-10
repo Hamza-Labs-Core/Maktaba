@@ -57,6 +57,25 @@ If a Linux kernel lacks some layers (no Landlock, no user namespaces), the host 
 if seccomp is in force, and reports *Degraded* with `sandbox_partial`. Without seccomp on
 Linux, or without the Seatbelt profile or AppContainer, it does not run.
 
+### Isolation levels (a home in a container, on a NAS)
+
+Each machine computes its **isolation level** at start, from the kernel's Landlock and
+user-namespace support and from what the host reports, and shows it in Settings, This
+machine, and on the Plugins page:
+
+| Level | When | Maktaba's own runners | Third-party plugins |
+|---|---|---|---|
+| **Full** | Landlock and user namespaces (macOS and Windows always) | as above | run |
+| **Container** | no Landlock (a NAS kernel before 5.13) or no user namespaces (Docker's default seccomp profile) | run, reported `sandbox_partial` | wait with `isolation_held` until an admin turns on **Allow plugins with container-only isolation on this home** |
+| **None** | a privileged container, or one with the Docker socket | the container refuses to start | |
+
+The host's required layers do not change with the level: no-new-privs, resource limits, the
+WebAssembly sandbox and its `AF_UNIX`-only seccomp filter, installed on top of Docker's. Only
+the optional ones (namespaces, Landlock) are missing on Container. The switch is per home and
+admin-only: turning it on asks for the admin's password again and is written to the audit log
+(`GET`, `PUT /api/plugins/isolation`). Nothing changes for your plugin's code: on a
+Container-level home it either waits or runs with the same API.
+
 ## Maktaba's own runners
 
 Maktaba's own stages run as first-party plugins in `maktaba-plugin-runner`, one Python

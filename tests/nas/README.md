@@ -63,6 +63,7 @@ runs every cell, a change to `web/` alone runs nothing.
 | `tier_light`, `tier_standard` | `GET /api/server/machine` (59.04) reads the container's memory limit as Docker set it, and the tier and its defaults are that tier's |
 | `quiet_hold` | outside the cell's quiet hours a new library's first scan waits: the scan queue (`GET /api/queues`) says `quiet_hours` and when the window opens, and no clip is found; the admin's `POST /api/queues/scan/run-now` then starts it: the held jobs run and none stays paused; every clip is then found as in `scan` (59.02) |
 | `postgres_pss_512m` | the bundled Postgres's processes hold under 512 MiB together (the sum of `Pss` in each one's `smaps_rollup`, kept as `postgres-pss.txt`), the Light tier's tuning applied (59.02) |
+| `isolation_container` | without Landlock and user namespaces the plugin isolation level is Container (`GET /api/server/machine`'s `plugin_isolation` and `GET /api/plugins/isolation`); the test plugin (`--plugin`, plugind's hello guest that the amd64 image job packs as the `nas-plugin` artifact), installed and turned on by the admin, stays off with `isolation_held`; `PUT /api/plugins/isolation` without the password is 401, with it 200; the plugin then runs, and `plugins.host` is Degraded with `sandbox_partial` (plugind's required layers on, its optional ones missing). The answers are kept as `api-plugin-isolation.json` (59.07) |
 | `refused_write`, `refused_privileged` | the container exits 78 with its message (59.01) |
 
 An assertion still waiting for its story is written `{"name": "tier_light", "needs": ["59.04"]}`:
@@ -89,6 +90,11 @@ it is reported as pending (⏳) until that story is in `landed`.
        --fixtures build/nas/media --out build/nas/out/uid-1000 --local 47088
    ```
 
+   The no-Landlock cells also take `--plugin hello.mkplugin`: `make plugind-guests`, then
+   `go run ./cmd/mkplugin <folder> hello.mkplugin` in `shared/go/componentpack`, the folder
+   holding the guest as `plugin.wasm`, its `manifest.toml` and `i18n/` (what nas.yml's image
+   job does).
+
    `--local PORT` runs the cell on a bridge network with a relay in its network namespace, so
    the server still sees a local client (Docker Desktop has no host network). Pick a port no
    other program on the machine listens on.
@@ -101,5 +107,4 @@ it is reported as pending (⏳) until that story is in `landed`.
 | `plugin-cache-grant` | stages run in the plugin runners are refused `$HOME/.maktaba/cache` (`plugin_sandbox_refused`, `/var/lib/maktaba/.maktaba/cache`): the image's `HOME` is the volume, and the runners' grants do not cover it; they fall back to running in process |
 
 **Later phases add cells:** VA-API without a device (`vaapi-fallback`, 59.05), speech on arm64
-(`arm64` with speech on, 59.06), the plugin isolation level on the no-Landlock cells (59.07),
-`bridge` and `offline` (59.08, 59.01), and the update legs (`update-rehearsal-container`, 59.12).
+(`arm64` with speech on, 59.06), `bridge` and `offline` (59.08, 59.01), and the update legs (`update-rehearsal-container`, 59.12).

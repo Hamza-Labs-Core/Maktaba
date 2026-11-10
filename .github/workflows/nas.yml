@@ -293,6 +293,28 @@ jobs:
           docker save maktaba-server:nas | zstd -T0 -3 -q -o "$RUNNER_TEMP/maktaba-server-$ARCH.tar.zst"
           ls -lh "$RUNNER_TEMP/maktaba-server-$ARCH.tar.zst"
 
+      # Epic 59 story 59.07: the third-party test plugin the no-Landlock cells install
+      # (plugind's hello guest with tests/nas/plugin's manifest); WebAssembly, so once
+      - name: The test plugin
+        if: steps.wanted.outputs.build == 'true' && matrix.arch == 'amd64'
+        run: |
+          set -euo pipefail
+          rustup target add wasm32-wasip2
+          make plugind-guests
+          src="$RUNNER_TEMP/nas-plugin-src"
+          cp -a tests/nas/plugin "$src"
+          cp plugind/guests/target/wasm32-wasip2/release/hello.wasm "$src/plugin.wasm"
+          mkdir -p "$RUNNER_TEMP/nas-plugin"
+          (cd shared/go/componentpack && go run ./cmd/mkplugin "$src" "$RUNNER_TEMP/nas-plugin/hello.mkplugin")
+          ls -l "$RUNNER_TEMP/nas-plugin"
+
+      - uses: actions/upload-artifact@v7.0.1
+        if: steps.wanted.outputs.build == 'true' && matrix.arch == 'amd64'
+        with:
+          name: nas-plugin
+          path: ${{ runner.temp }}/nas-plugin/hello.mkplugin
+          retention-days: 3
+
       - uses: actions/upload-artifact@v7.0.1
         if: steps.wanted.outputs.build == 'true'
         with:
@@ -362,11 +384,25 @@ jobs:
       - name: The fixture library
         run: tests/nas/fixtures.sh "$RUNNER_TEMP/fixtures"
 
+      # the test plugin (59.07), packed by the amd64 image job: the cells that install it
+      # fail their assertion without it, the others do not need it
+      - name: Download nas-plugin
+        if: matrix.arch == 'amd64'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: nas-plugin
+          path: ${{ runner.temp }}/nas-plugin
+
       - name: The cell
         id: cell
         env:
           CELL: ${{ matrix.cell }}
-        run: python3 tests/nas/cell.py --image maktaba-server:nas --cell "$CELL" --fixtures "$RUNNER_TEMP/fixtures" --out "$RUNNER_TEMP/nas-out"
+        run: |
+          set -euo pipefail
+          plugin=()
+          [ -f "$RUNNER_TEMP/nas-plugin/hello.mkplugin" ] && plugin=(--plugin "$RUNNER_TEMP/nas-plugin/hello.mkplugin")
+          python3 tests/nas/cell.py --image maktaba-server:nas --cell "$CELL" --fixtures "$RUNNER_TEMP/fixtures" --out "$RUNNER_TEMP/nas-out" "${plugin[@]}"
 
       - name: The cell's summary
         if: always()
