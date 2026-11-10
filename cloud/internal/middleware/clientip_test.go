@@ -28,6 +28,11 @@ func TestClientIP(t *testing.T) {
 		{"IPv4-mapped peer matches the IPv4 list", "[::ffff:127.0.0.1]:51000", "198.51.100.7", "", "198.51.100.7", cloudflared},
 		{"X-Forwarded-For is never read", "127.0.0.1:51000", "", "198.51.100.9", "127.0.0.1", cloudflared},
 		{"untrusted IPv6 peer", "[2001:db8::1]:443", "198.51.100.9", "1.2.3.4", "2001:db8::1", cloudflared},
+		// Epic 59 story 59.08 moved the resolver to shared/go/clientip; the cloud's answers stay.
+		{"a bare peer, no port", "127.0.0.1", "198.51.100.7", "", "198.51.100.7", cloudflared},
+		{"a zoned peer: the zone dropped", "[fe80::1%eth0]:443", "198.51.100.7", "", "fe80::1", cloudflared},
+		{"a peer that is no address", "pipe", "198.51.100.7", "", "", cloudflared},
+		{"X-Forwarded-For from a trusted peer, no CF header", "[::1]:51000", "", "198.51.100.9, 10.0.0.2", "::1", cloudflared},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
