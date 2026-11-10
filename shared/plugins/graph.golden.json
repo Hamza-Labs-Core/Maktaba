@@ -1008,7 +1008,9 @@
    "lane_order": 1,
    "legacy": false,
    "max_attempts": 3,
-   "may_request": [],
+   "may_request": [
+    "content_hash"
+   ],
    "model_rules": null,
    "name": "probe",
    "placement": "any",

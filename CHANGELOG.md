@@ -3178,6 +3178,16 @@ build fails when the two differ.
   it names them to the runners, by their real paths, wherever the home folder is, on macOS
   and Linux. A library's folders are never made or written by this.
 
+- **A library a scan or a download finds gets its posters, small thumbnails, transcripts and
+  lengths (Epic 59).** The poster, the small thumbnail and the transcript followed the file's
+  identity step, which only a library imported from mediaintel ever queued: on a fresh
+  install no clip got a poster or a transcript, and no scanned clip got its length either
+  (the length step read it and did not save it). A clip's first length reading now queues
+  its identity step once (not after an MP4 conversion, so a converted file is not
+  transcribed again) and saves the length; and once this release runs, the queue gives every
+  clip probed before it that never had that step its poster and transcript, in the
+  background.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were
