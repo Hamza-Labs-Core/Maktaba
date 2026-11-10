@@ -1279,7 +1279,7 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
             if r["access"] not in ("ro", "none"):
                 writable.add(real)
     # the cache the thumbnail stages write (maktaba_pipeline.thumbnail.small.ROOT)
-    thumbs = str(thumbnail_dir_for("x", root=small.ROOT).parent)
+    thumbs = _own_folder(str(thumbnail_dir_for("x", root=small.ROOT).parent))
     lib = ";".join(sorted(roots))
     lib_write = ";".join(sorted(writable))
     # library.subtitles is the writable libraries' folders, written only by subtitle names
@@ -1295,21 +1295,34 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
         # the audio cache extract writes its WAV in (audio.extract.cache_path_for, story 54.36)
         "data.cache": ";".join(
             [
-                os.path.realpath(
-                    os.path.expanduser(os.environ.get("MAKTABA_YT_WORK") or "~/.maktaba/work/yt")
-                ),
-                os.path.realpath(str(cache_path_for("x").parent)),
+                _own_folder(os.environ.get("MAKTABA_YT_WORK") or "~/.maktaba/work/yt"),
+                _own_folder(str(cache_path_for("x").parent)),
             ]
         ),
-        "data.index": os.path.realpath(
-            os.path.expanduser(os.environ.get("MAKTABA_CHROMA_DIR") or "~/.maktaba/chroma")
-        ),
+        "data.index": _own_folder(os.environ.get("MAKTABA_CHROMA_DIR") or "~/.maktaba/chroma"),
         # the reports folder (Reports: the channel plan's page, engine.plan_page)
-        "data.review": os.path.realpath(str(reviews_dir())),
+        "data.review": _own_folder(str(reviews_dir())),
         # the channels' art: what an admin uploaded (<data dir>/channel-art, the API's
         # channels.ArtDirName) and the folders the planner's rules name (schedule.tv_channel)
         "data.channels": ";".join(await _channel_art_folders(db)),
     }
+
+
+def _own_folder(path: str) -> str:
+    """One of Maktaba's own data folders (under ``~/.maktaba``, the home folder the worker and
+    its runners share, or the folder a setting names), made when missing, by its real path.
+
+    A runner's sandbox grants only folders that exist when it starts: Landlock opens each
+    one, and a missing one is no rule. On a fresh install (a container's empty volume, where
+    ``HOME`` is the volume) nothing had made ``~/.maktaba/cache`` yet, so the first report or
+    thumbnail a runner wrote was refused and the stage fell back to the worker. The worker
+    makes the folder before it names it, so every runner's grant follows the folder the
+    stages really write, wherever ``HOME`` puts it, on every system. Only Maktaba's own
+    folders are made here; a library's folders are never created or written by this."""
+    full = os.path.expanduser(path)
+    with contextlib.suppress(OSError):  # a read-only home: the grant is for what exists
+        os.makedirs(full, exist_ok=True)
+    return os.path.realpath(full)
 
 
 async def _channel_art_folders(db: Any) -> list[str]:
