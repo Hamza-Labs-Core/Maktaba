@@ -2637,8 +2637,8 @@ build fails when the two differ.
   avahi-daemon, and never claims the NAS's name. Mounting the host's D-Bus socket (an option
   in the compose file) publishes the home through the NAS's own Avahi instead. On a Docker
   bridge, mDNS and SSDP are off. Setup and Settings → This machine say that apps connect by
-  the address, the HTTPS name or a Maktaba Cloud code, and `docker-compose.bridge.yml` ships
-  with the release. A port another program holds (QNAP's UI on 8080) moves, with the holder
+  the address, the HTTPS name or a Maktaba Cloud code; the compose file's `[bridge]` blocks
+  set a bridge install up. A port another program holds (QNAP's UI on 8080) moves, with the holder
   named in setup, the log and Settings. `[server] trusted_proxies` (Settings → Storage &
   discovery) lists the reverse proxies whose `X-Forwarded-For` the API and streaming believe,
   besides this machine's own and the home's approved nodes. Before this, any peer's header was

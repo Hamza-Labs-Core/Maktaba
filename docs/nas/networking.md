@@ -52,8 +52,9 @@ connect). Use it only if you want the home under the NAS's name; nothing else ne
 ## Bridge network
 
 Docker Desktop (Mac, Windows) has no host network, and some households keep every container on a
-bridge. Use `docker-compose.bridge.yml`: it publishes 8088, 8080 and 8081 (never 54329: a bridge
-home has no other machines) and needs `MAKTABA_HOST_IP`, this machine's LAN address.
+bridge. Turn on the compose file's `[bridge]` blocks (maktaba.tv's install page does it for you):
+they drop `network_mode: host`, publish 8088, 8080 and 8081 (never 54329: a bridge home has no
+other machines) and set `MAKTABA_HOST_IP`, this machine's LAN address.
 
 On a bridge, multicast stays inside Docker, so Maktaba turns mDNS and SSDP off (it reads the
 bridge from the default route's interface; `MAKTABA_NETWORK=host` or `bridge` overrides that).
