@@ -5,7 +5,7 @@
 > 48 mockups, 130+ API endpoints, 32 DB entities.
 >
 > Status (2026-05-10): all 25 epics and 17 implementation phases delivered on `main`.
-> Since then (2026-11-03): epics 26–49 were added, most of them built on `main` (see [`specs/epics/README.md`](../../specs/epics/README.md)); 50–58 are specs. The counts above are from the 2026-05-10 generation.
+> Since then (2026-11-03): epics 26–49 were added, most of them built on `main` (see [`specs/epics/README.md`](../../specs/epics/README.md)); 50–59 are specs. The counts above are from the 2026-05-10 generation.
 
 ## Quick navigation
 
@@ -58,6 +58,7 @@
 | 56 | [TV Library View](../../specs/epics/56-tv-library-view/README.md) · [wiki](epics/epic-56-tv-library-view.md) | spec | API + Pipeline + TV apps + Players + Web | 14 | 0 | 0 | The TV apps' library view as Plex's: Recommended, Library, Collections, Playlists and Categories tabs; Play all and Shuffle on a library, series, season, collection or playlist through one server play queue; series grouping; automatic collections from YouTube playlists, channels and Plex; smart playlists; Up next; the same in the Players and the web. |
 | 57 | [Parental Controls](../../specs/epics/57-parental-controls/README.md) · [wiki](epics/epic-57-parental-controls.md) | spec | API + Streaming + Apple Player (iPhone, iPad) + Apple TV | 13 | 0 | 0 | Restricted accounts and guardians on the home; age tiers (All ages, 9+, 13+, 16+, 18+) from Plex, guide, YouTube, plugin and admin ratings; one server-side filter on every surface, the relay included; the iPhone and iPad Player sends Apple's Declared Age Range and Screen Time rating limit, which only tighten; time limits and bedtime stay Screen Time's; Ask a parent and a home-checked PIN; activity kept 90 days on the home. Android, web and desktop: a later epic. |
 | 58 | [Smart TV Platforms](../../specs/epics/58-smart-tv-platforms/README.md) · [wiki](epics/epic-58-smart-tv-platforms.md) | spec | API + Streaming + Cloud + Fire TV + Cast + Samsung + LG + Roku | 18 | 0 | 0 | Apps for the TVs Maktaba does not reach yet: Fire TV as a flavor of the Android TV app; a Maktaba Cast receiver with senders in both Players and Chrome; Samsung and LG on one web-TV launcher hosting the home's own `/tv/` UI; a native Roku channel with Arabic shaped by the app; Vega OS when its share warrants. A cloud code signs TVs in from anywhere; TVs report their decoders; an API level keeps store-updated apps and self-updating homes compatible; Epic 57's filter applies by itself; nothing sold on TVs. |
+| 59 | [NAS](../../specs/epics/59-nas/README.md) · [wiki](epics/epic-59-nas.md) | spec | Image + Server + Streaming + Pipeline + Plugins + Synology + TrueNAS + Unraid | 16 | 0 | 0 | Maktaba's home on a NAS: the one self-updating image as whatever user the NAS gives it, never root; each library checked and explained in the NAS's own words, read-only libraries supported; hardware tiers from the cgroup limit, the ZFS cache, AVX2 and render devices; VA-API video and speech to text on arm64; plugin isolation levels with the admin's yes; a Container Manager project, a TrueNAS community app and an Unraid template; NAS legs in the update rehearsal. |
 
 ## Implementation phases
 

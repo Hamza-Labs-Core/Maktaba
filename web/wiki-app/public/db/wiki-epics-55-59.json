@@ -1,6 +1,6 @@
 {
   "version": "2.0",
-  "part": "wiki-epics-55-58.json",
+  "part": "wiki-epics-55-59.json",
   "entries": [
     {
       "id": "story-55.1",
@@ -1868,6 +1868,458 @@
       "db_tables": [],
       "metadata": {
         "slug": "vega-os"
+      }
+    },
+    {
+      "id": "story-59.1",
+      "type": "story",
+      "title": "One image for every NAS: any user, never root, first start offline",
+      "epic": "59-nas",
+      "phase": 5,
+      "content": "# Story 59.01 — One image for every NAS: any user, never root, first start offline\n\n> Epic 59 · Phase 1 · Depends on: — · Needed by: 59.02, 59.03, 59.05, 59.06, 59.07, 59.09, 59.10, 59.11, 59.12\n\n## Why\n\n`ghcr.io/hamza-labs-core/maktaba-server` runs as uid/gid 1000, fixed in the Dockerfile\n(`useradd --uid 1000`).\n- **TrueNAS** starts apps as 568 and expects ACLs for that user.\n- **Unraid** uses 99:100.\n- **Synology** households run containers as a DSM user (uid 1026 and up, group 100) that they\n  grant shares to.\n\nWhen the image is started as another uid:\n- `HOME` points at a directory that ui",
+      "tags": [
+        "story",
+        "59-nas",
+        "phase-5"
+      ],
+      "related": [
+        "epic-59-nas"
+      ],
+      "files": {
+        "story": "specs/epics/59-nas/story-59-01-image-any-user.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "image-any-user"
+      }
+    },
+    {
+      "id": "story-59.2",
+      "type": "story",
+      "title": "The data volume and the database on a NAS: local, SSD first, tuned for spinning disks, quiet hours",
+      "epic": "59-nas",
+      "phase": 5,
+      "content": "# Story 59.02 — The data volume and the database on a NAS: local, SSD first, tuned for spinning disks, quiet hours\n\n> Epic 59 · Phase 1 · Depends on: 59.01, 59.04 · Needed by: 59.09, 59.10, 59.11\n\n## Why\n\nThe bundled Postgres lives on the data volume. On a NAS that volume can be:\n- an SSD pool;\n- an HDD RAID array;\n- a network share someone mounted by mistake.\n\nPostgres has three problems on a NAS:\n- **Wrong tuning:** it is sized for a cluster (`max_connections=300`, 40 replication slots) and\n  tuned for SSDs.\n- **No sleep:** on an HDD array, browsing and search are slow, and the array never s",
+      "tags": [
+        "story",
+        "59-nas",
+        "phase-5"
+      ],
+      "related": [
+        "epic-59-nas",
+        "ep-get-jobs"
+      ],
+      "files": {
+        "story": "specs/epics/59-nas/story-59-02-data-and-database.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /jobs"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "data-and-database"
+      }
+    },
+    {
+      "id": "story-59.3",
+      "type": "story",
+      "title": "Media permissions: check, explain, and work with read-only libraries",
+      "epic": "59-nas",
+      "phase": 5,
+      "content": "# Story 59.03 — Media permissions: check, explain, and work with read-only libraries\n\n> Epic 59 · Phase 1 · Depends on: 59.01 · Needed by: 59.07, 59.09, 59.10, 59.11, 59.13\n\n## Why\n\nOn a NAS, the container's user sees each share through the NAS's ACLs. Many households will\ngive Maktaba read-only access to their originals, and some shares will not be readable at all.\nToday Maktaba assumes it can write into every library:\n- subtitles are written beside the video;\n- convert, dedup, YouTube downloads and repair write into libraries;\n- the trash renames files into `<root>/.maktaba/trash`.\n\nA missin",
+      "tags": [
+        "story",
+        "59-nas",
+        "phase-5"
+      ],
+      "related": [
+        "epic-59-nas",
+        "ep-get-libraries",
+        "ep-post-libraries"
+      ],
+      "files": {
+        "story": "specs/epics/59-nas/story-59-03-media-permissions.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "media-permissions"
+      }
+    },
+    {
+      "id": "story-59.4",
+      "type": "story",
+      "title": "Hardware detection and tiers: memory (with ZFS ARC), CPU features, GPUs, disks",
+      "epic": "59-nas",
+      "phase": 5,
+      "content": "# Story 59.04 — Hardware detection and tiers: memory (with ZFS ARC), CPU features, GPUs, disks\n\n> Epic 59 · Phase 1 · Depends on: — · Needed by: 59.02, 59.05, 59.06, 59.07, 59.09, 59.10, 59.13\n\n## Why\n\nMaktaba's defaults assume a desktop with 16 GB (`docs/hardware.md`, the Full bundle). NAS boxes\nrange from 4 GB with four ARM cores to 32 GB with a GPU, and they share their memory with the\nNAS's own system.\n\nTwo readings mislead today:\n- **Memory on TrueNAS:** it is read from `MemAvailable`, which does not count the ZFS ARC, and\n  the ARC fills nearly all RAM. A healthy TrueNAS box looks full.\n",
+      "tags": [
+        "story",
+        "59-nas",
+        "phase-5"
+      ],
+      "related": [
+        "epic-59-nas"
+      ],
+      "files": {
+        "story": "specs/epics/59-nas/story-59-04-hardware-tiers.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "hardware-tiers"
+      }
+    },
+    {
+      "id": "story-59.5",
+      "type": "story",
+      "title": "Hardware video on NAS chips: VA-API, Quick Sync and the render device",
+      "epic": "59-nas",
+      "phase": 5,
+      "content": "# Story 59.05 — Hardware video on NAS chips: VA-API, Quick Sync and the render device\n\n> Epic 59 · Phase 2 · Depends on: 59.01, 59.04 · Needed by: 59.09, 59.10, 59.11\n\n## Why\n\nStreaming tries NVENC, then QSV, then libx264, keeping each only after a test encode\n(`streaming/internal/ffmpeg/hwaccel.go`). Most NAS chips give a container only `/dev/dri`:\n- the J4125 in Synology Plus models;\n- the N100 and N5105 in UGREEN, QNAP and ASUSTOR boxes;\n- AMD APUs in some TrueNAS builds.\n\nOn those devices VA-API is the path that works most reliably. QSV in a container also needs\nIntel's media driver, and t",
+      "tags": [
+        "story",
+        "59-nas",
+        "phase-5"
+      ],
+      "related": [
+        "epic-59-nas"
+      ],
+      "files": {
+        "story": "specs/epics/59-nas/story-59-05-vaapi.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "vaapi"
+      }
+    },
+    {
+      "id": "story-59.6",
+      "type": "story",
+      "title": "Speech to text on NAS CPUs: arm64, the model by tier, a measured speed",
+      "epic": "59-nas",
+      "phase": 5,
+      "content": "# Story 59.06 — Speech to text on NAS CPUs: arm64, the model by tier, a measured speed\n\n> Epic 59 · Phase 2 · Depends on: 59.01, 59.04 · Needed by: 59.09, 59.10, 59.11\n\n## Why\n\nTranscripts are what make Maktaba more than a player. On Linux, speech to text is faster-whisper\non CTranslate2 with `large-v3-turbo` (about 1.6 GB), on CUDA or CPU int8. Two things go wrong on\na NAS:\n- **No engine on arm64:** the `stt` extra installs ctranslate2, faster-whisper and torch only on\n  Linux x86_64 (`pipeline/pyproject.toml`), so an arm64 NAS has no speech engine.\n- **Too heavy on x86_64 NAS CPUs:** on a J4",
+      "tags": [
+        "story",
+        "59-nas",
+        "phase-5"
+      ],
+      "related": [
+        "epic-59-nas"
+      ],
+      "files": {
+        "story": "specs/epics/59-nas/story-59-06-stt-nas.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "stt-nas"
+      }
+    },
+    {
+      "id": "story-59.7",
+      "type": "story",
+      "title": "Plugins in a container: isolation levels, plugind's layers, the admin's yes",
+      "epic": "59-nas",
+      "phase": 5,
+      "content": "# Story 59.07 — Plugins in a container: isolation levels, plugind's layers, the admin's yes\n\n> Epic 59 · Phase 2 · Depends on: 59.01, 59.03, 59.04 · Needed by: 59.09, 59.10, 59.15\n\n## Why\n\nEpic 54 has two kinds of plugin, each with its own isolation:\n- **First-party plugins** run as trusted Python in plugin runners, inside a Landlock + seccomp\n  sandbox. Without Landlock a runner runs as `sandbox_partial`.\n- **Third-party plugins** run as WebAssembly in `maktaba-plugind`, with namespaces, Landlock and\n  seccomp. A required layer that fails makes plugind exit 78.\n\nInside a NAS container, two th",
+      "tags": [
+        "story",
+        "59-nas",
+        "phase-5"
+      ],
+      "related": [
+        "epic-59-nas"
+      ],
+      "files": {
+        "story": "specs/epics/59-nas/story-59-07-plugins-container.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "plugins-container"
+      }
+    },
+    {
+      "id": "story-59.8",
+      "type": "story",
+      "title": "Networking on a NAS: host or bridge, mDNS beside the NAS's responder, HTTPS, reverse proxies",
+      "epic": "59-nas",
+      "phase": 5,
+      "content": "# Story 59.08 — Networking on a NAS: host or bridge, mDNS beside the NAS's responder, HTTPS, reverse proxies\n\n> Epic 59 · Phase 3 · Depends on: 59.01 · Needed by: 59.09, 59.10, 59.11\n\n## Why\n\nMaktaba's apps and TVs find a home by mDNS (`_maktaba._tcp`), and the TV front door also answers\nSSDP. Both need the host network. A NAS already runs its own services that Maktaba must sit\nbeside:\n- an mDNS responder (Avahi on TrueNAS and Unraid, Bonjour on DSM);\n- nginx on 80/443;\n- its own UI;\n- on DSM, its own Postgres on 5432.\n\nSome households run every container on a bridge network for tidiness, or m",
+      "tags": [
+        "story",
+        "59-nas",
+        "phase-5"
+      ],
+      "related": [
+        "epic-59-nas",
+        "ep-get-ws"
+      ],
+      "files": {
+        "story": "specs/epics/59-nas/story-59-08-networking.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /ws"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "networking"
+      }
+    },
+    {
+      "id": "story-59.9",
+      "type": "story",
+      "title": "Synology: a Container Manager project, DSM's users and shares, the J4125's GPU",
+      "epic": "59-nas",
+      "phase": 5,
+      "content": "# Story 59.09 — Synology: a Container Manager project, DSM's users and shares, the J4125's GPU\n\n> Epic 59 · Phase 3 · Depends on: 59.01–59.08 · Needed by: 59.14, 59.15\n\n## Why\n\nSynology is the most common home NAS. On DSM 7.2 and 7.3, the supported way to run a server like\nMaktaba is **Container Manager**:\n- Docker 24.0.2 with compose \"Projects\", on x86_64 Plus models and on ARMv8 models since 7.2;\n- Jellyfin's official method, and how Immich is run on Synology.\n\nSynology's Package Center has no open path for third parties, and DSM 7 marks community packages\n\"not verified\" (research.md §2.1).\n",
+      "tags": [
+        "story",
+        "59-nas",
+        "phase-5"
+      ],
+      "related": [
+        "epic-59-nas",
+        "entity-users"
+      ],
+      "files": {
+        "story": "specs/epics/59-nas/story-59-09-synology.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [
+        "users"
+      ],
+      "metadata": {
+        "slug": "synology"
+      }
+    },
+    {
+      "id": "story-59.10",
+      "type": "story",
+      "title": "TrueNAS: a community app, datasets and ACLs, GPUs, the ZFS cache",
+      "epic": "59-nas",
+      "phase": 5,
+      "content": "# Story 59.10 — TrueNAS: a community app, datasets and ACLs, GPUs, the ZFS cache\n\n> Epic 59 · Phase 3 · Depends on: 59.01–59.08 · Needed by: 59.14, 59.15\n\n## Why\n\nTrueNAS Community Edition (25.04 Fangtooth, 25.10 Goldeye) runs apps as Docker Compose since\n24.10. Its catalog, `truenas/apps`, has a **community** train that takes third-party apps; Immich\nis one. Each app gets:\n- a form for storage, user, network and GPU;\n- updates when the catalog moves.\n\nTrueNAS's own conventions:\n- **User:** apps run as `apps` (568).\n- **Storage:** host paths need NFSv4 ACL entries for the run-as user, or the a",
+      "tags": [
+        "story",
+        "59-nas",
+        "phase-5"
+      ],
+      "related": [
+        "epic-59-nas",
+        "entity-devices"
+      ],
+      "files": {
+        "story": "specs/epics/59-nas/story-59-10-truenas.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [
+        "devices"
+      ],
+      "metadata": {
+        "slug": "truenas"
+      }
+    },
+    {
+      "id": "story-59.11",
+      "type": "story",
+      "title": "Unraid, QNAP, UGREEN and plain compose; the old scaffolds go",
+      "epic": "59-nas",
+      "phase": 5,
+      "content": "# Story 59.11 — Unraid, QNAP, UGREEN and plain compose; the old scaffolds go\n\n> Epic 59 · Phase 3 · Depends on: 59.01–59.08 · Needed by: 59.14, 59.15\n\n## Why\n\nAfter Synology and TrueNAS, home NAS boxes mostly run one of these:\n- Unraid, with Community Applications Docker templates;\n- QNAP, with Container Station;\n- UGREEN UGOS Pro, ASUSTOR ADM or a plain Linux mini PC, all with Docker and compose.\n\nOne plain compose file covers all of them except Unraid, which expects a template.\n\nTwo leftovers in the repo mislead:\n- the scaffolds `cloud/installers/nas/synology/INFO` and `cloud/installers/nas/",
+      "tags": [
+        "story",
+        "59-nas",
+        "phase-5"
+      ],
+      "related": [
+        "epic-59-nas"
+      ],
+      "files": {
+        "story": "specs/epics/59-nas/story-59-11-other-nas.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "other-nas"
+      }
+    },
+    {
+      "id": "story-59.12",
+      "type": "story",
+      "title": "Updates on a NAS: self-update beside catalog updates, the NAS leg of the rehearsal",
+      "epic": "59-nas",
+      "phase": 5,
+      "content": "# Story 59.12 — Updates on a NAS: self-update beside catalog updates, the NAS leg of the rehearsal\n\n> Epic 59 · Phase 4 · Depends on: 59.01, 59.10, 59.11 · Needed by: 59.15\n\n## Why\n\nThe image updates itself on its volume. The steps are:\n- the release is verified in process;\n- a new runtime is installed;\n- `current` is moved under the launcher's guard, which confirms within 3 minutes or switches\n  back;\n- a pre-update dump is taken first.\n\nCatalogs move the image too:\n- TrueNAS app updates;\n- Unraid's update check;\n- Watchtower;\n- a household pressing \"pull\" in Container Manager.\n\nThe image's r",
+      "tags": [
+        "story",
+        "59-nas",
+        "phase-5"
+      ],
+      "related": [
+        "epic-59-nas"
+      ],
+      "files": {
+        "story": "specs/epics/59-nas/story-59-12-updates.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "updates"
+      }
+    },
+    {
+      "id": "story-59.13",
+      "type": "story",
+      "title": "A NAS in a cluster: home, full node or storage; one path for each share",
+      "epic": "59-nas",
+      "phase": 5,
+      "content": "# Story 59.13 — A NAS in a cluster: home, full node or storage; one path for each share\n\n> Epic 59 · Phase 4 · Depends on: 59.03, 59.04 · Needed by: 59.14\n\n## Why\n\nThe cluster (Epics 31, 35, 37) has one home with Postgres and the queue, plus full nodes with a\nreplica that can take over. It treats a NAS as storage: every machine reads media through its own\nmount, matched by canonical share paths (`smb://server/share`, story 31.03).\n\nWhen the NAS becomes the home, its own files are local, at `/volume1/Movies` on DSM or\n`/mnt/tank/media` on TrueNAS. A Mac node sees the same files at `/Volumes/Mov",
+      "tags": [
+        "story",
+        "59-nas",
+        "phase-5"
+      ],
+      "related": [
+        "epic-59-nas"
+      ],
+      "files": {
+        "story": "specs/epics/59-nas/story-59-13-cluster.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "cluster"
+      }
+    },
+    {
+      "id": "story-59.14",
+      "type": "story",
+      "title": "English and Arabic: setup screens, messages, and the install guides on maktaba.tv",
+      "epic": "59-nas",
+      "phase": 5,
+      "content": "# Story 59.14 — English and Arabic: setup screens, messages, and the install guides on maktaba.tv\n\n> Epic 59 · Phase 4 (strings land with each story) · Depends on: 59.01–59.13\n\n## Why\n\nEvery user-facing string ships in English and Arabic, in the web and in the native apps. This\nepic adds many such strings:\n- setup steps;\n- permission states and fixes in each NAS's own words;\n- hardware tiers;\n- isolation levels;\n- update messages.\n\nIt also adds install guides that a NAS owner will follow step by step. maktaba.tv is where\nhouseholds install and learn Maktaba. maktaba.dev is the developer wiki.\n",
+      "tags": [
+        "story",
+        "59-nas",
+        "phase-5"
+      ],
+      "related": [
+        "epic-59-nas"
+      ],
+      "files": {
+        "story": "specs/epics/59-nas/story-59-14-strings-guides.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "strings-guides"
+      }
+    },
+    {
+      "id": "story-59.15",
+      "type": "story",
+      "title": "CI on NAS-shaped containers, device checklists, logs kept",
+      "epic": "59-nas",
+      "phase": 5,
+      "content": "# Story 59.15 — CI on NAS-shaped containers, device checklists, logs kept\n\n> Epic 59 · Phase 1 (grows each phase) · Depends on: 59.01 · Needed by: every story's tests\n\n## Why\n\nMost NAS failures come from a handful of differences, and each one can be imitated in a\ncontainer on a GitHub runner:\n- another uid;\n- a read-only or foreign-owned share;\n- a memory limit;\n- arm64;\n- a kernel without Landlock;\n- a render device or none.\n\nWhat cannot be imitated needs a short written checklist on a real device: DSM's ACL dialogs,\nTrueNAS's app install, real Quick Sync, a real DSM kernel.\n\n## Description\n\n",
+      "tags": [
+        "story",
+        "59-nas",
+        "phase-5"
+      ],
+      "related": [
+        "epic-59-nas"
+      ],
+      "files": {
+        "story": "specs/epics/59-nas/story-59-15-ci.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "ci"
+      }
+    },
+    {
+      "id": "story-59.16",
+      "type": "story",
+      "title": "OpenAPI and role tests for the new admin routes",
+      "epic": "59-nas",
+      "phase": 5,
+      "content": "# Story 59.16 — OpenAPI and role tests for the new admin routes\n\n> Epic 59 · Phase 4 (each route lands with its story) · Depends on: 59.02, 59.03, 59.04, 59.07\n\n## Why\n\nEvery role rule is enforced by the server, with a role test. Hiding a button is not a rule. This\nepic adds routes that read the machine, change what may run, or run heavy work now:\n- **reading the machine:** the hardware report, the library access check;\n- **changing what may run:** the plugin isolation switch, the tier;\n- **running heavy work now:** Run now past quiet hours.\n\nEach must be admin-only, documented in OpenAPI, and",
+      "tags": [
+        "story",
+        "59-nas",
+        "phase-5"
+      ],
+      "related": [
+        "epic-59-nas",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-jobs",
+        "ep-get-jobs-id",
+        "ep-get-settings",
+        "ep-put-settings"
+      ],
+      "files": {
+        "story": "specs/epics/59-nas/story-59-16-openapi-roles.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /jobs",
+        "GET /jobs/{id}",
+        "GET /settings",
+        "PUT /settings"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "openapi-roles"
       }
     }
   ]

@@ -3,7 +3,7 @@
   "project": "Maktaba",
   "description": "منصة ذكاء وسائط تستضيفها بنفسك: بديل كامل لـ Plex، ونصوص مفرّغة يمكن البحث في كل كلمة منها. انظر specs/architecture.md.",
   "generated_from": [
-    "specs/epics/** (58 epics, 01 to 58: READMEs, stories, plans)",
+    "specs/epics/** (59 epics, 01 to 59: READMEs, stories, plans)",
     "specs/architecture.md (DB tables)",
     "specs/*.md (15 reviews and audits)",
     "specs/diagrams/*.drawio (14 diagrams)",
@@ -15,13 +15,13 @@
     "diagram": 14,
     "endpoint": 180,
     "entity": 42,
-    "epic": 58,
+    "epic": 59,
     "feature": 3,
     "mockup": 63,
     "phase": 17,
     "plan": 372,
     "review": 15,
-    "story": 700
+    "story": 716
   },
   "parts": [
     "wiki-epics-01-09.json",
@@ -30,7 +30,7 @@
     "wiki-epics-28-36.json",
     "wiki-epics-37-45.json",
     "wiki-epics-46-54.json",
-    "wiki-epics-55-58.json"
+    "wiki-epics-55-59.json"
   ],
   "entries": [
     {
@@ -3418,6 +3418,53 @@
       }
     },
     {
+      "id": "epic-59-nas",
+      "type": "epic",
+      "title": "Maktaba على خادم تخزين شبكي",
+      "epic": "59-nas",
+      "phase": 5,
+      "engine": null,
+      "content": "Maktaba على خادم تخزين شبكي: سينولوجي وتروناس وغيرهما.\n\nالمتطلب: ينبغي أن تستطيع الأسرة التي تحفظ وسائطها على خادم تخزين شبكي أن تشغّل جهازها الرئيسي في Maktaba على ذلك الخادم نفسه، دون أن يبقى حاسوب آخر قيد التشغيل طوال الوقت.",
+      "tags": [
+        "epic",
+        "59-nas",
+        "phase-5"
+      ],
+      "related": [
+        "story-59.1",
+        "story-59.2",
+        "story-59.3",
+        "story-59.4",
+        "story-59.5",
+        "story-59.6",
+        "story-59.7",
+        "story-59.8",
+        "story-59.9",
+        "story-59.10",
+        "story-59.11",
+        "story-59.12",
+        "story-59.13",
+        "story-59.14",
+        "story-59.15",
+        "story-59.16"
+      ],
+      "files": {
+        "readme": "specs/epics/59-nas/README.md"
+      },
+      "metadata": {
+        "story_count": 16,
+        "plan_count": 0,
+        "mockup_count": 0
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "f32f335856179cde",
+          "content": "21847725c870bbab"
+        }
+      }
+    },
+    {
       "id": "diagram-api-streaming-stories",
       "type": "diagram",
       "title": "قصص الواجهة البرمجية والبث",
@@ -5925,7 +5972,9 @@
         "story-56.12",
         "story-56.14",
         "story-57.1",
-        "story-57.7"
+        "story-57.7",
+        "story-59.3",
+        "story-59.16"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5989,7 +6038,9 @@
         "story-56.12",
         "story-56.14",
         "story-57.1",
-        "story-57.7"
+        "story-57.7",
+        "story-59.3",
+        "story-59.16"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6039,7 +6090,8 @@
         "story-56.8",
         "story-56.14",
         "story-57.1",
-        "story-57.7"
+        "story-57.7",
+        "story-59.16"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6089,7 +6141,8 @@
         "story-56.8",
         "story-56.14",
         "story-57.1",
-        "story-57.7"
+        "story-57.7",
+        "story-59.16"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6139,7 +6192,8 @@
         "story-56.8",
         "story-56.14",
         "story-57.1",
-        "story-57.7"
+        "story-57.7",
+        "story-59.16"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6976,7 +7030,9 @@
         "story-25.5",
         "story-25.11",
         "story-25.16",
-        "story-25.21"
+        "story-25.21",
+        "story-59.2",
+        "story-59.16"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7010,7 +7066,8 @@
         "story-6.5",
         "story-7.12",
         "story-11.5",
-        "story-21.7"
+        "story-21.7",
+        "story-59.16"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7632,7 +7689,8 @@
         "story-54.11",
         "story-54.13",
         "story-54.41",
-        "story-55.2"
+        "story-55.2",
+        "story-59.16"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7686,7 +7744,8 @@
         "story-54.11",
         "story-54.13",
         "story-54.41",
-        "story-55.2"
+        "story-55.2",
+        "story-59.16"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7925,7 +7984,8 @@
         "story-51.11",
         "story-52.17",
         "story-53.6",
-        "story-54.20"
+        "story-54.20",
+        "story-59.8"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -11789,6 +11849,7 @@
         "story-7.17",
         "story-7.22",
         "story-12.10",
+        "story-59.10",
         "story-12.4"
       ],
       "files": {
@@ -12503,6 +12564,7 @@
         "story-30.3",
         "story-42.7",
         "story-57.13",
+        "story-59.9",
         "story-10.11"
       ],
       "files": {

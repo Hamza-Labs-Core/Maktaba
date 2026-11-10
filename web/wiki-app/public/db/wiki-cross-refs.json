@@ -2,8 +2,8 @@
   "schema_version": 2,
   "generated_for": "Maktaba",
   "totals": {
-    "epics": 58,
-    "stories": 700,
+    "epics": 59,
+    "stories": 716,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -414,6 +414,13 @@
       "title": "Apps for the TVs Maktaba does not reach yet",
       "description": "Apps for the TVs Maktaba does not reach yet: Fire TV, Google Cast, Samsung, LG and Roku.\n\nRequirement: a household should be able to watch its Maktaba home on the TV it already owns. Today that means an Apple TV, an Android or Google TV, or a phone with AirPlay. The TVs most families own are another matter: - a Samsung (about 17% of TVs worldwide, and 23% of US connected-TV platforms); - an LG (about 7–12%); - a Roku (28% in the US); - an Amazon Fire TV stick (research.md §7); - and in the Middle East, mostly Samsung, LG and Android TV.",
       "readme": "specs/epics/58-smart-tv-platforms/README.md"
+    },
+    {
+      "id": "59",
+      "slug": "nas",
+      "title": "Maktaba on a NAS",
+      "description": "Maktaba on a NAS: Synology, TrueNAS and the rest.\n\nRequirement: a household that keeps its media on a NAS should be able to run its Maktaba home on that NAS, with no other computer on all the time.",
+      "readme": "specs/epics/59-nas/README.md"
     }
   ],
   "stories": [
@@ -7453,6 +7460,150 @@
       "slug": "vega-os",
       "title": "Amazon Vega OS: a React Native app, built when Vega devices are a real share",
       "story_file": "specs/epics/58-smart-tv-platforms/story-58-18-vega-os.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.01",
+      "epic": 59,
+      "num": "01",
+      "slug": "image-any-user",
+      "title": "One image for every NAS: any user, never root, first start offline",
+      "story_file": "specs/epics/59-nas/story-59-01-image-any-user.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.02",
+      "epic": 59,
+      "num": "02",
+      "slug": "data-and-database",
+      "title": "The data volume and the database on a NAS: local, SSD first, tuned for spinning disks, quiet hours",
+      "story_file": "specs/epics/59-nas/story-59-02-data-and-database.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.03",
+      "epic": 59,
+      "num": "03",
+      "slug": "media-permissions",
+      "title": "Media permissions: check, explain, and work with read-only libraries",
+      "story_file": "specs/epics/59-nas/story-59-03-media-permissions.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.04",
+      "epic": 59,
+      "num": "04",
+      "slug": "hardware-tiers",
+      "title": "Hardware detection and tiers: memory (with ZFS ARC), CPU features, GPUs, disks",
+      "story_file": "specs/epics/59-nas/story-59-04-hardware-tiers.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.05",
+      "epic": 59,
+      "num": "05",
+      "slug": "vaapi",
+      "title": "Hardware video on NAS chips: VA-API, Quick Sync and the render device",
+      "story_file": "specs/epics/59-nas/story-59-05-vaapi.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.06",
+      "epic": 59,
+      "num": "06",
+      "slug": "stt-nas",
+      "title": "Speech to text on NAS CPUs: arm64, the model by tier, a measured speed",
+      "story_file": "specs/epics/59-nas/story-59-06-stt-nas.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.07",
+      "epic": 59,
+      "num": "07",
+      "slug": "plugins-container",
+      "title": "Plugins in a container: isolation levels, plugind's layers, the admin's yes",
+      "story_file": "specs/epics/59-nas/story-59-07-plugins-container.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.08",
+      "epic": 59,
+      "num": "08",
+      "slug": "networking",
+      "title": "Networking on a NAS: host or bridge, mDNS beside the NAS's responder, HTTPS, reverse proxies",
+      "story_file": "specs/epics/59-nas/story-59-08-networking.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.09",
+      "epic": 59,
+      "num": "09",
+      "slug": "synology",
+      "title": "Synology: a Container Manager project, DSM's users and shares, the J4125's GPU",
+      "story_file": "specs/epics/59-nas/story-59-09-synology.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.10",
+      "epic": 59,
+      "num": "10",
+      "slug": "truenas",
+      "title": "TrueNAS: a community app, datasets and ACLs, GPUs, the ZFS cache",
+      "story_file": "specs/epics/59-nas/story-59-10-truenas.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.11",
+      "epic": 59,
+      "num": "11",
+      "slug": "other-nas",
+      "title": "Unraid, QNAP, UGREEN and plain compose; the old scaffolds go",
+      "story_file": "specs/epics/59-nas/story-59-11-other-nas.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.12",
+      "epic": 59,
+      "num": "12",
+      "slug": "updates",
+      "title": "Updates on a NAS: self-update beside catalog updates, the NAS leg of the rehearsal",
+      "story_file": "specs/epics/59-nas/story-59-12-updates.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.13",
+      "epic": 59,
+      "num": "13",
+      "slug": "cluster",
+      "title": "A NAS in a cluster: home, full node or storage; one path for each share",
+      "story_file": "specs/epics/59-nas/story-59-13-cluster.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.14",
+      "epic": 59,
+      "num": "14",
+      "slug": "strings-guides",
+      "title": "English and Arabic: setup screens, messages, and the install guides on maktaba.tv",
+      "story_file": "specs/epics/59-nas/story-59-14-strings-guides.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.15",
+      "epic": 59,
+      "num": "15",
+      "slug": "ci",
+      "title": "CI on NAS-shaped containers, device checklists, logs kept",
+      "story_file": "specs/epics/59-nas/story-59-15-ci.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.16",
+      "epic": 59,
+      "num": "16",
+      "slug": "openapi-roles",
+      "title": "OpenAPI and role tests for the new admin routes",
+      "story_file": "specs/epics/59-nas/story-59-16-openapi-roles.md",
       "plan_files": []
     }
   ],
