@@ -558,9 +558,17 @@ class Cell:
         return "health, sign-in and " + ", ".join(ROLES) + " running"
 
     def assert_only_uid(self) -> str:
-        top = docker("top", self.container, "-eo", "uid,pid,comm").stdout.splitlines()[1:]
+        try:
+            top = docker("top", self.container, "-eo", "uid,pid,comm").stdout.splitlines()[1:]
+        except RuntimeError as e:
+            # a daemon whose ps is busybox's (docker:dind, the compose cell) has no uid column:
+            # its user column shows the uid as a number when the daemon's host has no name for
+            # it, and a name (root) when it has one; a name is never the cell's uid
+            if "bad -o argument" not in str(e):
+                raise
+            top = docker("top", self.container, "-o", "user,pid,comm").stdout.splitlines()[1:]
         procs = [line.split(None, 2) for line in top if line.strip()]
-        others = [p for p in procs if int(p[0]) != self.uid]
+        others = [p for p in procs if not p[0].isdigit() or int(p[0]) != self.uid]
         if others:
             raise AssertionError(f"processes not running as {self.uid}: {others[:10]}")
         return f"{len(procs)} processes, all uid {self.uid}"
