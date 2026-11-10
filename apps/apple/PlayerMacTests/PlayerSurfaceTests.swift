@@ -131,6 +131,85 @@ import MaktabaKit
         #expect(PlaybackPreferences.shared.autoplayNext)
     }
 
+    /// Story 59.05: a home with no transcode slot free (503 `transcode_busy`) is no error: the
+    /// player waits (`waiting`, the sentence), asks again after the home's `Retry-After`, and
+    /// plays once a slot is free. Against MockHome's real stream; shared Player code.
+    @Test func aBusyHomeIsAskedAgainAfterItsRetryAfterThenPlays() async throws {
+        let home = try MockHome()
+        try home.start()
+        defer { home.stop() }
+        home.stub("POST", "/api/stream/sessions", status: 503, body: Self.transcodeBusy, headers: ["Retry-After": "1"])
+        let url = try #require(URL(string: home.url))
+        let playback = Playback(client: APIClient(home: url, tokens: TokenStore(app: "test.mac.busy", home: url)))
+        defer { playback.stop() }
+        playback.play(try Self.video(), from: 0)
+
+        try await Self.until { playback.waiting != nil }
+        #expect(playback.waiting?.kind == .transcodeBusy(retryAfter: 1))
+        #expect(playback.failure == nil, "no error screen while it waits")
+        #expect(playback.player == nil)
+
+        // a second busy answer: still waiting, asked again a second later
+        try await Self.until { Self.opens(home) >= 2 }
+        #expect(playback.failure == nil)
+        #expect(playback.waiting != nil)
+
+        // a slot is free: the fixture's session opens and plays, the sentence goes
+        home.reset()
+        try await Self.until(seconds: 20) { playback.player != nil }
+        #expect(playback.waiting == nil)
+        #expect(playback.failure == nil)
+    }
+
+    /// Story 59.05: a busy home's watch screen says why it waits (its sentence over the spinner,
+    /// `player.waiting`), not the error screen.
+    @Test func theWatchScreenSaysWhyItWaitsForABusyHome() async throws {
+        let home = try MockHome()
+        try home.start()
+        defer { home.stop() }
+        home.stub("POST", "/api/stream/sessions", status: 503, body: Self.transcodeBusy, headers: ["Retry-After": "60"])
+        let url = try #require(URL(string: home.url))
+        let playback = Playback(client: APIClient(home: url, tokens: TokenStore(app: "test.mac.busyview", home: url)))
+        defer { playback.stop() }
+        playback.play(try Self.video(), from: 0)
+        try await Self.until { playback.waiting != nil }
+        let waiting = try #require(playback.waiting)
+
+        let defaults = try #require(UserDefaults(suiteName: "test.mac.busyview"))
+        let session = AppSession(app: "test.mac.busyview", defaults: defaults, asksHomes: false, capabilities: CapabilitiesStore())
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 360),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let hosting = NSHostingView(rootView: WatchView(playback: playback, session: session).frame(width: 640, height: 360))
+        window.contentView = hosting
+        window.orderFrontRegardless()
+        hosting.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
+        let words = try await PageSnapshots.words(of: hosting)
+        #expect(words.contains(waiting.message(video: true)), "the waiting sentence shows: \(words)")
+        #expect(!words.contains(ErrorStrings.forPreferredLanguages().text(.tryAgain)), "no error screen's Try again: \(words)")
+    }
+
+    /// The home's 503 `transcode_busy` problem (story 59.05).
+    static let transcodeBusy = #"{"type":"https://maktaba.tv/problems/transcode-busy","title":"Another video is being converted","status":503,"code":"transcode_busy"}"#
+
+    static func video() throws -> Video {
+        try JSONDecoder().decode(Video.self, from: Data(#"{"id":"v1","title":"The Message","duration_sec":4}"#.utf8))
+    }
+
+    /// How many stream opens `home` was asked for.
+    static func opens(_ home: MockHome) -> Int { home.seen.filter { $0 == "POST /api/stream/sessions" }.count }
+
+    /// Waits (10 s at most) until `condition`.
+    static func until(seconds: Double = 10, _ condition: () -> Bool) async throws {
+        let deadline = Date.now.addingTimeInterval(seconds)
+        while !condition() {
+            try #require(Date.now < deadline, "timed out")
+            try await Task.sleep(for: .milliseconds(50))
+        }
+    }
+
     static func find<V: NSView>(_: V.Type, in view: NSView) -> V? {
         if let v = view as? V { return v }
         for sub in view.subviews { if let v = find(V.self, in: sub) { return v } }
