@@ -3614,7 +3614,8 @@
     "runner_env",
     "plugin_home_only",
     "plugin_no_gpu",
-    "plugin_package_untrusted"
+    "plugin_package_untrusted",
+    "isolation_held"
   ],
   "schema": 1
 }

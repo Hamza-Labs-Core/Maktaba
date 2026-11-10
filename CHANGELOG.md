@@ -2590,6 +2590,18 @@ build fails when the two differ.
   packages for its architecture, so setup builds the pipeline's environment from them with no
   download; a home set up without speech to text downloads no model either.
 
+- **A home in a container says how isolated its plugins are, and asks before running
+  third-party plugins with less (story 59.07).** Each machine computes its plugin isolation
+  level at start: Full with Landlock and user namespaces, Container without them (most NAS
+  kernels, Docker's default seccomp profile). Settings → This machine and the Plugins page say
+  which, in one line. On the Container level a third-party plugin can be installed and turned
+  on but stays off, with the reason, until an admin turns on **Allow plugins with
+  container-only isolation on this home** (Settings → Plugins; the password typed again,
+  written to the audit log; `PUT /api/plugins/isolation`). Maktaba's own plugins keep running,
+  reported partial. The plugin host's required layers are unchanged; before any plugin runs it
+  is asked what they apply on this machine (`maktaba-plugind --sandbox-check`). A dedup or convert runner
+  started before a library's trash folder existed may now move a file into it.
+
 - **Speech to text on an ARM NAS, and the model a NAS can carry (story 59.06).** Speech to
   text now runs on Linux ARM machines, such as an ARM Synology. The machine's tier picks the
   model: on a Light machine speech is off until an admin turns it on with one tap in Settings →

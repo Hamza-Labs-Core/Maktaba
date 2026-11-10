@@ -125,9 +125,7 @@ func BuildPlugins(opts Options) (Process, *PluginsHealth, error) {
 		return Process{}, nil, err
 	}
 	p := PluginsPaths(opts.Config)
-	args := []string{"--data", opts.Config.Server.DataDir, "--plugins-dir", p.Root, "--cache-dir", p.Cache,
-		"--run-dir", p.Run, "--api-socket", p.API, "--dispatch-socket", p.Dispatch, "--pool", strconv.Itoa(PluginsPool())}
-	name, argv := sandboxed(runtime.GOOS, SandboxLauncher(), p, bin, args)
+	name, argv := sandboxed(runtime.GOOS, SandboxLauncher(), p, bin, plugindArgs(opts, p))
 	cmd := exec.Command(name, argv...)
 	cmd.Env = os.Environ()
 	wire(cmd)
@@ -146,6 +144,57 @@ func BuildPlugins(opts Options) (Process, *PluginsHealth, error) {
 		FatalExits: map[int]string{PluginsSandboxExit: ReasonSandboxUnavailable},
 		Present:    func() bool { return isExecutable(bin) },
 	}, h, nil
+}
+
+// plugindArgs are the plugin host's flags: its data, plugin folders and both sockets.
+func plugindArgs(opts Options, p PluginPaths) []string {
+	return []string{"--data", opts.Config.Server.DataDir, "--plugins-dir", p.Root, "--cache-dir", p.Cache,
+		"--run-dir", p.Run, "--api-socket", p.API, "--dispatch-socket", p.Dispatch, "--pool", strconv.Itoa(PluginsPool())}
+}
+
+// SandboxCheck is what the plugin host's sandbox applies on this machine (Epic 59 story
+// 59.07), asked before any plugin runs: the host's --sandbox-check, with a start's flags and
+// folders, applies the same layers in its own process and prints them. Sandbox is "full",
+// "partial" (Missing names the layers) or "unavailable" (Step: a required one failed).
+type SandboxCheck struct {
+	Sandbox string   `json:"sandbox"`
+	Missing []string `json:"missing"`
+	Step    string   `json:"step,omitempty"`
+}
+
+// CheckPluginsSandbox runs the plugin host's --sandbox-check (not on Windows, whose host
+// runs only inside the AppContainer its launcher makes). It binds no socket and leaves no
+// step file, so the host's own start is untouched.
+func CheckPluginsSandbox(ctx context.Context, opts Options) (SandboxCheck, error) {
+	if runtime.GOOS == "windows" {
+		return SandboxCheck{}, errors.New("no sandbox check on windows")
+	}
+	bin, err := PlugindBin(opts)
+	if err != nil {
+		return SandboxCheck{}, err
+	}
+	if !isExecutable(bin) {
+		return SandboxCheck{}, fmt.Errorf("%s: %w", bin, ErrBinaryNotFound)
+	}
+	p := PluginsPaths(opts.Config)
+	_ = os.MkdirAll(p.Root, 0o700)
+	_ = os.MkdirAll(p.Run, 0o700)
+	if p.Sockets != "" {
+		privateDir(p.Sockets)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, append(plugindArgs(opts, p), "--sandbox-check")...)
+	cmd.Env = os.Environ()
+	out, err := cmd.Output()
+	var c SandboxCheck
+	if jerr := json.Unmarshal(out, &c); jerr != nil || c.Sandbox == "" {
+		if err == nil {
+			err = fmt.Errorf("--sandbox-check answered %q", strings.TrimSpace(string(out)))
+		}
+		return SandboxCheck{}, err
+	}
+	return c, nil
 }
 
 // PlugindBin is maktaba-plugind in this payload (MAKTABA_PLUGIND_BIN, the release

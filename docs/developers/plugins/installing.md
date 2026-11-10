@@ -85,7 +85,9 @@ with your words in the admin's language. The home checks every value on save. Se
 The plugin's page shows its phase and why, jobs done and failed, its last error, its data use
 against its quota, and each stage's queue. The phase is the home's decision even while the
 pipeline is down: *Waiting* with the reason when its gate refuses it (a Maktaba version
-outside your range, a capability not granted, unreviewed while the home does not allow it),
+outside your range, a capability not granted, unreviewed while the home does not allow it,
+`isolation_held` on a home whose [isolation level](sandbox.md#isolation-levels-a-home-in-a-container-on-a-nas)
+is Container until the admin allows it),
 *Stopped* while held, *Running* when it may run. While the pipeline runs, its own state of
 your stages (starting, failed) shows when the gate lets the plugin run. Your log lines (`log.write`) are kept in a log
 segment of their own and open from **Its logs**. Your plugin's queues are the **Plugins** lane
@@ -218,3 +220,4 @@ All admin-only (no sign-in 401; a viewer or a cloud-linked play sign-in 403):
 | `GET /api/plugins/{id}/writes`, `POST …/writes/revert` | what it wrote |
 | `GET`, `PUT /api/plugins/{id}/settings` | its settings |
 | `GET`, `PUT /api/plugins/policy` | allow unreviewed plugins |
+| `GET`, `PUT /api/plugins/isolation` | each machine's isolation level; `{"allow": true, "password": "…"}` allows plugins with container-only isolation (`401 reauth_required` without the password) |

@@ -307,6 +307,8 @@ export type MachineDoc =
       /** the database is tuned for spinning disks, and how that was known */
       rotational: boolean;
       disk_how: "rotational" | "ssd" | "asked" | "unknown";
+      /** Epic 59 story 59.07: this machine's plugin isolation (older servers: absent) */
+      plugin_isolation?: PluginIsolationLevel;
     };
 
 /** Epic 59 story 59.06: a Whisper size as the server offers it. */
@@ -378,6 +380,17 @@ export type SpeechDoc =
 function asSpeechDoc(d: unknown): SpeechDoc {
   const o = (d ?? {}) as Record<string, unknown>;
   return ("available" in o ? o : { ...o, available: true }) as SpeechDoc;
+}
+
+/** One machine's plugin isolation level (Epic 59 story 59.07). */
+export interface PluginIsolationLevel {
+  level: "full" | "container" | "";
+  /** the optional layers it cannot apply: landlock, namespaces, … */
+  missing: string[];
+  landlock: number;
+  userns?: boolean;
+  /** what the plugin host reported ("" while it has not run) */
+  plugind?: string;
 }
 
 /** A PUT answer is the GET document without available. */

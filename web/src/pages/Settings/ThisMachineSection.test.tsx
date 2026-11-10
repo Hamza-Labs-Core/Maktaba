@@ -135,6 +135,19 @@ describe("ThisMachineSection", () => {
     expect(section).toHaveTextContent("This processor lacks AVX2, so a smaller model was chosen.");
   });
 
+  // Epic 59 story 59.07: the plugin isolation level, in one line
+  it("says the plugin isolation level", async () => {
+    open({
+      ...DOC,
+      plugin_isolation: { level: "container", missing: ["landlock", "namespaces"], landlock: 0 },
+    });
+    expect(
+      await screen.findByText(
+        "Plugins run inside this container's limits, without Maktaba's extra file sandbox. The NAS kernel doesn't support it."
+      )
+    ).toBeInTheDocument();
+  });
+
   // T09: the same in Arabic
   it("says the tier and why in Arabic", async () => {
     localStorage.setItem("mkt:locale", "ar");

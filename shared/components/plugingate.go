@@ -38,6 +38,9 @@ type PluginGateInput struct {
 	// Revoked and EntitlementMissing are Phase 2 and 3's (54.17, 54.19): false in Phase 1.
 	Revoked            bool `json:"revoked"`
 	EntitlementMissing bool `json:"entitlement_missing"`
+	// IsolationHeld: the machine's isolation level is Container and the home's policy does
+	// not allow plugins with container-only isolation (Epic 59 story 59.07).
+	IsolationHeld bool `json:"isolation_held"`
 }
 
 // Unreviewed reports whether a review level needs the home's opt-in (54.10): anything the
@@ -63,6 +66,8 @@ func PluginGate(in PluginGateInput) (string, map[string]any) {
 		return ReasonEntitlementMissing, nil
 	case Unreviewed(in.ReviewLevel) && !in.AllowUnreviewed:
 		return ReasonUnreviewedDisallow, nil
+	case in.IsolationHeld:
+		return ReasonIsolationHeld, nil
 	}
 	var missing []string
 	for _, c := range in.Required {

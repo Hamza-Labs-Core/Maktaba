@@ -4,6 +4,7 @@
 // (plugin_required_capability, plugin_data_newer, reauth_required, settings_invalid, ...),
 // whose words are plugins.error.<code>.
 import { ApiError, api, uploadWithProgress } from "./api";
+import type { PluginIsolationLevel } from "./serverSettingsApi";
 
 export type ReviewLevel = "none" | "developer" | "automated" | "reviewed" | "store" | "development";
 
@@ -160,6 +161,18 @@ export interface BuiltInPlugin {
 
 export interface Policy {
   allow_unreviewed: boolean;
+  /** Epic 59 story 59.07: set through setIsolation, never through setPolicy */
+  allow_container_isolation?: boolean;
+}
+
+/** GET /api/plugins/isolation (Epic 59 story 59.07). */
+export interface PluginIsolation {
+  /** the home's: container when any machine is ("" before any server wrote its level) */
+  level: "full" | "container" | "";
+  machines: ({ machine: string } & PluginIsolationLevel)[];
+  allow_container_isolation: boolean;
+  /** third-party plugins wait for the admin's yes now */
+  held: boolean;
 }
 
 export interface PluginWrite {
@@ -368,6 +381,13 @@ export const pluginsApi = {
   policy: () => api.get<Policy>("/api/plugins/policy"),
   setPolicy: (p: Policy, password?: string) =>
     api.put<Policy>("/api/plugins/policy", { ...p, ...(password ? { password } : {}) }),
+  isolation: () => api.get<PluginIsolation>("/api/plugins/isolation"),
+  /** Allow plugins with container-only isolation: turning it on asks for the password. */
+  setIsolation: (allow: boolean, password?: string) =>
+    api.put<PluginIsolation>("/api/plugins/isolation", {
+      allow,
+      ...(password ? { password } : {}),
+    }),
 };
 
 /** The refusal's code of an error from these routes ("" when it is not a refusal). */

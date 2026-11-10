@@ -248,6 +248,29 @@ class API:
         return self.call("GET", path, **kw)
 
 
+#: the test plugin the image job packs (plugind's hello guest, tests/components/test_plugins_live.py)
+TEST_PLUGIN = "dev.example.hello"
+
+
+def install_plugin(api: API, pkg: Path, confirm: str) -> tuple[int, Any]:
+    """POST /api/plugins/install as the Plugins page sends it: the fields, then the file."""
+    boundary = "----nascell" + secrets.token_hex(12)
+    parts: list[bytes] = []
+    for name, value in (("enable", "true"), ("grants", "[]"), ("libraries", "[]"), ("confirm_name", confirm)):
+        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode())
+    parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{pkg.name}"\r\n'
+                 "Content-Type: application/octet-stream\r\n\r\n".encode() + pkg.read_bytes() + b"\r\n")
+    parts.append(f"--{boundary}--\r\n".encode())
+    headers = {"Content-Type": f"multipart/form-data; boundary={boundary}", "X-Maktaba-Client": "native",
+               "Authorization": "Bearer " + api.token}
+    req = urllib.request.Request(api.base + "/api/plugins/install", data=b"".join(parts), headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            return resp.status, _json(resp.read())
+    except urllib.error.HTTPError as e:
+        return e.code, _json(e.read())
+
+
 def _json(b: bytes) -> Any:
     try:
         return json.loads(b) if b else None
@@ -293,6 +316,7 @@ class Cell:
     scans: int = 0
     first_counts: dict[str, int] = field(default_factory=dict)
     quiet: tuple[str, str] = ("", "")  # the cell's quiet window and its start, once chosen
+    plugin: Path | None = None  # a third-party test plugin (.mkplugin, the image job's), for 59.07
 
     @property
     def name(self) -> str:
@@ -996,6 +1020,66 @@ class Cell:
     def assert_tier_light(self) -> str:
         return self.tier_is("light")
 
+    def assert_isolation_container(self) -> str:
+        """59.07: without Landlock and user namespaces the home's plugin isolation level is
+        Container (the machine's page and the Plugins page say so); a third-party plugin an
+        admin installs and turns on stays off, isolation_held, until the admin allows plugins
+        with container-only isolation (the password typed again); then it runs, in plugind
+        with its required layers, reported partial."""
+        assert self.api is not None
+        api = self.api
+        iso = (self.machine().get("plugin_isolation") or {})
+        if iso.get("level") != "container":
+            raise AssertionError(f"GET /api/server/machine plugin_isolation {iso}, not container")
+        s, home = api.get("/api/plugins/isolation")
+        if s != 200 or not isinstance(home, dict) or home.get("level") != "container" or home.get("held") is not True:
+            raise AssertionError(f"GET /api/plugins/isolation: {s} {home}")
+        if self.plugin is None or not self.plugin.is_file():
+            raise AssertionError("no test plugin (--plugin): the image job's nas-plugin artifact")
+        s, d = api.call("PUT", "/api/plugins/policy", {"allow_unreviewed": True, "password": self.password})
+        if s != 200:
+            raise AssertionError(f"PUT /api/plugins/policy: {s} {d}")
+        s, d = install_plugin(api, self.plugin, confirm="Hello")
+        if s not in (200, 201):
+            raise AssertionError(f"POST /api/plugins/install: {s} {d}")
+
+        def plugin_state() -> dict[str, Any]:
+            s, d = api.get(f"/api/plugins/{TEST_PLUGIN}")
+            return d if s == 200 and isinstance(d, dict) else {}
+
+        held = wait("the plugin held for the isolation level",
+                    lambda: (p := plugin_state()).get("reason") == "isolation_held" and p, 5 * 60)
+        # the switch is the admin's, with the password again
+        s, d = api.call("PUT", "/api/plugins/isolation", {"allow": True})
+        if s != 401:
+            raise AssertionError(f"PUT /api/plugins/isolation without the password: {s} {d}, not 401")
+        s, d = api.call("PUT", "/api/plugins/isolation", {"allow": True, "password": self.password})
+        if s != 200 or not isinstance(d, dict) or d.get("allow_container_isolation") is not True or d.get("held"):
+            raise AssertionError(f"PUT /api/plugins/isolation: {s} {d}")
+        running = wait("the plugin running after the admin's yes",
+                       lambda: (p := plugin_state()).get("phase") in ("running", "degraded") and p, 5 * 60)
+
+        def host_partial() -> dict[str, Any] | None:
+            # Degraded keeps Ready true, so the list's reason (a false condition's) is empty:
+            # sandbox_partial is on the Ready condition of the home's part rows in the detail
+            s, d = api.get("/api/components/plugins.host")
+            if s != 200 or not isinstance(d, dict) or d.get("phase") != "degraded":
+                return None
+            for m in d.get("machines") or []:
+                for part in m.get("parts") or []:
+                    for c in part.get("conditions") or []:
+                        if c.get("reason") == "sandbox_partial":
+                            return {"phase": d.get("phase"), "machine": m.get("machine"), "condition": c}
+            return None
+
+        host = wait("plugins.host Degraded, sandbox_partial (plugind's required layers on)", host_partial, 5 * 60)
+        (self.out / "api-plugin-isolation.json").write_text(json.dumps(
+            {"machine": iso, "home": home, "held": held, "running": running, "host": host}, indent=1),
+            encoding="utf-8")
+        missing = (host.get("condition") or {}).get("params", {}).get("missing", "")
+        return (f"container (missing {','.join(iso.get('missing') or [])}); held, then {running.get('phase')} "
+                f"after the admin's yes; plugins.host degraded, sandbox_partial ({missing})")
+
     def assert_tier_standard(self) -> str:
         return self.tier_is("standard")
 
@@ -1129,6 +1213,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--local", type=int, metavar="PORT", help="bridge network with PORT published (Docker Desktop)")
     ap.add_argument("--keep", action="store_true", help="leave the container and volumes")
+    ap.add_argument("--plugin", type=Path, help="a third-party test plugin (.mkplugin) for the isolation cells (59.07)")
     args = ap.parse_args(argv)
     matrix = load_cells()
     spec = next((c for c in matrix["cells"] if c["name"] == args.cell), None)
@@ -1136,7 +1221,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no cell {args.cell!r} in {CELLS}", file=sys.stderr)
         return 2
     cell = Cell(spec=spec, image=args.image, fixtures=args.fixtures.resolve(), out=args.out.resolve(),
-                local_port=args.local, landed=list(matrix.get("landed", [])))
+                local_port=args.local, landed=list(matrix.get("landed", [])),
+                plugin=args.plugin.resolve() if args.plugin else None)
     try:
         ok = cell.run()
     finally:

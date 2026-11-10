@@ -224,6 +224,10 @@ func loadGrantSet(ctx context.Context, q querier, id string) (*GrantSet, error) 
 // Policy is the home's plugin policy (app_settings plugins.policy).
 type Policy struct {
 	AllowUnreviewed bool `json:"allow_unreviewed"`
+	// AllowContainerIsolation is the admin's yes for third-party plugins on a machine
+	// whose isolation level is Container (Epic 59 story 59.07): off, they wait
+	// (isolation_held). Set by SetContainerIsolation; SetPolicy keeps it.
+	AllowContainerIsolation bool `json:"allow_container_isolation"`
 }
 
 // PolicyKey is the policy's app_settings key (the supervisor's runner reads the same).
@@ -758,6 +762,8 @@ func (l *Lifecycle) SetPolicy(ctx context.Context, p Policy, actor svc.Actor) (P
 	if err != nil {
 		return p, err
 	}
+	// the container-only isolation switch is its own route's (SetContainerIsolation)
+	p.AllowContainerIsolation = before.AllowContainerIsolation
 	b, _ := json.Marshal(p)
 	if _, err := tx.ExecContext(ctx, `INSERT INTO app_settings (key, value) VALUES ($1, $2)
 		ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now()`, PolicyKey, string(b)); err != nil {

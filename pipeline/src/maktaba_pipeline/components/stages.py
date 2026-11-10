@@ -123,7 +123,15 @@ def _own(c: Component, d: Desired | None) -> Gate:
 
 #: a plugin's gates beyond its desired row (Epic 54, story 54.37 §3): it waits
 PLUGIN_WAITING = frozenset(
-    {"incompatible", "grants_needed", "revoked", "unreviewed_disallowed", "entitlement_missing"}
+    {
+        "incompatible",
+        "grants_needed",
+        "revoked",
+        "unreviewed_disallowed",
+        "entitlement_missing",
+        # Epic 59 story 59.07: Container isolation, held until the admin allows it
+        "isolation_held",
+    }
 )
 #: an admin turned the plugin off (54.07: keep-off, on its ``off`` row)
 KEPT_OFF = "kept_off"
