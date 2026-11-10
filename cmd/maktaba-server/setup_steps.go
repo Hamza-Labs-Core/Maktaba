@@ -418,8 +418,9 @@ type rootCheck struct {
 	Fix           *mediaaccess.Fix   `json:"fix"`
 }
 
-// nasPlatform is the NAS platform the fix text speaks of (story 59.04's detection).
-var nasPlatform = func() string { return os.Getenv("MAKTABA_PLATFORM") }
+// nasPlatform is the NAS platform the fix text speaks of: story 59.04's detection
+// (MAKTABA_PLATFORM when set, else what the machine shows). Tests replace it.
+var nasPlatform = func() string { return hostMachine().Platform }
 
 // checkRootAccess fills c with root's media-permission check: setup is one of the times
 // the check runs (it writes a probe, so never at every start).

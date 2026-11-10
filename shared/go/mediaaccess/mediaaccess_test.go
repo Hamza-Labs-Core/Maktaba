@@ -260,3 +260,20 @@ func TestRelativeRootIsNone(t *testing.T) {
 		t.Fatalf(".maktaba written under a relative root: %v", err)
 	}
 }
+
+// A role is given the platform maktaba-server detected; on its own it reads MAKTABA_PLATFORM.
+func TestPlatformFromEnv(t *testing.T) {
+	t.Setenv(EnvHostPlatform, "")
+	t.Setenv("MAKTABA_PLATFORM", "")
+	if p := PlatformFromEnv(); p != "" {
+		t.Fatalf("none set: %q", p)
+	}
+	t.Setenv("MAKTABA_PLATFORM", " unraid ")
+	if p := PlatformFromEnv(); p != PlatformUnraid {
+		t.Fatalf("MAKTABA_PLATFORM: %q", p)
+	}
+	t.Setenv(EnvHostPlatform, PlatformDSM)
+	if p := PlatformFromEnv(); p != PlatformDSM {
+		t.Fatalf("detected platform first: %q", p)
+	}
+}

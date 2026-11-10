@@ -15,6 +15,21 @@ const (
 	PlatformUnraid  = "unraid"
 )
 
+// EnvHostPlatform carries the platform maktaba-server detected at its start (story 59.04,
+// hostinfo.Detect) to the roles it runs, so a role never detects again. It is a name of
+// its own: setting MAKTABA_PLATFORM instead would make the next detection say it came
+// from the environment.
+const EnvHostPlatform = "MAKTABA_HOST_PLATFORM"
+
+// PlatformFromEnv is the platform a role was given: the one detected at the start, else
+// MAKTABA_PLATFORM (a role run on its own), else "".
+func PlatformFromEnv() string {
+	if p := strings.TrimSpace(os.Getenv(EnvHostPlatform)); p != "" {
+		return p
+	}
+	return strings.TrimSpace(os.Getenv("MAKTABA_PLATFORM"))
+}
+
 // RunsAs is the user Maktaba runs as: the page says "user 568, group 568".
 type RunsAs struct {
 	UID  int    `json:"uid"`
