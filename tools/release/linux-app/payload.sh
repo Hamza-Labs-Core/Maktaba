@@ -10,13 +10,17 @@
 #                                        $ORIGIN rpath
 #   python/    CPython 3.12              python-build-standalone, stdlib precompiled
 #   pipeline/  maktaba_pipeline-<v>-py3-none-any.whl constraints.txt constraints-core.txt
+#              wheels/   a wheel for every pin of constraints-core.txt, for this architecture,
+#                        and wheelhouse.json (Epic 59 story 59.01: the venv of a first start
+#                        builds offline from it, --no-index --find-links)
 #   migrations/  the database's schema (shared/db/migrations): maktaba-api finds them beside bin/
 #   licenses/  the third-party licences and where their sources are
 #   files.sha256                         every file and symlink, with mode, size, SHA-256
 #   payload.json                         what is inside: versions, checksums, min glibc
 #
-# Third-party pieces come from pins.env and are checked against its SHA-256s. The wheels
-# the venv needs (torch, …) and the models are not here: the first run downloads them.
+# Third-party pieces come from pins.env and are checked against its SHA-256s. The core
+# venv's wheels are here (pipeline/wheels); the ML extras' (torch, …) and the models are
+# not: they download when speech to text is turned on.
 # Neither is ffmpeg: on Linux Maktaba runs the distribution's (the .deb and the .rpm
 # depend on it; setup's check and the server's status say what to install when it is
 # missing, too old or lacks an encoder or filter Maktaba uses).
@@ -255,6 +259,30 @@ cp "${whl[0]}" "$OUT/pipeline/"
 cp "${cons[0]}" "$OUT/pipeline/constraints.txt"
 # story 51.17: the runtime's pins alone, for a venv with no ML extras (a Core home)
 cp "${cons_core[0]}" "$OUT/pipeline/constraints-core.txt"
+
+# --- the wheelhouse (Epic 59 story 59.01): every pin of constraints-core.txt as a wheel for
+# this architecture and the payload's Python (pip evaluates the markers as it runs: the
+# payload's own Python on the machine the payload is for), each checked against its hash.
+# venv_bootstrap installs from it alone (--no-index) when it covers the constraints, so a
+# first start (a NAS without internet) downloads nothing. Wheels only: a pin with no wheel for
+# this platform fails here, not at a household's first start. -B: nothing written into the
+# payload's Python. -------------------------------------------------------------------------
+log "wheelhouse (constraints-core.txt, linux-$ARCH)"
+mkdir -p "$OUT/pipeline/wheels"
+PYTHONDONTWRITEBYTECODE=1 "$PY" -I -B -m pip download --quiet --disable-pip-version-check --no-deps \
+    --only-binary=:all: --require-hashes -r "$OUT/pipeline/constraints-core.txt" -d "$OUT/pipeline/wheels" \
+    || die "pip download of constraints-core.txt's wheels for linux-$ARCH"
+WH_SHA="$(sha256 "$OUT/pipeline/constraints-core.txt")" WH_PLATFORM="linux-$ARCH" WH_PY="$PYTHON_VERSION" \
+"$PY" -I -B - "$OUT/pipeline/wheels" <<'EOF'
+import json, os, sys
+from pathlib import Path
+d = Path(sys.argv[1])
+e = os.environ
+doc = {"schema": 1, "constraints_sha256": [e["WH_SHA"]], "platform": e["WH_PLATFORM"],
+       "python": e["WH_PY"], "wheels": sorted(p.name for p in d.glob("*.whl"))}
+(d / "wheelhouse.json").write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+EOF
+log "wheelhouse: $(find "$OUT/pipeline/wheels" -name '*.whl' | wc -l | tr -d ' ') wheels, $(du -sh "$OUT/pipeline/wheels" | awk '{print $1}')"
 
 # --- the database's migrations: setup's finish and the api's auto-migrate run from the user's
 # data directory, never a checkout, so the payload carries them (maktaba-api: beside bin/) -------

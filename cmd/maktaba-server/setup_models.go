@@ -251,6 +251,10 @@ type modelEvent struct {
 // downloadModels runs the venv's `maktaba-pipeline models download --json`
 // (exactly what the workers load) and relays its byte progress.
 func (s *setupRun) downloadModels() (any, error) {
+	if !choiceNeedsModels(s.cfg.StateDir()) {
+		// the chosen components run no model (a Core home): nothing to download
+		return map[string]any{"models": []any{}}, nil
+	}
 	py := supervisor.VenvPython(filepath.Join(s.cfg.StateDir(), "venv"))
 	if _, err := os.Stat(py); err != nil {
 		return nil, failStep("venv_missing", "", "The transcription tools are not installed yet (the venv step).")

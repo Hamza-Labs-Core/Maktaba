@@ -214,6 +214,8 @@ var keptEnv = []string{
 	// the system: where the programs, the home folder and the temporary files are
 	"PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "LC_CTYPE",
 	"XDG_CACHE_HOME", "XDG_CONFIG_HOME", // pip's cache and configuration on Linux
+	// the container's name for a uid its /etc/passwd lacks (story 59.01: nss_wrapper)
+	"LD_PRELOAD", "NSS_WRAPPER_PASSWD", "NSS_WRAPPER_GROUP",
 	// Windows: a Python does not start without SYSTEMROOT; pip keeps its cache
 	// in LOCALAPPDATA and its configuration in APPDATA
 	"SYSTEMROOT", "WINDIR", "SYSTEMDRIVE", "COMSPEC", "PATHEXT", "USERPROFILE", "USERNAME",

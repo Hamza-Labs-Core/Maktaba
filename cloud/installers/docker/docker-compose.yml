@@ -23,6 +23,11 @@ services:
   maktaba:
     image: ghcr.io/hamza-labs-core/maktaba-server:latest
     restart: unless-stopped
+    # the user Maktaba runs as (any uid:gid; never root): 1000:1000 is the image's own. On a
+    # NAS, set the user that owns the folders you mount (a DSM user such as 1026:100, TrueNAS's
+    # apps user 568:568, Unraid's 99:100). The data folder below must be writable by it: if it
+    # is not, the container stops at once and its log says which folder, which user and the fix.
+    user: "1000:1000"
     # the launcher drains the server on a stop (the pipeline's jobs, then Postgres)
     stop_grace_period: 90s
     # environment:
