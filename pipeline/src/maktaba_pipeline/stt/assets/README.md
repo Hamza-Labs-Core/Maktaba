@@ -34,6 +34,6 @@ ffmpeg -i en.wav -af apad=whole_dur=30 -t 30 \
 ```
 
 The word error rates are a regression check per model and architecture (a baseline, then no
-rise over 5 points: `tests/nas/stt-baseline.json`), not a measure of accuracy on a
+rise over 5 points: `tests/nas/stt-baseline.json`, set on the CI runners), not a measure of accuracy on a
 household's own recordings. eSpeak NG's Arabic is not intelligible to Whisper, hence a
 recording for Arabic.

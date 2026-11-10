@@ -351,9 +351,11 @@ which is why the box measures itself):
 | base | 19.3× | 13.8× | 0.09 | 0.46 |
 | small | 9.9× | 5.2× | 0.03 | 0.30 |
 
-The word error rates are the NAS cells' baseline (`tests/nas/stt-baseline.json`): the
-`arm64-stt` cell transcribes both clips with `base` on GitHub's arm64 runner and fails on a
-rise of more than 5 points.
+The NAS cells' baseline (`tests/nas/stt-baseline.json`) is not this table: CTranslate2's
+kernels differ by CPU (`base` on Arabic read 0.46 here and 0.52 on GitHub's arm64 runner), so
+it comes from the cells' own first runs: `base/aarch64` (en 0.075, ar 0.52, 14.5× and 7.4×
+real time on 2 threads of `ubuntu-22.04-arm`) from `arm64-stt`, `small/x86_64` (en 0.03,
+ar 0.26, 8.4× and 4.9×) from `mem-6g-stt`. A rise of more than 5 points fails the cell.
 
 ## 4. Settings that change the load
 
