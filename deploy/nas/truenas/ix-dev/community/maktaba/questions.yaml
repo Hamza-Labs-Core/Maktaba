@@ -203,7 +203,9 @@ questions:
                           - definitions/node_bind_ip
         - variable: live_port
           label: Live TV Port
-          description: Live TV (container port 8081).
+          description: |
+            Live TV (container port 8081). The default is not 8081 only because another catalog app
+            has it: set 8081 when nothing else on the NAS uses it.
           schema:
             type: dict
             show_if: [["host_network", "=", false]]
@@ -232,7 +234,7 @@ questions:
                 schema:
                   type: int
                   show_if: [["bind_mode", "=", "published"]]
-                  default: 8081
+                  default: 30575
                   min: 1
                   max: 65535
                   required: true
