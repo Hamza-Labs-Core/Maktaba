@@ -2,8 +2,8 @@
   "schema_version": 2,
   "generated_for": "Maktaba",
   "totals": {
-    "epics": 58,
-    "stories": 700,
+    "epics": 59,
+    "stories": 716,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -414,6 +414,13 @@
       "title": "تطبيقات لأجهزة التلفاز التي لا يصل إليها Maktaba بعد",
       "description": "تطبيقات لأجهزة التلفاز التي لا يصل إليها Maktaba بعد: فاير تي في وجوجل كاست وسامسونج وLG وروكو.\n\nالمتطلب: ينبغي أن تستطيع الأسرة مشاهدة جهازها الرئيسي في Maktaba على التلفاز الذي تملكه أصلًا. واليوم يعني ذلك آبل تي في، أو تلفاز أندرويد أو جوجل تي في، أو هاتفًا عبر إير بلاي. أما أجهزة التلفاز التي تملكها معظم الأسر فشأنها مختلف: - سامسونج (نحو 17% من أجهزة التلفاز في العالم، و23% من منصات التلفاز المتصل في الولايات المتحدة)؛ - إل جي (نحو 7–12%)؛ - روكو (‏28% في الولايات المتحدة)؛ - عصا أمازون فاير تي في ‏(research.md §7)؛ - وفي الشرق الأوسط، سامسونج وLG وأندرويد تي في في الغالب.",
       "readme": "specs/epics/58-smart-tv-platforms/README.md"
+    },
+    {
+      "id": "59",
+      "slug": "nas",
+      "title": "Maktaba على خادم تخزين شبكي",
+      "description": "Maktaba على خادم تخزين شبكي: سينولوجي وتروناس وغيرهما.\n\nالمتطلب: ينبغي أن تستطيع الأسرة التي تحفظ وسائطها على خادم تخزين شبكي أن تشغّل جهازها الرئيسي في Maktaba على ذلك الخادم نفسه، دون أن يبقى حاسوب آخر قيد التشغيل طوال الوقت.",
+      "readme": "specs/epics/59-nas/README.md"
     }
   ],
   "stories": [
@@ -7453,6 +7460,150 @@
       "slug": "vega-os",
       "title": "أمازون فيغا أو إس: تطبيق React Native، يُبنى حين تصبح أجهزة فيغا حصة حقيقية",
       "story_file": "specs/epics/58-smart-tv-platforms/story-58-18-vega-os.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.01",
+      "epic": 59,
+      "num": "01",
+      "slug": "image-any-user",
+      "title": "صورة واحدة لكل خادم تخزين: أي مستخدم، ولا صلاحيات جذر أبدًا، وتشغيل أول دون إنترنت",
+      "story_file": "specs/epics/59-nas/story-59-01-image-any-user.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.02",
+      "epic": 59,
+      "num": "02",
+      "slug": "data-and-database",
+      "title": "مجلد البيانات وقاعدة البيانات على خادم التخزين: محلية، والأولوية لأقراص SSD، ومضبوطة للأقراص الدوّارة، مع ساعات هدوء",
+      "story_file": "specs/epics/59-nas/story-59-02-data-and-database.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.03",
+      "epic": 59,
+      "num": "03",
+      "slug": "media-permissions",
+      "title": "صلاحيات الوسائط: فحصها وشرحها والعمل مع المكتبات المتاحة للقراءة فقط",
+      "story_file": "specs/epics/59-nas/story-59-03-media-permissions.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.04",
+      "epic": 59,
+      "num": "04",
+      "slug": "hardware-tiers",
+      "title": "اكتشاف العتاد وفئاته: الذاكرة (مع تخزين ZFS المؤقت)، وميزات المعالج، ومعالجات الرسوميات، والأقراص",
+      "story_file": "specs/epics/59-nas/story-59-04-hardware-tiers.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.05",
+      "epic": 59,
+      "num": "05",
+      "slug": "vaapi",
+      "title": "الفيديو العتادي على شرائح خوادم التخزين: VA-API وكويك سينك وجهاز العرض",
+      "story_file": "specs/epics/59-nas/story-59-05-vaapi.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.06",
+      "epic": 59,
+      "num": "06",
+      "slug": "stt-nas",
+      "title": "تحويل الكلام إلى نص على معالجات خوادم التخزين: arm64، والنموذج حسب الفئة، وسرعة مقيسة",
+      "story_file": "specs/epics/59-nas/story-59-06-stt-nas.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.07",
+      "epic": 59,
+      "num": "07",
+      "slug": "plugins-container",
+      "title": "الإضافات داخل حاوية: مستويات العزل، وطبقات خدمة الإضافات، وموافقة المشرف",
+      "story_file": "specs/epics/59-nas/story-59-07-plugins-container.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.08",
+      "epic": 59,
+      "num": "08",
+      "slug": "networking",
+      "title": "الشبكة على خادم التخزين: شبكة المضيف أو الشبكة الجسرية، والإعلان المحلي بجانب مجيب الخادم، والاتصال الآمن، والوكلاء العكسيون",
+      "story_file": "specs/epics/59-nas/story-59-08-networking.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.09",
+      "epic": 59,
+      "num": "09",
+      "slug": "synology",
+      "title": "سينولوجي: مشروع في مدير الحاويات، ومستخدمو النظام ومشاركاته، ومعالج الرسوميات في شريحة J4125",
+      "story_file": "specs/epics/59-nas/story-59-09-synology.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.10",
+      "epic": 59,
+      "num": "10",
+      "slug": "truenas",
+      "title": "تروناس: تطبيق في قناة المجتمع، ومجموعات البيانات وقوائم الصلاحيات، ومعالجات الرسوميات، وتخزين ZFS المؤقت",
+      "story_file": "specs/epics/59-nas/story-59-10-truenas.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.11",
+      "epic": 59,
+      "num": "11",
+      "slug": "other-nas",
+      "title": "أنريد وكيوناب ويوغرين والتركيب العادي، وإزالة الهياكل القديمة",
+      "story_file": "specs/epics/59-nas/story-59-11-other-nas.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.12",
+      "epic": 59,
+      "num": "12",
+      "slug": "updates",
+      "title": "التحديثات على خادم التخزين: التحديث الذاتي بجانب تحديثات الفهارس، ومرحلة خوادم التخزين في بروفة التحديث",
+      "story_file": "specs/epics/59-nas/story-59-12-updates.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.13",
+      "epic": 59,
+      "num": "13",
+      "slug": "cluster",
+      "title": "خادم التخزين في عنقود: جهاز رئيسي أو عقدة كاملة أو مساحة تخزين، ومسار واحد لكل مشاركة",
+      "story_file": "specs/epics/59-nas/story-59-13-cluster.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.14",
+      "epic": 59,
+      "num": "14",
+      "slug": "strings-guides",
+      "title": "العربية والإنجليزية: شاشات الإعداد والرسائل وأدلة التثبيت على maktaba.tv",
+      "story_file": "specs/epics/59-nas/story-59-14-strings-guides.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.15",
+      "epic": 59,
+      "num": "15",
+      "slug": "ci",
+      "title": "التكامل المستمر على حاويات بشكل خوادم التخزين، وقوائم فحص الأجهزة، والاحتفاظ بالسجلات",
+      "story_file": "specs/epics/59-nas/story-59-15-ci.md",
+      "plan_files": []
+    },
+    {
+      "id": "59.16",
+      "epic": 59,
+      "num": "16",
+      "slug": "openapi-roles",
+      "title": "مواصفة الواجهة البرمجية واختبارات الأدوار للمسارات الإدارية الجديدة",
+      "story_file": "specs/epics/59-nas/story-59-16-openapi-roles.md",
       "plan_files": []
     }
   ],

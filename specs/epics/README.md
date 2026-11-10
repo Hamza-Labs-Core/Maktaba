@@ -63,3 +63,4 @@ older epics, a story file and a plan file per story. The number is the order the
 | 56 | [The TV library view: Play all, Shuffle, series, collections and playlists](56-tv-library-view/README.md) |
 | 57 | [Parental controls on iPhone and iPad, on Apple's Screen Time](57-parental-controls/README.md) |
 | 58 | [Apps for the TVs Maktaba does not reach yet: Fire TV, Google Cast, Samsung, LG and Roku](58-smart-tv-platforms/README.md) |
+| 59 | [Maktaba on a NAS: Synology, TrueNAS and the rest](59-nas/README.md) |
