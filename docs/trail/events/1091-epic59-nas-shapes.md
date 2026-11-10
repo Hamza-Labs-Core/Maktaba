@@ -1,6 +1,6 @@
 ---
 schema: 1
-kind: change
+kind: pr
 pr: 1091
 title: "nas-shapes: the server image in NAS shapes on CI (story 59.15, phase 1)"
 date: 2026-11-10
@@ -26,7 +26,7 @@ agent: claude-code
   to `landed`:
   - 59.01 (#1090): the uid, refusal and unnamed-uid cells;
   - 59.03 (#1092): `media-none` and the access checks;
-  - 59.02: Postgres PSS on the Light tier;
+  - 59.02 (#1096): Postgres PSS on the Light tier;
   - 59.07: the isolation level.
 
 ## What we learned
@@ -68,10 +68,13 @@ agent: claude-code
 ## Open
 - Turn on, in follow-up pull requests, each pending check once its fix or story lands:
   - `first_scan` (#1095);
-  - `restart-after-kill` (fix/epic59-pg-stale-lock);
-  - `thumbnail` (fix/epic59-poster-queue);
-  - `logs_clean` (fix/epic59-runner-cache-grant);
-  - the 59.01 cells (#1090) and the 59.03 cells (#1092).
+  - `restart-after-kill` (#1094, merged in 15b032d88);
+  - `thumbnail` (#1098);
+  - `logs_clean` (#1097);
+  - the 59.01 cells (#1090, merged in 2228aa84b) and the 59.03 cells (#1092).
+- The first follow-up, #1100, turns on the 59.01 cells and `restart-after-kill`. The child that
+  began the follow-ups stopped without a word; another session took over from this event's
+  branch and the merged #1091, losing nothing because every step had been pushed.
 - Later phases add cells: `vaapi-fallback` (59.05), arm64 speech (59.06), the isolation level
   (59.07), `bridge` and `offline` (59.08, 59.01), and the update legs (59.12).
 - The device checklists stay `draft` until their first run on a device (README Q6).
