@@ -7,6 +7,7 @@
 import { ApiError } from "./api";
 import { classifyError, type AppErrorKind } from "./errorKind";
 import { featureOffText } from "./featureWords";
+import { libraryAccessErrorText } from "./libraryAccess";
 
 /** A kind, plus "offline": the browser itself has no network. */
 export type UserErrorKind = AppErrorKind | "offline";
@@ -117,6 +118,7 @@ export function errorText(e: unknown, t: T, opts: { admin?: boolean } = {}): str
   return (
     relayPlanText(e, t) ??
     componentOffText(e, t, opts) ??
+    libraryAccessErrorText(e, t) ??
     inputDetail(e) ??
     t(`error.kind.${userErrorKind(e)}`)
   );

@@ -6,17 +6,25 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { deferred } from "../../test/deferred";
 
-const { get, post, admin } = vi.hoisted(() => ({
+const { get, post, admin, readOnly } = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   admin: { value: true },
+  readOnly: { ids: new Set<string>() },
 }));
 vi.mock("../../lib/api", async () => {
   const actual = await vi.importActual<typeof import("../../lib/api")>("../../lib/api");
   return { ...actual, api: { ...actual.api, get, post } };
 });
+// story 59.03: which libraries are read-only for Maktaba (its own read is the manage list)
+vi.mock("../../lib/libraryAccess", async () => {
+  const actual =
+    await vi.importActual<typeof import("../../lib/libraryAccess")>("../../lib/libraryAccess");
+  return { ...actual, useReadOnlyLibraries: () => readOnly.ids };
+});
 vi.mock("../../components/queue/useIsAdmin", () => ({ useIsAdmin: () => admin.value }));
 
+import { ApiError } from "../../lib/api";
 import { FileActions } from "./FileActions";
 import { Duplicates } from "./Duplicates";
 import { Failures } from "./Failures";
@@ -26,6 +34,7 @@ import { LIB, fileAction, group, offlineItem, trash } from "../../test/fixtures/
 import type { DuplicateGroup, FailureItem } from "../../lib/queueApi";
 
 beforeEach(() => {
+  readOnly.ids = new Set();
   get.mockReset();
   post.mockReset();
   admin.value = true;
@@ -320,5 +329,47 @@ describe("failures page: the Epic 47 kinds", () => {
     await userEvent.click(restore[0]);
     expect(post).toHaveBeenCalledWith("/api/queues/file-actions/fa-10/restore");
     expect(await screen.findByText("Restore queued.")).toBeInTheDocument();
+  });
+});
+
+// Story 59.03: applying a merge moves a copy into its library's trash and a
+// restore writes into the library: neither on a library read-only for Maktaba.
+describe("a library read-only for Maktaba", () => {
+  it("duplicates: Apply is off with the reason", async () => {
+    readOnly.ids = new Set([LIB]);
+    routeGet(get, { "/api/queues/duplicates": { items: [group()], next: null } });
+    renderAt(<Duplicates />, "/queue/duplicates");
+    const apply = await screen.findByRole("button", { name: "Apply" });
+    expect(apply).toBeDisabled();
+    expect(apply).toHaveAttribute("title", "This library is read-only for Maktaba");
+  });
+
+  it("file actions: Restore is off with the reason", async () => {
+    readOnly.ids = new Set([LIB]);
+    routeGet(get, {
+      "/api/queues/file-actions": { items: [fileAction({ id: "fa-ro" })], next: null, trash },
+    });
+    renderAt(<FileActions />, "/queue/file-actions");
+    const restore = await screen.findByRole("button", { name: /^Restore/ });
+    expect(restore).toBeDisabled();
+    expect(restore).toHaveAttribute("title", "This library is read-only for Maktaba");
+  });
+
+  it("duplicates: the API's 409 library_read_only reads in the app's words", async () => {
+    const g = group();
+    routeGet(get, { "/api/queues/duplicates": { items: [g], next: null } });
+    post.mockRejectedValue(
+      new ApiError({
+        type: "https://maktaba.tv/problems/library-read-only",
+        title: "Conflict",
+        status: 409,
+        code: "library_read_only",
+      })
+    );
+    renderAt(<Duplicates />, "/queue/duplicates");
+    await userEvent.click(await screen.findByRole("button", { name: "Apply" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This library is read-only for Maktaba, so nothing in its folders was changed."
+    );
   });
 });

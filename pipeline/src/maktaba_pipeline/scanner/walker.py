@@ -58,8 +58,13 @@ DEFAULT_IGNORE_BASENAMES: tuple[str, ...] = (
 #: the source media; revisiting them would loop. ``@eaDir`` is a Synology NAS's index
 #: folder (its own thumbnails and metadata, a folder per media file), never library
 #: content. Hidden folders (``.thumbs/``, where some download setups keep thumbnails)
-#: are skipped by the dot rule in :func:`_process_entry`.
-DEFAULT_IGNORE_DIRNAMES: frozenset[str] = frozenset({".maktaba", "@eaDir"})
+#: are skipped by the dot rule in :func:`_process_entry` (which covers ZFS's ``.zfs``,
+#: ``.snapshot``, ``.Trash-*`` and ``.AppleDouble`` too). Story 59.03 adds a NAS's own
+#: folders: DSM's recycle bin and snapshots (``#recycle``, ``#snapshot``) and a disk's
+#: ``lost+found``. The media check's sample skips the same (shared/go/mediaaccess SkipDir).
+DEFAULT_IGNORE_DIRNAMES: frozenset[str] = frozenset(
+    {".maktaba", "@eaDir", "#recycle", "#snapshot", "lost+found"}
+)
 
 
 class _Logger(Protocol):

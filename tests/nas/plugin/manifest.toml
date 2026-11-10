@@ -1,0 +1,22 @@
+# The NAS cells' third-party test plugin (Epic 59 story 59.07): plugind's hello guest
+# (plugind/guests/hello), packed by nas.yml's image job with this manifest as hello.mkplugin.
+# The same manifest as tests/components/test_plugins_live.py's.
+schema = 1
+id = "dev.example.hello"
+version = "1.0.0"
+plugin_api = "1.0"
+maktaba = ">=0.0.1"
+licence = "MIT"
+
+[strings]
+name = "plugin.name"
+summary = "plugin.summary"
+
+[resources]
+timeout_s = 30
+
+[[stage]]
+name = "hello"
+subject = "catalog"
+export = "run-hello"
+version = 1

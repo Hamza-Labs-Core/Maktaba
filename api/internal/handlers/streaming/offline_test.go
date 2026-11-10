@@ -323,7 +323,7 @@ func TestOfflineAVideoTheStreamingRoleLacksIsUnavailable(t *testing.T) {
 
 // The streaming role's refusals: too little disk to prepare the video is said
 // as such (507, its own code), not as busy; busy is 503 with its Retry-After
-// sent. An opened session carries the video's catalogue length.
+// sent (transcode_busy). An opened session carries the video's catalogue length.
 func TestOpenSessionRefusalsAndLength(t *testing.T) {
 	h, _, _ := offlineRig(t, true)
 	_, rec := open(t, h, as("u-amal", "lib1"), vNoDisk)
@@ -333,9 +333,14 @@ func TestOpenSessionRefusalsAndLength(t *testing.T) {
 		p.Title != "not enough disk space to prepare this video" {
 		t.Errorf("no disk: %d %s", rec.Code, rec.Body.String())
 	}
+	// every transcode slot taken (Epic 59 story 59.05: a Light home's one in software):
+	// transcode_busy, the player waits and asks again in 10 s
 	_, rec = open(t, h, as("u-amal", "lib1"), vBusy)
-	if rec.Code != http.StatusServiceUnavailable || rec.Result().Header.Get("Retry-After") != "5" {
-		t.Errorf("busy: %d, Retry-After %q", rec.Code, rec.Result().Header.Get("Retry-After"))
+	p = struct{ Type, Title, Code string }{}
+	_ = json.Unmarshal(rec.Body.Bytes(), &p)
+	if rec.Code != http.StatusServiceUnavailable || rec.Result().Header.Get("Retry-After") != "10" ||
+		p.Code != "transcode_busy" || p.Type != ProblemTranscodeBusy {
+		t.Errorf("busy: %d, Retry-After %q, %s", rec.Code, rec.Result().Header.Get("Retry-After"), rec.Body.String())
 	}
 	_, rec = open(t, h, as("u-amal", "lib1"), vHere)
 	var s OpenSessionResponse

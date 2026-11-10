@@ -31,14 +31,17 @@ import (
 // Deps bundles the dependencies the server needs. Production fills
 // these from main.go; tests inject fakes.
 type Deps struct {
-	Cfg          config.Config
-	JWKS         *auth.JWKSCache
-	Probe        *probe.Cache
-	Profiles     *capability.Registry
-	Sessions     session.Store
-	Layout       *cache.Layout
-	Files        handlers.FileOpener
-	Transcripts  handlers.TranscriptStreamer
+	Cfg         config.Config
+	JWKS        *auth.JWKSCache
+	Probe       *probe.Cache
+	Profiles    *capability.Registry
+	Sessions    session.Store
+	Layout      *cache.Layout
+	Files       handlers.FileOpener
+	Transcripts handlers.TranscriptStreamer
+	// Subtitles are the subtitles kept in the database for a read-only library (story
+	// 59.03), served after the side-cars; nil: side-cars only.
+	Subtitles    handlers.StoredSubtitles
 	Chapters     handlers.ChapterReader
 	StaticAssets handlers.StaticAssetResolver
 	Now          func() time.Time
@@ -127,7 +130,12 @@ func New(deps Deps) http.Handler {
 				if err != nil {
 					return nil, err
 				}
-				return handlers.ReadSidecar(path, lang, deps.Files)
+				// story 59.03: the side-car beside the video first, then the database's copy
+				var videoID string
+				if deps.Subtitles != nil {
+					videoID, _ = videoIDForSession(ctx, deps.Sessions)
+				}
+				return handlers.ReadSubtitle(ctx, path, videoID, lang, deps.Files, deps.Subtitles)
 			}
 			sub.Get("/subs/sidecar/{lang}.vtt", subs.ServeSidecar)
 			// Story 48.4 — the sidecars as HLS subtitle renditions too, for
@@ -137,10 +145,15 @@ func New(deps Deps) http.Handler {
 				if err != nil {
 					return handlers.SubtitleSet{}, err
 				}
-				return handlers.SubtitleSet{
-					DurationSec: row.DurationSec,
-					Langs:       handlers.ListSidecars(pathmap.Resolve(row.Path), os.ReadDir),
-				}, nil
+				langs := handlers.ListSidecars(pathmap.Resolve(row.Path), os.ReadDir)
+				if deps.Subtitles != nil {
+					if id, err := videoIDForSession(ctx, deps.Sessions); err == nil && id != "" {
+						if stored, err := deps.Subtitles.Langs(ctx, id); err == nil {
+							langs = handlers.MergeLangs(langs, stored)
+						}
+					}
+				}
+				return handlers.SubtitleSet{DurationSec: row.DurationSec, Langs: langs}, nil
 			}
 			sub.Get("/subs-{lang}/index.m3u8", manifestHandler.ServeSubtitlePlaylist)
 		}

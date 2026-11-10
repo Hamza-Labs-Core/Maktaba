@@ -16,6 +16,8 @@ import type {
   FailureList,
 } from "../../lib/queueApi";
 import { useReadOrder } from "../../lib/readOrder";
+import { libraryAccessErrorText, useReadOnlyLibraries } from "../../lib/libraryAccess";
+import { JobPermissionNote } from "../../components/LibraryAccessNotes";
 import { useIsAdmin } from "../../components/queue/useIsAdmin";
 import { useFmt } from "../../components/queue/format";
 import { waitingOnLabel } from "../../components/queue/QueueCard";
@@ -67,6 +69,9 @@ export function Failures() {
   const [notice, setNotice] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [prefixDraft, setPrefixDraft] = useState(filter.path_prefix ?? "");
+  // story 59.03: libraries Maktaba may not write in (no redownload or restore there)
+  const readOnly = useReadOnlyLibraries(admin);
+  const roOf = (it: FailureItem) => (it.library_id ? readOnly.has(it.library_id) : false);
 
   // the list's reads (a filter, Load more) and the fixes made here, in order: a
   // page read before a fix, or older than the one shown, is dropped
@@ -119,7 +124,7 @@ export function Failures() {
       setSelected(new Set());
       load();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : String(e));
+      setActionError(libraryAccessErrorText(e, t) ?? (e instanceof Error ? e.message : String(e)));
     } finally {
       setBusy(false);
     }
@@ -134,7 +139,7 @@ export function Failures() {
       setNotice(t("queue.failures.restoreQueued"));
       load();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : String(e));
+      setActionError(libraryAccessErrorText(e, t) ?? (e instanceof Error ? e.message : String(e)));
     } finally {
       setBusy(false);
     }
@@ -485,6 +490,7 @@ export function Failures() {
                   <td>
                     <strong>{reasonText(it, t)}</strong>
                     <div dir="auto">{it.message}</div>
+                    <JobPermissionNote item={it} />
                     <div className="mkt-q-muted">
                       {t(`queue.failures.status.${it.status}`)}
                       {it.class ? ` · ${it.class}` : ""}{" "}
@@ -531,7 +537,8 @@ export function Failures() {
                         <Button
                           size="sm"
                           variant="secondary"
-                          disabled={busy}
+                          disabled={busy || roOf(it)}
+                          title={roOf(it) ? t("library.read_only") : undefined}
                           onClick={() => void restore(it.file_action!.id)}
                         >
                           {t("queue.fa.restore")}
@@ -569,7 +576,8 @@ export function Failures() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={busy}
+                          disabled={busy || roOf(it)}
+                          title={roOf(it) ? t("library.read_only") : undefined}
                           onClick={() => act("redownload", { job_ids: [it.job_id] })}
                         >
                           {t("queue.failures.action.redownload")}

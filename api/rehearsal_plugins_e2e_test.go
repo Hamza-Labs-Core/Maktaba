@@ -307,6 +307,13 @@ func (r *rehearsal) homeWithPlugins() (*appMachine, *ownerSession) {
 		"password": ownerPass}); code != http.StatusOK {
 		r.t.Fatalf("allow unreviewed plugins: %d %s", code, body)
 	}
+	// a runner without user namespaces for the plugin host (Ubuntu's AppArmor restriction)
+	// is a Container-level machine (59.07): the admin allows container-only isolation, so
+	// the rehearsal follows the plugins through the update, not the hold
+	if code, body := admin.adminJSON("PUT", "/api/plugins/isolation", map[string]any{"allow": true,
+		"password": ownerPass}); code != http.StatusOK {
+		r.t.Fatalf("allow container-only isolation: %d %s", code, body)
+	}
 	for _, p := range []struct{ id, rng, subject string }{
 		{rehearsalPluginA, ">=0.0.1", "catalog"},
 		{rehearsalPluginB, ">=0.0.1, <" + k.next, "video"},

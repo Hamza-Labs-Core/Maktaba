@@ -33,6 +33,11 @@ enum class ErrorKind {
     RelayStreamLimit,
     /** The home can't prepare a capped relayed stream now (503 `home_busy`). */
     RelayHomeBusy,
+    /**
+     * Every transcode slot of the home is taken (503 `transcode_busy`, Epic 59 story 59.05: a
+     * Light-tier NAS converts one video at a time): the player asks again by itself.
+     */
+    TranscodeBusy,
 }
 
 /**
@@ -82,6 +87,7 @@ fun errorKind(status: Int, problem: Problem?): ErrorKind {
         status == 402 && reason == "relay_needs_plan" -> ErrorKind.RelayNeedsPlan
         status == 429 && reason == "stream_limit" -> ErrorKind.RelayStreamLimit
         status == 503 && reason == "home_busy" -> ErrorKind.RelayHomeBusy
+        status == 503 && (code == "transcode_busy" || slug == "transcode-busy") -> ErrorKind.TranscodeBusy
         code == "home_unreachable" || code == "home_timeout" -> ErrorKind.Unreachable
         slug == "home-unreachable" || slug == "home-timeout" || slug == "video-unavailable-offline" -> ErrorKind.Unreachable
         status == 404 && slug in notReadySlugs -> ErrorKind.NotReady

@@ -5,11 +5,12 @@
 //   GET    /api/libraries/folders[?path=]         { places: Place[] } | FolderListing (404: not a folder)
 //   GET    /api/libraries/{id}/impact             Impact (counts)
 //   POST   /api/libraries/{id}/merge              { into, confirm: <merged library's name> } (412: name)
-//   POST   /api/libraries/{id}/empty-trash        { removed }
+//   POST   /api/libraries/{id}/empty-trash        { removed } (409 library_read_only)
 //   POST   /api/libraries                         { name, roots, settings? }   (422: roots[i])
 //   PATCH  /api/libraries/{id}                    { name?, roots?, settings? } (422: roots[i])
 //   DELETE /api/libraries/{id}                    records only: the web never sends purge=true
 import { api, ApiError } from "./api";
+import type { LibraryAccess } from "./libraryAccess";
 
 export interface ManagedRoot {
   /** the database's form of the folder */
@@ -100,6 +101,11 @@ export interface ManagedLibrary {
   youtube?: LibraryYouTube;
   /** how the library grid shows collections (Epic 56 story 56.08) */
   collection_mode?: CollectionMode;
+  /** what Maktaba may do in its folders (story 59.03); null: never checked (read and write) */
+  access?: LibraryAccess | null;
+  access_checked_at?: string | null;
+  /** some sampled files (or a later write) failed */
+  access_partial?: boolean;
 }
 
 export type CollectionMode = "tab_only" | "hide_items" | "show_both";

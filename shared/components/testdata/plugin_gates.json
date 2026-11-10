@@ -21,6 +21,9 @@
     {"name": "an optional one not granted passes", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "required": [], "granted": [], "review_level": "store"}, "reason": ""},
     {"name": "store countersigned, automated: no opt-in needed", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "review_level": "automated", "allow_unreviewed": false}, "reason": ""},
     {"name": "store countersigned, reviewed: no opt-in needed", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "review_level": "reviewed", "allow_unreviewed": false}, "reason": ""},
-    {"name": "developer signed only needs the opt-in", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "review_level": "developer", "allow_unreviewed": false}, "reason": "unreviewed_disallowed"}
+    {"name": "developer signed only needs the opt-in", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "review_level": "developer", "allow_unreviewed": false}, "reason": "unreviewed_disallowed"},
+    {"name": "Container isolation without the admin's yes (59.07)", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "review_level": "store", "granted": [], "isolation_held": true}, "reason": "isolation_held"},
+    {"name": "the isolation hold comes after the opt-in for unreviewed plugins", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "review_level": "none", "allow_unreviewed": false, "isolation_held": true}, "reason": "unreviewed_disallowed"},
+    {"name": "the isolation hold comes before the grants", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "required": ["media.read"], "granted": [], "review_level": "store", "isolation_held": true}, "reason": "isolation_held"}
   ]
 }

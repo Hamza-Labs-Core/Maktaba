@@ -27,7 +27,8 @@ runs every cell, a change to `web/` alone runs nothing.
    `media.owner`, `media.mode` and `media.ro`, and `/volume1/Private` (mode 000) when the cell has
    `noaccess_root`.
 2. **server.toml** first, as the cell's user: the smallest Whisper, no second listen, no
-   language model.
+   language model, no quiet hours (the Light and Standard tiers' default, 01:00-06:00, holds
+   a library's first scan until then; `quiet-hours-hold` checks that hold).
 3. **Setup, headless**: `docker run --rm -i <shape> IMAGE setup --answers /dev/stdin`, what
    `docker compose run --rm maktaba setup` runs, the admin's password only on stdin.
 4. **The server**: `docker run -d <shape> --network host IMAGE`. Ready is the public health route,
@@ -42,7 +43,7 @@ runs every cell, a change to `web/` alone runs nothing.
    `cgroup-memory.txt`, `setup.log`, `state-logs/` (server.log, venv.log), `data-logs/` (every
    role's log segments: api, streaming, pipeline and its workers, the plugin runners, postgres,
    supervisor), `launcher.log`, the API's view (`api-processes.json`, `api-libraries.json`,
-   `api-machine.json` (`GET /api/server/machine`, 59.04), `api-version.json`), `report.json` and `summary.md`.
+   `api-machine.json` (`GET /api/server/machine`, 59.04), `api-version.json`), `postgres-pss.txt` on the cells that check it, `report.json` and `summary.md`.
 
 ## Assertions
 
@@ -53,10 +54,18 @@ runs every cell, a change to `web/` alone runs nothing.
 | `scan` | the libraries' roots are the fixtures' and a scan finds all 40 clips |
 | `thumbnail` | an Arabic clip's poster is served |
 | `transcode` | a forced software transcode of the HEVC clip serves its master playlist, a rendition and a first segment |
+| `transcode_auto` | the same on the encoder the server picked (no `force_software`): libx264 once VA-API fell back (59.05) |
+| `video_no_device`, `video_device_failed`, `video_group_add` | `GET /api/server/machine`'s `video` (the streaming role's verdict, 59.05) is software with that reason: no render node; one whose test encode failed (`/dev/null` as `renderD128`), its error kept; one the user may not open (the host's `/dev/kmsg`, 0644 root and read-only in the device cgroup: `/dev/null` is in Docker's default allow list, so `:r` does not narrow it), the uid named |
 | `no_oom` | not OOM-killed, `memory.current` under `memory.max`, no `oom_kill` event |
 | `media_untouched` | the library holds exactly the fixtures afterwards: nothing written in it |
 | `logs_clean` | no permission error in `server.log` |
+| `access_ro` | every library under the media mount shows Read only after Check access (`POST /api/libraries/{id}/check-access`), each root with its fix, a `:ro` mount named as one, and `GET /api/libraries` says `ro` (59.03) |
+| `convert_409` | conversion of a read-only library (and its dry run) answers 409 `library_read_only` (59.03) |
+| `access_none` | adding the mode-000 root is refused (422, `not-readable`); a library made while the folder was open shows No access once it is closed and checked again, with its fix, and its scan answers 409 `library_no_access` (59.03) |
 | `tier_light`, `tier_standard` | `GET /api/server/machine` (59.04) reads the container's memory limit as Docker set it, and the tier and its defaults are that tier's |
+| `quiet_hold` | outside the cell's quiet hours a new library's first scan waits: the scan queue (`GET /api/queues`) says `quiet_hours` and when the window opens, and no clip is found; the admin's `POST /api/queues/scan/run-now` then starts it: the held jobs run and none stays paused; every clip is then found as in `scan` (59.02) |
+| `postgres_pss_512m` | the bundled Postgres's processes hold under 512 MiB together (the sum of `Pss` in each one's `smaps_rollup`, kept as `postgres-pss.txt`), the Light tier's tuning applied (59.02) |
+| `isolation_container` | without Landlock and user namespaces the plugin isolation level is Container (`GET /api/server/machine`'s `plugin_isolation` and `GET /api/plugins/isolation`); the test plugin (`--plugin`, plugind's hello guest that the amd64 image job packs as the `nas-plugin` artifact), installed and turned on by the admin, stays off with `isolation_held`; `PUT /api/plugins/isolation` without the password is 401, with it 200; the plugin then runs, and `plugins.host` is Degraded with `sandbox_partial` (plugind's required layers on, its optional ones missing). The answers are kept as `api-plugin-isolation.json` (59.07) |
 | `refused_write`, `refused_privileged` | the container exits 78 with its message (59.01) |
 
 An assertion still waiting for its story is written `{"name": "tier_light", "needs": ["59.04"]}`:
@@ -67,7 +76,8 @@ it is reported as pending (⏳) until that story is in `landed`.
 1. Add it to `cells.json`: `name`, `about`, `arches` (`amd64`, `arm64`), and its shape: `user`,
    `data`, `media`, `noaccess_root`, `docker` (extra `docker run` arguments such as `--memory=4g`
    or `--device /dev/dri`), `env`, `seccomp` (a profile in this folder), `expect: "refused"`,
-   `kill_restart`; then `asserts`.
+   `kill_restart`, `quiet_hours_ahead` (a one-hour quiet window opening three hours from now,
+   UTC; every other cell has none, `[schedule] quiet_hours = ""`); then `asserts`.
 2. A new assertion is a method `assert_<name>` of `Cell` in `cell.py` returning a short detail,
    raising `AssertionError` to fail. Use `self.api` (signed in as the admin) and `docker(...)`.
 3. A cell or assertion for a story not merged yet carries `needs: ["59.NN"]`; the story's pull
@@ -82,6 +92,11 @@ it is reported as pending (⏳) until that story is in `landed`.
        --fixtures build/nas/media --out build/nas/out/uid-1000 --local 47088
    ```
 
+   The no-Landlock cells also take `--plugin hello.mkplugin`: `make plugind-guests`, then
+   `go run ./cmd/mkplugin <folder> hello.mkplugin` in `shared/go/componentpack`, the folder
+   holding the guest as `plugin.wasm`, its `manifest.toml` and `i18n/` (what nas.yml's image
+   job does).
+
    `--local PORT` runs the cell on a bridge network with a relay in its network namespace, so
    the server still sees a local client (Docker Desktop has no host network). Pick a port no
    other program on the machine listens on.
@@ -90,9 +105,12 @@ it is reported as pending (⏳) until that story is in `landed`.
 
 | Need | What the cells found |
 |---|---|
-| `scan-grant-race` | a scan asked right after a library is made walks nothing: the `light` runner's sandbox has no grant for the new root yet (EACCES, `files_walked=0`); the runner restarts with it a moment later. `scan` asks again each minute; `first_scan` waits |
 | `poster-queue` | in a fresh container no `content_hash` job is queued for the scanned clips, and `thumbnail` (the poster) only follows `content_hash`: `thumb_small` runs and writes nothing, and no poster is served after 15 minutes |
 
-**Later phases add cells:** VA-API without a device (`vaapi-fallback`, 59.05), speech on arm64
-(`arm64` with speech on, 59.06), the plugin isolation level on the no-Landlock cells (59.07),
+**VA-API (59.05):** `vaapi-fallback` (VA-API asked for, no `/dev/dri`), `vaapi-fake-device`
+(`/dev/null` as the render node: the test encode fails) and `vaapi-no-group` (a node the user may
+not open): each ends in libx264 with its reason in Settings. Real VA-API is in the device
+checklists (J4125, N100).
+
+**Later phases add cells:** speech on arm64 (`arm64` with speech on, 59.06),
 `bridge` and `offline` (59.08, 59.01), and the update legs (`update-rehearsal-container`, 59.12).

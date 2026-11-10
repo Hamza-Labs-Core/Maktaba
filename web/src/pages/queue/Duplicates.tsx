@@ -14,6 +14,7 @@ import { useReadOrder } from "../../lib/readOrder";
 import { useIsAdmin } from "../../components/queue/useIsAdmin";
 import { useFmt } from "../../components/queue/format";
 import { useBytes } from "../../components/queue/offline";
+import { libraryAccessErrorText, useReadOnlyLibraries } from "../../lib/libraryAccess";
 import { useAction } from "../../components/queue/useAction";
 import { TitleRow } from "../../help/HelpLink";
 import "../../styles/queue.css";
@@ -124,7 +125,13 @@ export function Duplicates() {
   const [loadError, setLoadError] = useState(false);
   const [keepers, setKeepers] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
-  const { busy, error, run } = useAction();
+  const { busy, error, cause, run } = useAction();
+  // story 59.03: applying moves a copy into its library's trash, which a library
+  // read-only for Maktaba does not allow
+  const readOnly = useReadOnlyLibraries(admin);
+  const groupReadOnly = (g: DuplicateGroup) =>
+    (g.library_id !== null && readOnly.has(g.library_id)) ||
+    g.members.some((m) => readOnly.has(m.library_id));
 
   const filter = useCallback(
     () => ({ status, tier: tier || undefined, library_id: library || undefined }),
@@ -200,6 +207,7 @@ export function Duplicates() {
   const openExact = (groups ?? []).filter(
     (g) =>
       g.tier === "exact" &&
+      !groupReadOnly(g) &&
       (g.status === "open" || g.status === "failed") &&
       !(g.job && LIVE.has(g.job.state))
   );
@@ -303,7 +311,7 @@ export function Duplicates() {
       )}
       {(error || loadError) && (
         <p role="alert" className="mkt-q-error">
-          {error ?? t("queue.error.load")}
+          {error ? (libraryAccessErrorText(cause, t) ?? error) : t("queue.error.load")}
         </p>
       )}
       {groups === null && !loadError && <p className="mkt-loading">{t("common.loading")}</p>}
@@ -374,7 +382,10 @@ export function Duplicates() {
                 <Button
                   size="sm"
                   loading={busy === `apply:${g.id}`}
-                  disabled={queued || (busy != null && busy !== `apply:${g.id}`)}
+                  disabled={
+                    queued || groupReadOnly(g) || (busy != null && busy !== `apply:${g.id}`)
+                  }
+                  title={groupReadOnly(g) ? t("library.read_only") : undefined}
                   onClick={() => void apply(g)}
                 >
                   {t("queue.dup.apply")}

@@ -504,3 +504,122 @@ def test_a_stage_outside_its_plugins_group_brings_only_the_network() -> None:
     assert not light.net
     assert light.read == ["/data/thumbnails"] and light.write == ["/data/reviews"]
     assert light.gpu
+
+
+# --- Epic 59: the trash of a writable library, missing when the runner starts ------------
+
+TRASH_PROBE = textwrap.dedent(
+    """
+    import json, os, sys
+    from maktaba_plugin_runner import sandbox
+    policy = sandbox.Policy(**json.loads(sys.argv[1]))
+    library = sys.argv[2]
+    out = {}
+    try:
+        out["applied"] = sandbox.apply(policy).level
+    except sandbox.SandboxUnavailable as exc:
+        out["applied"] = "unavailable:" + exc.step
+    def move():
+        day = os.path.join(library, ".maktaba", "trash", "convert", "2026-11-10")
+        os.makedirs(day, exist_ok=True)
+        os.rename(os.path.join(library, "ep1.mkv"), os.path.join(day, "ep1.mkv"))
+    try:
+        move()
+        out["trash"] = "allowed"
+    except Exception as exc:
+        out["trash"] = "denied:" + type(exc).__name__
+    print(json.dumps(out))
+    """
+)
+
+
+def _trash_policy(tmp_path: Path, writes_library: bool) -> tuple[Path, dict[str, Any]]:
+    from maktaba_plugin_runner.sandbox import policy_for
+
+    library, run_dir = (tmp_path / "lib").resolve(), (tmp_path / "run").resolve()
+    library.mkdir()
+    run_dir.mkdir()
+    (library / "ep1.mkv").write_bytes(b"video")
+    write = ["library", "trash"] if writes_library else ["trash"]
+    trusted: list[dict[str, object]] = [
+        {"runner": "files", "files": {"read": ["library"], "write": write}}
+    ]
+    areas = {
+        "library": str(library),
+        "library.write": str(library),
+        "trash": f"{library}/.maktaba/trash",
+    }
+    p = policy_for(trusted, areas=areas, api_socket="", own_socket="", run_dir=str(run_dir))
+    return library, {"read": p.read, "write": p.write, "run_dir": p.run_dir}
+
+
+def test_a_missing_trash_is_granted_through_its_library_root(tmp_path: Path) -> None:
+    """dedup and convert move a file into ``<root>/.maktaba/trash``, which a fresh library
+    does not have: the grant names the nearest folder that exists (the root, or its
+    ``.maktaba``), and nothing is made in the library before a stage moves a file."""
+    from maktaba_plugin_runner.sandbox import trash_grant
+
+    library, policy = _trash_policy(tmp_path, writes_library=False)
+    assert str(library) in policy["write"]
+    assert sorted(os.listdir(library)) == ["ep1.mkv"]  # nothing created
+    (library / ".maktaba").mkdir()
+    assert trash_grant(f"{library}/.maktaba/trash") == f"{library}/.maktaba"
+    (library / ".maktaba" / "trash").mkdir()
+    assert trash_grant(f"{library}/.maktaba/trash") == f"{library}/.maktaba/trash"
+    # an unmounted share: named as it is (a rule on a missing path applies nothing)
+    assert trash_grant("/no/such/share/.maktaba/trash") == "/no/such/share/.maktaba/trash"
+    # a trash folder named some other way is granted as named
+    assert trash_grant("/media/.trash") == "/media/.trash"
+
+
+@pytest.mark.parametrize("writes_library", [True, False])
+def test_a_sandboxed_runner_moves_a_file_into_a_trash_made_after_it_started(
+    tmp_path: Path, writes_library: bool
+) -> None:
+    """The move a convert or dedup stage makes, in a child that applied the files group's
+    sandbox before the trash existed: allowed (Landlock on Linux, Seatbelt on macOS)."""
+    library, policy = _trash_policy(tmp_path, writes_library=writes_library)
+    out = subprocess.run(
+        [sys.executable, "-c", TRASH_PROBE, json.dumps(policy), str(library)],
+        capture_output=True, text=True, timeout=60,
+    )  # fmt: skip
+    assert out.returncode == 0, out.stderr
+    got = json.loads(out.stdout.strip().splitlines()[-1])
+    if str(got["applied"]).startswith("unavailable"):
+        pytest.skip(f"this machine cannot apply the sandbox: {got['applied']}")
+    assert got["trash"] == "allowed", got
+    assert (library / ".maktaba" / "trash" / "convert" / "2026-11-10" / "ep1.mkv").is_file()
+
+
+def test_a_read_only_library_has_no_trash_grant() -> None:
+    """Story 59.03: a library Maktaba may not write is in no write area, its trash neither,
+    so a runner never writes it even without Landlock (the ``:ro`` mount enforces it)."""
+    from maktaba_pipeline.plugins.native import areas_doc
+
+    class DB:
+        async def fetch(self, q: str, *a: object) -> list[dict[str, object]]:
+            if "FROM libraries" in q:
+                return [
+                    {"roots": json.dumps(["/volume1/Media/ro"]), "access": "ro"},
+                    {"roots": json.dumps(["/volume1/Media/none"]), "access": "none"},
+                    {"roots": json.dumps(["/volume1/Media/rw"]), "access": "rw"},
+                ]
+            raise RuntimeError("no such table")
+
+        async def fetchrow(self, q: str, *a: object) -> None:
+            raise RuntimeError("no such table")
+
+        async def fetchval(self, q: str, *a: object) -> None:
+            raise RuntimeError("no such table")
+
+    # run without an event loop (its self-pipe is a socket the unit tier refuses): the
+    # fake answers at once, so the coroutine never suspends
+    coro = areas_doc(DB())
+    try:
+        coro.send(None)
+        raise AssertionError("areas_doc suspended")
+    except StopIteration as done:
+        areas = done.value
+    assert areas["trash"] == "/volume1/Media/rw/.maktaba/trash"
+    assert areas["library.write"] == "/volume1/Media/rw"
+    assert not os.path.exists("/volume1/Media/ro/.maktaba")

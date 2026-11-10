@@ -159,3 +159,77 @@ func TestServer_NoSidecarMasterUnchanged(t *testing.T) {
 		t.Fatalf("%d\n%s", rec.Code, rec.Body.String())
 	}
 }
+
+// fakeStored is the database's subtitles for one video (story 59.03).
+type fakeStored struct {
+	videoID string
+	vtt     map[string]string
+}
+
+func (f fakeStored) Langs(_ context.Context, id string) ([]string, error) {
+	if id != f.videoID {
+		return nil, nil
+	}
+	var out []string
+	for l := range f.vtt {
+		out = append(out, l)
+	}
+	return out, nil
+}
+
+func (f fakeStored) VTT(_ context.Context, id, lang string) ([]byte, error) {
+	if v, ok := f.vtt[lang]; ok && id == f.videoID {
+		return []byte(v), nil
+	}
+	return nil, handlers.ErrSidecarNotFound
+}
+
+// Story 59.03 through the router: a read-only library's subtitle kept in the database is a
+// rendition beside the side-car beside the video, and its segment serves the stored text;
+// a language in neither stays 404.
+func TestServer_StoredSubtitleServedLikeASidecar(t *testing.T) {
+	priv, _ := rsa.GenerateKey(rand.Reader, 2048)
+	jwks, _ := auth.NewJWKSCache(context.Background(), "", time.Minute)
+	jwks.Set(map[string]*rsa.PublicKey{"k1": &priv.PublicKey})
+	media := t.TempDir()
+	_ = os.WriteFile(filepath.Join(media, "Film.mkv"), []byte("x"), 0o644)
+	_ = os.WriteFile(filepath.Join(media, "Film.en.vtt"),
+		[]byte("WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.000\nHello\n"), 0o644)
+	libID := uuid.New()
+	row := &probe.Row{VideoID: uuid.New(), LibraryID: libID, Path: filepath.Join(media, "Film.mkv"), DurationSec: 600, Probed: true}
+	pb := probe.NewFakeBackend()
+	pb.Set(row)
+	layout := cache.New(t.TempDir())
+	_ = layout.EnsureTiers()
+	store := session.NewMemoryStore(time.Second)
+	sess := &session.Row{ID: uuid.New(), VideoID: row.VideoID, UserID: uuid.New(), Mode: session.ModeTranscode,
+		Format: session.FormatHLS}
+	_ = store.Insert(context.Background(), sess)
+	dir := layout.HLSDir(sess.ID.String())
+	_ = os.MkdirAll(dir, 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "master.m3u8"),
+		[]byte("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=6000000\nv0/index.m3u8\n"), 0o644)
+	stored := fakeStored{videoID: row.VideoID.String(),
+		vtt: map[string]string{"ar": "WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.000\nمرحبا\n"}}
+	r := New(Deps{Cfg: config.Load(), JWKS: jwks, Probe: probe.NewCache(pb, 16), Profiles: capability.NewRegistry(),
+		Sessions: store, Layout: layout, Files: diskOpener{}, Subtitles: stored, Now: time.Now})
+	tok := mintToken(t, priv, auth.Claims{Aud: "streaming", Sub: sess.ID.String(), Lib: []string{libID.String()}})
+	get := func(path string) (int, string) {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest("GET", "/stream/"+sess.ID.String()+path+"?sig="+url.QueryEscape(tok), nil))
+		return rec.Code, rec.Body.String()
+	}
+	code, master := get("/manifest.m3u8")
+	if code != 200 || !strings.Contains(master, `LANGUAGE="ar"`) || !strings.Contains(master, `LANGUAGE="en"`) {
+		t.Fatalf("master %d:\n%s", code, master)
+	}
+	if code, vtt := get("/subs/sidecar/ar.vtt"); code != 200 || !strings.Contains(vtt, "مرحبا") {
+		t.Fatalf("stored ar: %d %s", code, vtt)
+	}
+	if code, vtt := get("/subs/sidecar/en.vtt"); code != 200 || !strings.Contains(vtt, "Hello") {
+		t.Fatalf("side-car en: %d %s", code, vtt)
+	}
+	if code, _ := get("/subs/sidecar/fr.vtt"); code != 404 {
+		t.Fatalf("fr: %d, want 404", code)
+	}
+}

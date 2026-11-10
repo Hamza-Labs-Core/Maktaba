@@ -18,6 +18,7 @@ const (
 	HWAccelVideoToolbox HWAccel = "videotoolbox"
 	HWAccelNVENC        HWAccel = "nvenc"
 	HWAccelQSV          HWAccel = "qsv"
+	HWAccelVAAPI        HWAccel = "vaapi"
 	HWAccelSoftware     HWAccel = ""
 )
 
@@ -29,11 +30,16 @@ const (
 //   - macOS → VideoToolbox (h264_videotoolbox)
 //   - Linux and Windows → NVENC (h264_nvenc, an NVIDIA GPU), else QuickSync
 //     (h264_qsv, an Intel GPU)
+//   - Linux → VA-API (h264_vaapi on a /dev/dri render node: a NAS's Intel or
+//     AMD chip; story 59.05), after QuickSync, or before it on a NAS or in a
+//     container (PreferVAAPI: there QuickSync needs libmfx, which covers no
+//     newer Intel GPU, and VA-API uses less memory)
 //   - else → software libx264
 //
 // Prefer (MAKTABA_HWACCEL_PREFER) narrows it: "auto" (default) tries them
-// all, "software" (or "off", "none") none, "nvenc", "qsv" or "videotoolbox"
-// only that one; any other value is software, with an error saying so.
+// all, "software" (or "off", "none") none, "nvenc", "qsv", "vaapi" or
+// "videotoolbox" only that one; any other value is software, with an error
+// saying so.
 // Detection runs at boot and again later while it found software although
 // this ffmpeg lists a GPU encoder (WatchChoice); a session asking for
 // software (force_software) gets it in OpenSession.
@@ -47,6 +53,13 @@ type Detector struct {
 	// but has no session to give does (another program holds them).
 	Works func(ctx context.Context, ffmpeg, encoder string) (ok, busy bool)
 	GOOS  string // tests pin to "linux" / "darwin" / "windows"
+
+	// VAAPI finds the render node VA-API works on (nil: VA-API is not tried);
+	// PreferVAAPI tries it before QuickSync (a NAS, a container).
+	VAAPI       *VAAPIProbe
+	PreferVAAPI bool
+	// Now is the clock (tests).
+	Now func() time.Time
 }
 
 // Default returns a Detector with default probes wired, running bin.
@@ -59,13 +72,14 @@ func Default(bin Binary) *Detector {
 		Encoders: listEncoders,
 		Works:    encodes,
 		GOOS:     runtime.GOOS,
+		Now:      time.Now,
 	}
 }
 
 // Detect runs the probe and returns the chosen hwaccel.
 func (d *Detector) Detect(ctx context.Context) (HWAccel, error) {
-	hw, _, err := d.detect(ctx)
-	return hw, err
+	st, _, err := d.detect(ctx)
+	return HWAccel(strings.TrimPrefix(st.Encoder, "software")), err
 }
 
 // retry says whether a later detection may find more.
@@ -81,24 +95,36 @@ const (
 	retryBusy
 )
 
-// detect is Detect, and whether a later try may find more (software although
-// this ffmpeg lists a GPU encoder the preference allows).
-func (d *Detector) detect(ctx context.Context) (hw HWAccel, again retry, err error) {
+// detect is Detect with the verdict's details (VideoStatus), and whether a
+// later try may find more (software although this ffmpeg lists a GPU encoder
+// the preference allows).
+func (d *Detector) detect(ctx context.Context) (st VideoStatus, again retry, err error) {
+	now := time.Now
+	if d.Now != nil {
+		now = d.Now
+	}
+	defer func() {
+		st.CheckedAt = now().UTC()
+		if st.Encoder == "" {
+			st.Encoder = "software"
+		}
+		st.SoftwareOnly = st.Encoder == "software"
+	}()
 	prefer := strings.ToLower(strings.TrimSpace(d.Prefer))
 	switch prefer {
 	case "software", "off", "none", "libx264":
-		return HWAccelSoftware, retryNo, nil
+		return st, retryNo, nil
 	case "", "auto":
 		prefer = ""
-	case string(HWAccelNVENC), string(HWAccelQSV), string(HWAccelVideoToolbox):
+	case string(HWAccelNVENC), string(HWAccelQSV), string(HWAccelVAAPI), string(HWAccelVideoToolbox):
 	default:
-		return HWAccelSoftware, retryNo, fmt.Errorf("MAKTABA_HWACCEL_PREFER=%q is none of auto, software, nvenc, qsv, videotoolbox: software", d.Prefer)
+		return st, retryNo, fmt.Errorf("MAKTABA_HWACCEL_PREFER=%q is none of auto, software, nvenc, qsv, vaapi, videotoolbox: software", d.Prefer)
 	}
 	encs, err := d.Encoders(ctx, d.Bin.FFmpeg)
 	if err != nil {
 		// FFmpeg unavailable → fall back to software so tests on a
 		// host without ffmpeg still get a meaningful answer.
-		return HWAccelSoftware, retryNo, err
+		return st, retryNo, err
 	}
 	have := func(name string) bool {
 		for _, e := range encs {
@@ -113,7 +139,12 @@ func (d *Detector) detect(ctx context.Context) (hw HWAccel, again retry, err err
 	switch d.GOOS {
 	case "darwin":
 		candidates = []HWAccel{HWAccelVideoToolbox}
-	case "linux", "windows":
+	case "linux":
+		candidates = []HWAccel{HWAccelNVENC, HWAccelQSV, HWAccelVAAPI}
+		if d.PreferVAAPI {
+			candidates = []HWAccel{HWAccelNVENC, HWAccelVAAPI, HWAccelQSV}
+		}
+	case "windows":
 		candidates = []HWAccel{HWAccelNVENC, HWAccelQSV}
 	}
 	for _, hw := range candidates {
@@ -121,12 +152,32 @@ func (d *Detector) detect(ctx context.Context) (hw HWAccel, again retry, err err
 			continue
 		}
 		enc := encoderForHWAccel(string(hw))
+		if hw == HWAccelVAAPI {
+			if d.VAAPI == nil {
+				continue
+			}
+			if !have(enc) {
+				// this ffmpeg has no VA-API: said only when it was asked for
+				if prefer != "" {
+					st.Reason, st.Error = ReasonDeviceFailed, "this ffmpeg has no h264_vaapi encoder"
+				}
+				continue
+			}
+			// a render node is there or not: nothing a later try changes (the
+			// container's devices are set when it starts)
+			if _, vs := d.VAAPI.Find(ctx, d.Bin.FFmpeg); vs.Encoder != "" {
+				return vs, retryNo, nil
+			} else if st.Reason == "" {
+				st = vs
+			}
+			continue
+		}
 		if !have(enc) {
 			continue
 		}
 		ok, busy := d.Works(ctx, d.Bin.FFmpeg, enc)
 		if ok {
-			return hw, retryNo, nil
+			return VideoStatus{Encoder: string(hw), Codecs: []string{"H.264"}}, retryNo, nil
 		}
 		if busy {
 			again = retryBusy
@@ -134,7 +185,7 @@ func (d *Detector) detect(ctx context.Context) (hw HWAccel, again retry, err err
 			again = retryMaybe
 		}
 	}
-	return HWAccelSoftware, again, nil
+	return st, again, nil
 }
 
 // maybeTries: how many more detections a GPU encoder that failed without a
@@ -150,11 +201,31 @@ type Choice struct{ v atomic.Value }
 
 // Get is the verdict now ("" software).
 func (c *Choice) Get() HWAccel {
+	return HWAccel(strings.TrimPrefix(c.Status().Encoder, "software"))
+}
+
+// Status is the verdict now with its details (Encoder "software" before the first).
+func (c *Choice) Status() VideoStatus {
 	if c == nil {
-		return HWAccelSoftware
+		return VideoStatus{Encoder: "software", SoftwareOnly: true}
 	}
-	hw, _ := c.v.Load().(HWAccel)
-	return hw
+	st, ok := c.v.Load().(VideoStatus)
+	if !ok {
+		return VideoStatus{Encoder: "software", SoftwareOnly: true}
+	}
+	return st
+}
+
+// VAAPIDevice is the render node the VA-API verdict runs on (nil: not VA-API).
+func (c *Choice) VAAPIDevice() *VAAPIDevice {
+	return c.Status().VAAPI
+}
+
+// NewChoiceForTest is a Choice holding st.
+func NewChoiceForTest(st VideoStatus) *Choice {
+	c := &Choice{}
+	c.v.Store(st)
+	return c
 }
 
 // WatchChoice detects at once (within timeout), then again while the verdict
@@ -164,16 +235,16 @@ func (c *Choice) Get() HWAccel {
 // of its device (Windows' builds list h264_nvenc on any PC, a driver may load
 // after the server) gets maybeTries tries more. report hears every verdict
 // that changes, and the first.
-func WatchChoice(ctx context.Context, d *Detector, timeout, interval time.Duration, report func(HWAccel, error)) *Choice {
+func WatchChoice(ctx context.Context, d *Detector, timeout, interval time.Duration, report func(VideoStatus, error)) *Choice {
 	c := &Choice{}
 	try := func() retry {
 		tctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		hw, again, err := d.detect(tctx)
-		if old, seen := c.v.Load().(HWAccel); !seen || old != hw || err != nil {
-			report(hw, err)
+		st, again, err := d.detect(tctx)
+		if old, seen := c.v.Load().(VideoStatus); !seen || old.Encoder != st.Encoder || old.Reason != st.Reason || err != nil {
+			report(st, err)
 		}
-		c.v.Store(hw)
+		c.v.Store(st)
 		return again
 	}
 	again := try()

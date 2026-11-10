@@ -177,9 +177,12 @@ function OptionsEditor({
 export function YouTubeSourcesPanel({
   library,
   onChanged,
+  readOnly,
 }: {
   library: { id: string; name: string } | null;
   onChanged?: () => void;
+  /** story 59.03: why nothing can be downloaded into this library (it is read-only for Maktaba) */
+  readOnly?: string;
 }) {
   const { t, n } = useI18n();
   const fmt = useFmt();
@@ -325,6 +328,11 @@ export function YouTubeSourcesPanel({
 
   return (
     <div className="mkt-q-ytsrc">
+      {readOnly && (
+        <p className="mkt-q-banner mkt-q-banner--warn" role="note">
+          {readOnly}
+        </p>
+      )}
       <form
         className="mkt-q-ytsrc__add"
         aria-label={t("queue.yt.add")}
@@ -363,7 +371,13 @@ export function YouTubeSourcesPanel({
           placeholder={t("queue.yt.folderAuto")}
           onChange={(e) => setFolder(e.target.value)}
         />
-        <Button type="submit" size="sm" loading={busy === "add"} disabled={!url.trim()}>
+        <Button
+          type="submit"
+          size="sm"
+          loading={busy === "add"}
+          disabled={!url.trim() || !!readOnly}
+          title={readOnly}
+        >
           {t("queue.yt.addButton")}
         </Button>
       </form>
@@ -491,7 +505,8 @@ export function YouTubeSourcesPanel({
           size="sm"
           variant="secondary"
           loading={busy === "backfill"}
-          disabled={busy != null && busy !== "backfill"}
+          disabled={!!readOnly || (busy != null && busy !== "backfill")}
+          title={readOnly}
           onClick={() => void resume()}
         >
           {t("queue.yt.resumeBackfill", { n: n(backlog) })}
@@ -500,7 +515,8 @@ export function YouTubeSourcesPanel({
           size="sm"
           variant="secondary"
           loading={busy === "retry:all"}
-          disabled={failedTotal === 0 || (busy != null && busy !== "retry:all")}
+          disabled={!!readOnly || failedTotal === 0 || (busy != null && busy !== "retry:all")}
+          title={readOnly}
           onClick={() => void retry()}
         >
           {t("queue.yt.retryAll", { n: n(failedTotal) })}
@@ -509,6 +525,8 @@ export function YouTubeSourcesPanel({
           size="sm"
           variant="ghost"
           aria-expanded={tartube.open}
+          disabled={!!readOnly}
+          title={readOnly}
           onClick={() => setTartube((v) => ({ ...v, open: !v.open }))}
         >
           {t("queue.yt.tartube")}

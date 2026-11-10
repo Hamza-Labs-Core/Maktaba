@@ -38,8 +38,10 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libaccess"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libpaths"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/mediaaccess"
 )
 
 // Library is the over-the-wire shape returned by every endpoint here.
@@ -62,6 +64,41 @@ type Library struct {
 	// CollectionMode is how the library grid shows collections (Epic 56
 	// story 56.08, slot 0193): tab_only, hide_items or show_both.
 	CollectionMode string `json:"collection_mode,omitempty"`
+	// Access is the last media-permission check (Epic 59 story 59.03, slot 0219): rw, ro
+	// or none; null when never checked (treated as rw). GET .../access has each root's.
+	Access          *string    `json:"access"`
+	AccessCheckedAt *time.Time `json:"access_checked_at"`
+	AccessPartial   bool       `json:"access_partial"`
+}
+
+// libraryCols are the columns scanLibrary reads, in its order.
+const libraryCols = `id, name, roots, settings, created_at, updated_at, collection_mode, access, access_checked_at, access_detail`
+
+// scanLibrary reads one row of libraryCols.
+func scanLibrary(row interface{ Scan(...any) error }) (Library, error) {
+	var lib Library
+	var rootsArr stringArray
+	var settings, detail []byte
+	var access sql.NullString
+	var checked sql.NullTime
+	if err := row.Scan(&lib.ID, &lib.Name, &rootsArr, &settings, &lib.CreatedAt, &lib.UpdatedAt, &lib.CollectionMode,
+		&access, &checked, &detail); err != nil {
+		return Library{}, err
+	}
+	lib.Roots = rootsArr
+	if len(settings) == 0 {
+		settings = []byte(`{}`)
+	}
+	lib.Settings = settings
+	if access.Valid {
+		lib.Access = &access.String
+	}
+	if checked.Valid {
+		t := checked.Time
+		lib.AccessCheckedAt = &t
+	}
+	lib.AccessPartial = parseDetail(detail).partial()
+	return lib, nil
 }
 
 // Collection modes of a library.
@@ -93,6 +130,13 @@ type Handler struct {
 	PathChecker PathChecker
 	JobEnqueuer JobEnqueuer
 	NowFunc     func() time.Time
+	// Access checks a root's media permissions (story 59.03); nil is mediaaccess.Check.
+	Access AccessChecker
+	// Platform is the NAS platform the fix text speaks of (dsm, truenas, unraid, ...);
+	// nil is mediaaccess.PlatformFromEnv (what maktaba-server detected at its start).
+	Platform func() string
+	// RunsAs is the user Maktaba runs as; nil is this process's.
+	RunsAs func() mediaaccess.RunsAs
 }
 
 // PathChecker validates that a library root is an absolute, existing,
@@ -178,6 +222,9 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/libraries/{id}/impact", h.Impact)
 	r.Post("/api/libraries/{id}/merge", h.Merge)
 	r.Post("/api/libraries/{id}/empty-trash", h.EmptyTrash)
+	// Epic 59 story 59.03: media permissions (access.go)
+	r.Get("/api/libraries/{id}/access", h.GetAccess)
+	r.Post("/api/libraries/{id}/check-access", h.CheckAccess)
 }
 
 // List returns every library the principal can read. For an admin /
@@ -190,11 +237,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT id, name, roots, settings, created_at, updated_at
-		FROM libraries
-		ORDER BY created_at DESC
-	`)
+	rows, err := h.DB.QueryContext(r.Context(), `SELECT `+libraryCols+` FROM libraries ORDER BY created_at DESC`)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("query libraries").Wrap(err))
 		return
@@ -203,18 +246,11 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 	out := []Library{}
 	for rows.Next() {
-		var lib Library
-		var rootsArr stringArray
-		var settings []byte
-		if err := rows.Scan(&lib.ID, &lib.Name, &rootsArr, &settings, &lib.CreatedAt, &lib.UpdatedAt); err != nil {
+		lib, err := scanLibrary(rows)
+		if err != nil {
 			httperror.Write(w, r, httperror.Internal("scan libraries row").Wrap(err))
 			return
 		}
-		lib.Roots = rootsArr
-		if len(settings) == 0 {
-			settings = []byte(`{}`)
-		}
-		lib.Settings = settings
 		if p.AccessAllLibraries || p.HasLibrary(lib.ID) {
 			out = append(out, lib)
 		}
@@ -306,11 +342,14 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	WriteAudit(r.Context(), h.DB, EventLibraryCreated, ActorOf(p), id, map[string]any{
 		"name": req.Name, "roots": roots,
 	})
-	w.Header().Set("Location", "/api/libraries/"+id)
-	common.WriteJSON(w, r, http.StatusCreated, Library{
+	created := Library{
 		ID: id, Name: req.Name, Roots: roots, Settings: settings,
 		CreatedAt: now, UpdatedAt: now, Warnings: settingsWarnings,
-	})
+	}
+	// story 59.03: a library added is checked at once (its folders may be read-only)
+	h.applyAccess(r.Context(), &created)
+	w.Header().Set("Location", "/api/libraries/"+id)
+	common.WriteJSON(w, r, http.StatusCreated, created)
 }
 
 // Get returns the library row or 404.
@@ -487,6 +526,12 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		"fields": changed, "name": cur.Name, "roots": cur.Roots,
 	})
 	cur.UpdatedAt = now
+	if req.Roots != nil {
+		// story 59.03: new folders are checked at once
+		h.applyAccess(r.Context(), &cur)
+	} else if fresh, err := h.loadLibrary(r.Context(), id); err == nil {
+		cur.Access, cur.AccessCheckedAt, cur.AccessPartial = fresh.Access, fresh.AccessCheckedAt, fresh.AccessPartial
+	}
 	common.WriteJSON(w, r, http.StatusOK, cur)
 }
 
@@ -519,6 +564,10 @@ func (h *Handler) deleteLibrary(w http.ResponseWriter, r *http.Request) int {
 	purge, e := common.QueryBool(r, "purge", false)
 	if e != nil {
 		return writeErr(w, r, e)
+	}
+	if purge && lib.Access != nil && !libaccess.Writable(*lib.Access) {
+		// story 59.03: a purge removes the library's files; on a read-only library nothing is touched
+		return writeErr(w, r, libaccess.Problem())
 	}
 	if purge {
 		confirm := r.URL.Query().Get("confirm")
@@ -567,12 +616,18 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.BadRequest("malformed id"))
 		return
 	}
-	if _, err := h.loadLibrary(r.Context(), id); err != nil {
+	lib, err := h.loadLibrary(r.Context(), id)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httperror.Write(w, r, httperror.NotFound("library "+id))
 			return
 		}
 		httperror.Write(w, r, httperror.Internal("load library").Wrap(err))
+		return
+	}
+	if lib.Access != nil && *lib.Access == libaccess.None {
+		// story 59.03: no scan runs for a library whose folders cannot be listed
+		httperror.Write(w, r, libaccess.NoAccessProblem())
 		return
 	}
 	if h.JobEnqueuer == nil {
@@ -698,21 +753,7 @@ func canSeeLibrary(r *http.Request, id string) bool {
 // loadLibrary fetches a single library row; sql.ErrNoRows is returned
 // verbatim so callers can map to 404.
 func (h *Handler) loadLibrary(ctx context.Context, id string) (Library, error) {
-	var lib Library
-	var rootsArr stringArray
-	var settings []byte
-	err := h.DB.QueryRowContext(ctx, `
-		SELECT id, name, roots, settings, created_at, updated_at, collection_mode FROM libraries WHERE id=$1
-	`, id).Scan(&lib.ID, &lib.Name, &rootsArr, &settings, &lib.CreatedAt, &lib.UpdatedAt, &lib.CollectionMode)
-	if err != nil {
-		return Library{}, err
-	}
-	lib.Roots = rootsArr
-	if len(settings) == 0 {
-		settings = []byte(`{}`)
-	}
-	lib.Settings = settings
-	return lib, nil
+	return scanLibrary(h.DB.QueryRowContext(ctx, `SELECT `+libraryCols+` FROM libraries WHERE id=$1`, id))
 }
 
 // normaliseAndValidateRoots dedups, then runs the PathChecker.

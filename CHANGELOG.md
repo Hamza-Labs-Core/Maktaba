@@ -14,6 +14,18 @@ build fails when the two differ.
 
 ### Changed
 
+- **A NAS converts video on its own chip, and says when it can't (story 59.05).** On an Intel
+  J4125 or N100, or an AMD APU, streaming now uses VA-API (`h264_vaapi`, HEVC where the driver
+  lists it) once a 2-second 1080p test encode works: after NVIDIA and Quick Sync, before Quick
+  Sync on a NAS or in a container. The server image carries the VA-API drivers on amd64 (iHD
+  from Debian's non-free component, i965, Mesa; `THIRD_PARTY_NOTICES`), and the compose file
+  shows how to pass `/dev/dri` with its group (`group_add`). Settings → This machine shows the
+  video: "Video: hardware (iHD), H.264 and HEVC", or software with why (no render device, the
+  group to add, the device's own error). With no GPU the tier's limits apply (one conversion
+  at 720p at most on Light, two at 1080p on Standard), players are told the home converts in
+  software, and a conversion past the limit waits with "Another video is being converted on
+  this home" and starts by itself.
+
 - **On a NAS, heavy work waits for quiet hours and Postgres is tuned to the machine (story
   59.02).** On the Light and Standard tiers a library's first scan, a transcription backlog,
   convert and duplicates, and bulk thumbnail sprites wait for 01:00–06:00, so the NAS stays
@@ -224,15 +236,11 @@ build fails when the two differ.
 
 ### Fixed
 
-- **On a fresh install, reports and thumbnails are written by their sandboxed runners from
-  the first job (Epic 59).** A runner's sandbox grants only folders that exist when it starts,
-  and on a fresh install (the server image's empty volume, where the home folder is the
-  volume) Maktaba's own cache folders were not made yet: the first report or thumbnail a
-  runner wrote was refused, the stage ran in the queue worker instead, and the server log
-  recorded a permission error. The queue worker now makes its own data folders (the
-  thumbnail, audio and report caches, the download work folder and the search index) before
-  it names them to the runners, by their real paths, wherever the home folder is, on macOS
-  and Linux. A library's folders are never made or written by this.
+- **The first scan of a library you just added finds its files.** A scan that started right
+  after a library was added could run in a plugin runner that had not yet been given access to
+  the new folder: it found nothing (Permission denied in the log), and only a later scan found
+  the files. That scan now runs in the queue worker while the runner restarts with access to
+  the new folder.
 
 - **Maktaba's own database starts again after a power cut or a killed container.** After an
   unclean stop (a power cut, `docker kill`, a NAS switched off), the bundled Postgres could
@@ -705,6 +713,17 @@ build fails when the two differ.
   alerted.
 
 ### Added
+
+- **Read-only libraries are supported, and each library shows what Maktaba may do in it
+  (story 59.03).** When a library is added, when its folders change, and from its page's
+  **Check access** button, Maktaba checks each folder: Read and write, Read only, or No access,
+  and whether some files can't be read. The page says which user Maktaba runs as and, on
+  Synology DSM, TrueNAS, Unraid or another system, what to change in that system's own
+  screens. Nothing is checked at start, so a sleeping disk stays asleep. On a read-only
+  library, subtitles are kept in the database (players show them as before), while convert,
+  duplicates, repair, YouTube downloads and delete are refused with the reason, and nothing in
+  the folder is touched. A library Maktaba cannot list is not scanned. Scans also skip DSM's
+  `#recycle` and `#snapshot` folders and `lost+found`.
 
 - **Admins can see when a built-in plugin's step ran in the queue worker instead (story
   54.43).** A queue step whose plugin runner cannot take a job on a machine runs in the queue
@@ -2571,6 +2590,24 @@ build fails when the two differ.
   packages for its architecture, so setup builds the pipeline's environment from them with no
   download; a home set up without speech to text downloads no model either.
 
+- **A home in a container says how isolated its plugins are, and asks before running
+  third-party plugins with less (story 59.07).** Each machine computes its plugin isolation
+  level at start: Full with Landlock and user namespaces, Container without them (most NAS
+  kernels, Docker's default seccomp profile). Settings → This machine and the Plugins page say
+  which, in one line. On the Container level a third-party plugin can be installed and turned
+  on but stays off, with the reason, until an admin turns on **Allow plugins with
+  container-only isolation on this home** (Settings → Plugins; the password typed again,
+  written to the audit log; `PUT /api/plugins/isolation`). Maktaba's own plugins keep running,
+  reported partial. The plugin host's required layers are unchanged; before any plugin runs it
+  is asked what they apply on this machine (`maktaba-plugind --sandbox-check`). A dedup or convert runner
+  started before a library's trash folder existed may now move a file into it.
+
+- **The Apple and Android apps wait for a busy NAS instead of failing (story 59.05).** When
+  every conversion slot of the home is taken (a Light-tier NAS converts one video at a time),
+  the player says "Another video is being converted on this home. Yours will start when it
+  finishes." and asks again every 10 seconds by itself, with no error screen; the video starts
+  as soon as a slot is free. Elsewhere the same answer reads as that sentence, with Try again.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
@@ -3107,6 +3144,16 @@ build fails when the two differ.
 - **An idle Core home is back to its four processes a minute after its last job.** Since the
   core steps (such as a library scan) run in a plugin runner, any work woke a runner, and it
   stayed up for ten idle minutes. A runner now exits after one idle minute.
+
+- **On a fresh install, reports and thumbnails are written by their sandboxed runners from
+  the first job (Epic 59).** A runner's sandbox grants only folders that exist when it starts,
+  and on a fresh install (the server image's empty volume, where the home folder is the
+  volume) Maktaba's own cache folders were not made yet: the first report or thumbnail a
+  runner wrote was refused, the stage ran in the queue worker instead, and the server log
+  recorded a permission error. The queue worker now makes its own data folders (the
+  thumbnail, audio and report caches, the download work folder and the search index) before
+  it names them to the runners, by their real paths, wherever the home folder is, on macOS
+  and Linux. A library's folders are never made or written by this.
 
 ## [0.2.0] - 2026-10-19
 

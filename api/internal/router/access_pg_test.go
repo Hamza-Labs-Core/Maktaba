@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -393,5 +394,62 @@ func TestPGAccessPersistedQueries(t *testing.T) {
 	}
 	if status, out := e.gqlPost("member", map[string]any{"query": other}); status != http.StatusOK || out["errors"] != nil {
 		t.Fatalf("allowlist: admin-registered text for member = %d %v", status, out)
+	}
+}
+
+// T06 (Epic 59 story 59.03) against Postgres and its migrations: a read-only library refuses
+// deleting its videos (409 library_read_only; the file stays), a library whose folders cannot be
+// listed runs no scan, and Check access stores what it found.
+func TestPGAccessReadOnlyLibrary(t *testing.T) {
+	e, count := setupAccess(t)
+	file := t.TempDir() + "/keep.mp4"
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.db.Exec(`UPDATE libraries SET access = 'ro' WHERE id = $1`, acLibA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.db.Exec(`UPDATE videos SET path = $2 WHERE id = $1`, acVidA1, file); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/videos/" + acVidA1, "/api/videos/" + acVidA1 + "?purge=true&confirm=" + acVidA1} {
+		out := e.want(http.StatusConflict, "admin", http.MethodDelete, path, nil)
+		if out["code"] != "library_read_only" {
+			t.Errorf("%s: %v", path, out)
+		}
+	}
+	if _, err := os.Stat(file); err != nil {
+		t.Fatalf("the file was touched: %v", err)
+	}
+	if n := count(`SELECT count(*) FROM videos WHERE id = $1`, acVidA1); n != 1 {
+		t.Fatal("the video was deleted")
+	}
+	// the API enforces roles: a member reads no access report
+	e.want(http.StatusForbidden, "member", http.MethodGet, "/api/libraries/"+acLibA+"/access", nil)
+	e.want(http.StatusForbidden, "member", http.MethodPost, "/api/libraries/"+acLibA+"/check-access", nil)
+
+	// a folder the check can list and write: Check access turns the library rw
+	root := t.TempDir()
+	if _, err := e.db.Exec(`UPDATE libraries SET roots = $2 WHERE id = $1`, acLibB, "{"+root+"}"); err != nil {
+		t.Fatal(err)
+	}
+	rep := e.want(http.StatusOK, "admin", http.MethodPost, "/api/libraries/"+acLibB+"/check-access", nil)
+	if rep["access"] != "rw" {
+		t.Fatalf("check: %v", rep)
+	}
+	if n := count(`SELECT count(*) FROM libraries WHERE id = $1 AND access = 'rw' AND access_checked_at IS NOT NULL
+		AND jsonb_array_length(access_detail->'roots') = 1`, acLibB); n != 1 {
+		t.Fatal("the check was not stored")
+	}
+	// a library whose folders are gone: no access, and no scan
+	if _, err := e.db.Exec(`UPDATE libraries SET roots = '{/nonexistent/maktaba-59-03}' WHERE id = $1`, acLibB); err != nil {
+		t.Fatal(err)
+	}
+	rep = e.want(http.StatusOK, "admin", http.MethodPost, "/api/libraries/"+acLibB+"/check-access", nil)
+	if rep["access"] != "none" {
+		t.Fatalf("check gone: %v", rep)
+	}
+	if out := e.want(http.StatusConflict, "admin", http.MethodPost, "/api/libraries/"+acLibB+"/scan", nil); out["code"] != "library_no_access" {
+		t.Fatalf("scan: %v", out)
 	}
 }

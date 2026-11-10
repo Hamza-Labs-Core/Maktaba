@@ -188,6 +188,7 @@ func TestStreamingClient_GetCapabilities(t *testing.T) {
 				"supported_containers": []any{"mp4", "mkv"},
 				"transcode_used":       2,
 				"transcode_capacity":   4,
+				"software_only":        true,
 			}
 		},
 	})
@@ -196,7 +197,7 @@ func TestStreamingClient_GetCapabilities(t *testing.T) {
 		t.Fatalf("GetCapabilities: %v", err)
 	}
 	if len(caps.Codecs) != 2 || caps.HWAccel != "cuda" || caps.MaxBitrateKbps != 40000 ||
-		caps.TranscodeSlots.Used != 2 || caps.TranscodeSlots.Capacity != 4 {
+		caps.TranscodeSlots.Used != 2 || caps.TranscodeSlots.Capacity != 4 || !caps.SoftwareOnly {
 		t.Fatalf("bad caps: %+v", caps)
 	}
 }

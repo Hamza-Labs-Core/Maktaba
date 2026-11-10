@@ -47,9 +47,18 @@ object TestStreams {
  */
 class FakeStreams(private val home: FakeHome, var direct: Boolean = false, var ladder: String = "[]") {
     private val opened = AtomicInteger()
+    /** How many opens more answer 503 `transcode_busy` (story 59.05) before one opens. */
+    val busy = AtomicInteger()
 
     fun install(sessions: Int = 4) {
         home.answer("/api/stream/sessions") {
+            if (busy.getAndUpdate { if (it > 0) it - 1 else 0 } > 0) {
+                return@answer MockResponse.Builder().code(503)
+                    .setHeader("Content-Type", "application/problem+json")
+                    .setHeader("Retry-After", "10")
+                    .body("""{"type":"https://maktaba.tv/problems/transcode-busy","title":"Another video is being converted","status":503,"code":"transcode_busy"}""")
+                    .build()
+            }
             val n = opened.incrementAndGet()
             val url = if (direct) "/stream/s$n/two-audio.mp4?sig=x" else "/stream/s$n/master.m3u8?sig=x"
             val key = if (direct) "direct_url" else "manifest_url"

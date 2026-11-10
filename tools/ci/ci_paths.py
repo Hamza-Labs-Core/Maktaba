@@ -60,6 +60,7 @@ NOT_IN_CI: dict[str, str] = {
     "specs/**": "specifications (likewise)",
     "*.md": "the repository's own README, CHANGELOG, CLAUDE, CONTRIBUTING",
     "LICENSE": "the licence",
+    "THIRD_PARTY_NOTICES": "the server image's third-party licences (story 59.05)",
     ".claude/**": "Claude Code's project settings",
     ".editorconfig": "editor settings",
     "**/.gitignore": "git (a folder's own is matched by its folder's filters too)",

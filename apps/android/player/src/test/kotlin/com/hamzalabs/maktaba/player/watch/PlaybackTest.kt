@@ -16,6 +16,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.media3.test.utils.robolectric.ShadowMediaCodecConfig
+import com.hamzalabs.maktaba.core.api.ErrorKind
 import com.hamzalabs.maktaba.core.api.Video
 import com.hamzalabs.maktaba.player.Playback
 import com.hamzalabs.maktaba.player.harness.FakeHome
@@ -27,6 +28,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -115,6 +117,26 @@ class PlaybackTest {
         // played to the end: "completed"
         p.play()
         runUntil { streams.progress().any { it.second["completed"] != null } }
+    }
+
+    /** Story 59.05: no transcode slot free is no error: the sentence shows, and it asks again in 10 s. */
+    @Test
+    fun aHomeWithNoTranscodeSlotFreeIsAskedAgainEveryTenSeconds() {
+        streams.busy.set(2)
+        playback.play(v1)
+        runUntil { playback.waiting != null }
+        assertEquals(ErrorKind.TranscodeBusy, playback.waiting!!.kind)
+        assertNull("no error screen while it waits", playback.problem)
+        assertEquals(1, streams.opens().size)
+        idleFor(10_000)
+        runUntil { streams.opens().size == 2 }
+        assertNotNull("still waiting", playback.waiting)
+        assertNull(playback.problem)
+        idleFor(10_000)
+        playing()
+        assertEquals(3, streams.opens().size)
+        assertNull("playing: the sentence is gone", playback.waiting)
+        assertNull(playback.problem)
     }
 
     @Test

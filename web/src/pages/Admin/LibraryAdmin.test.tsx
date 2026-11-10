@@ -236,7 +236,10 @@ describe("LibraryAdmin", () => {
     await ready();
     await userEvent.click(within(section("Queue status")).getByRole("button", { name: "Run now" }));
     expect(post).toHaveBeenCalledWith(`/api/libraries/${ID}/run-now`);
-    expect(await screen.findByText("Something went wrong.")).toBeInTheDocument();
+    // the Run now line (the folder access panel says its own, unanswered here)
+    expect(
+      await screen.findByText("Something went wrong.", { selector: "p[role=status]" })
+    ).toBeInTheDocument();
   });
 
   it("saves the conversion settings inside the library's settings, keeping the rest", async () => {
@@ -382,6 +385,125 @@ describe("LibraryAdmin", () => {
       // the queues' stage titles in Arabic, never the API's English label
       await waitFor(() => expect(screen.getAllByText("الربط").length).toBeGreaterThan(0));
       expect(screen.queryByText("Link")).toBeNull();
+    } finally {
+      localStorage.removeItem("mkt:locale");
+    }
+  });
+});
+
+// Story 59.03 (T09): what Maktaba itself may do in the library's folders.
+const RO_ACCESS = {
+  library_id: ID,
+  access: "ro",
+  partial: true,
+  checked_at: "2026-11-09T10:00:00Z",
+  roots: [
+    {
+      path: "/volume1/Movies",
+      access: "ro",
+      partial: true,
+      unreadable: ["/volume1/Movies/a.mkv"],
+      mount_read_only: true,
+      fix: {
+        key: "library.fix.dsm",
+        params: {
+          share: "Movies",
+          name: "maktaba",
+          uid: "1026",
+          path: "/volume1/Movies",
+          dataset: "",
+        },
+      },
+    },
+  ],
+  write_failures: [{ path: "/volume1/Movies/x.en.srt", at: "2026-11-09T09:00:00Z" }],
+  runs_as: { uid: 1026, gid: 100, name: "maktaba" },
+  platform: "dsm",
+};
+const DSM_FIX =
+  "In Control Panel → Shared Folder → Movies → Edit → Permissions, give the user maktaba Read/Write (or Read only if you prefer).";
+
+describe("LibraryAdmin, folder access (story 59.03)", () => {
+  it("a read-only library shows Read only, the fix, and its actions off with the reason", async () => {
+    open({
+      "/api/libraries/manage": {
+        items: [{ ...LIB, access: "ro", access_partial: true }, OTHER],
+        conflict_groups: [],
+      },
+      [`/api/libraries/${ID}/access`]: RO_ACCESS,
+    });
+    await ready();
+    const folders = section("Folder access");
+    expect(await within(folders).findAllByText("Read only")).not.toHaveLength(0);
+    expect(within(folders).getAllByText("Some files can't be read")).not.toHaveLength(0);
+    expect(within(folders).getByText("Maktaba runs as user 1026, group 100")).toBeInTheDocument();
+    expect(within(folders).getByText(DSM_FIX)).toBeInTheDocument();
+    expect(
+      within(folders).getByText("The folder is mounted read-only in the container.")
+    ).toBeInTheDocument();
+    expect(within(folders).getByText("/volume1/Movies/a.mkv")).toBeInTheDocument();
+    expect(within(folders).getByText("/volume1/Movies/x.en.srt")).toBeInTheDocument();
+
+    const reason = `This library is read-only for Maktaba. ${DSM_FIX}`;
+    const convert = within(section("Conversion to MP4")).getAllByRole("button", {
+      name: "Convert to MP4",
+    })[0];
+    expect(convert).toBeDisabled();
+    expect(convert).toHaveAttribute("title", reason);
+    const dedup = within(section("Duplicates")).getAllByRole("button", {
+      name: "Find duplicates",
+    })[0];
+    expect(dedup).toBeDisabled();
+    expect(dedup).toHaveAttribute("title", reason);
+    // emptying the trash removes only the records of missing videos: it stays on
+    expect(within(section("Trash")).queryByRole("note")).toBeNull();
+    for (const name of ["Conversion to MP4", "Duplicates", "Queue status"]) {
+      expect(within(section(name)).getByRole("note")).toHaveTextContent(reason);
+    }
+    expect(within(section("YouTube sources")).getByRole("note")).toHaveTextContent(reason);
+  });
+
+  it("Check access runs the check now and shows its answer", async () => {
+    open({
+      [`/api/libraries/${ID}/access`]: {
+        ...RO_ACCESS,
+        access: null,
+        checked_at: null,
+        roots: [],
+        write_failures: [],
+      },
+    });
+    await ready();
+    const folders = section("Folder access");
+    expect(await within(folders).findByText("Not checked yet.")).toBeInTheDocument();
+    // never checked reads as read and write: the actions stay on
+    expect(
+      within(section("Conversion to MP4")).getAllByRole("button", { name: "Convert to MP4" })[0]
+    ).toBeEnabled();
+    post.mockResolvedValueOnce(RO_ACCESS);
+    await userEvent.click(within(folders).getByRole("button", { name: "Check access" }));
+    expect(post).toHaveBeenCalledWith(`/api/libraries/${ID}/check-access`);
+    expect(await within(folders).findByText(DSM_FIX)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        within(section("Conversion to MP4")).getAllByRole("button", { name: "Convert to MP4" })[0]
+      ).toBeDisabled()
+    );
+  });
+
+  it("in Arabic: the state, the user and the fix in Arabic", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    try {
+      open({ [`/api/libraries/${ID}/access`]: RO_ACCESS });
+      await ready();
+      const folders = screen.getByRole("region", { name: "الوصول إلى المجلدات" });
+      expect(await within(folders).findAllByText("قراءة فقط")).not.toHaveLength(0);
+      expect(
+        within(folders).getByText(/تعمل مكتبة بصفة المستخدم .*1026.* والمجموعة .*100/)
+      ).toBeInTheDocument();
+      expect(
+        within(folders).getByText(/من لوحة التحكم ← المجلد المشترك ← Movies ← تعديل ← الأذونات/)
+      ).toBeInTheDocument();
     } finally {
       localStorage.removeItem("mkt:locale");
     }

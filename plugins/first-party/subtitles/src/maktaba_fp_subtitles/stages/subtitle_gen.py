@@ -5,6 +5,11 @@ the TVs pick them up, and the transcript lives with the file it belongs to. Each
 is written atomically (a temporary file, then a rename) and recorded in
 ``subtitle_files`` (source ``generated``, its path and sha256).
 
+On a library that is read-only for Maktaba (Epic 59 story 59.03: a ``:ro`` mount, or an
+ACL that lets it read only), the write is refused; the subtitle is then kept in the database
+instead (``subtitle_files.content``, the row standing for the file it would have been), which
+streaming serves after the side-cars and which replicates to the nodes with the table.
+
 A file already there that Maktaba did not write (no ``subtitle_files`` row with its
 hash) is never overwritten: the job notes it and leaves it. A rewrite replaces only a
 file whose content still matches what Maktaba last wrote. A file that is exactly what
@@ -16,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import errno
 import hashlib
 import os
 import posixpath
@@ -104,6 +110,11 @@ def _write_atomic(path: str, data: bytes) -> None:
         raise
 
 
+def _refused(exc: OSError) -> bool:
+    """The write was refused for good: no permission, or a read-only file system."""
+    return isinstance(exc, PermissionError) or exc.errno in (errno.EROFS, errno.EACCES, errno.EPERM)
+
+
 def _current_sha(path: str) -> str | None:
     try:
         with open(path, "rb") as f:
@@ -130,7 +141,8 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         raise StageFailure("file_missing", f"{local}: not found", retryable=False)
 
     stem = os.path.splitext(found)[0]
-    written, kept = [], []
+    written, kept, stored = [], [], []
+    refused: str | None = None
     for fmt, body in (("srt", srt(segs)), ("vtt", vtt(segs))):
         target = f"{stem}.{lang}.{fmt}"
         data = body.encode("utf-8")
@@ -141,6 +153,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
             lang,
             fmt,
         )
+        in_db = False
         try:
             on_share = await asyncio.wait_for(
                 asyncio.to_thread(_current_sha, target), READ_TIMEOUT_S
@@ -150,13 +163,17 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
                 kept.append(posixpath.basename(target))  # not ours, or edited since
                 continue
             if on_share != _sha(data):
-                await asyncio.wait_for(
-                    asyncio.to_thread(_write_atomic, target, data), READ_TIMEOUT_S
-                )
+                try:
+                    await asyncio.wait_for(
+                        asyncio.to_thread(_write_atomic, target, data), READ_TIMEOUT_S
+                    )
+                except OSError as exc:
+                    if not _refused(exc):
+                        raise
+                    # story 59.03: a library read-only for Maktaba keeps it in the database
+                    in_db, refused = True, refused or target
         except TimeoutError as exc:
             raise StageFailure("nas_timeout", f"{target}: write did not finish") from exc
-        except PermissionError as exc:
-            raise StageFailure("nas_readonly", f"{target}: {exc}", retryable=False) from exc
         except OSError as exc:
             raise StageFailure("nas_unavailable", f"{target}: {exc}") from exc
         db_path = ctx.path_map.to_db(target)
@@ -168,6 +185,23 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
             fmt,
             to_ts(db, now()),
         )
+        if in_db:
+            await db.execute(
+                "INSERT INTO subtitle_files (video_id, transcript_id, language, format, source,"
+                " path, byte_size, sha256, is_external, metadata, content)"
+                " VALUES ($1, $2, $3, $4, 'generated', $5, $6, $7, false, $8, $9)",
+                uid(v.id),
+                uid(transcript_id),
+                lang,
+                fmt,
+                db_path,
+                len(data),
+                _sha(data),
+                dumps({"plan": "03-10", "stored": "database"}),
+                body,
+            )
+            stored.append(posixpath.basename(target))
+            continue
         await db.execute(
             "INSERT INTO subtitle_files (video_id, transcript_id, language, format, source,"
             " path, byte_size, sha256, is_external, metadata)"
@@ -182,9 +216,16 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
             dumps({"plan": "03-10"}),
         )
         written.append(posixpath.basename(target))
+    summary: dict[str, Any] = {"written": written, "kept_foreign": kept, "segments": len(segs)}
+    if stored:
+        summary["stored_in_database"] = stored
+        summary["write_refused"] = refused
     return StageResult(
-        output_hash=canonical_hash({"t": transcript_id, "written": written, "kept": kept}),
-        summary={"written": written, "kept_foreign": kept, "segments": len(segs)},
+        output_hash=canonical_hash(
+            {"t": transcript_id, "written": written, "kept": kept}
+            | ({"stored": stored} if stored else {})
+        ),
+        summary=summary,
     )
 
 

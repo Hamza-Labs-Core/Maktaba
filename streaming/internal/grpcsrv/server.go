@@ -85,6 +85,9 @@ type Capabilities struct {
 	SupportedContainers []string
 	TranscodeUsed       int
 	TranscodeCapacity   int
+	// SoftwareOnly: every transcode here is in software (no GPU encoder
+	// works): players prefer direct play and remux (Epic 59 story 59.05).
+	SoftwareOnly bool
 }
 
 // Status mirrors the HealthCheck reply.
@@ -123,9 +126,14 @@ type Server struct {
 	// HWAccelNow, when set, is the verdict now (ffmpeg.WatchChoice keeps it
 	// current) and wins over HWAccel.
 	HWAccelNow func() ffmpeg.HWAccel
-	Host       string // hostname, recorded in row.Host
-	Now        func() time.Time
-	SessionTTL time.Duration // expires_at = now + TTL (default 30 min)
+	// VAAPINow is the render node a VA-API verdict encodes on (story 59.05).
+	VAAPINow func() *ffmpeg.VAAPIDevice
+	// SoftwareMaxHeight is the tallest rung a software transcode makes (the
+	// hardware tier's; 0: any).
+	SoftwareMaxHeight int
+	Host              string // hostname, recorded in row.Host
+	Now               func() time.Time
+	SessionTTL        time.Duration // expires_at = now + TTL (default 30 min)
 
 	// Transcode spawns FFmpeg for transcode-mode sessions (HLB-328).
 	// Nil → no FFmpeg is spawned (the pre-HLB-328 behaviour: manifest
@@ -238,7 +246,11 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 	if reuse != nil {
 		s.log().Info("vod session reused", "session_id", reuse.ID.String(), "video_id", req.VideoID,
 			"mode", string(reuse.Mode), "start_sec", req.StartSec, "event", "vod_session_reused")
-		return s.respFor(reuse, ladderFor(row, req)), nil
+		ladder := ladderFor(row, req)
+		if s.hwaccel() == ffmpeg.HWAccelSoftware || req.ForceSoftware {
+			ladder = capLadder(ladder, s.SoftwareMaxHeight)
+		}
+		return s.respFor(reuse, ladder), nil
 	}
 
 	profile, _ := s.Profiles.Get(req.ClientProfile)
@@ -329,22 +341,31 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 		if req.ForceSoftware {
 			hw = ffmpeg.HWAccelSoftware
 		}
+		var vaapi *ffmpeg.VAAPIDevice
+		if hw == ffmpeg.HWAccelVAAPI && s.VAAPINow != nil {
+			vaapi = s.VAAPINow()
+		}
+		if hw == ffmpeg.HWAccelSoftware {
+			ladder = capLadder(ladder, s.SoftwareMaxHeight)
+		}
 		var colour *ffmpeg.Colour
 		if c, ok := ffmpeg.CatalogueColour(row.ColorTransfer, row.ColorMatrix, row.ColorPrimaries, row.ColorRange, row.PixFmt); ok {
 			colour = &c // no probe of the file at the open (a NAS can take seconds)
 		}
 		handle, terr := s.Transcode.Start(ctx, ffmpeg.Job{
-			SessionID:   sessID.String(),
-			InputPath:   pathmap.Resolve(row.Path), // story 31.3: canonical -> local
-			OutputDir:   s.ResolveDir(sessID.String()),
-			Ladder:      ladder,
-			HWAccel:     string(hw),
-			Format:      fmtStr,
-			MasterName:  "master.m3u8",
-			SourceCodec: row.VideoCodec,
-			NoAudio:     row.NoAudio(), // a track row with no codec is still audio
-			StartSec:    start,
-			Colour:      colour,
+			SessionID:    sessID.String(),
+			InputPath:    pathmap.Resolve(row.Path), // story 31.3: canonical -> local
+			OutputDir:    s.ResolveDir(sessID.String()),
+			Ladder:       ladder,
+			HWAccel:      string(hw),
+			Format:       fmtStr,
+			MasterName:   "master.m3u8",
+			SourceCodec:  row.VideoCodec,
+			NoAudio:      row.NoAudio(), // a track row with no codec is still audio
+			StartSec:     start,
+			Colour:       colour,
+			VAAPI:        vaapi,
+			SourcePixFmt: row.PixFmt,
 		})
 		if terr != nil {
 			release()
@@ -466,6 +487,26 @@ func manifestExt(f session.Format) string {
 	return "m3u8"
 }
 
+// capLadder drops the rungs taller than maxHeight (0: none dropped), keeping
+// the lowest when every rung is: a software transcode on a Light machine makes
+// 720p at most (Epic 59 story 59.04's tiers).
+func capLadder(ladder []ffmpeg.Rendition, maxHeight int) []ffmpeg.Rendition {
+	if maxHeight <= 0 || len(ladder) == 0 {
+		return ladder
+	}
+	out := make([]ffmpeg.Rendition, 0, len(ladder))
+	for _, r := range ladder {
+		short := min(r.Width, r.Height)
+		if short <= maxHeight {
+			out = append(out, r)
+		}
+	}
+	if len(out) == 0 {
+		out = append(out, ladder[len(ladder)-1])
+	}
+	return out
+}
+
 func ladderFor(row *probe.Row, req OpenSessionRequest) []ffmpeg.Rendition {
 	kbps := req.MaxBitrateKbps
 	if kbps == 0 {
@@ -539,6 +580,7 @@ func (s *Server) GetCapabilities(_ context.Context) (Capabilities, error) {
 	}
 	if c.HWAccel == "" {
 		c.HWAccel = "software"
+		c.SoftwareOnly = true
 	}
 	return c, nil
 }

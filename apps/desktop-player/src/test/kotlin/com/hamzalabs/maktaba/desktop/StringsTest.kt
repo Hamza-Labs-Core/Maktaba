@@ -80,6 +80,9 @@ class StringsTest {
         assertTrue(Texts(Lang.En).sentence(com.hamzalabs.maktaba.core.api.ErrorKind.RelayNeedsPlan).contains("Direct access from the internet is free"))
         assertTrue(Texts(Lang.En).sentence(com.hamzalabs.maktaba.core.api.ErrorKind.RelayStreamLimit).contains("Stop one"))
         assertTrue(Texts(Lang.Ar).sentence(com.hamzalabs.maktaba.core.api.ErrorKind.RelayHomeBusy).startsWith("جهازك الرئيسي مشغول"))
+        // Epic 59 story 59.05: the home's transcodes are all taken
+        assertTrue(Texts(Lang.En).sentence(com.hamzalabs.maktaba.core.api.ErrorKind.TranscodeBusy).startsWith("Another video is being converted"))
+        assertTrue(Texts(Lang.Ar).sentence(com.hamzalabs.maktaba.core.api.ErrorKind.TranscodeBusy).startsWith("يجري تحويل فيديو آخر"))
     }
 
     @Test
