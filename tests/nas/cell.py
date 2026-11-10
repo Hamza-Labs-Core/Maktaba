@@ -74,6 +74,11 @@ refine = "off"
 
 [llm]
 enabled = "off"
+
+# no quiet hours: the Light and Standard tiers' default (01:00-06:00, story 59.02) holds a
+# library's first scan until then, and a daytime cell would find nothing.
+[schedule]
+quiet_hours = ""
 """
 
 
