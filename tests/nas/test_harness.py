@@ -127,6 +127,14 @@ class Pending(unittest.TestCase):
             self.assertIs(c.results[-1]["ok"], False)
 
 
+class ServerToml(unittest.TestCase):
+    def test_no_quiet_hours_so_a_daytime_first_scan_runs(self) -> None:
+        import tomllib
+
+        conf = tomllib.loads(cell.SERVER_TOML)
+        self.assertEqual(conf["schedule"]["quiet_hours"], "")
+
+
 class Summary(unittest.TestCase):
     def test_rows_link_each_cell_to_its_logs(self) -> None:
         jobs = summary.objects('{"jobs": [{"name": "cell uid-568 (arm64)", "conclusion": "failure", "html_url": "u"},'
