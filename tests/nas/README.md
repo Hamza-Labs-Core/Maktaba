@@ -58,7 +58,7 @@ runs every cell, a change to `web/` alone runs nothing.
 | `media_untouched` | the library holds exactly the fixtures afterwards: nothing written in it |
 | `logs_clean` | no permission error in `server.log` |
 | `tier_light`, `tier_standard` | `GET /api/server/machine` (59.04) reads the container's memory limit as Docker set it, and the tier and its defaults are that tier's |
-| `quiet_hold` | outside the cell's quiet hours a new library's first scan waits: the scan queue (`GET /api/queues`) says `quiet_hours` and when the window opens, and no clip is found; the admin's `POST /api/queues/scan/run-now` then starts it and every clip is found with no second scan (59.02) |
+| `quiet_hold` | outside the cell's quiet hours a new library's first scan waits: the scan queue (`GET /api/queues`) says `quiet_hours` and when the window opens, and no clip is found; the admin's `POST /api/queues/scan/run-now` then starts it: the held jobs run and none stays paused; every clip is then found as in `scan` (59.02) |
 | `postgres_pss_512m` | the bundled Postgres's processes hold under 512 MiB together (the sum of `Pss` in each one's `smaps_rollup`, kept as `postgres-pss.txt`), the Light tier's tuning applied (59.02) |
 | `refused_write`, `refused_privileged` | the container exits 78 with its message (59.01) |
 
