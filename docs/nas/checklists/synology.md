@@ -79,7 +79,12 @@ follows the Synology guide on maktaba.tv (Epic 59 story 59.09); the result goes 
 - **See:** the home updates inside the window, the pre-update dump is in backups, the container keeps running as 1026:100, and Settings shows the new version.
 - **Screenshots:** `synology/12-updated.en.png`, `synology/12-updated.ar.png`
 
-### 13. Logs and the setup report
+### 13. The apps find the home (59.08)
+- **Do:** with the default install (host network, no D-Bus socket mounted), open the Apple Player and the Android app on the same Wi-Fi and look for homes; then, on a computer, run `avahi-browse -art` (Linux) or `dns-sd -B _maktaba._tcp` (Mac).
+- **See:** both apps list the home by itself, at `<nas>-maktaba.local`; DSM's own names (`<nas>.local` in Finder or `avahi-resolve -n <nas>.local` from a Linux PC) and its SMB share in Finder's sidebar still resolve and show, and the NAS was not renamed (no `-2` in its name). With the system D-Bus socket mounted as the guide's option, the home is listed at the NAS's own name instead.
+- **Screenshots:** `synology/13-discovered.en.png`, `synology/13-discovered.ar.png`
+
+### 14. Logs and the setup report
 - **Do:** run `docker logs maktaba` (Task Scheduler, output to a file) and copy the report from Settings → This machine.
 - **See:** both are attached to the result file, with no password, token or pairing code in them.
 - **Screenshots:** none

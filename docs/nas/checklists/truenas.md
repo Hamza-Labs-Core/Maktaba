@@ -67,7 +67,12 @@ major. The install is the Maktaba app (Epic 59 story 59.10); the result goes in
 - **See:** both end on the new version; an older image never replaces a newer runtime; the pre-update dump is in backups.
 - **Screenshots:** `truenas/10-updated.en.png`, `truenas/10-updated.ar.png`
 
-### 11. Logs and the setup report
+### 11. The apps find the home (59.08)
+- **Do:** with the default install (host network, no D-Bus socket mounted), open the Apple Player and the Android app on the same Wi-Fi and look for homes; then, on a computer, run `avahi-browse -art` (Linux) or `dns-sd -B _maktaba._tcp` (Mac).
+- **See:** both apps list the home by itself, at `<nas>-maktaba.local`; TrueNAS's own name (`<nas>.local`) where 25.04+ still answers mDNS (note whether it runs a responder at all) still resolve and show, and the NAS was not renamed (no `-2` in its name). With the system D-Bus socket mounted as the guide's option, the home is listed at the NAS's own name instead.
+- **Screenshots:** `truenas/11-discovered.en.png`, `truenas/11-discovered.ar.png`
+
+### 12. Logs and the setup report
 - **Do:** save the app's logs (Apps → Maktaba → Logs, or `docker logs` in the shell) and copy the report from This machine.
 - **See:** both are attached to the result file, with no secret in them.
 - **Screenshots:** none

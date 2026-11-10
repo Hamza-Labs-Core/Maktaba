@@ -51,8 +51,9 @@ and a zeroconf responder of its own under `<host>-maktaba` when Avahi is not rea
   TrueNAS and Unraid with the default, and that the NAS's own names still resolve.
 
 **Bridge network.**
-- With bridge networking (detected when the container's default route is a Docker bridge and
-  multicast to 224.0.0.251 does not loop back), Maktaba turns mDNS and SSDP off.
+- With bridge networking (detected when the interface of the container's default route is a
+  veth, the container's end of a Docker bridge; macvlan and ipvlan count as the host's network;
+  `MAKTABA_NETWORK=host|bridge` overrides), Maktaba turns mDNS and SSDP off.
 - Setup says: "This container is on a bridge network, so apps can't find Maktaba by themselves.
   They can still connect by its address ({url}), by its HTTPS name, or with a code from Maktaba
   Cloud."
@@ -66,7 +67,7 @@ and a zeroconf responder of its own under `<host>-maktaba` when Avahi is not rea
   nothing from the NAS.
 - A reverse proxy in front (DSM's Login Portal, TrueNAS with a proxy app, Nginx Proxy Manager on
   Unraid) is documented in the guides:
-  - WebSocket upgrade on `/api/ws`;
+  - WebSocket upgrade on `/api/` (the live updates are `/api/cluster/ws`);
   - `client_max_body_size` / upload limit 0 or ≥ 10 GB for uploads;
   - no buffering on `/stream/`;
   - `X-Forwarded-For` and `X-Forwarded-Proto`, honoured only from the proxy. The home has no
@@ -106,9 +107,10 @@ and a zeroconf responder of its own under `<host>-maktaba` when Avahi is not rea
 
 | Key | English | Arabic |
 |---|---|---|
-| `setup.network.bridge` | This container is on a bridge network, so apps can't find Maktaba by themselves. They can still connect by its address ({url}), by its HTTPS name, or with a code from Maktaba Cloud. | هذه الحاوية على شبكة جسرية، لذا لا تستطيع التطبيقات العثور على Maktaba بنفسها. لكنها تستطيع الاتصال به عبر عنوانه ({url})، أو اسمه الآمن HTTPS، أو برمز من Maktaba Cloud. |
-| `server.port_moved` | Port {old} is used by {holder} on this NAS, so Maktaba uses port {new} instead. | المنفذ {old} يستخدمه {holder} على خادم التخزين الشبكي هذا، لذا يستخدم Maktaba المنفذ {new} بدلًا منه. |
-| `settings.trusted_proxies` | Trusted proxies: forwarded client addresses are believed only from these | الوكلاء الموثوقون: لا تُصدَّق عناوين العملاء المُمرَّرة إلا منهم |
+| `setup.check.note.network_bridge` | This container is on a bridge network, so apps can't find Maktaba by themselves. They can still connect by its address ({url}), by its HTTPS name, or with a code from Maktaba Cloud. | هذه الحاوية على شبكة جسرية، لذا لا تستطيع التطبيقات العثور على Maktaba بنفسها. لكنها تستطيع الاتصال به عبر عنوانه ({url})، أو اسمه الآمن HTTPS، أو برمز من Maktaba Cloud. |
+| `setup.check.note.port_moved` | Port {old} is used by {holder} on this machine, so Maktaba uses port {new} instead. | المنفذ {old} يستخدمه {holder} على هذا الجهاز، لذا تستخدم مكتبة المنفذ {new} بدلًا منه. |
+| `setup.check.note.port_moved_other` | Port {old} is used by another program on this machine, so Maktaba uses port {new} instead. | المنفذ {old} يستخدمه برنامج آخر على هذا الجهاز، لذا تستخدم مكتبة المنفذ {new} بدلًا منه. |
+| `storage.field.trusted_proxies` | Trusted proxies: forwarded client addresses are believed only from these | الوكلاء الموثوقون: لا تُصدَّق عناوين العملاء المُمرَّرة إلا منهم |
 
 ## Edge cases
 
