@@ -387,12 +387,44 @@ jobs:
       # the test plugin (59.07), packed by the amd64 image job: the cells that install it
       # fail their assertion without it, the others do not need it
       - name: Download nas-plugin
+        id: artifact-nas-plugin
         if: matrix.arch == 'amd64'
         continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           name: nas-plugin
           path: ${{ runner.temp }}/nas-plugin
+      - name: Wait 15s to retry the download of nas-plugin
+        if: steps.artifact-nas-plugin.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download nas-plugin (attempt 2)
+        id: artifact-nas-plugin-2
+        if: steps.artifact-nas-plugin.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: nas-plugin
+          path: ${{ runner.temp }}/nas-plugin
+      - name: Wait 45s to retry the download of nas-plugin
+        if: steps.artifact-nas-plugin-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download nas-plugin (attempt 3)
+        id: artifact-nas-plugin-3
+        if: steps.artifact-nas-plugin-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: nas-plugin
+          path: ${{ runner.temp }}/nas-plugin
+      - name: Check nas-plugin downloaded
+        if: steps.artifact-nas-plugin-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: nas-plugin
+        run: |
+          echo "::warning::the artifact $ARTIFACT never downloaded after 3 attempts (optional here: a cell that installs the test plugin fails its assertion without it)"
 
       - name: The cell
         id: cell
