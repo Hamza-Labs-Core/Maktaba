@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
 
@@ -211,6 +212,9 @@ type speechDoc struct {
 	Measuring     bool               `json:"measuring"`
 	// QuietHours is the window heavy work waits for ("": none), for the backlog's estimate.
 	QuietHours string `json:"quiet_hours"`
+	// Models are the offered sizes: download, a worker's memory, the relative CPU cost the
+	// estimate of a model not measured scales by.
+	Models []hostinfo.SpeechModel `json:"models"`
 }
 
 // runningSpeech is what this start runs with (nil before serve resolves it).
@@ -228,6 +232,14 @@ func (c *configAdmin) speechDocOf(file config.Config) speechDoc {
 	}
 	if q := runningQuiet.Load(); q != nil {
 		d.QuietHours = *q
+	} else {
+		d.QuietHours = config.QuietHoursOf(file, hostinfo.DefaultsFor(tierOf(file.Server, speechHardware()).Tier, speechHardware()).QuietHours)
+	}
+	d.Models = []hostinfo.SpeechModel{}
+	for _, name := range d.Speech.Offered {
+		if m, ok := hostinfo.SpeechModelNamed(name); ok {
+			d.Models = append(d.Models, m)
+		}
 	}
 	return d
 }
