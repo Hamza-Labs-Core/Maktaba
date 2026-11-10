@@ -53,3 +53,27 @@ func TestANodeLocalSessionIsNotForwarded(t *testing.T) {
 		t.Fatalf("a home session: cookie %q, delegated %q", cookie, delegated)
 	}
 }
+
+// Epic 59 story 59.08: the home gets the client this node resolved, never the chain a
+// client wrote (the home believes it only from a node in its trusted_proxies).
+func TestTheHomeGetsTheResolvedClient(t *testing.T) {
+	var xff string
+	home := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		xff = r.Header.Get("X-Forwarded-For")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer home.Close()
+	p := New(fakeLink{url: home.URL}, nil)
+	for remote, want := range map[string]string{
+		"192.168.1.20:5000": "192.168.1.20", // no forwarding: the node's peer
+		"203.0.113.9":       "203.0.113.9",  // resolved by the node's middleware (a bare address)
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/api/library", nil)
+		req.RemoteAddr = remote
+		req.Header.Set("X-Forwarded-For", "6.6.6.6")
+		p.ServeHTTP(httptest.NewRecorder(), req)
+		if xff != want {
+			t.Errorf("from %s: the home got X-Forwarded-For %q, want %q", remote, xff, want)
+		}
+	}
+}
