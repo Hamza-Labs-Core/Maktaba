@@ -14,33 +14,15 @@ build fails when the two differ.
 
 ### Changed
 
-- **The home believes the client a machine forwards only from that machine's signature over
-  it, never from its address, and a trusted proxy list cannot trust everyone (story 59.08).**
-  A machine proxying a user's request to the home now signs the client's address with its
-  delegation key, bound to the request's own signature, or sends it on its authenticated
-  cluster link; the home takes that client and no longer trusts any machine's IP address
-  from when it joined, which a reused DHCP address, a carrier NAT or an unlisted proxy could
-  have shared. A revoked or removed machine loses this on its next request; one on an older
-  version shows as its own address, and an older home ignores the new headers. This needs no
-  setting and does not depend on Trusted proxies. `0.0.0.0/0` and `::/0` are refused in
-  `[server] trusted_proxies` and in Settings, which name the entry; the docs point a proxy in
-  a container to its own address rather than the Docker network, whose gateway carries other
-  machines' connections. Streaming's checks for this machine's own callers read the
-  connection's address, so a forwarded `127.0.0.1` passes for none of them, and a zoned
-  link-local client address (`fe80::1%eth0`) keeps its own key.
-
-- **On a NAS, apps find the home beside the NAS's own names, a bridge network says how to
-  connect, and forwarded addresses are believed only from trusted proxies (story 59.08).** In
-  a container Maktaba answers mDNS under its own name, `<nas>-maktaba.local`, beside the NAS's
-  avahi-daemon, and never claims the NAS's name. Mounting the host's D-Bus socket (an option
-  in the compose file) publishes the home through the NAS's own Avahi instead. On a Docker
-  bridge, mDNS and SSDP are off. Setup and Settings → This machine say that apps connect by
-  the address, the HTTPS name or a Maktaba Cloud code, and `docker-compose.bridge.yml` ships
-  with the release. A port another program holds (QNAP's UI on 8080) moves, with the holder
-  named in setup, the log and Settings. `[server] trusted_proxies` (Settings → Storage &
-  discovery) lists the reverse proxies whose `X-Forwarded-For` the API and streaming believe,
-  besides this machine's own and the home's approved nodes. Before this, any peer's header was
-  believed.
+- **Maktaba on QNAP, UGREEN, ASUSTOR and Unraid (story 59.11).** The published Docker compose
+  (`maktaba-docker-compose.yml`) is now the NAS file: it names the container `maktaba`, sets
+  `MAKTABA_PLATFORM=docker` and `TZ`, mounts each media folder at its own path (an install made
+  with the earlier file keeps its `/media` line), and has optional blocks for the memory limit
+  by tier (`mem_limit` 4g, 6g or 16g), hardware video (`/dev/dri` and its group), NVIDIA, the
+  host's D-Bus and a bridge network. maktaba.tv/install/docker fills it in from a few answers
+  in the page, in English and Arabic, and sends nothing. Unraid gets a Community Applications
+  template (99:100, the data on the cache pool, `/dev/dri`). The old Synology and QNAP package
+  scaffolds are gone, and the development compose names the images release publishes.
 
 - **A NAS converts video on its own chip, and says when it can't (story 59.05).** On an Intel
   J4125 or N100, or an AMD APU, streaming now uses VA-API (`h264_vaapi`, HEVC where the driver
@@ -2648,6 +2630,34 @@ build fails when the two differ.
   suggests the next smaller model with both estimates. On a NAS transcription runs at low
   priority with one thread per two cores, and no more speech workers start than the memory
   holds. The second listen stays on x86_64 with an NVIDIA GPU.
+
+- **The home believes the client a machine forwards only from that machine's signature over
+  it, never from its address, and a trusted proxy list cannot trust everyone (story 59.08).**
+  A machine proxying a user's request to the home now signs the client's address with its
+  delegation key, bound to the request's own signature, or sends it on its authenticated
+  cluster link; the home takes that client and no longer trusts any machine's IP address
+  from when it joined, which a reused DHCP address, a carrier NAT or an unlisted proxy could
+  have shared. A revoked or removed machine loses this on its next request; one on an older
+  version shows as its own address, and an older home ignores the new headers. This needs no
+  setting and does not depend on Trusted proxies. `0.0.0.0/0` and `::/0` are refused in
+  `[server] trusted_proxies` and in Settings, which name the entry; the docs point a proxy in
+  a container to its own address rather than the Docker network, whose gateway carries other
+  machines' connections. Streaming's checks for this machine's own callers read the
+  connection's address, so a forwarded `127.0.0.1` passes for none of them, and a zoned
+  link-local client address (`fe80::1%eth0`) keeps its own key.
+
+- **On a NAS, apps find the home beside the NAS's own names, a bridge network says how to
+  connect, and forwarded addresses are believed only from trusted proxies (story 59.08).** In
+  a container Maktaba answers mDNS under its own name, `<nas>-maktaba.local`, beside the NAS's
+  avahi-daemon, and never claims the NAS's name. Mounting the host's D-Bus socket (an option
+  in the compose file) publishes the home through the NAS's own Avahi instead. On a Docker
+  bridge, mDNS and SSDP are off. Setup and Settings → This machine say that apps connect by
+  the address, the HTTPS name or a Maktaba Cloud code; the compose file's `[bridge]` blocks
+  set a bridge install up. A port another program holds (QNAP's UI on 8080) moves, with the holder
+  named in setup, the log and Settings. `[server] trusted_proxies` (Settings → Storage &
+  discovery) lists the reverse proxies whose `X-Forwarded-For` the API and streaming believe,
+  besides this machine's own and the home's approved nodes. Before this, any peer's header was
+  believed.
 
 ### Fixed
 

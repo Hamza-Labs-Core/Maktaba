@@ -271,8 +271,10 @@ runs Maktaba in one container (`ghcr.io/hamza-labs-core/maktaba-server`, multi-a
 `docker compose up -d`, then `docker compose run --rm maktaba setup` once. It updates itself
 on its volume like every other install. It runs as whichever user you set (`user:` in the
 compose file; on a NAS, the user that owns your folders; never root), and its first start needs
-no internet. (`deploy/compose/docker-compose.yml` is the
-development and CI stack, built from source.)
+no internet. On a NAS, [maktaba.tv/install/docker](https://maktaba.tv/install/docker/) fills
+the file in for QNAP, UGREEN, ASUSTOR, Portainer or Dockge, and Unraid has a Community
+Applications template ([`deploy/nas`](deploy/nas/README.md)). (`deploy/compose/docker-compose.yml`
+is the development and CI stack, built from source; not for a NAS.)
 
 ---
 

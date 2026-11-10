@@ -1,6 +1,6 @@
 {
   "_doc": "The nas-shapes matrix (story 59.15). tests/nas/README.md says what each field means and how to add a cell. A cell runs once its `needs` are all in `landed`; an assertion likewise.",
-  "landed": ["59.04", "59.01", "pg-stale-lock", "59.02", "scan-grant-race", "59.03", "59.05", "59.06", "59.07", "plugin-cache-grant", "poster-queue", "59.08"],
+  "landed": ["59.04", "59.01", "pg-stale-lock", "59.02", "scan-grant-race", "59.03", "59.05", "59.06", "59.07", "plugin-cache-grant", "poster-queue", "59.11", "59.08"],
   "cells": [
     {
       "name": "uid-1000",
@@ -19,12 +19,25 @@
     },
     {
       "name": "uid-unraid",
-      "about": "Unraid's nobody:users",
+      "about": "Unraid's nobody:users, started as the Unraid template (deploy/nas/unraid/maktaba.xml) runs it",
       "arches": ["amd64", "arm64"],
       "user": "99:100",
+      "template": "unraid",
+      "platform": "unraid",
       "data": {"owner": "99:100", "mode": "0750"},
-      "needs": ["59.01"],
-      "asserts": ["ready", "only_uid", "scan"]
+      "needs": ["59.01", "59.11"],
+      "asserts": ["ready", "only_uid", "scan", "platform"]
+    },
+    {
+      "name": "compose-plain",
+      "about": "the published Docker compose filled in as on QNAP, UGREEN or ASUSTOR (x86-64: an N100 or Celeron box): a household user, the memory block on (6g, Standard; on arm64 6g is Light, the tier rule)",
+      "arches": ["amd64"],
+      "user": "1000:100",
+      "compose": {"blocks": ["memory"]},
+      "platform": "docker",
+      "data": {"owner": "1000:100", "mode": "0750"},
+      "needs": ["59.11"],
+      "asserts": ["ready", "only_uid", "scan", "platform", "tier_standard", "no_oom"]
     },
     {
       "name": "uid-dsm",

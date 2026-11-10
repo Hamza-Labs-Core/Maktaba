@@ -11,6 +11,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // bundle never pulls in the test harness.
 export default defineConfig({
   plugins: [react()],
+  // the install page's tests read the published Docker compose (story 59.11), outside web/
+  server: {
+    fs: {
+      allow: [
+        __dirname,
+        path.resolve(__dirname, "../cloud/installers/docker"),
+        path.resolve(__dirname, "../tools/plugin-sdk"),
+      ],
+    },
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
