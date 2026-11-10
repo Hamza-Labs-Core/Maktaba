@@ -8,9 +8,12 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pgpool"
 )
 
@@ -169,4 +172,33 @@ func TestBuildProbeStoresCapsThePool(t *testing.T) {
 	if got := pool.Config().MaxConnIdleTime; got != pgpool.IdleTime {
 		t.Fatalf("MaxConnIdleTime = %v, want %v", got, pgpool.IdleTime)
 	}
+}
+
+// Epic 59 story 59.05: the transcodes' cap follows the verdict (software's, a GPU's; 0 the
+// cores' share), and the verdict is written whole where Settings reads it.
+func TestTierLimitAndVideoStatus(t *testing.T) {
+	hw := ffmpeg.HWAccelSoftware
+	limit := tierLimit(config.TranscodeConfig{SoftwareMax: 1, HardwareMax: 2}, func() ffmpeg.HWAccel { return hw })
+	if limit() != 1 {
+		t.Fatalf("software: %d", limit())
+	}
+	hw = ffmpeg.HWAccelVAAPI
+	if limit() != 2 {
+		t.Fatalf("vaapi: %d", limit())
+	}
+	if n := tierLimit(config.TranscodeConfig{}, func() ffmpeg.HWAccel { return hw })(); n != 0 {
+		t.Fatalf("no tier: %d", n)
+	}
+
+	path := filepath.Join(t.TempDir(), "streaming", "video.json")
+	writeVideoStatus(path, ffmpeg.VideoStatus{Encoder: "software", Reason: ffmpeg.ReasonNoDevice, SoftwareOnly: true}, slog.Default())
+	b, err := os.ReadFile(path)
+	var got ffmpeg.VideoStatus
+	if err != nil || json.Unmarshal(b, &got) != nil || got.Reason != ffmpeg.ReasonNoDevice || !got.SoftwareOnly {
+		t.Fatalf("written: %s %v", b, err)
+	}
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf("the temporary file stayed: %v", err)
+	}
+	writeVideoStatus("", got, slog.Default()) // nowhere: nothing
 }

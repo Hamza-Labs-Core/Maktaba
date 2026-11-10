@@ -261,7 +261,7 @@ func TestWatchChoiceRetries(t *testing.T) {
 				}}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			choice := WatchChoice(ctx, d, time.Second, time.Millisecond, func(HWAccel, error) {})
+			choice := WatchChoice(ctx, d, time.Second, time.Millisecond, func(VideoStatus, error) {})
 			count := func() int {
 				mu.Lock()
 				defer mu.Unlock()

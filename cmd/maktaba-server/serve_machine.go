@@ -25,6 +25,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
 
 // TierChosenAdmin is [server] tier_chosen's value when an admin picked the tier.
@@ -125,6 +126,10 @@ type machineDoc struct {
 	// (rotational, ssd, asked, unknown).
 	Rotational bool   `json:"rotational"`
 	DiskHow    string `json:"disk_how"`
+	// Video is the streaming role's video verdict (Epic 59 story 59.05): the encoder, the
+	// render node and its driver and codecs, or why it is software (no_device, group_add,
+	// device_failed). Absent until the streaming role has written one.
+	Video json.RawMessage `json:"video,omitempty"`
 }
 
 // machineDocOf is the document for what runs (mt) and what server.toml saves (file).
@@ -143,6 +148,9 @@ func machineDocOf(mt machineTier, file config.Config, canRestart bool) machineDo
 	d.QuietSet = file.Schedule.QuietHours != nil
 	d.QuietHours = config.QuietHoursOf(file, d.QuietDefault)
 	d.Rotational, d.DiskHow = pgbundle.DataRotational(file, filepath.Join(file.StateDir(), "postgres"))
+	if b, err := os.ReadFile(supervisor.VideoStatusPath(file)); err == nil && json.Valid(b) {
+		d.Video = b
+	}
 	d.Saved = "auto"
 	if next.Chosen {
 		d.Saved = string(next.Tier)

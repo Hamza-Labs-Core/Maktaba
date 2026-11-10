@@ -486,3 +486,68 @@ func TestOpenSession_CodecLessTrackKeepsTheAudio(t *testing.T) {
 		})
 	}
 }
+
+// Epic 59 story 59.05: a VA-API verdict hands the job its render node and the source's
+// pixel format; a software one on a Light machine makes 720p at most, and its capabilities
+// say every transcode is in software.
+func TestOpenSession_VAAPIAndSoftwareCap(t *testing.T) {
+	srv, row, _ := transcodeSetup(t)
+	row.PixFmt = "yuv420p10le"
+	orch := &fakeOrchestrator{}
+	srv.Transcode = orch
+	dev := &ffmpeg.VAAPIDevice{Path: "/dev/dri/renderD128", Driver: "iHD", H264Enc: true}
+	srv.HWAccelNow = func() ffmpeg.HWAccel { return ffmpeg.HWAccelVAAPI }
+	srv.VAAPINow = func() *ffmpeg.VAAPIDevice { return dev }
+	srv.SoftwareMaxHeight = 720
+	open := func() OpenSessionResponse {
+		t.Helper()
+		resp, err := srv.OpenSession(context.Background(), OpenSessionRequest{
+			VideoID: row.VideoID.String(), UserID: uuid.New().String(), ClientProfile: "generic", ForceTranscode: true,
+		})
+		if err != nil {
+			t.Fatalf("OpenSession: %v", err)
+		}
+		return resp
+	}
+	resp := open()
+	if j := orch.lastJob; j.HWAccel != "vaapi" || j.VAAPI != dev || j.SourcePixFmt != "yuv420p10le" || len(j.Ladder) != 3 {
+		t.Fatalf("vaapi job: %+v", j)
+	}
+	if len(resp.Ladder) != 3 {
+		t.Errorf("vaapi ladder %d rungs", len(resp.Ladder))
+	}
+	if c, _ := srv.GetCapabilities(context.Background()); c.SoftwareOnly || c.HWAccel != "vaapi" {
+		t.Errorf("vaapi capabilities %+v", c)
+	}
+
+	srv.HWAccelNow = func() ffmpeg.HWAccel { return ffmpeg.HWAccelSoftware }
+	_ = srv.CloseSession(context.Background(), resp.SessionID)
+	resp = open()
+	if j := orch.lastJob; j.HWAccel != "" || j.VAAPI != nil || len(j.Ladder) != 2 || j.Ladder[0].Height != 720 {
+		t.Fatalf("software job: %+v", j)
+	}
+	if len(resp.Ladder) != 2 {
+		t.Errorf("software ladder %+v", resp.Ladder)
+	}
+	if c, _ := srv.GetCapabilities(context.Background()); !c.SoftwareOnly || c.HWAccel != "software" {
+		t.Errorf("software capabilities %+v", c)
+	}
+}
+
+func TestCapLadder(t *testing.T) {
+	l := ffmpeg.DefaultLadder(0)
+	if got := capLadder(l, 0); len(got) != 3 {
+		t.Errorf("no cap: %d", len(got))
+	}
+	if got := capLadder(l, 1080); len(got) != 3 {
+		t.Errorf("1080: %d", len(got))
+	}
+	if got := capLadder(l, 360); len(got) != 1 || got[0].Height != 480 {
+		t.Errorf("below every rung: %+v", got)
+	}
+	// a portrait video: its shorter side (the width) counts
+	p := ffmpeg.FitLadder(l, 1080, 1920)
+	if got := capLadder(p, 720); len(got) != 2 || got[0].Width != 720 {
+		t.Errorf("portrait: %+v", got)
+	}
+}

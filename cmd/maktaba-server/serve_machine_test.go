@@ -12,6 +12,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
 
 func fakeMachineOf(t *testing.T, gib uint64) {
@@ -176,5 +177,40 @@ func TestConfigMachineQuietHoursAndDisk(t *testing.T) {
 	rec = machineCall(h, "PUT", `{"quiet_default":true,"data_disk":"auto"}`)
 	if json.Unmarshal(rec.Body.Bytes(), &doc) != nil || doc.QuietHours != "01:00-06:00" || doc.QuietSet || doc.DiskHow == "asked" {
 		t.Fatalf("back to the default: %s", rec.Body)
+	}
+}
+
+// Epic 59 story 59.05: the streaming role's video verdict (its file) is in the machine's
+// document, for Settings → This machine; none before it is written.
+func TestConfigMachineVideo(t *testing.T) {
+	fakeMachineOf(t, 4)
+	path := tomlWith(t, "")
+	cfg, _, _ := config.LoadFrom(path)
+	mt := resolveTier(&cfg, path, &bytes.Buffer{})
+	runningTier.Store(&mt)
+	h := (&configAdmin{path: path, token: "tok"}).adminHandler(http.NotFoundHandler())
+	var doc machineDoc
+	if rec := machineCall(h, "GET", ""); json.Unmarshal(rec.Body.Bytes(), &doc) != nil || doc.Video != nil {
+		t.Fatalf("before the verdict: %s", rec.Body)
+	}
+	file, _, _ := config.LoadFrom(path)
+	vp := supervisor.VideoStatusPath(file)
+	if err := os.MkdirAll(filepath.Dir(vp), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	want := `{"encoder":"software","reason":"group_add","device":"/dev/dri/renderD128","uid":1026,"gid":993,"software_only":true}`
+	if err := os.WriteFile(vp, []byte(want), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	rec := machineCall(h, "GET", "")
+	var got struct {
+		Video struct {
+			Encoder string `json:"encoder"`
+			Reason  string `json:"reason"`
+			GID     int    `json:"gid"`
+		} `json:"video"`
+	}
+	if json.Unmarshal(rec.Body.Bytes(), &got) != nil || got.Video.Reason != "group_add" || got.Video.GID != 993 {
+		t.Fatalf("with the verdict: %s", rec.Body)
 	}
 }
