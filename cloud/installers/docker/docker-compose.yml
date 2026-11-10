@@ -1,5 +1,10 @@
 # The Docker install of Maktaba: one container that runs the server and everything it runs
-# (the web app, the API, live TV, the pipeline, its own Postgres), and updates itself.
+# (the web app, the API, live TV, the pipeline, its own Postgres), and updates itself. It is
+# also the NAS file: QNAP's Container Station, UGREEN's and ASUSTOR's Docker apps, Portainer
+# or Dockge (as a stack) and any Linux box with Docker take it as it is; the Synology project
+# and the TrueNAS app are made from it, and the Unraid template is checked against it.
+# maktaba.tv/install/docker fills it in from a few answers (the user, the folders, the memory):
+# nothing you type there leaves the page.
 #
 #   docker compose up -d                        # pulls the image, waits for the setup
 #   docker compose run --rm maktaba setup       # the setup, in the terminal (once)
@@ -8,7 +13,7 @@
 #
 # Updates are automatic, as on every other install (Admin -> Updates: the quiet window, Update
 # now, pause): the server verifies each release (its Sigstore signature from the release
-# workflow, the checksums) and installs it as a new runtime on the `maktaba` volume, switching to
+# workflow, the checksums) and installs it as a new runtime on the data volume, switching to
 # it under the launcher's guard and back if it cannot start. The image tag below is only where
 # a new volume starts from; there is nothing to pull for updates.
 #
@@ -18,44 +23,80 @@
 # image you ran before still runs). An older image never replaces what the volume runs. If you
 # manage the image yourself (Watchtower, a pinned tag you move), turn the server's own updates
 # off so only one thing updates it: MAKTABA_UPDATE_DISABLE below (or Admin -> Updates -> Pause).
+#
+# The lines starting with "#" in a block named [like-this] are optional: remove the "# " in
+# front of a block's settings to turn it on.
 
 services:
   maktaba:
     image: ghcr.io/hamza-labs-core/maktaba-server:latest
+    container_name: maktaba
     restart: unless-stopped
-    # the user Maktaba runs as (any uid:gid; never root): 1000:1000 is the image's own. On a
-    # NAS, set the user that owns the folders you mount (a DSM user such as 1026:100, TrueNAS's
-    # apps user 568:568, Unraid's 99:100). The data folder below must be writable by it: if it
-    # is not, the container stops at once and its log says which folder, which user and the fix.
+    # The user Maktaba runs as (any uid:gid; never root): 1000:1000 is the image's own. On a
+    # NAS, set the user that owns the folders you mount. Find it on the host with: id <user>
+    # (uid=1000(you) gid=100(users) ... is "1000:100"). QNAP and UGREEN: a user you made for
+    # Maktaba; Unraid: 99:100; TrueNAS: 568:568; Synology: a DSM user such as 1026:100.
+    # The data folder below must be writable by it: if it is not, the container stops at once
+    # and its log says which folder, which user and the fix.
     user: "1000:1000"
     # the launcher drains the server on a stop (the pipeline's jobs, then Postgres)
     stop_grace_period: 90s
-    # environment:
-    #   MAKTABA_UPDATE_DISABLE: "1"   # the image is updated by something else (see above)
-    # the host's network (Linux): the machines and apps of your network find this home (mDNS)
-    # and reach it at this machine's own address, as with any other install. Docker Desktop
-    # (Mac, Windows) has no host network: there, use the ports below instead.
+    # [memory] The memory Maktaba may use; it plans for this, not for the machine's RAM, and
+    # leaves the rest to the NAS. 4g is the Light tier (a 4 to 8 GB NAS), 6g Standard (8 to
+    # 16 GB), 16g Strong (16 GB or more). Without it Maktaba plans for all the machine's RAM.
+    # Below 3.5 GiB setup refuses: such a box serves Maktaba better as storage.
+    # mem_limit: 6g
+    environment:
+      MAKTABA_PLATFORM: docker
+      # your time zone, for the quiet hours (heavy work at night on Light and Standard)
+      TZ: Etc/UTC
+      # MAKTABA_UPDATE_DISABLE: "1"   # the image is updated by something else (see above)
+      # [bridge] this machine's address on your network, for the apps on a bridge network
+      # MAKTABA_HOST_IP: 192.168.1.20
+    # The host's network (Linux): the machines and apps of your network find this home (mDNS)
+    # and reach it at this machine's own address, as with any other install. Maktaba answers
+    # mDNS beside the NAS's own responder. Ports: 8088 web, 8080 cluster API, 8081 live TV,
+    # 54329 Postgres; one taken by the NAS (QNAP's QTS uses 8080) is moved, and setup shows
+    # the new one.
     network_mode: host
+    # [bridge] Docker Desktop (Mac, Windows) has no host network, and some households keep
+    # every container on a bridge: delete the network_mode line above and turn this block on.
+    # Apps cannot find Maktaba by themselves on a bridge; they connect by its address
+    # (MAKTABA_HOST_IP above), its HTTPS name or a code from Maktaba Cloud. No machine can
+    # join a bridge home, so the Postgres port is not published.
     # ports:
     #   - "8088:8088"   # the web app
-    #   - "8080:8080"   # the API the cluster's machines and the apps use
+    #   - "8080:8080"   # the API the apps use
     #   - "8081:8081"   # live TV
-    #   - "54329:54329" # the bundled Postgres, for machines that join this home (TLS, their roles only)
     volumes:
-      # everything Maktaba keeps: server.toml, the runtime it updates, the database, logs, models
+      # Everything Maktaba keeps: server.toml, the runtime it updates, the database, logs,
+      # models. A named volume here; on a NAS a folder on fast local storage (an SSD pool if
+      # you have one, never a network share or a USB stick), e.g.
+      #   - /share/Container/maktaba:/var/lib/maktaba   (QNAP)
+      #   - /volume1/docker/maktaba:/var/lib/maktaba    (UGREEN, ASUSTOR)
       - maktaba:/var/lib/maktaba
-      # your library, as the setup's library screens name it (read-write: the cluster's folder
-      # lives beside the media on a share; the media itself is never written)
-      - ${MAKTABA_MEDIA:-./media}:/media
-    # Hardware video on an Intel or AMD chip (a J4125 or N100 NAS, an AMD APU): pass the render
-    # device and its group, so Maktaba's user may open it. The group's id differs from NAS to
-    # NAS; find it on the host with: stat -c %g /dev/dri/renderD128
+      # Your library, each folder at its own path on the host (the same path inside), so a
+      # machine that joins this home finds the same share. Read-only (:ro) where Maktaba must
+      # never write: those libraries show "Read only" and conversions are off there. Add one
+      # line per folder.
+      - /srv/media:/srv/media
+      # An install made with an earlier version of this file mounted its library at /media:
+      # keep that line as it was (- ${MAKTABA_MEDIA:-./media}:/media), or its libraries'
+      # folders move.
+      # [dbus] The host's Avahi publishes Maktaba instead of its own responder. The socket
+      # reaches every system service the host's D-Bus policy lets this user talk to, and :ro
+      # does not narrow that, so it is off unless you want the NAS's own mDNS to carry it.
+      # - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
+    # [dri] Hardware video on an Intel or AMD chip (a J4125 or N100 NAS, an AMD APU): pass the
+    # render device and its group, so Maktaba's user may open it. The group's id differs from
+    # NAS to NAS; find it on the host with: stat -c %g /dev/dri/renderD128
     # Settings -> This machine then shows "Video: hardware (iHD), H.264 and HEVC", or why not.
     # devices:
     #   - /dev/dri:/dev/dri
     # group_add:
     #   - "937"   # the render device's group id, from the stat command above
-    # NVIDIA GPUs (the second listen, faster transcription) need the NVIDIA container toolkit:
+    # [nvidia] NVIDIA GPUs (faster transcription, the second listen) need the NVIDIA
+    # container toolkit on the host:
     # deploy:
     #   resources:
     #     reservations:
