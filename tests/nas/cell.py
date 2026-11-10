@@ -127,6 +127,21 @@ def missing(needs: list[str], landed: list[str]) -> list[str]:
 # --- docker -------------------------------------------------------------------------------
 
 
+PG_PSS_LIMIT_KIB = 512 * 1024  # story 59.02: Postgres's PSS sum on the Light tier
+
+
+def pss_sum(listing: str) -> tuple[int, int]:
+    """The PSS (KiB) summed over the processes of `<pid> Pss: <n> kB` lines, and their count;
+    a process without a Pss line (it exited between the listing and the read) is skipped."""
+    total = n = 0
+    for line in listing.splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and parts[1] == "Pss:" and parts[2].isdigit():
+            total += int(parts[2])
+            n += 1
+    return total, n
+
+
 def docker(*args: str, input: str | None = None, check: bool = True, timeout: float | None = 600,
            capture: bool = True) -> subprocess.CompletedProcess[str]:
     cmd = ["docker", *args]
@@ -628,6 +643,20 @@ class Cell:
 
         clips = wait("every clip found after Run now", found, 12 * 60, every=10)
         return f"{said}, window {window}; Run now started {jobs} job(s); then {clips}"
+
+    def assert_postgres_pss_512m(self) -> str:
+        """Story 59.02: the bundled Postgres's processes together hold under 512 MB (PSS: shared
+        pages counted once over the processes sharing them), the Light tier's tuning applied."""
+        p = docker("exec", self.container, "sh", "-c",
+                   'for d in /proc/[0-9]*; do [ "$(cat $d/comm 2>/dev/null)" = postgres ] && '
+                   'echo "${d#/proc/} $(grep -m1 ^Pss: $d/smaps_rollup 2>/dev/null)"; done; true')
+        (self.out / "postgres-pss.txt").write_text(p.stdout, encoding="utf-8")
+        kib, n = pss_sum(p.stdout)
+        if n == 0:
+            raise AssertionError(f"no postgres process with a PSS reading: {p.stdout[-300:]!r}")
+        if kib >= PG_PSS_LIMIT_KIB:
+            raise AssertionError(f"Postgres PSS {kib >> 10} MiB over {n} processes, not under 512 MiB")
+        return f"Postgres PSS {kib >> 10} MiB over {n} processes (limit 512 MiB)"
 
     def assert_media_untouched(self) -> str:
         """The library is exactly the fixtures: nothing written in it (no .maktaba left behind

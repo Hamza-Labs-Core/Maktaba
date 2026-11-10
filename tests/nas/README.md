@@ -43,7 +43,7 @@ runs every cell, a change to `web/` alone runs nothing.
    `cgroup-memory.txt`, `setup.log`, `state-logs/` (server.log, venv.log), `data-logs/` (every
    role's log segments: api, streaming, pipeline and its workers, the plugin runners, postgres,
    supervisor), `launcher.log`, the API's view (`api-processes.json`, `api-libraries.json`,
-   `api-machine.json` (`GET /api/server/machine`, 59.04), `api-version.json`), `report.json` and `summary.md`.
+   `api-machine.json` (`GET /api/server/machine`, 59.04), `api-version.json`), `postgres-pss.txt` on the cells that check it, `report.json` and `summary.md`.
 
 ## Assertions
 
@@ -59,6 +59,7 @@ runs every cell, a change to `web/` alone runs nothing.
 | `logs_clean` | no permission error in `server.log` |
 | `tier_light`, `tier_standard` | `GET /api/server/machine` (59.04) reads the container's memory limit as Docker set it, and the tier and its defaults are that tier's |
 | `quiet_hold` | outside the cell's quiet hours a new library's first scan waits: the scan queue (`GET /api/queues`) says `quiet_hours` and when the window opens, and no clip is found; the admin's `POST /api/queues/scan/run-now` then starts it and every clip is found with no second scan (59.02) |
+| `postgres_pss_512m` | the bundled Postgres's processes hold under 512 MiB together (the sum of `Pss` in each one's `smaps_rollup`, kept as `postgres-pss.txt`), the Light tier's tuning applied (59.02) |
 | `refused_write`, `refused_privileged` | the container exits 78 with its message (59.01) |
 
 An assertion still waiting for its story is written `{"name": "tier_light", "needs": ["59.04"]}`:
