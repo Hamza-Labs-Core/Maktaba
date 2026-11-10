@@ -250,6 +250,19 @@ class ConnectProgressTest {
         assertEquals(5, rec.steps().count { it is HomeBusy })
     }
 
+    /** Story 59.05: a home whose transcode slots stay taken (503 `transcode_busy`) fails as busy, not as other. */
+    @Test
+    fun aHomeWhoseTranscodeSlotsStayTakenFailsAsBusy() = runBlocking {
+        val rec = Recording()
+        val busy = """{"type":"https://maktaba.tv/problems/transcode-busy","title":"Another video is being converted","status":503,"code":"transcode_busy"}"""
+        val s = session(rec, MemoryTokens("a", "r"), sleep = { clock += it }) { Answer(503, busy, retryAfter = "10") }
+        s.use(Home("http://192.0.2.20:8088", "Maktaba Home"))
+        val failed = s.awaitProgress { it is Failed } as Failed
+        assertEquals(FailReason.Busy, failed.reason)
+        assertEquals("the first try and five waits", 6, failed.attempt)
+        assertEquals("five waits, each shown", 5, rec.steps().count { it is HomeBusy })
+    }
+
     @Test
     fun noAnswerOnLaunchTriesTheHomesOtherAddressesThenFails() = runBlocking {
         val rec = Recording()

@@ -21,6 +21,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
+import com.hamzalabs.maktaba.core.api.ErrorKind
 import com.hamzalabs.maktaba.core.api.Failure
 import com.hamzalabs.maktaba.core.api.Rendition
 import com.hamzalabs.maktaba.core.api.errorDetails
@@ -103,6 +104,12 @@ class Playback(
     /** Why nothing plays (the error screen): what it means to a person, and the home's own words. */
     var problem by mutableStateOf<Failure?>(null)
         private set
+    /**
+     * The home has no transcode slot free (503 `transcode_busy`, Epic 59 story 59.05): no error
+     * screen, the sentence shown while the stream is asked for again every 10 s.
+     */
+    var waiting by mutableStateOf<Failure?>(null)
+        private set
     /** The stream's tracks, as the player last read them (the picker lists them). */
     var tracks by mutableStateOf(Tracks.EMPTY)
         private set
@@ -169,6 +176,7 @@ class Playback(
         releasePlayers()
         session = null
         problem = null
+        waiting = null
         video = null
         tracks = Tracks.EMPTY
         isPlaying = false
@@ -229,8 +237,20 @@ class Playback(
     }
 
     private suspend fun run(fromMs: Long) {
-        opening.withLock { open(fromMs) }
+        openWhenFree(fromMs)
         if (player != null) watch()
+    }
+
+    /**
+     * Opens at [fromMs]; while the home has no transcode slot free ([waiting]), asks again every
+     * 10 s (its `Retry-After`) until one is.
+     */
+    private suspend fun openWhenFree(fromMs: Long) {
+        while (true) {
+            opening.withLock { open(fromMs) }
+            val w = waiting ?: return
+            delay(busyRetryMs(w.retryAfterSec))
+        }
     }
 
     /**
@@ -271,6 +291,7 @@ class Playback(
                 throw e
             }
             session = s.sessionId
+            waiting = null
             ladder = s.ladder
             ended = false
             openedAt = System.currentTimeMillis()
@@ -285,7 +306,13 @@ class Playback(
             if (old != null && control?.playerError == null) return
             Log.w("Maktaba", "playback: ${e.errorDetails()}", e)
             releasePlayers()
-            problem = Failure.of(e)
+            val f = Failure.of(e)
+            if (f.kind == ErrorKind.TranscodeBusy) {
+                waiting = f
+            } else {
+                waiting = null
+                problem = f
+            }
         }
     }
 
@@ -383,9 +410,16 @@ class Playback(
             }
             if (failed != null || System.currentTimeMillis() >= renewAt) {
                 val wasPlaying = p.playWhenReady
-                opening.withLock { open(fromMs = p.currentPosition) }
+                openWhenFree(fromMs = p.currentPosition)
                 if (!wasPlaying) control?.playWhenReady = false
             }
         }
     }
 }
+
+/** How long to wait before asking again for a stream the home had no transcode slot for. */
+internal fun busyRetryMs(retryAfterSec: Long?): Long = (retryAfterSec ?: BUSY_RETRY_SEC).coerceIn(1, 60) * 1000
+
+/** Story 59.05: the home's `Retry-After` for `transcode_busy`, and the wait when it sends none. */
+internal const val BUSY_RETRY_SEC = 10L
+
