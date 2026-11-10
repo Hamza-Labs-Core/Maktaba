@@ -128,9 +128,25 @@ class API:
     def __init__(self, base: str) -> None:
         self.base = base
         self.token = ""
+        self.credentials: dict[str, str] | None = None  # to sign in again when the token expires
+
+    def login(self) -> tuple[int, Any]:
+        assert self.credentials is not None
+        self.token = ""
+        s, d = self.call("POST", "/api/auth/login", self.credentials, retry=False)
+        if s == 200 and isinstance(d, dict) and d.get("access_token"):
+            self.token = d["access_token"]
+        return s, d
 
     def call(self, method: str, path: str, body: Any = None, raw: bool = False,
-             timeout: float = 30) -> tuple[int, Any]:
+             timeout: float = 30, retry: bool = True) -> tuple[int, Any]:
+        s, d = self._call(method, path, body, raw, timeout)
+        if s == 401 and retry and self.token and self.credentials:
+            self.login()  # the access token lasts minutes; a cell's waits are longer
+            s, d = self._call(method, path, body, raw, timeout)
+        return s, d
+
+    def _call(self, method: str, path: str, body: Any, raw: bool, timeout: float) -> tuple[int, Any]:
         url = path if path.startswith("http") else self.base + path
         headers = {"Content-Type": "application/json", "X-Maktaba-Client": "native"}
         if self.token:
@@ -324,9 +340,9 @@ class Cell:
         # one sign-in at a time: the login route allows 10 a minute
         def login() -> bool:
             running()
-            s, d = api.call("POST", "/api/auth/login", {"username": ADMIN, "password": self.password})
-            if s == 200 and isinstance(d, dict) and d.get("access_token"):
-                api.token = d["access_token"]
+            api.credentials = {"username": ADMIN, "password": self.password}
+            s, d = api.login()
+            if api.token:
                 return True
             if s in (401, 403, 423):
                 raise AssertionError(f"sign-in refused: {s} {d}")

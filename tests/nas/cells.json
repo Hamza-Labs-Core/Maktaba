@@ -6,7 +6,7 @@
       "name": "uid-1000",
       "about": "the image's default user, every assertion of a plain install",
       "arches": ["amd64", "arm64"],
-      "asserts": ["ready", "only_uid", "scan", {"name": "first_scan", "needs": ["scan-grant-race"]}, "thumbnail", "transcode", "no_oom", "logs_clean"]
+      "asserts": ["ready", "only_uid", "scan", {"name": "first_scan", "needs": ["scan-grant-race"]}, {"name": "thumbnail", "needs": ["poster-queue"]}, "transcode", "no_oom", {"name": "logs_clean", "needs": ["plugin-cache-grant"]}]
     },
     {
       "name": "uid-568",
