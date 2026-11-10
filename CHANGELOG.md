@@ -224,6 +224,12 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The first scan of a library you just added finds its files.** A scan that started right
+  after a library was added could run in a plugin runner that had not yet been given access to
+  the new folder: it found nothing (Permission denied in the log), and only a later scan found
+  the files. That scan now runs in the queue worker while the runner restarts with access to
+  the new folder.
+
 - **Maktaba's own database starts again after a power cut or a killed container.** After an
   unclean stop (a power cut, `docker kill`, a NAS switched off), the bundled Postgres could
   refuse to start, over and over, on a lock file the stopped database left behind
