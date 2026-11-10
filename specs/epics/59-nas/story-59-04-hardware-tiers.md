@@ -112,7 +112,7 @@ All of it is also in the diagnostics bundle.
 | `machine.memory.zfs` | including {n} GB the ZFS cache will give back | منها {n} غيغابايت سيعيدها تخزين ZFS المؤقت |
 | `machine.memory.zfs_unread` | The ZFS cache could not be read, so free memory may look lower than it is. | تعذّرت قراءة تخزين ZFS المؤقت، لذا قد تبدو الذاكرة الحرّة أقل مما هي عليه. |
 | `machine.tier.moved_up` | This machine now has more memory, so Maktaba moved it to the {tier} tier. | أصبح لدى هذا الجهاز ذاكرة أكبر، لذا نقله Maktaba إلى الفئة {tier}. |
-| `setup.memory.nas_refused` | This NAS has {n} GB of memory for Maktaba. Maktaba needs at least 4 GB. Run the Maktaba home on another computer and keep your media on this NAS: that computer will read it from here. | لدى خادم التخزين الشبكي هذا {n} غيغابايت من الذاكرة لـ Maktaba، ويحتاج Maktaba إلى 4 غيغابايت على الأقل. شغّل جهاز Maktaba الرئيسي على حاسوب آخر وأبقِ وسائطك على خادم التخزين هذا: سيقرؤها ذلك الحاسوب من هنا. |
+| `setup.check.note.nas_memory_refused` | This NAS has {n} GB of memory for Maktaba. Maktaba needs at least 4 GB. Run the Maktaba home on another computer and keep your media on this NAS: that computer will read it from here. | لدى خادم التخزين الشبكي هذا {n} غيغابايت من الذاكرة لـ Maktaba، ويحتاج Maktaba إلى 4 غيغابايت على الأقل. شغّل جهاز Maktaba الرئيسي على حاسوب آخر وأبقِ وسائطك على خادم التخزين هذا: سيقرؤها ذلك الحاسوب من هنا. |
 
 ## Edge cases
 
@@ -129,6 +129,6 @@ All of it is also in the diagnostics bundle.
 | `cmd/maktaba-server/internal/hostinfo/` | cgroup limits, ARC, CPU quota and flags, render devices, platform, kernel facts; tier rules |
 | `cmd/maktaba-server/setup_steps.go`, `setup_app_text.go` | limit-based check at 3.5 GiB, NAS text in both languages |
 | `cmd/maktaba-server/internal/config/` | `server.tier`, apply defaults |
-| `api/internal/handlers/systemstatus/` | `GET /api/system/machine` (admin; 59.16) |
+| `api/internal/handlers/serversettings/` | `GET /api/server/machine` and `PUT /api/server/machine` (the tier; admin; 59.16), proxying the supervisor's `/config/machine` as the other server settings do |
 | `web/src/i18n/{en,ar}.json`, `web/` | strings; This machine panel |
 | `docs/hardware.md` | the NAS tiers |
