@@ -845,7 +845,7 @@ files      = [
 ]
 platforms  = ["windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = []
-since      = "0.3.120"
+since      = "0.3.121"
 
 [[component]]
 id         = "model.whisper-base"
@@ -867,7 +867,7 @@ files      = [
 ]
 platforms  = ["windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = []
-since      = "0.3.120"
+since      = "0.3.121"
 
 [[component]]
 id         = "model.whisper-tiny"
@@ -889,7 +889,7 @@ files      = [
 ]
 platforms  = ["windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = []
-since      = "0.3.120"
+since      = "0.3.121"
 
 [[component]]
 id         = "model.cohere-arabic"

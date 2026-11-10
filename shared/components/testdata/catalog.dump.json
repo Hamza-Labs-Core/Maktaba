@@ -2478,7 +2478,7 @@
         "ram_mb": 0
       },
       "settings": [],
-      "since": "0.3.120",
+      "since": "0.3.121",
       "source": "hf:Systran/faster-whisper-small@536b0662742c02347bc0e980a01041f333bce120",
       "sources": {},
       "stages": [],
@@ -2523,7 +2523,7 @@
         "ram_mb": 0
       },
       "settings": [],
-      "since": "0.3.120",
+      "since": "0.3.121",
       "source": "hf:Systran/faster-whisper-base@ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66",
       "sources": {},
       "stages": [],
@@ -2568,7 +2568,7 @@
         "ram_mb": 0
       },
       "settings": [],
-      "since": "0.3.120",
+      "since": "0.3.121",
       "source": "hf:Systran/faster-whisper-tiny@d90ca5fe260221311c53c58e660288d3deb8d356",
       "sources": {},
       "stages": [],
