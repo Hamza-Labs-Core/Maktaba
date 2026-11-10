@@ -1,5 +1,5 @@
 {
- "digest": "700f45c69fa231f983752ae450e2c121ea3623ba4730ec6a35ef39ea1b8c0a3b",
+ "digest": "74249ef9bc864224e518c01b6b0de533081117c5a666e564a8a9cf20a3210b9a",
  "plugins": [
   {
    "digest": "90cee3b8a50fbfef9b0b1d9f12fbf0516ee5098ee7913c1d5133714f73b1b1b3",
@@ -6700,7 +6700,7 @@
    }
   },
   {
-   "digest": "2baba704fccfc86cb1573a0cd3d3c0bde4078247655c4aec6486191eea3307be",
+   "digest": "287a5cce9ea08a491ea405dfb0b6ff7fbc1d86c7a0e60b646cabcba9a138a555",
    "folder": "subtitles",
    "id": "tv.maktaba.subtitles",
    "manifest": "# tv.maktaba.subtitles: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 2\n# (story 54.29): the first stages that read library files and write files.\nschema     = 1\nid         = \"tv.maktaba.subtitles\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.subtitles.name\"\nsummary = \"fp.subtitles.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"subtitles\"\ndb.read   = [\"transcript_segments\", \"transcripts\", \"videos\"]\ndb.write  = [\"subtitle_files\"]\nfiles.read  = [\"library\"]\nfiles.write = [\"library.subtitles\"]\n\n[[stage]]\nname         = \"subtitle_gen\"\nsubject      = \"video\"\nexport       = \"subtitle-gen\"\nversion      = 1\nlabel        = \"Subtitle files\"\nsubject_kinds = [\"video\"]\npool         = \"nas_write\"\nlane         = \"speech\"\nlane_order   = 4\nexternal_write = true\nentry        = \"maktaba_fp_subtitles.stages.subtitle_gen:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
@@ -6791,6 +6791,24 @@
      "scope_arg": 1,
      "sha256": "3bc8617f524e76c4bdb3bb8c1b601dfeb8893694f4037aaf207e0ef163f5676b",
      "text": "INSERT INTO subtitle_files (video_id, transcript_id, language, format, source, path, byte_size, sha256, is_external, metadata) VALUES ($1, $2, $3, $4, 'generated', $5, $6, $7, true, $8)",
+     "writes": [
+      "subtitle_files"
+     ]
+    },
+    {
+     "also": [
+      {
+       "arg": 2,
+       "scope": "transcript"
+      }
+     ],
+     "mode": "write",
+     "name": "subtitle_gen.run.4",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "f0a1436377f85450e40e0dde4f598473badba8aa0a88b42f079c73385fd613a8",
+     "text": "INSERT INTO subtitle_files (video_id, transcript_id, language, format, source, path, byte_size, sha256, is_external, metadata, content) VALUES ($1, $2, $3, $4, 'generated', $5, $6, $7, false, $8, $9)",
      "writes": [
       "subtitle_files"
      ]

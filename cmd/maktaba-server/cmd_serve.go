@@ -31,6 +31,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/recovery"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/webui"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/mediaaccess"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go/logfiles"
@@ -158,6 +159,8 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 		// Epic 59 story 59.04: the hardware tier, before anything sized by it is built
 		mt := resolveTier(&cfg, config.Path(), os.Stderr)
 		runningTier.Store(&mt)
+		// story 59.03: the roles' fix text names this platform's screens (DSM, TrueNAS, ...)
+		_ = os.Setenv(mediaaccess.EnvHostPlatform, mt.Machine.Platform)
 		// Epic 59 story 59.02: what this start runs with, for Settings → This machine
 		quiet := config.QuietHoursOf(cfg, hostinfo.DefaultsFor(mt.Tier, mt.Machine).QuietHours)
 		rot, how := pgbundle.DataRotational(cfg, filepath.Join(cfg.StateDir(), "postgres"))

@@ -702,6 +702,17 @@ build fails when the two differ.
 
 ### Added
 
+- **Read-only libraries are supported, and each library shows what Maktaba may do in it
+  (story 59.03).** When a library is added, when its folders change, and from its page's
+  **Check access** button, Maktaba checks each folder: Read and write, Read only, or No access,
+  and whether some files can't be read. The page says which user Maktaba runs as and, on
+  Synology DSM, TrueNAS, Unraid or another system, what to change in that system's own
+  screens. Nothing is checked at start, so a sleeping disk stays asleep. On a read-only
+  library, subtitles are kept in the database (players show them as before), while convert,
+  duplicates, repair, YouTube downloads and delete are refused with the reason, and nothing in
+  the folder is touched. A library Maktaba cannot list is not scanned. Scans also skip DSM's
+  `#recycle` and `#snapshot` folders and `lost+found`.
+
 - **Admins can see when a built-in plugin's step ran in the queue worker instead (story
   54.43).** A queue step whose plugin runner cannot take a job on a machine runs in the queue
   worker. The worker now counts each of these, per machine and reason, and keeps the counts in

@@ -27,6 +27,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libaccess"
 )
 
 // FileAction is one ledger row.
@@ -276,6 +277,14 @@ func (h *Handler) RestoreFileAction(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		writeErr(w, r, "file action", err)
+		return
+	}
+	// story 59.03: a restore moves the file back into the library
+	if acc, err := libaccess.Of(ctx, tx, a.LibraryID); err != nil {
+		writeErr(w, r, "library access", err)
+		return
+	} else if !libaccess.Writable(acc) {
+		httperror.Write(w, r, libaccess.Problem())
 		return
 	}
 	if !a.Restorable {

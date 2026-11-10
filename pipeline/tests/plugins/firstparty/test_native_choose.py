@@ -233,8 +233,8 @@ async def test_on_sqlite_a_first_party_stage_runs_in_the_worker_counted() -> Non
 
 
 class _LibrariesDB:
-    """A home whose libraries change: ``roots`` is what ``SELECT roots FROM libraries``
-    answers now; each read is counted."""
+    """A home whose libraries change: ``roots`` is what ``SELECT roots, access FROM
+    libraries`` answers now (each read-write, story 59.03); each read is counted."""
 
     dialect = "postgres"
 
@@ -250,7 +250,7 @@ class _LibrariesDB:
     async def fetch(self, sql: str, *args: Any) -> list[dict[str, Any]]:
         if "FROM libraries" in sql:
             self.library_reads += 1
-            return [{"roots": [r]} for r in self.roots]
+            return [{"roots": [r], "access": None} for r in self.roots]
         raise RuntimeError("no such table here")  # the planner's rules: none
 
 

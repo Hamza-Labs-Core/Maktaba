@@ -752,8 +752,14 @@ def policy_for(
         for a in files.get("read") or ():
             p.read += paths(str(a))
         for a in files.get("write") or ():
+            # story 59.03: the write grants of the libraries are the writable libraries'
+            # (library.write, library.subtitles); an areas doc from before names only "library"
             if str(a) == "library.subtitles":
-                p.write_named += paths("library")
+                p.write_named += paths(
+                    "library.subtitles" if "library.subtitles" in areas else "library"
+                )
+            elif str(a) == "library":
+                p.write += paths("library.write" if "library.write" in areas else "library")
             else:
                 p.write += paths(str(a))
         for tool in t.get("exec") or ():  # type: ignore[attr-defined]

@@ -12,6 +12,7 @@ from ..db import claim_owner
 from ..db.jobs import Job
 from ..db.jobs_state import StageError, mark_cancelled, mark_failed_or_retry
 from ..log import get_logger
+from . import library_access
 from .context import JobCancelled, JobDeferred, StageContext, StageFailure
 from .events import job_ref, log_event, publish
 from .graph import GraphViolation, StageDef, StageResult
@@ -98,6 +99,13 @@ async def _execute(
     job_events.claimed(job)
 
     try:
+        # story 59.03: a stage that writes the library does not run on a read-only one, and
+        # no scan runs on a library whose folders cannot be listed
+        why = await library_access.refusal(
+            db, stage=stage.name, subject_kind=job.subject_kind, subject_id=job.subject.id
+        )
+        if why is not None:
+            raise StageFailure(why[0], why[1], retryable=False)
         # Epic 59 story 59.02: heavy work this machine claims outside its quiet hours is
         # given back until the window opens (engine/quiet.py)
         wait = await quiet_hold_seconds(db, job)
@@ -170,6 +178,11 @@ async def _execute(
             ),
         )
         job_events.finished(job.id, "done", output=result.summary)
+        refused = (result.summary or {}).get("write_refused")
+        if refused:
+            # a write the stage worked around (subtitles kept in the database): recorded when
+            # the library was thought writable, so the household sees which folder
+            await _write_refused(db, job, str(refused), expected=False)
     except JobCancelled:
         await mark_cancelled(db, job_id=job.id)
         job_events.finished(
@@ -190,6 +203,8 @@ async def _execute(
             retryable=exc.retryable,
             error=exc.message,
         )
+        if exc.kind == "nas_readonly":
+            await _write_refused(db, job, exc.message.split(": ", 1)[0], expected=True)
         await _fail(
             db,
             job,
@@ -226,6 +241,8 @@ async def _execute(
         )
     except Exception as exc:  # noqa: BLE001 - every handler failure becomes a classified job failure
         _log.exception("stage_handler_failed", job_id=job.id, stage=stage.name)
+        if isinstance(exc, PermissionError):
+            await _write_refused(db, job, str(exc.filename or ""), expected=True)
         await _fail(
             db,
             job,
@@ -242,6 +259,19 @@ async def _execute(
             "failed",
             outcome=job_events.failure(type(exc).__name__, str(exc), retryable=True),
         )
+
+
+async def _write_refused(db: Any, job: Job, path: str, *, expected: bool) -> None:
+    """Record a write refused with a permission error against the job's library (story
+    59.03). ``expected`` False: only when the library was thought writable (a read-only
+    library's refusals are what its access already says)."""
+    kind, sid = job.subject_kind, job.subject.id
+    if not expected:
+        access = await library_access.access_of(db, subject_kind=kind, subject_id=sid)
+        if access in library_access.READ_ONLY:
+            return
+    lib = job.library_id or await library_access.library_of(db, subject_kind=kind, subject_id=sid)
+    await library_access.record_write_failure(db, library_id=lib, path=path)
 
 
 async def _native_impl(db: Any, name: str, inproc: Any) -> Any:

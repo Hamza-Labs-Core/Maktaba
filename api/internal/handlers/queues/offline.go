@@ -31,6 +31,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libaccess"
 )
 
 // Stages of Epic 47 (pipeline engine/graph.py).
@@ -86,7 +87,13 @@ type LibraryActionResponse struct {
 	Enqueued  int                   `json:"enqueued"`
 	Coalesced int                   `json:"coalesced"`
 	Skipped   int                   `json:"skipped"`
+	// SkippedReadOnly counts the libraries an all-libraries action left out because they
+	// are read-only for Maktaba (story 59.03); each has outcome library_read_only.
+	SkippedReadOnly int `json:"skipped_read_only"`
 }
+
+// OutcomeLibraryReadOnly is a library an action left out: read-only for Maktaba.
+const OutcomeLibraryReadOnly = "library_read_only"
 
 // setPayloadSQL writes a request's payload keys onto the job its enqueue
 // landed on. processing_jobs_enqueue keeps an existing row's payload (it
@@ -266,11 +273,38 @@ func (h *Handler) writeLibraryAction(w http.ResponseWriter, r *http.Request, id 
 	if all {
 		extra = mergeMaps(extra, map[string]any{"all": true})
 	}
-	out, err := h.enqueueForLibraries(ctx, libs, e, audit, extra)
+	// story 59.03: every library action here writes into the library (convert, dedup,
+	// YouTube downloads), so a read-only library is refused, or left out of "all"
+	var readOnly []string
+	writable := libs[:0:0]
+	for _, lib := range libs {
+		a, err := libaccess.Of(ctx, h.DB, lib)
+		if err != nil {
+			writeErr(w, r, "library access", err)
+			return
+		}
+		if libaccess.Writable(a) {
+			writable = append(writable, lib)
+		} else {
+			readOnly = append(readOnly, lib)
+		}
+	}
+	if !all && len(readOnly) > 0 {
+		httperror.Write(w, r, libaccess.Problem())
+		return
+	}
+	if len(readOnly) > 0 {
+		extra = mergeMaps(extra, map[string]any{"skipped_read_only": len(readOnly)})
+	}
+	out, err := h.enqueueForLibraries(ctx, writable, e, audit, extra)
 	if err != nil {
 		writeErr(w, r, "enqueue", err)
 		return
 	}
+	for _, lib := range readOnly {
+		out.Results = append(out.Results, LibraryActionResult{LibraryID: lib, Outcome: OutcomeLibraryReadOnly})
+	}
+	out.SkippedReadOnly = len(readOnly)
 	common.WriteJSON(w, r, http.StatusOK, out)
 }
 
@@ -412,6 +446,9 @@ func (h *Handler) RetryDownloads(w http.ResponseWriter, r *http.Request) {
 	}
 	id, ok := libraryParam(w, r, false)
 	if !ok {
+		return
+	}
+	if !libaccess.Guard(w, r, h.DB, id) {
 		return
 	}
 	states := req.States

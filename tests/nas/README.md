@@ -57,6 +57,9 @@ runs every cell, a change to `web/` alone runs nothing.
 | `no_oom` | not OOM-killed, `memory.current` under `memory.max`, no `oom_kill` event |
 | `media_untouched` | the library holds exactly the fixtures afterwards: nothing written in it |
 | `logs_clean` | no permission error in `server.log` |
+| `access_ro` | every library under the media mount shows Read only after Check access (`POST /api/libraries/{id}/check-access`), each root with its fix, a `:ro` mount named as one, and `GET /api/libraries` says `ro` (59.03) |
+| `convert_409` | conversion of a read-only library (and its dry run) answers 409 `library_read_only` (59.03) |
+| `access_none` | adding the mode-000 root is refused (422, `not-readable`); a library made while the folder was open shows No access once it is closed and checked again, with its fix, and its scan answers 409 `library_no_access` (59.03) |
 | `tier_light`, `tier_standard` | `GET /api/server/machine` (59.04) reads the container's memory limit as Docker set it, and the tier and its defaults are that tier's |
 | `quiet_hold` | outside the cell's quiet hours a new library's first scan waits: the scan queue (`GET /api/queues`) says `quiet_hours` and when the window opens, and no clip is found; the admin's `POST /api/queues/scan/run-now` then starts it: the held jobs run and none stays paused; every clip is then found as in `scan` (59.02) |
 | `postgres_pss_512m` | the bundled Postgres's processes hold under 512 MiB together (the sum of `Pss` in each one's `smaps_rollup`, kept as `postgres-pss.txt`), the Light tier's tuning applied (59.02) |
