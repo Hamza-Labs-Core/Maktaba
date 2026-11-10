@@ -30,6 +30,10 @@ func PipelineInstanceLogsAddr(i int) string { return ports.TranscriptionLogs.Add
 // as they are (with transcribe among them there are none).
 func BuildPipelineInstances(opts Options) ([]Process, error) {
 	plan := PlanFor(opts)
+	if plan.Capped != "" {
+		// Epic 59 story 59.06: the log says why fewer speech workers start
+		fmt.Fprintf(os.Stderr, "[supervisor] level=warn speech workers: %s\n", plan.Capped)
+	}
 	n := plan.Workers
 	if n <= 0 {
 		return nil, nil

@@ -7,12 +7,13 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 )
 
-// Epic 59 story 59.02: Light and Standard wait for 01:00-06:00, Light's sprites too;
+// Epic 59 story 59.02: Light and Standard wait for 01:00-06:00, Light's sprites too (and,
+// story 59.06, its speech);
 // Strong none; [schedule] quiet_hours wins, "" meaning none.
 func TestQuietEnv(t *testing.T) {
 	cfg := config.Defaults()
 	for tier, want := range map[string][]string{
-		"light":    {"MAKTABA_QUIET_HOURS=01:00-06:00", "MAKTABA_QUIET_SPRITES=1"},
+		"light":    {"MAKTABA_QUIET_HOURS=01:00-06:00", "MAKTABA_QUIET_SPRITES=1", "MAKTABA_QUIET_SPEECH=1"},
 		"standard": {"MAKTABA_QUIET_HOURS=01:00-06:00"},
 		"strong":   nil,
 		"":         nil,

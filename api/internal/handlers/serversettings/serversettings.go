@@ -138,6 +138,7 @@ func (h *Handler) Mount(r chi.Router) {
 	h.mountStorage(r)
 	h.mountBackups(r)
 	h.mountMachine(r)
+	h.mountSpeech(r)
 }
 
 func (h *Handler) admin(next http.HandlerFunc) http.HandlerFunc {

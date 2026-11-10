@@ -10,17 +10,21 @@
 #                                        $ORIGIN rpath
 #   python/    CPython 3.12              python-build-standalone, stdlib precompiled
 #   pipeline/  maktaba_pipeline-<v>-py3-none-any.whl constraints.txt constraints-core.txt
+#              constraints-stt.txt (the stt extra's pins alone, story 59.06)
 #              wheels/   a wheel for every pin of constraints-core.txt, for this architecture,
 #                        and wheelhouse.json (Epic 59 story 59.01: the venv of a first start
-#                        builds offline from it, --no-index --find-links)
+#                        builds offline from it, --no-index --find-links); on aarch64 also
+#                        the speech engine's (constraints-stt.txt, story 59.06: CTranslate2
+#                        and faster-whisper, no torch)
 #   migrations/  the database's schema (shared/db/migrations): maktaba-api finds them beside bin/
 #   licenses/  the third-party licences and where their sources are
 #   files.sha256                         every file and symlink, with mode, size, SHA-256
 #   payload.json                         what is inside: versions, checksums, min glibc
 #
 # Third-party pieces come from pins.env and are checked against its SHA-256s. The core
-# venv's wheels are here (pipeline/wheels); the ML extras' (torch, …) and the models are
-# not: they download when speech to text is turned on.
+# venv's wheels are here (pipeline/wheels), and on aarch64 the speech engine's; the rest of
+# the ML extras' (torch, …) and the models are not: they download when speech to text is
+# turned on.
 # Neither is ffmpeg: on Linux Maktaba runs the distribution's (the .deb and the .rpm
 # depend on it; setup's check and the server's status say what to install when it is
 # missing, too old or lacks an encoder or filter Maktaba uses).
@@ -253,12 +257,14 @@ fi
 whl=("$WORK"/node/maktaba_pipeline-*-py3-none-any.whl)
 cons=("$WORK"/node/maktaba-pipeline-*-constraints.txt)
 cons_core=("$WORK"/node/maktaba-pipeline-*-constraints-core.txt)
+cons_stt=("$WORK"/node/maktaba-pipeline-*-constraints-stt.txt)
 if [ "${#whl[@]}" -ne 1 ] || [ ! -f "${whl[0]}" ]; then die "expected one pipeline wheel"; fi
 cp "${whl[0]}" "$OUT/pipeline/"
 [ -f "${cons_core[0]}" ] || die "expected the core constraints (build-release.sh)"
 cp "${cons[0]}" "$OUT/pipeline/constraints.txt"
 # story 51.17: the runtime's pins alone, for a venv with no ML extras (a Core home)
 cp "${cons_core[0]}" "$OUT/pipeline/constraints-core.txt"
+[ -f "${cons_stt[0]}" ] || die "expected the speech engine's constraints (build-release.sh)"
 
 # --- the wheelhouse (Epic 59 story 59.01): every pin of constraints-core.txt as a wheel for
 # this architecture and the payload's Python (pip evaluates the markers as it runs: the
@@ -272,7 +278,20 @@ mkdir -p "$OUT/pipeline/wheels"
 PYTHONDONTWRITEBYTECODE=1 "$PY" -I -B -m pip download --quiet --disable-pip-version-check --no-deps \
     --only-binary=:all: --require-hashes -r "$OUT/pipeline/constraints-core.txt" -d "$OUT/pipeline/wheels" \
     || die "pip download of constraints-core.txt's wheels for linux-$ARCH"
-WH_SHA="$(sha256 "$OUT/pipeline/constraints-core.txt")" WH_PLATFORM="linux-$ARCH" WH_PY="$PYTHON_VERSION" \
+# Epic 59 story 59.06: on aarch64 the speech engine's wheels too (constraints-stt.txt: the stt
+# extra, whose markers there name CTranslate2 and faster-whisper and no torch), so an arm64
+# NAS has them without PyPI. On x86_64 the stt extra brings torch (the second listen): its
+# wheels stay in runtime.ml's pack.
+WH_STT=""
+cp "${cons_stt[0]}" "$OUT/pipeline/constraints-stt.txt"
+if [ "$ARCH" = aarch64 ]; then
+    log "wheelhouse: the speech engine (constraints-stt.txt, linux-$ARCH)"
+    PYTHONDONTWRITEBYTECODE=1 "$PY" -I -B -m pip download --quiet --disable-pip-version-check --no-deps \
+        --only-binary=:all: --require-hashes -r "$OUT/pipeline/constraints-stt.txt" -d "$OUT/pipeline/wheels" \
+        || die "pip download of constraints-stt.txt's wheels for linux-$ARCH"
+    WH_STT="$(sha256 "$OUT/pipeline/constraints-stt.txt")"
+fi
+WH_SHA="$(sha256 "$OUT/pipeline/constraints-core.txt")" WH_STT="$WH_STT" WH_PLATFORM="linux-$ARCH" WH_PY="$PYTHON_VERSION" \
 "$PY" -I -B - "$OUT/pipeline/wheels" <<'EOF'
 import json, os, sys
 from pathlib import Path
@@ -280,6 +299,9 @@ d = Path(sys.argv[1])
 e = os.environ
 doc = {"schema": 1, "constraints_sha256": [e["WH_SHA"]], "platform": e["WH_PLATFORM"],
        "python": e["WH_PY"], "wheels": sorted(p.name for p in d.glob("*.whl"))}
+if e.get("WH_STT"):
+    # the speech engine's set it also covers (story 59.06)
+    doc["stt_constraints_sha256"] = e["WH_STT"]
 (d / "wheelhouse.json").write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
 EOF
 log "wheelhouse: $(find "$OUT/pipeline/wheels" -name '*.whl' | wc -l | tr -d ' ') wheels, $(du -sh "$OUT/pipeline/wheels" | awk '{print $1}')"

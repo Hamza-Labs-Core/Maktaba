@@ -99,6 +99,42 @@ describe("ThisMachineSection", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
+  // Epic 59 story 59.06: the speech section is part of the page
+  it("shows speech to text below the quiet hours", async () => {
+    routeGet(get, {
+      "/api/server/machine": () => DOC,
+      "/api/server/speech": () => ({
+        available: true,
+        speech: {
+          on: true,
+          on_set: false,
+          model: "base",
+          model_set: false,
+          repo: "Systran/faster-whisper-base",
+          default: "base",
+          default_on: true,
+          reason: "no_avx2",
+          engine: "ct2",
+          offered: ["tiny", "base", "small", "medium"],
+          quiet_only: false,
+          polite: true,
+          second_listen: true,
+          arch: "amd64",
+        },
+        restart_needed: false,
+        can_restart: true,
+        measure: null,
+        measuring: false,
+        quiet_hours: "01:00-06:00",
+        models: [],
+      }),
+    });
+    renderPage(<ThisMachineSection pollMs={1} />, { path: "/settings/machine" });
+    const section = await screen.findByTestId("speech-section");
+    expect(section).toHaveTextContent("Speech to text");
+    expect(section).toHaveTextContent("This processor lacks AVX2, so a smaller model was chosen.");
+  });
+
   // Epic 59 story 59.07: the plugin isolation level, in one line
   it("says the plugin isolation level", async () => {
     open({

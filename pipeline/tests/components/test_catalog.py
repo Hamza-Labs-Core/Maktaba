@@ -342,6 +342,9 @@ def test_accessors() -> None:
         "model.whisper-turbo",
         "model.whisper-large-v3",
         "model.whisper-medium",
+        "model.whisper-small",
+        "model.whisper-base",
+        "model.whisper-tiny",
     )
     order = cat.order()
     assert order.index("runtime.ml") < order.index("transcription")

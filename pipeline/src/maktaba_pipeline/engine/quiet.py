@@ -9,7 +9,8 @@ attempt) until the window opens, with the reason ``quiet_hours:<start>`` the que
 shows as "Waiting for quiet hours (01:00)".
 
 - Playback, a single new file's thumbnail (``thumb_small``) and its transcript (a backlog
-  of 10 or fewer) never wait.
+  of 10 or fewer) never wait; on the Light tier (``MAKTABA_QUIET_SPEECH``, story 59.06) every
+  transcription waits, a single new file's too.
 - An admin's **Run now** on a job or a library sets ``run_now`` in the job's payload and
   clears its wait: the gate lets it through.
 - Only jobs this machine claims wait: a node with no window of its own takes them (quiet
@@ -30,6 +31,7 @@ from .sql import is_pg, loads
 
 __all__ = [
     "ENV_QUIET_HOURS",
+    "ENV_QUIET_SPEECH",
     "ENV_QUIET_SPRITES",
     "QUIET_REASON",
     "QuietHours",
@@ -40,6 +42,7 @@ __all__ = [
 
 ENV_QUIET_HOURS = "MAKTABA_QUIET_HOURS"
 ENV_QUIET_SPRITES = "MAKTABA_QUIET_SPRITES"
+ENV_QUIET_SPEECH = "MAKTABA_QUIET_SPEECH"
 #: the paused reason of a held job: quiet_hours:<HH:MM>, the window's start
 QUIET_REASON = "quiet_hours"
 
@@ -80,6 +83,8 @@ class QuietHours:
     end: int
     #: thumbnail sprites always wait (the Light tier)
     sprites: bool = False
+    #: every transcription waits, a single new file's too (the Light tier, story 59.06)
+    speech: bool = False
 
     @classmethod
     def from_env(cls, env: Any = None) -> QuietHours | None:
@@ -87,7 +92,13 @@ class QuietHours:
         w = parse_window(env.get(ENV_QUIET_HOURS))
         if w is None:
             return None
-        return cls(w[0], w[1], sprites=env.get(ENV_QUIET_SPRITES, "") not in ("", "0", "false"))
+        on = ("", "0", "false")
+        return cls(
+            w[0],
+            w[1],
+            sprites=env.get(ENV_QUIET_SPRITES, "") not in on,
+            speech=env.get(ENV_QUIET_SPEECH, "") not in on,
+        )
 
     @property
     def start_text(self) -> str:
@@ -148,7 +159,7 @@ async def is_heavy(db: Any, job: Job, quiet: QuietHours) -> bool:
     if stage == "scan":
         return await _first_scan(db, job)
     if stage == "transcribe":
-        return await _count_waiting(db, stage) > TRANSCRIBE_BACKLOG
+        return quiet.speech or await _count_waiting(db, stage) > TRANSCRIBE_BACKLOG
     if stage == "thumbnail":
         return quiet.sprites or await _count_waiting(db, stage) > SPRITES_BACKLOG
     return False

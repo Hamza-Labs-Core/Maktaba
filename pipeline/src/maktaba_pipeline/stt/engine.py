@@ -30,6 +30,7 @@ __all__ = [
     "MLX",
     "SECOND_LISTEN_PINS",
     "Pin",
+    "SIZES",
     "PinMismatch",
     "ct2_repo",
     "current",
@@ -37,6 +38,7 @@ __all__ = [
     "for_machine",
     "model_for",
     "pin_for",
+    "size_of",
     "verify",
 ]
 
@@ -126,6 +128,68 @@ CT2_PINS: dict[str, Pin] = {
         },
     ),
 }
+
+
+def _systran(revision: str, config: str, model: str) -> Pin:
+    """A Systran conversion of an OpenAI Whisper size: its config and weights, and the
+    tokenizer and vocabulary every size shares (no preprocessor_config.json: faster-whisper
+    takes Whisper's own mel settings)."""
+    return Pin(
+        revision,
+        {
+            "config.json": config,
+            "model.bin": model,
+            "tokenizer.json": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
+            "vocabulary.txt": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913",
+        },
+    )
+
+
+#: Epic 59 story 59.06: the smaller sizes a NAS's tier picks (the catalog's model.whisper-tiny,
+#: -base, -small and -medium, pinned by tools/release/cmd/pin-models at the same commits)
+CT2_PINS.update(
+    {
+        "Systran/faster-whisper-tiny": _systran(
+            "d90ca5fe260221311c53c58e660288d3deb8d356",
+            "a73a28cdfe1c43ccc7202fa333d1f89c202477271407ae9a7f19afa52039cac8",
+            "dcb76c6586fc06cbdac6dd21f14cfd129cc4cdd9dce19bf4ffa62e59cbe6e6d1",
+        ),
+        "Systran/faster-whisper-base": _systran(
+            "ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66",
+            "56a6d8110d311f19c8f0471e562832c7527f146b567275bfca59fcf7c184da9a",
+            "d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+        ),
+        "Systran/faster-whisper-small": _systran(
+            "536b0662742c02347bc0e980a01041f333bce120",
+            "b55496ac7940a7ae47d2c01eab40edfd8701feec1229d9cce3b40014383fb828",
+            "3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671",
+        ),
+        "Systran/faster-whisper-medium": _systran(
+            "08e178d48790749d25932bbc082711ddcfdfbc4f",
+            "3622a2ddc41ec0e0fd4e68c13c6830f03b90c38d89aaad184de02c8c642cf807",
+            "9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae",
+        ),
+    }
+)
+
+#: the CTranslate2 models by the names the hardware tiers and Settings use (Epic 59 story
+#: 59.06; the supervisor's hostinfo.SpeechModels): MAKTABA_STT_MODEL may be one of them
+SIZES: dict[str, str] = {
+    "tiny": "Systran/faster-whisper-tiny",
+    "base": "Systran/faster-whisper-base",
+    "small": "Systran/faster-whisper-small",
+    "medium": "Systran/faster-whisper-medium",
+    "large-v3-turbo": DEFAULT_MODEL[CT2],
+}
+
+
+def size_of(model: str) -> str | None:
+    """The size name (``"base"``) of a CTranslate2 model repo, or None for another."""
+    for name, repo in SIZES.items():
+        if repo == model:
+            return name
+    return None
+
 
 #: the second listen's model as Windows and Linux fetch it (transformers' files,
 #: stt/cohere_cuda.py ALLOW_PATTERNS; story 38.9): the commit of 2026-07-13, the weights and
@@ -234,7 +298,8 @@ def _is_mlx(model: str) -> bool:
 
 def model_for(engine: str, model: str | None) -> str:
     """The model ``engine`` loads for ``MAKTABA_STT_MODEL`` = ``model``: its default when
-    unset; on CTranslate2 an MLX conversion (``mlx-community/...``, which it cannot load)
+    unset; on CTranslate2 a size name (:data:`SIZES`: "base") its pinned repo, and an MLX
+    conversion (``mlx-community/...``, which it cannot load)
     becomes the CTranslate2 conversion of the same weights, or the default when there is
     none, with a line in the log; anything else as given."""
     model = (model or "").strip()
@@ -251,6 +316,8 @@ def model_for(engine: str, model: str | None) -> str:
                 reason="an MLX model: the CTranslate2 engine loads a CTranslate2 conversion",
             )
         return to
+    if engine == CT2 and model in SIZES:
+        return SIZES[model]
     return _MOVED.get(model, model) if engine == CT2 else model
 
 
