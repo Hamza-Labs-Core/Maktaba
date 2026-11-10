@@ -32,9 +32,14 @@ services:
     stop_grace_period: 90s
     # environment:
     #   MAKTABA_UPDATE_DISABLE: "1"   # the image is updated by something else (see above)
+    #   MAKTABA_HOST_IP: "192.168.1.20"   # the address your devices reach this machine at, when
+    #                                     # it has several (a NAS's bonded links or VLANs)
     # the host's network (Linux): the machines and apps of your network find this home (mDNS)
-    # and reach it at this machine's own address, as with any other install. Docker Desktop
-    # (Mac, Windows) has no host network: there, use the ports below instead.
+    # and reach it at this machine's own address, as with any other install. Maktaba answers
+    # mDNS itself under "<this machine>-maktaba", beside the NAS's own responder. Docker
+    # Desktop (Mac, Windows) has no host network, and some households keep every container on
+    # a bridge: there, use docker-compose.bridge.yml instead (apps then connect by address,
+    # by the home's HTTPS name or with a code from Maktaba Cloud).
     network_mode: host
     # ports:
     #   - "8088:8088"   # the web app
@@ -47,6 +52,10 @@ services:
       # your library, as the setup's library screens name it (read-write: the cluster's folder
       # lives beside the media on a share; the media itself is never written)
       - ${MAKTABA_MEDIA:-./media}:/media
+      # Optional: publish the home through the NAS's own Avahi instead of Maktaba's responder.
+      # The socket reaches every system service D-Bus lets this user talk to (":ro" does not
+      # stop that), so it is off unless you want it:
+      # - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
     # Hardware video on an Intel or AMD chip (a J4125 or N100 NAS, an AMD APU): pass the render
     # device and its group, so Maktaba's user may open it. The group's id differs from NAS to
     # NAS; find it on the host with: stat -c %g /dev/dri/renderD128

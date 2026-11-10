@@ -1,0 +1,33 @@
+# Maktaba on a bridge network: the same container as docker-compose.yml, for Docker Desktop
+# (Mac, Windows), which has no host network, and for a household that keeps every container
+# on a bridge.
+#
+#   docker compose -f docker-compose.bridge.yml up -d
+#   docker compose -f docker-compose.bridge.yml run --rm maktaba setup
+#
+# On a bridge, multicast stays inside Docker: apps and TVs cannot find the home by themselves
+# (Maktaba turns mDNS and SSDP off, and setup says so). They connect by this machine's
+# address (MAKTABA_HOST_IP below), by the home's HTTPS name, or with a code from Maktaba
+# Cloud. A bridge home has no other machines (nodes), so the database port is not published.
+
+services:
+  maktaba:
+    image: ghcr.io/hamza-labs-core/maktaba-server:latest
+    restart: unless-stopped
+    # the user Maktaba runs as (any uid:gid; never root): see docker-compose.yml
+    user: "1000:1000"
+    stop_grace_period: 90s
+    environment:
+      # the address your devices reach this machine at: Maktaba's links and the setup's
+      # text name it (inside the bridge the container's own address is Docker's)
+      MAKTABA_HOST_IP: "${MAKTABA_HOST_IP:?set MAKTABA_HOST_IP to this machine's LAN address}"
+    ports:
+      - "8088:8088"   # the web app
+      - "8080:8080"   # the API the apps use
+      - "8081:8081"   # live TV
+    volumes:
+      - maktaba:/var/lib/maktaba
+      - ${MAKTABA_MEDIA:-./media}:/media
+
+volumes:
+  maktaba:

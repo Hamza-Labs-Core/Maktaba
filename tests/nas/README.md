@@ -70,6 +70,9 @@ runs every cell, a change to `web/` alone runs nothing.
 | `refused_write`, `refused_privileged` | the container exits 78 with its message (59.01) |
 | `stt_light_off` | on the Light tier speech is off by default, its reason `light`, the model base, in the quiet hours only; on arm64 no second listen (59.06) |
 | `stt_engine` | the speech engine (the stt extra's aarch64 pins, `pipeline/constraints-stt.txt`) goes into the pipeline's venv and imports, with no torch and no transformers: on arm64 from the payload's wheelhouse alone (`--no-index`), on amd64 from PyPI; its pip log is `stt-install.log` (59.06) |
+| `mdns_own` | (T02) with no D-Bus mount, the sibling's `avahi-browse -a -r -t -p` lists both the NAS's `_smb._tcp` and `_maktaba._tcp`, Maktaba's at `<host>-maktaba.local`, which `avahi-resolve` resolves; the NAS's own `<host>.local` still resolves and avahi-daemon logged no host name conflict; no `avahi-publish-service` runs (59.08) |
+| `mdns_dbus` | (T08) the bus mounted: `_maktaba._tcp` is listed at the NAS's own `<host>.local` (Avahi published it) and `avahi-publish-service` runs in the container (59.08) |
+| `bridge` | (T04) `GET /api/server/machine` reads the network as `bridge` and `web_url` is `http://<MAKTABA_HOST_IP>:8088`; `setup.log` and the container log carry the bridge text with that address (the log in English and Arabic) and `mDNS and SSDP off`, and nothing was advertised; the health route answers at the runner's address on the published port (59.08) |
 | `stt_measure` | an admin's Measure again (`POST /api/server/speech/measure`): the server transcribes the bundled Arabic and English clips with the tier's model; the real-time factor and each clip's word error rate are reported (`stt:wer`, `api-speech.json`), and a rise of more than 5 points over [`stt-baseline.json`](stt-baseline.json) for that model and architecture fails (no entry yet: recorded only) (59.06) |
 
 An assertion still waiting for its story is written `{"name": "tier_light", "needs": ["59.04"]}`:
@@ -82,8 +85,12 @@ it is reported as pending (⏳) until that story is in `landed`.
    or `--device /dev/dri`), `env`, `seccomp` (a profile in this folder), `expect: "refused"`,
    `kill_restart`, `quiet_hours_ahead` (a one-hour quiet window opening three hours from now,
    UTC; every other cell has none, `[schedule] quiet_hours = ""`), `speech` (story 59.06:
-   `[transcription] speech = "on"` and the tier's model instead of the cells' tiny one); then
-   `asserts`.
+   `[transcription] speech = "on"` and the tier's model instead of the cells' tiny one),
+   `avahi` (story 59.08: `"sibling"` starts the NAS's avahi-daemon in a `debian:12-slim`
+   container on the host's network, its own system bus and its own `avahi` user, publishing
+   an `_smb._tcp` share; `"dbus"` also mounts that bus at `/run/dbus` in Maktaba's container),
+   `network: "bridge"` (story 59.08: Docker's default bridge, 8088, 8080 and 8081 published,
+   `MAKTABA_HOST_IP` the runner's address, setup on the bridge too); then `asserts`.
 2. A new assertion is a method `assert_<name>` of `Cell` in `cell.py` returning a short detail,
    raising `AssertionError` to fail. Use `self.api` (signed in as the admin) and `docker(...)`.
 3. A cell or assertion for a story not merged yet carries `needs: ["59.NN"]`; the story's pull
@@ -119,4 +126,10 @@ it is reported as pending (⏳) until that story is in `landed`.
 not open): each ends in libx264 with its reason in Settings. Real VA-API is in the device
 checklists (J4125, N100).
 
-**Later phases add cells:** `bridge` and `offline` (59.08, 59.01), and the update legs (`update-rehearsal-container`, 59.12).
+**Networking (59.08):** `mdns-own` (no D-Bus mount: Maktaba's own responder beside the NAS's
+avahi-daemon), `mdns-dbus` (the NAS's bus mounted: published through its Avahi) and `bridge`
+(mDNS and SSDP off, the bridge text, an app by address). Each keeps `avahi-browse.txt` and
+`avahi.log` (the sibling's) beside the container's log. What apps on a real NAS find is in the
+device checklists.
+
+**Later phases add cells:** `offline` (59.01), and the update legs (`update-rehearsal-container`, 59.12).

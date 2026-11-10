@@ -1816,6 +1816,9 @@ jobs:
           # starts from it; the server updates the volume by itself after that).
           sed "s|maktaba-server:latest|maktaba-server:${TAG}|" cloud/installers/docker/docker-compose.yml \
             > dist/maktaba-docker-compose.yml
+          # and its bridge variant (Epic 59 story 59.08: Docker Desktop, a bridge-only NAS)
+          sed "s|maktaba-server:latest|maktaba-server:${TAG}|" cloud/installers/docker/docker-compose.bridge.yml \
+            > dist/maktaba-docker-compose.bridge.yml
           # The installer itself, listed in checksums.txt and so signed with the rest:
           # a machine fetches it from the release and verifies it like the payload
           # (specs/epics/39-linux-app/headless.md) before running it.

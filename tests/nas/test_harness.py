@@ -127,6 +127,36 @@ class Pending(unittest.TestCase):
             self.assertIs(c.results[-1]["ok"], False)
 
 
+class Networking(unittest.TestCase):
+    """Story 59.08: the mDNS cells and the bridge cell's shapes."""
+
+    def mk(self, spec: dict) -> cell.Cell:
+        return cell.Cell(spec={"name": "n", **spec}, image="img", fixtures=Path("."), out=Path("."),
+                         local_port=None, landed=[])
+
+    def test_the_dbus_cell_mounts_the_nas_bus_and_the_sibling_cell_does_not(self) -> None:
+        self.assertIn("nascell-n-dbus:/run/dbus", self.mk({"avahi": "dbus"}).shape())
+        self.assertNotIn("nascell-n-dbus:/run/dbus", self.mk({"avahi": "sibling"}).shape())
+        self.assertEqual(self.mk({"avahi": "sibling"}).network(), ["--network", "host"])
+
+    def test_the_bridge_cell_publishes_its_ports_but_not_postgres(self) -> None:
+        c = self.mk({"network": "bridge"})
+        net = c.network()
+        self.assertNotIn("--network", net)
+        for p in ("8088:8088", "8080:8080", "8081:8081"):
+            self.assertIn(p, net)
+        self.assertFalse(any("54329" in a for a in net))
+        self.assertEqual(c.setup_network(), [])
+        self.assertTrue(any(a.startswith("MAKTABA_HOST_IP=") for a in c.shape()))
+        self.assertEqual(self.mk({}).setup_network(), ["--network", "host"])
+
+    def test_the_networking_cells_are_in_the_matrix(self) -> None:
+        names = {c["name"]: c for c in cell.load_cells()["cells"]}
+        for n in ("mdns-own", "mdns-dbus", "bridge"):
+            self.assertIn(n, names)
+            self.assertIn("59.08", names[n]["needs"])
+
+
 class ServerToml(unittest.TestCase):
     def test_no_quiet_hours_so_a_daytime_first_scan_runs(self) -> None:
         import tomllib

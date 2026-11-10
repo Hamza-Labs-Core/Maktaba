@@ -1,6 +1,6 @@
 {
   "_doc": "The nas-shapes matrix (story 59.15). tests/nas/README.md says what each field means and how to add a cell. A cell runs once its `needs` are all in `landed`; an assertion likewise.",
-  "landed": ["59.04", "59.01", "pg-stale-lock", "59.02", "scan-grant-race", "59.03", "59.05", "59.06", "59.07"],
+  "landed": ["59.04", "59.01", "pg-stale-lock", "59.02", "scan-grant-race", "59.03", "59.05", "59.06", "59.07", "59.08"],
   "cells": [
     {
       "name": "uid-1000",
@@ -180,6 +180,30 @@
       "kill_restart": true,
       "needs": ["pg-stale-lock"],
       "asserts": ["ready", "scan"]
+    },
+    {
+      "name": "mdns-own",
+      "about": "host network beside the NAS's avahi-daemon (a sibling container, its own uid), no D-Bus mount: Maktaba's own responder under <host>-maktaba (59.08)",
+      "arches": ["amd64"],
+      "avahi": "sibling",
+      "needs": ["59.08"],
+      "asserts": ["ready", "mdns_own"]
+    },
+    {
+      "name": "mdns-dbus",
+      "about": "the NAS's system bus mounted (/run/dbus): Maktaba publishes through the NAS's Avahi (59.08)",
+      "arches": ["amd64"],
+      "avahi": "dbus",
+      "needs": ["59.08"],
+      "asserts": ["ready", "mdns_dbus"]
+    },
+    {
+      "name": "bridge",
+      "about": "Docker's bridge network, 8088, 8080 and 8081 published, MAKTABA_HOST_IP set: mDNS and SSDP off, the bridge text, an app connects by address (59.08)",
+      "arches": ["amd64"],
+      "network": "bridge",
+      "needs": ["59.08"],
+      "asserts": ["ready", "bridge", "scan"]
     }
   ]
 }

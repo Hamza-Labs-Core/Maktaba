@@ -31,4 +31,6 @@ Other packages
 --------------
 
 ffmpeg (LGPL-2.1+ / GPL-2+ as Debian builds it), tini (MIT), libnss-wrapper (BSD-3-Clause),
-ca-certificates (MPL-2.0 / GPL-2+), tzdata (public domain).
+ca-certificates (MPL-2.0 / GPL-2+), tzdata (public domain), avahi-utils and the Avahi
+client libraries it brings (LGPL-2.1+; avahi-publish-service, run only when the host's system
+D-Bus socket is mounted).
