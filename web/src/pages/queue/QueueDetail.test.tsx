@@ -248,6 +248,32 @@ describe("QueueDetail", () => {
     ).not.toHaveLength(0);
   });
 
+  it("starts a queue's work held for the quiet hours with Run now (Epic 59)", async () => {
+    const snap = {
+      ...snapshotFixture,
+      queues: snapshotFixture.queues.map((q) =>
+        q.stage === "transcribe"
+          ? {
+              ...q,
+              waiting_reason: "quiet_hours" as const,
+              quiet_at: "01:00",
+              counts: { ...q.counts, running: 0 },
+            }
+          : q
+      ),
+    };
+    setup("transcribe", snap);
+    expect(await screen.findAllByText("Waiting for quiet hours (01:00)")).not.toHaveLength(0);
+    await userEvent.click(screen.getByRole("button", { name: "Run now" }));
+    expect(post).toHaveBeenCalledWith("/api/queues/transcribe/run-now");
+  });
+
+  it("offers no Run now when nothing waits for the quiet hours", async () => {
+    setup("fingerprint");
+    await screen.findByRole("heading", { level: 1, name: "Fingerprint" });
+    expect(screen.queryByRole("button", { name: "Run now" })).not.toBeInTheDocument();
+  });
+
   it("opens the re-queue dialog prefilled with this queue", async () => {
     setup("detect");
     await userEvent.click(

@@ -289,6 +289,23 @@ export function QueueDetail() {
               </Button>
             </>
           )}
+          {summary.waiting_reason === "quiet_hours" && (
+            // Epic 59 story 59.02: heavy work held for the quiet hours, started now
+            <Button
+              variant="secondary"
+              loading={action.busy === "run-now"}
+              onClick={() =>
+                void action
+                  .run(
+                    "run-now",
+                    save(() => queueApi.runNow(stage))
+                  )
+                  .then(afterAction)
+              }
+            >
+              {t("queue.run_now")}
+            </Button>
+          )}
           <Button
             variant="secondary"
             disabled={retryGroups.length === 0}

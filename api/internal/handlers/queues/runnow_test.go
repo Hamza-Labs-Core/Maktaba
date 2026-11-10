@@ -48,6 +48,25 @@ func TestRunNow(t *testing.T) {
 	if rec := f.do("POST", "/api/libraries/nope/run-now", "", admin()); rec.Code != http.StatusBadRequest {
 		t.Errorf("bad library: %d", rec.Code)
 	}
+
+	// a queue's: only its jobs held for the quiet hours
+	f = newFixture(&queuestest.Rule{Match: "update processing_jobs", Affected: 3})
+	rec = f.do("POST", "/api/queues/scan/run-now", "", admin())
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"jobs":3`) {
+		t.Fatalf("stage: %d %s", rec.Code, rec.Body)
+	}
+	sql = ""
+	for _, c := range f.db.Calls() {
+		if c.Exec && strings.Contains(c.SQL, "update processing_jobs") {
+			sql = c.SQL
+			if len(c.Args) == 0 || c.Args[0] != "scan" {
+				t.Errorf("stage args %v", c.Args)
+			}
+		}
+	}
+	if !strings.Contains(sql, "and stage = $1") || !strings.Contains(sql, "paused_reason like 'quiet_hours:%'") {
+		t.Errorf("stage SQL: %s", sql)
+	}
 }
 
 // The waiting reason says the quiet hours, with when they open.

@@ -188,6 +188,7 @@ func (h *Handler) mount(r chi.Router) {
 	r.Get("/api/queues/{stage}/failures", h.StageFailures)
 	r.Post("/api/queues/{stage}/pause", h.PauseStage)
 	r.Post("/api/queues/{stage}/resume", h.ResumeStage)
+	r.Post("/api/queues/{stage}/run-now", h.RunNowStage)
 	r.Put("/api/queues/{stage}/impl", h.PutImpl)
 	r.Post("/api/queues/{stage}/retry", h.Retry)
 	r.Post("/api/queues/{stage}/apply", h.Apply)

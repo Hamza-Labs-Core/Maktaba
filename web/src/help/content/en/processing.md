@@ -224,7 +224,7 @@ Plex (or another service a queue uses) did not answer, so jobs of this queue wai
 
 ### Waiting for quiet hours {#waiting-quiet-hours}
 
-On this machine heavy work runs only in its quiet hours (01:00 to 06:00 by default on a small machine or a NAS), so the NAS stays quick for the household and its disks can rest: a library's first scan, a transcription backlog, convert and duplicates, thumbnail sprites in bulk. Playback and a single new file never wait. **Run now** on the job or the library starts it at once. The window is in **Settings → This machine**.
+On this machine heavy work runs only in its quiet hours (01:00 to 06:00 by default on a small machine or a NAS), so the NAS stays quick for the household and its disks can rest: a library's first scan, a transcription backlog, convert and duplicates, thumbnail sprites in bulk. Playback and a single new file never wait. **Run now** on the queue's page or the library page starts it at once. The window is in **Settings → This machine**.
 
 ### Waiting for earlier steps {#waiting-upstream}
 

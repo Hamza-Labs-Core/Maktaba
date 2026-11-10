@@ -132,7 +132,8 @@ Memory per tier (59.04):
   not a new job state: the queue's waiting reason `quiet_hours` names it. Heavy is decided
   when a worker claims the job (`engine/quiet.py`), from the window in
   `MAKTABA_QUIET_HOURS`. Run now sets `run_now` in the job's payload and clears the wait
-  (`POST /api/queues/jobs/{id}/run-now`, `POST /api/libraries/{id}/run-now`).
+  (`POST /api/queues/jobs/{id}/run-now`, `POST /api/libraries/{id}/run-now`, and
+  `POST /api/queues/{stage}/run-now` for a queue's held jobs, beside the queue page's label).
 - When the data disk cannot be read, setup says so and Settings → This machine asks
   (`[server] data_disk`); until then the database is tuned for spinning disks.
 

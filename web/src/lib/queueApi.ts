@@ -974,6 +974,9 @@ export const queueApi = {
   pause: (stage: string, interrupt = false) =>
     api.post<void>(`/api/queues/${q(stage)}/pause${interrupt ? "?interrupt=true" : ""}`),
   resume: (stage: string) => api.post<void>(`/api/queues/${q(stage)}/resume`),
+  /** POST /api/queues/{stage}/run-now (Epic 59 story 59.02): the queue's jobs held for the
+   * quiet hours start now. Admin only. */
+  runNow: (stage: string) => api.post<{ jobs: number }>(`/api/queues/${q(stage)}/run-now`),
   /** GET /api/queues/fallbacks (Epic 54, story 54.43): admin only. */
   fallbacks: (stage?: string) =>
     api.get<{ fallbacks: StageFallback[]; total: number }>(
