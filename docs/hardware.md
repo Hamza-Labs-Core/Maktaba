@@ -272,6 +272,32 @@ about 34 Mbps on average.
 
 ---
 
+### Hardware tiers on small machines and NAS boxes (Epic 59)
+
+At each start the server reads the machine it runs on (`internal/hostinfo`) and picks a tier
+from the **memory it may use** alone: a container's cgroup limit (v2 `memory.max`, v1
+`memory.limit_in_bytes`) when it is below the RAM, else the RAM. Free memory counts what the
+ZFS cache gives back (`arcstats`: `size − c_min`), so a healthy TrueNAS box does not look full.
+CPU cores are capped by the cgroup's quota (`cpu.max`).
+
+| Tier | Memory limit | Pipeline workers | Postgres memory (59.02) | Speech to text (59.06) |
+|---|---|---|---|---|
+| **Light** | under 6 GiB (under 8 GiB on arm64) | 1 | 256 MB | off; `base` when turned on |
+| **Standard** | under 16 GiB | 2 | 512 MB | `small` (`base` without AVX2) |
+| **Strong** | 16 GiB and more | as planned above | 25%, at most 4 GB | `large-v3-turbo` with CUDA or AVX2 |
+
+- The tier sets defaults, never limits: a value set in `server.toml` (`[transcription] workers`,
+  `[pipeline] instances`) keeps its value.
+- A GPU changes single defaults, never the tier: a CUDA GPU raises the speech model, a working
+  video device the transcode limits.
+- The tier is kept as `[server] tier`. An admin picks another one in **Settings → This
+  machine** (`tier_chosen = "admin"`), which applies at the next start; **Detect from the
+  memory** goes back. With no pick, memory added moves the tier up at the next start, and the
+  page says so.
+- Setup refuses under **3.5 GiB** of memory limit (a "4 GB" NAS reports 3.6–3.8 GiB). On a NAS
+  the refusal says to run the home on another computer and keep the media on the NAS.
+- The rows marked with a story number apply as those stories ship.
+
 ## 4. Settings that change the load
 
 ### The `gpu` pool (the transcription batch)

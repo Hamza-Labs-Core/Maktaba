@@ -1100,3 +1100,23 @@ func TestTranscriptionEnv(t *testing.T) {
 		t.Error("the operator's own MAKTABA_PATH_MAP must be kept")
 	}
 }
+
+// Epic 59 story 59.04: a Light tier runs the main worker alone, Standard one worker beside
+// it; Strong keeps today's plan, and a count server.toml sets stands on any tier.
+func TestPlanSTTTierCapsWorkers(t *testing.T) {
+	noSTTEnv(t)
+	fakeMachine(t, true, 96) // two transcribe-only workers planned
+	cfg := config.Defaults()
+	for tier, want := range map[string]int{"": 2, "strong": 2, "standard": 1, "light": 0} {
+		c := cfg
+		c.Server.Tier = tier
+		if p := PlanSTT(c); p.Workers != want {
+			t.Errorf("tier %q: %d workers, want %d", tier, p.Workers, want)
+		}
+	}
+	c := cfg
+	c.Server.Tier, c.Transcription.Workers = "light", 2
+	if p := PlanSTT(c); p.Workers != 2 {
+		t.Errorf("[transcription] workers on Light: %d, want 2", p.Workers)
+	}
+}

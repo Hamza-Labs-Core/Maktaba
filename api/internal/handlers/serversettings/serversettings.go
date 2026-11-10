@@ -137,6 +137,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/server/restart", h.admin(h.restart))
 	h.mountStorage(r)
 	h.mountBackups(r)
+	h.mountMachine(r)
 }
 
 func (h *Handler) admin(next http.HandlerFunc) http.HandlerFunc {

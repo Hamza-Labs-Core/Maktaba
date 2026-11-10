@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 )
 
 // STTPlan is how this machine transcribes: Workers transcribe-only workers beside
@@ -296,8 +297,9 @@ var appleSilicon = func() bool { return runtime.GOOS == "darwin" && runtime.GOAR
 // Tests replace it.
 var cudaWhisper = func() bool { return runtime.GOARCH == "amd64" }
 
-// numCPU is the machine's logical CPUs; tests replace it.
-var numCPU = runtime.NumCPU
+// numCPU is the logical CPUs this machine's processes may use (a cgroup's CPU quota caps
+// them, Epic 59 story 59.04); tests replace it.
+var numCPU = hostinfo.CPUCores
 
 // PlanSTT is this machine's plan: on Apple Silicon sized from the RAM (MLX); else
 // (CTranslate2) from the NVIDIA GPU's memory, or the CPU plan when there is none (or
@@ -375,6 +377,15 @@ func planSTT(cfg config.Config, venvTorchRuns func() bool) STTPlan {
 		plan.Workers = 0
 	case t.Workers > 0:
 		plan.Workers = t.Workers
+	default:
+		// Epic 59 story 59.04: a Light or Standard tier caps the pipeline's workers (1, 2:
+		// the main worker and as many transcribe-only workers as fit beside it); a count
+		// server.toml sets above stands
+		if tier, ok := hostinfo.ParseTier(cfg.Server.Tier); ok {
+			if c := hostinfo.DefaultsFor(tier, hostinfo.Machine{}).PipelineWorkers; c > 0 && plan.Workers > c-1 {
+				plan.Workers = c - 1
+			}
+		}
 	}
 	if operatorKeepsTranscribeOff() {
 		plan.Workers = 0
