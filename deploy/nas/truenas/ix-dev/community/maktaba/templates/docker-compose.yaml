@@ -37,8 +37,10 @@
 
 {# Media: each folder at its own host path (/mnt/tank/media stays /mnt/tank/media), so the
    cluster's machines recognise the same share. Never chowned; read-only per folder. #}
+{# create_host_path: only the catalog's test values set it (a runner has no media folder) #}
 {% for item in values.storage.media %}
-  {% do c1.add_storage(item.path, {"type": "host_path", "read_only": item.read_only, "host_path_config": {"path": item.path}}) %}
+  {% set create = item.create_host_path if item.create_host_path is defined else false %}
+  {% do c1.add_storage(item.path, {"type": "host_path", "read_only": item.read_only, "host_path_config": {"path": item.path, "create_host_path": create}}) %}
 {% endfor %}
 
 {% for store in values.storage.additional_storage %}
