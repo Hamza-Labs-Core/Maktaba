@@ -710,6 +710,29 @@ def apply(p: Policy) -> Applied:
     raise SandboxUnavailable("platform", sys.platform)
 
 
+#: a library root's trash folder (maktaba_pipeline.library_mgmt.trash.TRASH_DIR)
+TRASH_SUFFIX = "/.maktaba/trash"
+
+
+def trash_grant(trash: str) -> str:
+    """The folder a ``trash`` grant names (Epic 59): ``<root>/.maktaba/trash`` itself when
+    it exists, else the nearest folder of it that does, down to the library root.
+
+    Landlock grants only folders that exist when the runner starts, and the first move
+    into the trash (convert's original, dedup's merged copy) is what makes the folder: a
+    rule on the missing folder would be skipped and the move refused. Nothing is created
+    here: the areas doc names a root's trash only for a library Maktaba may write
+    (``libraries.access`` neither ``ro`` nor ``none``, story 59.03), and a root that is
+    itself missing (an unmounted share) is granted as named, which applies nothing."""
+    if not trash.endswith(TRASH_SUFFIX) or os.path.isdir(trash):
+        return trash
+    root = trash[: -len(TRASH_SUFFIX)]
+    maktaba = root + "/.maktaba"
+    if os.path.isdir(maktaba):
+        return maktaba
+    return root if os.path.isdir(root) else trash
+
+
 def policy_for(
     trusted: list[dict[str, object]],
     *,
@@ -760,6 +783,8 @@ def policy_for(
                 )
             elif str(a) == "library":
                 p.write += paths("library.write" if "library.write" in areas else "library")
+            elif str(a) == "trash":
+                p.write += [trash_grant(x) for x in paths("trash")]
             else:
                 p.write += paths(str(a))
         for tool in t.get("exec") or ():  # type: ignore[attr-defined]

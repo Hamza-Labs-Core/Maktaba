@@ -341,10 +341,12 @@ func (h *Admin) getIsolation(w http.ResponseWriter, r *http.Request) {
 }
 
 // putIsolation turns Allow plugins with container-only isolation on this home on or off
-// ({"allow": true}), audited.
+// ({"allow": true, "password": "…"}), audited. Turning it on is a sensitive change, as
+// Allow unreviewed plugins is: the admin's password again (401 reauth_required).
 func (h *Admin) putIsolation(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Allow *bool `json:"allow"`
+		Allow    *bool  `json:"allow"`
+		Password string `json:"password"`
 	}
 	if e := common.ReadJSON(r, &body, 1<<10); e != nil {
 		httperror.Write(w, r, e)
@@ -353,6 +355,21 @@ func (h *Admin) putIsolation(w http.ResponseWriter, r *http.Request) {
 	if body.Allow == nil {
 		httperror.Write(w, r, problem(http.StatusBadRequest, "isolation_allow_missing", "send {\"allow\": true} or {\"allow\": false}"))
 		return
+	}
+	if *body.Allow && h.VerifyPassword != nil {
+		cur, err := pl.LoadPolicy(r.Context(), h.L.DB)
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		if !cur.AllowContainerIsolation {
+			pr := principal.FromContext(r.Context())
+			if body.Password == "" || pr == nil || h.VerifyPassword(r.Context(), pr.UserID, body.Password) != nil {
+				httperror.Write(w, r, problem(http.StatusUnauthorized, "reauth_required",
+					"type your password again to allow plugins with container-only isolation"))
+				return
+			}
+		}
 	}
 	out, err := h.L.SetContainerIsolation(r.Context(), *body.Allow, h.actor(r))
 	if err != nil {

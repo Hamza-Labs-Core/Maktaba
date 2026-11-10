@@ -281,7 +281,7 @@ class ComponentRunner:
         from . import plugingate
 
         try:
-            self.plugin_reasons = await plugingate.read(self.db, self.version)
+            self.plugin_reasons = await plugingate.read(self.db, self.version, machine=self.machine)
         except Exception as exc:  # noqa: BLE001 - the last answer stands
             _log.warning("components_plugins_unreadable", error=f"{type(exc).__name__}: {exc}")
 

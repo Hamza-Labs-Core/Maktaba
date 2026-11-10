@@ -1,7 +1,9 @@
 package plugins
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,7 +18,7 @@ import (
 
 // Epic 59 story 59.07 T05: Allow plugins with container-only isolation is the admin's
 // alone: a viewer and an editor (library write, not an admin) 403 and nothing changes; an
-// admin 200, the switch is on, the audit log has plugin.isolation, and the unreviewed
+// admin 200 with the password typed again, the switch is on, the audit log has plugin.isolation, and the unreviewed
 // policy's own route keeps it.
 func TestContainerIsolationSwitchIsAdminOnlyAndAudited(t *testing.T) {
 	db, _ := clustertest.ScratchDB(t)
@@ -28,7 +30,13 @@ func TestContainerIsolationSwitchIsAdminOnlyAndAudited(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := chi.NewRouter()
-	(&Admin{L: &pl.Lifecycle{DB: db}}).Mount(r)
+	verify := func(_ context.Context, userID, password string) error {
+		if userID == adminID && password == "right" {
+			return nil
+		}
+		return errors.New("wrong password")
+	}
+	(&Admin{L: &pl.Lifecycle{DB: db}, VerifyPassword: verify}).Mount(r)
 	call := func(p *principal.Principal, method, body string) (int, map[string]any) {
 		t.Helper()
 		req := httptest.NewRequest(method, "/api/plugins/isolation", strings.NewReader(body))
@@ -58,7 +66,13 @@ func TestContainerIsolationSwitchIsAdminOnlyAndAudited(t *testing.T) {
 	if code, _ := call(admin, http.MethodPut, `{}`); code != http.StatusBadRequest {
 		t.Fatalf("PUT without allow: %d, want 400", code)
 	}
-	code, got := call(admin, http.MethodPut, `{"allow": true}`)
+	// turning it on asks for the password again
+	for _, body := range []string{`{"allow": true}`, `{"allow": true, "password": "wrong"}`} {
+		if code, got := call(admin, http.MethodPut, body); code != http.StatusUnauthorized || got["code"] != "reauth_required" {
+			t.Fatalf("PUT %s: %d %v, want 401 reauth_required", body, code, got)
+		}
+	}
+	code, got := call(admin, http.MethodPut, `{"allow": true, "password": "right"}`)
 	if code != http.StatusOK || got["allow_container_isolation"] != true || got["held"] != false {
 		t.Fatalf("PUT as the admin: %d %v", code, got)
 	}
