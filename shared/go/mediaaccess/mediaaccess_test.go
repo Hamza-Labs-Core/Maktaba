@@ -245,3 +245,18 @@ func TestSkipDir(t *testing.T) {
 		t.Error("skipped a library folder")
 	}
 }
+
+// A relative root is None, and nothing is written relative to the working folder.
+func TestRelativeRootIsNone(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.Mkdir("lib", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if r := Check("lib"); r.Access != None {
+		t.Fatalf("relative root: %+v", r)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "lib", ".maktaba")); !os.IsNotExist(err) {
+		t.Fatalf(".maktaba written under a relative root: %v", err)
+	}
+}

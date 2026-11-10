@@ -111,10 +111,16 @@ func Check(root string) Result { return CheckWith(root, Options{}) }
 // is created when missing and removed again afterwards; it is left in place only when it
 // already existed. A read-only root is left exactly as it was. The sample then reads up
 // to SampleFiles files breadth-first (for at most SampleBudget) and marks the result
-// Partial, with examples, when some cannot be read.
+// Partial, with examples, when some cannot be read. A relative root is None: the probe
+// never writes relative to the process's working folder.
 func CheckWith(root string, opt Options) Result {
 	opt = opt.withDefaults()
 	res := Result{Path: root, Unreadable: []string{}}
+	if !filepath.IsAbs(root) {
+		res.Access = None
+		return res
+	}
+	root = filepath.Clean(root)
 	fi, err := os.Stat(root)
 	if err != nil || !fi.IsDir() {
 		res.Access = None
