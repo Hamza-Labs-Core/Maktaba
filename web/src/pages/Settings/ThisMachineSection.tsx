@@ -7,6 +7,7 @@
 // (heavy work waits for them) and, when the data disk cannot be read, whether it is an SSD.
 // Story 59.05 adds the video: the encoder the transcodes use (VA-API's driver and codecs),
 // or why they are in software (no render device, a group to add, a device that failed).
+// Story 59.06 adds speech to text (SpeechSection).
 //
 //   GET /api/server/machine   the document ({available: false} without a supervisor)
 //   PUT /api/server/machine   {tier: "light"|"standard"|"strong"|"auto"}
@@ -27,6 +28,7 @@ import {
   type VideoStatus,
 } from "../../lib/serverSettingsApi";
 import { LinesPlaceholder } from "../../components/Placeholders";
+import { SpeechSection } from "./SpeechSection";
 import "../../styles/libraryAdmin.css";
 import "../../styles/updates.css";
 
@@ -457,6 +459,7 @@ function MachinePanel({ pollMs }: { pollMs: number }) {
             </Button>
           )}
         </section>
+        <SpeechSection restarting={restarting} onRestart={() => void restart()} />
         <dl className="mkt-about__facts" aria-label={t("settings.section.machine")}>
           {rows.map(([label, value]) => (
             <div key={label}>

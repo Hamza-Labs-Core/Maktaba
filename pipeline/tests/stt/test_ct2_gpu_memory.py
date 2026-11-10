@@ -171,11 +171,13 @@ def test_gpus_are_numbered_as_nvidia_smi_numbers_them() -> None:
 def test_the_default_models_are_pinned() -> None:
     import fnmatch
 
-    repos = {engine.DEFAULT_MODEL[engine.CT2], *engine._CT2_OF_MLX.values()}
+    repos = {engine.DEFAULT_MODEL[engine.CT2], *engine._CT2_OF_MLX.values(), *engine.SIZES.values()}
     assert repos <= set(engine.CT2_PINS)
     for repo, pin in engine.CT2_PINS.items():
         assert len(pin.revision) == 40 and int(pin.revision, 16) >= 0, repo
         for pattern in engine.CT2_FILES:  # every file the engine loads has its hash
+            if pattern == "preprocessor_config.json" and repo.startswith("Systran/faster-whisper-"):
+                continue  # the Systran conversions have none (Whisper's own mel settings)
             assert [n for n in pin.sha256 if fnmatch.fnmatch(n, pattern)], (repo, pattern)
         assert all(len(h) == 64 and int(h, 16) >= 0 for h in pin.sha256.values()), repo
 

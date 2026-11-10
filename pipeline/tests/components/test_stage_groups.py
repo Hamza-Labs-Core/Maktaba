@@ -72,7 +72,14 @@ def test_off_and_held_and_their_dependents() -> None:
 
 
 def test_an_any_group_needs_one_and_an_asset_needs_only_installing() -> None:
-    models = ("model.whisper-turbo", "model.whisper-large-v3", "model.whisper-medium")
+    models = (
+        "model.whisper-turbo",
+        "model.whisper-large-v3",
+        "model.whisper-medium",
+        "model.whisper-small",
+        "model.whisper-base",
+        "model.whisper-tiny",
+    )
     desired = {m: _d(m, "absent") for m in models}
     assert gates(desired)["transcription"].reason == "dependency_off"
     desired["model.whisper-medium"] = _d("model.whisper-medium", "installed")

@@ -31,17 +31,21 @@ mediaintel = [
 ]
 # Speech to text (plan 03-10): Whisper on the GPU through MLX on Apple Silicon; on Windows
 # and Linux x86_64 through CTranslate2 (story 38.8, stt/ct2.py), on an NVIDIA GPU when CUDA
-# is usable, else on the CPU.
+# is usable, else on the CPU; on Linux aarch64 (story 59.06) through CTranslate2 on the CPU.
+# The second listen (torch, transformers) stays Windows and Linux x86_64 with CUDA: on
+# aarch64 it is unavailable, and Settings says so.
 stt = [
     # stt/ (batched, align, ct2, vad) and the transcribe stage use numpy directly
     "numpy>=2",
     # pinned: stt/batched.py builds on its DecodingTask and timestamp filter internals
     "mlx-whisper==0.4.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
     # pinned: stt/ct2.py builds on its tokenizer, mel filters and word alignment
-    "faster-whisper==1.2.1 ; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
+    "faster-whisper==1.2.1 ; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'linux' and platform_machine == 'aarch64')",
     # 4.6.3 runs Whisper's convolutions in its own CUDA code: no cuDNN. Its wheels load
     # cuBLAS 12 when the model goes on the GPU (built against 12.8)
-    "ctranslate2>=4.6.3,<5 ; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
+    # and on Linux aarch64 (Epic 59 story 59.06, a NAS): CTranslate2's manylinux aarch64 wheels
+    # run int8 on the CPU through its ARM backend; no CUDA there, so no cuBLAS below
+    "ctranslate2>=4.6.3,<5 ; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64') or (sys_platform == 'linux' and platform_machine == 'aarch64')",
     # that cuBLAS, from PyPI (stt/ct2.py loads it from site-packages/nvidia/cublas): no
     # CUDA toolkit to install; the NVIDIA driver is all the machine needs
     "nvidia-cublas-cu12>=12.8,<13 ; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",

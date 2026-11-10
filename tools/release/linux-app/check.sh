@@ -218,6 +218,27 @@ if [ "$rc" -eq 0 ] && grep -q "wheelhouse (no download)" <<<"$out" && grep -q '"
 else
     fail "core venv from the wheelhouse (exit $rc): $(printf '%s\n' "$out" | tail -3)"
 fi
+# Epic 59 story 59.06: on aarch64 the speech engine installs from the wheelhouse alone and
+# imports, with no torch (the second listen is x86_64 + CUDA)
+if [ "$(uname -m)" = aarch64 ]; then
+    if [ -s "$PAYLOAD/pipeline/constraints-stt.txt" ] &&
+        grep -q '"stt_constraints_sha256"' "$PAYLOAD/pipeline/wheels/wheelhouse.json"; then
+        ok "wheelhouse has the speech engine's wheels (constraints-stt.txt)"
+    else
+        fail "no constraints-stt.txt or no speech engine's wheels in the wheelhouse (story 59.06)"
+    fi
+    rc=0
+    out="$(PIP_INDEX_URL=http://127.0.0.1:9/simple PIP_NO_CACHE_DIR=1 timeout 600 "$SCRATCH/core-venv/bin/python" -m pip install \
+        --quiet --disable-pip-version-check --no-index --find-links "$PAYLOAD/pipeline/wheels" --require-hashes --no-deps \
+        -r "$PAYLOAD/pipeline/constraints-stt.txt" 2>&1)" || rc=$?
+    if [ "$rc" -eq 0 ] && "$SCRATCH/core-venv/bin/python" -c \
+        'import importlib.util as u, ctranslate2, faster_whisper; assert u.find_spec("torch") is None and u.find_spec("transformers") is None; print("ctranslate2", ctranslate2.__version__, "cpu int8" if "int8" in ctranslate2.get_supported_compute_types("cpu") else "no int8")' \
+        >"$SCRATCH/stt-import.txt" 2>&1; then
+        ok "speech engine offline: $(cat "$SCRATCH/stt-import.txt")"
+    else
+        fail "speech engine from the wheelhouse (exit $rc): $(printf '%s\n' "$out" | tail -3) $(tail -3 "$SCRATCH/stt-import.txt" 2>/dev/null)"
+    fi
+fi
 run "payload.json" "$PY" -I -c \
     'import json,sys; d=json.load(open(sys.argv[1])); print(d["version"], d["platform"], "glibc", d["min_glibc"], d["files"]["count"], "entries")' \
     "$PAYLOAD/payload.json"
