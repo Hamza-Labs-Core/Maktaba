@@ -88,6 +88,9 @@ func TestStepBundleCustomAddsRequires(t *testing.T) {
 	if extras, none := choiceVenvSpec(e.state); extras != "stt,search" || none {
 		t.Fatalf("venv %q %v", extras, none)
 	}
+	if !choiceNeedsModels(e.state) || !choiceNeedsModels(t.TempDir()) {
+		t.Fatal("subtitles' Whisper, and a home with no choice, need the models")
+	}
 }
 
 func TestStepBundleCoreAndErrors(t *testing.T) {
@@ -98,6 +101,14 @@ func TestStepBundleCoreAndErrors(t *testing.T) {
 	}
 	if extras, none := choiceVenvSpec(e.state); extras != "" || !none {
 		t.Fatalf("core venv %q %v", extras, none)
+	}
+	// story 59.01: a Core home downloads no model, before the venv is even looked at (its
+	// first start completes with no network)
+	if choiceNeedsModels(e.state) {
+		t.Fatal("core needs no models")
+	}
+	if code, _, ev := runStep(t, "models", map[string]string{"action": "download"}); code != 0 {
+		t.Fatalf("core download: %d %v", code, ev)
 	}
 	for in, want := range map[string]map[string]any{
 		"unknown_component": {"bundle": "custom", "enable": []string{"nope"}},

@@ -82,7 +82,8 @@ class Env:
         self, version: str, deps: list[Path], requires: list[str], extra_lines: str = ""
     ) -> None:
         for old in self.payload.iterdir():
-            old.unlink()
+            if old.is_file():
+                old.unlink()
         _wheel(self.payload, "maktaba_pipeline", version, requires)
         _constraints(self.payload / "maktaba-pipeline-constraints.txt", deps, extra_lines)
 
@@ -292,6 +293,61 @@ def test_payload_needs_exactly_one_wheel(env: Env, capsys: pytest.CaptureFixture
     _wheel(env.payload, "maktaba_pipeline", "0.2.0")
     code, _ = env.run(capsys)
     assert code == vb.EXIT_BAD_INPUT
+
+
+def _wheelhouse(env: Env, covers: str | None) -> list[Path]:
+    """The payload's wheelhouse (story 59.01): the dependency wheels in ``wheels/`` (not
+    in the index), its ``wheelhouse.json`` naming the constraints SHA-256 ``covers``."""
+    house = env.payload / vb.WHEELHOUSE_DIR
+    deps = [_wheel(house, "fakedep_a", "1.0"), _wheel(house, "fakedep_b", "2.0")]
+    env.payload_files("0.1.0", deps, REQUIRES)
+    sha = vb.sha256_file(env.payload / "maktaba-pipeline-constraints.txt")
+    (house / vb.WHEELHOUSE_INDEX).write_text(
+        json.dumps({"constraints_sha256": covers or sha}), encoding="utf-8"
+    )
+    return deps
+
+
+def test_installs_offline_from_the_payloads_wheelhouse(
+    env: Env, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A wheelhouse covering the constraints: pip asks no index (--no-index) and finds
+    every pin in the payload's wheels/; the index holds nothing."""
+    monkeypatch.delenv("PIP_NO_INDEX")
+    monkeypatch.delenv("PIP_FIND_LINKS")
+    # an index that would answer nothing: a request there fails the run
+    monkeypatch.setenv("PIP_INDEX_URL", "http://127.0.0.1:9/simple")
+    _wheelhouse(env, None)
+    code, events = env.run(capsys)
+    assert code == vb.EXIT_OK, events[-1]
+    assert env.installed("fakedep_b") == "2.0"
+    deps = [str(e["message"]) for e in events if e["step"] == "deps"]
+    assert any("from the payload's wheelhouse (no download)" in m for m in deps), deps
+
+
+def test_a_wheelhouse_for_other_constraints_goes_beside_the_index(
+    env: Env, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Constraints the wheelhouse does not cover (the ML extras'): it is a source beside
+    the index, never the only one."""
+    _wheelhouse(env, "0" * 64)
+    code, events = env.run(capsys)
+    assert code == vb.EXIT_OK, events[-1]
+    deps = [str(e["message"]) for e in events if e["step"] == "deps"]
+    assert any("from the payload's wheelhouse and PyPI" in m for m in deps), deps
+
+
+def test_find_wheelhouse(tmp_path: Path) -> None:
+    assert vb.find_wheelhouse(tmp_path, "a" * 64) == (None, False)
+    house = tmp_path / vb.WHEELHOUSE_DIR
+    house.mkdir()
+    (house / vb.WHEELHOUSE_INDEX).write_text("not json", encoding="utf-8")
+    assert vb.find_wheelhouse(tmp_path, "a" * 64) == (None, False)
+    (house / vb.WHEELHOUSE_INDEX).write_text(
+        json.dumps({"constraints_sha256": ["b" * 64, "a" * 64]}), encoding="utf-8"
+    )
+    assert vb.find_wheelhouse(tmp_path, "a" * 64) == (house, True)
+    assert vb.find_wheelhouse(tmp_path, "c" * 64) == (house, False)
 
 
 def test_runs_from_the_wheel_with_only_the_stdlib(env: Env) -> None:

@@ -2539,6 +2539,16 @@ build fails when the two differ.
   the server and cannot be switched off; `categorize`, `component_catchup`, the watcher and
   the manual scans stay in the core.
 
+- **The Docker image runs as whichever user a NAS gives it, and its first start needs no
+  internet (story 59.01).** Set the container's user (compose's `user:`, TrueNAS's Run As,
+  Unraid's `--user`, a DSM user such as 1026:100) and every process runs as that user; a user
+  the image does not know gets a name, so the bundled database starts. The image refuses root,
+  a privileged container and the Docker socket, and if the user cannot write the data folder it
+  stops at once (exit 78) with a message, in English and Arabic, naming the folder, the user and
+  the fix, instead of restarting over and over. The Linux payload now carries the core Python
+  packages for its architecture, so setup builds the pipeline's environment from them with no
+  download; a home set up without speech to text downloads no model either.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings

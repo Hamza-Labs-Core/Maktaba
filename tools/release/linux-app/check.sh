@@ -201,6 +201,23 @@ if [ "$rc" -eq 10 ] && grep -q '"action": *"build"' <<<"$out"; then
 else
     fail "venv bootstrap --check (exit $rc): $(printf '%s\n' "$out" | tail -2)"
 fi
+# the wheelhouse (Epic 59 story 59.01): the core venv builds from it alone, no index asked
+# (an index that answers nothing stands in for a machine without internet)
+if [ -s "$PAYLOAD/pipeline/wheels/wheelhouse.json" ] &&
+    grep -q "$(sha256sum "$PAYLOAD/pipeline/constraints-core.txt" | awk '{print $1}')" "$PAYLOAD/pipeline/wheels/wheelhouse.json"; then
+    ok "wheelhouse covers constraints-core.txt ($(find "$PAYLOAD/pipeline/wheels" -name '*.whl' | wc -l | tr -d ' ') wheels)"
+else
+    fail "no pipeline/wheels/wheelhouse.json covering constraints-core.txt"
+fi
+rc=0
+out="$(PYTHONPATH="${whl[0]}" PIP_INDEX_URL=http://127.0.0.1:9/simple PIP_NO_CACHE_DIR=1 timeout 600 "$PY" \
+    -m maktaba_pipeline.venv_bootstrap --wheel "${whl[0]}" --constraints "$PAYLOAD/pipeline/constraints-core.txt" \
+    --extras "" --venv "$SCRATCH/core-venv" 2>&1)" || rc=$?
+if [ "$rc" -eq 0 ] && grep -q "wheelhouse (no download)" <<<"$out" && grep -q '"state": *"ready"' <<<"$out"; then
+    ok "core venv built offline from the wheelhouse"
+else
+    fail "core venv from the wheelhouse (exit $rc): $(printf '%s\n' "$out" | tail -3)"
+fi
 run "payload.json" "$PY" -I -c \
     'import json,sys; d=json.load(open(sys.argv[1])); print(d["version"], d["platform"], "glibc", d["min_glibc"], d["files"]["count"], "entries")' \
     "$PAYLOAD/payload.json"

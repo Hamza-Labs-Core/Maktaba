@@ -44,6 +44,11 @@ import (
 // launcher goes back instead (the new release crash-loops, or never answers by the guard's
 // deadline), the image's version is recorded as refused and not switched to again (a newer
 // image is), and the image that ran before still runs, as the watermark never rose.
+//
+// Before all of it the preflight runs (container_preflight.go, story 59.01): the image runs
+// as whatever uid:gid it is started with, refuses root, a privileged container and the
+// Docker socket, checks that the volume takes a write, and names a uid /etc/passwd lacks
+// (nss_wrapper); a refusal exits 78 with its message in English and Arabic.
 
 // containerSetupEvery is how often a container that is not set up looks for server.toml.
 var containerSetupEvery = 5 * time.Second
@@ -92,6 +97,9 @@ type containerDeps struct {
 	start func(ctx context.Context, path string, args, env []string) (int, error)
 	// follow copies what is appended to the log to out until ctx ends.
 	follow func(ctx context.Context, path string, out io.Writer)
+	// preflight runs before anything else (story 59.01): the variables every child gets,
+	// or a refusal (exit 78). nil: none (tests).
+	preflight func() ([]string, error)
 }
 
 func newContainerDeps() containerDeps {
@@ -123,6 +131,7 @@ func newContainerDeps() containerDeps {
 		follow: func(ctx context.Context, path string, out io.Writer) {
 			followLog(ctx, path, out, 250*time.Millisecond)
 		},
+		preflight: newPreflight().run,
 	}
 }
 
@@ -397,11 +406,26 @@ func (c containerDeps) waitSetup(ctx context.Context) bool {
 // run is the command: the bootstrap, then the given command (replacing this process) or,
 // with none, the launcher once set up; it returns the launcher's exit code.
 func (c containerDeps) run(ctx context.Context, args []string) (int, error) {
+	var extra []string
+	if c.preflight != nil {
+		var err error
+		if extra, err = c.preflight(); err != nil {
+			var r *refusal
+			if errors.As(err, &r) {
+				fmt.Fprintln(c.out, r.message)
+				return exitConfig, nil
+			}
+			return 1, err
+		}
+		if len(extra) > 0 {
+			c.logf("user %d has no name in the image: nss_wrapper names it %s (%s)", os.Getuid(), nssName, nssDir)
+		}
+	}
 	pending, err := c.bootstrap(ctx, len(args) > 0)
 	if err != nil {
 		return 1, err
 	}
-	env := containerEnv(os.Environ())
+	env := withEnv(containerEnv(os.Environ()), extra...)
 	if len(args) > 0 {
 		return 0, c.exec(c.self, append([]string{c.self}, args...), env)
 	}
