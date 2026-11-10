@@ -1,5 +1,6 @@
 // maktaba.tv's install pages (Epic 59 story 59.11, web/packages/install): /install/docker and
-// /ar/install/docker. `pnpm build:install` writes dist-install/. The published compose file
+// /ar/install/docker, and the TrueNAS guide (story 59.10): /install/truenas and
+// /ar/install/truenas. `pnpm build:install` writes dist-install/. The published compose file
 // (cloud/installers/docker/docker-compose.yml) is built into the page (`?raw`): the page
 // fetches nothing and sends nothing.
 import { defineConfig } from "vite";
@@ -22,6 +23,9 @@ export default defineConfig({
       input: {
         en: path.resolve(site, "install/docker/index.html"),
         ar: path.resolve(site, "ar/install/docker/index.html"),
+        // story 59.10: the TrueNAS guide, static pages
+        truenas: path.resolve(site, "install/truenas/index.html"),
+        "truenas-ar": path.resolve(site, "ar/install/truenas/index.html"),
       },
     },
   },

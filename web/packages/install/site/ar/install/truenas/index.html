@@ -1,0 +1,186 @@
+<!doctype html>
+<!-- maktaba.tv/ar/install/truenas (Epic 59 story 59.10): the TrueNAS guide, a static page.
+     Its twin in the other language has the same sections; a placeholder figure (class
+     placeholder, data-shot) stands for a TrueNAS screenshot the device checklist takes. -->
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>تثبيت Maktaba على TrueNAS · Maktaba</title>
+    <meta
+      name="description"
+      content="ثبّت Maktaba على TrueNAS ‏25.04 وما بعده: مجموعات البيانات وأذوناتها، والتطبيق، وإعداده، وما يأتي بعده."
+    />
+    <link rel="alternate" hreflang="en" href="https://maktaba.tv/install/truenas/" />
+    <link rel="alternate" hreflang="ar" href="https://maktaba.tv/ar/install/truenas/" />
+    <link rel="stylesheet" href="/install/install.css" />
+  </head>
+  <body>
+    <header>
+      <h1>تثبيت Maktaba على TrueNAS</h1>
+      <p class="lead">تطبيق واحد يشغّل كل شيء ويحدّث نفسه.</p>
+      <nav><a href="/install/truenas/" hreflang="en" lang="en">English</a></nav>
+    </header>
+    <main class="guide">
+      <p>
+        لإصدار TrueNAS Community Edition <strong>‏25.04 (Fangtooth) وما بعده</strong> (ومنه 25.10
+        Goldeye). لا يدعم Maktaba نظام TrueNAS CORE. يستغرق التثبيت نحو 20 دقيقة.
+      </p>
+      <p>
+        يعمل Maktaba على جهاز التخزين تطبيقًا واحدًا: الخادم، وتطبيق الويب، والبث التلفزيوني
+        المباشر، والمعالج الذي يقرأ مكتبتك، وقاعدة بياناته الخاصة. ويحدّث نفسه بنفسه في نافذة
+        التحديث التي تختارها.
+      </p>
+      <h2>قبل أن تبدأ</h2>
+      <ul>
+        <li>
+          <strong>الذاكرة:</strong> ‏8 غيغابايت أو أكثر مريحة، ويعمل Maktaba بدءًا من 4 غيغابايت. لا
+          تقلق إن أظهرت لوحة TrueNAS الذاكرة «مستخدمة»: تلك ذاكرة ZFS المؤقتة (ARC)، وهي تعيد
+          الذاكرة متى احتاجها تطبيق، ويحسبها Maktaba ذاكرة متاحة.
+        </li>
+        <li>
+          <strong>مجمّع أقراص SSD</strong> إن وُجد: قاعدة بيانات Maktaba وصوره المصغّرة أسرع بكثير
+          عليه، وتبقى وسائطك على الأقراص الصلبة.
+        </li>
+        <li>
+          <strong>معالج رسوميات</strong> (اختياري): شريحة Intel (مثل N100 أو معالج Core فيه Quick
+          Sync) أو AMD تحوّل الفيديو للهواتف والمتصفحات دون أن تُثقل المعالج. وبطاقة NVIDIA تسرّع
+          تحويل الكلام إلى نص أيضًا.
+        </li>
+      </ul>
+      <h2>1. أنشئ مجموعة بيانات Maktaba</h2>
+      <p>
+        من «Datasets» ← <strong>«Add Dataset»</strong> على مجمّع SSD (أو مجمّعك الرئيسي)، وسمّها
+        <code>apps/maktaba</code>، واختر في <strong>«Dataset Preset»</strong> الإعداد
+        <strong>«Apps»</strong>. يمنح هذا الإعداد المسبق مستخدمَ التطبيقات في TrueNAS ‏<code
+          >apps</code
+        >
+        (‏568)، الذي يعمل به Maktaba، حقَّ الكتابة فيها. لا يغيّر Maktaba الأذونات بنفسه أبدًا.
+      </p>
+      <figure class="placeholder" data-shot="screenshots/truenas/dataset-apps-preset.ar.png">
+        <figcaption>
+          📷 <strong>صورة قادمة:</strong>
+          <code>screenshots/truenas/dataset-apps-preset.ar.png</code>: نافذة «Add Dataset» مع
+          الإعداد المسبق «Apps».
+        </figcaption>
+      </figure>
+      <h2>2. اسمح لـ Maktaba بقراءة وسائطك</h2>
+      <p>
+        لكل مجموعة بيانات فيها أفلام أو مسلسلات: من «Datasets» اخترها ←
+        <strong>«Permissions»</strong> ← <strong>«Edit»</strong> ← <strong>«Add Item»</strong>: في
+        «Who» اختر <strong>«User»</strong>، وفي «User» اختر <strong>apps</strong>، وفي «Permissions»
+        اختر <strong>«Read»</strong> (أو <strong>«Modify»</strong> إن أردت أن يكتب Maktaba الترجمات
+        بجانب مقاطعك) ← <strong>«Save Access Control List»</strong>.
+      </p>
+      <figure class="placeholder" data-shot="screenshots/truenas/acl-entry.ar.png">
+        <figcaption>
+          📷 <strong>صورة قادمة:</strong> <code>screenshots/truenas/acl-entry.ar.png</code>: محرر
+          ACL مع إدخال المستخدم apps.
+        </figcaption>
+      </figure>
+      <p>
+        إن تجاوزت مجموعة بيانات فسيُثبَّت Maktaba مع ذلك، وتظهر مكتبتها
+        <strong>«لا وصول»</strong> مع هذا الحل نفسه.
+      </p>
+      <h2>3. ثبّت التطبيق</h2>
+      <p>
+        من «Apps» ← <strong>«Discover Apps»</strong> ← ابحث عن <strong>Maktaba</strong> ←
+        <strong>«Install»</strong>.
+      </p>
+      <ul>
+        <li><strong>«Timezone»:</strong> منطقتك الزمنية.</li>
+        <li><strong>«User and Group»:</strong> أبقِ 568 و568.</li>
+        <li>
+          <strong>«Network»:</strong> أبقِ <strong>«Host Network»</strong> مفعّلًا، فتجد هواتفك
+          وأجهزة التلفاز Maktaba بنفسها.
+        </li>
+        <li>
+          <strong>«Storage» ← «Maktaba Data Storage»:</strong> اختر «Host Path» والمسار
+          <code>/mnt/&lt;مجمّع SSD&gt;/apps/maktaba</code>.
+        </li>
+        <li>
+          <strong>«Storage» ← «Media Folders»:</strong> أضف كل مجموعة بيانات للوسائط، مثل
+          <code>/mnt/tank/media</code>. وفعّل <strong>«Read Only»</strong> إن أردت ألّا يكتب Maktaba
+          فيها أبدًا.
+        </li>
+        <li>
+          <strong>«Resources» ← «Memory»:</strong> ‏8192 ميغابايت بداية جيدة، ويضبط Maktaba نفسه على
+          هذا الحد.
+        </li>
+        <li>
+          <strong>«Resources» ← «GPU»:</strong> فعّل معالج Intel أو AMD الرسومي، أو اختر بطاقة
+          NVIDIA (بعد تثبيت تعريفات NVIDIA في TrueNAS من «Apps» ← «Configuration» ← «Settings»).
+        </li>
+      </ul>
+      <figure class="placeholder" data-shot="screenshots/truenas/install-storage.ar.png">
+        <figcaption>
+          📷 <strong>صورة قادمة:</strong> <code>screenshots/truenas/install-storage.ar.png</code> و
+          <code>screenshots/truenas/install-resources.ar.png</code>: قسما «Storage» و«Resources» في
+          نموذج التثبيت.
+        </figcaption>
+      </figure>
+      <p>
+        <strong>ألا يظهر Maktaba في «Discover Apps» بعد؟</strong> إلى أن يدخل كتالوج TrueNAS، ثبّته
+        تطبيقًا مخصّصًا: نزّل الملف <code>maktaba-truenas-custom-app.yaml</code> من
+        <a href="https://github.com/Hamza-Labs-Core/Maktaba/releases/latest">أحدث إصدار</a>، وغيّر
+        الأسطر المعلَّمة بـ <code>CHANGE</code> (منطقتك الزمنية، ومجموعة بيانات Maktaba، ووسائطك)،
+        ثم من «Apps» ← «Discover Apps» ← <strong>⋮</strong> ← <strong>«Install via YAML»</strong>،
+        وسمّه <code>maktaba</code>، والصق الملف واضغط <strong>«Save»</strong>.
+      </p>
+      <figure class="placeholder" data-shot="screenshots/truenas/install-via-yaml.ar.png">
+        <figcaption>
+          📷 <strong>صورة قادمة:</strong> <code>screenshots/truenas/install-via-yaml.ar.png</code>:
+          نافذة «Install via YAML».
+        </figcaption>
+      </figure>
+      <h2>4. شغّل الإعداد</h2>
+      <p>
+        حين يظهر التطبيق <strong>«Running»</strong>: من «Apps» ← «Installed» ← Maktaba ←
+        <strong>«Workloads»</strong> ← maktaba ← <strong>«Shell»</strong> (أيقونة الطرفية)، ثم نفّذ:
+      </p>
+      <pre><code>/opt/maktaba/server/bin/maktaba-server container setup</code></pre>
+      <p>
+        أجب عن أسئلته (اسم المدير وكلمة مروره، ومكتباتك). يبدأ Maktaba بنفسه حين ينتهي. افتح
+        <strong>«Web UI»</strong> من صفحة التطبيق، أو <code>http://&lt;جهاز التخزين&gt;:8088</code>.
+      </p>
+      <figure class="placeholder" data-shot="screenshots/truenas/app-shell.ar.png">
+        <figcaption>
+          📷 <strong>صورة قادمة:</strong> <code>screenshots/truenas/app-shell.ar.png</code>: طرفية
+          التطبيق وفيها أمر الإعداد.
+        </figcaption>
+      </figure>
+      <h2>بعد الإعداد</h2>
+      <ul>
+        <li>
+          <strong>الإعدادات ← هذا الجهاز</strong> تعرض ما وجده Maktaba: ‏TrueNAS، وفئته (من حد
+          الذاكرة)، والذاكرة المتاحة (محسوبًا فيها ذاكرة ZFS المؤقتة)، وعتاد الفيديو.
+        </li>
+        <li>
+          <strong>مكتبة تظهر «لا وصول» أو «للقراءة فقط»:</strong> أضف إدخال ACL للمستخدم 568 كما في
+          الخطوة 2، ثم اضغط <strong>«التحقق من الوصول»</strong>.
+        </li>
+        <li>
+          <strong>توقّف Maktaba فور التثبيت</strong> وتقول سجلّاته إنه لا يستطيع الكتابة في مجلد
+          بياناته: عدّل أذونات مجموعة البيانات وأضف إدخال ACL للمستخدم 568 بصلاحية التعديل، أو
+          استخدم الإعداد المسبق Apps.
+        </li>
+        <li>
+          <strong>الفيديو:</strong> مع معالج Intel أو AMD رسومي مخصّص للتطبيق تقول صفحة هذا الجهاز
+          «الفيديو: بالعتاد (iHD)، ‏H.264 وHEVC». لم تعد تعريفات NVIDIA في TrueNAS 25.10 تدعم بطاقات
+          Pascal وما قبلها (GTX 10xx وأقدم): يحوّل Maktaba حينها بالمعالج ويذكر السبب.
+        </li>
+        <li>
+          <strong>التحديثات:</strong> يحدّث Maktaba نفسه في نافذة التحديث (الإدارة ← التحديثات)،
+          ويحدّث TrueNAS التطبيق حين يتقدّم الكتالوج. وفي الحالتين يستمر منزلك كما هو.
+        </li>
+        <li><strong>إعادة التثبيت</strong> بمجموعة البيانات نفسها تعيد منزلك كما كان.</li>
+        <li>
+          <strong>مع إيقاف «Host Network»:</strong> اضبط <strong>«Host IP»</strong> على عنوان جهاز
+          التخزين. لن تجد الهواتف وأجهزة التلفاز Maktaba بنفسها حينها، لكنها تتصل به عبر عنوان جهاز
+          التخزين، أو اسم المنزل الآمن HTTPS، أو برمز من Maktaba Cloud.
+        </li>
+      </ul>
+    </main>
+  </body>
+</html>

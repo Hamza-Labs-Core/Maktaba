@@ -11,8 +11,8 @@ catalog's own source layout, ready to go into its **community** train, and the s
 | `custom-app.yaml` | the Custom App (Apps → Discover → ⋮ → Install via YAML), with the questions as comments |
 
 The household's guide is maktaba.tv/install/truenas (its source:
-[docs/nas/guides/truenas.md](../../../docs/nas/guides/truenas.md), in Arabic
-[truenas.ar.md](../../../docs/nas/guides/truenas.ar.md)). The device checklist is
+[web/packages/install/site/install/truenas](../../../web/packages/install/site/install/truenas/index.html), in Arabic
+[ar/install/truenas](../../../web/packages/install/site/ar/install/truenas/index.html)). The device checklist is
 [docs/nas/checklists/truenas.md](../../../docs/nas/checklists/truenas.md).
 
 ## The app

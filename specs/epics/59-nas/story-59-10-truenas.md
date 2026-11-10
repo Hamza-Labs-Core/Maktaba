@@ -142,4 +142,4 @@ has no Arabic). Maktaba's own screens are in both languages.
 | `cmd/maktaba-server/` | the `healthcheck` command; the setup hint and the write-denied fix in TrueNAS's words |
 | `tests/nas/truenas_app.py`, `tests/nas/truenas/` | the catalog's tooling against the app: render, lint, metadata, deploy |
 | `.github/workflows/release.yml`, `packages.yml` | the Custom App YAML on each release; the catalog bump PR |
-| `docs/nas/guides/truenas{,.ar}.md` (new) | the maktaba.tv guide's source |
+| `web/packages/install/site/{,ar/}install/truenas/` (new) | the maktaba.tv guide, en and ar |

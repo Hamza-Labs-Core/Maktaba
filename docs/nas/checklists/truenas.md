@@ -80,8 +80,8 @@ guide's screenshots of TrueNAS's own screens are taken in the same run (step 13)
 - **Screenshots:** `truenas/12-isolation.en.png`, `truenas/12-isolation.ar.png`
 
 ### 13. The guide's TrueNAS screenshots
-- **Do:** with TrueNAS's UI in dark mode, take each screenshot the maktaba.tv guide lists as a placeholder (`docs/nas/guides/README.md`): the dataset with the Apps preset, the ACL editor's entry for 568, the app's install form (storage, network, resources and GPU), the app's Shell with the setup command, Install via YAML; in English, and in Arabic where TrueNAS's UI has it.
-- **See:** each file at the path the guide names; the guide then shows them instead of its placeholders.
+- **Do:** with TrueNAS's UI in dark mode, take each screenshot the maktaba.tv guide lists as a placeholder (`web/packages/install/README.md`, "Screenshot placeholders"): the dataset with the Apps preset, the ACL editor's entry for 568, the app's install form (storage, network, resources and GPU), the app's Shell with the setup command, Install via YAML; in English, and in Arabic where TrueNAS's UI has it.
+- **See:** each file under `web/packages/install/site/screenshots/truenas/` as the placeholder names it; each placeholder figure then becomes the image.
 - **Screenshots:** none
 
 ### 14. A catalog update and a self-update
