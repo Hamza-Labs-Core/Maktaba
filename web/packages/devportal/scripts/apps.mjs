@@ -1071,8 +1071,8 @@ export const APPS = [
                     "Docker، على جهاز NAS أو خادم (x86-64 وARM64)"
                   ),
                   t(
-                    "the image `ghcr.io/hamza-labs-core/maktaba-server` with the project's compose file: it runs as whichever user the NAS gives it (never root), and its first start needs no internet. If that user cannot write the data folder, it stops at once and its log names the folder, the user and the fix",
-                    "الصورة `ghcr.io/hamza-labs-core/maktaba-server` مع ملف compose الخاص بالمشروع: تعمل بأي مستخدم يعطيه لها جهاز الـNAS (ولا تعمل بصلاحيات الجذر أبدًا)، ولا يحتاج تشغيلها الأول إلى الإنترنت. وإن لم يستطع ذلك المستخدم الكتابة في مجلد البيانات توقفت فورًا وذكر سجلها المجلد والمستخدم وطريقة الإصلاح"
+                    "the image `ghcr.io/hamza-labs-core/maktaba-server` with the project's compose file, which [maktaba.tv/install/docker](https://maktaba.tv/install/docker/) fills in from a few answers in the page (the user, the data and media folders, the memory tier, hardware video): QNAP's Container Station, UGREEN's and ASUSTOR's Docker apps, Portainer and Dockge take it as it is, and Unraid has a Community Applications template. It runs as whichever user the NAS gives it (never root), and its first start needs no internet. If that user cannot write the data folder, it stops at once and its log names the folder, the user and the fix",
+                    "الصورة `ghcr.io/hamza-labs-core/maktaba-server` مع ملف compose الخاص بالمشروع، الذي تملؤه صفحة [maktaba.tv/install/docker](https://maktaba.tv/ar/install/docker/) من بضع إجابات داخل الصفحة نفسها (المستخدم، ومجلدا البيانات والوسائط، وفئة الذاكرة، والفيديو بالعتاد): تقبله كما هو محطة الحاويات في QNAP وتطبيقا Docker في UGREEN وASUSTOR وأداتا Portainer وDockge، ولجهاز Unraid قالب في متجر Community Applications. تعمل بأي مستخدم يعطيه لها جهاز الـNAS (ولا تعمل بصلاحيات الجذر أبدًا)، ولا يحتاج تشغيلها الأول إلى الإنترنت. وإن لم يستطع ذلك المستخدم الكتابة في مجلد البيانات توقفت فورًا وذكر سجلها المجلد والمستخدم وطريقة الإصلاح"
                   ),
                 ],
                 [

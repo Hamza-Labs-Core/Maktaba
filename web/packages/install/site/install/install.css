@@ -1,0 +1,146 @@
+/* maktaba.tv's install pages: dark by default, light where the system asks for it */
+:root {
+  --bg: #0f1115;
+  --panel: #171a21;
+  --fg: #e8e6e3;
+  --muted: #a3a8b3;
+  --accent: #d9a441;
+  --border: #2a2f3a;
+  --bad: #f0857d;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #faf8f4;
+    --panel: #ffffff;
+    --fg: #1d1f24;
+    --muted: #5b616d;
+    --accent: #8a5a00;
+    --border: #ddd8cf;
+    --bad: #b3261e;
+    color-scheme: light;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0 auto;
+  max-width: 64rem;
+  padding: 1.5rem 1rem 3rem;
+  background: var(--bg);
+  color: var(--fg);
+  font:
+    16px/1.55 system-ui,
+    "IBM Plex Sans Arabic",
+    sans-serif;
+}
+h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.7rem;
+}
+.lead,
+.hint {
+  color: var(--muted);
+}
+.hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+}
+nav a,
+a {
+  color: var(--accent);
+}
+#app {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 900px) {
+  #app {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  }
+}
+.answers,
+.result {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem;
+}
+.field {
+  margin-bottom: 1rem;
+}
+label,
+.label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+}
+.media-row label {
+  display: inline;
+  font-weight: 400;
+}
+input:not([type="checkbox"]),
+select,
+textarea {
+  width: 100%;
+  padding: 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+.media-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+textarea {
+  font:
+    13px/1.45 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  min-height: 24rem;
+}
+button,
+.button {
+  display: inline-block;
+  margin: 0.5rem 0.5rem 0 0;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+[dir="rtl"] button,
+[dir="rtl"] .button {
+  margin: 0.5rem 0 0 0.5rem;
+}
+button.secondary {
+  background: transparent;
+  color: var(--accent);
+}
+button[disabled],
+.button[aria-disabled] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.problems {
+  color: var(--bad);
+  padding-inline-start: 1.2rem;
+}
+.problems:empty {
+  display: none;
+}
+footer {
+  margin-top: 2rem;
+  color: var(--muted);
+}

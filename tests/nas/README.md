@@ -16,6 +16,8 @@ checklists, [`docs/nas/checklists/`](../../docs/nas/checklists/README.md).
 | `check_checklists.py` | the device checklists' lint: every step has its expected result and its screenshots in both languages |
 | `test_harness.py` | this folder's own tests (the plan job runs them) |
 | `stt-baseline.json` | each speech model and architecture's word error rate on the bundled clips (59.06) |
+| `install_files.py` | the NAS install files' checks (59.11): the published compose's `# [name]` blocks (no block, each, all: `docker compose config` with `--docker`), the Unraid template's schema, its render to `docker run` arguments and its drift from the compose file, the development compose's images under release's names (resolved with `--docker`); the plan job runs it |
+| `test_install_files.py` | its tests, and the compose and template cells' shapes |
 | `test_synology.py` | the Synology project's files (`deploy/nas/synology/`, 59.09): written by `deploy/nas/generate.py` from the plain compose (`--check`), only keys Docker 24.0.2 takes, the DSM shape, the GPU lines only in the J4125 file |
 
 `tools/ci/tests/test_nas_workflow.py` checks the workflow's triggers: a change to the Dockerfile
@@ -68,6 +70,7 @@ runs every cell, a change to `web/` alone runs nothing.
 | `quiet_hold` | outside the cell's quiet hours a new library's first scan waits: the scan queue (`GET /api/queues`) says `quiet_hours` and when the window opens, and no clip is found; the admin's `POST /api/queues/scan/run-now` then starts it: the held jobs run and none stays paused; every clip is then found as in `scan` (59.02) |
 | `postgres_pss_512m` | the bundled Postgres's processes hold under 512 MiB together (the sum of `Pss` in each one's `smaps_rollup`, kept as `postgres-pss.txt`), the Light tier's tuning applied (59.02) |
 | `isolation_container` | without Landlock and user namespaces the plugin isolation level is Container (`GET /api/server/machine`'s `plugin_isolation` and `GET /api/plugins/isolation`); the test plugin (`--plugin`, plugind's hello guest that the amd64 image job packs as the `nas-plugin` artifact), installed and turned on by the admin, stays off with `isolation_held`; `PUT /api/plugins/isolation` without the password is 401, with it 200; the plugin then runs, and `plugins.host` is Degraded with `sandbox_partial` (plugind's required layers on, its optional ones missing). The answers are kept as `api-plugin-isolation.json` (59.07) |
+| `platform` | `GET /api/server/machine` names the platform the install file set (`MAKTABA_PLATFORM`, the cell's `platform`), read from the environment (59.11) |
 | `refused_write`, `refused_privileged` | the container exits 78 with its message (59.01) |
 | `refused_write_dsm` | the same with `MAKTABA_PLATFORM=dsm`: the message adds DSM's screens (Control Panel → Shared Folder, File Station's Permission) in both languages (59.09) |
 | `platform_dsm` | `GET /api/server/machine` names the platform `dsm` (59.09) |
@@ -87,8 +90,13 @@ it is reported as pending (⏳) until that story is in `landed`.
 1. Add it to `cells.json`: `name`, `about`, `arches` (`amd64`, `arm64`), and its shape: `user`,
    `data`, `media`, `noaccess_root`, `docker` (extra `docker run` arguments such as `--memory=4g`
    or `--device /dev/dri`), `env`, `seccomp` (a profile in this folder), `expect: "refused"`,
-   `kill_restart`, `media.path` (where the library is mounted, `/volume1/Media` by default),
-   `media.dsm_extras` (DSM's `@eaDir`, `#recycle` and `#snapshot` in it), `quiet_hours_ahead` (a one-hour quiet window opening three hours from now,
+   `compose` (`{"blocks": [...]}`: the published compose file filled in with those blocks on and
+   started with `docker compose`; host network only), `template` (`"unraid"`: the Unraid template
+   rendered to its `docker run` arguments), `platform` (for `platform`),
+   `media.path` (where the library is mounted, `/volume1/Media` by default), `media.dsm_extras`
+   (DSM's `@eaDir`, `#recycle` and `#snapshot` in it), `compose_file` (`{"file", "engine", "api"}`:
+   a NAS's own compose file run unchanged by that Docker engine in a dind container, 59.09),
+   `kill_restart`, `quiet_hours_ahead` (a one-hour quiet window opening three hours from now,
    UTC; every other cell has none, `[schedule] quiet_hours = ""`), `speech` (story 59.06:
    `[transcription] speech = "on"` and the tier's model instead of the cells' tiny one); then
    `asserts`.

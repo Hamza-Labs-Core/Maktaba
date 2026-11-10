@@ -11,6 +11,7 @@
     "build": "tsc -p tsconfig.json && vite build",
     "build:cloud": "tsc -p tsconfig.json && vite build --config vite.cloud.config.ts",
     "build:admin": "tsc -p tsconfig.json && vite build --config vite.admin.config.ts",
+    "build:install": "tsc -p tsconfig.json && vite build --config vite.install.config.ts",
     "build:player": "tsc -p tsconfig.json && vite build --mode player",
     "build:remote": "tsc -p tsconfig.json && vite build --mode remote",
     "build:player:cloud": "tsc -p tsconfig.json && vite build --mode player --base /play/ --outDir dist-play",
