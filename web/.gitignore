@@ -4,6 +4,7 @@ dist
 *.tsbuildinfo
 dist-cloud
 dist-admin
+dist-install
 dist-play
 dist-manage
 

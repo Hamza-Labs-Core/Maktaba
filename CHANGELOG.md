@@ -14,6 +14,16 @@ build fails when the two differ.
 
 ### Changed
 
+- **Maktaba on QNAP, UGREEN, ASUSTOR and Unraid (story 59.11).** The published Docker compose
+  (`maktaba-docker-compose.yml`) is now the NAS file: it names the container `maktaba`, sets
+  `MAKTABA_PLATFORM=docker` and `TZ`, mounts each media folder at its own path (an install made
+  with the earlier file keeps its `/media` line), and has optional blocks for the memory limit
+  by tier (`mem_limit` 4g, 6g or 16g), hardware video (`/dev/dri` and its group), NVIDIA, the
+  host's D-Bus and a bridge network. maktaba.tv/install/docker fills it in from a few answers
+  in the page, in English and Arabic, and sends nothing. Unraid gets a Community Applications
+  template (99:100, the data on the cache pool, `/dev/dri`). The old Synology and QNAP package
+  scaffolds are gone, and the development compose names the images release publishes.
+
 - **A NAS converts video on its own chip, and says when it can't (story 59.05).** On an Intel
   J4125 or N100, or an AMD APU, streaming now uses VA-API (`h264_vaapi`, HEVC where the driver
   lists it) once a 2-second 1080p test encode works: after NVIDIA and Quick Sync, before Quick
