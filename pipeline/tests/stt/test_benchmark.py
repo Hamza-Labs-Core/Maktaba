@@ -104,3 +104,23 @@ def test_the_sizes_are_the_catalogs_models() -> None:
     assert engine.model_for(engine.CT2, "small") == "Systran/faster-whisper-small"
     assert engine.model_for(engine.CT2, "large-v3-turbo") == engine.DEFAULT_MODEL[engine.CT2]
     assert engine.size_of("Systran/faster-whisper-base") == "base" and engine.size_of("x/y") is None
+
+
+def test_a_transcribing_process_is_polite(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Story 59.06: MAKTABA_STT_NICE lowers the priority once, never raises it."""
+    import os
+
+    from maktaba_pipeline.stt import ct2
+
+    if not hasattr(os, "getpriority"):
+        pytest.skip("no process priorities here")
+    now = os.getpriority(os.PRIO_PROCESS, 0)
+    set_to: list[int] = []
+    monkeypatch.setattr(os, "setpriority", lambda which, who, v: set_to.append(v))
+    monkeypatch.delenv("MAKTABA_STT_NICE", raising=False)
+    assert ct2.be_polite() is None and set_to == []
+    monkeypatch.setenv("MAKTABA_STT_NICE", str(now + 1))
+    assert ct2.be_polite() == now + 1 and set_to == [now + 1]
+    monkeypatch.setenv("MAKTABA_STT_NICE", "0")
+    set_to.clear()
+    assert ct2.be_polite() == now and set_to == []  # never raised back

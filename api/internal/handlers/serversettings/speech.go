@@ -66,7 +66,7 @@ type speechView struct {
 		RTF   float64 `json:"rtf"`
 		Error string  `json:"error"`
 	} `json:"measure"`
-	QuietHours string        `json:"quiet_hours"`
+	QuietHours string            `json:"quiet_hours"`
 	Models     []SpeechModelCost `json:"models"`
 }
 
