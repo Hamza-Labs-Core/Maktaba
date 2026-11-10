@@ -991,6 +991,10 @@ export const APPS = [
                 "يفتح **الإبلاغ عن مشكلة…** في منطقة الإشعارات وقائمة **المساعدة** نموذجَ تطبيق الويب. وإذا توقف التطبيق نفسه فجأة، يُحفظ العطل على هذا الحاسوب منقّحًا، ولا يرسله تطبيق الويب في نافذته إلى الجهاز الرئيسي إلا حين تكون تقارير الأعطال مشغّلة هناك (**الإعدادات ← الخصوصية**)."
               ),
               t(
+                "Sizes itself to the computer, or the container, it runs on. At each start it reads the memory it may use (a container's limit, not the host's RAM, with the ZFS cache on a TrueNAS box counted as free), the processor and its features, the graphics and the data disk, and picks a **tier**: **Light** under 6 GB (8 GB on ARM), **Standard** under 16 GB, **Strong** above. The tier sets defaults, such as how many pipeline workers run; anything you set yourself keeps your value. **Settings → This machine** shows what it found and why it chose the tier (for example *Standard: 6 GB, Intel graphics*), and lets an admin pick another tier. Setup needs at least 3.5 GB, so a \"4 GB\" NAS fits.",
+                "يضبط نفسه على الحاسوب أو الحاوية التي يعمل فيها. ففي كل تشغيل يقرأ الذاكرة المسموح له باستعمالها (حدّ الحاوية لا ذاكرة الجهاز المضيف، مع احتساب تخزين ZFS المؤقت على أجهزة TrueNAS ذاكرةً حرّة)، والمعالج وميزاته، والرسوميات، وقرص البيانات، ثم يختار **فئة**: **خفيف** لأقل من 6 غيغابايت (8 غيغابايت على ARM)، و**قياسي** لأقل من 16 غيغابايت، و**قوي** لما فوق ذلك. وتضبط الفئة الإعدادات الافتراضية، مثل عدد عمّال المعالجة؛ أما ما تضبطه بنفسك فيبقى على قيمتك. وتعرض صفحة **الإعدادات ← هذا الجهاز** ما وجده وسبب اختياره الفئة (مثل *قياسي: 6 غيغابايت، رسوميات Intel*)، ويستطيع المدير فيها اختيار فئة أخرى. ويحتاج الإعداد إلى 3.5 غيغابايت على الأقل، فيتّسع له خادم تخزين شبكي «بذاكرة 4 غيغابايت»."
+              ),
+              t(
                 "Can run with no outbound call at all: `maktaba-server serve --offline` (or `MAKTABA_OFFLINE=1`) turns off the update check, pack and model downloads, usage data and the link to Maktaba Cloud at once.",
                 "ويمكن تشغيله دون أي اتصال صادر: يوقف الأمر `maktaba-server serve --offline` (أو `MAKTABA_OFFLINE=1`) التحقق من التحديثات وتنزيل الحزم والنماذج وبيانات الاستخدام والربط بسحابة مكتبة دفعةً واحدة."
               ),
@@ -1047,6 +1051,16 @@ export const APPS = [
                   t(
                     "the `.AppImage`, `.deb` or `.rpm`; on a computer without a desktop, `install.sh --app` installs the server alone",
                     "ملف `.AppImage` أو `.deb` أو `.rpm`؛ وعلى حاسوب بلا واجهة رسومية يثبّت الأمر `install.sh --app` الخادم وحده"
+                  ),
+                ],
+                [
+                  t(
+                    "Docker, on a NAS or a server (x86-64 and ARM64)",
+                    "Docker، على جهاز NAS أو خادم (x86-64 وARM64)"
+                  ),
+                  t(
+                    "the image `ghcr.io/hamza-labs-core/maktaba-server` with the project's compose file: it runs as whichever user the NAS gives it (never root), and its first start needs no internet. If that user cannot write the data folder, it stops at once and its log names the folder, the user and the fix",
+                    "الصورة `ghcr.io/hamza-labs-core/maktaba-server` مع ملف compose الخاص بالمشروع: تعمل بأي مستخدم يعطيه لها جهاز الـNAS (ولا تعمل بصلاحيات الجذر أبدًا)، ولا يحتاج تشغيلها الأول إلى الإنترنت. وإن لم يستطع ذلك المستخدم الكتابة في مجلد البيانات توقفت فورًا وذكر سجلها المجلد والمستخدم وطريقة الإصلاح"
                   ),
                 ],
               ],

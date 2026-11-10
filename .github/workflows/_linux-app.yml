@@ -11,7 +11,8 @@
 # Fedora's ffmpeg-free (no libx264) with the RPM Fusion command. Then e2e.sh runs the server
 # the way the app installs it, as the runner's systemd user unit, on the runner's ffmpeg.
 # The Docker install's image (deploy/docker/server) is built from the payload and started on
-# a fresh volume: its entrypoint's bootstrap, and its wait for the setup.
+# a fresh volume: its entrypoint's bootstrap, and its wait for the setup; then as a NAS runs it
+# (docker-nas.sh, story 59.01): any uid:gid, refusals, an offline first start.
 # Unsigned: the updater signature comes with desktop-release.yml.
 
 name: Linux app
@@ -250,6 +251,26 @@ jobs:
           grep -q "not set up yet" "$RUNNER_TEMP/container.log"
           docker stop -t 30 maktaba-ci >/dev/null
           test "$(docker inspect -f '{{.State.ExitCode}}' maktaba-ci)" = 0
+
+      # Epic 59 story 59.01: the image as a NAS runs it. For 1000:1000, 568:568 (TrueNAS),
+      # 99:100 (Unraid), 1026:100 (a DSM user) and 4321:4321 (no passwd entry: nss_wrapper),
+      # each on a volume it owns: setup with --network none (the venv from the payload's
+      # wheelhouse; initdb under the uid), then the container offline: the API answers, the
+      # plugin runners start, every process runs as that uid:gid. A root-owned volume, root,
+      # --privileged and the Docker socket each stop it with exit 78 and their message in
+      # English and Arabic. The image's compressed size stays at 1 GB or less.
+      - name: The Docker image on a NAS (any uid, never root, first start offline)
+        timeout-minutes: 30
+        run: tools/release/linux-app/docker-nas.sh maktaba-server:ci "$RUNNER_TEMP/docker-nas"
+
+      - name: Keep the NAS checks' logs
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: docker-nas-${{ matrix.arch }}
+          path: ${{ runner.temp }}/docker-nas
+          if-no-files-found: ignore
+          retention-days: 14
 
       # Epic 39 story 39.11: `setup --answers` as `install.sh --app` runs it (runtime copy,
       # venv, models, finish, the systemd user unit), every role on 127.0.0.1, back from a

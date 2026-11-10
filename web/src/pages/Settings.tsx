@@ -16,6 +16,8 @@
 //   Advanced    — Experiments: beta cohorts the user may join (16.6)
 //   Storage & discovery — server.toml's path map, roots, mdns, addresses,
 //                 public URLs and a restart (admins; Epic 45)
+//   This machine — the hardware the server found and the tier it set its defaults
+//                 from; an admin picks another (admins; Epic 59, story 59.04)
 //   Subscription — the plan, users against seats, the license, Maktaba
 //                 Cloud (Epic 16; admins manage it, viewers read it)
 //   About       — what the app is: version and build, the home, the plan, links,
@@ -35,6 +37,7 @@ import { ServerUsageData } from "./Settings/ServerUsageData";
 import { ReportsToMaktaba } from "./Settings/ReportsToMaktaba";
 import { SubscriptionSettings } from "./Settings/SubscriptionSettings";
 import { StorageSettings } from "./Settings/StorageSettings";
+import { ThisMachineSection } from "./Settings/ThisMachineSection";
 import { AccountPanel, AppearancePanel, PrivacyPanel, SessionsPanel } from "./Profile/Preferences";
 import { updateAvailable, useUpdateStatus } from "../lib/updates";
 import { TitleRow } from "../help/HelpLink";
@@ -70,6 +73,9 @@ export function Settings() {
         {user?.is_admin && (
           <NavLink to="/settings/storage">{t("settings.section.storage")}</NavLink>
         )}
+        {user?.is_admin && (
+          <NavLink to="/settings/machine">{t("settings.section.machine")}</NavLink>
+        )}
         <NavLink to="/settings/subscription">{t("settings.section.subscription")}</NavLink>
         <NavLink
           to="/settings/about"
@@ -98,6 +104,7 @@ export function Settings() {
         <Route path="plugins" element={<PluginsSection />} />
         <Route path="advanced" element={<AdvancedTab />} />
         <Route path="storage" element={<StorageSettings />} />
+        <Route path="machine" element={<ThisMachineSection />} />
         <Route path="subscription" element={<SubscriptionSettings />} />
         <Route path="about" element={<AboutPanel />} />
         {/* an unknown tab (/settings/nope) opens Account instead of an empty panel */}

@@ -72,7 +72,7 @@ func (c *configAdmin) adminHandler(base http.Handler) http.Handler {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		if c.storageRoutes(w, r) || c.backupsRoutes(w, r) || c.logsRoutes(w, r) {
+		if c.storageRoutes(w, r) || c.backupsRoutes(w, r) || c.logsRoutes(w, r) || c.machineRoutes(w, r) {
 			return
 		}
 		switch {
