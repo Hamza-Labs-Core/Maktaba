@@ -122,6 +122,16 @@
       "asserts": ["ready", "scan", "no_oom", {"name": "isolation_container", "needs": ["59.07"]}]
     },
     {
+      "name": "quiet-hours-hold",
+      "about": "quiet hours that open later today: a new library's first scan waits for them, and Run now starts it",
+      "arches": ["amd64"],
+      "docker": ["--memory=4g"],
+      "env": {"TZ": "UTC"},
+      "quiet_hours_ahead": true,
+      "needs": ["59.02"],
+      "asserts": ["ready", "quiet_hold", "no_oom"]
+    },
+    {
       "name": "restart-after-kill",
       "about": "a power cut: the container killed (SIGKILL) and started again on the same volume",
       "arches": ["amd64"],

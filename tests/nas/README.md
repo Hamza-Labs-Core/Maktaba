@@ -27,7 +27,8 @@ runs every cell, a change to `web/` alone runs nothing.
    `media.owner`, `media.mode` and `media.ro`, and `/volume1/Private` (mode 000) when the cell has
    `noaccess_root`.
 2. **server.toml** first, as the cell's user: the smallest Whisper, no second listen, no
-   language model.
+   language model, no quiet hours (the Light and Standard tiers' default, 01:00-06:00, holds
+   a library's first scan until then; `quiet-hours-hold` checks that hold).
 3. **Setup, headless**: `docker run --rm -i <shape> IMAGE setup --answers /dev/stdin`, what
    `docker compose run --rm maktaba setup` runs, the admin's password only on stdin.
 4. **The server**: `docker run -d <shape> --network host IMAGE`. Ready is the public health route,
@@ -57,6 +58,7 @@ runs every cell, a change to `web/` alone runs nothing.
 | `media_untouched` | the library holds exactly the fixtures afterwards: nothing written in it |
 | `logs_clean` | no permission error in `server.log` |
 | `tier_light`, `tier_standard` | `GET /api/server/machine` (59.04) reads the container's memory limit as Docker set it, and the tier and its defaults are that tier's |
+| `quiet_hold` | outside the cell's quiet hours a new library's first scan waits: the scan queue (`GET /api/queues`) says `quiet_hours` and when the window opens, and no clip is found; the admin's `POST /api/queues/scan/run-now` then starts it and every clip is found with no second scan (59.02) |
 | `refused_write`, `refused_privileged` | the container exits 78 with its message (59.01) |
 
 An assertion still waiting for its story is written `{"name": "tier_light", "needs": ["59.04"]}`:
@@ -67,7 +69,8 @@ it is reported as pending (⏳) until that story is in `landed`.
 1. Add it to `cells.json`: `name`, `about`, `arches` (`amd64`, `arm64`), and its shape: `user`,
    `data`, `media`, `noaccess_root`, `docker` (extra `docker run` arguments such as `--memory=4g`
    or `--device /dev/dri`), `env`, `seccomp` (a profile in this folder), `expect: "refused"`,
-   `kill_restart`; then `asserts`.
+   `kill_restart`, `quiet_hours_ahead` (a one-hour quiet window opening three hours from now,
+   UTC; every other cell has none, `[schedule] quiet_hours = ""`); then `asserts`.
 2. A new assertion is a method `assert_<name>` of `Cell` in `cell.py` returning a short detail,
    raising `AssertionError` to fail. Use `self.api` (signed in as the admin) and `docker(...)`.
 3. A cell or assertion for a story not merged yet carries `needs: ["59.NN"]`; the story's pull

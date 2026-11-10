@@ -134,6 +134,17 @@ class ServerToml(unittest.TestCase):
         conf = tomllib.loads(cell.SERVER_TOML)
         self.assertEqual(conf["schedule"]["quiet_hours"], "")
 
+    def test_the_hold_cell_gets_a_window_that_opens_later(self) -> None:
+        from datetime import datetime, timezone
+
+        import tomllib
+
+        now = datetime(2026, 11, 10, 22, 41, tzinfo=timezone.utc)
+        window, opens = cell.quiet_window_ahead(now)
+        self.assertEqual((window, opens), ("01:00-02:00", "01:00"))  # across midnight, now outside
+        conf = tomllib.loads(cell.server_toml(window))
+        self.assertEqual(conf["schedule"]["quiet_hours"], "01:00-02:00")
+
 
 class Summary(unittest.TestCase):
     def test_rows_link_each_cell_to_its_logs(self) -> None:
