@@ -23,7 +23,7 @@ import summary  # noqa: E402
 MATRIX = cell.load_cells()
 # Every story whose cells and assertions the harness knows (README §7 phases); a new needs
 # value is a typo unless it is added here with its cell.
-KNOWN_NEEDS = {"59.01", "59.02", "59.03", "59.04", "59.05", "59.06", "59.07", "59.08", "pg-stale-lock", "scan-grant-race", "plugin-cache-grant", "poster-queue"}
+KNOWN_NEEDS = {"59.01", "59.02", "59.03", "59.04", "59.05", "59.06", "59.07", "59.08", "59.10", "pg-stale-lock", "scan-grant-race", "plugin-cache-grant", "poster-queue"}
 # The phase-1 cells story 59.15 lists (README §9): each must be in the matrix
 PHASE_ONE = {"uid-1000", "uid-568", "uid-unraid", "uid-dsm", "media-ro", "media-none", "media-foreign",
              "mem-4g", "mem-6g", "no-landlock-enosys", "no-landlock-eperm"}

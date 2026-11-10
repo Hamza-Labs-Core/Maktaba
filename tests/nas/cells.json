@@ -15,7 +15,7 @@
       "user": "568:568",
       "data": {"owner": "568:568", "mode": "0750"},
       "needs": ["59.01"],
-      "asserts": ["ready", "only_uid", "scan"]
+      "asserts": ["ready", "only_uid", "scan", {"name": "healthcheck", "needs": ["59.10"]}]
     },
     {
       "name": "uid-unraid",
