@@ -69,7 +69,9 @@ refused() {
     if [ "$took" -gt 5 ]; then fail "$name: took ${took}s, want 5 s or less"; fi
     if ! grep -qF -- "$expect" <<<"$out"; then fail "$name: no \"$expect\" in: $out"; return; fi
     # every refusal's Arabic line starts with لا (does not / cannot)
-    if ! sed -n 2p <<<"$out" | grep -q '^لا .*Maktaba'; then
+    local second
+    second="$(sed -n 2p <<<"$out")"
+    if [[ "$second" != "لا "*Maktaba* ]]; then
         fail "$name: no Arabic line after the English: $out"
         return
     fi
