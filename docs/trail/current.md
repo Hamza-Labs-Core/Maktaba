@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.114
-up_to_commit: 541d4f31e
-built_from: v0.3.113
+tag: v0.3.115
+up_to_commit: b8c6985ff
+built_from: v0.3.114
 ---
 
-# Trail snapshot: v0.3.114
+# Trail snapshot: v0.3.115
 
 ## Keep doing
 
@@ -170,6 +170,7 @@ built_from: v0.3.113
 - When moving code across a process boundary, list the module-level state it reads and pin each with a test that leaves the global empty, plus a guard against importing it. (#1062)
 - Read each failing job's log before touching code: four of six failures on one PR had different causes. (#1027)
 - Revoke sessions, not just the credential, when a credential looks cloned. (#1067)
+- When a fix lands in one handler, look for the same pattern in its siblings: both sign-in handlers made their timing hash eagerly. (#1077)
 - When two of your PRs touch the same test files, merge main into the second after the first lands and run the combined suite: each PR's green checks prove only its own half. Read a parity world's job outcomes, not just its pass: a fake that refuses a stage's call turns it into retries and a weaker proof. (#1068)
 
 ## Stop doing
@@ -448,7 +449,7 @@ built_from: v0.3.113
 - A best-effort step that skips itself quietly hides a test's real precondition: the restore test saw empty `asides`, not a lack of room. (#1047)
 - A fixed allowance over a cost that scales with call count looks flaky. N16 now states the per-call cost and judges CPU (which ignores stalls) and paired wall time (which cancels a slow machine); the runner runs inside the test process, so `time.process_time()` covers worker, runner and plugin code. (#1059)
 - Moving a stage out of process drops every process-wide setting it read: the parity suite ran with no path map, so both sides agreed on the wrong answer and only the live home's NFS map exposed it. An `item_permanent` failure across a whole share is a deployment-shape bug first. (#1062)
-- A package-level value that does real work runs in every role of a multi-role binary: keep expensive ones lazy; load-small's per-tunnel memory comparison catches what unit tests cannot. A stopgap carried through several layers goes from all of them in one PR. (#1027)
+- A package-level value that does real work runs in every role of a multi-role binary: keep expensive ones lazy; load-small's per-tunnel memory comparison catches what unit tests cannot; both sign-in timing hashes are now a `sync.OnceValue`. A counter inside the once, read in `TestMain` before `m.Run`, proves init did no expensive work with no heap measurement. A tiny `database/sql` driver that returns no rows runs a handler's not-found path with no Postgres. A stopgap carried through several layers goes from all of them in one PR. (#1027, #1077)
 - A delegated agent cannot wait on PR checks, so stacked PRs need the coordinator to drive merges in order. Go 1.26 deprecates raw `ecdsa` coordinates: use `PublicKey.Bytes()` or `ecdsa.ParseUncompressedPublicKey`. (#1067)
 - A control that automation also writes records a person's choice even when the value does not change: a request for a stage's current impl answered 200 without setting `impl_changed_at`, and the next graph sync flipped the stage to `plugin` (rehearsal 16.7's one-off failure). A rehearsal step on the previous release runs that release's code, so the scenario waits for a state that release makes observable. (#1074)
 
@@ -510,8 +511,8 @@ built_from: v0.3.113
 | #973 | 2026-11-08 | fix(supervisor): plugin runners wait for the venv like the pipeline |
 | #1023 | 2026-11-08 | test(rehearsal): scenario 16.7, wave 7's TV change across an update |
 | #1042 | 2026-11-08 | fix(web): an open screen keeps its feature gate when the feature goes off right after the first answer |
-| #1077 | 2026-11-09 | perf(cloud/auth): make the customer sign-in timing hash at the first sign-in |
 | #1078 | 2026-11-09 | docs(specs): 54.36 §4 waits for its real preconditions; story 54.43 counts the in-process fallbacks |
+| #1080 | 2026-11-09 | feat(plugins): count the in-process fallbacks and show them to admins (story 54.43) |
 
 ## Index
 
@@ -1081,4 +1082,5 @@ built_from: v0.3.113
 | 1067-staff-passkeys | 2026-11-09 | pr | Staff passkeys for the operator console (story 50.33, part 2) |
 | 1068-core-media-parity-cap | 2026-11-09 | pr | core-media's parity fits its soft cap; every parity test starts faster |
 | 1074-impl-pin-update-flip | 2026-11-09 | pr | A stage's impl asked while unchanged is kept through the update's flip (rehearsal 16.7) |
+| 1077-customer-auth-lazy-timing-hash | 2026-11-09 | pr | The customer sign-in timing hash is made at the first sign-in |
 
