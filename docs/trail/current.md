@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.112
-up_to_commit: 2dd0d18b2
-built_from: v0.3.111
+tag: v0.3.113
+up_to_commit: c14c1434f
+built_from: v0.3.112
 ---
 
-# Trail snapshot: v0.3.112
+# Trail snapshot: v0.3.113
 
 ## Keep doing
 
@@ -141,7 +141,8 @@ built_from: v0.3.111
 - Split a production fix out of a test PR the moment the test finds it, and merge it fail-closed on its own. (#988)
 - When an unrelated PR's check fails, find the cause and fix it in its own PR with a test. A flaky test asserting a status is often a real ordering bug: slow one side at the gap to reproduce it. (#1002)
 - Read the failure's hierarchy before calling a UI failure flaky: an xcresult keeps it (`xcresulttool export attachments --test-id`) and it tells a wrong screen from a slow one. A temporary commit with `-test-iterations N` proves a UI fix in one CI job; raise the job's `timeout-minutes` with it. (#1000)
-- Profile before trimming a slow test: the time is often in shared fixtures. Build tools and clone databases in a test's setup, since the soft cap judges only the call. (#996, #992)
+- Profile before trimming a slow test, phase by phase: the time is often in shared fixtures or a world's fixed cost, which a split repeats in every test. Build tools and clone databases in a test's setup, since the soft cap judges only the call. (#996, #992, #1068)
+- When two PRs touch the same test files, merge main into the second after the first lands and run the combined suite: each PR's green checks prove only its own half. (#1068)
 - A warm-up's "warm" is when the measure stops improving, not a fixed time that holds on one device: check a threshold on every device in the PR's own run. (#1001)
 - Check a dependency map before removing a feature. A removal is two releases: first the code goes and ignores the leftovers (a lossless migration, so a rollback runs the Down scripts), then a later migration deletes the data once no release that uses it can be rolled back to. (d20261108-remove-plex-sync)
 - Write down a product direction that rules features out: Maktaba replaces Plex, and only Plex Live TV stays. Unwritten, features against it were built, moved and hardened across several epics. (d20261108-remove-plex-sync)
@@ -437,6 +438,9 @@ built_from: v0.3.111
 - A home's `pgbin` fetches Postgres from Maktaba's CDN, then GitHub's API asset route (by tag and name, `Accept: application/octet-stream`, no credentials), then the github.com door, three tries each. The updater, self-update, the update catalog and packs inside an update job keep the door: they need an update-rehearsal T-row first. The same outage reached CI through the Windows job's WiX download and the Gradle wrapper. (#1007)
 - Moving core stages into a plugin conflicts with every wave merged meanwhile: drop both sides' moved entries and rebuild the generated files (`bundle.py --write`, `roles.py sql`). A parity world runs every stage the graph queues, including other plugins': switch off what is not under test, or it depends on the machine's tools. A runner exits after one idle minute (`RunnerIdleSec = 60`); a job that finds it gone waits for it to start. A real-ffmpeg Go timing test fails when pytest shares the machine, so run the full Go suites alone. (#998, #1041)
 - Core stages are not switchable, but the flip at update is the graph sync (`engine/sync.py`), which does not read `switchable`: only the admin route and the CLI refuse them. (#1041)
+- The graph sync moves every first-party stage with no `impl_changed_at` to `plugin`, so a request for a stage's current impl must still be recorded as set by hand, or the next sync undoes it; any control that automation also writes records a person's choice even when the value does not change. (#1074)
+- A rehearsal step on the previous release runs that release's code, so a fix on main does not reach it: the scenario waits for a state that release makes observable. (#1074)
+- Parity harness: starting the dev server while the databases are copied saved more than `STRATEGY FILE_COPY` or concurrent `CREATE DATABASE`. A fake that refuses a stage's call turns it into retries and a weaker proof: read a parity world's job outcomes, not only its pass. (#1068)
 - Every plugin-API read by id is typed from every column-to-`$N` comparison in the statement (`write_scope.read_checks`). `processing_jobs.subject_id` is polymorphic: the `job_subject` kind resolves it through the tables that own each subject kind and reads job rows only when none has the id, counting only job rows with a library, because `checkRow` allows as soon as a row has no library. A scratch cluster from `initdb` without `-E UTF8` is SQL_ASCII, and so is the `template1` the harness copies: livetv parity then fails with `22P05`, which looks like a code fault. (#1025, #1050)
 - A removal passes its own rehearsal while the previous release still has the component, and breaks the rehearsal one release later, when a release without it becomes the previous one. (#1032)
 - A tool that runs another tool can hide its downloads: appimagetool fetched its runtime unpinned inside linuxdeploy until given `--runtime-file`, and tauri-cli keeps linuxdeploy's output only at `--verbose`, so `failed to run linuxdeploy` with nothing after it means the output was dropped. `gh run rerun --job` refuses while the run is in progress. (#1034, d20261108-ci-cache-eviction-linuxdeploy)
@@ -493,7 +497,7 @@ built_from: v0.3.111
 - Epic 58 (TV platforms, spec only): the build, Phase 1 first (58.01–58.04, 58.15's catalog check, 58.16), and a real-device spike of whether Cast receivers enforce Chrome's Local Network Access for LAN HTTPS names (58.07). (#1038)
 - Caches: compare job times on main's second run after the new entries exist (unit near 8.7 min) and re-measure usage; whether the rehearsal's `full` seed (2.7 GB) needs a cache is a question for its job's time. (#1036)
 - Plugin event emits: the `unavailable` and `home_unreachable` refusals are logged but have no test. (#1048)
-- Core-media's parity test takes 5.2-7.2 s on a Mac, over the 5 s soft cap, on main as well; the read checks from #1025 are the likely cause. (#1049)
+- Other parity tests are over the 5 s soft cap on CI (classify waves 1 and 4, repair, the N16 selftest, livetv staging); core-media's now fits, split by N16 group. (#1049, #1068)
 - The customer auth handler (`cloud/internal/handlers/auth`) still computes its argon2id timing hash at init, so every role holds that 64 MiB. (#1027, #1067)
 - No sweep was made of other process-wide state the moved first-party stages may read; the guard covers only `to_local`. (#1062)
 - N16: CPU p95 over 11 runs is their maximum, and a rare job costing about 4x CPU in both processes came within 0.8 ms of failing `topic_assign`; the plugin API's ~0.58 ms of CPU a call is the bulk of the per-call cost. (#1059)
@@ -509,7 +513,7 @@ built_from: v0.3.111
 | #973 | 2026-11-08 | fix(supervisor): plugin runners wait for the venv like the pipeline |
 | #1023 | 2026-11-08 | test(rehearsal): scenario 16.7, wave 7's TV change across an update |
 | #1042 | 2026-11-08 | fix(web): an open screen keeps its feature gate when the feature goes off right after the first answer |
-| #1068 | 2026-11-09 | test(plugins): core-media's parity fits its soft cap; every parity test starts faster |
+| #1077 | 2026-11-09 | perf(cloud/auth): make the customer sign-in timing hash at the first sign-in |
 
 ## Index
 
@@ -1077,4 +1081,6 @@ built_from: v0.3.111
 | 1062-moved-stages-path-map | 2026-11-09 | pr | Moved stages open the file through the job's path map |
 | 1066-n16-report-per-test | 2026-11-09 | pr | Each N16 report belongs to one test; classify's wave 4 writes its own |
 | 1067-staff-passkeys | 2026-11-09 | pr | Staff passkeys for the operator console (story 50.33, part 2) |
+| 1068-core-media-parity-cap | 2026-11-09 | pr | core-media's parity fits its soft cap; every parity test starts faster |
+| 1074-impl-pin-update-flip | 2026-11-09 | pr | A stage's impl asked while unchanged is kept through the update's flip (rehearsal 16.7) |
 
