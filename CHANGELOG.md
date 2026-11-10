@@ -22,7 +22,8 @@ build fails when the two differ.
   on but stays off, with the reason, until an admin turns on **Allow plugins with
   container-only isolation on this home** (Settings → Plugins; the password typed again,
   written to the audit log; `PUT /api/plugins/isolation`). Maktaba's own plugins keep running,
-  reported partial. The plugin host's required layers are unchanged. A dedup or convert runner
+  reported partial. The plugin host's required layers are unchanged; before any plugin runs it
+  is asked what they apply on this machine (`maktaba-plugind --sandbox-check`). A dedup or convert runner
   started before a library's trash folder existed may now move a file into it.
 
 - **On a NAS, heavy work waits for quiet hours and Postgres is tuned to the machine (story

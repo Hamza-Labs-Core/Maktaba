@@ -124,8 +124,18 @@ type Runner struct {
 	// machine's isolation level. nil: the level is not computed (full, nothing held).
 	Kernel *hostinfo.Kernel
 	GOOS   string
+	// SandboxCheck asks the plugin host what its sandbox applies here before any plugin
+	// runs (supervisor.CheckPluginsSandbox); run once, on Linux, before the first level.
+	// The kernel's facts can say full where the host's own steps fail (Ubuntu's AppArmor
+	// lets a user namespace be made and refuses its uid map): its partial holds the level
+	// at Container from the start. nil: not asked.
+	SandboxCheck func(context.Context) (supervisor.SandboxCheck, error)
 
 	mu sync.Mutex
+	// checked: SandboxCheck was asked; checkMissing is what it found missing (nil: full,
+	// or no answer)
+	checked      bool
+	checkMissing []string
 	// iso is this machine's level as last computed; published whether it is written to
 	// plugins.isolation
 	iso       *Isolation
@@ -380,7 +390,30 @@ func (r *Runner) isolationNow(ctx context.Context) Isolation {
 	if goos == "" {
 		goos = runtime.GOOS
 	}
+	r.mu.Lock()
+	ask := !r.checked && r.SandboxCheck != nil && goos == "linux"
+	r.checked = true
+	r.mu.Unlock()
+	if ask {
+		c, err := r.SandboxCheck(ctx)
+		switch {
+		case err != nil:
+			r.logf("level=warn the plugin host's sandbox is not checked: %v", err)
+		case c.Sandbox == "partial":
+			r.mu.Lock()
+			r.checkMissing = append([]string{}, c.Missing...)
+			r.mu.Unlock()
+		case c.Sandbox == "unavailable":
+			// the host cannot start here at all: its own start fails sandbox_unavailable
+			r.logf("level=warn the plugin host's sandbox is unavailable here (step %s)", c.Step)
+		}
+	}
 	plugind, missing := "", []string(nil)
+	r.mu.Lock()
+	if r.checkMissing != nil {
+		plugind, missing = "partial", r.checkMissing
+	}
+	r.mu.Unlock()
 	if r.Host != nil {
 		if h, _, ok := r.Host.Last(); ok {
 			plugind, missing = h.Sandbox, h.SandboxMissing

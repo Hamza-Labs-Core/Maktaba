@@ -60,8 +60,12 @@ Linux, or without the Seatbelt profile or AppContainer, it does not run.
 ### Isolation levels (a home in a container, on a NAS)
 
 Each machine computes its **isolation level** at start, from the kernel's Landlock and
-user-namespace support and from what the host reports, and shows it in Settings, This
-machine, and on the Plugins page:
+user-namespace support and from what the host's own sandbox applies, and shows it in
+Settings, This machine, and on the Plugins page. Before any plugin runs, the server starts
+the host once with `--sandbox-check`: it applies the same layers as a start, prints them
+(`{"sandbox": "full"|"partial", "missing": [...]}`) and exits, binding no socket. A kernel
+that lets a user namespace be made but refuses its uid map (Ubuntu's AppArmor restriction)
+is Container from the first moment, not after a plugin ran:
 
 | Level | When | Maktaba's own runners | Third-party plugins |
 |---|---|---|---|

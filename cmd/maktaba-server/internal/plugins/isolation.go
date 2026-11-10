@@ -13,12 +13,14 @@ package plugins
 //	none       a privileged container or one with the Docker socket: never reached here,
 //	           the container's preflight refuses to start (59.01, container_preflight.go)
 //
-// The kernel's facts are read before any plugin runs, by the same probes plugind makes
-// (landlock_create_ruleset's version, a child in a new user namespace), as the same user
-// under the same seccomp profile and AppArmor in the same container, so the level holds a
-// plugin before plugind starts. plugind only starts once a plugin's gate passes; its own
-// report is a second check that can only lower the level (partial → Container, kept for
-// the rest of this start).
+// The kernel's facts are read before any plugin runs, and on Linux the plugin host is
+// asked too, once, before the first level: its --sandbox-check applies the same layers as
+// a start and prints what it applied (supervisor.CheckPluginsSandbox). The kernel's facts
+// alone can say full where the host's steps fail: Ubuntu's AppArmor restriction lets a
+// user namespace be made and refuses its uid map. So the level holds a plugin before
+// plugind starts. plugind only starts once a plugin's gate passes; its own report is a
+// third check that can only lower the level (partial → Container, kept for the rest of
+// this start).
 //
 // macOS (Seatbelt) and Windows (AppContainer) have no optional layer that a kernel can
 // lack, so they are full unless plugind itself reports partial.

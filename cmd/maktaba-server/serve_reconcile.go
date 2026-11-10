@@ -170,6 +170,8 @@ type pluginsOptions struct {
 	// home is set on a joined machine: its packages come from the home (story 54.42)
 	home plugins.HomeFiles
 	gpu  bool
+	// check is the host's --sandbox-check (Epic 59 story 59.07)
+	check func(context.Context) (supervisor.SandboxCheck, error)
 }
 
 // pluginsOpts is the plugin host's options, when serve built it (nil otherwise).
@@ -183,7 +185,10 @@ func pluginsOpts(cfg config.Config, sopts supervisor.Options, host *supervisor.P
 	}
 	// on Windows the check runs through the AppContainer launcher, as the host does (#710)
 	bin, preload := supervisor.PreloadCommand(cfg, bin)
-	return &pluginsOptions{host: host, plugind: bin, preload: preload}
+	check := func(ctx context.Context) (supervisor.SandboxCheck, error) {
+		return supervisor.CheckPluginsSandbox(ctx, sopts)
+	}
+	return &pluginsOptions{host: host, plugind: bin, preload: preload, check: check}
 }
 
 // startPlugins is the plugins runner beside the packs runner (story 54.38 §4): it gives
@@ -201,6 +206,7 @@ func startPlugins(cfg config.Config, po *pluginsOptions, rec *supervisor.Reconci
 	// Epic 59 story 59.07: the kernel's sandbox facts make this machine's isolation level
 	kernel := detectMachine().Kernel
 	pr.Kernel = &kernel
+	pr.SandboxCheck = po.check
 	if sup != nil {
 		pr.PipelineStarted = func() time.Time {
 			for _, p := range sup.Snapshot().Processes {

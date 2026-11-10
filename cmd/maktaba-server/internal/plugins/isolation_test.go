@@ -111,3 +111,64 @@ func TestContainerLevelHoldsThirdPartyPluginsUntilAllowed(t *testing.T) {
 		t.Fatalf("node-c %+v, want full before the host ran", got)
 	}
 }
+
+// 59.07: the kernel's facts can say full where the plugin host's own steps fail (Ubuntu's
+// AppArmor makes the user namespace and refuses its uid map). The host's --sandbox-check,
+// asked once before the first level, holds the plugin from the first pass, before any
+// plugin ran; a check that cannot run leaves the kernel's facts.
+func TestSandboxCheckHoldsBeforeAnyPluginRuns(t *testing.T) {
+	db := scratchDB(t)
+	ctx := context.Background()
+	f, _ := newFiles(t)
+	st := store.New(db)
+	cid := components.PluginPrefix + testID
+	v1, err := f.Install(ctx, bytes.NewReader(pkg(t, testID, "1.0.0")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record(t, db, v1, nil)
+	if _, err := db.Exec(`UPDATE plugin_installs SET review_level = 'reviewed'`); err != nil {
+		t.Fatal(err)
+	}
+	asked := 0
+	r := &Runner{Files: f, DB: db, Machine: store.Home, Version: "0.3.83", Catalog: &sink{}, Status: st, Log: os.Stderr,
+		Kernel: &hostinfo.Kernel{Landlock: 4, UserNS: yes()}, GOOS: "linux", Host: &supervisor.PluginsHealth{},
+		SandboxCheck: func(context.Context) (supervisor.SandboxCheck, error) {
+			asked++
+			return supervisor.SandboxCheck{Sandbox: "partial", Missing: []string{"namespaces"}}, nil
+		}}
+	r.Pass(ctx)
+	if g := r.Gate(cid); g != components.ReasonIsolationHeld {
+		t.Fatalf("gate %q on the first pass, want isolation_held", g)
+	}
+	got := isolationRow(t, r)[store.Home]
+	if got.Level != LevelContainer || got.Plugind != "partial" || !slices.Equal(got.Missing, []string{"namespaces"}) {
+		t.Fatalf("plugins.isolation %+v", got)
+	}
+	r.Pass(ctx)
+	if asked != 1 {
+		t.Fatalf("the check was asked %d times, want once a start", asked)
+	}
+	if g := r.Gate(cid); g != components.ReasonIsolationHeld {
+		t.Fatalf("gate %q on the second pass, want still held", g)
+	}
+
+	// no answer (no host in this payload): the kernel's facts, full
+	r2 := &Runner{Files: f, DB: db, Machine: "node-d", Version: "0.3.83", Catalog: &sink{}, Status: st, Log: os.Stderr,
+		Kernel: &hostinfo.Kernel{Landlock: 4, UserNS: yes()}, GOOS: "linux",
+		SandboxCheck: func(context.Context) (supervisor.SandboxCheck, error) {
+			return supervisor.SandboxCheck{}, supervisor.ErrBinaryNotFound
+		}}
+	r2.Pass(ctx)
+	if got := isolationRow(t, r2)["node-d"]; got.Level != LevelFull {
+		t.Fatalf("node-d %+v, want full without an answer", got)
+	}
+	// not Linux: not asked
+	r3 := &Runner{Files: f, DB: db, Machine: "node-e", Version: "0.3.83", Catalog: &sink{}, Status: st, Log: os.Stderr,
+		Kernel: &hostinfo.Kernel{}, GOOS: "darwin",
+		SandboxCheck: func(context.Context) (supervisor.SandboxCheck, error) {
+			t.Error("asked on darwin")
+			return supervisor.SandboxCheck{}, nil
+		}}
+	r3.Pass(ctx)
+}
