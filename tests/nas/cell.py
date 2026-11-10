@@ -609,9 +609,9 @@ class Cell:
         """Story 59.02: outside the quiet hours a library's first scan waits for them (the
         scan queue says quiet_hours and when the window opens, and no clip is found), and
         the admin's Run now on the queue (POST /api/queues/scan/run-now) starts it at once:
-        the held jobs run and none stays paused. Every clip is then found, the scan asked
-        again each minute as in `scan`: until scan-grant-race is fixed (#1095), a scan run
-        within seconds of the library being made walks nothing."""
+        the held jobs run and none stays paused. Every clip is then found, as in `scan`.
+        (Before #1095 a scan run within seconds of the library being made walked nothing:
+        the runner had no grant for the new root yet.)"""
         assert self.api is not None
         api = self.api
         window, opens = self.quiet

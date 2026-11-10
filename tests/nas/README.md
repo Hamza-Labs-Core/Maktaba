@@ -94,7 +94,6 @@ it is reported as pending (⏳) until that story is in `landed`.
 
 | Need | What the cells found |
 |---|---|
-| `scan-grant-race` | a scan asked right after a library is made walks nothing: the `light` runner's sandbox has no grant for the new root yet (EACCES, `files_walked=0`); the runner restarts with it a moment later. `scan` asks again each minute; `first_scan` waits |
 | `poster-queue` | in a fresh container no `content_hash` job is queued for the scanned clips, and `thumbnail` (the poster) only follows `content_hash`: `thumb_small` runs and writes nothing, and no poster is served after 15 minutes |
 | `plugin-cache-grant` | stages run in the plugin runners are refused `$HOME/.maktaba/cache` (`plugin_sandbox_refused`, `/var/lib/maktaba/.maktaba/cache`): the image's `HOME` is the volume, and the runners' grants do not cover it; they fall back to running in process |
 
