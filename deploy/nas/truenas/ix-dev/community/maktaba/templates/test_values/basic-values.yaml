@@ -1,0 +1,29 @@
+resources:
+  limits:
+    cpus: 2.0
+    memory: 4096
+
+TZ: Asia/Riyadh
+maktaba:
+  additional_envs: []
+network:
+  host_network: true
+  host_ip: ""
+
+run_as:
+  user: 568
+  group: 568
+
+ix_volumes:
+  maktaba-data: /opt/tests/mnt/maktaba-data
+
+storage:
+  data:
+    type: ix_volume
+    ix_volume_config:
+      dataset_name: maktaba-data
+      create_host_path: true
+  media:
+    - path: /opt/tests/mnt/maktaba-media
+      read_only: true
+  additional_storage: []

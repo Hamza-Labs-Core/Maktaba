@@ -1,0 +1,41 @@
+annotations:
+  min_scale_version: 25.04.0
+app_version: 0.3.121
+capabilities: []
+categories:
+- media
+changelog_url: https://github.com/Hamza-Labs-Core/Maktaba/releases
+date_added: '2026-11-10'
+description: Maktaba is a home media server for films, series and recordings, with Arabic
+  and English throughout, live TV, subtitles and transcripts made on the home, and apps
+  for phones and TVs.
+home: https://maktaba.tv/
+host_mounts: []
+icon: https://media.sys.truenas.net/apps/maktaba/icons/icon.svg
+keywords:
+- media
+- movies
+- series
+- tv
+- streaming
+- arabic
+lib_version: 2.3.18
+lib_version_hash: ''
+maintainers:
+- email: dev@truenas.com
+  name: truenas
+  url: https://www.truenas.com/
+name: maktaba
+run_as_context:
+- description: Container [maktaba] can run as any non-root user and group.
+  gid: 568
+  group_name: Host group is [apps]
+  uid: 568
+  user_name: Host user is [apps]
+screenshots: []
+sources:
+- https://github.com/Hamza-Labs-Core/Maktaba
+- https://maktaba.tv/
+title: Maktaba
+train: community
+version: 1.3.121

@@ -86,6 +86,7 @@ func newRootCmd() *cobra.Command {
 		newRuntimeCmd(),
 		newFFmpegCmd(),
 		newContainerCmd(),
+		newHealthcheckCmd(),
 		newReleaseOfflineCmd(),
 		newLogsCmd(),
 		newPluginsSandboxRunCmd(),
