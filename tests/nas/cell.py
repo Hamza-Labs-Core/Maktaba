@@ -102,15 +102,16 @@ STT_ENGINE = "ctranslate2 faster_whisper"
 
 
 def stt_engine_requirements(constraints: str) -> str:
-    """The pins of constraints-stt.txt that make the speech engine on Linux aarch64 (their
-    marker names aarch64; the core venv has the rest), markers dropped so that pip installs
-    them on either architecture, hashes kept."""
+    """The pins of constraints-stt.txt that make the speech engine on Linux aarch64 (those
+    with no marker, such as NumPy, which the core venv lacks, and those whose marker names
+    aarch64), markers dropped so that pip installs them on either architecture, hashes kept."""
     out: list[str] = []
     block: list[str] = []
 
     def flush() -> None:
-        if block and "platform_machine == 'aarch64'" in block[0]:
-            head = block[0].split(" ;", 1)[0]
+        # the pins every platform's extra takes (no marker: NumPy) and the aarch64 ones
+        if block and (" ;" not in block[0] or "platform_machine == 'aarch64'" in block[0]):
+            head = block[0].split(" ;", 1)[0].rstrip(" \\")
             tail = " \\" if block[0].rstrip().endswith("\\") else ""
             out.extend([head + tail, *block[1:]])
         block.clear()

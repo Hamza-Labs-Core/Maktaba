@@ -256,10 +256,9 @@ class SpeechTest(unittest.TestCase):
     def test_the_engine_is_the_aarch64_pins_without_markers(self) -> None:
         reqs = cell.stt_engine_requirements(self.CONSTRAINTS)
         heads = [line for line in reqs.splitlines() if line and not line[0].isspace()]
-        self.assertEqual(heads, ["av==19.0.2 \\", "ctranslate2==4.8.3 \\"])
+        self.assertEqual(heads, ["av==19.0.2 \\", "numpy==2.5.4 \\", "ctranslate2==4.8.3 \\"])
         self.assertIn("    --hash=sha256:bb", reqs)
         self.assertNotIn("torch", reqs)
-        self.assertNotIn("numpy", reqs)
 
     def test_a_rise_over_five_points_fails(self) -> None:
         base = {"base/aarch64": {"en": 0.09, "ar": 0.46}}

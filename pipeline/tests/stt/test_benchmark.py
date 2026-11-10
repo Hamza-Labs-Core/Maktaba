@@ -42,7 +42,7 @@ def _fake(text_of: dict[str, str], seconds: float = 30.0) -> benchmark.Transcrib
 
 def test_a_measure_reports_speed_and_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     clock = iter([0.0, 0.0, 10.0, 10.0, 70.0, 70.0])  # en takes 10 s, ar 60 s
-    monkeypatch.setattr(benchmark.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr("maktaba_pipeline.stt.benchmark.time.monotonic", lambda: next(clock))
     monkeypatch.setattr(benchmark, "_cpu_now", lambda: (0.0, 0.0, 4))
     ref = {lang: (benchmark.ASSETS / f"{lang}.txt").read_text("utf-8") for lang in benchmark.CLIPS}
     r = benchmark.measure(_fake(ref), model=engine.SIZES["base"], threads=2)
@@ -61,7 +61,7 @@ def test_a_busy_machine_is_measured_again_then_said(monkeypatch: pytest.MonkeyPa
         t[0] += 1.0
         return t[0]
 
-    monkeypatch.setattr(benchmark.time, "monotonic", tick)
+    monkeypatch.setattr("maktaba_pipeline.stt.benchmark.time.monotonic", tick)
     # the rest of the system takes 3.6 of 4 CPUs (90%) each run
     busy = iter([(0.0, 0.0, 4), (1000.0, 0.0, 4), (0.0, 0.0, 4), (1000.0, 0.0, 4)])
     monkeypatch.setattr(benchmark, "_cpu_now", lambda: next(busy))
@@ -124,3 +124,21 @@ def test_a_transcribing_process_is_polite(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("MAKTABA_STT_NICE", "0")
     set_to.clear()
     assert ct2.be_polite() == now and set_to == []  # never raised back
+
+
+def test_a_python_without_the_engine_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    """A core venv (no stt extra) writes why, never crashes on an import: the server then waits
+    before it tries again."""
+    import importlib.util
+
+    real = importlib.util.find_spec
+    monkeypatch.setattr(engine, "current", lambda: engine.CT2)
+    monkeypatch.setattr(
+        importlib.util, "find_spec", lambda name, *a: None if name == "numpy" else real(name, *a)
+    )
+    out = tmp_path / "speed.json"
+    assert benchmark.main(["--model", "base", "--out", str(out)]) == 2
+    assert json.loads(out.read_text("utf-8"))["error"] == "numpy is not installed (the stt extra)"
+    capsys.readouterr()

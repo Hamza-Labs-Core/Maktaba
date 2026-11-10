@@ -251,6 +251,21 @@ def _engine(model: str, threads: int) -> tuple[Transcribe, str, str, str]:
     return transcribe, device, compute, versions
 
 
+def _missing_engine() -> str | None:
+    """Why this Python has no speech engine (the stt extra: NumPy, CTranslate2, faster-whisper),
+    asked before anything imports them, or None."""
+    import importlib.util
+
+    for module, package in (
+        ("numpy", "numpy"),
+        ("ctranslate2", "ctranslate2"),
+        ("faster_whisper", "faster-whisper"),
+    ):
+        if importlib.util.find_spec(module) is None:
+            return f"{package} is not installed (the stt extra)"
+    return None
+
+
 def _write(path: Path, doc: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
@@ -280,6 +295,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "the speech measure runs on the CTranslate2 engine (Windows and Linux)"
         )
     else:
+        problem = _missing_engine()
+    if problem is None:
         from . import ct2
         from .env import settings_from_env
 

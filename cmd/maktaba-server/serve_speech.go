@@ -67,6 +67,10 @@ type speechRunner struct {
 	// started is when the last measure started (the file's own time stands in for a failed
 	// one's after a restart)
 	started time.Time
+	// failedRepo and failedAt: the last measure of that model ended with no answer of its own
+	// (the pipeline could not start it): the watch waits speechRetryFailed before the next
+	failedRepo string
+	failedAt   time.Time
 }
 
 // speechHardware is the hardware speech is read from (tests replace it).
@@ -120,7 +124,7 @@ func (r *speechRunner) measuring() bool {
 }
 
 // start runs a measure in the background (false: one runs already).
-func (r *speechRunner) start(ctx context.Context, why string) bool {
+func (r *speechRunner) start(ctx context.Context, why, repo string) bool {
 	r.mu.Lock()
 	if r.running {
 		r.mu.Unlock()
@@ -134,12 +138,12 @@ func (r *speechRunner) start(ctx context.Context, why string) bool {
 			r.running = false
 			r.mu.Unlock()
 		}()
-		r.run(ctx, why)
+		r.run(ctx, why, repo)
 	}()
 	return true
 }
 
-func (r *speechRunner) run(ctx context.Context, why string) {
+func (r *speechRunner) run(ctx context.Context, why, repo string) {
 	if err := os.MkdirAll(filepath.Dir(r.out), 0o750); err != nil {
 		fmt.Fprintf(r.log, "[serve] level=warn the speech measure: %v\n", err)
 		return
@@ -156,6 +160,11 @@ func (r *speechRunner) run(ctx context.Context, why string) {
 	t0 := time.Now()
 	out, err := c.Output()
 	m := readSpeechMeasure(r.out)
+	if err != nil && (m == nil || m.Model != repo) {
+		r.mu.Lock()
+		r.failedRepo, r.failedAt = repo, time.Now()
+		r.mu.Unlock()
+	}
 	switch {
 	case m != nil && m.Error != "":
 		fmt.Fprintf(r.log, "[serve] level=warn the speech measure of %s: %s\n", m.Model, m.Error)
@@ -166,6 +175,14 @@ func (r *speechRunner) run(ctx context.Context, why string) {
 		fmt.Fprintf(r.log, "[serve] the speech measure: %s transcribes at %.2f× real time on %s (%d threads%s)\n",
 			m.Model, m.RTF, m.Device, m.Threads, map[bool]string{true: ", the machine busy", false: ""}[m.Busy])
 	}
+}
+
+// backingOff reports whether the last measure of repo failed without an answer less than
+// speechRetryFailed ago.
+func (r *speechRunner) backingOff(repo string, now time.Time) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.failedRepo == repo && now.Sub(r.failedAt) < speechRetryFailed
 }
 
 // watch measures when speech needs it: at the start (once the pipeline had a minute to
@@ -190,12 +207,12 @@ func (r *speechRunner) watch(ctx context.Context) {
 		if st, err := os.Stat(r.out); err == nil && st.ModTime().After(at) {
 			at = st.ModTime()
 		}
-		if !r.measuring() && speechStale(s, m, at, time.Now()) {
+		if !r.measuring() && speechStale(s, m, at, time.Now()) && !r.backingOff(s.Repo, time.Now()) {
 			why := "speech is on and " + s.Model + " was not measured here"
 			if m != nil && m.Model != s.Repo {
 				why = "the model changed to " + s.Model
 			}
-			r.start(ctx, why)
+			r.start(ctx, why, s.Repo)
 		}
 	}
 }
@@ -268,7 +285,7 @@ func (c *configAdmin) speechRoutes(w http.ResponseWriter, r *http.Request) bool 
 			writeConfigJSON(w, http.StatusConflict, map[string]string{"error": "no_runner", "detail": "this machine runs no pipeline"})
 		case !s.On || s.Engine != "ct2":
 			writeConfigJSON(w, http.StatusConflict, map[string]string{"error": "speech_off", "detail": "speech to text is off or not measured on this machine"})
-		case !speechMeasurer.start(context.Background(), "an admin asked"):
+		case !speechMeasurer.start(context.Background(), "an admin asked", s.Repo):
 			writeConfigJSON(w, http.StatusConflict, map[string]string{"error": "measuring", "detail": "a measure runs already"})
 		default:
 			writeConfigJSON(w, http.StatusAccepted, c.speechDocOf(file))

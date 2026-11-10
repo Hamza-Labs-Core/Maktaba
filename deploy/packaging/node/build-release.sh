@@ -200,7 +200,7 @@ grep -v '^--extra-index-url ' "$OUT/$CONSTRAINTS_STT" >"$WORK/$CONSTRAINTS_STT.p
 mv "$WORK/$CONSTRAINTS_STT.pypi" "$OUT/$CONSTRAINTS_STT"
 grep -qE "^ctranslate2==[^ ]* ;.*platform_machine == 'aarch64'" "$OUT/$CONSTRAINTS_STT" \
     || die "$CONSTRAINTS_STT pins no CTranslate2 for Linux aarch64 (the stt extra)"
-if grep -E '^(torch|transformers)==' "$OUT/$CONSTRAINTS_STT" | grep -q "aarch64"; then
+if grep -E "^(torch|transformers)==.*aarch64" "$OUT/$CONSTRAINTS_STT" >/dev/null; then
     die "$CONSTRAINTS_STT pins torch or transformers on Linux aarch64: the second listen is x86_64 only"
 fi
 

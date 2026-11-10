@@ -119,3 +119,20 @@ func TestSpeechStale(t *testing.T) {
 }
 
 func runningOnAppleSilicon() bool { return runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" }
+
+// A measure that ended with no answer of its own (a pipeline without the speech engine that
+// could not even say so) is not started again for six hours.
+func TestSpeechBackoff(t *testing.T) {
+	r := &speechRunner{}
+	now := time.Now()
+	if r.backingOff("Systran/faster-whisper-base", now) {
+		t.Fatal("nothing failed yet")
+	}
+	r.failedRepo, r.failedAt = "Systran/faster-whisper-base", now.Add(-time.Hour)
+	if !r.backingOff("Systran/faster-whisper-base", now) || r.backingOff("Systran/faster-whisper-small", now) {
+		t.Fatal("an hour after a failure of base")
+	}
+	if r.backingOff("Systran/faster-whisper-base", now.Add(6*time.Hour)) {
+		t.Fatal("seven hours after")
+	}
+}
