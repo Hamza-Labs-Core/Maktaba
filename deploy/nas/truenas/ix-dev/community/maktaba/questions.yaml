@@ -93,12 +93,12 @@ questions:
         - variable: host_ip
           label: Host IP
           description: |
-            Optional. The NAS address the apps and TVs of your network use to reach Maktaba.</br>
-            Needed only with Host Network off: a bridge network has no mDNS, so Maktaba cannot learn it by itself.
+            Optional. The NAS address the apps and TVs of your network reach Maktaba at. With Host
+            Network on, Maktaba announces itself on that address's interface only. With it off,
+            set it: a bridge network has no mDNS, so Maktaba cannot learn the address by itself.
           schema:
             type: string
             default: ""
-            show_if: [["host_network", "=", false]]
             $ref:
               - definitions/node_bind_ip
         - variable: web_port
