@@ -7,11 +7,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/plugins"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
 
@@ -179,6 +181,40 @@ func TestConfigMachineQuietHoursAndDisk(t *testing.T) {
 		t.Fatalf("back to the default: %s", rec.Body)
 	}
 }
+
+// Epic 59 story 59.07: GET /config/machine says the plugin isolation level, from the
+// kernel's facts before the plugins runner's first pass: Container on Linux without
+// Landlock or user namespaces, Full with both (and on macOS and Windows).
+func TestConfigMachinePluginIsolation(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		kernel hostinfo.Kernel
+		want   string
+	}{
+		{"every layer", hostinfo.Kernel{Landlock: 4, UserNS: boolPtr(true)}, plugins.LevelFull},
+		{"a NAS kernel", hostinfo.Kernel{Landlock: 0, UserNS: boolPtr(false)}, map[bool]string{true: plugins.LevelContainer, false: plugins.LevelFull}[runtime.GOOS == "linux"]},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			fakeMachineOf(t, 8)
+			prev := detectMachine
+			detectMachine = func() hostinfo.Machine { m := prev(); m.Kernel = c.kernel; return m }
+			path := tomlWith(t, "")
+			cfg, _, _ := config.LoadFrom(path)
+			mt := resolveTier(&cfg, path, &bytes.Buffer{})
+			runningTier.Store(&mt)
+			h := (&configAdmin{path: path, token: "tok"}).adminHandler(http.NotFoundHandler())
+			var doc machineDoc
+			if rec := machineCall(h, "GET", ""); rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &doc) != nil {
+				t.Fatalf("GET %d %s", rec.Code, rec.Body)
+			}
+			if doc.PluginIsolation.Level != c.want {
+				t.Fatalf("plugin_isolation %+v, want %s", doc.PluginIsolation, c.want)
+			}
+		})
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }
 
 // Epic 59 story 59.05: the streaming role's video verdict (its file) is in the machine's
 // document, for Settings → This machine; none before it is written.

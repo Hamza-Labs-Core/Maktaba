@@ -8,6 +8,8 @@ package plugins
 //	GET    /api/plugins/{id}/downstream      other plugins' stages that go idle when it is off
 //	GET    /api/plugins/{id}/flow            its flow: the whole set, each member's state, the missing (54.41)
 //	PUT    /api/plugins/policy               change it
+//	GET    /api/plugins/isolation            each machine's isolation level and the switch (59.07)
+//	PUT    /api/plugins/isolation            {allow}: Allow plugins with container-only isolation
 //	POST   /api/plugins/install              multipart: file, grants, libraries, all_libraries, enable, confirm_name
 //	GET    /api/plugins/{id}                 one plugin's detail
 //	PUT    /api/plugins/{id}/grants          {capabilities, libraries, all_libraries}
@@ -87,6 +89,8 @@ func (h *Admin) Mount(r chi.Router) {
 		r.Get("/api/plugins/policy", h.getPolicy)
 		r.Get("/api/plugins/graph", h.graph)
 		r.Put("/api/plugins/policy", h.putPolicy)
+		r.Get("/api/plugins/isolation", h.getIsolation)
+		r.Put("/api/plugins/isolation", h.putIsolation)
 		r.Post("/api/plugins/install", h.install)
 		r.Get("/api/plugins/panel-order", h.getPanelOrder)
 		r.Put("/api/plugins/panel-order", h.putPanelOrder)
@@ -318,6 +322,56 @@ func (h *Admin) putPolicy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	out, err := h.L.SetPolicy(r.Context(), p, h.actor(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, out)
+}
+
+// getIsolation answers each machine's plugin isolation level and the home's switch
+// (Epic 59 story 59.07).
+func (h *Admin) getIsolation(w http.ResponseWriter, r *http.Request) {
+	iso, err := pl.LoadIsolation(r.Context(), h.L.DB)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, iso)
+}
+
+// putIsolation turns Allow plugins with container-only isolation on this home on or off
+// ({"allow": true, "password": "…"}), audited. Turning it on is a sensitive change, as
+// Allow unreviewed plugins is: the admin's password again (401 reauth_required).
+func (h *Admin) putIsolation(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Allow    *bool  `json:"allow"`
+		Password string `json:"password"`
+	}
+	if e := common.ReadJSON(r, &body, 1<<10); e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	if body.Allow == nil {
+		httperror.Write(w, r, problem(http.StatusBadRequest, "isolation_allow_missing", "send {\"allow\": true} or {\"allow\": false}"))
+		return
+	}
+	if *body.Allow && h.VerifyPassword != nil {
+		cur, err := pl.LoadPolicy(r.Context(), h.L.DB)
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		if !cur.AllowContainerIsolation {
+			pr := principal.FromContext(r.Context())
+			if body.Password == "" || pr == nil || h.VerifyPassword(r.Context(), pr.UserID, body.Password) != nil {
+				httperror.Write(w, r, problem(http.StatusUnauthorized, "reauth_required",
+					"type your password again to allow plugins with container-only isolation"))
+				return
+			}
+		}
+	}
+	out, err := h.L.SetContainerIsolation(r.Context(), *body.Allow, h.actor(r))
 	if err != nil {
 		h.fail(w, r, err)
 		return

@@ -59,7 +59,9 @@ reasons = ["dependency_off", "licence_missing", "platform_unsupported", "not_eno
            # Maktaba's own plugin runners (Epic 54, story 54.23)
            "runner_env",
            # third-party plugins on joined machines (Epic 54, story 54.42)
-           "plugin_home_only", "plugin_no_gpu", "plugin_package_untrusted"]
+           "plugin_home_only", "plugin_no_gpu", "plugin_package_untrusted",
+           # third-party plugins on a home whose isolation is the container's (Epic 59, 59.07)
+           "isolation_held"]
 
 # GET /api/capabilities answers these words (README §4.12). chapters and
 # recommendations have no component behind them yet and always answer "on".

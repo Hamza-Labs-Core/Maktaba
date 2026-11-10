@@ -19,12 +19,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/plugins"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
 
@@ -126,6 +128,9 @@ type machineDoc struct {
 	// (rotational, ssd, asked, unknown).
 	Rotational bool   `json:"rotational"`
 	DiskHow    string `json:"disk_how"`
+	// PluginIsolation is this machine's plugin isolation level (Epic 59 story 59.07):
+	// full, or container with the layers missing.
+	PluginIsolation plugins.Isolation `json:"plugin_isolation"`
 	// Video is the streaming role's video verdict (Epic 59 story 59.05): the encoder, the
 	// render node and its driver and codecs, or why it is software (no_device, group_add,
 	// device_failed). Absent until the streaming role has written one.
@@ -138,10 +143,11 @@ func machineDocOf(mt machineTier, file config.Config, canRestart bool) machineDo
 		Machine:  mt.Machine,
 		DataDisk: hostinfo.DataDiskOf(file.StateDir()),
 		Tier:     mt.Tier, Detected: mt.Detected, Chosen: mt.Chosen, MovedUp: mt.MovedUp,
-		Reason:     hostinfo.ReasonFor(mt.Tier, mt.Machine),
-		Defaults:   hostinfo.DefaultsFor(mt.Tier, mt.Machine),
-		NAS:        hostinfo.IsNAS(mt.Machine.Platform),
-		CanRestart: canRestart,
+		Reason:          hostinfo.ReasonFor(mt.Tier, mt.Machine),
+		Defaults:        hostinfo.DefaultsFor(mt.Tier, mt.Machine),
+		NAS:             hostinfo.IsNAS(mt.Machine.Platform),
+		CanRestart:      canRestart,
+		PluginIsolation: plugins.Current(runtime.GOOS, mt.Machine.Kernel),
 	}
 	next := tierOf(file.Server, mt.Machine)
 	d.QuietDefault = hostinfo.DefaultsFor(next.Tier, mt.Machine).QuietHours
