@@ -26,6 +26,7 @@ require (
 	github.com/Hamza-Labs-Core/Maktaba/shared/components v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/layout v0.0.0
+	github.com/Hamza-Labs-Core/Maktaba/shared/go/mediaaccess v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/ports v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/log/go v0.0.0
@@ -133,3 +134,5 @@ replace github.com/Hamza-Labs-Core/Maktaba/shared/components => ../../shared/com
 replace github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack => ../../shared/go/componentpack
 
 replace github.com/Hamza-Labs-Core/Maktaba/shared/plugins => ../../shared/plugins
+
+replace github.com/Hamza-Labs-Core/Maktaba/shared/go/mediaaccess => ../../shared/go/mediaaccess

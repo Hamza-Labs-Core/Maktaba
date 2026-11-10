@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Modal } from "@ds/components/Modal/Modal";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
+import { libraryAccessErrorText } from "../../lib/libraryAccess";
 import { queueApi } from "../../lib/queueApi";
 import type { LibraryActionResponse } from "../../lib/queueApi";
 import type { OfflineAction } from "./offline";
@@ -29,21 +30,24 @@ interface Tally {
   queued: number;
   merged: number;
   notSetUp: number;
+  /** libraries left out as read-only for Maktaba (all=true) */
+  readOnly: number;
 }
 
 function tally(rs: LibraryActionResponse[]): Tally {
-  const out: Tally = { queued: 0, merged: 0, notSetUp: 0 };
+  const out: Tally = { queued: 0, merged: 0, notSetUp: 0, readOnly: 0 };
   for (const r of rs) {
     out.queued += r.enqueued;
     out.merged += r.coalesced;
     out.notSetUp += r.skipped;
+    out.readOnly += typeof r.skipped_read_only === "number" ? r.skipped_read_only : 0;
   }
   return out;
 }
 
 export function OfflineActionDialog({ target, onClose, onDone }: OfflineActionDialogProps) {
   const { t, n } = useI18n();
-  const { busy, error, run, clear } = useAction();
+  const { busy, error, cause, run, clear } = useAction();
   const [dryRun, setDryRun] = useState(true);
   const [fullListing, setFullListing] = useState(false);
   const [retryGone, setRetryGone] = useState(false);
@@ -121,6 +125,11 @@ export function OfflineActionDialog({ target, onClose, onDone }: OfflineActionDi
               {t("queue.offline.notSetUp", { n: n(result.notSetUp) })}
             </p>
           )}
+          {result.readOnly > 0 && (
+            <p className="mkt-q-banner mkt-q-banner--warn">
+              {t("convert.skipped_read_only", { n: n(result.readOnly) })}
+            </p>
+          )}
           {action !== "youtube_refresh" && dryRun && (
             <p className="mkt-q-muted">{t("queue.offline.dryRunWhere")}</p>
           )}
@@ -163,7 +172,7 @@ export function OfflineActionDialog({ target, onClose, onDone }: OfflineActionDi
           )}
           {error && (
             <p role="alert" className="mkt-q-error">
-              {error}
+              {libraryAccessErrorText(cause, t) ?? error}
             </p>
           )}
         </form>

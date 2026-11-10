@@ -42,6 +42,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libaccess"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 )
 
@@ -770,6 +771,10 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.canWrite(r.Context(), v.LibraryID); err != nil {
 		httperror.Write(w, r, err)
+		return
+	}
+	// story 59.03: delete is unavailable on a library that is read-only for Maktaba
+	if !libaccess.Guard(w, r, h.DB, v.LibraryID) {
 		return
 	}
 

@@ -15,6 +15,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libaccess"
 )
 
 // Actions of POST /api/queues/failures/actions.
@@ -225,6 +226,12 @@ func (h *Handler) applyFix(ctx context.Context, tx *sql.Tx, req FixRequest, ts [
 			}
 		}
 		for lib := range libs {
+			// story 59.03: repair writes the good copy into the library; a read-only one is left alone
+			if acc, err := libaccess.Of(ctx, tx, lib); err != nil {
+				return internal("library access", err)
+			} else if !libaccess.Writable(acc) {
+				continue
+			}
 			if _, err := Enqueue(ctx, tx, EnqueueParams{SubjectKind: KindLibrary, SubjectID: lib, Stage: "scan",
 				Force: true, Reason: ReasonFor(ctx, "rescan from the failures page", nil)}); err != nil {
 				return internal("rescan", err)

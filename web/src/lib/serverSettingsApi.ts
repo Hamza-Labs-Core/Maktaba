@@ -252,6 +252,22 @@ export interface MachineInfo {
   kernel: { release?: string; landlock: number; userns?: boolean };
 }
 
+/**
+ * The streaming role's video verdict (Epic 59 story 59.05): the encoder, the VA-API render
+ * node with its driver and codecs, or why every transcode is in software.
+ */
+export interface VideoStatus {
+  encoder: "vaapi" | "qsv" | "nvenc" | "videotoolbox" | "software";
+  vaapi?: { device: string; driver?: string };
+  codecs?: string[];
+  reason?: "no_device" | "group_add" | "device_failed";
+  device?: string;
+  error?: string;
+  uid?: number;
+  gid?: number;
+  software_only: boolean;
+}
+
 export type MachineDoc =
   | { available: false; reason: string }
   | {
@@ -276,8 +292,14 @@ export type MachineDoc =
         shared_buffers: string;
         work_mem: string;
         quiet_hours: string;
+        /** Epic 59 story 59.05: transcodes at once in software (tallest output) and on a GPU; 0 none */
+        software_transcodes?: number;
+        software_max_height?: number;
+        hardware_transcodes?: number;
       };
       nas: boolean;
+      /** absent until the streaming role has tested the video encoders */
+      video?: VideoStatus;
       /** Epic 59 story 59.02: the window as saved ("" none), set in server.toml or the tier's */
       quiet_hours: string;
       quiet_set: boolean;
@@ -285,7 +307,20 @@ export type MachineDoc =
       /** the database is tuned for spinning disks, and how that was known */
       rotational: boolean;
       disk_how: "rotational" | "ssd" | "asked" | "unknown";
+      /** Epic 59 story 59.07: this machine's plugin isolation (older servers: absent) */
+      plugin_isolation?: PluginIsolationLevel;
     };
+
+/** One machine's plugin isolation level (Epic 59 story 59.07). */
+export interface PluginIsolationLevel {
+  level: "full" | "container" | "";
+  /** the optional layers it cannot apply: landlock, namespaces, … */
+  missing: string[];
+  landlock: number;
+  userns?: boolean;
+  /** what the plugin host reported ("" while it has not run) */
+  plugind?: string;
+}
 
 /** A PUT answer is the GET document without available. */
 function asMachineDoc(d: unknown): MachineDoc {

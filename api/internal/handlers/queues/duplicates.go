@@ -26,6 +26,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libaccess"
 )
 
 // DuplicateMember is one file of a group: a video's own path, or one of its copies.
@@ -302,6 +303,19 @@ func (h *Handler) ApplyDuplicate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	// story 59.03: applying moves the other copies to their library's trash; with any of
+	// them on a read-only library nothing is touched
+	var readOnly bool
+	if err := h.DB.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM duplicate_members m
+		JOIN videos v ON v.id = m.video_id JOIN libraries l ON l.id = v.library_id
+		WHERE m.group_id = $1 AND l.access IN ('ro', 'none'))`, gid).Scan(&readOnly); err != nil {
+		writeErr(w, r, "library access", err)
+		return
+	}
+	if readOnly {
+		httperror.Write(w, r, libaccess.Problem())
+		return
+	}
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
 		writeErr(w, r, "begin", err)

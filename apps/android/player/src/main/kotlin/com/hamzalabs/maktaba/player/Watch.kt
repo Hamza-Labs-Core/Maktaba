@@ -71,6 +71,7 @@ import androidx.media3.ui.SubtitleView
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.Video
 import com.hamzalabs.maktaba.core.ui.ErrorState
+import com.hamzalabs.maktaba.core.ui.sentence
 import com.hamzalabs.maktaba.core.ui.InkAndBrass
 import com.hamzalabs.maktaba.core.R as CoreR
 import com.hamzalabs.maktaba.core.ui.Poster
@@ -187,7 +188,23 @@ fun WatchScreen(
                     onBack = onClose,
                 )
             }
-            else -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = InkAndBrass.Brass)
+            else -> Column(
+                Modifier.align(Alignment.Center).padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                CircularProgressIndicator(color = InkAndBrass.Brass)
+                // no transcode slot free (story 59.05): the player asks again by itself
+                playback.waiting?.let { w ->
+                    Text(
+                        stringResource(w.kind.sentence(video = true)),
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.testTag("waiting"),
+                    )
+                }
+            }
         }
         // while it opens, or failed: close and the title (the controls carry them once it plays)
         if (player == null && !inPip) {

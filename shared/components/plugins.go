@@ -29,28 +29,32 @@ const (
 
 // The reason codes Epic 54 adds (story 54.37 §3); each is in catalog.toml's reasons.
 const (
-	ReasonIncompatible        = "incompatible"
-	ReasonGrantsNeeded        = "grants_needed"
-	ReasonRevoked             = "revoked"
-	ReasonUnreviewedDisallow  = "unreviewed_disallowed"
-	ReasonEntitlementMissing  = "entitlement_missing"
-	ReasonPluginCrashLoop     = "plugin_crash_loop"
-	ReasonSandboxPartial      = "sandbox_partial"
-	ReasonSandboxUnavailable  = "sandbox_unavailable"
-	ReasonRunnerCrashLoop     = "runner_crash_loop"
-	ReasonTrustedUnsigned     = "plugin_trusted_unsigned"
-	ReasonTrustedVersion      = "plugin_trusted_version"
-	ReasonKeptOff             = "kept_off"
+	ReasonIncompatible       = "incompatible"
+	ReasonGrantsNeeded       = "grants_needed"
+	ReasonRevoked            = "revoked"
+	ReasonUnreviewedDisallow = "unreviewed_disallowed"
+	ReasonEntitlementMissing = "entitlement_missing"
+	ReasonPluginCrashLoop    = "plugin_crash_loop"
+	ReasonSandboxPartial     = "sandbox_partial"
+	ReasonSandboxUnavailable = "sandbox_unavailable"
+	ReasonRunnerCrashLoop    = "runner_crash_loop"
+	ReasonTrustedUnsigned    = "plugin_trusted_unsigned"
+	ReasonTrustedVersion     = "plugin_trusted_version"
+	ReasonKeptOff            = "kept_off"
+	// ReasonIsolationHeld: the home's isolation level is Container (no Landlock or no user
+	// namespaces, Epic 59 story 59.07) and the admin has not allowed plugins with
+	// container-only isolation
+	ReasonIsolationHeld       = "isolation_held"
 	pluginDrainCapS           = 120
 	allPlatforms              = "any"
 	PluginRequiresComputeLLM  = "llm"
 	PluginRequiresComputeEmbd = "search.semantic"
 )
 
-// PluginReasons are the twelve codes, in the order of the story.
+// PluginReasons are the story's twelve codes, in its order, and 59.07's isolation hold.
 var PluginReasons = []string{ReasonIncompatible, ReasonGrantsNeeded, ReasonRevoked, ReasonUnreviewedDisallow,
 	ReasonEntitlementMissing, ReasonPluginCrashLoop, ReasonSandboxPartial, ReasonSandboxUnavailable,
-	ReasonRunnerCrashLoop, ReasonTrustedUnsigned, ReasonTrustedVersion, ReasonKeptOff}
+	ReasonRunnerCrashLoop, ReasonTrustedUnsigned, ReasonTrustedVersion, ReasonKeptOff, ReasonIsolationHeld}
 
 // PluginSpec is what an entry is derived from: an installed plugin's validated manifest.
 type PluginSpec struct {

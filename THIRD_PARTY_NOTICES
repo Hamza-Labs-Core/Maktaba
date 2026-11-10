@@ -1,0 +1,34 @@
+Third-party software in Maktaba's server image
+==============================================
+
+The server image (ghcr.io/hamza-labs-core/maktaba-server, deploy/docker/server/Dockerfile)
+installs these Debian 12 packages beside Maktaba itself. Each keeps its own licence; the
+full texts are in the image at /usr/share/doc/<package>/copyright.
+
+VA-API video drivers (amd64 only; Epic 59 story 59.05)
+-------------------------------------------------------
+
+intel-media-va-driver-non-free (Debian 12, component non-free)
+  Intel Media Driver for VAAPI (iHD): Intel GPUs from Broadwell on (the J4125, N100, N5105).
+  Source: https://github.com/intel/media-driver
+  Licence: Expat (MIT); its test framework BSD-3-Clause. Copyright 2007-2021 Intel
+  Corporation and others.
+  Why non-free: Debian builds it with Intel's prebuilt GPU kernels, which come without
+  source and cannot be rebuilt; their licence is the same Expat licence, which permits
+  redistribution, so the image may carry the package as Debian ships it.
+
+i965-va-driver (Debian 12, main)
+  The VA-API driver for older Intel GPUs (i965). Licence: Expat (MIT).
+
+mesa-va-drivers (Debian 12, main)
+  Mesa's VA-API drivers (radeonsi for AMD GPUs and APUs). Licence: Expat (MIT) and others
+  as listed in its copyright file.
+
+vainfo (Debian 12, main)
+  Lists a VA-API device's profiles; the streaming role reads them. Licence: Expat (MIT).
+
+Other packages
+--------------
+
+ffmpeg (LGPL-2.1+ / GPL-2+ as Debian builds it), tini (MIT), libnss-wrapper (BSD-3-Clause),
+ca-certificates (MPL-2.0 / GPL-2+), tzdata (public domain).

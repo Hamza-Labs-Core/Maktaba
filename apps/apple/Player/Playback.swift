@@ -26,6 +26,9 @@ final class Playback {
     private(set) var player: AVPlayer?
     /// Why it does not play (the watch screen says it and what can be done).
     private(set) var failure: HomeFailure?
+    /// The home has no transcode slot free (503 `transcode_busy`, story 59.05): no error
+    /// screen, the sentence shown while the stream is asked for again every 10 s.
+    private(set) var waiting: HomeFailure?
 
     // What the controls show.
     private(set) var position: Double = 0
@@ -235,6 +238,7 @@ final class Playback {
         session = nil
         player = nil
         failure = nil
+        waiting = nil
         video = nil
         proxy?.stop()
         proxy = nil
@@ -299,7 +303,7 @@ final class Playback {
         }
         guard !Task.isCancelled else { return }
         let start = WatchLogic.start(asked: asked, resume: state?.positionSec, completed: state?.completed ?? false)
-        await open(from: start)
+        await openWhenFree(from: start)
         guard player != nil else { return }
         findNext(after: v)
         await watch()
@@ -330,6 +334,7 @@ final class Playback {
                 Task { [client] in await client.closeStream(old) }
             }
             session = s.sessionID
+            waiting = nil
             ladder = s.ladder ?? []
             try await client.waitUntilPlayable(url, headers: auth.headers)
             try Task.checkCancellation()
@@ -342,8 +347,28 @@ final class Playback {
         } catch is CancellationError {
             return
         } catch {
+            let f = HomeFailure(error)
+            if f.kind.transcodeRetrySeconds != nil {
+                // what plays now plays on (a reopen: the 10 s watch asks again); with nothing
+                // playing, the sentence shows while `openWhenFree` asks again
+                if player != nil { return }
+                waiting = f
+                return
+            }
             player = nil
-            failure = HomeFailure(error)
+            waiting = nil
+            failure = f
+        }
+    }
+
+    /// Opens at `start`; while the home has no transcode slot free (`waiting`), asks again
+    /// every 10 s (its `Retry-After`) until one is (story 59.05).
+    private func openWhenFree(from start: Double) async {
+        while !Task.isCancelled {
+            await open(from: start)
+            if failure != nil { waiting = nil }
+            guard let after = waiting?.kind.transcodeRetrySeconds else { return }
+            do { try await Task.sleep(for: .seconds(after)) } catch { return }
         }
     }
 

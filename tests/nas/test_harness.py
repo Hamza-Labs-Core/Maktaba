@@ -127,6 +127,34 @@ class Pending(unittest.TestCase):
             self.assertIs(c.results[-1]["ok"], False)
 
 
+class ServerToml(unittest.TestCase):
+    def test_no_quiet_hours_so_a_daytime_first_scan_runs(self) -> None:
+        import tomllib
+
+        conf = tomllib.loads(cell.SERVER_TOML)
+        self.assertEqual(conf["schedule"]["quiet_hours"], "")
+
+    def test_the_hold_cell_gets_a_window_that_opens_later(self) -> None:
+        from datetime import datetime, timezone
+
+        import tomllib
+
+        now = datetime(2026, 11, 10, 22, 41, tzinfo=timezone.utc)
+        window, opens = cell.quiet_window_ahead(now)
+        self.assertEqual((window, opens), ("01:00-02:00", "01:00"))  # across midnight, now outside
+        conf = tomllib.loads(cell.server_toml(window))
+        self.assertEqual(conf["schedule"]["quiet_hours"], "01:00-02:00")
+
+
+class PostgresPss(unittest.TestCase):
+    def test_sums_every_postgres_process(self) -> None:
+        listing = "41 Pss:              10240 kB\n57 Pss: 2048 kB\n58 \n"
+        self.assertEqual(cell.pss_sum(listing), (12288, 2))
+
+    def test_nothing_read_is_zero_processes(self) -> None:
+        self.assertEqual(cell.pss_sum(""), (0, 0))
+
+
 class Summary(unittest.TestCase):
     def test_rows_link_each_cell_to_its_logs(self) -> None:
         jobs = summary.objects('{"jobs": [{"name": "cell uid-568 (arm64)", "conclusion": "failure", "html_url": "u"},'

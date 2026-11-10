@@ -34,6 +34,7 @@ import {
   type PluginSettings,
   type PluginWrite,
   type Policy,
+  type PluginIsolation,
   type SettingProperty,
 } from "../../lib/pluginsApi";
 import { ApiError } from "../../lib/api";
@@ -182,6 +183,7 @@ function PluginsInner() {
       </ul>
       {builtIn.length > 0 && <BuiltInSection plugins={builtIn} />}
       <PolicySection policy={policy} onChange={setPolicy} />
+      <IsolationSection />
       <PanelOrder />
       <StoreAccount />
       {installing && (
@@ -1184,6 +1186,84 @@ function TrustBanner() {
     <p role="alert">{t("plugins.trust.expired", { date })}</p>
   ) : (
     <p className="mkt-plugins__hint">{t("plugins.trust.checked", { date })}</p>
+  );
+}
+
+/**
+ * Epic 59 story 59.07: the home's plugin isolation level, and on the Container level the
+ * switch Allow plugins with container-only isolation (turning it on asks for the admin's
+ * password, as Allow unreviewed plugins does). While it is off, third-party plugins stay
+ * off with the reason (isolation_held).
+ */
+export function IsolationSection() {
+  const { t } = useI18n();
+  const [iso, setIso] = useState<PluginIsolation | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  useEffect(() => {
+    pluginsApi.isolation().then(setIso, () => setIso(null));
+  }, []);
+  if (!iso || !iso.level) return null;
+  const set = async (on: boolean, pw?: string) => {
+    try {
+      setIso(await pluginsApi.setIsolation(on, pw));
+      setAsking(false);
+      setPassword("");
+      setError("");
+    } catch (e) {
+      setError(refusalWords(t, e));
+    }
+  };
+  const container = iso.level === "container";
+  return (
+    <section
+      aria-labelledby="pl-isolation"
+      className="mkt-plugins__policy"
+      data-testid="plugin-isolation"
+    >
+      <h3 id="pl-isolation">{t("plugins.isolation.title")}</h3>
+      <p>{t(container ? "plugins.isolation.container" : "plugins.isolation.full")}</p>
+      {(container || iso.allow_container_isolation) && (
+        <>
+          <Toggle
+            label={t("plugins.allow_container")}
+            checked={iso.allow_container_isolation}
+            onChange={(e) => (e.target.checked ? setAsking(true) : void set(false))}
+          />
+          <p className="mkt-plugins__hint">{t("plugins.allow_container.explain")}</p>
+        </>
+      )}
+      {iso.held && <p role="status">{t("plugins.held_isolation")}</p>}
+      {error && !asking && <p role="alert">{error}</p>}
+      {asking && (
+        <Modal
+          open
+          onClose={() => setAsking(false)}
+          title={t("plugins.allow_container")}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setAsking(false)}>
+                {t("common.cancel")}
+              </Button>
+              <Button disabled={!password} onClick={() => void set(true, password)}>
+                {t("plugins.policy.confirm")}
+              </Button>
+            </>
+          }
+        >
+          <p>{t("plugins.allow_container.explain")}</p>
+          <Input
+            type="password"
+            label={t("plugins.policy.password")}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+          />
+          {error && <p role="alert">{error}</p>}
+        </Modal>
+      )}
+    </section>
   );
 }
 

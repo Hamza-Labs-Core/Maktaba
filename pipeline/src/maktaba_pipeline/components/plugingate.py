@@ -36,6 +36,9 @@ class GateInput:
     allow_unreviewed: bool = False
     revoked: bool = False
     entitlement_missing: bool = False
+    #: the machine's isolation level is Container and the policy does not allow plugins
+    #: with container-only isolation (Epic 59 story 59.07)
+    isolation_held: bool = False
 
 
 def unreviewed(level: str) -> bool:
@@ -100,6 +103,8 @@ def plugin_gate(g: GateInput) -> tuple[str, dict[str, Any]]:
         return "entitlement_missing", {}
     if unreviewed(g.review_level) and not g.allow_unreviewed:
         return "unreviewed_disallowed", {}
+    if g.isolation_held:
+        return "isolation_held", {}
     missing = [c for c in g.required if c not in g.granted]
     if missing:
         return "grants_needed", {"capabilities": ",".join(missing)}
@@ -108,6 +113,9 @@ def plugin_gate(g: GateInput) -> tuple[str, dict[str, Any]]:
 
 #: the home's plugin policy's app_settings key (the API's ``plugins.PolicyKey``)
 POLICY_KEY = "plugins.policy"
+#: each machine's isolation level, a map machine -> {level, missing, ...}, written by its
+#: server (Epic 59 story 59.07: cmd/maktaba-server/internal/plugins/isolation.go)
+ISOLATION_KEY = "plugins.isolation"
 
 #: an entitlement holds this long past its valid_until (story 54.19 §6: Epic 16's 72 hours,
 #: pluginsig.EntitlementGrace)
@@ -150,12 +158,30 @@ def _json(v: Any) -> Any:
     return v
 
 
+async def _isolation_held(db: Any, machine: str | None, policy: Any) -> bool:
+    """Whether this machine's isolation level is Container and the policy does not allow
+    plugins with container-only isolation (59.07). A machine whose server has not written
+    its level is not held: its server, which starts the plugin host, holds what it must."""
+    if not machine:
+        return False
+    if bool(policy.get("allow_container_isolation")):
+        return False
+    try:
+        row = await db.fetchrow("SELECT value FROM app_settings WHERE key = $1", ISOLATION_KEY)
+    except Exception:  # noqa: BLE001 - an older schema: no level
+        return False
+    levels = _json(row["value"]) if row is not None else None
+    mine = levels.get(machine) if isinstance(levels, dict) else None
+    return isinstance(mine, dict) and mine.get("level") == "container"
+
+
 async def read(
-    db: Any, version: str, now: datetime | None = None
+    db: Any, version: str, now: datetime | None = None, machine: str | None = None
 ) -> dict[str, tuple[str, dict[str, Any]]]:
     """Each installed plugin entry's gate reason ("" none), from the tables the API keeps
-    (plugin_installs, plugin_grants, the policy, plugin_keep_off, plugin_health): the same
-    inputs the supervisor's runner reads. A schema without them answers nothing."""
+    (plugin_installs, plugin_grants, the policy, plugin_keep_off, plugin_health) and, for
+    ``machine``, its isolation level: the same inputs the supervisor's runner reads. A
+    schema without them answers nothing."""
     out: dict[str, tuple[str, dict[str, Any]]] = {}
     try:
         rows = await db.fetch(
@@ -177,7 +203,11 @@ async def read(
         pol = await db.fetchrow("SELECT value FROM app_settings WHERE key = $1", POLICY_KEY)
     except Exception:  # noqa: BLE001 - an older schema: no plugins
         return out
-    allow = bool((_json(pol["value"]) or {}).get("allow_unreviewed")) if pol is not None else False
+    policy = (_json(pol["value"]) or {}) if pol is not None else {}
+    if not isinstance(policy, dict):
+        policy = {}
+    allow = bool(policy.get("allow_unreviewed"))
+    held = await _isolation_held(db, machine, policy)
     entitled = await _entitled_until(db)
     at = now or datetime.now(UTC)
     for r in rows:
@@ -196,6 +226,7 @@ async def read(
                 revoked=bool(r["revoked"]),
                 entitlement_missing=paid(m.get("price"))
                 and not (pid in entitled and at < entitled[pid] + ENTITLEMENT_GRACE),
+                isolation_held=held,
             )
         )
         if not reason and pid in tripped:

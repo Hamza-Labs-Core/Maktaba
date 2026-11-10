@@ -37,6 +37,9 @@ func TestMutationsRefuseNonAdmins(t *testing.T) {
 		{"GET", "/api/libraries/" + lib + "/impact", ""},
 		{"POST", "/api/libraries/" + lib + "/merge", `{"into":"` + lib + `","confirm":"Talks"}`},
 		{"POST", "/api/libraries/" + lib + "/empty-trash", ""},
+		// epic 59 story 59.03: media permissions (an admin's: who Maktaba runs as, the paths)
+		{"GET", "/api/libraries/" + lib + "/access", ""},
+		{"POST", "/api/libraries/" + lib + "/check-access", ""},
 	} {
 		for _, p := range []*principal.Principal{nil, viewer} {
 			req := httptest.NewRequest(c.method, c.path, strings.NewReader(c.body))

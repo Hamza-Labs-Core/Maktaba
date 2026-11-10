@@ -170,6 +170,21 @@ def test_walk_skips_thumbs_and_synology_index_folders(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_walk_skips_nas_recycle_snapshot_and_lost_found(tmp_path: Path) -> None:
+    """T07 (story 59.03): DSM's ``#recycle`` and ``#snapshot`` and a disk's ``lost+found``
+    are never library content."""
+    _touch(tmp_path, "Movies/Film.mkv")
+    for skipped in ("#recycle", "#snapshot", "lost+found", ".zfs"):
+        _touch(tmp_path, f"{skipped}/Movies/Film.mkv")
+        _touch(tmp_path, f"Movies/{skipped}/Old.mkv")
+    log = _RecordingLogger()
+
+    got = _rels(tmp_path, walk(tmp_path, WalkConfig(), log))
+
+    assert got == ["Movies/Film.mkv"]
+
+
+@pytest.mark.unit
 def test_walk_skips_special_files(tmp_path: Path) -> None:
     """FIFOs / sockets are filesystem entries the walker must reject."""
     if sys.platform == "win32":

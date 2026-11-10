@@ -31,6 +31,8 @@ public struct ErrorStrings: Sendable {
         case restoreFailed
         // Maktaba Cloud's relay refusing a plan's play (story 50.19); relayStreamLimit has %@
         case relayNeedsPlan, relayStreamLimit, relayHomeBusy
+        // every transcode slot of the home is taken (story 59.05); the player asks again by itself
+        case transcodeBusy
     }
 
     /// The one sentence for `kind`; `video`: said about the video being played.
@@ -48,6 +50,7 @@ public struct ErrorStrings: Sendable {
         case let .relay(.streamLimit(n)):
             text(.relayStreamLimit).replacingOccurrences(of: "%@", with: n.map { $0.formatted() } ?? "")
         case .relay(.homeBusy): text(.relayHomeBusy)
+        case .transcodeBusy: text(.transcodeBusy)
         }
     }
 
@@ -112,6 +115,7 @@ public struct ErrorStrings: Sendable {
         .relayNeedsPlan: "Remote play through the relay needs a Basic or Pro plan. Direct access from the internet is free: turn it on in this home's settings.",
         .relayStreamLimit: "%@ devices are already playing through the relay, the most your plan allows. Stop one, or play at home or over a direct connection.",
         .relayHomeBusy: "Your home is too busy to prepare this video for remote play right now. Try again shortly.",
+        .transcodeBusy: "Another video is being converted on this home. Yours will start when it finishes.",
     ]
 
     static let ar: [Key: String] = [
@@ -136,5 +140,6 @@ public struct ErrorStrings: Sendable {
         .relayNeedsPlan: "التشغيل عن بُعد عبر الوسيط يتطلب الخطة الأساسية أو الاحترافية. الوصول المباشر من الإنترنت مجاني: فعّله من إعدادات هذا الجهاز الرئيسي.",
         .relayStreamLimit: "يوجد %@ أجهزة تشغّل عبر الوسيط، وهو الحد الأقصى في خطتك. أوقف أحدها، أو شغّل في المنزل أو عبر اتصال مباشر.",
         .relayHomeBusy: "جهازك الرئيسي مشغول جدًا لتجهيز هذا الفيديو للتشغيل عن بُعد الآن. حاول بعد قليل.",
+        .transcodeBusy: "يجري تحويل فيديو آخر على هذا الجهاز الرئيسي، وسيبدأ الفيديو الخاص بك عند انتهائه.",
     ]
 }

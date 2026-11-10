@@ -12,6 +12,7 @@ import type { FileAction, FileActionFilter, LibraryTrash } from "../../lib/queue
 import { useIsAdmin } from "../../components/queue/useIsAdmin";
 import { useFmt } from "../../components/queue/format";
 import { useBytes, useDate } from "../../components/queue/offline";
+import { libraryAccessErrorText, useReadOnlyLibraries } from "../../lib/libraryAccess";
 import { useAction } from "../../components/queue/useAction";
 import { TitleRow } from "../../help/HelpLink";
 import "../../styles/queue.css";
@@ -47,7 +48,9 @@ export function FileActions() {
   const [next, setNext] = useState<string | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const { busy, error, run } = useAction();
+  const { busy, error, cause, run } = useAction();
+  // story 59.03: a restore writes into the library, which a read-only one does not allow
+  const readOnly = useReadOnlyLibraries(admin);
 
   const load = useCallback(() => {
     setLoadError(false);
@@ -220,7 +223,7 @@ export function FileActions() {
       )}
       {(error || loadError) && (
         <p role="alert" className="mkt-q-error">
-          {error ?? t("queue.error.load")}
+          {error ? (libraryAccessErrorText(cause, t) ?? error) : t("queue.error.load")}
         </p>
       )}
       {items === null && !loadError && <p className="mkt-loading">{t("common.loading")}</p>}
@@ -307,7 +310,11 @@ export function FileActions() {
                             size="sm"
                             variant="secondary"
                             loading={busy === `restore:${a.id}`}
-                            disabled={busy != null && busy !== `restore:${a.id}`}
+                            disabled={
+                              readOnly.has(a.library_id) ||
+                              (busy != null && busy !== `restore:${a.id}`)
+                            }
+                            title={readOnly.has(a.library_id) ? t("library.read_only") : undefined}
                             onClick={() => void restore(a)}
                           >
                             {t("queue.fa.restore")}

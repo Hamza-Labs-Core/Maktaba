@@ -12,6 +12,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -19,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -49,6 +51,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/session"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slots"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/subtitles"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/transcripts"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/version"
@@ -431,14 +434,18 @@ func listenPair(publicAddr, adminAddr string) (public, admin net.Listener, err e
 // single-replica deploy.
 func buildGRPCServer(bg *background, logger *slog.Logger, backend probe.Backend, store session.Store) *grpcsrv.Server {
 	cfg := config.Load()
+	choice := watchHWAccel(bg, logger, cfg)
 	allocator := slots.NewAllocator(slots.AllocatorConfig{
 		MaxTranscode: cfg.Transcode.MaxConcurrent,
 		QueueDepth:   cfg.Transcode.QueueDepth,
+		Limit:        tierLimit(cfg.Transcode, choice.Get),
 	})
 	probeCache := probe.NewCache(backend, 4096)
 
 	srv := grpcsrv.New(probeCache, store, allocator, capability.NewRegistry())
-	srv.HWAccelNow = watchHWAccel(bg, logger, cfg).Get
+	srv.HWAccelNow = choice.Get
+	srv.VAAPINow = choice.VAAPIDevice
+	srv.SoftwareMaxHeight = cfg.Transcode.SoftwareMaxHeight
 	srv.Logger = logger
 
 	// HLB-328: wire the real ffmpeg-spawning orchestrator so
@@ -474,23 +481,65 @@ func vodBinary(cfg config.Config) ffmpeg.Binary {
 // the last try).
 const hwaccelRetry = 5 * time.Minute
 
+// tierLimit is the transcodes' cap from the hardware tier (Epic 59 stories
+// 59.04, 59.05): software's while the verdict is software, a GPU encoder's
+// while one works; 0 (the cores' share) where the tier sets none.
+func tierLimit(t config.TranscodeConfig, hw func() ffmpeg.HWAccel) func() int {
+	return func() int {
+		if hw() == ffmpeg.HWAccelSoftware {
+			return t.SoftwareMax
+		}
+		return t.HardwareMax
+	}
+}
+
 // watchHWAccel picks the transcodes' encoder (Story 8.7), narrowed by
 // MAKTABA_HWACCEL_PREFER: once at start (within 10 s), then again while a
-// listed GPU encoder did not work, logging each verdict.
+// listed GPU encoder did not work, logging each verdict and writing it where
+// Settings → This machine reads it (MAKTABA_VIDEO_STATUS_FILE, story 59.05).
 func watchHWAccel(bg *background, logger *slog.Logger, cfg config.Config) *ffmpeg.Choice {
 	d := ffmpeg.Default(vodBinary(cfg))
 	d.Prefer = cfg.HWAccel.Prefer
-	return ffmpeg.WatchChoice(bg.ctx, d, 10*time.Second, hwaccelRetry, func(hw ffmpeg.HWAccel, err error) {
+	if runtime.GOOS == "linux" {
+		d.VAAPI = ffmpeg.DefaultVAAPIProbe(cfg.HWAccel.RenderDevice)
+		d.PreferVAAPI = cfg.HWAccel.PreferVAAPI
+	}
+	return ffmpeg.WatchChoice(bg.ctx, d, 30*time.Second, hwaccelRetry, func(st ffmpeg.VideoStatus, err error) {
+		writeVideoStatus(cfg.HWAccel.StatusFile, st, logger)
 		if err != nil {
 			logger.Warn("hwaccel: software", "err", err.Error(), "event", "hwaccel_software_fallback")
 			return
 		}
-		name := string(hw)
-		if name == "" {
-			name = "software"
+		attrs := []any{"encoder", st.Encoder, "event", "hwaccel_selected"}
+		if st.VAAPI != nil {
+			attrs = append(attrs, "device", st.VAAPI.Path, "driver", st.VAAPI.Driver,
+				"codecs", strings.Join(st.Codecs, ","), "decode", strings.Join(st.VAAPI.Decode, ","))
 		}
-		logger.Info("hwaccel detected", "encoder", name, "event", "hwaccel_selected")
+		if st.Reason != "" {
+			attrs = append(attrs, "reason", st.Reason, "device", st.Device, "err", st.Error)
+		}
+		logger.Info("hwaccel detected", attrs...)
 	})
+}
+
+// writeVideoStatus writes the video verdict to path ("": nowhere), replacing
+// the last one whole (a reader never sees half of it).
+func writeVideoStatus(path string, st ffmpeg.VideoStatus, logger *slog.Logger) {
+	if path == "" {
+		return
+	}
+	b, _ := json.Marshal(st)
+	tmp := path + ".tmp"
+	err := os.MkdirAll(filepath.Dir(path), 0o750)
+	if err == nil {
+		err = os.WriteFile(tmp, b, 0o640)
+	}
+	if err == nil {
+		err = os.Rename(tmp, path)
+	}
+	if err != nil {
+		logger.Warn("the video verdict was not written", "path", path, "err", err.Error(), "event", "hwaccel_status_unwritten")
+	}
 }
 
 // buildChecks assembles the readiness check set for streaming. The
@@ -607,6 +656,7 @@ func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backe
 		Layout:      layout,
 		Files:       handlers.OSFileOpener{},
 		Transcripts: transcripts,
+		Subtitles:   storedSubtitles(pool),
 		Now:         time.Now,
 		ExtraMounts: extraMounts,
 	}), nil
@@ -673,4 +723,12 @@ func buildProbeStores(ctx context.Context, logger *slog.Logger, lazy bool) (prob
 	logger.Info("probe: Postgres-backed media_info reads wired", "event", "probe_pg_backend")
 	streamer := transcripts.NewPGStreamer(pool)
 	return backend, streamer, pool, up, func() { pool.Close() }
+}
+
+// storedSubtitles reads the subtitles kept in the database (story 59.03); none without one.
+func storedSubtitles(pool *pgxpool.Pool) handlers.StoredSubtitles {
+	if pool == nil {
+		return nil
+	}
+	return subtitles.NewPGStore(pool)
 }
