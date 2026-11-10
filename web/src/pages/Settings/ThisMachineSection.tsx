@@ -251,6 +251,19 @@ function MachinePanel({ pollMs }: { pollMs: number }) {
           </>
         ),
       ],
+      // Epic 59 story 59.07: the plugin isolation level, in one line
+      ...(d.plugin_isolation?.level
+        ? ([
+            [
+              t("machine.plugins"),
+              t(
+                d.plugin_isolation.level === "container"
+                  ? "plugins.isolation.container"
+                  : "plugins.isolation.full"
+              ),
+            ],
+          ] as [string, React.ReactNode][])
+        : []),
       [
         t("machine.disk"),
         <>
