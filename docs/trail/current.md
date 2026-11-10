@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.112
-up_to_commit: 2dd0d18b2
-built_from: v0.3.111
+tag: v0.3.113
+up_to_commit: c14c1434f
+built_from: v0.3.112
 ---
 
-# Trail snapshot: v0.3.112
+# Trail snapshot: v0.3.113
 
 ## Keep doing
 
@@ -141,7 +141,7 @@ built_from: v0.3.111
 - Split a production fix out of a test PR the moment the test finds it, and merge it fail-closed on its own. (#988)
 - When an unrelated PR's check fails, find the cause and fix it in its own PR with a test. A flaky test asserting a status is often a real ordering bug: slow one side at the gap to reproduce it. (#1002)
 - Read the failure's hierarchy before calling a UI failure flaky: an xcresult keeps it (`xcresulttool export attachments --test-id`) and it tells a wrong screen from a slow one. A temporary commit with `-test-iterations N` proves a UI fix in one CI job; raise the job's `timeout-minutes` with it. (#1000)
-- Profile before trimming a slow test: the time is often in shared fixtures. Build tools and clone databases in a test's setup, since the soft cap judges only the call. (#996, #992)
+- Profile before trimming a slow test: the time is often in shared fixtures. Build tools and clone databases in a test's setup, since the soft cap judges only the call. Profile the phases first: when a world's fixed cost outweighs the part worth splitting, it has to come down too (starting the dev server while the databases are copied cut it; `FILE_COPY` did not). (#996, #992, #1068)
 - A warm-up's "warm" is when the measure stops improving, not a fixed time that holds on one device: check a threshold on every device in the PR's own run. (#1001)
 - Check a dependency map before removing a feature. A removal is two releases: first the code goes and ignores the leftovers (a lossless migration, so a rollback runs the Down scripts), then a later migration deletes the data once no release that uses it can be rolled back to. (d20261108-remove-plex-sync)
 - Write down a product direction that rules features out: Maktaba replaces Plex, and only Plex Live TV stays. Unwritten, features against it were built, moved and hardened across several epics. (d20261108-remove-plex-sync)
@@ -170,6 +170,7 @@ built_from: v0.3.111
 - When moving code across a process boundary, list the module-level state it reads and pin each with a test that leaves the global empty, plus a guard against importing it. (#1062)
 - Read each failing job's log before touching code: four of six failures on one PR had different causes. (#1027)
 - Revoke sessions, not just the credential, when a credential looks cloned. (#1067)
+- When two of your PRs touch the same test files, merge main into the second after the first lands and run the combined suite: each PR's green checks prove only its own half. Read a parity world's job outcomes, not just its pass: a fake that refuses a stage's call turns it into retries and a weaker proof. (#1068)
 
 ## Stop doing
 
@@ -449,6 +450,7 @@ built_from: v0.3.111
 - Moving a stage out of process drops every process-wide setting it read: the parity suite ran with no path map, so both sides agreed on the wrong answer and only the live home's NFS map exposed it. An `item_permanent` failure across a whole share is a deployment-shape bug first. (#1062)
 - A package-level value that does real work runs in every role of a multi-role binary: keep expensive ones lazy; load-small's per-tunnel memory comparison catches what unit tests cannot. A stopgap carried through several layers goes from all of them in one PR. (#1027)
 - A delegated agent cannot wait on PR checks, so stacked PRs need the coordinator to drive merges in order. Go 1.26 deprecates raw `ecdsa` coordinates: use `PublicKey.Bytes()` or `ecdsa.ParseUncompressedPublicKey`. (#1067)
+- A control that automation also writes records a person's choice even when the value does not change: a request for a stage's current impl answered 200 without setting `impl_changed_at`, and the next graph sync flipped the stage to `plugin` (rehearsal 16.7's one-off failure). A rehearsal step on the previous release runs that release's code, so the scenario waits for a state that release makes observable. (#1074)
 
 ## Open
 
@@ -493,8 +495,7 @@ built_from: v0.3.111
 - Epic 58 (TV platforms, spec only): the build, Phase 1 first (58.01–58.04, 58.15's catalog check, 58.16), and a real-device spike of whether Cast receivers enforce Chrome's Local Network Access for LAN HTTPS names (58.07). (#1038)
 - Caches: compare job times on main's second run after the new entries exist (unit near 8.7 min) and re-measure usage; whether the rehearsal's `full` seed (2.7 GB) needs a cache is a question for its job's time. (#1036)
 - Plugin event emits: the `unavailable` and `home_unreachable` refusals are logged but have no test. (#1048)
-- Core-media's parity test takes 5.2-7.2 s on a Mac, over the 5 s soft cap, on main as well; the read checks from #1025 are the likely cause. (#1049)
-- The customer auth handler (`cloud/internal/handlers/auth`) still computes its argon2id timing hash at init, so every role holds that 64 MiB. (#1027, #1067)
+- Parity tests still over the 5 s soft cap on CI: classify's waves 1 and 4, repair, the N16 self-test and livetv staging; core-media's now fits. (#1049, #1068)
 - No sweep was made of other process-wide state the moved first-party stages may read; the guard covers only `to_local`. (#1062)
 - N16: CPU p95 over 11 runs is their maximum, and a rare job costing about 4x CPU in both processes came within 0.8 ms of failing `topic_assign`; the plugin API's ~0.58 ms of CPU a call is the bulk of the per-call cost. (#1059)
 
@@ -509,7 +510,7 @@ built_from: v0.3.111
 | #973 | 2026-11-08 | fix(supervisor): plugin runners wait for the venv like the pipeline |
 | #1023 | 2026-11-08 | test(rehearsal): scenario 16.7, wave 7's TV change across an update |
 | #1042 | 2026-11-08 | fix(web): an open screen keeps its feature gate when the feature goes off right after the first answer |
-| #1068 | 2026-11-09 | test(plugins): core-media's parity fits its soft cap; every parity test starts faster |
+| #1077 | 2026-11-09 | perf(cloud/auth): make the customer sign-in timing hash at the first sign-in |
 
 ## Index
 
@@ -1077,4 +1078,6 @@ built_from: v0.3.111
 | 1062-moved-stages-path-map | 2026-11-09 | pr | Moved stages open the file through the job's path map |
 | 1066-n16-report-per-test | 2026-11-09 | pr | Each N16 report belongs to one test; classify's wave 4 writes its own |
 | 1067-staff-passkeys | 2026-11-09 | pr | Staff passkeys for the operator console (story 50.33, part 2) |
+| 1068-core-media-parity-cap | 2026-11-09 | pr | core-media's parity fits its soft cap; every parity test starts faster |
+| 1074-impl-pin-update-flip | 2026-11-09 | pr | A stage's impl asked while unchanged is kept through the update's flip (rehearsal 16.7) |
 
