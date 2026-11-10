@@ -13,6 +13,13 @@ package plugins
 //	none       a privileged container or one with the Docker socket: never reached here,
 //	           the container's preflight refuses to start (59.01, container_preflight.go)
 //
+// The kernel's facts are read before any plugin runs, by the same probes plugind makes
+// (landlock_create_ruleset's version, a child in a new user namespace), as the same user
+// under the same seccomp profile and AppArmor in the same container, so the level holds a
+// plugin before plugind starts. plugind only starts once a plugin's gate passes; its own
+// report is a second check that can only lower the level (partial → Container, kept for
+// the rest of this start).
+//
 // macOS (Seatbelt) and Windows (AppContainer) have no optional layer that a kernel can
 // lack, so they are full unless plugind itself reports partial.
 //
