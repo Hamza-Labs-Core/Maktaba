@@ -582,6 +582,38 @@ class Cell:
             raise AssertionError(f"{len(bad)} permission errors in server.log, first: {bad[0][:300]}")
         return "no permission error in server.log"
 
+    def machine(self) -> dict[str, Any]:
+        """GET /api/server/machine (59.04): the tier, why, and the hardware it read."""
+        assert self.api is not None
+        s, d = self.api.get("/api/server/machine")
+        if s != 200 or not isinstance(d, dict) or not d.get("available"):
+            raise AssertionError(f"GET /api/server/machine: {s} {d}")
+        return d
+
+    def limit_bytes(self) -> int:
+        """The container's memory limit as Docker set it (0: none)."""
+        return int(docker("inspect", "-f", "{{.HostConfig.Memory}}", self.container).stdout.strip() or 0)
+
+    def tier_is(self, want: str) -> str:
+        d = self.machine()
+        tier = d.get("tier")
+        limit = ((d.get("machine") or {}).get("memory") or {}).get("limit_bytes")
+        docker_limit = self.limit_bytes()
+        if docker_limit and limit != docker_limit:
+            raise AssertionError(f"the memory limit read is {limit}, not the container's {docker_limit}")
+        if tier != want:
+            raise AssertionError(f"tier {tier!r} (detected {d.get('detected')!r}), not {want!r}; limit {limit}")
+        defaults = d.get("defaults") or {}
+        if defaults.get("tier") not in (None, want):
+            raise AssertionError(f"the defaults are {defaults.get('tier')!r}'s, not {want!r}'s")
+        return f"{tier}: limit {limit >> 20 if limit else 0} MiB, Postgres {defaults.get('shared_buffers')}, {defaults.get('pipeline_workers')} worker(s)"
+
+    def assert_tier_light(self) -> str:
+        return self.tier_is("light")
+
+    def assert_tier_standard(self) -> str:
+        return self.tier_is("standard")
+
     # -- cells that must not start
 
     def expect_refused(self) -> None:

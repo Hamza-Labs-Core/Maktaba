@@ -56,6 +56,7 @@ runs every cell, a change to `web/` alone runs nothing.
 | `no_oom` | not OOM-killed, `memory.current` under `memory.max`, no `oom_kill` event |
 | `media_untouched` | the library holds exactly the fixtures afterwards: nothing written in it |
 | `logs_clean` | no permission error in `server.log` |
+| `tier_light`, `tier_standard` | `GET /api/server/machine` (59.04) reads the container's memory limit as Docker set it, and the tier and its defaults are that tier's |
 | `refused_write`, `refused_privileged` | the container exits 78 with its message (59.01) |
 
 An assertion still waiting for its story is written `{"name": "tier_light", "needs": ["59.04"]}`:

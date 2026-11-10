@@ -1,6 +1,6 @@
 {
   "_doc": "The nas-shapes matrix (story 59.15). tests/nas/README.md says what each field means and how to add a cell. A cell runs once its `needs` are all in `landed`; an assertion likewise.",
-  "landed": [],
+  "landed": ["59.04"],
   "cells": [
     {
       "name": "uid-1000",
@@ -90,7 +90,7 @@
       "about": "a 4 GB NAS",
       "arches": ["amd64"],
       "docker": ["--memory=4g"],
-      "asserts": ["ready", "scan", "no_oom", {"name": "tier_light", "needs": ["59.04"]}, {"name": "postgres_pss_512m", "needs": ["59.04"]}]
+      "asserts": ["ready", "scan", "no_oom", {"name": "tier_light", "needs": ["59.04"]}, {"name": "postgres_pss_512m", "needs": ["59.02"]}]
     },
     {
       "name": "mem-3.7g",
