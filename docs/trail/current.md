@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.113
-up_to_commit: c14c1434f
-built_from: v0.3.112
+tag: v0.3.114
+up_to_commit: 541d4f31e
+built_from: v0.3.113
 ---
 
-# Trail snapshot: v0.3.113
+# Trail snapshot: v0.3.114
 
 ## Keep doing
 
@@ -511,6 +511,7 @@ built_from: v0.3.112
 | #1023 | 2026-11-08 | test(rehearsal): scenario 16.7, wave 7's TV change across an update |
 | #1042 | 2026-11-08 | fix(web): an open screen keeps its feature gate when the feature goes off right after the first answer |
 | #1077 | 2026-11-09 | perf(cloud/auth): make the customer sign-in timing hash at the first sign-in |
+| #1078 | 2026-11-09 | docs(specs): 54.36 §4 waits for its real preconditions; story 54.43 counts the in-process fallbacks |
 
 ## Index
 
