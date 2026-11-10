@@ -1,0 +1,58 @@
+{
+  "_comment": [
+    "tests/nas (story 59.15): a kernel without Landlock and without user namespaces, as on most DSM models.",
+    "landlock_* answer ENOSYS (38): a kernel built without it;",
+    "unshare answers EPERM (1); clone with CLONE_NEWUSER (0x10000000) answers EPERM; clone3 answers ENOSYS (38), as Docker's default profile does, so callers fall back to clone.",
+    "Everything else is allowed: the cell tests what Maktaba does without these, not Docker's whole default profile."
+  ],
+  "defaultAction": "SCMP_ACT_ALLOW",
+  "syscalls": [
+    {
+      "names": [
+        "landlock_create_ruleset",
+        "landlock_add_rule",
+        "landlock_restrict_self"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 38
+    },
+    {
+      "names": [
+        "unshare"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    },
+    {
+      "names": [
+        "clone"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1,
+      "args": [
+        {
+          "index": 0,
+          "value": 268435456,
+          "valueTwo": 268435456,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "includes": {
+        "arches": [
+          "amd64",
+          "x86",
+          "x32",
+          "arm64",
+          "arm"
+        ]
+      }
+    },
+    {
+      "names": [
+        "clone3"
+      ],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 38
+    }
+  ]
+}
