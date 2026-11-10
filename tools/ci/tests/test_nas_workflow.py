@@ -97,8 +97,30 @@ def test_every_harness_file_is_tracked_by_the_trigger() -> None:
 
 def test_the_verdict_needs_every_job() -> None:
     jobs = yaml.safe_load(NAS.read_text(encoding="utf-8"))["jobs"]
-    assert jobs["nas-shapes"]["needs"] == ["plan", "image", "cell"]
+    assert jobs["nas-shapes"]["needs"] == ["plan", "image", "cell", "truenas-lint", "truenas-deploy"]
     assert jobs["nas-shapes"]["if"] == "always()"
     # logs are kept pass or fail
     keep = next(s for s in jobs["cell"]["steps"] if s.get("name") == "Keep the logs")
     assert keep["if"] == "always()"
+
+
+def test_the_truenas_app_runs_its_catalog_jobs_only_on_its_changes() -> None:
+    """Story 59.10: truenas/apps' tooling runs on a change to the app, its harness or its
+    healthcheck, and not on another change that starts the cells."""
+    truenas = _plan_filters()["truenas"]
+    for f in (
+        "deploy/nas/truenas/ix-dev/community/maktaba/questions.yaml",
+        "deploy/nas/truenas/custom-app.yaml",
+        "tests/nas/truenas_app.py",
+        "tests/nas/truenas/catalog.env",
+        "tools/release/truenas_app.py",
+        "cmd/maktaba-server/cmd_healthcheck.go",
+    ):
+        assert _any(truenas, f), f
+        assert _any(_doc()["pull_request"]["paths"], f), f
+    for f in ("deploy/docker/server/Dockerfile", "streaming/internal/ffmpeg/hwaccel.go", "plugind/crates/host/src/lib.rs"):
+        assert not _any(truenas, f), f
+    jobs = yaml.safe_load(NAS.read_text(encoding="utf-8"))["jobs"]
+    assert "truenas" in jobs["truenas-lint"]["if"]
+    assert "image" in jobs["truenas-deploy"]["needs"]
+    assert {"truenas-lint", "truenas-deploy"} <= set(jobs["nas-shapes"]["needs"])
