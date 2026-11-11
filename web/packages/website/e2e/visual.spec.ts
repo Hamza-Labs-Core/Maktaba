@@ -37,6 +37,14 @@ export function visualPages(): SitePage[] {
   });
 }
 
+/** Pages whose length is the registry's (the problem index lists every entry, story 60.06): their
+ * reference is the first screen, with the list and its count masked, so it holds the template
+ * (title, lead, filter) and a new registry entry changes no reference. Their every entry is
+ * checked by the structural tests instead (README §11 decision 11). */
+export const FIRST_SCREEN: Record<string, string[]> = {
+  "/problems/": [".areas", "#count"],
+};
+
 /** A reference's file name: <page>-<width>-<lang>[-light].png */
 export const shotName = (p: SitePage, width: number, light = false) =>
   `${p.name}-${width}-${p.lang}${light ? "-light" : ""}.png`;
@@ -66,8 +74,11 @@ for (const p of visualPages()) {
         await page.setViewportSize({ width: s.width, height: 800 });
         await page.goto(p.url);
         await settle(page);
+        const en = p.lang === "ar" ? p.url.slice(3) : p.url;
+        const firstScreen = FIRST_SCREEN[en];
         await expect(page).toHaveScreenshot(shotName(p, s.width, s.light), {
-          fullPage: true,
+          fullPage: !firstScreen,
+          mask: (firstScreen ?? []).map((sel) => page.locator(sel)),
           animations: "disabled",
           caret: "hide",
         });

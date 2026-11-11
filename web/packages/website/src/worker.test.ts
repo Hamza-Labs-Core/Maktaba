@@ -2,7 +2,7 @@
 // Story 60.03 T01–T04: the Worker's redirects, headers, 404 pages and caching, over a fake of
 // the assets binding (what wrangler's [assets] serves from dist/).
 import { describe, expect, it } from "vitest";
-import { CSP_COPYRIGHT, CSP_DEFAULT, cacheControl, cspFor } from "./headers";
+import { CSP_COPYRIGHT, CSP_DEFAULT, REDIRECTS, cacheControl, cspFor } from "./headers";
 import worker, { type Env } from "./worker";
 
 const HTML = "text/html; charset=utf-8";
@@ -72,6 +72,20 @@ describe("redirects (T01, T04)", () => {
     }
     // only /docs itself: a page under it is not a redirect
     expect((await get("https://maktaba.tv/docs/x")).status).toBe(404);
+  });
+
+  it("serves every redirect of src/redirects.json, the table the link check reads", async () => {
+    const sources = Object.keys(REDIRECTS);
+    expect(sources.length).toBeGreaterThan(0);
+    expect(sources).not.toContain("$comment");
+    for (const [from, to] of Object.entries(REDIRECTS)) {
+      expect(to.startsWith("/"), `${from} → ${to} is a site path`).toBe(true);
+      const res = await get(`https://maktaba.tv${from}`);
+      expect(res.status, from).toBe(301);
+      expect(res.headers.get("Location"), from).toBe(to);
+    }
+    // a path that is only the prototype's never redirects
+    expect((await get("https://maktaba.tv/constructor")).status).toBe(404);
   });
 
   it("refuses anything but GET and HEAD", async () => {
