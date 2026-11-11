@@ -20,6 +20,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 // Queue is one play_queues row.
@@ -455,7 +456,7 @@ func (h *Handler) checkVisible(ctx context.Context, p *principal.Principal, ids 
 		ph[i] = fmt.Sprintf("$%d", len(args))
 	}
 	rows, err := h.DB.QueryContext(ctx, `SELECT CAST(id AS TEXT), CAST(library_id AS TEXT) FROM videos
-		WHERE id IN (`+strings.Join(ph, ",")+`) AND deleted_at IS NULL`, args...)
+		WHERE id IN (`+strings.Join(ph, ",")+`) AND deleted_at IS NULL`+parental.Where(ctx, "videos"), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -537,7 +538,7 @@ func (h *Handler) queueDoc(ctx context.Context, p *principal.Principal, q Queue,
 	}
 	from := ` FROM play_queue_items i JOIN videos v ON v.id = i.video_id AND v.deleted_at IS NULL
 		LEFT JOIN playback_state ps ON ps.video_id = v.id AND ps.user_id = $2
-		WHERE i.queue_id = $1` + scope
+		WHERE i.queue_id = $1` + scope + parental.Where(ctx, "v")
 	read := func(cond, order string, n int) ([]Item, error) {
 		args := append([]any{q.ID, q.UserID, around}, sargs...)
 		args = append(args, n)

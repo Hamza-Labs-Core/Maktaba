@@ -30,6 +30,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/paginate"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 // tabPageSize is a tab's page when the request names no limit.
@@ -168,7 +169,7 @@ func (h *Handler) LibrarySeries(w http.ResponseWriter, r *http.Request) {
 		JOIN series_episodes se ON se.video_id = v.id
 		JOIN series s ON s.id = se.series_id
 		LEFT JOIN playback_state ps ON ps.video_id = v.id AND ps.user_id = $2
-		WHERE v.library_id = $1 AND `+visible+`
+		WHERE v.library_id = $1 AND `+shown(ctx)+`
 		GROUP BY s.id, s.name, s.name_override, s.poster_path) x
 		ORDER BY `+order+` LIMIT $3 OFFSET $4`, lib.ID, uid, limit, offset)
 	if err != nil {
@@ -201,7 +202,7 @@ func (h *Handler) LibrarySeries(w http.ResponseWriter, r *http.Request) {
 	if offset > 0 && len(items) == 0 {
 		// past the end: the window gave no row to carry the total
 		if err := h.DB.QueryRowContext(ctx, `SELECT COUNT(DISTINCT se.series_id) FROM videos v
-			JOIN series_episodes se ON se.video_id = v.id WHERE v.library_id = $1 AND `+visible, lib.ID).Scan(&total); err != nil {
+			JOIN series_episodes se ON se.video_id = v.id WHERE v.library_id = $1 AND `+shown(ctx), lib.ID).Scan(&total); err != nil {
 			internal(w, r, "count series", err)
 			return
 		}
@@ -345,7 +346,7 @@ func (h *Handler) libraryCollections(ctx context.Context, s scope, lib string, w
 	args := []any{lib}
 	itemScope := s.cond("cv.library_id", &args)
 	curatedCount := `(SELECT COUNT(*) FROM collection_items ci JOIN videos cv ON cv.id = ci.video_id
-		WHERE ci.collection_id = c.id AND ` + and(strings.ReplaceAll(visible, "v.", "cv."), itemScope) + `)`
+		WHERE ci.collection_id = c.id AND ` + and((strings.ReplaceAll(visible, "v.", "cv.")+parental.Where(ctx, "cv")), itemScope) + `)`
 	hidden := " AND c.hidden_at IS NULL"
 	if withHidden {
 		hidden = ""
@@ -354,14 +355,14 @@ func (h *Handler) libraryCollections(ctx context.Context, s scope, lib string, w
 		SELECT 0 AS rank, 'topic' AS kind, '' AS sub, t.id AS id, t.name AS name, COUNT(*) AS n, NULL AS sq,
 		       NULL AS sk, `+falseLit(h.DB)+` AS sol, `+falseLit(h.DB)+` AS hid, NULL AS st
 		FROM topic_collections t JOIN topic_items i ON i.topic_id = t.id JOIN videos v ON v.id = i.video_id
-		WHERE t.library_id = $1 AND v.library_id = $1 AND `+visible+`
+		WHERE t.library_id = $1 AND v.library_id = $1 AND `+shown(ctx)+`
 		GROUP BY t.id, t.name
 		UNION ALL
 		SELECT CASE WHEN g.kind = 'clips' THEN 1 ELSE 2 END, 'clip',
 		       CASE WHEN g.kind = 'clips' THEN 'filler' ELSE 'standalone' END, g.id, g.name, COUNT(*), NULL,
 		       NULL, `+falseLit(h.DB)+`, `+falseLit(h.DB)+`, NULL
 		FROM clip_groups g JOIN clip_group_items i ON i.group_id = g.id JOIN videos v ON v.id = i.video_id
-		WHERE g.library_id = $1 AND v.library_id = $1 AND `+visible+`
+		WHERE g.library_id = $1 AND v.library_id = $1 AND `+shown(ctx)+`
 		GROUP BY g.id, g.name, g.kind
 		UNION ALL
 		SELECT CASE WHEN c.source_kind IS NULL THEN 3 WHEN c.source_kind = 'plex' THEN 5 ELSE 4 END,
@@ -441,7 +442,7 @@ func (h *Handler) collectionPosters(ctx context.Context, s scope, lib string, pa
 		return read(`SELECT owner, video_id FROM (
 			SELECT i.`+owner+` AS owner, i.video_id, ROW_NUMBER() OVER (PARTITION BY i.`+owner+` ORDER BY i.position, i.video_id) AS n
 			FROM `+items+` i JOIN videos v ON v.id = i.video_id
-			WHERE i.`+owner+` IN (`+in+`) AND v.library_id = $1 AND `+visible+`) firsts
+			WHERE i.`+owner+` IN (`+in+`) AND v.library_id = $1 AND `+shown(ctx)+`) firsts
 			WHERE n <= 4 ORDER BY owner, n`, args)
 	}
 	if err := auto(byKind[KindTopic], "topic_items", "topic_id"); err != nil {
@@ -453,7 +454,7 @@ func (h *Handler) collectionPosters(ctx context.Context, s scope, lib string, pa
 	if ids := append(append(byKind[KindCurated], byKind[KindYouTube]...), byKind[KindPlex]...); len(ids) > 0 {
 		var args []any
 		in := inList(ids, &args)
-		cond := and(visible, s.cond("v.library_id", &args))
+		cond := and(shown(ctx), s.cond("v.library_id", &args))
 		return read(`SELECT owner, video_id FROM (
 			SELECT ci.collection_id AS owner, ci.video_id, ROW_NUMBER() OVER (PARTITION BY ci.collection_id
 				ORDER BY CASE WHEN c.hand_ordered THEN ci.position END, v.created_at DESC, v.id DESC) AS n

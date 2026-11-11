@@ -378,7 +378,12 @@ func runServe() error {
 	capabilities := components.NewCapabilities(components.CapabilitiesOptions{Logger: logger,
 		AllOn: components.CapabilitiesGateOff() || runner.ReconcileOff()})
 
+	// Epic 57 story 57.03: the content filter's gate. It refuses every signed-in user
+	// until MountP6 gives it the policy cache (fail closed).
+	parentalGate := parental.NewGate()
+
 	r := router.New(router.Deps{
+		Parental:           parentalGate,
 		Capabilities:       capabilities,
 		License:            licRef,
 		Usage:              usageCounter,
@@ -592,6 +597,7 @@ func runServe() error {
 			router.MountP6(r, router.P6Deps{
 				EventHub:     eventHub,
 				OnParental:   func(c *parental.Cache) { parentalHandles.Cache = c },
+				ParentalGate: parentalGate,
 				OnBus:        func(b *eventbus.Bus) { eventBus = b },
 				Capabilities: capabilities,
 				Loops:        loops,

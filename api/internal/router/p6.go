@@ -120,6 +120,9 @@ type P6Deps struct {
 	// OnParental, when set, is called with the restricted accounts' cache (Epic 57
 	// story 57.02) so main.go keeps it for the surfaces that filter with it.
 	OnParental func(*parental.Cache)
+	// ParentalGate, when set, is the router's gate (Deps.Parental, story 57.03): it
+	// gets the cache as soon as it exists.
+	ParentalGate *parental.Gate
 	// OnQueues, when set, is called with the queue/extensions handler
 	// before it is mounted (story 32.6 hangs the Cloudflare test on it).
 	OnQueues func(*queues.Handler)
@@ -205,6 +208,9 @@ func MountP6(r chi.Router, d P6Deps) {
 	browseHandler.Mount(r)
 	// Epic 57 story 57.02: restricted accounts, guardians and rules.
 	parentalCache := MountParental(r, d.DB, d.Loops, d.BusCtx, d.BusDSN, d.BusResettle)
+	if d.ParentalGate != nil {
+		d.ParentalGate.SetCache(parentalCache)
+	}
 	if d.OnParental != nil {
 		d.OnParental(parentalCache)
 	}

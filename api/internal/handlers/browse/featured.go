@@ -68,7 +68,7 @@ func (h *Handler) pickedID(ctx context.Context) string {
 func (h *Handler) visibleCard(ctx context.Context, s scope, id string) (*Card, error) {
 	args := []any{id}
 	cond := s.cond("v.library_id", &args)
-	cs, err := h.cards(ctx, `SELECT `+cardColumns+` FROM videos v WHERE v.id = $1 AND `+and(visible, cond), args)
+	cs, err := h.cards(ctx, `SELECT `+cardColumns+` FROM videos v WHERE v.id = $1 AND `+and(shown(ctx), cond), args)
 	if err != nil || len(cs) == 0 {
 		return nil, err
 	}
@@ -107,10 +107,10 @@ func (h *Handler) featured(ctx context.Context, s scope) (*Featured, error) {
 	var fs FeaturedSeries
 	err := h.DB.QueryRowContext(ctx, `SELECT s.id, COALESCE(s.name_override, s.name, ''),
 			(SELECT COUNT(v.id) FROM series_episodes se JOIN videos v ON v.id = se.video_id
-			  WHERE se.series_id = s.id AND `+and(visible, count)+`)
+			  WHERE se.series_id = s.id AND `+and(shown(ctx), count)+`)
 		FROM series s
 		WHERE EXISTS (SELECT 1 FROM series_episodes se JOIN videos v ON v.id = se.video_id
-		               WHERE se.series_id = s.id AND `+and(visible, has)+`)
+		               WHERE se.series_id = s.id AND `+and(shown(ctx), has)+`)
 		ORDER BY s.created_at DESC, s.id DESC LIMIT 1`, args...).Scan(&fs.ID, &fs.Name, &fs.Episodes)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -121,7 +121,7 @@ func (h *Handler) featured(ctx context.Context, s scope) (*Featured, error) {
 	args = []any{fs.ID}
 	cond := s.cond("v.library_id", &args)
 	cs, err := h.cards(ctx, `SELECT `+cardColumns+` FROM series_episodes se JOIN videos v ON v.id = se.video_id
-		WHERE se.series_id = $1 AND `+and(visible, cond)+`
+		WHERE se.series_id = $1 AND `+and(shown(ctx), cond)+`
 		ORDER BY COALESCE(se.season_override, se.season, 0),
 		         COALESCE(se.episode_override, se.episode, se.absolute_number, 0), v.created_at, v.id
 		LIMIT 1`, args)

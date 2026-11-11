@@ -14,6 +14,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 // Handler serves the watch-session lifecycle (Story 29.1), the per-user
@@ -151,6 +152,11 @@ func (h *Handler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("load session").Wrap(err))
+		return
+	}
+	// a watch of a video since hidden from its account counts no more time
+	if !parental.Check(r.Context(), h.DB, parental.SubjectVideo, a.videoID) {
+		httperror.Write(w, r, httperror.NotFound("session "+req.SessionID))
 		return
 	}
 	if a.state != StateActive {
