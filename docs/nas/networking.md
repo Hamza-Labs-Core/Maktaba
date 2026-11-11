@@ -45,6 +45,10 @@ through the NAS's avahi-daemon, under the NAS's own name:
       - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket
 ```
 
+The container's user must be one the NAS knows (the compose file's `user:`, a NAS account's
+uid): the NAS's D-Bus refuses a caller whose uid it cannot look up, and Maktaba then answers under
+its own name, saying why in its log.
+
 Its cost: the socket reaches every system service D-Bus policy lets the container's user talk
 to, not only Avahi, and `:ro` does not change that (a read-only bind still lets the container
 connect). Use it only if you want the home under the NAS's name; nothing else needs it.

@@ -153,6 +153,9 @@ AVAHI_IMAGE = "debian:12-slim"
 AVAHI_SCRIPT = """set -e
 apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
   avahi-daemon avahi-utils dbus >/dev/null
+# the NAS knows the user Maktaba's container runs as (a NAS account): the system bus looks
+# up a caller's groups and drops a uid it does not know
+getent passwd "$NAS_UID" >/dev/null || useradd -u "$NAS_UID" -M -s /usr/sbin/nologin maktaba-nas
 mkdir -p /run/dbus && rm -f /run/dbus/pid /run/dbus/system_bus_socket
 dbus-daemon --system --fork
 avahi-daemon --no-chroot --no-rlimits -D
@@ -576,7 +579,9 @@ class Cell:
         publishes its SMB service."""
         log("the NAS's avahi-daemon, beside Maktaba")
         mounts = ["-v", f"{self.vol('dbus')}:/run/dbus"]
-        docker("run", "-d", "--name", self.avahi, "--network", "host", *mounts, AVAHI_IMAGE, "sh", "-c", AVAHI_SCRIPT)
+        uid = (self.user or "1000").split(":")[0]
+        docker("run", "-d", "--name", self.avahi, "--network", "host", "-e", f"NAS_UID={uid}", *mounts, AVAHI_IMAGE,
+               "sh", "-c", AVAHI_SCRIPT)
 
         def up() -> bool:
             st = docker("inspect", "-f", "{{.State.Running}}", self.avahi, check=False).stdout.strip()

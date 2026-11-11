@@ -35,10 +35,10 @@ func avahiBusCheck() error {
 	defer func() { _ = conn.Close() }()
 	var owner string
 	if err := conn.BusObject().CallWithContext(ctx, "org.freedesktop.DBus.GetNameOwner", 0, avahiBusName).Store(&owner); err != nil {
-		return fmt.Errorf("Avahi not on the bus: %w", err)
+		return fmt.Errorf("avahi not on the bus: %w", err)
 	}
 	if owner == "" {
-		return errors.New("Avahi not on the bus")
+		return errors.New("avahi not on the bus")
 	}
 	return nil
 }
