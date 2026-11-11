@@ -25,11 +25,7 @@ const preflight = readFileSync("../cmd/maktaba-server/container_preflight.go", "
 
 // Stories whose strings land with the story itself and are not on main yet: their keys are
 // checked once the story merges (remove it from here in that pull request).
-const PENDING: Record<string, string> = {
-  // #1142 (the routes, OpenAPI and roles) adds no catalog key: library.not_available_here waits
-  // for the screen that shows a viewer a disabled action's reason
-  "59.16": "library.not_available_here: no screen uses it yet",
-};
+const PENDING: Record<string, string> = {};
 
 // Keys a story's code named differently from its spec's table, spec key → catalog key. Story
 // 59.12 put its texts under the Updates page's own prefixes (updates.code.*, as every update
