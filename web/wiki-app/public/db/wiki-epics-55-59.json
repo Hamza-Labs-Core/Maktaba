@@ -1131,6 +1131,8 @@
       ],
       "related": [
         "epic-57-parental-controls",
+        "ep-post-me-age-signal",
+        "ep-post-users-id-parental-signals-family-clear",
         "ep-get-users-id-parental",
         "ep-put-users-id-parental",
         "ep-delete-users-id-parental",
@@ -1142,6 +1144,8 @@
         "mockups": []
       },
       "api_endpoints": [
+        "POST /me/age-signal",
+        "POST /users/{id}/parental/signals/{family}/clear",
         "GET /users/{id}/parental",
         "PUT /users/{id}/parental",
         "DELETE /users/{id}/parental",

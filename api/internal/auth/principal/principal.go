@@ -74,6 +74,18 @@ type Principal struct {
 	// a play sign-in, even an admin's. A cloud sign-in also mints no
 	// credential of its own that would outlive the link (ViaCloud).
 	CloudScope string
+
+	// RefreshFamily is the sign-in an access token belongs to: the family of
+	// the refresh token it was minted beside (the `fam` claim). "" for a web
+	// session, an API token, the admin token and a token minted before the
+	// claim existed. A device's age signal is kept per sign-in under it
+	// (Epic 57 story 57.04).
+	RefreshFamily string
+
+	// AgeCeiling is the token's `ac` claim: the age-tier limit the sign-in's
+	// device gave when the token was minted (nil: none). parental.Cache.For
+	// holds the request to it as well as to the account's policy.
+	AgeCeiling *int
 }
 
 // Cloud link scopes (Epic 42 story 42.7).

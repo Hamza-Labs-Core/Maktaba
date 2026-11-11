@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 216,
+    "endpoint": 218,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -12403,6 +12403,64 @@
         "lang": "ar",
         "source": {
           "content": "0f945fd511b00355"
+        }
+      }
+    },
+    {
+      "id": "ep-post-me-age-signal",
+      "type": "endpoint",
+      "title": "POST /me/age-signal",
+      "content": "إرسال ما يقوله الجهاز عن عمر مستخدمه",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.4"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/age-signal",
+        "tag": "Parental controls",
+        "operationId": "postMyAgeSignal"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "d6a97ba4bbb5e83f"
+        }
+      }
+    },
+    {
+      "id": "ep-post-users-id-parental-signals-family-clear",
+      "type": "endpoint",
+      "title": "POST /users/{id}/parental/signals/{family}/clear",
+      "content": "إجازة إشارة جهاز لتسجيل دخول",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.4"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/users/{id}/parental/signals/{family}/clear",
+        "tag": "Parental controls",
+        "operationId": "clearParentalSignal"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "781bdbb94387aaef"
         }
       }
     },

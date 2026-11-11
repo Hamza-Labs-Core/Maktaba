@@ -3689,6 +3689,106 @@
       "en": "Only what a rule allows is open, whatever its tier.",
       "ar": "لا يُفتح إلا ما تسمح به قاعدة، أيًّا كانت فئته."
     },
+    "/paths/~1me~1parental/get/responses/200/content/application~1json/schema/properties/device_limit/description": {
+      "en": "The limit this sign-in's device set, when it set one: `max_tier` is then the stricter of it and the account's own limit, and it is present even when `restricted` is `false`.",
+      "ar": "الحدّ الذي وضعه جهاز تسجيل الدخول هذا إن وضع حدًّا: يكون `max_tier` عندئذ الأشدّ منه ومن حدّ الحساب نفسه، ويحضر حتى إن كان `restricted` يساوي `false`."
+    },
+    "/paths/~1me~1parental/get/responses/200/content/application~1json/schema/properties/device_pending/description": {
+      "en": "The device has since said something looser, which waits for an admin or a guardian.",
+      "ar": "قال الجهاز بعد ذلك قولًا أخفّ ينتظر مشرفًا أو وليًّا."
+    },
+    "/paths/~1me~1age-signal/post/summary": {
+      "en": "Send what the device says about its user's age",
+      "ar": "إرسال ما يقوله الجهاز عن عمر مستخدمه"
+    },
+    "/paths/~1me~1age-signal/post/description": {
+      "en": "An app tells the home what its device said: the age range the guardian shared and the device's film and TV rating limits. The home turns each into an age tier (rounding down), keeps the strictest, and holds this sign-in to it, on top of the account's own limit and even when the account has none. It only tightens: a first statement or a stricter one applies at once; a looser one is kept and waits until an admin or a guardian of the account clears it. A statement with no value limits nothing and, after a limit, counts as looser. The limit belongs to the sign-in (the refresh token's family) that sent it, so the caller must hold an access token an app got by signing in. After a 200, refresh the access token: the next one carries the limit in its `ac` claim. The home applies the limit from this call on, whatever the token says.",
+      "ar": "يخبر التطبيق المنزل بما قاله جهازه: الفئة العمرية التي شاركها الوليّ، وحدَّي تصنيف الأفلام والتلفزيون في الجهاز. يحوّل المنزل كلًّا منها إلى فئة عمرية (بالتقريب إلى الأدنى)، ويأخذ الأشدّ، ويُلزم به تسجيل الدخول هذا، فوق حدّ الحساب نفسه وحتى إن لم يكن للحساب حدّ. وهو لا يزيد إلا تشديدًا: أول قول أو قول أشدّ يُطبَّق فورًا؛ والقول الأخفّ يُحفظ وينتظر حتى يجيزه مشرف أو وليّ للحساب. والقول الخالي من أي قيمة لا يقيّد شيئًا، ويُعدّ بعد وجود حدّ قولًا أخفّ. الحدّ يخصّ تسجيل الدخول (عائلة رمز التجديد) الذي أرسله، فلا بد أن يحمل الطالب رمز وصول حصل عليه تطبيق بتسجيل الدخول. بعد 200 جدِّد رمز الوصول: الرمز التالي يحمل الحدّ في المطالبة `ac`. ويطبّق المنزل الحدّ من هذا الطلب فصاعدًا أيًّا كان ما يقوله الرمز."
+    },
+    "/paths/~1me~1age-signal/post/requestBody/content/application~1json/schema/properties/age_range/description": {
+      "en": "The age range the person or their guardian shared (Apple's Declared Age Range). Leave it out when nothing was shared. An `upper` of 9 or less limits to tier `0`, 13 or less to `9`, 18 or less to `13`; no `upper`, or one above 18, limits nothing.",
+      "ar": "الفئة العمرية التي شاركها الشخص أو وليّه (Declared Age Range من Apple). تُترك إن لم يُشارَك شيء. `upper` بقيمة 9 أو أقل يحدّ بالفئة `0`، و13 أو أقل بالفئة `9`، و18 أو أقل بالفئة `13`؛ وغياب `upper` أو زيادته على 18 لا يحدّ شيئًا."
+    },
+    "/paths/~1me~1age-signal/post/requestBody/content/application~1json/schema/properties/age_range/properties/lower/description": {
+      "en": "The youngest age of the range.",
+      "ar": "أصغر عمر في الفئة."
+    },
+    "/paths/~1me~1age-signal/post/requestBody/content/application~1json/schema/properties/age_range/properties/upper/description": {
+      "en": "The oldest age of the range; absent for an adult range.",
+      "ar": "أكبر عمر في الفئة؛ يغيب في فئة البالغين."
+    },
+    "/paths/~1me~1age-signal/post/requestBody/content/application~1json/schema/properties/age_range/properties/declaration/description": {
+      "en": "How the range was declared, as the device names it in snake case: for example `self_declared` or `guardian_declared`. Kept for the guardian to read; it changes no limit.",
+      "ar": "كيف أُعلنت الفئة، كما يسمّيها الجهاز بصيغة snake case: مثل `self_declared` أو `guardian_declared`. تُحفظ ليقرأها الوليّ؛ ولا تغيّر أي حدّ."
+    },
+    "/paths/~1me~1age-signal/post/requestBody/content/application~1json/schema/properties/movie_ceiling/description": {
+      "en": "The device's highest allowed film rating on Apple's 0 to 1000 scale (`ManagedSettingsStore.effectiveMaximumMovieRating`): `0` nothing, `100` G, `200` PG, `300` PG-13, `400` R, `500` NC-17, `1000` no limit. A value between two steps counts as the step below it.",
+      "ar": "أعلى تصنيف أفلام يسمح به الجهاز على مقياس Apple من 0 إلى 1000 (`ManagedSettingsStore.effectiveMaximumMovieRating`): `0` لا شيء، `100` G، `200` PG، `300` PG-13، `400` R، `500` NC-17، `1000` بلا حدّ. القيمة الواقعة بين درجتين تُعدّ الدرجة الأدنى."
+    },
+    "/paths/~1me~1age-signal/post/requestBody/content/application~1json/schema/properties/tv_ceiling/description": {
+      "en": "The device's highest allowed TV rating on Apple's 0 to 1000 scale (`effectiveMaximumTVShowRating`): `0` nothing, `100` TV-Y, `200` TV-Y7, `300` TV-G, `400` TV-PG, `500` TV-14, `600` TV-MA, `1000` no limit. A value between two steps counts as the step below it.",
+      "ar": "أعلى تصنيف تلفزيوني يسمح به الجهاز على مقياس Apple من 0 إلى 1000 (`effectiveMaximumTVShowRating`): `0` لا شيء، `100` TV-Y، `200` TV-Y7، `300` TV-G، `400` TV-PG، `500` TV-14، `600` TV-MA، `1000` بلا حدّ. القيمة الواقعة بين درجتين تُعدّ الدرجة الأدنى."
+    },
+    "/paths/~1me~1age-signal/post/requestBody/content/application~1json/schema/properties/region/description": {
+      "en": "The device's region: two letters (ISO 3166-1, any case) or three digits (UN M.49). Kept with the signal. The United States steps are used for every region today.",
+      "ar": "منطقة الجهاز: حرفان (ISO 3166-1 بأي حالة أحرف) أو ثلاثة أرقام (UN M.49). تُحفظ مع الإشارة. وتُستعمل درجات الولايات المتحدة لكل المناطق حاليًّا."
+    },
+    "/paths/~1me~1age-signal/post/responses/200/description": {
+      "en": "Recorded. `tier_limit` is the limit in force, which is the earlier one when what was sent is looser.",
+      "ar": "سُجِّلت. `tier_limit` هو الحدّ النافذ، وهو الحدّ السابق إن كان المُرسَل أخفّ."
+    },
+    "/paths/~1me~1age-signal/post/responses/200/content/application~1json/schema/properties/tier_limit/description": {
+      "en": "The device limit now in force on this sign-in: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier; `null` when the device limits nothing.",
+      "ar": "حدّ الجهاز النافذ الآن على تسجيل الدخول هذا: `0` لكل الأعمار، `9`، `13`، `16`، `18`؛ `-1` لا شيء مما له فئة؛ و`null` حين لا يحدّ الجهاز شيئًا."
+    },
+    "/paths/~1me~1age-signal/post/responses/200/content/application~1json/schema/properties/pending_looser/description": {
+      "en": "What was sent is looser than the limit in force: it is kept and waits for an admin or a guardian to clear it.",
+      "ar": "المُرسَل أخفّ من الحدّ النافذ: يُحفظ وينتظر أن يجيزه مشرف أو وليّ."
+    },
+    "/paths/~1me~1age-signal/post/responses/200/content/application~1json/schema/properties/refresh/description": {
+      "en": "Always `true`: refresh the access token now so the next one carries the limit.",
+      "ar": "دائمًا `true`: جدِّد رمز الوصول الآن ليحمل الرمز التالي الحدّ."
+    },
+    "/paths/~1me~1age-signal/post/responses/409/description": {
+      "en": "The credential names no app sign-in (`code`: `no_sign_in`): a web session, an API token, or an access token minted before this release. An app refreshes its access token and sends the signal again.",
+      "ar": "بيانات الاعتماد لا تسمّي تسجيل دخول لتطبيق (`code`: `no_sign_in`): جلسة ويب، أو رمز API، أو رمز وصول صدر قبل هذا الإصدار. يجدّد التطبيق رمز الوصول ويرسل الإشارة من جديد."
+    },
+    "/paths/~1me~1age-signal/post/responses/422/description": {
+      "en": "A value is out of range: an age outside 0 to 150, `lower` above `upper`, a ceiling outside 0 to 1000, a `declaration` that is not snake case, or a `region` that is neither two letters nor three digits.",
+      "ar": "قيمة خارج المدى: عمر خارج 0 إلى 150، أو `lower` أكبر من `upper`، أو حدّ تصنيف خارج 0 إلى 1000، أو `declaration` ليست بصيغة snake case، أو `region` ليست حرفين ولا ثلاثة أرقام."
+    },
+    "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/summary": {
+      "en": "Clear a sign-in's device signal",
+      "ar": "إجازة إشارة جهاز لتسجيل دخول"
+    },
+    "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/description": {
+      "en": "For admins and the account's guardians. When a looser statement is waiting on the sign-in, it is applied and becomes the device limit. When none is waiting, the signal is removed and the sign-in is held to the account's own limit alone until its device speaks again. `family` is the `refresh_family_id` of a signal listed by `GET /users/{id}/parental`. An admin can clear a signal of any account, restricted or not. A sign-in that is itself limited by its device clears nothing, whoever it belongs to. The sign-in's access token keeps the earlier limit until its next refresh.",
+      "ar": "للمشرفين ولأولياء الحساب. حين ينتظر قولٌ أخفّ على تسجيل الدخول يُطبَّق ويصير حدّ الجهاز. وحين لا ينتظر شيء تُزال الإشارة ويُلزَم تسجيل الدخول بحدّ الحساب وحده حتى يتكلم جهازه من جديد. `family` هو `refresh_family_id` لإشارة يسردها `GET /users/{id}/parental`. ويجيز المشرف إشارة أي حساب، مقيَّدًا كان أو غير مقيَّد. وتسجيل الدخول المحدود هو نفسه بجهازه لا يجيز شيئًا أيًّا كان صاحبه. ويحتفظ رمز وصول تسجيل الدخول بالحدّ السابق حتى تجديده التالي."
+    },
+    "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/parameters/1/description": {
+      "en": "The `refresh_family_id` of the signal.",
+      "ar": "`refresh_family_id` الخاص بالإشارة."
+    },
+    "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/responses/200/description": {
+      "en": "Cleared.",
+      "ar": "أُجيزت."
+    },
+    "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/responses/200/content/application~1json/schema/properties/tier_limit/description": {
+      "en": "The device limit now in force on that sign-in; `null` when there is none.",
+      "ar": "حدّ الجهاز النافذ الآن على تسجيل الدخول ذاك؛ و`null` حين لا حدّ."
+    },
+    "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/responses/200/content/application~1json/schema/properties/removed/description": {
+      "en": "Nothing looser was waiting, so the signal was removed.",
+      "ar": "لم يكن قولٌ أخفّ ينتظر، فأُزيلت الإشارة."
+    },
+    "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/responses/403/description": {
+      "en": "Not this caller's to clear: `code` is `restricted` for a restricted account, `admin_only` for anyone else who is neither an admin nor a guardian of the account, `device_limited` when the caller's own sign-in is limited by its device. A play-only sign-in through Maktaba Cloud is refused too.",
+      "ar": "ليس لهذا الطالب أن يجيزها: `code` هو `restricted` للحساب المقيَّد، و`admin_only` لمن ليس مشرفًا ولا وليًّا للحساب، و`device_limited` حين يكون تسجيل دخول الطالب نفسه محدودًا بجهازه. ويُرفض كذلك تسجيل الدخول للتشغيل فقط عبر Maktaba Cloud."
+    },
+    "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/responses/404/description": {
+      "en": "No signal for this sign-in on an account the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا إشارة لتسجيل الدخول هذا على حساب يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
+    },
     "/paths/~1users~1{id}~1parental/get/summary": {
       "en": "A restricted account's limit",
       "ar": "حدّ حساب مقيَّد"

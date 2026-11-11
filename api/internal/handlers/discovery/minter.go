@@ -127,20 +127,7 @@ func (m *tokenMinter) Mint(ctx context.Context, userID, deviceKind, deviceLabel 
 		}
 	}
 
-	access, err := m.signer.Sign(jwt.Claims{
-		Iss:     "maktaba",
-		Aud:     "api",
-		Sub:     userID,
-		Iat:     now.Unix(),
-		Exp:     now.Add(pairAccessTTL).Unix(),
-		Usr:     userID,
-		Lib:     libs,
-		IsAdmin: isAdmin,
-	})
-	if err != nil {
-		return MintedTokens{}, err
-	}
-
+	// the refresh token first: the access token names its family
 	meta := map[string]any{"origin": "pairing"}
 	if deviceKind != "" {
 		meta["device_kind"] = deviceKind
@@ -152,6 +139,22 @@ func (m *tokenMinter) Mint(ctx context.Context, userID, deviceKind, deviceLabel 
 		UserID:     userID,
 		ClientMeta: meta,
 		TTL:        PairRefreshTTL,
+	})
+	if err != nil {
+		return MintedTokens{}, err
+	}
+
+	access, err := m.signer.Sign(jwt.Claims{
+		Iss:     "maktaba",
+		Aud:     "api",
+		Sub:     userID,
+		Iat:     now.Unix(),
+		Exp:     now.Add(pairAccessTTL).Unix(),
+		Usr:     userID,
+		Lib:     libs,
+		IsAdmin: isAdmin,
+		// the sign-in a device's age signal is kept under (Epic 57 story 57.04)
+		Fam: rt.FamilyID,
 	})
 	if err != nil {
 		return MintedTokens{}, err

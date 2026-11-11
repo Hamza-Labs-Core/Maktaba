@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 216,
+    "endpoint": 218,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -10100,6 +10100,52 @@
         "path": "/me/parental",
         "tag": "Auth",
         "operationId": "getMyParental"
+      }
+    },
+    {
+      "id": "ep-post-me-age-signal",
+      "type": "endpoint",
+      "title": "POST /me/age-signal",
+      "content": "Send what the device says about its user's age",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.4"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/age-signal",
+        "tag": "Parental controls",
+        "operationId": "postMyAgeSignal"
+      }
+    },
+    {
+      "id": "ep-post-users-id-parental-signals-family-clear",
+      "type": "endpoint",
+      "title": "POST /users/{id}/parental/signals/{family}/clear",
+      "content": "Clear a sign-in's device signal",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.4"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/users/{id}/parental/signals/{family}/clear",
+        "tag": "Parental controls",
+        "operationId": "clearParentalSignal"
       }
     },
     {

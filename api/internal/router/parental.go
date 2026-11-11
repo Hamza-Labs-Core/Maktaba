@@ -37,7 +37,9 @@ func MountParental(r chi.Router, db *sql.DB, loops *runner.Runner, busCtx contex
 			cache.Listen(ctx, busDSN, resettle, slog.Default())
 		})))
 	}
-	(&parentalh.Handler{Store: cache.Store(), Cache: cache}).Mount(r)
+	h := &parentalh.Handler{Store: cache.Store(), Cache: cache}
+	h.Mount(r)
+	h.MountSignal(r) // story 57.04: the device's signal
 	return cache
 }
 

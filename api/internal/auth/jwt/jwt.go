@@ -39,6 +39,14 @@ type Claims struct {
 	// "play" or "manage"; empty for every other token. A verifier caps
 	// the principal by it (principal.ApplyCloudScope).
 	Scp string `json:"scp,omitempty"`
+	// Fam is the sign-in the token belongs to: the family id of the refresh
+	// token it was minted beside (Epic 57 story 57.04). Empty for a token
+	// with no refresh token.
+	Fam string `json:"fam,omitempty"`
+	// Ac is the age-tier limit the sign-in's device gave (-1 nothing, 0, 9,
+	// 13, 16, 18); absent when the device gave none. The home holds the
+	// request to it as well as to the account's policy.
+	Ac *int `json:"ac,omitempty"`
 }
 
 // Errors exported by Verify.
