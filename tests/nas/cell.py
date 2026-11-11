@@ -43,6 +43,7 @@ usage error.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import posixpath
@@ -1586,11 +1587,12 @@ class Cell:
 
         return wait(f"the {stage} job of a converted video", ended, 10 * 60, every=5)
 
-    def subtitle_served(self, video_id: str, words: str) -> str:
-        """A transcode session of the video lists its Arabic side-car as an HLS subtitle
-        rendition (EXT-X-MEDIA TYPE=SUBTITLES), and the rendition's first file has the
-        side-car's words: the streaming service found it from the stored path (beside the
-        file, or the database's copy a read-only library keeps)."""
+    def subtitle_served(self, video_id: str, lang: str, words: str) -> str:
+        """A transcode session of the video lists its subtitle in lang as an HLS subtitle
+        rendition (EXT-X-MEDIA TYPE=SUBTITLES, URI subs-<lang>/index.m3u8), and the
+        rendition's first file has the subtitle's words: the streaming service found it (a
+        side-car beside the file at its stored path, else the database's copy a read-only
+        library keeps)."""
         assert self.api is not None
         api = self.api
         s, d = api.call("POST", "/api/stream/sessions",
@@ -1609,11 +1611,11 @@ class Cell:
                 for line in fetch(master).splitlines():
                     if line.startswith("#EXT-X-MEDIA:TYPE=SUBTITLES"):
                         m = re.search(r'URI="([^"]+)"', line)
-                        if m and "/ar/" in m.group(1):
+                        if m and f"subs-{lang}/" in m.group(1):
                             return m.group(1)
                 return ""
 
-            index = urljoin(master, wait("the Arabic subtitle rendition in the master playlist", subs_uri, 180, every=3))
+            index = urljoin(master, wait(f"the {lang} subtitle rendition in the master playlist", subs_uri, 180, every=3))
 
             def first(url: str) -> str:
                 return next((ln.strip() for ln in fetch(url).splitlines() if ln and not ln.startswith("#")), "")
@@ -1626,13 +1628,70 @@ class Cell:
         finally:
             api.call("DELETE", f"/api/stream/sessions/{d.get('session_id')}")
 
+    #: runs one statement with the pipeline process's own database address and the venv's asyncpg;
+    #: prints the rows as JSON (argv: the statement, its arguments as a JSON list)
+    SQL_SCRIPT = """
+import asyncio, glob, json, sys
+import asyncpg
+dsn = None
+for env in glob.glob("/proc/[0-9]*/environ"):
+    try:
+        cmd = open(env[:-len("environ")] + "cmdline", "rb").read()
+        kvs = open(env, "rb").read().split(b"\\0")
+    except OSError:
+        continue
+    if b"maktaba_pipeline" not in cmd:
+        continue
+    dsn = next((kv.split(b"=", 1)[1].decode() for kv in kvs
+                if kv.startswith((b"MAKTABA_DATABASE_URL=", b"DATABASE_URL="))), None)
+    if dsn:
+        break
+if not dsn:
+    sys.exit("no pipeline process with MAKTABA_DATABASE_URL or DATABASE_URL")
+async def main():
+    c = await asyncpg.connect(dsn)
+    try:
+        rows = await c.fetch(sys.argv[1], *json.loads(sys.argv[2]))
+    finally:
+        await c.close()
+    print(json.dumps([dict(r) for r in rows], default=str, ensure_ascii=False))
+asyncio.run(main())
+"""
+
+    def sql(self, statement: str, *args: Any) -> list[dict[str, Any]]:
+        """One statement in the home's database, as the pipeline connects to it."""
+        user = ["-u", self.user] if self.user else []
+        p = docker("exec", "-i", *user, self.container, self.venv_python(), "-", statement,
+                   json.dumps(list(args), ensure_ascii=False), input=self.SQL_SCRIPT, check=False, timeout=120)
+        if p.returncode != 0:
+            raise AssertionError(f"SQL {statement[:80]!r}: {(p.stdout + p.stderr).strip()[-500:]}")
+        return list(json.loads(p.stdout.strip().splitlines()[-1]))
+
+    #: the database copy of a generated subtitle, as the subtitles stage keeps it for a
+    #: library read-only for Maktaba (story 59.03); seeded: this cell runs no transcription
+    STORED_SUB_WORDS = "The library opens at nine in the morning."
+
+    def seed_stored_subtitle(self, video_id: str, path: str) -> None:
+        body = f"WEBVTT\n\n00:00:00.000 --> 00:00:03.000\n{self.STORED_SUB_WORDS}\n"
+        self.sql("INSERT INTO subtitle_files (video_id, language, format, source, path, byte_size, sha256,"
+                 " is_external, metadata, content) VALUES ($1::uuid, 'en', 'vtt', 'generated', $2, $3, $4,"
+                 " false, '{\"stored\": \"database\", \"seeded_by\": \"tests/nas nas_converted\"}'::jsonb, $5)",
+                 video_id, path, len(body.encode()), hashlib.sha256(body.encode()).hexdigest(), body)
+
+    def stored_subtitle_rows(self, video_id: str) -> list[dict[str, Any]]:
+        return self.sql("SELECT path, deleted_at, content IS NOT NULL AS in_db FROM subtitle_files"
+                        " WHERE video_id = $1::uuid AND language = 'en' ORDER BY id", video_id)
+
     def assert_nas_converted(self) -> str:
         """After the share map's settle the home converts its own folders' paths
         (smb://<nas>/Movies/..., same video ids, nothing lost or added), and keeps working
         on them: a rescan of the converted libraries finds the same files (no duplicate, no
         removal), a poster is made from a converted path (a thumbnail job, which always runs
-        ffmpeg on the file), a transcode plays, and the read-only library's Arabic side-car
-        still reaches the player."""
+        ffmpeg on the file), a transcode plays, the read-only library's stored subtitle
+        (subtitle_files.content, seeded as the subtitles stage keeps it: this cell
+        transcribes nothing) has its path converted, stays the one live row and is served,
+        the Arabic side-car beside a converted file reaches the player, and Check access
+        still reads the converted roots."""
         assert self.api is not None
         api = self.api
         before = self.media_paths()
@@ -1642,12 +1701,18 @@ class Cell:
             raise AssertionError(f"{len(early)} paths converted before the check started (first {early[0]}); "
                                  "the settle should have held them")
         lesson = next((i for i, p in before.items() if p.endswith("/ar/درس 01.mp4")), None)
-        if lesson is None:
-            raise AssertionError("درس 01 is not in the library")
-        s, subs0 = api.get(f"/api/videos/{lesson}/subtitles")
+        stored = next((i for i, p in before.items() if p.endswith("/en/Lesson 02.mp4")), None)
+        if lesson is None or stored is None:
+            raise AssertionError("درس 01 or Lesson 02 is not in the library")
+        # the read-only library's database copy of a subtitle (subtitle_files.content), as
+        # the subtitles stage keeps it: served before the conversion
+        sub_path = f"{self.media.rstrip('/')}/en/Lesson 02.en.vtt"
+        self.seed_stored_subtitle(stored, sub_path)
+        s, subs0 = api.get(f"/api/videos/{stored}/subtitles")
         langs0 = sorted(x.get("language") for x in (subs0 or {}).get("items") or [])
-        if s != 200 or "ar" not in langs0:
-            raise AssertionError(f"درس 01's subtitles before: {s} {subs0}")
+        if s != 200 or langs0 != ["en"]:
+            raise AssertionError(f"Lesson 02's subtitles before: {s} {subs0}")
+        self.subtitle_served(stored, "en", self.STORED_SUB_WORDS)
 
         t0 = time.monotonic()
         self.ask_canon_check()
@@ -1692,15 +1757,24 @@ class Cell:
             raise AssertionError(f"the poster of a converted video: {st_} {len(b) if isinstance(b, bytes) else b}")
         trans = self.transcode(force_software=True)
 
-        s, subs1 = api.get(f"/api/videos/{lesson}/subtitles")
+        # the stored subtitle: its path converted with the rest, still the one live row (the
+        # rescan neither deleted nor doubled it), listed and served as before
+        rows = self.stored_subtitle_rows(stored)
+        want_sub = f"smb://{server}/{sub_path[len(posixpath.dirname(self.media.rstrip('/'))) + 1:]}"
+        live = [r for r in rows if r.get("deleted_at") in (None, "None")]
+        if len(live) != 1 or live[0].get("path") != want_sub or not live[0].get("in_db"):
+            raise AssertionError(f"Lesson 02's subtitle rows after: {rows}, want one live at {want_sub}")
+        s, subs1 = api.get(f"/api/videos/{stored}/subtitles")
         langs1 = sorted(x.get("language") for x in (subs1 or {}).get("items") or [])
         if s != 200 or langs1 != langs0:
-            raise AssertionError(f"درس 01's subtitles after: {langs1}, before {langs0}")
-        sub = self.subtitle_served(lesson, "تفتح المكتبة")
+            raise AssertionError(f"Lesson 02's subtitles after: {langs1}, before {langs0}")
+        sub = self.subtitle_served(stored, "en", self.STORED_SUB_WORDS)
+        # the side-car beside a converted file: found through the converted path
+        side = self.subtitle_served(lesson, "ar", "تفتح المكتبة")
         access = self.assert_access_ro()  # Check access on the converted roots, through the API's share map
         return (f"{len(after)} paths → smb://{server}/… in {took} min (batch {self.canon_batch}); rescan: {scans}, "
                 f"same {len(again)} videos; thumbnail job {thumb}, poster {len(b)} bytes; {trans}; "
-                f"subtitles {langs1}: {sub}; access: {access}")
+                f"stored subtitle at {want_sub}: {sub}; side-car: {side}; access: {access}")
 
     def home_server(self) -> str:
         assert self.api is not None
@@ -1744,6 +1818,11 @@ class Cell:
                                  f"(was {batch}), run {st.get('run')}, problems {st.get('problems')}")
         if self.media_paths() != paths:
             raise AssertionError("the paths changed across the restart")
+        stored = next((i for i, p in paths.items() if p.endswith("/en/Lesson 02.mp4")), None)
+        if stored is not None:
+            rows = [r for r in self.stored_subtitle_rows(stored) if r.get("deleted_at") in (None, "None")]
+            if len(rows) != 1 or not str(rows[0].get("path", "")).startswith("smb://"):
+                raise AssertionError(f"Lesson 02's stored subtitle across the restart: {rows}")
         now = {x.get("name"): x.get("exports") for x in self.storage_servers()}
         if now != servers:
             raise AssertionError(f"the storage servers changed across the restart: {servers} → {now}")
