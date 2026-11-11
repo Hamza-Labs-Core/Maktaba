@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.122
-up_to_commit: 4c61ef985
-built_from: v0.3.121
+tag: v0.3.123
+up_to_commit: 6a2630590
+built_from: v0.3.122
 ---
 
-# Trail snapshot: v0.3.122
+# Trail snapshot: v0.3.123
 
 ## Keep doing
 
@@ -535,6 +535,8 @@ built_from: v0.3.121
 | #1098 | 2026-11-10 | fix(pipeline): scanned videos get posters, transcripts and lengths (Epic 59) |
 | #1109 | 2026-11-10 | feat(plugins): isolation levels and the admin's yes for container-only isolation (Epic 59 story 59.07) |
 | #1112 | 2026-11-10 | Epic 59 story 59.06: speech to text on NAS CPUs: arm64, the model by tier, a measured speed |
+| #1117 | 2026-11-10 | feat(nas): 59.11 the plain compose as the NAS base, the Unraid template, the install page |
+| #1118 | 2026-11-10 | feat(nas): the TrueNAS app, its Custom App YAML and the catalog's own CI (story 59.10) |
 
 ## Index
 
