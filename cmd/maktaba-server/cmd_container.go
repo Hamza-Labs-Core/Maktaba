@@ -22,6 +22,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appruntime"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/mediaaccess"
 )
 
 // container: the Docker install's entrypoint (deploy/docker/server/Dockerfile, behind
@@ -97,6 +98,9 @@ type containerDeps struct {
 	start func(ctx context.Context, path string, args, env []string) (int, error)
 	// follow copies what is appended to the log to out until ctx ends.
 	follow func(ctx context.Context, path string, out io.Writer)
+	// platform is the NAS the container says it runs on (MAKTABA_PLATFORM; "" none): the
+	// setup hint names that NAS's way to run a command (story 59.10).
+	platform string
 	// preflight runs before anything else (story 59.01): the variables every child gets,
 	// or a refusal (exit 78). nil: none (tests).
 	preflight func() ([]string, error)
@@ -132,6 +136,7 @@ func newContainerDeps() containerDeps {
 			followLog(ctx, path, out, 250*time.Millisecond)
 		},
 		preflight: newPreflight().run,
+		platform:  mediaaccess.PlatformFromEnv(),
 	}
 }
 
@@ -382,17 +387,19 @@ func serverVersion(ctx context.Context, cfgPath string) string {
 	return v.Version
 }
 
-// waitSetup waits for server.toml (setup writes it last), saying once how to set up; false
-// when ctx ended first (the container stopped).
+// waitSetup waits for a finished setup, saying once how to set up; false when ctx ended
+// first (the container stopped). server.toml alone is not that: setup's finish step writes
+// it before it creates the database, and a server started then runs its own initdb on the
+// same folder as setup's (the TrueNAS app's CI saw both fail, Epic 59 story 59.08). So setup's
+// pending file (state/setup.json, removed once the finish step is done) must be gone too.
 func (c containerDeps) waitSetup(ctx context.Context) bool {
 	said := false
 	for {
-		if _, err := os.Stat(c.config); err == nil {
+		if _, err := os.Stat(c.config); err == nil && !setupRunning(c.config) {
 			return true
 		}
 		if !said {
-			c.logf("Maktaba is not set up yet: run its setup in this image, `docker compose run --rm maktaba setup`; " +
-				"the server starts here by itself once it is done")
+			c.logf("%s", setupHint(c.platform))
 			said = true
 		}
 		select {
@@ -401,6 +408,29 @@ func (c containerDeps) waitSetup(ctx context.Context) bool {
 		case <-time.After(c.every):
 		}
 	}
+}
+
+// setupRunning is whether a setup of the install at cfgPath has not finished (its pending
+// file is there). A config that does not load is not this check's to judge: the server says.
+func setupRunning(cfgPath string) bool {
+	cfg, _, err := config.LoadFrom(cfgPath)
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(setupPendingFor(cfg))
+	return err == nil
+}
+
+// setupHint is what a container not set up says once: how to run its setup on platform
+// (MAKTABA_PLATFORM, which the TrueNAS app sets; its households have no compose file to run).
+func setupHint(platform string) string {
+	if strings.EqualFold(strings.TrimSpace(platform), mediaaccess.PlatformTrueNAS) {
+		return "Maktaba is not set up yet: open this app's Shell in TrueNAS (Apps → Installed → Maktaba → " +
+			"Workloads → maktaba → Shell) and run `/opt/maktaba/server/bin/maktaba-server container setup`; " +
+			"the server starts here by itself once it is done"
+	}
+	return "Maktaba is not set up yet: run its setup in this image, `docker compose run --rm maktaba setup`; " +
+		"the server starts here by itself once it is done"
 }
 
 // run is the command: the bootstrap, then the given command (replacing this process) or,

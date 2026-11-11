@@ -46,8 +46,12 @@ type pendingPlex struct {
 	Linked   bool   `json:"linked"`
 }
 
-func (s *setupRun) pendingPath() string {
-	return filepath.Join(s.cfg.StateDir(), "state", "setup.json")
+func (s *setupRun) pendingPath() string { return setupPendingFor(s.cfg) }
+
+// setupPendingFor is where a setup keeps what its steps collected until its finish step is
+// done (state/setup.json): there while a setup runs, gone once it ended.
+func setupPendingFor(cfg config.Config) string {
+	return filepath.Join(cfg.StateDir(), "state", "setup.json")
 }
 
 func (s *setupRun) loadPending() (setupPending, error) {

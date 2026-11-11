@@ -153,10 +153,19 @@ AVAHI_IMAGE = "debian:12-slim"
 AVAHI_SCRIPT = """set -e
 apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
   avahi-daemon avahi-utils dbus >/dev/null
+# the NAS knows the user Maktaba's container runs as (a NAS account): the system bus looks
+# up a caller's groups and drops a uid it does not know
+getent passwd "$NAS_UID" >/dev/null || useradd -u "$NAS_UID" -M -s /usr/sbin/nologin maktaba-nas
 mkdir -p /run/dbus && rm -f /run/dbus/pid /run/dbus/system_bus_socket
 dbus-daemon --system --fork
 avahi-daemon --no-chroot --no-rlimits -D
 for i in $(seq 1 60); do avahi-daemon -c && break; sleep 1; done
+# ready once Avahi owns its name on the bus (Maktaba asks the bus that, once, at its start)
+for i in $(seq 1 60); do
+  dbus-send --system --print-reply --dest=org.freedesktop.DBus / org.freedesktop.DBus.GetNameOwner \
+    string:org.freedesktop.Avahi >/dev/null 2>&1 && break
+  sleep 1
+done
 avahi-publish-service "NAS share" _smb._tcp 445 >/tmp/publish.log 2>&1 &
 touch /tmp/avahi-ready
 exec sleep infinity
@@ -570,7 +579,9 @@ class Cell:
         publishes its SMB service."""
         log("the NAS's avahi-daemon, beside Maktaba")
         mounts = ["-v", f"{self.vol('dbus')}:/run/dbus"]
-        docker("run", "-d", "--name", self.avahi, "--network", "host", *mounts, AVAHI_IMAGE, "sh", "-c", AVAHI_SCRIPT)
+        uid = (self.user or "1000").split(":")[0]
+        docker("run", "-d", "--name", self.avahi, "--network", "host", "-e", f"NAS_UID={uid}", *mounts, AVAHI_IMAGE,
+               "sh", "-c", AVAHI_SCRIPT)
 
         def up() -> bool:
             st = docker("inspect", "-f", "{{.State.Running}}", self.avahi, check=False).stdout.strip()
@@ -629,7 +640,7 @@ class Cell:
         own = self.avahi_sh(f"avahi-resolve -4 -n {host}-maktaba.local")
         if "Failed" in own or not own.strip():
             raise AssertionError(f"{host}-maktaba.local does not resolve: {own.strip()}")
-        top = docker("top", self.container, "-eo", "comm").stdout
+        top = docker("top", self.container, "-eo", "pid,comm").stdout
         if "avahi-publish" in top:
             raise AssertionError("avahi-publish-service runs without a D-Bus mount")
         return f"{rec[3]} at {rec[6]}:{rec[8]} beside the NAS's _smb._tcp; {host}.local intact"
@@ -640,8 +651,11 @@ class Cell:
         rec = self.maktaba_seen()
         host = self.nas_name_intact()
         if rec[6].lower() != f"{host}.local".lower():
-            raise AssertionError(f"Maktaba announced at {rec[6]}, not through Avahi at {host}.local")
-        top = docker("top", self.container, "-eo", "comm").stdout
+            clog = docker("logs", self.container, check=False)
+            said = [ln for ln in ((clog.stdout or "") + (clog.stderr or "")).splitlines() if "advertising _maktaba" in ln]
+            raise AssertionError(f"Maktaba announced at {rec[6]}, not through Avahi at {host}.local"
+                                 f" ({said[-1].strip() if said else 'no advertising line'})")
+        top = docker("top", self.container, "-eo", "pid,comm").stdout
         if "avahi-publish" not in top:
             raise AssertionError("no avahi-publish-service in the container")
         return f"{rec[3]} at {rec[6]}:{rec[8]} through the NAS's Avahi"
@@ -763,6 +777,14 @@ class Cell:
 
     def assert_ready(self) -> str:
         return "health, sign-in and " + ", ".join(ROLES) + " running"
+
+    def assert_healthcheck(self) -> str:
+        """59.10: the image's own healthcheck (what the TrueNAS app's compose runs, by `docker
+        exec` as the container's user) says healthy once the web app answers."""
+        p = docker("exec", self.container, "/opt/maktaba/server/bin/maktaba-server", "healthcheck", check=False)
+        if p.returncode != 0 or "answered 200" not in p.stdout:
+            raise AssertionError(f"healthcheck exited {p.returncode}: {(p.stdout + p.stderr).strip()[-400:]}")
+        return p.stdout.strip()
 
     def assert_only_uid(self) -> str:
         top = docker("top", self.container, "-eo", "uid,pid,comm").stdout.splitlines()[1:]

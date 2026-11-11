@@ -87,6 +87,46 @@ type responderEnv struct {
 // avahiSockets are where a running avahi-daemon listens.
 var avahiSockets = []string{"/run/avahi-daemon/socket", "/var/run/avahi-daemon/socket"}
 
+// String names a responder kind, for the log.
+func (k responderKind) String() string {
+	switch k {
+	case viaDNSSD:
+		return "dns-sd"
+	case viaAvahi:
+		return "avahi (avahi-publish-service)"
+	case viaZeroconfOwnHost:
+		return "own responder (<host>-maktaba)"
+	case viaDNSAPI:
+		return "Windows DNS-SD"
+	case viaResolved:
+		return "systemd-resolved"
+	default:
+		return "own responder"
+	}
+}
+
+// systemBusSockets are where a mounted system bus appears in a container.
+var systemBusSockets = []string{"/run/dbus/system_bus_socket", "/var/run/dbus/system_bus_socket"}
+
+// Responder says which announcer this machine uses, for the log (Epic 59 story 59.08): in
+// a container given a system bus that does not lead to the host's Avahi, also why.
+func Responder() string {
+	r := systemResponder()
+	s := r.kind.String()
+	if r.kind != viaZeroconfOwnHost || !inContainer(os.Getenv, fileExists) {
+		return s
+	}
+	for _, p := range systemBusSockets {
+		if fileExists(p) {
+			if err := avahiBusCheck(); err != nil {
+				return s + "; the mounted system bus: " + err.Error()
+			}
+			return s + "; Avahi is on the mounted bus, but avahi-publish-service is missing"
+		}
+	}
+	return s
+}
+
 // systemResponder is this machine's announcer.
 func systemResponder() responder {
 	return systemResponderFor(responderEnv{

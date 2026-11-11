@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/mediaaccess"
 )
 
 // The container's preflight (Epic 59 story 59.01): what `maktaba-server container` checks
@@ -52,6 +54,11 @@ var containerTexts = map[string][2]string{
 		"The folder belongs to user {owner}: give user {uid} access, or run the container as {owner} again.",
 		"المجلد ملك المستخدم {owner}: امنح المستخدم {uid} صلاحية الوصول، أو شغّل الحاوية بصفة المستخدم {owner} كما كانت.",
 	},
+	// story 59.10: on TrueNAS the data folder is a dataset, fixed in its permissions editor
+	"container.write_truenas": {
+		"Edit the dataset's permissions and add an ACL entry for user {uid} with Modify, or use the Apps preset.",
+		"عدّل أذونات مجموعة البيانات وأضف إدخال ACL للمستخدم {uid} بصلاحية التعديل، أو استخدم الإعداد المسبق Apps.",
+	},
 	"container.root_refused": {
 		"Maktaba does not run as root. Set the container's user to a normal user (for example 1000:1000).",
 		"لا يعمل Maktaba بصلاحيات الجذر. اضبط مستخدم الحاوية على مستخدم عادي (مثل 1000:1000).",
@@ -81,6 +88,8 @@ type preflight struct {
 	group     string   // /etc/group
 	// nssLib is libnss_wrapper.so ("" when the image has none: no name is given).
 	nssLib string
+	// platform is MAKTABA_PLATFORM ("" none): a refusal says the fix in that NAS's words.
+	platform string
 }
 
 func newPreflight() preflight {
@@ -92,6 +101,7 @@ func newPreflight() preflight {
 		uid: os.Getuid(), gid: os.Getgid(), volume: home,
 		status: "/proc/self/status", mountinfo: "/proc/self/mountinfo", sockets: dockerSockets,
 		passwd: "/etc/passwd", group: "/etc/group", nssLib: findNSSWrapper(),
+		platform: mediaaccess.PlatformFromEnv(),
 	}
 }
 
@@ -223,6 +233,9 @@ func (p preflight) writeCheck() error {
 	msg := containerText("container.write_denied", "{path}", p.volume, "{uid}", uid, "{gid}", gid)
 	if owner, ok := ownerOf(p.volume); ok && owner != p.uid && owner != 0 { // never "run as root"
 		msg += "\n" + containerText("container.write_owner", "{owner}", strconv.Itoa(owner), "{uid}", uid)
+	}
+	if strings.EqualFold(strings.TrimSpace(p.platform), mediaaccess.PlatformTrueNAS) {
+		msg += "\n" + containerText("container.write_truenas", "{uid}", uid)
 	}
 	return &refusal{msg + "\n(" + err.Error() + ")"}
 }

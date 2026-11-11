@@ -23,7 +23,7 @@ import summary  # noqa: E402
 MATRIX = cell.load_cells()
 # Every story whose cells and assertions the harness knows (README §7 phases); a new needs
 # value is a typo unless it is added here with its cell.
-KNOWN_NEEDS = {"59.01", "59.02", "59.03", "59.04", "59.05", "59.06", "59.07", "59.08", "59.11", "pg-stale-lock", "scan-grant-race", "plugin-cache-grant", "poster-queue"}
+KNOWN_NEEDS = {"59.01", "59.02", "59.03", "59.04", "59.05", "59.06", "59.07", "59.08", "59.10", "59.11", "pg-stale-lock", "scan-grant-race", "plugin-cache-grant", "poster-queue"}
 # The phase-1 cells story 59.15 lists (README §9): each must be in the matrix
 PHASE_ONE = {"uid-1000", "uid-568", "uid-unraid", "uid-dsm", "media-ro", "media-none", "media-foreign",
              "mem-4g", "mem-6g", "no-landlock-enosys", "no-landlock-eperm"}
@@ -325,3 +325,93 @@ class SpeechTest(unittest.TestCase):
         self.assertIn('speech = "on"', cell.server_toml("", speech=True))
         self.assertNotIn("faster-whisper-tiny", cell.server_toml("", speech=True))
         self.assertIn("faster-whisper-tiny", cell.server_toml(""))
+
+
+class TrueNASShape(unittest.TestCase):
+    """Story 59.10: the shape truenas_app.py asks of each render of the TrueNAS app."""
+
+    def setUp(self) -> None:
+        import truenas_app
+
+        self.check = truenas_app.check_shape
+        self.values = {
+            "TZ": "Asia/Riyadh",
+            "run_as": {"user": 568, "group": 568},
+            "network": {"host_network": True},
+            "resources": {"limits": {"memory": 4096}, "gpus": {}},
+            "storage": {"data": {"type": "ix_volume"}, "media": [{"path": "/mnt/tank/media", "read_only": True}]},
+        }
+
+    def compose(self) -> dict:
+        return {"services": {
+            "permissions": {"user": "0:0"},
+            "maktaba": {
+                "user": "568:568", "network_mode": "host", "stop_grace_period": "1m30s",
+                "environment": {"MAKTABA_PLATFORM": "truenas", "TZ": "Asia/Riyadh", "NVIDIA_VISIBLE_DEVICES": "void"},
+                "healthcheck": {"test": ["CMD", "/opt/maktaba/server/bin/maktaba-server", "healthcheck"]},
+                "volumes": [{"type": "bind", "source": "/opt/x", "target": "/var/lib/maktaba"},
+                            {"type": "bind", "source": "/mnt/tank/media", "target": "/mnt/tank/media", "read_only": True}],
+                "depends_on": {"permissions": {"condition": "service_completed_successfully"}},
+                "group_add": [568],
+                "deploy": {"resources": {"limits": {"memory": str(4096 << 20)}}},
+            }}}
+
+    def test_the_default_render_passes(self) -> None:
+        self.assertIn("568:568, host network, ix_volume data, 1 media, no GPU", self.check(self.compose(), self.values))
+
+    def test_each_departure_is_named(self) -> None:
+        cases = [
+            (lambda s: s.update(user="1000:1000"), "user"),
+            (lambda s: s["environment"].pop("MAKTABA_PLATFORM"), "MAKTABA_PLATFORM"),
+            (lambda s: s["environment"].update(MAKTABA_UPDATE_DISABLE="1"), "self-update"),
+            (lambda s: s.pop("network_mode"), "network_mode"),
+            (lambda s: s["volumes"].append({"source": "/run/dbus/system_bus_socket", "target": "/run/dbus/system_bus_socket"}), "D-Bus"),
+            (lambda s: s["volumes"].append({"source": "/dev/null", "target": "/proc/spl/kstat/zfs/arcstats"}), "/proc"),
+            (lambda s: s["volumes"][1].update(read_only=False), "read_only"),
+            (lambda s: s["volumes"][1].update(target="/media"), "own path"),
+            (lambda s: s.pop("depends_on"), "permissions step"),
+            (lambda s: s.update(devices=["/dev/dri:/dev/dri"]), "/dev/dri"),
+            (lambda s: s.update(stop_grace_period="10s"), "stop_grace_period"),
+        ]
+        for change, words in cases:
+            c = self.compose()
+            change(c["services"]["maktaba"])
+            with self.assertRaisesRegex(AssertionError, words.replace("/", "\\/")):
+                self.check(c, self.values)
+
+    def test_gpus_bridge_and_host_path(self) -> None:
+        v = dict(self.values, resources={"limits": {"memory": 4096}, "gpus": {"use_all_gpus": True}})
+        c = self.compose()
+        c["services"]["maktaba"].update(devices=[{"source": "/dev/dri", "target": "/dev/dri"}], group_add=[44, 107, 568])
+        self.assertIn("Intel/AMD GPU", self.check(c, v))
+        c["services"]["maktaba"]["group_add"] = [568]
+        with self.assertRaisesRegex(AssertionError, "render"):
+            self.check(c, v)
+
+        v = dict(self.values, resources={"limits": {"memory": 4096}, "gpus": {
+            "nvidia_gpu_selection": {"0000:01:00.0": {"use_gpu": True, "uuid": "GPU-x"}}}})
+        c = self.compose()
+        s = c["services"]["maktaba"]
+        s["deploy"]["resources"]["reservations"] = {"devices": [{"driver": "nvidia", "capabilities": ["gpu"]}]}
+        s["environment"]["NVIDIA_VISIBLE_DEVICES"] = "GPU-x"
+        self.assertIn("NVIDIA", self.check(c, v))
+
+        v = dict(self.values, network={"host_network": False, "host_ip": "192.168.1.20"})
+        c = self.compose()
+        s = c["services"]["maktaba"]
+        s.pop("network_mode")
+        s["ports"] = [{"target": t, "published": str(30000 + t % 1000)} for t in (8088, 8080, 8081)]
+        s["environment"]["MAKTABA_HOST_IP"] = "192.168.1.20"
+        self.assertIn("bridge", self.check(c, v))
+        s["ports"].append({"target": 54329})
+        with self.assertRaisesRegex(AssertionError, "Postgres"):
+            self.check(c, v)
+
+        v = dict(self.values, storage={"data": {"type": "host_path"}, "media": []})
+        c = self.compose()
+        c["services"]["maktaba"]["volumes"].pop()
+        with self.assertRaisesRegex(AssertionError, "never chowned"):
+            self.check(c, v)
+        del c["services"]["permissions"]
+        c["services"]["maktaba"].pop("depends_on")
+        self.assertIn("host_path data", self.check(c, v))

@@ -2646,6 +2646,19 @@ build fails when the two differ.
   connection's address, so a forwarded `127.0.0.1` passes for none of them, and a zoned
   link-local client address (`fe80::1%eth0`) keeps its own key.
 
+- **Maktaba as a TrueNAS app (story 59.10).** TrueNAS 25.04 and newer gets Maktaba's app in the
+  catalog's own format (`deploy/nas/truenas`), ready for its community train: it runs as `apps`
+  (568), keeps its data on a dataset with the Apps preset (an SSD pool when there is one) or an
+  ixVolume the catalog's permissions step hands to 568, mounts each media folder at its own path
+  with a read-only toggle, uses the host network, and offers TrueNAS's GPU choice (Intel/AMD for
+  VA-API, NVIDIA). Until the app is in the catalog, each release carries
+  `maktaba-truenas-custom-app.yaml` to install as a Custom App. The setup runs from the app's
+  Shell (`maktaba-server container setup`); a new `maktaba-server healthcheck` keeps the app
+  healthy while it waits for that setup. On TrueNAS a data folder Maktaba cannot write says
+  "Edit the dataset's permissions and add an ACL entry for user 568 with Modify, or use the Apps
+  preset." CI runs the catalog's own tooling on the app (render, metadata, ports, deploy), and the
+  maktaba.tv guide and device checklist cover TrueNAS 25.04 and 25.10.
+
 - **On a NAS, apps find the home beside the NAS's own names, a bridge network says how to
   connect, and forwarded addresses are believed only from trusted proxies (story 59.08).** In
   a container Maktaba answers mDNS under its own name, `<nas>-maktaba.local`, beside the NAS's
@@ -2657,7 +2670,8 @@ build fails when the two differ.
   named in setup, the log and Settings. `[server] trusted_proxies` (Settings → Storage &
   discovery) lists the reverse proxies whose `X-Forwarded-For` the API and streaming believe,
   besides this machine's own and the home's approved nodes. Before this, any peer's header was
-  believed.
+  believed. A container waiting for its setup starts the server only once setup has finished,
+  no longer as soon as server.toml appears, before setup's database is made.
 
 ### Fixed
 
