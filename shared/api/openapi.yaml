@@ -7819,6 +7819,19 @@ paths:
                   allow_only:
                     type: boolean
                     description: Only what a rule allows is open, whatever its tier.
+                  device_limit:
+                    type: integer
+                    enum:
+                    - -1
+                    - 0
+                    - 9
+                    - 13
+                    - 16
+                    - 18
+                    description: 'The limit this sign-in''s device set, when it set one: `max_tier` is then the stricter of it and the account''s own limit, and it is present even when `restricted` is `false`.'
+                  device_pending:
+                    type: boolean
+                    description: The device has since said something looser, which waits for an admin or a guardian.
                   version:
                     type: integer
                 required:
@@ -7830,6 +7843,179 @@ paths:
         default:
           $ref: '#/components/responses/InternalError'
       operationId: getMyParental
+  /me/age-signal:
+    post:
+      tags:
+      - Parental controls
+      summary: Send what the device says about its user's age
+      description: 'An app tells the home what its device said: the age range the guardian shared and the device''s film and TV rating limits. The home turns each into an age tier (rounding down), keeps the strictest, and holds this sign-in to it, on top of the account''s own limit and even when the account has none. It only tightens: a first statement or a stricter one applies at once; a looser one is kept and waits until an admin or a guardian of the account clears it. A statement with no value limits nothing and, after a limit, counts as looser. The limit belongs to the sign-in (the refresh token''s family) that sent it, so the caller must hold an access token an app got by signing in. After a 200, refresh the access token: the next one carries the limit in its `ac` claim. The home applies the limit from this call on, whatever the token says.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                age_range:
+                  type: object
+                  description: The age range the person or their guardian shared (Apple's Declared Age Range). Leave it out when nothing was shared. An `upper` of 9 or less limits to tier `0`, 13 or less to `9`, 18 or less to `13`; no `upper`, or one above 18, limits nothing.
+                  properties:
+                    lower:
+                      type: integer
+                      minimum: 0
+                      maximum: 150
+                      description: The youngest age of the range.
+                    upper:
+                      type: integer
+                      minimum: 0
+                      maximum: 150
+                      description: The oldest age of the range; absent for an adult range.
+                    declaration:
+                      type: string
+                      pattern: ^[a-z][a-z0-9_]{0,39}$
+                      description: 'How the range was declared, as the device names it in snake case: for example `self_declared` or `guardian_declared`. Kept for the guardian to read; it changes no limit.'
+                movie_ceiling:
+                  type: integer
+                  minimum: 0
+                  maximum: 1000
+                  description: 'The device''s highest allowed film rating on Apple''s 0 to 1000 scale (`ManagedSettingsStore.effectiveMaximumMovieRating`): `0` nothing, `100` G, `200` PG, `300` PG-13, `400` R, `500` NC-17, `1000` no limit. A value between two steps counts as the step below it.'
+                tv_ceiling:
+                  type: integer
+                  minimum: 0
+                  maximum: 1000
+                  description: 'The device''s highest allowed TV rating on Apple''s 0 to 1000 scale (`effectiveMaximumTVShowRating`): `0` nothing, `100` TV-Y, `200` TV-Y7, `300` TV-G, `400` TV-PG, `500` TV-14, `600` TV-MA, `1000` no limit. A value between two steps counts as the step below it.'
+                region:
+                  type: string
+                  pattern: ^([A-Za-z]{2}|[0-9]{3})$
+                  description: 'The device''s region: two letters (ISO 3166-1, any case) or three digits (UN M.49). Kept with the signal. The United States steps are used for every region today.'
+              example:
+                age_range:
+                  lower: 13
+                  upper: 15
+                  declaration: guardian_declared
+                movie_ceiling: 400
+                tv_ceiling: 400
+                region: US
+      responses:
+        '200':
+          description: Recorded. `tier_limit` is the limit in force, which is the earlier one when what was sent is looser.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tier_limit:
+                    type: integer
+                    nullable: true
+                    enum:
+                    - -1
+                    - 0
+                    - 9
+                    - 13
+                    - 16
+                    - 18
+                    - null
+                    description: 'The device limit now in force on this sign-in: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier; `null` when the device limits nothing.'
+                  pending_looser:
+                    type: boolean
+                    description: 'What was sent is looser than the limit in force: it is kept and waits for an admin or a guardian to clear it.'
+                  refresh:
+                    type: boolean
+                    enum:
+                    - true
+                    description: 'Always `true`: refresh the access token now so the next one carries the limit.'
+                required:
+                - tier_limit
+                - pending_looser
+                - refresh
+                example:
+                  tier_limit: 9
+                  pending_looser: false
+                  refresh: true
+        '409':
+          description: 'The credential names no app sign-in (`code`: `no_sign_in`): a web session, an API token, or an access token minted before this release. An app refreshes its access token and sends the signal again.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: 'A value is out of range: an age outside 0 to 150, `lower` above `upper`, a ceiling outside 0 to 1000, a `declaration` that is not snake case, or a `region` that is neither two letters nor three digits.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: postMyAgeSignal
+  /users/{id}/parental/signals/{family}/clear:
+    post:
+      tags:
+      - Parental controls
+      summary: Clear a sign-in's device signal
+      description: For admins and the account's guardians. When a looser statement is waiting on the sign-in, it is applied and becomes the device limit. When none is waiting, the signal is removed and the sign-in is held to the account's own limit alone until its device speaks again. `family` is the `refresh_family_id` of a signal listed by `GET /users/{id}/parental`. An admin can clear a signal of any account, restricted or not. A sign-in that is itself limited by its device clears nothing, whoever it belongs to. The sign-in's access token keeps the earlier limit until its next refresh.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: path
+        name: family
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: The `refresh_family_id` of the signal.
+      responses:
+        '200':
+          description: Cleared.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tier_limit:
+                    type: integer
+                    nullable: true
+                    enum:
+                    - -1
+                    - 0
+                    - 9
+                    - 13
+                    - 16
+                    - 18
+                    - null
+                    description: The device limit now in force on that sign-in; `null` when there is none.
+                  removed:
+                    type: boolean
+                    description: Nothing looser was waiting, so the signal was removed.
+                required:
+                - tier_limit
+                - removed
+        '403':
+          description: 'Not this caller''s to clear: `code` is `restricted` for a restricted account, `admin_only` for anyone else who is neither an admin nor a guardian of the account, `device_limited` when the caller''s own sign-in is limited by its device. A play-only sign-in through Maktaba Cloud is refused too.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No signal for this sign-in on an account the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: clearParentalSignal
   /users/{id}/parental:
     get:
       tags:
