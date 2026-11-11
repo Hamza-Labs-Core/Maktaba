@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 	"github.com/lib/pq"
 )
 
@@ -33,8 +34,8 @@ func labelSQL(kindCol, idCol string) (joins, expr string) {
 	// a duplicate group is named by its keeper, else its first member (pipeline
 	// engine/subjects.py label_of)
 	expr = fmt.Sprintf(`COALESCE(CASE %[1]s
-		WHEN 'video' THEN COALESCE(lv.title, lv.filename)
-		WHEN 'dup_group' THEN (SELECT COALESCE(gkv.title, gkv.filename) FROM duplicate_groups gk
+		WHEN 'video' THEN `+videotitle.SQL("lv.title", "lv.filename")+`
+		WHEN 'dup_group' THEN (SELECT `+videotitle.SQL("gkv.title", "gkv.filename")+` FROM duplicate_groups gk
 			JOIN videos gkv ON gkv.id = COALESCE(gk.keeper_video_id,
 				(SELECT gkm.video_id FROM duplicate_members gkm WHERE gkm.group_id = gk.id ORDER BY gkm.video_id LIMIT 1))
 			WHERE gk.id = %[2]s)

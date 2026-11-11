@@ -22,6 +22,7 @@ import { Badge } from "@ds/components/Badge/Badge";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { api, ApiError } from "../lib/api";
+import { videoTitle } from "../lib/videoTitle";
 import { subscribe } from "../lib/ws";
 import { useI18n } from "../lib/i18n";
 import { LoadError } from "../components/LoadError";
@@ -302,7 +303,7 @@ export function VideoDetail() {
             ref={setHero}
             className="mkt-video__hero"
             onClick={play}
-            aria-label={`${t("video.play")}: ${video.title || video.filename}`}
+            aria-label={`${t("video.play")}: ${videoTitle(video)}`}
           >
             <VideoPoster videoId={video.id} />
             <span className="mkt-video__hero-play" aria-hidden="true">
@@ -311,7 +312,7 @@ export function VideoDetail() {
           </button>
         )}
         <TitleRow>
-          <h1 dir="auto">{video.title || video.filename}</h1>
+          <h1 dir="auto">{videoTitle(video)}</h1>
         </TitleRow>
         <div className="mkt-video__flags">
           {video.detected_language && <Badge>{video.detected_language}</Badge>}
@@ -337,7 +338,7 @@ export function VideoDetail() {
         {/* Phase 2: resume, watched, favorite, add to playlist, the series' lessons */}
         <VideoActions videoId={videoId} />
       </header>
-      <Tabs label={video.title || video.filename} items={items} value={tab} onChange={selectTab} />
+      <Tabs label={videoTitle(video)} items={items} value={tab} onChange={selectTab} />
       {/* story 54.20: installed plugins' panels, below Maktaba's own sections */}
       <PluginPanels subject={{ kind: "video", id: video.id }} />
     </section>

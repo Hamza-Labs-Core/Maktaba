@@ -35,6 +35,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 )
 
 // FollowPlanHash is the external_links.content_hash that hands a channel back
@@ -319,7 +320,7 @@ func (h *Handler) collectionSources(ctx context.Context, q string, limit int) ([
 
 func (h *Handler) videoSources(ctx context.Context, q string, limit int) ([]Source, error) {
 	return h.querySources(ctx, SourceVideo, `
-		SELECT v.id, COALESCE(NULLIF(v.title, ''), v.filename), 1, COALESCE(v.duration_sec, 0)
+		SELECT v.id, `+videotitle.SQL("v.title", "v.filename")+`, 1, COALESCE(v.duration_sec, 0)
 		FROM videos v
 		WHERE v.deleted_at IS NULL
 		  AND (lower(COALESCE(v.title, '')) LIKE $1 ESCAPE '\' OR lower(v.filename) LIKE $1 ESCAPE '\')

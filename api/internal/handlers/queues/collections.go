@@ -9,6 +9,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 )
 
 // LibraryCollections is the part of a library's story that is not a season
@@ -67,8 +68,8 @@ SELECT g.id::text, g.kind, g.basis, g.title, count(i.video_id)
  GROUP BY g.id, g.kind, g.basis, g.title
  ORDER BY g.kind, count(i.video_id) DESC, g.title`
 
-const promosSQL = `
-SELECT v.id::text, COALESCE(v.title, v.filename), COALESCE(s.name_override, s.name),
+var promosSQL = `
+SELECT v.id::text, ` + videotitle.SQL("v.title", "v.filename") + `, COALESCE(s.name_override, s.name),
        p.season_id::text, p.season, p.evidence
   FROM promo_links p
   JOIN videos v ON v.id = p.video_id

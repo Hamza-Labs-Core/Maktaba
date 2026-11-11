@@ -65,9 +65,9 @@ import Testing
         #expect(try JSONDecoder().decode(Me.self, from: Data(json.utf8)).homeName == nil)
     }
 
-    @Test func videoTitleFallsBackToTheFile() throws {
+    @Test func videoTitleFallsBackToTheFileWithoutItsExtension() throws {
         let json = #"{"id":"v","library_id":"l","filename":"a.mp4","title":""}"#
-        #expect(try JSONDecoder().decode(Video.self, from: Data(json.utf8)).displayTitle == "a.mp4")
+        #expect(try JSONDecoder().decode(Video.self, from: Data(json.utf8)).displayTitle == "a")
     }
 }
 

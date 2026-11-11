@@ -34,7 +34,7 @@ public struct QueueItem: Decodable, Identifiable, Hashable, Sendable {
     public let seriesID: String?
     public let seriesName: String?
 
-    public var name: String { (title?.isEmpty == false ? title : nil) ?? filename }
+    public var name: String { VideoTitle.of(title, filename) }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyKey.self)

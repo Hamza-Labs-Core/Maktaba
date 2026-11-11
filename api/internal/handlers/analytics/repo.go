@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"sort"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 )
 
 // repo holds the aggregate reads. driver selects dialect-specific SQL for
@@ -153,7 +155,7 @@ func (r *repo) nowPlays(ctx context.Context, f Filters, playCutoff, now time.Tim
 		w += " AND " + cond
 	}
 	q := `SELECT ws.id, CAST(ws.user_id AS TEXT), COALESCE(u.username,''), ws.video_id,
-	             COALESCE(NULLIF(v.title,''), v.filename), ws.started_at, ws.percent_complete,
+	             ` + videotitle.SQL("v.title", "v.filename") + `, ws.started_at, ws.percent_complete,
 	             ws.client_app, ws.client_version, ws.platform, ws.device_type
 	      FROM watch_sessions ws
 	      JOIN videos v     ON v.id = ws.video_id
@@ -247,7 +249,7 @@ func orUnknown(s string) string {
 func (r *repo) topVideos(ctx context.Context, f Filters, limit int) ([]TopVideo, error) {
 	b := r.newQ()
 	q := b.with(f) + `
-	SELECT ev.video_id, COALESCE(NULLIF(v.title,''), v.filename), COUNT(*),
+	SELECT ev.video_id, ` + videotitle.SQL("v.title", "v.filename") + `, COUNT(*),
 	       COALESCE(SUM(ev.seconds),0), COUNT(DISTINCT ev.user_id), COALESCE(AVG(ev.completed),0)
 	FROM ev
 	JOIN videos v ON v.id = ev.video_id

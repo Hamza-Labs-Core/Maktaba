@@ -2,6 +2,7 @@ package com.hamzalabs.maktaba.core.queue
 
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
+import com.hamzalabs.maktaba.core.api.VideoTitle
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.builtins.serializer
@@ -51,7 +52,7 @@ data class QueueItem(
     @SerialName("series_id") val seriesId: String? = null,
     @SerialName("series_name") val seriesName: String? = null,
 ) {
-    val name: String get() = title?.takeIf { it.isNotBlank() } ?: filename
+    val name: String get() = VideoTitle.of(title, filename)
 }
 
 @Serializable

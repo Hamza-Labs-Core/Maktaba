@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.tv.data
 
+import com.hamzalabs.maktaba.core.api.VideoTitle
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -21,7 +22,7 @@ data class TvCard(
     val completed: Boolean? = null,
     val series: SeriesName? = null,
 ) {
-    val name: String get() = title?.takeIf { it.isNotBlank() } ?: filename
+    val name: String get() = VideoTitle.of(title, filename)
     val progress: Float
         get() {
             val p = positionSec ?: return 0f
@@ -177,7 +178,8 @@ data class GroupedCard(
     @SerialName("unwatched_count") val unwatchedCount: Int? = null,
     @SerialName("duration_sec") val durationSec: Double? = null,
 ) {
-    val label: String get() = name?.takeIf { it.isNotBlank() } ?: title?.takeIf { it.isNotBlank() } ?: filename ?: id
+    val label: String
+        get() = name?.takeIf { it.isNotBlank() } ?: filename?.let { VideoTitle.of(title, it) } ?: title?.takeIf { it.isNotBlank() } ?: id
     val picture: String get() = posterVideoId ?: id
 }
 

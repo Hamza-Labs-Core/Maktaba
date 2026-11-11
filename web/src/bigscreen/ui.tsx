@@ -5,6 +5,7 @@
 // grid), so the focus engine, the browser's Tab and a screen reader agree.
 import { useRef, useState, type ReactNode } from "react";
 import { useI18n } from "../lib/i18n";
+import { videoTitle } from "../lib/videoTitle";
 import { watchedFraction, type VideoCard } from "../lib/browse";
 import { formatDuration } from "../components/VideoViews";
 import { useLayer } from "./focus/FocusProvider";
@@ -95,7 +96,7 @@ export function Picture({ src, className }: { src: string | null; className?: st
 export const posterOf = (videoId: string) => `/api/videos/${encodeURIComponent(videoId)}/poster`;
 
 export function cardTitle(v: { title?: string | null; filename?: string | null; id: string }) {
-  return v.title || v.filename || v.id;
+  return videoTitle(v);
 }
 
 export function Progress({ fraction, label }: { fraction: number; label: string }) {

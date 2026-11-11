@@ -246,6 +246,14 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A video with no title shows its file name without the extension.** A video whose file
+  carries no title metadata was listed by its raw file name, extension and all
+  (`My Lecture 03.mp4`). The library, home rows, search, series, collections, playlists, the
+  player and the admin queues now show `My Lecture 03` on the web and in the Android, Android TV, Apple and
+  Apple TV apps. Only the final extension goes (`a.b.mkv` shows `a.b`); a title from the file's
+  metadata is never cut, and file details, paths and the duplicates view still show the full
+  file name. Nothing stored changes, and search still matches the file name.
+
 - **The first scan of a library you just added finds its files.** A scan that started right
   after a library was added could run in a plugin runner that had not yet been given access to
   the new folder: it found nothing (Permission denied in the log), and only a later scan found

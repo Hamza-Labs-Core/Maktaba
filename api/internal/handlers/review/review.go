@@ -20,6 +20,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/transcript"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 )
 
 // LockFor is how long opening a flag holds it for the reviewer.
@@ -139,7 +140,7 @@ type Flag struct {
 	CreatedAt    time.Time       `json:"created_at"`
 }
 
-const flagCols = `f.id::text, f.kind, f.transcript_id::text, f.video_id::text, COALESCE(v.title, v.filename, ''),
+var flagCols = `f.id::text, f.kind, f.transcript_id::text, f.video_id::text, COALESCE(` + videotitle.SQL("v.title", "v.filename") + `, ''),
 	f.library_id::text, f.segment_seq, f.word_index, f.word_count, f.char_start, f.char_len,
 	f.start_sec, f.end_sec, f.original, f.context, f.language, f.reasons, f.scores, f.priority,
 	f.candidates, f.key, f.status, f.resolution, f.locked_by::text, u.username, f.locked_until, f.created_at`
@@ -346,7 +347,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	if f.Key != "" {
 		_ = h.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM word_flags
 			WHERE key = $1 AND language = $2 AND status = 'open' AND id <> $3`, f.Key, f.Language, f.ID).Scan(&d.SameKeyOpen)
-		rows, err := h.DB.QueryContext(ctx, `SELECT f.id::text, f.video_id::text, COALESCE(v.title, v.filename, ''),
+		rows, err := h.DB.QueryContext(ctx, `SELECT f.id::text, f.video_id::text, COALESCE(`+videotitle.SQL("v.title", "v.filename")+`, ''),
 			f.context, f.start_sec FROM word_flags f LEFT JOIN videos v ON v.id = f.video_id
 			WHERE f.key = $1 AND f.language = $2 AND f.status = 'open' AND f.id <> $3
 			ORDER BY f.priority DESC, f.id LIMIT 5`, f.Key, f.Language, f.ID)

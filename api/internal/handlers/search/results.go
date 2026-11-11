@@ -17,6 +17,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 )
 
 // maxVideoPassages bounds the passages one video's list reads (a transcript
@@ -757,7 +758,7 @@ func (h *Handler) cards(ctx context.Context, p *principal.Principal, ids []strin
 		idCol, libCol = "v.id", "COALESCE(v.library_id, '')"
 	}
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT `+idCol+`, COALESCE(NULLIF(v.title, ''), v.filename, ''), v.duration_sec,
+		SELECT `+idCol+`, COALESCE(`+videotitle.SQL("v.title", "v.filename")+`, ''), v.duration_sec,
 		       `+libCol+`, COALESCE(l.name, '')
 		FROM videos v LEFT JOIN libraries l ON l.id = v.library_id
 		WHERE `+strings.Join(where, " AND "), args...)

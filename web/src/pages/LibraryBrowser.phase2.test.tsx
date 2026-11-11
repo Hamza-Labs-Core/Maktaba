@@ -323,7 +323,7 @@ describe("LibraryBrowser, Phase 2", () => {
           })
     );
     renderGrid();
-    await screen.findByText("a.mp4");
+    await screen.findByText("a");
     expect(screen.queryByRole("combobox", { name: "Tag" })).toBeNull();
     expect(
       within(screen.getByRole("group", { name: "Language" })).getByRole("button", { name: "en" })

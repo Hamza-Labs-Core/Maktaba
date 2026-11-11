@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.tv.data
 
+import com.hamzalabs.maktaba.core.api.VideoTitle
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -21,7 +22,7 @@ data class TvVideo(
     @SerialName("playback_state") val playback: PlaybackState? = null,
 ) {
     val displayTitle: String
-        get() = displayTitleRaw?.takeIf { it.isNotBlank() } ?: title?.takeIf { it.isNotBlank() } ?: filename
+        get() = displayTitleRaw?.takeIf { it.isNotBlank() } ?: VideoTitle.of(title, filename)
 
     /** Where to pick up, in seconds: null when not started, finished, or too near either end. */
     val resumeSec: Double?

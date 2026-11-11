@@ -58,8 +58,8 @@ data class Video(
     val description: String? = null,
     @SerialName("duration_sec") val durationSec: Double? = null,
 ) {
-    /** What a person reads: the title, else the file's name. */
-    val displayTitle: String get() = title?.takeIf { it.isNotEmpty() } ?: filename
+    /** What a person reads: the title, else the file's name without its extension. */
+    val displayTitle: String get() = VideoTitle.of(title, filename)
 }
 
 /** A page of a list (`{"items": [...], "next": cursor}`). */

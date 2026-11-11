@@ -93,7 +93,7 @@ describe("LibraryBrowser", () => {
         .find((u) => u.includes("cursor=CURSOR_2"));
       expect(cursorCall).toBeDefined();
     });
-    await waitFor(() => expect(screen.getByText("b.mp4")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("b")).toBeInTheDocument());
   });
 
   it("shows the first-run empty state when there are no videos", async () => {
@@ -130,8 +130,8 @@ describe("LibraryBrowser", () => {
       expect(page2.get("sort")).toBe("created_at");
       expect(page2.get("limit")).toBe("60");
       await act(async () => release({ items: [v2], next: null }));
-      expect(await screen.findByText("b.mp4")).toBeInTheDocument();
-      expect(screen.getByText("a.mp4")).toBeInTheDocument();
+      expect(await screen.findByText("b")).toBeInTheDocument();
+      expect(screen.getByText("a")).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /load more/i })).not.toBeInTheDocument();
     });
 
@@ -145,8 +145,8 @@ describe("LibraryBrowser", () => {
       await waitFor(() =>
         expect(screen.queryByRole("button", { name: /load more/i })).not.toBeInTheDocument()
       );
-      expect(screen.getAllByText("a.mp4")).toHaveLength(1);
-      expect(screen.getAllByText("b.mp4")).toHaveLength(1);
+      expect(screen.getAllByText("a")).toHaveLength(1);
+      expect(screen.getAllByText("b")).toHaveLength(1);
     });
 
     it("LIB-18: a failed Load more keeps loaded videos, shows the error and keeps the button", async () => {
@@ -161,7 +161,7 @@ describe("LibraryBrowser", () => {
         await screen.findByText("Something went wrong on your home. Try again in a moment.")
       ).toBeInTheDocument();
       expect(screen.queryByText("boom")).toBeNull();
-      expect(screen.getByText("a.mp4")).toBeInTheDocument();
+      expect(screen.getByText("a")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /load more/i })).toBeInTheDocument();
     });
 
@@ -192,9 +192,9 @@ describe("LibraryBrowser", () => {
       const more = await screen.findByRole("button", { name: /load more/i });
       await act(async () => more.click());
       await act(async () => screen.getByRole("button", { name: "sort by title" }).click());
-      expect(await screen.findByText("title-sorted.mp4")).toBeInTheDocument();
+      expect(await screen.findByText("title-sorted")).toBeInTheDocument();
       await act(async () => release({ items: [v2], next: "OLD_SORT_CURSOR" }));
-      expect(screen.queryByText("b.mp4")).not.toBeInTheDocument();
+      expect(screen.queryByText("b")).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /load more/i })).not.toBeInTheDocument();
     });
 

@@ -153,7 +153,7 @@ class BrowseTest {
         assertFalse(hero.picked)
         // a card without a title reads as its file's name; progress is position over length
         val cw = home.continueWatching.single()
-        assertEquals("fiqh-07.mkv", cw.displayTitle)
+        assertEquals("fiqh-07", cw.displayTitle) // the file name without its extension
         assertEquals(0.25, cw.watchedFraction!!, 1e-9)
         assertEquals("سيرة ابن هشام", home.onDeck.single().series?.name)
         assertTrue(home.favorites.isEmpty())
@@ -423,7 +423,7 @@ class BrowseTest {
         assertTrue(home.continueWatching.isEmpty())
         assertTrue(home.onDeck.isEmpty())
         assertTrue(home.pinned.isEmpty())
-        assertEquals("a.mp4", home.recentlyAdded.single().displayTitle)
+        assertEquals("a", home.recentlyAdded.single().displayTitle)
         // a kind this app does not know is kept as sent
         assertEquals("spotlight", home.featured?.kind)
         assertNull(home.featured?.series)

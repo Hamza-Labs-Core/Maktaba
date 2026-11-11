@@ -179,9 +179,9 @@ enum BrowseHome {
             #expect(rows.continueWatching[0].lastWatchedAt != nil)
             #expect(rows.favorites.map(\.id) == [BrowseHome.v4])
             #expect(rows.onDeck.isEmpty)
-            // an untitled video reads as its file
+            // an untitled video reads as its file name without the extension
             let untitled = try #require(rows.recentlyAdded.first)
-            #expect(untitled.title == nil && untitled.displayTitle == "untitled-lecture.mp4" && untitled.durationSec == nil)
+            #expect(untitled.title == nil && untitled.displayTitle == "untitled-lecture" && untitled.durationSec == nil)
             #expect(rows.recentlyAddedGrouped.contains { $0.kind == "series" && $0.count == 3 && $0.series?.id == BrowseHome.series })
             #expect(rows.pinned.map(\.library.name) == ["Tafsir Lessons"])
             #expect(rows.recentlyWatched.map(\.id) == [BrowseHome.v2, BrowseHome.v4, BrowseHome.v1])

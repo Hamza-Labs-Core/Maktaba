@@ -77,8 +77,8 @@ public struct BrowseVideo: Decodable, Identifiable, Hashable, Sendable {
         series = c.lenient(.series)
     }
 
-    /// What a person reads: the title, else the file's name.
-    public var displayTitle: String { title?.nilIfBlank ?? filename }
+    /// What a person reads: the title, else the file's name without its extension.
+    public var displayTitle: String { VideoTitle.of(title, filename) }
 
     /// How much was watched, 0...1 (a finished video is 1).
     public var progress: Double {
@@ -758,7 +758,7 @@ public struct VideoInfo: Decodable, Identifiable, Hashable, Sendable {
         playbackState = (c.lenient(k("playback_state")) as LenientPlayback?)?.state
     }
 
-    public var displayTitle: String { title?.nilIfBlank ?? filename }
+    public var displayTitle: String { VideoTitle.of(title, filename) }
 
     /// Where Resume opens (nil: Play from the start, the video is new or was finished).
     public var resumeAt: Double? {

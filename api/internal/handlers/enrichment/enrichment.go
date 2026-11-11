@@ -46,6 +46,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 )
 
 // mappableFields are the `videos` columns an enrichment candidate may
@@ -277,7 +278,7 @@ func (h *Handler) Pending(w http.ResponseWriter, r *http.Request) {
 	// One best candidate per video (highest confidence, not dismissed,
 	// not yet accepted).
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT e.video_id, v.library_id, COALESCE(v.title, v.filename),
+		SELECT e.video_id, v.library_id, `+videotitle.SQL("v.title", "v.filename")+`,
 		       e.provider, e.confidence, e.mapped
 		FROM media_metadata_enrichment e
 		JOIN videos v ON v.id = e.video_id

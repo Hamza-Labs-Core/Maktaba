@@ -33,6 +33,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/swr"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 )
 
 // Stages are the transcription programme's stages, in pipeline order.
@@ -282,9 +283,11 @@ SELECT COALESCE(sum(amount) FILTER (WHERE metric LIKE 'stt.audio_sec:%'), 0)::fl
        COALESCE(sum(amount / covered) FILTER (WHERE metric LIKE 'stt.audio_sec:%'
                 AND covered >= 60 AND last >= $3), 0)::float8
   FROM per`
+)
 
-	failuresSQL = `
-SELECT j.id, j.subject_id::text, COALESCE(v.title, v.filename, j.subject_id::text), l.name,
+// failuresSQL is a var: it splices in the shared title expression.
+var failuresSQL = `
+SELECT j.id, j.subject_id::text, COALESCE(` + videotitle.SQL("v.title", "v.filename") + `, j.subject_id::text), l.name,
        j.stage, j.error_cause, j.error, j.finished_at, j.attempts,
        COALESCE(j.library_id, v.library_id)::text
   FROM processing_jobs j
@@ -296,7 +299,6 @@ SELECT j.id, j.subject_id::text, COALESCE(v.title, v.filename, j.subject_id::tex
                       AND n.stage = j.stage AND n.id > j.id)
  ORDER BY j.finished_at DESC NULLS LAST, j.id DESC
  LIMIT $2`
-)
 
 // ---------- handler ----------
 

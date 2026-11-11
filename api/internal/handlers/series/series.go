@@ -31,6 +31,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 )
 
 const defaultPageSize = 60
@@ -548,7 +549,7 @@ func (h *Handler) loadEpisodes(r *http.Request, p *principal.Principal, seriesID
 		SELECT se.series_id, se.video_id, v.library_id,
 		       se.season, se.episode, se.absolute_number,
 		       se.season_override, se.episode_override,
-		       COALESCE(v.title, v.filename), v.poster_path, v.duration_sec,
+		       ` + videotitle.SQL("v.title", "v.filename") + `, v.poster_path, v.duration_sec,
 		       ps.position_sec, ps.completed
 		FROM series_episodes se
 		JOIN videos v ON v.id = se.video_id

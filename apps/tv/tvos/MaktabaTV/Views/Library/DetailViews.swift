@@ -136,7 +136,7 @@ struct ListPageView: View {
                 ForEach(videos) { v in
                     HStack(spacing: 32) {
                         Button { queue?.play(source, shuffle: false, start: v.id) } label: {
-                            VideoCard(id: v.id, title: v.title ?? v.filename)
+                            VideoCard(id: v.id, title: v.displayTitle)
                         }
                         .buttonStyle(.borderless)
                         if let remove {

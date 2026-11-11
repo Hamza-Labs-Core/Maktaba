@@ -4,6 +4,7 @@
 // same reads as the desk Home; empty rows are hidden.
 import { useEffect, useState } from "react";
 import { useI18n } from "../../lib/i18n";
+import { videoTitle } from "../../lib/videoTitle";
 import { fetchHome, watchedFraction, type HomeResponse, type VideoCard } from "../../lib/browse";
 import { channelsApi, type NowEntry } from "../../lib/channels";
 import { bigPath, useBigNav } from "../nav";
@@ -46,7 +47,7 @@ function BigContinueQueue() {
   }, []);
   const cur = q ? currentItem(q) : null;
   if (!q || !cur) return null;
-  const title = cur.title || cur.filename || "";
+  const title = videoTitle({ title: cur.title, filename: cur.filename });
   const device = deviceLabel(q.device_id, t);
   return (
     <div

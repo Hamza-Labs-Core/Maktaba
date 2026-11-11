@@ -11,6 +11,7 @@ import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { ApiError } from "../../lib/api";
+import { videoTitle } from "../../lib/videoTitle";
 import { useI18n } from "../../lib/i18n";
 import {
   fetchAutoCollection,
@@ -153,7 +154,7 @@ function AutoCollectionOf({
 
       <ol className="mkt-plitems">
         {items.map((v, i) => {
-          const title = v.title || v.filename || v.id;
+          const title = videoTitle(v);
           return (
             <li key={v.id} className="mkt-plitems__item">
               <span className="mkt-plitems__num">{n(i + 1)}</span>

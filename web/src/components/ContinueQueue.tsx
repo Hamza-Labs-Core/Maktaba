@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { useI18n } from "../lib/i18n";
+import { videoTitle } from "../lib/videoTitle";
 import {
   currentItem,
   fetchCurrentQueue,
@@ -48,7 +49,7 @@ export function ContinueQueue({ now = () => Date.now() }: { now?: () => number }
   }, [now]);
   const cur = q ? currentItem(q) : null;
   if (!q || !cur) return null;
-  const title = cur.title || cur.filename || "";
+  const title = videoTitle({ title: cur.title, filename: cur.filename });
   const device = deviceLabel(q.device_id, t);
   return (
     <section

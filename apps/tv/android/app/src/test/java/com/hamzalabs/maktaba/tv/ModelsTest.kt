@@ -1,5 +1,8 @@
 package com.hamzalabs.maktaba.tv
 
+import com.hamzalabs.maktaba.tv.data.GroupedCard
+import com.hamzalabs.maktaba.tv.data.TvCard
+import com.hamzalabs.maktaba.tv.data.TvVideo
 import com.hamzalabs.maktaba.tv.data.resumeAt
 import com.hamzalabs.maktaba.tv.ui.components.qrModules
 import com.hamzalabs.maktaba.tv.ui.screens.clock
@@ -10,6 +13,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ModelsTest {
+    @Test
+    fun aVideoWithNoTitleShowsItsFileNameWithoutTheExtension() {
+        assertEquals("My Lecture 03", TvCard(id = "v1", filename = "My Lecture 03.mp4").name)
+        assertEquals("Seerah", TvCard(id = "v2", title = "Seerah", filename = "s.mp4").name)
+        assertEquals("a.b", TvVideo(id = "v3", filename = "a.b.mkv").displayTitle)
+        assertEquals("Short", TvVideo(id = "v4", filename = "a.mkv", displayTitleRaw = "Short").displayTitle)
+        assertEquals("lesson", GroupedCard(kind = "video", id = "v5", filename = "lesson.mp4").label)
+        assertEquals("Series", GroupedCard(kind = "series", id = "s1", name = "Series").label)
+        assertEquals("s2", GroupedCard(kind = "series", id = "s2").label)
+    }
+
     @Test
     fun resumeOnlyWhereThereIsSomethingLeftToWatch() {
         assertEquals(125.0, resumeAt(125.0, 600.0, completed = false)!!, 0.0)

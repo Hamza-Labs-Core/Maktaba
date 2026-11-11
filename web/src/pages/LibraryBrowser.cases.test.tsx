@@ -97,7 +97,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     expect(intro).toHaveAttribute("href", "/videos/v1");
     expect(intro).toHaveTextContent("1:05");
     expect(intro).toHaveTextContent("· en");
-    const b = screen.getByRole("link", { name: /b\.mp4/ });
+    const b = screen.getByRole("link", { name: /^b(\s|$)/ });
     expect(b).toHaveAttribute("href", "/videos/v2");
     expect(b).toHaveTextContent("1:02:05");
     expect(document.querySelectorAll("li.mkt-card")).toHaveLength(2);
@@ -117,12 +117,12 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
         : { items: [{ id: "b", filename: "from-b.mp4", state: "ready" }], next: null }
     );
     renderLib(`/library/${A}`, { history: [`/library/${B}`] });
-    expect(await screen.findByText("from-a.mp4")).toBeInTheDocument();
+    expect(await screen.findByText("from-a")).toBeInTheDocument();
     expect(videoCalls()[0]).toContain(`library=${A}`);
     await userEvent.setup().click(screen.getByRole("button", { name: "go back" }));
-    expect(await screen.findByText("from-b.mp4")).toBeInTheDocument();
+    expect(await screen.findByText("from-b")).toBeInTheDocument();
     expect(videoCalls().at(-1)).toContain(`library=${B}`);
-    expect(screen.queryByText("from-a.mp4")).toBeNull();
+    expect(screen.queryByText("from-a")).toBeNull();
   });
 
   it.each([
@@ -156,18 +156,18 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     });
     renderLib();
     const user = userEvent.setup();
-    const x = await screen.findByRole("link", { name: "x.mp4" });
+    const x = await screen.findByRole("link", { name: "x" });
     expect(x.querySelector(".mkt-card__meta")).toBeEmptyDOMElement();
-    expect(screen.getByRole("link", { name: "y.mp4" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "y" })).toBeInTheDocument();
     expect(document.querySelector(".mk-badge")).toBeNull();
     await user.click(screen.getByRole("radio", { name: "List" }));
     const table = screen.getByRole("table", { name: "All videos" });
-    const row = within(table).getByRole("link", { name: "x.mp4" }).closest("tr")!;
+    const row = within(table).getByRole("link", { name: "x" }).closest("tr")!;
     expect(within(row).getAllByText("—")).toHaveLength(4);
     await user.selectOptions(screen.getByRole("combobox", { name: "Sort" }), "title");
     await user.selectOptions(screen.getByRole("combobox", { name: "Sort" }), "duration_sec");
     const again = await screen.findByRole("table", { name: "All videos" });
-    expect(within(again).getByRole("link", { name: "y.mp4" })).toBeInTheDocument();
+    expect(within(again).getByRole("link", { name: "y" })).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -191,7 +191,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
   it("LIB-05: the grid no longer carries What's On Now (it moved to Home)", async () => {
     serve({ items: [{ id: "v1", filename: "a.mp4", state: "ready" }], next: null });
     renderLib();
-    expect(await screen.findByText("a.mp4")).toBeInTheDocument();
+    expect(await screen.findByText("a")).toBeInTheDocument();
     expect(get.mock.calls.some((c) => String(c[0]).startsWith("/api/channels/now"))).toBe(false);
     expect(screen.queryByTestId("whats-on-now-rail")).toBeNull();
   });
@@ -266,7 +266,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     renderLib("/library/not-a-uuid");
     expect(await screen.findByRole("alert")).toHaveTextContent("Library not found.");
     expect(videoCalls()).toHaveLength(0);
-    expect(screen.queryByText("everything.mp4")).toBeNull();
+    expect(screen.queryByText("everything")).toBeNull();
   });
 
   it("LIB-10: signed-out user is sent to /login and no videos are requested", () => {
@@ -310,7 +310,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     expect(screen.getByText("elsewhere")).toBeInTheDocument();
     bad = false;
     await user.click(screen.getByRole("button", { name: "go back" }));
-    expect(await screen.findByText("fixed.mp4")).toBeInTheDocument();
+    expect(await screen.findByText("fixed")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -357,7 +357,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
   it("the default sort is Recently added, newest first", async () => {
     serve({ items: [{ id: "v1", filename: "a.mp4", state: "ready" }], next: null });
     renderLib();
-    await screen.findByText("a.mp4");
+    await screen.findByText("a");
     const select = screen.getByRole("combobox", { name: "Sort" });
     expect(select).toHaveValue("created_at");
     expect(within(select).getByRole("option", { selected: true })).toHaveTextContent(
@@ -388,7 +388,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
   it("best match needs a search: ?sort=relevance alone is recently added", async () => {
     serve({ items: [{ id: "v1", filename: "a.mp4", state: "ready" }], next: null });
     renderLib("/library?sort=relevance");
-    await screen.findByText("a.mp4");
+    await screen.findByText("a");
     expect(videoCalls()[0]).toContain("sort=created_at&order=desc");
     const select = screen.getByRole("combobox", { name: "Sort" });
     expect(within(select).queryByRole("option", { name: "Best match" })).toBeNull();
@@ -424,7 +424,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     renderLib();
     const alert = await screen.findByRole("alert");
     await userEvent.setup().click(within(alert).getByRole("button", { name: "Try again" }));
-    expect(await screen.findByText("a.mp4", {}, { timeout: 300 })).toBeInTheDocument();
+    expect(await screen.findByText("a", {}, { timeout: 300 })).toBeInTheDocument();
     expect(videoCalls()).toHaveLength(2);
   });
 
@@ -439,7 +439,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     serve(items);
     const first = renderLib();
     const user = userEvent.setup();
-    await screen.findByText("a.mp4");
+    await screen.findByText("a");
     expect(screen.getByRole("radio", { name: "Grid" })).toHaveAttribute("aria-checked", "true");
     await user.click(screen.getByRole("radio", { name: "List" }));
     const table = screen.getByRole("table", { name: "All videos" });
@@ -451,7 +451,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     expect(localStorage.getItem("mkt:lib:view")).toBe("list");
     first.unmount();
     renderLib();
-    await screen.findByText("a.mp4");
+    await screen.findByText("a");
     expect(screen.getByRole("table", { name: "All videos" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "List" })).toHaveAttribute("aria-checked", "true");
   });
@@ -465,7 +465,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     });
     serve({ items: [{ id: "v1", filename: "a.mp4", state: "ready" }], next: null });
     renderLib();
-    expect(await screen.findByText("a.mp4")).toBeInTheDocument();
+    expect(await screen.findByText("a")).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Grid" })).toHaveAttribute("aria-checked", "true");
   });
 
@@ -503,7 +503,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     serve({ items: [{ id: "v1", filename: "a.mp4", state: "ready" }], next: null });
     renderLib();
     const user = userEvent.setup();
-    await screen.findByText("a.mp4");
+    await screen.findByText("a");
     const select = screen.getByRole("combobox", { name: "Sort" });
     const values = within(select)
       .getAllByRole("option")
@@ -558,18 +558,18 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
       next: null,
     }));
     renderLib("/library?sort=plays");
-    const card = await screen.findByRole("link", { name: /a\.mp4/ });
+    const card = await screen.findByRole("link", { name: /^a(\s|$)/ });
     expect(card).toHaveTextContent("12 plays");
     expect(card).not.toHaveTextContent("2019");
     await userEvent
       .setup()
       .selectOptions(screen.getByRole("combobox", { name: "Sort" }), "published_at");
     await waitFor(() =>
-      expect(screen.getByRole("link", { name: /a\.mp4/ })).not.toHaveTextContent("plays")
+      expect(screen.getByRole("link", { name: /^a(\s|$)/ })).not.toHaveTextContent("plays")
     );
     // the day itself (midnight UTC), whatever the viewer's time zone, and no time
-    expect(screen.getByRole("link", { name: /a\.mp4/ })).toHaveTextContent("Mar 4, 2019");
-    expect(screen.getByRole("link", { name: /a\.mp4/ })).not.toHaveTextContent(/AM|PM/);
+    expect(screen.getByRole("link", { name: /^a(\s|$)/ })).toHaveTextContent("Mar 4, 2019");
+    expect(screen.getByRole("link", { name: /^a(\s|$)/ })).not.toHaveTextContent(/AM|PM/);
   });
 
   it("LIB-26: typing a year filters; a bad ?year= or ?watched= is not sent", async () => {
@@ -612,7 +612,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
     expect(screen.queryByRole("button", { name: "Scan now" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(screen.getByTestId("loc")).not.toHaveTextContent("language=");
-    expect(await screen.findByText("en.mp4")).toBeInTheDocument();
+    expect(await screen.findByText("en", { selector: ".mkt-card__title" })).toBeInTheDocument();
   });
 
   it("LIB-22: deep link with ?sort=title&order=asc&language=ar", async () => {
@@ -650,7 +650,7 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
       next: null,
     });
     renderLib();
-    await screen.findByText("ready.mp4");
+    await screen.findByText("ready");
     const badge = (name: string) => screen.getByText(name, { selector: ".mk-badge" });
     for (const name of ["Missing", "Corrupted", "Failed"]) {
       expect(badge(name)).toHaveClass("mk-badge--error");
@@ -659,14 +659,12 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
       expect(badge(name)).toHaveClass("mk-badge--warn");
     }
     for (const id of ["ready", "transcoding"]) {
-      expect(screen.getByRole("link", { name: `${id}.mp4` }).querySelector(".mk-badge")).toBeNull();
+      expect(screen.getByRole("link", { name: id }).querySelector(".mk-badge")).toBeNull();
     }
     await userEvent.setup().click(screen.getByRole("radio", { name: "List" }));
     const table = screen.getByRole("table", { name: "All videos" });
     for (const id of ["ready", "transcoding"]) {
-      const row = within(table)
-        .getByRole("link", { name: `${id}.mp4` })
-        .closest("tr")!;
+      const row = within(table).getByRole("link", { name: id }).closest("tr")!;
       expect(row.lastElementChild).toHaveTextContent("—");
     }
     expect(within(table).getByText("Missing")).toBeInTheDocument();
@@ -690,13 +688,13 @@ describe("LibraryBrowser (test-cases/library.md)", () => {
       }
     );
     const user = userEvent.setup();
-    const link = await screen.findByRole("link", { name: /a\.mp4/ });
+    const link = await screen.findByRole("link", { name: /^a(\s|$)/ });
     expect(link).toHaveAttribute("href", "/videos/v1");
     const before = videoCalls().length;
     await user.click(link);
     expect(screen.getByText("video page")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "go back" }));
-    expect(await screen.findByText("a.mp4")).toBeInTheDocument();
+    expect(await screen.findByText("a")).toBeInTheDocument();
     expect(screen.getByTestId("loc")).toHaveTextContent("/library?sort=title&language=en");
     expect(videoCalls().length).toBe(before + 1);
     expect(videoCalls().at(-1)).toContain("sort=title");

@@ -8,6 +8,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { useToast } from "@ds/components/Toast/Toast";
 import { useAuth } from "../lib/auth";
+import { videoTitle } from "../lib/videoTitle";
 import { useI18n } from "../lib/i18n";
 import { setFeaturedPick, showsWhole, type Featured } from "../lib/browse";
 import { watchPath } from "../lib/playQueue";
@@ -24,9 +25,7 @@ export function FeaturedHero({ featured, onChange }: { featured: Featured; onCha
   const { video, series } = featured;
   const isSeries = featured.kind === "series" && !!series;
   const art = `/api/videos/${encodeURIComponent(video.id)}/poster`;
-  const title = isSeries
-    ? series!.name || t("libraryPage.seriesUnnamed")
-    : video.title || video.filename || video.id;
+  const title = isSeries ? series!.name || t("libraryPage.seriesUnnamed") : videoTitle(video);
 
   async function reset() {
     setBusy(true);

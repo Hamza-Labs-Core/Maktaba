@@ -71,8 +71,8 @@ data class VideoCard(
     /** On Deck: the series this is the next lesson of */
     val series: SeriesName? = null,
 ) {
-    /** What a person reads: the title, else the file's name. */
-    val displayTitle: String get() = title?.takeIf { it.isNotBlank() } ?: filename
+    /** What a person reads: the title, else the file's name without its extension. */
+    val displayTitle: String get() = VideoTitle.of(title, filename)
 
     /** How far in the caller is (0..1), or null when there is nothing to show (as the web). */
     val watchedFraction: Double? get() = watchedFraction(positionSec, durationSec, completed == true)
@@ -326,9 +326,9 @@ data class VideoDetail(
     val plays: Long? = null,
     val favorite: Boolean? = null,
 ) {
-    /** What a person reads: the home's display title, the title, else the file's name. */
+    /** What a person reads: the home's display title, the title, else the file's name without its extension. */
     val displayTitle: String
-        get() = displayTitleOverride?.takeIf { it.isNotBlank() } ?: title?.takeIf { it.isNotBlank() } ?: filename
+        get() = displayTitleOverride?.takeIf { it.isNotBlank() } ?: VideoTitle.of(title, filename)
 
     /** Where Resume starts: the saved position, unless it is finished or not started. */
     val resumeAtSec: Double?

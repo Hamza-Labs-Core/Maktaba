@@ -52,9 +52,9 @@ describe("MediaRow", () => {
     const img = region.querySelector("img.mkt-card__poster")!;
     expect(img).toHaveAttribute("src", "/api/videos/v1/poster");
     expect(img).toHaveAttribute("loading", "lazy");
-    // titles are bidi-isolated; a card without a title shows its file name
+    // titles are bidi-isolated; a card without a title shows its file name without the extension
     expect(screen.getByText("سورة البقرة").tagName).toBe("BDI");
-    expect(screen.getByText("lesson-2.mp4").tagName).toBe("BDI");
+    expect(screen.getByText("lesson-2").tagName).toBe("BDI");
     expect(within(region).getByText("1:02:05")).toBeInTheDocument();
   });
 
@@ -119,7 +119,7 @@ describe("MediaRow", () => {
         <MediaCard video={{ id: "x", filename: "x.mp4" }} />
       </ul>
     );
-    expect(screen.getByRole("link", { name: "x.mp4" })).toHaveAttribute("href", "/videos/x");
+    expect(screen.getByRole("link", { name: "x" })).toHaveAttribute("href", "/videos/x");
     expect(screen.queryByRole("progressbar")).toBeNull();
   });
 });

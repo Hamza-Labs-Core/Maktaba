@@ -66,7 +66,8 @@ func TestActivityCarriesVideoTitle(t *testing.T) {
 	if len(body.Items) != 3 {
 		t.Fatalf("got %d items, want 3 (the other user's watch is not theirs): %s", len(body.Items), rec.Body.String())
 	}
-	want := []struct{ kind, label string }{{"watched", "b.mp4"}, {"searched", "fiqh"}, {"watched", "Tafsir 1"}}
+	// v2 has no title: it is named by its file name without the extension
+	want := []struct{ kind, label string }{{"watched", "b"}, {"searched", "fiqh"}, {"watched", "Tafsir 1"}}
 	for i, w := range want {
 		it := body.Items[i]
 		label, _ := it.Meta["title"].(string)
