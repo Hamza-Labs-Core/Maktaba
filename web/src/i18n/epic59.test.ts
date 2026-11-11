@@ -26,7 +26,6 @@ const preflight = readFileSync("../cmd/maktaba-server/container_preflight.go", "
 // Stories whose strings land with the story itself and are not on main yet: their keys are
 // checked once the story merges (remove it from here in that pull request).
 const PENDING: Record<string, string> = {
-  "59.12": "updates on a NAS: in flight",
   "59.13": "a NAS in a cluster: in flight",
   "59.16": "OpenAPI and role tests: its one string lands with it",
 };

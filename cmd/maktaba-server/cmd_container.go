@@ -228,8 +228,13 @@ func (c containerDeps) bootstrap(ctx context.Context, command bool) (*layout.Gua
 	case plan == containerOlder:
 		// story 59.12: a catalog or a household pinned or pulled an older tag; the volume may
 		// be migrated past it, so the runtime it ran last runs (Settings says the same)
-		c.logf("The container image (%s) is older than this home's runtime (%s), so the runtime is running.",
-			layout.NormalizeVersion(st.FromVersion), layout.NormalizeVersion(orNone(st.Version)))
+		// in both languages, as every message before the web is up (story 59.14)
+		msg := containerText("container.image_older",
+			"{image}", layout.NormalizeVersion(st.FromVersion),
+			"{runtime}", layout.NormalizeVersion(orNone(st.Version)))
+		for _, line := range strings.Split(msg, "\n") {
+			c.logf("%s", line)
+		}
 	}
 	if c.rt.ReadOwner() != appruntime.OwnerHeadless {
 		if err := c.rt.SetOwner(appruntime.OwnerHeadless); err != nil {
