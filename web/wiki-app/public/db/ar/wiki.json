@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 216,
+    "endpoint": 221,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -12640,6 +12640,143 @@
         "lang": "ar",
         "source": {
           "content": "76b84cc4d72cb3e1"
+        }
+      }
+    },
+    {
+      "id": "ep-get-channels-id-access",
+      "type": "endpoint",
+      "title": "GET /channels/{id}/access",
+      "content": "هل يجوز للمتصل مشاهدة القناة الآن",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/channels/{id}/access",
+        "tag": "Parental controls",
+        "operationId": "getChannelAccess"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "8391fb3d158cc139"
+        }
+      }
+    },
+    {
+      "id": "ep-post-channels-id-play",
+      "type": "endpoint",
+      "title": "POST /channels/{id}/play",
+      "content": "الحصول على عنوان موقَّع لمشاهدة قناة",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/channels/{id}/play",
+        "tag": "Parental controls",
+        "operationId": "playChannel"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "cb47b55023727267"
+        }
+      }
+    },
+    {
+      "id": "ep-get-tv-parental-verdict",
+      "type": "endpoint",
+      "title": "GET /tv/parental/verdict",
+      "content": "جواب الرقابة الأبوية لمشاهد وقناة (لخدمات هذا الجهاز)",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/tv/parental/verdict",
+        "tag": "Parental controls",
+        "operationId": "getLiveParentalVerdict"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "9b5e29a99cc442ed"
+        }
+      }
+    },
+    {
+      "id": "ep-get-tv-hdhr-allowed",
+      "type": "endpoint",
+      "title": "GET /tv/hdhr/allowed",
+      "content": "عرض العناوين التي يجوز لها استخدام الموالف",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/tv/hdhr/allowed",
+        "tag": "Parental controls",
+        "operationId": "getTunerAllowedAddresses"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "0c87bffc030b77b1"
+        }
+      }
+    },
+    {
+      "id": "ep-put-tv-hdhr-allowed",
+      "type": "endpoint",
+      "title": "PUT /tv/hdhr/allowed",
+      "content": "ضبط العناوين التي يجوز لها استخدام الموالف",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/tv/hdhr/allowed",
+        "tag": "Parental controls",
+        "operationId": "setTunerAllowedAddresses"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "c9e4d8502253b33c"
         }
       }
     },

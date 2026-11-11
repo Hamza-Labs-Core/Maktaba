@@ -13278,6 +13278,431 @@
         "operationId": "removeParentalRule"
       }
     },
+    "/channels/{id}/access": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": "The channel's id."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Parental controls"
+        ],
+        "summary": "Whether the caller may watch a channel now",
+        "description": "Says whether the programme now on the channel is within the caller's parental limit, and when that may change. A player asks before it starts and again at `until`, and shows its \"not available right now\" screen while `allowed` is false. An account with no limit always gets `allowed: true`.",
+        "responses": {
+          "200": {
+            "description": "The answer for now.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "channel_id",
+                    "restricted",
+                    "allowed",
+                    "until"
+                  ],
+                  "properties": {
+                    "channel_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "The channel."
+                    },
+                    "restricted": {
+                      "type": "boolean",
+                      "description": "True when the caller has a parental limit."
+                    },
+                    "allowed": {
+                      "type": "boolean",
+                      "description": "True when the caller may watch the programme now on the channel."
+                    },
+                    "until": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time",
+                      "description": "When the answer may change: the start of the next programme that flips it, in UTC. Null when nothing in the next 12 hours changes it. Ask again at this time."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such channel that the caller may see. A channel above a restricted account's limit, or blocked for it, answers the same as one that does not exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getChannelAccess"
+      }
+    },
+    "/channels/{id}/play": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": "The channel's id."
+        }
+      ],
+      "post": {
+        "tags": [
+          "Parental controls"
+        ],
+        "summary": "Get a signed address to watch a channel",
+        "description": "Answers the channel's live stream address, signed for this caller. The streaming service refuses a channel address without a signature. When the programme now on the channel is above the caller's parental limit the answer is 403 with `code: restricted`, `reason: programme` and `retry_at`, and the player shows its \"not available right now\" screen until then. The stream itself stops for a restricted viewer when such a programme starts.",
+        "responses": {
+          "200": {
+            "description": "The signed address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "channel_id",
+                    "url",
+                    "expires_at",
+                    "until"
+                  ],
+                  "properties": {
+                    "channel_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "The channel."
+                    },
+                    "url": {
+                      "type": "string",
+                      "description": "The channel's HLS playlist address with its signature. Ask for a new one before `expires_at`."
+                    },
+                    "expires_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "When the signature stops working."
+                    },
+                    "until": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time",
+                      "description": "When the answer may change: the start of the next programme that flips it, in UTC. Null when nothing in the next 12 hours changes it. Ask again at this time."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The programme now on the channel is above the caller's limit: `code` is `restricted`, `reason` is `programme` and `retry_at` is when to ask again (absent when nothing in the next 12 hours changes it).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such channel that the caller may see. A channel above a restricted account's limit, or blocked for it, answers the same as one that does not exist.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "playChannel"
+      }
+    },
+    "/tv/parental/verdict": {
+      "get": {
+        "tags": [
+          "Parental controls"
+        ],
+        "summary": "The parental answer for a viewer and a channel (this machine's services)",
+        "description": "For the streaming service on the home machine, which asks before it serves a live channel to a named viewer. It carries the machine's local token in `X-Maktaba-Local-Token`; no user sign-in opens it.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The channel's id."
+          },
+          {
+            "name": "user",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The viewer's account id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The answer for now.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "restricted",
+                    "channel_allowed",
+                    "allowed",
+                    "until"
+                  ],
+                  "properties": {
+                    "restricted": {
+                      "type": "boolean",
+                      "description": "True when the viewer has a parental limit."
+                    },
+                    "channel_allowed": {
+                      "type": "boolean",
+                      "description": "True when the viewer may see the channel at all."
+                    },
+                    "allowed": {
+                      "type": "boolean",
+                      "description": "True when the viewer may watch the programme now on the channel."
+                    },
+                    "until": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time",
+                      "description": "When the answer may change: the start of the next programme that flips it, in UTC. Null when nothing in the next 12 hours changes it. Ask again at this time."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The local token is missing or wrong.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getLiveParentalVerdict"
+      }
+    },
+    "/tv/hdhr/allowed": {
+      "get": {
+        "tags": [
+          "Parental controls"
+        ],
+        "summary": "List the addresses that may use the tuner",
+        "description": "The tuner (the HDHomeRun emulation Plex records from) and the guide files beside it carry every channel with no sign-in, so they answer only this machine, the Plex server set up in Maktaba, and the addresses listed here.",
+        "x-maktaba-role": "admin",
+        "responses": {
+          "200": {
+            "description": "The addresses.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "addresses"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "addresses": {
+                      "type": "array",
+                      "maxItems": 64,
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "IP addresses or CIDR ranges, for example `192.168.1.20` or `192.168.1.0/24`. The answer has them normalised, without repeats."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getTunerAllowedAddresses"
+      },
+      "put": {
+        "tags": [
+          "Parental controls"
+        ],
+        "summary": "Set the addresses that may use the tuner",
+        "description": "Replaces the list. An empty list leaves the tuner open only to this machine and the Plex server set up in Maktaba.",
+        "x-maktaba-role": "admin",
+        "requestBody": {
+          "required": true,
+          "description": "The addresses.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "addresses"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "addresses": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "IP addresses or CIDR ranges, for example `192.168.1.20` or `192.168.1.0/24`. The answer has them normalised, without repeats."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The addresses after the change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "addresses"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "addresses": {
+                      "type": "array",
+                      "maxItems": 64,
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "IP addresses or CIDR ranges, for example `192.168.1.20` or `192.168.1.0/24`. The answer has them normalised, without repeats."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "setTunerAllowedAddresses"
+      }
+    },
     "/pairing/approve": {
       "post": {
         "tags": [
