@@ -683,6 +683,8 @@ paths:
       tags:
       - Videos
       summary: Enqueue a single processing stage for a video
+      x-maktaba-role: admin
+      description: 'Queues the stage for the video through the pipeline''s queue (processing_jobs_enqueue), as a forced run: it runs now, even when its output is up to date. A live job of that stage is bumped instead. Admins only. Never answers success without a job: a stage the pipeline will not queue, or a server with no job queue, is an error.'
       requestBody:
         required: true
         content:
@@ -698,10 +700,11 @@ paths:
                   type: integer
                   minimum: 1
                   maximum: 999
-                  default: 100
+                  default: 50
+                  description: Lower runs sooner.
       responses:
         '200':
-          description: Job enqueued (or returned if it already existed).
+          description: Job queued (or the live job of that stage, bumped).
           content:
             application/json:
               schema:
@@ -718,10 +721,8 @@ paths:
                     $ref: '#/components/schemas/JobStage'
                   state:
                     $ref: '#/components/schemas/JobState'
-                  note:
-                    type: string
         '400':
-          description: '`stage` cannot be enqueued at video scope (e.g. `scan`).'
+          description: '`stage` cannot be queued for a video (`scan`, or a stage that is not a video''s), or `priority` is out of range.'
           content:
             application/problem+json:
               schema:
@@ -734,6 +735,24 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Not an admin.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: 'The stage is switched off (`outcome`: `disabled` or `skipped_component_off`): nothing was queued.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: 'This server has no job queue: nothing was queued.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       operationId: processVideo
   /videos/{id}/reprocess:
     parameters:
@@ -742,6 +761,8 @@ paths:
       tags:
       - Videos
       summary: Reset state and reprocess from a given stage
+      x-maktaba-role: admin
+      description: 'Queues `from_stage` for the video as a forced cascade: it re-runs, and every stage after it re-runs when it is done. Admins only. Never answers success without a job.'
       requestBody:
         required: true
         content:
@@ -755,7 +776,7 @@ paths:
                   $ref: '#/components/schemas/JobStage'
       responses:
         '202':
-          description: Jobs enqueued.
+          description: Jobs queued; `predecessor_state` is the video's state when it was asked.
           content:
             application/json:
               schema:
@@ -780,6 +801,32 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '400':
+          description: '`from_stage` is missing, `scan`, or not a video''s stage.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Not an admin.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 'The stage is switched off (`outcome`: `disabled` or `skipped_component_off`): nothing was queued.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: 'This server has no job queue: nothing was queued.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       operationId: reprocessVideo
   /videos/{id}/segments:
     parameters:

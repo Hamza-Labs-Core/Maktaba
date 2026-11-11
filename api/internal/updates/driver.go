@@ -620,6 +620,10 @@ func machineErr(st *MachineStatus, fallback string) map[string]any {
 	doc := map[string]any{"code": fallback}
 	if st != nil && st.Error != nil {
 		doc["code"], doc["step"], doc["detail"] = st.Error.Code, st.Error.Step, st.Error.Detail
+		if st.Error.NeedBytes > 0 {
+			// the Updates page says both (story 59.12: the data folder's room for an update)
+			doc["need_bytes"], doc["free_bytes"] = st.Error.NeedBytes, st.Error.FreeBytes
+		}
 	}
 	return doc
 }
@@ -1936,7 +1940,7 @@ func (d *Driver) targetFailed(ctx context.Context, run Run, pol Policy, t Target
 // an app built locally (the placeholder updater key: it can take no update) or one macOS
 // will not let replace itself (App Management, locked files) waits for a person too.
 var needsPersonCodes = map[string]bool{"not_self_managed": true, "old_launcher": true, "no_app": true,
-	"no_app_update": true, "launcher_protocol": true, "disk_space": true, "not_writable": true, "no_runtime": true,
+	"no_app_update": true, "launcher_protocol": true, "disk_space": true, "disk_short": true, "not_writable": true, "no_runtime": true,
 	"no_python": true, "venv_network": true, "venv_python_unsupported": true, "needs_admin": true,
 	"local_build": true, "app_management": true, "translocated": true, "verify_trust_root_expired": true,
 	"no_trust_root": true,

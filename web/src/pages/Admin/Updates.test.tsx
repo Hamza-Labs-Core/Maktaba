@@ -900,6 +900,95 @@ describe("Admin Updates", () => {
     ).toBeInTheDocument();
   });
 
+  // T07 (story 59.12): on a NAS the home card says the runtime's release, the image's, which
+  // runs and why; a data folder short of room says what an update needs and has.
+  it("shows the runtime against the container image, and a data folder short of room", async () => {
+    get.mockImplementation((path: string) => {
+      if (path === "/api/cluster/updates")
+        return Promise.resolve(
+          overview({
+            last_run: {
+              id: "r1",
+              version: "1.5.0",
+              from_version: "1.4.0",
+              trigger: "auto",
+              state: "failed",
+              step: "preflight",
+              started_at: finishedAt,
+              error: {
+                code: "disk_short",
+                step: "preflight",
+                need_bytes: 13 * 1024 ** 3,
+                free_bytes: 12 * 1024 ** 3,
+              },
+            },
+          })
+        );
+      if (path.startsWith("/api/cluster/updates/runs?")) return Promise.resolve({ items: [] });
+      if (path.startsWith("/api/system/updates"))
+        return Promise.resolve({
+          available: false,
+          current_version: "1.4.0",
+          channel: "stable",
+          checked_at: finishedAt,
+          install: "docker",
+          container: {
+            runtime: "1.4.0",
+            image: "1.3.0",
+            running: "runtime",
+            reason: "image_older",
+          },
+        });
+      return Promise.reject(new Error("unexpected " + path));
+    });
+    renderPage();
+    expect(await screen.findByTestId("updates-container-versions")).toHaveTextContent(
+      "Runtime 1.4.0 · Image 1.3.0"
+    );
+    expect(screen.getByTestId("updates-container-why")).toHaveTextContent(
+      "The container image (1.3.0) is older than this home's runtime (1.4.0), so the runtime is running."
+    );
+    expect(await screen.findByTestId("updates-last-failed")).toHaveTextContent(
+      "Not enough free space on the data folder for a safe update: 13.0 GB needed, 12.0 GB free."
+    );
+  });
+
+  it("says the runtime against the container image in Arabic", async () => {
+    get.mockImplementation((path: string) => {
+      if (path === "/api/cluster/updates") return Promise.resolve(overview());
+      if (path.startsWith("/api/cluster/updates/runs?")) return Promise.resolve({ items: [] });
+      if (path.startsWith("/api/system/updates"))
+        return Promise.resolve({
+          available: false,
+          current_version: "1.5.0",
+          channel: "stable",
+          checked_at: finishedAt,
+          install: "docker",
+          container: {
+            runtime: "1.5.0",
+            image: "1.6.0",
+            running: "runtime",
+            reason: "image_refused",
+          },
+        });
+      return Promise.reject(new Error("unexpected " + path));
+    });
+    renderPage("ar");
+    expect(await screen.findByTestId("updates-container-versions")).toHaveTextContent(
+      "بيئة التشغيل 1.5.0 · الصورة 1.6.0"
+    );
+    expect(screen.getByTestId("updates-container-why")).toHaveTextContent(
+      "تعذّر تشغيل صورة الحاوية (1.6.0) هنا"
+    );
+  });
+
+  it("shows no container line outside the image (or to someone who is not an admin)", async () => {
+    routes(overview(), null);
+    renderPage();
+    await screen.findByTestId("updates-home");
+    expect(screen.queryByTestId("updates-container")).toBeNull();
+  });
+
   it("names the backup step only for a release that changes the database", async () => {
     const cat = [{ ...target, version: "1.4.0", manifest: { schema_rev: 10 } }];
     routes(

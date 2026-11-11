@@ -1,6 +1,7 @@
 package libraries
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -37,7 +38,7 @@ func (f *fakeAccess) n() int {
 
 func accessHandler(t *testing.T, fa *fakeAccess) *Handler {
 	t.Helper()
-	return &Handler{DB: manageDB(t), PathChecker: fakeChecker{}, Access: fa,
+	return &Handler{DB: manageDB(t), PathChecker: fakeChecker{}, Access: fa, JobEnqueuer: fakeScans{},
 		NowFunc:  func() time.Time { return t0 },
 		Platform: func() string { return "dsm" },
 		RunsAs:   func() mediaaccess.RunsAs { return mediaaccess.RunsAs{UID: 1026, GID: 100, Name: "maktaba"} }}
@@ -198,3 +199,8 @@ func TestRefusalsOnAccess(t *testing.T) {
 		t.Fatalf("delete ro: %d %s", rec.Code, rec.Body)
 	}
 }
+
+// fakeScans queues every scan as job 1.
+type fakeScans struct{}
+
+func (fakeScans) EnqueueScan(context.Context, string, int) (string, error) { return "1", nil }

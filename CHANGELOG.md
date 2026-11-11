@@ -14,6 +14,17 @@ build fails when the two differ.
 
 ### Changed
 
+- **Updates on a NAS (story 59.12).** The Docker image's own updates and a NAS catalog's
+  (TrueNAS app updates, Unraid's update check, Watchtower, a pull in Container Manager) now live
+  side by side: neither needs turning off. **Admin → Updates** shows, on the image, the release
+  that runs against the image's and why (an image older than the home's runtime starts the
+  runtime). A container's update first checks the data folder has room for the new runtime and
+  the backup (the database and a fifth more), and waits saying how much it needs when it has
+  not; on the Light and Standard tiers speech to text and transcodes stop for the backup. The
+  update rehearsal now also starts the image on NAS shapes (uid 568 with a read-only library, a
+  4 GB limit with 20,000 videos, arm64, a restart in the middle of an update, an older image)
+  and gates every tag on them.
+
 - **Maktaba on QNAP, UGREEN, ASUSTOR and Unraid (story 59.11).** The published Docker compose
   (`maktaba-docker-compose.yml`) is now the NAS file: it names the container `maktaba`, sets
   `MAKTABA_PLATFORM=docker` and `TZ`, mounts each media folder at its own path (an install made
@@ -246,14 +257,14 @@ build fails when the two differ.
 
 ### Fixed
 
-- **Quiet hours and the data disk save from Settings → This machine (story 59.16).** The page
-  saves them through `PUT /api/server/machine`, which passed on only the tier, so the server
-  refused the save; it now passes on each field sent (`tier`, `quiet_hours` or
-  `quiet_default`, `data_disk`) and audits the change. The API reference on maktaba.dev
-  describes every route Epic 59 added (This machine, speech to text, library access, Run now,
-  plugin isolation, server.toml's trusted proxies) and the new fields, in English and Arabic,
-  each admin route marked as such; the admin's yes to container-only plugin isolation is
-  audited with the isolation level.
+- **Process and reprocess a video queue real work.** `POST /api/videos/{id}/process` and
+  `/reprocess` (and GraphQL's `processVideo` and `reprocessVideo`) answered success in every
+  build without queuing anything: no job queue was wired to them. They now queue the stage
+  through the pipeline's queue (`processing_jobs_enqueue`, as a scan or a retrigger does), as
+  a forced run (reprocess: a forced cascade, so every later stage runs again too), and answer
+  the job's id. A stage that is not a video's is a 400, one switched off a 409, and a server
+  with no job queue a 503; the library scan also answers 503 instead of a 202 with no job when
+  it has no queue. Admins only, as before.
 
 - **The Components page says why a component is degraded.** A degraded component keeps its
   Ready condition true, so the list's `reason` stayed empty and an admin saw *Running with
@@ -3272,6 +3283,15 @@ build fails when the two differ.
   player no longer stops on its error screen: it shows the waiting sentence under Preparing and
   asks again after the home's `Retry-After` (10 s), the same wait as the phone, tablet, Apple and
   desktop players, until the video starts.
+
+- **Quiet hours and the data disk save from Settings → This machine (story 59.16).** The page
+  saves them through `PUT /api/server/machine`, which passed on only the tier, so the server
+  refused the save; it now passes on each field sent (`tier`, `quiet_hours` or
+  `quiet_default`, `data_disk`) and audits the change. The API reference on maktaba.dev
+  describes every route Epic 59 added (This machine, speech to text, library access, Run now,
+  plugin isolation, server.toml's trusted proxies) and the new fields, in English and Arabic,
+  each admin route marked as such; the admin's yes to container-only plugin isolation is
+  audited with the isolation level.
 
 ## [0.2.0] - 2026-10-19
 

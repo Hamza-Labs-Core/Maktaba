@@ -34,6 +34,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dbsafe"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/homemirror"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/machineagent"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
@@ -158,6 +159,12 @@ func (u *updates) startPython(_ context.Context) error {
 		}
 	}
 	return first
+}
+
+// lightTier is whether this machine's tier is Light or Standard (the heavy workers stop for
+// the pre-update dump there: story 59.12); not known is neither.
+func lightTier(mt *machineTier) bool {
+	return mt != nil && (mt.Tier == hostinfo.TierLight || mt.Tier == hostinfo.TierStandard)
 }
 
 // installKind picks this server's installer (install-kinds.md): the desktop app's
@@ -356,11 +363,19 @@ type rehearser struct {
 	keep int
 	room pgbundle.RoomPolicy
 	off  bool
+	// runtime is a container's runtime folder on its data volume ("" elsewhere): its update
+	// first checks the volume has room for the new runtime and the dump (story 59.12)
+	runtime string
 }
 
 func (r rehearser) Check(ctx context.Context, rehearse bool, maxGB int) error {
 	if err := r.t.Check(ctx); err != nil {
 		return codedFailure(err)
+	}
+	if r.runtime != "" {
+		if err := r.t.UpdateRoom(ctx, r.runtime); err != nil {
+			return codedFailure(err)
+		}
 	}
 	return codedFailure(r.t.Space(ctx, rehearse, maxGB))
 }
@@ -448,6 +463,11 @@ func codedFailure(err error) error {
 	if err == nil {
 		return nil
 	}
+	var short *dbsafe.ShortError
+	if errors.As(err, &short) {
+		_, detail, _ := strings.Cut(short.Error(), ": ")
+		return &updater.Failure{Code: "disk_short", Detail: detail, Need: short.Need, Free: short.Free}
+	}
 	msg := err.Error()
 	if code, detail, ok := strings.Cut(msg, ": "); ok && code != "" && strings.Trim(code, "abcdefghijklmnopqrstuvwxyz_") == "" {
 		return &updater.Failure{Code: code, Detail: detail}
@@ -510,6 +530,10 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 	}
 	m := &updater.Machine{Dir: dir, Installer: inst, Exit: exit, Log: os.Stderr}
 	m.TVHandover = u.tvHandover
+	if lightTier(runningTier.Load()) {
+		// story 59.12: the dump under a NAS's memory limit, without speech and transcodes
+		m.Lighten, m.Relight = u.stopPython, u.startPython
+	}
 	// Epic 51 story 51.18: the new release's packs fetched before the switch, those of
 	// releases no longer kept pruned at the commit (and at each start)
 	m.Packs = &updater.Packs{M: newPacksManager(cfg, releaseDir, os.Stderr), Source: src}
@@ -520,7 +544,11 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 		u.r = newRestorer(cfg, homeDatabase(cfg, pg), inst, exit)
 		u.r.run = func() *updater.Journal { return m.Status().Journal }
 		if t := homeDatabase(cfg, pg); t != nil {
-			m.Rehearser = rehearser{t: *t, keep: updateKeep(cfg), room: roomOf(cfg), off: !cfg.Backups.PreUpdateOn()}
+			rh := rehearser{t: *t, keep: updateKeep(cfg), room: roomOf(cfg), off: !cfg.Backups.PreUpdateOn()}
+			if ri, ok := inst.(*updater.RuntimeInstaller); ok && ri.Container != "" {
+				rh.runtime = ri.Runtime.Root // story 59.12: the volume's room for the runtime and the dump
+			}
+			m.Rehearser = rh
 			go func() { // a crash during a rehearsal left its scratch database
 				dctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 				defer cancel()

@@ -216,3 +216,48 @@ func TestRollbackAfterMigrationsMarksTheBackupOnly(t *testing.T) {
 		t.Fatalf("marked %v backups %v (the one before the switch) next %s", n.w.marked, s.taken(), n.w.next)
 	}
 }
+
+// Story 59.12: on a Light or Standard machine the heavy workers stop before the dump (they
+// would compete with it for a NAS's memory) and start again only when the update goes no
+// further; a switch leaves them to the new release.
+func TestApplyLightensBeforeTheDump(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		s := &sideRehearser{pending: 1, known: true}
+		if fail {
+			s.err = errors.New("pg_dump: out of memory")
+		}
+		r, _ := sideRig(t, s)
+		var mu sync.Mutex
+		var calls []string
+		r.m.Lighten = func(context.Context) error {
+			mu.Lock()
+			defer mu.Unlock()
+			calls = append(calls, "lighten:"+strings.Join(s.taken(), ","))
+			return nil
+		}
+		r.m.Relight = func(context.Context) error {
+			mu.Lock()
+			defer mu.Unlock()
+			calls = append(calls, "relight")
+			return nil
+		}
+		_ = r.m.Apply("run-1")
+		if fail {
+			r.waitState(StateApplyFailed)
+			r.m.Wait()
+		} else {
+			r.waitExit()
+			r.waitState(StateRestarting)
+		}
+		mu.Lock()
+		got := strings.Join(calls, " ")
+		mu.Unlock()
+		want := "lighten:"
+		if fail {
+			want = "lighten: relight"
+		}
+		if got != want {
+			t.Fatalf("failed %v: calls %q, want %q (stopped before the dump; started again only when nothing switched)", fail, got, want)
+		}
+	}
+}
