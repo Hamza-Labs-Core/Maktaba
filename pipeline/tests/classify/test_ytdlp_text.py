@@ -73,6 +73,25 @@ def test_parse_video_info_json() -> None:
     assert (v.playlist_id, v.playlist_index) == ("PLx", 8)
 
 
+def test_parse_video_info_json_reads_the_age_limit() -> None:
+    """Epic 57 story 57.01 (T06): YouTube's age limit is kept for the age tiers; a file
+    that does not say, or says something that is no age, gives None."""
+
+    def limit(extra: dict[str, object]) -> int | None:
+        v = parse_info_json(json.dumps({"id": "JekM9-soyJQ", "title": "t", **extra}))
+        assert isinstance(v, VideoInfo)
+        return v.age_limit
+
+    assert limit({"age_limit": 18}) == 18
+    assert limit({"age_limit": 0}) == 0
+    assert limit({}) is None
+    assert limit({"age_limit": None}) is None
+    assert limit({"age_limit": "18"}) is None
+    assert limit({"age_limit": True}) is None
+    assert limit({"age_limit": -1}) is None
+    assert limit({"age_limit": 1800}) is None
+
+
 def test_parse_playlist_info_json() -> None:
     p = parse_info_json(json.dumps({"_type": "playlist", "id": "UCabc", "title": "X - Videos"}))
     assert isinstance(p, PlaylistInfo)

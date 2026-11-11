@@ -89,6 +89,9 @@ class VideoInfo:
     description: str | None
     tags: tuple[str, ...]
     webpage_url: str | None
+    #: YouTube's age limit for the video (0: none, 18: age-restricted); None when the
+    #: file does not say. The age tiers read it (Epic 57, story 57.01).
+    age_limit: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +130,13 @@ def _str(v: Any) -> str | None:
 
 def _int(v: Any) -> int | None:
     return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+
+def parse_age_limit(value: Any) -> int | None:
+    """yt-dlp's ``age_limit`` (an age in years, 0 for none) → int; ``None`` if absent or
+    not an age."""
+    v = _int(value)
+    return v if v is not None and 0 <= v <= 99 else None
 
 
 def parse_info_json(text: str) -> VideoInfo | PlaylistInfo | None:
@@ -174,6 +184,7 @@ def parse_info_json(text: str) -> VideoInfo | PlaylistInfo | None:
         description=_str(j.get("description")),
         tags=tuple(t for t in tags if isinstance(t, str)),
         webpage_url=_str(j.get("webpage_url")),
+        age_limit=parse_age_limit(j.get("age_limit")),
     )
 
 
