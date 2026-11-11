@@ -165,6 +165,10 @@ type Failure struct {
 	Step   string `json:"step"`
 	Code   string `json:"code"`
 	Detail string `json:"detail,omitempty"`
+	// Need and Free are a room check's bytes (disk_short, story 59.12): the Updates page
+	// says both.
+	Need uint64 `json:"need_bytes,omitempty"`
+	Free uint64 `json:"free_bytes,omitempty"`
 }
 
 func (f *Failure) Error() string {

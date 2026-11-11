@@ -1011,6 +1011,10 @@ export const APPS = [
                 "خلف وكيل عكسي (وكيل خادم التخزين الشبكي مثلًا)، تُدرَج عنوانه في **الإعدادات ← التخزين والاكتشاف ← الوكلاء الموثوقون**: فلا تُصدَّق عناوين العملاء المُمرَّرة إلا منه، فترى السجلات والحدود كل عميل حقيقي، ولا يستطيع غيره على الشبكة ادّعاء عنوان آخر."
               ),
               t(
+                "On a NAS, its own updates and the NAS's catalog (TrueNAS app updates, Unraid's update check, Watchtower, a pull in Container Manager) live side by side, so neither needs turning off: a newer image goes onto the data folder at the container's next start under the same guard as an update, and an older one never replaces a newer release. **Admin → Updates** shows the release that runs against the image's, and why. An update first checks the data folder has room for the new release and its backup, and waits, saying how much it needs, when it has not; on the Light and Standard tiers speech to text and conversions pause for the backup.",
+                "على جهاز NAS تعمل تحديثاته الذاتية وتحديثات متجر الجهاز (تحديثات تطبيقات TrueNAS، وفحص التحديثات في Unraid، وWatchtower، والسحب في Container Manager) جنبًا إلى جنب، فلا حاجة إلى إيقاف أيٍّ منها: توضع الصورة الأحدث في مجلد البيانات عند التشغيل التالي للحاوية بالحماية نفسها التي يمرّ بها التحديث، ولا تحلّ الصورة الأقدم أبدًا محلّ إصدار أحدث. وتعرض صفحة **الإدارة ← التحديثات** الإصدار الذي يعمل مقابل إصدار الصورة وسبب ذلك. ويتحقق التحديث أولًا من وجود مساحة في مجلد البيانات للإصدار الجديد ونسخته الاحتياطية، وينتظر ذاكرًا ما يحتاجه إن لم تتوفر؛ وفي فئتي الخفيف والقياسي يتوقف تحويل الكلام إلى نص وتحويل الفيديو أثناء النسخ الاحتياطي."
+              ),
+              t(
                 "Can run with no outbound call at all: `maktaba-server serve --offline` (or `MAKTABA_OFFLINE=1`) turns off the update check, pack and model downloads, usage data and the link to Maktaba Cloud at once.",
                 "ويمكن تشغيله دون أي اتصال صادر: يوقف الأمر `maktaba-server serve --offline` (أو `MAKTABA_OFFLINE=1`) التحقق من التحديثات وتنزيل الحزم والنماذج وبيانات الاستخدام والربط بسحابة مكتبة دفعةً واحدة."
               ),

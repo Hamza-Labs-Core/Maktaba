@@ -1,0 +1,46 @@
+{
+  "_doc": "The update rehearsal's container legs (story 59.12): the image's updates in NAS shapes. tests/nas/update_leg.py runs one; .github/workflows/update-rehearsal.yml runs every leg on its architectures. A leg takes the fields of a nas-shapes cell (tests/nas/cells.json: user, data, media, docker, env) and its steps (update, rollback, restore, and its own: restart, older) with its assertions.",
+  "legs": [
+    {
+      "name": "nas-568",
+      "about": "TrueNAS's apps user 568, the library mounted read-only, the data folder group-writable",
+      "arches": ["amd64"],
+      "user": "568:568",
+      "data": {"owner": "0:568", "mode": "0770"},
+      "media": {"ro": true},
+      "steps": ["update", "rollback", "restore"],
+      "asserts": ["only_uid", "media_untouched"]
+    },
+    {
+      "name": "nas-4g",
+      "about": "a 4 GB memory limit (the Light tier) and a library of 20,000 videos: the dump and the new runtime compete for memory and disk",
+      "arches": ["amd64"],
+      "docker": ["--memory=4g"],
+      "items": 20000,
+      "steps": ["update", "rollback", "restore"],
+      "asserts": ["tier_light", "no_oom"]
+    },
+    {
+      "name": "nas-arm64",
+      "about": "an arm64 NAS (a Synology or TrueNAS on ARM, a Raspberry Pi 5)",
+      "arches": ["arm64"],
+      "steps": ["update", "rollback", "restore"],
+      "asserts": ["only_uid"]
+    },
+    {
+      "name": "nas-restart",
+      "about": "the NAS stops the container in the middle of an update (DSM's stop all before its own update, a TrueNAS app restart): staged, moved, before confirm",
+      "arches": ["amd64"],
+      "restart_at": ["staged", "moved", "before_confirm"],
+      "steps": ["update", "restart", "rollback", "restore"],
+      "asserts": []
+    },
+    {
+      "name": "nas-image-older",
+      "about": "the volume on N+1 and the image N started (a household pinned an older tag): N+1 runs, and Settings says why",
+      "arches": ["amd64"],
+      "steps": ["update", "rollback", "restore", "older"],
+      "asserts": []
+    }
+  ]
+}

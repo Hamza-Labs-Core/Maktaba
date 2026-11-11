@@ -14,6 +14,17 @@ build fails when the two differ.
 
 ### Changed
 
+- **Updates on a NAS (story 59.12).** The Docker image's own updates and a NAS catalog's
+  (TrueNAS app updates, Unraid's update check, Watchtower, a pull in Container Manager) now live
+  side by side: neither needs turning off. **Admin → Updates** shows, on the image, the release
+  that runs against the image's and why (an image older than the home's runtime starts the
+  runtime). A container's update first checks the data folder has room for the new runtime and
+  the backup (the database and a fifth more), and waits saying how much it needs when it has
+  not; on the Light and Standard tiers speech to text and transcodes stop for the backup. The
+  update rehearsal now also starts the image on NAS shapes (uid 568 with a read-only library, a
+  4 GB limit with 20,000 videos, arm64, a restart in the middle of an update, an older image)
+  and gates every tag on them.
+
 - **Maktaba on QNAP, UGREEN, ASUSTOR and Unraid (story 59.11).** The published Docker compose
   (`maktaba-docker-compose.yml`) is now the NAS file: it names the container `maktaba`, sets
   `MAKTABA_PLATFORM=docker` and `TZ`, mounts each media folder at its own path (an install made

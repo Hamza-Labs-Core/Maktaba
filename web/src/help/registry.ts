@@ -387,6 +387,7 @@ export const UPDATE_CODE_HELP: ReadonlyMap<string, string> = new Map([
   ["release_incomplete", "code-download"],
   ["disk_full", "code-download"],
   ["disk_space", "code-download"],
+  ["disk_short", "code-download"],
   ["no_release", "code-download"],
   ["withdrawn", "code-download"],
   ["turned_prerelease", "code-download"],
