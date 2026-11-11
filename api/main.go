@@ -384,6 +384,7 @@ func runServe() error {
 		IdempotencyStore:   idemStore,
 		IPRatePerMin:       envIntDefault("MAKTABA_IP_RATE_PER_MIN", 6000),
 		UserRatePerMin:     envIntDefault("MAKTABA_USER_RATE_PER_MIN", 600),
+		InternalRatePerMin: envIntDefault("MAKTABA_INTERNAL_RATE_PER_MIN", 0), // 0: the router's default,
 		SchemaRev:          envIntDefault("MAKTABA_SCHEMA_REV", schemaguard.SchemaRev),
 		AggregatorServices: buildAggregatorServices(),
 		StatsDataDir:       statsDataDir,
