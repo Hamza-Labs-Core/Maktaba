@@ -3312,6 +3312,330 @@
     "/paths/~1system~1updates/get/responses/200/content/application~1json/schema/properties/container/description": {
       "en": "Admins only: the volume's runtime beside the Docker image's release.",
       "ar": "للمسؤول وحده: إصدار وحدة التخزين بجانب إصدار صورة Docker."
+    },
+    "/paths/~1videos~1{id}~1age-tier/parameters/0/description": {
+      "en": "The video's id.",
+      "ar": "معرّف الفيديو."
+    },
+    "/paths/~1videos~1{id}~1age-tier/put/summary": {
+      "en": "Set a video's age tier",
+      "ar": "ضبط الفئة العمرية لفيديو"
+    },
+    "/paths/~1videos~1{id}~1age-tier/put/description": {
+      "en": "The admin's tier for one video wins over every other source. `null` clears it and the video falls back to its series, collection or YouTube source, then its ratings, then the library's default. The video's tier is written before the answer.",
+      "ar": "فئة المشرف لفيديو واحد تغلب كل مصدر آخر. والقيمة `null` تمسحها فيعود الفيديو إلى مسلسله أو مجموعته أو مصدره على يوتيوب، ثم إلى تصنيفاته، ثم إلى الفئة الافتراضية للمكتبة. وتُكتب فئة الفيديو قبل الجواب."
+    },
+    "/paths/~1videos~1{id}~1age-tier/put/requestBody/description": {
+      "en": "The tier.",
+      "ar": "الفئة."
+    },
+    "/paths/~1videos~1{id}~1age-tier/put/requestBody/content/application~1json/schema/properties/tier/description": {
+      "en": "The admin's tier for the video, or null to clear it.",
+      "ar": "فئة المشرف للفيديو، أو null لمسحها."
+    },
+    "/paths/~1videos~1{id}~1age-tier/put/responses/200/description": {
+      "en": "The tier after the change.",
+      "ar": "الفئة بعد التغيير."
+    },
+    "/paths/~1videos~1{id}~1age-tier/put/responses/200/content/application~1json/schema/properties/tier/description": {
+      "en": "The tier now in force: for a video its effective tier, for the others the tier just stored. Null is unrated.",
+      "ar": "الفئة السارية الآن: للفيديو فئته الفعلية، ولغيره الفئة المخزَّنة للتو. والقيمة null تعني غير مصنَّف."
+    },
+    "/paths/~1videos~1{id}~1age-tier/put/responses/200/content/application~1json/schema/properties/source/description": {
+      "en": "Where the tier comes from. For a video, the source of its effective tier; for the others, the source the tier has on the videos that take it (`admin_container`, or `library_default` for a library). Null when there is no tier.",
+      "ar": "مصدر الفئة. للفيديو مصدر فئته الفعلية؛ ولغيره المصدر الذي تحمله الفئة على الفيديوهات التي تأخذها (`admin_container`، أو `library_default` للمكتبة). والقيمة null حين لا توجد فئة."
+    },
+    "/paths/~1videos~1{id}~1age-tier/put/responses/200/content/application~1json/schema/properties/recompute_count/description": {
+      "en": "Always 1: the video itself.",
+      "ar": "دائمًا 1: الفيديو نفسه."
+    },
+    "/paths/~1videos~1{id}~1age-tier/put/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1videos~1{id}~1age-tier/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1videos~1{id}~1age-tier/put/responses/404/description": {
+      "en": "No such video.",
+      "ar": "لا يوجد فيديو بهذا المعرّف."
+    },
+    "/paths/~1libraries~1{id}~1age-tier/parameters/0/description": {
+      "en": "The library's id.",
+      "ar": "معرّف المكتبة."
+    },
+    "/paths/~1libraries~1{id}~1age-tier/put/summary": {
+      "en": "Set a library's default age tier",
+      "ar": "ضبط الفئة العمرية الافتراضية لمكتبة"
+    },
+    "/paths/~1libraries~1{id}~1age-tier/put/description": {
+      "en": "The tier of every video in the library that nothing else rates. A rating that only a plugin gave never puts a video below this default. `null` clears it and such videos are unrated.",
+      "ar": "فئة كل فيديو في المكتبة لا يصنّفه شيء آخر. والتصنيف الذي لم تعطه إلا إضافة لا يضع الفيديو تحت هذه الفئة الافتراضية أبدًا. والقيمة `null` تمسحها فتصير تلك الفيديوهات غير مصنَّفة."
+    },
+    "/paths/~1libraries~1{id}~1age-tier/put/requestBody/description": {
+      "en": "The tier.",
+      "ar": "الفئة."
+    },
+    "/paths/~1libraries~1{id}~1age-tier/put/requestBody/content/application~1json/schema/properties/tier/description": {
+      "en": "The library's default tier, or null to clear it.",
+      "ar": "الفئة الافتراضية للمكتبة، أو null لمسحها."
+    },
+    "/paths/~1libraries~1{id}~1age-tier/put/responses/200/description": {
+      "en": "The tier after the change.",
+      "ar": "الفئة بعد التغيير."
+    },
+    "/paths/~1libraries~1{id}~1age-tier/put/responses/200/content/application~1json/schema/properties/tier/description": {
+      "en": "The tier now in force: for a video its effective tier, for the others the tier just stored. Null is unrated.",
+      "ar": "الفئة السارية الآن: للفيديو فئته الفعلية، ولغيره الفئة المخزَّنة للتو. والقيمة null تعني غير مصنَّف."
+    },
+    "/paths/~1libraries~1{id}~1age-tier/put/responses/200/content/application~1json/schema/properties/source/description": {
+      "en": "Where the tier comes from. For a video, the source of its effective tier; for the others, the source the tier has on the videos that take it (`admin_container`, or `library_default` for a library). Null when there is no tier.",
+      "ar": "مصدر الفئة. للفيديو مصدر فئته الفعلية؛ ولغيره المصدر الذي تحمله الفئة على الفيديوهات التي تأخذها (`admin_container`، أو `library_default` للمكتبة). والقيمة null حين لا توجد فئة."
+    },
+    "/paths/~1libraries~1{id}~1age-tier/put/responses/200/content/application~1json/schema/properties/recompute_count/description": {
+      "en": "How many videos the change reaches; their tiers are written in the background, 1,000 at a time.",
+      "ar": "عدد الفيديوهات التي يطالها التغيير؛ وتُكتب فئاتها في الخلفية، 1,000 في كل دفعة."
+    },
+    "/paths/~1libraries~1{id}~1age-tier/put/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1libraries~1{id}~1age-tier/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1libraries~1{id}~1age-tier/put/responses/404/description": {
+      "en": "No such library.",
+      "ar": "لا توجد مكتبة بهذا المعرّف."
+    },
+    "/paths/~1series~1{id}~1age-tier/parameters/0/description": {
+      "en": "The series' id.",
+      "ar": "معرّف المسلسل."
+    },
+    "/paths/~1series~1{id}~1age-tier/put/summary": {
+      "en": "Set a series' age tier",
+      "ar": "ضبط الفئة العمرية لمسلسل"
+    },
+    "/paths/~1series~1{id}~1age-tier/put/description": {
+      "en": "The tier of every episode of the series the admin did not rate one by one; it wins over ratings from Plex, the guide, YouTube and plugins. A video in several rated containers takes the strictest. `null` clears it.",
+      "ar": "فئة كل حلقة من المسلسل لم يصنّفها المشرف واحدة واحدة؛ وتغلب تصنيفات Plex والدليل ويوتيوب والإضافات. والفيديو الموجود في عدة حاويات مصنَّفة يأخذ الأشد. والقيمة `null` تمسحها."
+    },
+    "/paths/~1series~1{id}~1age-tier/put/requestBody/description": {
+      "en": "The tier.",
+      "ar": "الفئة."
+    },
+    "/paths/~1series~1{id}~1age-tier/put/requestBody/content/application~1json/schema/properties/tier/description": {
+      "en": "The series' tier, or null to clear it.",
+      "ar": "فئة المسلسل، أو null لمسحها."
+    },
+    "/paths/~1series~1{id}~1age-tier/put/responses/200/description": {
+      "en": "The tier after the change.",
+      "ar": "الفئة بعد التغيير."
+    },
+    "/paths/~1series~1{id}~1age-tier/put/responses/200/content/application~1json/schema/properties/tier/description": {
+      "en": "The tier now in force: for a video its effective tier, for the others the tier just stored. Null is unrated.",
+      "ar": "الفئة السارية الآن: للفيديو فئته الفعلية، ولغيره الفئة المخزَّنة للتو. والقيمة null تعني غير مصنَّف."
+    },
+    "/paths/~1series~1{id}~1age-tier/put/responses/200/content/application~1json/schema/properties/source/description": {
+      "en": "Where the tier comes from. For a video, the source of its effective tier; for the others, the source the tier has on the videos that take it (`admin_container`, or `library_default` for a library). Null when there is no tier.",
+      "ar": "مصدر الفئة. للفيديو مصدر فئته الفعلية؛ ولغيره المصدر الذي تحمله الفئة على الفيديوهات التي تأخذها (`admin_container`، أو `library_default` للمكتبة). والقيمة null حين لا توجد فئة."
+    },
+    "/paths/~1series~1{id}~1age-tier/put/responses/200/content/application~1json/schema/properties/recompute_count/description": {
+      "en": "How many videos the change reaches; their tiers are written in the background, 1,000 at a time.",
+      "ar": "عدد الفيديوهات التي يطالها التغيير؛ وتُكتب فئاتها في الخلفية، 1,000 في كل دفعة."
+    },
+    "/paths/~1series~1{id}~1age-tier/put/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1series~1{id}~1age-tier/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1series~1{id}~1age-tier/put/responses/404/description": {
+      "en": "No such series.",
+      "ar": "لا يوجد مسلسل بهذا المعرّف."
+    },
+    "/paths/~1collections~1{id}~1age-tier/parameters/0/description": {
+      "en": "The collection's id.",
+      "ar": "معرّف المجموعة."
+    },
+    "/paths/~1collections~1{id}~1age-tier/put/summary": {
+      "en": "Set a collection's age tier",
+      "ar": "ضبط الفئة العمرية لمجموعة"
+    },
+    "/paths/~1collections~1{id}~1age-tier/put/description": {
+      "en": "The tier of every video listed in the collection the admin did not rate one by one. A smart collection, whose videos are found when it is opened, passes no tier on. A video in several rated containers takes the strictest. `null` clears it.",
+      "ar": "فئة كل فيديو مدرج في المجموعة لم يصنّفه المشرف واحدًا واحدًا. والمجموعة الذكية، التي تُجمع فيديوهاتها عند فتحها، لا تورّث فئة. والفيديو الموجود في عدة حاويات مصنَّفة يأخذ الأشد. والقيمة `null` تمسحها."
+    },
+    "/paths/~1collections~1{id}~1age-tier/put/requestBody/description": {
+      "en": "The tier.",
+      "ar": "الفئة."
+    },
+    "/paths/~1collections~1{id}~1age-tier/put/requestBody/content/application~1json/schema/properties/tier/description": {
+      "en": "The collection's tier, or null to clear it.",
+      "ar": "فئة المجموعة، أو null لمسحها."
+    },
+    "/paths/~1collections~1{id}~1age-tier/put/responses/200/description": {
+      "en": "The tier after the change.",
+      "ar": "الفئة بعد التغيير."
+    },
+    "/paths/~1collections~1{id}~1age-tier/put/responses/200/content/application~1json/schema/properties/tier/description": {
+      "en": "The tier now in force: for a video its effective tier, for the others the tier just stored. Null is unrated.",
+      "ar": "الفئة السارية الآن: للفيديو فئته الفعلية، ولغيره الفئة المخزَّنة للتو. والقيمة null تعني غير مصنَّف."
+    },
+    "/paths/~1collections~1{id}~1age-tier/put/responses/200/content/application~1json/schema/properties/source/description": {
+      "en": "Where the tier comes from. For a video, the source of its effective tier; for the others, the source the tier has on the videos that take it (`admin_container`, or `library_default` for a library). Null when there is no tier.",
+      "ar": "مصدر الفئة. للفيديو مصدر فئته الفعلية؛ ولغيره المصدر الذي تحمله الفئة على الفيديوهات التي تأخذها (`admin_container`، أو `library_default` للمكتبة). والقيمة null حين لا توجد فئة."
+    },
+    "/paths/~1collections~1{id}~1age-tier/put/responses/200/content/application~1json/schema/properties/recompute_count/description": {
+      "en": "How many videos the change reaches; their tiers are written in the background, 1,000 at a time.",
+      "ar": "عدد الفيديوهات التي يطالها التغيير؛ وتُكتب فئاتها في الخلفية، 1,000 في كل دفعة."
+    },
+    "/paths/~1collections~1{id}~1age-tier/put/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1collections~1{id}~1age-tier/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1collections~1{id}~1age-tier/put/responses/404/description": {
+      "en": "No such collection.",
+      "ar": "لا توجد مجموعة بهذا المعرّف."
+    },
+    "/paths/~1channels~1{id}~1age-tier/parameters/0/description": {
+      "en": "The channel's id.",
+      "ar": "معرّف القناة."
+    },
+    "/paths/~1channels~1{id}~1age-tier/put/summary": {
+      "en": "Set a channel's age tier",
+      "ar": "ضبط الفئة العمرية لقناة"
+    },
+    "/paths/~1channels~1{id}~1age-tier/put/description": {
+      "en": "The tier of the channel itself: who may tune to it. It does not change the tiers of the videos the channel plays. `null` clears it.",
+      "ar": "فئة القناة نفسها: من يجوز له مشاهدتها. ولا تغيّر فئات الفيديوهات التي تعرضها القناة. والقيمة `null` تمسحها."
+    },
+    "/paths/~1channels~1{id}~1age-tier/put/requestBody/description": {
+      "en": "The tier.",
+      "ar": "الفئة."
+    },
+    "/paths/~1channels~1{id}~1age-tier/put/requestBody/content/application~1json/schema/properties/tier/description": {
+      "en": "The channel's tier, or null to clear it.",
+      "ar": "فئة القناة، أو null لمسحها."
+    },
+    "/paths/~1channels~1{id}~1age-tier/put/responses/200/description": {
+      "en": "The tier after the change.",
+      "ar": "الفئة بعد التغيير."
+    },
+    "/paths/~1channels~1{id}~1age-tier/put/responses/200/content/application~1json/schema/properties/tier/description": {
+      "en": "The tier now in force: for a video its effective tier, for the others the tier just stored. Null is unrated.",
+      "ar": "الفئة السارية الآن: للفيديو فئته الفعلية، ولغيره الفئة المخزَّنة للتو. والقيمة null تعني غير مصنَّف."
+    },
+    "/paths/~1channels~1{id}~1age-tier/put/responses/200/content/application~1json/schema/properties/source/description": {
+      "en": "Where the tier comes from. For a video, the source of its effective tier; for the others, the source the tier has on the videos that take it (`admin_container`, or `library_default` for a library). Null when there is no tier.",
+      "ar": "مصدر الفئة. للفيديو مصدر فئته الفعلية؛ ولغيره المصدر الذي تحمله الفئة على الفيديوهات التي تأخذها (`admin_container`، أو `library_default` للمكتبة). والقيمة null حين لا توجد فئة."
+    },
+    "/paths/~1channels~1{id}~1age-tier/put/responses/200/content/application~1json/schema/properties/recompute_count/description": {
+      "en": "Always 0: a channel's tier changes no video's tier.",
+      "ar": "دائمًا 0: فئة القناة لا تغيّر فئة أي فيديو."
+    },
+    "/paths/~1channels~1{id}~1age-tier/put/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1channels~1{id}~1age-tier/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1channels~1{id}~1age-tier/put/responses/404/description": {
+      "en": "No such channel.",
+      "ar": "لا توجد قناة بهذا المعرّف."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}~1age-tier/parameters/0/description": {
+      "en": "The library's id.",
+      "ar": "معرّف المكتبة."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}~1age-tier/parameters/1/description": {
+      "en": "The YouTube source's id.",
+      "ar": "معرّف مصدر يوتيوب."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}~1age-tier/put/summary": {
+      "en": "Set a YouTube source's age tier",
+      "ar": "ضبط الفئة العمرية لمصدر يوتيوب"
+    },
+    "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}~1age-tier/put/description": {
+      "en": "The tier of every video downloaded from this channel or playlist the admin did not rate one by one. A video in several rated containers takes the strictest. `null` clears it.",
+      "ar": "فئة كل فيديو نُزّل من هذه القناة أو قائمة التشغيل لم يصنّفه المشرف واحدًا واحدًا. والفيديو الموجود في عدة حاويات مصنَّفة يأخذ الأشد. والقيمة `null` تمسحها."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}~1age-tier/put/requestBody/description": {
+      "en": "The tier.",
+      "ar": "الفئة."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}~1age-tier/put/requestBody/content/application~1json/schema/properties/tier/description": {
+      "en": "The source's tier, or null to clear it.",
+      "ar": "فئة المصدر، أو null لمسحها."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}~1age-tier/put/responses/200/description": {
+      "en": "The tier after the change.",
+      "ar": "الفئة بعد التغيير."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}~1age-tier/put/responses/200/content/application~1json/schema/properties/tier/description": {
+      "en": "The tier now in force: for a video its effective tier, for the others the tier just stored. Null is unrated.",
+      "ar": "الفئة السارية الآن: للفيديو فئته الفعلية، ولغيره الفئة المخزَّنة للتو. والقيمة null تعني غير مصنَّف."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}~1age-tier/put/responses/200/content/application~1json/schema/properties/source/description": {
+      "en": "Where the tier comes from. For a video, the source of its effective tier; for the others, the source the tier has on the videos that take it (`admin_container`, or `library_default` for a library). Null when there is no tier.",
+      "ar": "مصدر الفئة. للفيديو مصدر فئته الفعلية؛ ولغيره المصدر الذي تحمله الفئة على الفيديوهات التي تأخذها (`admin_container`، أو `library_default` للمكتبة). والقيمة null حين لا توجد فئة."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}~1age-tier/put/responses/200/content/application~1json/schema/properties/recompute_count/description": {
+      "en": "How many videos the change reaches; their tiers are written in the background, 1,000 at a time.",
+      "ar": "عدد الفيديوهات التي يطالها التغيير؛ وتُكتب فئاتها في الخلفية، 1,000 في كل دفعة."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}~1age-tier/put/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}~1age-tier/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}~1age-tier/put/responses/404/description": {
+      "en": "No such source in this library.",
+      "ar": "لا يوجد مصدر بهذا المعرّف في هذه المكتبة."
+    },
+    "/paths/~1parental~1ratings/get/summary": {
+      "en": "The rating labels and their age tiers",
+      "ar": "تصنيفات المحتوى وفئاتها العمرية"
+    },
+    "/paths/~1parental~1ratings/get/description": {
+      "en": "The table every app uses to turn a rating label (`PG-13`, `gb/15`, `TV-MA`) into an age tier: the tiers, each country's labels, and the labels that carry no rating. For any signed-in user; the apps keep it for 5 minutes.",
+      "ar": "الجدول الذي يستعمله كل تطبيق لتحويل تصنيف (`PG-13` أو `gb/15` أو `TV-MA`) إلى فئة عمرية: الفئات، وتصنيفات كل بلد، والتصنيفات التي لا تحمل تصنيفًا. لكل مستخدم مسجَّل الدخول؛ وتحتفظ به التطبيقات 5 دقائق."
+    },
+    "/paths/~1parental~1ratings/get/responses/200/description": {
+      "en": "The ratings table.",
+      "ar": "جدول التصنيفات."
+    },
+    "/paths/~1parental~1ratings/get/responses/200/content/application~1json/schema/properties/version/description": {
+      "en": "The table's version; it rises when a label changes.",
+      "ar": "إصدار الجدول؛ ويزيد عند تغيّر تصنيف."
+    },
+    "/paths/~1parental~1ratings/get/responses/200/content/application~1json/schema/properties/tiers/description": {
+      "en": "The age tiers, lowest first.",
+      "ar": "الفئات العمرية، من الأدنى."
+    },
+    "/paths/~1parental~1ratings/get/responses/200/content/application~1json/schema/properties/systems/description": {
+      "en": "Each rating system (`us-movie`, `us-tv`, `gb`, and so on): its name in English and Arabic and the nominal age of each of its labels. As content a label takes the smallest tier at or above that age.",
+      "ar": "كل نظام تصنيف (`us-movie` و`us-tv` و`gb` وهكذا): اسمه بالإنجليزية والعربية والعمر الاسمي لكل تصنيف فيه. والتصنيف بوصفه محتوى يأخذ أصغر فئة تساوي ذلك العمر أو تعلوه."
+    },
+    "/tags/23/name": {
+      "en": "Parental controls",
+      "ar": "الرقابة الأبوية"
+    },
+    "/tags/23/description": {
+      "en": "Age tiers on the home's content (0, 9, 13, 16, 18, or unrated) and the table that maps each country's rating labels to them.",
+      "ar": "الفئات العمرية لمحتوى المنزل (0 أو 9 أو 13 أو 16 أو 18 أو غير مصنَّف) والجدول الذي يقابل تصنيفات كل بلد بها."
     }
   }
 }

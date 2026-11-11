@@ -71,6 +71,8 @@ tags:
   description: 'This machine: server.toml''s settings, the hardware and its tier, the quiet hours, speech to text. Admins only.'
 - name: Plugins
   description: Installed plugins and their isolation. Admins only.
+- name: Parental controls
+  description: Age tiers on the home's content (0, 9, 13, 16, 18, or unrated) and the table that maps each country's rating labels to them.
 security:
 - bearerAuth: []
 - cookieAuth: []
@@ -7048,6 +7050,677 @@ paths:
         default:
           $ref: '#/components/responses/InternalError'
       operationId: getSystemUpdates
+  /videos/{id}/age-tier:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: The video's id.
+    put:
+      tags:
+      - Parental controls
+      summary: Set a video's age tier
+      description: The admin's tier for one video wins over every other source. `null` clears it and the video falls back to its series, collection or YouTube source, then its ratings, then the library's default. The video's tier is written before the answer.
+      x-maktaba-role: admin
+      requestBody:
+        required: true
+        description: The tier.
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - tier
+              additionalProperties: false
+              properties:
+                tier:
+                  type:
+                  - integer
+                  - 'null'
+                  enum:
+                  - 0
+                  - 9
+                  - 13
+                  - 16
+                  - 18
+                  - null
+                  description: The admin's tier for the video, or null to clear it.
+      responses:
+        '200':
+          description: The tier after the change.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - tier
+                - source
+                - recompute_count
+                properties:
+                  tier:
+                    type:
+                    - integer
+                    - 'null'
+                    enum:
+                    - 0
+                    - 9
+                    - 13
+                    - 16
+                    - 18
+                    - null
+                    description: 'The tier now in force: for a video its effective tier, for the others the tier just stored. Null is unrated.'
+                  source:
+                    type:
+                    - string
+                    - 'null'
+                    enum:
+                    - admin
+                    - admin_container
+                    - plex
+                    - guide
+                    - youtube
+                    - plugin
+                    - detected
+                    - library_default
+                    - null
+                    description: Where the tier comes from. For a video, the source of its effective tier; for the others, the source the tier has on the videos that take it (`admin_container`, or `library_default` for a library). Null when there is no tier.
+                  recompute_count:
+                    type: integer
+                    description: 'Always 1: the video itself.'
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No such video.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: setVideoAgeTier
+  /libraries/{id}/age-tier:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: The library's id.
+    put:
+      tags:
+      - Parental controls
+      summary: Set a library's default age tier
+      description: The tier of every video in the library that nothing else rates. A rating that only a plugin gave never puts a video below this default. `null` clears it and such videos are unrated.
+      x-maktaba-role: admin
+      requestBody:
+        required: true
+        description: The tier.
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - tier
+              additionalProperties: false
+              properties:
+                tier:
+                  type:
+                  - integer
+                  - 'null'
+                  enum:
+                  - 0
+                  - 9
+                  - 13
+                  - 16
+                  - 18
+                  - null
+                  description: The library's default tier, or null to clear it.
+      responses:
+        '200':
+          description: The tier after the change.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - tier
+                - source
+                - recompute_count
+                properties:
+                  tier:
+                    type:
+                    - integer
+                    - 'null'
+                    enum:
+                    - 0
+                    - 9
+                    - 13
+                    - 16
+                    - 18
+                    - null
+                    description: 'The tier now in force: for a video its effective tier, for the others the tier just stored. Null is unrated.'
+                  source:
+                    type:
+                    - string
+                    - 'null'
+                    enum:
+                    - admin
+                    - admin_container
+                    - plex
+                    - guide
+                    - youtube
+                    - plugin
+                    - detected
+                    - library_default
+                    - null
+                    description: Where the tier comes from. For a video, the source of its effective tier; for the others, the source the tier has on the videos that take it (`admin_container`, or `library_default` for a library). Null when there is no tier.
+                  recompute_count:
+                    type: integer
+                    description: How many videos the change reaches; their tiers are written in the background, 1,000 at a time.
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No such library.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: setLibraryAgeTier
+  /series/{id}/age-tier:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: The series' id.
+    put:
+      tags:
+      - Parental controls
+      summary: Set a series' age tier
+      description: The tier of every episode of the series the admin did not rate one by one; it wins over ratings from Plex, the guide, YouTube and plugins. A video in several rated containers takes the strictest. `null` clears it.
+      x-maktaba-role: admin
+      requestBody:
+        required: true
+        description: The tier.
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - tier
+              additionalProperties: false
+              properties:
+                tier:
+                  type:
+                  - integer
+                  - 'null'
+                  enum:
+                  - 0
+                  - 9
+                  - 13
+                  - 16
+                  - 18
+                  - null
+                  description: The series' tier, or null to clear it.
+      responses:
+        '200':
+          description: The tier after the change.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - tier
+                - source
+                - recompute_count
+                properties:
+                  tier:
+                    type:
+                    - integer
+                    - 'null'
+                    enum:
+                    - 0
+                    - 9
+                    - 13
+                    - 16
+                    - 18
+                    - null
+                    description: 'The tier now in force: for a video its effective tier, for the others the tier just stored. Null is unrated.'
+                  source:
+                    type:
+                    - string
+                    - 'null'
+                    enum:
+                    - admin
+                    - admin_container
+                    - plex
+                    - guide
+                    - youtube
+                    - plugin
+                    - detected
+                    - library_default
+                    - null
+                    description: Where the tier comes from. For a video, the source of its effective tier; for the others, the source the tier has on the videos that take it (`admin_container`, or `library_default` for a library). Null when there is no tier.
+                  recompute_count:
+                    type: integer
+                    description: How many videos the change reaches; their tiers are written in the background, 1,000 at a time.
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No such series.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: setSeriesAgeTier
+  /collections/{id}/age-tier:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: The collection's id.
+    put:
+      tags:
+      - Parental controls
+      summary: Set a collection's age tier
+      description: The tier of every video listed in the collection the admin did not rate one by one. A smart collection, whose videos are found when it is opened, passes no tier on. A video in several rated containers takes the strictest. `null` clears it.
+      x-maktaba-role: admin
+      requestBody:
+        required: true
+        description: The tier.
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - tier
+              additionalProperties: false
+              properties:
+                tier:
+                  type:
+                  - integer
+                  - 'null'
+                  enum:
+                  - 0
+                  - 9
+                  - 13
+                  - 16
+                  - 18
+                  - null
+                  description: The collection's tier, or null to clear it.
+      responses:
+        '200':
+          description: The tier after the change.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - tier
+                - source
+                - recompute_count
+                properties:
+                  tier:
+                    type:
+                    - integer
+                    - 'null'
+                    enum:
+                    - 0
+                    - 9
+                    - 13
+                    - 16
+                    - 18
+                    - null
+                    description: 'The tier now in force: for a video its effective tier, for the others the tier just stored. Null is unrated.'
+                  source:
+                    type:
+                    - string
+                    - 'null'
+                    enum:
+                    - admin
+                    - admin_container
+                    - plex
+                    - guide
+                    - youtube
+                    - plugin
+                    - detected
+                    - library_default
+                    - null
+                    description: Where the tier comes from. For a video, the source of its effective tier; for the others, the source the tier has on the videos that take it (`admin_container`, or `library_default` for a library). Null when there is no tier.
+                  recompute_count:
+                    type: integer
+                    description: How many videos the change reaches; their tiers are written in the background, 1,000 at a time.
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No such collection.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: setCollectionAgeTier
+  /channels/{id}/age-tier:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: The channel's id.
+    put:
+      tags:
+      - Parental controls
+      summary: Set a channel's age tier
+      description: 'The tier of the channel itself: who may tune to it. It does not change the tiers of the videos the channel plays. `null` clears it.'
+      x-maktaba-role: admin
+      requestBody:
+        required: true
+        description: The tier.
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - tier
+              additionalProperties: false
+              properties:
+                tier:
+                  type:
+                  - integer
+                  - 'null'
+                  enum:
+                  - 0
+                  - 9
+                  - 13
+                  - 16
+                  - 18
+                  - null
+                  description: The channel's tier, or null to clear it.
+      responses:
+        '200':
+          description: The tier after the change.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - tier
+                - source
+                - recompute_count
+                properties:
+                  tier:
+                    type:
+                    - integer
+                    - 'null'
+                    enum:
+                    - 0
+                    - 9
+                    - 13
+                    - 16
+                    - 18
+                    - null
+                    description: 'The tier now in force: for a video its effective tier, for the others the tier just stored. Null is unrated.'
+                  source:
+                    type:
+                    - string
+                    - 'null'
+                    enum:
+                    - admin
+                    - admin_container
+                    - plex
+                    - guide
+                    - youtube
+                    - plugin
+                    - detected
+                    - library_default
+                    - null
+                    description: Where the tier comes from. For a video, the source of its effective tier; for the others, the source the tier has on the videos that take it (`admin_container`, or `library_default` for a library). Null when there is no tier.
+                  recompute_count:
+                    type: integer
+                    description: 'Always 0: a channel''s tier changes no video''s tier.'
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No such channel.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: setChannelAgeTier
+  /libraries/{id}/youtube/sources/{sid}/age-tier:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: The library's id.
+    - name: sid
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: The YouTube source's id.
+    put:
+      tags:
+      - Parental controls
+      summary: Set a YouTube source's age tier
+      description: The tier of every video downloaded from this channel or playlist the admin did not rate one by one. A video in several rated containers takes the strictest. `null` clears it.
+      x-maktaba-role: admin
+      requestBody:
+        required: true
+        description: The tier.
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - tier
+              additionalProperties: false
+              properties:
+                tier:
+                  type:
+                  - integer
+                  - 'null'
+                  enum:
+                  - 0
+                  - 9
+                  - 13
+                  - 16
+                  - 18
+                  - null
+                  description: The source's tier, or null to clear it.
+      responses:
+        '200':
+          description: The tier after the change.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - tier
+                - source
+                - recompute_count
+                properties:
+                  tier:
+                    type:
+                    - integer
+                    - 'null'
+                    enum:
+                    - 0
+                    - 9
+                    - 13
+                    - 16
+                    - 18
+                    - null
+                    description: 'The tier now in force: for a video its effective tier, for the others the tier just stored. Null is unrated.'
+                  source:
+                    type:
+                    - string
+                    - 'null'
+                    enum:
+                    - admin
+                    - admin_container
+                    - plex
+                    - guide
+                    - youtube
+                    - plugin
+                    - detected
+                    - library_default
+                    - null
+                    description: Where the tier comes from. For a video, the source of its effective tier; for the others, the source the tier has on the videos that take it (`admin_container`, or `library_default` for a library). Null when there is no tier.
+                  recompute_count:
+                    type: integer
+                    description: How many videos the change reaches; their tiers are written in the background, 1,000 at a time.
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No such source in this library.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: setYouTubeSourceAgeTier
+  /parental/ratings:
+    get:
+      tags:
+      - Parental controls
+      summary: The rating labels and their age tiers
+      description: 'The table every app uses to turn a rating label (`PG-13`, `gb/15`, `TV-MA`) into an age tier: the tiers, each country''s labels, and the labels that carry no rating. For any signed-in user; the apps keep it for 5 minutes.'
+      responses:
+        '200':
+          description: The ratings table.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  version:
+                    type: integer
+                    description: The table's version; it rises when a label changes.
+                  tiers:
+                    type: array
+                    items:
+                      type: integer
+                    description: The age tiers, lowest first.
+                  systems:
+                    type: object
+                    additionalProperties: true
+                    description: 'Each rating system (`us-movie`, `us-tv`, `gb`, and so on): its name in English and Arabic and the nominal age of each of its labels. As content a label takes the smallest tier at or above that age.'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: getParentalRatings
 components:
   securitySchemes:
     bearerAuth:
