@@ -1169,7 +1169,7 @@
       "title": "Family settings for guardians in the Player",
       "epic": "57-parental-controls",
       "phase": 5,
-      "content": "# Story 57.07 — Family settings for guardians in the Player\n\n> Epic 57 · Phase 3 · Depends on: 57.02, 57.05, 57.06 · Needed by: 57.08, 57.12\n\n## Why\n\nParents look after children from their own phone. The web's admin pages are out of scope for\nthis epic (README §4), and the Remote app is for admins running the home, while a guardian may be\na viewer. So the Player on iPhone and iPad gets a Family section, shown only to admins and\nguardians (`parental.can_manage` from capabilities). The home still enforces every rule; the\nsection only calls the routes of 57.02 and 57.06.\n\n## Description\n\n### 1. W",
+      "content": "# Story 57.07 — Family settings for guardians in the Player\n\n> Epic 57 · Phase 3 · Depends on: 57.02, 57.05, 57.06 · Needed by: 57.08, 57.12\n\n## Why\n\nParents look after children from their own phone. On the web this epic adds only the time\nrules editor (57.15; README §4), and the Remote app is for admins running the home, while a guardian may be\na viewer. So the Player on iPhone and iPad gets a Family section, shown only to admins and\nguardians (`parental.can_manage` from capabilities). The home still enforces every rule; the\nsection only calls the routes of 57.02 and 57.06.\n\n## Description\n\n#",
       "tags": [
         "story",
         "57-parental-controls",
@@ -1235,7 +1235,7 @@
       "title": "Screen Time, Family Sharing and the App Store",
       "epic": "57-parental-controls",
       "phase": 5,
-      "content": "# Story 57.09 — Screen Time, Family Sharing and the App Store\n\n> Epic 57 · Phase 3 · Depends on: 57.04 · Needed by: —\n\n## Why\n\nTime limits, downtime, bedtime, app limits and Always Allowed are Screen Time's, set by a parent\nin Settings for a Family Sharing child. Maktaba builds none of them (README decision 1). Its job\nis to behave well when Screen Time stops it, to be honest in its App Store age rating so Apple's\nage gate works, and to tell parents in Help how to use Apple's controls with Maktaba.\n\n## Description\n\n### 1. Under a shield\n\nWhen downtime starts or an app limit is reached, iOS shi",
+      "content": "# Story 57.09 — Screen Time, Family Sharing and the App Store\n\n> Epic 57 · Phase 3 · Depends on: 57.04 · Needed by: —\n\n## Why\n\nTime limits, downtime, bedtime, app limits and Always Allowed are Screen Time's, set by a parent\nin Settings for a Family Sharing child. Maktaba does not rebuild them. The home keeps its own\ntime rules for every device (57.14), and 57.16 carries those to Screen Time where Apple allows\n(README decision 1). This story's job is to behave well when Screen Time stops it, to be honest in its App Store age rating so Apple's\nage gate works, and to tell parents in Help how to u",
       "tags": [
         "story",
         "57-parental-controls",
@@ -1366,6 +1366,113 @@
       ],
       "metadata": {
         "slug": "openapi-roles-rehearsal"
+      }
+    },
+    {
+      "id": "story-57.14",
+      "type": "story",
+      "title": "Time limits and time slots, kept by the home",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.14 — Time limits and time slots, kept by the home\n\n> Epic 57 · Phase 2b · Depends on: 57.02, 57.03, 57.06 · Needed by: 57.15, 57.16, 57.13\n\n## Why\n\nScreen Time limits an app on Apple devices only. A child also watches on an Android tablet, a\nbrowser and a TV, and a limit that one device keeps is passed by picking up another. The home is\nthe one place every client plays from, so the home counts the time and decides (README\ndecision 1).\n\n## Description\n\n### 1. Rules\n\nA guardian or an admin sets rules for a restricted account. Each rule (`parental_time_rules`,\nslot 0223) has:\n\n- **days",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-14-time-rules.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "time-rules"
+      }
+    },
+    {
+      "id": "story-57.15",
+      "type": "story",
+      "title": "Time limits on every client",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.15 — Time limits on every client\n\n> Epic 57 · Phase 3b · Depends on: 57.14 · Needed by: 57.13\n\n## Why\n\nThe home enforces time (57.14), so no client can skip it. But a client that does not know about\nit shows a broken player when the home says no. Every client has to show the child how much time\nis left and say plainly when it is over, in English and Arabic. And a home with no iPhone needs\na place to set the rules.\n\n## Description\n\n### 1. What every client shows\n\nFor a restricted account, on the Apple Player (iPhone, iPad, Apple TV), Android (phone, tablet,\nTV), the web and the deskt",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-15-time-on-clients.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "time-on-clients"
+      }
+    },
+    {
+      "id": "story-57.16",
+      "type": "story",
+      "title": "The home's time rules through Screen Time",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.16 — The home's time rules through Screen Time\n\n> Epic 57 · Phase 3b · Depends on: 57.14, 57.09 · Needed by: —\n\n## Why\n\nOn Apple devices a parent already uses Screen Time. Where Apple allows it, Maktaba should work\nwith it and not beside it: the rules a guardian sets once in Maktaba should also hold at the\nsystem level on the child's iPhone or iPad. This story is built only if it proves doable; the\nhome's own enforcement (57.14) does not depend on it.\n\n## Description\n\n### 1. The feasibility check, first\n\nBefore any build, a written check answers, on a real child device in a test fam",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-16-screen-time-rules.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "screen-time-rules"
+      }
+    },
+    {
+      "id": "story-57.17",
+      "type": "story",
+      "title": "Tiers detected from transcripts",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.17 — Tiers detected from transcripts\n\n> Epic 57 · Phase 2b · Depends on: 57.01 · Needed by: 57.12, 57.13\n\n## Why\n\nMost of a home's content has no rating: lectures, home videos, YouTube, recordings. A filter\nthat hides everything unrated leaves a child with almost nothing, and one that shows it fails\nopen. The home already has each video's transcript, title, description and classification. It\ncan work out a likely tier from them, so that unrated becomes the exception.\n\n## Description\n\n### 1. What is detected\n\nA pipeline stage, `content_screen`, runs after transcription and classifica",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls",
+        "entity-transcript_segments"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-17-detected-tiers.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [
+        "transcript_segments"
+      ],
+      "metadata": {
+        "slug": "detected-tiers"
       }
     },
     {

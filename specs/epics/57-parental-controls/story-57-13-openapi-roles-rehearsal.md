@@ -24,7 +24,7 @@ One table-driven Postgres test per handler package (`parental`, and the changed 
 `discovery`, `channels`, `search`), with seven principals: no session, viewer, restricted child,
 the child's guardian (a viewer), a guardian of another child, admin, and the restricted child
 signed in through the cloud (play scope). The expected cells are 57.02 §2's table, extended by
-57.06 and 57.08's routes. The child-through-cloud column must equal the child column for every read.
+57.06, 57.08, 57.14 and 57.17's routes. The child-through-cloud column must equal the child column for every read.
 
 ### 3. The surface registry walk
 
@@ -41,7 +41,8 @@ related-jobs rules):
 
 - seeds a home with fixtures (`v_ok`, `v_hi`, `v_unr`, a 16+ series, a 9+ and a 16+ channel with a
   masked programme, a collection, a playlist, a play queue, a plugin panel, a YouTube source);
-- as a 9+ restricted child, runs **every registry probe** and attempts A1–A18 of README §7;
+- as a 9+ restricted child, runs **every registry probe** and attempts A1–A18 and A23–A26 of
+  README §7 (the time attempts run on a fake clock);
 - repeats through the relay's loopback path (`X-Maktaba-Via` from loopback with a cloud
   sign-in), and with an unrestricted account carrying `ac = 9` (device signal);
 - asserts: no hidden subject's id, title, poster hash or transcript text appears in any body; by-ID

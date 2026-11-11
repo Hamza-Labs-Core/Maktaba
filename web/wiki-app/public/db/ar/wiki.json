@@ -21,7 +21,7 @@
     "phase": 17,
     "plan": 372,
     "review": 15,
-    "story": 716
+    "story": 720
   },
   "parts": [
     "wiki-epics-01-09.json",
@@ -3327,11 +3327,11 @@
     {
       "id": "epic-57-parental-controls",
       "type": "epic",
-      "title": "الرقابة الأبوية على iPhone وiPad، عبر «مدة استخدام الجهاز» من Apple",
+      "title": "الرقابة الأبوية",
       "epic": "57-parental-controls",
       "phase": 5,
       "engine": null,
-      "content": "الرقابة الأبوية على iPhone وiPad، عبر «مدة استخدام الجهاز» من Apple.\n\nالمتطلب: يجب أن يستطيع أحد الوالدين أن يعطي طفله جهاز iPhone أو iPad عليه Maktaba وهو مطمئن إلى أن الطفل لا يرى إلا ما يسمح به. ويجب أن يصح ذلك في كل مكان قد يظهر فيه المحتوى، على شبكة المنزل وعبر Maktaba Cloud، وألّا يستطيع أي تطبيق، معدَّلًا كان أو لا، الالتفاف عليه. أما اليوم فالقيد الوحيد هو المكتبات التي يستطيع المستخدم قراءتها (`library_acl`). وقد عدّت الملحمة 45 الرقابة الأبوية ناقصة وأرجأت قصة الملفات الشخصية برمز PIN (45.23).",
+      "content": "الرقابة الأبوية: قواعد المنزل على كل جهاز، مع «مدة استخدام الجهاز» من Apple.\n\nالمتطلب: يجب أن يستطيع أحد الوالدين أن يعطي طفله جهاز iPhone أو iPad عليه Maktaba وهو مطمئن إلى أن الطفل لا يرى إلا ما يسمح به. ويجب أن يصح ذلك في كل مكان قد يظهر فيه المحتوى، على شبكة المنزل وعبر Maktaba Cloud، وألّا يستطيع أي تطبيق، معدَّلًا كان أو لا، الالتفاف عليه. أما اليوم فالقيد الوحيد هو المكتبات التي يستطيع المستخدم قراءتها (`library_acl`). وقد عدّت الملحمة 45 الرقابة الأبوية ناقصة وأرجأت قصة الملفات الشخصية برمز PIN (45.23).",
       "tags": [
         "epic",
         "57-parental-controls",
@@ -3350,21 +3350,25 @@
         "story-57.10",
         "story-57.11",
         "story-57.12",
-        "story-57.13"
+        "story-57.13",
+        "story-57.14",
+        "story-57.15",
+        "story-57.16",
+        "story-57.17"
       ],
       "files": {
         "readme": "specs/epics/57-parental-controls/README.md"
       },
       "metadata": {
-        "story_count": 13,
+        "story_count": 17,
         "plan_count": 0,
         "mockup_count": 0
       },
       "i18n": {
         "lang": "ar",
         "source": {
-          "title": "4aed0636fdbc0e4c",
-          "content": "fc9ec24d08d6f4f7"
+          "title": "fb38f96584c164ee",
+          "content": "4e647039b4d808d5"
         }
       }
     },
@@ -12431,7 +12435,8 @@
         "story-5.2",
         "story-8.11",
         "story-9.15",
-        "story-52.1"
+        "story-52.1",
+        "story-57.17"
       ],
       "files": {
         "schema": "specs/architecture.md#8-database-schema",

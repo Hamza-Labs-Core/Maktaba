@@ -21,7 +21,7 @@
     "phase": 17,
     "plan": 372,
     "review": 15,
-    "story": 716
+    "story": 720
   },
   "parts": [
     "wiki-epics-01-09.json",
@@ -2911,11 +2911,11 @@
     {
       "id": "epic-57-parental-controls",
       "type": "epic",
-      "title": "Parental controls on iPhone and iPad, on Apple's Screen Time",
+      "title": "Parental controls",
       "epic": "57-parental-controls",
       "phase": 5,
       "engine": null,
-      "content": "Parental controls on iPhone and iPad, on Apple's Screen Time.\n\nRequirement: a parent must be able to hand a child an iPhone or iPad with Maktaba on it and know the child sees only what the parent allows. That has to hold everywhere content can appear, on the home network and through Maktaba Cloud, and no app, modified or not, may get around it. Today the only limit is which libraries a user can read (`library_acl`). Epic 45 listed parental controls as missing and shelved its profiles-with-a-PIN story (45.23).",
+      "content": "Parental controls: the home's rules on every device, with Apple's Screen Time.\n\nRequirement: a parent must be able to hand a child an iPhone or iPad with Maktaba on it and know the child sees only what the parent allows. That has to hold everywhere content can appear, on the home network and through Maktaba Cloud, and no app, modified or not, may get around it. Today the only limit is which libraries a user can read (`library_acl`). Epic 45 listed parental controls as missing and shelved its profiles-with-a-PIN story (45.23).",
       "tags": [
         "epic",
         "57-parental-controls",
@@ -2934,13 +2934,17 @@
         "story-57.10",
         "story-57.11",
         "story-57.12",
-        "story-57.13"
+        "story-57.13",
+        "story-57.14",
+        "story-57.15",
+        "story-57.16",
+        "story-57.17"
       ],
       "files": {
         "readme": "specs/epics/57-parental-controls/README.md"
       },
       "metadata": {
-        "story_count": 13,
+        "story_count": 17,
         "plan_count": 0,
         "mockup_count": 0
       }
@@ -10139,7 +10143,8 @@
         "story-5.2",
         "story-8.11",
         "story-9.15",
-        "story-52.1"
+        "story-52.1",
+        "story-57.17"
       ],
       "files": {
         "schema": "specs/architecture.md#8-database-schema",

@@ -19,6 +19,9 @@ device.
 - `POST /api/me/parental/requests {subject_kind, subject_id}` by a restricted user (or a
   device-limited sign-in whose account has guardians). One pending request per subject per child;
   at most 20 pending per child (429 `too_many_requests`). Requests expire after 7 days.
+- A request may also be for more time: `subject_kind` `time` with `minutes` of 15, 30 or 60 and
+  no subject id. Approving it, or a correct PIN, makes a time grant for that day (57.14) and
+  not an allow rule. A time request expires at the day line (04:00 home time).
 - Guardians see them in Profile > Family > Requests (57.07): `GET /api/parental/requests`. Each
   shows the child, the title, poster and tier (the guardian may see them), and when it was asked.
 - `POST /api/parental/requests/{id}/approve {expires_at?}` adds an allow rule (57.02) on that

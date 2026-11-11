@@ -1,8 +1,10 @@
-# Epic 57: Parental controls on iPhone and iPad, on Apple's Screen Time
+# Epic 57: Parental controls: the home's rules on every device, with Apple's Screen Time
 
-> **Status:** spec (2026-11-08). **Platforms:** the Apple Player on iPhone and iPad, and the
-> home's API and streaming service. Apple TV only where it falls out (story 57.11). Android, the
-> web, the desktop Player and the Mac Player are a later epic (§4). **Builds on:**
+> **Status:** spec (2026-11-08; direction widened 2026-11-10, see §1). **Platforms:** the Apple
+> Player on iPhone and iPad, and the home's API, pipeline and streaming service. The home's time
+> rules also reach Android, the web and the desktop Player (57.15). Apple TV only where it falls
+> out (story 57.11). The full restricted UI on Android, the web, the desktop Player and the Mac
+> Player is a later epic (§4). **Builds on:**
 > [Epic 10](../10-auth-security/README.md) (sessions, signed URLs),
 > [Epic 25](../25-cloud-relay/README.md) and [Epic 50](../50-cloud-no-downtime/README.md) (the
 > relay and linked sign-ins), [Epic 26](../26-content-intelligence/README.md) (classification,
@@ -26,10 +28,18 @@ Apple already gives parents most of the device side: Family Sharing child accoun
 (time limits, downtime, app limits, Always Allowed), Content & Privacy Restrictions with movie and
 TV rating limits per region, the App Store age gate and Ask to Buy. From iOS 26 an app can also
 learn the child's age range (Declared Age Range) and read the movie and TV rating limit in force on
-the device (ManagedSettings). Maktaba should not rebuild any of that. What Apple cannot do is
+the device (ManagedSettings). Maktaba uses those where they exist. What Apple cannot do is
 judge Maktaba's own content, which lives on the home and not in Apple's store. So the home rates
 its content, and the home's API filters it for restricted accounts and for devices that tell it a
 child is using them.
+
+**Direction, 2026-11-10.** A rating filter alone is not enough, for two reasons. First, most of a
+home's content has no rating at all, so the home has to detect what a video is, and the
+transcript is one source for that (57.17). Second, parental controls are about how the apps are
+used as much as about the content: how long a child watches, in which time slots, and which
+libraries the Player opens for them. Screen Time does this on Apple devices only, and children
+also watch on other devices. So the home keeps time rules of its own for every client (57.14,
+57.15), and supports Screen Time as far as Apple allows (57.09, 57.16).
 
 ## 2. What exists, and the gaps
 
@@ -74,6 +84,9 @@ between the two is in §2.4. Details and file paths are in [research.md](researc
 - **G5** The Player ignores what Apple knows about the person holding the device.
 - **G6** No way for a child to ask for something, and no way for a parent to see what was watched.
 - **G7** Help says nothing about Screen Time.
+- **G8** No limit on how long or when an account may watch. Screen Time covers Apple devices
+  only, so a child passes it by picking up another device.
+- **G9** Most content has no rating from any source, and nothing on the home works one out.
 
 ### 2.4 What changed on `main` after the first check
 
@@ -94,9 +107,11 @@ Checked again at 4ab79c132 (2026-11-10). Nothing in this epic is built yet. Thes
 1. **Restricted accounts.** An admin, or a guardian an admin names, makes a child's account
    restricted, with an age limit, allow and block lists, and a rule for unrated content. Only
    they can change it, and the API enforces that, with role tests.
-2. **Content ratings.** Every video gets an age tier (All ages, 9+, 13+, 16+, 18+, or unrated)
-   from what the home knows: Plex content ratings, guide ratings, YouTube's age limit, plugins,
-   and what an admin sets on a library, collection, series, channel, YouTube source or video.
+2. **Content ratings, detected where nobody gave one.** Most of a home's content carries no
+   rating. Every video gets an age tier (All ages, 9+, 13+, 16+, 18+, or unrated) from what an
+   admin sets, from ratings that exist (kept Plex ratings, the guide, YouTube's age limit,
+   plugins), and from what the home detects in the video's own transcript, title and
+   description (57.17).
 3. **One filter on the server, on every surface.** Browse, Home, search (titles, transcripts,
    suggestions), recommendations, Continue Watching, On Deck, collections, series, playlists, play
    queues, the guide and live streams, thumbnails and posters, plugin panels, a video by its ID,
@@ -105,9 +120,11 @@ Checked again at 4ab79c132 (2026-11-10). Nothing in this epic is built yet. Thes
 4. **Apple's signal.** The Player sends the home the age range from Declared Age Range and the
    movie and TV limit from Screen Time. The home applies the strictest of the account's policy and
    the device's signal. A signal can only tighten, never loosen.
-5. **Apple's controls do the rest.** Time limits, downtime, app limits, Always Allowed, the App
-   Store age gate and Ask to Buy stay Apple's. Maktaba behaves well under them and explains them
-   in Help.
+5. **Time, on every device.** A guardian sets how long a child may watch each day and in which
+   time slots, for the whole account or for one library. The home counts the time and enforces
+   it, so it holds on iPhone, iPad, Apple TV, Android, the web and the desktop Player alike
+   (57.14, 57.15). Apple's Screen Time keeps working beside it: Maktaba behaves well under it
+   (57.09) and, where Apple allows, applies the home's time rules through it (57.16).
 6. **Ask a parent.** A child can ask for a blocked item. A guardian approves it from their own
    Player, or types a parent PIN on the child's device. The PIN is checked by the home, with
    limits on tries.
@@ -119,22 +136,25 @@ Checked again at 4ab79c132 (2026-11-10). Nothing in this epic is built yet. Thes
 
 ## 4. Non-goals
 
-- **Android (phone, tablet, TV), the web, the desktop Player and the Mac Player.** They are a
-  later epic. Even so, the home's filter applies to every client from the first build: a
-  restricted account signed in on Android or the web simply does not get blocked items. Those
-  clients just lack the restricted UI, Ask a parent and the Family screen.
-- **No Maktaba time limits, schedules, bedtime or app-leave PIN.** Screen Time does these on the
-  device, and better (story 57.09).
+- **The full restricted UI on Android (phone, tablet, TV), the web, the desktop Player and the
+  Mac Player.** Ask a parent and the Family screen on those clients are a later epic. The home's
+  filter and the home's time rules apply to every client from the first build, and each client
+  shows the time state (57.15). The web also gets the time rules editor, so a home with no
+  iPhone can set them.
+- **No app-leave PIN.** A child can leave the app; the home's rules follow the account.
 - **No profiles inside one account** (Plex Home's switch-user grid). A child has their own
   Maktaba account, as Apple's Family Sharing gives a child their own Apple Account.
-- **No Family Controls entitlement in this epic.** The rating limit can be read without it
-  (§6.3). Using Family Controls, DeviceActivity or shields would need Apple to approve
-  `com.apple.developer.family-controls` for distribution, separately for each extension. That is
-  kept as a later option (decision 6).
+- **Family Controls only in 57.16.** The rating limit can be read without it (§6.3). Using
+  Family Controls, DeviceActivity or shields needs Apple to approve
+  `com.apple.developer.family-controls` for distribution, separately for each extension. Only
+  57.16 uses it, only for Maktaba's own time rules, and nothing else depends on it (decision 6).
+- **No judging the picture.** Detection reads the transcript, title, description and
+  classification. Looking at video frames is a later option.
+- **No limits on other apps.** Maktaba limits Maktaba.
 - **No StoreKit.** The iOS app sells nothing, so Ask to Buy has nothing to cover (story 57.09
   says what changes if it ever does).
-- **No word-level screening of transcripts** (bad-word filters). Ratings come from metadata and
-  from people.
+- **No blocking of single words or passages.** The transcript feeds a video's tier (57.17); it
+  is not cut, muted or censored.
 - **No web filtering.** Safari's limits are Screen Time's.
 
 ## 5. Who does what: Apple and Maktaba
@@ -142,13 +162,13 @@ Checked again at 4ab79c132 (2026-11-10). Nothing in this epic is built yet. Thes
 | Need | Apple (set by the parent in Settings > Screen Time, or Family) | Maktaba |
 |---|---|---|
 | A child's account | Family Sharing child account (Child Account from iOS 27) | a restricted Maktaba account, made by an admin or guardian (57.02) |
-| How long, and when | Screen Time: app limits, downtime, Always Allowed, communication limits | nothing to build; saves progress and stops cleanly when shielded (57.09) |
+| How long, and when | Screen Time: app limits, downtime, Always Allowed, communication limits (Apple devices only) | daily limits and time slots per account and per library, counted and enforced by the home on every client (57.14, 57.15); saves progress and stops cleanly when shielded (57.09); applies the home's rules through Screen Time where Apple allows it (57.16) |
 | Installing the app | App Store age gate against the app's age rating; Ask to Buy | keeps its age rating honest; answers the questionnaire's In-App Controls (57.09) |
 | Movie and TV limit | Content & Privacy Restrictions, Ratings For a region | reads it (`effectiveMaximumMovieRating`, `effectiveMaximumTVShowRating`) and sends it to the home (57.04) |
 | Age | Declared Age Range: the guardian decides whether to share | asks once, sends the band to the home (57.04) |
-| What content is suitable | nothing (Apple does not see the home's videos) | age tiers on the home's content (57.01), the server filter (57.03) |
+| What content is suitable | nothing (Apple does not see the home's videos) | age tiers on the home's content (57.01), detected from transcripts where nothing else rates it (57.17), the server filter (57.03) |
 | Asking for more | Ask to Buy, Ask for More Time | Ask a parent for one item, approved in the guardian's Player or with a PIN (57.06) |
-| What was used | Screen Time reports (time per app) | Activity: titles watched, blocked, asked for (57.08) |
+| What was used | Screen Time reports (time per app) | Activity: titles watched, blocked, asked for (57.08); time watched per day (57.14) |
 
 ## 6. Design
 
@@ -178,7 +198,8 @@ both (57.01).
 1. an admin's tier on the video;
 2. the strictest admin tier on anything containing it (series, collection, YouTube source,
    channel);
-3. the strictest rating found in metadata: a kept Plex `contentRating` (`plex_items`, no longer
+3. the strictest rating found in metadata or detected by the home (57.17, source `detected`,
+   only at or above its confidence line): a kept Plex `contentRating` (`plex_items`, no longer
    refreshed, see §2.4), the guide programme's rating,
    YouTube `age_limit` (18 means 18+), a plugin's `content_rating` (`set-field`);
 4. the library's default tier ("everything here is suitable for …"), set by an admin;
@@ -255,7 +276,7 @@ streams gain signed URLs. HDHomeRun routes answer only the Plex servers they wer
 
 ### 6.5 Data model and migrations
 
-Slots **0220, 0221 and 0222 are planned** (0219 was the last one taken on `main` at 4ab79c132). Per `shared/db/migrations/MANIFEST.md` a slot is taken
+Slots **0220 to 0224 are planned** (0219 was the last one taken on `main` at 4ab79c132). Per `shared/db/migrations/MANIFEST.md` a slot is taken
 when its migration merges: if `main` has moved past one when a story lands, the story takes the
 next free integer and updates this table. Each has a `.sqlite.sql` twin.
 
@@ -264,6 +285,8 @@ next free integer and updates this table. Each has a `.sqlite.sql` twin.
 | 0220 | 57.01 | `0220_age_tiers.sql` | `videos` ADD `age_tier smallint null` check in (0, 9, 13, 16, 18), `age_tier_source text null` check `admin_video`/`admin_container`/`plex`/`guide`/`youtube`/`plugin`/`library_default`, `age_tier_admin smallint null`; index `(library_id, age_tier)`; `age_tier smallint null` on `libraries` (the default), `series`, `collections`, `channels`, `youtube_sources`; `youtube_videos` ADD `age_limit smallint null`; `channel_programs` ADD `age_tier smallint null` |
 | 0221 | 57.02, 57.04 | `0221_parental_policies.sql` | `parental_policies` (user_id pk fk cascade, max_tier smallint, unrated text check `hide`/`tier_0`…`tier_18`, allow_only bool, version int, updated_by, updated_at); `parental_guardians` (child_id, guardian_id, pk both, check child ≠ guardian); `parental_rules` (id, user_id, effect `allow`/`block`, subject_kind `library`/`collection`/`series`/`channel`/`youtube_source`/`plugin`/`video`, subject_id text, expires_at null, created_by); `session_age_signals` (refresh_family_id pk, user_id, lower smallint null, upper smallint null, declaration text null, movie_ceiling int null, tv_ceiling int null, region text null, tier_limit smallint null, pending_looser jsonb null, observed_at); `app_settings` keys `parental.enabled`, `parental.unrated_on_signal`; check: a user with a policy is not `is_admin` |
 | 0222 | 57.06, 57.08 | `0222_parental_requests.sql` | `parental_requests` (id, child_id, subject_kind, subject_id, status `pending`/`approved`/`denied`/`expired`, decided_by, decided_at, created_at); `parental_pins` (guardian_id pk, pin_hash argon2id, failed int, locked_until, updated_at); `parental_events` (id, child_id, kind `watched`/`blocked`/`asked`/`approved`/`denied`/`pin_locked`/`signal`, subject_kind, subject_id, at); retention index `(at)`; `parental_pins` joins `cluster_copy_excluded()` (starting from its newest definition on `main`) |
+| 0223 | 57.14 | `0223_parental_time.sql` | `parental_time_rules` (id, user_id fk cascade, library_id null, days smallint bitmask, slot_start time null, slot_end time null, daily_minutes int null, created_by, updated_at); `parental_time_usage` (user_id, day date, library_id null, seconds int, pk all three); `parental_time_grants` (id, user_id, day, minutes, granted_by, created_at); `parental_requests.subject_kind` gains `time` |
+| 0224 | 57.17 | `0224_content_signals.sql` | `video_content_signals` (video_id pk fk cascade, tier smallint null, confidence real, categories jsonb, model text, input_hash text, reviewed_by null, reviewed_at null, updated_at); `videos.age_tier_source` check gains `detected` |
 
 ### 6.6 API
 
@@ -289,6 +312,13 @@ admin, and a restricted child signed in through the cloud (57.13).
 | `GET /api/users/{id}/parental/activity?cursor=` | admin, guardian of that user | 57.08 |
 | `POST /api/pairing/approve` gains `as_user` (a child this guardian manages) | admin, guardian | 57.02 |
 | `GET /api/capabilities` gains `parental: {restricted, tier_limit, can_manage}` | any signed-in user | 57.05 |
+| `GET/PUT /api/parental/users/{id}/time-rules`, `GET …/time-usage?from&to`, `POST …/time-grants` `{minutes}` | admin, guardian of that user | 57.14 |
+| `GET /api/me/parental/time` → `{remaining_seconds, slot_ends_at, next_allowed_at}` | any signed-in user | 57.14 |
+| `GET /api/parental/review`, `POST /api/parental/review/{video_id}` `{tier \| null}` | admin (confirm, change, clear); a guardian reads items from libraries their children can read | 57.17 |
+
+When time is up, stream creation, URL minting and renewal answer 403 with problem type
+`parental-time` (`reason`, `next_allowed_at`). This is the one parental answer that is not a 404:
+the child is meant to know (57.14).
 
 A restricted user is refused, with 403 `restricted`: personal access tokens, YouTube search and
 import (`/api/search/youtube`, `import-youtube`), the XMLTV and M3U exports, plugin admin, and
@@ -343,6 +373,24 @@ Allowed (list) · Blocked (list) · Devices (signals; Clear) · Activity ›
 - Crash reports and logs never carry a child's age band or titles (the redact rules gain the new
   fields, `RedactRules.swift`, and the Go log schema's redaction).
 
+### 6.10 Time
+
+The home counts watching time per account and decides, on its own clock and in its own time
+zone. A rule has days, an optional time slot, an optional daily limit and an optional library;
+every rule that covers a moment must allow it. Usage comes from the progress posts and stream
+heartbeats the home already receives. When time is up, no stream starts and a running one ends
+within 60 seconds; browsing stays open so a child can ask for more (57.06, subject `time`).
+Every client shows what the home says and keeps no count of its own. Story 57.14 has the
+detail, 57.15 the clients, 57.16 the Screen Time side.
+
+### 6.11 Detection
+
+A pipeline stage reads each video's transcript, title, description and classification on the
+home's own model and writes a tier, a confidence and the categories found, with transcript
+times as evidence. At or above the confidence line it is a metadata source for §6.1; below it
+the video stays unrated and goes on a review list for an admin. It never loosens a rating and
+never beats a person's tier. The transcript does not leave the home. Story 57.17 has the detail.
+
 ## 7. Faults and abuse: how a child might get around it
 
 | # | Attempt | What stops it | Test |
@@ -365,10 +413,16 @@ Allowed (list) · Blocked (list) · Devices (signals; Clear) · Activity ›
 | A16 | Approve a device sign-in to get a parent's account onto a device | approval signs in as the approver; a restricted user approving gives a restricted sign-in; `as_user` only for a guardian's own children | 57.02 T06 |
 | A17 | Make a personal access token, use YouTube search to reach outside content | 403 `restricted` | 57.03 T09 |
 | A18 | A plugin panel shows other titles, or a plugin lowers a rating | panels need the plugin allowed; plugin ratings are below admin tiers and never loosen a container's | 57.03 T10, 57.01 T05 |
-| A19 | Change the device clock for Screen Time | Apple's (Screen Time uses its own time); nothing Maktaba holds depends on the clock except request expiry, checked on the home | — |
+| A19 | Change the device clock | Screen Time uses its own time; Maktaba's time rules and request expiry use the home's clock and time zone, never the device's | 57.14 T01 |
 | A20 | Safari to the home's web UI | the web gets the same filter (no restricted UI yet) | 57.03 T11 |
 | A21 | AirPlay keeps playing on an Apple TV after Screen Time shields the iPad | residual: the receiver plays a URL already given; it expires within 15 minutes and the Apple TV has its own Screen Time; Help says so | 57.09 T03 |
 | A22 | Delete and reinstall the app to drop the signal | the sign-in's ratchet is on the home; a new sign-in needs the account password, and the new sign-in sends a fresh signal | 57.04 T07 |
+
+| A23 | Reach the daily limit on one device, pick up another | the home counts per account, across every client | 57.14 T02, T03 |
+| A24 | Keep a stream running past the slot's end | the session gets an end time; segments stop within 60 seconds, and URL renewal is refused | 57.14 T04 |
+| A25 | A modified client that hides the time's-up screen | the home refuses the stream; the client has nothing to play | 57.14 T03 |
+| A26 | Sign in with another, unrestricted account | needs that account's password; a guardian's device approval signs in as the child (A16) | 57.02 T06 |
+| A27 | Content whose transcript reads clean but whose picture is not | residual: detection does not see the picture (§4). An admin's tier and the review list cover it; Help says so | 57.17 |
 
 ## 8. Phases
 
@@ -377,6 +431,8 @@ Allowed (list) · Blocked (list) · Devices (signals; Clear) · Activity ›
 | 1. Home | 57.01 tiers, 57.02 accounts, 57.03 filter, 57.10 live TV | 57.01 and 57.02 first; 57.03 and 57.10 then, in parallel |
 | 2. Signals and requests | 57.04 signal (API part), 57.06 requests and PIN (API), 57.08 activity (API) | yes |
 | 3. Player | 57.04, 57.05, 57.06, 57.07, 57.08, 57.09 on iPhone and iPad; 57.11 Apple TV | 57.05 first |
+| 2b. Time and detection | 57.14 time rules (API), 57.17 detected tiers (pipeline, API) | yes; 57.17 needs 57.01, 57.14 needs 57.02 |
+| 3b. Time on clients | 57.15 every client, 57.16 Screen Time (after its feasibility check) | yes |
 | 4. Rollout | 57.12 existing homes, 57.13 OpenAPI, role tests and the bypass rehearsal | 57.13's registry walk lands with 57.03; the rest last |
 
 ## 9. Stories
@@ -396,6 +452,10 @@ Allowed (list) · Blocked (list) · Devices (signals; Clear) · Activity ›
 | 57.11 | [Apple TV, where it falls out](story-57-11-apple-tv.md) | tvOS |
 | 57.12 | [Turning it on in existing homes](story-57-12-existing-homes.md) | API, iOS |
 | 57.13 | [OpenAPI, role tests and the bypass rehearsal](story-57-13-openapi-roles-rehearsal.md) | API, CI |
+| 57.14 | [Time limits and time slots, kept by the home](story-57-14-time-rules.md) | API, streaming |
+| 57.15 | [Time limits on every client](story-57-15-time-on-clients.md) | iOS, tvOS, Android, web, desktop |
+| 57.16 | [The home's time rules through Screen Time](story-57-16-screen-time-rules.md) | iOS |
+| 57.17 | [Tiers detected from transcripts](story-57-17-detected-tiers.md) | pipeline, API |
 
 ## 10. Test and rehearsal plan
 
@@ -414,6 +474,10 @@ only related jobs). Nothing runs against the live home.
 | Player | MaktabaKit XCTest | signal mapping, ratchet handling, blocked states, PIN entry lockout display, request flow against `MockHome` |
 | Player UI | `_apple-apps.yml` Player UI shards on throwaway iPhone and iPad simulators, English and Arabic | restricted child, guardian Family screens, Ask a parent; the age signal comes from a test double (`AgeSignalSource`), since the simulator cannot be a Family Sharing child |
 | Strings | `check-string-catalogs.py` (with `--stringsdata`) | every new key has Arabic |
+| Time rules | Go unit on a fake clock, Go Postgres, `streaming` Go tests (57.14) | slots across midnight, the 04:00 day line, two devices at once, grants, the session end time |
+| Time on clients | each client's own tests, English and Arabic (57.15) | time left, the warnings, the time's-up screen, no retry |
+| Detection | pytest on a fixed English and Arabic transcript set with a faked model; Go unit for the precedence (57.17) | tiers, the confidence line, the hash skip, never loosening |
+| Screen Time rules | a written feasibility check on a real child device (57.16) | whether Apple grants the entitlement and the shield holds with the Player closed |
 | Device check | a written checklist in story 57.04 for a real child device in a test family, run before the Phase 3 release tag | whether `effectiveMaximum…Rating` reflects the parent's own Content & Privacy setting (research.md, open item) |
 
 ## 11. Acceptance (the epic)
@@ -429,14 +493,23 @@ only related jobs). Nothing runs against the live home.
   guardians.
 - Screen Time downtime starting mid-video saves the position, and the video resumes there after
   downtime.
-- A viewer, the child, or another guardian cannot change the child's policy (403, role tests).
+- A guardian sets one hour a day and 07:00 to 20:00. The child watches 40 minutes on the iPad
+  and 20 on an Android tablet; a third device then answers time's up, in English or Arabic, with
+  the time watching opens again. A 30 minute grant lets playback go on.
+- A library of unrated lectures gets detected tiers after the pipeline runs. The clear ones show
+  for a 9+ child; the unsure ones stay hidden and are on the review list.
+- A viewer, the child, or another guardian cannot change the child's policy or time rules (403,
+  role tests).
 - Every new string exists in English and Arabic, and each screen is checked mirrored.
 
 ## 12. Decisions (2026-11-08)
 
-1. **Apple's controls for the device, Maktaba's for the content.** Time limits, schedules,
-   bedtime and app-leave locks are Screen Time's. Rejected: Maktaba's own timers and an app-leave
-   PIN, which duplicate Apple's and are weaker (a child can force-quit an app, not Screen Time).
+1. **Time is the home's, and Apple's too** (changed 2026-11-10). Screen Time exists only on Apple
+   devices, and a child also watches on Android, the web and a TV. So the home keeps daily limits
+   and time slots and enforces them on every client (57.14, 57.15). Screen Time stays in use on
+   Apple devices and Maktaba supports it as far as Apple allows (57.09, 57.16). Rejected: leaving
+   time to Screen Time alone, which covers one maker's devices; and an app-leave PIN, which a
+   child gets around by force-quitting.
 2. **The filter is on the home**, and every client gets it, even ones whose UI comes later.
    Rejected: filtering in the app, which a modified app skips.
 3. **A child has their own account.** Rejected: profiles inside one account with a PIN switcher
@@ -448,18 +521,24 @@ only related jobs). Nothing runs against the live home.
 5. **App Store tiers (All ages, 9+, 13+, 16+, 18+)** as the single scale, with region tables
    mapping in. Content rounds up, limits round down. Rejected: one region's labels (MPA), which
    mean little to an Arabic-speaking family.
-6. **No Family Controls entitlement now.** Reading the effective limit needs none, and the app
-   re-reads on foreground. Rejected for now: DeviceActivity or shields, which need Apple's
-   approval for each extension and add nothing Screen Time does not already do. Revisit if Apple
-   stops exposing the effective limit without it.
-7. **Unrated is hidden from restricted accounts by default**, and an admin rates whole libraries
-   with one choice each, so most homes rate everything in minutes (57.12). Rejected: unrated
-   shown by default, which fails open.
+6. **Family Controls only for time, and only if Apple grants it** (changed 2026-11-10; see 57.16).
+   Reading the rating limit needs none, and the app re-reads it on foreground. DeviceActivity and
+   a shield are used only to carry the home's own time rules to the system level on a child's
+   Apple device, after a feasibility check, and the home stays the judge either way. Rejected:
+   making any other story depend on an entitlement Apple may refuse.
+7. **Unrated is the normal case, and still hidden from restricted accounts by default.** Most
+   content has no rating, so the home detects a tier from the transcript (57.17) and an admin
+   rates whole libraries with one choice each (57.12). What neither covers stays hidden.
+   Rejected: unrated shown by default, which fails open.
 8. **The parent PIN is a guardian's, checked by the home.** Rejected: a PIN kept on the device,
    which a child could read from a backup or brute-force offline.
 9. **Blocked answers 404**, never 403, so a child cannot tell a blocked item from a missing one.
 10. **Notifications off by default, and title-free.** Nothing about a child leaves the home
     unless a guardian opts in, and even then not what was asked for.
+11. **A detected tier is a source like any other, never above a person** (2026-11-10). It joins
+    the metadata step, an admin's tier beats it, and a low-confidence result rates nothing and
+    goes to a review list. Rejected: detection as the only source, which is wrong too often to
+    stand alone; and detection that loosens a metadata rating.
 
 ## 13. Questions only the owner can answer
 
@@ -472,6 +551,9 @@ None blocks the epic. Each has a default the stories use.
 | Q3 | Should a library's default tier be set for existing libraries at upgrade? | no; the admin is asked once, per library, with All ages pre-selected for libraries whose content type is lectures or Quran (57.12) |
 | Q4 | Should guardians be told when a child's device declares a looser age than before? | yes, in Activity (a `signal` event), not as a push |
 | Q5 | The app's App Store age rating under the new questionnaire | keep the current rating; answer In-App Controls: Parental Controls yes, Age Assurance yes (57.09) |
-| Q6 | Ask Apple for the Family Controls distribution entitlement now, in case it is needed later? | no (decision 6) |
+| Q6 | Ask Apple for the Family Controls distribution entitlement? | yes, for 57.16; the owner files the request, and 57.16 is dropped without loss if Apple refuses (the home's rules still apply) |
+| Q9 | What does detection cover: only what a video is, or also who is holding the device? | what a video is (57.17). Who holds the device stays Apple's signal (57.04) |
+| Q10 | Starting time rules for a new restricted account | none; a guardian adds them. The editor offers 1 hour a day and 07:00 to 20:00 as a first choice |
+| Q11 | May the transcript leave the home to be rated? | no; detection runs on the home's own model, and a home with no model gets no detected tiers |
 | Q7 | How long to keep a child's activity | 90 days |
 | Q8 | May a guardian who is not an admin lift a restriction entirely? | no; only an admin can delete a policy, a guardian can loosen it to 18+ |

@@ -4,8 +4,8 @@
 
 ## Why
 
-Parents look after children from their own phone. The web's admin pages are out of scope for
-this epic (README §4), and the Remote app is for admins running the home, while a guardian may be
+Parents look after children from their own phone. On the web this epic adds only the time
+rules editor (57.15; README §4), and the Remote app is for admins running the home, while a guardian may be
 a viewer. So the Player on iPhone and iPad gets a Family section, shown only to admins and
 guardians (`parental.can_manage` from capabilities). The home still enforces every rule; the
 section only calls the routes of 57.02 and 57.06.
