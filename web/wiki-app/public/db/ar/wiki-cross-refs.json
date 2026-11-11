@@ -2,8 +2,8 @@
   "schema_version": 2,
   "generated_for": "Maktaba",
   "totals": {
-    "epics": 59,
-    "stories": 720,
+    "epics": 60,
+    "stories": 733,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -421,6 +421,13 @@
       "title": "Maktaba على خادم تخزين شبكي",
       "description": "Maktaba على خادم تخزين شبكي: سينولوجي وتروناس وغيرهما.\n\nالمتطلب: ينبغي أن تستطيع الأسرة التي تحفظ وسائطها على خادم تخزين شبكي أن تشغّل جهازها الرئيسي في Maktaba على ذلك الخادم نفسه، دون أن يبقى حاسوب آخر قيد التشغيل طوال الوقت.",
       "readme": "specs/epics/59-nas/README.md"
+    },
+    {
+      "id": "60",
+      "slug": "website",
+      "title": "maktaba.tv، الموقع الذي تجد فيه الأسر Maktaba",
+      "description": "maktaba.tv، الموقع الذي تجد فيه الأسر Maktaba.\n\nالمتطلب: كل عنوان على maktaba.tv يطبعه المنتج يفتح صفحة حقيقية بالإنجليزية والعربية، والأسرة التي تسمع عن Maktaba تستطيع أن تعرف ما هو، وأن تراه، وأن تنزّله لكل أجهزتها، وأن تثبّته وتجد المساعدة، على موقع يبدو جميلًا كجمال التطبيقات.",
+      "readme": "specs/epics/60-website/README.md"
     }
   ],
   "stories": [
@@ -7640,6 +7647,123 @@
       "slug": "openapi-roles",
       "title": "مواصفة الواجهة البرمجية واختبارات الأدوار للمسارات الإدارية الجديدة",
       "story_file": "specs/epics/59-nas/story-59-16-openapi-roles.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.01",
+      "epic": 60,
+      "num": "01",
+      "slug": "design",
+      "title": "التصميم: التوجّه البصري وتخطيطات الصفحات والمكوّنات، في نماذج مراجَعة",
+      "story_file": "specs/epics/60-website/story-60-01-design.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.02",
+      "epic": 60,
+      "num": "02",
+      "slug": "voice-copy",
+      "title": "النبرة والنصوص: بسيطة ودافئة للأسر، والعربية مكتوبة بأصالة",
+      "story_file": "specs/epics/60-website/story-60-02-voice-copy.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.03",
+      "epic": 60,
+      "num": "03",
+      "slug": "site-hosting",
+      "title": "الموقع واستضافته ونشره: أصول Workers الثابتة على النطاق الرئيسي وwww، والتجربة قبل النشر، والتراجع",
+      "story_file": "specs/epics/60-website/story-60-03-site-hosting.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.04",
+      "epic": 60,
+      "num": "04",
+      "slug": "quality-gates",
+      "title": "معيار الجودة في CI: Lighthouse، وWCAG 2.2 AA، وبلا انزياح في التخطيط، وصور مرجعية، وتحسين الظهور وبطاقات المشاركة",
+      "story_file": "specs/epics/60-website/story-60-04-quality-gates.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.05",
+      "epic": 60,
+      "num": "05",
+      "slug": "install-guides",
+      "title": "أدلة التثبيت على maktaba.tv",
+      "story_file": "specs/epics/60-website/story-60-05-install-guides.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.06",
+      "epic": 60,
+      "num": "06",
+      "slug": "problems",
+      "title": "أنواع المشكلات: سجلّ واحد تُرسل منه الواجهة البرمجية، وصفحة لكل نوع",
+      "story_file": "specs/epics/60-website/story-60-06-problems.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.07",
+      "epic": 60,
+      "num": "07",
+      "slug": "legal",
+      "title": "الصفحات القانونية: الخصوصية، والشروط، وحقوق النشر مع نموذج الإشعار من الملحمة 50",
+      "story_file": "specs/epics/60-website/story-60-07-legal.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.08",
+      "epic": 60,
+      "num": "08",
+      "slug": "link-integrity",
+      "title": "لا روابط ميتة: فحص روابط maktaba.tv، وصورة عامة بعد كل إصدار",
+      "story_file": "specs/epics/60-website/story-60-08-link-integrity.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.09",
+      "epic": 60,
+      "num": "09",
+      "slug": "product-imagery",
+      "title": "صور المنتج: لقطات داكنة حقيقية لكل تطبيق، بالإنجليزية والعربية، على محتوى تجريبي",
+      "story_file": "specs/epics/60-website/story-60-09-product-imagery.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.10",
+      "epic": 60,
+      "num": "10",
+      "slug": "home",
+      "title": "الصفحة الرئيسية",
+      "story_file": "specs/epics/60-website/story-60-10-home.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.11",
+      "epic": 60,
+      "num": "11",
+      "slug": "download",
+      "title": "التنزيل: كل جهاز، مع ملفه الحقيقي من الإصدار",
+      "story_file": "specs/epics/60-website/story-60-11-download.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.12",
+      "epic": 60,
+      "num": "12",
+      "slug": "help",
+      "title": "المساعدة على maktaba.tv، من مواضيع التطبيق نفسه",
+      "story_file": "specs/epics/60-website/story-60-12-help.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.13",
+      "epic": 60,
+      "num": "13",
+      "slug": "pricing",
+      "title": "الأسعار، من الخطط التي تفرضها السحابة",
+      "story_file": "specs/epics/60-website/story-60-13-pricing.md",
       "plan_files": []
     }
   ],
