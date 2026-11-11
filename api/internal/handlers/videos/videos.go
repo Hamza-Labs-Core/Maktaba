@@ -153,7 +153,7 @@ func notQueued(err error, what string) *httperror.Error {
 		switch nq.Outcome {
 		case "unknown_stage", "invalid_subject":
 			return (&httperror.Error{
-				Type:   "https://maktaba.tv/problems/stage-not-per-video",
+				Type:   httperror.Type("stage-not-per-video"),
 				Title:  "stage not per-video",
 				Status: http.StatusBadRequest,
 				Detail: "stage " + nq.Stage + " cannot be queued for a video",
@@ -321,7 +321,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, ok := listSorts[sort]; !ok && !random && sort != sortRelevance && sort != sortShuffle {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.tv/problems/invalid-sort",
+			Type:   httperror.Type("invalid-sort"),
 			Title:  "invalid sort",
 			Status: http.StatusBadRequest,
 			Detail: "sort must be one of: " + listSortNames,
@@ -887,7 +887,7 @@ func (h *Handler) Process(w http.ResponseWriter, r *http.Request) {
 	}
 	if stage == "scan" {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.tv/problems/stage-not-per-video",
+			Type:   httperror.Type("stage-not-per-video"),
 			Title:  "stage not per-video",
 			Status: http.StatusBadRequest,
 			Detail: "scan is library-scoped",
@@ -947,7 +947,7 @@ func (h *Handler) Reprocess(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.FromStage == "scan" {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.tv/problems/stage-not-per-video",
+			Type:   httperror.Type("stage-not-per-video"),
 			Title:  "stage not per-video",
 			Status: http.StatusBadRequest,
 			Detail: "scan is library-scoped",

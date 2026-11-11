@@ -30,6 +30,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
 )
 
@@ -315,7 +317,7 @@ func (f *Fallback) Wrap(next http.Handler) http.Handler {
 
 // ProblemUnavailableOffline is the problem type of a video this machine cannot read
 // while the home, which could serve it, does not answer.
-const ProblemUnavailableOffline = "https://maktaba.tv/problems/video-unavailable-offline"
+var ProblemUnavailableOffline = httperror.Type("video-unavailable-offline")
 
 // WriteUnavailableOffline answers 503 {code: video_unavailable_offline}: this machine
 // cannot open the video's file, and the home does not answer to serve it instead.

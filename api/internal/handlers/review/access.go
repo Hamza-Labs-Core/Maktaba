@@ -18,13 +18,13 @@ func gate(w http.ResponseWriter, r *http.Request) (*principal.Principal, bool) {
 	p := principal.FromContext(r.Context())
 	if p == nil {
 		httperror.Write(w, r, &httperror.Error{
-			Type: "https://maktaba.tv/problems/unauthorized", Title: "unauthorized",
+			Type: httperror.TypeUnauthorized, Title: "unauthorized",
 			Status: http.StatusUnauthorized, Detail: "sign in",
 		})
 		return nil, false
 	}
 	if !CanReview(p) {
-		httperror.Write(w, r, httperror.Forbidden("https://maktaba.tv/problems/review-admin-only",
+		httperror.Write(w, r, httperror.Forbidden(httperror.Type("review-admin-only"),
 			"only home admins review words"))
 		return nil, false
 	}

@@ -551,7 +551,7 @@ func (h *Handler) Folders(w http.ResponseWriter, r *http.Request) {
 		names = res.names
 	case <-timer.C:
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.tv/problems/folder-timeout",
+			Type:   httperror.Type("folder-timeout"),
 			Title:  "folder did not answer",
 			Status: http.StatusGatewayTimeout,
 			Detail: "folder " + q + " did not answer in time; its drive or share may be disconnected",

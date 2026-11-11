@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/linkctx"
@@ -307,7 +309,7 @@ func writeReject(w http.ResponseWriter, reason string) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(http.StatusUnauthorized)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"type": "https://maktaba.tv/problems/node-signature", "title": "node signature refused",
+		"type": httperror.Type("node-signature"), "title": "node signature refused",
 		"status": http.StatusUnauthorized, "code": reason,
 	})
 }

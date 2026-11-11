@@ -17,6 +17,8 @@ and CI. The source lives at
 - [Running the tests](tests.md): each test suite, the tiers, and the affected-tests gate.
 - [Conventions](conventions.md): English and Arabic together, tests with the code,
   server-side roles, no secrets, commit style.
+- [Problem types](problem-types.md): the API's errors, their registry, how to add one, and
+  the checks that keep the API, the apps and maktaba.tv in step.
 - [CI](ci.md): how CI picks the jobs a change needs, and the single merge gate.
 - [Pull requests](pull-requests.md): branch, test, describe, review, merge.
 - [Maktaba Cloud: how it stays up](cloud.md): the two nodes, deploys, backups, and the cloud rehearsal.

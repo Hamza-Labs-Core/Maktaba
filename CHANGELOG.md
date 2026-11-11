@@ -770,6 +770,15 @@ build fails when the two differ.
 
 ### Added
 
+- **What an error means (story 60.06).** Every error the API sends now names a type from one
+  registry, `shared/api/problems.json`: 288 entries, each saying in English and Arabic what
+  happened, what you can do and whom to ask, ready for maktaba.tv's page per type. A browser
+  that opens an API error gets a **What this means** link to that page, in Arabic for an Arabic
+  browser. The API sends only registered types: in production an unknown one is logged and sent
+  as its status's general type, with the status kept; in the tests, and in the Android, Apple and
+  web apps' tests, an unregistered type or code fails the run. The word review's undo errors now
+  use hyphens in their type (`not-active`, as every other type), with the same `code`.
+
 - **A NAS as the home of several machines (story 59.13).** Computers join a NAS home as nodes
   and take transcription and conversions, opening the NAS's folders over SMB: the home works
   out each of its own folders' share from where the NAS keeps it (Synology `/volume1/Movies`,

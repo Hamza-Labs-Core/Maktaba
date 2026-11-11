@@ -1434,8 +1434,8 @@
       "ar": "مستند مشكلة وفق RFC 9457."
     },
     "/components/schemas/ProblemDetails/properties/type/description": {
-      "en": "Stable problem identifier (`https://maktaba.tv/problems/<slug>`).",
-      "ar": "معرّف ثابت للمشكلة (`https://maktaba.tv/problems/<slug>`)."
+      "en": "Stable problem identifier (`https://maktaba.tv/problems/<slug>`). Every slug is an entry of the problem-type registry, `shared/api/problems.json`, which says in English and Arabic what it means and what to do; https://maktaba.tv/problems/ publishes a page for each.",
+      "ar": "معرّف ثابت للمشكلة (`https://maktaba.tv/problems/<slug>`). لكل معرّف مدخل في سجل أنواع المشكلات، `shared/api/problems.json`، يشرح بالعربية والإنجليزية معناه وما يمكن فعله؛ وتنشر https://maktaba.tv/problems/ صفحة لكل منها."
     },
     "/components/schemas/ProblemDetails/properties/title/description": {
       "en": "Short human-readable summary.",

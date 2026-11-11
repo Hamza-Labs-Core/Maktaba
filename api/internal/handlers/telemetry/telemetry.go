@@ -21,11 +21,11 @@ import (
 )
 
 // Problem types of the pipe (beside the httperror registry's own).
-const (
-	TypeUnknownEventKind = "https://maktaba.tv/problems/unknown-event-kind"
-	TypeUnknownMetric    = "https://maktaba.tv/problems/unknown-metric"
-	TypeTooManyEvents    = "https://maktaba.tv/problems/too-many-events"
-	TypeUnknownField     = "https://maktaba.tv/problems/unknown-field"
+var (
+	TypeUnknownEventKind = httperror.Type("unknown-event-kind")
+	TypeUnknownMetric    = httperror.Type("unknown-metric")
+	TypeTooManyEvents    = httperror.Type("too-many-events")
+	TypeUnknownField     = httperror.Type("unknown-field")
 )
 
 const (
