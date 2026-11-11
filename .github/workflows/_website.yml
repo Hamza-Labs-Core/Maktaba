@@ -57,6 +57,12 @@ jobs:
           go-version-file: cloud/go.mod
           cache: false
 
+      # the cloud module, retried; later steps read the module cache only (`go run` offline)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: cloud
+
       # restore only: main's entries (.github/actions/node-cache); only a push to main saves
       - name: pnpm store
         id: pnpm-cache

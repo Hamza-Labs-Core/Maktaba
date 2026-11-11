@@ -162,7 +162,11 @@ test("copyright: the agent's email and the notice's contents, no postal line, an
     );
     assert.ok(!html.includes("<form"), `${lang}: a form without the endpoint`);
     assert.ok(!/postal address:|العنوان البريدي:/i.test(html), `${lang}: a postal line before A4`);
-    assert.ok(html.includes("https://app.maktaba.tv/"), `${lang}: the counter-notice's link`);
+    assert.match(
+      html,
+      /<a href="https:\/\/app\.maktaba\.tv\/">/,
+      `${lang}: the counter-notice's link`
+    );
     assert.ok(html.includes("12"), `${lang}: the repeat-infringer window`);
   }
 });
