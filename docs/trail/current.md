@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.128
-up_to_commit: 7161c1e85
-built_from: v0.3.127
+tag: v0.3.129
+up_to_commit: d0969b5b2
+built_from: v0.3.128
 ---
 
-# Trail snapshot: v0.3.128
+# Trail snapshot: v0.3.129
 
 ## Keep doing
 
@@ -196,6 +196,9 @@ built_from: v0.3.127
 - Run a NAS shape with a large library in the update rehearsal, and read each leg's `report.json` before trusting a fast green: the 40-clip legs passed at once, only the 20,000-video leg found the keep bug. (#1138)
 - When a fix lands on the phone Player, check `apps/tv/android` for its own copy of the same flow. (#1134)
 - Check a field's meaning in the code (its comment, the helper behind it) before choosing between widening it and adding one. (#1135)
+- Prove a scan after a change with a file added after it (the only new row) and the runner log's `files_walked`: "nothing changed after the rescan" also passes on a scan that walked nothing. Prove a behaviour change on the real image in a NAS cell before merging. (#1140)
+- Read an epic's routes from the merged diffs, not the story's list, and mark admin routes with `x-maktaba-role: admin` so one role-table test covers them all; re-apply scripted OpenAPI edits on main's file at a conflict. (#1142)
+- Reproduce a limit with production caps and request shapes before changing it, keeping the client cases (proxy, relay, forged header) beside the fix. (#1148)
 
 ## Stop doing
 
@@ -241,6 +244,9 @@ built_from: v0.3.127
 - Soft-fail branches that answer 2xx when a dependency is missing; treating a probe with no answer as a negative answer in a wait that must see a steady state. (#1147, #1138)
 - Re-running a timing flake without reading which assertion failed (it was the test's own precondition). (#1144)
 - Moving code between Android modules without changing a test in each module it leaves and enters: `affected-tests` asks for a changed test beside every changed source file. (#1134)
+- Treating a harness's 429 as a flake to re-run: the harness waits out Retry-After (at most 180 s); a 429 after that is real. (#1140)
+- Marking a route admin-only without a test that calls it as a non-admin; loading a handler's object before its role check (404 vs 403 leaks existence, a DB error becomes 500). (#1142)
+- Sending a secret header with a client that follows redirects (Go copies custom headers to the redirect's host). (#1148)
 
 ## What we learned
 
@@ -514,6 +520,9 @@ built_from: v0.3.127
 - The TrueNAS catalog's renderer needs `openat2` (Linux amd64 only, not Docker Desktop's emulation); its README takes only a title and basic tags, default ports are unique across the catalog (live TV defaults to 30575), and host paths are made only with `create_host_path`. `docker top -eo` needs `pid`. (#1118)
 - NAS networking: Maktaba answers mDNS as `<host>-maktaba.local` beside the NAS's avahi-daemon (shared UDP 5353), or publishes through a mounted host system bus; a system D-Bus drops a uid it cannot look up, so a container on the host's bus runs as an account the host knows. A `veth` default route marks a Docker bridge, where mDNS and SSDP go off. setup writes server.toml before it creates the database, so the container waits for `state/setup.json` to be gone too. (#1119)
 - Updates on a NAS (59.12): the image's self-update and the catalog's tag moves both stay on; an image older than the home's runtime runs the runtime, and admins see a `container` block in `GET /api/system/updates`. The preflight checks the volume for the runtime and the dump (`disk_short`). The rehearsal's five container legs update from the previous published image and roll a `bad` image back. The nas-4g leg found that 429s on loopback version checks restarted the 3-minute keep wait: a check with no answer now says nothing. Paging `/api/videos` for 20,000 videos hits the per-user rate limit; read counts from `/api/libraries/manage`. A docker logs offset keeps a restart test from matching an earlier start's line. (#1138)
+- A NAS as a cluster's home (59.13): the home works out each library folder's share (DSM `/volume<N>/<share>`, Unraid `/mnt/user/<share>`, QNAP `/share/<share>`, TrueNAS names from setup) and keeps its own `storage_servers` record, so a joining computer opens `/Volumes/<share>` with no path map. An existing DSM, Unraid or QNAP home converts its stored paths to `smb://` once the share map settles, after a backup, undone by Revert last conversion; a non-NAS home is never converted. Process-global state (`set_active_path_map`) does not cross into the plugin runner, only what the job frame carries: the runner now activates the frame's map as a `Resolver`. A database-copy subtitle (`content` set, no file) no longer blocks the conversion's pre-check. A rescan settles on the scan queue's `done_24h` rising, not on an idle queue. (#1140)
+- A rate limiter that runs before auth cannot key by user: every loopback caller was one `anon-ip:127.0.0.1` client. The home's own identity is the per-boot local token (never given to plugin runners, stripped by homeproxy); `mw.InternalCallers` gives requests bearing it their own 60,000/min bucket (`MAKTABA_INTERNAL_RATE_PER_MIN`), keyed by the token, not the address, since a proxy's and the relay's clients also arrive over loopback. (#1148)
+- OpenAPI: every `/api` route the home mounts is described or listed in `testdata/openapi_undocumented.txt` (the list only shrinks); `PUT /api/server/machine` dropped every field but the tier until 59.16 (web, API and supervisor each had tests, none across the three). `openapi.yaml` round-trips byte for byte when edited by script (PyYAML, `width=1000`). (#1142)
 
 ## Open
 
@@ -560,14 +569,16 @@ built_from: v0.3.127
 - Plugin event emits: the `unavailable` and `home_unreachable` refusals are logged but have no test. (#1048)
 - Parity tests still over the 5 s soft cap on CI: classify's waves 1 and 4, repair, the N16 self-test and livetv staging; core-media's now fits. (#1049, #1068)
 - No sweep was made of other process-wide state the moved first-party stages may read; the guard covers only `to_local`. (#1062)
-- Epic 59 (Maktaba on a NAS; replaces Epic 25’s NAS plan): 59.01–59.12 are in; cgroup v1 (DSM's 4.4 kernels) cannot be imitated on GitHub's cgroup v2 runners; facts each story checks on real devices (DSM kernels and Landlock, DSM’s responder, J4125 HEVC decode on DSM 7.2.2+, Avahi on TrueNAS 25.04+); real VA-API is untested until the device checklists run, and no real NAS has run the speech measure (a DS223/DS423 and a J4125). The setup text still says the venv step downloads about 2 GB, even offline (59.14); a Full home needs PyPI for its ML wheels until a `runtime.ml` pack. Speech baselines exist only for `small/x86_64` and `base/aarch64`. On upgrade, the identity sweep queues hashing, posters and transcription for every older scanned video: a burst of background work. (#1087, #1089, #1096, #1110, #1090, #1112, #1098, #1119, #1120)
+- Epic 59 (Maktaba on a NAS; replaces Epic 25’s NAS plan): 59.01–59.16 are in; cgroup v1 (DSM's 4.4 kernels) cannot be imitated on GitHub's cgroup v2 runners; facts each story checks on real devices (DSM kernels and Landlock, DSM’s responder, J4125 HEVC decode on DSM 7.2.2+, Avahi on TrueNAS 25.04+); real VA-API is untested until the device checklists run, and no real NAS has run the speech measure (a DS223/DS423 and a J4125). The setup text still says the venv step downloads about 2 GB, even offline (59.14); a Full home needs PyPI for its ML wheels until a `runtime.ml` pack. Speech baselines exist only for `small/x86_64` and `base/aarch64`. On upgrade, the identity sweep queues hashing, posters and transcription for every older scanned video: a burst of background work. (#1087, #1089, #1096, #1110, #1090, #1112, #1098, #1119, #1120)
 - N16: CPU p95 over 11 runs is their maximum, and a rare job costing about 4x CPU in both processes came within 0.8 ms of failing `topic_assign`; the plugin API's ~0.58 ms of CPU a call is the bulk of the per-call cost. (#1059)
 - NAS shapes (59.15): every waiting check has landed (59.03, `logs_clean`, `thumbnail`, `isolation_container`, `restart-after-kill`, the strict `first_scan`); `offline` and `bridge` need a harness that reaches the API without the host network; the device checklists (`docs/nas/checklists`) stay draft until their first run on a device. (#1091, #1103, #1104, #1094, #1095, #1097, #1098, #1109)
 - `EncodePlan.Burn` has no caller: the API's `burn_subs` reaches no transcode. (#1110)
 - Timing-sensitive on CI runners: Android TV's `TvConnectTest` route harness (a ConcurrentModificationException) and the iPad `PlayerMockHomeTests.testADelayKeepsTheQuerysAnswer` bound. (#1111, #1119, #1120)
 - NAS owner actions: submit the Unraid template to Community Applications and the TrueNAS app to truenas/apps (text in `deploy/nas/*/README.md`), then set `vars.TRUENAS_APPS_FORK`, `secrets.TRUENAS_APPS_TOKEN` and `vars.TRUENAS_APP_IN_CATALOG`; host the install pages on maktaba.tv; run the Unraid 7, UGREEN and TrueNAS 25.04/25.10 checklists, and the "the apps find the home" steps on real hardware (Synology 13, TrueNAS 15, Unraid 8). QNAP stays untested. On a bridge the server does not learn a published port that differs from its own; the app's icon URL exists only once the catalog hosts it. Synology still needs the guide's DSM screenshots (checklist steps 19 to 23, marked ready in `synologyGuide.ts`), a check of whether DSM has an Arabic UI, and the DS425+, DS923+ and DS223 checklists. (#1117, #1118, #1120)
-- Plugin routes, and `GET /api/system/updates` with its `container` block, are absent from `openapi.json` (59.16). (#1109, #1138)
-- The loopback's per-IP rate limit refused the home's own plugin invocations (560 × 429 under a 20,000-video scan); the tagged commit gives the home's own callers their own budget, keyed by the local token; its pull request is listed under Missing events. The in-window self-update inside a container is not rehearsed in a container. (#1138)
+- OpenAPI still omits 374 older routes (`testdata/openapi_undocumented.txt`), among them the streaming routes, described under stale paths (`/sessions`, not `/api/stream/sessions`). (#1142)
+- `TestAJobThatKeepsFailing` (supervisor) failed once in integration: it may read the snapshot before the failed event is recorded. (#1142)
+- NAS cluster: a home in Docker bridge mode names its record after the container's hostname, not the NAS's network name (setup's server field covers it today); no cell has a share with a character map (`fullwidth`, `sfm`), which a TrueNAS cell would cover. (#1140)
+- The rehearsal's `nas-4g` leg should show no 429 from the home's own callers on its first run after v0.3.129; if a busy home ever empties the shared internal bucket, split it by caller class (the health check first). The in-window self-update inside a container is not rehearsed in a container. (#1138, #1148)
 - `relay.yml` and `release.yml` still use cosign-installer by tag (optional hygiene). (#1124)
 
 ## Missing events
@@ -583,9 +594,8 @@ built_from: v0.3.127
 | #1042 | 2026-11-08 | fix(web): an open screen keeps its feature gate when the feature goes off right after the first answer |
 | #1128 | 2026-11-10 | docs(spec): Epic 57 checked again against main |
 | #1130 | 2026-11-10 | spec(epic57): time rules on every device, and tiers detected from transcripts |
+| #1137 | 2026-11-11 | Epic 59.14: NAS guides on maktaba.tv (en+ar), the strings pass, the Arabic build check |
 | #1139 | 2026-11-10 | spec(epic57): Q9 answered, detection covers what a video is |
-| #1140 | 2026-11-11 | feat(59.13): a NAS as the cluster's home: its own folders as SMB shares, setup's share step, Light-NAS join choice |
-| #1148 | 2026-11-11 | fix(api): the home's own callers get their own rate budget, keyed by the local token |
 
 ## Index
 
@@ -1187,5 +1197,8 @@ built_from: v0.3.127
 | 1121-epic59-08-clientip-hardening | 2026-11-11 | pr | Epic 59 story 59.08 follow-up: which forwarded client addresses the home believes |
 | 1125-title-without-extension | 2026-11-11 | pr | fix(titles): a video with no title shows its file name without the extension |
 | 1138-epic59-12-updates | 2026-11-11 | pr | Updates on a NAS: the image beside its runtime, and the update rehearsal's container legs (story 59.12) |
+| 1140-epic59-13-nas-cluster | 2026-11-11 | pr | A NAS as the home of a cluster: its shares, nodes that join it, and its own paths converted (story 59.13) |
+| 1142-epic59-openapi-roles | 2026-11-11 | pr | Epic 59 story 59.16: the admin routes in OpenAPI (en, ar), a role table and a route walk |
 | 1147-video-process-noop | 2026-11-11 | pr | fix(api): video process and reprocess queue real jobs, never a silent success |
+| 1148-internal-callers-rate-limit | 2026-11-11 | pr | fix(api): the home's own callers get their own rate budget, keyed by the local token |
 
