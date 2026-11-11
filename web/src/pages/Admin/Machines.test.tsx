@@ -375,6 +375,39 @@ describe("Machines admin page", () => {
     });
   });
 
+  // story 59.13: on a NAS home the page shows the NAS's own shares
+  it("shows the NAS's shares on a NAS home", async () => {
+    const v = fixture();
+    v.home = {
+      ...v.home,
+      storage: { read: "ok", write: "ok", checked_at: NOW, detail: null },
+      path_map: null,
+    };
+    get.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === "/api/cluster/storage/home-shares"
+          ? {
+              nas: true,
+              platform: "dsm",
+              server: "diskstation",
+              addresses: ["192.168.1.20"],
+              shares: [
+                { path: "/volume1/Movies", share: "Movies", local_only: false, host_path: true },
+              ],
+              unnamed: [],
+              other_path: false,
+              writable_share: true,
+              notices: [],
+            }
+          : v
+      )
+    );
+    renderPage();
+    expect(await screen.findByRole("heading", { name: "This NAS's shares" })).toBeInTheDocument();
+    expect(screen.getByText("smb://diskstation/Movies")).toBeInTheDocument();
+    expect(get).toHaveBeenCalledWith("/api/cluster/storage/home-shares");
+  });
+
   it("asks before revoking a machine", async () => {
     renderPage();
     await userEvent.click(await screen.findByRole("button", { name: "Revoke" }));

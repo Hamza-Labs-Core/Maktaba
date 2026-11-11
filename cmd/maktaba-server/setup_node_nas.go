@@ -6,6 +6,7 @@ package main
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
@@ -19,7 +20,8 @@ const LightNASText = "A Light NAS should be the Maktaba home or just storage. As
 	"down without helping the home much."
 
 // ErrLightNAS: setup --node on a Light NAS without --light-nas.
-var ErrLightNAS = errors.New(LightNASText + " To join it anyway, run setup --node again with --light-nas.")
+var ErrLightNAS = errors.New(strings.TrimSuffix(LightNASText, ".") +
+	"; to join it anyway, run setup --node again with --light-nas")
 
 // lightNAS reports whether m, with the tier cfg's [server] sets, is a NAS on the Light
 // tier (the admin's pick wins, as for every tier default).

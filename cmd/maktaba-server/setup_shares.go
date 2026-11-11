@@ -119,9 +119,7 @@ func stepShares(s *setupRun, in json.RawMessage) (any, error) {
 		return nil, err
 	}
 	server := strings.ToLower(strings.TrimSpace(req.Server))
-	if strings.HasSuffix(server, ".local") {
-		server = strings.TrimSuffix(server, ".local")
-	}
+	server = strings.TrimSuffix(server, ".local")
 	if server == "" || strings.ContainsAny(server, `/\ `) || len(server) > 253 {
 		return nil, failStep("share_server", "server", "Give the NAS's name as your other computers see it (for example diskstation).")
 	}

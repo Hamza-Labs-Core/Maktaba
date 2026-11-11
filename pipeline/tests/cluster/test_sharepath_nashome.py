@@ -9,6 +9,7 @@ Runs on the migrated SQLite always and on Postgres when ``MAKTABA_TEST_PG_URL`` 
 from __future__ import annotations
 
 import json
+import sys
 import uuid
 from pathlib import Path
 from typing import Any
@@ -147,6 +148,7 @@ async def test_dsm_home_converts_its_folders_to_the_share(db: Any) -> None:
     ]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="a NAS home is Linux: its folders are /paths")
 async def test_catch_all_home_converts_with_setup_names(
     db: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
