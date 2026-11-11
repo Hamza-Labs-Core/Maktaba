@@ -158,7 +158,7 @@ func restrictedAdmin() *httperror.Error {
 // input checks the limit before anything is written.
 func (c *createParental) input() (parental.PolicyInput, *httperror.Error) {
 	var errs []httperror.FieldError
-	if c.MaxTier == nil || !parental.ValidPolicyTier(*c.MaxTier) {
+	if c.MaxTier == nil || !parental.ValidPolicyLimit(*c.MaxTier) {
 		errs = append(errs, httperror.FieldError{Field: "parental.max_tier", Message: "must be one of -1, 0, 9, 13, 16, 18"})
 	}
 	unrated := c.Unrated
@@ -175,7 +175,7 @@ func (c *createParental) input() (parental.PolicyInput, *httperror.Error) {
 	if len(errs) > 0 {
 		return parental.PolicyInput{}, httperror.Unprocessable(errs)
 	}
-	return parental.PolicyInput{MaxTier: parental.PolicyTier(*c.MaxTier), Unrated: unrated, AllowOnly: c.AllowOnly}, nil
+	return parental.PolicyInput{MaxTier: *c.MaxTier, Unrated: unrated, AllowOnly: c.AllowOnly}, nil
 }
 
 // restrict gives the account just made its limit and guardians. On a failure the

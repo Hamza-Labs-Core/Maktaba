@@ -20,36 +20,20 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 )
 
-// PolicyTier is a restricted account's limit: the highest age tier it sees.
-// Story 57.01 owns the tiers of content; this is the small type the policy needs.
-type PolicyTier int16
-
-const (
-	// PolicyTierNone lets nothing through by its rating: only allowed items show.
-	PolicyTierNone PolicyTier = -1
-	PolicyTierAll  PolicyTier = 0
-	PolicyTier9    PolicyTier = 9
-	PolicyTier13   PolicyTier = 13
-	PolicyTier16   PolicyTier = 16
-	PolicyTier18   PolicyTier = 18
-)
-
-// ValidPolicyTier reports whether t is one of the limits a policy may hold.
-func ValidPolicyTier(t int) bool {
-	switch PolicyTier(t) {
-	case PolicyTierNone, PolicyTierAll, PolicyTier9, PolicyTier13, PolicyTier16, PolicyTier18:
-		return true
-	}
-	return false
+// ValidPolicyLimit reports whether t is a limit a policy may hold: a tier of the
+// scale (ratings.go), or NothingAllowed, under which only allowed items show. NoLimit
+// is not one: an account with no limit has no policy.
+func ValidPolicyLimit(t int) bool {
+	return t == NothingAllowed || ValidTier(t)
 }
 
 // UnratedHide hides content with no tier; the other values treat it as that tier.
 const UnratedHide = "hide"
 
 // unratedTiers maps the stored unrated rule to the tier unrated content is treated as.
-var unratedTiers = map[string]PolicyTier{
-	"tier_0": PolicyTierAll, "tier_9": PolicyTier9, "tier_13": PolicyTier13,
-	"tier_16": PolicyTier16, "tier_18": PolicyTier18,
+var unratedTiers = map[string]int{
+	"tier_0": TierAll, "tier_9": Tier9, "tier_13": Tier13,
+	"tier_16": Tier16, "tier_18": Tier18,
 }
 
 // ValidUnrated reports whether s is a stored unrated rule.
@@ -162,26 +146,26 @@ func translate(err error) error {
 
 // Policy is one restricted account's stored limit.
 type Policy struct {
-	UserID    string     `json:"user_id"`
-	MaxTier   PolicyTier `json:"max_tier"`
-	Unrated   string     `json:"unrated"`
-	AllowOnly bool       `json:"allow_only"`
-	Version   int        `json:"version"`
-	UpdatedBy string     `json:"updated_by,omitempty"`
-	UpdatedAt time.Time  `json:"updated_at"`
+	UserID    string    `json:"user_id"`
+	MaxTier   int       `json:"max_tier"`
+	Unrated   string    `json:"unrated"`
+	AllowOnly bool      `json:"allow_only"`
+	Version   int       `json:"version"`
+	UpdatedBy string    `json:"updated_by,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // PolicyInput is what a caller may set. Version is the version the caller read: 0
 // makes the account restricted (refused with ErrStale when it already is).
 type PolicyInput struct {
-	MaxTier   PolicyTier
+	MaxTier   int
 	Unrated   string
 	AllowOnly bool
 	Version   int
 }
 
 func (in PolicyInput) validate() error {
-	if !ValidPolicyTier(int(in.MaxTier)) {
+	if !ValidPolicyLimit(in.MaxTier) {
 		return fmt.Errorf("%w: max_tier", ErrInvalid)
 	}
 	if !ValidUnrated(in.Unrated) {
@@ -345,7 +329,7 @@ func policyAudit(p *Policy) map[string]any {
 	if p == nil {
 		return nil
 	}
-	return map[string]any{"max_tier": int(p.MaxTier), "unrated": p.Unrated, "allow_only": p.AllowOnly, "version": p.Version}
+	return map[string]any{"max_tier": p.MaxTier, "unrated": p.Unrated, "allow_only": p.AllowOnly, "version": p.Version}
 }
 
 // audit writes one row for a change: who, whose policy, and the values before and
@@ -414,7 +398,7 @@ func (s *Store) SetPolicy(ctx context.Context, actorID, userID string, in Policy
 				 VALUES ($1, $2, $3, $4, 1, $5, $6)
 				 ON CONFLICT (user_id) DO NOTHING
 				 RETURNING `+policyCols,
-				userID, int(in.MaxTier), in.Unrated, in.AllowOnly, nullUUID(actorID), at))
+				userID, in.MaxTier, in.Unrated, in.AllowOnly, nullUUID(actorID), at))
 			if errors.Is(err, sql.ErrNoRows) {
 				return ErrStale // made restricted by someone else meanwhile
 			}
@@ -428,7 +412,7 @@ func (s *Store) SetPolicy(ctx context.Context, actorID, userID string, in Policy
 				        updated_by = $5, updated_at = $6
 				  WHERE user_id = $1
 				 RETURNING `+policyCols,
-				userID, int(in.MaxTier), in.Unrated, in.AllowOnly, nullUUID(actorID), at))
+				userID, in.MaxTier, in.Unrated, in.AllowOnly, nullUUID(actorID), at))
 		}
 		if err != nil {
 			return err

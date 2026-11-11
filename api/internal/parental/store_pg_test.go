@@ -68,7 +68,7 @@ func (e *env) count(q string, args ...any) int {
 // restrict makes id restricted at 9+ and returns the policy.
 func (e *env) restrict(id string) *parental.Policy {
 	e.t.Helper()
-	p, err := e.store.SetPolicy(context.Background(), uAdmin, id, parental.PolicyInput{MaxTier: parental.PolicyTier9, Unrated: parental.UnratedHide})
+	p, err := e.store.SetPolicy(context.Background(), uAdmin, id, parental.PolicyInput{MaxTier: parental.Tier9, Unrated: parental.UnratedHide})
 	if err != nil {
 		e.t.Fatalf("restrict %s: %v", id, err)
 	}
@@ -80,7 +80,7 @@ func (e *env) restrict(id string) *parental.Policy {
 func TestRestrictedIsNeverAdminOrGuardian(t *testing.T) {
 	e := setup(t)
 	ctx := context.Background()
-	in := parental.PolicyInput{MaxTier: parental.PolicyTier9, Unrated: parental.UnratedHide}
+	in := parental.PolicyInput{MaxTier: parental.Tier9, Unrated: parental.UnratedHide}
 
 	if _, err := e.store.SetPolicy(ctx, uAdmin, uAdmin, in); !errors.Is(err, parental.ErrRestrictedAdmin) {
 		t.Fatalf("policy on an admin: %v, want ErrRestrictedAdmin", err)
@@ -131,27 +131,27 @@ func TestPolicyVersions(t *testing.T) {
 	e := setup(t)
 	ctx := context.Background()
 	p := e.restrict(uChild)
-	if p.Version != 1 || p.MaxTier != parental.PolicyTier9 || p.UpdatedBy != uAdmin {
+	if p.Version != 1 || p.MaxTier != parental.Tier9 || p.UpdatedBy != uAdmin {
 		t.Fatalf("new policy = %+v", p)
 	}
 	// a second "make restricted" (version 0) is stale, not an overwrite
-	if _, err := e.store.SetPolicy(ctx, uAdmin, uChild, parental.PolicyInput{MaxTier: parental.PolicyTier18, Unrated: parental.UnratedHide}); !errors.Is(err, parental.ErrStale) {
+	if _, err := e.store.SetPolicy(ctx, uAdmin, uChild, parental.PolicyInput{MaxTier: parental.Tier18, Unrated: parental.UnratedHide}); !errors.Is(err, parental.ErrStale) {
 		t.Fatalf("version 0 on an existing policy: %v, want ErrStale", err)
 	}
-	p2, err := e.store.SetPolicy(ctx, uGuardian, uChild, parental.PolicyInput{MaxTier: parental.PolicyTier13, Unrated: "tier_9", AllowOnly: true, Version: 1})
+	p2, err := e.store.SetPolicy(ctx, uGuardian, uChild, parental.PolicyInput{MaxTier: parental.Tier13, Unrated: "tier_9", AllowOnly: true, Version: 1})
 	if err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	if p2.Version != 2 || p2.MaxTier != parental.PolicyTier13 || p2.Unrated != "tier_9" || !p2.AllowOnly || p2.UpdatedBy != uGuardian {
+	if p2.Version != 2 || p2.MaxTier != parental.Tier13 || p2.Unrated != "tier_9" || !p2.AllowOnly || p2.UpdatedBy != uGuardian {
 		t.Fatalf("updated policy = %+v", p2)
 	}
-	if _, err := e.store.SetPolicy(ctx, uAdmin, uChild, parental.PolicyInput{MaxTier: parental.PolicyTier9, Unrated: parental.UnratedHide, Version: 1}); !errors.Is(err, parental.ErrStale) {
+	if _, err := e.store.SetPolicy(ctx, uAdmin, uChild, parental.PolicyInput{MaxTier: parental.Tier9, Unrated: parental.UnratedHide, Version: 1}); !errors.Is(err, parental.ErrStale) {
 		t.Fatalf("old version: %v, want ErrStale", err)
 	}
 	if _, err := e.store.SetPolicy(ctx, uAdmin, uChild, parental.PolicyInput{MaxTier: 12, Unrated: parental.UnratedHide, Version: 2}); !errors.Is(err, parental.ErrInvalid) {
 		t.Fatalf("tier 12: %v, want ErrInvalid", err)
 	}
-	if _, err := e.store.SetPolicy(ctx, uAdmin, "00000000-0000-4000-8000-00000057ffff", parental.PolicyInput{MaxTier: parental.PolicyTier9, Unrated: parental.UnratedHide}); !errors.Is(err, parental.ErrUserNotFound) {
+	if _, err := e.store.SetPolicy(ctx, uAdmin, "00000000-0000-4000-8000-00000057ffff", parental.PolicyInput{MaxTier: parental.Tier9, Unrated: parental.UnratedHide}); !errors.Is(err, parental.ErrUserNotFound) {
 		t.Fatalf("unknown user: %v, want ErrUserNotFound", err)
 	}
 	if _, err := e.store.Policy(ctx, uViewer); !errors.Is(err, parental.ErrNotRestricted) {
@@ -331,11 +331,11 @@ func TestAuditRows(t *testing.T) {
 	}
 	var ruleID string
 	step("make restricted", parental.AuditPolicySet, func() error {
-		_, err := e.store.SetPolicy(ctx, uAdmin, uChild, parental.PolicyInput{MaxTier: parental.PolicyTier9, Unrated: parental.UnratedHide})
+		_, err := e.store.SetPolicy(ctx, uAdmin, uChild, parental.PolicyInput{MaxTier: parental.Tier9, Unrated: parental.UnratedHide})
 		return err
 	})
 	step("change the limit", parental.AuditPolicySet, func() error {
-		_, err := e.store.SetPolicy(ctx, uAdmin, uChild, parental.PolicyInput{MaxTier: parental.PolicyTier13, Unrated: parental.UnratedHide, Version: 1})
+		_, err := e.store.SetPolicy(ctx, uAdmin, uChild, parental.PolicyInput{MaxTier: parental.Tier13, Unrated: parental.UnratedHide, Version: 1})
 		return err
 	})
 	step("name a guardian", parental.AuditGuardianAdded, func() error { return e.store.AddGuardian(ctx, uAdmin, uChild, uGuardian) })
@@ -352,7 +352,7 @@ func TestAuditRows(t *testing.T) {
 
 	// a refused change writes nothing
 	before := rows()
-	_, _ = e.store.SetPolicy(ctx, uAdmin, uAdmin, parental.PolicyInput{MaxTier: parental.PolicyTier9, Unrated: parental.UnratedHide})
+	_, _ = e.store.SetPolicy(ctx, uAdmin, uAdmin, parental.PolicyInput{MaxTier: parental.Tier9, Unrated: parental.UnratedHide})
 	if rows() != before {
 		t.Fatal("a refused change wrote an audit row")
 	}
@@ -436,7 +436,7 @@ func TestCacheSeesAChangeOnTheNextRead(t *testing.T) {
 	// "another process" tightens the limit: a plain write, with no call into this cache
 	other := parental.NewStore(e.db)
 	p, _ := other.Policy(ctx, uChild)
-	if _, err := other.SetPolicy(ctx, uAdmin, uChild, parental.PolicyInput{MaxTier: parental.PolicyTier9, Unrated: parental.UnratedHide, Version: p.Version}); err != nil {
+	if _, err := other.SetPolicy(ctx, uAdmin, uChild, parental.PolicyInput{MaxTier: parental.Tier9, Unrated: parental.UnratedHide, Version: p.Version}); err != nil {
 		t.Fatalf("tighten: %v", err)
 	}
 	deadline = time.Now().Add(5 * time.Second)
@@ -494,11 +494,11 @@ func TestCacheWithoutAListenerReadsEveryTime(t *testing.T) {
 	ctx := context.Background()
 	e.restrict(uChild)
 	cache := parental.NewCache(e.store)
-	if eff, err := cache.Effective(ctx, uChild); err != nil || eff.MaxTier != parental.PolicyTier9 {
+	if eff, err := cache.Effective(ctx, uChild); err != nil || eff.MaxTier != parental.Tier9 {
 		t.Fatalf("first read: %+v, %v", eff, err)
 	}
 	e.exec(`UPDATE parental_policies SET max_tier = 0 WHERE user_id = $1`, uChild)
-	if eff, err := cache.Effective(ctx, uChild); err != nil || eff.MaxTier != parental.PolicyTierAll {
+	if eff, err := cache.Effective(ctx, uChild); err != nil || eff.MaxTier != parental.TierAll {
 		t.Fatalf("second read: %+v, %v", eff, err)
 	}
 }

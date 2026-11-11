@@ -15,6 +15,15 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 )
 
+// ParentalHandles is what Epic 57's mounts built, kept by main.go for the stories
+// that filter or re-rate with them: the restricted accounts' cache (MountParental,
+// through P6Deps.OnParental) and the age tiers' recompute (MountP57Tiers). Either is
+// nil where its mount did not run.
+type ParentalHandles struct {
+	Cache     *parental.Cache
+	Recompute *parental.Recomputer
+}
+
 // MountParental mounts Epic 57 story 57.02's routes: restricted accounts, their
 // guardians and their rules. With the bus's Postgres listener (busCtx and busDSN
 // set) a policy is read from memory and dropped on slot 0221's parental_policy

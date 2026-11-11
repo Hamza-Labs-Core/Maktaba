@@ -50,6 +50,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws/eventbus"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libpaths"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	perfpkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
@@ -116,6 +117,9 @@ type P6Deps struct {
 	// ends. Nil: no sweep (tests). The threshold defaults to 0, so the
 	// sweep does nothing until an admin sets it.
 	EnrichAutoAcceptCtx context.Context
+	// OnParental, when set, is called with the restricted accounts' cache (Epic 57
+	// story 57.02) so main.go keeps it for the surfaces that filter with it.
+	OnParental func(*parental.Cache)
 	// OnQueues, when set, is called with the queue/extensions handler
 	// before it is mounted (story 32.6 hangs the Cloudflare test on it).
 	OnQueues func(*queues.Handler)
@@ -200,7 +204,10 @@ func MountP6(r chi.Router, d P6Deps) {
 	}
 	browseHandler.Mount(r)
 	// Epic 57 story 57.02: restricted accounts, guardians and rules.
-	MountParental(r, d.DB, d.Loops, d.BusCtx, d.BusDSN, d.BusResettle)
+	parentalCache := MountParental(r, d.DB, d.Loops, d.BusCtx, d.BusDSN, d.BusResettle)
+	if d.OnParental != nil {
+		d.OnParental(parentalCache)
+	}
 
 	// Video patch, delete, process and reprocess write audit rows; process and
 	// reprocess queue real pipeline jobs (PostgresJobs: processing_jobs_enqueue).

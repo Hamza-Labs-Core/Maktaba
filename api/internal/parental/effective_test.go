@@ -19,7 +19,7 @@ func TestPermits(t *testing.T) {
 		return Rule{Effect: effect, SubjectKind: s.Kind, SubjectID: s.ID, ExpiresAt: exp}
 	}
 	nine := func(rules ...Rule) *Effective {
-		return &Effective{Restricted: true, MaxTier: PolicyTier9, Unrated: UnratedHide, Rules: rules}
+		return &Effective{Restricted: true, MaxTier: Tier9, Unrated: UnratedHide, Rules: rules}
 	}
 	cases := []struct {
 		name string
@@ -51,20 +51,20 @@ func TestPermits(t *testing.T) {
 			Item{Tier: tier(16), Subjects: []Subject{vid("v1")}}, true},
 		{"unrated hidden by default", nine(), Item{}, false},
 		{"unrated treated as 9+ under a 9+ limit",
-			&Effective{Restricted: true, MaxTier: PolicyTier9, Unrated: "tier_9"}, Item{}, true},
+			&Effective{Restricted: true, MaxTier: Tier9, Unrated: "tier_9"}, Item{}, true},
 		{"unrated treated as 13+ under a 9+ limit",
-			&Effective{Restricted: true, MaxTier: PolicyTier9, Unrated: "tier_13"}, Item{}, false},
+			&Effective{Restricted: true, MaxTier: Tier9, Unrated: "tier_13"}, Item{}, false},
 		{"allow on an unrated title", nine(rule(EffectAllow, vid("v1"), nil)),
 			Item{Subjects: []Subject{vid("v1")}}, true},
 		{"allow_only hides what is not allowed",
-			&Effective{Restricted: true, MaxTier: PolicyTier18, Unrated: "tier_0", AllowOnly: true},
+			&Effective{Restricted: true, MaxTier: Tier18, Unrated: "tier_0", AllowOnly: true},
 			Item{Tier: tier(0), Subjects: []Subject{vid("v1")}}, false},
 		{"allow_only shows what is allowed",
-			&Effective{Restricted: true, MaxTier: PolicyTierNone, Unrated: UnratedHide, AllowOnly: true,
+			&Effective{Restricted: true, MaxTier: NothingAllowed, Unrated: UnratedHide, AllowOnly: true,
 				Rules: []Rule{rule(EffectAllow, vid("v1"), nil)}},
 			Item{Tier: tier(18), Subjects: []Subject{vid("v1")}}, true},
 		{"limit of nothing hides an all-ages title",
-			&Effective{Restricted: true, MaxTier: PolicyTierNone, Unrated: UnratedHide}, Item{Tier: tier(0)}, false},
+			&Effective{Restricted: true, MaxTier: NothingAllowed, Unrated: UnratedHide}, Item{Tier: tier(0)}, false},
 	}
 	for _, c := range cases {
 		if got := c.e.Permits(c.item, now); got != c.want {
@@ -93,12 +93,12 @@ func TestSubjectsSkipsExpiredAndOtherKinds(t *testing.T) {
 
 func TestValidators(t *testing.T) {
 	for _, n := range []int{-1, 0, 9, 13, 16, 18} {
-		if !ValidPolicyTier(n) {
+		if !ValidPolicyLimit(n) {
 			t.Errorf("tier %d should be valid", n)
 		}
 	}
 	for _, n := range []int{-2, 1, 12, 17, 21} {
-		if ValidPolicyTier(n) {
+		if ValidPolicyLimit(n) {
 			t.Errorf("tier %d should not be valid", n)
 		}
 	}

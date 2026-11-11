@@ -284,7 +284,7 @@ type putRequest struct {
 
 func (req putRequest) input() (parentalpkg.PolicyInput, *httperror.Error) {
 	var errs []httperror.FieldError
-	if req.MaxTier == nil || !parentalpkg.ValidPolicyTier(*req.MaxTier) {
+	if req.MaxTier == nil || !parentalpkg.ValidPolicyLimit(*req.MaxTier) {
 		errs = append(errs, httperror.FieldError{Field: "max_tier", Message: "must be one of -1, 0, 9, 13, 16, 18"})
 	}
 	unrated := req.Unrated
@@ -301,7 +301,7 @@ func (req putRequest) input() (parentalpkg.PolicyInput, *httperror.Error) {
 		return parentalpkg.PolicyInput{}, httperror.Unprocessable(errs)
 	}
 	return parentalpkg.PolicyInput{
-		MaxTier: parentalpkg.PolicyTier(*req.MaxTier), Unrated: unrated, AllowOnly: req.AllowOnly, Version: req.Version,
+		MaxTier: *req.MaxTier, Unrated: unrated, AllowOnly: req.AllowOnly, Version: req.Version,
 	}, nil
 }
 
@@ -535,7 +535,7 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 	out := meResponse{Restricted: e.Restricted}
 	if e.Restricted {
-		tier := int(e.MaxTier)
+		tier := e.MaxTier
 		out.MaxTier, out.Unrated, out.AllowOnly, out.Version = &tier, e.Unrated, e.AllowOnly, e.Version
 	}
 	common.WriteJSON(w, r, http.StatusOK, out)

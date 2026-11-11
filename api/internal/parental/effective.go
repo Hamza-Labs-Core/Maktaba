@@ -25,7 +25,7 @@ type Item struct {
 type Effective struct {
 	UserID     string
 	Restricted bool
-	MaxTier    PolicyTier
+	MaxTier    int
 	Unrated    string
 	AllowOnly  bool
 	Version    int
@@ -85,7 +85,7 @@ func (e *Effective) TierPermits(tier *int) bool {
 		as, ok := unratedTiers[e.Unrated]
 		return ok && as <= e.MaxTier
 	}
-	return PolicyTier(*tier) <= e.MaxTier
+	return *tier <= e.MaxTier
 }
 
 // Permits is the whole rule for one item: a block on anything it is or sits in

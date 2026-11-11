@@ -56,6 +56,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/pgdsn"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
@@ -585,8 +586,12 @@ func runServe() error {
 			components.Start(loops, appDB, func() string { return pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping) }, logger)
 			var eventBus *eventbus.Bus
 			eventHub := ws.NewHub()
+			// Epic 57: the restricted accounts' cache and the age tiers' recompute, for
+			// the surfaces that filter by them
+			parentalHandles := &router.ParentalHandles{}
 			router.MountP6(r, router.P6Deps{
 				EventHub:     eventHub,
+				OnParental:   func(c *parental.Cache) { parentalHandles.Cache = c },
 				OnBus:        func(b *eventbus.Bus) { eventBus = b },
 				Capabilities: capabilities,
 				Loops:        loops,
@@ -772,7 +777,8 @@ func runServe() error {
 			loops.Declare("play_queue_sweep", runner.Func(func(ctx context.Context) { playqueue.Sweep(ctx, appDB, time.Hour, logger) }))
 			// Epic 57 story 57.01: the admin's age-tier routes, the ratings table, and the
 			// recompute that writes each video's tier from the queue of slot 0220
-			if recompute := router.MountP57Tiers(r, router.P57TiersDeps{DB: appDB, Logger: logger}); recompute != nil {
+			parentalHandles.Recompute = router.MountP57Tiers(r, router.P57TiersDeps{DB: appDB, Logger: logger})
+			if recompute := parentalHandles.Recompute; recompute != nil {
 				loops.Declare("parental_recompute", runner.Func(func(ctx context.Context) { _ = recompute.Run(ctx) }))
 			}
 			usageCounter.Attach(appDB)
