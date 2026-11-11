@@ -12,5 +12,5 @@ fi
 echo "::error::the API sent problem types that shared/api/problems.json does not list (add an entry, then run go generate ./internal/httperror in api/):"
 cut -f1 "$file" | sort | uniq -c | sort -rn
 echo "first requests:"
-sort -u "$file" | head -40
+sort -u "$file" | sed -n 1,40p
 exit 1

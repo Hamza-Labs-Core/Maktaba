@@ -14,7 +14,10 @@ if out=$("$here/unregistered-problems.sh" "$file"); then
 	exit 1
 fi
 printf '%s\n' "$out"
-echo "$out" | grep -q 'positive-control-unregistered-fixture' || { echo "::error::the check did not name the fixture's slug"; exit 1; }
+case $out in
+*positive-control-unregistered-fixture*) ;;
+*) echo "::error::the check did not name the fixture's slug"; exit 1 ;;
+esac
 if [ "$(wc -l < "$file" | tr -d ' ')" != 1 ]; then
 	echo "::error::the control recorded more than the unregistered type:"; cat "$file"; exit 1
 fi
