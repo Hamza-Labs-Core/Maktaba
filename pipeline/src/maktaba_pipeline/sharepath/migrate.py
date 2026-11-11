@@ -50,8 +50,9 @@ class Column:
     unique_with: str | None = None
     #: the rows whose file must exist, as SQL (the dry run's sampled check opens only
     #: those); ``None``: never checked. A purged file (``purge_log``), a soft-deleted
-    #: video or subtitle and a repair's kept backup are gone on purpose, and a check
-    #: that sampled them would hold the conversion back for good.
+    #: video or subtitle, a subtitle a read-only library keeps in the database and a
+    #: repair's kept backup are gone (or never written) on purpose, and a check that
+    #: sampled them would hold the conversion back for good.
     verify: str | None = "1 = 1"
 
 
@@ -60,7 +61,11 @@ COLUMNS: tuple[Column, ...] = (
     Column("library_roots", "id", "path", "uuid"),
     Column("library_roots", "id", "path_canonical", "uuid", unique_with="library_id"),
     Column("videos", "id", "path", "uuid", verify="deleted_at IS NULL"),
-    Column("subtitle_files", "id", "path", "bigint", verify="deleted_at IS NULL"),
+    # a read-only library's subtitle kept in the database (content, story 59.03): its path
+    # is where the file would have been; converted with the rest, never looked for
+    Column(
+        "subtitle_files", "id", "path", "bigint", verify="deleted_at IS NULL AND content IS NULL"
+    ),
     Column("video_repairs", "video_id", "backup_path", "uuid", verify=None),
     Column("purge_log", "id", "path", "bigint", verify=None),
 )
