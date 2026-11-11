@@ -780,6 +780,8 @@ func runServe() error {
 			parentalHandles.Recompute = router.MountP57Tiers(r, router.P57TiersDeps{DB: appDB, Logger: logger})
 			if recompute := parentalHandles.Recompute; recompute != nil {
 				loops.Declare("parental_recompute", runner.Func(func(ctx context.Context) { _ = recompute.Run(ctx) }))
+				// Epic 57 story 57.17: the review list of the tiers detected from transcripts
+				router.MountP57Review(r, router.P57ReviewDeps{DB: appDB, Recompute: recompute, Logger: logger})
 			}
 			usageCounter.Attach(appDB)
 			loops.Declare("usage_counter", runner.Func(func(ctx context.Context) { usageCounter.Run(ctx, usage.DefaultFlushEvery) }))
