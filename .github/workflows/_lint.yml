@@ -130,6 +130,32 @@ jobs:
       - name: The agent trail checks (agent-trail)
         uses: Hamza-Labs-Core/agent-trail@v0
 
+  # Story 60.08: every maktaba.tv link the repository prints opens a page. On every pull request
+  # with no path filter: the files it reads (every tracked file but the trail, the specs, the
+  # wiki databases and test files) cannot be written as a ci-paths.yml filter, which has no
+  # negation. Problem links are checked against shared/api/problems.json, the others against
+  # web/packages/website/dist-manifest.json (the site build regenerates it). A dead link fails
+  # with its file, line and the nearest page; links-baseline.json lists the links that were dead
+  # when the check landed (the site did not exist yet), shrinks with each page that ships, and
+  # must be empty by the end of Epic 60's Phase 1. Node's standard library only: no install.
+  links:
+    name: maktaba.tv links
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: web/.nvmrc
+          package-manager-cache: false
+
+      - name: The link check's tests
+        run: node --test web/packages/website/scripts/links.test.mjs
+
+      - name: Every maktaba.tv link opens a page (links.mjs)
+        run: node web/packages/website/scripts/links.mjs
+
   lint:
     if: inputs.go || inputs.pipeline || inputs.web
     runs-on: ubuntu-22.04
