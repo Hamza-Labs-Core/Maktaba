@@ -15,6 +15,12 @@
 #   - the repository variable WEBSITE_LIVE = true: the go-live switch.
 # Without any of them the deploy job prints a notice naming what is missing and passes.
 #
+# The nightly sweep (website-nightly.yml, story 60.04): a red sweep blocks the deploy until a
+# fix lands. The nightly job reads the latest sweep (tools/ci/website_nightly_state.sh); when it
+# failed, this run's build measures the pages it failed again (Lighthouse, 3 runs, median), and
+# the deploy goes on only when they pass; a failed sweep whose pages cannot be read refuses the
+# deploy outright. A rollback is never held back by it.
+#
 # The steps (tools/cloudflare/website-deploy.mjs): the token check; record the version serving
 # now; upload the new version (not live) and smoke its preview URL; promote it at 100% and
 # apply the custom domains (`triggers deploy`); smoke the live site, and on failure roll back
@@ -37,6 +43,8 @@ on:
       - 'cloud/internal/privacy/**'
       - 'api/internal/security/disclosure.go'
       - 'web/design-system/tokens/**'
+      - 'web/public/icons/**'
+      - 'tools/ci/website_nightly_state.sh'
       - 'tools/cloudflare/smoke.mjs'
       - 'tools/cloudflare/token-check.mjs'
       - 'tools/cloudflare/website-deploy.mjs'
@@ -65,15 +73,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # the same build and tests as the pull request ran, on this commit (a rollback builds nothing)
+  # the latest nightly sweep on main: green, none yet, red (with the pages it failed), or red
+  # and unreadable
+  nightly:
+    if: ${{ !inputs.rollback }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      state: ${{ steps.latest.outputs.state }}
+      failed: ${{ steps.latest.outputs.failed }}
+      run: ${{ steps.latest.outputs.run }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          sparse-checkout: tools/ci
+          persist-credentials: false
+      - name: The latest nightly sweep
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: bash tools/ci/website_nightly_state.sh
+
+  # the same build and tests as the pull request ran, on this commit (a rollback builds nothing),
+  # with the pages the last nightly sweep failed measured again
   build:
+    needs: [nightly]
     if: ${{ !inputs.rollback }}
     uses: ./.github/workflows/_website.yml
     with:
-      upload: true
+      lighthouse_extra: ${{ needs.nightly.outputs.failed }}
 
   deploy:
-    needs: [build]
+    needs: [nightly, build]
     if: ${{ always() && (needs.build.result == 'success' || (inputs.rollback && needs.build.result == 'skipped')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -130,8 +165,29 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: node tools/cloudflare/token-check.mjs --pieces workers,dns --zone maktaba.tv
 
-      # The nightly quality sweep's gate (story 60.04: the deploy refuses to run while the
-      # latest nightly sweep on main is red) comes here.
+      # The nightly sweep's gate (story 60.04): green or none yet, go on; red, go on only because
+      # this run's build measured the failing pages again and they passed (the deploy needs the
+      # build); red with no readable list of pages, refuse.
+      # (tools/ci/tests/test_website_deploy.py runs this script with each state.)
+      - name: Nightly sweep gate
+        if: steps.gate.outputs.ok == 'true' && !inputs.rollback
+        working-directory: .
+        env:
+          STATE: ${{ needs.nightly.outputs.state }}
+          FAILED: ${{ needs.nightly.outputs.failed }}
+          RUN: ${{ needs.nightly.outputs.run }}
+        run: |
+          case "$STATE" in
+            green) echo "the latest nightly sweep passed (${RUN})" ;;
+            none) echo "::notice title=maktaba.tv nightly::no nightly sweep has finished yet" ;;
+            red)
+              echo "::notice title=maktaba.tv nightly::the latest sweep (${RUN}) failed on ${FAILED}; this run's build measured those pages again and they pass"
+              ;;
+            *)
+              echo "::error title=maktaba.tv not deployed::the latest nightly sweep (${RUN:-unknown}) is red and its failing pages cannot be read (state: ${STATE:-empty}); fix forward or revert, then dispatch website-nightly.yml"
+              exit 1
+              ;;
+          esac
 
       # the site the build job built and tested
       - name: Download website-site

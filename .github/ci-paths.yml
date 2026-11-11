@@ -813,6 +813,8 @@ website:
   - 'cloud/internal/privacy/**'
   - 'api/internal/security/disclosure.go'
   - 'web/design-system/tokens/**'
+  - 'web/public/icons/**'
+  - 'tools/ci/website_nightly_state.sh'
   - 'tools/cloudflare/smoke.mjs'
   - 'tools/cloudflare/token-check.mjs'
   - 'tools/cloudflare/website-deploy.mjs'

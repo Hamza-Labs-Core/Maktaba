@@ -8,6 +8,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
+    <meta name="maktaba-menu" content="none" />
     <title>Install Maktaba on Unraid · Maktaba</title>
     <meta
       name="description"
@@ -18,6 +19,7 @@
     <link rel="stylesheet" href="/install/install.css" />
   </head>
   <body>
+    <a class="skip-link" href="#main">Skip to the content</a>
     <header>
       <h1>Install Maktaba on Unraid</h1>
       <p class="lead">One container from the Apps tab runs everything and updates itself.</p>
@@ -26,7 +28,7 @@
         <a href="/ar/install/unraid/" hreflang="ar" lang="ar">العربية</a>
       </nav>
     </header>
-    <main class="guide">
+    <main id="main" class="guide">
       <p>
         For <strong>Unraid 6.12 and newer</strong> with Community Applications (the Apps tab). About
         15 minutes. Maktaba runs as Unraid's own <code>nobody</code> user (99, group
@@ -107,7 +109,7 @@
       </p>
       <h2>4. Run the setup</h2>
       <p>Docker → click Maktaba's icon → <strong>Console</strong>, and run:</p>
-      <pre><code>/opt/maktaba/server/bin/maktaba-server container setup</code></pre>
+      <pre tabindex="0"><code>/opt/maktaba/server/bin/maktaba-server container setup</code></pre>
       <p>
         Answer its questions: a name for the admin account (not <code>admin</code>, which Maktaba
         keeps for itself), its password, and the folders with your videos. The NAS needs the

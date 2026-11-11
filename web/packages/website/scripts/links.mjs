@@ -24,7 +24,8 @@
 // Usage (Node's standard library only, from any directory):
 //   node web/packages/website/scripts/links.mjs                 the check
 //   node web/packages/website/scripts/links.mjs --paths         the paths it leaves out
-//   node web/packages/website/scripts/links.mjs --dist DIR      check against a built dist/
+//   node web/packages/website/scripts/links.mjs --dist DIR      check against a built dist/, and
+//                                         check the built site itself (siteFindings below)
 //   node web/packages/website/scripts/links.mjs --write-manifest DIR   regenerate the manifest
 //   node web/packages/website/scripts/links.mjs --prune-baseline       drop entries now live
 //   --root DIR runs it over another repository (the tests' fixtures).
@@ -141,7 +142,14 @@ export function loadManifest(file) {
   return { files: m.files || [], ids: m.ids || {}, redirects: m.redirects || {} };
 }
 
-// manifestOf: the manifest of a built dist/: every file, and every id on each HTML page.
+// Vite's content-hashed bundles (/install/assets/main-M8RBXfxV.js), as src/headers.ts names
+// them: no link names one, and their names change with every change to the bundle, so the
+// manifest leaves them out and stays the same while the pages do.
+export const HASHED =
+  /^\/(install\/)?assets\/.+-[A-Za-z0-9_-]{8,}\.(js|css|woff2?|svg|png|webp|avif)$/;
+
+// manifestOf: the manifest of a built dist/: every file (but the hashed bundles), and every id
+// on each HTML page.
 export function manifestOf(dist, redirects = {}) {
   const files = [];
   const ids = {};
@@ -151,6 +159,7 @@ export function manifestOf(dist, redirects = {}) {
       if (e.isDirectory()) walk(p);
       else if (e.isFile()) {
         const rel = "/" + path.relative(dist, p).split(path.sep).join("/");
+        if (HASHED.test(rel)) continue;
         files.push(rel);
         if (rel.endsWith(".html")) {
           const found = [
@@ -198,6 +207,85 @@ export function checkLink(l, slugs, manifest) {
     return `no id "${l.fragment}" on ${page}`;
   }
   return null;
+}
+
+// ---- the built site's own links (story 60.08, run from _website.yml with --dist) ------------
+
+const SITE_ATTR_RE = /\s(href|src)\s*=\s*"([^"]*)"|\s(href|src)\s*=\s*'([^']*)'/g;
+const SITE_META_RE = /<meta\s[^>]*content\s*=\s*"(https:\/\/maktaba\.tv\/[^"]*)"/g;
+const ID_RE = /\s(?:id|name)\s*=\s*["']([^"']+)["']/g;
+
+function distFiles(dist) {
+  const out = [];
+  const walk = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.isFile()) out.push("/" + path.relative(dist, p).split(path.sep).join("/"));
+    }
+  };
+  walk(dist);
+  return out;
+}
+
+/** A built page's twin in the other language (null for a 404 page, which has no address). */
+export function twinPath(file) {
+  if (/(^|\/)404\.html$/.test(file)) return null;
+  const own = file.replace(/index\.html$/, "");
+  return own.startsWith("/ar/") ? own.slice(3) || "/" : `/ar${own}`;
+}
+
+/**
+ * The built site's broken links: every href and src (and every maktaba.tv URL a <meta> names,
+ * the card images) on every page resolves to a file of dist/, with the Worker's
+ * auto-trailing-slash rule; every #fragment names an id on its page; and every page with an
+ * address links its twin in the other language. Returns ["<page>: <why>", ...].
+ */
+export function siteFindings(dist, redirects = {}) {
+  const files = distFiles(dist);
+  const all = { files, ids: {}, redirects };
+  const html = files.filter((f) => f.endsWith(".html"));
+  const text = {};
+  for (const f of html) {
+    text[f] = readFileSync(path.join(dist, f), "utf8");
+    all.ids[f] = [...new Set([...text[f].matchAll(ID_RE)].map((m) => m[1]))];
+  }
+  const out = [];
+  for (const f of html.sort()) {
+    const base = new URL(f, "https://maktaba.tv");
+    const links = [];
+    for (const m of text[f].matchAll(SITE_ATTR_RE))
+      links.push({ tag: m[1] || m[3], v: m[2] ?? m[4] });
+    for (const m of text[f].matchAll(SITE_META_RE)) links.push({ tag: "meta", v: m[1] });
+    const anchors = new Set();
+    for (const { tag, v } of links) {
+      const raw = v.replace(/&amp;/g, "&").trim();
+      if (!raw || /^(mailto|tel|data|blob):/i.test(raw)) continue;
+      let u;
+      try {
+        u = new URL(raw, base);
+      } catch {
+        out.push(`${f}: ${tag}="${v}" is not a URL`);
+        continue;
+      }
+      if (!/^https?:$/.test(u.protocol) || !/^(www\.)?maktaba\.tv$/.test(u.hostname)) continue;
+      const p = decodeURIComponent(u.pathname);
+      const frag = decodeURIComponent(u.hash.slice(1));
+      if (tag === "href") anchors.add(p.replace(/index\.html$/, ""));
+      if (isRedirect(all, p) && !frag) continue;
+      const page = resolvePage(all, p);
+      if (!page) {
+        out.push(`${f}: ${tag}="${v}": no such file in dist/`);
+        continue;
+      }
+      if (frag && !(all.ids[page] || []).includes(frag))
+        out.push(`${f}: ${tag}="${v}": no id "${frag}" on ${page}`);
+    }
+    const twin = twinPath(f);
+    if (twin && !anchors.has(twin) && !anchors.has(twin.replace(/\/$/, "")))
+      out.push(`${f}: links no twin (${twin})`);
+  }
+  return out;
 }
 
 function distance(a, b) {
@@ -366,6 +454,12 @@ function main(argv) {
       return 1;
     }
   }
+  let site = [];
+  if (args.dist) {
+    site = siteFindings(path.resolve(args.dist), manifest.redirects);
+    for (const x of site) console.log(`::error::the built site: ${x}`);
+    console.log(`links.mjs: the built site: ${site.length} broken link(s)`);
+  }
   const scanned = scan({ root, slugs, manifest, allow });
   const result = judge(scanned, baseline, slugs, manifest);
 
@@ -379,7 +473,7 @@ function main(argv) {
     return 0;
   }
 
-  let fail = 0;
+  let fail = site.length ? 1 : 0;
   for (const d of result.dead) {
     const hint = d.near ? ` (did you mean https://maktaba.tv${d.near}?)` : "";
     console.log(

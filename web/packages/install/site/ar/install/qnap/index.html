@@ -6,6 +6,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
+    <meta name="maktaba-menu" content="none" />
     <title>تثبيت Maktaba على خادم QNAP · Maktaba</title>
     <meta
       name="description"
@@ -16,6 +17,7 @@
     <link rel="stylesheet" href="/install/install.css" />
   </head>
   <body>
+    <a class="skip-link" href="#main">انتقلوا إلى المحتوى</a>
     <header>
       <h1>تثبيت Maktaba على خادم QNAP</h1>
       <p class="lead">يشغّل تطبيق «Container Station» برنامج Maktaba من ملف compose واحد.</p>
@@ -24,7 +26,7 @@
         <a href="/install/qnap/" hreflang="en" lang="en">English</a>
       </nav>
     </header>
-    <main class="guide">
+    <main id="main" class="guide">
       <p class="notice">
         <strong>لم تُجرَّب هذه الخطوات بعد على جهاز QNAP.</strong> وهي تتبع خطوات QNAP نفسها، والملف
         نفسه يعمل على كل جهاز فيه Docker. أخبرنا بما تجده على
@@ -96,7 +98,9 @@
       </figure>
       <h2>5. شغّل الإعداد</h2>
       <p>شغّل عبر SSH:</p>
-      <pre><code>docker exec -it maktaba /opt/maktaba/server/bin/maktaba-server container setup</code></pre>
+      <pre
+        tabindex="0"
+      ><code>docker exec -it maktaba /opt/maktaba/server/bin/maktaba-server container setup</code></pre>
       <p>
         أجب عن أسئلته: اسمٌ لحساب المدير (غير <code>admin</code> الذي يحتفظ به Maktaba لنفسه)، وكلمة
         مروره، والمجلدات التي فيها مقاطعك. ويحتاج الخادم إلى الإنترنت في هذه الخطوة: ينزّل الإعداد

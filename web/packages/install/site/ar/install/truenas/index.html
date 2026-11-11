@@ -7,6 +7,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
+    <meta name="maktaba-menu" content="none" />
     <title>تثبيت Maktaba على TrueNAS · Maktaba</title>
     <meta
       name="description"
@@ -17,6 +18,7 @@
     <link rel="stylesheet" href="/install/install.css" />
   </head>
   <body>
+    <a class="skip-link" href="#main">انتقلوا إلى المحتوى</a>
     <header>
       <h1>تثبيت Maktaba على TrueNAS</h1>
       <p class="lead">تطبيق واحد يشغّل كل شيء ويحدّث نفسه.</p>
@@ -25,7 +27,7 @@
         <a href="/install/truenas/" hreflang="en" lang="en">English</a>
       </nav>
     </header>
-    <main class="guide">
+    <main id="main" class="guide">
       <p>
         لإصدار TrueNAS Community Edition <strong>‏25.04 (Fangtooth) وما بعده</strong> (ومنه 25.10
         Goldeye). لا يدعم Maktaba نظام TrueNAS CORE. يستغرق التثبيت نحو 20 دقيقة.
@@ -142,7 +144,7 @@
         حين يظهر التطبيق <strong>«Running»</strong>: من «Apps» ← «Installed» ← Maktaba ←
         <strong>«Workloads»</strong> ← maktaba ← <strong>«Shell»</strong> (أيقونة الطرفية)، ثم نفّذ:
       </p>
-      <pre><code>/opt/maktaba/server/bin/maktaba-server container setup</code></pre>
+      <pre tabindex="0"><code>/opt/maktaba/server/bin/maktaba-server container setup</code></pre>
       <p>
         أجب عن أسئلته: اسمٌ لحساب المدير (غير <code>admin</code> الذي يحتفظ به Maktaba لنفسه)، وكلمة
         مروره، والمجلدات التي فيها مقاطعك. ويحتاج الخادم إلى الإنترنت في هذه الخطوة: ينزّل الإعداد

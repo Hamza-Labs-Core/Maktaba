@@ -13,10 +13,17 @@ and is built and deployed the way this portal is: a Cloudflare Worker in front o
    site at `/install/` and `/ar/install/`, its hashed files under `/install/assets/`;
 2. the generated families (the problem pages, help, download), as their stories add them;
 3. the hand-made pages (`src/pages/`), each wrapped in the page shell (`scripts/shell.mjs`);
-4. the copied files: the log schema at `/schema/log-line.json` (its `$id`), `security.txt` with a
-   `Canonical` line for each domain, and `robots.txt`;
-5. the checks: every page has its twin in the other language, and an Arabic page passes this
-   portal's Latin-share check.
+4. the copied files: the app icons (`favicon.ico`, `apple-touch-icon.png`, the 192, 512 and
+   maskable icons and `manifest.webmanifest`), the log schema at `/schema/log-line.json` (its
+   `$id`), and `security.txt` with a `Canonical` line for each domain;
+5. what every page carries: the head tags (`scripts/head.mjs`: canonical, `hreflang` en, ar and
+   x-default, Open Graph, Twitter's card, the icons) added where an install guide's own head
+   lacks them; a social card per page and language (`scripts/cards.mjs`, 1200×630 PNG under
+   200 KB); `sitemap.xml` with each page's alternates, and `robots.txt` naming it;
+6. the checks: every page has its twin in the other language, and an Arabic page passes this
+   portal's Latin-share check;
+7. the link check's manifest (`scripts/links.mjs --write-manifest dist`): commit
+   `dist-manifest.json` when the pages change, because CI fails when it differs from the build.
 
 ## The Worker
 
@@ -27,16 +34,76 @@ in its language and status 404, and puts the headers on every answer: a strict C
 
 ## Pull requests
 
-`ci.yml`'s `website` job (`_website.yml`) runs on a pull request that changes the site or a
-source it is built from: the build, the unit tests (the Worker, the build, the smoke and the
-deploy steps), and a smoke of the built site through the Worker under `wrangler dev`, whose log
-is kept as the run's `website-worker-log` artifact. The built site is the `website-site`
-artifact.
+`ci.yml`'s `website` jobs (`_website.yml`) run on a pull request that changes the site or a
+source it is built from:
+
+- **website:** the build, the unit tests (the Worker, the build, the head tags, cards and
+  sitemap, the scripts), the CSS lint, the committed `dist-manifest.json` against the build, the
+  link check against the build (every maktaba.tv link in the repository, and every `href`, `src`
+  and `#fragment` on every built page, with each page's link to its twin), and a smoke of the
+  built site through the Worker under `wrangler dev`. The built site is the `website-site`
+  artifact; the Worker's log is `website-worker-log`.
+- **quality:** Playwright on every page in both languages, served by the Worker: axe with the
+  WCAG 2.0, 2.1 and 2.2 A and AA rules, dark and light; the keyboard (a skip link first, Tab in
+  reading order, the phone menu once the shell declares one); a 2 px focus ring at 3:1, not
+  covered; 24 px targets; no sideways scroll at 320 px; text spacing; reduced motion; the
+  languages; no layout shift; RTL mirroring; and the visual references. Kept: `website-playwright`
+  (the report), `website-axe` (axe's findings), `website-visual-diff` (on a mismatch, the
+  expected, actual and diff images), `website-worker-log-quality`.
+- **lighthouse:** Lighthouse on mobile, three runs per page, the median judged: 95 or more for
+  performance, accessibility, best practices and SEO, layout shift 0, and 500 KB or less on the
+  hand-made pages. It measures the hand-made pages and each family's representatives
+  (`e2e/representatives.json`) in both languages, and the whole family, one run per page, when the
+  pull request changes what the family is generated from. A fixture page with an unsized image
+  must fail it first (the positive control). Kept: `website-lighthouse`, with the HTML and JSON
+  reports and a table of the scores in the run's summary.
+
+## Running the gates locally
+
+In `web/packages/website`, after `npm ci` and `npm run build`:
+
+```sh
+npm test                 # the unit tests and the scripts' tests
+npm run lint:css         # logical properties only: margin-inline-start, never margin-left
+node scripts/links.mjs --dist dist   # the link check against this build
+npm run e2e              # Playwright: starts wrangler dev on :8788 (its log: test-results/worker.log)
+npm run lighthouse -- run --set pr --base http://127.0.0.1:8788 --out lighthouse-out/pr
+```
+
+`npm run e2e` skips the visual references on a Mac: they are rendered only in the image CI runs
+in. `npx playwright test e2e/a11y.spec.ts` runs one spec; `WEBSITE_BASE` points the tests at a
+`wrangler dev` already running.
+
+## Updating the visual references
+
+The references live in `e2e/__screenshots__/` as `<page>-<width>-<lang>[-light].png`: every
+page at 360, 768 and 1280 px in both languages, dark, and each hand-made page in light at 1280.
+When a change to a page's look is meant:
+
+1. `npm run build`, then `npm run e2e:update` (`pnpm -C web/packages/website e2e:update` from the
+   repository root). It needs Docker: it renders the references in
+   `mcr.microsoft.com/playwright:v<the pinned Playwright>-noble` on `linux/amd64`, the image CI
+   runs, and rewrites only those whose pixels changed. A reference never comes from a Mac.
+2. Open every changed image, in both languages.
+3. Commit them, and list each one under a `Reference images:` section of the pull request's body
+   with one line on why. The `Reference images` check fails, naming the files, until each is
+   listed. Each image stays under 1 MB, with no metadata.
+
+## The nightly sweep
+
+`website-nightly.yml` runs every night on `main` (and by hand): Lighthouse on every page in both
+languages, one run per page, in eight shards of 15 minutes. A page under the bar is measured
+three more times and judged on that median. A failure makes the run red and names the pages in
+its summary and in the `website-nightly-failures` artifact. The next deploy measures those pages
+again in its own build and goes on only when they pass, so a fix that lands, or a revert, unblocks
+it. A red sweep whose list of pages cannot be read blocks the deploy until a sweep passes.
 
 ## The deploy
 
-`website-deploy.yml` runs on a push to `main` that changes the site, by hand, and monthly. Its
-steps (`tools/cloudflare/website-deploy.mjs`):
+`website-deploy.yml` runs on a push to `main` that changes the site, by hand, and monthly. It
+builds and checks the site as a pull request does (with the pages the latest nightly sweep
+failed), refuses while that sweep is red and unreadable, then runs these steps
+(`tools/cloudflare/website-deploy.mjs`):
 
 1. the token check (`token-check.mjs --pieces workers,dns`);
 2. record the version serving now (`wrangler deployments status`): a rollback returns to it;

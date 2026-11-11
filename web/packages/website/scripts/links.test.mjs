@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { findLinks, excluded, storyFor, resolvePage } from "./links.mjs";
+import { findLinks, excluded, storyFor, resolvePage, siteFindings, twinPath } from "./links.mjs";
 
 const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "links.mjs");
 const PKG = "web/packages/website";
@@ -344,7 +344,70 @@ test("--dist checks against a built dist/ instead of the committed manifest", (t
   assert.equal(run(root).code, 1);
   const dist = path.join(root, "dist");
   mkdirSync(path.join(dist, "install/nas"), { recursive: true });
-  writeFileSync(path.join(dist, "install/nas/index.html"), '<h2 id="ports">');
+  mkdirSync(path.join(dist, "ar/install/nas"), { recursive: true });
+  writeFileSync(
+    path.join(dist, "install/nas/index.html"),
+    '<h2 id="ports"><a href="/ar/install/nas/">ar</a>'
+  );
+  writeFileSync(path.join(dist, "ar/install/nas/index.html"), '<a href="/install/nas/">en</a>');
   const r = run(root, "--dist", dist);
   assert.equal(r.code, 0, r.out);
+});
+
+// a built site for siteFindings: two twins, a 404, a stylesheet and an image
+function site(t, pages) {
+  const dist = mkdtempSync(path.join(tmpdir(), "site-"));
+  t.after(() => rmSync(dist, { recursive: true, force: true }));
+  for (const [f, text] of Object.entries(pages)) {
+    mkdirSync(path.dirname(path.join(dist, f)), { recursive: true });
+    writeFileSync(path.join(dist, f), text);
+  }
+  return dist;
+}
+const GOOD = {
+  "index.html":
+    '<link rel="stylesheet" href="/assets/site.css"><link rel="canonical" href="https://maktaba.tv/">' +
+    '<meta property="og:image" content="https://maktaba.tv/cards/index.png">' +
+    '<a href="#main">skip</a><main id="main"><a href="/ar/" hreflang="ar">ar</a>' +
+    '<a href="install/nas#ports">nas</a><a href="https://github.com/x">gh</a><a href="mailto:a@b">m</a></main>',
+  "ar/index.html": '<a href="/">en</a><img src="../assets/logo.png">',
+  "install/nas/index.html": '<h2 id="ports"></h2><a href="/ar/install/nas/">ar</a>',
+  "ar/install/nas/index.html": "<a href='https://maktaba.tv/install/nas/'>en</a>",
+  "404.html": '<a href="/">home</a>',
+  "assets/site.css": "",
+  "assets/logo.png": "",
+  "cards/index.png": "",
+};
+
+test("the built site: every href, src and card resolves, every fragment, every twin linked", (t) => {
+  assert.deepEqual(siteFindings(site(t, GOOD)), []);
+});
+
+test("the built site: a missing file, a missing id, a missing card and a missing twin are found", (t) => {
+  const dist = site(t, {
+    ...GOOD,
+    "index.html": GOOD["index.html"]
+      .replace("/assets/site.css", "/assets/gone.css")
+      .replace("#ports", "#nope")
+      .replace("cards/index.png", "cards/none.png")
+      .replace('href="#main"', 'href="#mian"'),
+    "ar/install/nas/index.html": "<p>no link back</p>",
+  });
+  assert.deepEqual(siteFindings(dist), [
+    "/ar/install/nas/index.html: links no twin (/install/nas/)",
+    '/index.html: href="/assets/gone.css": no such file in dist/',
+    '/index.html: href="#mian": no id "mian" on /index.html',
+    '/index.html: href="install/nas#nope": no id "nope" on /install/nas/index.html',
+    '/index.html: meta="https://maktaba.tv/cards/none.png": no such file in dist/',
+  ]);
+  assert.equal(twinPath("/404.html"), null, "a 404 page has no twin to link");
+  assert.equal(twinPath("/ar/index.html"), "/");
+});
+
+test("--dist fails on the built site's broken links", (t) => {
+  const root = fixture(t, { "a.md": "nothing\n" }, { manifest: { files: [] } });
+  const dist = site(t, { ...GOOD, "ar/index.html": "<p>no switch</p>" });
+  const r = run(root, "--dist", dist);
+  assert.equal(r.code, 1);
+  assert.match(r.out, /::error::the built site: \/ar\/index\.html: links no twin \(\/\)/);
 });

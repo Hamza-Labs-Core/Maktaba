@@ -1,0 +1,254 @@
+# maktaba.tv's nightly quality sweep (Epic 60 story 60.04): Lighthouse on mobile on every page
+# of main in both languages, one run per URL, in eight shards of 15 minutes each, the whole within
+# 60 minutes. A URL under the bar is measured three more times and judged on their median; a page
+# whose median is under 95 (or with any layout shift, or a hand-made page over 500 KB) fails.
+#
+# A failure makes this run red, names the pages (the run's summary and its
+# website-nightly-failures artifact), and blocks the next deploy until a fix lands:
+# website-deploy.yml reads the latest sweep (tools/ci/website_nightly_state.sh) and measures the
+# failed pages again in its own build, deploying only when they pass. Main stays deployable by
+# fixing forward or reverting. Dispatch this workflow by hand to re-sweep after a fix.
+#
+# The pull requests and the deploy measure the representatives only (_website.yml's lighthouse
+# job); this is the only full sweep. No secret, no call to Cloudflare.
+
+name: maktaba.tv nightly sweep
+
+on:
+  schedule:
+    - cron: '23 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: website-nightly
+  cancel-in-progress: false
+
+jobs:
+  # the build and tests the pull requests run, without their quality jobs: the sweep is the
+  # quality run here
+  build:
+    uses: ./.github/workflows/_website.yml
+    with:
+      quality: false
+
+  sweep:
+    name: sweep (shard ${{ matrix.shard }}/8)
+    needs: [build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host --init
+    defaults:
+      run:
+        working-directory: web/packages/website
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Download website-site
+        id: artifact-website-site
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: website-site
+          path: web/packages/website/dist
+      - name: Wait 15s to retry the download of website-site
+        if: steps.artifact-website-site.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download website-site (attempt 2)
+        id: artifact-website-site-2
+        if: steps.artifact-website-site.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: website-site
+          path: web/packages/website/dist
+      - name: Wait 45s to retry the download of website-site
+        if: steps.artifact-website-site-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download website-site (attempt 3)
+        id: artifact-website-site-3
+        if: steps.artifact-website-site-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: website-site
+          path: web/packages/website/dist
+      - name: Check website-site downloaded
+        id: artifact-website-site-check
+        if: steps.artifact-website-site-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: website-site
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Lighthouse under wrangler dev (one run per URL, a failing URL three more)
+        env:
+          SHARD: ${{ matrix.shard }}
+          LOG: logs/worker.log
+          PIDFILE: logs/worker.pid
+        run: |
+          mkdir -p logs
+          timeout 840 npx wrangler dev --var CANONICAL_REDIRECTS:off --ip 127.0.0.1 --port 8787 \
+            --log-level info > "$LOG" 2>&1 &
+          echo $! > "$PIDFILE"
+          up=0
+          for _ in $(seq 1 60); do
+            if curl -s -o /dev/null http://127.0.0.1:8787/; then up=1; break; fi
+            sleep 1
+          done
+          rc=0
+          if [ "$up" = 1 ]; then
+            node scripts/lighthouse.mjs run --set all --shard "$SHARD/8" --remeasure 3 \
+              --base http://127.0.0.1:8787 --out "lighthouse-out/shard-$SHARD" \
+              --title "maktaba.tv nightly: shard $SHARD/8" || rc=$?
+          else
+            echo "::error::wrangler dev never answered on 127.0.0.1:8787"
+            rc=1
+          fi
+          kill "$(cat "$PIDFILE")" 2>/dev/null || true
+          pkill -f "wrangler dev --var CANONICAL_REDIRECTS:off" || true
+          exit $rc
+
+      - name: Upload the shard's reports
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: website-lighthouse-shard-${{ matrix.shard }}
+          path: |
+            web/packages/website/lighthouse-out/
+            web/packages/website/logs/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # the pages under the bar across the shards (a shard that left no result counts all its pages),
+  # kept as website-nightly-failures for the deploy
+  verdict:
+    needs: [build, sweep]
+    if: ${{ always() && needs.build.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: web/packages/website
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: web/packages/website/.nvmrc
+          package-manager-cache: false
+
+      - name: Download website-site
+        id: artifact-website-site
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: website-site
+          path: web/packages/website/dist
+      - name: Wait 15s to retry the download of website-site
+        if: steps.artifact-website-site.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download website-site (attempt 2)
+        id: artifact-website-site-2
+        if: steps.artifact-website-site.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: website-site
+          path: web/packages/website/dist
+      - name: Wait 45s to retry the download of website-site
+        if: steps.artifact-website-site-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download website-site (attempt 3)
+        id: artifact-website-site-3
+        if: steps.artifact-website-site-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: website-site
+          path: web/packages/website/dist
+      - name: Check website-site downloaded
+        id: artifact-website-site-check
+        if: steps.artifact-website-site-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: website-site
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
+
+      - name: Download website-lighthouse-shard-*
+        id: artifact-shards
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: website-lighthouse-shard-*
+          path: web/packages/website/shards
+      - name: Wait 15s to retry the download of website-lighthouse-shard-*
+        if: steps.artifact-shards.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download website-lighthouse-shard-* (attempt 2)
+        id: artifact-shards-2
+        if: steps.artifact-shards.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: website-lighthouse-shard-*
+          path: web/packages/website/shards
+      - name: Wait 45s to retry the download of website-lighthouse-shard-*
+        if: steps.artifact-shards-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download website-lighthouse-shard-* (attempt 3)
+        id: artifact-shards-3
+        if: steps.artifact-shards-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: website-lighthouse-shard-*
+          path: web/packages/website/shards
+      - name: Check website-lighthouse-shard-* downloaded
+        id: artifact-shards-check
+        if: steps.artifact-shards-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: website-lighthouse-shard-*
+        run: |
+          echo "::warning::the artifact $ARTIFACT never downloaded after 3 attempts: the verdict counts every page of a shard with no result as failed"
+
+      # each artifact holds lighthouse-out/shard-<i>/ (and logs/): gather them as shard-<i>/
+      - name: The pages under the bar
+        run: |
+          mkdir -p results
+          for i in 1 2 3 4 5 6 7 8; do
+            src="shards/website-lighthouse-shard-$i/lighthouse-out/shard-$i"
+            if [ -d "$src" ]; then cp -r "$src" "results/shard-$i"; fi
+          done
+          node scripts/lighthouse.mjs verdict --shards 8 --in results --out failures.json
+
+      - name: Upload the failing pages
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: website-nightly-failures
+          path: web/packages/website/failures.json
+          if-no-files-found: warn
+          retention-days: 30
