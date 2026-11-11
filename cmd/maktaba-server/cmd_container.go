@@ -228,8 +228,13 @@ func (c containerDeps) bootstrap(ctx context.Context, command bool) (*layout.Gua
 	case plan == containerOlder:
 		// story 59.12: a catalog or a household pinned or pulled an older tag; the volume may
 		// be migrated past it, so the runtime it ran last runs (Settings says the same)
-		c.logf("The container image (%s) is older than this home's runtime (%s), so the runtime is running.",
-			layout.NormalizeVersion(st.FromVersion), layout.NormalizeVersion(orNone(st.Version)))
+		// in both languages, as every message before the web is up (story 59.14)
+		msg := containerText("container.image_older",
+			"{image}", layout.NormalizeVersion(st.FromVersion),
+			"{runtime}", layout.NormalizeVersion(orNone(st.Version)))
+		for _, line := range strings.Split(msg, "\n") {
+			c.logf("%s", line)
+		}
 	}
 	if c.rt.ReadOwner() != appruntime.OwnerHeadless {
 		if err := c.rt.SetOwner(appruntime.OwnerHeadless); err != nil {
@@ -409,7 +414,9 @@ func (c containerDeps) waitSetup(ctx context.Context) bool {
 			return true
 		}
 		if !said {
-			c.logf("%s", setupHint(c.platform))
+			for _, line := range strings.Split(setupHint(c.platform), "\n") {
+				c.logf("%s", line)
+			}
 			said = true
 		}
 		select {
@@ -434,13 +441,16 @@ func setupRunning(cfgPath string) bool {
 // setupHint is what a container not set up says once: how to run its setup on platform
 // (MAKTABA_PLATFORM, which the TrueNAS app sets; its households have no compose file to run).
 func setupHint(platform string) string {
-	if strings.EqualFold(strings.TrimSpace(platform), mediaaccess.PlatformTrueNAS) {
-		return "Maktaba is not set up yet: open this app's Shell in TrueNAS (Apps → Installed → Maktaba → " +
-			"Workloads → maktaba → Shell) and run `/opt/maktaba/server/bin/maktaba-server container setup`; " +
-			"the server starts here by itself once it is done"
+	key := "container.setup_compose"
+	switch strings.ToLower(strings.TrimSpace(platform)) {
+	case mediaaccess.PlatformTrueNAS:
+		key = "container.setup_truenas"
+	case mediaaccess.PlatformDSM:
+		key = "container.setup_dsm"
+	case mediaaccess.PlatformUnraid:
+		key = "container.setup_unraid"
 	}
-	return "Maktaba is not set up yet: run its setup in this image, `docker compose run --rm maktaba setup`; " +
-		"the server starts here by itself once it is done"
+	return containerText(key)
 }
 
 // run is the command: the bootstrap, then the given command (replacing this process) or,

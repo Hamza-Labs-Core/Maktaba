@@ -68,10 +68,14 @@ class Legs(unittest.TestCase):
 
 class Lines(unittest.TestCase):
     def test_the_older_line_is_the_entrypoints(self) -> None:
+        # the entrypoint prints container_preflight.go's container.image_older, English then
+        # Arabic (story 59.14); the leg waits for the English line
         go = CONTAINER_GO.read_text(encoding="utf-8")
-        fmt = re.search(r'"(The container image \(%s\) is older[^"]+)"', go)
-        assert fmt is not None, "cmd_container.go no longer says the older image's line"
-        self.assertEqual(fmt.group(1).replace("%s", "{}").format("1.4.0", "1.5.0"),
+        self.assertIn('"container.image_older"', go)
+        texts = (CONTAINER_GO.parent / "container_preflight.go").read_text(encoding="utf-8")
+        fmt = re.search(r'"(The container image \(\{image\}\) is older[^"]+)"', texts)
+        assert fmt is not None, "container_preflight.go no longer says the older image's line"
+        self.assertEqual(fmt.group(1).replace("{image}", "1.4.0").replace("{runtime}", "1.5.0"),
                          update_leg.older_line("1.4.0", "1.5.0"))
 
     def test_the_lines_waited_for(self) -> None:

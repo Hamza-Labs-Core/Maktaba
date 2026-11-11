@@ -11,55 +11,19 @@ import {
   tierFor,
   type Problem as BaseProblem,
 } from "./compose";
+import { detectedTier, modelsOf } from "./nasModels";
+export { detectedTier, reportedGiB } from "./nasModels";
 
-export type Arch = "amd64" | "arm64";
+export type { Arch } from "./nasModels";
+import type { Arch } from "./nasModels";
 export type Tier = "light" | "standard" | "strong";
 
-export interface Model {
-  name: string;
-  cpu: string;
-  arch: Arch;
-  /** Quick Sync through VA-API: the J4125 version of the file */
-  gpu: boolean;
-  /** the memory it ships with, and the most it takes (GB) */
-  ram: number;
-  maxRam: number;
-}
+export type { Model } from "./nasModels";
 
-// The guide's model table (story 59.14: data, checked once per release cycle). Maktaba never
-// trusts it: the server detects the memory and the GPU it gets (59.04, 59.05).
-export const MODELS: Model[] = [
-  { name: "DS425+", cpu: "Intel Celeron J4125", arch: "amd64", gpu: true, ram: 2, maxRam: 6 },
-  { name: "DS224+", cpu: "Intel Celeron J4125", arch: "amd64", gpu: true, ram: 2, maxRam: 6 },
-  { name: "DS423+", cpu: "Intel Celeron J4125", arch: "amd64", gpu: true, ram: 2, maxRam: 6 },
-  { name: "DS920+", cpu: "Intel Celeron J4125", arch: "amd64", gpu: true, ram: 4, maxRam: 8 },
-  { name: "DS720+", cpu: "Intel Celeron J4125", arch: "amd64", gpu: true, ram: 2, maxRam: 6 },
-  { name: "DS923+", cpu: "AMD Ryzen R1600", arch: "amd64", gpu: false, ram: 4, maxRam: 32 },
-  { name: "DS723+", cpu: "AMD Ryzen R1600", arch: "amd64", gpu: false, ram: 2, maxRam: 32 },
-  { name: "DS1522+", cpu: "AMD Ryzen R1600", arch: "amd64", gpu: false, ram: 8, maxRam: 32 },
-  { name: "DS1621+", cpu: "AMD Ryzen V1500B", arch: "amd64", gpu: false, ram: 4, maxRam: 32 },
-  { name: "DS223", cpu: "Realtek RTD1619B", arch: "arm64", gpu: false, ram: 2, maxRam: 2 },
-  { name: "DS423", cpu: "Realtek RTD1619B", arch: "arm64", gpu: false, ram: 2, maxRam: 2 },
-  { name: "DS223j", cpu: "Realtek RTD1619B", arch: "arm64", gpu: false, ram: 1, maxRam: 1 },
-  { name: "DS124", cpu: "Realtek RTD1619B", arch: "arm64", gpu: false, ram: 1, maxRam: 1 },
-];
-
-/** The memory the kernel reports for installed GB (the GB → GiB step and the kernel's share):
- * a "4 GB" NAS reads about 3.6 GiB. */
-export function reportedGiB(gb: number): number {
-  return gb * 0.93 - 0.1;
-}
-
-/** The tier the server will pick (cmd/maktaba-server/internal/hostinfo/tier.go) on the memory
- * it gets, the container's limit or the NAS's own, whichever is smaller; "storage" under setup's
- * 3.5 GiB floor. */
-export function detectedTier(gb: number, arch: Arch, limitGiB = Infinity): Tier | "storage" {
-  const g = Math.min(reportedGiB(gb), limitGiB);
-  if (g < 3.5) return "storage";
-  if (g < 6 || (arch === "arm64" && g < 8)) return "light";
-  if (g < 16) return "standard";
-  return "strong";
-}
+// The guide's model table: the Synology rows of nas-models.json (story 59.14: data, checked once
+// per release cycle). Maktaba never trusts it: the server detects the memory and the GPU it gets
+// (59.04, 59.05).
+export const MODELS = modelsOf("synology");
 
 /** The memory limit the page sets for a NAS with this much (compose.ts's rule: the rest is
  * DSM's), or "storage" when setup will refuse. */

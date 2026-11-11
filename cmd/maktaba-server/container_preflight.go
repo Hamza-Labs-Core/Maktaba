@@ -67,6 +67,31 @@ var containerTexts = map[string][2]string{
 		"Edit the dataset's permissions and add an ACL entry for user {uid} with Modify, or use the Apps preset.",
 		"عدّل أذونات مجموعة البيانات وأضف إدخال ACL للمستخدم {uid} بصلاحية التعديل، أو استخدم الإعداد المسبق Apps.",
 	},
+	// story 59.14: what a container not set up says once, in the NAS's own words (setupHint):
+	// TrueNAS's app Shell, DSM's Container Manager terminal, Unraid's Console; elsewhere the
+	// compose command. Printed before the web is up, so in both languages.
+	"container.setup_truenas": {
+		"Maktaba is not set up yet: open this app's Shell in TrueNAS (Apps → Installed → Maktaba → Workloads → maktaba → Shell) and run `/opt/maktaba/server/bin/maktaba-server container setup`; the server starts here by itself once it is done.",
+		"لم يُعدّ Maktaba بعد: افتح طرفية هذا التطبيق في TrueNAS (Apps ← Installed ← Maktaba ← Workloads ← maktaba ← Shell) وشغّل الأمر `/opt/maktaba/server/bin/maktaba-server container setup`، وسيبدأ الخادم هنا بنفسه حين ينتهي.",
+	},
+	"container.setup_dsm": {
+		"Maktaba is not set up yet: in Container Manager open Container → maktaba → Details → Terminal → Create and run `/opt/maktaba/server/bin/maktaba-server container setup`; the server starts here by itself once it is done.",
+		"لم يُعدّ Maktaba بعد: افتح في Container Manager الحاوية ← maktaba ← التفاصيل ← الطرفية ← إنشاء، وشغّل الأمر `/opt/maktaba/server/bin/maktaba-server container setup`، وسيبدأ الخادم هنا بنفسه حين ينتهي.",
+	},
+	"container.setup_unraid": {
+		"Maktaba is not set up yet: on Unraid's Docker tab click Maktaba's icon → Console and run `/opt/maktaba/server/bin/maktaba-server container setup`; the server starts here by itself once it is done.",
+		"لم يُعدّ Maktaba بعد: من تبويب Docker في Unraid اضغط أيقونة Maktaba ← Console وشغّل الأمر `/opt/maktaba/server/bin/maktaba-server container setup`، وسيبدأ الخادم هنا بنفسه حين ينتهي.",
+	},
+	"container.setup_compose": {
+		"Maktaba is not set up yet: run its setup in this image, `docker compose run --rm maktaba setup` (or `docker exec -it maktaba /opt/maktaba/server/bin/maktaba-server container setup`); the server starts here by itself once it is done.",
+		"لم يُعدّ Maktaba بعد: شغّل إعداده في هذه الصورة بالأمر `docker compose run --rm maktaba setup` (أو `docker exec -it maktaba /opt/maktaba/server/bin/maktaba-server container setup`)، وسيبدأ الخادم هنا بنفسه حين ينتهي.",
+	},
+	// story 59.12: an older image than the volume's runtime (the Updates page's
+	// updates.container.why.imageOlder says the same)
+	"container.image_older": {
+		"The container image ({image}) is older than this home's runtime ({runtime}), so the runtime is running.",
+		"صورة الحاوية ({image}) أقدم من بيئة تشغيل هذا الجهاز الرئيسي ({runtime})، لذا تعمل بيئة التشغيل.",
+	},
 	"container.root_refused": {
 		"Maktaba does not run as root. Set the container's user to a normal user (for example 1000:1000).",
 		"لا يعمل Maktaba بصلاحيات الجذر. اضبط مستخدم الحاوية على مستخدم عادي (مثل 1000:1000).",

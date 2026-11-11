@@ -224,3 +224,23 @@ img.shot {
   border-radius: 8px;
   color: var(--muted);
 }
+/* the NAS guides (story 59.14): the landing page's wider table, its list of guides, and the
+   note on a guide not yet tried on a device */
+.guide.wide {
+  max-width: 64rem;
+}
+.guide ul.choices {
+  padding-inline-start: 1.2rem;
+}
+.guide ul.choices li {
+  margin-bottom: 0.4rem;
+}
+.guide .notice {
+  border-inline-start: 3px solid var(--accent);
+  padding: 0.5rem 1rem;
+  background: var(--panel);
+  border-radius: 8px;
+}
+header nav {
+  margin-top: 0.25rem;
+}

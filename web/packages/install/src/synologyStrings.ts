@@ -79,7 +79,7 @@ export const SYN = {
       "Container Manager → Project → Create: name maktaba, path docker/maktaba, source Create docker-compose.yml. Paste the file above, then Next and Done. Container Manager downloads the image and starts it.",
     "step5.title": "5. Finish setup",
     "step5.body":
-      "Open http://<your NAS>:8088 in a browser and follow setup: the admin account, then your libraries. Settings → This machine then shows the user Maktaba runs as, its tier and whether video uses Quick Sync.",
+      "When the project runs: Container Manager → Container → maktaba → Details → Terminal → Create, and run /opt/maktaba/server/bin/maktaba-server container setup there. Answer its questions (the admin account, then your libraries); Maktaba starts by itself when it finishes. Then open http://<your NAS>:8088. Settings → This machine shows the user Maktaba runs as, its tier and whether video uses Quick Sync.",
     after: "After setup",
     "after.firewall":
       "Firewall: if DSM's firewall is on, Control Panel → Security → Firewall → Edit Rules → Create: ports 8088 (the web app), 8080 (apps and the home's other machines) and 8081 (live TV), TCP, from your network only.",
@@ -145,19 +145,19 @@ export const SYN = {
     "col.model": "الطراز",
     "col.cpu": "المعالج",
     "col.video": "الفيديو",
-    "col.memory": "الذاكرة (GB)",
+    "col.memory": "الذاكرة (غيغابايت)",
     "col.fits": "هل يناسب؟",
     "video.hw": "بالعتاد (Quick Sync)",
     "video.sw": "برمجيًا",
     memory: "{ram}، وحتى {max}",
     fits: "يناسب: {tier}",
-    fitsMore: "يناسب بذاكرة أكبر: {tier} مع {max} GB",
+    fitsMore: "يناسب بذاكرة أكبر: {tier} مع {max} غيغابايت",
     storage: "للتخزين فقط",
     "tier.light": "خفيف",
     "tier.standard": "قياسي",
     "tier.strong": "قوي",
     modelsNote:
-      'يحتاج Maktaba إلى جهاز NAS يُظهر 3.5 GiB من الذاكرة على الأقل (طراز "4 GB"). وإن قلّت عن ذلك يرفض الإعداد المتابعة، ويبقى الجهاز صالحًا لحفظ المكتبة لمنزل Maktaba على حاسوب آخر. يفحص Maktaba الذاكرة ومعالج الرسوميات بنفسه: هذا الجدول للمساعدة في الاختيار فقط.',
+      "يحتاج Maktaba إلى جهاز NAS يُظهر 3.5 غيغابايت من الذاكرة على الأقل (طراز «4 غيغابايت»). وإن قلّت عن ذلك يرفض الإعداد المتابعة، ويبقى الجهاز صالحًا لحفظ المكتبة لمنزل Maktaba على حاسوب آخر. يفحص Maktaba الذاكرة ومعالج الرسوميات بنفسه: هذا الجدول للمساعدة في الاختيار فقط.",
     tiers:
       "خفيف: تحويل الكلام إلى نص متوقف حتى تشغّله (base، في ساعات الهدوء)، وتحويل فيديو واحد في كل مرة حتى 720p. قياسي: تحويل الكلام بنموذج small، وتحويلان في وقت واحد. قوي: كل شيء بكامل حجمه. وينتظر العمل الثقيل ساعات الهدوء (من 01:00 إلى 06:00) في الخفيف والقياسي، فيبقى الجهاز سريعًا في خدمة ملفاته.",
     prepare: "ما تحتاج إلى تجهيزه",
@@ -173,7 +173,7 @@ export const SYN = {
     "model.otherGpu": "طراز Intel آخر يدعم Quick Sync",
     "model.other": "طراز Intel أو AMD آخر، دون Quick Sync",
     "model.otherArm": "طراز ARM آخر",
-    "field.ram": "الذاكرة المركّبة (GB)",
+    "field.ram": "الذاكرة المركّبة (غيغابايت)",
     "field.uid": "معرّف uid لمستخدم DSM باسم maktaba",
     "field.uid.help": "توضح الخطوة 1 أدناه كيف تقرؤه. المجموعة دائمًا users ‏(100).",
     "field.gpu": "استخدام Quick Sync (تمرير ‎/dev/dri)",
@@ -186,7 +186,7 @@ export const SYN = {
     "share.remove": "إزالة",
     "field.tz": "المنطقة الزمنية",
     tooSmall:
-      "بذاكرة {ram} GB لا تكفي ذاكرة هذا الجهاز لـ Maktaba، وسيرفض الإعداد المتابعة. لكنه يبقى صالحًا لحفظ المكتبة لمنزل Maktaba على حاسوب آخر.",
+      "بذاكرة {ram} غيغابايت لا تكفي ذاكرة هذا الجهاز لـ Maktaba، وسيرفض الإعداد المتابعة. لكنه يبقى صالحًا لحفظ المكتبة لمنزل Maktaba على حاسوب آخر.",
     result: "ملف المشروع ({tier})",
     "result.j4125": "هذه نسخة J4125: ‏Quick Sync عبر ‎/dev/dri.",
     "result.plain":
@@ -210,7 +210,7 @@ export const SYN = {
       "Container Manager ← المشروع ← إنشاء: الاسم maktaba، والمسار docker/maktaba، والمصدر إنشاء docker-compose.yml. الصق الملف أعلاه، ثم التالي وتم. ينزّل Container Manager الصورة ويشغّلها.",
     "step5.title": "5. أكمل الإعداد",
     "step5.body":
-      "افتح http://<جهازك>:8088 في المتصفح واتبع الإعداد: حساب المسؤول، ثم مكتباتك. بعد ذلك تعرض الإعدادات ← هذا الجهاز المستخدم الذي يعمل به Maktaba، وفئته، وهل يستخدم الفيديو Quick Sync.",
+      "حين يعمل المشروع: من Container Manager ← الحاوية ← maktaba ← التفاصيل ← الطرفية ← إنشاء، وشغّل هناك الأمر /opt/maktaba/server/bin/maktaba-server container setup. أجب عن أسئلته (حساب المسؤول، ثم مكتباتك)، ويبدأ Maktaba بنفسه حين ينتهي. ثم افتح http://<جهازك>:8088. وتعرض الإعدادات ← هذا الجهاز المستخدم الذي يعمل به Maktaba، وفئته، وهل يستخدم الفيديو Quick Sync.",
     after: "بعد الإعداد",
     "after.firewall":
       "الجدار الناري: إن كان الجدار الناري في DSM مفعّلًا، فمن لوحة التحكم ← الأمان ← الجدار الناري ← تعديل القواعد ← إنشاء: المنافذ 8088 (تطبيق الويب) و8080 (التطبيقات وأجهزة المنزل الأخرى) و8081 (البث المباشر)، بروتوكول TCP، من شبكتك فقط.",
@@ -236,7 +236,7 @@ export const SYN = {
     "trouble.noAccess":
       "تظهر مكتبة بلا وصول: امنح maktaba الإذن على ذلك المجلد المشترك (الخطوة 3)، ثم اضغط فحص الوصول في صفحة المكتبة.",
     "trouble.memory":
-      "يقول الإعداد إن الذاكرة لا تكفي: يحتاج Maktaba إلى 3.5 GiB. أضف ذاكرة إن كان الطراز يقبلها، أو استخدم الجهاز للتخزين لمنزل Maktaba على حاسوب آخر.",
+      "يقول الإعداد إن الذاكرة لا تكفي: يحتاج Maktaba إلى 3.5 غيغابايت. أضف ذاكرة إن كان الطراز يقبلها، أو استخدم الجهاز للتخزين لمنزل Maktaba على حاسوب آخر.",
     "trouble.port":
       "يشغل تطبيق آخر على الجهاز المنفذ 8088 أو 8080 أو 8081: عند التشغيل ينقل Maktaba ذلك المنفذ إلى منفذ حر بين 8780 و8790. ويذكر سجل الحاوية المنفذ الجديد (إن كان 8088 فافتح ⁦http://<your NAS>:8780⁩)، وتعرض الإعدادات ← هذا الجهاز ما انتقل وأي برنامج يشغل المنفذ.",
     "shot.guide-user": "مستخدم DSM باسم maktaba في المستخدم والمجموعة، دون صلاحيات المسؤول",
@@ -250,9 +250,9 @@ export const SYN = {
     "field.tz.help": "لساعات الهدوء: يعمل العمل الثقيل ليلًا في الفئتين الخفيفة والقياسية.",
     "tier.field": "الذاكرة المخصصة لـ Maktaba",
     "tier.hint": "تُضبط من الذاكرة المركّبة: يخطط Maktaba لهذا القدر ويترك الباقي لـ DSM.",
-    "tier.light.limit": "خفيف، 4 GB (جهاز بذاكرة من 4 إلى 8 GB)",
-    "tier.standard.limit": "قياسي، 6 GB (من 8 إلى 16 GB)",
-    "tier.strong.limit": "قوي، 16 GB (‏24 GB أو أكثر)",
+    "tier.light.limit": "خفيف، 4 غيغابايت (جهاز بذاكرة من 4 إلى 8 غيغابايت)",
+    "tier.standard.limit": "قياسي، 6 غيغابايت (من 8 إلى 16 غيغابايت)",
+    "tier.strong.limit": "قوي، 16 غيغابايت (‏24 غيغابايت أو أكثر)",
     "problem.uid": "أدخل معرّف uid رقمًا، مثل 1026.",
     "problem.volume": "أدخل وحدة تخزين مثل volume1.",
     "problem.share-volume": "كل مجلد على وحدة تخزين، مثل ‎/volume1/Movies.",

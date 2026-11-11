@@ -1,0 +1,240 @@
+{
+  "about": "maktaba.tv's NAS model table (Epic 59 story 59.14): each model's CPU, whether it converts video in hardware, the memory it ships with and the most it takes (GB). Data, checked once per release cycle against the makers' pages; Maktaba itself never trusts it (59.04 detects the memory and the GPU it gets). nasModels.test.ts checks its shape.",
+  "checked": "2026-11-10",
+  "models": [
+    {
+      "vendor": "synology",
+      "name": "DS425+",
+      "cpu": "Intel Celeron J4125",
+      "arch": "amd64",
+      "gpu": true,
+      "ram": 2,
+      "maxRam": 6
+    },
+    {
+      "vendor": "synology",
+      "name": "DS224+",
+      "cpu": "Intel Celeron J4125",
+      "arch": "amd64",
+      "gpu": true,
+      "ram": 2,
+      "maxRam": 6
+    },
+    {
+      "vendor": "synology",
+      "name": "DS423+",
+      "cpu": "Intel Celeron J4125",
+      "arch": "amd64",
+      "gpu": true,
+      "ram": 2,
+      "maxRam": 6
+    },
+    {
+      "vendor": "synology",
+      "name": "DS920+",
+      "cpu": "Intel Celeron J4125",
+      "arch": "amd64",
+      "gpu": true,
+      "ram": 4,
+      "maxRam": 8
+    },
+    {
+      "vendor": "synology",
+      "name": "DS720+",
+      "cpu": "Intel Celeron J4125",
+      "arch": "amd64",
+      "gpu": true,
+      "ram": 2,
+      "maxRam": 6
+    },
+    {
+      "vendor": "synology",
+      "name": "DS923+",
+      "cpu": "AMD Ryzen R1600",
+      "arch": "amd64",
+      "gpu": false,
+      "ram": 4,
+      "maxRam": 32
+    },
+    {
+      "vendor": "synology",
+      "name": "DS723+",
+      "cpu": "AMD Ryzen R1600",
+      "arch": "amd64",
+      "gpu": false,
+      "ram": 2,
+      "maxRam": 32
+    },
+    {
+      "vendor": "synology",
+      "name": "DS1522+",
+      "cpu": "AMD Ryzen R1600",
+      "arch": "amd64",
+      "gpu": false,
+      "ram": 8,
+      "maxRam": 32
+    },
+    {
+      "vendor": "synology",
+      "name": "DS1621+",
+      "cpu": "AMD Ryzen V1500B",
+      "arch": "amd64",
+      "gpu": false,
+      "ram": 4,
+      "maxRam": 32
+    },
+    {
+      "vendor": "synology",
+      "name": "DS223",
+      "cpu": "Realtek RTD1619B",
+      "arch": "arm64",
+      "gpu": false,
+      "ram": 2,
+      "maxRam": 2
+    },
+    {
+      "vendor": "synology",
+      "name": "DS423",
+      "cpu": "Realtek RTD1619B",
+      "arch": "arm64",
+      "gpu": false,
+      "ram": 2,
+      "maxRam": 2
+    },
+    {
+      "vendor": "synology",
+      "name": "DS223j",
+      "cpu": "Realtek RTD1619B",
+      "arch": "arm64",
+      "gpu": false,
+      "ram": 1,
+      "maxRam": 1
+    },
+    {
+      "vendor": "synology",
+      "name": "DS124",
+      "cpu": "Realtek RTD1619B",
+      "arch": "arm64",
+      "gpu": false,
+      "ram": 1,
+      "maxRam": 1
+    },
+    {
+      "vendor": "qnap",
+      "name": "TS-464",
+      "cpu": "Intel Celeron N5105",
+      "arch": "amd64",
+      "gpu": true,
+      "ram": 8,
+      "maxRam": 16
+    },
+    {
+      "vendor": "qnap",
+      "name": "TS-264",
+      "cpu": "Intel Celeron N5105",
+      "arch": "amd64",
+      "gpu": true,
+      "ram": 8,
+      "maxRam": 16
+    },
+    {
+      "vendor": "qnap",
+      "name": "TS-462",
+      "cpu": "Intel Celeron N4505",
+      "arch": "amd64",
+      "gpu": true,
+      "ram": 4,
+      "maxRam": 16
+    },
+    {
+      "vendor": "qnap",
+      "name": "TS-473A",
+      "cpu": "AMD Ryzen V1500B",
+      "arch": "amd64",
+      "gpu": false,
+      "ram": 8,
+      "maxRam": 64
+    },
+    {
+      "vendor": "qnap",
+      "name": "TS-233",
+      "cpu": "ARM Cortex-A55",
+      "arch": "arm64",
+      "gpu": false,
+      "ram": 2,
+      "maxRam": 2
+    },
+    {
+      "vendor": "ugreen",
+      "name": "DXP2800",
+      "cpu": "Intel N100",
+      "arch": "amd64",
+      "gpu": true,
+      "ram": 8,
+      "maxRam": 16
+    },
+    {
+      "vendor": "ugreen",
+      "name": "DXP4800 Plus",
+      "cpu": "Intel Pentium Gold 8505",
+      "arch": "amd64",
+      "gpu": true,
+      "ram": 8,
+      "maxRam": 64
+    },
+    {
+      "vendor": "ugreen",
+      "name": "DXP6800 Pro",
+      "cpu": "Intel Core i5-1235U",
+      "arch": "amd64",
+      "gpu": true,
+      "ram": 8,
+      "maxRam": 64
+    },
+    {
+      "vendor": "asustor",
+      "name": "AS5402T",
+      "cpu": "Intel Celeron N5105",
+      "arch": "amd64",
+      "gpu": true,
+      "ram": 4,
+      "maxRam": 16
+    },
+    {
+      "vendor": "asustor",
+      "name": "AS6702T",
+      "cpu": "Intel Celeron N5105",
+      "arch": "amd64",
+      "gpu": true,
+      "ram": 4,
+      "maxRam": 16
+    },
+    {
+      "vendor": "asustor",
+      "name": "FS6706T",
+      "cpu": "Intel Celeron N5105",
+      "arch": "amd64",
+      "gpu": true,
+      "ram": 4,
+      "maxRam": 16
+    },
+    {
+      "vendor": "asustor",
+      "name": "AS1102T",
+      "cpu": "Realtek RTD1296",
+      "arch": "arm64",
+      "gpu": false,
+      "ram": 1,
+      "maxRam": 1
+    },
+    {
+      "vendor": "other",
+      "name": "N100 mini PC",
+      "cpu": "Intel N100",
+      "arch": "amd64",
+      "gpu": true,
+      "ram": 16,
+      "maxRam": 16
+    }
+  ]
+}

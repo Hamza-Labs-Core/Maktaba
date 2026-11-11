@@ -87,6 +87,9 @@ _web: &web
   # the Synology install page's tests read the project files and the device checklist (59.09)
   - 'deploy/nas/**'
   - 'docs/nas/checklists/synology.md'
+  # Epic 59's strings check reads the stories' Strings tables and the container's texts (59.14)
+  - 'specs/epics/59-nas/story-*.md'
+  - 'cmd/maktaba-server/container_preflight.go'
 
 # make test-tokens: the token source and the files built from it
 _tokens: &tokens

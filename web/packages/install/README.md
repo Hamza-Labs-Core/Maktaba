@@ -44,5 +44,36 @@ figure becomes the image.
 TrueNAS's UI has no Arabic: the `.ar.png` files show TrueNAS in English with the Arabic page's
 own words around them.
 
-Hosting on maktaba.tv, and the other guides (`/install/nas`, `/install/synology`,
-`/install/unraid`), are story 59.14's.
+## The NAS guides (story 59.14)
+
+| Page                       | What it is                                                                                                                                |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `/install/nas`             | which guide to follow, the model table (`src/nas-models.json`, read by `src/nasModels.ts`, drawn by `src/nasPage.ts`) and what to prepare |
+| `/install/unraid`          | the Community Applications template (`deploy/nas/unraid/maktaba.xml`)                                                                     |
+| `/install/qnap`            | Container Station, with the file from `/install/docker`; not yet tried on a device                                                        |
+| `/install/ugreen`          | UGOS Pro's Docker and ASUSTOR's Portainer, with the file from `/install/docker`                                                           |
+| `/install/after-setup`     | permissions, quiet hours, speech to text, hardware video, proxy and firewall, updates, a computer with a GPU (one `id` per section)       |
+| `/install/troubleshooting` | one section per message (`#write-denied`, `#port-taken`, `#no-access`, `#render-device`, `#plugins-held`, `#not-enough-memory`, ...)      |
+
+Each has its Arabic page under `/ar/`. `src/twins.test.ts` keeps every pair mirrored (the same
+sections and ids, the same placeholders, links both ways). The **model table** is data, checked
+once per release cycle (its `checked` date); Maktaba itself never trusts it.
+
+**Arabic:** the build (`vite.install.config.ts`) fails when an Arabic page's prose is more than
+20% Latin: maktaba.dev's own check (`../devportal/scripts/parity.mjs`, through `src/latin.ts`),
+with two kinds of names counted as code: the model table, and a NAS menu name kept in English in
+«quotes» after an Arabic description (a NAS with no Arabic UI). The pages a script fills
+(`docker`, `synology`) are checked on what their script renders, in `twins.test.ts`.
+
+**In a browser** (`pnpm -C web e2e:install`, `web-ui.yml`'s `install` job): the install page's
+file equals the generator's for the same answers and no request carries an answer (T04); every
+guide is right to left in Arabic and dark, and is photographed in both languages
+(`test-results/guides/`, the run's `install-guides-screenshots` artifact) (T05).
+
+**NAS screenshots still to come**, by hand on each device checklist (`docs/nas/checklists/`):
+`screenshots/unraid/{template,console}`, `screenshots/qnap/create-application`,
+`screenshots/ugreen/project`, each `.en.png` and `.ar.png`, beside TrueNAS's above and
+Synology's (`src/synologyGuide.ts`).
+
+**Hosting:** the site builds to `web/dist-install/` as static files for maktaba.tv's `/install/`
+and `/ar/install/` paths; publishing it there is a maintainer's action.

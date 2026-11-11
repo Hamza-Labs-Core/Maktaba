@@ -2743,6 +2743,16 @@ build fails when the two differ.
   believed. A container waiting for its setup starts the server only once setup has finished,
   no longer as soon as server.toml appears, before setup's database is made.
 
+- **Install guides for every NAS on maktaba.tv, in English and Arabic (story 59.14).**
+  `/install/nas` says which guide to follow and whether a model fits (a table of Synology, QNAP,
+  UGREEN and ASUSTOR models: Fits, Fits with more memory, or Use as storage), and what to
+  prepare. New guides for Unraid, QNAP and UGREEN/ASUSTOR join Synology, TrueNAS and Docker, with
+  After setup (permissions, quiet hours, speech to text, hardware video, a reverse proxy, updates,
+  a computer with a GPU) and Troubleshooting (one section per message). Each page has its Arabic
+  twin, and the build fails on an Arabic page left mostly in English. The Synology guide now says
+  to run setup in Container Manager's terminal, as the container expects, and a container waiting
+  for setup says how in English and Arabic, in each NAS's own words.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings

@@ -85,6 +85,7 @@ const GUIDES = {
     "ci.md",
     "pull-requests.md",
     "cloud.md",
+    "nas.md",
     "nas-apps.md",
   ],
   security: ["conformance.md"],

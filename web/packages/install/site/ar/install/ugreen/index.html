@@ -1,0 +1,102 @@
+<!doctype html>
+<!-- maktaba.tv/ar/install/ugreen (Epic 59 story 59.14): the Arabic twin of /install/ugreen.
+     UGOS Pro's and ADM's menu names stay in English, in quotes, after an Arabic description. -->
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>تثبيت Maktaba على UGREEN أو ASUSTOR · Maktaba</title>
+    <meta
+      name="description"
+      content="ثبّت Maktaba على خادم UGREEN (تطبيق Docker في UGOS Pro) أو خادم ASUSTOR ‏(Portainer): المستخدم، والمجلدات، وملف compose، والإعداد."
+    />
+    <link rel="alternate" hreflang="en" href="https://maktaba.tv/install/ugreen/" />
+    <link rel="alternate" hreflang="ar" href="https://maktaba.tv/ar/install/ugreen/" />
+    <link rel="stylesheet" href="/install/install.css" />
+  </head>
+  <body>
+    <header>
+      <h1>تثبيت Maktaba على UGREEN أو ASUSTOR</h1>
+      <p class="lead">كلاهما يشغّل Maktaba من ملف compose واحد.</p>
+      <nav>
+        <a href="/ar/install/nas/">كل أدلة خوادم التخزين</a> ·
+        <a href="/install/ugreen/" hreflang="en" lang="en">English</a>
+      </nav>
+    </header>
+    <main class="guide">
+      <p>
+        لنظام <strong>UGOS Pro</strong> (طرازات DXP) مع تطبيق Docker، ولنظام
+        <strong>ADM ‏4.2</strong> وما بعده مع Portainer من مركز التطبيقات. يستغرق التثبيت نحو 20
+        دقيقة.
+      </p>
+      <h2>قبل أن تبدأ</h2>
+      <ul>
+        <li>
+          <strong>الذاكرة:</strong> ‏8 غيغابايت أو أكثر مريحة، ويعمل Maktaba بدءًا من 4 غيغابايت.
+        </li>
+        <li>
+          <strong>تحويل الفيديو بالعتاد:</strong> الطرازات ذات معالجات Intel تحوّل الفيديو بتقنية
+          Quick Sync عبر <code>/dev/dri</code>.
+        </li>
+        <li>
+          <strong>قرص SSD</strong> لمجلد البيانات إن وُجد: قاعدة البيانات والصور المصغّرة أسرع بكثير
+          عليه.
+        </li>
+      </ul>
+      <h2>1. أنشئ مستخدمًا واقرأ رقميه</h2>
+      <p>
+        <strong>على UGREEN:</strong> من «Control Panel» ← «User» ← <strong>«Create»</strong>: سمّه
+        <code>maktaba</code>، دون صلاحيات المدير. <strong>على ASUSTOR:</strong> من «Access Control»
+        ← «Local Users» ← <strong>«Add»</strong>. ثم شغّل عبر SSH (فعّله من إعدادات الطرفية في
+        الخادم) الأمر <code>id maktaba</code>: فالنتيجة <code>uid=1001 gid=100</code> تعني الإجابة
+        <code>1001:100</code>.
+      </p>
+      <h2>2. امنحه مجلداته</h2>
+      <p>
+        أنشئ مجلدًا لبيانات Maktaba، مثل <code>/volume1/docker/maktaba</code> على UGREEN أو
+        <code>/volume1/Docker/maktaba</code> على ASUSTOR، وامنح <code>maktaba</code> صلاحية القراءة
+        والكتابة عليه. ولكل مجلد مشترك فيه مقاطع، امنحه القراءة والكتابة حيث يحفظ Maktaba الترجمات
+        والتحويلات، والقراءة فقط في غيرها.
+      </p>
+      <h2>3. أنشئ ملف compose</h2>
+      <p>
+        افتح <a href="/ar/install/docker/">صفحة التثبيت</a>، واختر <strong>UGREEN</strong> أو
+        <strong>ASUSTOR</strong>، وأجب: المستخدم، والذاكرة، ومجلد البيانات، ومجلدات وسائطك، وتحويل
+        الفيديو بالعتاد، والمنطقة الزمنية. ثم انسخ الملف. لا يغادر شيء مما تكتبه هناك الصفحة.
+      </p>
+      <h2>4. أنشئ المشروع</h2>
+      <ul>
+        <li>
+          <strong>على UGREEN:</strong> من «Docker» ← <strong>«Project»</strong> ←
+          <strong>«Create»</strong>: سمّه <code>maktaba</code>، واجعل مجلده تحت
+          <code>/volume1/docker</code>، والصق الملف، ثم <strong>«Deploy»</strong>.
+        </li>
+        <li>
+          <strong>على ASUSTOR:</strong> ثبّت <strong>«Portainer CE»</strong> من مركز التطبيقات، ثم
+          من «Stacks» ← <strong>«Add stack»</strong>: سمّه <code>maktaba</code>، والصق الملف، ثم
+          <strong>«Deploy the stack»</strong>.
+        </li>
+      </ul>
+      <figure class="placeholder" data-shot="screenshots/ugreen/project.ar.png">
+        <figcaption>
+          📷 <strong>صورة قادمة:</strong> <code>screenshots/ugreen/project.ar.png</code>: نافذة
+          إنشاء المشروع في UGOS Pro مع ملف compose ملصوقًا.
+        </figcaption>
+      </figure>
+      <h2>5. شغّل الإعداد</h2>
+      <p>شغّل عبر SSH:</p>
+      <pre><code>sudo docker exec -it maktaba /opt/maktaba/server/bin/maktaba-server container setup</code></pre>
+      <p>
+        أجب عن أسئلته (اسم المدير وكلمة مروره، ومكتباتك)، ويبدأ Maktaba بنفسه حين ينتهي. ثم افتح
+        <code>http://&lt;your NAS&gt;:8088</code>.
+      </p>
+      <h2>بعد الإعداد</h2>
+      <p>
+        <a href="/ar/install/after-setup/">بعد الإعداد</a>: الأذونات، وساعات الهدوء، وتحويل الكلام
+        إلى نص، وتحويل الفيديو بالعتاد، والوكيل العكسي، والتحديثات، وإضافة حاسوب فيه معالج رسوميات.
+        <a href="/ar/install/troubleshooting/">حل المشكلات</a>: معنى كل رسالة.
+      </p>
+    </main>
+  </body>
+</html>

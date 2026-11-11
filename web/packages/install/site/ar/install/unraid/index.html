@@ -1,0 +1,133 @@
+<!doctype html>
+<!-- maktaba.tv/ar/install/unraid (Epic 59 story 59.14): the Arabic twin of /install/unraid.
+     Unraid's UI has no Arabic: its menu names stay in English, in quotes, after an Arabic
+     description. -->
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>تثبيت Maktaba على Unraid · Maktaba</title>
+    <meta
+      name="description"
+      content="ثبّت Maktaba على Unraid ‏6.12 وما بعده من تبويب التطبيقات: مجلد البيانات على مجمّع تخزين، ومشاركاتك، وتحويل الفيديو بالعتاد، والإعداد."
+    />
+    <link rel="alternate" hreflang="en" href="https://maktaba.tv/install/unraid/" />
+    <link rel="alternate" hreflang="ar" href="https://maktaba.tv/ar/install/unraid/" />
+    <link rel="stylesheet" href="/install/install.css" />
+  </head>
+  <body>
+    <header>
+      <h1>تثبيت Maktaba على Unraid</h1>
+      <p class="lead">حاوية واحدة من تبويب التطبيقات تشغّل كل شيء وتحدّث نفسها.</p>
+      <nav>
+        <a href="/ar/install/nas/">كل أدلة خوادم التخزين</a> ·
+        <a href="/install/unraid/" hreflang="en" lang="en">English</a>
+      </nav>
+    </header>
+    <main class="guide">
+      <p>
+        لنظام <strong>Unraid ‏6.12 وما بعده</strong> مع متجر التطبيقات المجتمعية (تبويب «Apps»).
+        يستغرق التثبيت نحو 15 دقيقة. ويعمل Maktaba بصفة المستخدم <code>nobody</code> الخاص بنظام
+        Unraid ‏(99، والمجموعة <code>users</code> ‏100)، لا بصلاحيات الجذر أبدًا.
+      </p>
+      <h2>قبل أن تبدأ</h2>
+      <ul>
+        <li>
+          <strong>الذاكرة:</strong> ‏8 غيغابايت أو أكثر مريحة، ويعمل Maktaba بدءًا من 4 غيغابايت.
+        </li>
+        <li>
+          <strong>مجمّع تخزين لمجلد البيانات:</strong> يجب أن تكون قاعدة بيانات Maktaba على مجمّع
+          التخزين المؤقت أو على قرص واحد، مثل <code>/mnt/cache/appdata/maktaba</code>، لا على مشاركة
+          المصفوفة <code>/mnt/user</code> أبدًا. يرفض الإعداد المصفوفة لهذا المجلد، لأن قاعدة
+          البيانات تكون عليها بطيئة وعرضة للتلف. أما وسائطك فتبقى على المصفوفة.
+        </li>
+        <li>
+          <strong>تحويل الفيديو بالعتاد</strong> (اختياري): مع شريحة Intel أو AMD، تأكد من وجود
+          <code>/dev/dri</code> (من «Tools» ← «System Devices»، أو بالأمر
+          <code>ls /dev/dri</code> في الطرفية). فإن لم يوجد، فثبّت الإضافة
+          <strong>«Intel GPU TOP»</strong> من تبويب التطبيقات، فهي تحمّل التعريف.
+        </li>
+      </ul>
+      <h2>1. ابحث عن Maktaba في التطبيقات</h2>
+      <p>
+        من «Apps» ابحث عن <strong>Maktaba</strong> ← <strong>«Install»</strong>. وإلى أن يُدرج في
+        المتجر: من «Docker» ← <strong>«Add Container»</strong> ←
+        <strong>«Template repositories»</strong>، أضف
+        <code>https://github.com/Hamza-Labs-Core/Maktaba</code> واضغط <strong>«Save»</strong>، ثم
+        اختر <strong>Maktaba</strong> من قائمة «Template».
+      </p>
+      <h2>2. املأ القالب</h2>
+      <ul>
+        <li>
+          <strong>البيانات («Data»):</strong> أبقِ <code>/mnt/cache/appdata/maktaba</code>، أو مجلد
+          التطبيقات على مجمّع آخر.
+        </li>
+        <li>
+          <strong>الوسائط («Media»):</strong> مشاركتك، مثل <code>/mnt/user/Media</code>. اجعل
+          <strong>«Container Path»</strong> مطابقًا لـ «Host Path»، فتجد الأجهزةُ التي تنضم إلى هذا
+          الجهاز الرئيسي لاحقًا المشاركةَ نفسها. واجعل <strong>«Access Mode»</strong> للقراءة فقط
+          حيث لا ينبغي أن يكتب Maktaba أبدًا. واضغط <strong>«Add another Path»</strong> لكل مشاركة
+          أخرى.
+        </li>
+        <li><strong>المنطقة الزمنية:</strong> منطقتك، مثل <code>Asia/Riyadh</code>.</li>
+        <li>
+          <strong>جهاز العرض («Render device»):</strong> أبقِ <code>/dev/dri</code> لتحويل الفيديو
+          بالعتاد، وأضف مجموعة جهاز العرض إلى <strong>«Extra Parameters»</strong>:
+          <code>--user 99:100 --stop-timeout 90 --group-add 18</code>، والرقم 18 هو ما يطبعه الأمر
+          <code>stat -c %g /dev/dri/renderD128</code> على خادمك. وإن لم يكن فيه معالج رسوميات فاحذف
+          الجهاز.
+        </li>
+        <li>
+          <strong>نوع الشبكة («Network Type»):</strong> أبقِ <strong>«Host»</strong>، فتجد هواتفك
+          وأجهزة التلفاز Maktaba بنفسها.
+        </li>
+      </ul>
+      <figure class="placeholder" data-shot="screenshots/unraid/template.ar.png">
+        <figcaption>
+          📷 <strong>صورة قادمة:</strong> <code>screenshots/unraid/template.ar.png</code>: القالب مع
+          مسار البيانات ومشاركة وسائط وجهاز العرض.
+        </figcaption>
+      </figure>
+      <p>اضغط <strong>«Apply»</strong>، فينزّل Unraid الصورة ويشغّل الحاوية.</p>
+      <h2>3. اسمح لـ Maktaba بقراءة مشاركاتك</h2>
+      <p>
+        مشاركات Unraid ملك <code>nobody:users</code>، فيستطيع Maktaba قراءتها كما هي في العادة. أما
+        الملفات المنسوخة بطريقة أخرى (عبر SSH بصلاحيات الجذر، أو من حاوية أخرى بمستخدم آخر) فقد لا
+        تُقرأ: من «Tools» ← <strong>«Docker Safe New Perms»</strong> تعود ملكيتها إلى
+        <code>nobody:users</code>. والمشاركة التي لا يستطيع Maktaba قراءتها تظهر فيه بعبارة
+        <strong>لا وصول</strong>، مع هذا الحل نفسه.
+      </p>
+      <h2>4. شغّل الإعداد</h2>
+      <p>من «Docker» اضغط أيقونة Maktaba ← <strong>«Console»</strong>، وشغّل:</p>
+      <pre><code>/opt/maktaba/server/bin/maktaba-server container setup</code></pre>
+      <p>
+        أجب عن أسئلته (اسم المدير وكلمة مروره، ومكتباتك)، ويبدأ Maktaba بنفسه حين ينتهي. ثم افتح
+        <strong>«WebUI»</strong> من قائمة الأيقونة، أو العنوان
+        <code>http://&lt;your server&gt;:8088</code>.
+      </p>
+      <figure class="placeholder" data-shot="screenshots/unraid/console.ar.png">
+        <figcaption>
+          📷 <strong>صورة قادمة:</strong> <code>screenshots/unraid/console.ar.png</code>: طرفية
+          الحاوية مع أمر الإعداد.
+        </figcaption>
+      </figure>
+      <h2>بعد الإعداد</h2>
+      <ul>
+        <li>
+          <strong>حين تتوقف المصفوفة</strong> تغيب المشاركات مؤقتًا: تظهر المكتبات بعبارة لا وصول،
+          ولا يُعدّ شيء فيها محذوفًا. شغّل المصفوفة واضغط <strong>افحص الصلاحيات</strong>.
+        </li>
+        <li>
+          <strong>التحديثات:</strong> يحدّث Maktaba نفسه في نافذة التحديث (الإدارة ← التحديثات). ولا
+          حاجة إلى تحديث الصورة حين يعرضه Unraid، ولا ضرر في تطبيقه.
+        </li>
+        <li>
+          صفحة <a href="/ar/install/after-setup/">بعد الإعداد</a> لساعات الهدوء وتحويل الكلام إلى نص
+          والوكيل العكسي وإضافة حاسوب فيه معالج رسوميات، وصفحة
+          <a href="/ar/install/troubleshooting/">حل المشكلات</a> لكل رسالة.
+        </li>
+      </ul>
+    </main>
+  </body>
+</html>

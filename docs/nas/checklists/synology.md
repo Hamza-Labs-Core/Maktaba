@@ -41,8 +41,8 @@ kernel's cgroup and Landlock, disk sleep.
 - **See:** the project builds with no warning; the container `maktaba` is Running as user 1026:100 (Container → maktaba → Details); Docker is 24.0.2 or newer.
 - **Screenshots:** `synology/04-project.en.png`, `synology/04-project.ar.png`
 
-### 5. Finish setup in the browser
-- **Do:** open `http://<nas>:8088`, set up in English, then again in a second browser profile in Arabic up to the first screen. Stop the timer at the home page.
+### 5. Finish setup in the container's terminal
+- **Do:** Container Manager → Container → maktaba → Details → Terminal → Create, run `/opt/maktaba/server/bin/maktaba-server container setup` and set up in English; on a second run (a fresh data folder) choose Arabic up to the first question. Open `http://<nas>:8088` when it finishes. Stop the timer at the home page.
 - **See:** setup ends on the home page within 15 minutes of step 1; Settings → This machine names the platform DSM, user 1026, the tier (Light: the DS425+'s 6 GB reads under 6 GiB), and the memory limit of the compose file.
 - **Screenshots:** `synology/05-this-machine.en.png`, `synology/05-this-machine.ar.png`
 
@@ -117,7 +117,7 @@ kernel's cgroup and Landlock, disk sleep.
 - **Screenshots:** `synology/17-ryzen.en.png`, `synology/17-ryzen.ar.png`
 
 ### 18. DS223 (ARM, 2 GB): storage only
-- **Do:** DS223: steps 1 to 4 with the file for other models (Container Manager runs on ARMv8 since DSM 7.2); run setup in the browser.
+- **Do:** DS223: steps 1 to 4 with the file for other models (Container Manager runs on ARMv8 since DSM 7.2); run setup in the container's terminal (step 5).
 - **See:** setup refuses with the NAS-as-storage text (the memory read, the 3.5 GiB floor, and that the NAS can still hold the library for a Maktaba home on another computer); nothing is half installed. The guide's model table says the same before the household starts.
 - **Screenshots:** `synology/18-storage-only.en.png`, `synology/18-storage-only.ar.png`
 

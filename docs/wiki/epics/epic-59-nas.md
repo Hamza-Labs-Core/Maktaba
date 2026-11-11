@@ -46,3 +46,22 @@ runs plugins with a stated isolation level, and updates itself safely, in Englis
 | 59.14 | [English and Arabic: setup screens, messages, and the install guides on maktaba.tv](../../../specs/epics/59-nas/story-59-14-strings-guides.md) | 4 |
 | 59.15 | [CI on NAS-shaped containers, device checklists, logs kept](../../../specs/epics/59-nas/story-59-15-ci.md) | 1 |
 | 59.16 | [OpenAPI and role tests for the new admin routes](../../../specs/epics/59-nas/story-59-16-openapi-roles.md) | 4 |
+
+## Where it lives (the developer view)
+
+[docs/developers/contributing/nas.md](../../developers/contributing/nas.md) (maktaba.dev,
+English and Arabic) maps each part to its code. In short:
+
+| Part | Where |
+|---|---|
+| The container's start: payload, preflight, setup hint (English then Arabic) | `cmd/maktaba-server/cmd_container.go`, `container_preflight.go` |
+| Hardware, tiers, ZFS cache, render devices | `cmd/maktaba-server/internal/hostinfo` |
+| Media permissions and each NAS's fix text | `shared/go/mediaaccess` |
+| Networking: bridge, moved ports, trusted proxies | `cmd/maktaba-server/serve_network.go`, `ports.go`, [docs/nas/networking.md](../../nas/networking.md) |
+| The install files | `cloud/installers/docker/docker-compose.yml` (the one compose file), `deploy/nas/{synology,truenas,unraid}` |
+| maktaba.tv's guides: `/install/nas` (and its model table, `nas-models.json`), `docker`, `synology`, `truenas`, `unraid`, `qnap`, `ugreen`, `after-setup`, `troubleshooting`, each with `/ar/` | `web/packages/install` |
+| Strings: the stories' tables checked in both languages | `web/src/i18n/epic59.test.ts`, `cmd/maktaba-server/container_texts_test.go` |
+| CI and device checklists | `.github/workflows/nas.yml`, `web-ui.yml` (`install`), `docs/nas/checklists/` |
+
+The guides' NAS screenshots (DSM, TrueNAS, Unraid, QNAP and UGREEN screens) are taken by hand
+on each device's checklist; until then each is a marked placeholder in both languages.

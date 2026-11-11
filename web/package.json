@@ -23,7 +23,8 @@
     "format:write": "prettier --write .",
     "typecheck": "tsc --noEmit",
     "test:unit": "vitest run",
-    "e2e:cloud": "playwright test --config playwright.cloud.config.ts"
+    "e2e:cloud": "playwright test --config playwright.cloud.config.ts",
+    "e2e:install": "playwright test --config playwright.install.config.ts"
   },
   "dependencies": {
     "@fontsource/amiri": "5.2.8",
