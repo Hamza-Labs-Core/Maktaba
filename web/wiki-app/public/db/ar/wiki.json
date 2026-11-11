@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 218,
+    "endpoint": 227,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -12698,6 +12698,266 @@
         "lang": "ar",
         "source": {
           "content": "76b84cc4d72cb3e1"
+        }
+      }
+    },
+    {
+      "id": "ep-post-me-parental-requests",
+      "type": "endpoint",
+      "title": "POST /me/parental/requests",
+      "content": "طلب فتح شيء من أحد الوالدين",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.6"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/parental/requests",
+        "tag": "Parental controls",
+        "operationId": "askParent"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "c8db7229bc407a39"
+        }
+      }
+    },
+    {
+      "id": "ep-get-me-parental-guardians",
+      "type": "endpoint",
+      "title": "GET /me/parental/guardians",
+      "content": "من يستطيع الفتح برمز الوالدين",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/parental/guardians",
+        "tag": "Parental controls",
+        "operationId": "listParentalUnlockers"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "d60bef30934d4298"
+        }
+      }
+    },
+    {
+      "id": "ep-post-me-parental-unlock",
+      "type": "endpoint",
+      "title": "POST /me/parental/unlock",
+      "content": "فتح شيء برمز الوالدين",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.6"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/parental/unlock",
+        "tag": "Parental controls",
+        "operationId": "unlockWithParentPin"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "3bb6c58f8f3ad5d5"
+        }
+      }
+    },
+    {
+      "id": "ep-get-me-parental-pin",
+      "type": "endpoint",
+      "title": "GET /me/parental-pin",
+      "content": "هل للمتصل رمز والدين",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.6",
+        "story-57.7"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/parental-pin",
+        "tag": "Parental controls",
+        "operationId": "getParentalPin"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "f7370338ebe3decb"
+        }
+      }
+    },
+    {
+      "id": "ep-put-me-parental-pin",
+      "type": "endpoint",
+      "title": "PUT /me/parental-pin",
+      "content": "تعيين رمز الوالدين للمتصل",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.6",
+        "story-57.7"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/me/parental-pin",
+        "tag": "Parental controls",
+        "operationId": "setParentalPin"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "ce4bdafba9e20cfc"
+        }
+      }
+    },
+    {
+      "id": "ep-get-parental-requests",
+      "type": "endpoint",
+      "title": "GET /parental/requests",
+      "content": "طلبات الأطفال الذين يرعاهم المتصل",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.6",
+        "story-57.7"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/requests",
+        "tag": "Parental controls",
+        "operationId": "listParentalRequests"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "67e311ee8755c248"
+        }
+      }
+    },
+    {
+      "id": "ep-post-parental-requests-id-approve",
+      "type": "endpoint",
+      "title": "POST /parental/requests/{id}/approve",
+      "content": "الموافقة على طلب",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.6"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/parental/requests/{id}/approve",
+        "tag": "Parental controls",
+        "operationId": "approveParentalRequest"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "5930d3d923bc891b"
+        }
+      }
+    },
+    {
+      "id": "ep-post-parental-requests-id-deny",
+      "type": "endpoint",
+      "title": "POST /parental/requests/{id}/deny",
+      "content": "رفض طلب",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/parental/requests/{id}/deny",
+        "tag": "Parental controls",
+        "operationId": "denyParentalRequest"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "645fe2feea5e66d6"
+        }
+      }
+    },
+    {
+      "id": "ep-get-users-id-parental-activity",
+      "type": "endpoint",
+      "title": "GET /users/{id}/parental/activity",
+      "content": "نشاط حساب مقيَّد",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/users/{id}/parental/activity",
+        "tag": "Parental controls",
+        "operationId": "listParentalActivity"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "a944c781c1007b0b"
         }
       }
     },

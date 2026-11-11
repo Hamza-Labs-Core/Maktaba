@@ -59,6 +59,7 @@ func everyMountWith(t *testing.T, caps *components.Capabilities) chi.Router {
 	MountNodeLocal(r, NodeLocalDeps{})
 	MountP51(r, P51Deps{DB: db, Capabilities: caps})
 	MountP57Tiers(r, P57TiersDeps{DB: db})
+	MountP57Requests(r, P57RequestsDeps{DB: db})
 	return r
 }
 

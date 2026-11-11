@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 218,
+    "endpoint": 227,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -10335,6 +10335,212 @@
         "path": "/users/{id}/parental/rules/{rule_id}",
         "tag": "Auth",
         "operationId": "removeParentalRule"
+      }
+    },
+    {
+      "id": "ep-post-me-parental-requests",
+      "type": "endpoint",
+      "title": "POST /me/parental/requests",
+      "content": "Ask a parent to open something",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.6"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/parental/requests",
+        "tag": "Parental controls",
+        "operationId": "askParent"
+      }
+    },
+    {
+      "id": "ep-get-me-parental-guardians",
+      "type": "endpoint",
+      "title": "GET /me/parental/guardians",
+      "content": "Who can unlock with a parent PIN",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/parental/guardians",
+        "tag": "Parental controls",
+        "operationId": "listParentalUnlockers"
+      }
+    },
+    {
+      "id": "ep-post-me-parental-unlock",
+      "type": "endpoint",
+      "title": "POST /me/parental/unlock",
+      "content": "Open something with a parent PIN",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.6"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/parental/unlock",
+        "tag": "Parental controls",
+        "operationId": "unlockWithParentPin"
+      }
+    },
+    {
+      "id": "ep-get-me-parental-pin",
+      "type": "endpoint",
+      "title": "GET /me/parental-pin",
+      "content": "Whether the caller has a parent PIN",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.6",
+        "story-57.7"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/parental-pin",
+        "tag": "Parental controls",
+        "operationId": "getParentalPin"
+      }
+    },
+    {
+      "id": "ep-put-me-parental-pin",
+      "type": "endpoint",
+      "title": "PUT /me/parental-pin",
+      "content": "Set the caller's parent PIN",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.6",
+        "story-57.7"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/me/parental-pin",
+        "tag": "Parental controls",
+        "operationId": "setParentalPin"
+      }
+    },
+    {
+      "id": "ep-get-parental-requests",
+      "type": "endpoint",
+      "title": "GET /parental/requests",
+      "content": "The requests of the children the caller looks after",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.6",
+        "story-57.7"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/requests",
+        "tag": "Parental controls",
+        "operationId": "listParentalRequests"
+      }
+    },
+    {
+      "id": "ep-post-parental-requests-id-approve",
+      "type": "endpoint",
+      "title": "POST /parental/requests/{id}/approve",
+      "content": "Approve a request",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.6"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/parental/requests/{id}/approve",
+        "tag": "Parental controls",
+        "operationId": "approveParentalRequest"
+      }
+    },
+    {
+      "id": "ep-post-parental-requests-id-deny",
+      "type": "endpoint",
+      "title": "POST /parental/requests/{id}/deny",
+      "content": "Deny a request",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/parental/requests/{id}/deny",
+        "tag": "Parental controls",
+        "operationId": "denyParentalRequest"
+      }
+    },
+    {
+      "id": "ep-get-users-id-parental-activity",
+      "type": "endpoint",
+      "title": "GET /users/{id}/parental/activity",
+      "content": "A restricted account's activity",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/users/{id}/parental/activity",
+        "tag": "Parental controls",
+        "operationId": "listParentalActivity"
       }
     },
     {

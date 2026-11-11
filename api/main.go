@@ -781,6 +781,10 @@ func runServe() error {
 			if recompute := parentalHandles.Recompute; recompute != nil {
 				loops.Declare("parental_recompute", runner.Func(func(ctx context.Context) { _ = recompute.Run(ctx) }))
 			}
+			// Epic 57 stories 57.06 and 57.08: ask a parent, the parent PIN, a child's
+			// activity, and the loop that writes watched events and keeps 90 days
+			router.MountP57Requests(r, router.P57RequestsDeps{DB: appDB, Cache: parentalHandles.Cache,
+				Notifier: notifyHub, Loops: loops, Logger: logger})
 			usageCounter.Attach(appDB)
 			loops.Declare("usage_counter", runner.Func(func(ctx context.Context) { usageCounter.Run(ctx, usage.DefaultFlushEvery) }))
 			logger.Info("p29: watch-analytics handlers mounted + reaper started",

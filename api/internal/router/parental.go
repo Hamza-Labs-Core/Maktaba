@@ -37,6 +37,22 @@ func MountParental(r chi.Router, db *sql.DB, loops *runner.Runner, busCtx contex
 			cache.Listen(ctx, busDSN, resettle, slog.Default())
 		})))
 	}
+	// A looser signal that waits for a guardian is shown in the child's activity
+	// (story 57.08). The devices table keeps no name, so the event carries the
+	// sign-in's platform, or "device" when the sign-in has no registered device.
+	cache.Store().OnSignalPending = func(ctx context.Context, userID, family string) {
+		name := "device"
+		var platform sql.NullString
+		if err := db.QueryRowContext(ctx,
+			`SELECT d.platform FROM refresh_tokens rt JOIN devices d ON d.id = rt.device_id
+			  WHERE rt.user_id = $1 AND rt.family_id = $2 ORDER BY rt.issued_at DESC LIMIT 1`,
+			userID, family).Scan(&platform); err == nil && platform.String != "" {
+			name = platform.String
+		}
+		if err := cache.Store().RecordSignalEvent(ctx, userID, name); err != nil {
+			slog.Default().Error("parental: record signal event", "err", err)
+		}
+	}
 	h := &parentalh.Handler{Store: cache.Store(), Cache: cache}
 	h.Mount(r)
 	h.MountSignal(r) // story 57.04: the device's signal

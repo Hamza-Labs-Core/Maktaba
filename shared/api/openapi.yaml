@@ -8654,6 +8654,840 @@ paths:
         default:
           $ref: '#/components/responses/InternalError'
       operationId: removeParentalRule
+  /me/parental/requests:
+    post:
+      tags:
+      - Parental controls
+      summary: Ask a parent to open something
+      description: For a restricted account only. Asks its guardians to allow one item it can reach but its limit hides. Asking again for the same item while the first request waits answers that request. A request waits seven days, and at most 20 wait at once. Each guardian gets one notice, which names neither the child nor the item.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                subject_kind:
+                  type: string
+                  enum:
+                  - library
+                  - collection
+                  - series
+                  - channel
+                  - youtube_source
+                  - plugin
+                  - video
+                subject_id:
+                  type: string
+              required:
+              - subject_kind
+              - subject_id
+      responses:
+        '200':
+          description: A request for this item was already waiting; it is returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      child_id:
+                        type: string
+                        format: uuid
+                      subject_kind:
+                        type: string
+                        enum:
+                        - library
+                        - collection
+                        - series
+                        - channel
+                        - youtube_source
+                        - plugin
+                        - video
+                      subject_id:
+                        type: string
+                      status:
+                        type: string
+                        enum:
+                        - pending
+                        - approved
+                        - denied
+                        - expired
+                      decided_by:
+                        type: string
+                        format: uuid
+                      decided_at:
+                        type: string
+                        format: date-time
+                      created_at:
+                        type: string
+                        format: date-time
+                      expires_at:
+                        type: string
+                        format: date-time
+                        description: 'When a request still waiting stops waiting: seven days after it was made.'
+        '201':
+          description: The request was made.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      child_id:
+                        type: string
+                        format: uuid
+                      subject_kind:
+                        type: string
+                        enum:
+                        - library
+                        - collection
+                        - series
+                        - channel
+                        - youtube_source
+                        - plugin
+                        - video
+                      subject_id:
+                        type: string
+                      status:
+                        type: string
+                        enum:
+                        - pending
+                        - approved
+                        - denied
+                        - expired
+                      decided_by:
+                        type: string
+                        format: uuid
+                      decided_at:
+                        type: string
+                        format: date-time
+                      created_at:
+                        type: string
+                        format: date-time
+                      expires_at:
+                        type: string
+                        format: date-time
+                        description: 'When a request still waiting stops waiting: seven days after it was made.'
+        '403':
+          description: 'Not a restricted account: `code` is `not_restricted`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No such item that the account can reach. An item in a library the account cannot open answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: 20 requests are already waiting (`code` is `too_many_requests`), or the caller is rate limited.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: askParent
+  /me/parental/guardians:
+    get:
+      tags:
+      - Parental controls
+      summary: Who can unlock with a parent PIN
+      description: 'For a restricted account only. The account''s guardians, and the admins, who have set a parent PIN: the people a device offers on its PIN screen.'
+      responses:
+        '200':
+          description: The people with a PIN, by name.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  guardians:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        username:
+                          type: string
+        '403':
+          description: 'Not a restricted account: `code` is `not_restricted`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: listParentalUnlockers
+  /me/parental/unlock:
+    post:
+      tags:
+      - Parental controls
+      summary: Open something with a parent PIN
+      description: 'For a restricted account only: a guardian types their PIN on the child''s device. A right PIN allows the item until 04:00 home time and answers a waiting request for it. A wrong PIN, a person who is not a guardian of the account and a person with no PIN all get the same answer, and every answer takes at least 250 ms. Five wrong PINs lock that guardian''s PIN for 15 minutes, then twice as long each time, up to 24 hours; ten wrong PINs in an hour from one account, or twenty from one address, close PIN entry for an hour.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                guardian_id:
+                  type: string
+                  format: uuid
+                  description: 'Whose PIN this is: one of the people `GET /me/parental/guardians` lists.'
+                pin:
+                  type: string
+                  pattern: ^[0-9]{6}$
+                subject_kind:
+                  type: string
+                  enum:
+                  - library
+                  - collection
+                  - series
+                  - channel
+                  - youtube_source
+                  - plugin
+                  - video
+                subject_id:
+                  type: string
+              required:
+              - guardian_id
+              - pin
+              - subject_kind
+              - subject_id
+      responses:
+        '200':
+          description: 'Opened: the allow rule, with when it ends.'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      user_id:
+                        type: string
+                        format: uuid
+                      effect:
+                        type: string
+                        enum:
+                        - allow
+                        - block
+                      subject_kind:
+                        type: string
+                        enum:
+                        - library
+                        - collection
+                        - series
+                        - channel
+                        - youtube_source
+                        - plugin
+                        - video
+                      subject_id:
+                        type: string
+                      expires_at:
+                        type: string
+                        format: date-time
+                      created_by:
+                        type: string
+                        format: uuid
+                      created_at:
+                        type: string
+                        format: date-time
+        '403':
+          description: '`code` is `pin_wrong` (nothing was opened), or `not_restricted` when the caller is not a restricted account.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No such item that the account can reach; the PIN was not looked at.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: 'PIN entry is locked: `code` is `pin_locked`, and `retry_after` and the `Retry-After` header give the seconds left. The right PIN is refused too while a lock is on.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: unlockWithParentPin
+  /me/parental-pin:
+    get:
+      tags:
+      - Parental controls
+      summary: Whether the caller has a parent PIN
+      description: For admins and for guardians of a restricted account. The PIN itself is never returned.
+      responses:
+        '200':
+          description: Whether a PIN is set.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  set:
+                    type: boolean
+        '403':
+          description: 'Not this caller''s to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: getParentalPin
+    put:
+      tags:
+      - Parental controls
+      summary: Set the caller's parent PIN
+      description: For admins and for guardians of a restricted account. The PIN is six digits and is kept only as an argon2id hash. The caller's password is typed again. A new PIN clears any lock on the old one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pin:
+                  type: string
+                  pattern: ^[0-9]{6}$
+                password:
+                  type: string
+                  format: password
+              required:
+              - pin
+              - password
+      responses:
+        '204':
+          description: The PIN is set.
+        '403':
+          description: '`code` is `password_wrong` when the password is wrong; `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: 'Ten wrong passwords in an hour: `code` is `too_many_tries`, with `retry_after` and the `Retry-After` header. Or the caller is rate limited.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: setParentalPin
+  /parental/requests:
+    get:
+      tags:
+      - Parental controls
+      summary: The requests of the children the caller looks after
+      description: 'For guardians and admins: a guardian sees the requests of their own children, an admin every request. Newest first. An item in a library the caller cannot open comes with its kind and id only.'
+      parameters:
+      - in: query
+        name: status
+        required: false
+        schema:
+          type: string
+          enum:
+          - pending
+          - approved
+          - denied
+          - expired
+        description: 'Only requests with this status; absent: all.'
+      responses:
+        '200':
+          description: The requests.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        child_id:
+                          type: string
+                          format: uuid
+                        subject_kind:
+                          type: string
+                          enum:
+                          - library
+                          - collection
+                          - series
+                          - channel
+                          - youtube_source
+                          - plugin
+                          - video
+                        subject_id:
+                          type: string
+                        status:
+                          type: string
+                          enum:
+                          - pending
+                          - approved
+                          - denied
+                          - expired
+                        decided_by:
+                          type: string
+                          format: uuid
+                        decided_at:
+                          type: string
+                          format: date-time
+                        created_at:
+                          type: string
+                          format: date-time
+                        expires_at:
+                          type: string
+                          format: date-time
+                          description: 'When a request still waiting stops waiting: seven days after it was made.'
+                        child:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                              format: uuid
+                            username:
+                              type: string
+                        subject:
+                          type: object
+                          properties:
+                            kind:
+                              type: string
+                            id:
+                              type: string
+                            title:
+                              type: string
+                            poster_url:
+                              type: string
+                            tier:
+                              type: integer
+                              description: The age tier of a video, when it has one.
+                            removed:
+                              type: boolean
+                              description: True when the item was deleted since.
+                            hidden:
+                              type: boolean
+                              description: 'True when the caller cannot open the item''s library: only its kind and id are given.'
+        '400':
+          description: '`status` is not a status.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: 'Not this caller''s to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: listParentalRequests
+  /parental/requests/{id}/approve:
+    post:
+      tags:
+      - Parental controls
+      summary: Approve a request
+      description: For a guardian of the child who asked, and for admins. Adds an allow rule for the item, the same way a rule added by hand is, ending at `expires_at` when given.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expires_at:
+                  type: string
+                  format: date-time
+                  description: 'When the allow rule ends; absent: it does not end. Must be in the future.'
+      responses:
+        '200':
+          description: 'Approved: the request and the allow rule.'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      child_id:
+                        type: string
+                        format: uuid
+                      subject_kind:
+                        type: string
+                        enum:
+                        - library
+                        - collection
+                        - series
+                        - channel
+                        - youtube_source
+                        - plugin
+                        - video
+                      subject_id:
+                        type: string
+                      status:
+                        type: string
+                        enum:
+                        - pending
+                        - approved
+                        - denied
+                        - expired
+                      decided_by:
+                        type: string
+                        format: uuid
+                      decided_at:
+                        type: string
+                        format: date-time
+                      created_at:
+                        type: string
+                        format: date-time
+                      expires_at:
+                        type: string
+                        format: date-time
+                        description: 'When a request still waiting stops waiting: seven days after it was made.'
+                  rule:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      user_id:
+                        type: string
+                        format: uuid
+                      effect:
+                        type: string
+                        enum:
+                        - allow
+                        - block
+                      subject_kind:
+                        type: string
+                        enum:
+                        - library
+                        - collection
+                        - series
+                        - channel
+                        - youtube_source
+                        - plugin
+                        - video
+                      subject_id:
+                        type: string
+                      expires_at:
+                        type: string
+                        format: date-time
+                      created_by:
+                        type: string
+                        format: uuid
+                      created_at:
+                        type: string
+                        format: date-time
+        '403':
+          description: 'Not this caller''s to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No such request that the caller may answer. A request of a child the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: 'Already answered: `code` is `request_decided`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: 'The request expired, or what it asked for is no longer there: `code` is `request_expired`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: approveParentalRequest
+  /parental/requests/{id}/deny:
+    post:
+      tags:
+      - Parental controls
+      summary: Deny a request
+      description: For a guardian of the child who asked, and for admins. No rule is added.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 'Denied: the request.'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      child_id:
+                        type: string
+                        format: uuid
+                      subject_kind:
+                        type: string
+                        enum:
+                        - library
+                        - collection
+                        - series
+                        - channel
+                        - youtube_source
+                        - plugin
+                        - video
+                      subject_id:
+                        type: string
+                      status:
+                        type: string
+                        enum:
+                        - pending
+                        - approved
+                        - denied
+                        - expired
+                      decided_by:
+                        type: string
+                        format: uuid
+                      decided_at:
+                        type: string
+                        format: date-time
+                      created_at:
+                        type: string
+                        format: date-time
+                      expires_at:
+                        type: string
+                        format: date-time
+                        description: 'When a request still waiting stops waiting: seven days after it was made.'
+        '403':
+          description: 'Not this caller''s to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No such request that the caller may answer. A request of a child the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: 'Already answered: `code` is `request_decided`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: 'The request expired, or what it asked for is no longer there: `code` is `request_expired`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: denyParentalRequest
+  /users/{id}/parental/activity:
+    get:
+      tags:
+      - Parental controls
+      summary: A restricted account's activity
+      description: For the account's guardians and admins. What the account watched (a play of 60 seconds or 20 percent), what was blocked (once per item per day), what it asked for and how it was answered, PIN locks and age signals from its devices. Newest first, 50 a page, kept 90 days. Events hold ids only; titles are read when the list is asked for.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
+        description: 'The `next_cursor` of the page before; absent: the first page.'
+      - in: query
+        name: kind
+        required: false
+        schema:
+          type: string
+          enum:
+          - watched
+          - blocked
+          - asked
+          - approved
+          - denied
+          - pin_locked
+          - signal
+          - time_up
+          - time_granted
+        description: Only events of this kind.
+      responses:
+        '200':
+          description: A page of events.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        kind:
+                          type: string
+                          enum:
+                          - watched
+                          - blocked
+                          - asked
+                          - approved
+                          - denied
+                          - pin_locked
+                          - signal
+                          - time_up
+                          - time_granted
+                        at:
+                          type: string
+                          format: date-time
+                        subject:
+                          type: object
+                          properties:
+                            kind:
+                              type: string
+                            id:
+                              type: string
+                            title:
+                              type: string
+                            poster_url:
+                              type: string
+                            tier:
+                              type: integer
+                              description: The age tier of a video, when it has one.
+                            removed:
+                              type: boolean
+                              description: True when the item was deleted since.
+                            hidden:
+                              type: boolean
+                              description: 'True when the caller cannot open the item''s library: only its kind and id are given.'
+                        guardian:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                              format: uuid
+                            username:
+                              type: string
+                          description: The guardian an `approved`, `denied` or `pin_locked` event names.
+                        device:
+                          type: string
+                          description: The device's name, for a `signal` event.
+                  next_cursor:
+                    type: string
+                    description: Present when there is another page.
+        '400':
+          description: '`cursor` or `kind` is not valid.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: listParentalActivity
   /pairing/approve:
     post:
       tags:

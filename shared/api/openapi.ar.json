@@ -4013,6 +4013,282 @@
       "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
       "ar": "لا حساب مقيَّد بهذا المعرّف يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
     },
+    "/paths/~1me~1parental~1requests/post/summary": {
+      "en": "Ask a parent to open something",
+      "ar": "طلب فتح شيء من أحد الوالدين"
+    },
+    "/paths/~1me~1parental~1requests/post/description": {
+      "en": "For a restricted account only. Asks its guardians to allow one item it can reach but its limit hides. Asking again for the same item while the first request waits answers that request. A request waits seven days, and at most 20 wait at once. Each guardian gets one notice, which names neither the child nor the item.",
+      "ar": "للحساب المقيَّد فقط. يطلب من أولياء أمره السماح بعنصر يستطيع الوصول إليه لكن حدّه يحجبه. تكرار الطلب للعنصر نفسه والطلب الأول ما زال منتظرًا يعيد الطلب نفسه. ينتظر الطلب سبعة أيام، ولا ينتظر أكثر من 20 طلبًا في وقت واحد. يصل كل وليّ أمر إشعار واحد لا يذكر اسم الطفل ولا العنصر."
+    },
+    "/paths/~1me~1parental~1requests/post/responses/200/description": {
+      "en": "A request for this item was already waiting; it is returned.",
+      "ar": "كان هناك طلب منتظر لهذا العنصر؛ يُعاد كما هو."
+    },
+    "/paths/~1me~1parental~1requests/post/responses/200/content/application~1json/schema/properties/request/properties/expires_at/description": {
+      "en": "When a request still waiting stops waiting: seven days after it was made.",
+      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه."
+    },
+    "/paths/~1me~1parental~1requests/post/responses/201/description": {
+      "en": "The request was made.",
+      "ar": "أُنشئ الطلب."
+    },
+    "/paths/~1me~1parental~1requests/post/responses/201/content/application~1json/schema/properties/request/properties/expires_at/description": {
+      "en": "When a request still waiting stops waiting: seven days after it was made.",
+      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه."
+    },
+    "/paths/~1me~1parental~1requests/post/responses/403/description": {
+      "en": "Not a restricted account: `code` is `not_restricted`.",
+      "ar": "الحساب غير مقيَّد: قيمة `code` هي `not_restricted`."
+    },
+    "/paths/~1me~1parental~1requests/post/responses/404/description": {
+      "en": "No such item that the account can reach. An item in a library the account cannot open answers the same as one that does not exist.",
+      "ar": "لا يوجد عنصر كهذا يستطيع الحساب الوصول إليه. عنصر في مكتبة لا يستطيع الحساب فتحها يُجاب عنه كما يُجاب عن عنصر غير موجود."
+    },
+    "/paths/~1me~1parental~1requests/post/responses/429/description": {
+      "en": "20 requests are already waiting (`code` is `too_many_requests`), or the caller is rate limited.",
+      "ar": "هناك 20 طلبًا منتظرًا بالفعل (قيمة `code` هي `too_many_requests`)، أو تجاوز المتصل حدّ المعدّل."
+    },
+    "/paths/~1me~1parental~1guardians/get/summary": {
+      "en": "Who can unlock with a parent PIN",
+      "ar": "من يستطيع الفتح برمز الوالدين"
+    },
+    "/paths/~1me~1parental~1guardians/get/description": {
+      "en": "For a restricted account only. The account's guardians, and the admins, who have set a parent PIN: the people a device offers on its PIN screen.",
+      "ar": "للحساب المقيَّد فقط. أولياء أمر الحساب والمديرون الذين عيّنوا رمز الوالدين: من يعرضهم الجهاز على شاشة إدخال الرمز."
+    },
+    "/paths/~1me~1parental~1guardians/get/responses/200/description": {
+      "en": "The people with a PIN, by name.",
+      "ar": "أصحاب الرموز، مرتبين بالاسم."
+    },
+    "/paths/~1me~1parental~1guardians/get/responses/403/description": {
+      "en": "Not a restricted account: `code` is `not_restricted`.",
+      "ar": "الحساب غير مقيَّد: قيمة `code` هي `not_restricted`."
+    },
+    "/paths/~1me~1parental~1unlock/post/summary": {
+      "en": "Open something with a parent PIN",
+      "ar": "فتح شيء برمز الوالدين"
+    },
+    "/paths/~1me~1parental~1unlock/post/description": {
+      "en": "For a restricted account only: a guardian types their PIN on the child's device. A right PIN allows the item until 04:00 home time and answers a waiting request for it. A wrong PIN, a person who is not a guardian of the account and a person with no PIN all get the same answer, and every answer takes at least 250 ms. Five wrong PINs lock that guardian's PIN for 15 minutes, then twice as long each time, up to 24 hours; ten wrong PINs in an hour from one account, or twenty from one address, close PIN entry for an hour.",
+      "ar": "للحساب المقيَّد فقط: يكتب وليّ الأمر رمزه على جهاز الطفل. الرمز الصحيح يسمح بالعنصر حتى الساعة 04:00 بتوقيت المنزل ويجيب عن الطلب المنتظر له. الرمز الخاطئ، والشخص الذي ليس وليّ أمر للحساب، والشخص الذي لا رمز له، كلها تتلقى الرد نفسه، وكل رد يستغرق 250 مللي ثانية على الأقل. خمسة رموز خاطئة تقفل رمز ذلك الوليّ 15 دقيقة، ثم ضعف المدة في كل مرة حتى 24 ساعة؛ وعشرة رموز خاطئة في ساعة من حساب واحد، أو عشرون من عنوان واحد، تغلق إدخال الرمز ساعة."
+    },
+    "/paths/~1me~1parental~1unlock/post/requestBody/content/application~1json/schema/properties/guardian_id/description": {
+      "en": "Whose PIN this is: one of the people `GET /me/parental/guardians` lists.",
+      "ar": "صاحب هذا الرمز: أحد من تسردهم `GET /me/parental/guardians`."
+    },
+    "/paths/~1me~1parental~1unlock/post/responses/200/description": {
+      "en": "Opened: the allow rule, with when it ends.",
+      "ar": "فُتح: قاعدة السماح، مع وقت انتهائها."
+    },
+    "/paths/~1me~1parental~1unlock/post/responses/403/description": {
+      "en": "`code` is `pin_wrong` (nothing was opened), or `not_restricted` when the caller is not a restricted account.",
+      "ar": "قيمة `code` هي `pin_wrong` (لم يُفتح شيء)، أو `not_restricted` إذا لم يكن المتصل حسابًا مقيَّدًا."
+    },
+    "/paths/~1me~1parental~1unlock/post/responses/404/description": {
+      "en": "No such item that the account can reach; the PIN was not looked at.",
+      "ar": "لا يوجد عنصر كهذا يستطيع الحساب الوصول إليه؛ لم يُنظر في الرمز."
+    },
+    "/paths/~1me~1parental~1unlock/post/responses/429/description": {
+      "en": "PIN entry is locked: `code` is `pin_locked`, and `retry_after` and the `Retry-After` header give the seconds left. The right PIN is refused too while a lock is on.",
+      "ar": "إدخال الرمز مقفل: قيمة `code` هي `pin_locked`، ويعطي `retry_after` وترويسة `Retry-After` الثواني المتبقية. يُرفض الرمز الصحيح أيضًا ما دام القفل قائمًا."
+    },
+    "/paths/~1me~1parental-pin/get/summary": {
+      "en": "Whether the caller has a parent PIN",
+      "ar": "هل للمتصل رمز والدين"
+    },
+    "/paths/~1me~1parental-pin/get/description": {
+      "en": "For admins and for guardians of a restricted account. The PIN itself is never returned.",
+      "ar": "للمديرين ولأولياء أمر حساب مقيَّد. لا يُعاد الرمز نفسه أبدًا."
+    },
+    "/paths/~1me~1parental-pin/get/responses/200/description": {
+      "en": "Whether a PIN is set.",
+      "ar": "هل عُيّن رمز."
+    },
+    "/paths/~1me~1parental-pin/get/responses/403/description": {
+      "en": "Not this caller's to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.",
+      "ar": "ليس لهذا المتصل أن يرى أو يغيّر: قيمة `code` هي `restricted` للحساب المقيَّد. ويُرفض كذلك تسجيل الدخول عبر سحابة مكتبة المقتصر على التشغيل."
+    },
+    "/paths/~1me~1parental-pin/put/summary": {
+      "en": "Set the caller's parent PIN",
+      "ar": "تعيين رمز الوالدين للمتصل"
+    },
+    "/paths/~1me~1parental-pin/put/description": {
+      "en": "For admins and for guardians of a restricted account. The PIN is six digits and is kept only as an argon2id hash. The caller's password is typed again. A new PIN clears any lock on the old one.",
+      "ar": "للمديرين ولأولياء أمر حساب مقيَّد. الرمز ستة أرقام ولا يُحفظ إلا كتجزئة argon2id. يكتب المتصل كلمة مروره مرة أخرى. الرمز الجديد يزيل أي قفل على القديم."
+    },
+    "/paths/~1me~1parental-pin/put/responses/204/description": {
+      "en": "The PIN is set.",
+      "ar": "عُيّن الرمز."
+    },
+    "/paths/~1me~1parental-pin/put/responses/403/description": {
+      "en": "`code` is `password_wrong` when the password is wrong; `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.",
+      "ar": "قيمة `code` هي `password_wrong` إذا كانت كلمة المرور خاطئة؛ و`restricted` للحساب المقيَّد. ويُرفض كذلك تسجيل الدخول عبر سحابة مكتبة المقتصر على التشغيل."
+    },
+    "/paths/~1me~1parental-pin/put/responses/429/description": {
+      "en": "Ten wrong passwords in an hour: `code` is `too_many_tries`, with `retry_after` and the `Retry-After` header. Or the caller is rate limited.",
+      "ar": "عشر كلمات مرور خاطئة في ساعة: قيمة `code` هي `too_many_tries`، مع `retry_after` وترويسة `Retry-After`. أو تجاوز المتصل حدّ المعدّل."
+    },
+    "/paths/~1parental~1requests/get/summary": {
+      "en": "The requests of the children the caller looks after",
+      "ar": "طلبات الأطفال الذين يرعاهم المتصل"
+    },
+    "/paths/~1parental~1requests/get/description": {
+      "en": "For guardians and admins: a guardian sees the requests of their own children, an admin every request. Newest first. An item in a library the caller cannot open comes with its kind and id only.",
+      "ar": "لأولياء الأمور والمديرين: يرى وليّ الأمر طلبات أطفاله، ويرى المدير كل الطلبات. الأحدث أولًا. العنصر الذي في مكتبة لا يستطيع المتصل فتحها يأتي بنوعه ومعرّفه فقط."
+    },
+    "/paths/~1parental~1requests/get/parameters/0/description": {
+      "en": "Only requests with this status; absent: all.",
+      "ar": "الطلبات بهذه الحالة فقط؛ إن غاب: الكل."
+    },
+    "/paths/~1parental~1requests/get/responses/200/description": {
+      "en": "The requests.",
+      "ar": "الطلبات."
+    },
+    "/paths/~1parental~1requests/get/responses/200/content/application~1json/schema/properties/requests/items/properties/expires_at/description": {
+      "en": "When a request still waiting stops waiting: seven days after it was made.",
+      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه."
+    },
+    "/paths/~1parental~1requests/get/responses/200/content/application~1json/schema/properties/requests/items/properties/subject/properties/tier/description": {
+      "en": "The age tier of a video, when it has one.",
+      "ar": "الفئة العمرية للفيديو، إن وُجدت."
+    },
+    "/paths/~1parental~1requests/get/responses/200/content/application~1json/schema/properties/requests/items/properties/subject/properties/removed/description": {
+      "en": "True when the item was deleted since.",
+      "ar": "صحيح إذا حُذف العنصر بعد ذلك."
+    },
+    "/paths/~1parental~1requests/get/responses/200/content/application~1json/schema/properties/requests/items/properties/subject/properties/hidden/description": {
+      "en": "True when the caller cannot open the item's library: only its kind and id are given.",
+      "ar": "صحيح إذا لم يكن للمتصل وصول إلى مكتبة العنصر: يُعطى نوعه ومعرّفه فقط."
+    },
+    "/paths/~1parental~1requests/get/responses/400/description": {
+      "en": "`status` is not a status.",
+      "ar": "قيمة `status` ليست حالة معروفة."
+    },
+    "/paths/~1parental~1requests/get/responses/403/description": {
+      "en": "Not this caller's to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.",
+      "ar": "ليس لهذا المتصل أن يرى أو يغيّر: قيمة `code` هي `restricted` للحساب المقيَّد. ويُرفض كذلك تسجيل الدخول عبر سحابة مكتبة المقتصر على التشغيل."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/summary": {
+      "en": "Approve a request",
+      "ar": "الموافقة على طلب"
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/description": {
+      "en": "For a guardian of the child who asked, and for admins. Adds an allow rule for the item, the same way a rule added by hand is, ending at `expires_at` when given.",
+      "ar": "لوليّ أمر الطفل صاحب الطلب وللمديرين. تضيف قاعدة سماح للعنصر، كما تُضاف القاعدة يدويًا، تنتهي عند `expires_at` إن أُعطي."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/requestBody/content/application~1json/schema/properties/expires_at/description": {
+      "en": "When the allow rule ends; absent: it does not end. Must be in the future.",
+      "ar": "متى تنتهي قاعدة السماح؛ إن غاب: لا تنتهي. يجب أن يكون في المستقبل."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/responses/200/description": {
+      "en": "Approved: the request and the allow rule.",
+      "ar": "تمت الموافقة: الطلب وقاعدة السماح."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/responses/200/content/application~1json/schema/properties/request/properties/expires_at/description": {
+      "en": "When a request still waiting stops waiting: seven days after it was made.",
+      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/responses/403/description": {
+      "en": "Not this caller's to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.",
+      "ar": "ليس لهذا المتصل أن يرى أو يغيّر: قيمة `code` هي `restricted` للحساب المقيَّد. ويُرفض كذلك تسجيل الدخول عبر سحابة مكتبة المقتصر على التشغيل."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/responses/404/description": {
+      "en": "No such request that the caller may answer. A request of a child the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا يوجد طلب بهذا المعرّف يحق للمتصل الرد عليه. طلب طفل لا يرعاه المتصل يُجاب عنه كما يُجاب عن طلب غير موجود."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/responses/409/description": {
+      "en": "Already answered: `code` is `request_decided`.",
+      "ar": "سبق الرد عليه: قيمة `code` هي `request_decided`."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/responses/410/description": {
+      "en": "The request expired, or what it asked for is no longer there: `code` is `request_expired`.",
+      "ar": "انتهت مدة الطلب، أو لم يعد ما طُلب موجودًا: قيمة `code` هي `request_expired`."
+    },
+    "/paths/~1parental~1requests~1{id}~1deny/post/summary": {
+      "en": "Deny a request",
+      "ar": "رفض طلب"
+    },
+    "/paths/~1parental~1requests~1{id}~1deny/post/description": {
+      "en": "For a guardian of the child who asked, and for admins. No rule is added.",
+      "ar": "لوليّ أمر الطفل صاحب الطلب وللمديرين. لا تُضاف أي قاعدة."
+    },
+    "/paths/~1parental~1requests~1{id}~1deny/post/responses/200/description": {
+      "en": "Denied: the request.",
+      "ar": "رُفض: الطلب."
+    },
+    "/paths/~1parental~1requests~1{id}~1deny/post/responses/200/content/application~1json/schema/properties/request/properties/expires_at/description": {
+      "en": "When a request still waiting stops waiting: seven days after it was made.",
+      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه."
+    },
+    "/paths/~1parental~1requests~1{id}~1deny/post/responses/403/description": {
+      "en": "Not this caller's to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.",
+      "ar": "ليس لهذا المتصل أن يرى أو يغيّر: قيمة `code` هي `restricted` للحساب المقيَّد. ويُرفض كذلك تسجيل الدخول عبر سحابة مكتبة المقتصر على التشغيل."
+    },
+    "/paths/~1parental~1requests~1{id}~1deny/post/responses/404/description": {
+      "en": "No such request that the caller may answer. A request of a child the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا يوجد طلب بهذا المعرّف يحق للمتصل الرد عليه. طلب طفل لا يرعاه المتصل يُجاب عنه كما يُجاب عن طلب غير موجود."
+    },
+    "/paths/~1parental~1requests~1{id}~1deny/post/responses/409/description": {
+      "en": "Already answered: `code` is `request_decided`.",
+      "ar": "سبق الرد عليه: قيمة `code` هي `request_decided`."
+    },
+    "/paths/~1parental~1requests~1{id}~1deny/post/responses/410/description": {
+      "en": "The request expired, or what it asked for is no longer there: `code` is `request_expired`.",
+      "ar": "انتهت مدة الطلب، أو لم يعد ما طُلب موجودًا: قيمة `code` هي `request_expired`."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/summary": {
+      "en": "A restricted account's activity",
+      "ar": "نشاط حساب مقيَّد"
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/description": {
+      "en": "For the account's guardians and admins. What the account watched (a play of 60 seconds or 20 percent), what was blocked (once per item per day), what it asked for and how it was answered, PIN locks and age signals from its devices. Newest first, 50 a page, kept 90 days. Events hold ids only; titles are read when the list is asked for.",
+      "ar": "لأولياء أمر الحساب وللمديرين. ما شاهده الحساب (تشغيل لمدة 60 ثانية أو 20 بالمئة)، وما حُجب عنه (مرة لكل عنصر في اليوم)، وما طلبه وكيف أُجيب، وأقفال الرمز وإشارات العمر من أجهزته. الأحدث أولًا، 50 في الصفحة، ويُحتفظ بها 90 يومًا. تحمل الأحداث المعرّفات فقط؛ وتُقرأ العناوين عند طلب القائمة."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/parameters/1/description": {
+      "en": "The `next_cursor` of the page before; absent: the first page.",
+      "ar": "قيمة `next_cursor` من الصفحة السابقة؛ إن غاب: الصفحة الأولى."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/parameters/2/description": {
+      "en": "Only events of this kind.",
+      "ar": "الأحداث من هذا النوع فقط."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/responses/200/description": {
+      "en": "A page of events.",
+      "ar": "صفحة من الأحداث."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/responses/200/content/application~1json/schema/properties/events/items/properties/subject/properties/tier/description": {
+      "en": "The age tier of a video, when it has one.",
+      "ar": "الفئة العمرية للفيديو، إن وُجدت."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/responses/200/content/application~1json/schema/properties/events/items/properties/subject/properties/removed/description": {
+      "en": "True when the item was deleted since.",
+      "ar": "صحيح إذا حُذف العنصر بعد ذلك."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/responses/200/content/application~1json/schema/properties/events/items/properties/subject/properties/hidden/description": {
+      "en": "True when the caller cannot open the item's library: only its kind and id are given.",
+      "ar": "صحيح إذا لم يكن للمتصل وصول إلى مكتبة العنصر: يُعطى نوعه ومعرّفه فقط."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/responses/200/content/application~1json/schema/properties/events/items/properties/guardian/description": {
+      "en": "The guardian an `approved`, `denied` or `pin_locked` event names.",
+      "ar": "وليّ الأمر الذي يذكره حدث `approved` أو `denied` أو `pin_locked`."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/responses/200/content/application~1json/schema/properties/events/items/properties/device/description": {
+      "en": "The device's name, for a `signal` event.",
+      "ar": "اسم الجهاز، لحدث `signal`."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/responses/200/content/application~1json/schema/properties/next_cursor/description": {
+      "en": "Present when there is another page.",
+      "ar": "موجود إذا كانت هناك صفحة أخرى."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/responses/400/description": {
+      "en": "`cursor` or `kind` is not valid.",
+      "ar": "قيمة `cursor` أو `kind` غير صالحة."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/responses/404/description": {
+      "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا يوجد حساب مقيَّد بهذا المعرّف يحق للمتصل رؤيته. الحساب الذي لا يرعاه المتصل يُجاب عنه كما يُجاب عن حساب غير موجود."
+    },
     "/paths/~1pairing~1approve/post/summary": {
       "en": "Approve the code a device shows",
       "ar": "الموافقة على الرمز الذي يعرضه جهاز"
