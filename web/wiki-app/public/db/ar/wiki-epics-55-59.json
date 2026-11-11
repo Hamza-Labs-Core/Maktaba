@@ -1143,7 +1143,6 @@
         "ep-post-libraries-id-youtube-sources",
         "ep-patch-libraries-id-youtube-sources-sid",
         "ep-delete-libraries-id-youtube-sources-sid",
-        "ep-get-extensions",
         "ep-get-series",
         "ep-get-series-id",
         "ep-patch-series-id"
@@ -1172,7 +1171,6 @@
         "POST /libraries/{id}/youtube/sources",
         "PATCH /libraries/{id}/youtube/sources/{sid}",
         "DELETE /libraries/{id}/youtube/sources/{sid}",
-        "GET /extensions",
         "GET /series",
         "GET /series/{id}",
         "PATCH /series/{id}"
@@ -1426,7 +1424,7 @@
       "title": "النشاط للأولياء",
       "epic": "57-parental-controls",
       "phase": 5,
-      "content": "# القصة 57.08 — النشاط للأولياء\n\n> الملحمة 57 · المرحلة 2 (الواجهة البرمجية)، 3 (iOS) · تعتمد على: 57.02، 57.06، 57.07 · تحتاجها: 57.13\n\n## لماذا\n\nتُبلغ «مدة استخدام الجهاز» عن مدة استخدام كل تطبيق، لا عمّا شوهد فيه. ويريد الوالد أن يرى ما شاهده طفله، وما حُظر، وما طلبه، دون أن يغادر هذا السجل المنزل، ودون الاحتفاظ بأكثر من اللازم.\n\n## الوصف\n\n### 1. ما يُسجَّل\n\n`parental_events` (الخانة 0218)، للحسابات المقيَّدة فقط:\n\n| النوع | متى | الموضوع |\n|---|---|---|\n| `watched` | حين تبلغ جلسة المشاهدة 60 ث أو 20 % (من `watch_sessions`،",
+      "content": "# القصة 57.08 — النشاط للأولياء\n\n> الملحمة 57 · المرحلة 2 (الواجهة البرمجية)، 3 (iOS) · تعتمد على: 57.02، 57.06، 57.07 · تحتاجها: 57.13\n\n## لماذا\n\nتُبلغ «مدة استخدام الجهاز» عن مدة استخدام كل تطبيق، لا عمّا شوهد فيه. ويريد الوالد أن يرى ما شاهده طفله، وما حُظر، وما طلبه، دون أن يغادر هذا السجل المنزل، ودون الاحتفاظ بأكثر من اللازم.\n\n## الوصف\n\n### 1. ما يُسجَّل\n\n`parental_events` (الخانة 0222)، للحسابات المقيَّدة فقط:\n\n| النوع | متى | الموضوع |\n|---|---|---|\n| `watched` | حين تبلغ جلسة المشاهدة 60 ث أو 20 % (من `watch_sessions`،",
       "tags": [
         "story",
         "57-parental-controls",
@@ -1452,7 +1450,7 @@
         "lang": "ar",
         "source": {
           "title": "8cdd2484226097fa",
-          "content": "ea64e1ec8a9169d6"
+          "content": "f73ea0e5ae24281d"
         }
       }
     },

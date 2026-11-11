@@ -57,7 +57,7 @@ guardian (or an admin), and the child must be restricted. A restricted user may 
 only for themselves, which gives a restricted sign-in, so a child cannot use the code flow to
 bring an adult's account onto a device. The child's password still works as for any user.
 
-### 5. Migration (slot 0217, planned; see README §6.5)
+### 5. Migration (slot 0221, planned; see README §6.5)
 
 The policy, guardian and rule tables; `session_age_signals` lands in the same slot for 57.04.
 
@@ -113,7 +113,7 @@ The API returns codes. The Player shows (57.07):
 
 | File | Change |
 |---|---|
-| `shared/db/migrations/0217_parental_policies{,.sqlite}.sql`, `MANIFEST.md` | tables |
+| `shared/db/migrations/0221_parental_policies{,.sqlite}.sql`, `MANIFEST.md` | tables |
 | `api/internal/parental/policy.go`, `cache.go` (new) | load, cache, notify |
 | `api/internal/handlers/parental/accounts.go` (new), `accounts_pg_test.go` | routes, T02 |
 | `api/internal/handlers/users/` | `parental` on create; 409 on admin |
