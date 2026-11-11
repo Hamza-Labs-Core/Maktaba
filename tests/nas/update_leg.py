@@ -151,15 +151,20 @@ class UpdateLeg(nas.Cell):
 
     def counted(self) -> dict[str, int]:
         """Each library's videos: the fixture libraries' paged (40 clips), the bulk library's
-        from its counts on GET /api/libraries (one request: paging 20,000 videos would hit the
-        per-user rate limit at every poll)."""
+        from its counts on GET /api/libraries/manage, the Manage libraries page's (one request:
+        paging 20,000 videos would hit the per-user rate limit at every poll)."""
         got = super().counted()
         if self.items:
+            assert self.api is not None
             root = f"{self.media}/{BULK}"
-            lib = next((x for x in self.libraries() if root in (x.get("roots") or [])), None)
+            s, d = self.api.get("/api/libraries/manage")
+            if s != 200 or not isinstance(d, dict):
+                raise AssertionError(f"GET /api/libraries/manage: {s} {d}")
+            lib = next((x for x in d.get("items") or []
+                        if root in [r.get("path") for r in x.get("roots") or []]), None)
             counts = (lib or {}).get("counts") or {}
             if "total" not in counts:
-                raise AssertionError(f"GET /api/libraries gives the bulk library no counts: {lib}")
+                raise AssertionError(f"GET /api/libraries/manage gives the bulk library no counts: {lib}")
             got[BULK] = int(counts["total"]) - int(counts.get("missing", 0))
         return got
 
