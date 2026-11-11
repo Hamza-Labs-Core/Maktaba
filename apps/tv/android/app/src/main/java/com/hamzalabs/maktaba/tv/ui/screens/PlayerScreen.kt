@@ -3,7 +3,9 @@ package com.hamzalabs.maktaba.tv.ui.screens
 import android.view.KeyEvent
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -14,6 +16,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
@@ -29,6 +33,7 @@ import com.hamzalabs.maktaba.tv.MaktabaTVApp
 import com.hamzalabs.maktaba.tv.R
 import com.hamzalabs.maktaba.tv.playback.TvPlayback
 import com.hamzalabs.maktaba.core.R as CoreR
+import com.hamzalabs.maktaba.core.ui.sentence
 import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.LaunchedEffect
@@ -178,12 +183,27 @@ fun PlayerScreen(
                 onChooseHome = { app.session.switchHome() },
                 onBack = onBack,
             )
-            playback.opening -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            playback.opening || playback.waiting != null -> Column(
+                Modifier.fillMaxSize().padding(48.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+            ) {
                 Text(
                     stringResource(R.string.preparing) + "\n" + title,
                     style = MaterialTheme.typography.titleLarge,
                     color = MaktabaPalette.Text,
+                    textAlign = TextAlign.Center,
                 )
+                // no transcode slot free (story 59.05): the player asks again by itself
+                playback.waiting?.let { w ->
+                    Text(
+                        stringResource(w.kind.sentence(video = true)),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaktabaPalette.Muted,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.testTag("waiting"),
+                    )
+                }
             }
         }
     }

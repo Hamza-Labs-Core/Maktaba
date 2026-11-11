@@ -246,6 +246,12 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Android TV waits for a free transcoder (story 59.05).** When every transcode slot of the
+  home is taken (503 `transcode_busy`, a Light-tier NAS converts one video at a time), the TV
+  player no longer stops on its error screen: it shows the waiting sentence under Preparing and
+  asks again after the home's `Retry-After` (10 s), the same wait as the phone, tablet, Apple and
+  desktop players, until the video starts.
+
 - **A video with no title shows its file name without the extension.** A video whose file
   carries no title metadata was listed by its raw file name, extension and all
   (`My Lecture 03.mp4`). The library, home rows, search, series, collections, playlists, the
