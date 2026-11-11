@@ -1,73 +1,95 @@
 ---
 platform: truenas
-devices: an N100 box on TrueNAS SCALE 25.04, then the same box on 25.10
+devices: an Intel N100 box and a CPU-only box, each on TrueNAS 25.04, then on 25.10 (an NVIDIA card where one is at hand)
 status: draft
 ---
 
 # TrueNAS device checklist
 
-Run on TrueNAS 25.04 and again on 25.10, before TrueNAS's first release and after each TrueNAS
-major. The install is the Maktaba app (Epic 59 story 59.10); the result goes in
-[results/](results/README.md). Screenshots are dark, in English and Arabic, under
-`docs/nas/checklists/screenshots/truenas/`.
+Run on TrueNAS 25.04 (Fangtooth) and again on 25.10 (Goldeye), on the N100 box and on a CPU-only
+box, before the app goes to TrueNAS's catalog (Epic 59 README Q2) and after each TrueNAS major.
+The install is story 59.10's app (`deploy/nas/truenas`) and its Custom App YAML; the result goes
+in [results/](results/README.md) with the logs. Screenshots are dark, in English and Arabic,
+under `docs/nas/checklists/screenshots/truenas/`. The step's screenshots are of Maktaba; the
+guide's screenshots of TrueNAS's own screens are taken in the same run (step 13).
 
 ## Install from the app
 
 ### 1. The datasets
-- **Do:** create `apps/maktaba` on the SSD pool with the Apps preset, and a media dataset `tank/media` with a few videos.
-- **See:** `apps/maktaba`'s ACL lists the `apps` user (568) with Modify.
+- **Do:** Datasets → Add Dataset `apps/maktaba` on the SSD pool (the main pool on a box without one) with the preset **Apps**; a media dataset `tank/media` with a few videos, one 1080p HEVC; a second media dataset `tank/private` with no ACL entry for 568.
+- **See:** `apps/maktaba`'s ACL lists the `apps` user (568) with Modify; `tank/private`'s does not list it.
 - **Screenshots:** none
 
 ### 2. Install the app
-- **Do:** Apps → Discover → Maktaba (or the custom catalog while the app is under review) → Install: data on `/mnt/<ssd>/apps/maktaba`, media `/mnt/tank/media` read-only, memory 8 GB, GPU Intel-AMD.
-- **See:** the app deploys and goes Running; its workload runs as 568:568.
-- **Screenshots:** `truenas/02-install.en.png`, `truenas/02-install.ar.png`
+- **Do:** Apps → Discover → Maktaba (until it is in the catalog: Apps → Discover → ⋮ → Install via YAML with `maktaba-truenas-custom-app.yaml`, step 7) → Install with the defaults, data host path `/mnt/<ssd>/apps/maktaba`, media `/mnt/tank/media` read-only, GPU: allocate the Intel GPU on the N100.
+- **See:** the app goes Deploying, then Running (healthy while it waits for setup); its notes say how to run the setup; Workloads shows the container as 568:568.
+- **Screenshots:** none
 
-### 3. Finish setup in the browser
-- **Do:** open the app's Web UI button (`http://<nas>:8088`), set up in English, then in a second browser profile in Arabic up to the first screen.
-- **See:** Settings → This machine names the platform TrueNAS, tier Standard, memory 8 GB, the iHD driver on the N100's render device.
-- **Screenshots:** `truenas/03-this-machine.en.png`, `truenas/03-this-machine.ar.png`
+### 3. Setup from the app's Shell
+- **Do:** Apps → Installed → Maktaba → Workloads → maktaba → Shell; run `/opt/maktaba/server/bin/maktaba-server container setup`; answer in English. Then open the app's Web UI button (`http://<nas>:8088`) and, in a second browser profile, sign in in Arabic.
+- **See:** the setup finishes; within a few minutes the web app answers and the app stays Running and healthy.
+- **Screenshots:** `truenas/03-ready.en.png`, `truenas/03-ready.ar.png`
 
-### 4. ARC counts as available memory
-- **Do:** copy a few large files from the pool so ARC grows (the dashboard's ZFS cache), then reload This machine.
-- **See:** available memory includes the ARC (close to the container's limit), not only MemAvailable.
-- **Screenshots:** `truenas/04-arc.en.png`, `truenas/04-arc.ar.png`
+### 4. This machine
+- **Do:** Settings → This machine.
+- **See:** platform TrueNAS, tier Standard from the app's 8 GB memory limit, the iHD driver on the N100's render device (none on the CPU-only box); available memory counts the ZFS ARC.
+- **Screenshots:** `truenas/04-this-machine.en.png`, `truenas/04-this-machine.ar.png`
+
+### 5. ARC counts as available memory
+- **Do:** copy a few large files on the pool so the ARC grows (Dashboard → Memory: ZFS cache), then reload This machine.
+- **See:** available memory stays close to the app's limit (ARC counted), and the tier does not drop.
+- **Screenshots:** `truenas/05-arc.en.png`, `truenas/05-arc.ar.png`
+
+### 6. Discovery on the host network
+- **Do:** open the Maktaba app on a phone and a TV on the same network.
+- **See:** both find the home by itself (mDNS); TrueNAS's own name (`truenas.local`) still resolves.
+- **Screenshots:** none
+
+### 7. The Custom App YAML
+- **Do:** on a second run, install `maktaba-truenas-custom-app.yaml` from the release page as a Custom App, after changing its CHANGE lines; set up as in step 3.
+- **See:** the same result as steps 2 to 4.
+- **Screenshots:** none
 
 ## Permissions
 
-### 5. A dataset Maktaba cannot read
-- **Do:** add a library on a dataset with no ACL entry for 568.
-- **See:** No access, with TrueNAS's fix: Datasets → {dataset} → Permissions, add an ACL entry for user 568 with Modify (or Read).
-- **Screenshots:** `truenas/05-no-access.en.png`, `truenas/05-no-access.ar.png`
+### 8. A dataset Maktaba cannot read
+- **Do:** add `/mnt/tank/private` to the app's media folders (Edit → Media Folders), then add it as a library.
+- **See:** the app still deploys; the library shows No access with TrueNAS's fix: Datasets → tank/private → Permissions, add an ACL entry for user 568 with Modify (or Read).
+- **Screenshots:** `truenas/08-no-access.en.png`, `truenas/08-no-access.ar.png`
 
-### 6. The ACL fix flow
-- **Do:** add the entry with Read, then press Check access.
+### 9. The ACL fix flow
+- **Do:** add the entry with Read, Save Access Control List, then press Check access.
 - **See:** the library turns Read only; a scan finds its videos; convert and delete are disabled with the reason.
-- **Screenshots:** `truenas/06-read-only.en.png`, `truenas/06-read-only.ar.png`
+- **Screenshots:** `truenas/09-read-only.en.png`, `truenas/09-read-only.ar.png`
 
-### 7. ixVolume
-- **Do:** install a second copy of the app with ixVolume for its data.
-- **See:** the catalog's permissions step owns the volume for 568 before Maktaba starts; Maktaba starts with no write-denied exit.
+### 10. ixVolume and a data folder Maktaba cannot write
+- **Do:** install a second copy with ixVolume for its data; then a third with a host-path data dataset made without the Apps preset.
+- **See:** the ixVolume copy: the permissions step owns the volume for 568 and Maktaba starts. The third stops at once; its logs say "Edit the dataset's permissions and add an ACL entry for user 568 with Modify, or use the Apps preset."
 - **Screenshots:** none
 
 ## Hardware and updates
 
-### 8. VA-API on the N100
-- **Do:** with the app's GPU setting passing the N100's `/dev/dri` (the render group added), open Settings → This machine, then play a 1080p HEVC file on a browser that needs a transcode; note the speed from the server log's `vod_transcode` lines.
-- **See:** This machine says "Video: hardware (iHD), H.264 and HEVC"; playback is smooth and the transcode runs at 2× real time or faster.
-- **Screenshots:** `truenas/08-vaapi.en.png`, `truenas/08-vaapi.ar.png`
+### 11. VA-API on the N100, NVIDIA on 25.10
+- **Do:** play the 1080p HEVC file in a browser that needs a transcode; note the speed from the server log's `vod_transcode` lines. Where an NVIDIA card is at hand: Apps → Configuration → Install NVIDIA Drivers, select the card in the app's GPU setting, play again.
+- **See:** This machine says "Video: hardware (iHD), H.264 and HEVC" and the transcode runs at 2× real time or faster. NVIDIA: NVENC used, speech on the Strong tier uses CUDA; a Pascal or older card on 25.10 falls back to the CPU with the reason shown.
+- **Screenshots:** `truenas/11-video.en.png`, `truenas/11-video.ar.png`
 
-### 9. Plugin isolation
+### 12. Plugin isolation
 - **Do:** Settings → This machine → plugin isolation.
 - **See:** the level matches TrueNAS's kernel (Full with Landlock, Container without); write it in the result file.
-- **Screenshots:** `truenas/09-isolation.en.png`, `truenas/09-isolation.ar.png`
+- **Screenshots:** `truenas/12-isolation.en.png`, `truenas/12-isolation.ar.png`
 
-### 10. A catalog update and a self-update
+### 13. The guide's TrueNAS screenshots
+- **Do:** with TrueNAS's UI in dark mode, take each screenshot the maktaba.tv guide lists as a placeholder (`web/packages/install/README.md`, "Screenshot placeholders"): the dataset with the Apps preset, the ACL editor's entry for 568, the app's install form (storage, network, resources and GPU), the app's Shell with the setup command, Install via YAML; in English, and in Arabic where TrueNAS's UI has it.
+- **See:** each file under `web/packages/install/site/screenshots/truenas/` as the placeholder names it; each placeholder figure then becomes the image.
+- **Screenshots:** none
+
+### 14. A catalog update and a self-update
 - **Do:** with an older app version installed, update the app from Apps; on another run, let the self-update install a release in the update window.
 - **See:** both end on the new version; an older image never replaces a newer runtime; the pre-update dump is in backups.
-- **Screenshots:** `truenas/10-updated.en.png`, `truenas/10-updated.ar.png`
+- **Screenshots:** `truenas/14-updated.en.png`, `truenas/14-updated.ar.png`
 
-### 11. Logs and the setup report
+### 15. Logs and the setup report
 - **Do:** save the app's logs (Apps → Maktaba → Logs, or `docker logs` in the shell) and copy the report from This machine.
 - **See:** both are attached to the result file, with no secret in them.
 - **Screenshots:** none

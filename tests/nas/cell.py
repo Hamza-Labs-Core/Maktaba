@@ -634,6 +634,14 @@ class Cell:
     def assert_ready(self) -> str:
         return "health, sign-in and " + ", ".join(ROLES) + " running"
 
+    def assert_healthcheck(self) -> str:
+        """59.10: the image's own healthcheck (what the TrueNAS app's compose runs, by `docker
+        exec` as the container's user) says healthy once the web app answers."""
+        p = docker("exec", self.container, "/opt/maktaba/server/bin/maktaba-server", "healthcheck", check=False)
+        if p.returncode != 0 or "answered 200" not in p.stdout:
+            raise AssertionError(f"healthcheck exited {p.returncode}: {(p.stdout + p.stderr).strip()[-400:]}")
+        return p.stdout.strip()
+
     def assert_only_uid(self) -> str:
         try:
             top = docker("top", self.container, "-eo", "uid,pid,comm").stdout.splitlines()[1:]

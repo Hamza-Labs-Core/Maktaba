@@ -1,0 +1,188 @@
+<!doctype html>
+<!-- maktaba.tv/install/truenas (Epic 59 story 59.10): the TrueNAS guide, a static page.
+     Its twin in the other language has the same sections; a placeholder figure (class
+     placeholder, data-shot) stands for a TrueNAS screenshot the device checklist takes. -->
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Install Maktaba on TrueNAS · Maktaba</title>
+    <meta
+      name="description"
+      content="Install Maktaba on TrueNAS 25.04 and newer: the datasets and their permissions, the app, its setup, and what comes after."
+    />
+    <link rel="alternate" hreflang="en" href="https://maktaba.tv/install/truenas/" />
+    <link rel="alternate" hreflang="ar" href="https://maktaba.tv/ar/install/truenas/" />
+    <link rel="stylesheet" href="/install/install.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Install Maktaba on TrueNAS</h1>
+      <p class="lead">One app runs everything and updates itself.</p>
+      <nav><a href="/ar/install/truenas/" hreflang="ar" lang="ar">العربية</a></nav>
+    </header>
+    <main class="guide">
+      <p>
+        For TrueNAS Community Edition <strong>25.04 (Fangtooth) and newer</strong> (25.10 Goldeye
+        included). TrueNAS CORE is not supported. About 20 minutes.
+      </p>
+      <p>
+        Maktaba runs as one app on your NAS: the server, the web app, live TV, the pipeline that
+        reads your library, and its own database. It updates itself, inside the update window you
+        choose.
+      </p>
+      <h2>Before you start</h2>
+      <ul>
+        <li>
+          <strong>Memory:</strong> 8 GB or more is comfortable; Maktaba runs from 4 GB. Don't worry
+          when TrueNAS's dashboard shows memory as "used": that is ZFS's cache (the ARC), which
+          gives memory back when an app needs it. Maktaba counts it as available.
+        </li>
+        <li>
+          <strong>An SSD pool</strong> if you have one: Maktaba's database and thumbnails are much
+          faster there. Your media can stay on hard disks.
+        </li>
+        <li>
+          <strong>A GPU</strong> (optional): an Intel chip (an N100, a Core with Quick Sync) or AMD
+          converts video for phones and browsers without loading the CPU. An NVIDIA card also speeds
+          up speech to text.
+        </li>
+      </ul>
+      <h2>1. Make the data dataset</h2>
+      <p>
+        Datasets → <strong>Add Dataset</strong> on your SSD pool (or your main pool), name it
+        <code>apps/maktaba</code>, and set <strong>Dataset Preset</strong> to <strong>Apps</strong>.
+        The Apps preset gives TrueNAS's <code>apps</code> user (568), which Maktaba runs as, the
+        right to write there. Maktaba never changes permissions itself.
+      </p>
+      <figure class="placeholder" data-shot="screenshots/truenas/dataset-apps-preset.en.png">
+        <figcaption>
+          📷 <strong>Screenshot to come:</strong>
+          <code>screenshots/truenas/dataset-apps-preset.en.png</code>: Add Dataset with the Apps
+          preset.
+        </figcaption>
+      </figure>
+      <h2>2. Let Maktaba read your media</h2>
+      <p>
+        For each dataset with films or series: Datasets → choose it → <strong>Permissions</strong> →
+        <strong>Edit</strong> → <strong>Add Item</strong>: Who <strong>User</strong>, User
+        <strong>apps</strong>, Permissions <strong>Read</strong> (or <strong>Modify</strong> if
+        Maktaba may write subtitles beside your videos) → <strong>Save Access Control List</strong>.
+      </p>
+      <figure class="placeholder" data-shot="screenshots/truenas/acl-entry.en.png">
+        <figcaption>
+          📷 <strong>Screenshot to come:</strong> <code>screenshots/truenas/acl-entry.en.png</code>:
+          the ACL editor with the apps user's entry.
+        </figcaption>
+      </figure>
+      <p>
+        If you skip a dataset, Maktaba still installs; that library shows
+        <strong>No access</strong>, with this same fix.
+      </p>
+      <h2>3. Install the app</h2>
+      <p>
+        Apps → <strong>Discover Apps</strong> → search <strong>Maktaba</strong> →
+        <strong>Install</strong>.
+      </p>
+      <ul>
+        <li><strong>Timezone:</strong> yours.</li>
+        <li><strong>User and Group:</strong> keep 568 and 568.</li>
+        <li>
+          <strong>Network:</strong> keep <strong>Host Network</strong> on. Your phones and TVs then
+          find Maktaba by themselves.
+        </li>
+        <li>
+          <strong>Storage → Maktaba Data Storage:</strong> Host Path,
+          <code>/mnt/&lt;your SSD pool&gt;/apps/maktaba</code>.
+        </li>
+        <li>
+          <strong>Storage → Media Folders:</strong> add each media dataset, for example
+          <code>/mnt/tank/media</code>. Tick <strong>Read Only</strong> if Maktaba should never
+          write there.
+        </li>
+        <li>
+          <strong>Resources → Memory:</strong> 8192 MB is a good start. Maktaba sizes itself to this
+          limit.
+        </li>
+        <li>
+          <strong>Resources → GPU:</strong> tick your Intel or AMD GPU, or choose your NVIDIA card
+          (install TrueNAS's NVIDIA drivers first: Apps → Configuration → Settings).
+        </li>
+      </ul>
+      <figure class="placeholder" data-shot="screenshots/truenas/install-storage.en.png">
+        <figcaption>
+          📷 <strong>Screenshot to come:</strong>
+          <code>screenshots/truenas/install-storage.en.png</code> and
+          <code>screenshots/truenas/install-resources.en.png</code>: the install form's Storage and
+          Resources.
+        </figcaption>
+      </figure>
+      <p>
+        <strong>Maktaba not in Discover Apps yet?</strong> Until it is in TrueNAS's catalog, install
+        it as a Custom App: download <code>maktaba-truenas-custom-app.yaml</code> from the
+        <a href="https://github.com/Hamza-Labs-Core/Maktaba/releases/latest">newest release</a>,
+        change the lines marked <code>CHANGE</code> (your time zone, your data dataset, your media),
+        then Apps → Discover Apps → <strong>⋮</strong> → <strong>Install via YAML</strong>, name it
+        <code>maktaba</code>, paste the file and <strong>Save</strong>.
+      </p>
+      <figure class="placeholder" data-shot="screenshots/truenas/install-via-yaml.en.png">
+        <figcaption>
+          📷 <strong>Screenshot to come:</strong>
+          <code>screenshots/truenas/install-via-yaml.en.png</code>: Install via YAML.
+        </figcaption>
+      </figure>
+      <h2>4. Run the setup</h2>
+      <p>
+        When the app shows <strong>Running</strong>: Apps → Installed → Maktaba →
+        <strong>Workloads</strong> → maktaba → <strong>Shell</strong> (the terminal icon), and run:
+      </p>
+      <pre><code>/opt/maktaba/server/bin/maktaba-server container setup</code></pre>
+      <p>
+        Answer its questions (the admin's name and password, your libraries). Maktaba starts by
+        itself when it finishes. Open <strong>Web UI</strong> on the app's page, or
+        <code>http://&lt;your NAS&gt;:8088</code>.
+      </p>
+      <figure class="placeholder" data-shot="screenshots/truenas/app-shell.en.png">
+        <figcaption>
+          📷 <strong>Screenshot to come:</strong> <code>screenshots/truenas/app-shell.en.png</code>:
+          the app's Shell with the setup command.
+        </figcaption>
+      </figure>
+      <h2>After setup</h2>
+      <ul>
+        <li>
+          <strong>Settings → This machine</strong> shows what Maktaba found: TrueNAS, its tier (from
+          the memory limit), the memory available (ZFS's cache counted), and the video hardware.
+        </li>
+        <li>
+          <strong>A library shows No access or Read only:</strong> add the ACL entry of step 2 for
+          user 568, then press <strong>Check access</strong>.
+        </li>
+        <li>
+          <strong>Maktaba stopped right after install</strong> and its logs say it cannot write to
+          its data folder: edit the dataset's permissions and add an ACL entry for user 568 with
+          Modify, or use the Apps preset.
+        </li>
+        <li>
+          <strong>Video:</strong> with an Intel or AMD GPU allocated, This machine says "Video:
+          hardware (iHD), H.264 and HEVC". TrueNAS 25.10's NVIDIA drivers no longer support Pascal
+          and older cards (GTX 10xx and earlier): Maktaba then converts on the CPU and says why.
+        </li>
+        <li>
+          <strong>Updates:</strong> Maktaba updates itself inside its update window (Admin →
+          Updates), and TrueNAS updates the app when the catalog moves it. Either way your home
+          carries on.
+        </li>
+        <li>
+          <strong>Reinstalling</strong> with the same data dataset brings your home back as it was.
+        </li>
+        <li>
+          <strong>Host Network off:</strong> set <strong>Host IP</strong> to the NAS's address.
+          Phones and TVs then can't find Maktaba by themselves; they connect by the NAS's address,
+          the home's HTTPS name, or a code from Maktaba Cloud.
+        </li>
+      </ul>
+    </main>
+  </body>
+</html>
