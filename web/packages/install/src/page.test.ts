@@ -40,6 +40,18 @@ describe("the install page", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  // story 59.12: the self-update and a NAS's own app updates live side by side
+  it.each([
+    ["en", ":latest", "Watchtower"],
+    ["ar", ":latest", "Watchtower"],
+  ] as const)("says how it updates (%s)", (lang, tag, tool) => {
+    const root = document.createElement("main");
+    mount(root, BASE, lang);
+    const text = root.querySelector(".result")!.textContent!;
+    expect(text).toContain(tag);
+    expect(text).toContain(tool);
+  });
+
   it("refuses root", () => {
     const root = document.createElement("main");
     mount(root, BASE, "en");
