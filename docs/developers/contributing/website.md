@@ -68,14 +68,16 @@ source it is built from:
   WCAG 2.0, 2.1 and 2.2 A and AA rules, dark and light; the keyboard (a skip link first, Tab in
   reading order, the phone menu once the shell declares one); a 2 px focus ring at 3:1, not
   covered; 24 px targets; no sideways scroll at 320 px; text spacing; reduced motion; the
-  languages; no layout shift; RTL mirroring; and the visual references. Kept: `website-playwright`
-  (the report), `website-axe` (axe's findings), `website-visual-diff` (on a mismatch, the
-  expected, actual and diff images), `website-worker-log-quality`.
+  languages; no layout shift; RTL mirroring; and the visual references. It runs in four shards
+  (`--shard`), one job each. Kept, per shard `<n>`: `website-playwright-<n>` (the report),
+  `website-axe-<n>` (axe's findings), `website-visual-diff-<n>` (on a mismatch, the expected,
+  actual and diff images), `website-worker-log-quality-<n>`.
 - **lighthouse:** Lighthouse on mobile, three runs per page, the median judged: 95 or more for
   performance, accessibility, best practices and SEO, layout shift 0, and 500 KB or less on the
-  hand-made pages. It measures the hand-made pages and each family's representatives
-  (`e2e/representatives.json`) in both languages, and the whole family, one run per page, when the
-  pull request changes what the family is generated from. A fixture page with an unsized image
+  hand-made pages. It measures the hand-made pages (with the problem index) and each family's
+  representatives (`e2e/representatives.json`) in both languages, and, when the pull request
+  changes what a family is generated from, its other pages, one run each: all of them up to 16,
+  and beyond that 16 spread evenly over it (the nightly measures every page). A fixture page with an unsized image
   must fail it first (the positive control). Kept: `website-lighthouse`, with the HTML and JSON
   reports and a table of the scores in the run's summary.
 
@@ -113,7 +115,7 @@ When a change to a page's look is meant:
 ## The nightly sweep
 
 `website-nightly.yml` runs every night on `main` (and by hand): Lighthouse on every page in both
-languages, one run per page, in eight shards of 15 minutes. A page under the bar is measured
+languages, one run per page, in sixteen shards of 15 minutes. A page under the bar is measured
 three more times and judged on that median. A failure makes the run red and names the pages in
 its summary and in the `website-nightly-failures` artifact. The next deploy measures those pages
 again in its own build and goes on only when they pass, so a fix that lands, or a revert, unblocks

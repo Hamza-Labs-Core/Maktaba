@@ -30,6 +30,8 @@ async function measure(page: Page, url: string) {
 for (const family of families) {
   test(`${family}: the representatives are its pages and each claim holds`, async ({ page }) => {
     const pages = sitePages().filter((p) => p.kind === family && p.lang === "en");
+    // every page of the family is measured: the problem pages are 288, so time for each
+    test.setTimeout(Math.max(90_000, pages.length * 1_500));
     const chosen = reps[family];
     if (!pages.length) {
       expect(chosen, `${family} has no pages yet, so no representatives`).toEqual({});

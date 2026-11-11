@@ -7,19 +7,21 @@
 //     shared/api/problems.json (story 60.06), so the API's pull requests need no site build;
 //   - every other link names a file of the built site, as dist-manifest.json lists it (the
 //     site build regenerates it with --write-manifest), with the Worker's auto-trailing-slash
-//     rule (/x, /x/ and /x/index.html are the same page), and a #fragment names an id on it.
+//     rule (/x, /x/ and /x/index.html are the same page), and a #fragment names an id on it;
+//   - a link to one of the Worker's redirects (src/redirects.json, the table src/worker.ts
+//     serves: /docs) passes when the page it redirects to opens.
 //
 // Left out: the trail (docs/trail/**, docs/claude-trail.md), the specs (specs/**: plans, not
 // links), the wiki databases built from them, test files (parser inputs, not links; TEST_PATHS
 // below) and this check's own data files. links-allow.json lists the links that are not links
 // (each with its reason); a new entry is reviewed like code.
 //
-// THE BASELINE (links-baseline.json) is temporary. When this check landed, maktaba.tv served
-// nothing, so every link was dead; each one is listed there with the story whose page makes it
-// live (60.03, 60.05, 60.06, ...). The check fails on a dead link that is not in the baseline,
-// and on a baseline entry that is no longer dead (or no longer in its file), so the baseline
-// only shrinks: the pull request that ships a page removes its entries (--prune-baseline).
-// It must be empty by the end of Epic 60's Phase 1; then this file and the job drop it.
+// THE BASELINE (links-baseline.json) is empty since story 60.06 shipped the problem pages (the
+// last of the links that were dead when this check landed). The mechanism stays: the check
+// fails on a dead link that is not in the baseline, and on a baseline entry that is no longer
+// dead (or no longer in its file), and --prune-baseline only removes entries. A NEW ENTRY IS
+// REVIEWED LIKE AN ALLOW-LIST ENTRY: it is a dead link shipped on purpose, with the story whose
+// page makes it live, and the pull request says why the link cannot wait for its page.
 //
 // Usage (Node's standard library only, from any directory):
 //   node web/packages/website/scripts/links.mjs                 the check
@@ -135,11 +137,27 @@ export function loadSlugs(root) {
 }
 
 // The manifest: {files: ["/x/index.html", ...], ids: {"/x/index.html": ["a", ...]},
-// redirects: {"/docs": "/"}}. The Worker's redirects are not files; --write-manifest keeps them.
+// redirects: {"/docs": "/"}}. The Worker's redirects are not files: --write-manifest copies them
+// from the Worker's table (loadRedirects), so the manifest says what the check passed.
 export function loadManifest(file) {
   if (!existsSync(file)) return { files: [], ids: {}, redirects: {} };
   const m = JSON.parse(readFileSync(file, "utf8"));
   return { files: m.files || [], ids: m.ids || {}, redirects: m.redirects || {} };
+}
+
+// The Worker's redirects, source path → target path: src/redirects.json, the table
+// src/worker.ts serves (its "$comment" left out). A missing table is no redirect.
+export function loadRedirects(pkg) {
+  const file = path.join(pkg, "src/redirects.json");
+  if (!existsSync(file)) return {};
+  const out = {};
+  for (const [from, to] of Object.entries(JSON.parse(readFileSync(file, "utf8")))) {
+    if (!from.startsWith("/")) continue;
+    if (typeof to !== "string" || !to.startsWith("/"))
+      throw new Error(`src/redirects.json: ${from} redirects to ${JSON.stringify(to)}, not a path`);
+    out[from] = to;
+  }
+  return out;
 }
 
 // Vite's content-hashed bundles (/install/assets/main-M8RBXfxV.js), as src/headers.ts names
@@ -186,9 +204,19 @@ export function resolvePage(manifest, p) {
   return null;
 }
 
-function isRedirect(manifest, p) {
-  const clean = p.replace(/\/+$/, "") || "/";
-  return Object.keys(manifest.redirects).some((k) => (k.replace(/\/+$/, "") || "/") === clean);
+// redirectTarget: where the Worker sends a path (the exact source, as worker.ts matches it),
+// or null when it is not a redirect.
+export function redirectTarget(manifest, p) {
+  return Object.hasOwn(manifest.redirects, p) ? manifest.redirects[p] : null;
+}
+
+// a redirect whose target opens a page (a target that is itself a redirect is followed, up to
+// a few hops, so a loop is no page)
+function redirectOpens(manifest, p, hops = 5) {
+  const to = redirectTarget(manifest, p);
+  if (to === null) return false;
+  if (resolvePage(manifest, to)) return true;
+  return hops > 0 && redirectOpens(manifest, to, hops - 1);
 }
 
 const PROBLEM_RE = /^\/(?:ar\/)?problems\/([^/]+)\/?$/;
@@ -200,7 +228,12 @@ export function checkLink(l, slugs, manifest) {
     if (!slugs.has(pm[1])) return `no problem type "${pm[1]}" in shared/api/problems.json`;
     return null;
   }
-  if (isRedirect(manifest, l.path) && !l.fragment) return null;
+  if (redirectTarget(manifest, l.path) !== null) {
+    if (l.fragment) return "a redirect keeps no #fragment";
+    if (!redirectOpens(manifest, l.path))
+      return `redirects to ${redirectTarget(manifest, l.path)}, which is no page on maktaba.tv`;
+    return null;
+  }
   const page = resolvePage(manifest, l.path);
   if (!page) return "no such page on maktaba.tv";
   if (l.fragment && !(manifest.ids[page] || []).includes(l.fragment)) {
@@ -272,7 +305,12 @@ export function siteFindings(dist, redirects = {}) {
       const p = decodeURIComponent(u.pathname);
       const frag = decodeURIComponent(u.hash.slice(1));
       if (tag === "href") anchors.add(p.replace(/index\.html$/, ""));
-      if (isRedirect(all, p) && !frag) continue;
+      if (redirectTarget(all, p) !== null) {
+        if (frag) out.push(`${f}: ${tag}="${v}": a redirect keeps no #fragment`);
+        else if (!redirectOpens(all, p))
+          out.push(`${f}: ${tag}="${v}": redirects to ${redirectTarget(all, p)}, no file in dist/`);
+        continue;
+      }
       const page = resolvePage(all, p);
       if (!page) {
         out.push(`${f}: ${tag}="${v}": no such file in dist/`);
@@ -432,7 +470,7 @@ function main(argv) {
   const baselineFile = path.join(pkg, "links-baseline.json");
 
   if (args.writeManifest) {
-    const m = manifestOf(path.resolve(args.writeManifest), loadManifest(manifestFile).redirects);
+    const m = manifestOf(path.resolve(args.writeManifest), loadRedirects(pkg));
     writeFileSync(manifestFile, JSON.stringify(m, null, 2) + "\n");
     console.log(
       `links.mjs: wrote ${path.relative(process.cwd(), manifestFile)}: ${m.files.length} files`
@@ -441,9 +479,11 @@ function main(argv) {
   }
 
   const slugs = loadSlugs(root);
+  // the redirects are always the Worker's own table (a manifest's copy may lag behind it)
+  const redirects = loadRedirects(pkg);
   const manifest = args.dist
-    ? manifestOf(path.resolve(args.dist), loadManifest(manifestFile).redirects)
-    : loadManifest(manifestFile);
+    ? manifestOf(path.resolve(args.dist), redirects)
+    : { ...loadManifest(manifestFile), redirects };
   const allow = loadJSON(path.join(pkg, "links-allow.json"), []);
   const baseline = loadJSON(baselineFile, []);
   for (const a of allow) {
@@ -496,7 +536,7 @@ function main(argv) {
   }
   console.log(
     `links.mjs: ${scanned.links.length} links checked; ${result.dead.length} dead outside the baseline; ` +
-      `${baseline.length} still in the baseline (temporary: it must be empty by the end of Epic 60's Phase 1)`
+      `${baseline.length} in the baseline (empty since 60.06: a new entry is reviewed like an allow-list entry)`
   );
   return fail;
 }

@@ -5,8 +5,16 @@
 
 export const APEX = "maktaba.tv";
 
-/** Where /docs goes: the front door until the help pages exist (60.12 makes it /help/). */
-export const DOCS_TARGET = "/";
+import table from "./redirects.json";
+
+/** The Worker's redirects, source path → target path (src/redirects.json, which the link check
+ * reads too). /docs goes to the front door until the help pages exist (60.12 makes it /help/). */
+export const REDIRECTS: Readonly<Record<string, string>> = Object.fromEntries(
+  Object.entries(table).filter(([k]) => k.startsWith("/"))
+);
+
+/** Where /docs goes. */
+export const DOCS_TARGET = REDIRECTS["/docs"];
 
 const BASE_CSP = [
   "default-src 'self'",

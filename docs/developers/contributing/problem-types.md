@@ -5,7 +5,9 @@ Every error the Maktaba API sends is an RFC 9457 problem (`application/problem+j
 went wrong: `https://maktaba.tv/problems/seat-limit`. Each slug is an entry of one registry,
 [`shared/api/problems.json`](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/shared/api/problems.json),
 and maktaba.tv publishes a page for each entry, in English and Arabic, saying what happened and
-what a person can do.
+what a person can do. Each entry gets its page at `https://maktaba.tv/problems/<slug>/` and
+`https://maktaba.tv/ar/problems/<slug>/`, built from the registry with the site (a new entry needs
+no page of its own), and [the index](https://maktaba.tv/problems/) lists them all by `area`.
 
 ## An entry
 

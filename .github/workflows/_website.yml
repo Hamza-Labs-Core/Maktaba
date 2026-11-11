@@ -189,13 +189,18 @@ jobs:
   # ---- the quality bar (story 60.04) -----------------------------------------------------------
 
   # Playwright and axe on every page in both languages, and the visual references, in the image
-  # the references were rendered in (scripts/e2e-update.sh renders them in the same one).
+  # the references were rendered in (scripts/e2e-update.sh renders them in the same one). Four
+  # shards (Playwright's --shard): the problem pages (60.06) put about 590 pages under every test.
   quality:
-    name: quality (axe, keyboard, layout, RTL, visual)
+    name: quality (axe, keyboard, layout, RTL, visual; shard ${{ matrix.shard }}/4)
     needs: [website]
     if: inputs.quality
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-noble
       options: --ipc=host --init
@@ -254,6 +259,7 @@ jobs:
           CI: "true"
           WEBSITE_VISUAL: "1"
           WEBSITE_BASE: http://127.0.0.1:8787
+          SHARD: ${{ matrix.shard }}
           LOG: logs/worker-quality.log
           PIDFILE: logs/worker-quality.pid
         run: |
@@ -268,7 +274,7 @@ jobs:
           done
           rc=0
           if [ "$up" = 1 ]; then
-            npx playwright test || rc=$?
+            npx playwright test --shard="$SHARD/4" || rc=$?
           else
             echo "::error::wrangler dev never answered on 127.0.0.1:8787"
             rc=1
@@ -281,7 +287,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: website-playwright
+          name: website-playwright-${{ matrix.shard }}
           path: |
             web/packages/website/playwright-report/
             web/packages/website/test-results/results.json
@@ -292,7 +298,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: website-axe
+          name: website-axe-${{ matrix.shard }}
           path: web/packages/website/test-results/axe/
           if-no-files-found: warn
           retention-days: 7
@@ -302,7 +308,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: website-visual-diff
+          name: website-visual-diff-${{ matrix.shard }}
           path: |
             web/packages/website/test-results/output/**/*-expected.png
             web/packages/website/test-results/output/**/*-actual.png
@@ -314,7 +320,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: website-worker-log-quality
+          name: website-worker-log-quality-${{ matrix.shard }}
           path: web/packages/website/logs/worker-quality.log
           if-no-files-found: warn
           retention-days: 7

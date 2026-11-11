@@ -11,6 +11,7 @@ import {
   handMadePattern,
   handMadeUrls,
   pick,
+  sample,
   verdict,
 } from "./lighthouse.mjs";
 
@@ -32,6 +33,9 @@ test("the hand-made pages: their paths, the 404 at /404 (status 200, which Light
     "/install/",
     "/ar/install/",
     ...["privacy", "terms", "copyright"].flatMap((n) => [`/legal/${n}/`, `/ar/legal/${n}/`]),
+    // the problem index (60.06), a family's own page
+    "/problems/",
+    "/ar/problems/",
   ];
   assert.deepEqual(handMadeUrls(), all);
   const re = new RegExp(handMadePattern());
@@ -105,4 +109,25 @@ test("the nightly's verdict: each shard's failures, and every page of a shard wi
   put(4, "[]");
   put(2, "[]");
   assert.deepEqual(verdict({ shards: 4, dir, shardUrls: () => ["/z/"] }).failed, []);
+});
+
+test("a large changed family is sampled evenly, both languages; a small one runs whole", () => {
+  const big = Array.from({ length: 288 }, (_, i) => `/problems/p${String(i).padStart(3, "0")}/`);
+  const urls = [...big, ...big.map((u) => `/ar${u}`)];
+  const s = sample(urls, 16);
+  assert.equal(s.length, 16);
+  assert.ok(s.includes("/problems/p000/") && s.includes("/problems/p287/"), "first and last");
+  for (const u of s.filter((u) => !u.startsWith("/ar/"))) assert.ok(s.includes(`/ar${u}`), u);
+  assert.deepEqual(sample(["/b/", "/a/"], 16), ["/a/", "/b/"]);
+  const fam = urls.map((url) => ({ url, family: "problems" }));
+  const r = pick({
+    set: "pr",
+    pages: fam,
+    reps: { problems: [] },
+    hand,
+    changed: ["shared/api/problems.json"],
+  });
+  assert.equal(r.single.length, 16);
+  // the nightly still sweeps every page
+  assert.equal(pick({ set: "all", pages: fam, reps: {}, hand }).single.length, hand.length + 576);
 });

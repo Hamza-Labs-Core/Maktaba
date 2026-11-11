@@ -173,3 +173,44 @@ describe("60.08 T07: the link check's manifest", () => {
     expect(manifestOf(DIST, committed.redirects)).toEqual(committed);
   });
 });
+
+describe("60.06: the problem pages, as built", () => {
+  const reg = JSON.parse(fs.readFileSync(path.join(b.REPO, "shared/api/problems.json"), "utf8"));
+  const have = fs.existsSync(path.join(DIST, "problems/index.html"));
+
+  it("T09: every slug of the registry has both pages, each with every section", () => {
+    expect(have, "dist/ has the problem pages: run npm run build").toBe(true);
+    for (const e of reg.problems as { slug: string; title: Record<string, string> }[])
+      for (const lang of ["en", "ar"]) {
+        const rel = `${lang === "ar" ? "ar/" : ""}problems/${e.slug}/index.html`;
+        expect(fs.existsSync(path.join(DIST, rel)), rel).toBe(true);
+        const html = read(rel);
+        expect(html, rel).toContain(`<html lang="${lang}" dir="${lang === "ar" ? "rtl" : "ltr"}">`);
+        expect(html, rel).toContain(`data-problem="${e.slug}"`);
+        expect(html, rel).toContain(`<h1>`);
+        for (const id of ["means", "do", "who-helps", "details-title"])
+          expect(html, `${rel}: #${id}`).toContain(`id="${id}"`);
+        expect(html, rel).toContain(`<code>https://maktaba.tv/problems/${e.slug}</code>`);
+      }
+    // no problem page beyond the registry's
+    const built = fs
+      .readdirSync(path.join(DIST, "problems"), { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+      .sort();
+    expect(built).toEqual(reg.problems.map((e: { slug: string }) => e.slug).sort());
+  });
+
+  it("the index links every entry, and its filter is one content-hashed script of the site", () => {
+    for (const lang of ["en", "ar"]) {
+      const html = read(`${lang === "ar" ? "ar/" : ""}problems/index.html`);
+      const links = [...html.matchAll(/<li><a href="([^"]+)"/g)].map((m) => m[1]);
+      expect(new Set(links).size, lang).toBe(reg.problems.length);
+      const src = attr(html, /<script type="module" src="([^"]+)"/);
+      expect(src, lang).toMatch(/^\/assets\/problems-filter-[A-Za-z0-9_-]{10}\.js$/);
+      const js = fs.readFileSync(path.join(DIST, src!.slice(1)), "utf8");
+      expect(js).toContain("export function matches");
+      expect(js).not.toMatch(/: string\b/);
+    }
+  });
+});

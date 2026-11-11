@@ -2,6 +2,7 @@
 // Story 60.03 T05: the build's parts (the page sources, security.txt, the twin check), and the
 // built dist/ itself. The second part reads dist/: run `npm run build` first (CI does).
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 // @ts-ignore: plain JavaScript build scripts
@@ -31,6 +32,26 @@ describe("the build's parts", () => {
     expect(b.shotExists("install/install.css")).toBe(true);
     expect(b.shotExists("screenshots/truenas/no-such.en.png")).toBe(false);
     expect(b.shotExists("../../../LICENSE")).toBe(false);
+  });
+
+  it("60.06: resolves a built path and its fragment, and nothing outside dist/", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "resolver-"));
+    try {
+      fs.mkdirSync(path.join(dir, "install/troubleshooting"), { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, "install/troubleshooting/index.html"),
+        '<h2 id="port-in-use">x</h2>'
+      );
+      const r = b.resolver(dir);
+      expect(r("/install/troubleshooting/")).toBe(true);
+      expect(r("/install/troubleshooting")).toBe(true);
+      expect(r("/install/troubleshooting/#port-in-use")).toBe(true);
+      expect(r("/install/troubleshooting/#nope")).toBe(false);
+      expect(r("/help/users/#seat-limit")).toBe(false);
+      expect(r("/../../etc/passwd")).toBe(false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("reads a page source's leading comment", () => {

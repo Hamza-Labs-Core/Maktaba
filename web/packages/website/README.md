@@ -10,7 +10,8 @@ Worker, which:
 
 - redirects `www.maktaba.tv` and plain http to `https://maktaba.tv`;
 - redirects `/docs` to the front door (`/help/` once the help pages exist, story 60.12), and
-  `/ar/docs` to `/ar/`;
+  `/ar/docs` to `/ar/`: the table is `src/redirects.json`, which the link check reads too (a link
+  to `/docs` passes when the page it redirects to exists);
 - answers a missing path with the 404 page in its language (`/404.html`, or `/ar/404.html`
   under `/ar/`) and status 404;
 - sets the headers on every answer (`src/headers.ts`): a strict CSP (no other origin; the
@@ -20,21 +21,31 @@ Worker, which:
 
 ## What is on the site
 
-| Path                          | What                                     | From                                                 |
-| ----------------------------- | ---------------------------------------- | ---------------------------------------------------- |
-| `/`, `/ar/`                   | the front door (Phase 1)                 | `src/pages/index.html`, `src/pages/ar/index.html`    |
-| `/install/`, `/ar/install/`   | the install chooser (60.05)              | `src/pages/install/index.html` (+ `ar/`)             |
-| `/install/…`, `/ar/install/…` | Epic 59's install guides                 | `web/packages/install` (`pnpm -C web build:install`) |
-| `/legal/…`, `/ar/legal/…`     | privacy, terms, copyright (60.07)        | `copy/legal/`, `scripts/legal.mjs`                   |
-| `/404.html`, `/ar/404.html`   | the 404 page                             | `src/pages/404.html`, `src/pages/ar/404.html`        |
-| `/schema/log-line.json`       | the log schema, at its `$id`             | `shared/log/schema/line.schema.json`                 |
-| `/.well-known/security.txt`   | the disclosure policy, both `Canonical`s | `api/internal/security/disclosure.go`                |
-| `/robots.txt`                 | every page may be crawled                | `scripts/build.mjs`                                  |
+| Path                            | What                                           | From                                                 |
+| ------------------------------- | ---------------------------------------------- | ---------------------------------------------------- |
+| `/`, `/ar/`                     | the front door (Phase 1)                       | `src/pages/index.html`, `src/pages/ar/index.html`    |
+| `/install/`, `/ar/install/`     | the install chooser (60.05)                    | `src/pages/install/index.html` (+ `ar/`)             |
+| `/install/…`, `/ar/install/…`   | Epic 59's install guides                       | `web/packages/install` (`pnpm -C web build:install`) |
+| `/legal/…`, `/ar/legal/…`       | privacy, terms, copyright (60.07)              | `copy/legal/`, `scripts/legal.mjs`                   |
+| `/problems/…`, `/ar/problems/…` | a page per problem type, and the index (60.06) | `shared/api/problems.json`, `scripts/problems.mjs`   |
+| `/404.html`, `/ar/404.html`     | the 404 page                                   | `src/pages/404.html`, `src/pages/ar/404.html`        |
+| `/schema/log-line.json`         | the log schema, at its `$id`                   | `shared/log/schema/line.schema.json`                 |
+| `/.well-known/security.txt`     | the disclosure policy, both `Canonical`s       | `api/internal/security/disclosure.go`                |
+| `/robots.txt`                   | every page may be crawled                      | `scripts/build.mjs`                                  |
 
 A page source in `src/pages/` is the page's `<main>` content after a leading comment
 (`title:`, `description:`, optionally `meta:`). `scripts/shell.mjs` wraps it in the document,
 the header (with the language switch to its twin) and the footer. The install guides lose
 each "Screenshot to come" figure whose image does not exist yet (60.05 T07).
+
+The problem pages are generated from the registry the API sends from, `shared/api/problems.json`
+(`scripts/problems.mjs`): one page per entry in each language, and the index, `/problems/`, grouped
+by area, with a filter that runs in the page (`src/problems-filter.ts`, hidden without JavaScript,
+when the whole list shows anyway). The registry becomes a structured document per page and one
+function renders each (`renderProblem`, `renderIndex`), in the sections of 60.01's problem mockups,
+so the design replaces those two functions. The build fails, naming the entry and the field, when
+an entry lacks a text in either language or names an area `AREAS` has no heading for. A help topic
+or install anchor is linked only when its page is built.
 
 The legal pages are copy (`copy/legal/<page>.<lang>.md`) that `scripts/legal.mjs` turns into a
 structured document and renders with one function (`renderLegal`). The privacy page reads
@@ -57,9 +68,9 @@ npm run dev                # wrangler dev on http://localhost:8787, no canonical
 ```
 
 `scripts/build.mjs` runs, in order: the install build, the generated families (`FAMILIES`:
-problems 60.06, help 60.12, download 60.11), the hand-made pages, the copied files, and the
-checks (every page has its twin in the other language; an Arabic page is Arabic, by
-maktaba.dev's Latin-share check). The link check (60.08) joins them.
+problems 60.06, then help 60.12 and download 60.11), the hand-made pages, the copied files, and
+the checks (every page has its twin in the other language; an Arabic page is Arabic, by
+maktaba.dev's Latin-share check), and writes the link check's manifest (60.08).
 
 ## Deploy, go-live and rollback
 

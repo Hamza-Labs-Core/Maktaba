@@ -41,6 +41,7 @@ import { cardPath, renderCard } from "./cards.mjs";
 import { writeIcons } from "./icons.mjs";
 import { ROBOTS, sitemapXml } from "./sitemap.mjs";
 import { LEGAL, legalPages, readSources } from "./legal.mjs";
+import { PROBLEMS } from "./problems.mjs";
 import { noticeConfig } from "../src/copyright-form.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -53,11 +54,14 @@ export const ORIGINS = ["https://maktaba.tv", "https://maktaba.dev"];
 export const INSTALL_OUT = path.join(REPO, "web/dist-install");
 
 /**
- * The generated families, each `{ name, story, build({ write, repo }) }`, run in this order
- * after the install pages and before the hand-made pages. Stories 60.06 (problems.mjs),
- * 60.12 (help.mjs) and 60.11 (download.mjs) add theirs here.
+ * The generated families, each `{ name, story, build({ write, repo, resolves, script }) }`, run
+ * in this order after the install pages and before the hand-made pages: `resolves(href)` says
+ * whether a site path (and its #fragment) is already built, so a family links only pages that
+ * exist (the problem pages link a help topic once 60.12's pages are built: help.mjs goes before
+ * problems.mjs), and `script(src)` publishes a script of src/ under a content-hashed name.
+ * Stories 60.12 (help.mjs) and 60.11 (download.mjs) add theirs here.
  */
-export const FAMILIES = [];
+export const FAMILIES = [PROBLEMS];
 
 /** The hand-made pages: their source in src/pages/ (or, for a legal page, its copy in
  * copy/legal/, scripts/legal.mjs), their English path (null: no address of its own), and the
@@ -248,12 +252,34 @@ export function shotExists(
 
 // ---- the copyright notice form's script (story 60.07) ---------------------------------------
 
-/** src/copyright-form.ts with its types stripped, under a content-hashed name. */
-export function noticeScriptFile() {
-  const ts = fs.readFileSync(path.join(PKG, "src/copyright-form.ts"), "utf8");
+/** A script of src/ (TypeScript that imports nothing) with its types stripped, under a
+ * content-hashed name: { file: "assets/<name>-<hash>.js", js }. */
+export function scriptFile(src) {
+  const ts = fs.readFileSync(path.join(PKG, "src", src), "utf8");
   const js = stripTypeScriptTypes(ts);
   const hash = crypto.createHash("sha256").update(js).digest("base64url").slice(0, 10);
-  return { file: `assets/copyright-form-${hash}.js`, js };
+  return { file: `assets/${src.replace(/\.ts$/, "")}-${hash}.js`, js };
+}
+
+/** src/copyright-form.ts with its types stripped, under a content-hashed name. */
+export const noticeScriptFile = () => scriptFile("copyright-form.ts");
+
+/** Whether a site path (/x/, /ar/x/#id) opens a page of dist/ as built so far, with the
+ * Worker's auto-trailing-slash rule, and its #fragment names an id on that page. */
+export function resolver(dist) {
+  return (href) => {
+    const u = new URL(href, "https://maktaba.tv");
+    const p = decodeURIComponent(u.pathname).replace(/^\/+/, "");
+    if (p.split("/").includes("..")) return false;
+    const file = [p, `${p.replace(/\/$/, "")}/index.html`, `${p}.html`]
+      .map((f) => path.join(dist, f))
+      .find((f) => fs.existsSync(f) && fs.statSync(f).isFile());
+    if (!file) return false;
+    const id = decodeURIComponent(u.hash.slice(1));
+    if (!id) return true;
+    const html = fs.readFileSync(file, "utf8");
+    return [...html.matchAll(/\s(?:id|name)\s*=\s*["']([^"']+)["']/g)].some((m) => m[1] === id);
+  };
 }
 
 export async function build({
@@ -275,9 +301,15 @@ export async function build({
   }
 
   // 2. the generated families
+  const resolves = resolver(dist);
+  const script = (src) => {
+    const s = scriptFile(src);
+    write(s.file, s.js);
+    return `/${s.file}`;
+  };
   for (const f of FAMILIES) {
-    log(`family: ${f.name} (${f.story})`);
-    await f.build({ write, repo: REPO });
+    const n = await f.build({ write, repo: REPO, resolves, script });
+    log(`family: ${f.name} (${f.story}): ${n} pages`);
   }
 
   // 3. the hand-made pages, and the legal pages from their copy (legal.mjs). The copyright
