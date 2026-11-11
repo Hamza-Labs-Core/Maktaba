@@ -295,10 +295,33 @@ func TestPGAccessAuditLibrariesVideos(t *testing.T) {
 	// video patch / process / reprocess / delete
 	e.want(http.StatusOK, "admin", http.MethodPatch, "/api/videos/"+acVidA1, map[string]any{"title": "New title"})
 	audited("video-patched", acVidA1)
-	e.want(http.StatusOK, "admin", http.MethodPost, "/api/videos/"+acVidA1+"/process", map[string]any{"stage": "transcribe"})
+	// process and reprocess are an admin's, and queue a real pipeline job (before
+	// fix/video-process-noop the production router wired no job queue: 200, no job)
+	e.want(http.StatusForbidden, "member", http.MethodPost, "/api/videos/"+acVidA1+"/process", map[string]any{"stage": "transcribe"})
+	e.want(http.StatusForbidden, "member", http.MethodPost, "/api/videos/"+acVidA1+"/reprocess", map[string]any{"from_stage": "transcribe"})
+	if n := count(`SELECT count(*) FROM processing_jobs WHERE video_id=$1`, acVidA1); n != 0 {
+		t.Fatalf("a refused process queued %d jobs", n)
+	}
+	proc := e.want(http.StatusOK, "admin", http.MethodPost, "/api/videos/"+acVidA1+"/process", map[string]any{"stage": "transcribe"})
 	audited("video-process", acVidA1)
-	e.want(http.StatusOK, "admin", http.MethodPost, "/api/videos/"+acVidA1+"/reprocess", map[string]any{"from_stage": "transcribe"})
+	jobID, _ := proc["job_id"].(float64)
+	if n := count(`SELECT count(*) FROM processing_jobs WHERE id=$1 AND subject_kind='video' AND subject_id=$2
+		AND stage='transcribe' AND state='pending' AND force`, int64(jobID), acVidA1); jobID == 0 || n != 1 || proc["state"] != "pending" {
+		t.Fatalf("process queued no transcribe job: %v (%d rows)", proc, n)
+	}
+	re := e.want(http.StatusAccepted, "admin", http.MethodPost, "/api/videos/"+acVidA1+"/reprocess", map[string]any{"from_stage": "subtitle_gen"})
 	audited("video-reprocess", acVidA1)
+	ids, _ := re["job_ids"].([]any)
+	if len(ids) != 1 {
+		t.Fatalf("reprocess: %v", re)
+	}
+	rid, _ := ids[0].(float64)
+	if n := count(`SELECT count(*) FROM processing_jobs WHERE id=$1 AND subject_id=$2 AND stage='subtitle_gen'
+		AND force AND force_cascade`, int64(rid), acVidA1); n != 1 {
+		t.Fatalf("reprocess queued no cascading subtitle_gen job: %v", re)
+	}
+	// a stage that is not a video's is refused, and queues nothing
+	e.want(http.StatusBadRequest, "admin", http.MethodPost, "/api/videos/"+acVidA1+"/process", map[string]any{"stage": "no_such_stage"})
 	e.want(http.StatusForbidden, "member", http.MethodDelete, "/api/videos/"+acVidA1, nil)
 	e.want(http.StatusNoContent, "admin", http.MethodDelete, "/api/videos/"+acVidA1, nil)
 	audited("video-deleted", acVidA1)

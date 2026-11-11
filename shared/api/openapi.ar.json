@@ -334,20 +334,60 @@
       "ar": "إضافة مرحلة معالجة واحدة لفيديو إلى طابور المهام"
     },
     "/paths/~1videos~1{id}~1process/post/responses/200/description": {
-      "en": "Job enqueued (or returned if it already existed).",
-      "ar": "أُضيفت المهمة إلى الطابور (أو أُعيدت إن كانت موجودة مسبقًا)."
+      "en": "Job queued (or the live job of that stage, bumped).",
+      "ar": "أُضيفت المهمة إلى الطابور (أو رُفعت أولوية المهمة الحيّة لتلك المرحلة)."
     },
     "/paths/~1videos~1{id}~1process/post/responses/400/description": {
-      "en": "`stage` cannot be enqueued at video scope (e.g. `scan`).",
-      "ar": "لا يمكن إضافة `stage` إلى الطابور على مستوى الفيديو (مثل `scan`)."
+      "en": "`stage` cannot be queued for a video (`scan`, or a stage that is not a video's), or `priority` is out of range.",
+      "ar": "لا يمكن إضافة `stage` إلى الطابور لفيديو (`scan`، أو مرحلة ليست من مراحل الفيديو)، أو `priority` خارج حدودها."
+    },
+    "/paths/~1videos~1{id}~1process/post/description": {
+      "en": "Queues the stage for the video through the pipeline's queue (processing_jobs_enqueue), as a forced run: it runs now, even when its output is up to date. A live job of that stage is bumped instead. Admins only. Never answers success without a job: a stage the pipeline will not queue, or a server with no job queue, is an error.",
+      "ar": "تضيف المرحلة للفيديو إلى طابور خط المعالجة (processing_jobs_enqueue) تشغيلًا مفروضًا: تعمل الآن، ولو كان ناتجها محدَّثًا. وإن كانت للمرحلة مهمة حيّة، رُفعت أولويتها بدلًا من ذلك. للمشرفين فقط. لا تجيب بالنجاح أبدًا دون مهمة: المرحلة التي لا يضيفها خط المعالجة، أو خادم بلا طابور مهام، خطأ."
+    },
+    "/paths/~1videos~1{id}~1process/post/requestBody/content/application~1json/schema/properties/priority/description": {
+      "en": "Lower runs sooner.",
+      "ar": "الأقل يعمل أولًا."
+    },
+    "/paths/~1videos~1{id}~1process/post/responses/403/description": {
+      "en": "Not an admin.",
+      "ar": "ليس مشرفًا."
+    },
+    "/paths/~1videos~1{id}~1process/post/responses/409/description": {
+      "en": "The stage is switched off (`outcome`: `disabled` or `skipped_component_off`): nothing was queued.",
+      "ar": "المرحلة متوقفة (`outcome`: `disabled` أو `skipped_component_off`): لم يُضَف شيء إلى الطابور."
+    },
+    "/paths/~1videos~1{id}~1process/post/responses/503/description": {
+      "en": "This server has no job queue: nothing was queued.",
+      "ar": "لا طابور مهام على هذا الخادم: لم يُضَف شيء إلى الطابور."
     },
     "/paths/~1videos~1{id}~1reprocess/post/summary": {
       "en": "Reset state and reprocess from a given stage",
       "ar": "إعادة ضبط الحالة وإعادة المعالجة من مرحلة معيّنة"
     },
     "/paths/~1videos~1{id}~1reprocess/post/responses/202/description": {
-      "en": "Jobs enqueued.",
-      "ar": "أُضيفت المهام إلى الطابور."
+      "en": "Jobs queued; `predecessor_state` is the video's state when it was asked.",
+      "ar": "أُضيفت المهام إلى الطابور؛ و`predecessor_state` حالة الفيديو حين طُلب ذلك."
+    },
+    "/paths/~1videos~1{id}~1reprocess/post/description": {
+      "en": "Queues `from_stage` for the video as a forced cascade: it re-runs, and every stage after it re-runs when it is done. Admins only. Never answers success without a job.",
+      "ar": "تضيف `from_stage` للفيديو تشغيلًا مفروضًا متتاليًا: تُعاد، وتُعاد كل مرحلة بعدها حين تنتهي. للمشرفين فقط. لا تجيب بالنجاح أبدًا دون مهمة."
+    },
+    "/paths/~1videos~1{id}~1reprocess/post/responses/400/description": {
+      "en": "`from_stage` is missing, `scan`, or not a video's stage.",
+      "ar": "`from_stage` مفقودة، أو `scan`، أو ليست من مراحل الفيديو."
+    },
+    "/paths/~1videos~1{id}~1reprocess/post/responses/403/description": {
+      "en": "Not an admin.",
+      "ar": "ليس مشرفًا."
+    },
+    "/paths/~1videos~1{id}~1reprocess/post/responses/409/description": {
+      "en": "The stage is switched off (`outcome`: `disabled` or `skipped_component_off`): nothing was queued.",
+      "ar": "المرحلة متوقفة (`outcome`: `disabled` أو `skipped_component_off`): لم يُضَف شيء إلى الطابور."
+    },
+    "/paths/~1videos~1{id}~1reprocess/post/responses/503/description": {
+      "en": "This server has no job queue: nothing was queued.",
+      "ar": "لا طابور مهام على هذا الخادم: لم يُضَف شيء إلى الطابور."
     },
     "/paths/~1videos~1{id}~1segments/get/summary": {
       "en": "Read a transcript window for a video",
