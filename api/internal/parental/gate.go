@@ -276,28 +276,52 @@ func (g *Gate) narrow(ctx context.Context, p *principal.Principal, e *Effective)
 }
 
 // echoWriter holds a hidden object's answer and sends it with the stand-in id
-// replaced by the id that was asked, in the body and the headers.
+// replaced by the id that was asked, in the body and the headers. An event stream
+// is not held: it opens at once, on the stand-in's channel, which nothing
+// publishes to.
 type echoWriter struct {
 	http.ResponseWriter
 	from, to string
 	code     int
+	live     bool
 	body     bytes.Buffer
 }
 
 func (w *echoWriter) WriteHeader(code int) {
-	if w.code == 0 {
-		w.code = code
+	if w.code != 0 {
+		return
+	}
+	w.code = code
+	if strings.HasPrefix(w.ResponseWriter.Header().Get("Content-Type"), "text/event-stream") {
+		w.live = true
+		w.ResponseWriter.WriteHeader(code)
 	}
 }
 
 func (w *echoWriter) Write(b []byte) (int, error) {
 	if w.code == 0 {
-		w.code = http.StatusOK
+		w.WriteHeader(http.StatusOK)
+	}
+	if w.live {
+		return w.ResponseWriter.Write(b)
 	}
 	return w.body.Write(b)
 }
 
+// Flush sends a live stream's frames on; a held answer goes out whole, at the end.
+func (w *echoWriter) Flush() {
+	if !w.live {
+		return
+	}
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 func (w *echoWriter) flush() {
+	if w.live {
+		return
+	}
 	if w.code == 0 {
 		w.code = http.StatusOK
 	}

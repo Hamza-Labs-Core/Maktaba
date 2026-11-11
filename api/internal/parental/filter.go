@@ -81,6 +81,17 @@ func inList(ids []string) string {
 	return b.String()
 }
 
+// names reports whether a live rule of effect names s, whatever spelling of the
+// uuid the rule was stored with (s.ID is canonical).
+func (e *Effective) names(effect string, s Subject, now time.Time) bool {
+	for _, id := range e.Subjects(effect, s.Kind, now) {
+		if c, ok := CanonicalUUID(id); ok && c == s.ID {
+			return true
+		}
+	}
+	return false
+}
+
 // subjectTerms is one OR-able term per kind of subject a live rule of effect names,
 // each true for a videos row (alias) that is, or sits in, one of them.
 func (e *Effective) subjectTerms(effect, alias string, now time.Time) []string {
@@ -185,28 +196,28 @@ func Allowed(ctx context.Context, q RowQueryer, e *Effective, kind, id string) (
 		query = `SELECT NOT EXISTS (SELECT 1 FROM videos v WHERE v.id = $1)
 		             OR EXISTS (SELECT 1 FROM videos v WHERE v.id = $1 AND ` + PredicateAt(e, "v", now) + `)`
 	case SubjectSeries:
-		if e.has(EffectBlock, self, now) {
+		if e.names(EffectBlock, self, now) {
 			return false, nil
 		}
 		query = `SELECT NOT EXISTS (SELECT 1 FROM series s WHERE s.id = $1)
 		             OR EXISTS (SELECT 1 FROM series_episodes se JOIN videos v ON v.id = se.video_id
 		                         WHERE se.series_id = $1 AND ` + PredicateAt(e, "v", now) + `)`
 	case SubjectCollection:
-		if e.has(EffectBlock, self, now) {
+		if e.names(EffectBlock, self, now) {
 			return false, nil
 		}
 		// a smart collection keeps no items: its list is the videos query, filtered
 		query = `SELECT NOT EXISTS (SELECT 1 FROM collections c WHERE c.id = $1)
-		             OR EXISTS (SELECT 1 FROM collections c WHERE c.id = $1 AND c.kind = 'smart')
+		             OR EXISTS (SELECT 1 FROM collections c WHERE c.id = $1 AND c.is_smart)
 		             OR EXISTS (SELECT 1 FROM collection_items ci JOIN videos v ON v.id = ci.video_id
 		                         WHERE ci.collection_id = $1 AND ` + PredicateAt(e, "v", now) + `)`
 	case SubjectLibrary:
-		return !e.has(EffectBlock, self, now), nil
+		return !e.names(EffectBlock, self, now), nil
 	case SubjectChannel:
-		if e.has(EffectBlock, self, now) {
+		if e.names(EffectBlock, self, now) {
 			return false, nil
 		}
-		if e.has(EffectAllow, self, now) {
+		if e.names(EffectAllow, self, now) {
 			return true, nil
 		}
 		if e.AllowOnly {

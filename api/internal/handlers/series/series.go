@@ -139,11 +139,14 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	eps := h.loadEpisodes(r, p, "", dismissalUser(p))
 
+	restricted := parental.From(r.Context()).Limits()
 	items := []Item{}
 	for _, hd := range headers {
 		group := eps[hd.ID]
-		if len(group) == 0 && !videos.CanRead(p, hd.LibraryID) {
-			continue // no visible episode and not in a readable library (or in none)
+		if len(group) == 0 && (restricted || !videos.CanRead(p, hd.LibraryID)) {
+			// no visible episode and not in a readable library (or in none); a
+			// restricted account's list leaves out a series it can see nothing of
+			continue
 		}
 		item := hd
 		seasons := map[int]bool{}

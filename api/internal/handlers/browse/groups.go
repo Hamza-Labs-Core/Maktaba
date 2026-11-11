@@ -378,6 +378,17 @@ func (h *Handler) libraryCollections(ctx context.Context, s scope, lib string, w
 		return nil, err
 	}
 	defer rows.Close()
+	// a restricted account's list leaves out a blocked collection and one whose
+	// items are all hidden, as GET /api/collections does (Epic 57 story 57.03)
+	limit := parental.From(ctx)
+	blocked := map[string]bool{}
+	if limit.Limits() {
+		for _, id := range limit.Subjects(parental.EffectBlock, parental.SubjectCollection, time.Now()) {
+			if cid, ok := parental.CanonicalUUID(id); ok {
+				blocked[cid] = true
+			}
+		}
+	}
 	out := []LibraryCollection{}
 	for rows.Next() {
 		var c LibraryCollection
@@ -385,6 +396,12 @@ func (h *Handler) libraryCollections(ctx context.Context, s scope, lib string, w
 		var sq, sk, st sql.NullString
 		if err := rows.Scan(&c.rank, &c.Kind, &c.Subkind, &c.ID, &c.Name, &n, &sq, &sk, &c.ShowOnLibrary, &c.Hidden, &st); err != nil {
 			return nil, err
+		}
+		if limit.Limits() && c.rank >= 3 {
+			cid, ok := parental.CanonicalUUID(c.ID)
+			if !ok || blocked[cid] || (n.Valid && n.Int64 == 0) {
+				continue
+			}
 		}
 		c.SourceKind, c.sortTitle = sk.String, st.String
 		if c.SourceKind != "" && n.Valid && n.Int64 == 0 {
