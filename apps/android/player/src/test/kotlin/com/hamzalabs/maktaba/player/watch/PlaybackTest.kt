@@ -18,6 +18,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.media3.test.utils.robolectric.ShadowMediaCodecConfig
 import com.hamzalabs.maktaba.core.api.ErrorKind
 import com.hamzalabs.maktaba.core.api.Video
+import com.hamzalabs.maktaba.core.api.busyRetryMs
 import com.hamzalabs.maktaba.player.Playback
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import kotlinx.coroutines.CoroutineScope
@@ -126,6 +127,7 @@ class PlaybackTest {
         playback.play(v1)
         runUntil { playback.waiting != null }
         assertEquals(ErrorKind.TranscodeBusy, playback.waiting!!.kind)
+        assertEquals("the shared client's wait (as Android TV's)", 10_000L, busyRetryMs(playback.waiting!!.retryAfterSec))
         assertNull("no error screen while it waits", playback.problem)
         assertEquals(1, streams.opens().size)
         idleFor(10_000)

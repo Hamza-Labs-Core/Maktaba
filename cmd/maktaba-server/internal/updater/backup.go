@@ -55,6 +55,7 @@ func (m *Machine) backupBeforeSwitch(ctx context.Context) error {
 		m.logf("whether %s adds migrations cannot be told: saving the library database first, while it goes on serving",
 			j.Job.Version)
 	}
+	m.lighten(ctx)
 	start := m.now()
 	bk, err := b.BackupBefore(ctx, j.From, j.Job.Version, func(n int64) {
 		m.stepDetail(StepBackup, fmt.Sprintf("%d MB written", n>>20))

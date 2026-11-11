@@ -651,10 +651,13 @@ fn a_compile_is_not_the_jobs_time() {
 
 /// 54.02 §5: a job waiting for its plugin's slots keeps its whole limit. One unit of guest
 /// work is timed first: longer than two epoch ticks, so a deadline that passed is seen while
-/// the guest runs (the host checks it only at a tick). Two long jobs (six units, a generous
-/// limit) take the plugin's two slots; then a short one (one unit) comes, with a limit of
-/// three units: it waits about four units and runs one. With its clock from its arrival it
-/// would need five and time out; it runs within its three.
+/// the guest runs (the host checks it only at a tick). Two long jobs take the plugin's two
+/// slots and hold them until the test cancels them, so the wait never depends on how fast a
+/// loaded runner runs the guest: the test waits until both run (`health().running`), sends
+/// the short job (one unit, a limit of several units), and frees the slots only once the
+/// short job has waited longer than its whole limit. With its clock from its arrival its
+/// deadline would have passed before it ran, and the first tick of its run would end it;
+/// it runs within its limit.
 #[test]
 fn a_wait_for_a_slot_is_not_the_jobs_time() {
     let f = Fixture::new(false);
@@ -665,22 +668,47 @@ fn a_wait_for_a_slot_is_not_the_jobs_time() {
     assert_eq!(unit.outcome, Outcome::Ok, "{unit:?}");
     let unit_ms = unit.wall_ms;
     assert!(unit_ms >= 200, "one unit took {unit_ms} ms: under two epoch ticks, a passed deadline might never be seen");
-    let long = || f.run(&p, "xxxxxx", &[], Limits { timeout_ms: 600_000, fuel, ..Default::default() });
-    let short_limit = unit_ms * 3;
+    // a generous limit for one unit of work: a loaded runner may run it slower than it was
+    // timed, and only the slot wait (held by the test, below) has to pass the limit
+    let short_limit = unit_ms * 5 + 1_000;
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let until = |what: &str, done: &dyn Fn() -> bool| {
+        while !done() {
+            assert!(Instant::now() < deadline, "{what} (unit {unit_ms} ms)");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+    // a long job is far more work than the test lets it do (under the package's fuel cap):
+    // the test cancels it
+    let long = |id: &str| {
+        let r = Run { invocation_id: id.into(), ..req(&p, &"x".repeat(200), &[], Limits::default()) };
+        f.host.run(&r, Box::new(|_, _| {}))
+    };
+    let arrived: Mutex<Option<Instant>> = Mutex::new(None);
     let (longs, short) = std::thread::scope(|sc| {
-        let a = sc.spawn(long);
-        let b = sc.spawn(long);
-        // both long jobs hold their slots before the short one comes
-        std::thread::sleep(Duration::from_millis(unit_ms * 2));
-        let short = f.run(&p, "x", &[], Limits { timeout_ms: short_limit, fuel, ..Default::default() });
-        ([a.join().unwrap(), b.join().unwrap()], short)
+        let a = sc.spawn(|| long("long-a"));
+        let b = sc.spawn(|| long("long-b"));
+        until("the long jobs never both held their slots", &|| f.host.health().running == 2);
+        let s = sc.spawn(|| {
+            *arrived.lock().unwrap() = Some(Instant::now());
+            f.run(&p, "x", &[], Limits { timeout_ms: short_limit, fuel, ..Default::default() })
+        });
+        until("the short job never came", &|| arrived.lock().unwrap().is_some());
+        let came = arrived.lock().unwrap().unwrap();
+        // the slots stay held past the short job's whole limit, measured from its arrival
+        std::thread::sleep((came + Duration::from_millis(short_limit + 500)).saturating_duration_since(Instant::now()));
+        assert_eq!(f.host.health().running, 2, "a long job ended before it was cancelled (unit {unit_ms} ms)");
+        assert!(f.host.cancel("long-a") && f.host.cancel("long-b"), "the long jobs are not running");
+        ([a.join().unwrap(), b.join().unwrap()], s.join().unwrap())
     });
     for r in &longs {
-        assert_eq!(r.outcome, Outcome::Ok, "a long job (unit {unit_ms} ms): {r:?}");
+        assert_eq!(r.outcome, Outcome::Refused, "a long job: {r:?}");
+        assert_eq!(r.error_code, "cancelled", "a long job: {r:?}");
     }
     assert!(
-        short.wait_ms + short.wall_ms > short_limit,
-        "the short job did not wait long enough to show it (unit {unit_ms} ms, limit {short_limit} ms): {short:?}"
+        short.wait_ms > short_limit,
+        "the short job waited {} ms, not past its {short_limit} ms limit (unit {unit_ms} ms): {short:?}",
+        short.wait_ms
     );
     assert_eq!(short.outcome, Outcome::Ok, "the short job (unit {unit_ms} ms, limit {short_limit} ms): {short:?}");
 }

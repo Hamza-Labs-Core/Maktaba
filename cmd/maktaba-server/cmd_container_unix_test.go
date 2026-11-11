@@ -117,7 +117,8 @@ func TestContainerBootstrapOlderAndCommand(t *testing.T) {
 	if g, _ := layout.ReadGuard(c.launcherRoot); g != nil {
 		t.Fatalf("a guard: %+v", g)
 	}
-	if !strings.Contains(out.String(), "older than 1.5.0") || !strings.Contains(out.String(), "when the container starts") {
+	if !strings.Contains(out.String(), "The container image (1.4.0) is older than this home's runtime (1.5.0), so the runtime is running.") ||
+		!strings.Contains(out.String(), "when the container starts") {
 		t.Fatalf("said %q", out.String())
 	}
 }
@@ -269,5 +270,93 @@ func TestRunLauncherPassesTheStopOn(t *testing.T) {
 	code, err := runLauncher(context.Background(), "/bin/sh", []string{"-c", "exit 75"}, os.Environ(), io.Discard)
 	if err != nil || code != 75 {
 		t.Fatalf("an exit of its own: %d %v", code, err)
+	}
+}
+
+// Story 59.12: the server is told the image's release and whether it was refused, so
+// Settings → Updates says which runs and why (an older image: the runtime; a refused one:
+// the release before).
+func TestContainerTellsTheServerItsImage(t *testing.T) {
+	c, _ := containerFor(t, onePayload(t, "1.5.0"))
+	ctx := context.Background()
+	if _, err := c.bootstrap(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	if env := c.imageEnv(); !slices.Equal(env, []string{"MAKTABA_IMAGE_VERSION=1.5.0", "MAKTABA_IMAGE_REFUSED=0"}) {
+		t.Fatalf("the same image: %v", env)
+	}
+	older := withImage(t, c, "1.4.0")
+	if _, err := older.bootstrap(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	if env := older.imageEnv(); !slices.Equal(env, []string{"MAKTABA_IMAGE_VERSION=1.4.0", "MAKTABA_IMAGE_REFUSED=0"}) {
+		t.Fatalf("an older image: %v", env)
+	}
+	c.refuse("1.6.0")
+	if env := withImage(t, c, "1.6.0").imageEnv(); !slices.Equal(env, []string{"MAKTABA_IMAGE_VERSION=1.6.0", "MAKTABA_IMAGE_REFUSED=1"}) {
+		t.Fatalf("a refused image: %v", env)
+	}
+	if env := (containerDeps{}).imageEnv(); env != nil {
+		t.Fatalf("no payload: %v", env)
+	}
+}
+
+// Story 59.12 (found by the nas-4g leg): on a busy home some version checks get no answer
+// (the loopback's rate limit, 429); they do not start the wait again, so the newer image is
+// still kept. An answer with another version does start it again.
+func TestContainerConfirmKeepsThroughUnansweredChecks(t *testing.T) {
+	c, out := containerFor(t, onePayload(t, "1.5.0"))
+	ctx := context.Background()
+	if _, err := c.bootstrap(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	newer := withImage(t, c, "1.6.0")
+	g, err := newer.bootstrap(ctx, false)
+	if err != nil || g == nil {
+		t.Fatalf("%+v %v", g, err)
+	}
+	clock := time.Unix(0, 0)
+	var n int
+	newer.now = func() time.Time { return clock }
+	newer.settle = time.Minute
+	newer.version = func(context.Context) string {
+		n++
+		clock = clock.Add(10 * time.Second)
+		if n%3 == 0 {
+			return "" // refused: 429
+		}
+		return "v1.6.0"
+	}
+	done := make(chan struct{})
+	go func() { newer.confirm(ctx, *g); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("not kept through unanswered checks")
+	}
+	if !strings.Contains(out.String(), "runs: kept") {
+		t.Fatalf("said %q", out.String())
+	}
+
+	// another version answering starts the wait again
+	if err := layout.WriteGuard(c.launcherRoot, *g); err != nil {
+		t.Fatal(err)
+	}
+	n, clock = 0, time.Unix(0, 0)
+	var answered []string
+	newer.version = func(context.Context) string {
+		n++
+		clock = clock.Add(10 * time.Second)
+		v := "v1.6.0"
+		if n == 5 {
+			v = "v1.5.0"
+		}
+		answered = append(answered, v)
+		return v
+	}
+	newer.confirm(ctx, *g)
+	// kept only after 6 more right answers past the wrong one (a minute at 10 s each)
+	if len(answered) < 5+7 {
+		t.Fatalf("kept after %d checks: %v", len(answered), answered)
 	}
 }

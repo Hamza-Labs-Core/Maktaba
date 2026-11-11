@@ -228,7 +228,8 @@ export function mount(root: HTMLElement, base: string, lang: Lang): void {
       errors,
       out,
       el("div", { class: "actions" }, copy, download),
-      el("p", {}, t(lang, "next"))
+      el("p", {}, t(lang, "next")),
+      el("p", {}, t(lang, "updates"))
     )
   );
   update();

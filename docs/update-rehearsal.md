@@ -141,6 +141,32 @@ start to its end.
 | 16.1–16.6, 16.8, 16.9 | Epic 54 Phase 4's waves across an update ([stories 54.28–54.36](../specs/epics/54-plugins/story-54-28-wave1-leaf-classify.md), each one's T05): the small seed's home on the previous release, running each release's own pipeline, with jobs of the wave's stages queued and running (16.1: `promo_links`, `clip_groups`, `topic_collections`, `rate_style`, the seed given a series with two seasons first; 16.2: `thumb_small`, `chapter_thumbs`, `subtitle_gen`; 16.3: `topic_assign`, `chapter_infer`; 16.4: `detect`, `tag`; 16.5: `dedup_scan`; 16.6: `exact_dates`; 16.8: `plex_groups`, the Plex extension turned on through Settings first; 16.9: `scan`, `probe`, `link`, `fp_gate`, the seed given the same seasons (the small seed has no series, and `rate_style` and `fp_gate` claim seasons), core stages of `tv.maktaba.core-media` in the light runner, which no admin can switch: the release flips them); the update to the release that fails its watch; more jobs; the update to this commit; then two more jobs of each stage | every job ends done, none failed or cancelled, none took a second attempt or started twice; each ran where its release runs the stage: in its runner (`plugin`) on a release whose built-in plugins have it, in-process on one without, so a rollback to a release from before the wave runs it in-process again; on a release with the plugin, a job claimed before its runner says Hello runs in-process (story 54.25 §3); once this commit serves, every stage of the wave is `plugin` and the last jobs run in their runners; no restore; every round (through the rollback, through the update, each warm-up, after the flip) has a job of every stage the row lists, or the row fails. Each row's setup gives the small seed the derived data its stages claim (16.1 and 16.9: seasons; 16.8: the Plex extension on); no listed stage is left without a job in CI. Every other wave's row is in `api/rehearsal_waves_e2e_test.go` (16.7 has its own, below); each is skipped until its wave's plugins are in the commit. A scenario first waits out any open job of its stages (an enqueue on a subject with one joins it: a home scans its libraries itself). The jobs a scenario queues are due at once (a stage's debounce, 300 s for `tag` and `exact_dates`, is not what it rehearses), and after the flip it runs warm-up jobs until each stage has run in its runner (a runner restarting on new areas leaves a moment with none serving; a runner started on demand exits after a minute idle, so a job may wait for it to start again, and still runs there) | 4 min (the rollback), 2 min (the update) |
 | 16.7 | Wave 7's TV change across an update ([story 54.34](../specs/epics/54-plugins/story-54-34-wave7-livetv.md), T02): the small seed's home on the previous release with its TV slots on, a live TV release on that release's streaming, and each release's own pipeline, the stages `tv_stage`, `tv_swap`, `tv_rollback` and `tv_gc` doing their real work (only witnessed: where each job ran). A TV setting saved with staging on makes a change; `tv_stage` stages it in-process (the stage's switch set to `inproc` when that release has the plugin); its verification is played (the soak needs channels airing real media, and the seed has none); the admin approves it to swap six hours later. The update to this commit; once the stages are `plugin` and a `tv_gc` ran in the runner, Swap now; then the admin's rollback | the stage ran once, in-process, on the previous release; the update is `done` with the change still approved on its release (not set aside, not lost); `tv_swap` ran once, in the runner, on this commit, and the swap completes: the change is `live`, `tv_routing` airs its release with the old one as previous, its slot is live and the old live slot is previous; the rollback is warm (the front door's operation): `tv_rollback` ran once, in the runner, the change is `rolled_back`, the previous release is live again on the previous slot; the seeded counts unchanged; no restore | 2 min (the update) |
 
+### The container legs (NAS shapes)
+
+Epic 59 [story 59.12](../specs/epics/59-nas/story-59-12-updates.md): the Docker image's own update
+path, on the shapes a NAS gives it. The scenarios above drive the Mac app's layout with Go tests;
+these start the image. `nas-images` builds, per architecture on the payload's glibc baseline, this
+commit's image (`cur`, as nas.yml builds it), the same with its version raised (`next`,
+`tests/nas/reversion.sh`) and a release that cannot start (`bad`: its server exits at `serve`);
+the previous release's published image (`prev`) is pulled from the registry. Each
+`update-rehearsal-container` leg (`tests/nas/update_leg.py`, the legs in `tests/nas/update_legs.json`)
+sets a home up on `prev` with the fixture library scanned, then:
+
+| Step | What | Expected |
+|---|---|---|
+| update | the container started from `cur` | `cur` goes on the volume under the launcher's guard, answers, and is kept (the guard gone); every video still there; Settings' container block says the image's release runs |
+| rollback | started from `bad` | the launcher goes back to `cur`, the image's release is recorded as refused; restarted, it is not tried again |
+| restore | after the rollback | the same videos, a sign-in, `cur` answering, Settings saying `image_refused` |
+| restart (`nas-restart`) | `docker restart` while the release is staged, right after `current` moved, and once it answers but before it is kept | each next start goes on by itself to a kept `cur` |
+| older (`nas-image-older`) | the volume moved on to `next`, then started from `cur` | `next` runs; the log and Settings say the image is older |
+
+The legs: `nas-568` (`--user 568:568`, the library read-only, the data folder group-writable),
+`nas-4g` (`--memory=4g`, the Light tier, 20,000 more videos; no OOM kill), `nas-arm64` (an arm64
+runner), `nas-restart`, `nas-image-older`. Every leg's logs (each container's docker logs, the
+server's, the launcher's, report.json) are its artifact, `rehearsal-nas-leg-<leg>-<arch>`, kept pass
+or fail. The verdict requires them with the scenarios.
+
+### Expected failures
 ### Expected failures
 
 `tools/rehearsal/expected-failures.txt` lists scenarios whose fix is not merged yet, with the

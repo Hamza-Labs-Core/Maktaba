@@ -23,6 +23,17 @@ export interface UpdateStatus {
   image?: string;
   /** The last self-update that could not start and was undone. */
   rolled_back?: { version: string; reason: string; at: string };
+  /** The Docker image against the volume's runtime (story 59.12; admins only). */
+  container?: ContainerImage;
+}
+
+/** Which release runs on the Docker image, and why (story 59.12). */
+export interface ContainerImage {
+  runtime: string;
+  image: string;
+  /** "runtime": the volume's own release; "image": the image's release is the one running */
+  running: "runtime" | "image";
+  reason: "same" | "image_older" | "image_refused" | "image_pending" | string;
 }
 
 let inflight: Promise<UpdateStatus | null> | null = null;

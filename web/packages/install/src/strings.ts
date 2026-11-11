@@ -56,6 +56,8 @@ export const STRINGS = {
     copied: "Copied",
     download: "Download docker-compose.yml",
     next: "Then run docker compose up -d, and docker compose run --rm maktaba setup once. Open http://<this machine>:8088.",
+    updates:
+      "Maktaba updates itself after that, in its update window. The file names the latest release (:latest); your NAS's own app updates, Watchtower included, can stay on too: a newer image goes onto the data folder at the next start, and an older one never replaces a newer Maktaba.",
     "problem.user": "Write the user as two numbers, uid:gid, such as 1000:100.",
     "problem.user-root": "Maktaba never runs as root (uid 0): choose a user of its own.",
     "problem.data":
@@ -122,6 +124,8 @@ export const STRINGS = {
     copied: "نُسخ",
     download: "نزّل docker-compose.yml",
     next: "ثم شغّل الأمر docker compose up -d، والأمر docker compose run --rm maktaba setup مرة واحدة. وافتح العنوان http://<this machine>:8088.",
+    updates:
+      "بعد ذلك تحدّث مكتبة نفسها في نافذة التحديث. ويسمّي الملف أحدث إصدار (:latest)؛ ويمكن أن تبقى تحديثات التطبيقات في جهاز NAS، ومنها Watchtower، مفعّلة أيضًا: توضع الصورة الأحدث في مجلد البيانات عند التشغيل التالي، ولا تحلّ الصورة الأقدم أبدًا محلّ نسخة أحدث من مكتبة.",
     "problem.user": "اكتب المستخدم رقمين بهذا الشكل uid:gid، مثل 1000:100.",
     "problem.user-root": "لا يعمل Maktaba أبدًا بالمستخدم الجذر (uid 0)، فاختر مستخدمًا خاصًا به.",
     "problem.data":

@@ -313,11 +313,49 @@ details.)
 | **Windows app** | The same; the installer stops and starts the server. | The first update from a release before automatic updates. |
 | **Linux app** (AppImage, `.deb`, `.rpm`) | The server installs the release's signed Linux payload as a new runtime directory, and switches to it at the home's go, with no click in the app (no root needed); `previous` is kept for the rollback. | The first update from a release before automatic updates. The app's own window updates with its updater. |
 | **Headless** (`install.sh --app`) | The same runtime switch, by itself in the window. | The first update from a release before automatic updates. |
-| **Docker** (`ghcr.io/hamza-labs-core/maktaba-server`, [cloud/installers/docker](../cloud/installers/docker/docker-compose.yml)) | The headless runtime switch, on the image's volume, by itself in the window: the image only puts its payload there the first time, and the server updates it from then on. A newer image pulled later is switched to at the container's start under the launcher's guard, kept once its server has run for 3 minutes; one that cannot start is gone back from and not tried again (the image before still runs). An older image never replaces what the volume runs. | Nothing (no image to pull, no Docker socket). An image managed elsewhere (Watchtower, a tag you move): set `MAKTABA_UPDATE_DISABLE=1` (or Pause on Admin > Updates) so only one thing updates it. |
+| **Docker** (`ghcr.io/hamza-labs-core/maktaba-server`, [cloud/installers/docker](../cloud/installers/docker/docker-compose.yml)) | The headless runtime switch, on the image's volume, by itself in the window: the image only puts its payload there the first time, and the server updates it from then on. A newer image pulled later is switched to at the container's start under the launcher's guard, kept once its server has run for 3 minutes; one that cannot start is gone back from and not tried again (the image before still runs). An older image never replaces what the volume runs. | Nothing (no image to pull, no Docker socket). An image a NAS's catalog moves (TrueNAS app updates, Unraid's update check, Watchtower, a pull in Container Manager) needs nothing turned off: see [Updates on a NAS](#updates-on-a-nas). |
 | **Plain server** on the side-by-side layout (`setup --self-managed`, the `.deb`/`.rpm`, the Homebrew formula) | Staged in `bin/releases/<v>` with its migrations and its own pipeline environment (`venv`, built from the release's wheel and the home's wheelhouse with the machine's Python 3.12), switched to under the launcher's guard, TV handed over. A release that needs a newer launcher replaces it after its commit (a package-owned launcher: the package manager brings it, and the run names the command). | A Python 3.12 for the pipeline (or `MAKTABA_PIPELINE_PYTHON`). |
 | **Worker-only node** (the Epic 31 installer) | Made a full node by its next update ([above](#what-the-machines-do)). Automatic from then on. | A worker whose pipeline predates the command ("worker-only — re-run the installer once"). |
 | Plain binary copied by hand (no launcher) | — (reported: `not_self_managed`) | One `maktaba-server setup --self-managed`, then automatic. |
 | A container of the stack built from source (`deploy/compose`) | — | `docker compose pull && docker compose up -d` (Epic 28.3's `409`). |
+
+### Updates on a NAS
+
+Epic 59 story 59.12. On a NAS the Docker image has two triggers and one update path:
+
+- **The self-update** runs in the household's update window as on any Docker install: the release
+  verified in process, a pre-update dump, a new runtime on the data volume, `current` moved under
+  the launcher's guard (kept once the new release has run, or switched back). It never changes the
+  image's tag; a later pull of that release's image finds the work done.
+- **A catalog moving the image's tag** (TrueNAS app updates, Unraid's update check, Watchtower, a
+  household pressing pull in Container Manager): the newer image puts its release on the volume
+  at the container's next start, through the same install and guard. An image older than the
+  volume's runtime starts the runtime and logs "The container image (…) is older than this home's
+  runtime (…), so the runtime is running." Neither needs the other turned off;
+  `MAKTABA_UPDATE_DISABLE=1` is a household's choice (the image path only, the guard still on).
+- **Admin → Updates** shows, on the image, the runtime's release against the image's, which runs
+  and why (`GET /api/system/updates`' `container` block, an admin's only).
+- **Room:** a container's update first checks the data volume for the new runtime (about 1 GB) and
+  the dump (the database × 1.2). When it is short the run waits for a person with "Not enough free
+  space on the data folder for a safe update: {need} needed, {free} free." (`disk_short`), and
+  nothing is changed; the update never goes on without its dump.
+- **Memory:** on the Light and Standard tiers the pipeline (speech to text, transcodes) stops for
+  the pre-update dump; the new release starts it, or the release before again when the update goes
+  no further.
+- **A restart in the middle** (DSM's stop-all before its own update, a TrueNAS app restart): the
+  next start resolves the half-done state as the guard does (an unconfirmed `current` goes back to
+  `previous`; a newer image's switch is watched on until it is kept).
+
+The tags: `:latest` is the highest stable release (`release.yml`), and the copied install files
+name it (the published compose, the Synology files, the Unraid template). The release publishes
+the compose and the Synology files pinned to its tag, and the TrueNAS app and its Custom App YAML
+pinned to the image's digest (`tests/nas/test_install_files.py` checks each).
+
+The update rehearsal proves all of it on NAS shapes before any tag: its `update-rehearsal-container`
+legs (`tests/nas/update_leg.py`, `tests/nas/update_legs.json`) start the image as uid 568 with a
+read-only library, under a 4 GB limit with 20,000 videos, on arm64, restarted at each step of an
+update, and from an image older than its volume; each updates from the previous release, rolls a
+release that cannot start back under the guard, and finds the home as it was.
 
 `maktaba-server update` reads the same feed and verifies with the same code (`--check`,
 `--version vX.Y.Z`, `--rollback`): on a layout install it switches `current` (the launcher runs the

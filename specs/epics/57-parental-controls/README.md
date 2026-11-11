@@ -552,7 +552,7 @@ None blocks the epic. Each has a default the stories use.
 | Q4 | Should guardians be told when a child's device declares a looser age than before? | yes, in Activity (a `signal` event), not as a push |
 | Q5 | The app's App Store age rating under the new questionnaire | keep the current rating; answer In-App Controls: Parental Controls yes, Age Assurance yes (57.09) |
 | Q6 | Ask Apple for the Family Controls distribution entitlement? | yes, for 57.16; the owner files the request, and 57.16 is dropped without loss if Apple refuses (the home's rules still apply) |
-| Q9 | What does detection cover: only what a video is, or also who is holding the device? | what a video is (57.17). Who holds the device stays Apple's signal (57.04) |
+| Q9 | What does detection cover: only what a video is, or also who is holding the device? | answered 2026-11-10: what a video is (57.17). Who holds the device stays Apple's signal (57.04) |
 | Q10 | Starting time rules for a new restricted account | none; a guardian adds them. The editor offers 1 hour a day and 07:00 to 20:00 as a first choice |
 | Q11 | May the transcript leave the home to be rated? | no; detection runs on the home's own model, and a home with no model gets no detected tiers |
 | Q7 | How long to keep a child's activity | 90 days |
