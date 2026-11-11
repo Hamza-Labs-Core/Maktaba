@@ -27,6 +27,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libaccess"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 )
 
 // DuplicateMember is one file of a group: a video's own path, or one of its copies.
@@ -89,8 +90,8 @@ func scanDupGroup(rs rowScanner) (DuplicateGroup, error) {
 	return g, nil
 }
 
-const dupMembersSQL = `
-SELECT m.group_id::text, m.video_id::text, m.path, m.is_copy, m.score, COALESCE(v.title, v.filename),
+var dupMembersSQL = `
+SELECT m.group_id::text, m.video_id::text, m.path, m.is_copy, m.score, ` + videotitle.SQL("v.title", "v.filename") + `,
        v.library_id::text, l.name, v.size_bytes, v.duration_sec, mi.width, mi.height, mi.video_codec,
        mi.container, mi.bitrate_kbps,
        (SELECT count(*) FROM playback_state ps WHERE ps.video_id = m.video_id),

@@ -12,6 +12,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 )
 
 // Explain answers "why is this video where it is": for every video whose
@@ -94,8 +95,8 @@ type ExplainResponse struct {
 	Limit  int             `json:"limit"`
 }
 
-const explainVideosSQL = `
-SELECT v.id::text, COALESCE(yv.title, v.title, v.filename), v.filename, v.library_id::text, l.name,
+var explainVideosSQL = `
+SELECT v.id::text, COALESCE(NULLIF(yv.title, ''), ` + videotitle.SQL("v.title", "v.filename") + `), v.filename, v.library_id::text, l.name,
        yv.upload_date::text, yv.date_quality, COALESCE(v.duration_sec, yv.duration_s),
        v.metadata, m.external_id, m.mapped->>'link_method', yv.tab
   FROM videos v

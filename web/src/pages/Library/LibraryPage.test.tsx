@@ -153,7 +153,7 @@ describe("LibraryPage", () => {
     const user = userEvent.setup();
     const years = await screen.findByRole("region", { name: en["libraryPage.row.byYear"] });
     await user.click(within(years).getByRole("link", { name: "2019: 12 videos" }));
-    expect(await screen.findByText("2019.mp4")).toBeInTheDocument();
+    expect(await screen.findByText("2019", { selector: ".mkt-card__title" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: en["libraryPage.tab.browse"] })).toHaveAttribute(
       "aria-selected",
       "true"

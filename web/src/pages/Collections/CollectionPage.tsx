@@ -21,6 +21,7 @@ import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { Modal } from "@ds/components/Modal/Modal";
 import { useToast } from "@ds/components/Toast/Toast";
 import { ApiError } from "../../lib/api";
+import { videoTitle } from "../../lib/videoTitle";
 import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
 import type { VideoCard } from "../../lib/browse";
@@ -357,7 +358,7 @@ function CollectionOf({ id }: { id: string }) {
       {!col.is_smart && items.length > 0 && (
         <ol className="mkt-plitems">
           {items.map((v, i) => {
-            const title = v.title || v.filename || v.id;
+            const title = videoTitle(v);
             return (
               <li key={v.id} className="mkt-plitems__item">
                 <span className="mkt-plitems__num">{n(i + 1)}</span>

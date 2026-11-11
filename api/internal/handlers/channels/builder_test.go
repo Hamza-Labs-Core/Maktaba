@@ -199,6 +199,7 @@ func TestSources(t *testing.T) {
 	for _, q := range []string{
 		`INSERT INTO videos (id, title, filename, duration_sec) VALUES ('v1', 'Ep 1', 'e1.mp4', 1500), ('v2', 'Ep 2', 'e2.mp4', 1500), ('v3', 'Clip', 'clip.mp4', 30)`,
 		`INSERT INTO videos (id, title, filename, duration_sec, deleted_at) VALUES ('v4', 'Gone', 'g.mp4', 60, '2026-01-01')`,
+		`INSERT INTO videos (id, title, filename, duration_sec) VALUES ('v5', NULL, 'Night Lecture.mkv', 90)`,
 		`INSERT INTO series (id, name) VALUES ('s1', 'Prophets'), ('s2', 'Other')`,
 		`INSERT INTO series_episodes (series_id, video_id) VALUES ('s1', 'v1'), ('s1', 'v2'), ('s1', 'v4')`,
 		`INSERT INTO collections (id, name) VALUES ('00000000-0000-4000-8000-0000000000c1', 'Short clips')`,
@@ -229,6 +230,11 @@ func TestSources(t *testing.T) {
 	}
 	if _, s := get("kind=video&q=clip"); len(s) != 1 || s[0].ID != "v3" || s[0].DurationMS != 30_000 {
 		t.Fatalf("videos: %+v", s)
+	}
+	// a video with no title is offered by its file name without the extension, and
+	// still found by it
+	if _, s := get("kind=video&q=night"); len(s) != 1 || s[0].ID != "v5" || s[0].Name != "Night Lecture" {
+		t.Fatalf("an untitled video: %+v", s)
 	}
 	if _, s := get("kind=video&q=gone"); len(s) != 0 {
 		t.Fatalf("a deleted video is offered: %+v", s)

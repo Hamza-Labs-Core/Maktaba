@@ -824,6 +824,7 @@ func TestPG_Fields(t *testing.T) {
 	run("batching", nestedFieldsAreBatched)
 	run("idempotency", idempotencyReplays)
 	run("purge", purgeNeedsConfirm)
+	run("untitled card", untitledCardDropsTheExtension)
 	for _, c := range writes {
 		run(c.field, c.run)
 	}
@@ -847,6 +848,18 @@ func TestPG_EveryRootFieldHasACase(t *testing.T) {
 				t.Errorf("root field %s.%s has no real-database test case", def.Name, f.Name)
 			}
 		}
+	}
+}
+
+// untitledCardDropsTheExtension: a rail card for a video with no metadata title
+// is titled by its file name without the extension. It puts the title back.
+func untitledCardDropsTheExtension(t *testing.T, e *pgEnv) {
+	e.exec(`UPDATE videos SET title = NULL, filename = 'Night lecture.mkv' WHERE id = $1`, videoA1)
+	defer e.exec(`UPDATE videos SET title = 'First lesson', filename = $2 WHERE id = $1`, videoA1, videoA1+".mp4")
+	q := `{ continueWatching(limit: 12) { id title } }`
+	cards := e.ok(member, "continueWatching", q, nil).([]any)
+	if len(cards) != 1 || cards[0].(map[string]any)["title"] != "Night lecture" {
+		t.Fatalf("cards = %v, want the title %q", cards, "Night lecture")
 	}
 }
 

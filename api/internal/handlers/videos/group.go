@@ -30,6 +30,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 )
 
 const (
@@ -100,7 +101,7 @@ func (h *Handler) listGrouped(w http.ResponseWriter, r *http.Request, p *princip
 	}
 	args = append(append([]any(nil), args...), uid)
 	u := pidx(len(args))
-	matched := "SELECT id, COALESCE(title, filename) AS t, created_at FROM videos" + where
+	matched := "SELECT id, " + videotitle.SQL("title", "filename") + " AS t, created_at FROM videos" + where
 	lastWatched := "(SELECT MAX(ps.updated_at) FROM playback_state ps WHERE ps.user_id = " + u + " AND ps.video_id = m.id)"
 	rows, err := h.DB.QueryContext(ctx, `WITH m AS (`+matched+`)
 		SELECT 'series', CAST(s.id AS TEXT), COALESCE(s.name_override, s.name), COUNT(DISTINCT m.id), MAX(m.created_at), MAX(`+lastWatched+`)

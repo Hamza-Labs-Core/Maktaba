@@ -128,6 +128,18 @@ describe("PlaylistPage", () => {
     expect(within(items[2]!).getByRole("button", { name: "Move Lesson c down" })).toBeDisabled();
   });
 
+  it("names an untitled video by its file name without the extension", async () => {
+    get.mockResolvedValue({
+      ...DETAIL,
+      items: [card("a"), card("b", { title: null, filename: "Night lecture.mkv" }), card("c")],
+    });
+    open();
+    await screen.findByRole("heading", { name: "رمضان" });
+    const items = screen.getAllByRole("listitem");
+    expect(items[1]).toHaveTextContent("Night lecture");
+    expect(items[1]).not.toHaveTextContent(".mkv");
+  });
+
   it("moves a video down and saves the new order", async () => {
     get.mockResolvedValue(DETAIL);
     put.mockResolvedValue({

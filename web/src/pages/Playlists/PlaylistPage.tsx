@@ -12,6 +12,7 @@ import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { Modal } from "@ds/components/Modal/Modal";
 import { useToast } from "@ds/components/Toast/Toast";
 import { ApiError } from "../../lib/api";
+import { videoTitle } from "../../lib/videoTitle";
 import { useI18n } from "../../lib/i18n";
 import { watchedFraction } from "../../lib/browse";
 import {
@@ -275,7 +276,7 @@ function PlaylistOf({ id }: { id: string }) {
       ) : (
         <ol className="mkt-plitems">
           {items.map((v, i) => {
-            const title = v.title || v.filename || v.id;
+            const title = videoTitle(v);
             const frac = watchedFraction(v);
             return (
               <li key={v.id} className="mkt-plitems__item">

@@ -70,6 +70,20 @@ describe("UpNext", () => {
     expect(readQueue()?.index).toBe(1);
   });
 
+  it("names an untitled next video by its file name without the extension", async () => {
+    startQueue(["a", "b"]);
+    get.mockImplementation((url: string) =>
+      url === "/api/videos/b"
+        ? Promise.resolve({ id: "b", title: null, filename: "Night lecture.mkv" })
+        : Promise.reject(new Error(url))
+    );
+    const v = open();
+    fireEvent(v, new Event("ended"));
+    const card = await screen.findByRole("dialog");
+    expect(card).toHaveTextContent("Night lecture");
+    expect(card).not.toHaveTextContent(".mkv");
+  });
+
   it("counts down and starts the next lesson of the series by itself", async () => {
     get.mockImplementation((url: string) => {
       if (url === "/api/me/videos/a")

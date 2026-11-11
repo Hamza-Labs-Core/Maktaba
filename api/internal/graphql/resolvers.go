@@ -17,6 +17,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/recommendations"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 )
 
 // Resolvers holds what the resolvers need: the REST bridge, the app
@@ -368,11 +369,11 @@ func (q *root) cards(ctx context.Context, rails []recommendations.Rail) ([]*rail
 	}
 	titles := map[string]string{}
 	for _, n := range nodes {
-		t := n.v.Filename
-		if n.v.Title != nil && *n.v.Title != "" {
+		t := ""
+		if n.v.Title != nil {
 			t = *n.v.Title
 		}
-		titles[n.v.ID] = t
+		titles[n.v.ID] = videotitle.Display(t, n.v.Filename)
 	}
 	out := []*railCard{}
 	for _, r := range rails {

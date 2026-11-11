@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { api } from "../../lib/api";
+import { videoTitle } from "../../lib/videoTitle";
 import { useI18n } from "../../lib/i18n";
 import { VideoPlayer } from "../../pages/VideoPlayer";
 import { useFocusApi, useLayer } from "../focus/FocusProvider";
@@ -90,7 +91,11 @@ export function BigWatch() {
       .get<{ title?: string | null; display_title?: string | null; filename?: string }>(
         `/api/videos/${enc}`
       )
-      .then((v) => !cancelled && setTitle(v.display_title || v.title || v.filename || ""))
+      .then(
+        (v) =>
+          !cancelled &&
+          setTitle(v.display_title || videoTitle({ title: v.title, filename: v.filename }))
+      )
       .catch(() => undefined);
     api
       .get<{ items: Chapter[] }>(`/api/videos/${enc}/chapters`)

@@ -73,4 +73,13 @@ class PlayQueueModelTest {
         answers += 204 to ""
         assertNull(model.fetchCurrent())
     }
+
+    @Test
+    fun anUntitledItemIsNamedByItsFileWithoutTheExtension() = runBlocking {
+        answers += 201 to """{"id":"Q","source":{"kind":"library","id":"L"},"shuffle":false,"current_pos":0,"version":1,"source_done":true,
+            "items":[{"pos":0,"id":"a","title":null,"filename":"Night lecture.mkv"},{"pos":1,"id":"b","title":"Dawn","filename":"b.mp4"}]}"""
+        val first = model.create(QueueSource("library", "L"), shuffle = false)
+        assertEquals("Night lecture", first?.name)
+        assertEquals(listOf("Night lecture", "Dawn"), model.doc?.items?.map { it.name })
+    }
 }

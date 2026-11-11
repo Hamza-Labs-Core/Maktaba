@@ -128,7 +128,7 @@ struct CardShelf: View {
                 LazyHStack(spacing: 48) {
                     ForEach(videos) { v in
                         NavigationLink { VideoPage(id: v.id) } label: {
-                            VideoCard(id: v.id, title: v.title ?? v.filename, progress: v.positionSec.map { p in
+                            VideoCard(id: v.id, title: v.displayTitle, progress: v.positionSec.map { p in
                                 (v.durationSec ?? 0) > 0 ? p / v.durationSec! : 0 } ?? 0)
                         }
                         .buttonStyle(.borderless)
@@ -222,7 +222,7 @@ struct LibraryGridTab: View {
                         }
                     } else {
                         ForEach(videos) { v in
-                            NavigationLink { VideoPage(id: v.id) } label: { VideoCard(id: v.id, title: v.title ?? v.filename) }
+                            NavigationLink { VideoPage(id: v.id) } label: { VideoCard(id: v.id, title: v.displayTitle) }
                                 .buttonStyle(.borderless)
                                 .onAppear { if v.id == videos.last?.id, next != nil { Task { await load(more: true) } } }
                         }

@@ -116,6 +116,20 @@ describe("CollectionPage", () => {
     ).toBeNull();
   });
 
+  it("names an untitled video by its file name without the extension", async () => {
+    const items = structuredClone(ITEMS);
+    items.items[1]!.video = {
+      ...items.items[1]!.video,
+      title: null,
+      filename: "Night lecture.mkv",
+    } as never;
+    serve({ "/api/collections/c1/items": items });
+    renderOne("c1");
+    const lis = await screen.findAllByRole("listitem");
+    expect(lis[1]).toHaveTextContent("Night lecture");
+    expect(lis[1]).not.toHaveTextContent(".mkv");
+  });
+
   it("lets an admin reorder, remove and rename", async () => {
     serve();
     patch.mockResolvedValue({});

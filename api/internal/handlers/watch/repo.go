@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 )
 
 // repo is the thin SQL accessor over watch_sessions / user_analytics_prefs
@@ -293,7 +295,7 @@ func (r *repo) deleteHistory(ctx context.Context, userID, videoID string) error 
 func (r *repo) watchedActivity(ctx context.Context, userID string, n int) ([]ActivityItem, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT ws.video_id, ws.started_at, ws.percent_complete,
-		       COALESCE(v.title, v.filename, '')
+		       COALESCE(`+videotitle.SQL("v.title", "v.filename")+`, '')
 		FROM watch_sessions ws LEFT JOIN videos v ON v.id = ws.video_id
 		WHERE ws.user_id = $1
 		ORDER BY ws.started_at DESC LIMIT $2`, userID, n)

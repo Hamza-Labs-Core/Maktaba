@@ -57,6 +57,17 @@ describe("ContinueQueue", () => {
     expect(get).toHaveBeenCalledWith("/api/me/play-queues/current");
   });
 
+  it("names an untitled current video by its file name without the extension", async () => {
+    const q = queue("2026-11-06T11:50:00Z");
+    q.items[1] = { ...q.items[1], title: null, filename: "Night lecture.mkv" } as never;
+    get.mockResolvedValue(q);
+    open();
+    expect(
+      await screen.findByRole("button", { name: /Night lecture · from a phone/ })
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/\.mkv/)).toBeNull();
+  });
+
   it("leaves out a queue older than a day, and none at all", async () => {
     get.mockResolvedValue(queue("2026-11-04T11:00:00Z"));
     const { unmount } = open();

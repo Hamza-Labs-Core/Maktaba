@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { api } from "../lib/api";
+import { videoTitle } from "../lib/videoTitle";
 import { useI18n } from "../lib/i18n";
 import { fetchLessons, fetchMyVideo } from "../lib/me";
 import { advanceTo, QUEUE_STALE_EVENT, queueNext, watchPath } from "../lib/playQueue";
@@ -32,7 +33,7 @@ export async function resolveNext(videoId: string): Promise<NextVideo | null> {
       const v = await api.get<{ title?: string | null; filename?: string }>(
         `/api/videos/${encodeURIComponent(q)}`
       );
-      title = v?.title || v?.filename || "";
+      title = v ? videoTitle({ title: v.title, filename: v.filename }) : "";
     } catch {
       /* the title is only a nicety */
     }

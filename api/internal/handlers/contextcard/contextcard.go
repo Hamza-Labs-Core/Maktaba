@@ -32,6 +32,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 )
 
 const (
@@ -151,7 +152,7 @@ func (h *Handler) buildFacts(r *http.Request, videoID string) map[string]any {
 
 func (h *Handler) seriesSiblings(r *http.Request, videoID string) []Related {
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT v.id, COALESCE(v.title, v.filename)
+		SELECT v.id, `+videotitle.SQL("v.title", "v.filename")+`
 		FROM series_episodes se
 		JOIN series_episodes sib ON sib.series_id = se.series_id AND sib.video_id <> se.video_id
 		JOIN videos v ON v.id = sib.video_id
@@ -164,7 +165,7 @@ func (h *Handler) seriesSiblings(r *http.Request, videoID string) []Related {
 
 func (h *Handler) sharedCast(r *http.Request, videoID string) []Related {
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT v.id, COALESCE(v.title, v.filename), e.name
+		SELECT v.id, `+videotitle.SQL("v.title", "v.filename")+`, e.name
 		FROM video_entities ve
 		JOIN video_entities other ON other.entity_id = ve.entity_id AND other.video_id <> ve.video_id
 		JOIN media_entities e ON e.id = ve.entity_id AND e.kind = 'PER'
@@ -177,7 +178,7 @@ func (h *Handler) sharedCast(r *http.Request, videoID string) []Related {
 
 func (h *Handler) sharedTopic(r *http.Request, videoID string) []Related {
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT v.id, COALESCE(v.title, v.filename)
+		SELECT v.id, `+videotitle.SQL("v.title", "v.filename")+`
 		FROM video_topics vt
 		JOIN video_topics other ON other.topic_id = vt.topic_id
 		     AND other.library_id = vt.library_id AND other.video_id <> vt.video_id
@@ -191,7 +192,7 @@ func (h *Handler) sharedTopic(r *http.Request, videoID string) []Related {
 
 func (h *Handler) sameCollection(r *http.Request, videoID string) []Related {
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT v.id, COALESCE(v.title, v.filename)
+		SELECT v.id, `+videotitle.SQL("v.title", "v.filename")+`
 		FROM collection_items ci
 		JOIN collection_items other ON other.collection_id = ci.collection_id AND other.video_id <> ci.video_id
 		JOIN videos v ON v.id = other.video_id
@@ -206,7 +207,7 @@ func (h *Handler) sameCollection(r *http.Request, videoID string) []Related {
 // ranked by topic overlap.
 func (h *Handler) moreLikeThis(r *http.Request, p *principal.Principal, videoID string) []Related {
 	rows, err := h.DB.QueryContext(r.Context(), `
-		SELECT v.id, COALESCE(v.title, v.filename), v.library_id, SUM(vt.score) AS s
+		SELECT v.id, `+videotitle.SQL("v.title", "v.filename")+`, v.library_id, SUM(vt.score) AS s
 		FROM video_topics vt
 		JOIN video_topics other ON other.topic_id = vt.topic_id
 		     AND other.library_id = vt.library_id AND other.video_id <> vt.video_id

@@ -71,8 +71,8 @@ public struct Video: Codable, Identifiable, Hashable, Sendable {
         case playbackState = "playback_state"
     }
 
-    /// What a person reads: the title, else the file's name.
-    public var displayTitle: String { title?.isEmpty == false ? title! : filename }
+    /// What a person reads: the title, else the file's name without its extension.
+    public var displayTitle: String { VideoTitle.of(title, filename) }
 }
 
 /// Where a person stopped watching a video.

@@ -7,6 +7,7 @@
 import { Children, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useI18n } from "../lib/i18n";
+import { videoTitle } from "../lib/videoTitle";
 import { watchedFraction, type AddedEntry, type VideoCard } from "../lib/browse";
 import { VideoPoster, formatDuration } from "./VideoViews";
 
@@ -100,7 +101,7 @@ export function MediaRow({ title, titleTo, seeAllTo, children, className, testId
 export function MediaCard({ video, meta }: { video: VideoCard; meta?: ReactNode }) {
   const { t, n } = useI18n();
   const frac = watchedFraction(video);
-  const name = video.title || video.filename || video.id;
+  const name = videoTitle(video);
   return (
     <li className="mkt-row__item">
       <Link to={`/videos/${encodeURIComponent(video.id)}`} className="mkt-media-card">

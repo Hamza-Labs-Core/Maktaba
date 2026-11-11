@@ -18,10 +18,10 @@ const (
 	viewerID = "33333333-3333-3333-3333-333333333333"
 )
 
-// orderSeries is one series on SQLite: season 1's lessons 1, 2 and 3 joined
+// orderSeries is one series on SQLite (extra statements run after the fixture): season 1's lessons 1, 2 and 3 joined
 // the library on days 3, 1 and 2 (newest first: 1, 3, 2), season 2's lesson
 // 1 on day 9; the viewer finished season 1's lesson 1.
-func orderSeries(t *testing.T) chi.Router {
+func orderSeries(t *testing.T, extra ...string) chi.Router {
 	t.Helper()
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "s.db"))
 	if err != nil {
@@ -60,6 +60,11 @@ func orderSeries(t *testing.T) chi.Router {
 	}
 	if _, err := db.Exec(`INSERT INTO playback_state VALUES ($1, 's1e1', 600, 1)`, viewerID); err != nil {
 		t.Fatal(err)
+	}
+	for _, q := range extra {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
 	}
 	r := chi.NewRouter()
 	(&Handler{DB: db}).Mount(r)
@@ -133,5 +138,27 @@ func TestEpisodesNewestAddedFirstWithTheLessonOrderOnRequest(t *testing.T) {
 	}
 	if _, code := getEpisodes(t, r, "?sort=title"); code != http.StatusBadRequest {
 		t.Errorf("sort=title: status %d, want 400", code)
+	}
+}
+
+// An episode with no metadata title is named by its file name without the
+// extension, on the episodes list and as Up next.
+func TestEpisodesTitlelessEpisodeShowsItsFileNameWithoutTheExtension(t *testing.T) {
+	r := orderSeries(t, `UPDATE videos SET title = NULL, filename = 'Lesson Two.mp4' WHERE id = 's1e2'`)
+	b, code := getEpisodes(t, r, "?sort=episode")
+	if code != http.StatusOK {
+		t.Fatalf("status %d", code)
+	}
+	var got string
+	for _, e := range b.Seasons[0].Episodes {
+		if e.VideoID == "s1e2" {
+			got = e.Title
+		}
+	}
+	if got != "Lesson Two" {
+		t.Errorf("episode title %q, want %q", got, "Lesson Two")
+	}
+	if b.Next == nil || b.Next.Title != "Lesson Two" {
+		t.Errorf("next episode %+v, want the title %q", b.Next, "Lesson Two")
 	}
 }

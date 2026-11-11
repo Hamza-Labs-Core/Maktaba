@@ -41,6 +41,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { api } from "../lib/api";
+import { videoTitle } from "../lib/videoTitle";
 import { useAuth } from "../lib/auth";
 import { useI18n } from "../lib/i18n";
 import { TitleRow } from "../help/HelpLink";
@@ -1145,7 +1146,7 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
         {marks(v)}
       </span>
       <div className="mkt-card__title" dir="auto">
-        {v.title || v.filename}
+        {videoTitle(v)}
       </div>
       <div className="mkt-card__meta">
         {typeof v.duration_sec === "number" && <span>{formatDuration(v.duration_sec)}</span>}
@@ -1236,7 +1237,7 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
                     type="checkbox"
                     checked={selected.includes(v.id)}
                     onChange={() => toggleSelected(v.id)}
-                    aria-label={t("browse.select.one", { name: v.title || v.filename })}
+                    aria-label={t("browse.select.one", { name: videoTitle(v) })}
                   />
                   {cardBody(v)}
                 </label>
@@ -1275,12 +1276,12 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
                         type="checkbox"
                         checked={selected.includes(v.id)}
                         onChange={() => toggleSelected(v.id)}
-                        aria-label={t("browse.select.one", { name: v.title || v.filename })}
+                        aria-label={t("browse.select.one", { name: videoTitle(v) })}
                       />
                     </td>
                   )}
                   <td dir="auto">
-                    <Link to={`/videos/${v.id}`}>{v.title || v.filename}</Link>
+                    <Link to={`/videos/${v.id}`}>{videoTitle(v)}</Link>
                     {v.favorite && (
                       <span
                         className="mkt-card__fav-inline"

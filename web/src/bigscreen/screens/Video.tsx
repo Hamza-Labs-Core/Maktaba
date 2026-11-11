@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
+import { videoTitle } from "../../lib/videoTitle";
 import { useI18n } from "../../lib/i18n";
 import { fetchMyVideo, markWatched, setFavorite, type MyVideo } from "../../lib/me";
 import { bigPath, useBigNav } from "../nav";
@@ -107,7 +108,7 @@ export function BigVideo() {
   }
   if (!video) return <Loading />;
 
-  const name = video.display_title || video.title || video.filename;
+  const name = video.display_title || videoTitle(video);
   const ps = video.playback_state;
   const dur = video.duration_sec ?? 0;
   const resume = ps && !ps.completed && ps.position_sec >= RESUME_MIN_SEC ? ps.position_sec : 0;

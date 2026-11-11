@@ -207,10 +207,10 @@ describe("VideoDetail (test-cases/video-detail.md)", () => {
     expect(rel.querySelector("img")?.getAttribute("src")).toBe("/api/videos/v2/poster");
   });
 
-  it("VID-01: with title null the h1 shows the filename", async () => {
+  it("VID-01: with title null the h1 shows the filename without its extension", async () => {
     serve({ "/api/videos/v1": { ...V1, title: null } });
     renderVideo();
-    expect(await screen.findByRole("heading", { level: 1, name: "l1.mp4" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "l1" })).toBeInTheDocument();
   });
 
   const tabEmpty: Array<[string, string, string, string]> = [

@@ -277,6 +277,31 @@ func TestSearch_GroupsPerVideoWithFullCounts(t *testing.T) {
 	}
 }
 
+// A video with no metadata title is listed by its file name without the
+// extension: "My Lecture 03.mp4" shows "My Lecture 03", never ".mp4".
+func TestSearch_TitlelessVideoListsWithoutExtension(t *testing.T) {
+	db := searchDB(t)
+	f := &fixture{t: t, db: db}
+	f.library(libA, "Lessons")
+	f.exec(`INSERT INTO videos (id, library_id, title, filename, duration_sec) VALUES ('vnull', $1, NULL, 'My Lecture 03.mp4', 60)`, libA)
+	f.exec(`INSERT INTO videos (id, library_id, title, filename, duration_sec) VALUES ('vempty', $1, '', 'a.b.mkv', 60)`, libA)
+	f.video("vtitled", libA, "Seerah", 60)
+	f.transcript("tnull", "vnull", true, "prayer")
+	f.transcript("tempty", "vempty", true, "prayer")
+	f.transcript("ttitled", "vtitled", true, "prayer")
+
+	h := router(&Handler{DB: db})
+	resp := decode[Response](t, call(t, h, admin, http.MethodPost, "/api/search", `{"q":"prayer","mode":"fts","view":"list"}`), 200)
+	got := map[string]string{}
+	for _, v := range resp.TranscriptVideos {
+		got[v.VideoID] = v.Title
+	}
+	want := map[string]string{"vnull": "My Lecture 03", "vempty": "a.b", "vtitled": "Seerah"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("titles %v, want %v", got, want)
+	}
+}
+
 // Videos rank by their best passage first, then by how many passages match.
 func TestSearch_OrdersByScoreThenCount(t *testing.T) {
 	db := searchDB(t)
