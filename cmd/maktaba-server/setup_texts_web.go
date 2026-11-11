@@ -136,6 +136,7 @@ var webSetupTexts = map[string][2]string{
 	"setup.error.unknown_step":                  {"This copy of Maktaba's server does not have this setup step. Update Maktaba.", "خادم هذه النسخة من مكتبة لا يعرف خطوة الإعداد هذه. حدِّث مكتبة."},
 	"setup.error.username_control":              {"A username cannot hold control characters.", "لا يجوز أن يحوي اسم المستخدم محارف تحكّم."},
 	"setup.error.username_length":               {"A username is 1 to {max} characters.", "اسم المستخدم من حرف واحد إلى {max} حرفًا."},
+	"setup.error.username_reserved":             {"The name {name} is kept by Maktaba itself: choose another, such as your own name.", "الاسم {name} محجوز لمكتبة نفسها: اختر اسمًا آخر، كاسمك أنت."},
 	"setup.error.username_space":                {"A username cannot start or end with a space.", "لا يجوز أن يبدأ اسم المستخدم أو ينتهي بمسافة."},
 	"setup.error.venv_failed":                   {"Installing the tools failed.", "فشل تثبيت الأدوات."},
 	"setup.error.venv_missing":                  {"The transcription tools are not installed yet.", "أدوات التفريغ لم تُثبَّت بعد."},

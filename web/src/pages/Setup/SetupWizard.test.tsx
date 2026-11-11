@@ -269,6 +269,10 @@ describe("SetupWizard", () => {
       "/Volumes/Big/Maktaba"
     );
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    // no name is offered: "admin" is the sentinel account's (setup refuses it)
+    const user = await screen.findByLabelText(/Username/);
+    expect(user).toHaveValue("");
+    await userEvent.type(user, "owner");
     const [pw, again] = await screen.findAllByLabelText(/Password/);
     await userEvent.type(pw, "a long passphrase");
     await userEvent.type(again, "a long passphrase");
@@ -471,6 +475,7 @@ describe("SetupWizard", () => {
     });
     const api = fakeApi({ admin });
     renderWizard(api, "admin");
+    await userEvent.type(screen.getByLabelText(/Username/), "owner");
     const [pw, again] = screen.getAllByLabelText(/Password/);
     await userEvent.type(pw, "short");
     await userEvent.type(again, "shorT");
@@ -483,7 +488,7 @@ describe("SetupWizard", () => {
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(await screen.findByText("Use at least 12 characters.")).toBeInTheDocument();
     expect(admin).toHaveBeenCalledWith(
-      { username: "admin", password: "short" },
+      { username: "owner", password: "short" },
       expect.any(Function)
     );
 

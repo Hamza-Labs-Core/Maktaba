@@ -148,6 +148,16 @@ func TestPreflightWriteCheck(t *testing.T) {
 			t.Fatalf("TrueNAS message lacks %q: %q", want, msg)
 		}
 	}
+
+	// on Unraid the fix is a chown of the template's Data folder in Unraid's terminal
+	p.platform = "unraid"
+	_, err = p.run()
+	msg = refusalOf(t, err)
+	for _, want := range []string{"On Unraid: open the terminal", "`chown " + strconv.Itoa(p.uid) + ":568 /mnt/cache/appdata/maktaba`", "على Unraid"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("Unraid message lacks %q: %q", want, msg)
+		}
+	}
 	p.platform = ""
 
 	// another uid's folder (a 1000-owned volume started as 568): the owner is named

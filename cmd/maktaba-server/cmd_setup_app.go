@@ -513,7 +513,7 @@ func (a *appSetup) toRuntime(ctx context.Context) error {
 }
 
 func (a *appSetup) askAdmin(string) (any, error) {
-	user, err := a.ask.line(a.t.get("login.username"), "admin")
+	user, err := a.ask.line(a.t.get("login.username"), "")
 	if err != nil {
 		return nil, err
 	}

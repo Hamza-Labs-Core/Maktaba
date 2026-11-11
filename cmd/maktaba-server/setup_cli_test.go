@@ -38,9 +38,9 @@ func TestSetupCLIDrivesTheSteps(t *testing.T) {
 	answers := strings.Join([]string{
 		"",                        // data directory: the config's
 		"",                        // backend: sqlite
-		"admin", "short", "short", // refused: under 8 characters
-		"admin", "a long one", "x", // the two passwords differ
-		"admin", "a long one", "a long one",
+		"owner", "short", "short", // refused: under 8 characters
+		"owner", "a long one", "x", // the two passwords differ
+		"owner", "a long one", "a long one",
 		"Lectures", "", // refused: not a whole path
 		lib, "/Volumes/Media => " + e.dir,
 		"n", // Plex: later
@@ -60,7 +60,7 @@ func TestSetupCLIDrivesTheSteps(t *testing.T) {
 	}
 	var seeded bool
 	for _, c := range fakeCalls(t, e.fakeLog) {
-		seeded = seeded || (c.Args[0] == "adduser" && c.Args[len(c.Args)-1] == "admin")
+		seeded = seeded || (c.Args[0] == "adduser" && c.Args[len(c.Args)-1] == "owner")
 	}
 	if !seeded {
 		t.Fatal("the admin was not seeded through the finish step")
