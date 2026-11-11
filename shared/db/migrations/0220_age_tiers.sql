@@ -29,11 +29,12 @@
 --                            when done. Working a job twice gives the same tiers.
 --
 -- The stages run under their own roles and write no tier, so triggers put the jobs in
--- (parental_recompute_enqueue is SECURITY DEFINER: a stage's role needs no grant on the
--- queue): a new video, a video moved to another library, a changed
+-- (the trigger functions are SECURITY DEFINER: a stage's role needs no grant on the
+-- queue, and nobody but the owner may call parental_recompute_enqueue): a new video, a video moved to another library, a changed
 -- metadata.content_rating (a plugin's set-field), a video joining or leaving a
--- collection, a series or a YouTube source, a YouTube match made or dropped, and a
--- learned age_limit. A trigger asks for a recompute only where the tier can change.
+-- collection, a series or a YouTube source, a YouTube match made or dropped, a
+-- learned age_limit, and a kept Plex item's or a guide programme's rating or video
+-- changing or going. A trigger asks for a recompute only where the tier can change.
 --
 -- One 'all' job is put in here, so the ratings a home already has (kept Plex ratings,
 -- plugins' ratings) fill in after the update, in the background.
@@ -207,6 +208,14 @@ $f$;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+-- The function runs as its owner, so nobody may call it but the owner: the triggers
+-- below reach it through their own SECURITY DEFINER functions, and the API (which
+-- owns the queue) writes the table itself. A stage's or a plugin's role cannot put a
+-- job in by hand.
+REVOKE EXECUTE ON FUNCTION parental_recompute_enqueue(text, text) FROM PUBLIC;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 -- A video joined or left a collection, a series or a YouTube source. Leaving matters only
 -- to a video whose tier came from a container; joining only when the container has a tier.
 CREATE OR REPLACE FUNCTION parental_member_changed() RETURNS trigger
@@ -345,12 +354,115 @@ CREATE OR REPLACE TRIGGER youtube_videos_parental_upd
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+-- A kept Plex item's rating or its video changed, or the item went.
+CREATE OR REPLACE FUNCTION parental_plex_item_changed() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $f$
+DECLARE
+    old_video  uuid;
+    new_video  uuid;
+    old_rating text := '';
+    new_rating text := '';
+BEGIN
+    IF TG_OP <> 'INSERT' THEN
+        old_video := OLD.video_id;
+        old_rating := COALESCE(OLD.detail->>'contentRating', '');
+    END IF;
+    IF TG_OP <> 'DELETE' THEN
+        new_video := NEW.video_id;
+        new_rating := COALESCE(NEW.detail->>'contentRating', '');
+    END IF;
+    IF old_video IS NOT DISTINCT FROM new_video AND old_rating = new_rating THEN
+        RETURN NULL;
+    END IF;
+    IF old_video IS NOT NULL AND old_rating <> '' THEN
+        PERFORM parental_recompute_enqueue('video', old_video::text);
+    END IF;
+    IF new_video IS NOT NULL AND new_rating <> ''
+       AND (new_video IS DISTINCT FROM old_video OR old_rating = '') THEN
+        PERFORM parental_recompute_enqueue('video', new_video::text);
+    END IF;
+    RETURN NULL;
+END
+$f$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE OR REPLACE TRIGGER plex_items_parental
+    AFTER INSERT OR DELETE OR UPDATE OF video_id, detail ON plex_items
+    FOR EACH ROW EXECUTE FUNCTION parental_plex_item_changed();
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- A guide programme's rating or its video changed, or the programme left the schedule.
+-- A programme with no rating, and a write that changes neither, queue nothing: the
+-- schedule's own churn costs one comparison a row.
+CREATE OR REPLACE FUNCTION parental_program_changed() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $f$
+DECLARE
+    old_video  uuid;
+    new_video  uuid;
+    old_rating text := '';
+    new_rating text := '';
+BEGIN
+    IF TG_OP <> 'INSERT' THEN
+        old_video := OLD.video_id;
+        old_rating := COALESCE(OLD.title_snapshot->>'rating', '');
+    END IF;
+    IF TG_OP <> 'DELETE' THEN
+        new_video := NEW.video_id;
+        new_rating := COALESCE(NEW.title_snapshot->>'rating', '');
+    END IF;
+    IF old_video IS NOT DISTINCT FROM new_video AND old_rating = new_rating THEN
+        RETURN NULL;
+    END IF;
+    IF old_video IS NOT NULL AND old_rating <> '' THEN
+        PERFORM parental_recompute_enqueue('video', old_video::text);
+    END IF;
+    IF new_video IS NOT NULL AND new_rating <> ''
+       AND (new_video IS DISTINCT FROM old_video OR old_rating = '') THEN
+        PERFORM parental_recompute_enqueue('video', new_video::text);
+    END IF;
+    RETURN NULL;
+END
+$f$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE OR REPLACE TRIGGER channel_programs_parental
+    AFTER INSERT OR DELETE OR UPDATE OF video_id, title_snapshot ON channel_programs
+    FOR EACH ROW EXECUTE FUNCTION parental_program_changed();
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- trigger functions are never called by hand
+REVOKE EXECUTE ON FUNCTION parental_member_changed(), parental_video_changed(),
+    parental_youtube_match_changed(), parental_youtube_age_limit_changed(),
+    parental_plex_item_changed(), parental_program_changed() FROM PUBLIC;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 -- the one-off recompute of every video (not put in again while one waits)
 INSERT INTO parental_recompute_jobs (kind)
 SELECT 'all' WHERE NOT EXISTS (SELECT 1 FROM parental_recompute_jobs WHERE kind = 'all');
 -- +goose StatementEnd
 
 -- +goose Down
+
+-- +goose StatementBegin
+DROP TRIGGER IF EXISTS channel_programs_parental ON channel_programs;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DROP TRIGGER IF EXISTS plex_items_parental ON plex_items;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DROP FUNCTION IF EXISTS parental_program_changed();
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DROP FUNCTION IF EXISTS parental_plex_item_changed();
+-- +goose StatementEnd
 
 -- +goose StatementBegin
 DROP TRIGGER IF EXISTS youtube_videos_parental_upd ON youtube_videos;

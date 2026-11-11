@@ -43,7 +43,9 @@ type Result struct {
 // Resolve is the rule, first match wins: the admin's tier on the video; the strictest
 // admin tier on a container; the strictest metadata rating (Plex, the guide, YouTube's
 // age limit, a plugin); the library's default; unrated. A plugin's rating is one of the
-// metadata sources, so it never loosens an admin's tier or a stricter rating.
+// metadata sources, so it never loosens an admin's tier or a stricter rating; and when
+// it is the only rating, it never brings the video under the library's default (the
+// stricter of the two is the tier).
 func Resolve(v Video) Result { return Default().Resolve(v) }
 
 // Resolve is Resolve with t's tables.
@@ -80,13 +82,21 @@ func (t *Table) Resolve(v Video) Result {
 	if v.YouTubeAgeLimit != nil && *v.YouTubeAgeLimit > 0 {
 		take(ContentTier(*v.YouTubeAgeLimit), SourceYouTube)
 	}
+	trusted := found
 	if tier, ok := t.Content(v.PluginRating); ok {
 		take(tier, SourcePlugin)
+	}
+	hasDefault := v.LibraryDefault != nil && ValidTier(*v.LibraryDefault)
+	// A plugin's rating can only tighten. Beside a Plex, guide or YouTube rating it
+	// counts when it is the strictest; alone, it never brings a video under the
+	// default an admin gave the library.
+	if found && !trusted && hasDefault && *v.LibraryDefault > strictest {
+		return rated(*v.LibraryDefault, SourceLibraryDefault)
 	}
 	if found {
 		return rated(strictest, src)
 	}
-	if v.LibraryDefault != nil && ValidTier(*v.LibraryDefault) {
+	if hasDefault {
 		return rated(*v.LibraryDefault, SourceLibraryDefault)
 	}
 	return Result{}

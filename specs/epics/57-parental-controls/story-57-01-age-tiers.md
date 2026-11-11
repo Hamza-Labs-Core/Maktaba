@@ -56,7 +56,11 @@ passes the line, 57.17); the library's default; unrated. The result goes in
   detection. A container's tier change enqueues a recompute for its members in batches of 1,000
   (the queue's `parental_recompute` job, idempotent).
 - **Plugins never loosen.** A plugin's rating is a metadata source (step 3), so an admin's tier or
-  a container's tier always wins, and among metadata sources the strictest wins.
+  a container's tier always wins, and among metadata sources the strictest wins. A plugin's
+  rating (and the `detected` source of 57.17) can only tighten: when it is the video's only
+  rating and the library has a default, the tier is the stricter of the two, so a plugin never
+  brings a video under the default an admin set. Plex, guide and YouTube ratings keep their
+  place over the default.
 - **YouTube:** the import stage keeps yt-dlp's `age_limit` (0 or 18) in `youtube_videos.age_limit`.
   Existing YouTube videos get it on their next metadata refresh. Until then they fall to the
   library default.
@@ -100,7 +104,7 @@ newest first) so Plex, guide and plugin ratings that already exist fill in.
 | T02 | MaktabaKit XCTest | the same vector file | map | identical to T01 |
 | T03 | Go unit | the precedence cases above | `Resolve` | tier and source per case |
 | T04 | Go + Postgres | collection of 3,000 videos | set collection tier | recompute in 3 batches; all members updated |
-| T05 | Go unit | plugin `G` vs Plex `R`; plugin `R18+` vs admin 9 | `Resolve` | 18; 9 |
+| T05 | Go unit | plugin `G` vs Plex `R`; plugin `R18+` vs admin 9; plugin `G` alone vs library default 13 | `Resolve` | 18; 9; 13 |
 | T06 | pytest | yt-dlp info with `age_limit: 18` | YouTube import | `youtube_videos.age_limit = 18` |
 | T07 | Go unit | unknown label `XYZ` twice | parse | unrated; one log line |
 | T08 | Go role test | no session, viewer, guardian, admin | each age-tier route | 401, 403, 403, 200 |

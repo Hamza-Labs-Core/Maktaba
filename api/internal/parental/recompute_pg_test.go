@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -185,14 +186,13 @@ func TestRecomputeFollowsEverySource(t *testing.T) {
 	h.drain()
 	h.want(v, 9, "library_default")
 
-	// a plugin's content_rating: stricter than nothing, it beats the default even
-	// though it is looser than it
+	// a plugin's content_rating, alone, never brings the video under the default
 	h.exec(`UPDATE videos SET metadata = metadata || '{"content_rating":"G"}' WHERE id = $1`, v)
 	if h.jobs() != 1 {
 		t.Fatalf("a changed content_rating queued %d jobs, want 1", h.jobs())
 	}
 	h.drain()
-	h.want(v, 0, "plugin")
+	h.want(v, 9, "library_default")
 	h.exec(`UPDATE videos SET title = 'renamed' WHERE id = $1`, v)
 	if h.jobs() != 0 {
 		t.Fatal("a change that rates nothing queued a job")
@@ -203,8 +203,8 @@ func TestRecomputeFollowsEverySource(t *testing.T) {
 	h.exec(`INSERT INTO channels (id, number, name, slug, mode) VALUES ($1, 901, 'c', 'c-901', 'shuffle')`, ch)
 	h.exec(`INSERT INTO channel_programs (channel_id, seq, start_at, end_at, source_duration, video_id, title_snapshot)
 		VALUES ($1, 1, now(), now() + interval '1 hour', 3600, $2, '{"rating":"TV-PG"}')`, ch, v)
-	if err := h.rc.Enqueue(ctx, h.db, parental.KindVideo, v); err != nil {
-		t.Fatal(err)
+	if h.jobs() != 1 {
+		t.Fatalf("a new rating queued %d jobs, want 1", h.jobs())
 	}
 	h.drain()
 	h.want(v, 9, "guide")
@@ -212,8 +212,8 @@ func TestRecomputeFollowsEverySource(t *testing.T) {
 	// Plex's kept rating
 	h.exec(`INSERT INTO plex_items (server, rating_key, section_key, section_title, video_id, detail)
 		VALUES ('s', '1', '1', 'Films', $1, '{"contentRating":"PG-13"}')`, v)
-	if err := h.rc.Enqueue(ctx, h.db, parental.KindVideo, v); err != nil {
-		t.Fatal(err)
+	if h.jobs() != 1 {
+		t.Fatalf("a new rating queued %d jobs, want 1", h.jobs())
 	}
 	h.drain()
 	h.want(v, 13, "plex")
@@ -288,8 +288,36 @@ func TestRecomputeFollowsEverySource(t *testing.T) {
 	}
 	h.drain()
 	h.want(v, 13, "plex")
-	h.exec(`DELETE FROM plex_items WHERE video_id = $1`, v)
+	// a changed source rating never leaves the looser tier behind: Plex's rating
+	// tightens, the programme's rating changes, the item is taken off the video, the
+	// programme leaves the schedule; a write that changes neither queues nothing
+	h.exec(`UPDATE plex_items SET detail = '{"contentRating":"R"}' WHERE video_id = $1`, v)
+	if h.jobs() != 1 {
+		t.Fatalf("a changed Plex rating queued %d jobs, want 1", h.jobs())
+	}
+	h.drain()
+	h.want(v, 18, "plex")
+	h.exec(`UPDATE plex_items SET detail = detail || '{"title":"x"}', seen_at = now() WHERE video_id = $1`, v)
+	h.exec(`UPDATE channel_programs SET end_at = end_at + interval '1 minute', title_snapshot = title_snapshot || '{"title":"x"}' WHERE video_id = $1`, v)
+	if h.jobs() != 0 {
+		t.Fatalf("writes that change no rating queued %d jobs", h.jobs())
+	}
+	h.exec(`UPDATE plex_items SET video_id = NULL WHERE video_id = $1`, v)
+	if h.jobs() != 1 {
+		t.Fatalf("a Plex item taken off its video queued %d jobs, want 1", h.jobs())
+	}
+	h.drain()
+	h.want(v, 9, "guide")
+	h.exec(`UPDATE channel_programs SET title_snapshot = '{"rating":"TV-MA"}' WHERE video_id = $1`, v)
+	if h.jobs() != 1 {
+		t.Fatalf("a changed guide rating queued %d jobs, want 1", h.jobs())
+	}
+	h.drain()
+	h.want(v, 18, "guide")
 	h.exec(`DELETE FROM channel_programs WHERE video_id = $1`, v)
+	if h.jobs() != 1 {
+		t.Fatalf("a programme leaving the schedule queued %d jobs, want 1", h.jobs())
+	}
 	h.exec(`UPDATE videos SET metadata = metadata - 'content_rating' WHERE id = $1`, v)
 	h.drain()
 	h.want(v, 9, "library_default")
@@ -346,4 +374,72 @@ func TestRecomputeAllAndInvalidJobs(t *testing.T) {
 	}
 	h.want(va, 18, "plugin")
 	h.want(vb, -1, "")
+}
+
+// Acceptance: a kept Plex rating of gb/15 is 16 from plex; an admin's 18 on a
+// collection the video is in is 18 from admin_container; a plugin's G against
+// Plex's R stays 18.
+func TestRecomputeAcceptance(t *testing.T) {
+	h := newPGHome(t)
+	lib := h.library("accept")
+	v, w := h.video(lib), h.video(lib)
+	h.exec(`INSERT INTO plex_items (server, rating_key, section_key, section_title, video_id, detail)
+		VALUES ('s', '1', '1', 'Films', $1, '{"contentRating":"gb/15"}'), ('s', '2', '1', 'Films', $2, '{"contentRating":"R"}')`, v, w)
+	h.exec(`UPDATE videos SET metadata = '{"content_rating":"G"}' WHERE id = $1`, w)
+	h.drain()
+	h.want(v, 16, "plex")
+	h.want(w, 18, "plex")
+	col := uuid.NewString()
+	h.exec(`INSERT INTO collections (id, library_id, name, age_tier) VALUES ($1, $2, 'grown', 18)`, col, lib)
+	h.exec(`INSERT INTO collection_items (collection_id, video_id, position) VALUES ($1, $2, 0)`, col, v)
+	h.drain()
+	h.want(v, 18, "admin_container")
+}
+
+// The queue's function runs as its owner, so no other role may call it: a role with
+// every right a stage has on the tables still cannot put a job in by hand, while
+// its writes still reach the queue through the triggers.
+func TestEnqueueFunctionIsTheOwnersAlone(t *testing.T) {
+	h := newPGHome(t)
+	lib := h.library("roles")
+	v := h.video(lib)
+	h.exec(`INSERT INTO plex_items (server, rating_key, section_key, section_title, video_id, detail)
+		VALUES ('s', '1', '1', 'Films', $1, '{"contentRating":"PG"}')`, v)
+	h.drain()
+	role := "t1_parental_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	h.exec(`CREATE ROLE ` + role + ` NOLOGIN`)
+	t.Cleanup(func() {
+		_, _ = h.db.Exec(`DROP OWNED BY ` + role)
+		_, _ = h.db.Exec(`DROP ROLE IF EXISTS ` + role)
+	})
+	h.exec(`GRANT SELECT, UPDATE ON plex_items TO ` + role)
+	ctx := context.Background()
+	conn, err := h.db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := conn.ExecContext(ctx, `SET ROLE `+role); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _, _ = conn.ExecContext(ctx, `RESET ROLE`) }()
+	for _, q := range []string{
+		`SELECT parental_recompute_enqueue('all', '')`,
+		`INSERT INTO parental_recompute_jobs (kind) VALUES ('all')`,
+	} {
+		if _, err := conn.ExecContext(ctx, q); err == nil || !strings.Contains(err.Error(), "permission denied") {
+			t.Fatalf("%s as another role: %v, want permission denied", q, err)
+		}
+	}
+	if _, err := conn.ExecContext(ctx, `UPDATE plex_items SET detail = '{"contentRating":"R"}' WHERE video_id = $1`, v); err != nil {
+		t.Fatalf("the role's own write: %v", err)
+	}
+	if _, err := conn.ExecContext(ctx, `RESET ROLE`); err != nil {
+		t.Fatal(err)
+	}
+	if h.jobs() != 1 {
+		t.Fatalf("the role's write queued %d jobs through the trigger, want 1", h.jobs())
+	}
+	h.drain()
+	h.want(v, 18, "plex")
 }

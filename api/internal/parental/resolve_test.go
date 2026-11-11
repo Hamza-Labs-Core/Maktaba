@@ -57,4 +57,13 @@ func TestResolvePluginsNeverLoosen(t *testing.T) {
 	check(t, "plugin R18+ against the admin's 9", Resolve(Video{PluginRating: "au/R18+", AdminTier: ip(9)}), ip(9), SourceAdminVideo)
 	check(t, "plugin R18+ against a container's 9", Resolve(Video{PluginRating: "au/R18+", ContainerTiers: []int{9}}), ip(9), SourceAdminContainer)
 	check(t, "a plugin may tighten a rating", Resolve(Video{PluginRating: "au/R18+", PlexRatings: []string{"G"}}), ip(18), SourcePlugin)
+	// alone, a plugin's rating never brings a video under the library's default
+	check(t, "plugin G under a default of 13", Resolve(Video{PluginRating: "G", LibraryDefault: ip(13)}), ip(13), SourceLibraryDefault)
+	check(t, "plugin PG-13 at a default of 13", Resolve(Video{PluginRating: "PG-13", LibraryDefault: ip(13)}), ip(13), SourcePlugin)
+	check(t, "plugin R over a default of 13", Resolve(Video{PluginRating: "R", LibraryDefault: ip(13)}), ip(18), SourcePlugin)
+	check(t, "plugin G with no default", Resolve(Video{PluginRating: "G"}), ip(0), SourcePlugin)
+	// Plex, the guide and YouTube keep their place over the default, a plugin beside them or not
+	check(t, "Plex G under a default of 13", Resolve(Video{PlexRatings: []string{"G"}, LibraryDefault: ip(13)}), ip(0), SourcePlex)
+	check(t, "Plex G and plugin G under a default of 13", Resolve(Video{PlexRatings: []string{"G"}, PluginRating: "G", LibraryDefault: ip(13)}), ip(0), SourcePlex)
+	check(t, "guide TV-G and plugin PG under a default of 13", Resolve(Video{GuideRatings: []string{"TV-G"}, PluginRating: "PG", LibraryDefault: ip(13)}), ip(9), SourcePlugin)
 }
