@@ -294,6 +294,10 @@ CPU cores are capped by the cgroup's quota (`cpu.max`).
   machine** (`tier_chosen = "admin"`), which applies at the next start; **Detect from the
   memory** goes back. With no pick, memory added moves the tier up at the next start, and the
   page says so.
+- maktaba.tv's NAS guides show the tier a model gets at the memory it ships with, and at the
+  most it takes (`web/packages/install/src/nas-models.json`, story 59.14): **Fits**, **Fits with
+  more memory** or **Use as storage**. That table helps a household choose; the server only
+  trusts what it detects.
 - Setup refuses under **3.5 GiB** of memory limit (a "4 GB" NAS reports 3.6–3.8 GiB). On a NAS
   the refusal says to run the home on another computer and keep the media on the NAS.
 - Postgres memory is passed as `-c` server arguments with `max_connections` (300 on every
