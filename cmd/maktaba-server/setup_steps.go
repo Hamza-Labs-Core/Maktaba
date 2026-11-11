@@ -29,6 +29,10 @@ type setupPending struct {
 	PathMap string         `json:"path_map,omitempty"`
 	Models  *pendingModels `json:"models,omitempty"`
 	Plex    *pendingPlex   `json:"plex,omitempty"`
+	// story 59.13: the share step on a NAS home ([media] shares, share_server, share_aliases)
+	Shares       map[string]string `json:"shares,omitempty"`
+	ShareServer  string            `json:"share_server,omitempty"`
+	ShareAliases []string          `json:"share_aliases,omitempty"`
 }
 
 type pendingAdmin struct {
@@ -563,8 +567,13 @@ func stepLibraries(s *setupRun, in json.RawMessage) (any, error) {
 	}); err != nil {
 		return nil, err
 	}
-	// a read-only root is supported (story 59.03): the step shows it, with who Maktaba runs as
-	return map[string]any{"roots": checks, "runs_as": who, "platform": nasPlatform()}, nil
+	// a read-only root is supported (story 59.03): the step shows it, with who Maktaba runs as;
+	// on a NAS home the share step's question follows (story 59.13)
+	out := map[string]any{"roots": checks, "runs_as": who, "platform": nasPlatform()}
+	if st := shareProposals(nasPlatform(), roots); st != nil {
+		out["shares"] = st
+	}
+	return out, nil
 }
 
 // setupPortMoves are the binds of cfg that another program holds and would move (a dry

@@ -17,6 +17,7 @@ package config
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/netip"
 	"os"
@@ -531,6 +532,35 @@ type MediaSection struct {
 	// 20 GiB and a tenth of the disk, at least 3 GiB; below 0: none. The
 	// streaming role's MAKTABA_TRANSCODE_MIN_FREE_GIB.
 	TranscodeMinFreeGiB int `toml:"transcode_min_free_gib"`
+	// Shares, ShareServer and ShareAliases are a NAS home's share step (Epic 59 story
+	// 59.13): each library folder's SMB share as the household confirmed it ("": not
+	// shared on the network), the NAS's name and the names nodes mount it by. The
+	// pipeline puts them in the NAS's storage server record (MAKTABA_HOME_SHARES) where
+	// that record does not name the folder yet; later changes are made in Settings.
+	Shares       map[string]string `toml:"shares,omitempty"`
+	ShareServer  string            `toml:"share_server,omitempty"`
+	ShareAliases []string          `toml:"share_aliases,omitempty"`
+}
+
+// HomeSharesEnv is MAKTABA_HOME_SHARES ({"server", "aliases", "roots"}), "" when setup
+// named no share.
+func (m MediaSection) HomeSharesEnv() string {
+	if len(m.Shares) == 0 && strings.TrimSpace(m.ShareServer) == "" {
+		return ""
+	}
+	roots := m.Shares
+	if roots == nil {
+		roots = map[string]string{}
+	}
+	aliases := m.ShareAliases
+	if aliases == nil {
+		aliases = []string{}
+	}
+	raw, err := json.Marshal(map[string]any{"server": strings.TrimSpace(m.ShareServer), "aliases": aliases, "roots": roots})
+	if err != nil {
+		return ""
+	}
+	return string(raw)
 }
 
 // TranscriptionSection is the [transcription] table: what the pipeline's

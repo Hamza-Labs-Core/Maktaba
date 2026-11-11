@@ -46,6 +46,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/selfmanaged"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/selfupdate"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/service"
@@ -88,6 +89,7 @@ func (f *nodeSetupFlags) register(cmd *cobra.Command) {
 	}
 	defBool("no-service", "with --node: install the release but register no service")
 	defBool("keep-worker", "with --node: leave the old worker units in place")
+	defBool("light-nas", "with --node: join although this is a Light NAS (better as the home or as storage)")
 	_ = fl.MarkHidden("converting")
 }
 
@@ -97,6 +99,10 @@ type nodeSetup struct {
 	Instances                         int
 	DryRun, Converting                bool
 	NoService, KeepWorker             bool
+	// LightNAS: the household chose to make a Light NAS a node (story 59.13)
+	LightNAS bool
+	// Machine reads this machine (nil: hostinfo.Detect; tests replace it)
+	Machine func() hostinfo.Machine
 
 	Out        io.Writer
 	NodeConfig config.NodeConfig
@@ -190,7 +196,8 @@ func runSetupNodeCmd(cmd *cobra.Command, lf layoutFlags) error {
 		Python:  flagString(cmd, "python"), Mode: flagString(cmd, "mode"), Instances: inst,
 		DryRun: lf.dryRun || flagBool(cmd, "dry-run"), Converting: flagBool(cmd, "converting"),
 		NoService: flagBool(cmd, "no-service"), KeepWorker: flagBool(cmd, "keep-worker"),
-		Out: cmd.OutOrStdout(), NodeConfig: config.LocalNodeConfig(), NodePath: config.LocalNodeConfigPath(),
+		LightNAS: flagBool(cmd, "light-nas"),
+		Out:      cmd.OutOrStdout(), NodeConfig: config.LocalNodeConfig(), NodePath: config.LocalNodeConfigPath(),
 		ConfigPath: config.Path(), Platform: releaseverify.Platform(), Identity: id,
 		HTTP: &http.Client{Timeout: 5 * time.Minute},
 		Run: func(name string, args ...string) error {
@@ -206,6 +213,27 @@ func runSetupNodeCmd(cmd *cobra.Command, lf layoutFlags) error {
 }
 
 func (s *nodeSetup) say(format string, a ...any) { fmt.Fprintf(s.Out, format+"\n", a...) }
+
+// checkLightNAS (story 59.13): a Light NAS joins only by the household's explicit choice;
+// the rollout's own conversion (--converting) was chosen when the worker joined.
+func (s *nodeSetup) checkLightNAS() error {
+	if s.Converting {
+		return nil
+	}
+	detect := s.Machine
+	if detect == nil {
+		detect = hostinfo.Detect
+	}
+	cfg, _, _ := config.LoadFrom(s.ConfigPath)
+	if !lightNAS(cfg.Server, detect()) {
+		return nil
+	}
+	if !s.LightNAS {
+		return ErrLightNAS
+	}
+	s.say("  %s Joining as you chose (--light-nas).", LightNASText)
+	return nil
+}
 
 func (s *nodeSetup) now() time.Time {
 	if s.Now != nil {
@@ -230,6 +258,9 @@ func (s *nodeSetup) run(ctx context.Context) error {
 	}
 	if strings.TrimSpace(n.Home.ClusterPub) == "" || n.HomeURL() == "" {
 		return ErrRejoin
+	}
+	if err := s.checkLightNAS(); err != nil {
+		return err
 	}
 	if s.Mode == "" {
 		s.Mode = "task"
