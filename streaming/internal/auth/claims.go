@@ -47,6 +47,9 @@ type Claims struct {
 	Usr     string   `json:"usr,omitempty"`
 	Lib     []string `json:"lib,omitempty"`
 	IsAdmin bool     `json:"is_admin,omitempty"`
+	// Tls is the stream session whose time lease the URL needs (Epic 57 story
+	// 57.14): set on every stream URL of a restricted account. Empty: none needed.
+	Tls string `json:"tls,omitempty"`
 }
 
 // LibIDs parses the lib[] claim into UUIDs. Returns an error if any

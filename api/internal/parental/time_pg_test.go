@@ -20,6 +20,7 @@ type pushed struct {
 	userID, libraryID, reason string
 	endAt, next, lease        *time.Time
 	cleared                   bool
+	session                   string // the stream session the lease is for
 }
 
 // fakePusher is streaming as the keeper sees it: it keeps what it is told, and says
@@ -29,7 +30,19 @@ type fakePusher struct {
 	got     []pushed
 	fail    error
 	served  map[string]time.Time // by stream session id
-	unknown bool                 // streaming holds nothing for the account
+	unknown bool                 // streaming holds no lease for the session
+}
+
+// lease is the last lease streaming was given for a session, nil when none.
+func (f *fakePusher) lease(session string) *time.Time {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := len(f.got) - 1; i >= 0; i-- {
+		if f.got[i].session == session && f.got[i].lease != nil {
+			return f.got[i].lease
+		}
+	}
+	return nil
 }
 
 func (f *fakePusher) SetTimeLimit(_ context.Context, userID, libraryID string, lim *parental.TimeLimit) error {
@@ -42,7 +55,7 @@ func (f *fakePusher) SetTimeLimit(_ context.Context, userID, libraryID string, l
 		f.got = append(f.got, pushed{userID: userID, libraryID: libraryID, cleared: true})
 		return nil
 	}
-	f.got = append(f.got, pushed{userID, libraryID, lim.Reason, lim.EndAt, lim.NextAllowedAt, lim.LeaseUntil, false})
+	f.got = append(f.got, pushed{userID, libraryID, lim.Reason, lim.EndAt, lim.NextAllowedAt, lim.LeaseUntil, false, lim.SessionID})
 	return nil
 }
 
@@ -284,10 +297,13 @@ func TestTimeCountsWithoutTheClient(t *testing.T) {
 	if err != nil || !st.Allowed {
 		t.Fatalf("Admit = %+v (%v)", st, err)
 	}
-	if p := e.push.last(t); p.lease == nil || !p.lease.Equal(e.clock.Add(parental.HeartbeatCap)) {
-		t.Fatalf("streaming was told %+v, want a lease of one heartbeat interval", p)
+	if p := e.push.last(t); p.lease != nil || p.endAt == nil {
+		t.Fatalf("streaming was told %+v, want the account's end and no lease before a session is open", p)
 	}
 	e.post(0, "s-silent", v)
+	if p := e.push.last(t); p.session != "s-silent" || p.lease == nil || !p.lease.Equal(e.clock.Add(parental.HeartbeatCap)) {
+		t.Fatalf("streaming was told %+v, want a lease of one heartbeat interval for the session", p)
+	}
 	// the rules change and the child reads its own time: neither is a counted call
 	if err := e.keeper.Refresh(ctx, uChild, libOpen); err != nil {
 		t.Fatal(err)
@@ -308,8 +324,8 @@ func TestTimeCountsWithoutTheClient(t *testing.T) {
 	if err := e.keeper.Closed(ctx, "s-silent"); err != nil || e.used(libOpen) != 60 {
 		t.Fatalf("Closed: %v, %d s counted", err, e.used(libOpen))
 	}
-	if p := e.push.last(t); p.lease == nil || p.lease.After(e.clock) {
-		t.Fatalf("the last session closed and the lease goes on: %+v", p)
+	if p := e.push.last(t); p.session != "s-silent" || p.lease == nil || p.lease.After(e.clock) {
+		t.Fatalf("the session closed and its lease goes on: %+v", p)
 	}
 	// and again, with streaming unable to say what it served: the whole interval
 	e.post(0, "s-silent-2", v)
@@ -336,6 +352,110 @@ func TestTimeCountsWithoutTheClient(t *testing.T) {
 	e.post(10*time.Second, "s-ipad", v)
 	if e.used(libOpen) != 150 {
 		t.Fatalf("after the write came back: %d s, want 150", e.used(libOpen))
+	}
+}
+
+// Security finding 3: a session is never served without a mark that counts it. The
+// lease is the session's own; a mark is let go (the marks are full, or it was idle)
+// only after what streaming served it is counted and its lease is ended; when that
+// cannot be done the mark stays and the new session is refused; a mark streaming
+// still serves is kept; and a session let go is served again only through a counted
+// call.
+func TestNoSessionServedWithoutItsMark(t *testing.T) {
+	e := setupTime(t)
+	ctx := context.Background()
+	e.rules(limit(everyDay, 600, ""))
+	v := e.video(libOpen)
+	s1, s2, s3 := e.session(uChild, v), e.session(uChild, v), e.session(uChild, v)
+	ended := func(session string) bool {
+		l := e.push.lease(session)
+		return l != nil && !l.After(e.clock)
+	}
+
+	// each session has its own lease: one that posts does not carry another
+	e.post(0, s1, v)
+	e.post(0, s2, v)
+	e.post(30*time.Second, s2, v)
+	if l1, l2 := e.push.lease(s1), e.push.lease(s2); l1 == nil || l2 == nil || !l2.Equal(l1.Add(30*time.Second)) {
+		t.Fatalf("leases %v and %v: a call for one session renewed the other, or gave none", l1, l2)
+	}
+	if err := e.keeper.Closed(ctx, s2); err != nil {
+		t.Fatal(err)
+	}
+	if !ended(s2) || ended(s1) {
+		t.Fatal("closing one session must end its lease and no other")
+	}
+	base := e.used(libOpen) // s2 played 30 s; s1 is still to count
+
+	// the marks are full: the oldest is counted from what streaming served it, and
+	// its lease is ended, before the new session gets its own
+	e.keeper.MarksKept = 1
+	e.push.served[s1] = e.clock.Add(20 * time.Second)
+	e.clock = e.clock.Add(5 * time.Minute)
+	if err := e.keeper.Opened(ctx, uChild, libOpen, v, s3); err != nil {
+		t.Fatalf("Opened: %v", err)
+	}
+	if got := e.used(libOpen) - base; got != 50 {
+		t.Fatalf("the mark let go was counted %d s, want the 50 streaming served it", got)
+	}
+	if !ended(s1) || ended(s3) {
+		t.Fatalf("after the marks filled: lease of the one let go %v, of the new one %v", e.push.lease(s1), e.push.lease(s3))
+	}
+
+	// streaming cannot be told the lease ended: the mark stays, the new one is refused
+	s4 := e.session(uChild, v)
+	e.push.fail = errors.New("streaming is away")
+	e.clock = e.clock.Add(10 * time.Second)
+	err := e.keeper.Opened(ctx, uChild, libOpen, v, s4)
+	e.push.fail = nil
+	if err == nil || e.push.lease(s4) != nil {
+		t.Fatalf("Opened = %v with the marks full and streaming away, lease %v: want an error and no lease", err, e.push.lease(s4))
+	}
+	if err := e.keeper.Progress(ctx, uChild, s3); err != nil || e.used(libOpen)-base != 60 {
+		t.Fatalf("the mark that had to stay: %v, %d s counted, want 60", err, e.used(libOpen)-base)
+	}
+
+	// a session let go comes back through the API: counted again, with a new lease
+	e.clock = e.clock.Add(10 * time.Second)
+	if err := e.keeper.Progress(ctx, uChild, s1); err != nil {
+		t.Fatalf("Progress for a session let go: %v", err)
+	}
+	if ended(s1) || !ended(s3) {
+		t.Fatal("the session that called has no lease, or the one let go for it still has one")
+	}
+
+	// an idle mark that streaming still serves is kept and counted; once streaming
+	// serves it nothing it is let go, its lease ended
+	e.keeper.MarksKept = 0
+	base = e.used(libOpen)
+	e.clock = e.clock.Add(7 * time.Hour)
+	e.push.served[s1] = e.clock.Add(-time.Second)
+	if _, err := e.keeper.Admit(ctx, e.child, libOpen); err != nil {
+		t.Fatal(err)
+	}
+	if e.used(libOpen) == base {
+		t.Fatal("an idle session that streaming still served was not counted")
+	}
+	base = e.used(libOpen)
+	e.clock = e.clock.Add(2 * time.Minute)
+	e.push.served[s1] = e.clock // still served: the mark was kept, so this is counted
+	if _, err := e.keeper.Admit(ctx, e.child, libOpen); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.used(libOpen) - base; got != 120 {
+		t.Fatalf("the idle mark was dropped while streaming served it: %d s counted, want 120", got)
+	}
+	pushes := len(e.push.got)
+	e.clock = e.clock.Add(2 * time.Minute) // nothing more served
+	if _, err := e.keeper.Admit(ctx, e.child, libOpen); err != nil {
+		t.Fatal(err)
+	}
+	let := false
+	for _, p := range e.push.got[pushes:] {
+		let = let || (p.session == s1 && p.lease != nil && !p.lease.After(e.clock))
+	}
+	if !let {
+		t.Fatal("the idle mark was not let go with its lease ended")
 	}
 }
 

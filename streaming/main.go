@@ -54,6 +54,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/session"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slots"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/subtitles"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/timelimit"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/transcripts"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/tvmetrics"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/version"
@@ -390,6 +391,12 @@ func runServe() error {
 // Production: net.Listen. The tests swap in a guard that refuses any address
 // that is not loopback, so `go test` never opens a socket on the LAN (on
 // Windows that pops a firewall prompt for every new streaming.test.exe).
+// timeLimits are the time limits and stream leases the API pushes for restricted
+// accounts (Epic 57 story 57.14): the gRPC surface fills them, the public server's
+// guard reads them. They live in memory: after a restart a restricted account's
+// stream is served again once the API renews its lease.
+var timeLimits = timelimit.New()
+
 var listenTCP = net.Listen
 
 // serveOn binds srv.Addr through listenTCP and serves it (ListenAndServe).
@@ -455,6 +462,7 @@ func buildGRPCServer(bg *background, logger *slog.Logger, backend probe.Backend,
 	srv.VAAPINow = choice.VAAPIDevice
 	srv.SoftwareMaxHeight = cfg.Transcode.SoftwareMaxHeight
 	srv.Logger = logger
+	srv.TimeLimits = timeLimits
 
 	// HLB-328: wire the real ffmpeg-spawning orchestrator so
 	// OpenSession actually transcodes. The output dir must match the
@@ -669,6 +677,7 @@ func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backe
 		ExtraMounts: extraMounts,
 		// runServe refused a bad list before anything was built
 		TrustedProxies: trustedProxies(),
+		TimeLimits:     timeLimits,
 	}), nil
 }
 

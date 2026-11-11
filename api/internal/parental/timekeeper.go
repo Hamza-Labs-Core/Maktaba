@@ -7,10 +7,11 @@ package parental
 // The count is the home's own. A stream session is marked when the API opens it,
 // and every call the API gets for it (open, renew, progress post, close) adds the
 // time since the one before, never more than HeartbeatCap. What the client says its
-// position is plays no part. Streaming serves a time-limited account only for
-// HeartbeatCap after the last counted call (the lease), so a client that stops
-// calling is stopped, and what it was served before that is counted from what
-// streaming says it served.
+// position is plays no part. Streaming serves a restricted account's session only
+// for HeartbeatCap after the last counted call for that session (its lease), so a
+// client that stops calling is stopped, and what it was served before that is
+// counted from what streaming says it served. A session whose mark the keeper let
+// go has its lease ended first: it is served again only through the API.
 
 import (
 	"context"
@@ -23,8 +24,9 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 )
 
-// ReasonNoHeartbeat is the reason streaming gives when it stopped serving a
-// time-limited account because no counted call came within HeartbeatCap. A progress
+// ReasonNoHeartbeat is the reason streaming gives when it does not serve a
+// restricted account's session because no counted call for that session came within
+// HeartbeatCap. A progress
 // post or a renewed session opens it again.
 const ReasonNoHeartbeat = "no_heartbeat"
 
@@ -35,8 +37,11 @@ var ErrUnknownSession = errors.New("parental time: not a stream session of that 
 type TimeLimit struct {
 	// EndAt: no media is served from here on (nil: no end).
 	EndAt *time.Time
-	// LeaseUntil: no media is served from here on until a newer lease comes. Nil
-	// keeps the lease streaming has (none: nothing is served until one comes).
+	// SessionID and VideoID name the stream session LeaseUntil is for.
+	SessionID, VideoID string
+	// LeaseUntil: that session's media (and, for direct play, that video's) is
+	// served up to here and no further until a newer lease comes. Nil leaves every
+	// lease as it is. A session with no lease is served nothing.
 	LeaseUntil *time.Time
 	// Reason and NextAllowedAt are what streaming answers once EndAt has passed.
 	Reason        string
@@ -47,11 +52,11 @@ type TimeLimit struct {
 type TimePusher interface {
 	// SetTimeLimit sets what streaming holds for the account in the library
 	// (libraryID "": playback with no library). A nil limit removes it: the account
-	// has no time limit there.
+	// is not restricted, and is served with no lease.
 	SetTimeLimit(ctx context.Context, userID, libraryID string, lim *TimeLimit) error
 	// TimeServed is when streaming last served media of that stream session (or, for
 	// direct play, of that video) to the account. known is false when streaming
-	// holds no limit for the account in the library, so it cannot tell.
+	// holds no lease for that session, so it cannot tell.
 	TimeServed(ctx context.Context, userID, libraryID, sessionID, videoID string) (last time.Time, known bool, err error)
 }
 
@@ -73,8 +78,8 @@ type TimeKeeper struct {
 	// Push is the streaming service (nil: none, so nothing but the count is kept).
 	Push TimePusher
 	// MarksKept bounds the session marks (0: marksKept). When it is reached the
-	// mark heard from longest ago is counted and dropped: a session is never left
-	// without a count.
+	// mark heard from longest ago is counted, its lease is ended, and it is dropped:
+	// a session is never served without a count.
 	MarksKept int
 
 	mu    sync.Mutex
@@ -85,8 +90,8 @@ func NewTimeKeeper(cache *Cache, push TimePusher) *TimeKeeper {
 	return &TimeKeeper{cache: cache, store: cache.Store(), Push: push, marks: map[string]*sessionMark{}}
 }
 
-// marksKept bounds the session marks; a mark not heard from for markIdle is dropped
-// once what it owes is counted.
+// marksKept bounds the session marks; a mark not heard from for markIdle, which
+// streaming says it serves nothing, is dropped once its lease is ended.
 const (
 	marksKept = 4096
 	markIdle  = 6 * time.Hour
@@ -118,10 +123,10 @@ func (k *TimeKeeper) counted(ctx context.Context, p *principal.Principal) (bool,
 }
 
 // Admit is Time for a stream about to start or renew. What the account's other
-// sessions still owe is counted first. When it is allowed for a time-limited
-// account, streaming is told when it must end before Admit returns; if streaming
-// cannot be told, or the count cannot be written, Admit returns the error and the
-// stream is refused.
+// sessions still owe is counted first. When it is allowed, streaming is told when
+// the account's playback must end before Admit returns; if streaming cannot be
+// told, or the count cannot be written, Admit returns the error and the stream is
+// refused. Admit gives no lease: Opened does, for the session that was opened.
 func (k *TimeKeeper) Admit(ctx context.Context, p *principal.Principal, libraryID string) (TimeState, error) {
 	if on, err := k.counted(ctx, p); err != nil || !on {
 		return TimeState{Allowed: err == nil}, err
@@ -134,10 +139,10 @@ func (k *TimeKeeper) Admit(ctx context.Context, p *principal.Principal, libraryI
 		return TimeState{}, err
 	}
 	if !st.Allowed {
-		_ = k.push(ctx, p.UserID, libraryID, st, leaseKeep) // a stream still running ends now
+		_ = k.push(ctx, p.UserID, libraryID, st, leaseKeep, "", "") // a stream still running ends now
 		return st, nil
 	}
-	if err := k.push(ctx, p.UserID, libraryID, st, leaseRenew); err != nil {
+	if err := k.push(ctx, p.UserID, libraryID, st, leaseKeep, "", ""); err != nil {
 		return TimeState{}, err
 	}
 	return st, nil
@@ -146,35 +151,44 @@ func (k *TimeKeeper) Admit(ctx context.Context, p *principal.Principal, libraryI
 type leaseMode int
 
 const (
-	leaseKeep  leaseMode = iota // leave the lease streaming has
-	leaseRenew                  // a counted call came: HeartbeatCap from now
-	leaseEnd                    // the last session there closed: ends now
+	leaseKeep  leaseMode = iota // leave every lease as it is
+	leaseRenew                  // a counted call came for the session: HeartbeatCap from now
+	leaseEnd                    // the session closed, or its mark is let go: ends now
 )
 
-func (k *TimeKeeper) push(ctx context.Context, userID, libraryID string, st TimeState, lease leaseMode) error {
+func (k *TimeKeeper) push(ctx context.Context, userID, libraryID string, st TimeState, lease leaseMode, sessionID, videoID string) error {
 	if k.Push == nil {
 		return nil
 	}
-	if !st.Allowed {
+	lim := &TimeLimit{}
+	switch {
+	case !st.Allowed:
 		now := st.Now
-		return k.Push.SetTimeLimit(ctx, userID, libraryID, &TimeLimit{EndAt: &now, Reason: st.Reason, NextAllowedAt: st.NextAllowedAt})
+		lim.EndAt, lim.Reason, lim.NextAllowedAt = &now, st.Reason, st.NextAllowedAt
+	case st.EndsAt != nil:
+		lim.EndAt, lim.Reason = st.EndsAt, ReasonLimitReached
+		if st.SlotEndsAt != nil && !st.SlotEndsAt.After(*st.EndsAt) {
+			lim.Reason = ReasonOutsideSlot
+		}
 	}
-	if st.EndsAt == nil {
-		return k.Push.SetTimeLimit(ctx, userID, libraryID, nil) // no rule covers it: no limit
-	}
-	lim := &TimeLimit{EndAt: st.EndsAt, Reason: ReasonLimitReached}
-	if st.SlotEndsAt != nil && !st.SlotEndsAt.After(*st.EndsAt) {
-		lim.Reason = ReasonOutsideSlot
-	}
-	switch lease {
-	case leaseRenew:
-		until := st.Now.Add(HeartbeatCap)
-		lim.LeaseUntil = &until
-	case leaseEnd:
+	if lease != leaseKeep && sessionID != "" {
 		until := st.Now
-		lim.LeaseUntil = &until
+		if lease == leaseRenew {
+			until = until.Add(HeartbeatCap)
+		}
+		lim.SessionID, lim.VideoID, lim.LeaseUntil = sessionID, videoID, &until
 	}
 	return k.Push.SetTimeLimit(ctx, userID, libraryID, lim)
+}
+
+// lease renews or ends one session's lease, with the account's end as it is now,
+// which it returns.
+func (k *TimeKeeper) lease(ctx context.Context, m sessionMark, sessionID string, mode leaseMode) (TimeState, error) {
+	st, err := k.store.TimeOf(ctx, m.userID, m.libraryID)
+	if err != nil {
+		return TimeState{}, err
+	}
+	return st, k.push(ctx, m.userID, m.libraryID, st, mode, sessionID, m.videoID)
 }
 
 // restricted reports whether userID's playback is counted.
@@ -187,12 +201,11 @@ func (k *TimeKeeper) restricted(ctx context.Context, userID string) (bool, error
 }
 
 // owed is the time to count for a mark counted up to m.at, and whether that is
-// known. Within HeartbeatCap of a call it is the whole gap. Past it the lease ran
-// out in between, so streaming served the session nothing after m.at+HeartbeatCap:
-// what streaming says it served up to then is counted. A mark already found quiet
-// (lapsed) has no lease of its own, so whatever streaming served it since is
-// counted. When streaming cannot say, the whole of HeartbeatCap is, and sure is
-// false.
+// known. Within HeartbeatCap of a call for the session it is the whole gap. Past it
+// the session's lease ran out at m.seen+HeartbeatCap, so what streaming says it
+// served the session is counted. When streaming cannot say, the rest of the lease
+// is counted whole, and sure is false unless streaming holds no lease for the
+// session at all (it serves it nothing).
 func (k *TimeKeeper) owed(ctx context.Context, m sessionMark, sessionID string, now time.Time) (d time.Duration, sure bool) {
 	gap := now.Sub(m.at)
 	if gap <= 0 {
@@ -201,24 +214,25 @@ func (k *TimeKeeper) owed(ctx context.Context, m sessionMark, sessionID string, 
 	if !m.lapsed && gap <= HeartbeatCap {
 		return gap, true
 	}
+	// what the lease still allowed after m.at
+	left := max(0, min(gap, m.seen.Add(HeartbeatCap).Sub(m.at)))
 	if k.Push == nil {
-		return min(gap, HeartbeatCap), false
+		return left, false
 	}
 	served, known, err := k.Push.TimeServed(ctx, m.userID, m.libraryID, sessionID, m.videoID)
-	if err != nil || !known {
-		return min(gap, HeartbeatCap), false
+	if err != nil {
+		return left, false
 	}
-	limit := HeartbeatCap
-	if m.lapsed {
-		limit = gap
+	if !known {
+		return left, true
 	}
-	return max(0, min(served.Sub(m.at), limit)), true
+	return max(0, min(served.Sub(m.at), gap)), true
 }
 
 // count adds what the mark owes up to now. heard: this is a call for the session
 // itself, not the keeper finding it quiet. On a failed write the seconds stay owed
 // on the mark, and the error is returned: the caller does not renew the lease.
-func (k *TimeKeeper) count(ctx context.Context, sessionID string, m *sessionMark, now time.Time, heard bool) (sure bool, err error) {
+func (k *TimeKeeper) count(ctx context.Context, sessionID string, m *sessionMark, now time.Time, heard bool) (seconds int, sure bool, err error) {
 	k.mu.Lock()
 	snap := *m
 	if now.After(m.at) {
@@ -233,26 +247,44 @@ func (k *TimeKeeper) count(ctx context.Context, sessionID string, m *sessionMark
 
 	d, sure := k.owed(ctx, snap, sessionID, now)
 	d += snap.carry
-	seconds := int(d/time.Second) + snap.debt
+	seconds = int(d/time.Second) + snap.debt
 	if seconds > 0 {
 		if err := k.store.AddUsage(ctx, snap.userID, snap.libraryID, seconds); err != nil {
 			k.mu.Lock()
 			m.debt += seconds
 			k.mu.Unlock()
-			return sure, fmt.Errorf("parental time: count: %w", err)
+			return 0, sure, fmt.Errorf("parental time: count: %w", err)
 		}
 	}
 	k.mu.Lock()
 	m.carry += d % time.Second
 	k.mu.Unlock()
-	return sure, nil
+	return seconds, sure, nil
+}
+
+// letGo ends the session's lease in streaming and then drops its mark: from here
+// on streaming serves the session nothing until the API counts it again. If
+// streaming cannot be told, the mark stays.
+func (k *TimeKeeper) letGo(ctx context.Context, sessionID string, m *sessionMark) error {
+	k.mu.Lock()
+	snap := *m
+	k.mu.Unlock()
+	if _, err := k.lease(ctx, snap, sessionID, leaseEnd); err != nil {
+		return err
+	}
+	k.mu.Lock()
+	if k.marks[sessionID] == m {
+		delete(k.marks, sessionID)
+	}
+	k.mu.Unlock()
+	return nil
 }
 
 // settle counts what userID's other sessions owe once they have gone quiet for
-// longer than HeartbeatCap (a session that stopped calling, or never called). It
-// drops the ones not heard from for markIdle, and the ones streaming could not
-// answer for, which were counted a whole interval. except is the session being
-// counted by the caller.
+// longer than HeartbeatCap (a session that stopped calling, or never called). A
+// mark is let go only when it was not heard from for markIdle and streaming says it
+// served the session nothing since. except is the session being counted by the
+// caller.
 func (k *TimeKeeper) settle(ctx context.Context, userID, except string) error {
 	now := k.store.now()
 	type due struct {
@@ -269,64 +301,58 @@ func (k *TimeKeeper) settle(ctx context.Context, userID, except string) error {
 	k.mu.Unlock()
 	var first error
 	for _, d := range list {
-		sure, err := k.count(ctx, d.id, d.m, now, false)
-		if err != nil {
-			if first == nil {
-				first = err
-			}
-			continue
+		seconds, sure, err := k.count(ctx, d.id, d.m, now, false)
+		if err == nil && sure && seconds == 0 && now.Sub(d.m.seen) > markIdle {
+			err = k.letGo(ctx, d.id, d.m)
 		}
-		k.mu.Lock()
-		if (!sure || now.Sub(d.m.seen) > markIdle) && k.marks[d.id] == d.m {
-			delete(k.marks, d.id)
+		if err != nil && first == nil {
+			first = err
 		}
-		k.mu.Unlock()
 	}
 	return first
 }
 
 // mark returns the session's mark, making it when there is none. made reports a new
-// one. When the marks are full the one heard from longest ago is counted (the whole
-// of HeartbeatCap at most) and dropped first.
+// one. When the marks are full, the one heard from longest ago is counted from what
+// streaming served it and let go first; if that cannot be done the new session gets
+// no mark and the error is returned, so it is refused.
 func (k *TimeKeeper) mark(ctx context.Context, sessionID string, fresh sessionMark) (m *sessionMark, made bool, err error) {
-	k.mu.Lock()
-	if m = k.marks[sessionID]; m != nil && m.userID == fresh.userID {
-		k.mu.Unlock()
-		return m, false, nil
-	}
 	limit := k.MarksKept
 	if limit <= 0 {
 		limit = marksKept
 	}
-	var evicted []sessionMark
-	for len(k.marks) >= limit {
+	for {
+		k.mu.Lock()
+		if m = k.marks[sessionID]; m != nil && m.userID == fresh.userID {
+			k.mu.Unlock()
+			return m, false, nil
+		}
+		if len(k.marks) < limit {
+			m = &fresh
+			k.marks[sessionID] = m
+			k.mu.Unlock()
+			return m, true, nil
+		}
 		oldest := ""
 		for id, o := range k.marks {
 			if oldest == "" || o.seen.Before(k.marks[oldest].seen) {
 				oldest = id
 			}
 		}
-		evicted = append(evicted, *k.marks[oldest])
-		delete(k.marks, oldest)
-	}
-	m = &fresh
-	k.marks[sessionID] = m
-	k.mu.Unlock()
-
-	now := k.store.now()
-	for _, o := range evicted {
-		d := min(max(now.Sub(o.at), 0), HeartbeatCap) + o.carry
-		if seconds := int(d/time.Second) + o.debt; seconds > 0 {
-			if aerr := k.store.AddUsage(ctx, o.userID, o.libraryID, seconds); aerr != nil && err == nil {
-				err = fmt.Errorf("parental time: count: %w", aerr)
-			}
+		old := k.marks[oldest]
+		k.mu.Unlock()
+		if _, _, err := k.count(ctx, oldest, old, k.store.now(), false); err != nil {
+			return nil, false, err
+		}
+		if err := k.letGo(ctx, oldest, old); err != nil {
+			return nil, false, err
 		}
 	}
-	return m, true, err
 }
 
 // Opened marks a stream session the API just opened or renewed for userID, after
-// Admit allowed it. A renewed session is counted like any other call for it.
+// Admit allowed it, and gives it its lease. A renewed session is counted like any
+// other call for it. On an error the session has no lease: the caller refuses it.
 func (k *TimeKeeper) Opened(ctx context.Context, userID, libraryID, videoID, sessionID string) error {
 	on, err := k.restricted(ctx, userID)
 	if err != nil {
@@ -338,27 +364,46 @@ func (k *TimeKeeper) Opened(ctx context.Context, userID, libraryID, videoID, ses
 	}
 	now := k.store.now()
 	m, made, err := k.mark(ctx, sessionID, sessionMark{userID: userID, libraryID: libraryID, videoID: videoID, at: now, seen: now})
-	if err != nil || made {
+	if err != nil {
 		return err
 	}
-	_, err = k.count(ctx, sessionID, m, now, true)
+	if !made {
+		if _, _, err := k.count(ctx, sessionID, m, now, true); err != nil {
+			return err
+		}
+	}
+	_, err = k.lease(ctx, *m, sessionID, leaseRenew)
 	return err
 }
 
-// Progress counts one progress post of a stream session: the stream's heartbeat. It
+// Kept reports whether p's playback time is kept: p is a restricted account. Every
+// stream URL of such an account names its session, so streaming serves it only
+// under that session's lease.
+func (k *TimeKeeper) Kept(ctx context.Context, p *principal.Principal) (bool, error) {
+	return k.counted(ctx, p)
+}
+
+// Progress is Beat for a caller that does not need the state.
+func (k *TimeKeeper) Progress(ctx context.Context, userID, sessionID string) error {
+	_, err := k.Beat(ctx, userID, sessionID)
+	return err
+}
+
+// Beat counts one progress post of a stream session: the stream's heartbeat. It
 // adds the time since the last call for the session, never more than HeartbeatCap,
 // whatever position the client reports, and renews streaming's lease. A session the
 // home did not open for userID is ErrUnknownSession: it is not counted as another's
 // and renews nothing. On an error nothing is renewed, so the stream ends when its
-// lease does. An unrestricted account costs no query.
-func (k *TimeKeeper) Progress(ctx context.Context, userID, sessionID string) error {
+// lease does. It returns the account's time as it is after the count: not Allowed
+// means the stream is over. An unrestricted account costs no query.
+func (k *TimeKeeper) Beat(ctx context.Context, userID, sessionID string) (TimeState, error) {
 	on, err := k.restricted(ctx, userID)
 	if err != nil {
-		return err
+		return TimeState{}, err
 	}
 	if !on {
 		k.forget(sessionID)
-		return nil
+		return TimeState{Allowed: true}, nil
 	}
 	now := k.store.now()
 	k.mu.Lock()
@@ -374,33 +419,29 @@ func (k *TimeKeeper) Progress(ctx context.Context, userID, sessionID string) err
 			  FROM streaming_sessions s LEFT JOIN videos v ON v.id = s.video_id
 			 WHERE s.id::text = $1`, sessionID).Scan(&owner, &video, &lib, &opened)
 		if errors.Is(err, sql.ErrNoRows) || (err == nil && owner != userID) {
-			return ErrUnknownSession
+			return TimeState{}, ErrUnknownSession
 		}
 		if err != nil {
-			return err
+			return TimeState{}, err
 		}
 		if opened.After(now) {
 			opened = now
 		}
 		if m, _, err = k.mark(ctx, sessionID, sessionMark{userID: userID, libraryID: lib, videoID: video, at: opened, seen: now}); err != nil {
-			return err
+			return TimeState{}, err
 		}
 	}
-	if _, err := k.count(ctx, sessionID, m, now, true); err != nil {
-		return err
+	if _, _, err := k.count(ctx, sessionID, m, now, true); err != nil {
+		return TimeState{}, err
 	}
 	if err := k.settle(ctx, userID, sessionID); err != nil {
-		return err
+		return TimeState{}, err
 	}
-	st, err := k.store.TimeOf(ctx, userID, m.libraryID)
-	if err != nil {
-		return err
-	}
-	return k.push(ctx, userID, m.libraryID, st, leaseRenew)
+	return k.lease(ctx, *m, sessionID, leaseRenew)
 }
 
-// Closed counts a stream session up to its close and drops its mark. When it was
-// the account's last session in that library, streaming's lease there ends now.
+// Closed counts a stream session up to its close, ends its lease and drops its
+// mark. On an error the mark stays: what it owes is counted with the next call.
 func (k *TimeKeeper) Closed(ctx context.Context, sessionID string) error {
 	k.mu.Lock()
 	m := k.marks[sessionID]
@@ -408,27 +449,10 @@ func (k *TimeKeeper) Closed(ctx context.Context, sessionID string) error {
 	if m == nil {
 		return nil
 	}
-	now := k.store.now()
-	if _, err := k.count(ctx, sessionID, m, now, true); err != nil {
-		return err // the mark stays: what it owes is counted with the next call
-	}
-	k.mu.Lock()
-	delete(k.marks, sessionID)
-	others := false
-	for _, o := range k.marks {
-		if o.userID == m.userID && o.libraryID == m.libraryID && now.Sub(o.seen) <= HeartbeatCap {
-			others = true
-		}
-	}
-	k.mu.Unlock()
-	if others {
-		return nil
-	}
-	st, err := k.store.TimeOf(ctx, m.userID, m.libraryID)
-	if err != nil {
+	if _, _, err := k.count(ctx, sessionID, m, k.store.now(), true); err != nil {
 		return err
 	}
-	return k.push(ctx, m.userID, m.libraryID, st, leaseEnd)
+	return k.letGo(ctx, sessionID, m)
 }
 
 func (k *TimeKeeper) forget(sessionID string) {
@@ -470,7 +494,7 @@ func (k *TimeKeeper) Refresh(ctx context.Context, userID string, libraryIDs ...s
 		} else {
 			var st TimeState
 			if st, err = k.store.TimeOf(ctx, userID, lib); err == nil {
-				err = k.push(ctx, userID, lib, st, leaseKeep)
+				err = k.push(ctx, userID, lib, st, leaseKeep, "", "")
 			}
 		}
 		if err != nil && first == nil {

@@ -28,6 +28,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/probe"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/session"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/timelimit"
 )
 
 // Deps bundles the dependencies the server needs. Production fills
@@ -59,6 +60,10 @@ type Deps struct {
 	// trusted_proxies, Epic 59 story 59.08) whose X-Forwarded-For is believed, besides
 	// loopback (the web port's proxy and gate) which always is. Empty: loopback only.
 	TrustedProxies []netip.Prefix
+
+	// TimeLimits are the time limits and stream leases the API pushed for restricted
+	// accounts (Epic 57 story 57.14). Nil: a URL that needs a lease is refused.
+	TimeLimits *timelimit.Registry
 }
 
 // New builds the chi router for the public byte-pumping mux.
@@ -91,9 +96,10 @@ func New(deps Deps) http.Handler {
 		NowFn: deps.Now,
 	}
 	directLib := auth.LibraryGuard(libResolverForDirect(deps.Probe))
-	r.With(auth.SignedURL(verifier, auth.AudDirect, "video_id"), directLib).
+	timeGuard := timelimit.Guard(deps.TimeLimits)
+	r.With(auth.SignedURL(verifier, auth.AudDirect, "video_id"), directLib, timeGuard).
 		Get("/stream/direct/{video_id}", directHandler.ServeHTTP)
-	r.With(auth.SignedURL(verifier, auth.AudDirect, "video_id"), directLib).
+	r.With(auth.SignedURL(verifier, auth.AudDirect, "video_id"), directLib, timeGuard).
 		Head("/stream/direct/{video_id}", directHandler.ServeHTTP)
 
 	// Epic 52 (story 52.8): the audio around a suspect word, signed for the video by the
@@ -106,7 +112,7 @@ func New(deps Deps) http.Handler {
 		Probe: deps.Probe, CacheDir: clipDir, FFmpeg: deps.Cfg.FFmpeg.Binary,
 		CacheBytes: handlers.DefaultClipCacheBytes,
 	}
-	r.With(auth.SignedURL(verifier, auth.AudDirect, "video_id"), directLib).
+	r.With(auth.SignedURL(verifier, auth.AudDirect, "video_id"), directLib, timeGuard).
 		Get("/stream/clip/{video_id}", clipHandler.ServeHTTP)
 
 	// HLS / DASH (Stories 8.5/8.6)
@@ -121,6 +127,7 @@ func New(deps Deps) http.Handler {
 	r.Route("/stream/{session_id}", func(sub chi.Router) {
 		sub.Use(auth.SignedURL(verifier, auth.AudSession, "session_id"))
 		sub.Use(sessLib)
+		sub.Use(timeGuard)
 		sub.Get("/manifest.m3u8", manifestHandler.ServeMaster)
 		sub.Get("/manifest.mpd", manifestHandler.ServeMaster)
 		sub.Get("/{rendition}/index.m3u8", manifestHandler.ServeRenditionIndex)
