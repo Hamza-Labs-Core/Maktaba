@@ -1,17 +1,17 @@
 ---
 schema: 1
-tag: v0.3.129
-up_to_commit: d0969b5b2
-built_from: v0.3.128
+tag: v0.3.130
+up_to_commit: 7fc2aab34
+built_from: v0.3.129
 ---
 
-# Trail snapshot: v0.3.129
+# Trail snapshot: v0.3.130
 
 ## Keep doing
 
 **Working**
 - Run the PR flow to the merge without asking; ask only for real product decisions (costly backfill, deleting data). Follow-ups start at once as parallel worktree agents. (d20261031-standing-rules, d20261102-coordinator-rules)
-- Verify every claim yourself before acting on it, and check a spec's claims against the code: read the code a spec section describes before relying on it (the code was right and the spec stale, twice). Before writing a fix for an issue, or its options, check that it is not already fixed or decided, and before carrying an open item forward or taking a trail line as work look for it in the code (native TV crash capture stayed open after it shipped); before blaming one PR, check the PRs merged around it; before splitting out a fix for a failure that breaks every PR, check main's latest merges. (d20261014-pc-dizquetv-origin-and-rules, d20261031-standing-rules, #587, #795, #879, #888, d20261107-test-infra-missteps, d20261107-correction-0685-player-sentence, #952, d20261108-snapshot-fixture-clock)
+- Verify every claim yourself before acting on it, and check a spec's claims against the code: read the code a spec section describes before relying on it (the code was right and the spec stale, twice). Before writing a fix for an issue, or its options, check that it is not already fixed or decided, and before carrying an open item forward or taking a trail line as work look for it in the code (native TV crash capture stayed open after it shipped); before blaming one PR, check the PRs merged around it; before splitting out a fix for a failure that breaks every PR, check main's latest merges; recount a brief's numbers against main before relying on them (link counts, pages that exist only in specs). (#1158, d20261014-pc-dizquetv-origin-and-rules, d20261031-standing-rules, #587, #795, #879, #888, d20261107-test-infra-missteps, d20261107-correction-0685-player-sentence, #952, d20261108-snapshot-fixture-clock)
 - When a check can't be made directly, look for what the context already proves: a page reached over the LAN address already proves the raw IP works. (#906)
 - Build tools for the work instead of doing it by hand; a recurring manual step becomes a feature; rules are settings with a UI, not code. (d20261014-pc-dizquetv-origin-and-rules, d20261020-pc-coordinator-merge-rules)
 - No placeholder features: a feature is built or it is not shown. (#128, d20261014-pc-dizquetv-origin-and-rules)
@@ -199,6 +199,7 @@ built_from: v0.3.128
 - Prove a scan after a change with a file added after it (the only new row) and the runner log's `files_walked`: "nothing changed after the rescan" also passes on a scan that walked nothing. Prove a behaviour change on the real image in a NAS cell before merging. (#1140)
 - Read an epic's routes from the merged diffs, not the story's list, and mark admin routes with `x-maktaba-role: admin` so one role-table test covers them all; re-apply scripted OpenAPI edits on main's file at a conflict. (#1142)
 - Reproduce a limit with production caps and request shapes before changing it, keeping the client cases (proxy, relay, forged header) beside the fix. (#1148)
+- Before writing a guide's setup step, read what the container does before it is set up (`waitSetup`, `setupHint` in `cmd_container.go`). When text moves (a log line into a bilingual table), grep for tests that read it in its old place, the `tests/nas` Python harnesses included. Run `pnpm -C web exec tsc -p tsconfig.json` after adding a test under `web/src`, and trial-merge a parallel story's branch in a scratch worktree to see its conflicts and strings early. (#1137)
 
 ## Stop doing
 
@@ -247,6 +248,7 @@ built_from: v0.3.128
 - Treating a harness's 429 as a flake to re-run: the harness waits out Retry-After (at most 180 s); a 429 after that is real. (#1140)
 - Marking a route admin-only without a test that calls it as a non-admin; loading a handler's object before its role check (404 vs 403 leaks existence, a DB error becomes 500). (#1142)
 - Sending a secret header with a client that follows redirects (Go copies custom headers to the redirect's host). (#1148)
+- Writing guide steps from another guide's wording without checking the code path (#1120's Synology step 5 sent households to a browser page the container does not serve before setup). (#1137)
 
 ## What we learned
 
@@ -523,6 +525,13 @@ built_from: v0.3.128
 - A NAS as a cluster's home (59.13): the home works out each library folder's share (DSM `/volume<N>/<share>`, Unraid `/mnt/user/<share>`, QNAP `/share/<share>`, TrueNAS names from setup) and keeps its own `storage_servers` record, so a joining computer opens `/Volumes/<share>` with no path map. An existing DSM, Unraid or QNAP home converts its stored paths to `smb://` once the share map settles, after a backup, undone by Revert last conversion; a non-NAS home is never converted. Process-global state (`set_active_path_map`) does not cross into the plugin runner, only what the job frame carries: the runner now activates the frame's map as a `Resolver`. A database-copy subtitle (`content` set, no file) no longer blocks the conversion's pre-check. A rescan settles on the scan queue's `done_24h` rising, not on an idle queue. (#1140)
 - A rate limiter that runs before auth cannot key by user: every loopback caller was one `anon-ip:127.0.0.1` client. The home's own identity is the per-boot local token (never given to plugin runners, stripped by homeproxy); `mw.InternalCallers` gives requests bearing it their own 60,000/min bucket (`MAKTABA_INTERNAL_RATE_PER_MIN`), keyed by the token, not the address, since a proxy's and the relay's clients also arrive over loopback. (#1148)
 - OpenAPI: every `/api` route the home mounts is described or listed in `testdata/openapi_undocumented.txt` (the list only shrinks); `PUT /api/server/machine` dropped every field but the tier until 59.16 (web, API and supervisor each had tests, none across the three). `openapi.yaml` round-trips byte for byte when edited by script (PyYAML, `width=1000`). (#1142)
+- NAS install guides (59.14): maktaba.tv's install site (`web/packages/install`) has `/install/nas` (model table from `src/nas-models.json`) and guides for each NAS, each with an Arabic twin under `/ar/`; the build fails an Arabic page over 20% Latin (maktaba.dev's `parity.mjs`), «quoted» NAS menu names count as names, and `twins.test.ts` keeps the pairs mirrored. `web/src/i18n/epic59.test.ts` fails on any Epic 59 Strings-table key missing from either catalog (renamed keys are mapped in one documented table); container messages are English then Arabic, in each NAS's words (`MAKTABA_PLATFORM`). A web test reading files outside `web/` loads `node:fs` at run time: the web build typechecks tests with no node types. (#1137)
+
+**maktaba.tv (Epic 60)**
+- The zone is active with no DNS records at all; hundreds of repo links point at it (most at `/problems/`). The server image `ghcr.io/hamza-labs-core/maktaba-server` is private while the repository is public, and every install guide pulls it. (#1158)
+- Problem types have no real registry: `httperror/types.go` holds 18 constants while call sites build slugs at runtime, four shipped slugs use underscores clients match, and the recoverer turns a panic into a 500, so a panic-based guard is invisible to status-only tests. Epic 60 adds `shared/api/problems.json`, checked in `httperror.Write`. (#1158)
+- Wrangler: `versions upload`/`versions deploy` never apply routes or custom domains (`wrangler triggers deploy` does), and a bare `wrangler rollback` can return to a version that never went live; record the live version and roll back to it. (#1158)
+- `release.json`'s `assets` lists only the server archives and `checksums.txt` has no desktop installers; the Releases API gives every asset's size and sha256 `digest`. `_pr-body-check.yml` reads the body from the event payload and `ci.yml` does not trigger on `edited`; `ci-paths.yml` has no negation. (#1158)
 
 ## Open
 
@@ -574,13 +583,15 @@ built_from: v0.3.128
 - NAS shapes (59.15): every waiting check has landed (59.03, `logs_clean`, `thumbnail`, `isolation_container`, `restart-after-kill`, the strict `first_scan`); `offline` and `bridge` need a harness that reaches the API without the host network; the device checklists (`docs/nas/checklists`) stay draft until their first run on a device. (#1091, #1103, #1104, #1094, #1095, #1097, #1098, #1109)
 - `EncodePlan.Burn` has no caller: the API's `burn_subs` reaches no transcode. (#1110)
 - Timing-sensitive on CI runners: Android TV's `TvConnectTest` route harness (a ConcurrentModificationException) and the iPad `PlayerMockHomeTests.testADelayKeepsTheQuerysAnswer` bound. (#1111, #1119, #1120)
-- NAS owner actions: submit the Unraid template to Community Applications and the TrueNAS app to truenas/apps (text in `deploy/nas/*/README.md`), then set `vars.TRUENAS_APPS_FORK`, `secrets.TRUENAS_APPS_TOKEN` and `vars.TRUENAS_APP_IN_CATALOG`; host the install pages on maktaba.tv; run the Unraid 7, UGREEN and TrueNAS 25.04/25.10 checklists, and the "the apps find the home" steps on real hardware (Synology 13, TrueNAS 15, Unraid 8). QNAP stays untested. On a bridge the server does not learn a published port that differs from its own; the app's icon URL exists only once the catalog hosts it. Synology still needs the guide's DSM screenshots (checklist steps 19 to 23, marked ready in `synologyGuide.ts`), a check of whether DSM has an Arabic UI, and the DS425+, DS923+ and DS223 checklists. (#1117, #1118, #1120)
+- NAS owner actions: submit the Unraid template to Community Applications and the TrueNAS app to truenas/apps (text in `deploy/nas/*/README.md`), then set `vars.TRUENAS_APPS_FORK`, `secrets.TRUENAS_APPS_TOKEN` and `vars.TRUENAS_APP_IN_CATALOG`; publish `web/dist-install/` at maktaba.tv's `/install/` and `/ar/install/` (#1137); run the Unraid 7, UGREEN and TrueNAS 25.04/25.10 checklists, and the "the apps find the home" steps on real hardware (Synology 13, TrueNAS 15, Unraid 8). QNAP stays untested. On a bridge the server does not learn a published port that differs from its own; the app's icon URL exists only once the catalog hosts it. Synology still needs the guide's DSM screenshots (checklist steps 19 to 23, marked ready in `synologyGuide.ts`), a check of whether DSM has an Arabic UI, and the DS425+, DS923+ and DS223 checklists. (#1117, #1118, #1120)
 - OpenAPI still omits 374 older routes (`testdata/openapi_undocumented.txt`), among them the streaming routes, described under stale paths (`/sessions`, not `/api/stream/sessions`). (#1142)
 - `TestAJobThatKeepsFailing` (supervisor) failed once in integration: it may read the snapshot before the failed event is recorded. (#1142)
 - NAS cluster: a home in Docker bridge mode names its record after the container's hostname, not the NAS's network name (setup's server field covers it today); no cell has a share with a character map (`fullwidth`, `sfm`), which a TrueNAS cell would cover. (#1140)
 - The rehearsal's `nas-4g` leg should show no 429 from the home's own callers on its first run after v0.3.129; if a busy home ever empties the shared internal bucket, split it by caller class (the health check first). The in-window self-update inside a container is not rehearsed in a container. (#1138, #1148)
 - `relay.yml` and `release.yml` still use cosign-installer by tag (optional hygiene). (#1124)
 
+- NAS guides: device screenshots (dark, en+ar) for Unraid, QNAP and UGREEN beside TrueNAS's and Synology's; the menu names on an Arabic DSM/QTS to check on a device; the QNAP guide is untested on a device. (#1137)
+- Epic 60 (maktaba.tv, spec only): owner actions A1–A7 (README §12; making the `maktaba-server` package public blocks Phase 1), Q1–Q9 keep their defaults until answered; the implementing stories check `preview_urls = true` with `workers_dev = false` and that `wrangler triggers deploy` attaches the custom domains; the build PRs, Phase 1 first. (#1158)
 ## Missing events
 
 | PR | Merged | Title |
@@ -594,8 +605,8 @@ built_from: v0.3.128
 | #1042 | 2026-11-08 | fix(web): an open screen keeps its feature gate when the feature goes off right after the first answer |
 | #1128 | 2026-11-10 | docs(spec): Epic 57 checked again against main |
 | #1130 | 2026-11-10 | spec(epic57): time rules on every device, and tiers detected from transcripts |
-| #1137 | 2026-11-11 | Epic 59.14: NAS guides on maktaba.tv (en+ar), the strings pass, the Arabic build check |
 | #1139 | 2026-11-10 | spec(epic57): Q9 answered, detection covers what a video is |
+| #1160 | 2026-11-11 | feat(ci): maktaba.tv link check, public-image check, Reference images rule (60.08, 60.04) |
 
 ## Index
 
@@ -1196,9 +1207,10 @@ built_from: v0.3.128
 | 1120-epic59-synology | 2026-11-11 | pr | Maktaba on a Synology NAS: the Container Manager project and maktaba.tv/install/synology (story 59.09) |
 | 1121-epic59-08-clientip-hardening | 2026-11-11 | pr | Epic 59 story 59.08 follow-up: which forwarded client addresses the home believes |
 | 1125-title-without-extension | 2026-11-11 | pr | fix(titles): a video with no title shows its file name without the extension |
+| 1137-epic59-strings-guides | 2026-11-11 | pr | Epic 59.14: NAS guides on maktaba.tv (en+ar), the strings pass, the Arabic build check |
 | 1138-epic59-12-updates | 2026-11-11 | pr | Updates on a NAS: the image beside its runtime, and the update rehearsal's container legs (story 59.12) |
 | 1140-epic59-13-nas-cluster | 2026-11-11 | pr | A NAS as the home of a cluster: its shares, nodes that join it, and its own paths converted (story 59.13) |
 | 1142-epic59-openapi-roles | 2026-11-11 | pr | Epic 59 story 59.16: the admin routes in OpenAPI (en, ar), a role table and a route walk |
 | 1147-video-process-noop | 2026-11-11 | pr | fix(api): video process and reprocess queue real jobs, never a silent success |
 | 1148-internal-callers-rate-limit | 2026-11-11 | pr | fix(api): the home's own callers get their own rate budget, keyed by the local token |
-
+| 1158-epic60-website | 2026-11-11 | decision | Epic 60 spec: maktaba.tv, the website households find Maktaba on |
