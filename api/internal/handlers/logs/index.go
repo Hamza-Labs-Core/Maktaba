@@ -92,7 +92,7 @@ func (h *Handler) proxyIndex(path string, stream bool) http.HandlerFunc {
 }
 
 func (h *Handler) indexDown(w http.ResponseWriter, r *http.Request) {
-	httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.tv/problems/log-index-unavailable",
+	httperror.Write(w, r, &httperror.Error{Type: httperror.Type("log-index-unavailable"),
 		Title: "log search is not running", Status: http.StatusServiceUnavailable,
 		Detail: "the log index (logs.index) is off or restarting; recent logs can be read from the files",
 		Extras: map[string]any{"code": "log_index_unavailable"}})

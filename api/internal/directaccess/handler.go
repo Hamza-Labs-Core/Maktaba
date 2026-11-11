@@ -29,7 +29,7 @@ func (h *Routes) Mount(r chi.Router) {
 func admin(w http.ResponseWriter, r *http.Request) bool {
 	p := principal.FromContext(r.Context())
 	if p == nil {
-		httperror.Write(w, r, (&httperror.Error{Type: "https://maktaba.tv/problems/auth-required",
+		httperror.Write(w, r, (&httperror.Error{Type: httperror.TypeAuthRequired,
 			Title: "sign in", Status: http.StatusUnauthorized, Detail: "sign in as an admin"}).With("code", "auth_required"))
 		return false
 	}
@@ -54,7 +54,7 @@ func (h *Routes) check(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.Service.CheckNow(r.Context()); err != nil {
-		httperror.Write(w, r, (&httperror.Error{Type: "https://maktaba.tv/problems/direct-offline",
+		httperror.Write(w, r, (&httperror.Error{Type: httperror.Type("direct-offline"),
 			Title: "the cloud can't be reached", Status: http.StatusServiceUnavailable,
 			Detail: "the relay agent has no tunnel to a cloud with direct access"}).With("code", "direct_offline"))
 		return

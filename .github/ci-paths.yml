@@ -52,6 +52,8 @@ _go: &go
   - 'tools/affected-tests/**'
   # api/internal/handlers/browse's native fixtures are the Apple apps' own
   - 'apps/apple/MaktabaKit/Tests/Fixtures/**'
+  # the problem registry's help links are checked against the help topics (story 60.06)
+  - 'web/src/help/content/**'
 
 # the pipeline, and what its tests read outside it
 _pipeline: &pipeline
@@ -87,6 +89,8 @@ _web: &web
   # the Synology install page's tests read the project files and the device checklist (59.09)
   - 'deploy/nas/**'
   - 'docs/nas/checklists/synology.md'
+  # the problem types the web compares are checked against the registry (story 60.06)
+  - 'shared/api/problems.json'
   # Epic 59's strings check reads the stories' Strings tables and the container's texts (59.14)
   - 'specs/epics/59-nas/story-*.md'
   - 'cmd/maktaba-server/container_preflight.go'
@@ -200,6 +204,9 @@ unit_go:
   - '.github/workflows/_unit.yml'
   # it writes its runner's Go cache entry, every module in it first
   - 'tools/ci/go-cache-fill.sh'
+  # the problem registry's check and its positive control (story 60.06)
+  - 'tools/ci/unregistered-problems.sh'
+  - 'tools/ci/unregistered-problems-control.sh'
 
 # the pipeline's unit tier, and its cluster tests on Windows
 unit_pipeline:
@@ -693,6 +700,8 @@ linux_app:
 android_apps:
   - *ci
   - 'apps/android/**'
+  # the problem types and codes the apps compare are checked against the registry (60.06)
+  - 'shared/api/problems.json'
   - '.github/workflows/_android-apps.yml'
   # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
   - 'tools/ci/gradle-wrapper.sh'
@@ -732,6 +741,8 @@ desktop_player:
 apple_apps:
   - *ci
   - 'apps/apple/**'
+  # the problem types and codes the apps compare are checked against the registry (60.06)
+  - 'shared/api/problems.json'
   - 'apps/tv/tvos/**'
   - 'tools/apple/**'
   - '.github/workflows/_apple-apps.yml'

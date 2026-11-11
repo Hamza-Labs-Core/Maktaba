@@ -21,6 +21,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homelink"
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
@@ -138,7 +140,7 @@ func NewWith(link homelink.Link, logger *slog.Logger, o Options) http.Handler {
 			if errors.Is(err, errHeaderTimeout) {
 				w.Header().Set("Content-Type", "application/problem+json")
 				w.WriteHeader(http.StatusGatewayTimeout)
-				_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://maktaba.tv/problems/home-timeout",
+				_ = json.NewEncoder(w).Encode(map[string]any{"type": httperror.Type("home-timeout"),
 					"title": "the home is slow to answer", "status": http.StatusGatewayTimeout, "code": "home_timeout"})
 				return
 			}
@@ -212,7 +214,7 @@ func writeUnreachable(w http.ResponseWriter, detail string) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.Header().Set("Retry-After", "5")
 	w.WriteHeader(http.StatusServiceUnavailable)
-	_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://maktaba.tv/problems/home-unreachable",
+	_ = json.NewEncoder(w).Encode(map[string]any{"type": httperror.TypeHomeUnreachable,
 		"title": "the home is not reachable", "status": http.StatusServiceUnavailable, "code": "home_unreachable",
 		"detail": detail})
 }
