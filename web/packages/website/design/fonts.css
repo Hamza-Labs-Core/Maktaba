@@ -1,0 +1,71 @@
+/*
+ * maktaba.tv's text face (story 60.01): IBM Plex Sans Arabic, subset and renamed
+ * "Maktaba Text" (the OFL keeps the name "Plex" for the original; a subset is a
+ * Modified Version). Two weights, each split into a Latin and an Arabic file, so an
+ * English page downloads only the Latin pair (about 29 KB) and an Arabic page both pairs
+ * (about 83 KB). Self-hosted; no third-party request. See ../static/fonts/README.md.
+ *
+ * The fallback faces are Arial scaled to Plex's average Latin width and vertical
+ * metrics, so the swap from the fallback to the real face moves nothing (CLS 0).
+ */
+
+@font-face {
+  font-family: "Maktaba Text";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../static/fonts/maktaba-text-400-latin.woff2") format("woff2");
+  unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+02C6, U+02DA, U+02DC, U+2000-206F,
+    U+20AC, U+2122, U+2190-2193, U+2212, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Maktaba Text";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../static/fonts/maktaba-text-400-arabic.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+200C-200F, U+2066-2069, U+FB50-FDFF, U+FE70-FEFF;
+}
+
+@font-face {
+  font-family: "Maktaba Text";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../static/fonts/maktaba-text-600-latin.woff2") format("woff2");
+  unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+02C6, U+02DA, U+02DC, U+2000-206F,
+    U+20AC, U+2122, U+2190-2193, U+2212, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Maktaba Text";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../static/fonts/maktaba-text-600-arabic.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+200C-200F, U+2066-2069, U+FB50-FDFF, U+FE70-FEFF;
+}
+
+/* Plex Regular averages 0.4541 em per Latin character, Arial 0.4470: 101.6%.
+   Plex's ascender and descender (1.085, 0.415 em) divided by that scale. */
+@font-face {
+  font-family: "Maktaba Text Fallback";
+  font-weight: 400;
+  src: local("Arial"), local("ArialMT");
+  size-adjust: 101.6%;
+  ascent-override: 106.8%;
+  descent-override: 40.85%;
+  line-gap-override: 0%;
+}
+
+/* Plex SemiBold averages 0.4703 em, Arial Bold 0.4841: 97.15%. */
+@font-face {
+  font-family: "Maktaba Text Fallback";
+  font-weight: 600;
+  src: local("Arial Bold"), local("Arial-BoldMT");
+  size-adjust: 97.15%;
+  ascent-override: 111.7%;
+  descent-override: 42.7%;
+  line-gap-override: 0%;
+}

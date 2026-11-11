@@ -95,6 +95,12 @@ _web: &web
 _tokens: &tokens
   - 'web/design-system/**'
   - 'web/src/styles/tokens.css'
+  # maktaba.tv's design shell (story 60.01): its CSS is built from the tokens, and its
+  # mockups, fonts and voice guide are checked with them (contrast, logical CSS, renders)
+  - 'web/packages/website/design/**'
+  - 'web/packages/website/static/fonts/**'
+  - 'web/packages/website/copy/**'
+  - 'web/public/icons/icon-192.png'
   - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Tokens.swift'
   - 'apps/android/core/src/main/kotlin/com/hamzalabs/maktaba/core/ui/Tokens.kt'
 
