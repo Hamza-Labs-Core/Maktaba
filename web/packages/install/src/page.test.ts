@@ -12,6 +12,22 @@ function setValue(root: HTMLElement, sel: string, value: string): void {
 describe("the install page", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  // Story 60.04: axe's label rule. The file's textarea is named by the heading above it.
+  it.each(["en", "ar"] as const)(
+    "names the compose file's textarea by its heading (%s)",
+    (lang) => {
+      const root = document.createElement("main");
+      document.body.append(root);
+      mount(root, BASE, lang);
+      const out = root.querySelector<HTMLTextAreaElement>("#out")!;
+      const id = out.getAttribute("aria-labelledby")!;
+      const heading = document.getElementById(id)!;
+      expect(heading.tagName).toBe("H2");
+      expect(heading.textContent!.trim()).not.toBe("");
+      root.remove();
+    }
+  );
+
   it.each(["en", "ar"] as const)("fills the compose file in (%s) without a request", (lang) => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
