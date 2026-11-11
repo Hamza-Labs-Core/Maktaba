@@ -1066,7 +1066,14 @@ class Cell:
         return d
 
     def media_libraries(self) -> list[dict[str, Any]]:
-        libs = [lib for lib in self.libraries() if any(r.startswith(self.media + "/") for r in lib.get("roots") or [])]
+        share = self.media.rstrip("/").rsplit("/", 1)[-1]
+
+        def under(r: str) -> bool:
+            # a NAS home converts its own folders to their share paths (59.13):
+            # /volume1/Movies/en → smb://<nas>/Movies/en
+            return r.startswith(self.media + "/") or (r.startswith("smb://") and self.share(r) == share)
+
+        libs = [lib for lib in self.libraries() if any(under(r) for r in lib.get("roots") or [])]
         if not libs:
             raise AssertionError(f"no library under {self.media}")
         return libs
@@ -1408,14 +1415,22 @@ class Cell:
         return f"{', '.join(DSM_FOLDERS)} skipped; {got}"
 
     def share(self, path: str) -> str:
-        """/volume1/Movies/en → Movies."""
+        """/volume1/Movies/en → Movies; smb://<nas>/Movies/en (the home converts its own
+        folders to their shares since 59.13) → Movies."""
+        if path.startswith("smb://"):
+            return path[len("smb://"):].split("/")[1]
         return path.strip("/").split("/")[1]
+
+    @staticmethod
+    def on_dsm_share(root: str) -> bool:
+        """A library root on one of the NAS's shares: its own path, or the share path."""
+        return root.startswith(("/volume", "smb://"))
 
     def assert_fix_dsm(self) -> str:
         """Each root that needs one (Read only, No access) has DSM's fix (library.fix.dsm),
         naming its shared folder."""
         seen = []
-        libs = [lib for lib in self.libraries() if any(r.startswith("/volume") for r in lib.get("roots") or [])]
+        libs = [lib for lib in self.libraries() if any(self.on_dsm_share(r) for r in lib.get("roots") or [])]
         for lib in libs:
             for root in self.check_access(lib).get("roots") or []:
                 if root.get("access") == "rw":
@@ -1435,7 +1450,8 @@ class Cell:
         assert self.api is not None
         ro = self.assert_access_ro()
         root = "/volume1/Recordings"
-        lib = next((x for x in self.libraries() if root in (x.get("roots") or [])), None)
+        lib = next((x for x in self.libraries()
+                    if any(r == root or r.endswith("/Recordings") for r in x.get("roots") or [])), None)
         if lib is None:
             s, d = self.api.call("POST", "/api/libraries", {"name": "Recordings", "roots": [root]})
             if s not in (200, 201) or not isinstance(d, dict):
@@ -1445,6 +1461,34 @@ class Cell:
         if rep.get("access") != "rw":
             raise AssertionError(f"{root}: access {rep.get('access')!r}, not rw: {rep}")
         return f"{ro}; Recordings: read and write"
+
+    # -- story 59.13: a NAS as the cluster's home
+
+    def assert_nas_home_shares(self) -> str:
+        """The home keeps a record of the NAS itself (GET /api/cluster/storage/home-shares):
+        its own folder /volume1/Movies is the share Movies by DSM's layout, at the NAS's own
+        path, so a node's /Volumes/Movies matches it with no path map; and with every shared
+        folder read-only (access_ro, access_none before this) the join notice
+        no_writable_share is there. The pipeline completes the record at its storage check
+        (at start, then every five minutes)."""
+        assert self.api is not None
+
+        def ready() -> dict[str, Any] | None:
+            s, d = self.api.get("/api/cluster/storage/home-shares")  # type: ignore[union-attr]
+            if s != 200 or not isinstance(d, dict):
+                raise AssertionError(f"GET /api/cluster/storage/home-shares: {s} {d}")
+            movies = [x for x in d.get("shares") or [] if x.get("path") == "/volume1/Movies"]
+            return d if d.get("nas") and movies else None
+
+        d = wait("the NAS's own Movies share", ready, 420, every=10)
+        movies = next(x for x in d["shares"] if x["path"] == "/volume1/Movies")
+        if movies.get("share") != "Movies" or movies.get("rule") != "Movies" or not movies.get("host_path"):
+            raise AssertionError(f"/volume1/Movies: {movies}, want the share Movies at the NAS's own path")
+        if d.get("platform") != "dsm" or not d.get("server"):
+            raise AssertionError(f"home {d.get('server')!r} on {d.get('platform')!r}, want a named dsm home")
+        if "no_writable_share" not in (d.get("notices") or []):
+            raise AssertionError(f"every share is read-only, yet no no_writable_share notice: {d}")
+        return f"smb://{d['server']}/Movies ← /volume1/Movies; notices {d['notices']}"
 
     def assert_compose_engine(self) -> str:
         """The compose file was taken unchanged by Docker 24.0.x (`docker compose config`, then

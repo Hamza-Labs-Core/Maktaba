@@ -78,6 +78,7 @@ runs every cell, a change to `web/` alone runs nothing.
 | `dsm_skipped` | the share holds DSM's `@eaDir`, `#recycle` and `#snapshot`, each with a real clip: the scan finds exactly the fixtures, none of those (59.03, 59.09) |
 | `fix_dsm` | every root that needs a fix (Read only, No access) has DSM's, `library.fix.dsm`, naming its shared folder (`/volume1/Movies/en` → Movies) (59.09) |
 | `dsm_shares` | the compose file's shares as the guide grants them: Movies (`:ro`) Read only, Recordings (Read/Write for the DSM user) Read and write (59.09) |
+| `nas_home_shares` | the home keeps the NAS's own record: `/volume1/Movies` is the share Movies by DSM's layout, at the NAS's own path (a node's `/Volumes/Movies` matches with no path map); with every share read-only, the join notice `no_writable_share` (59.13) |
 | `compose_engine` | the compose cell's file was taken unchanged by the engine it names (`docker compose config`, then `up`), its version and API recorded (59.09) |
 | `stt_light_off` | on the Light tier speech is off by default, its reason `light`, the model base, in the quiet hours only; on arm64 no second listen (59.06) |
 | `stt_engine` | the speech engine (the stt extra's aarch64 pins, `pipeline/constraints-stt.txt`) goes into the pipeline's venv and imports, with no torch and no transformers: on arm64 from the payload's wheelhouse alone (`--no-index`), on amd64 from PyPI; its pip log is `stt-install.log` (59.06) |
