@@ -1,0 +1,12 @@
+[
+  {
+    "file": "web/src/lib/native.ts",
+    "link": "https://maktaba.tv/library/abc",
+    "reason": "a comment documenting the deep-link parser's input, not a link: no app claims maktaba.tv as an associated domain"
+  },
+  {
+    "file": "apps/mobile/src/native-shell.ts",
+    "link": "https://maktaba.tv/watch/123",
+    "reason": "a comment documenting the deep-link parser's input, not a link: no app claims maktaba.tv as an associated domain"
+  }
+]

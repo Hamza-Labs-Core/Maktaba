@@ -34,20 +34,53 @@ concurrency:
 jobs:
   publish:
     name: Postgres archives to the CDN
-    # a tag's successful release, or a run by hand from main
+    # a tag's successful release, or a run by hand from main. A release run that failed only
+    # because the server image refused an anonymous pull (release.yml's image-public job, story
+    # 60.08: a leaf job that holds back nothing) counts as successful here: the step below reads
+    # the run's jobs.
     if: >-
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push')
+      (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' &&
+       (github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure'))
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
     env:
       CDN_URL: ${{ vars.MAKTABA_CDN_URL || 'https://plugins-cdn.maktaba.tv' }}
       BUCKET: ${{ vars.MAKTABA_CDN_BUCKET || 'maktaba-plugins' }}
     steps:
+      # a failed release run: every job but the image check succeeded or was skipped, or nothing
+      # is published (one job read as anything else, or the jobs not read at all, is a failure)
+      - name: The release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" != workflow_run ] || [ "${CONCLUSION}" = success ]; then
+            echo "ok=true" >>"${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          jobs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+            --jq '.jobs[] | "\(.conclusion)\t\(.name)"')"
+          printf '%s\n' "${jobs}"
+          bad="$(printf '%s\n' "${jobs}" | awk -F'\t' '$1 != "success" && $1 != "skipped" && $2 != "image (server) pullable without signing in"')"
+          if [ -z "${jobs}" ] || [ -n "${bad}" ]; then
+            echo "::notice::the release run ${RUN_ID} failed (${bad:-its jobs could not be read}): nothing to publish"
+            echo "ok=false" >>"${GITHUB_OUTPUT}"
+          else
+            echo "::warning::the release run ${RUN_ID} failed only on the server image's anonymous pull (story 60.08): the archives are published"
+            echo "ok=true" >>"${GITHUB_OUTPUT}"
+          fi
+
       # what is set, never its value
       - name: Configured
         id: config
+        if: steps.release.outputs.ok == 'true'
         env:
           HAS_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
           HAS_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID != '' }}

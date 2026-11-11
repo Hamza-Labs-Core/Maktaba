@@ -1,0 +1,75 @@
+# The server image is pullable without signing in, every day (Epic 60, story 60.08).
+#
+# release.yml checks it after every release (its image-public job); this finds a visibility
+# change between releases. The same script (tools/release/image-public.sh): the anonymous token
+# request, then `docker pull --platform linux/amd64|arm64` of the newest stable release's tag
+# and :latest, with no login and an empty DOCKER_CONFIG, three tries over two minutes. It fails
+# with `::error::the server image is not pullable without signing in`, naming the package's
+# visibility setting and the story.
+#
+# First, the script's controls (T08): a public image passes and an unreadable one fails with
+# the error, so a red check means the image, not the checker. A pull request that changes the
+# script or this file runs the controls alone.
+#
+# Until the package is made public (owner action A1 of Epic 60) the daily check is red: that
+# is the check doing its job.
+
+name: Image public
+
+on:
+  schedule:
+    - cron: '29 6 * * *' # daily, 06:29 UTC
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - tools/release/image-public.sh
+      - tools/release/image-public-test.sh
+      - .github/workflows/image-public.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-public-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'daily' }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ${{ vars.MAKTABA_REGISTRY || 'ghcr.io/hamza-labs-core' }}
+
+jobs:
+  controls:
+    name: the check's controls (T08)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: shellcheck
+        run: shellcheck tools/release/image-public.sh tools/release/image-public-test.sh
+      - name: A public image passes, an unreadable one fails with the error
+        run: bash tools/release/image-public-test.sh
+
+  image:
+    name: the server image, pullable without signing in
+    needs: [controls]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      # the newest stable release (GitHub's latest), the tag :latest names
+      - name: The newest release
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$(gh release view --repo "${GITHUB_REPOSITORY}" --json tagName --jq .tagName)"
+          [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::no stable latest release (got '${tag}')"; exit 1; }
+          echo "tag=${tag}" >>"${GITHUB_OUTPUT}"
+
+      - name: Anonymous pull of the tag and :latest
+        env:
+          IMAGE: ${{ env.REGISTRY }}/maktaba-server
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: bash tools/release/image-public.sh "${IMAGE}" "${TAG}" latest

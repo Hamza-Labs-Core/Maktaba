@@ -1,0 +1,38 @@
+# Reference images need review (Epic 60, story 60.04): a pull request that changes a file under
+# web/packages/website/e2e/__screenshots__/ (the visual references) or
+# web/packages/website/static/shots/ (the site's screenshots, story 60.09) lists each one in a
+# `Reference images:` section of its body, with one line on why. tools/ci/reference_images.py
+# reads the body and the file list fresh from the API (a re-run reads the body as it is now).
+#
+# Its own workflow, on `edited` too: ci.yml runs on the default pull_request types, which leave
+# `edited` out, so fixing the body would never re-run the check there.
+
+name: Reference images
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: reference-images-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  reference-images:
+    name: changed reference images are listed
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          sparse-checkout: tools/ci
+          persist-credentials: false
+
+      - name: Every changed reference image is listed with why
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/ci/reference_images.py
