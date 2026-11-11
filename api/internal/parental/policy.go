@@ -652,49 +652,59 @@ func (s *Store) Rules(ctx context.Context, userID string) ([]Rule, error) {
 // for is ErrNoLibraryAccess: the library ACL applies first, and a rule never opens
 // a library.
 func (s *Store) AddRule(ctx context.Context, actorID, userID string, in RuleInput) (*Rule, error) {
+	var out *Rule
+	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		var err error
+		out, err = s.addRuleTx(ctx, tx, actorID, userID, in)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// addRuleTx is AddRule inside the caller's transaction (a request's approval and a
+// PIN unlock add their rule with their own change, or not at all).
+func (s *Store) addRuleTx(ctx context.Context, tx *sql.Tx, actorID, userID string, in RuleInput) (*Rule, error) {
 	if err := in.validate(); err != nil {
 		return nil, err
 	}
-	var out *Rule
-	err := s.inTx(ctx, func(tx *sql.Tx) error {
-		if _, err := policyOf(ctx, tx, userID, true); err != nil {
-			return err
-		}
-		if in.Effect == EffectAllow && in.SubjectKind == SubjectLibrary {
-			var has bool
-			if isUUID(in.SubjectID) {
-				if err := tx.QueryRowContext(ctx,
-					`SELECT EXISTS (SELECT 1 FROM library_acl WHERE user_id = $1 AND library_id = $2)`,
-					userID, in.SubjectID).Scan(&has); err != nil {
-					return err
-				}
-			}
-			if !has {
-				return ErrNoLibraryAccess
+	if _, err := policyOf(ctx, tx, userID, true); err != nil {
+		return nil, err
+	}
+	if in.Effect == EffectAllow && in.SubjectKind == SubjectLibrary {
+		var has bool
+		if isUUID(in.SubjectID) {
+			if err := tx.QueryRowContext(ctx,
+				`SELECT EXISTS (SELECT 1 FROM library_acl WHERE user_id = $1 AND library_id = $2)`,
+				userID, in.SubjectID).Scan(&has); err != nil {
+				return nil, err
 			}
 		}
-		at := s.now().UTC()
-		var exp sql.NullTime
-		if in.ExpiresAt != nil {
-			exp = sql.NullTime{Valid: true, Time: in.ExpiresAt.UTC()}
+		if !has {
+			return nil, ErrNoLibraryAccess
 		}
-		var err error
-		out, err = scanRule(tx.QueryRowContext(ctx,
-			`INSERT INTO parental_rules (user_id, effect, subject_kind, subject_id, expires_at, created_by, created_at)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7)
-			 ON CONFLICT (user_id, subject_kind, subject_id, effect)
-			 DO UPDATE SET expires_at = EXCLUDED.expires_at, created_by = EXCLUDED.created_by
-			 RETURNING `+ruleCols,
-			userID, in.Effect, in.SubjectKind, in.SubjectID, exp, nullUUID(actorID), at))
-		if err != nil {
-			return err
-		}
-		if err := bump(ctx, tx, actorID, userID, at); err != nil {
-			return err
-		}
-		return audit(ctx, tx, AuditRuleAdded, actorID, userID, nil, ruleAudit(out))
-	})
+	}
+	at := s.now().UTC()
+	var exp sql.NullTime
+	if in.ExpiresAt != nil {
+		exp = sql.NullTime{Valid: true, Time: in.ExpiresAt.UTC()}
+	}
+	out, err := scanRule(tx.QueryRowContext(ctx,
+		`INSERT INTO parental_rules (user_id, effect, subject_kind, subject_id, expires_at, created_by, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		 ON CONFLICT (user_id, subject_kind, subject_id, effect)
+		 DO UPDATE SET expires_at = EXCLUDED.expires_at, created_by = EXCLUDED.created_by
+		 RETURNING `+ruleCols,
+		userID, in.Effect, in.SubjectKind, in.SubjectID, exp, nullUUID(actorID), at))
 	if err != nil {
+		return nil, err
+	}
+	if err := bump(ctx, tx, actorID, userID, at); err != nil {
+		return nil, err
+	}
+	if err := audit(ctx, tx, AuditRuleAdded, actorID, userID, nil, ruleAudit(out)); err != nil {
 		return nil, err
 	}
 	return out, nil

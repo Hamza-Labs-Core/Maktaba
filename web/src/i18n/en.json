@@ -7605,6 +7605,8 @@
   "notify.plugins.revoked": "The plugin store withdrew {plugin}; it was turned off",
   "notify.plugins.revocation_warn": "The plugin store warns about {plugin}",
   "notify.plugins.revocation_lifted": "The plugin store lifted its withdrawal of {plugin}; you can start it again",
+  "notify.parental.request": "A request is waiting for you",
+  "notify.parental.pin_locked": "Too many wrong tries of the parent PIN",
   "plugins.error.plugin_delisted": "The store no longer lists this version.",
   "plugins.error.store_list_stale": "Installs from the store wait until this home has a fresh list of withdrawn plugins.",
   "plugins.error.plugin_not_in_catalog": "This plugin is not in the store's catalog yet.",
