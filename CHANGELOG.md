@@ -3291,7 +3291,8 @@ build fails when the two differ.
   describes every route Epic 59 added (This machine, speech to text, library access, Run now,
   plugin isolation, server.toml's trusted proxies) and the new fields, in English and Arabic,
   each admin route marked as such; the admin's yes to container-only plugin isolation is
-  audited with the isolation level.
+  audited with the isolation level. A video's Process and Reprocess check the admin role before
+  they read the video, so a non-admin gets 403 whether or not the video exists.
 
 ## [0.2.0] - 2026-10-19
 

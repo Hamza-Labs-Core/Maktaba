@@ -2325,14 +2325,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-59-nas"
+        "epic-59-nas",
+        "ep-get-system-updates"
       ],
       "files": {
         "story": "specs/epics/59-nas/story-59-12-updates.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /system/updates"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "updates"
@@ -2464,7 +2467,8 @@
         "ep-post-queues-jobs-id-run-now",
         "ep-post-queues-stage-run-now",
         "ep-get-plugins-isolation",
-        "ep-put-plugins-isolation"
+        "ep-put-plugins-isolation",
+        "ep-get-system-updates"
       ],
       "files": {
         "story": "specs/epics/59-nas/story-59-16-openapi-roles.md",
@@ -2500,7 +2504,8 @@
         "POST /queues/jobs/{id}/run-now",
         "POST /queues/{stage}/run-now",
         "GET /plugins/isolation",
-        "PUT /plugins/isolation"
+        "PUT /plugins/isolation",
+        "GET /system/updates"
       ],
       "db_tables": [
         "libraries"

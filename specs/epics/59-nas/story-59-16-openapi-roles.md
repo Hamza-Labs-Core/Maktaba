@@ -33,7 +33,7 @@ operation in the OpenAPI description):
 | `GET /api/plugins/isolation`, `PUT /api/plugins/isolation` (Allow plugins with container-only isolation) | 59.07 | admin; audited with who, when and the level | `getPluginIsolation`, `putPluginIsolation` | table; `TestContainerIsolationSwitchIsAdminOnlyAndAudited` |
 | `GET /api/stream/capabilities` (gains `software_only`); `POST /api/stream/sessions` (503 `transcode_busy`) | 59.05 | as today | `StreamCapabilities` schema, `/sessions` 503 | as today |
 | `GET /api/components` and its component and machine views (gain `degraded_reason`, `degraded_reason_params`) | 59.07 (#1135) | admin | `listComponents` | table; `TestDegradedReason` |
-| `GET /api/system/updates` (gains the container block: runtime vs image) | 59.12 | public, as today; the new fields only to admins | pending #1138 | pending #1138 |
+| `GET /api/system/updates` (gains `container`: the volume's runtime beside the image, which runs and why) | 59.12 | every signed-in user, as today; `container` only to admins | `getSystemUpdates` | `system` `TestStatusHandlerContainerBlockIsAdminsOnly` |
 | the NAS shares routes | 59.13 | admin | pending #1140 | pending #1140 |
 
 Stories 59.01, 59.09, 59.10, 59.11 and 59.14 add no route.
@@ -76,8 +76,8 @@ Stories 59.01, 59.09, 59.10, 59.11 and 59.14 add no route.
   admins, and 403 before that for roles that cannot write at all.
 - **Given** `shared/api/openapi.json`, **then** every mounted `/api` route is described or on the
   shrinking list, each admin route says `x-maktaba-role: admin`, and each text has its Arabic.
-- **Given** `GET /api/system/updates` without a session, **then** it still answers, without the
-  runtime and image fields.
+- **Given** `GET /api/system/updates` as a viewer, **then** it still answers, without the
+  `container` block (runtime and image); without a session the gate answers 401, as before.
 
 ## Test cases
 
@@ -88,7 +88,7 @@ Stories 59.01, 59.09, 59.10, 59.11 and 59.14 add no route.
 | T03 | Go handler | consent | PUT as admin | 200; an audit row with who, when and the level |
 | T04 | Go handler | ro library, admin | convert/delete/YouTube | 409 `library_read_only` |
 | T05 | Go and maktaba.dev | `shared/api/openapi.json` | every route, the Arabic overlay | described; roles marked; every text in Arabic |
-| T06 | Go handler | `GET /api/system/updates` as no one / viewer / admin | call | 200 each; new fields only for admin |
+| T06 | Go handler | `GET /api/system/updates` as a viewer / admin | call | 200 each; `container` only for the admin |
 | T07 | Go handler | `PUT /api/server/machine` with quiet hours, the data disk | PUT as admin | the supervisor gets those fields only; audited |
 
 ## Strings

@@ -6929,6 +6929,54 @@ paths:
         default:
           $ref: '#/components/responses/InternalError'
       operationId: putPluginIsolation
+  /system/updates:
+    get:
+      tags:
+      - System
+      summary: This server's release and the newest one
+      description: 'Every signed-in user: the release running (`current_version`), the newest on the channel (`latest_version`, `available`), its notes and when it was checked; how this server updates (`install`, and for a container that cannot update itself the `instructions` and `image`); `rolled_back` when the last update was undone. To an admin only, on the Docker image: `container`, the release on the volume (`runtime`) beside the image''s (`image`), which one runs (`running`: `runtime` or `image`) and why (`reason`: `same`, `image_older`, `image_refused` or `image_pending`).'
+      responses:
+        '200':
+          description: The release.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  current_version:
+                    type: string
+                  latest_version:
+                    type: string
+                  available:
+                    type: boolean
+                  container:
+                    type: object
+                    description: 'Admins only: the volume''s runtime beside the Docker image''s release.'
+                    properties:
+                      runtime:
+                        type: string
+                      image:
+                        type: string
+                      running:
+                        type: string
+                        enum:
+                        - runtime
+                        - image
+                      reason:
+                        type: string
+                        enum:
+                        - same
+                        - image_older
+                        - image_refused
+                        - image_pending
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: getSystemUpdates
 components:
   securitySchemes:
     bearerAuth:

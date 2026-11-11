@@ -174,7 +174,6 @@ GET /api/stream/capabilities
 GET /api/stream/sessions/{id}
 GET /api/system/processes
 GET /api/system/sbom
-GET /api/system/updates
 GET /api/thumbnails/{hash}/small.jpg
 GET /api/transcription/summary
 GET /api/tv/changes

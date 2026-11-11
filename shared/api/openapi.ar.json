@@ -3224,6 +3224,22 @@
     "/components/schemas/QueueSummary/properties/quiet_at/description": {
       "en": "With `waiting_reason` `quiet_hours` (heavy jobs wait for this machine's quiet hours; `POST /api/queues/{stage}/run-now` starts them), when the window opens (`01:00`).",
       "ar": "حين يكون `waiting_reason` هو `quiet_hours` (تنتظر المهام الثقيلة ساعات الهدوء في هذا الجهاز؛ ويشغّلها `POST /api/queues/{stage}/run-now`)، موعد بدء الفترة (`01:00`)."
+    },
+    "/paths/~1system~1updates/get/summary": {
+      "en": "This server's release and the newest one",
+      "ar": "إصدار هذا الخادم وأحدث إصدار"
+    },
+    "/paths/~1system~1updates/get/description": {
+      "en": "Every signed-in user: the release running (`current_version`), the newest on the channel (`latest_version`, `available`), its notes and when it was checked; how this server updates (`install`, and for a container that cannot update itself the `instructions` and `image`); `rolled_back` when the last update was undone. To an admin only, on the Docker image: `container`, the release on the volume (`runtime`) beside the image's (`image`), which one runs (`running`: `runtime` or `image`) and why (`reason`: `same`, `image_older`, `image_refused` or `image_pending`).",
+      "ar": "كل مستخدم مسجّل الدخول: الإصدار الذي يعمل (`current_version`)، وأحدث إصدار في القناة (`latest_version` و`available`)، وملاحظاته ووقت التحقق منه؛ وطريقة تحديث هذا الخادم (`install`، وللحاوية التي لا تستطيع تحديث نفسها `instructions` و`image`)؛ و`rolled_back` إن تراجع التحديث الأخير. وللمسؤول وحده، على صورة Docker: `container`، أي الإصدار على وحدة التخزين (`runtime`) بجانب إصدار الصورة (`image`)، وأيهما يعمل (`running`: `runtime` أو `image`) ولماذا (`reason`: `same` أو `image_older` أو `image_refused` أو `image_pending`)."
+    },
+    "/paths/~1system~1updates/get/responses/200/description": {
+      "en": "The release.",
+      "ar": "الإصدار."
+    },
+    "/paths/~1system~1updates/get/responses/200/content/application~1json/schema/properties/container/description": {
+      "en": "Admins only: the volume's runtime beside the Docker image's release.",
+      "ar": "للمسؤول وحده: إصدار وحدة التخزين بجانب إصدار صورة Docker."
     }
   }
 }

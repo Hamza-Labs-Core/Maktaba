@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 194,
+    "endpoint": 195,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -9811,6 +9811,34 @@
         "path": "/plugins/isolation",
         "tag": "Plugins",
         "operationId": "putPluginIsolation"
+      }
+    },
+    {
+      "id": "ep-get-system-updates",
+      "type": "endpoint",
+      "title": "GET /system/updates",
+      "content": "This server's release and the newest one",
+      "tags": [
+        "api",
+        "System",
+        "get"
+      ],
+      "related": [
+        "story-28.2",
+        "story-28.5",
+        "story-28.6",
+        "story-35.3",
+        "story-59.12",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/system/updates",
+        "tag": "System",
+        "operationId": "getSystemUpdates"
       }
     },
     {
