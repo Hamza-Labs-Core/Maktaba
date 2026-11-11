@@ -34,7 +34,7 @@ describe("the NAS landing page's model table", () => {
     expect(fitText("ar", model("DXP2800"))).toBe("مناسب: قياسي");
     expect(rowCells("en", model("DS923+"))).toEqual([
       "Synology DS923+",
-      "AMD Ryzen R1600",
+      model("DS923+").cpu,
       "Software",
       "4 (32)",
       "Fits: Light",

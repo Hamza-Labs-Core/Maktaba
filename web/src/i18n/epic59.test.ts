@@ -4,14 +4,24 @@
 // Arabic; a `container.*` key is printed by the container before the web is up, so it is in
 // the server's own pair (cmd/maktaba-server/container_preflight.go, English then Arabic,
 // checked by its Go test).
-import fs from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 import en from "./en.json";
 import ar from "./ar.json";
 
-const repo = path.resolve(__dirname, "../../..");
-const dir = path.join(repo, "specs/epics/59-nas");
+// Files outside web/ are read at run time (the web image builds from web/ alone); vitest runs
+// in web/.
+const FS = "node:fs";
+const { readFileSync, readdirSync } = (await import(/* @vite-ignore */ FS)) as {
+  readFileSync: (path: string, encoding: "utf8") => string;
+  readdirSync: (path: string) => string[];
+};
+const DIR = "../specs/epics/59-nas";
+const STORIES: Record<string, string> = Object.fromEntries(
+  readdirSync(DIR)
+    .filter((n) => /^story-59-\d+-.*\.md$/.test(n))
+    .map((n) => [n, readFileSync(`${DIR}/${n}`, "utf8")])
+);
+const preflight = readFileSync("../cmd/maktaba-server/container_preflight.go", "utf8");
 
 // Stories whose strings land with the story itself and are not on main yet: their keys are
 // checked once the story merges (remove it from here in that pull request).
@@ -28,9 +38,8 @@ interface Row {
 
 function rows(): Row[] {
   const out: Row[] = [];
-  for (const f of fs.readdirSync(dir).filter((n) => /^story-59-\d+-.*\.md$/.test(n))) {
-    const story = `59.${f.match(/^story-59-(\d+)/)![1]}`;
-    const text = fs.readFileSync(path.join(dir, f), "utf8");
+  for (const [file, text] of Object.entries(STORIES)) {
+    const story = `59.${file.match(/story-59-(\d+)/)![1]}`;
     const section = text.split(/^## Strings\s*$/m)[1]?.split(/^## /m)[0] ?? "";
     for (const m of section.matchAll(/^\| `([a-z0-9_.]+)` \|/gm)) out.push({ story, key: m[1]! });
   }
@@ -40,10 +49,6 @@ function rows(): Row[] {
 const catalogEn = en as Record<string, string>;
 const catalogAr = ar as Record<string, string>;
 const ARABIC = /[؀-ۿ]/;
-const preflight = fs.readFileSync(
-  path.join(repo, "cmd/maktaba-server/container_preflight.go"),
-  "utf8"
-);
 
 describe("Epic 59's strings", () => {
   const all = rows();
