@@ -4,8 +4,9 @@
 //
 // The middleware order in New is canonical and load-bearing:
 //
-//  1. RealIP        — populates RemoteAddr from X-Forwarded-For so the
-//     rate limiter sees the right key.
+//  1. ClientIP      — populates RemoteAddr from X-Forwarded-For, believed
+//     only from loopback or a trusted proxy (shared/go/clientip),
+//     so the rate limiter sees the right key.
 //  2. RequestID     — mints / accepts the per-request UUID v7.
 //  3. Recoverer     — turns panics into 500 problem+json before they
 //     reach the logger; must precede the logger so the
@@ -38,9 +39,9 @@ package router
 import (
 	"database/sql"
 	"net/http"
+	"net/netip"
 
 	"github.com/go-chi/chi/v5"
-	chimw "github.com/go-chi/chi/v5/middleware"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
@@ -50,6 +51,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/usage"
 	errrpt "github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 	tracing "github.com/Hamza-Labs-Core/Maktaba/shared/tracing/go"
 )
 
@@ -102,6 +104,14 @@ type Deps struct {
 	// whose component is off answers 409 component_off (ComponentRoutes). MountP51
 	// starts it; nil leaves the check off (bare-Deps unit tests).
 	Capabilities *components.Capabilities
+
+	// TrustedProxies are the reverse proxies in front of the home ([server]
+	// trusted_proxies, Epic 59 story 59.08) whose X-Forwarded-For is believed, besides
+	// loopback (this machine's own proxies) which always is. Empty: loopback only.
+	TrustedProxies []netip.Prefix
+	// TrustedHop trusts addresses learned as the home runs, beside TrustedProxies: its
+	// approved nodes, which forward their clients' requests (nil: none).
+	TrustedHop func(netip.Addr) bool
 }
 
 // New builds the API's chi.Mux with the canonical middleware stack and
@@ -111,15 +121,9 @@ type Deps struct {
 func New(d Deps) chi.Router {
 	r := chi.NewRouter()
 
-	// SA1019: RealIP is deprecated because it trusts client-supplied
-	// X-Forwarded-For / X-Real-IP headers. Maktaba is a self-hosted
-	// server expected to sit behind a trusted reverse proxy that sets
-	// those headers, which is exactly RealIP's intended deployment, so
-	// we keep it deliberately. Operators exposing the API directly must
-	// strip inbound forwarding headers at their edge.
 	// Epic 32 story 32.9: only the relay agent on loopback may mark a
 	// request as coming through the relay; checked on the real peer
-	// address, before RealIP rewrites it.
+	// address, before the client address is resolved.
 	r.Use(mw.StripVia)
 	// the relay reaches people's routes only, never the machines' (via.go)
 	r.Use(mw.RefuseRelayToMachines)
@@ -129,7 +133,13 @@ func New(d Deps) chi.Router {
 	// likewise a program on this machine (the desktop app asks /api/cluster/self over
 	// loopback), judged on the real peer address
 	r.Use(mw.MarkLocalCaller)
-	r.Use(chimw.RealIP) //nolint:staticcheck // SA1019: intentional behind a trusted proxy (see comment above)
+	// The client address (Epic 59 story 59.08): X-Forwarded-For (else X-Real-IP) is
+	// believed only from loopback (the web port's proxy, the relay agent, direct access)
+	// or a proxy in [server] trusted_proxies, walked right to left past the trusted hops;
+	// from anyone else it is the client's own text and the peer address stands. The API
+	// listens on the LAN, so chi's RealIP (which believed it from every peer) let a LAN
+	// client pick its own address.
+	r.Use(clientip.MiddlewareWith(d.TrustedProxies, d.TrustedHop))
 	r.Use(mw.RequestID)
 	// Recoverer carries the central HLB-300 error-report hook. With a
 	// nil d.ErrorReporter this is exactly the old mw.Recoverer (no

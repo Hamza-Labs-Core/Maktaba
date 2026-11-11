@@ -351,6 +351,57 @@ describe("ThisMachineSection", () => {
     );
   });
 
+  // Epic 59 story 59.08: a bridge network says how apps still connect; a moved port names
+  // its holder
+  it("says the bridge network and the ports that moved, with their holder", async () => {
+    open({
+      ...DOC,
+      machine: {
+        ...DOC.machine,
+        network: { mode: "bridge", from: "detected", interface: "eth0", driver: "veth" },
+      },
+      web_url: "http://192.168.1.50:8088",
+      port_moves: [
+        { key: "listen", old: 8080, new: 8782, taken: true, holder: "thttpd" },
+        { key: "stream_addr", old: 8081, new: 8781, taken: true },
+        { key: "web_listen", old: 8088, new: 8780, taken: false },
+      ],
+    });
+    expect(await screen.findByText("A bridge network")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /apps can't find Maktaba by themselves\. They can still connect by its address \(http:\/\/192\.168\.1\.50:8088\)/
+      )
+    ).toBeInTheDocument();
+    const moves = screen.getByTestId("port-moves");
+    expect(moves).toHaveTextContent(
+      "Port 8080 is used by thttpd on this machine, so Maktaba uses port 8782 instead."
+    );
+    expect(moves).toHaveTextContent(
+      "Port 8081 is used by another program on this machine, so Maktaba uses port 8781 instead."
+    );
+    expect(moves).not.toHaveTextContent("8780");
+  });
+
+  it("says the bridge network and a moved port in Arabic", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    open({
+      ...DOC,
+      machine: { ...DOC.machine, network: { mode: "bridge" } },
+      web_url: "http://192.168.1.50:8088",
+      port_moves: [{ key: "listen", old: 8080, new: 8782, taken: true, holder: "thttpd" }],
+    });
+    expect(await screen.findByText("شبكة جسرية")).toBeInTheDocument();
+    expect(screen.getByTestId("port-moves")).toHaveTextContent("المنفذ 8080 يستخدمه thttpd");
+  });
+
+  it("shows no network row outside a container", async () => {
+    open();
+    await screen.findByTestId("tier-reason");
+    expect(screen.queryByText("Network")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("port-moves")).not.toBeInTheDocument();
+  });
+
   it("rounds GB as people read them", () => {
     expect(gb(3.7 * G)).toBe(3.7);
     expect(gb(31.6 * G)).toBe(32);

@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 )
 
 func TestStripVia(t *testing.T) {
@@ -32,7 +32,7 @@ func TestStripVia(t *testing.T) {
 	}
 }
 
-// A program on this machine is told apart on the real peer address, before RealIP: through
+// A program on this machine is told apart on the real peer address, before the client address is resolved: through
 // the web port's proxy (its client in X-Forwarded-For) only when that client is loopback
 // too, never the relay's calls, never a LAN client that forges a forwarding header.
 func TestMarkLocalCaller(t *testing.T) {
@@ -57,8 +57,9 @@ func TestMarkLocalCaller(t *testing.T) {
 	}
 	for _, c := range cases {
 		var got bool
-		// as the router chains it: before RealIP, which rewrites RemoteAddr from the headers
-		h := MarkLocalCaller(chimw.RealIP(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { got = LocalCaller(r) }))) //nolint:staticcheck // SA1019: as the router chains it
+		// as the router chains it: before the client-address middleware, which rewrites
+		// RemoteAddr from the headers of a loopback or trusted peer
+		h := MarkLocalCaller(clientip.Middleware(nil)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { got = LocalCaller(r) })))
 		req := httptest.NewRequest("GET", "/api/cluster/self", nil)
 		req.RemoteAddr = c.remote
 		for k, v := range c.headers {

@@ -67,6 +67,8 @@ type Machine struct {
 	CPU    CPU    `json:"cpu"`
 	GPU    GPUs   `json:"gpu"`
 	Kernel Kernel `json:"kernel"`
+	// Network is the container's network (Epic 59 story 59.08); empty outside one.
+	Network Network `json:"network"`
 }
 
 // Memory is what memory Maktaba may use and has now, in bytes.
@@ -151,6 +153,8 @@ type Probe struct {
 	// Landlock and UserNS probe the kernel (nil: not probed).
 	Landlock func() int
 	UserNS   func() *bool
+	// Driver is a network interface's driver (nil: not asked).
+	Driver func(iface string) string
 }
 
 // System is this machine's probe.
@@ -158,7 +162,7 @@ func System() Probe {
 	return Probe{
 		Root: "/", GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Env: os.Getenv,
 		NumCPU: runtime.NumCPU(), Uname: uname(), NVIDIA: NVIDIA,
-		Landlock: landlockABI, UserNS: userNamespaces,
+		Landlock: landlockABI, UserNS: userNamespaces, Driver: ifaceDriver,
 	}
 }
 
@@ -224,6 +228,7 @@ func DetectAt(p Probe) Machine {
 	if p.UserNS != nil {
 		m.Kernel.UserNS = p.UserNS()
 	}
+	m.Network = readNetwork(p)
 	return m
 }
 

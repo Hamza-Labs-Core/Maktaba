@@ -7,6 +7,7 @@ go 1.25.0
 godebug multipathtcp=0
 
 require (
+	github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/components v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/health/go v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/log/go v0.0.0
@@ -38,3 +39,5 @@ replace github.com/Hamza-Labs-Core/Maktaba/shared/health/go => ../shared/health/
 replace github.com/Hamza-Labs-Core/Maktaba/shared/log/go => ../shared/log/go
 
 replace github.com/Hamza-Labs-Core/Maktaba/shared/go/ports => ../shared/go/ports
+
+replace github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip => ../shared/go/clientip

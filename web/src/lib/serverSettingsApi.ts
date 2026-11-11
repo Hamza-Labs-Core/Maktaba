@@ -47,6 +47,10 @@ export interface ServerSettings {
     stream_addr: string;
     public_url: string;
     web_public_url: string;
+    /** [server] trusted_proxies (Epic 59 story 59.08): addresses or CIDRs of a reverse
+     * proxy in front, whose forwarded client address is believed. Absent from a server
+     * older than it. */
+    trusted_proxies?: string[];
   };
 }
 
@@ -250,6 +254,22 @@ export interface MachineInfo {
     nvidia: { name: string; memory_mb: number }[];
   };
   kernel: { release?: string; landlock: number; userns?: boolean };
+  /** Epic 59 story 59.08: a container's network ({} outside one; older servers: absent) */
+  network?: {
+    mode?: "host" | "bridge" | "macvlan";
+    from?: "env" | "detected";
+    interface?: string;
+    driver?: string;
+  };
+}
+
+/** A port this start moved (Epic 59 story 59.08): taken by another program, its holder when seen. */
+export interface PortMove {
+  key: "web_listen" | "listen" | "stream_addr";
+  old: number;
+  new: number;
+  taken: boolean;
+  holder?: string;
 }
 
 /**
@@ -309,6 +329,9 @@ export type MachineDoc =
       disk_how: "rotational" | "ssd" | "asked" | "unknown";
       /** Epic 59 story 59.07: this machine's plugin isolation (older servers: absent) */
       plugin_isolation?: PluginIsolationLevel;
+      /** Epic 59 story 59.08: this machine's web address, and the ports this start moved */
+      web_url?: string;
+      port_moves?: PortMove[];
     };
 
 /** Epic 59 story 59.06: a Whisper size as the server offers it. */

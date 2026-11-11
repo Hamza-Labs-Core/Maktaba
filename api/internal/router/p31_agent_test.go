@@ -63,7 +63,7 @@ func TestP31AgentUpgradeThroughMiddleware(t *testing.T) {
 
 // Behind a reverse proxy every process arrives from the proxy's address:
 // the hub keys its handshake limit and a machine's folder on the client
-// address the API's chain resolves (chi RealIP: X-Forwarded-For), not on
+// address the API's chain resolves (X-Forwarded-For, believed from a loopback peer), not on
 // the proxy's.
 func TestP31AgentClientAddressBehindProxy(t *testing.T) {
 	dir := t.TempDir()

@@ -3,12 +3,15 @@ package viewing
 import (
 	"context"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 )
 
 // fakeStore records every batch; fail makes the next writes fail.
@@ -464,21 +467,25 @@ func TestFromUserAgent(t *testing.T) {
 	}
 }
 
-// The person comes from the gate's header only on a loopback connection.
+// The person comes from the gate's header only on a loopback connection, judged on the
+// connection itself; the address is the one the public mux resolved (story 59.08).
 func TestFromRequest(t *testing.T) {
 	u := uuid.New()
+	var v Viewer
+	viaMux := clientip.Middleware(nil)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { v = FromRequest(r) }))
 	r := httptest.NewRequest("GET", "/stream/channel/x/seg-1.ts", nil)
 	r.RemoteAddr = "127.0.0.1:50000"
 	r.Header.Set(ViewerHeader, u.String())
-	r.Header.Set("X-Forwarded-For", "192.168.1.7, 127.0.0.1")
+	r.Header.Set("X-Forwarded-For", "6.6.6.6, 192.168.1.7")
 	r.Header.Set(ClientHeader, "player/2.0 (ipados; tablet)")
-	v := FromRequest(r)
+	viaMux.ServeHTTP(httptest.NewRecorder(), r)
 	if v.User != u || v.Addr != "192.168.1.7" || v.Client.App != "player" || v.Client.Device != "tablet" {
 		t.Fatalf("loopback: %+v", v)
 	}
 	r.RemoteAddr = "192.168.1.9:50000"
-	if v := FromRequest(r); v.User != uuid.Nil {
-		t.Fatalf("the header trusted from the LAN: %+v", v)
+	viaMux.ServeHTTP(httptest.NewRecorder(), r)
+	if v.User != uuid.Nil || v.Addr != "192.168.1.9" {
+		t.Fatalf("the headers trusted from the LAN: %+v", v)
 	}
 	r = httptest.NewRequest("GET", "/", nil)
 	r.RemoteAddr = "[::1]:1"

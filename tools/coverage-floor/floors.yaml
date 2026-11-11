@@ -35,6 +35,7 @@ shared/testtier/go:  43    # measured 43.2
 shared/go/releaseverify: 50  # measured 50.9 (2026-10-19, story 35.1)
 shared/components:   74    # measured 76.3 (2026-11-03, the catalog and the store; no Postgres)
 shared/go/ports:     95    # measured 95.2 (2026-10-31, the port registry)
+shared/go/clientip: 90   # measured 98.3 (2026-11-10, story 59.08)
 shared/go/mediaaccess: 70  # measured 91.5 as a user (2026-11-10, story 59.03); the mode tests skip as root
 
 # --- Go tooling modules ---

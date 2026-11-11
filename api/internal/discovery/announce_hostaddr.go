@@ -101,11 +101,7 @@ func startHostAddrs(host string, ips []string) (*hostAddrs, error) {
 			h.ips = append(h.ips, ip)
 		}
 	}
-	ifaces, _ := net.Interfaces()
-	for _, ifi := range ifaces {
-		if ifi.Flags&net.FlagUp == 0 || ifi.Flags&net.FlagMulticast == 0 {
-			continue
-		}
+	for _, ifi := range announceInterfaces() {
 		if pc.JoinGroup(&ifi, mdnsIPv4Group) == nil {
 			h.ifaces = append(h.ifaces, ifi)
 		}

@@ -85,6 +85,7 @@ on:
       - 'api/node_*.go'
       - 'api/self_update*.go'
       - 'api/go.mod'
+      - 'shared/go/clientip/**'
       - 'shared/go/layout/**'
       - 'shared/go/ports/**'
       - 'shared/go/releaseverify/**'

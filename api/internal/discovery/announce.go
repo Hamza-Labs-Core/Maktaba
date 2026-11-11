@@ -17,7 +17,13 @@ package discovery
 //     this process may not register there (polkit lets root, or whom a rule names), or
 //     resolved has no RegisterService, zeroconf announces under "<host>-maktaba" too;
 //   - Windows 10+: the DNS Client's responder, through DnsServiceRegister (dnsapi.dll,
-//     announce_dnsapi.go and announce_windows.go).
+//     announce_dnsapi.go and announce_windows.go);
+//   - in a container (Epic 59 story 59.08, a NAS): the host's Avahi only when its system
+//     D-Bus socket is mounted and Avahi owns its name there (announce_avahibus*.go), else
+//     zeroconf under "<host>-maktaba": with the host's network the container's host name
+//     is the NAS's, which the NAS's own responder answers for. zeroconf's sockets are bound
+//     to a multicast address, which Go binds with SO_REUSEADDR, so on Linux they sit
+//     beside the NAS's avahi-daemon on 5353 and every one of them gets the queries.
 //
 // zeroconf answers alone only where nothing else does. The same files are in
 // api/internal/discovery and cmd/maktaba-server/internal/mdns (two modules);
@@ -71,15 +77,61 @@ type responderEnv struct {
 	exists   func(string) bool
 	dnsapi   func() bool
 	resolved func() resolvedState
+	// container: this process runs in a container (Epic 59 story 59.08)
+	container bool
+	// avahiBus: Avahi owns its name on a reachable system bus (a container given the
+	// host's D-Bus socket); nil asks nothing
+	avahiBus func() bool
 }
 
 // avahiSockets are where a running avahi-daemon listens.
 var avahiSockets = []string{"/run/avahi-daemon/socket", "/var/run/avahi-daemon/socket"}
 
+// String names a responder kind, for the log.
+func (k responderKind) String() string {
+	switch k {
+	case viaDNSSD:
+		return "dns-sd"
+	case viaAvahi:
+		return "avahi (avahi-publish-service)"
+	case viaZeroconfOwnHost:
+		return "own responder (<host>-maktaba)"
+	case viaDNSAPI:
+		return "Windows DNS-SD"
+	case viaResolved:
+		return "systemd-resolved"
+	default:
+		return "own responder"
+	}
+}
+
+// systemBusSockets are where a mounted system bus appears in a container.
+var systemBusSockets = []string{"/run/dbus/system_bus_socket", "/var/run/dbus/system_bus_socket"}
+
+// Responder says which announcer this machine uses, for the log (Epic 59 story 59.08): in
+// a container given a system bus that does not lead to the host's Avahi, also why.
+func Responder() string {
+	r := systemResponder()
+	s := r.kind.String()
+	if r.kind != viaZeroconfOwnHost || !inContainer(os.Getenv, fileExists) {
+		return s
+	}
+	for _, p := range systemBusSockets {
+		if fileExists(p) {
+			if err := avahiBusCheck(); err != nil {
+				return s + "; the mounted system bus: " + err.Error()
+			}
+			return s + "; Avahi is on the mounted bus, but avahi-publish-service is missing"
+		}
+	}
+	return s
+}
+
 // systemResponder is this machine's announcer.
 func systemResponder() responder {
 	return systemResponderFor(responderEnv{
 		goos: runtime.GOOS, lookPath: exec.LookPath, exists: fileExists, dnsapi: dnsapiAvailable, resolved: probeResolved,
+		container: inContainer(os.Getenv, fileExists), avahiBus: avahiOnBus,
 	})
 }
 
@@ -94,10 +146,17 @@ func systemResponderFor(env responderEnv) responder {
 			return responder{kind: viaDNSAPI}
 		}
 	default:
-		if avahiRunning(env.exists) {
+		// a container sees no avahi-daemon socket of the host's; a mounted system bus may
+		// still reach the host's Avahi (asked only there: outside one the socket says it)
+		if avahiRunning(env.exists) || env.container && env.avahiBus != nil && env.avahiBus() {
 			if path, err := env.lookPath("avahi-publish-service"); err == nil {
 				return responder{kind: viaAvahi, path: path}
 			}
+			return responder{kind: viaZeroconfOwnHost}
+		}
+		// in a container the host name is the host's, whose responder (if it runs one)
+		// the container cannot see: never claim it
+		if env.container {
 			return responder{kind: viaZeroconfOwnHost}
 		}
 		if env.goos != "linux" {
@@ -111,6 +170,12 @@ func systemResponderFor(env responderEnv) responder {
 		}
 	}
 	return responder{kind: viaZeroconf}
+}
+
+// inContainer is whether this process runs in a container: the image says so
+// (MAKTABA_CONTAINER), or Docker's or Podman's marker file is there.
+func inContainer(getenv func(string) string, exists func(string) bool) bool {
+	return strings.TrimSpace(getenv("MAKTABA_CONTAINER")) != "" || exists("/.dockerenv") || exists("/run/.containerenv")
 }
 
 // avahiRunning is whether avahi-daemon runs here (and so answers for the host name).

@@ -46,8 +46,12 @@ type pendingPlex struct {
 	Linked   bool   `json:"linked"`
 }
 
-func (s *setupRun) pendingPath() string {
-	return filepath.Join(s.cfg.StateDir(), "state", "setup.json")
+func (s *setupRun) pendingPath() string { return setupPendingFor(s.cfg) }
+
+// setupPendingFor is where a setup keeps what its steps collected until its finish step is
+// done (state/setup.json): there while a setup runs, gone once it ended.
+func setupPendingFor(cfg config.Config) string {
+	return filepath.Join(cfg.StateDir(), "state", "setup.json")
 }
 
 func (s *setupRun) loadPending() (setupPending, error) {
@@ -236,6 +240,7 @@ func stepCheck(s *setupRun, _ json.RawMessage) (any, error) {
 	}
 	checkDataDir(root, &res)
 	m := hostMachine()
+	checkNetwork(s.cfg, m, &res)
 	switch {
 	case ram > 0 && ram < setupMinRAM && hostinfo.IsNAS(m.Platform):
 		// Epic 59 story 59.04: a NAS too small to be the home can still keep the media
@@ -560,4 +565,33 @@ func stepLibraries(s *setupRun, in json.RawMessage) (any, error) {
 	}
 	// a read-only root is supported (story 59.03): the step shows it, with who Maktaba runs as
 	return map[string]any{"roots": checks, "runs_as": who, "platform": nasPlatform()}, nil
+}
+
+// setupPortMoves are the binds of cfg that another program holds and would move (a dry
+// run of ReconcilePorts; tests replace it).
+var setupPortMoves = func(cfg config.Config) []config.PortChange {
+	moved, err := cfg.ReconcilePorts(portProbe(), config.PortOptions{KeepOurs: true})
+	if err != nil {
+		return nil
+	}
+	return moved
+}
+
+// checkNetwork (Epic 59 story 59.08): on a Docker bridge apps cannot find the home by
+// themselves, and how they still connect; each port another program holds (QNAP's UI on
+// 8080), where Maktaba goes instead and who holds it.
+func checkNetwork(cfg config.Config, m hostinfo.Machine, res *checkResult) {
+	if m.Network.Bridge() {
+		url := cfg.PublicWebURL()
+		en, _ := bridgeText(url)
+		res.Warn("network_bridge", en, "url", url)
+	}
+	for _, ch := range setupPortMoves(cfg) {
+		if !ch.Taken {
+			continue
+		}
+		ch.Holder = portHolder(ch.OldPort)
+		en, _ := portMovedText(ch)
+		res.Warn(portMoveCode(ch), en, "old", ch.OldPort, "new", ch.NewPort, "holder", ch.Holder, "key", ch.Key)
+	}
 }

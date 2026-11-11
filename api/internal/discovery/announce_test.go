@@ -3,6 +3,7 @@ package discovery
 import (
 	"bytes"
 	"errors"
+	"net"
 	"reflect"
 	"strings"
 	"sync"
@@ -43,6 +44,18 @@ func withResolved(env responderEnv, st resolvedState) responderEnv {
 	return env
 }
 
+// inBox is env in a container, Avahi on its system bus or not.
+func inBox(env responderEnv, avahi bool) responderEnv {
+	env.container = true
+	return withAvahiBus(env, avahi)
+}
+
+// withAvahiBus is env whose system bus has Avahi on it or not.
+func withAvahiBus(env responderEnv, avahi bool) responderEnv {
+	env.avahiBus = func() bool { return avahi }
+	return env
+}
+
 // resolvedOK is a systemd-resolved that answers mDNS and takes this process's
 // registrations.
 var resolvedOK = resolvedState{responds: true, canRegister: true, host: "studio"}
@@ -74,6 +87,12 @@ func TestSystemResponderPerOS(t *testing.T) {
 		{"linux, avahi and resolved", withResolved(fakeEnv("linux", all, avahi, false), resolvedOK), responder{kind: viaAvahi, path: "/usr/bin/avahi-publish-service"}},
 		{"freebsd never asks resolved", withResolved(fakeEnv("freebsd", all, nil, false), resolvedOK), responder{kind: viaZeroconf}},
 		{"mac never asks resolved", withResolved(fakeEnv("darwin", nil, nil, false), resolvedOK), responder{kind: viaZeroconf}},
+		// Epic 59 story 59.08: a container never claims the host's name
+		{"container", inBox(fakeEnv("linux", all, nil, false), false), responder{kind: viaZeroconfOwnHost}},
+		{"container, resolved on a mounted bus", withResolved(inBox(fakeEnv("linux", all, nil, false), false), resolvedOK), responder{kind: viaZeroconfOwnHost}},
+		{"container, the host's Avahi on a mounted bus", inBox(fakeEnv("linux", all, nil, false), true), responder{kind: viaAvahi, path: "/usr/bin/avahi-publish-service"}},
+		{"container, the host's Avahi but no avahi-utils", inBox(fakeEnv("linux", nil, nil, false), true), responder{kind: viaZeroconfOwnHost}},
+		{"no container: the bus is never asked", withAvahiBus(fakeEnv("linux", all, nil, false), true), responder{kind: viaZeroconf}},
 	}
 	for _, c := range cases {
 		if got := systemResponderFor(c.env); got != c.want {
@@ -363,5 +382,82 @@ func TestDNSAPIShutdownStopsRetries(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 	if n := len(api.registrations(t, 1)); n > 2 {
 		t.Fatalf("registered %d times after Shutdown", n)
+	}
+}
+
+// The image says it is a container, or Docker's or Podman's marker does.
+func TestInContainer(t *testing.T) {
+	t.Parallel()
+	none := func(string) bool { return false }
+	if inContainer(func(string) string { return "" }, none) {
+		t.Error("no marker: not a container")
+	}
+	if !inContainer(func(k string) string {
+		if k == "MAKTABA_CONTAINER" {
+			return "docker"
+		}
+		return ""
+	}, none) {
+		t.Error("MAKTABA_CONTAINER")
+	}
+	for _, f := range []string{"/.dockerenv", "/run/.containerenv"} {
+		if !inContainer(func(string) string { return "" }, func(p string) bool { return p == f }) {
+			t.Error(f)
+		}
+	}
+}
+
+// Docker's bridges and veths are never announced on; MAKTABA_HOST_IP picks its interface,
+// and one no interface holds picks none out.
+func TestPickInterfaces(t *testing.T) {
+	t.Parallel()
+	up := net.FlagUp | net.FlagMulticast
+	ifaces := []net.Interface{
+		{Index: 1, Name: "lo", Flags: net.FlagUp | net.FlagLoopback},
+		{Index: 2, Name: "eth0", Flags: up},
+		{Index: 3, Name: "bond0.20", Flags: up},
+		{Index: 4, Name: "docker0", Flags: up},
+		{Index: 5, Name: "br-1a2b3c", Flags: up},
+		{Index: 6, Name: "veth12ab", Flags: up},
+		{Index: 7, Name: "eth1", Flags: net.FlagMulticast},
+		{Index: 8, Name: "br0", Flags: up},
+	}
+	addrs := map[string]string{"eth0": "192.168.1.20", "bond0.20": "10.0.20.5", "br0": "192.168.2.9"}
+	addrsOf := func(ifi net.Interface) []net.Addr {
+		if a, ok := addrs[ifi.Name]; ok {
+			return []net.Addr{&net.IPNet{IP: net.ParseIP(a), Mask: net.CIDRMask(24, 32)}}
+		}
+		return nil
+	}
+	names := func(in []net.Interface) string {
+		var out []string
+		for _, i := range in {
+			out = append(out, i.Name)
+		}
+		return strings.Join(out, ",")
+	}
+	if got := names(pickInterfaces(ifaces, "", addrsOf)); got != "eth0,bond0.20,br0" {
+		t.Errorf("all: %s", got)
+	}
+	if got := names(pickInterfaces(ifaces, "10.0.20.5", addrsOf)); got != "bond0.20" {
+		t.Errorf("MAKTABA_HOST_IP: %s", got)
+	}
+	if got := names(pickInterfaces(ifaces, "172.16.0.1", addrsOf)); got != "eth0,bond0.20,br0" {
+		t.Errorf("an address no interface holds: %s", got)
+	}
+}
+
+// Epic 59 story 59.08: the log names the responder; every kind has its own name.
+func TestResponderKindNames(t *testing.T) {
+	seen := map[string]bool{}
+	for _, k := range []responderKind{viaZeroconf, viaDNSSD, viaAvahi, viaZeroconfOwnHost, viaDNSAPI, viaResolved} {
+		s := k.String()
+		if s == "" || seen[s] {
+			t.Errorf("kind %d: name %q empty or shared", k, s)
+		}
+		seen[s] = true
+	}
+	if s := Responder(); s == "" {
+		t.Error("Responder is empty")
 	}
 }

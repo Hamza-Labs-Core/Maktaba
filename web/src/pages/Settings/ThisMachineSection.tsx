@@ -365,6 +365,21 @@ function MachinePanel({ pollMs }: { pollMs: number }) {
         </>,
       ],
     ];
+    const net = m.network?.mode;
+    if (net) {
+      rows.push([
+        t("machine.network"),
+        <>
+          {t(`machine.network.${net}`)}
+          {net === "bridge" && (
+            <span className="mkt-muted mkt-libadmin__small" style={{ display: "block" }}>
+              {t("setup.check.note.network_bridge", { url: d.web_url || "?" })}
+            </span>
+          )}
+        </>,
+      ]);
+    }
+    const moves = (d.port_moves ?? []).filter((pm) => pm.taken);
     const window = (w: string) => w || t("machine.quiet.none");
 
     return (
@@ -373,6 +388,21 @@ function MachinePanel({ pollMs }: { pollMs: number }) {
         <p className="mkt-muted">{t("machine.intro")}</p>
         {d.moved_up && (
           <p role="status">{t("machine.tier.moved_up", { tier: tierName(d.tier) })}</p>
+        )}
+        {moves.length > 0 && (
+          <section role="status" aria-label={t("machine.ports.title")} data-testid="port-moves">
+            {moves.map((pm) => (
+              <p key={pm.key}>
+                {pm.holder
+                  ? t("setup.check.note.port_moved", {
+                      old: pm.old,
+                      new: pm.new,
+                      holder: pm.holder,
+                    })
+                  : t("setup.check.note.port_moved_other", { old: pm.old, new: pm.new })}
+              </p>
+            ))}
+          </section>
         )}
         <section className="mkt-storage__reach" aria-labelledby="mkt-machine-tier">
           <h3 id="mkt-machine-tier">

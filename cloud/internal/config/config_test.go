@@ -276,3 +276,18 @@ func TestTurnstileConfig(t *testing.T) {
 		t.Fatalf("defaults: %+v %v", l.Turnstile, err)
 	}
 }
+
+// Epic 50 story 50.31, kept when Epic 59 story 59.08 moved the parser to shared/go/clientip:
+// the cloud's server.trusted_proxies takes CIDRs only (a bare address is refused, so a list
+// says what it means), masked.
+func TestParsePrefixesCIDRsOnly(t *testing.T) {
+	got, err := ParsePrefixes([]string{" 10.1.2.3/8 ", "::1/128"})
+	if err != nil || len(got) != 2 || got[0].String() != "10.0.0.0/8" || got[1].String() != "::1/128" {
+		t.Fatalf("got %v, %v", got, err)
+	}
+	for _, bad := range []string{"127.0.0.1", "", "not-a-cidr"} {
+		if _, err := ParsePrefixes([]string{bad}); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}

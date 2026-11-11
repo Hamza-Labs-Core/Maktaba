@@ -14,8 +14,8 @@ const ViaHeader = "X-Maktaba-Via"
 
 // StripVia drops X-Maktaba-Via from every request that does not come from
 // loopback, so only the relay agent on this machine can set it (story 32.9
-// AC1). It must run before RealIP: RealIP rewrites RemoteAddr from
-// forwarding headers a client controls.
+// AC1). It must run before the client-address middleware (shared/go/clientip),
+// which rewrites RemoteAddr from forwarding headers.
 func StripVia(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get(ViaHeader) != "" && !FromLoopback(r) {
@@ -67,7 +67,7 @@ type localCallerKey struct{}
 // loopback peer, every address a proxy forwarded loopback too (the web port's proxy adds
 // its client's to X-Forwarded-For), and not the relay agent's (X-Maktaba-Via: the internet,
 // through loopback). LocalCaller reads it. It judges the real peer address, so it must run
-// before RealIP, which rewrites that from headers a client controls.
+// before the client-address middleware, which rewrites that from forwarding headers.
 func MarkLocalCaller(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if localCaller(r) {

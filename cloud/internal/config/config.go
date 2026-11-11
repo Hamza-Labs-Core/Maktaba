@@ -12,6 +12,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 )
 
 // Config is the in-memory representation of cloud.toml. We keep it flat
@@ -646,15 +648,8 @@ func (s ServerConfig) AdminOriginOrDefault() string {
 	return "https://" + s.AdminHost
 }
 
-// ParsePrefixes reads CIDRs; a bare address is refused, so a list says what it means.
+// ParsePrefixes reads CIDRs; a bare address is refused, so a list says what it means
+// (shared/go/clientip's ParseCIDRs; the home's list also takes bare addresses).
 func ParsePrefixes(vs []string) ([]netip.Prefix, error) {
-	out := make([]netip.Prefix, 0, len(vs))
-	for _, v := range vs {
-		p, err := netip.ParsePrefix(strings.TrimSpace(v))
-		if err != nil {
-			return nil, fmt.Errorf("%q is not a CIDR", v)
-		}
-		out = append(out, p.Masked())
-	}
-	return out, nil
+	return clientip.ParseCIDRs(vs)
 }

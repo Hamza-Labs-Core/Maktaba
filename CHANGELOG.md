@@ -2644,6 +2644,20 @@ build fails when the two differ.
   preset." CI runs the catalog's own tooling on the app (render, metadata, ports, deploy), and the
   maktaba.tv guide and device checklist cover TrueNAS 25.04 and 25.10.
 
+- **On a NAS, apps find the home beside the NAS's own names, a bridge network says how to
+  connect, and forwarded addresses are believed only from trusted proxies (story 59.08).** In
+  a container Maktaba answers mDNS under its own name, `<nas>-maktaba.local`, beside the NAS's
+  avahi-daemon, and never claims the NAS's name. Mounting the host's D-Bus socket (an option
+  in the compose file) publishes the home through the NAS's own Avahi instead. On a Docker
+  bridge, mDNS and SSDP are off. Setup and Settings → This machine say that apps connect by
+  the address, the HTTPS name or a Maktaba Cloud code; the compose file's `[bridge]` blocks
+  set a bridge install up. A port another program holds (QNAP's UI on 8080) moves, with the holder
+  named in setup, the log and Settings. `[server] trusted_proxies` (Settings → Storage &
+  discovery) lists the reverse proxies whose `X-Forwarded-For` the API and streaming believe,
+  besides this machine's own and the home's approved nodes. Before this, any peer's header was
+  believed. A container waiting for its setup starts the server only once setup has finished,
+  no longer as soon as server.toml appears, before setup's database is made.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings

@@ -148,11 +148,14 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 
 // mdnsLoop is the supervisor's mDNS advertiser as the discovery.mdns component's loop:
 // on by default when [server] mdns is, kept off for this boot by --no-mdns (boot_flag)
-// or MAKTABA_DISCOVERY_MDNS=0 (env_override).
+// or MAKTABA_DISCOVERY_MDNS=0 (env_override), and off on a Docker bridge (bridge_network,
+// Epic 59 story 59.08).
 func mdnsLoop(cfg config.Config, noMDNS bool, run func(ctx context.Context)) *supervisor.Loop {
 	l := &supervisor.Loop{Name: "supervisor:mdns", Run: run, ConfigOn: cfg.Server.MDNSOn()}
 	v := strings.TrimSpace(strings.ToLower(os.Getenv("MAKTABA_DISCOVERY_MDNS")))
 	switch {
+	case onBridge():
+		l.Forced = supervisor.ReasonBridgeNetwork
 	case noMDNS:
 		l.Forced, l.ForcedParams = supervisor.ReasonBootFlag, map[string]any{"flag": "--no-mdns"}
 	case v == "0" || v == "false" || v == "off":

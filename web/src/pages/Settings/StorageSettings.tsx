@@ -1,6 +1,7 @@
 // Epic 45 (story 45.5): Settings → Storage & discovery (admins). The server's
 // [media] path_map and roots, LAN discovery (mdns), its listen addresses and
-// public URLs, as saved in server.toml. Save checks every value on the server
+// public URLs, and the reverse proxies it trusts (Epic 59 story 59.08), as saved in
+// server.toml. Save checks every value on the server
 // first (422 names the field); a change applies at the next restart, which the
 // admin starts here (when the server runs under the launcher) and watches: the
 // page waits for the server to answer again, then reloads. The reachability
@@ -13,6 +14,7 @@ import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { Input } from "@ds/components/Input/Input";
+import { Textarea } from "@ds/components/Textarea/Textarea";
 import { Modal } from "@ds/components/Modal/Modal";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { Toggle } from "@ds/components/Choice/Toggle";
@@ -46,6 +48,9 @@ type ServerKey = keyof ServerSettings["server"];
 type Phase = "idle" | "confirm" | "restarting" | "slow";
 
 const blankPair = (): PathMapPair => ({ db: "", local: "" });
+/** The trusted proxies typed one per line, blank lines dropped. */
+const proxyList = (lines: string[] | undefined) =>
+  (lines ?? []).map((l) => l.trim()).filter((l) => l !== "");
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /** The rows to send (fully blank ones dropped) and each one's row index. */
@@ -168,9 +173,14 @@ function StorageInner({ pollMs, onReload }: { pollMs: number; onReload: () => vo
 
   const serverChanges: Partial<ServerSettings["server"]> = {};
   for (const k of Object.keys(saved.server) as ServerKey[]) {
+    if (k === "trusted_proxies") continue; // a list: compared below
     const v =
       typeof form.server[k] === "string" ? (form.server[k] as string).trim() : form.server[k];
     if (v !== saved.server[k]) (serverChanges as Record<string, unknown>)[k] = v;
+  }
+  const proxies = proxyList(form.server.trusted_proxies);
+  if (saved.server.trusted_proxies && !same(proxies, saved.server.trusted_proxies)) {
+    serverChanges.trusted_proxies = proxies;
   }
   const mediaChanges: Partial<ServerSettings["media"]> = {};
   if (!same(pathMap, saved.media.path_map)) mediaChanges.path_map = pathMap;
@@ -208,7 +218,13 @@ function StorageInner({ pollMs, onReload }: { pollMs: number; onReload: () => vo
         const pm = /^media\.path_map\[(\d+)\](?:\.(db|local))?$/.exec(fe.field);
         const rt = /^media\.roots\[(\d+)\]$/.exec(fe.field);
         const sv = /^server\.(\w+)$/.exec(fe.field);
-        if (pm && pairs.rowOf[Number(pm[1])] !== undefined) {
+        const tp = /^server\.trusted_proxies\[\d+\]$/.test(fe.field);
+        if (tp) {
+          // every bad entry under the one field (the message names the entry)
+          next.trusted_proxies = next.trusted_proxies
+            ? `${next.trusted_proxies} ${fe.message}`
+            : fe.message;
+        } else if (pm && pairs.rowOf[Number(pm[1])] !== undefined) {
           next[`path_map.${pairs.rowOf[Number(pm[1])]}.${pm[2] ?? "local"}`] = fe.message;
         } else if (rt && roots.rowOf[Number(rt[1])] !== undefined) {
           next[`roots.${roots.rowOf[Number(rt[1])]}`] = fe.message;
@@ -473,6 +489,24 @@ function StorageInner({ pollMs, onReload }: { pollMs: number; onReload: () => vo
             <p className="mkt-storage__warn" role="note">
               {t("storage.addresses.warn")}
             </p>
+          )}
+          {saved.server.trusted_proxies && (
+            <Textarea
+              label={t("storage.field.trusted_proxies")}
+              description={t("storage.field.trusted_proxies.help")}
+              value={(s.trusted_proxies ?? []).join("\n")}
+              dir="ltr"
+              spellCheck={false}
+              autoComplete="off"
+              rows={3}
+              error={errors.trusted_proxies}
+              onChange={(e) => {
+                const v = e.target.value.split("\n");
+                update((x) => {
+                  x.server.trusted_proxies = v;
+                });
+              }}
+            />
           )}
         </fieldset>
 

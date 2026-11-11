@@ -24,6 +24,9 @@ func TestComponentsTarget(t *testing.T) {
 }
 
 func TestMDNSLoopFlags(t *testing.T) {
+	old := onBridge
+	t.Cleanup(func() { onBridge = old })
+	onBridge = func() bool { return false } // the machine running the test may be a container
 	cfg := config.Defaults()
 	noop := func(context.Context) {}
 	if l := mdnsLoop(cfg, false, noop); !l.ConfigOn || l.Forced != "" {

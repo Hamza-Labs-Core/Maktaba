@@ -72,6 +72,8 @@ COPY tools/healthcheck/go.mod ./tools/healthcheck/
 COPY shared/log/go ./shared/log/go
 # and the log keeper and index it replaces from ../shared/logkeeper/go (story 53.17)
 COPY shared/logkeeper/go ./shared/logkeeper/go
+# and the client-address resolver from ../shared/go/clientip (Epic 59 story 59.08)
+COPY shared/go/clientip ./shared/go/clientip
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     cd cloud && go mod download

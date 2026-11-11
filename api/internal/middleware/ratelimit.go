@@ -208,19 +208,10 @@ func isExempt(path string) bool {
 	return strings.Contains(path, "/progress")
 }
 
-// clientIP picks the request's source IP. Honours X-Forwarded-For
-// only when the upstream chi.RealIP middleware has already trimmed it
-// to a single value; otherwise reads RemoteAddr.
+// clientIP is the request's source address: RemoteAddr, which the router's client-address
+// middleware (shared/go/clientip) already resolved from a trusted proxy's X-Forwarded-For.
+// The header itself is never read here: from an untrusted peer it is the client's own text.
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first IP in the list — chi.RealIP also normalises
-		// this, but defending the limiter against a misconfiguration
-		// is cheap.
-		if i := strings.Index(xff, ","); i > 0 {
-			return strings.TrimSpace(xff[:i])
-		}
-		return strings.TrimSpace(xff)
-	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
