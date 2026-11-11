@@ -860,6 +860,11 @@ type ProcessRequest struct {
 }
 
 func (h *Handler) Process(w http.ResponseWriter, r *http.Request) {
+	// the role first (story 59.16): a non-admin learns nothing of the video, and no query runs
+	if err := h.canWrite(r.Context(), ""); err != nil {
+		httperror.Write(w, r, err)
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(id); err != nil {
 		httperror.Write(w, r, httperror.BadRequest("malformed id"))
@@ -872,10 +877,6 @@ func (h *Handler) Process(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		httperror.Write(w, r, httperror.Internal("load video").Wrap(err))
-		return
-	}
-	if err := h.canWrite(r.Context(), v.LibraryID); err != nil {
-		httperror.Write(w, r, err)
 		return
 	}
 	var req ProcessRequest
@@ -920,6 +921,11 @@ type ReprocessRequest struct {
 }
 
 func (h *Handler) Reprocess(w http.ResponseWriter, r *http.Request) {
+	// the role first (story 59.16): a non-admin learns nothing of the video, and no query runs
+	if err := h.canWrite(r.Context(), ""); err != nil {
+		httperror.Write(w, r, err)
+		return
+	}
 	id := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(id); err != nil {
 		httperror.Write(w, r, httperror.BadRequest("malformed id"))
@@ -932,10 +938,6 @@ func (h *Handler) Reprocess(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		httperror.Write(w, r, httperror.Internal("load video").Wrap(err))
-		return
-	}
-	if err := h.canWrite(r.Context(), v.LibraryID); err != nil {
-		httperror.Write(w, r, err)
 		return
 	}
 	var req ReprocessRequest

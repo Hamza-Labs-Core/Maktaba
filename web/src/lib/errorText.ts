@@ -113,12 +113,15 @@ export function relayPlanText(e: unknown, t: T): string | null {
   return null;
 }
 
-/** The sentence a screen shows for a failed call (admin: component_off says where to turn it on). */
+/**
+ * The sentence a screen shows for a failed call (admin: component_off says where to turn it
+ * on; admin false: a library's refusal is only library.not_available_here).
+ */
 export function errorText(e: unknown, t: T, opts: { admin?: boolean } = {}): string {
   return (
     relayPlanText(e, t) ??
     componentOffText(e, t, opts) ??
-    libraryAccessErrorText(e, t) ??
+    libraryAccessErrorText(e, t, opts.admin !== false) ??
     inputDetail(e) ??
     t(`error.kind.${userErrorKind(e)}`)
   );

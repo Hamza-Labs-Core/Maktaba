@@ -46,14 +46,17 @@
       ],
       "related": [
         "epic-28-auto-update",
-        "plan-28.02-update-check-service"
+        "plan-28.02-update-check-service",
+        "ep-get-system-updates"
       ],
       "files": {
         "story": "specs/epics/28-auto-update/story-28-02-update-check-service.md",
         "plan": "specs/epics/28-auto-update/plan-28-02-update-check-service.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /system/updates"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "update-check-service"
@@ -128,7 +131,8 @@
       "related": [
         "epic-28-auto-update",
         "plan-28.05-mobile-update-notification",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-system-updates"
       ],
       "files": {
         "story": "specs/epics/28-auto-update/story-28-05-mobile-update-notification.md",
@@ -136,7 +140,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /system/updates"
       ],
       "db_tables": [],
       "metadata": {
@@ -159,7 +164,8 @@
         "epic-28-auto-update",
         "plan-28.06-update-ui",
         "ep-get-system-version",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-system-updates"
       ],
       "files": {
         "story": "specs/epics/28-auto-update/story-28-06-update-ui.md",
@@ -168,7 +174,8 @@
       },
       "api_endpoints": [
         "GET /system/version",
-        "GET /components"
+        "GET /components",
+        "GET /system/updates"
       ],
       "db_tables": [],
       "metadata": {
@@ -1724,14 +1731,17 @@
       ],
       "related": [
         "epic-35-cluster-full-nodes-and-updates",
-        "plan-35.03-policy-discovery-scheduling"
+        "plan-35.03-policy-discovery-scheduling",
+        "ep-get-system-updates"
       ],
       "files": {
         "story": "specs/epics/35-cluster-full-nodes-and-updates/story-35-03-policy-discovery-scheduling.md",
         "plan": "specs/epics/35-cluster-full-nodes-and-updates/plan-35-03-policy-discovery-scheduling.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /system/updates"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "policy-discovery-scheduling"

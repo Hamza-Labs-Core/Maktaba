@@ -3316,6 +3316,18 @@ build fails when the two differ.
   asks again after the home's `Retry-After` (10 s), the same wait as the phone, tablet, Apple and
   desktop players, until the video starts.
 
+- **Quiet hours and the data disk save from Settings → This machine (story 59.16).** The page
+  saves them through `PUT /api/server/machine`, which passed on only the tier, so the server
+  refused the save; it now passes on each field sent (`tier`, `quiet_hours` or
+  `quiet_default`, `data_disk`) and audits the change. The API reference on maktaba.dev
+  describes every route Epic 59 added (This machine, speech to text, library access, Run now,
+  plugin isolation, server.toml's trusted proxies) and the new fields, in English and Arabic,
+  each admin route marked as such; the admin's yes to container-only plugin isolation is
+  audited with the isolation level. A video's Process and Reprocess check the admin role before
+  they read the video, so a non-admin gets 403 whether or not the video exists. In the web, a
+  library's refusal reads "Not available in this library" to anyone who is not an admin; an admin
+  keeps the read-only reason and its fix.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were
