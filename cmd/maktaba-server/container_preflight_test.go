@@ -135,6 +135,20 @@ func TestPreflightWriteCheck(t *testing.T) {
 	if strings.Contains(msg, "belongs to user") {
 		t.Fatalf("the owner is the uid itself: no owner line: %q", msg)
 	}
+	if strings.Contains(msg, "ACL") {
+		t.Fatalf("no platform: no TrueNAS words: %q", msg)
+	}
+
+	// story 59.10: on TrueNAS the fix names the dataset's ACL and the Apps preset
+	p.platform = "truenas"
+	_, err = p.run()
+	msg = refusalOf(t, err)
+	for _, want := range []string{"Edit the dataset's permissions and add an ACL entry for user " + strconv.Itoa(p.uid) + " with Modify, or use the Apps preset.", "الإعداد المسبق Apps"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("TrueNAS message lacks %q: %q", want, msg)
+		}
+	}
+	p.platform = ""
 
 	// another uid's folder (a 1000-owned volume started as 568): the owner is named
 	p.uid = os.Getuid() + 1

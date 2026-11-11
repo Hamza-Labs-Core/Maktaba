@@ -20,6 +20,7 @@ and CI. The source lives at
 - [CI](ci.md): how CI picks the jobs a change needs, and the single merge gate.
 - [Pull requests](pull-requests.md): branch, test, describe, review, merge.
 - [Maktaba Cloud: how it stays up](cloud.md): the two nodes, deploys, backups, and the cloud rehearsal.
+- [Maktaba on a NAS: the TrueNAS app](nas-apps.md): the catalog app, its CI with the catalog's own tooling, and how releases move it.
 - [Security rules for plugins and contributors](../security/conformance.md): what
   plugins and contributors must follow, and how to report a vulnerability.
 

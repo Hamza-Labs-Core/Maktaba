@@ -21,8 +21,16 @@
 #             ready, the cell's assertions through the admin API. Its logs (docker logs,
 #             the server's, each worker's and plugind's, the launcher's, the setup log, the
 #             API's view) are its artifact, kept pass or fail
-#   nas-shapes  the verdict: every cell passed; the summary lists each cell's result and
-#             links its artifact
+#   truenas-lint    story 59.10: truenas/apps' own tooling, at the commit
+#             tests/nas/truenas/catalog.env pins, on the TrueNAS app (deploy/nas/truenas): its
+#             metadata check, port check and render of each test values file, the shape the
+#             story asks of each render, and the Custom App YAML (tests/nas/truenas_app.py lint)
+#   truenas-deploy  the same app started with this commit's image: the ixVolume's
+#             permissions step, setup from the app's Shell, ready as 568 (T06), then the
+#             catalog's own deploy of each test values file (tests/nas/truenas_app.py deploy)
+#             Both run only when the app, its harness or its healthcheck change (and on a push)
+#   nas-shapes  the verdict: every cell passed (and the TrueNAS jobs, when they ran); the
+#             summary lists each cell's result and links its artifact
 #
 # It runs on a pull request touching those paths, on main and release/** for the same paths
 # (every main commit is a release candidate: the release session tags one only once CI and
@@ -42,6 +50,12 @@ on:
       - 'cloud/installers/docker/**'
       - 'deploy/nas/**'
       - 'deploy/compose/docker-compose.yml'
+      - 'deploy/nas/truenas/**'
+      - 'tests/nas/truenas_app.py'
+      - 'tests/nas/truenas/**'
+      - 'tests/nas/cell.py'
+      - 'tools/release/truenas_app.py'
+      - 'cmd/maktaba-server/cmd_healthcheck.go'
       - 'tools/release/linux-app/**'
       - 'deploy/packaging/node/build-release.sh'
       - 'cmd/maktaba-server/**'
@@ -66,6 +80,12 @@ on:
       - 'cloud/installers/docker/**'
       - 'deploy/nas/**'
       - 'deploy/compose/docker-compose.yml'
+      - 'deploy/nas/truenas/**'
+      - 'tests/nas/truenas_app.py'
+      - 'tests/nas/truenas/**'
+      - 'tests/nas/cell.py'
+      - 'tools/release/truenas_app.py'
+      - 'cmd/maktaba-server/cmd_healthcheck.go'
       - 'tools/release/linux-app/**'
       - 'deploy/packaging/node/build-release.sh'
       - 'cmd/maktaba-server/**'
@@ -103,6 +123,7 @@ jobs:
     outputs:
       cells: ${{ steps.plan.outputs.cells }}
       run: ${{ steps.plan.outputs.run }}
+      truenas: ${{ steps.plan.outputs.truenas }}
     steps:
       - uses: actions/checkout@v6.0.2
 
@@ -132,6 +153,14 @@ jobs:
               - 'pipeline/pyproject.toml'
               - 'pipeline/uv.lock'
               - 'plugind/**'
+            truenas:
+              - '.github/workflows/nas.yml'
+              - 'deploy/nas/truenas/**'
+              - 'tests/nas/truenas_app.py'
+              - 'tests/nas/truenas/**'
+              - 'tests/nas/cell.py'
+              - 'tools/release/truenas_app.py'
+              - 'cmd/maktaba-server/cmd_healthcheck.go'
             arm64:
               - '.github/workflows/nas.yml'
               - 'tests/nas/**'
@@ -167,22 +196,27 @@ jobs:
           EVENT: ${{ github.event_name }}
           CELLS: ${{ steps.changes.outputs.cells }}
           ARM64: ${{ steps.changes.outputs.arm64 }}
+          TRUENAS: ${{ steps.changes.outputs.truenas }}
           ONLY: ${{ github.event.inputs.only }}
         run: |
           set -euo pipefail
-          run=true arm=true
+          run=true arm=true truenas=true
           if [ "$EVENT" = pull_request ]; then
             [ "$CELLS" = true ] || run=false
             [ "$ARM64" = true ] || arm=false
+            [ "$TRUENAS" = true ] || truenas=false
           fi
+          # the TrueNAS app's deploy needs the amd64 image: it runs only with the cells (its
+          # lint runs alone)
           args=(--only "${ONLY:-}")
           [ "$arm" = true ] || args+=(--no-arm64)
           cells="$(python3 tests/nas/plan.py "${args[@]}")"
           echo "run=$run" >>"$GITHUB_OUTPUT"
+          echo "truenas=$truenas" >>"$GITHUB_OUTPUT"
           echo "cells=$cells" >>"$GITHUB_OUTPUT"
           {
             echo "### NAS shapes: the plan"
-            echo "cells run: $run; arm64: $arm"
+            echo "cells run: $run; arm64: $arm; TrueNAS app: $truenas"
             echo '```json'
             echo "$cells" | python3 -m json.tool
             echo '```'
@@ -468,9 +502,114 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
+  # Story 59.10: truenas/apps' own tooling on the TrueNAS app (render, lint, metadata, ports)
+  truenas-lint:
+    name: truenas-app lint
+    needs: plan
+    if: needs.plan.outputs.truenas == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: truenas/apps at the pinned commit
+        run: tests/nas/truenas/clone-catalog.sh "$RUNNER_TEMP/catalog"
+
+      - name: The catalog's tooling on the app
+        run: |
+          set -euo pipefail
+          tools/ci/apt-install.sh python3-yaml
+          python3 tests/nas/truenas_app.py lint --catalog "$RUNNER_TEMP/catalog" --out "$RUNNER_TEMP/truenas-lint"
+
+      - name: The summary
+        if: always()
+        run: cat "$RUNNER_TEMP/truenas-lint/summary.md" >>"$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "no summary" >>"$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: nas-truenas-lint
+          path: ${{ runner.temp }}/truenas-lint
+          retention-days: 14
+          if-no-files-found: warn
+
+  # Story 59.10: the app started with this commit's image (T06), then the catalog's own deploy
+  truenas-deploy:
+    name: truenas-app deploy
+    needs: [plan, image]
+    if: needs.plan.outputs.truenas == 'true' && needs.plan.outputs.run == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Download nas-image-amd64
+        id: artifact-nas-image
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: nas-image-amd64
+          path: ${{ runner.temp }}
+      - name: Wait 15s to retry the download of nas-image-amd64
+        if: steps.artifact-nas-image.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download nas-image-amd64 (attempt 2)
+        id: artifact-nas-image-2
+        if: steps.artifact-nas-image.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: nas-image-amd64
+          path: ${{ runner.temp }}
+      - name: Wait 45s to retry the download of nas-image-amd64
+        if: steps.artifact-nas-image-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download nas-image-amd64 (attempt 3)
+        id: artifact-nas-image-3
+        if: steps.artifact-nas-image-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: nas-image-amd64
+          path: ${{ runner.temp }}
+      - name: Check nas-image-amd64 downloaded
+        if: steps.artifact-nas-image-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: nas-image-amd64
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
+
+      - name: Load the image
+        run: zstd -d -q -c "$RUNNER_TEMP/maktaba-server-amd64.tar.zst" | docker load
+
+      - name: truenas/apps at the pinned commit
+        run: tests/nas/truenas/clone-catalog.sh "$RUNNER_TEMP/catalog"
+
+      - name: The app started, then the catalog's deploy
+        run: |
+          set -euo pipefail
+          tools/ci/apt-install.sh python3-yaml
+          python3 tests/nas/truenas_app.py deploy --catalog "$RUNNER_TEMP/catalog" --image maktaba-server:nas --out "$RUNNER_TEMP/truenas-deploy"
+
+      - name: The summary
+        if: always()
+        run: cat "$RUNNER_TEMP/truenas-deploy/summary.md" >>"$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "no summary" >>"$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: nas-truenas-deploy
+          path: ${{ runner.temp }}/truenas-deploy
+          retention-days: 14
+          if-no-files-found: warn
+
   nas-shapes:
     name: nas-shapes
-    needs: [plan, image, cell]
+    needs: [plan, image, cell, truenas-lint, truenas-deploy]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -489,6 +628,9 @@ jobs:
           PLAN: ${{ needs.plan.result }}
           IMAGE: ${{ needs.image.result }}
           CELL: ${{ needs.cell.result }}
+          TRUENAS: ${{ needs.plan.outputs.truenas }}
+          TRUENAS_LINT: ${{ needs.truenas-lint.result }}
+          TRUENAS_DEPLOY: ${{ needs.truenas-deploy.result }}
         run: |
           set -euo pipefail
           {
@@ -507,6 +649,13 @@ jobs:
             echo "(the table of cells could not be built: see the run's jobs and artifacts)" >>"$GITHUB_STEP_SUMMARY"
           fi
           [ "$PLAN" = success ] || { echo "the plan failed"; exit 1; }
+          echo "TrueNAS app: lint $TRUENAS_LINT, deploy $TRUENAS_DEPLOY" >>"$GITHUB_STEP_SUMMARY"
+          if [ "$TRUENAS" = true ]; then
+            [ "$TRUENAS_LINT" = success ] || { echo "the TrueNAS app's lint: $TRUENAS_LINT"; exit 1; }
+            if [ "$RUN" = true ]; then
+              [ "$TRUENAS_DEPLOY" = success ] || { echo "the TrueNAS app's deploy: $TRUENAS_DEPLOY"; exit 1; }
+            fi
+          fi
           if [ "$RUN" != true ]; then echo "no cell to run for this change"; exit 0; fi
           [ "$IMAGE" = success ] || { echo "the image was not built"; exit 1; }
           [ "$CELL" = success ] || [ "$CELL" = skipped ] || { echo "a cell failed: see the summary"; exit 1; }
