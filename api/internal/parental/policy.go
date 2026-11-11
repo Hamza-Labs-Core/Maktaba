@@ -241,6 +241,10 @@ type Store struct {
 	DB *sql.DB
 	// Now is the clock (tests set it); nil is time.Now.
 	Now func() time.Time
+	// OnSignalPending, when set, is told after the commit that userID's sign-in
+	// (family) has a looser device signal waiting (story 57.04; the guardian's
+	// notice of it is story 57.08's).
+	OnSignalPending func(ctx context.Context, userID, family string)
 }
 
 // NewStore returns a Store over db.

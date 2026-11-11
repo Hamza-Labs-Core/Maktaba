@@ -23,6 +23,9 @@ type Cache struct {
 	on      bool
 	gen     uint64
 	entries map[string]*Effective
+	// signals are the sign-ins' device signals (signal.go), dropped with the
+	// account's entry.
+	signals map[signalKey]*SignInSignal
 }
 
 // maxCached bounds the map: past it the cache starts over (a home has few users;
@@ -65,13 +68,29 @@ func (c *Cache) Effective(ctx context.Context, userID string) (*Effective, error
 	return e, nil
 }
 
-// For returns the effective policy of the request's principal. No principal, or
-// one with no user id (the admin token), is unrestricted.
+// For returns the effective policy of the request's principal: the account's
+// policy, held as well to the device limit of the sign-in the request came through
+// (story 57.04), whichever is stricter. No principal, or one with no user id (the
+// admin token), is unrestricted.
 func (c *Cache) For(ctx context.Context, p *principal.Principal) (*Effective, error) {
-	if p == nil || p.UserID == "" || !isUUID(p.UserID) {
+	if p == nil {
 		return &Effective{}, nil
 	}
-	return c.Effective(ctx, p.UserID)
+	e := &Effective{}
+	if isUUID(p.UserID) {
+		var err error
+		if e, err = c.Effective(ctx, p.UserID); err != nil {
+			return nil, err
+		}
+	}
+	sig, err := c.signalFor(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	if sig == nil {
+		return e, nil
+	}
+	return e.WithSignal(*sig), nil
 }
 
 // Invalidate drops userID's entry ("": every entry).
@@ -79,6 +98,7 @@ func (c *Cache) Invalidate(userID string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.gen++
+	c.dropSignals(userID)
 	if userID == "" {
 		c.entries = map[string]*Effective{}
 		return
@@ -92,6 +112,7 @@ func (c *Cache) resume() {
 	defer c.mu.Unlock()
 	c.gen++
 	c.entries = map[string]*Effective{}
+	c.signals = nil
 	c.on = true
 }
 
@@ -102,6 +123,7 @@ func (c *Cache) suspend() {
 	defer c.mu.Unlock()
 	c.gen++
 	c.entries = map[string]*Effective{}
+	c.signals = nil
 	c.on = false
 }
 
