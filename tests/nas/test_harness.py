@@ -127,6 +127,35 @@ class Pending(unittest.TestCase):
             self.assertIs(c.results[-1]["ok"], False)
 
 
+class RatePacing(unittest.TestCase):
+    """The harness waits out the server's per-user rate limit instead of failing on it."""
+
+    def api(self, answers: list[tuple[int, object]], retry_after: float = 2.0) -> tuple[cell.API, list[float]]:
+        api = cell.API("http://x")
+        slept: list[float] = []
+
+        def fake_call(*_a: object) -> tuple[int, object]:
+            api.retry_after = retry_after
+            return answers.pop(0)
+
+        api._call = fake_call  # type: ignore[method-assign]
+        orig = cell.time.sleep
+        cell.time.sleep = slept.append  # type: ignore[assignment]
+        self.addCleanup(setattr, cell.time, "sleep", orig)
+        return api, slept
+
+    def test_a_429_is_waited_out_as_the_server_says(self) -> None:
+        api, slept = self.api([(429, {}), (429, {}), (200, {"ok": 1})])
+        self.assertEqual(api.get("/api/videos"), (200, {"ok": 1}))
+        self.assertEqual(slept, [2.0, 2.0])
+
+    def test_the_wait_is_bounded_and_the_429_comes_back(self) -> None:
+        api, slept = self.api([(429, {})] * 20, retry_after=100)
+        self.assertEqual(api.get("/api/videos")[0], 429)
+        self.assertEqual(sum(slept), cell.API.RATE_WAIT_SEC)
+        self.assertTrue(all(x <= 30 for x in slept))
+
+
 class Networking(unittest.TestCase):
     """Story 59.08: the mDNS cells and the bridge cell's shapes."""
 

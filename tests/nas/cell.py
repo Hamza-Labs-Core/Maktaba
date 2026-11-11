@@ -279,6 +279,7 @@ class API:
         self.base = base
         self.token = ""
         self.credentials: dict[str, str] | None = None  # to sign in again when the token expires
+        self.retry_after = 5.0  # the last 429's Retry-After, in seconds
 
     def login(self) -> tuple[int, Any]:
         assert self.credentials is not None
@@ -290,11 +291,27 @@ class API:
 
     def call(self, method: str, path: str, body: Any = None, raw: bool = False,
              timeout: float = 30, retry: bool = True) -> tuple[int, Any]:
-        s, d = self._call(method, path, body, raw, timeout)
+        s, d = self._paced(method, path, body, raw, timeout)
         if s == 401 and retry and self.token and self.credentials:
             self.login()  # the access token lasts minutes; a cell's waits are longer
-            s, d = self._call(method, path, body, raw, timeout)
+            s, d = self._paced(method, path, body, raw, timeout)
         return s, d
+
+    #: how long the harness waits out the server's per-user rate limit (429) in all
+    RATE_WAIT_SEC = 180.0
+
+    def _paced(self, method: str, path: str, body: Any, raw: bool, timeout: float) -> tuple[int, Any]:
+        """One call, waiting out a 429: the harness's own reads (paging 20,000 videos, a
+        poll loop) can pass the per-user limit a person never reaches; the server says how
+        long to wait (Retry-After), else 5 s, for at most :attr:`RATE_WAIT_SEC` in all."""
+        waited = 0.0
+        while True:
+            s, d = self._call(method, path, body, raw, timeout)
+            if s != 429 or waited >= self.RATE_WAIT_SEC:
+                return s, d
+            pause = min(max(self.retry_after, 1.0), 30.0, self.RATE_WAIT_SEC - waited)
+            time.sleep(pause)
+            waited += pause
 
     def _call(self, method: str, path: str, body: Any, raw: bool, timeout: float) -> tuple[int, Any]:
         url = path if path.startswith("http") else self.base + path
@@ -309,6 +326,11 @@ class API:
                 return resp.status, b if raw else _json(b)
         except urllib.error.HTTPError as e:
             b = e.read()
+            if e.code == 429:
+                try:
+                    self.retry_after = float(e.headers.get("Retry-After") or 5)
+                except ValueError:  # an HTTP date: the default wait
+                    self.retry_after = 5.0
             return e.code, b if raw else _json(b)
 
     def get(self, path: str, **kw: Any) -> tuple[int, Any]:
