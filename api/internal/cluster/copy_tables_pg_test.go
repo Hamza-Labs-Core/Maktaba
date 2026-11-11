@@ -75,6 +75,10 @@ var copyReviewed = []string{
 	// instead of a plugin runner (machine ids, stage names, counts and times, no secret);
 	// a promoted copy keeps the reading
 	"stage_fallbacks",
+	// slot 0221 (Epic 57): who is restricted, their guardians, their allow and block
+	// rules and each session's age signal (ids, tiers and times, no secret); a
+	// promoted copy keeps every child's limit
+	"parental_guardians", "parental_policies", "parental_rules", "session_age_signals",
 }
 
 // Every table of a migrated database is either reviewed as copied or left out.
