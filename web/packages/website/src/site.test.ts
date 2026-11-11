@@ -50,8 +50,9 @@ function png(buf: Buffer) {
 }
 
 const attr = (html: string, re: RegExp) => html.match(re)?.[1];
+const reEscape = (s: string) => s.replace(/[\\^$.*+?()[\]{}|/-]/g, "\\$&");
 const meta = (html: string, key: string, name: string) =>
-  attr(html, new RegExp(`<meta ${key}="${name.replace(/[:.]/g, "\\$&")}" content="([^"]*)"`));
+  attr(html, new RegExp(`<meta ${key}="${reEscape(name)}" content="([^"]*)"`));
 
 describe("T10: every page's head", () => {
   it("has pages", () => expect(pages.length).toBeGreaterThan(10));
