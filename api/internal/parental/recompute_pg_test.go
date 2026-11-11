@@ -443,3 +443,102 @@ func TestEnqueueFunctionIsTheOwnersAlone(t *testing.T) {
 	h.drain()
 	h.want(v, 18, "plex")
 }
+
+// A source link that is removed or pointed at another video always queues the video
+// it left, whatever that video's stored source says: a tier nothing gives any more
+// never stays behind.
+func TestRemovedSourceLinksQueueTheOldVideo(t *testing.T) {
+	h := newPGHome(t)
+	lib := h.library("links")
+	a, b := h.video(lib), h.video(lib)
+
+	// a YouTube match re-pointed from one video to the other, then dropped
+	h.exec(`INSERT INTO youtube_videos (youtube_id, title, age_limit) VALUES ('ytA', 't', 18)`)
+	h.drain()
+	h.exec(`INSERT INTO media_metadata_enrichment (video_id, provider, external_id, confidence) VALUES ($1, 'youtube', 'ytA', 1)`, a)
+	h.drain()
+	h.want(a, 18, "youtube")
+	h.exec(`UPDATE media_metadata_enrichment SET video_id = $2 WHERE video_id = $1`, a, b)
+	if h.jobs() != 2 {
+		t.Fatalf("a re-pointed YouTube match queued %d jobs, want 2 (the old video and the new)", h.jobs())
+	}
+	h.drain()
+	h.want(a, -1, "")
+	h.want(b, 18, "youtube")
+	// the stored source says something else (as it does while a recompute is still on
+	// its way): the dropped match queues the video all the same
+	h.exec(`UPDATE videos SET age_tier_source = 'plex' WHERE id = $1`, b)
+	h.exec(`DELETE FROM media_metadata_enrichment WHERE video_id = $1`, b)
+	if h.jobs() != 1 {
+		t.Fatalf("a dropped YouTube match queued %d jobs, want 1", h.jobs())
+	}
+	h.drain()
+	h.want(b, -1, "")
+	// the match pointed at another YouTube video, one with no age limit
+	h.exec(`INSERT INTO youtube_videos (youtube_id, title) VALUES ('ytB', 't')`)
+	h.exec(`INSERT INTO media_metadata_enrichment (video_id, provider, external_id, confidence) VALUES ($1, 'youtube', 'youtube:ytA', 1)`, a)
+	h.drain()
+	h.want(a, 18, "youtube")
+	h.exec(`UPDATE media_metadata_enrichment SET external_id = 'youtube:ytB' WHERE video_id = $1`, a)
+	if h.jobs() != 1 {
+		t.Fatalf("a match changed to another YouTube video queued %d jobs, want 1", h.jobs())
+	}
+	h.drain()
+	h.want(a, -1, "")
+	// the YouTube video's own row goes
+	h.exec(`UPDATE media_metadata_enrichment SET external_id = 'ytA' WHERE video_id = $1`, a)
+	h.drain()
+	h.want(a, 18, "youtube")
+	h.exec(`DELETE FROM youtube_videos WHERE youtube_id = 'ytA'`)
+	if h.jobs() != 1 {
+		t.Fatalf("a removed YouTube video queued %d jobs, want 1", h.jobs())
+	}
+	h.drain()
+	h.want(a, -1, "")
+
+	// a collection's row pointed at another video, and a collection deleted whole
+	col := uuid.NewString()
+	h.exec(`INSERT INTO collections (id, library_id, name, age_tier) VALUES ($1, $2, 'picks', 16)`, col, lib)
+	h.exec(`INSERT INTO collection_items (collection_id, video_id, position) VALUES ($1, $2, 0)`, col, a)
+	h.drain()
+	h.want(a, 16, "admin_container")
+	h.exec(`UPDATE videos SET age_tier_source = 'library_default' WHERE id = $1`, a)
+	h.exec(`UPDATE collection_items SET video_id = $2 WHERE video_id = $1`, a, b)
+	if h.jobs() != 2 {
+		t.Fatalf("a re-pointed collection row queued %d jobs, want 2", h.jobs())
+	}
+	h.drain()
+	h.want(a, -1, "")
+	h.want(b, 16, "admin_container")
+	h.exec(`DELETE FROM collections WHERE id = $1`, col)
+	if h.jobs() != 1 {
+		t.Fatalf("a deleted collection queued %d jobs, want 1", h.jobs())
+	}
+	h.drain()
+	h.want(b, -1, "")
+
+	// a Plex item and a guide programme pointed at another video
+	h.exec(`INSERT INTO plex_items (server, rating_key, section_key, section_title, video_id, detail)
+		VALUES ('s', '9', '1', 'Films', $1, '{"contentRating":"R"}')`, a)
+	ch := uuid.NewString()
+	h.exec(`INSERT INTO channels (id, number, name, slug, mode) VALUES ($1, 902, 'c', 'c-902', 'shuffle')`, ch)
+	h.exec(`INSERT INTO channel_programs (channel_id, seq, start_at, end_at, source_duration, video_id, title_snapshot)
+		VALUES ($1, 1, now(), now() + interval '1 hour', 3600, $2, '{"rating":"TV-14"}')`, ch, a)
+	h.drain()
+	h.want(a, 18, "plex")
+	h.exec(`UPDATE plex_items SET video_id = $2 WHERE video_id = $1`, a, b)
+	if h.jobs() != 2 {
+		t.Fatalf("a re-pointed Plex item queued %d jobs, want 2", h.jobs())
+	}
+	h.drain()
+	h.want(a, 16, "guide")
+	h.want(b, 18, "plex")
+	h.exec(`UPDATE channel_programs SET video_id = $2 WHERE video_id = $1`, a, b)
+	if h.jobs() != 2 {
+		t.Fatalf("a re-pointed programme queued %d jobs, want 2", h.jobs())
+	}
+	h.exec(`DELETE FROM plex_items WHERE video_id = $1`, b)
+	h.drain()
+	h.want(a, -1, "")
+	h.want(b, 16, "guide")
+}

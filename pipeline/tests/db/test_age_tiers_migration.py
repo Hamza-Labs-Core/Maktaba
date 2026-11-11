@@ -29,6 +29,7 @@ TRIGGERS = {
     "media_metadata_enrichment_parental",
     "youtube_videos_parental_ins",
     "youtube_videos_parental_upd",
+    "youtube_videos_parental_del",
     "plex_items_parental",
     "channel_programs_parental",
 }

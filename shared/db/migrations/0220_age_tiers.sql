@@ -216,19 +216,21 @@ REVOKE EXECUTE ON FUNCTION parental_recompute_enqueue(text, text) FROM PUBLIC;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- A video joined or left a collection, a series or a YouTube source. Leaving matters only
--- to a video whose tier came from a container; joining only when the container has a tier.
+-- A video joined or left a collection, a series or a YouTube source. A video that left,
+-- or whose row now names another video or container, is always rated again: the stored
+-- source is not asked, since a recompute still on its way may be about to write it, and a
+-- tier nothing gives any more must never stay. Joining matters only when the container
+-- has a tier.
 CREATE OR REPLACE FUNCTION parental_member_changed() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $f$
 DECLARE
     tiered boolean := false;
 BEGIN
     IF TG_OP <> 'INSERT' AND OLD.video_id IS NOT NULL THEN
-        IF EXISTS (SELECT 1 FROM videos WHERE id = OLD.video_id AND age_tier_source = 'admin_container') THEN
-            PERFORM parental_recompute_enqueue('video', OLD.video_id::text);
-        END IF;
+        PERFORM parental_recompute_enqueue('video', OLD.video_id::text);
     END IF;
-    IF TG_OP <> 'DELETE' AND NEW.video_id IS NOT NULL THEN
+    IF TG_OP <> 'DELETE' AND NEW.video_id IS NOT NULL
+       AND (TG_OP = 'INSERT' OR NEW.video_id IS DISTINCT FROM OLD.video_id) THEN
         IF TG_TABLE_NAME = 'collection_items' THEN
             SELECT age_tier IS NOT NULL INTO tiered FROM collections WHERE id = NEW.collection_id;
         ELSIF TG_TABLE_NAME = 'series_episodes' THEN
@@ -298,17 +300,18 @@ CREATE OR REPLACE TRIGGER videos_parental_upd
 
 -- +goose StatementBegin
 -- A YouTube match made, changed or dropped (external_id is the bare id or "youtube:<id>",
--- as slot 0164). A new match matters when its video has an age limit; a dropped one when
--- the tier came from YouTube.
+-- as slot 0164). The video a match was dropped from, or pointed away from, is always
+-- rated again, whatever its stored source says; a new match matters when its YouTube
+-- video has an age limit.
 CREATE OR REPLACE FUNCTION parental_youtube_match_changed() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $f$
 BEGIN
     IF TG_OP <> 'INSERT' AND OLD.provider = 'youtube' THEN
-        IF EXISTS (SELECT 1 FROM videos WHERE id = OLD.video_id AND age_tier_source = 'youtube') THEN
-            PERFORM parental_recompute_enqueue('video', OLD.video_id::text);
-        END IF;
+        PERFORM parental_recompute_enqueue('video', OLD.video_id::text);
     END IF;
-    IF TG_OP <> 'DELETE' AND NEW.provider = 'youtube' THEN
+    IF TG_OP <> 'DELETE' AND NEW.provider = 'youtube'
+       AND (TG_OP = 'INSERT' OR OLD.provider <> 'youtube'
+            OR NEW.video_id IS DISTINCT FROM OLD.video_id) THEN
         IF EXISTS (SELECT 1 FROM youtube_videos y
                     WHERE y.youtube_id = CASE WHEN NEW.external_id LIKE 'youtube:%'
                                               THEN substr(NEW.external_id, 9)
@@ -333,7 +336,11 @@ CREATE OR REPLACE TRIGGER media_metadata_enrichment_parental
 CREATE OR REPLACE FUNCTION parental_youtube_age_limit_changed() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $f$
 BEGIN
-    PERFORM parental_recompute_enqueue('youtube_video', NEW.youtube_id);
+    IF TG_OP = 'DELETE' THEN  -- the videos matched to it lose its age limit
+        PERFORM parental_recompute_enqueue('youtube_video', OLD.youtube_id);
+    ELSE
+        PERFORM parental_recompute_enqueue('youtube_video', NEW.youtube_id);
+    END IF;
     RETURN NULL;
 END
 $f$;
@@ -350,6 +357,13 @@ CREATE OR REPLACE TRIGGER youtube_videos_parental_ins
 CREATE OR REPLACE TRIGGER youtube_videos_parental_upd
     AFTER UPDATE OF age_limit ON youtube_videos
     FOR EACH ROW WHEN (OLD.age_limit IS DISTINCT FROM NEW.age_limit)
+    EXECUTE FUNCTION parental_youtube_age_limit_changed();
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE OR REPLACE TRIGGER youtube_videos_parental_del
+    AFTER DELETE ON youtube_videos
+    FOR EACH ROW WHEN (OLD.age_limit > 0)
     EXECUTE FUNCTION parental_youtube_age_limit_changed();
 -- +goose StatementEnd
 
@@ -462,6 +476,10 @@ DROP FUNCTION IF EXISTS parental_program_changed();
 
 -- +goose StatementBegin
 DROP FUNCTION IF EXISTS parental_plex_item_changed();
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DROP TRIGGER IF EXISTS youtube_videos_parental_del ON youtube_videos;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
