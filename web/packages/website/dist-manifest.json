@@ -1,5 +1,224 @@
 {
-  "files": [],
-  "ids": {},
+  "files": [
+    "/.well-known/security.txt",
+    "/404.html",
+    "/ar/404.html",
+    "/ar/index.html",
+    "/ar/install/after-setup/index.html",
+    "/ar/install/docker/index.html",
+    "/ar/install/nas/index.html",
+    "/ar/install/qnap/index.html",
+    "/ar/install/synology/index.html",
+    "/ar/install/troubleshooting/index.html",
+    "/ar/install/truenas/index.html",
+    "/ar/install/ugreen/index.html",
+    "/ar/install/unraid/index.html",
+    "/assets/site.css",
+    "/index.html",
+    "/install/after-setup/index.html",
+    "/install/assets/compose-CqqdGYBW.js",
+    "/install/assets/install-CkdwqX0w.css",
+    "/install/assets/main-M8RBXfxV.js",
+    "/install/assets/modulepreload-polyfill-B5Qt9EMX.js",
+    "/install/assets/nas-main-BikfbbPI.js",
+    "/install/assets/nasModels-Bnjwn4mL.js",
+    "/install/assets/synology-main-BfoMlySO.js",
+    "/install/docker/index.html",
+    "/install/nas/index.html",
+    "/install/qnap/index.html",
+    "/install/synology/index.html",
+    "/install/troubleshooting/index.html",
+    "/install/truenas/index.html",
+    "/install/ugreen/index.html",
+    "/install/unraid/index.html",
+    "/robots.txt",
+    "/schema/log-line.json"
+  ],
+  "ids": {
+    "/404.html": [
+      "color-scheme",
+      "description",
+      "lang-switch",
+      "main",
+      "maktaba-page",
+      "maktaba-site",
+      "viewport"
+    ],
+    "/ar/404.html": [
+      "color-scheme",
+      "description",
+      "lang-switch",
+      "main",
+      "maktaba-page",
+      "maktaba-site",
+      "viewport"
+    ],
+    "/ar/index.html": [
+      "color-scheme",
+      "description",
+      "developers",
+      "download",
+      "help",
+      "install",
+      "lang-switch",
+      "main",
+      "maktaba-site",
+      "viewport"
+    ],
+    "/ar/install/after-setup/index.html": [
+      "color-scheme",
+      "description",
+      "gpu-node",
+      "libraries",
+      "permissions",
+      "proxy",
+      "quiet-hours",
+      "speech",
+      "updates",
+      "video",
+      "viewport"
+    ],
+    "/ar/install/docker/index.html": [
+      "app",
+      "color-scheme",
+      "description",
+      "viewport"
+    ],
+    "/ar/install/nas/index.html": [
+      "choose",
+      "color-scheme",
+      "description",
+      "fits",
+      "models",
+      "models-note",
+      "next",
+      "prepare",
+      "viewport"
+    ],
+    "/ar/install/qnap/index.html": [
+      "color-scheme",
+      "description",
+      "viewport"
+    ],
+    "/ar/install/synology/index.html": [
+      "color-scheme",
+      "description",
+      "guide",
+      "viewport"
+    ],
+    "/ar/install/troubleshooting/index.html": [
+      "color-scheme",
+      "data-folder",
+      "description",
+      "empty-library",
+      "no-access",
+      "not-enough-memory",
+      "plugins-held",
+      "port-taken",
+      "render-device",
+      "root",
+      "setup-download",
+      "viewport",
+      "write-denied"
+    ],
+    "/ar/install/truenas/index.html": [
+      "color-scheme",
+      "description",
+      "viewport"
+    ],
+    "/ar/install/ugreen/index.html": [
+      "color-scheme",
+      "description",
+      "viewport"
+    ],
+    "/ar/install/unraid/index.html": [
+      "color-scheme",
+      "description",
+      "viewport"
+    ],
+    "/index.html": [
+      "color-scheme",
+      "description",
+      "developers",
+      "download",
+      "help",
+      "install",
+      "lang-switch",
+      "main",
+      "maktaba-site",
+      "viewport"
+    ],
+    "/install/after-setup/index.html": [
+      "color-scheme",
+      "description",
+      "gpu-node",
+      "libraries",
+      "permissions",
+      "proxy",
+      "quiet-hours",
+      "speech",
+      "updates",
+      "video",
+      "viewport"
+    ],
+    "/install/docker/index.html": [
+      "app",
+      "color-scheme",
+      "description",
+      "viewport"
+    ],
+    "/install/nas/index.html": [
+      "choose",
+      "color-scheme",
+      "description",
+      "fits",
+      "models",
+      "models-note",
+      "next",
+      "prepare",
+      "viewport"
+    ],
+    "/install/qnap/index.html": [
+      "color-scheme",
+      "description",
+      "viewport"
+    ],
+    "/install/synology/index.html": [
+      "color-scheme",
+      "description",
+      "guide",
+      "viewport"
+    ],
+    "/install/troubleshooting/index.html": [
+      "color-scheme",
+      "data-folder",
+      "description",
+      "empty-library",
+      "no-access",
+      "not-enough-memory",
+      "plugins-held",
+      "port-taken",
+      "render-device",
+      "root",
+      "setup-download",
+      "viewport",
+      "write-denied"
+    ],
+    "/install/truenas/index.html": [
+      "color-scheme",
+      "description",
+      "viewport"
+    ],
+    "/install/ugreen/index.html": [
+      "color-scheme",
+      "description",
+      "viewport"
+    ],
+    "/install/unraid/index.html": [
+      "color-scheme",
+      "description",
+      "viewport"
+    ]
+  },
   "redirects": {}
 }
