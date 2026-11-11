@@ -346,7 +346,9 @@ func (r *Recomputer) CountVideos(ctx context.Context, kind Kind, subject string)
 
 // loadVideos reads, for each video, what its tier is resolved from. The YouTube
 // match is the best one, picked as slot 0164 picks it; the guide's ratings are read
-// through the partial index of slot 0220, whose condition is repeated here.
+// through the partial index of slot 0220, whose condition is repeated here. The
+// detected tier ($2 is the confidence line) is left out under the line and once an
+// admin has reviewed it.
 const loadVideos = `
 SELECT v.id, v.age_tier, COALESCE(v.age_tier_source, ''), v.age_tier_admin,
        COALESCE(v.metadata->>'content_rating', ''), l.age_tier,
@@ -369,7 +371,10 @@ SELECT v.id, v.age_tier, COALESCE(v.age_tier_source, ''), v.age_tier_admin,
                                  FROM media_metadata_enrichment m
                                 WHERE m.video_id = v.id AND m.provider = 'youtube'
                                 ORDER BY m.confidence DESC, m.created_at DESC, m.id
-                                LIMIT 1))
+                                LIMIT 1)),
+       (SELECT cs.tier FROM video_content_signals cs
+         WHERE cs.video_id = v.id AND cs.tier IS NOT NULL AND cs.reviewed_at IS NULL
+           AND cs.confidence >= $2::real)
   FROM videos v
   LEFT JOIN libraries l ON l.id = v.library_id
  WHERE v.id = ANY($1::uuid[])`
@@ -380,7 +385,13 @@ func (r *Recomputer) recompute(ctx context.Context, tx *sql.Tx, ids []string) (i
 	if len(ids) == 0 {
 		return 0, nil
 	}
-	rows, err := tx.QueryContext(ctx, loadVideos, pq.Array(ids))
+	// an unreadable line fails the recompute (the job stays and is worked again):
+	// a detected tier is never counted, or dropped, on a guess
+	line, err := DetectLine(ctx, tx)
+	if err != nil {
+		return 0, err
+	}
+	rows, err := tx.QueryContext(ctx, loadVideos, pq.Array(ids), line)
 	if err != nil {
 		return 0, fmt.Errorf("parental: load videos to rate: %w", err)
 	}
@@ -401,9 +412,10 @@ func (r *Recomputer) recompute(ctx context.Context, tx *sql.Tx, ids []string) (i
 			plex       pq.StringArray
 			guide      pq.StringArray
 			ageLimit   sql.NullInt64
+			detected   sql.NullInt64
 		)
 		if err := rows.Scan(&id, &curTier, &curSource, &admin, &plugin, &library,
-			&containers, &plex, &guide, &ageLimit); err != nil {
+			&containers, &plex, &guide, &ageLimit, &detected); err != nil {
 			_ = rows.Close()
 			return 0, fmt.Errorf("parental: read a video to rate: %w", err)
 		}
@@ -413,6 +425,7 @@ func (r *Recomputer) recompute(ctx context.Context, tx *sql.Tx, ids []string) (i
 			GuideRatings:    guide,
 			YouTubeAgeLimit: nullInt(ageLimit),
 			PluginRating:    plugin,
+			DetectedTier:    nullInt(detected),
 			LibraryDefault:  nullInt(library),
 		}
 		for _, c := range containers {
