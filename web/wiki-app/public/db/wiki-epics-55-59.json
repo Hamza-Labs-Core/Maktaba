@@ -1025,14 +1025,35 @@
       ],
       "related": [
         "epic-57-parental-controls",
-        "entity-audit_log"
+        "entity-audit_log",
+        "ep-get-parental-children",
+        "ep-get-me-parental",
+        "ep-get-users-id-parental",
+        "ep-put-users-id-parental",
+        "ep-delete-users-id-parental",
+        "ep-post-users-id-parental-guardians",
+        "ep-get-users-id-parental-rules",
+        "ep-post-users-id-parental-rules",
+        "ep-post-pairing-approve",
+        "ep-post-users"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-02-restricted-accounts.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /parental/children",
+        "GET /me/parental",
+        "GET /users/{id}/parental",
+        "PUT /users/{id}/parental",
+        "DELETE /users/{id}/parental",
+        "POST /users/{id}/parental/guardians",
+        "GET /users/{id}/parental/rules",
+        "POST /users/{id}/parental/rules",
+        "POST /pairing/approve",
+        "POST /users"
+      ],
       "db_tables": [
         "audit_log"
       ],
@@ -1095,14 +1116,23 @@
         "phase-5"
       ],
       "related": [
-        "epic-57-parental-controls"
+        "epic-57-parental-controls",
+        "ep-get-users-id-parental",
+        "ep-put-users-id-parental",
+        "ep-delete-users-id-parental",
+        "ep-post-users"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-04-device-signal.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /users/{id}/parental",
+        "PUT /users/{id}/parental",
+        "DELETE /users/{id}/parental",
+        "POST /users"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "device-signal"
@@ -1122,7 +1152,8 @@
       ],
       "related": [
         "epic-57-parental-controls",
-        "ep-get-capabilities"
+        "ep-get-capabilities",
+        "ep-get-me-parental"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-05-restricted-player.md",
@@ -1130,7 +1161,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /capabilities"
+        "GET /capabilities",
+        "GET /me/parental"
       ],
       "db_tables": [],
       "metadata": {
@@ -1150,14 +1182,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-57-parental-controls"
+        "epic-57-parental-controls",
+        "ep-get-me-parental"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-06-ask-a-parent.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /me/parental"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "ask-a-parent"
@@ -1181,7 +1216,13 @@
         "ep-post-libraries",
         "ep-get-libraries-id",
         "ep-patch-libraries-id",
-        "ep-delete-libraries-id"
+        "ep-delete-libraries-id",
+        "ep-get-parental-children",
+        "ep-get-me-parental",
+        "ep-get-users-id-parental",
+        "ep-put-users-id-parental",
+        "ep-delete-users-id-parental",
+        "ep-post-users"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-07-family-settings.md",
@@ -1193,7 +1234,13 @@
         "POST /libraries",
         "GET /libraries/{id}",
         "PATCH /libraries/{id}",
-        "DELETE /libraries/{id}"
+        "DELETE /libraries/{id}",
+        "GET /parental/children",
+        "GET /me/parental",
+        "GET /users/{id}/parental",
+        "PUT /users/{id}/parental",
+        "DELETE /users/{id}/parental",
+        "POST /users"
       ],
       "db_tables": [],
       "metadata": {
@@ -1214,7 +1261,11 @@
       ],
       "related": [
         "epic-57-parental-controls",
-        "ep-get-activity"
+        "ep-get-activity",
+        "ep-get-users-id-parental",
+        "ep-put-users-id-parental",
+        "ep-delete-users-id-parental",
+        "ep-post-users"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-08-activity.md",
@@ -1222,7 +1273,11 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /activity"
+        "GET /activity",
+        "GET /users/{id}/parental",
+        "PUT /users/{id}/parental",
+        "DELETE /users/{id}/parental",
+        "POST /users"
       ],
       "db_tables": [],
       "metadata": {
@@ -1381,14 +1436,19 @@
         "phase-5"
       ],
       "related": [
-        "epic-57-parental-controls"
+        "epic-57-parental-controls",
+        "ep-get-me-parental",
+        "ep-post-users"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-14-time-rules.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /me/parental",
+        "POST /users"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "time-rules"
@@ -1407,14 +1467,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-57-parental-controls"
+        "epic-57-parental-controls",
+        "ep-get-me-parental"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-15-time-on-clients.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /me/parental"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "time-on-clients"

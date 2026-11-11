@@ -3574,14 +3574,17 @@
       ],
       "related": [
         "epic-50-cloud-no-downtime",
-        "entity-audit_log"
+        "entity-audit_log",
+        "ep-post-users"
       ],
       "files": {
         "story": "specs/epics/50-cloud-no-downtime/story-50-33-staff-auth.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "POST /users"
+      ],
       "db_tables": [
         "audit_log"
       ],
@@ -5295,7 +5298,8 @@
         "ep-put-components-id",
         "ep-delete-components-id",
         "ep-post-components-id-stop",
-        "ep-post-components-id-restart"
+        "ep-post-components-id-restart",
+        "ep-post-users"
       ],
       "files": {
         "story": "specs/epics/53-logs-errors-reports/story-53-04-recovery-console.md",
@@ -5308,7 +5312,8 @@
         "PUT /components/{id}",
         "DELETE /components/{id}",
         "POST /components/{id}/stop",
-        "POST /components/{id}/restart"
+        "POST /components/{id}/restart",
+        "POST /users"
       ],
       "db_tables": [
         "audit_log"

@@ -1221,14 +1221,17 @@
       ],
       "related": [
         "epic-23-security",
-        "plan-23.02-authorization-acls"
+        "plan-23.02-authorization-acls",
+        "ep-post-users"
       ],
       "files": {
         "story": "specs/epics/23-security/story-23-02-authorization-acls.md",
         "plan": "specs/epics/23-security/plan-23-02-authorization-acls.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "POST /users"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "authorization-acls"
@@ -1374,7 +1377,8 @@
         "ep-post-libraries",
         "ep-get-libraries-id",
         "ep-patch-libraries-id",
-        "ep-delete-libraries-id"
+        "ep-delete-libraries-id",
+        "ep-post-users"
       ],
       "files": {
         "story": "specs/epics/23-security/story-23-06-rate-limiting.md",
@@ -1388,7 +1392,8 @@
         "POST /libraries",
         "GET /libraries/{id}",
         "PATCH /libraries/{id}",
-        "DELETE /libraries/{id}"
+        "DELETE /libraries/{id}",
+        "POST /users"
       ],
       "db_tables": [],
       "metadata": {
@@ -2497,14 +2502,17 @@
       ],
       "related": [
         "epic-25-cloud-relay",
-        "plan-25.20-admin-fleet"
+        "plan-25.20-admin-fleet",
+        "ep-post-users"
       ],
       "files": {
         "story": "specs/epics/25-cloud-relay/story-25-20-admin-fleet.md",
         "plan": "specs/epics/25-cloud-relay/plan-25-20-admin-fleet.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "POST /users"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "admin-fleet"

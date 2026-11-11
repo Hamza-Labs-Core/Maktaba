@@ -24,6 +24,7 @@
         "entity-saved_searches",
         "entity-users",
         "ep-post-sessions",
+        "ep-post-users",
         "story-10.9"
       ],
       "files": {
@@ -32,7 +33,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "POST /sessions"
+        "POST /sessions",
+        "POST /users"
       ],
       "db_tables": [
         "playback_state",
@@ -200,6 +202,7 @@
         "plan-10.05-logout-revocation",
         "ep-post-auth-logout",
         "ep-post-sessions",
+        "ep-post-users",
         "story-10.2",
         "story-10.3"
       ],
@@ -210,7 +213,8 @@
       },
       "api_endpoints": [
         "POST /auth/logout",
-        "POST /sessions"
+        "POST /sessions",
+        "POST /users"
       ],
       "db_tables": [
         "web_sessions",
@@ -435,6 +439,7 @@
       "related": [
         "epic-10-auth-security",
         "plan-10.11-brute-force-protection",
+        "ep-post-users",
         "story-10.12"
       ],
       "files": {
@@ -442,7 +447,9 @@
         "plan": "specs/epics/10-auth-security/plan-10-11-brute-force-protection.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "POST /users"
+      ],
       "db_tables": [
         "users"
       ],
@@ -1325,6 +1332,7 @@
         "ep-get-libraries",
         "ep-post-libraries",
         "ep-get-videos",
+        "ep-post-users",
         "story-10.3"
       ],
       "files": {
@@ -1335,7 +1343,8 @@
       "api_endpoints": [
         "GET /libraries",
         "POST /libraries",
-        "GET /videos"
+        "GET /videos",
+        "POST /users"
       ],
       "db_tables": [
         "audit_log",
@@ -1373,6 +1382,7 @@
         "ep-post-sessions",
         "ep-get-sessions-id",
         "ep-delete-sessions-id",
+        "ep-post-users",
         "story-10.5"
       ],
       "files": {
@@ -1384,7 +1394,8 @@
         "POST /auth/logout",
         "POST /sessions",
         "GET /sessions/{id}",
-        "DELETE /sessions/{id}"
+        "DELETE /sessions/{id}",
+        "POST /users"
       ],
       "db_tables": [
         "web_sessions",
@@ -2718,14 +2729,17 @@
       ],
       "related": [
         "epic-16-subscriptions",
-        "plan-16.01-free-tier"
+        "plan-16.01-free-tier",
+        "ep-post-users"
       ],
       "files": {
         "story": "specs/epics/16-subscriptions/story-16-01-free-tier.md",
         "plan": "specs/epics/16-subscriptions/plan-16-01-free-tier.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "POST /users"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "free-tier"
@@ -2975,14 +2989,17 @@
       "related": [
         "epic-16-subscriptions",
         "plan-16.08-feature-flags-api",
-        "entity-audit_log"
+        "entity-audit_log",
+        "ep-post-users"
       ],
       "files": {
         "story": "specs/epics/16-subscriptions/story-16-08-feature-flags-api.md",
         "plan": "specs/epics/16-subscriptions/plan-16-08-feature-flags-api.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "POST /users"
+      ],
       "db_tables": [
         "audit_log"
       ],
