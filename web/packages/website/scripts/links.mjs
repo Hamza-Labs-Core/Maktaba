@@ -44,7 +44,8 @@ export const EXCLUDED_PATHS = [
   "specs/**",
   "web/wiki-app/public/db/**",
   "docs/wiki/db/**",
-  // this check's own data: links as data, not as links
+  // this check's own files: links as data and patterns, not as links
+  "web/packages/website/scripts/links.mjs",
   "web/packages/website/links-baseline.json",
   "web/packages/website/links-allow.json",
   "web/packages/website/dist-manifest.json",
