@@ -152,6 +152,11 @@ func PerIP(perMin int) func(http.Handler) http.Handler {
 	go runSweep(s)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// the home's own callers have their own budget (InternalCallers)
+			if InternalCaller(r) {
+				next.ServeHTTP(w, r)
+				return
+			}
 			ip := clientIP(r)
 			if ok, retry := s.take("ip:" + ip); !ok {
 				w.Header().Set("Retry-After", strconv.Itoa(retry))
@@ -177,7 +182,7 @@ func PerUser(perMin int) func(http.Handler) http.Handler {
 	go runSweep(s)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isExempt(r.URL.Path) {
+			if isExempt(r.URL.Path) || InternalCaller(r) {
 				next.ServeHTTP(w, r)
 				return
 			}

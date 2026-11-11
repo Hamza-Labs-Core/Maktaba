@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 180,
+    "endpoint": 182,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -9477,6 +9477,48 @@
         "path": "/collections/{id}/duplicate",
         "tag": "Collections",
         "operationId": "duplicateCollection"
+      }
+    },
+    {
+      "id": "ep-get-cluster-storage-home-shares",
+      "type": "endpoint",
+      "title": "GET /cluster/storage/home-shares",
+      "content": "A NAS home's own shares (admin)",
+      "tags": [
+        "api",
+        "System",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/cluster/storage/home-shares",
+        "tag": "System",
+        "operationId": "getHomeShares"
+      }
+    },
+    {
+      "id": "ep-put-cluster-storage-home-shares",
+      "type": "endpoint",
+      "title": "PUT /cluster/storage/home-shares",
+      "content": "Name a NAS home's shares (admin)",
+      "tags": [
+        "api",
+        "System",
+        "put"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/cluster/storage/home-shares",
+        "tag": "System",
+        "operationId": "putHomeShares"
       }
     },
     {

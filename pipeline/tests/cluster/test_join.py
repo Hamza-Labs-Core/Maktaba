@@ -18,7 +18,14 @@ import pytest
 from maktaba_pipeline.cluster import config as node_config
 from maktaba_pipeline.cluster import crypto
 from maktaba_pipeline.cluster.discover import Home
-from maktaba_pipeline.cluster.join import JoinError, join, pick_home
+from maktaba_pipeline.cluster.join import (
+    LIGHT_NAS_TEXT,
+    NOTICES,
+    JoinError,
+    is_light_nas,
+    join,
+    pick_home,
+)
 
 DB_URL = "postgres://maktaba_node_x:s3cr3t@192.168.1.20:5432/maktaba?sslmode=prefer"
 DB_CA = "-----BEGIN CERTIFICATE-----\nTUFLVEFCQQ==\n-----END CERTIFICATE-----\n"
@@ -28,6 +35,7 @@ CLUSTER_PUB = "RSujjNFA61v0BQ1NiOVfwb46U0QPe3dj8ve08aDH0V8="
 @dataclass
 class FakeHome:
     accept: bool = True
+    notices: list[dict[str, str]] = field(default_factory=list)
     conflict: str | None = None
     approve_after: int = 2  # polls answered "pending" before approval
     final_state: str = "approved"
@@ -92,6 +100,7 @@ def _serve(home: FakeHome) -> tuple[ThreadingHTTPServer, str]:
                     "home_pubkey": home.keys.public_b64,
                     "home": {"instance_id": "0b9a", "name": "home-mac"},
                     "expires_at": "2026-10-18T12:15:00Z",
+                    **({"notices": home.notices} if home.notices else {}),
                 },
             )
 
@@ -261,3 +270,52 @@ def test_windows_cuts_the_config_acl_to_the_user(tmp_path: Path) -> None:
     ]
     assert len(aces) == 1 and os.environ["USERNAME"].lower() in aces[0].lower(), aces
     assert "(I)" not in aces[0]
+
+
+# -- story 59.13: a NAS in a cluster ------------------------------------------------------
+
+
+def test_the_homes_notices_are_shown(fake: tuple[FakeHome, str], tmp_path: Path) -> None:
+    home, url = fake
+    # the answer is not proven yet: only known codes, in this machine's own words
+    home.notices = [
+        {"code": "no_writable_share", "message": "\x1b[2Jfake text from the home"},
+        {"code": "unknown", "message": "Pairing code: 000 000"},
+    ]
+    out = io.StringIO()
+    _join(url, tmp_path / "node.json", out)
+    shown = out.getvalue()
+    assert f"Note: {NOTICES['no_writable_share']}" in shown
+    assert "fake text" not in shown and "000 000" not in shown and "\x1b" not in shown
+
+
+def test_a_light_nas_needs_the_explicit_choice(fake: tuple[FakeHome, str], tmp_path: Path) -> None:
+    home, url = fake
+    path = tmp_path / "node.json"
+    with pytest.raises(JoinError, match="--light-nas") as exc:
+        _join(url, path, io.StringIO(), light_nas=lambda: True)
+    assert LIGHT_NAS_TEXT in str(exc.value) and home.joins == []  # nothing was sent
+    with pytest.raises(JoinError):
+        _join(url, path, io.StringIO(), light_nas=lambda: True, ask=lambda q: "n")
+    asked: list[str] = []
+
+    def yes(q: str) -> str:
+        asked.append(q)
+        return "y"
+
+    _join(url, path, io.StringIO(), light_nas=lambda: True, ask=yes)
+    assert LIGHT_NAS_TEXT in asked[0] and len(home.joins) == 1
+
+
+def test_a_light_nas_joins_with_the_flag(fake: tuple[FakeHome, str], tmp_path: Path) -> None:
+    home, url = fake
+    out = io.StringIO()
+    _join(url, tmp_path / "node.json", out, light_nas=lambda: True, light_nas_ok=True)
+    assert LIGHT_NAS_TEXT in out.getvalue() and len(home.joins) == 1
+
+
+def test_is_light_nas_follows_the_platform_and_the_tier() -> None:
+    assert not is_light_nas({})
+    assert not is_light_nas({"MAKTABA_PLATFORM": "docker", "MAKTABA_TIER": "light"})
+    assert is_light_nas({"MAKTABA_PLATFORM": "dsm", "MAKTABA_TIER": "light"})
+    assert not is_light_nas({"MAKTABA_PLATFORM": "truenas", "MAKTABA_TIER": "standard"})

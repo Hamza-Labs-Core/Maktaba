@@ -8,7 +8,7 @@
 #
 # Jobs:
 #   plan      what changed: whether the cells run (the image, the server, streaming's ffmpeg,
-#             the pipeline's runner, scanner and speech code, plugind, the NAS install files,
+#             the pipeline's runner, scanner, share paths, cluster and speech code, plugind, the NAS install files,
 #             the harness) and whether arm64 is required (the image, streaming or the
 #             pipeline's speech); the harness's own tests and the checklists' lint; the NAS
 #             install files checked (tests/nas/install_files.py: the published compose's
@@ -65,6 +65,8 @@ on:
       - 'pipeline/src/maktaba_pipeline/orchestrator/**'
       - 'pipeline/src/maktaba_pipeline/pipeline/**'
       - 'pipeline/src/maktaba_pipeline/scanner/**'
+      - 'pipeline/src/maktaba_pipeline/sharepath/**'
+      - 'pipeline/src/maktaba_pipeline/cluster/**'
       - 'pipeline/src/maktaba_pipeline/stt/**'
       - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'
       - 'pipeline/pyproject.toml'
@@ -95,6 +97,8 @@ on:
       - 'pipeline/src/maktaba_pipeline/orchestrator/**'
       - 'pipeline/src/maktaba_pipeline/pipeline/**'
       - 'pipeline/src/maktaba_pipeline/scanner/**'
+      - 'pipeline/src/maktaba_pipeline/sharepath/**'
+      - 'pipeline/src/maktaba_pipeline/cluster/**'
       - 'pipeline/src/maktaba_pipeline/stt/**'
       - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'
       - 'pipeline/pyproject.toml'
@@ -148,6 +152,8 @@ jobs:
               - 'pipeline/src/maktaba_pipeline/orchestrator/**'
               - 'pipeline/src/maktaba_pipeline/pipeline/**'
               - 'pipeline/src/maktaba_pipeline/scanner/**'
+              - 'pipeline/src/maktaba_pipeline/sharepath/**'
+              - 'pipeline/src/maktaba_pipeline/cluster/**'
               - 'pipeline/src/maktaba_pipeline/stt/**'
               - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'
               - 'pipeline/pyproject.toml'

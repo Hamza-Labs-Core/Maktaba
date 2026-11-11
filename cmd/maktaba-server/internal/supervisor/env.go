@@ -13,6 +13,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dsn"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/packs"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pluginrelay"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
@@ -435,6 +436,17 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		}
 		if os.Getenv("MAKTABA_WORKER_PATH_MAP") == "" {
 			add("MAKTABA_WORKER_PATH_MAP", strings.TrimSpace(cfg.Media.PathMap))
+		}
+		// Epic 59 story 59.13: on a NAS home the pipeline names its own folders' shares by
+		// the platform's layout (MAKTABA_PLATFORM, the install file's or detected) and by
+		// setup's share step ([media] shares)
+		if os.Getenv(hostinfo.EnvPlatform) == "" {
+			if p := speechMachine().Platform; hostinfo.IsNAS(p) {
+				add(hostinfo.EnvPlatform, p)
+			}
+		}
+		if v := cfg.Media.HomeSharesEnv(); v != "" && os.Getenv("MAKTABA_HOME_SHARES") == "" {
+			add("MAKTABA_HOME_SHARES", v)
 		}
 		// Epic 51: the refine stage reads CAMeL Tools' MSA database from the installed
 		// model.refine pack (its camel_tools/ is a CAMELTOOLS_DATA folder); without the

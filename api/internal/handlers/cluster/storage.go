@@ -22,6 +22,8 @@ import (
 //	PUT    /api/cluster/home/path-map             admin: {path_map: {share: local} | null}
 //	GET    /api/cluster/storage/canonicalize      admin: the automatic path conversion
 //	POST   /api/cluster/storage/canonicalize      admin: {action: run | revert | resume}
+//	GET    /api/cluster/storage/home-shares       admin: a NAS home's own shares (homeshares.go)
+//	PUT    /api/cluster/storage/home-shares       admin
 //
 // GET /api/cluster carries the home's per-share storage check and its
 // override as home.storage / home.path_map.
@@ -51,6 +53,8 @@ func (h *Handler) mountStorage(r chi.Router) {
 	r.Put("/api/cluster/home/path-map", h.SetHomePathMap)
 	r.Get("/api/cluster/storage/canonicalize", h.GetCanonicalize)
 	r.Post("/api/cluster/storage/canonicalize", h.PostCanonicalize)
+	r.Get("/api/cluster/storage/home-shares", h.GetHomeShares)
+	r.Put("/api/cluster/storage/home-shares", h.PutHomeShares)
 }
 
 // CanonRequest is the body of POST /api/cluster/storage/canonicalize.
@@ -148,7 +152,8 @@ func (h *Handler) PutServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for path, share := range req.Exports {
-		if !strings.HasPrefix(path, "/") || strings.TrimSpace(share) == "" || strings.Contains(share, "/") {
+		// story 59.13: "" is a NAS home's folder that is not shared (local only)
+		if !strings.HasPrefix(path, "/") || strings.Contains(share, "/") {
 			httperror.Write(w, r, httperror.BadRequest(`exports: {"/export/path": "Share"}`))
 			return
 		}

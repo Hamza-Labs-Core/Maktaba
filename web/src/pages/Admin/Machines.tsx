@@ -47,6 +47,7 @@ import { LlmPanel } from "../../components/cluster/LlmPanel";
 import type { LogTarget } from "../../components/cluster/LogViewer";
 import { LogsPanel } from "../../components/cluster/LogsPanel";
 import { MachineComponents, WorkerChoice } from "./MachineComponents";
+import { NasShares } from "./NasShares";
 import {
   HOME_HOST,
   countsKey,
@@ -526,6 +527,7 @@ const HomeCard = memo(function HomeCard({
             }}
           />
           <StorageServers />
+          <NasShares />
         </>
       )}
     </section>

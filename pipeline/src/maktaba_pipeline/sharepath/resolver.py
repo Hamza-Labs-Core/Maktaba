@@ -9,6 +9,8 @@ entries come from, highest precedence first:
 2. the admin's per-machine override on the Machines page ("share -> local mount");
 3. the shares this machine has mounted (:mod:`.mounts`), matched to a
    ``storage_servers`` record by its address set: ``smb://nas/Originals/ -> O:/``;
+   on a NAS home, below them, its own folders as the shares they are
+   (:mod:`.nashome`): ``smb://diskstation/Movies/ -> /volume1/Movies/``;
 4. on Windows, a UNC fallback per server: ``smb://nas/ -> //192.168.50.94/``
    (Windows opens ``\\\\server\\share\\...`` without a drive letter);
 5. legacy prefixes (paths stored before the migration, the inferred map):
@@ -115,6 +117,8 @@ def share_of(server: StorageServer, mount: Mount) -> tuple[str, str]:
     export = "/" + mount.share.strip("/")
     best: tuple[str, str] | None = None
     for path, share in server.exports:
+        if not share.strip():
+            continue  # a NAS home's folder that is not shared (story 59.13)
         p = "/" + path.strip("/")
         if (export.lower() == p.lower() or export.lower().startswith(p.lower() + "/")) and (
             best is None or len(p) > len(best[0])
@@ -346,9 +350,13 @@ def build_resolver(
     resolve: Resolve | None = None,
     probe: bool = True,
     exists: Callable[[str], bool] | None = None,
+    local: Iterable[ShareMount] = (),
 ) -> Resolver:
-    """Merge the sources (see the module docstring) into one resolver."""
+    """Merge the sources (see the module docstring) into one resolver. ``local``: a
+    NAS home's own folders as the shares they are (:mod:`.nashome`, story 59.13), above
+    the network mounts and below the admin's override."""
     shares = share_mounts(servers, mounts, system=system, resolve=resolve)
+    shares += [s for s in local if not any(m.prefix.lower() == s.prefix.lower() for m in shares)]
     merged: dict[str, str] = {}
 
     def put(src: str, dst: str) -> None:
@@ -373,7 +381,12 @@ def build_resolver(
     seen: set[str] = set()
     for sm in shares:
         # the first mount of a share wins (a drive letter before a ``net use`` line)
-        if sm.protocol != "unc" and sm.prefix.lower() not in seen:
+        if sm.protocol not in ("unc", "local") and sm.prefix.lower() not in seen:
+            seen.add(sm.prefix.lower())
+            put(sm.prefix, sm.local)
+    for sm in shares:
+        # a NAS home's own folder (a network mount of the same share came first)
+        if sm.protocol == "local" and sm.prefix.lower() not in seen:
             seen.add(sm.prefix.lower())
             put(sm.prefix, sm.local)
     for a, b in as_pairs(admin):
