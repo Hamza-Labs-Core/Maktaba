@@ -1,0 +1,462 @@
+{
+ "version": 1,
+ "about": "Test vectors for shared/parental/ratings.json (story 57.01, T01 and T02). input is a rating as a source writes it; content is the tier it gives a video (null: unrated); limit is the tier it gives as a limit (null: not a limit; -1: nothing allowed; 1000: no limit). Go and Swift must both map every vector to these values.",
+ "vectors": [
+  {
+   "input": "us-movie/G",
+   "content": 0,
+   "limit": 0
+  },
+  {
+   "input": "us-movie/PG",
+   "content": 9,
+   "limit": 9
+  },
+  {
+   "input": "us-movie/PG-13",
+   "content": 13,
+   "limit": 13
+  },
+  {
+   "input": "us-movie/R",
+   "content": 18,
+   "limit": 16
+  },
+  {
+   "input": "us-movie/NC-17",
+   "content": 18,
+   "limit": 18
+  },
+  {
+   "input": "us-tv/TV-Y",
+   "content": 0,
+   "limit": 0
+  },
+  {
+   "input": "us-tv/TV-G",
+   "content": 0,
+   "limit": 0
+  },
+  {
+   "input": "us-tv/TV-Y7",
+   "content": 9,
+   "limit": 0
+  },
+  {
+   "input": "us-tv/TV-PG",
+   "content": 9,
+   "limit": 9
+  },
+  {
+   "input": "us-tv/TV-14",
+   "content": 16,
+   "limit": 13
+  },
+  {
+   "input": "us-tv/TV-MA",
+   "content": 18,
+   "limit": 16
+  },
+  {
+   "input": "gb/U",
+   "content": 0,
+   "limit": 0
+  },
+  {
+   "input": "gb/PG",
+   "content": 9,
+   "limit": 9
+  },
+  {
+   "input": "gb/12",
+   "content": 13,
+   "limit": 9
+  },
+  {
+   "input": "gb/12A",
+   "content": 13,
+   "limit": 9
+  },
+  {
+   "input": "gb/15",
+   "content": 16,
+   "limit": 13
+  },
+  {
+   "input": "gb/18",
+   "content": 18,
+   "limit": 18
+  },
+  {
+   "input": "sa/G",
+   "content": 0,
+   "limit": 0
+  },
+  {
+   "input": "sa/PG",
+   "content": 9,
+   "limit": 9
+  },
+  {
+   "input": "sa/PG12",
+   "content": 13,
+   "limit": 9
+  },
+  {
+   "input": "sa/R12",
+   "content": 13,
+   "limit": 9
+  },
+  {
+   "input": "sa/R15",
+   "content": 16,
+   "limit": 13
+  },
+  {
+   "input": "sa/R18",
+   "content": 18,
+   "limit": 18
+  },
+  {
+   "input": "au/G",
+   "content": 0,
+   "limit": 0
+  },
+  {
+   "input": "au/PG",
+   "content": 9,
+   "limit": 9
+  },
+  {
+   "input": "au/M",
+   "content": 16,
+   "limit": 13
+  },
+  {
+   "input": "au/MA15+",
+   "content": 16,
+   "limit": 13
+  },
+  {
+   "input": "au/R18+",
+   "content": 18,
+   "limit": 18
+  },
+  {
+   "input": "de/0",
+   "content": 0,
+   "limit": 0
+  },
+  {
+   "input": "de/6",
+   "content": 9,
+   "limit": 0
+  },
+  {
+   "input": "de/12",
+   "content": 13,
+   "limit": 9
+  },
+  {
+   "input": "de/16",
+   "content": 16,
+   "limit": 16
+  },
+  {
+   "input": "de/18",
+   "content": 18,
+   "limit": 18
+  },
+  {
+   "input": "age/0",
+   "content": 0,
+   "limit": 0
+  },
+  {
+   "input": "age/0+",
+   "content": 0,
+   "limit": 0
+  },
+  {
+   "input": "age/3+",
+   "content": 9,
+   "limit": 0
+  },
+  {
+   "input": "age/7",
+   "content": 9,
+   "limit": 0
+  },
+  {
+   "input": "age/9+",
+   "content": 9,
+   "limit": 9
+  },
+  {
+   "input": "age/10",
+   "content": 13,
+   "limit": 9
+  },
+  {
+   "input": "age/12+",
+   "content": 13,
+   "limit": 9
+  },
+  {
+   "input": "age/13",
+   "content": 13,
+   "limit": 13
+  },
+  {
+   "input": "age/14+",
+   "content": 16,
+   "limit": 13
+  },
+  {
+   "input": "age/16+",
+   "content": 16,
+   "limit": 16
+  },
+  {
+   "input": "age/17",
+   "content": 18,
+   "limit": 16
+  },
+  {
+   "input": "age/18+",
+   "content": 18,
+   "limit": 18
+  },
+  {
+   "input": "age/21",
+   "content": 18,
+   "limit": 18
+  },
+  {
+   "input": "apple-movie/0",
+   "content": null,
+   "limit": -1
+  },
+  {
+   "input": "apple-movie/100",
+   "content": null,
+   "limit": 0
+  },
+  {
+   "input": "apple-movie/200",
+   "content": null,
+   "limit": 9
+  },
+  {
+   "input": "apple-movie/300",
+   "content": null,
+   "limit": 13
+  },
+  {
+   "input": "apple-movie/400",
+   "content": null,
+   "limit": 16
+  },
+  {
+   "input": "apple-movie/500",
+   "content": null,
+   "limit": 18
+  },
+  {
+   "input": "apple-movie/1000",
+   "content": null,
+   "limit": 1000
+  },
+  {
+   "input": "apple-tv/0",
+   "content": null,
+   "limit": -1
+  },
+  {
+   "input": "apple-tv/100",
+   "content": null,
+   "limit": 0
+  },
+  {
+   "input": "apple-tv/200",
+   "content": null,
+   "limit": 0
+  },
+  {
+   "input": "apple-tv/300",
+   "content": null,
+   "limit": 0
+  },
+  {
+   "input": "apple-tv/400",
+   "content": null,
+   "limit": 9
+  },
+  {
+   "input": "apple-tv/500",
+   "content": null,
+   "limit": 13
+  },
+  {
+   "input": "apple-tv/600",
+   "content": null,
+   "limit": 16
+  },
+  {
+   "input": "apple-tv/1000",
+   "content": null,
+   "limit": 1000
+  },
+  {
+   "input": "PG-13",
+   "content": 13,
+   "limit": 13,
+   "note": "bare: us-movie"
+  },
+  {
+   "input": "R",
+   "content": 18,
+   "limit": 16,
+   "note": "bare: us-movie"
+  },
+  {
+   "input": "G",
+   "content": 0,
+   "limit": 0,
+   "note": "bare: us-movie"
+  },
+  {
+   "input": "TV-14",
+   "content": 16,
+   "limit": 13,
+   "note": "bare: us-tv"
+  },
+  {
+   "input": "TV-MA",
+   "content": 18,
+   "limit": 16,
+   "note": "bare: us-tv"
+  },
+  {
+   "input": "gb/15",
+   "content": 16,
+   "limit": 13,
+   "note": "Plex's form"
+  },
+  {
+   "input": "de/12",
+   "content": 13,
+   "limit": 9,
+   "note": "Plex's form"
+  },
+  {
+   "input": "uk/12A",
+   "content": 13,
+   "limit": 9,
+   "note": "uk is gb"
+  },
+  {
+   "input": "us/TV-Y7",
+   "content": 9,
+   "limit": 0,
+   "note": "us tries films, then television"
+  },
+  {
+   "input": "us/NC-17",
+   "content": 18,
+   "limit": 18
+  },
+  {
+   "input": "au/MA15+",
+   "content": 16,
+   "limit": 13
+  },
+  {
+   "input": "sa/R15",
+   "content": 16,
+   "limit": 13
+  },
+  {
+   "input": "  tv-pg ",
+   "content": 9,
+   "limit": 9,
+   "note": "case and outer spaces do not matter"
+  },
+  {
+   "input": "GB/pg",
+   "content": 9,
+   "limit": 9
+  },
+  {
+   "input": "pg-13",
+   "content": 13,
+   "limit": 13
+  },
+  {
+   "input": "Approved",
+   "content": null,
+   "limit": null,
+   "note": "unrated"
+  },
+  {
+   "input": "XYZ",
+   "content": null,
+   "limit": null,
+   "note": "unrated"
+  },
+  {
+   "input": "",
+   "content": null,
+   "limit": null,
+   "note": "unrated"
+  },
+  {
+   "input": "gb/XYZ",
+   "content": null,
+   "limit": null,
+   "note": "unrated"
+  },
+  {
+   "input": "zz/15",
+   "content": null,
+   "limit": null,
+   "note": "unrated"
+  },
+  {
+   "input": "12",
+   "content": null,
+   "limit": null,
+   "note": "unrated"
+  },
+  {
+   "input": "apple-movie/250",
+   "content": null,
+   "limit": null,
+   "note": "unrated"
+  },
+  {
+   "input": "age/abc",
+   "content": null,
+   "limit": null,
+   "note": "unrated"
+  },
+  {
+   "input": "Not Rated",
+   "content": null,
+   "limit": null,
+   "note": "unrated"
+  },
+  {
+   "input": "NR",
+   "content": null,
+   "limit": null,
+   "note": "unrated"
+  },
+  {
+   "input": "de/NR",
+   "content": null,
+   "limit": null,
+   "note": "unrated"
+  }
+ ]
+}

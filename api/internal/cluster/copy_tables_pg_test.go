@@ -75,6 +75,9 @@ var copyReviewed = []string{
 	// instead of a plugin runner (machine ids, stage names, counts and times, no secret);
 	// a promoted copy keeps the reading
 	"stage_fallbacks",
+	// slot 0220 (story 57.01): the queue of the age tiers' recompute (a kind, an id and
+	// a place in the work, no secret); a promoted copy finishes the jobs that waited
+	"parental_recompute_jobs",
 }
 
 // Every table of a migrated database is either reviewed as copied or left out.
