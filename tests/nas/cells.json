@@ -6,7 +6,7 @@
       "name": "uid-1000",
       "about": "the image's default user, every assertion of a plain install",
       "arches": ["amd64", "arm64"],
-      "asserts": ["ready", "only_uid", "scan", {"name": "first_scan", "needs": ["scan-grant-race"]}, {"name": "thumbnail", "needs": ["poster-queue"]}, "transcode", "no_oom", {"name": "logs_clean", "needs": ["plugin-cache-grant"]}]
+      "asserts": ["ready", "only_uid", "scan", {"name": "first_scan", "needs": ["scan-grant-race"]}, {"name": "thumbnail", "needs": ["poster-queue"]}, "transcode", {"name": "plain_home_untouched", "needs": ["59.13"]}, "no_oom", {"name": "logs_clean", "needs": ["plugin-cache-grant"]}]
     },
     {
       "name": "uid-568",
@@ -69,7 +69,7 @@
       "docker": ["--memory=6g"],
       "seccomp": "seccomp-no-landlock-enosys.json",
       "needs": ["59.09"],
-      "asserts": ["ready", "only_uid", "platform_dsm", "scan", "dsm_skipped", "access_ro", "access_none", {"name": "nas_home_shares", "needs": ["59.13"]}, "fix_dsm", "tier_standard", "isolation_container", "no_oom"]
+      "asserts": ["ready", "only_uid", "platform_dsm", "scan", "dsm_skipped", "access_ro", "access_none", {"name": "nas_home_shares", "needs": ["59.13"]}, "fix_dsm", "tier_standard", "isolation_container", {"name": "nas_converted", "needs": ["59.13"]}, {"name": "nas_restart_idempotent", "needs": ["59.13"]}, "no_oom"]
     },
     {
       "name": "synology-compose",

@@ -415,3 +415,20 @@ class TrueNASShape(unittest.TestCase):
         del c["services"]["permissions"]
         c["services"]["maktaba"].pop("depends_on")
         self.assertIn("host_path data", self.check(c, v))
+
+
+class SharePaths(unittest.TestCase):
+    """Story 59.13: a NAS home converts its own folders to smb://<nas>/<share>/...; the
+    assertions read a stored path in either form."""
+
+    def cell(self) -> cell.Cell:
+        return cell.Cell(spec={"name": "s", "media": {"path": "/volume1/Movies"}}, image="img",
+                         fixtures=Path("."), out=Path("."), local_port=None, landed=[])
+
+    def test_local_form(self) -> None:
+        c = self.cell()
+        self.assertEqual(c.local_form("smb://diskstation/Movies/ar/درس 01.mp4"), "/volume1/Movies/ar/درس 01.mp4")
+        self.assertEqual(c.local_form("/volume1/Movies/en/a.mp4"), "/volume1/Movies/en/a.mp4")
+        self.assertEqual(c.share("smb://diskstation/Movies/en"), "Movies")
+        self.assertEqual(c.share("/volume1/Movies/en"), "Movies")
+        self.assertTrue(c.on_dsm_share("smb://diskstation/Movies") and c.on_dsm_share("/volume1/Movies"))

@@ -45,6 +45,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import posixpath
 import re
 import secrets
 import shlex
@@ -853,8 +854,18 @@ class Cell:
                     break
         return out
 
+    def local_form(self, path: str) -> str:
+        """A stored path in the home's own form: smb://<nas>/Movies/en/x.mp4, as a NAS home
+        stores its own folders once converted (59.13), is /volume1/Movies/en/x.mp4 (the
+        share's folder beside the cell's media folder); any other path as it is."""
+        if not path.startswith("smb://"):
+            return path
+        rest = path[len("smb://"):].split("/", 1)
+        return f"{posixpath.dirname(self.media.rstrip('/'))}/{rest[1] if len(rest) > 1 else ''}"
+
     def under(self, root: str) -> list[dict[str, Any]]:
-        return [v for v in self.videos() if (v.get("path") or "").startswith(root.rstrip("/") + "/")]
+        prefix = root.rstrip("/") + "/"
+        return [v for v in self.videos() if self.local_form(v.get("path") or "").startswith(prefix)]
 
     def scan_all(self) -> None:
         assert self.api is not None
@@ -1489,6 +1500,285 @@ class Cell:
         if "no_writable_share" not in (d.get("notices") or []):
             raise AssertionError(f"every share is read-only, yet no no_writable_share notice: {d}")
         return f"smb://{d['server']}/Movies ← /volume1/Movies; notices {d['notices']}"
+
+    # The behaviour change 59.13 brings to an existing NAS home: once the home keeps its own
+    # record, the automatic conversion (story 31.3) rewrites its stored paths from
+    # /volume1/Movies/... to smb://<nas>/Movies/... . These prove the home still works on
+    # what it converted, and that a home with no NAS record is left alone.
+
+    def media_paths(self) -> dict[str, str]:
+        """Every video of the cell's media (not the no-access library): id → stored path."""
+        out: dict[str, str] = {}
+        for v in self.videos():
+            p = v.get("path") or ""
+            if self.local_form(p).startswith(self.media.rstrip("/") + "/"):
+                if v["id"] in out:
+                    raise AssertionError(f"video {v['id']} listed twice")
+                out[v["id"]] = p
+        return out
+
+    def canon(self) -> dict[str, Any]:
+        """GET /api/cluster/storage/canonicalize: the automatic conversion's state."""
+        assert self.api is not None
+        s, d = self.api.get("/api/cluster/storage/canonicalize")
+        if s != 200 or not isinstance(d, dict):
+            raise AssertionError(f"GET /api/cluster/storage/canonicalize: {s} {d}")
+        st = d.get("state")
+        return st if isinstance(st, dict) else {}
+
+    def ask_canon_check(self) -> None:
+        """Check now (the Machines page's button): the home looks at once; the share map's
+        settle (storage.map_settle_minutes) still holds a conversion back."""
+        assert self.api is not None
+        s, d = self.api.call("POST", "/api/cluster/storage/canonicalize", {"action": "run"})
+        if s not in (200, 202, 204):
+            raise AssertionError(f"POST /api/cluster/storage/canonicalize run: {s} {d}")
+
+    def rescan_settled(self) -> str:
+        """Scan every library again and wait until the scan queue is idle with the new
+        scans done."""
+        assert self.api is not None
+        api = self.api
+
+        def scan_counts() -> dict[str, int]:
+            s, d = api.get("/api/queues")
+            if s != 200 or not isinstance(d, dict):
+                raise AssertionError(f"GET /api/queues: {s} {d}")
+            q = next((q for q in d.get("queues") or [] if q.get("stage") == "scan"), None)
+            return dict((q or {}).get("counts") or {})
+
+        before = scan_counts().get("done_24h", 0)
+        self.scan_all()
+        wanted = len([lib for lib in self.libraries() if NOACCESS not in (lib.get("roots") or [])])
+
+        def idle() -> str:
+            c = scan_counts()
+            busy = c.get("pending", 0) + c.get("ready", 0) + c.get("running", 0)
+            if busy == 0 and c.get("done_24h", 0) >= before + wanted:
+                return f"{c.get('done_24h', 0) - before} scan(s) done"
+            if c.get("failed_open", 0):
+                raise AssertionError(f"a scan failed: {c}")
+            return ""
+
+        done = wait("the rescan of the converted libraries", idle, 10 * 60, every=10)
+        time.sleep(20)  # the scan's last inserts commit with its job; a margin for the listing
+        return done
+
+    def process_and_wait(self, video_id: str, stage: str) -> str:
+        """POST /api/videos/{id}/process for one stage, then the job to its end."""
+        assert self.api is not None
+        api = self.api
+        s, d = api.call("POST", f"/api/videos/{video_id}/process", {"stage": stage})
+        if s != 200 or not isinstance(d, dict) or not d.get("job_id"):
+            raise AssertionError(f"POST /api/videos/{video_id}/process {stage}: {s} {d}")
+        job_id = d["job_id"]
+
+        def ended() -> str:
+            s, j = api.get(f"/api/jobs/{job_id}")
+            if s != 200 or not isinstance(j, dict):
+                raise AssertionError(f"GET /api/jobs/{job_id}: {s} {j}")
+            state = j.get("state")
+            if state == "done":
+                return "done"
+            if state in ("failed", "cancelled", "superseded"):
+                raise AssertionError(f"the {stage} job {job_id} ended {state}: {j.get('error')}")
+            return ""
+
+        return wait(f"the {stage} job of a converted video", ended, 10 * 60, every=5)
+
+    def subtitle_served(self, video_id: str, words: str) -> str:
+        """A transcode session of the video lists its Arabic side-car as an HLS subtitle
+        rendition (EXT-X-MEDIA TYPE=SUBTITLES), and the rendition's first file has the
+        side-car's words: the streaming service found it from the stored path (beside the
+        file, or the database's copy a read-only library keeps)."""
+        assert self.api is not None
+        api = self.api
+        s, d = api.call("POST", "/api/stream/sessions",
+                        {"video_id": video_id, "force_transcode": True, "force_software": True})
+        if s not in (200, 201) or not isinstance(d, dict) or not d.get("manifest_url"):
+            raise AssertionError(f"POST /api/stream/sessions: {s} {d}")
+        master = urljoin(api.base, d["manifest_url"])
+        try:
+            def fetch(url: str) -> str:
+                s, b = api.get(url, raw=True, timeout=60)
+                if s != 200:
+                    raise AssertionError(f"GET {url}: {s} {b[:200]!r}")
+                return b.decode("utf-8", "replace")
+
+            def subs_uri() -> str:
+                for line in fetch(master).splitlines():
+                    if line.startswith("#EXT-X-MEDIA:TYPE=SUBTITLES"):
+                        m = re.search(r'URI="([^"]+)"', line)
+                        if m and "/ar/" in m.group(1):
+                            return m.group(1)
+                return ""
+
+            index = urljoin(master, wait("the Arabic subtitle rendition in the master playlist", subs_uri, 180, every=3))
+
+            def first(url: str) -> str:
+                return next((ln.strip() for ln in fetch(url).splitlines() if ln and not ln.startswith("#")), "")
+
+            vtt = urljoin(index, wait("a file in the subtitle playlist", lambda: first(index), 120, every=3))
+            text = fetch(vtt)
+            if words not in text:
+                raise AssertionError(f"the subtitle has no {words!r}: {text[:300]!r}")
+            return f"{len(text)} bytes with {words!r}"
+        finally:
+            api.call("DELETE", f"/api/stream/sessions/{d.get('session_id')}")
+
+    def assert_nas_converted(self) -> str:
+        """After the share map's settle the home converts its own folders' paths
+        (smb://<nas>/Movies/..., same video ids, nothing lost or added), and keeps working
+        on them: a rescan of the converted libraries finds the same files (no duplicate, no
+        removal), a poster is made from a converted path (a thumbnail job, which always runs
+        ffmpeg on the file), a transcode plays, and the read-only library's Arabic side-car
+        still reaches the player."""
+        assert self.api is not None
+        api = self.api
+        before = self.media_paths()
+        server = self.home_server()
+        early = [p for p in before.values() if p.startswith("smb://")]
+        if early:
+            raise AssertionError(f"{len(early)} paths converted before the check started (first {early[0]}); "
+                                 "the settle should have held them")
+        lesson = next((i for i, p in before.items() if p.endswith("/ar/درس 01.mp4")), None)
+        if lesson is None:
+            raise AssertionError("درس 01 is not in the library")
+        s, subs0 = api.get(f"/api/videos/{lesson}/subtitles")
+        langs0 = sorted(x.get("language") for x in (subs0 or {}).get("items") or [])
+        if s != 200 or "ar" not in langs0:
+            raise AssertionError(f"درس 01's subtitles before: {s} {subs0}")
+
+        t0 = time.monotonic()
+        self.ask_canon_check()
+
+        def converted() -> dict[str, Any] | None:
+            st = self.canon()
+            if st.get("phase") == "failed":
+                raise AssertionError(f"the conversion failed: {st.get('problems')}")
+            last = st.get("last") or {}
+            return st if st.get("phase") == "done" and last.get("changes") else None
+
+        st = wait("the home's conversion of its own paths (after the share map's settle)", converted, 30 * 60, every=15)
+        self.canon_batch = (st.get("last") or {}).get("batch")
+        took = round((time.monotonic() - t0) / 60, 1)
+
+        def expected(p: str) -> str:
+            rel = p[len(posixpath.dirname(self.media.rstrip("/"))) + 1:]
+            return f"smb://{server}/{rel}"
+
+        after = self.media_paths()
+        if set(after) != set(before):
+            raise AssertionError(f"ids changed: lost {sorted(set(before) - set(after))[:3]}, new {sorted(set(after) - set(before))[:3]}")
+        wrong = [(before[i], after[i]) for i in before if after[i] != expected(before[i])]
+        if wrong:
+            raise AssertionError(f"{len(wrong)} paths not in the share form, first {wrong[0]}")
+
+        scans = self.rescan_settled()
+        again = self.media_paths()
+        if again != after:
+            lost = sorted(set(after) - set(again))
+            new = sorted(set(again) - set(after))
+            moved = [i for i in after if i in again and again[i] != after[i]]
+            raise AssertionError(f"the rescan changed the library: lost {len(lost)}, new {len(new)} "
+                                 f"(first {[again[i] for i in new[:2]]}), moved {len(moved)}")
+        dups = len(again) - len(set(again.values()))
+        if dups:
+            raise AssertionError(f"{dups} duplicate paths after the rescan")
+
+        thumb = self.process_and_wait(lesson, "thumbnail")
+        st_, b = api.get(f"/api/videos/{lesson}/poster?size=small", raw=True)
+        if st_ != 200 or len(b) < 100:
+            raise AssertionError(f"the poster of a converted video: {st_} {len(b) if isinstance(b, bytes) else b}")
+        trans = self.transcode(force_software=True)
+
+        s, subs1 = api.get(f"/api/videos/{lesson}/subtitles")
+        langs1 = sorted(x.get("language") for x in (subs1 or {}).get("items") or [])
+        if s != 200 or langs1 != langs0:
+            raise AssertionError(f"درس 01's subtitles after: {langs1}, before {langs0}")
+        sub = self.subtitle_served(lesson, "تفتح المكتبة")
+        access = self.assert_access_ro()  # Check access on the converted roots, through the API's share map
+        return (f"{len(after)} paths → smb://{server}/… in {took} min (batch {self.canon_batch}); rescan: {scans}, "
+                f"same {len(again)} videos; thumbnail job {thumb}, poster {len(b)} bytes; {trans}; "
+                f"subtitles {langs1}: {sub}; access: {access}")
+
+    def home_server(self) -> str:
+        assert self.api is not None
+        s, d = self.api.get("/api/cluster/storage/home-shares")
+        if s != 200 or not isinstance(d, dict) or not d.get("server"):
+            raise AssertionError(f"GET /api/cluster/storage/home-shares: {s} {d}")
+        return str(d["server"])
+
+    def storage_servers(self) -> list[dict[str, Any]]:
+        assert self.api is not None
+        s, d = self.api.get("/api/cluster/storage-servers")
+        if s != 200 or not isinstance(d, dict):
+            raise AssertionError(f"GET /api/cluster/storage-servers: {s} {d}")
+        return list(d.get("servers") or [])
+
+    def assert_nas_restart_idempotent(self) -> str:
+        """After nas_converted, the container restarted on the same volume: the home
+        checks again and converts nothing (the same last batch, no new run), every path and
+        id is as it was, and the NAS keeps one record of itself with the same shares."""
+        assert self.api is not None
+        batch = getattr(self, "canon_batch", None)
+        if not batch:
+            raise AssertionError("run after nas_converted")
+        paths = self.media_paths()
+        servers = {x.get("name"): x.get("exports") for x in self.storage_servers()}
+        checked = self.canon().get("updated_at")
+        log("restart the container on the same volume")
+        docker("restart", "-t", "60", self.container)
+        self.wait_ready()
+        self.ask_canon_check()
+
+        def looked() -> dict[str, Any] | None:
+            st = self.canon()
+            return st if st.get("updated_at") not in (None, checked) and st.get("phase") not in (
+                "backing_up", "pausing", "applying", "verifying") else None
+
+        st = wait("the home's conversion check after the restart", looked, 15 * 60, every=10)
+        last = st.get("last") or {}
+        if st.get("phase") != "done" or last.get("batch") != batch or st.get("run"):
+            raise AssertionError(f"after the restart: phase {st.get('phase')}, last batch {last.get('batch')} "
+                                 f"(was {batch}), run {st.get('run')}, problems {st.get('problems')}")
+        if self.media_paths() != paths:
+            raise AssertionError("the paths changed across the restart")
+        now = {x.get("name"): x.get("exports") for x in self.storage_servers()}
+        if now != servers:
+            raise AssertionError(f"the storage servers changed across the restart: {servers} → {now}")
+        return f"same batch {batch}, {len(paths)} paths unchanged, servers {sorted(now)}"
+
+    def assert_plain_home_untouched(self) -> str:
+        """A home that is not a NAS (no NAS platform: the image's plain install) keeps no
+        record of itself and its paths are never converted: no storage server, home-shares
+        says no NAS, and after the home's conversion check (asked now) every path is still
+        its local one under the media folder."""
+        assert self.api is not None
+        s, hs = self.api.get("/api/cluster/storage/home-shares")
+        if s != 200 or not isinstance(hs, dict) or hs.get("nas"):
+            raise AssertionError(f"home-shares on a plain home: {s} {hs}")
+        before = self.media_paths()
+        if not before:
+            raise AssertionError("run after scan")
+        checked = self.canon().get("updated_at")
+        self.ask_canon_check()
+
+        def looked() -> dict[str, Any] | None:
+            st = self.canon()
+            return st if st.get("updated_at") not in (None, checked) else None
+
+        st = wait("the home's conversion check", looked, 10 * 60, every=10)
+        if (st.get("last") or {}).get("changes"):
+            raise AssertionError(f"a plain home converted paths: {st}")
+        servers = self.storage_servers()
+        if servers:
+            raise AssertionError(f"a plain home made storage server records: {servers}")
+        after = self.media_paths()
+        moved = [p for p in after.values() if not p.startswith(self.media.rstrip("/") + "/")]
+        if after != before or moved:
+            raise AssertionError(f"paths changed on a plain home: {moved[:2]}")
+        return f"no record, phase {st.get('phase')}, {len(after)} paths local"
 
     def assert_compose_engine(self) -> str:
         """The compose file was taken unchanged by Docker 24.0.x (`docker compose config`, then
