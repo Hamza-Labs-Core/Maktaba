@@ -3,6 +3,7 @@ schema: 1
 kind: incident
 title: Epic 59 trail events written but never opened as pull requests
 date: 2026-11-10
+session: ca5b5f5a-daa4-4edf-94fd-eb52e3852eeb
 ---
 
 ## What happened
