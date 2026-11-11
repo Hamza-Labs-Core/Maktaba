@@ -2,6 +2,7 @@ package plugins
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -79,6 +80,13 @@ func TestContainerIsolationSwitchIsAdminOnlyAndAudited(t *testing.T) {
 	var n int
 	if err := db.QueryRow(`SELECT count(*) FROM audit_log WHERE action = 'plugin.isolation' AND actor_user_id::text = $1`, adminID).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("audit rows %d (%v), want 1", n, err)
+	}
+	// story 59.16 T03: who, when and the level
+	var level string
+	var at sql.NullTime
+	if err := db.QueryRow(`SELECT COALESCE(payload::jsonb->>'level', ''), ts FROM audit_log WHERE action = 'plugin.isolation'`).
+		Scan(&level, &at); err != nil || level == "" || !at.Valid {
+		t.Fatalf("audit level %q at %v (%v)", level, at, err)
 	}
 	// the unreviewed policy's route does not reset it
 	req := httptest.NewRequest(http.MethodPut, "/api/plugins/policy", strings.NewReader(`{"allow_unreviewed": false}`))

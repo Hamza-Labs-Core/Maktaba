@@ -118,6 +118,14 @@
     {
       "name": "Play queues",
       "description": "One play queue on the server for every Play and Shuffle."
+    },
+    {
+      "name": "Server",
+      "description": "This machine: server.toml's settings, the hardware and its tier, the quiet hours, speech to text. Admins only."
+    },
+    {
+      "name": "Plugins",
+      "description": "Installed plugins and their isolation. Admins only."
     }
   ],
   "security": [
@@ -642,6 +650,16 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "description": "`library_read_only`: the library is read-only for Maktaba, and this would change its files.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "operationId": "deleteLibrary"
@@ -693,6 +711,16 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "description": "`library_no_access`: Maktaba cannot list the library's folders.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "operationId": "scanLibrary"
@@ -1017,6 +1045,16 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "description": "`library_read_only`: the library is read-only for Maktaba, and this would change its files.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "operationId": "deleteVideo"
@@ -2741,7 +2779,14 @@
             "$ref": "#/components/responses/NotFound"
           },
           "503": {
-            "$ref": "#/components/responses/Unavailable"
+            "description": "`transcode_busy`: every transcode this home runs at once is taken; ask again after `Retry-After`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           },
           "507": {
             "description": "Too little free on the streaming service's disk to prepare (transcode) the video (code `insufficient_storage`).",
@@ -4382,6 +4427,7 @@
           "Queue"
         ],
         "summary": "Pause every queue",
+        "x-maktaba-role": "admin",
         "responses": {
           "204": {
             "description": "Done."
@@ -4415,6 +4461,7 @@
           "Queue"
         ],
         "summary": "Resume every queue",
+        "x-maktaba-role": "admin",
         "responses": {
           "204": {
             "description": "Done."
@@ -4489,6 +4536,7 @@
           "Queue"
         ],
         "summary": "Enable/disable a queue or set its write mode",
+        "x-maktaba-role": "admin",
         "requestBody": {
           "required": true,
           "content": {
@@ -4806,6 +4854,7 @@
           "Queue"
         ],
         "summary": "Pause a queue (running jobs finish)",
+        "x-maktaba-role": "admin",
         "parameters": [
           {
             "name": "interrupt",
@@ -4873,6 +4922,7 @@
           "Queue"
         ],
         "summary": "Resume a queue",
+        "x-maktaba-role": "admin",
         "responses": {
           "204": {
             "description": "Done."
@@ -4919,6 +4969,7 @@
           "Queue"
         ],
         "summary": "Retry failures of a cause or specific jobs",
+        "x-maktaba-role": "admin",
         "requestBody": {
           "required": true,
           "content": {
@@ -5012,6 +5063,7 @@
           "Queue"
         ],
         "summary": "Apply reviewed external writes",
+        "x-maktaba-role": "admin",
         "requestBody": {
           "required": true,
           "content": {
@@ -5139,6 +5191,7 @@
           "Queue"
         ],
         "summary": "Resize a pool",
+        "x-maktaba-role": "admin",
         "requestBody": {
           "required": true,
           "content": {
@@ -5216,6 +5269,7 @@
         ],
         "summary": "Re-add subjects to their entry queues",
         "description": "Every item is enqueued through the processing_jobs_enqueue SQL function in one transaction.",
+        "x-maktaba-role": "admin",
         "requestBody": {
           "required": true,
           "content": {
@@ -5643,6 +5697,7 @@
           "Queue"
         ],
         "summary": "Enable/disable an extension or update its settings (secrets are write-only)",
+        "x-maktaba-role": "admin",
         "requestBody": {
           "required": true,
           "content": {
@@ -5726,6 +5781,7 @@
         ],
         "summary": "Test an extension connection (a list of checks)",
         "description": "Admin-only; runs on the home. Each check: key, ok, optional (a warning when not ok), skipped, detail, code, latency_ms. Plex: reachable, token, server, livetv, maktaba_tuner. Cloudflare Stream: see /tv/remote/test. Every run is audited (audit_log config/extension_test).",
+        "x-maktaba-role": "admin",
         "responses": {
           "200": {
             "description": "OK",
@@ -5811,6 +5867,7 @@
         ],
         "summary": "Start \"Sign in with Plex\" (creates a plex.tv PIN)",
         "description": "Admin-only. Open auth_url in a browser window, then poll GET /extensions/plex/signin/{id}.",
+        "x-maktaba-role": "admin",
         "responses": {
           "200": {
             "description": "OK",
@@ -5875,6 +5932,7 @@
           "Queue"
         ],
         "summary": "Poll a Plex sign-in; once done, lists the account's Plex servers (no tokens)",
+        "x-maktaba-role": "admin",
         "responses": {
           "200": {
             "description": "OK",
@@ -5954,6 +6012,7 @@
           "Queue"
         ],
         "summary": "Save the chosen Plex server (URL and its token) into the plex extension settings",
+        "x-maktaba-role": "admin",
         "requestBody": {
           "required": true,
           "content": {
@@ -6089,6 +6148,7 @@
         ],
         "summary": "List the components",
         "description": "Every component of the catalog in its order: what should run (`want`, a hold), what does on each machine (`phase`, `reason`, and `reason_params`: the values the reason's message fills in, absent when it has none; for a degraded component, whose Ready condition stays true so `reason` is empty, `degraded_reason` and `degraded_reason_params` say why it runs with less, such as `sandbox_partial`), what it needs and what needs it, the settings it owns (`settings`, as the catalog lists them: `rules.<section>`, `toml:<key>`, `ext:<name>`), and the home's bundle.",
+        "x-maktaba-role": "admin",
         "responses": {
           "200": {
             "description": "The components.",
@@ -6131,6 +6191,7 @@
         ],
         "summary": "Preview a change",
         "description": "What a set of changes, or a bundle, would do, without changing anything: each component's phase before and after, what conflicts, what is refused and why, how many queued jobs wait, and how long stopping takes.",
+        "x-maktaba-role": "admin",
         "requestBody": {
           "required": true,
           "content": {
@@ -6224,6 +6285,7 @@
         ],
         "summary": "Apply a change",
         "description": "Applies a set of changes, or a bundle, in one transaction: all of it or none. Each change is checked against what the earlier ones leave.",
+        "x-maktaba-role": "admin",
         "requestBody": {
           "required": true,
           "content": {
@@ -6337,6 +6399,7 @@
         ],
         "summary": "List the bundles",
         "description": "The bundles (`full`, `core`, `worker`), what each holds, and which one the home is based on.",
+        "x-maktaba-role": "admin",
         "responses": {
           "200": {
             "description": "The bundles.",
@@ -6379,6 +6442,7 @@
         ],
         "summary": "Switch to a bundle",
         "description": "The difference to a bundle, applied in one batch: what it leaves out stops and keeps its files (`remove_unused` removes them), and what it holds is turned on. `dry_run` only answers the difference.",
+        "x-maktaba-role": "admin",
         "requestBody": {
           "required": true,
           "content": {
@@ -6473,6 +6537,7 @@
         ],
         "summary": "Make an offline pack file",
         "description": "Builds one file with the packs a bundle or chosen components need, for a home without internet, and answers its name.",
+        "x-maktaba-role": "admin",
         "requestBody": {
           "required": true,
           "content": {
@@ -6558,6 +6623,7 @@
           "Components"
         ],
         "summary": "Download an offline pack file",
+        "x-maktaba-role": "admin",
         "parameters": [
           {
             "name": "name",
@@ -6613,6 +6679,7 @@
         ],
         "summary": "Import an offline pack file",
         "description": "Checks every pack in the file against the signed release index, then installs them.",
+        "x-maktaba-role": "admin",
         "parameters": [
           {
             "name": "name",
@@ -6706,6 +6773,7 @@
         ],
         "summary": "Read one component",
         "description": "The component as in the list, plus each machine's status rows and its last 20 audit entries.",
+        "x-maktaba-role": "admin",
         "responses": {
           "200": {
             "description": "The component.",
@@ -6841,6 +6909,7 @@
         ],
         "summary": "Remove a component",
         "description": "The same as `want: absent`. `purge=true` also deletes the component's settings.",
+        "x-maktaba-role": "admin",
         "parameters": [
           {
             "name": "purge",
@@ -7004,6 +7073,7 @@
         ],
         "summary": "Stop a component",
         "description": "Holds the component until it is started again: its processes stop and its stages keep their queued work. A hold has no end time; a body with `until` is refused.",
+        "x-maktaba-role": "admin",
         "responses": {
           "200": {
             "description": "The component after the change.",
@@ -7080,6 +7150,7 @@
         ],
         "summary": "Start a component",
         "description": "Clears the hold.",
+        "x-maktaba-role": "admin",
         "responses": {
           "200": {
             "description": "The component after the change.",
@@ -7156,6 +7227,7 @@
         ],
         "summary": "Restart a component",
         "description": "Restarts a running component: its processes and the supervisor's own loops through this machine's supervisor, its loops in the API cancelled and started again, and its loops in streaming or the pipeline through a restart request their runner acts on within seconds. The desired state does not change; the restart is recorded as `component.restart`.",
+        "x-maktaba-role": "admin",
         "responses": {
           "200": {
             "description": "The component after the restart, with `restarted`: how many of its processes and loops started again here, and `requested`: the hosts (`streaming`, `pipeline`, `api`) asked to restart their loops, whose runners act on the request within seconds (not counted in `restarted`: the API cannot confirm them).",
@@ -7243,6 +7315,7 @@
         ],
         "summary": "Reset a component's settings",
         "description": "Deletes the settings this component owns, so each falls back to its default.",
+        "x-maktaba-role": "admin",
         "responses": {
           "200": {
             "description": "The settings were reset.",
@@ -7308,6 +7381,7 @@
         ],
         "summary": "Set what should run on one machine",
         "description": "An override for one machine; `want: null` follows the home again.",
+        "x-maktaba-role": "admin",
         "requestBody": {
           "required": true,
           "content": {
@@ -7413,6 +7487,7 @@
           "Components"
         ],
         "summary": "Stop a component on one machine",
+        "x-maktaba-role": "admin",
         "responses": {
           "200": {
             "description": "The component after the change.",
@@ -7497,6 +7572,7 @@
           "Components"
         ],
         "summary": "Start a component on one machine",
+        "x-maktaba-role": "admin",
         "responses": {
           "200": {
             "description": "The component after the change.",
@@ -9589,6 +9665,1284 @@
         },
         "operationId": "duplicateCollection"
       }
+    },
+    "/server/settings": {
+      "get": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Read server.toml's settings",
+        "description": "The supervisor's settings document (`saved`: the media roots and path map; `server`: `mdns`, the listen addresses, the public URLs and `trusted_proxies`, the reverse proxies whose forwarded client address is believed), and where each library folder is on this machine under the saved map. Without a supervisor: `{available: false, reason}`.",
+        "x-maktaba-role": "admin",
+        "responses": {
+          "200": {
+            "description": "The settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getServerSettings"
+      },
+      "put": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Change server.toml's settings",
+        "description": "A partial change the supervisor checks and writes, for the next start. `server.trusted_proxies` lists addresses or CIDRs (a `/0` is refused); the forwarded client address is believed only from loopback and from them. Audited.",
+        "x-maktaba-role": "admin",
+        "requestBody": {
+          "required": true,
+          "description": "The fields to change.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The settings after the change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This server runs under no supervisor.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A value was refused; the answer names each.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "putServerSettings"
+      }
+    },
+    "/server/machine": {
+      "get": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "This machine's hardware and tier",
+        "description": "What the server found on this machine (the memory, a container's limit and the ZFS cache counted; the CPU and its features; the GPUs; the data disk; the platform), the tier and why, what it sets, the quiet hours, the video encoder's verdict and the plugin isolation level. On a full node this is the home's.",
+        "x-maktaba-role": "admin",
+        "responses": {
+          "200": {
+            "description": "The machine.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "available": {
+                      "type": "boolean",
+                      "description": "False when this API runs under no supervisor, or the supervisor did not answer (`reason` says why)."
+                    },
+                    "tier": {
+                      "type": "string",
+                      "enum": [
+                        "light",
+                        "standard",
+                        "strong"
+                      ],
+                      "description": "The tier running now."
+                    },
+                    "detected": {
+                      "type": "string",
+                      "enum": [
+                        "light",
+                        "standard",
+                        "strong"
+                      ],
+                      "description": "The tier this machine's memory gives."
+                    },
+                    "saved": {
+                      "type": "string",
+                      "enum": [
+                        "light",
+                        "standard",
+                        "strong",
+                        "auto"
+                      ],
+                      "description": "The tier saved for the next start (`auto`: none picked)."
+                    },
+                    "restart_needed": {
+                      "type": "boolean"
+                    },
+                    "quiet_hours": {
+                      "type": "string",
+                      "description": "The quiet hours as saved (`01:00-06:00`; empty: none): heavy work waits for them."
+                    },
+                    "quiet_set": {
+                      "type": "boolean",
+                      "description": "Whether the quiet hours are set (else the tier's default applies)."
+                    },
+                    "quiet_default": {
+                      "type": "string",
+                      "description": "The tier's default quiet hours."
+                    },
+                    "video": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "The streaming role's video verdict: the encoder (`vaapi`, `qsv`, `nvenc`, `videotoolbox` or `software`) and why; absent until the streaming role has tested the encoders."
+                    },
+                    "plugin_isolation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "This machine's plugin isolation level."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getMachine"
+      },
+      "put": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Change the tier, the quiet hours or the data disk",
+        "description": "Every field is optional and only those sent change, for the next start: `tier` (`auto`: detected from the memory again), `quiet_hours` (`01:00-06:00`, or empty for none) or `quiet_default: true` (the tier's), `data_disk` (`ssd`, `rotational` or `auto`). A tier pick and the other changes are audited.",
+        "x-maktaba-role": "admin",
+        "requestBody": {
+          "required": true,
+          "description": "The change.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tier": {
+                    "type": "string",
+                    "enum": [
+                      "light",
+                      "standard",
+                      "strong",
+                      "auto"
+                    ]
+                  },
+                  "quiet_hours": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "quiet_default": {
+                    "type": "boolean"
+                  },
+                  "data_disk": {
+                    "type": "string",
+                    "enum": [
+                      "ssd",
+                      "rotational",
+                      "auto"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The machine after the change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "available": {
+                      "type": "boolean",
+                      "description": "False when this API runs under no supervisor, or the supervisor did not answer (`reason` says why)."
+                    },
+                    "tier": {
+                      "type": "string",
+                      "enum": [
+                        "light",
+                        "standard",
+                        "strong"
+                      ],
+                      "description": "The tier running now."
+                    },
+                    "detected": {
+                      "type": "string",
+                      "enum": [
+                        "light",
+                        "standard",
+                        "strong"
+                      ],
+                      "description": "The tier this machine's memory gives."
+                    },
+                    "saved": {
+                      "type": "string",
+                      "enum": [
+                        "light",
+                        "standard",
+                        "strong",
+                        "auto"
+                      ],
+                      "description": "The tier saved for the next start (`auto`: none picked)."
+                    },
+                    "restart_needed": {
+                      "type": "boolean"
+                    },
+                    "quiet_hours": {
+                      "type": "string",
+                      "description": "The quiet hours as saved (`01:00-06:00`; empty: none): heavy work waits for them."
+                    },
+                    "quiet_set": {
+                      "type": "boolean",
+                      "description": "Whether the quiet hours are set (else the tier's default applies)."
+                    },
+                    "quiet_default": {
+                      "type": "string",
+                      "description": "The tier's default quiet hours."
+                    },
+                    "video": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "The streaming role's video verdict: the encoder (`vaapi`, `qsv`, `nvenc`, `videotoolbox` or `software`) and why; absent until the streaming role has tested the encoders."
+                    },
+                    "plugin_isolation": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "This machine's plugin isolation level."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This server runs under no supervisor.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The supervisor did not answer.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A value was refused; the answer names each.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "putMachine"
+      }
+    },
+    "/server/speech": {
+      "get": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Speech to text on this machine",
+        "description": "On or off, the model by tier and why, the sizes offered, the last measure of this machine's speed, and the backlog's estimate.",
+        "x-maktaba-role": "admin",
+        "responses": {
+          "200": {
+            "description": "Speech to text.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "speech": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "On or off, the model, and why the tier picked it."
+                    },
+                    "measure": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "additionalProperties": true,
+                      "description": "The last measure of this machine's speed: the model and its real-time factor (`rtf`)."
+                    },
+                    "advice": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "The backlog (the audio waiting for transcription), how long it takes at the measured speed and, over 30 days, the next smaller model's estimate or speech off."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getSpeech"
+      },
+      "put": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Turn speech to text on or off, or pick its model",
+        "description": "`speech` (`on`, `off` or `auto`) and `model` (a size, or `auto`), for the next start. Audited.",
+        "x-maktaba-role": "admin",
+        "requestBody": {
+          "required": true,
+          "description": "The change.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "speech": {
+                    "type": "string",
+                    "enum": [
+                      "on",
+                      "off",
+                      "auto"
+                    ]
+                  },
+                  "model": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Speech to text after the change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "speech": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "On or off, the model, and why the tier picked it."
+                    },
+                    "measure": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "additionalProperties": true,
+                      "description": "The last measure of this machine's speed: the model and its real-time factor (`rtf`)."
+                    },
+                    "advice": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "The backlog (the audio waiting for transcription), how long it takes at the measured speed and, over 30 days, the next smaller model's estimate or speech off."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This server runs under no supervisor.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The supervisor did not answer.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A value was refused; the answer names each.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "putSpeech"
+      }
+    },
+    "/server/speech/measure": {
+      "post": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Measure this machine's speech speed now",
+        "description": "Measures again how fast this machine turns speech into text; the answer comes in a later GET. Audited.",
+        "x-maktaba-role": "admin",
+        "responses": {
+          "202": {
+            "description": "The measure started."
+          },
+          "409": {
+            "description": "This server runs under no supervisor.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The supervisor did not answer.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "measureSpeech"
+      }
+    },
+    "/libraries/{id}/access": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": "The library's id."
+        }
+      ],
+      "get": {
+        "tags": [
+          "Libraries"
+        ],
+        "summary": "A library's media permissions",
+        "description": "The last check of each folder: the access, the user Maktaba runs as, the files it could not read, and the fix for this platform. A write that failed with a permission error since the last check makes this read check again. Paths and user ids are an admin's: every library reader sees only `access` on the library.",
+        "x-maktaba-role": "admin",
+        "responses": {
+          "200": {
+            "description": "The access report.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "library_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "access": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "rw",
+                        "ro",
+                        "none",
+                        null
+                      ],
+                      "description": "The library's access: `rw`, `ro` (read-only for Maktaba) or `none`; null when never checked."
+                    },
+                    "checked_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "partial": {
+                      "type": "boolean"
+                    },
+                    "runs_as": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "The user and group Maktaba runs as (`uid`, `gid`, `name`)."
+                    },
+                    "platform": {
+                      "type": "string"
+                    },
+                    "roots": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      },
+                      "description": "Each folder: its path, its access, the files it could not read and, when it is not read-write, the fix for this platform."
+                    },
+                    "write_failures": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getLibraryAccess"
+      }
+    },
+    "/libraries/{id}/check-access": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": "The library's id."
+        }
+      ],
+      "post": {
+        "tags": [
+          "Libraries"
+        ],
+        "summary": "Check a library's media permissions now",
+        "description": "The page's Check access: reads and writes a probe in each folder (a read-only library that became writable is picked up here). Audited.",
+        "x-maktaba-role": "admin",
+        "responses": {
+          "200": {
+            "description": "The access report.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "library_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "access": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "rw",
+                        "ro",
+                        "none",
+                        null
+                      ],
+                      "description": "The library's access: `rw`, `ro` (read-only for Maktaba) or `none`; null when never checked."
+                    },
+                    "checked_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "partial": {
+                      "type": "boolean"
+                    },
+                    "runs_as": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "The user and group Maktaba runs as (`uid`, `gid`, `name`)."
+                    },
+                    "platform": {
+                      "type": "string"
+                    },
+                    "roots": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      },
+                      "description": "Each folder: its path, its access, the files it could not read and, when it is not read-write, the fix for this platform."
+                    },
+                    "write_failures": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "checkLibraryAccess"
+      }
+    },
+    "/libraries/{id}/run-now": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": "The library's id."
+        }
+      ],
+      "post": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Run a library's waiting work now",
+        "description": "Every live job of the library (its first scan too) runs now, past the quiet hours; a job waiting for another reason (a debounce, a retry) keeps its wait.",
+        "x-maktaba-role": "admin",
+        "responses": {
+          "200": {
+            "description": "The jobs marked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "jobs"
+                  ],
+                  "properties": {
+                    "jobs": {
+                      "type": "integer",
+                      "description": "How many waiting jobs were marked to run now."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "runLibraryNow"
+      }
+    },
+    "/queues/jobs/{id}/run-now": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "description": "The job's id."
+        }
+      ],
+      "post": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Run one waiting job now",
+        "description": "The job runs now, past the quiet hours of the machine that claimed it.",
+        "x-maktaba-role": "admin",
+        "responses": {
+          "200": {
+            "description": "The job marked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "jobs"
+                  ],
+                  "properties": {
+                    "jobs": {
+                      "type": "integer",
+                      "description": "How many waiting jobs were marked to run now."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "runJobNow"
+      }
+    },
+    "/queues/{stage}/run-now": {
+      "parameters": [
+        {
+          "name": "stage",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The queue's stage."
+        }
+      ],
+      "post": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Run a queue's jobs held for the quiet hours now",
+        "description": "Only the stage's jobs held for the quiet hours (the queue's Waiting for quiet hours), not every waiting job.",
+        "x-maktaba-role": "admin",
+        "responses": {
+          "200": {
+            "description": "The jobs marked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "jobs"
+                  ],
+                  "properties": {
+                    "jobs": {
+                      "type": "integer",
+                      "description": "How many waiting jobs were marked to run now."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "runStageNow"
+      }
+    },
+    "/plugins/isolation": {
+      "get": {
+        "tags": [
+          "Plugins"
+        ],
+        "summary": "Plugin isolation",
+        "description": "Each machine's plugin isolation level and the home's switch for plugins with container-only isolation.",
+        "x-maktaba-role": "admin",
+        "responses": {
+          "200": {
+            "description": "The isolation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "level": {
+                      "type": "string",
+                      "description": "The home's level (the weakest of its machines')."
+                    },
+                    "machines": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      },
+                      "description": "Each machine's level and what it misses (`landlock`, `userns`)."
+                    },
+                    "allow_container_isolation": {
+                      "type": "boolean",
+                      "description": "Allow plugins with container-only isolation on this home."
+                    },
+                    "held": {
+                      "type": "boolean",
+                      "description": "Plugins are held because the level is container-only and the switch is off."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getPluginIsolation"
+      },
+      "put": {
+        "tags": [
+          "Plugins"
+        ],
+        "summary": "Allow plugins with container-only isolation",
+        "description": "`allow` turns the switch on or off. Turning it on is a sensitive change: it needs the admin's `password` again (401 `reauth_required`). Audited with who, when and the level.",
+        "x-maktaba-role": "admin",
+        "requestBody": {
+          "required": true,
+          "description": "The switch.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "allow"
+                ],
+                "properties": {
+                  "allow": {
+                    "type": "boolean"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The isolation after the change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "level": {
+                      "type": "string",
+                      "description": "The home's level (the weakest of its machines')."
+                    },
+                    "machines": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      },
+                      "description": "Each machine's level and what it misses (`landlock`, `userns`)."
+                    },
+                    "allow_container_isolation": {
+                      "type": "boolean",
+                      "description": "Allow plugins with container-only isolation on this home."
+                    },
+                    "held": {
+                      "type": "boolean",
+                      "description": "Plugins are held because the level is container-only and the switch is off."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "putPluginIsolation"
+      }
     }
   },
   "components": {
@@ -10045,6 +11399,30 @@
               "hide_items",
               "show_both"
             ]
+          },
+          "access": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "rw",
+              "ro",
+              "none",
+              null
+            ],
+            "description": "The last media-permission check: `rw`, `ro` (read-only for Maktaba: the writes that would change its files answer 409 `library_read_only`) or `none`; null when never checked (treated as `rw`). The folders' detail is the admin's `GET /api/libraries/{id}/access`."
+          },
+          "access_checked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "access_partial": {
+            "type": "boolean",
+            "description": "Some files could not be read, or a write failed since the check."
           }
         }
       },
@@ -11440,6 +12818,10 @@
                 "type": "integer"
               }
             }
+          },
+          "software_only": {
+            "type": "boolean",
+            "description": "This home converts video in software only (no GPU encoder works): a player plays files as they are, or remuxed, whenever it can."
           }
         }
       },
@@ -12393,6 +13775,13 @@
               "string",
               "null"
             ]
+          },
+          "quiet_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "With `waiting_reason` `quiet_hours` (heavy jobs wait for this machine's quiet hours; `POST /api/queues/{stage}/run-now` starts them), when the window opens (`01:00`)."
           }
         }
       },

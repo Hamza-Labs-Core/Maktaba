@@ -2445,7 +2445,10 @@
         "ep-get-jobs-id",
         "ep-get-queues",
         "ep-get-queues-stage",
-        "ep-patch-queues-stage"
+        "ep-patch-queues-stage",
+        "ep-post-libraries-id-run-now",
+        "ep-post-queues-jobs-id-run-now",
+        "ep-post-queues-stage-run-now"
       ],
       "files": {
         "story": "specs/epics/59-nas/story-59-02-data-and-database.md",
@@ -2462,7 +2465,10 @@
         "GET /jobs/{id}",
         "GET /queues",
         "GET /queues/{stage}",
-        "PATCH /queues/{stage}"
+        "PATCH /queues/{stage}",
+        "POST /libraries/{id}/run-now",
+        "POST /queues/jobs/{id}/run-now",
+        "POST /queues/{stage}/run-now"
       ],
       "db_tables": [],
       "metadata": {
@@ -2530,14 +2536,19 @@
         "phase-5"
       ],
       "related": [
-        "epic-59-nas"
+        "epic-59-nas",
+        "ep-get-server-machine",
+        "ep-put-server-machine"
       ],
       "files": {
         "story": "specs/epics/59-nas/story-59-04-hardware-tiers.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /server/machine",
+        "PUT /server/machine"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "hardware-tiers"
@@ -2629,14 +2640,19 @@
         "phase-5"
       ],
       "related": [
-        "epic-59-nas"
+        "epic-59-nas",
+        "ep-get-plugins-isolation",
+        "ep-put-plugins-isolation"
       ],
       "files": {
         "story": "specs/epics/59-nas/story-59-07-plugins-container.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /plugins/isolation",
+        "PUT /plugins/isolation"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "plugins-container"
@@ -2899,14 +2915,19 @@
         "phase-5"
       ],
       "related": [
-        "epic-59-nas"
+        "epic-59-nas",
+        "ep-get-server-machine",
+        "ep-put-server-machine"
       ],
       "files": {
         "story": "specs/epics/59-nas/story-59-15-ci.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /server/machine",
+        "PUT /server/machine"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "ci"
@@ -2933,6 +2954,7 @@
       ],
       "related": [
         "epic-59-nas",
+        "entity-libraries",
         "ep-get-libraries",
         "ep-post-libraries",
         "ep-get-libraries-id",
@@ -2940,11 +2962,28 @@
         "ep-delete-libraries-id",
         "ep-get-jobs",
         "ep-get-jobs-id",
+        "ep-post-sessions",
         "ep-get-settings",
         "ep-put-settings",
         "ep-get-queues",
         "ep-get-queues-stage",
-        "ep-patch-queues-stage"
+        "ep-patch-queues-stage",
+        "ep-get-capabilities",
+        "ep-get-components",
+        "ep-get-server-settings",
+        "ep-put-server-settings",
+        "ep-get-server-machine",
+        "ep-put-server-machine",
+        "ep-get-server-speech",
+        "ep-put-server-speech",
+        "ep-post-server-speech-measure",
+        "ep-get-libraries-id-access",
+        "ep-post-libraries-id-check-access",
+        "ep-post-libraries-id-run-now",
+        "ep-post-queues-jobs-id-run-now",
+        "ep-post-queues-stage-run-now",
+        "ep-get-plugins-isolation",
+        "ep-put-plugins-isolation"
       ],
       "files": {
         "story": "specs/epics/59-nas/story-59-16-openapi-roles.md",
@@ -2959,13 +2998,32 @@
         "DELETE /libraries/{id}",
         "GET /jobs",
         "GET /jobs/{id}",
+        "POST /sessions",
         "GET /settings",
         "PUT /settings",
         "GET /queues",
         "GET /queues/{stage}",
-        "PATCH /queues/{stage}"
+        "PATCH /queues/{stage}",
+        "GET /capabilities",
+        "GET /components",
+        "GET /server/settings",
+        "PUT /server/settings",
+        "GET /server/machine",
+        "PUT /server/machine",
+        "GET /server/speech",
+        "PUT /server/speech",
+        "POST /server/speech/measure",
+        "GET /libraries/{id}/access",
+        "POST /libraries/{id}/check-access",
+        "POST /libraries/{id}/run-now",
+        "POST /queues/jobs/{id}/run-now",
+        "POST /queues/{stage}/run-now",
+        "GET /plugins/isolation",
+        "PUT /plugins/isolation"
       ],
-      "db_tables": [],
+      "db_tables": [
+        "libraries"
+      ],
       "metadata": {
         "slug": "openapi-roles"
       },

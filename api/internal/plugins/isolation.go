@@ -111,9 +111,14 @@ func (l *Lifecycle) SetContainerIsolation(ctx context.Context, allow bool, actor
 		return Isolation{}, err
 	}
 	if before != after {
+		// the level the admin said yes (or no) to, beside who and when (story 59.16)
+		iso, err := LoadIsolation(ctx, tx)
+		if err != nil {
+			return Isolation{}, err
+		}
 		if err := audit(ctx, tx, "plugin.isolation", PolicyKey, actor,
 			map[string]bool{"allow_container_isolation": before.AllowContainerIsolation},
-			map[string]bool{"allow_container_isolation": allow}, nil); err != nil {
+			map[string]bool{"allow_container_isolation": allow}, map[string]any{"level": iso.Level}); err != nil {
 			return Isolation{}, err
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE components SET updated_by = $1 WHERE id LIKE 'plugin.%'`, actor.By); err != nil {

@@ -246,6 +246,15 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Quiet hours and the data disk save from Settings → This machine (story 59.16).** The page
+  saves them through `PUT /api/server/machine`, which passed on only the tier, so the server
+  refused the save; it now passes on each field sent (`tier`, `quiet_hours` or
+  `quiet_default`, `data_disk`) and audits the change. The API reference on maktaba.dev
+  describes every route Epic 59 added (This machine, speech to text, library access, Run now,
+  plugin isolation, server.toml's trusted proxies) and the new fields, in English and Arabic,
+  each admin route marked as such; the admin's yes to container-only plugin isolation is
+  audited with the isolation level.
+
 - **The Components page says why a component is degraded.** A degraded component keeps its
   Ready condition true, so the list's `reason` stayed empty and an admin saw *Running with
   problems* with no cause (story 59.07: `plugins.host` on a NAS kernel without Landlock). The

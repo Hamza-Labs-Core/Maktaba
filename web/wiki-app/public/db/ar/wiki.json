@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 180,
+    "endpoint": 194,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -7518,7 +7518,8 @@
         "story-57.10",
         "story-58.2",
         "story-58.13",
-        "story-58.17"
+        "story-58.17",
+        "story-59.16"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -9712,7 +9713,8 @@
         "story-55.2",
         "story-57.5",
         "story-57.13",
-        "story-58.1"
+        "story-58.1",
+        "story-59.16"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -9814,7 +9816,8 @@
         "story-55.2",
         "story-56.13",
         "story-58.13",
-        "story-58.14"
+        "story-58.14",
+        "story-59.16"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -11628,6 +11631,421 @@
       }
     },
     {
+      "id": "ep-get-server-settings",
+      "type": "endpoint",
+      "title": "GET /server/settings",
+      "content": "قراءة إعدادات server.toml",
+      "tags": [
+        "api",
+        "Server",
+        "get"
+      ],
+      "related": [
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/server/settings",
+        "tag": "Server",
+        "operationId": "getServerSettings"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "05621c880e5e3eae"
+        }
+      }
+    },
+    {
+      "id": "ep-put-server-settings",
+      "type": "endpoint",
+      "title": "PUT /server/settings",
+      "content": "تغيير إعدادات server.toml",
+      "tags": [
+        "api",
+        "Server",
+        "put"
+      ],
+      "related": [
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/server/settings",
+        "tag": "Server",
+        "operationId": "putServerSettings"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "ef54e5d734f2c845"
+        }
+      }
+    },
+    {
+      "id": "ep-get-server-machine",
+      "type": "endpoint",
+      "title": "GET /server/machine",
+      "content": "عتاد هذا الجهاز وفئته",
+      "tags": [
+        "api",
+        "Server",
+        "get"
+      ],
+      "related": [
+        "story-59.4",
+        "story-59.15",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/server/machine",
+        "tag": "Server",
+        "operationId": "getMachine"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "33ba0170005b63bd"
+        }
+      }
+    },
+    {
+      "id": "ep-put-server-machine",
+      "type": "endpoint",
+      "title": "PUT /server/machine",
+      "content": "تغيير الفئة أو ساعات الهدوء أو قرص البيانات",
+      "tags": [
+        "api",
+        "Server",
+        "put"
+      ],
+      "related": [
+        "story-59.4",
+        "story-59.15",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/server/machine",
+        "tag": "Server",
+        "operationId": "putMachine"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "4e68b66d755339ea"
+        }
+      }
+    },
+    {
+      "id": "ep-get-server-speech",
+      "type": "endpoint",
+      "title": "GET /server/speech",
+      "content": "تحويل الكلام إلى نص على هذا الجهاز",
+      "tags": [
+        "api",
+        "Server",
+        "get"
+      ],
+      "related": [
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/server/speech",
+        "tag": "Server",
+        "operationId": "getSpeech"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "0c63c10a93c2c327"
+        }
+      }
+    },
+    {
+      "id": "ep-put-server-speech",
+      "type": "endpoint",
+      "title": "PUT /server/speech",
+      "content": "تشغيل تحويل الكلام إلى نص أو إيقافه، أو اختيار نموذجه",
+      "tags": [
+        "api",
+        "Server",
+        "put"
+      ],
+      "related": [
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/server/speech",
+        "tag": "Server",
+        "operationId": "putSpeech"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "a1ff0a475bf48054"
+        }
+      }
+    },
+    {
+      "id": "ep-post-server-speech-measure",
+      "type": "endpoint",
+      "title": "POST /server/speech/measure",
+      "content": "قياس سرعة تحويل الكلام على هذا الجهاز الآن",
+      "tags": [
+        "api",
+        "Server",
+        "post"
+      ],
+      "related": [
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/server/speech/measure",
+        "tag": "Server",
+        "operationId": "measureSpeech"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "e893d7565b8e1059"
+        }
+      }
+    },
+    {
+      "id": "ep-get-libraries-id-access",
+      "type": "endpoint",
+      "title": "GET /libraries/{id}/access",
+      "content": "صلاحيات الوسائط لمكتبة",
+      "tags": [
+        "api",
+        "Libraries",
+        "get"
+      ],
+      "related": [
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/libraries/{id}/access",
+        "tag": "Libraries",
+        "operationId": "getLibraryAccess"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "b630acfd66c67fdb"
+        }
+      }
+    },
+    {
+      "id": "ep-post-libraries-id-check-access",
+      "type": "endpoint",
+      "title": "POST /libraries/{id}/check-access",
+      "content": "فحص صلاحيات الوسائط لمكتبة الآن",
+      "tags": [
+        "api",
+        "Libraries",
+        "post"
+      ],
+      "related": [
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/libraries/{id}/check-access",
+        "tag": "Libraries",
+        "operationId": "checkLibraryAccess"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "034f0325e0a232e0"
+        }
+      }
+    },
+    {
+      "id": "ep-post-libraries-id-run-now",
+      "type": "endpoint",
+      "title": "POST /libraries/{id}/run-now",
+      "content": "تشغيل المهام المنتظرة لمكتبة الآن",
+      "tags": [
+        "api",
+        "Queue",
+        "post"
+      ],
+      "related": [
+        "story-59.2",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/libraries/{id}/run-now",
+        "tag": "Queue",
+        "operationId": "runLibraryNow"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "dc1c9f6eb4262f0a"
+        }
+      }
+    },
+    {
+      "id": "ep-post-queues-jobs-id-run-now",
+      "type": "endpoint",
+      "title": "POST /queues/jobs/{id}/run-now",
+      "content": "تشغيل مهمة منتظرة واحدة الآن",
+      "tags": [
+        "api",
+        "Queue",
+        "post"
+      ],
+      "related": [
+        "story-59.2",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/queues/jobs/{id}/run-now",
+        "tag": "Queue",
+        "operationId": "runJobNow"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "872d3fbf80b66bca"
+        }
+      }
+    },
+    {
+      "id": "ep-post-queues-stage-run-now",
+      "type": "endpoint",
+      "title": "POST /queues/{stage}/run-now",
+      "content": "تشغيل مهام قائمة انتظار موقوفة حتى ساعات الهدوء الآن",
+      "tags": [
+        "api",
+        "Queue",
+        "post"
+      ],
+      "related": [
+        "story-59.2",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/queues/{stage}/run-now",
+        "tag": "Queue",
+        "operationId": "runStageNow"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "6043faad1a38ada1"
+        }
+      }
+    },
+    {
+      "id": "ep-get-plugins-isolation",
+      "type": "endpoint",
+      "title": "GET /plugins/isolation",
+      "content": "عزل الإضافات",
+      "tags": [
+        "api",
+        "Plugins",
+        "get"
+      ],
+      "related": [
+        "story-59.7",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/plugins/isolation",
+        "tag": "Plugins",
+        "operationId": "getPluginIsolation"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "b64b4fb5b21d8714"
+        }
+      }
+    },
+    {
+      "id": "ep-put-plugins-isolation",
+      "type": "endpoint",
+      "title": "PUT /plugins/isolation",
+      "content": "السماح بالإضافات ذات العزل على مستوى الحاوية فقط",
+      "tags": [
+        "api",
+        "Plugins",
+        "put"
+      ],
+      "related": [
+        "story-59.7",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/plugins/isolation",
+        "tag": "Plugins",
+        "operationId": "putPluginIsolation"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "511c226e7d618716"
+        }
+      }
+    },
+    {
       "id": "entity-audio_cache",
       "type": "entity",
       "title": "audio_cache",
@@ -11931,7 +12349,8 @@
         "story-29.3",
         "story-51.17",
         "story-54.8",
-        "story-56.10"
+        "story-56.10",
+        "story-59.16"
       ],
       "files": {
         "schema": "specs/architecture.md#8-database-schema",

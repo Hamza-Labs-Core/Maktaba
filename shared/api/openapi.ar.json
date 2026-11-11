@@ -2636,6 +2636,554 @@
     "/tags/20/name": {
       "en": "Play queues",
       "ar": "قوائم انتظار التشغيل"
+    },
+    "/tags/21/name": {
+      "en": "Server",
+      "ar": "الخادم"
+    },
+    "/tags/21/description": {
+      "en": "This machine: server.toml's settings, the hardware and its tier, the quiet hours, speech to text. Admins only.",
+      "ar": "هذا الجهاز: إعدادات server.toml، والعتاد وفئته، وساعات الهدوء، وتحويل الكلام إلى نص. للمشرفين وحدهم."
+    },
+    "/tags/22/name": {
+      "en": "Plugins",
+      "ar": "الإضافات"
+    },
+    "/tags/22/description": {
+      "en": "Installed plugins and their isolation. Admins only.",
+      "ar": "الإضافات المثبّتة وعزلها. للمشرفين وحدهم."
+    },
+    "/paths/~1libraries~1{id}/delete/responses/409/description": {
+      "en": "`library_read_only`: the library is read-only for Maktaba, and this would change its files.",
+      "ar": "`library_read_only`: المكتبة للقراءة فقط بالنسبة إلى مكتبة، وهذا الطلب يغيّر ملفاتها."
+    },
+    "/paths/~1libraries~1{id}~1scan/post/responses/409/description": {
+      "en": "`library_no_access`: Maktaba cannot list the library's folders.",
+      "ar": "`library_no_access`: لا تستطيع مكتبة سرد مجلدات المكتبة."
+    },
+    "/paths/~1videos~1{id}/delete/responses/409/description": {
+      "en": "`library_read_only`: the library is read-only for Maktaba, and this would change its files.",
+      "ar": "`library_read_only`: المكتبة للقراءة فقط بالنسبة إلى مكتبة، وهذا الطلب يغيّر ملفاتها."
+    },
+    "/paths/~1sessions/post/responses/503/description": {
+      "en": "`transcode_busy`: every transcode this home runs at once is taken; ask again after `Retry-After`.",
+      "ar": "`transcode_busy`: كل عمليات التحويل التي يشغّلها هذا الجهاز الرئيسي في آن واحد مشغولة؛ أعد الطلب بعد `Retry-After`."
+    },
+    "/paths/~1server~1settings/get/summary": {
+      "en": "Read server.toml's settings",
+      "ar": "قراءة إعدادات server.toml"
+    },
+    "/paths/~1server~1settings/get/description": {
+      "en": "The supervisor's settings document (`saved`: the media roots and path map; `server`: `mdns`, the listen addresses, the public URLs and `trusted_proxies`, the reverse proxies whose forwarded client address is believed), and where each library folder is on this machine under the saved map. Without a supervisor: `{available: false, reason}`.",
+      "ar": "وثيقة الإعدادات لدى المشرف على العمليات (`saved`: جذور الوسائط وخريطة المسارات؛ و`server`: `mdns` وعناوين الاستماع والعناوين العامة و`trusted_proxies`، أي الوكلاء العكسيون الذين يُصدَّق عنوان العميل الذي يمرّرونه)، وموضع كل مجلد مكتبة على هذا الجهاز بحسب الخريطة المحفوظة. ودون مشرف على العمليات: `{available: false, reason}`."
+    },
+    "/paths/~1server~1settings/get/responses/200/description": {
+      "en": "The settings.",
+      "ar": "الإعدادات."
+    },
+    "/paths/~1server~1settings/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1server~1settings/put/summary": {
+      "en": "Change server.toml's settings",
+      "ar": "تغيير إعدادات server.toml"
+    },
+    "/paths/~1server~1settings/put/description": {
+      "en": "A partial change the supervisor checks and writes, for the next start. `server.trusted_proxies` lists addresses or CIDRs (a `/0` is refused); the forwarded client address is believed only from loopback and from them. Audited.",
+      "ar": "تغيير جزئي يتحقق منه المشرف على العمليات ويكتبه، للتشغيل التالي. يسرد `server.trusted_proxies` عناوين أو نطاقات CIDR (ويُرفض `/0`)؛ ولا يُصدَّق عنوان العميل الممرَّر إلا من الحلقة المحلية ومنها. ويُسجَّل في سجل التدقيق."
+    },
+    "/paths/~1server~1settings/put/requestBody/description": {
+      "en": "The fields to change.",
+      "ar": "الحقول المراد تغييرها."
+    },
+    "/paths/~1server~1settings/put/responses/200/description": {
+      "en": "The settings after the change.",
+      "ar": "الإعدادات بعد التغيير."
+    },
+    "/paths/~1server~1settings/put/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1server~1settings/put/responses/409/description": {
+      "en": "This server runs under no supervisor.",
+      "ar": "هذا الخادم لا يعمل تحت مشرف على العمليات."
+    },
+    "/paths/~1server~1settings/put/responses/422/description": {
+      "en": "A value was refused; the answer names each.",
+      "ar": "رُفضت قيمة؛ والجواب يسمّي كل واحدة."
+    },
+    "/paths/~1server~1settings/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1server~1machine/get/summary": {
+      "en": "This machine's hardware and tier",
+      "ar": "عتاد هذا الجهاز وفئته"
+    },
+    "/paths/~1server~1machine/get/description": {
+      "en": "What the server found on this machine (the memory, a container's limit and the ZFS cache counted; the CPU and its features; the GPUs; the data disk; the platform), the tier and why, what it sets, the quiet hours, the video encoder's verdict and the plugin isolation level. On a full node this is the home's.",
+      "ar": "ما وجده الخادم على هذا الجهاز (الذاكرة، مع حدّ الحاوية وذاكرة ZFS المؤقتة؛ والمعالج وميزاته؛ ووحدات معالجة الرسوميات؛ وقرص البيانات؛ والمنصّة)، والفئة وسببها، وما تضبطه، وساعات الهدوء، وحكم مرمّز الفيديو، ومستوى عزل الإضافات. وعلى الجهاز الكامل يكون هذا للجهاز الرئيسي."
+    },
+    "/paths/~1server~1machine/get/responses/200/description": {
+      "en": "The machine.",
+      "ar": "الجهاز."
+    },
+    "/paths/~1server~1machine/get/responses/200/content/application~1json/schema/properties/available/description": {
+      "en": "False when this API runs under no supervisor, or the supervisor did not answer (`reason` says why).",
+      "ar": "تكون false حين لا تعمل هذه الواجهة البرمجية تحت مشرف على العمليات، أو حين لا يجيب المشرف (ويقول `reason` السبب)."
+    },
+    "/paths/~1server~1machine/get/responses/200/content/application~1json/schema/properties/tier/description": {
+      "en": "The tier running now.",
+      "ar": "الفئة التي تعمل الآن."
+    },
+    "/paths/~1server~1machine/get/responses/200/content/application~1json/schema/properties/detected/description": {
+      "en": "The tier this machine's memory gives.",
+      "ar": "الفئة التي تقتضيها ذاكرة هذا الجهاز."
+    },
+    "/paths/~1server~1machine/get/responses/200/content/application~1json/schema/properties/saved/description": {
+      "en": "The tier saved for the next start (`auto`: none picked).",
+      "ar": "الفئة المحفوظة للتشغيل التالي (`auto`: لم يُختر شيء)."
+    },
+    "/paths/~1server~1machine/get/responses/200/content/application~1json/schema/properties/quiet_hours/description": {
+      "en": "The quiet hours as saved (`01:00-06:00`; empty: none): heavy work waits for them.",
+      "ar": "ساعات الهدوء كما حُفظت (`01:00-06:00`؛ وفارغة: لا ساعات هدوء): تنتظرها المهام الثقيلة."
+    },
+    "/paths/~1server~1machine/get/responses/200/content/application~1json/schema/properties/quiet_set/description": {
+      "en": "Whether the quiet hours are set (else the tier's default applies).",
+      "ar": "هل ضُبطت ساعات الهدوء (وإلا فالقيمة الافتراضية للفئة هي المعتمدة)."
+    },
+    "/paths/~1server~1machine/get/responses/200/content/application~1json/schema/properties/quiet_default/description": {
+      "en": "The tier's default quiet hours.",
+      "ar": "ساعات الهدوء الافتراضية للفئة."
+    },
+    "/paths/~1server~1machine/get/responses/200/content/application~1json/schema/properties/video/description": {
+      "en": "The streaming role's video verdict: the encoder (`vaapi`, `qsv`, `nvenc`, `videotoolbox` or `software`) and why; absent until the streaming role has tested the encoders.",
+      "ar": "حكم دور البث على الفيديو: المرمّز (`vaapi` أو `qsv` أو `nvenc` أو `videotoolbox` أو `software`) وسببه؛ ولا يظهر قبل أن يختبر دور البث المرمّزات."
+    },
+    "/paths/~1server~1machine/get/responses/200/content/application~1json/schema/properties/plugin_isolation/description": {
+      "en": "This machine's plugin isolation level.",
+      "ar": "مستوى عزل الإضافات على هذا الجهاز."
+    },
+    "/paths/~1server~1machine/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1server~1machine/put/summary": {
+      "en": "Change the tier, the quiet hours or the data disk",
+      "ar": "تغيير الفئة أو ساعات الهدوء أو قرص البيانات"
+    },
+    "/paths/~1server~1machine/put/description": {
+      "en": "Every field is optional and only those sent change, for the next start: `tier` (`auto`: detected from the memory again), `quiet_hours` (`01:00-06:00`, or empty for none) or `quiet_default: true` (the tier's), `data_disk` (`ssd`, `rotational` or `auto`). A tier pick and the other changes are audited.",
+      "ar": "كل حقل اختياري، ولا يتغيّر إلا ما يُرسَل، للتشغيل التالي: `tier` (و`auto`: تُكتشف من الذاكرة مجددًا)، و`quiet_hours` (`01:00-06:00`، أو فارغة لإلغائها) أو `quiet_default: true` (ساعات الفئة)، و`data_disk` (`ssd` أو `rotational` أو `auto`). ويُسجَّل اختيار الفئة والتغييرات الأخرى في سجل التدقيق."
+    },
+    "/paths/~1server~1machine/put/requestBody/description": {
+      "en": "The change.",
+      "ar": "التغيير."
+    },
+    "/paths/~1server~1machine/put/responses/200/description": {
+      "en": "The machine after the change.",
+      "ar": "الجهاز بعد التغيير."
+    },
+    "/paths/~1server~1machine/put/responses/200/content/application~1json/schema/properties/available/description": {
+      "en": "False when this API runs under no supervisor, or the supervisor did not answer (`reason` says why).",
+      "ar": "تكون false حين لا تعمل هذه الواجهة البرمجية تحت مشرف على العمليات، أو حين لا يجيب المشرف (ويقول `reason` السبب)."
+    },
+    "/paths/~1server~1machine/put/responses/200/content/application~1json/schema/properties/tier/description": {
+      "en": "The tier running now.",
+      "ar": "الفئة التي تعمل الآن."
+    },
+    "/paths/~1server~1machine/put/responses/200/content/application~1json/schema/properties/detected/description": {
+      "en": "The tier this machine's memory gives.",
+      "ar": "الفئة التي تقتضيها ذاكرة هذا الجهاز."
+    },
+    "/paths/~1server~1machine/put/responses/200/content/application~1json/schema/properties/saved/description": {
+      "en": "The tier saved for the next start (`auto`: none picked).",
+      "ar": "الفئة المحفوظة للتشغيل التالي (`auto`: لم يُختر شيء)."
+    },
+    "/paths/~1server~1machine/put/responses/200/content/application~1json/schema/properties/quiet_hours/description": {
+      "en": "The quiet hours as saved (`01:00-06:00`; empty: none): heavy work waits for them.",
+      "ar": "ساعات الهدوء كما حُفظت (`01:00-06:00`؛ وفارغة: لا ساعات هدوء): تنتظرها المهام الثقيلة."
+    },
+    "/paths/~1server~1machine/put/responses/200/content/application~1json/schema/properties/quiet_set/description": {
+      "en": "Whether the quiet hours are set (else the tier's default applies).",
+      "ar": "هل ضُبطت ساعات الهدوء (وإلا فالقيمة الافتراضية للفئة هي المعتمدة)."
+    },
+    "/paths/~1server~1machine/put/responses/200/content/application~1json/schema/properties/quiet_default/description": {
+      "en": "The tier's default quiet hours.",
+      "ar": "ساعات الهدوء الافتراضية للفئة."
+    },
+    "/paths/~1server~1machine/put/responses/200/content/application~1json/schema/properties/video/description": {
+      "en": "The streaming role's video verdict: the encoder (`vaapi`, `qsv`, `nvenc`, `videotoolbox` or `software`) and why; absent until the streaming role has tested the encoders.",
+      "ar": "حكم دور البث على الفيديو: المرمّز (`vaapi` أو `qsv` أو `nvenc` أو `videotoolbox` أو `software`) وسببه؛ ولا يظهر قبل أن يختبر دور البث المرمّزات."
+    },
+    "/paths/~1server~1machine/put/responses/200/content/application~1json/schema/properties/plugin_isolation/description": {
+      "en": "This machine's plugin isolation level.",
+      "ar": "مستوى عزل الإضافات على هذا الجهاز."
+    },
+    "/paths/~1server~1machine/put/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1server~1machine/put/responses/409/description": {
+      "en": "This server runs under no supervisor.",
+      "ar": "هذا الخادم لا يعمل تحت مشرف على العمليات."
+    },
+    "/paths/~1server~1machine/put/responses/502/description": {
+      "en": "The supervisor did not answer.",
+      "ar": "لم يُجب المشرف على العمليات."
+    },
+    "/paths/~1server~1machine/put/responses/422/description": {
+      "en": "A value was refused; the answer names each.",
+      "ar": "رُفضت قيمة؛ والجواب يسمّي كل واحدة."
+    },
+    "/paths/~1server~1machine/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1server~1speech/get/summary": {
+      "en": "Speech to text on this machine",
+      "ar": "تحويل الكلام إلى نص على هذا الجهاز"
+    },
+    "/paths/~1server~1speech/get/description": {
+      "en": "On or off, the model by tier and why, the sizes offered, the last measure of this machine's speed, and the backlog's estimate.",
+      "ar": "التشغيل أو الإيقاف، والنموذج بحسب الفئة وسببه، والأحجام المتاحة، وآخر قياس لسرعة هذا الجهاز، وتقدير المتراكم."
+    },
+    "/paths/~1server~1speech/get/responses/200/description": {
+      "en": "Speech to text.",
+      "ar": "تحويل الكلام إلى نص."
+    },
+    "/paths/~1server~1speech/get/responses/200/content/application~1json/schema/properties/speech/description": {
+      "en": "On or off, the model, and why the tier picked it.",
+      "ar": "التشغيل أو الإيقاف، والنموذج، وسبب اختيار الفئة له."
+    },
+    "/paths/~1server~1speech/get/responses/200/content/application~1json/schema/properties/measure/description": {
+      "en": "The last measure of this machine's speed: the model and its real-time factor (`rtf`).",
+      "ar": "آخر قياس لسرعة هذا الجهاز: النموذج ومعامل الزمن الحقيقي (`rtf`)."
+    },
+    "/paths/~1server~1speech/get/responses/200/content/application~1json/schema/properties/advice/description": {
+      "en": "The backlog (the audio waiting for transcription), how long it takes at the measured speed and, over 30 days, the next smaller model's estimate or speech off.",
+      "ar": "المتراكم (الصوت المنتظر للتفريغ)، والمدة التي يستغرقها بالسرعة المقيسة، وإن زادت على 30 يومًا فتقدير النموذج الأصغر التالي أو إيقاف تحويل الكلام."
+    },
+    "/paths/~1server~1speech/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1server~1speech/put/summary": {
+      "en": "Turn speech to text on or off, or pick its model",
+      "ar": "تشغيل تحويل الكلام إلى نص أو إيقافه، أو اختيار نموذجه"
+    },
+    "/paths/~1server~1speech/put/description": {
+      "en": "`speech` (`on`, `off` or `auto`) and `model` (a size, or `auto`), for the next start. Audited.",
+      "ar": "`speech` (`on` أو `off` أو `auto`) و`model` (حجم، أو `auto`)، للتشغيل التالي. ويُسجَّل في سجل التدقيق."
+    },
+    "/paths/~1server~1speech/put/requestBody/description": {
+      "en": "The change.",
+      "ar": "التغيير."
+    },
+    "/paths/~1server~1speech/put/responses/200/description": {
+      "en": "Speech to text after the change.",
+      "ar": "تحويل الكلام إلى نص بعد التغيير."
+    },
+    "/paths/~1server~1speech/put/responses/200/content/application~1json/schema/properties/speech/description": {
+      "en": "On or off, the model, and why the tier picked it.",
+      "ar": "التشغيل أو الإيقاف، والنموذج، وسبب اختيار الفئة له."
+    },
+    "/paths/~1server~1speech/put/responses/200/content/application~1json/schema/properties/measure/description": {
+      "en": "The last measure of this machine's speed: the model and its real-time factor (`rtf`).",
+      "ar": "آخر قياس لسرعة هذا الجهاز: النموذج ومعامل الزمن الحقيقي (`rtf`)."
+    },
+    "/paths/~1server~1speech/put/responses/200/content/application~1json/schema/properties/advice/description": {
+      "en": "The backlog (the audio waiting for transcription), how long it takes at the measured speed and, over 30 days, the next smaller model's estimate or speech off.",
+      "ar": "المتراكم (الصوت المنتظر للتفريغ)، والمدة التي يستغرقها بالسرعة المقيسة، وإن زادت على 30 يومًا فتقدير النموذج الأصغر التالي أو إيقاف تحويل الكلام."
+    },
+    "/paths/~1server~1speech/put/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1server~1speech/put/responses/409/description": {
+      "en": "This server runs under no supervisor.",
+      "ar": "هذا الخادم لا يعمل تحت مشرف على العمليات."
+    },
+    "/paths/~1server~1speech/put/responses/502/description": {
+      "en": "The supervisor did not answer.",
+      "ar": "لم يُجب المشرف على العمليات."
+    },
+    "/paths/~1server~1speech/put/responses/422/description": {
+      "en": "A value was refused; the answer names each.",
+      "ar": "رُفضت قيمة؛ والجواب يسمّي كل واحدة."
+    },
+    "/paths/~1server~1speech/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1server~1speech~1measure/post/summary": {
+      "en": "Measure this machine's speech speed now",
+      "ar": "قياس سرعة تحويل الكلام على هذا الجهاز الآن"
+    },
+    "/paths/~1server~1speech~1measure/post/description": {
+      "en": "Measures again how fast this machine turns speech into text; the answer comes in a later GET. Audited.",
+      "ar": "يقيس مجددًا مدى سرعة هذا الجهاز في تحويل الكلام إلى نص؛ ويأتي الجواب في طلب GET لاحق. ويُسجَّل في سجل التدقيق."
+    },
+    "/paths/~1server~1speech~1measure/post/responses/202/description": {
+      "en": "The measure started.",
+      "ar": "بدأ القياس."
+    },
+    "/paths/~1server~1speech~1measure/post/responses/409/description": {
+      "en": "This server runs under no supervisor.",
+      "ar": "هذا الخادم لا يعمل تحت مشرف على العمليات."
+    },
+    "/paths/~1server~1speech~1measure/post/responses/502/description": {
+      "en": "The supervisor did not answer.",
+      "ar": "لم يُجب المشرف على العمليات."
+    },
+    "/paths/~1server~1speech~1measure/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1libraries~1{id}~1access/parameters/0/description": {
+      "en": "The library's id.",
+      "ar": "معرّف المكتبة."
+    },
+    "/paths/~1libraries~1{id}~1access/get/summary": {
+      "en": "A library's media permissions",
+      "ar": "صلاحيات الوسائط لمكتبة"
+    },
+    "/paths/~1libraries~1{id}~1access/get/description": {
+      "en": "The last check of each folder: the access, the user Maktaba runs as, the files it could not read, and the fix for this platform. A write that failed with a permission error since the last check makes this read check again. Paths and user ids are an admin's: every library reader sees only `access` on the library.",
+      "ar": "آخر فحص لكل مجلد: الوصول، والمستخدم الذي تعمل به مكتبة، والملفات التي تعذّرت قراءتها، والإصلاح لهذه المنصّة. وإن فشلت كتابة بخطأ صلاحيات منذ آخر فحص أعادت هذه القراءة الفحص. والمسارات ومعرّفات المستخدمين للمشرف وحده: فكل قارئ للمكتبة لا يرى إلا `access` على المكتبة."
+    },
+    "/paths/~1libraries~1{id}~1access/get/responses/200/description": {
+      "en": "The access report.",
+      "ar": "تقرير الوصول."
+    },
+    "/paths/~1libraries~1{id}~1access/get/responses/200/content/application~1json/schema/properties/access/description": {
+      "en": "The library's access: `rw`, `ro` (read-only for Maktaba) or `none`; null when never checked.",
+      "ar": "وصول المكتبة: `rw`، أو `ro` (للقراءة فقط بالنسبة إلى مكتبة)، أو `none`؛ وnull إن لم تُفحص قط."
+    },
+    "/paths/~1libraries~1{id}~1access/get/responses/200/content/application~1json/schema/properties/runs_as/description": {
+      "en": "The user and group Maktaba runs as (`uid`, `gid`, `name`).",
+      "ar": "المستخدم والمجموعة اللذان تعمل بهما مكتبة (`uid` و`gid` و`name`)."
+    },
+    "/paths/~1libraries~1{id}~1access/get/responses/200/content/application~1json/schema/properties/roots/description": {
+      "en": "Each folder: its path, its access, the files it could not read and, when it is not read-write, the fix for this platform.",
+      "ar": "كل مجلد: مساره، ووصوله، والملفات التي تعذّرت قراءتها، والإصلاح لهذه المنصّة إن لم يكن للقراءة والكتابة."
+    },
+    "/paths/~1libraries~1{id}~1access/get/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1libraries~1{id}~1access/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1libraries~1{id}~1check-access/parameters/0/description": {
+      "en": "The library's id.",
+      "ar": "معرّف المكتبة."
+    },
+    "/paths/~1libraries~1{id}~1check-access/post/summary": {
+      "en": "Check a library's media permissions now",
+      "ar": "فحص صلاحيات الوسائط لمكتبة الآن"
+    },
+    "/paths/~1libraries~1{id}~1check-access/post/description": {
+      "en": "The page's Check access: reads and writes a probe in each folder (a read-only library that became writable is picked up here). Audited.",
+      "ar": "زر «افحص الوصول» في الصفحة: يقرأ ويكتب ملف اختبار في كل مجلد (والمكتبة التي كانت للقراءة فقط وصارت قابلة للكتابة تُلتقط هنا). ويُسجَّل في سجل التدقيق."
+    },
+    "/paths/~1libraries~1{id}~1check-access/post/responses/200/description": {
+      "en": "The access report.",
+      "ar": "تقرير الوصول."
+    },
+    "/paths/~1libraries~1{id}~1check-access/post/responses/200/content/application~1json/schema/properties/access/description": {
+      "en": "The library's access: `rw`, `ro` (read-only for Maktaba) or `none`; null when never checked.",
+      "ar": "وصول المكتبة: `rw`، أو `ro` (للقراءة فقط بالنسبة إلى مكتبة)، أو `none`؛ وnull إن لم تُفحص قط."
+    },
+    "/paths/~1libraries~1{id}~1check-access/post/responses/200/content/application~1json/schema/properties/runs_as/description": {
+      "en": "The user and group Maktaba runs as (`uid`, `gid`, `name`).",
+      "ar": "المستخدم والمجموعة اللذان تعمل بهما مكتبة (`uid` و`gid` و`name`)."
+    },
+    "/paths/~1libraries~1{id}~1check-access/post/responses/200/content/application~1json/schema/properties/roots/description": {
+      "en": "Each folder: its path, its access, the files it could not read and, when it is not read-write, the fix for this platform.",
+      "ar": "كل مجلد: مساره، ووصوله، والملفات التي تعذّرت قراءتها، والإصلاح لهذه المنصّة إن لم يكن للقراءة والكتابة."
+    },
+    "/paths/~1libraries~1{id}~1check-access/post/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1libraries~1{id}~1check-access/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1libraries~1{id}~1run-now/parameters/0/description": {
+      "en": "The library's id.",
+      "ar": "معرّف المكتبة."
+    },
+    "/paths/~1libraries~1{id}~1run-now/post/summary": {
+      "en": "Run a library's waiting work now",
+      "ar": "تشغيل المهام المنتظرة لمكتبة الآن"
+    },
+    "/paths/~1libraries~1{id}~1run-now/post/description": {
+      "en": "Every live job of the library (its first scan too) runs now, past the quiet hours; a job waiting for another reason (a debounce, a retry) keeps its wait.",
+      "ar": "تعمل كل مهام المكتبة الحيّة الآن (ومنها فحصها الأول)، متجاوزةً ساعات الهدوء؛ أما المهمة المنتظرة لسبب آخر (تأخير أو إعادة محاولة) فتبقى على انتظارها."
+    },
+    "/paths/~1libraries~1{id}~1run-now/post/responses/200/description": {
+      "en": "The jobs marked.",
+      "ar": "المهام المعلَّمة."
+    },
+    "/paths/~1libraries~1{id}~1run-now/post/responses/200/content/application~1json/schema/properties/jobs/description": {
+      "en": "How many waiting jobs were marked to run now.",
+      "ar": "عدد المهام المنتظرة التي عُلّمت لتعمل الآن."
+    },
+    "/paths/~1libraries~1{id}~1run-now/post/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1libraries~1{id}~1run-now/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1queues~1jobs~1{id}~1run-now/parameters/0/description": {
+      "en": "The job's id.",
+      "ar": "معرّف المهمة."
+    },
+    "/paths/~1queues~1jobs~1{id}~1run-now/post/summary": {
+      "en": "Run one waiting job now",
+      "ar": "تشغيل مهمة منتظرة واحدة الآن"
+    },
+    "/paths/~1queues~1jobs~1{id}~1run-now/post/description": {
+      "en": "The job runs now, past the quiet hours of the machine that claimed it.",
+      "ar": "تعمل المهمة الآن، متجاوزةً ساعات الهدوء في الجهاز الذي تسلّمها."
+    },
+    "/paths/~1queues~1jobs~1{id}~1run-now/post/responses/200/description": {
+      "en": "The job marked.",
+      "ar": "المهمة المعلَّمة."
+    },
+    "/paths/~1queues~1jobs~1{id}~1run-now/post/responses/200/content/application~1json/schema/properties/jobs/description": {
+      "en": "How many waiting jobs were marked to run now.",
+      "ar": "عدد المهام المنتظرة التي عُلّمت لتعمل الآن."
+    },
+    "/paths/~1queues~1jobs~1{id}~1run-now/post/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1queues~1jobs~1{id}~1run-now/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1queues~1{stage}~1run-now/parameters/0/description": {
+      "en": "The queue's stage.",
+      "ar": "مرحلة قائمة الانتظار."
+    },
+    "/paths/~1queues~1{stage}~1run-now/post/summary": {
+      "en": "Run a queue's jobs held for the quiet hours now",
+      "ar": "تشغيل مهام قائمة انتظار موقوفة حتى ساعات الهدوء الآن"
+    },
+    "/paths/~1queues~1{stage}~1run-now/post/description": {
+      "en": "Only the stage's jobs held for the quiet hours (the queue's Waiting for quiet hours), not every waiting job.",
+      "ar": "مهام المرحلة الموقوفة حتى ساعات الهدوء وحدها (حالة «بانتظار ساعات الهدوء» في قائمة الانتظار)، لا كل مهمة منتظرة."
+    },
+    "/paths/~1queues~1{stage}~1run-now/post/responses/200/description": {
+      "en": "The jobs marked.",
+      "ar": "المهام المعلَّمة."
+    },
+    "/paths/~1queues~1{stage}~1run-now/post/responses/200/content/application~1json/schema/properties/jobs/description": {
+      "en": "How many waiting jobs were marked to run now.",
+      "ar": "عدد المهام المنتظرة التي عُلّمت لتعمل الآن."
+    },
+    "/paths/~1queues~1{stage}~1run-now/post/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1queues~1{stage}~1run-now/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1plugins~1isolation/get/summary": {
+      "en": "Plugin isolation",
+      "ar": "عزل الإضافات"
+    },
+    "/paths/~1plugins~1isolation/get/description": {
+      "en": "Each machine's plugin isolation level and the home's switch for plugins with container-only isolation.",
+      "ar": "مستوى عزل الإضافات على كل جهاز، ومفتاح الجهاز الرئيسي للإضافات ذات العزل على مستوى الحاوية فقط."
+    },
+    "/paths/~1plugins~1isolation/get/responses/200/description": {
+      "en": "The isolation.",
+      "ar": "العزل."
+    },
+    "/paths/~1plugins~1isolation/get/responses/200/content/application~1json/schema/properties/level/description": {
+      "en": "The home's level (the weakest of its machines').",
+      "ar": "مستوى الجهاز الرئيسي (أضعف مستويات أجهزته)."
+    },
+    "/paths/~1plugins~1isolation/get/responses/200/content/application~1json/schema/properties/machines/description": {
+      "en": "Each machine's level and what it misses (`landlock`, `userns`).",
+      "ar": "مستوى كل جهاز وما ينقصه (`landlock` و`userns`)."
+    },
+    "/paths/~1plugins~1isolation/get/responses/200/content/application~1json/schema/properties/allow_container_isolation/description": {
+      "en": "Allow plugins with container-only isolation on this home.",
+      "ar": "السماح بالإضافات ذات العزل على مستوى الحاوية فقط على هذا الجهاز الرئيسي."
+    },
+    "/paths/~1plugins~1isolation/get/responses/200/content/application~1json/schema/properties/held/description": {
+      "en": "Plugins are held because the level is container-only and the switch is off.",
+      "ar": "الإضافات موقوفة لأن العزل على مستوى الحاوية فقط والمفتاح معطّل."
+    },
+    "/paths/~1plugins~1isolation/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1plugins~1isolation/put/summary": {
+      "en": "Allow plugins with container-only isolation",
+      "ar": "السماح بالإضافات ذات العزل على مستوى الحاوية فقط"
+    },
+    "/paths/~1plugins~1isolation/put/description": {
+      "en": "`allow` turns the switch on or off. Turning it on is a sensitive change: it needs the admin's `password` again (401 `reauth_required`). Audited with who, when and the level.",
+      "ar": "يشغّل `allow` المفتاح أو يطفئه. والتشغيل تغيير حساس: يحتاج إلى `password` المشرف مرة أخرى (401 `reauth_required`). ويُسجَّل في سجل التدقيق مع من غيّره ومتى والمستوى."
+    },
+    "/paths/~1plugins~1isolation/put/requestBody/description": {
+      "en": "The switch.",
+      "ar": "المفتاح."
+    },
+    "/paths/~1plugins~1isolation/put/responses/200/description": {
+      "en": "The isolation after the change.",
+      "ar": "العزل بعد التغيير."
+    },
+    "/paths/~1plugins~1isolation/put/responses/200/content/application~1json/schema/properties/level/description": {
+      "en": "The home's level (the weakest of its machines').",
+      "ar": "مستوى الجهاز الرئيسي (أضعف مستويات أجهزته)."
+    },
+    "/paths/~1plugins~1isolation/put/responses/200/content/application~1json/schema/properties/machines/description": {
+      "en": "Each machine's level and what it misses (`landlock`, `userns`).",
+      "ar": "مستوى كل جهاز وما ينقصه (`landlock` و`userns`)."
+    },
+    "/paths/~1plugins~1isolation/put/responses/200/content/application~1json/schema/properties/allow_container_isolation/description": {
+      "en": "Allow plugins with container-only isolation on this home.",
+      "ar": "السماح بالإضافات ذات العزل على مستوى الحاوية فقط على هذا الجهاز الرئيسي."
+    },
+    "/paths/~1plugins~1isolation/put/responses/200/content/application~1json/schema/properties/held/description": {
+      "en": "Plugins are held because the level is container-only and the switch is off.",
+      "ar": "الإضافات موقوفة لأن العزل على مستوى الحاوية فقط والمفتاح معطّل."
+    },
+    "/paths/~1plugins~1isolation/put/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1plugins~1isolation/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/components/schemas/Library/properties/access/description": {
+      "en": "The last media-permission check: `rw`, `ro` (read-only for Maktaba: the writes that would change its files answer 409 `library_read_only`) or `none`; null when never checked (treated as `rw`). The folders' detail is the admin's `GET /api/libraries/{id}/access`.",
+      "ar": "آخر فحص لصلاحيات الوسائط: `rw`، أو `ro` (للقراءة فقط بالنسبة إلى مكتبة: الكتابات التي تغيّر ملفاتها تجيب 409 `library_read_only`)، أو `none`؛ وnull إن لم تُفحص قط (وتُعامَل كـ`rw`). وتفاصيل المجلدات في `GET /api/libraries/{id}/access` للمشرف."
+    },
+    "/components/schemas/Library/properties/access_partial/description": {
+      "en": "Some files could not be read, or a write failed since the check.",
+      "ar": "تعذّرت قراءة بعض الملفات، أو فشلت كتابة منذ الفحص."
+    },
+    "/components/schemas/StreamCapabilities/properties/software_only/description": {
+      "en": "This home converts video in software only (no GPU encoder works): a player plays files as they are, or remuxed, whenever it can.",
+      "ar": "يحوّل هذا الجهاز الرئيسي الفيديو برمجيًا فقط (لا يعمل أي مرمّز على وحدة الرسوميات): فيشغّل المشغّل الملفات كما هي، أو بعد إعادة تغليفها، متى استطاع."
+    },
+    "/components/schemas/QueueSummary/properties/quiet_at/description": {
+      "en": "With `waiting_reason` `quiet_hours` (heavy jobs wait for this machine's quiet hours; `POST /api/queues/{stage}/run-now` starts them), when the window opens (`01:00`).",
+      "ar": "حين يكون `waiting_reason` هو `quiet_hours` (تنتظر المهام الثقيلة ساعات الهدوء في هذا الجهاز؛ ويشغّلها `POST /api/queues/{stage}/run-now`)، موعد بدء الفترة (`01:00`)."
     }
   }
 }
