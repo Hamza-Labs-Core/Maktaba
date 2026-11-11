@@ -18,8 +18,9 @@ type internalCallerKey struct{}
 
 // InternalCallers gives the home's own processes their own rate budget: a request carrying
 // the supervisor's per-boot local token (FromSupervisor: the pipeline, the launcher's
-// version and health checks, the supervisor's update watch) draws on one bucket of perMin
-// a minute (0 or less: unlimited), and the client limits (PerIP, PerUser) let it by.
+// version and health checks, the supervisor's update watch, and the streaming front door's
+// and a node's link pulls, which it makes for a signed-in viewer) draws on one bucket of
+// perMin a minute (0 or less: unlimited), and the client limits (PerIP, PerUser) let it by.
 //
 // The token is the identity, never the address: a reverse proxy and the relay agent also
 // reach the API over loopback, and their clients keep the client limits. A request with a

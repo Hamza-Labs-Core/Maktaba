@@ -69,7 +69,7 @@ func checkHealth(ctx context.Context, cfgPath string, client *http.Client) (stri
 		return err.Error(), false
 	}
 	withLocalToken(req, cfg)
-	resp, err := client.Do(req)
+	resp, err := noRedirect(client).Do(req)
 	if err != nil {
 		return url + ": " + err.Error(), false
 	}
@@ -79,6 +79,14 @@ func checkHealth(ctx context.Context, cfgPath string, client *http.Client) (stri
 		return fmt.Sprintf("%s answered %d", url, resp.StatusCode), false
 	}
 	return url + " answered 200", true
+}
+
+// noRedirect is client following no redirect: a request carrying the local token must not
+// carry it to wherever a 30x points (Go copies custom headers to the next host).
+func noRedirect(client *http.Client) *http.Client {
+	c := *client
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &c
 }
 
 // withLocalToken sends this machine's per-boot local token (the supervisor's, when this

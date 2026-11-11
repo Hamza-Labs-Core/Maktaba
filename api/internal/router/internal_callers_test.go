@@ -126,3 +126,18 @@ func TestLocalTokenWithoutFileClaimsNothing(t *testing.T) {
 		t.Fatalf("only %d of 700 refused", n)
 	}
 }
+
+// On the production stack the sign-in routes' table still bounds the home's own callers:
+// the local token buys no extra logins.
+func TestLocalTokenBuysNoLogins(t *testing.T) {
+	withLocalToken(t)
+	r := New(Deps{IdempotencyStore: idempotency.NewMemoryStore(), IPRatePerMin: 6000, UserRatePerMin: 600})
+	r.Post("/api/auth/login", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	// the API wraps the router with the table (auth_bootstrap.go)
+	h := mw.AuthRouteRateLimit(mw.DefaultAuthRouteLimits())(r)
+	if n := fire(h, 20, http.MethodPost, "/api/auth/login", func(req *http.Request) {
+		req.Header.Set(mw.LocalTokenHeader, localToken)
+	}); n < 9 {
+		t.Fatalf("only %d of 20 logins refused (10 a minute)", n)
+	}
+}

@@ -101,3 +101,27 @@ func TestAuthRouteLimitIgnoresInternalMark(t *testing.T) {
 		t.Fatalf("%d of 5 logins refused, want 3", refused)
 	}
 }
+
+// A token file configured but missing or empty: a header claims nothing (and the cached
+// read of one file never answers for another).
+func TestInternalCallersMissingOrEmptyTokenFile(t *testing.T) {
+	var marked bool
+	h := InternalCallers(-1)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { marked = InternalCaller(r) }))
+	dir := t.TempDir()
+	empty := filepath.Join(dir, "empty.token")
+	if err := os.WriteFile(empty, []byte("\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{filepath.Join(dir, "missing.token"), empty} {
+		t.Setenv("MAKTABA_SUPERVISOR_TOKEN_FILE", file)
+		for _, tok := range []string{"x", " "} {
+			req := httptest.NewRequest(http.MethodGet, "/x", nil)
+			req.Header.Set(LocalTokenHeader, tok)
+			marked = false
+			h.ServeHTTP(httptest.NewRecorder(), req)
+			if marked {
+				t.Fatalf("file %s, token %q: marked", file, tok)
+			}
+		}
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -75,9 +76,12 @@ func TestSetupHint(t *testing.T) {
 // limits never refuse them (the API's InternalCallers); with no token file they send none.
 func TestOwnChecksCarryLocalToken(t *testing.T) {
 	dir := t.TempDir()
+	var mu sync.Mutex
 	var got []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		got = append(got, r.URL.Path+"="+r.Header.Get("X-Maktaba-Local-Token"))
+		mu.Unlock()
 		if r.URL.Path == "/api/system/version" {
 			_, _ = w.Write([]byte(`{"version":"0.3.1"}`))
 		}
@@ -105,7 +109,44 @@ func TestOwnChecksCarryLocalToken(t *testing.T) {
 	checkHealth(context.Background(), cfg, srv.Client())
 	serverVersion(context.Background(), cfg)
 	want := []string{"/api/system/health=", "/api/system/version=", "/api/system/health=tok-abc", "/api/system/version=tok-abc"}
+	mu.Lock()
+	defer mu.Unlock()
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+// A request with the token follows no redirect: the token must not go to where a 30x points.
+func TestOwnChecksFollowNoRedirect(t *testing.T) {
+	var leaked string
+	away := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		leaked = r.Header.Get("X-Maktaba-Local-Token")
+	}))
+	defer away.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, away.URL+r.URL.Path, http.StatusFound)
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	_, port, _ := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	cfg := filepath.Join(dir, "server.toml")
+	data := filepath.Join(dir, "data")
+	if err := os.WriteFile(cfg, []byte("[server]\nlisten = \"0.0.0.0:"+port+"\"\ndata_dir = \""+data+"\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(data, "supervisor"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(data, "supervisor", "local.token"), []byte("tok-abc"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if msg, ok := checkHealth(context.Background(), cfg, http.DefaultClient); ok || !strings.Contains(msg, "302") {
+		t.Fatalf("a redirect: %q %v", msg, ok)
+	}
+	if v := serverVersion(context.Background(), cfg); v != "" {
+		t.Fatalf("version through a redirect: %q", v)
+	}
+	if leaked != "" {
+		t.Fatalf("the token followed a redirect: %q", leaked)
 	}
 }

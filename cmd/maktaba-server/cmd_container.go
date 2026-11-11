@@ -374,7 +374,7 @@ func serverVersion(ctx context.Context, cfgPath string) string {
 		return ""
 	}
 	withLocalToken(req, cfg)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := noRedirect(http.DefaultClient).Do(req)
 	if err != nil {
 		return ""
 	}

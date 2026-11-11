@@ -124,3 +124,21 @@ type oneKey struct {
 func (k oneKey) Lookup(_ context.Context, node, key string) ([]byte, bool) {
 	return k.secret, node == k.node && key == "dk_1"
 }
+
+// A node's per-boot local token never goes to the home: it names a program on the node,
+// and the home's API would take it for its own (its rate budget for internal callers).
+func TestTheLocalTokenStaysOnTheNode(t *testing.T) {
+	got := "unset"
+	home := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("X-Maktaba-Local-Token")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer home.Close()
+	p := New(fakeLink{url: home.URL}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/library", nil)
+	req.Header.Set("X-Maktaba-Local-Token", "node-token")
+	p.ServeHTTP(httptest.NewRecorder(), req)
+	if got != "" {
+		t.Fatalf("the home got the node's local token %q", got)
+	}
+}
