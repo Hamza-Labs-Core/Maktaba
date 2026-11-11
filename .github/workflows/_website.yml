@@ -2,17 +2,29 @@
 # and smoke the built site through the Worker under `wrangler dev`. ci.yml runs it on a pull
 # request that touches the site or a source it is built from (the `website` filter of
 # .github/ci-paths.yml); website-deploy.yml runs it before every deploy and deploys the very
-# dist/ it uploads. No secret, no call to Cloudflare.
+# dist/ it uploads; website-nightly.yml builds with it (quality: false) and sweeps every page.
+# No secret, no call to Cloudflare.
+#
+# The quality bar (story 60.04), on the dist/ the first job built, served by the Worker:
+#   - quality: axe, keyboard, focus, target size, reflow, text spacing, reduced motion,
+#     language, layout shift, RTL and the visual references (Playwright), in the image the
+#     references are rendered in; axe's findings, the report and the visual diffs are kept;
+#   - lighthouse: the hand-made pages and the representatives (3 runs, median), a whole family
+#     when its generator changed (1 run each), and T02's positive control; the reports kept.
 
 name: Website
 
 on:
   workflow_call:
     inputs:
-      upload:
-        description: upload the built site (dist/) as the website-site artifact
+      quality:
+        description: run the quality jobs (axe, the visual references, Lighthouse) on the build
         type: boolean
-        default: false
+        default: true
+      lighthouse_extra:
+        description: a JSON list of site paths Lighthouse also measures, 3 runs each (the deploy passes the pages the last nightly sweep failed)
+        type: string
+        default: "[]"
 
 permissions:
   contents: read
@@ -66,8 +78,30 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Tests (the Worker, the build, the built site)
+      # the Worker, the build, the built site (head tags, cards, sitemap: T10, T11), and the
+      # node tests of the scripts (the link check, the CSS lint, the Lighthouse URL sets)
+      - name: Tests (the Worker, the build, the built site, the scripts)
         run: npm test
+
+      # T07: logical properties only, in the site's and the install guides' stylesheets
+      - name: CSS lint (no physical left or right)
+        run: npm run lint:css
+
+      # 60.08 T07: the build rewrote dist-manifest.json; the committed one must be the same
+      - name: The committed dist-manifest.json is the build's
+        working-directory: .
+        run: |
+          if ! git diff --exit-code -- web/packages/website/dist-manifest.json; then
+            echo "::error file=web/packages/website/dist-manifest.json::the site's pages changed: run npm run build in web/packages/website and commit dist-manifest.json"
+            exit 1
+          fi
+
+      # 60.08: every maktaba.tv link in the repository against this build, and the built site's
+      # own links: every href, src and #fragment on every page, both languages, and each
+      # page's link to its twin
+      - name: Links (the repository's and the built site's)
+        working-directory: .
+        run: node web/packages/website/scripts/links.mjs --dist web/packages/website/dist
 
       # the smoke targets and the deploy's steps (a fake wrangler), which the deploy runs
       - name: Tests (the smoke and the deploy tools)
@@ -115,11 +149,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      # The link check (story 60.08) and the quality run (story 60.04: axe, the visual
-      # references, Lighthouse) come here, before the site is uploaded for the deploy.
-
+      # the quality jobs below and the deploy read this very build
       - name: Upload the built site
-        if: inputs.upload
         uses: actions/upload-artifact@v7.0.1
         with:
           name: website-site
@@ -141,3 +172,261 @@ jobs:
         with:
           path: ${{ steps.npm-cache.outputs.path }}
           key: ${{ steps.npm-cache.outputs.key }}
+
+  # ---- the quality bar (story 60.04) -----------------------------------------------------------
+
+  # Playwright and axe on every page in both languages, and the visual references, in the image
+  # the references were rendered in (scripts/e2e-update.sh renders them in the same one).
+  quality:
+    name: quality (axe, keyboard, layout, RTL, visual)
+    needs: [website]
+    if: inputs.quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host --init
+    defaults:
+      run:
+        working-directory: web/packages/website
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Download website-site
+        id: artifact-website-site
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: website-site
+          path: web/packages/website/dist
+      - name: Wait 15s to retry the download of website-site
+        if: steps.artifact-website-site.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download website-site (attempt 2)
+        id: artifact-website-site-2
+        if: steps.artifact-website-site.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: website-site
+          path: web/packages/website/dist
+      - name: Wait 45s to retry the download of website-site
+        if: steps.artifact-website-site-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download website-site (attempt 3)
+        id: artifact-website-site-3
+        if: steps.artifact-website-site-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: website-site
+          path: web/packages/website/dist
+      - name: Check website-site downloaded
+        id: artifact-website-site-check
+        if: steps.artifact-website-site-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: website-site
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: The built site under wrangler dev, and the browser tests
+        env:
+          CI: "true"
+          WEBSITE_VISUAL: "1"
+          WEBSITE_BASE: http://127.0.0.1:8787
+          LOG: logs/worker-quality.log
+          PIDFILE: logs/worker-quality.pid
+        run: |
+          mkdir -p logs
+          timeout 1500 npx wrangler dev --var CANONICAL_REDIRECTS:off --ip 127.0.0.1 --port 8787 \
+            --log-level info > "$LOG" 2>&1 &
+          echo $! > "$PIDFILE"
+          up=0
+          for _ in $(seq 1 60); do
+            if curl -s -o /dev/null http://127.0.0.1:8787/; then up=1; break; fi
+            sleep 1
+          done
+          rc=0
+          if [ "$up" = 1 ]; then
+            npx playwright test || rc=$?
+          else
+            echo "::error::wrangler dev never answered on 127.0.0.1:8787"
+            rc=1
+          fi
+          kill "$(cat "$PIDFILE")" 2>/dev/null || true
+          pkill -f "wrangler dev --var CANONICAL_REDIRECTS:off" || true
+          exit $rc
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: website-playwright
+          path: |
+            web/packages/website/playwright-report/
+            web/packages/website/test-results/results.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload axe's findings
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: website-axe
+          path: web/packages/website/test-results/axe/
+          if-no-files-found: warn
+          retention-days: 7
+
+      # on a mismatch: each reference's expected, actual and diff images
+      - name: Upload the visual diffs
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: website-visual-diff
+          path: |
+            web/packages/website/test-results/output/**/*-expected.png
+            web/packages/website/test-results/output/**/*-actual.png
+            web/packages/website/test-results/output/**/*-diff.png
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload the Worker's log
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: website-worker-log-quality
+          path: web/packages/website/logs/worker-quality.log
+          if-no-files-found: warn
+          retention-days: 7
+
+  # Lighthouse on mobile (scripts/lighthouse.mjs, lighthouserc.json): the hand-made pages and
+  # each family's representatives in both languages, 3 runs, median; a family whose generator or
+  # source this change touches, every page once; the inputs' extra pages; and T02, the positive
+  # control (an unsized image must fail the layout-shift bar). Chromium is the image's.
+  lighthouse:
+    name: lighthouse (mobile, ≥ 95 × 4, CLS 0)
+    needs: [website]
+    if: inputs.quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host --init
+    defaults:
+      run:
+        working-directory: web/packages/website
+    steps:
+      # two commits: what this change touches is HEAD^1..HEAD (a pull request's merge commit
+      # against its base; a push to main against the commit before it)
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 2
+
+      - name: Download website-site
+        id: artifact-website-site
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: website-site
+          path: web/packages/website/dist
+      - name: Wait 15s to retry the download of website-site
+        if: steps.artifact-website-site.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download website-site (attempt 2)
+        id: artifact-website-site-2
+        if: steps.artifact-website-site.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: website-site
+          path: web/packages/website/dist
+      - name: Wait 45s to retry the download of website-site
+        if: steps.artifact-website-site-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download website-site (attempt 3)
+        id: artifact-website-site-3
+        if: steps.artifact-website-site-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: website-site
+          path: web/packages/website/dist
+      - name: Check website-site downloaded
+        id: artifact-website-site-check
+        if: steps.artifact-website-site-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: website-site
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: The files this change touches
+        working-directory: .
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          mkdir -p web/packages/website/logs
+          if git rev-parse -q --verify HEAD^1 > /dev/null; then
+            git diff --name-only HEAD^1 HEAD > web/packages/website/logs/changed.txt
+          else
+            : > web/packages/website/logs/changed.txt
+          fi
+          echo "$(wc -l < web/packages/website/logs/changed.txt) file(s) changed"
+
+      - name: T02, the positive control (an unsized image fails the bar)
+        run: node scripts/lighthouse.mjs control --out lighthouse-out/control
+
+      - name: Lighthouse under wrangler dev
+        env:
+          EXTRA: ${{ inputs.lighthouse_extra }}
+          LOG: logs/worker-lighthouse.log
+          PIDFILE: logs/worker-lighthouse.pid
+        run: |
+          mkdir -p logs
+          timeout 1500 npx wrangler dev --var CANONICAL_REDIRECTS:off --ip 127.0.0.1 --port 8787 \
+            --log-level info > "$LOG" 2>&1 &
+          echo $! > "$PIDFILE"
+          up=0
+          for _ in $(seq 1 60); do
+            if curl -s -o /dev/null http://127.0.0.1:8787/; then up=1; break; fi
+            sleep 1
+          done
+          rc=0
+          if [ "$up" = 1 ]; then
+            node scripts/lighthouse.mjs run --set pr --base http://127.0.0.1:8787 \
+              --changed logs/changed.txt --extra "$EXTRA" \
+              --out lighthouse-out/pr || rc=$?
+          else
+            echo "::error::wrangler dev never answered on 127.0.0.1:8787"
+            rc=1
+          fi
+          kill "$(cat "$PIDFILE")" 2>/dev/null || true
+          pkill -f "wrangler dev --var CANONICAL_REDIRECTS:off" || true
+          exit $rc
+
+      - name: Upload the reports
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: website-lighthouse
+          path: |
+            web/packages/website/lighthouse-out/*/reports/
+            web/packages/website/lighthouse-out/*/reports-remeasured/
+            web/packages/website/lighthouse-out/*/*.json
+            web/packages/website/lighthouse-out/*/summary.md
+            web/packages/website/lighthouse-out/*/lhci.log
+            web/packages/website/logs/
+          if-no-files-found: warn
+          retention-days: 14

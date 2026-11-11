@@ -6,20 +6,31 @@
 //      install/assets/) copied to the root of dist/;
 //   2. the generated families (FAMILIES: /problems 60.06, /help 60.12, /download 60.11);
 //   3. the hand-made pages (src/pages/, each wrapped in the shell, scripts/shell.mjs);
-//   4. the copied files: static/, the log schema at its $id, security.txt, robots.txt;
-//   5. the checks: every page has its twin in the other language, and an Arabic page is
-//      Arabic (maktaba.dev's Latin-share check). The link check (60.08) joins them.
+//   4. the copied files: static/, the icons and manifest (icons.mjs), the log schema at its
+//      $id, security.txt;
+//   5. what every page carries (story 60.04): the head tags an install guide's own <head>
+//      lacks (head.mjs), a social card per page and language (cards.mjs), sitemap.xml and
+//      robots.txt (sitemap.mjs);
+//   6. the checks: every page has its twin in the other language, and an Arabic page is
+//      Arabic (maktaba.dev's Latin-share check);
+//   7. the link check's manifest (links.mjs --write-manifest dist, story 60.08): the committed
+//      dist-manifest.json is the build's, and CI fails when it differs (`git diff`).
 //
 //   node --experimental-strip-types scripts/build.mjs [--no-install]
 //
 // --no-install skips step 1 for a quick look at the hand-made pages; CI and the deploy never
-// pass it, and the twin check then sees no install pages.
+// pass it, and the twin check then sees no install pages. It also skips step 7, so a quick
+// build never rewrites the committed manifest without the install guides.
 
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { page } from "./shell.mjs";
+import { completeHead, readHead } from "./head.mjs";
+import { cardPath, renderCard } from "./cards.mjs";
+import { writeIcons } from "./icons.mjs";
+import { ROBOTS, sitemapXml } from "./sitemap.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const PKG = path.resolve(HERE, "..");
@@ -114,7 +125,7 @@ export function securityTxt(p, origins = ORIGINS) {
   );
 }
 
-export const ROBOTS = "User-agent: *\nAllow: /\n";
+export { ROBOTS };
 
 // ---- the checks ---------------------------------------------------------------------------
 
@@ -148,6 +159,22 @@ export async function latinFindings(dist) {
   for (const f of walk(dist).filter((f) => f.startsWith("ar/") && f.endsWith(".html")))
     pages[f] = fs.readFileSync(path.join(dist, f), "utf8");
   return find(pages);
+}
+
+// ---- the pages -----------------------------------------------------------------------------
+
+/** Every page of a built dist/ with an address of its own (the 404 pages have none): its file,
+ * language, own path and English path. */
+export function sitePages(files) {
+  const out = [];
+  for (const file of files) {
+    if (!file.endsWith(".html") || /(^|\/)404\.html$/.test(file)) continue;
+    const lang = file.startsWith("ar/") ? "ar" : "en";
+    const own = `/${file.replace(/index\.html$/, "")}`;
+    const path = lang === "ar" ? own.slice(3) || "/" : own;
+    out.push({ file, lang, own, path });
+  }
+  return out.sort((a, b) => a.file.localeCompare(b.file));
 }
 
 // ---- the build ------------------------------------------------------------------------------
@@ -204,13 +231,35 @@ export async function build({
   const policy = readDisclosurePolicy(now);
   if (policy.expires <= now) throw new Error("security.txt: Expires is not ahead");
   write(".well-known/security.txt", securityTxt(policy));
+  writeIcons(REPO, write);
+
+  // 5. what every page carries: the head tags, a card, the sitemap
+  const pages = sitePages(walk(dist));
+  for (const p of pages) {
+    const file = path.join(dist, p.file);
+    const html = fs.readFileSync(file, "utf8");
+    const head = readHead(html, p.file);
+    if (head.lang !== p.lang)
+      throw new Error(`${p.file}: <html lang="${head.lang}">, not ${p.lang}`);
+    const done = completeHead(html, { ...p, ...head });
+    if (done !== html) fs.writeFileSync(file, done);
+    write(cardPath(p.lang, p.path).slice(1), await renderCard({ lang: p.lang, title: head.title }));
+  }
+  write("sitemap.xml", sitemapXml(pages.map((p) => p.path)));
   write("robots.txt", ROBOTS);
 
-  // 5. the checks
+  // 6. the checks
   const findings = [...twinFindings(walk(dist)), ...(await latinFindings(dist))];
   if (findings.length)
     throw new Error(`the site has ${findings.length} problem(s):\n${findings.join("\n")}`);
-  log(`dist/: ${walk(dist).length} files`);
+  log(`dist/: ${walk(dist).length} files, ${pages.length} pages`);
+
+  // 7. the link check's manifest (only for a whole build)
+  if (install && dist === DIST) {
+    execFileSync(process.execPath, [path.join(HERE, "links.mjs"), "--write-manifest", dist], {
+      stdio: "inherit",
+    });
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

@@ -7,6 +7,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
+    <meta name="maktaba-menu" content="none" />
     <title>تثبيت Maktaba على Unraid · Maktaba</title>
     <meta
       name="description"
@@ -17,6 +18,7 @@
     <link rel="stylesheet" href="/install/install.css" />
   </head>
   <body>
+    <a class="skip-link" href="#main">انتقلوا إلى المحتوى</a>
     <header>
       <h1>تثبيت Maktaba على Unraid</h1>
       <p class="lead">حاوية واحدة من تبويب التطبيقات تشغّل كل شيء وتحدّث نفسها.</p>
@@ -25,7 +27,7 @@
         <a href="/install/unraid/" hreflang="en" lang="en">English</a>
       </nav>
     </header>
-    <main class="guide">
+    <main id="main" class="guide">
       <p>
         لنظام <strong>Unraid ‏6.12 وما بعده</strong> مع متجر التطبيقات المجتمعية (تبويب «Apps»).
         يستغرق التثبيت نحو 15 دقيقة. ويعمل Maktaba بصفة المستخدم <code>nobody</code> الخاص بنظام
@@ -107,7 +109,7 @@
       </p>
       <h2>4. شغّل الإعداد</h2>
       <p>من «Docker» اضغط أيقونة Maktaba ← <strong>«Console»</strong>، وشغّل:</p>
-      <pre><code>/opt/maktaba/server/bin/maktaba-server container setup</code></pre>
+      <pre tabindex="0"><code>/opt/maktaba/server/bin/maktaba-server container setup</code></pre>
       <p>
         أجب عن أسئلته: اسمٌ لحساب المدير (غير <code>admin</code> الذي يحتفظ به Maktaba لنفسه)، وكلمة
         مروره، والمجلدات التي فيها مقاطعك. ويحتاج الخادم إلى الإنترنت في هذه الخطوة: ينزّل الإعداد

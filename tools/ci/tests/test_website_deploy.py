@@ -7,6 +7,7 @@ Run: uv run --no-project --with pyyaml==6.0.3 --with pytest==8.4.2 pytest tools/
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
@@ -112,3 +113,156 @@ def test_a_rollback_builds_nothing_and_still_passes_the_gate() -> None:
 
 def test_one_deploy_at_a_time_never_cancelled() -> None:
     assert workflow()["concurrency"] == {"group": "website-deploy", "cancel-in-progress": False}
+
+
+# ---- story 60.04: a red nightly sweep blocks the deploy -----------------------------------
+
+NIGHTLY = ROOT / ".github/workflows/website-nightly.yml"
+STATE_SCRIPT = ROOT / "tools/ci/website_nightly_state.sh"
+
+
+def nightly_gate() -> dict:
+    return next(s for s in steps() if s.get("name") == "Nightly sweep gate")
+
+
+def run_nightly_gate(state: str, failed: str = "[]") -> subprocess.CompletedProcess[str]:
+    env = {"PATH": os.environ["PATH"], "STATE": state, "FAILED": failed, "RUN": "https://run/1"}
+    return subprocess.run(["bash", "-e", "-c", nightly_gate()["run"]], env=env, capture_output=True, text=True)
+
+
+def test_the_nightly_gate_sits_after_the_token_check_and_before_any_upload() -> None:
+    names = [s.get("name") or s.get("uses") for s in steps()]
+    gate = names.index("Nightly sweep gate")
+    assert names.index("Token check") < gate < names.index("Download website-site")
+    step = nightly_gate()
+    assert GATED in step["if"] and "!inputs.rollback" in step["if"], "a rollback is never held back"
+    assert step["env"]["STATE"] == "${{ needs.nightly.outputs.state }}"
+
+
+@pytest.mark.parametrize("state", ["green", "none", "red"])
+def test_the_gate_lets_a_green_absent_or_remeasured_sweep_through(state: str) -> None:
+    r = run_nightly_gate(state, '["/install/qnap/"]' if state == "red" else "[]")
+    assert r.returncode == 0, r.stdout + r.stderr
+    if state == "red":
+        assert "measured those pages again and they pass" in r.stdout
+
+
+@pytest.mark.parametrize("state", ["unreadable", "", "something-else"])
+def test_the_gate_refuses_a_red_sweep_it_cannot_read(state: str) -> None:
+    r = run_nightly_gate(state)
+    assert r.returncode == 1
+    assert "::error title=maktaba.tv not deployed::" in r.stdout
+
+
+def test_the_build_measures_the_pages_the_last_sweep_failed_and_the_deploy_needs_it() -> None:
+    jobs = workflow()["jobs"]
+    assert jobs["nightly"]["permissions"] == {"contents": "read", "actions": "read"}
+    assert jobs["nightly"]["if"] == "${{ !inputs.rollback }}"
+    assert jobs["build"]["needs"] == ["nightly"]
+    assert jobs["build"]["with"] == {"lighthouse_extra": "${{ needs.nightly.outputs.failed }}"}
+    assert jobs["deploy"]["needs"] == ["nightly", "build"]
+    # the deploy goes on only when that build (with those pages) passed
+    assert "needs.build.result == 'success'" in jobs["deploy"]["if"]
+
+
+def fake_gh(tmp_path: Path, runs: dict | None, failures: str | None, api_status: int = 0) -> Path:
+    """A `gh` that answers the runs API with `runs` (or an HTTP error) and `run download` with a
+    failures.json of `failures` (None: the artifact is missing)."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (tmp_path / "runs.json").write_text(json.dumps(runs or {}))
+    if failures is not None:
+        (tmp_path / "failures.json").write_text(failures)
+    script = f"""#!/usr/bin/env bash
+if [ "$1" = api ]; then
+  if [ {api_status} = 404 ]; then echo "gh: Not Found (HTTP 404)" >&2; exit 1; fi
+  if [ {api_status} != 0 ]; then echo "gh: Server Error (HTTP 500)" >&2; exit 1; fi
+  cat "{tmp_path}/runs.json"; exit 0
+fi
+if [ "$1" = run ] && [ "$2" = download ]; then
+  dir=""; while [ $# -gt 0 ]; do [ "$1" = -D ] && dir="$2"; shift; done
+  [ -f "{tmp_path}/failures.json" ] || exit 1
+  cp "{tmp_path}/failures.json" "$dir/failures.json"; exit 0
+fi
+exit 2
+"""
+    gh = bin_dir / "gh"
+    gh.write_text(script)
+    gh.chmod(0o755)
+    return bin_dir
+
+
+def run_state(tmp_path: Path, bin_dir: Path) -> tuple[int, dict[str, str], str]:
+    out = tmp_path / "out"
+    out.write_text("")
+    env = {
+        "PATH": f"{bin_dir}:{os.environ['PATH']}",
+        "REPO": "o/r",
+        "GITHUB_OUTPUT": str(out),
+        "TMPDIR": str(tmp_path),
+    }
+    r = subprocess.run(["bash", str(STATE_SCRIPT)], env=env, capture_output=True, text=True)
+    outputs = dict(line.split("=", 1) for line in out.read_text().splitlines() if "=" in line)
+    return r.returncode, outputs, r.stdout + r.stderr
+
+
+def runs_of(*conclusions: str) -> dict:
+    return {
+        "workflow_runs": [
+            {"id": i + 1, "conclusion": c, "html_url": f"https://run/{i + 1}"} for i, c in enumerate(conclusions)
+        ]
+    }
+
+
+def test_state_green_skips_cancelled_runs(tmp_path: Path) -> None:
+    code, out, _ = run_state(tmp_path, fake_gh(tmp_path, runs_of("cancelled", "success", "failure"), None))
+    assert code == 0
+    assert out["state"] == "green" and out["run"] == "https://run/2"
+
+
+def test_state_none_before_any_sweep_or_before_the_workflow_exists(tmp_path: Path) -> None:
+    code, out, _ = run_state(tmp_path, fake_gh(tmp_path, runs_of("cancelled"), None))
+    assert (code, out["state"]) == (0, "none")
+    (tmp_path / "b").mkdir()
+    code, out, _ = run_state(tmp_path / "b", fake_gh(tmp_path / "b", None, None, api_status=404))
+    assert (code, out["state"]) == (0, "none")
+
+
+def test_state_red_carries_the_failing_pages(tmp_path: Path) -> None:
+    gh = fake_gh(tmp_path, runs_of("failure"), '["/install/qnap/", "/ar/"]')
+    code, out, log = run_state(tmp_path, gh)
+    assert code == 0
+    assert out["state"] == "red"
+    assert json.loads(out["failed"]) == ["/install/qnap/", "/ar/"]
+    assert "/install/qnap/" in log
+
+
+@pytest.mark.parametrize("failures", [None, "[]", "not json", '[{"x": 1}]', '["no-slash"]'])
+def test_state_unreadable_when_a_red_sweep_has_no_readable_list(tmp_path: Path, failures: str | None) -> None:
+    code, out, log = run_state(tmp_path, fake_gh(tmp_path, runs_of("timed_out"), failures))
+    assert code == 0
+    assert out["state"] == "unreadable" and out["failed"] == "[]"
+    assert "::error" in log
+
+
+def test_state_fails_on_an_api_error(tmp_path: Path) -> None:
+    code, out, _ = run_state(tmp_path, fake_gh(tmp_path, None, None, api_status=500))
+    assert code == 1 and "state" not in out
+
+
+def test_the_nightly_sweeps_every_page_in_eight_bounded_shards() -> None:
+    wf = yaml.safe_load(NIGHTLY.read_text())
+    on = wf.get("on", wf.get(True))
+    assert set(on) == {"schedule", "workflow_dispatch"}
+    jobs = wf["jobs"]
+    assert jobs["build"]["with"] == {"quality": False}
+    sweep = jobs["sweep"]
+    assert sweep["strategy"]["matrix"]["shard"] == list(range(1, 9))
+    assert sweep["strategy"]["fail-fast"] is False
+    assert sweep["timeout-minutes"] == 15
+    run = next(s["run"] for s in sweep["steps"] if "lighthouse.mjs run" in str(s.get("run")))
+    assert "--set all" in run and '--shard "$SHARD/8"' in run and "--remeasure 3" in run
+    # the whole within 60 minutes: the build's 20, a shard's 15, the verdict's 5
+    assert jobs["verdict"]["timeout-minutes"] <= 5
+    uploads = [s["with"]["name"] for s in jobs["verdict"]["steps"] if "upload-artifact" in str(s.get("uses"))]
+    assert uploads == ["website-nightly-failures"]

@@ -4,7 +4,16 @@
 //
 // Every page carries <meta name="maktaba-site" content="maktaba-website">: the deploy's smoke
 // (tools/cloudflare/smoke.mjs) looks for it to tell this Worker's answers from any other's.
+//
+// Every page also declares whether its shell has a phone menu, <meta name="maktaba-menu">
+// (SHELL_MENU): "none" for this placeholder shell, "phone" once the design's shell has one. The
+// keyboard tests (e2e/keyboard.spec.ts) open and close the menu on every page that declares
+// one, skip the menu test (saying why) on a page that declares none, and fail a page that
+// declares nothing or declares none while its header has a menu button.
 
+import { esc, headHtml, inLang, organizationJsonLd } from "./head.mjs";
+
+export { esc, inLang };
 export const ORIGIN = "https://maktaba.tv";
 export const GITHUB = "https://github.com/Hamza-Labs-Core/Maktaba";
 export const LATEST_RELEASE = `${GITHUB}/releases/latest`;
@@ -13,6 +22,10 @@ export const DEVPORTAL = "https://maktaba.dev/";
 export const HELP = "/install/troubleshooting/";
 
 export const SITE_MARKER = '<meta name="maktaba-site" content="maktaba-website" />';
+
+/** This shell's phone menu: "none" (the placeholder header has no menu) or "phone". */
+export const SHELL_MENU = "none";
+export const menuMeta = (menu = SHELL_MENU) => `<meta name="maktaba-menu" content="${menu}" />`;
 
 const T = {
   en: {
@@ -24,6 +37,7 @@ const T = {
     developers: "Developers",
     switchLabel: "العربية",
     switchLang: "ar",
+    skip: "Skip to the content",
     security: "Security",
     source: "Source code",
   },
@@ -36,20 +50,11 @@ const T = {
     developers: "للمطوّرين",
     switchLabel: "English",
     switchLang: "en",
+    skip: "انتقلوا إلى المحتوى",
     security: "الأمان",
     source: "الشيفرة المصدرية",
   },
 };
-
-export const esc = (s) =>
-  String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-
-/** A site path in a language: /x/ in English, /ar/x/ in Arabic. */
-export const inLang = (lang, p) => (lang === "ar" ? `/ar${p}` : p);
 
 /** The page's twin in the other language. */
 export function twinOf(lang, p) {
@@ -61,7 +66,8 @@ export function header(lang, sitePath) {
   const t = T[lang];
   // a page with no address of its own (the 404) switches to the other language's front door
   const switchTo = sitePath === null ? inLang(t.switchLang, "/") : twinOf(lang, sitePath);
-  return `<header class="site-header">
+  return `<a class="skip-link" href="#main">${esc(t.skip)}</a>
+<header class="site-header">
   <a class="wordmark" href="${inLang(lang, "/")}">${esc(t.name)}</a>
   <nav aria-label="${esc(t.nav)}">
     <a href="${inLang(lang, "/install/nas/")}">${esc(t.install)}</a>
@@ -83,20 +89,14 @@ export function footer(lang) {
 
 /**
  * A whole document. `path` is the page's English path (`/`, `/install/`), or null for a page
- * with no address of its own (the 404 page): no alternates, and the switch goes to the other
- * language's front door.
+ * with no address of its own (the 404 page): no canonical, alternates or card, and the switch
+ * goes to the other language's front door. The head's links and social tags are head.mjs's.
  */
 export function page({ lang, path, title, description, body, meta = "" }) {
   const dir = lang === "ar" ? "rtl" : "ltr";
   const here = path === null ? null : inLang(lang, path);
-  const alternates =
-    path === null
-      ? ""
-      : `
-  <link rel="canonical" href="${ORIGIN}${here}" />
-  <link rel="alternate" hreflang="en" href="${ORIGIN}${path}" />
-  <link rel="alternate" hreflang="ar" href="${ORIGIN}${inLang("ar", path)}" />
-  <link rel="alternate" hreflang="x-default" href="${ORIGIN}${path}" />`;
+  const head = headHtml({ lang, path, title, description });
+  const jsonLd = path === "/" ? `\n  ${organizationJsonLd(lang)}` : "";
   return `<!doctype html>
 <html lang="${lang}" dir="${dir}">
 <head>
@@ -105,8 +105,10 @@ export function page({ lang, path, title, description, body, meta = "" }) {
   <meta name="color-scheme" content="light dark" />
   <title>${esc(title)}</title>
   <meta name="description" content="${esc(description)}" />
-  ${SITE_MARKER}${meta ? `\n  ${meta}` : ""}${alternates}
-  <link rel="stylesheet" href="/assets/site.css" />
+  ${SITE_MARKER}
+  ${menuMeta()}${meta ? `\n  ${meta}` : ""}
+${head}
+  <link rel="stylesheet" href="/assets/site.css" />${jsonLd}
 </head>
 <body>
 ${header(lang, here)}

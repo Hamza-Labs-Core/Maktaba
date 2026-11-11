@@ -115,6 +115,8 @@ describe("the built site (dist/)", () => {
           expect(allowed, `${f}: ${href}`).toContain(href);
           continue;
         }
+        // an in-page link (the skip link's #main): links.mjs --dist checks fragments
+        if (href.startsWith("#")) continue;
         const rel = href.replace(/^\//, "");
         const file = rel === "" || rel.endsWith("/") ? `${rel}index.html` : rel;
         expect(fs.existsSync(path.join(DIST, file)), `${f}: ${href}`).toBe(true);
@@ -122,7 +124,7 @@ describe("the built site (dist/)", () => {
     }
   });
 
-  it("has robots.txt", () => {
-    expect(read("robots.txt")).toBe("User-agent: *\nAllow: /\n");
+  it("has robots.txt (naming the sitemap, story 60.04)", () => {
+    expect(read("robots.txt")).toMatch(/^User-agent: \*\nAllow: \/\n/);
   });
 });
