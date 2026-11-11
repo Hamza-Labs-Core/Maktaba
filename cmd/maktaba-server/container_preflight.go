@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -54,6 +55,13 @@ var containerTexts = map[string][2]string{
 		"The folder belongs to user {owner}: give user {uid} access, or run the container as {owner} again.",
 		"المجلد ملك المستخدم {owner}: امنح المستخدم {uid} صلاحية الوصول، أو شغّل الحاوية بصفة المستخدم {owner} كما كانت.",
 	},
+	// story 59.09: on DSM (MAKTABA_PLATFORM=dsm, the Synology compose file's) the fix in
+	// DSM's own screens: the shared folder that holds the data folder, and File Station's
+	// permission dialog for the folder itself
+	"container.write_dsm": {
+		"On DSM: Control Panel → Shared Folder → {share} → Edit → Permissions, or File Station → {folder} → Properties → Permission: give the DSM user with uid {uid} (maktaba in the guide) Read/Write.",
+		"على DSM: من لوحة التحكم ← المجلد المشترك ← {share} ← تعديل ← الأذونات، أو من File Station ← {folder} ← الخصائص ← الإذن: امنح مستخدم DSM صاحب المعرّف {uid} (maktaba في الدليل) صلاحية القراءة والكتابة.",
+	},
 	// story 59.10: on TrueNAS the data folder is a dataset, fixed in its permissions editor
 	"container.write_truenas": {
 		"Edit the dataset's permissions and add an ACL entry for user {uid} with Modify, or use the Apps preset.",
@@ -88,7 +96,8 @@ type preflight struct {
 	group     string   // /etc/group
 	// nssLib is libnss_wrapper.so ("" when the image has none: no name is given).
 	nssLib string
-	// platform is MAKTABA_PLATFORM ("" none): a refusal says the fix in that NAS's words.
+	// platform is MAKTABA_PLATFORM ("" none; mediaaccess.PlatformFromEnv): a refusal says the
+	// fix in that NAS's words (dsm: DSM's screens, truenas: the dataset's permissions editor).
 	platform string
 }
 
@@ -170,8 +179,9 @@ func capBounding(status string) (uint64, bool) {
 	return 0, false
 }
 
-// mount is one line of a mountinfo: its target and its per-mount options.
-type mount struct{ target, opts string }
+// mount is one line of a mountinfo: the path of the filesystem it shows (root), its target
+// and its per-mount options.
+type mount struct{ root, target, opts string }
 
 // mounts reads a /proc/<pid>/mountinfo (fields: id parent major:minor root target options
 // ...); targets keep their octal escapes (\040 a space).
@@ -189,7 +199,7 @@ func mounts(path string) []mount {
 		if len(fields) < 6 {
 			continue
 		}
-		out = append(out, mount{target: fields[4], opts: fields[5]})
+		out = append(out, mount{root: fields[3], target: fields[4], opts: fields[5]})
 	}
 	return out
 }
@@ -234,10 +244,38 @@ func (p preflight) writeCheck() error {
 	if owner, ok := ownerOf(p.volume); ok && owner != p.uid && owner != 0 { // never "run as root"
 		msg += "\n" + containerText("container.write_owner", "{owner}", strconv.Itoa(owner), "{uid}", uid)
 	}
-	if strings.EqualFold(strings.TrimSpace(p.platform), mediaaccess.PlatformTrueNAS) {
+	switch strings.ToLower(strings.TrimSpace(p.platform)) {
+	case mediaaccess.PlatformDSM:
+		share, folder := dsmDataFolder(p.mountinfo, p.volume)
+		msg += "\n" + containerText("container.write_dsm", "{share}", share, "{folder}", folder, "{uid}", uid)
+	case mediaaccess.PlatformTrueNAS:
 		msg += "\n" + containerText("container.write_truenas", "{uid}", uid)
 	}
 	return &refusal{msg + "\n(" + err.Error() + ")"}
+}
+
+// dsmDataFolder is the DSM shared folder and folder mounted at volume: the mount's root
+// within its btrfs or ext4 volume (/docker/maktaba, or /@syno/docker/maktaba where DSM
+// shows its subvolume) gives docker and docker/maktaba. Unread, or a named volume (in no
+// shared folder), the guide's own folder.
+func dsmDataFolder(mountinfo, volume string) (share, folder string) {
+	share, folder = "docker", "docker/maktaba"
+	for _, m := range mounts(mountinfo) {
+		if m.target != volume {
+			continue
+		}
+		var parts []string
+		for _, s := range strings.Split(strings.ReplaceAll(m.root, `\040`, " "), "/") {
+			if s != "" && (len(parts) > 0 || s != "@syno") {
+				parts = append(parts, s)
+			}
+		}
+		// a named volume (/@docker/volumes/<name>/_data) is in no shared folder
+		if len(parts) > 0 && !strings.HasPrefix(parts[0], "@") && !slices.Contains(parts, "_data") {
+			share, folder = parts[0], strings.Join(parts, "/")
+		}
+	}
+	return share, folder
 }
 
 // nssDir is where the passwd and group files of a uid /etc/passwd lacks go in the volume.

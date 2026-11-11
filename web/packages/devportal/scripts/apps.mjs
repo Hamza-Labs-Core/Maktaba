@@ -1079,6 +1079,13 @@ export const APPS = [
                     "الصورة `ghcr.io/hamza-labs-core/maktaba-server` مع ملف compose الخاص بالمشروع، الذي تملؤه صفحة [maktaba.tv/install/docker](https://maktaba.tv/ar/install/docker/) من بضع إجابات داخل الصفحة نفسها (المستخدم، ومجلدا البيانات والوسائط، وفئة الذاكرة، والفيديو بالعتاد): تقبله كما هو محطة الحاويات في QNAP وتطبيقا Docker في UGREEN وASUSTOR وأداتا Portainer وDockge، ولجهاز Unraid قالب في متجر Community Applications. تعمل بأي مستخدم يعطيه لها جهاز الـNAS (ولا تعمل بصلاحيات الجذر أبدًا)، ولا يحتاج تشغيلها الأول إلى الإنترنت. وإن لم يستطع ذلك المستخدم الكتابة في مجلد البيانات توقفت فورًا وذكر سجلها المجلد والمستخدم وطريقة الإصلاح"
                   ),
                 ],
+                [
+                  t("Synology NAS (DSM 7.2 and newer)", "جهاز Synology NAS ‏(DSM 7.2 وما بعده)"),
+                  t(
+                    "a Container Manager project: [maktaba.tv/install/synology](https://maktaba.tv/install/synology/) fills in its YAML from your answers (the DSM user made for Maktaba, the shared folders and which are read only, the memory, Quick Sync on a J4125 model) in the page, and walks through DSM's user, folder and permission screens. The release attaches both versions, `maktaba-synology-compose.yaml` and `maktaba-synology-compose.j4125.yaml`. On DSM the permission fixes and the container's messages name DSM's own screens, and DSM's `@eaDir`, `#recycle` and `#snapshot` folders are never library content",
+                    "مشروع في Container Manager: تملأ صفحة [maktaba.tv/install/synology](https://maktaba.tv/ar/install/synology/) ملف YAML الخاص به من إجاباتك (مستخدم DSM المخصص لـ«مكتبة»، والمجلدات المشتركة وأيّها للقراءة فقط، والذاكرة، وQuick Sync على طرز J4125) داخل الصفحة نفسها، وتشرح خطوة بخطوة شاشات المستخدم والمجلد والأذونات في DSM. ويرفق الإصدار النسختين `maktaba-synology-compose.yaml` و`maktaba-synology-compose.j4125.yaml`. وعلى DSM تذكر طرق إصلاح الأذونات ورسائل الحاوية شاشات DSM نفسها، ولا تُعدّ مجلدات DSM ‏`@eaDir` و`#recycle` و`#snapshot` من محتوى المكتبة أبدًا"
+                  ),
+                ],
               ],
             },
           },
@@ -1087,6 +1094,16 @@ export const APPS = [
               `The project's [README](https://github.com/Hamza-Labs-Core/Maktaba#install-the-home-server) has the requirements and every way to install the home.`,
               `وفي [ملف README](https://github.com/Hamza-Labs-Core/Maktaba#install-the-home-server) للمشروع المتطلبات وكل طرق تثبيت الجهاز الرئيسي.`
             ),
+          },
+          {
+            shots: [
+              shot(
+                "install-synology",
+                "wide",
+                "maktaba.tv's Synology install page: a DS425+ with 6 GB, and the Container Manager project's YAML made from the answers",
+                "صفحة تثبيت Synology على maktaba.tv: جهاز DS425+ بذاكرة 6 GB، وملف YAML لمشروع Container Manager المصنوع من الإجابات"
+              ),
+            ],
           },
         ],
       },

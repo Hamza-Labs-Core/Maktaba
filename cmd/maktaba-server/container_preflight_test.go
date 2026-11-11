@@ -168,6 +168,56 @@ func TestPreflightWriteCheck(t *testing.T) {
 	}
 }
 
+// Story 59.09: on DSM the write-denied message adds DSM's own screens, naming the shared
+// folder and the folder the data volume is (from the mount's root), in both languages.
+func TestPreflightWriteCheckDSM(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root writes anywhere")
+	}
+	p := preflightFor(t, capBndDefault, "")
+	p.platform = "dsm"
+	if err := os.WriteFile(p.mountinfo, []byte("590 1 0:29 / / rw,relatime - overlay overlay rw\n"+
+		"600 590 0:44 /@syno/docker/maktaba "+p.volume+" rw,relatime - btrfs /dev/mapper/cachedev_0 rw\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(p.volume, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(p.volume, 0o755) })
+	_, err := p.run()
+	msg := refusalOf(t, err)
+	for _, want := range []string{"Control Panel → Shared Folder → docker → Edit → Permissions",
+		"File Station → docker/maktaba → Properties → Permission", "uid " + strconv.Itoa(p.uid),
+		"لوحة التحكم ← المجلد المشترك ← docker"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("message lacks %q: %q", want, msg)
+		}
+	}
+	p.platform = ""
+	if msg := refusalOf(t, func() error { _, err := p.run(); return err }()); strings.Contains(msg, "On DSM") {
+		t.Fatalf("not DSM, yet DSM's screens: %q", msg)
+	}
+}
+
+func TestDSMDataFolder(t *testing.T) {
+	dir := t.TempDir()
+	mi := filepath.Join(dir, "mountinfo")
+	for _, c := range []struct{ line, share, folder string }{
+		{"600 590 0:44 /docker/maktaba /var/lib/maktaba rw - btrfs /dev/md2 rw", "docker", "docker/maktaba"},
+		{"600 590 0:44 /@syno/SSD\\040apps/maktaba /var/lib/maktaba rw - btrfs /dev/md3 rw", "SSD apps", "SSD apps/maktaba"},
+		{"600 590 0:44 /@docker/volumes/maktaba/_data /var/lib/maktaba rw - btrfs /dev/md2 rw", "docker", "docker/maktaba"},
+		{"600 590 0:44 /docker/maktaba /elsewhere rw - btrfs /dev/md2 rw", "docker", "docker/maktaba"},
+		{"600 590 8:1 /var/lib/docker/volumes/maktaba/_data /var/lib/maktaba rw - ext4 /dev/sda1 rw", "docker", "docker/maktaba"},
+	} {
+		if err := os.WriteFile(mi, []byte(c.line+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if s, f := dsmDataFolder(mi, "/var/lib/maktaba"); s != c.share || f != c.folder {
+			t.Errorf("%s: %q %q, want %q %q", c.line, s, f, c.share, c.folder)
+		}
+	}
+}
+
 // T06 (unit): a uid /etc/passwd lacks gets maktaba in <volume>/.nss and libnss_wrapper
 // preloaded; the image's own maktaba (1000) no longer shadows it; a gid the group file has
 // (100, users) is kept, one it lacks is added.

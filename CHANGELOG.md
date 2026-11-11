@@ -732,6 +732,19 @@ build fails when the two differ.
 
 ### Added
 
+- **Maktaba on a Synology NAS: a Container Manager project, filled in on maktaba.tv (story
+  59.09).** maktaba.tv/install/synology (and /ar/install/synology) is the guide for DSM 7.2 and
+  newer: a model table that says which DiskStations fit (J4125 models with Quick Sync, Ryzen
+  models in software, 2 GB ARM models as storage only), the DSM user made for Maktaba, its folder
+  and its shares, and a form that writes the project's YAML in the page from the answers (the
+  uid, the shared folders and which are read only, the memory tier's limit, Quick Sync and the
+  render group, the time zone); nothing is sent anywhere. Each release
+  attaches `maktaba-synology-compose.yaml` and `maktaba-synology-compose.j4125.yaml`, made
+  from the published Docker compose as the page makes them. On DSM a data folder the user cannot write stops the container with
+  DSM's own screens in its message (Control Panel → Shared Folder, File Station's Permission),
+  and a render device the user cannot open is fixed in Container Manager's words. The guide's
+  DSM screenshots are added once taken on a DiskStation (the device checklist lists them).
+
 - **Read-only libraries are supported, and each library shows what Maktaba may do in it
   (story 59.03).** When a library is added, when its folders change, and from its page's
   **Check access** button, Maktaba checks each folder: Read and write, Read only, or No access,

@@ -1,6 +1,6 @@
 {
   "_doc": "The nas-shapes matrix (story 59.15). tests/nas/README.md says what each field means and how to add a cell. A cell runs once its `needs` are all in `landed`; an assertion likewise.",
-  "landed": ["59.04", "59.01", "pg-stale-lock", "59.02", "scan-grant-race", "59.03", "59.05", "59.06", "59.07", "plugin-cache-grant", "poster-queue", "59.11", "59.10", "59.08"],
+  "landed": ["59.04", "59.01", "pg-stale-lock", "59.02", "scan-grant-race", "59.03", "59.05", "59.06", "59.07", "plugin-cache-grant", "poster-queue", "59.11", "59.10", "59.08", "59.09"],
   "cells": [
     {
       "name": "uid-1000",
@@ -56,6 +56,42 @@
       "data": {"owner": "4321:4321", "mode": "0750"},
       "needs": ["59.01"],
       "asserts": ["ready", "only_uid"]
+    },
+    {
+      "name": "dsm",
+      "about": "a Synology as the guide sets it up: the DSM user 1026:100, MAKTABA_PLATFORM=dsm, a 6 GB limit, DSM's kernel without Landlock, a share mounted :ro at its own path (/volume1/Movies) with DSM's @eaDir, #recycle and #snapshot in it, and a share the user has no permission on",
+      "arches": ["amd64"],
+      "user": "1026:100",
+      "data": {"owner": "0:100", "mode": "0770"},
+      "media": {"path": "/volume1/Movies", "owner": "1024:100", "mode": "0755", "ro": true, "dsm_extras": true},
+      "noaccess_root": true,
+      "env": {"MAKTABA_PLATFORM": "dsm"},
+      "docker": ["--memory=6g"],
+      "seccomp": "seccomp-no-landlock-enosys.json",
+      "needs": ["59.09"],
+      "asserts": ["ready", "only_uid", "platform_dsm", "scan", "dsm_skipped", "access_ro", "access_none", "fix_dsm", "tier_standard", "isolation_container", "no_oom"]
+    },
+    {
+      "name": "synology-compose",
+      "about": "deploy/nas/synology/compose.yaml unchanged on Container Manager's engine (Docker 24.0.2 in dind): config, setup through docker compose run, up; the DSM user, both shares as granted, DSM's folders skipped",
+      "arches": ["amd64"],
+      "compose_file": {"file": "deploy/nas/synology/compose.yaml", "engine": "24.0.2", "api": "1.43"},
+      "user": "1026:100",
+      "data": {"owner": "0:100", "mode": "0770"},
+      "media": {"path": "/volume1/Movies", "owner": "1024:100", "ro": true},
+      "needs": ["59.09"],
+      "asserts": ["ready", "compose_engine", "only_uid", "platform_dsm", "scan", "dsm_skipped", "dsm_shares", "fix_dsm", "tier_standard", "no_oom"]
+    },
+    {
+      "name": "dsm-data-denied",
+      "about": "a DSM data folder the DSM user cannot write: exit 78, the fix in DSM's screens in both languages",
+      "arches": ["amd64"],
+      "user": "1026:100",
+      "data": {"owner": "0:0", "mode": "0755"},
+      "env": {"MAKTABA_PLATFORM": "dsm"},
+      "expect": "refused",
+      "needs": ["59.09"],
+      "asserts": ["refused_write_dsm"]
     },
     {
       "name": "data-denied",

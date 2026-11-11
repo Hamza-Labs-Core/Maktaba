@@ -18,6 +18,7 @@ checklists, [`docs/nas/checklists/`](../../docs/nas/checklists/README.md).
 | `stt-baseline.json` | each speech model and architecture's word error rate on the bundled clips (59.06) |
 | `install_files.py` | the NAS install files' checks (59.11): the published compose's `# [name]` blocks (no block, each, all: `docker compose config` with `--docker`), the Unraid template's schema, its render to `docker run` arguments and its drift from the compose file, the development compose's images under release's names (resolved with `--docker`); the plan job runs it |
 | `test_install_files.py` | its tests, and the compose and template cells' shapes |
+| `test_synology.py` | the Synology project's files (`deploy/nas/synology/`, 59.09): written by `deploy/nas/generate.py` from the published compose, as the install page fills it in (`--check`), only keys Docker 24.0.2 takes, the DSM shape, the GPU lines only in the J4125 file |
 
 `tools/ci/tests/test_nas_workflow.py` checks the workflow's triggers: a change to the Dockerfile
 runs every cell, a change to `web/` alone runs nothing.
@@ -72,6 +73,12 @@ runs every cell, a change to `web/` alone runs nothing.
 | `isolation_container` | without Landlock and user namespaces the plugin isolation level is Container (`GET /api/server/machine`'s `plugin_isolation` and `GET /api/plugins/isolation`); the test plugin (`--plugin`, plugind's hello guest that the amd64 image job packs as the `nas-plugin` artifact), installed and turned on by the admin, stays off with `isolation_held`; `PUT /api/plugins/isolation` without the password is 401, with it 200; the plugin then runs, and `plugins.host` is Degraded with `sandbox_partial` (plugind's required layers on, its optional ones missing). The answers are kept as `api-plugin-isolation.json` (59.07) |
 | `platform` | `GET /api/server/machine` names the platform the install file set (`MAKTABA_PLATFORM`, the cell's `platform`), read from the environment (59.11) |
 | `refused_write`, `refused_privileged` | the container exits 78 with its message (59.01) |
+| `refused_write_dsm` | the same with `MAKTABA_PLATFORM=dsm`: the message adds DSM's screens (Control Panel → Shared Folder, File Station's Permission) in both languages (59.09) |
+| `platform_dsm` | `GET /api/server/machine` names the platform `dsm` (59.09) |
+| `dsm_skipped` | the share holds DSM's `@eaDir`, `#recycle` and `#snapshot`, each with a real clip: the scan finds exactly the fixtures, none of those (59.03, 59.09) |
+| `fix_dsm` | every root that needs a fix (Read only, No access) has DSM's, `library.fix.dsm`, naming its shared folder (`/volume1/Movies/en` → Movies) (59.09) |
+| `dsm_shares` | the compose file's shares as the guide grants them: Movies (`:ro`) Read only, Recordings (Read/Write for the DSM user) Read and write (59.09) |
+| `compose_engine` | the compose cell's file was taken unchanged by the engine it names (`docker compose config`, then `up`), its version and API recorded (59.09) |
 | `stt_light_off` | on the Light tier speech is off by default, its reason `light`, the model base, in the quiet hours only; on arm64 no second listen (59.06) |
 | `stt_engine` | the speech engine (the stt extra's aarch64 pins, `pipeline/constraints-stt.txt`) goes into the pipeline's venv and imports, with no torch and no transformers: on arm64 from the payload's wheelhouse alone (`--no-index`), on amd64 from PyPI; its pip log is `stt-install.log` (59.06) |
 | `mdns_own` | (T02) with no D-Bus mount, the sibling's `avahi-browse -a -r -t -p` lists both the NAS's `_smb._tcp` and `_maktaba._tcp`, Maktaba's at `<host>-maktaba.local`, which `avahi-resolve` resolves; the NAS's own `<host>.local` still resolves and avahi-daemon logged no host name conflict; no `avahi-publish-service` runs (59.08) |
@@ -90,6 +97,9 @@ it is reported as pending (⏳) until that story is in `landed`.
    `compose` (`{"blocks": [...]}`: the published compose file filled in with those blocks on and
    started with `docker compose`; host network only), `template` (`"unraid"`: the Unraid template
    rendered to its `docker run` arguments), `platform` (for `platform`),
+   `media.path` (where the library is mounted, `/volume1/Media` by default), `media.dsm_extras`
+   (DSM's `@eaDir`, `#recycle` and `#snapshot` in it), `compose_file` (`{"file", "engine", "api"}`:
+   a NAS's own compose file run unchanged by that Docker engine in a dind container, 59.09),
    `kill_restart`, `quiet_hours_ahead` (a one-hour quiet window opening three hours from now,
    UTC; every other cell has none, `[schedule] quiet_hours = ""`), `speech` (story 59.06:
    `[transcription] speech = "on"` and the tier's model instead of the cells' tiny one),
@@ -128,6 +138,26 @@ now. A new one goes in a table here (`| Need | What the cells found |`) until it
 (`/dev/null` as the render node: the test encode fails) and `vaapi-no-group` (a node the user may
 not open): each ends in libx264 with its reason in Settings. Real VA-API is in the device
 checklists (J4125, N100).
+
+**Synology (59.09):** `dsm` is a DiskStation as the guide sets it up: the DSM user
+1026:100, `MAKTABA_PLATFORM=dsm`, a 6 GB limit, no Landlock (DSM's 4.4 and 5.10 kernels), the
+share at its own path (`/volume1/Movies`, `:ro`) with DSM's folders in it, and a share the user
+has no permission on. `synology-compose` runs `deploy/nas/synology/compose.yaml` itself, unchanged,
+on Container Manager's engine: a `compose_file` cell (`{"file": ..., "engine": "24.0.2", "api":
+"1.43"}`) starts `docker:<engine>-dind`, loads the commit's image into it under the file's
+image name, makes the file's host paths inside it (`/volume1/docker/maktaba` owned 0:100 0770,
+`/volume1/Movies` with the fixtures owned by a DSM admin, 1024:100, `/volume1/Recordings`
+0:100 0770), runs setup with `docker compose run --rm maktaba setup` and starts it with
+`docker compose up -d`; a relay in the engine's network namespace hands the API to the
+harness, so the server sees a local client. Its artifact adds `compose-config.yaml`,
+`engine.json` and `dind.log`. `dsm-data-denied` is the DSM user on a data folder it cannot
+write.
+
+**What the Synology cells cannot imitate:** cgroup v1. DSM 7.2 on its 4.4 kernels (the J4125
+and the older Intel models) mounts cgroup v1, and GitHub's runners boot with cgroup v2 only:
+a container cannot change its host's hierarchy. The v1 memory limit
+(`memory.limit_in_bytes`, its "no limit" near 2^63) is read by 59.04's unit tests
+(`cmd/maktaba-server/internal/hostinfo`), and the device checklist records what a DS425+ reads.
 
 **Networking (59.08):** `mdns-own` (no D-Bus mount: Maktaba's own responder beside the NAS's
 avahi-daemon), `mdns-dbus` (the NAS's bus mounted: published through its Avahi) and `bridge`
