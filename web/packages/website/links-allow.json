@@ -8,5 +8,25 @@
     "file": "apps/mobile/src/native-shell.ts",
     "link": "https://maktaba.tv/watch/123",
     "reason": "a comment documenting the deep-link parser's input, not a link: no app claims maktaba.tv as an associated domain"
+  },
+  {
+    "file": "api/internal/httperror/registry.go",
+    "link": "https://maktaba.tv/problems/",
+    "reason": "the problem-type base a slug is appended to (httperror.Type, the registry's `base`), not a link"
+  },
+  {
+    "file": "api/internal/httperror/registry_gen.json",
+    "link": "https://maktaba.tv/problems/",
+    "reason": "the problem-type base a slug is appended to (httperror.Type, the registry's `base`), not a link"
+  },
+  {
+    "file": "shared/api/problems.json",
+    "link": "https://maktaba.tv/problems/",
+    "reason": "the problem-type base a slug is appended to (httperror.Type, the registry's `base`), not a link"
+  },
+  {
+    "file": "api/internal/httperror/httperror.go",
+    "link": "https://maktaba.tv/ar/problems/",
+    "reason": "the Arabic problem pages' base the HTML error page appends a slug to (meaningLink), not a link"
   }
 ]
