@@ -26,16 +26,23 @@ CI, not a reminder.
   check without building the site.
 - **Every other link** must resolve to a file in `dist/`, with `auto-trailing-slash` rules (`/x`,
   `/x/` and `/x/index.html` are the same). A `#fragment` must name an `id` on that page.
-- **Allowed, with reasons** (`links-allow.json`, each entry with a `reason`): empty at the start.
-  The log schema's `$id` (`/schema/log-line.json`) is served as a file (60.03), so it resolves
-  like any page. A new entry needs a reason and is reviewed like code.
+- **Allowed, with reasons** (`links-allow.json`, each entry with a `reason`):
+  - `web/src/lib/native.ts` (`/library/abc`) and `apps/mobile/src/native-shell.ts`
+    (`/watch/123`): comments documenting the deep-link parser, not links. No app claims
+    maktaba.tv as an associated domain.
+
+  The log schema's `$id` (`/schema/log-line.json`) is served as a file (60.03), so it needs no
+  entry. A new entry needs a reason and is reviewed like code.
+- **Spec text is out of scope:** the specs, and the wiki database maktaba.dev builds from them,
+  describe plans (Epic 25.15's `/pricing`). They are left out, as `specs/**` is.
 - **Inside the built site,** every `href` and `src` resolves, in both languages, and every page
   links its twin.
 - **Where it runs:**
-  - in `_website.yml` (the full check against `dist/`);
-  - as a fast job in `ci.yml`'s lint stage on every pull request that touches a file in its
-    list (problem links and the list of pages, read from a committed `dist-manifest.json` that
-    the site build regenerates and a test keeps equal).
+  - in `_website.yml` (the full check against `dist/`, with internal links and fragments);
+  - as a fast job in `ci.yml`'s lint stage on **every** pull request, with no path filter, since
+    its file list (every tracked file but a few) cannot be written as a `ci-paths.yml` filter,
+    which has no negation. It is a grep: problem links against the registry, other links against
+    a committed `dist-manifest.json` that the site build regenerates and a test keeps equal.
 - **On failure:** it prints each dead link with its file and line, and the nearest page name
   when one is close (a typo).
 
@@ -69,7 +76,7 @@ CI, not a reminder.
 - **Given** a release, **then** the anonymous pull of the tag on amd64 and arm64 passes, or the run
   fails with the message above.
 - **Given** main today, **when** 60.03, 60.05 and 60.06 have landed, **then** the check passes with
-  an empty allow list.
+  only the two allow-list entries above.
 
 ## Test cases
 

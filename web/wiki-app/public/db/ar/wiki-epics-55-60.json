@@ -3427,8 +3427,11 @@
       "related": [
         "epic-60-website",
         "ep-get-videos",
+        "ep-get-search",
+        "ep-post-search",
         "ep-get-settings",
-        "ep-put-settings"
+        "ep-put-settings",
+        "ep-get-series"
       ],
       "files": {
         "story": "specs/epics/60-website/story-60-12-help.md",
@@ -3437,8 +3440,11 @@
       },
       "api_endpoints": [
         "GET /videos",
+        "GET /search",
+        "POST /search",
         "GET /settings",
-        "PUT /settings"
+        "PUT /settings",
+        "GET /series"
       ],
       "db_tables": [],
       "metadata": {

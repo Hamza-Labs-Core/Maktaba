@@ -34,9 +34,11 @@ fastest way to turn 45 dead links into working ones, and to let a household actu
   - **the quality run:** axe, Lighthouse, visual references at three widths in both languages
     (60.04). The guides must pass the bar like any page. Faults found are fixed in the install
     package in this story.
-- **Screenshots still to come** keep their placeholder figure ("Screenshot to come",
-  `web/packages/install/README.md`) until each device checklist takes them. A placeholder is not
-  a missing image for the link check.
+- **Screenshots still to come:** the site build leaves out each placeholder figure ("Screenshot
+  to come", `web/packages/install/README.md`) until its image exists. The step's text stays. A
+  public page shows no "to come" box, and the figure appears once the device checklist commits
+  the image. The install package's own preview keeps the placeholder, so the gap stays visible
+  to developers.
 - **The image** they pull: the guides name `ghcr.io/hamza-labs-core/maktaba-server`. The phase
   does not close until owner action A1 has made the package public and 60.08's anonymous pull
   passes.
@@ -75,7 +77,8 @@ fastest way to turn 45 dead links into working ones, and to let a household actu
 
 | ID | Type | Setup | Action | Expected |
 |---|---|---|---|---|
-| T01 | build | site build | list `dist/install/*`, `dist/ar/install/*` | the nine guides × 2 and the two index pages |
+| T01 | build | site build | list `dist/install/*`, `dist/ar/install/*` | the nine guides × 2 and the two index pages; the install assets under `install/assets/` |
+| T07 | build | a guide with a `figure.placeholder` whose image is missing | site build | the figure is absent from `dist/`; present once the image exists |
 | T02 | unit | `notes.md.tmpl` | render with a fixture | maktaba.tv mentions are `https://maktaba.tv/…/` links |
 | T03 | Playwright | deployed-shape `dist/` under `wrangler dev` | Epic 59's T04 against it | the compose equals the generator's; no answer in any request |
 | T04 | Lighthouse + axe | each guide × 2 languages | run | 60.04's bar |

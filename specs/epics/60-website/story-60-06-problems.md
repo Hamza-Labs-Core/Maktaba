@@ -37,7 +37,10 @@ page.
 ```
 
 - **The fields:**
-  - `slug` is the URI's last segment, lowercase with hyphens;
+  - `slug` is the URI's last segment, `[a-z0-9_-]`. The four shipped underscore slugs
+    (`smart_playlist`, `automatic_collection`, `stale_queue`, `empty_source`) keep their
+    spelling, because clients match it (`PlayQueue.kt:97` reads `empty_source`). New slugs use
+    hyphens, and a lint refuses a new underscore slug;
   - `codes` lists the `code` values sent with it (the `With("code", …)` extra), so a client that
     reads codes reaches the same entry;
   - `audience` is one of `anyone`, `person`, `admin`, `app` and `node`;
@@ -49,25 +52,39 @@ page.
 - **Seeding:** from today's code.
   - The 120 literal slugs.
   - The 18 constants.
-  - The codes each of the seven runtime sites can receive:
+  - The codes each of the seven runtime call sites can receive (six functions; `review` has
+    two call sites):
     - `cluster.problem`;
     - `components` (line 104);
     - `plugins/admin` (line 145);
     - `review.writeEditErr` (the `transcript.Err*` values and batch errors);
     - `rules.conflict`;
     - `tvremote.writeTuneError` (the `remote.TuneError` codes).
-  - The seeding pull request lists how many came from each source.
+  - The seeding pull request lists how many came from each source. The grep's matches are
+    normalised (trailing punctuation dropped), so the 120 literals give 119 or 120 slugs, as
+    the character class decides.
 
 **The API sends only registered types** (`api/internal/httperror`):
-- `httperror.Type(slug string) string` returns `"https://maktaba.tv/problems/" + slug` after
-  looking it up. `httperror.TypeForCode(code string)` maps a code through `codes`. Both read the
-  registry, embedded at build time (`go:embed` from a copy generated into the package, checked
-  equal by a test).
-- **Unregistered slug or code:**
-  - **under `go test`** (`testing.Testing()` is true in a test binary), it panics, so the whole
-    suite runs under the rule (#662);
-  - **in production,** it logs `problem_type_unregistered` with the slug and sends the problem
-    as `internal`, so a household never sees a dead link.
+- `httperror.Type(slug string) string` returns `"https://maktaba.tv/problems/" + slug`.
+  `httperror.TypeForCode(code string)` maps a code through `codes`. Both read the registry,
+  embedded at build time (`go:embed` from a copy generated into the package, checked equal by a
+  test).
+- **The check is in `httperror.Write`.** Every problem passes through it, however its `Type` was
+  made. `Error.Type` is a public field, and handlers build struct literals
+  (`cluster/switchover/keptaside.go:288`), so a check inside `Type()` alone would miss them.
+- **An unregistered type:**
+  - **in a test binary** (`testing.Testing()`), it is recorded. It is appended to the file named
+    by `MAKTABA_UNREGISTERED_PROBLEMS`, which the API's CI job sets and reads after
+    `go test ./...`, failing the job when the file is not empty. It is not a panic: the
+    recoverer middleware (`middleware/recoverer.go`) turns a panic into a 500 `internal`, and a
+    test that checks only for an error status would still pass. With the variable unset (a
+    local run), it is logged at error level. The whole suite runs under the rule (#662);
+  - **in production,** it logs `problem_type_unregistered` with the slug, **keeps the status**,
+    and sends the registered generic type for that status (`TypeConflict`, `TypeForbidden`,
+    `TypeNotFound`, … `TypeInternal` for 5xx). A 409 never becomes a 500, and a household never
+    sees a dead link.
+- **Out of reach:** e2e runs of the real binary are not test binaries. The literal scan below and
+  the unit suites cover them.
 - **Callers:**
   - the 18 constants become `Type("…")` values;
   - every literal in the handlers becomes a constant or a `Type` call;
@@ -121,8 +138,10 @@ page.
 
 | ID | Type | Setup | Action | Expected |
 |---|---|---|---|---|
-| T01 | Go unit | `Type("no-such-thing")` under test | call | panics |
-| T02 | Go unit | `Type` with the test-mode switch off (an unexported hook the test sets) | call | `TypeInternal`; log line `problem_type_unregistered` |
+| T01 | Go unit | `Write` of an `Error{Type: ".../no-such-thing", Status: 409}` struct literal in a test binary with the variable set | write | the slug appended to the file |
+| T02 | Go unit | the same with test mode off (an unexported hook the test sets) | write | status 409, type `conflict`, log line `problem_type_unregistered` |
+| T12 | CI | the API job with a fixture handler that sends an unregistered type behind the recoverer | run | the job fails naming the slug (positive control: passes once it is registered) |
+| T13 | lint | a new slug with an underscore (fixture) | run | refused; the four shipped ones allowed |
 | T03 | Go unit | repo `.go` files | scan for the literal prefix | only in `httperror` and the generated copy |
 | T04 | Go unit | the seven runtime sites | each code their source can produce | each maps through `TypeForCode` |
 | T05 | Go unit | embedded copy vs `shared/api/problems.json` | compare | equal |
@@ -152,8 +171,9 @@ page.
   only. The old slug stays as an entry whose text points to the new one, so old links still work.
 - **A slug retired from the API:** its page stays, saying it is no longer sent and what replaced
   it. Links in old logs and old clients keep working.
-- **`review.writeEditErr` with a wrapped error whose text is not a code:** `TypeForCode` refuses
-  it. Under test that panics, which finds it; in production it is `internal`.
+- **`review.writeEditErr` with a wrapped error whose text is not a code:** `TypeForCode` does not
+  find it. Under test it is recorded and fails the job; in production it is sent as `conflict`
+  with its 409.
 - **`about:blank`** (sent by some tests and pages): not a maktaba.tv URI, and not in the registry.
 
 ## Build plan

@@ -23,12 +23,17 @@ publishes the same topics, not a second copy, so the two cannot drift.
 **Links, rewritten at build time:**
 - `/help/<topic>#<anchor>` → `/help/<topic>/#<anchor>` (or `/ar/help/…`). The anchor must exist,
   and the link check proves it.
-- **App routes** (`/settings/…`, `/admin/…`, `/account/…`, `/queue…`, `/videos…`, `/library…`:
-  167 links in the English topics) are not pages on the site.
+- **App routes** are not pages on the site: 167 links in the English topics, 104 of them to
+  `/settings/…` and `/admin/…`, and the rest to `/account`, `/queue`, `/library`, `/videos`,
+  `/login`, `/register`, `/pair`, `/cloud`, `/guide`, `/search`, `/series`, `/playlists`,
+  `/review`, `/transcription` and others. The rewriter takes the route list from the app's router
+  (`web/src/App.tsx`), not a hand-made list.
   - They render as text in a "where" style: "In Maktaba: **Settings → Privacy**" (Arabic: «في
     Maktaba: **الإعدادات ← الخصوصية**»).
   - The label comes from the link's own text.
   - The arrow is a direction mark and mirrors.
+  - A link to the app's root (`](/)`) renders as "In Maktaba: the home screen", never as a link
+    to the site's home.
   - A test fails an app route the rewriter does not recognise.
 - **External links** stay as written.
 

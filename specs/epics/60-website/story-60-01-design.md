@@ -40,6 +40,8 @@ right once:
 - **Layouts:**
   - the **text page**, for legal pages and the Phase 1 front door;
   - the **problem page** and the problem index;
+  - an **install guide inside the shell**: Epic 59's guide with its own stylesheet, wrapped in the
+    shell's header and footer, as Phase 1 publishes it;
   - the **404**.
 - Mockups of these at 360, 768 and 1280 px, English and Arabic, dark, plus the text page in light.
 
@@ -126,7 +128,7 @@ A fixes the names, part B the values):
 ## Acceptance criteria
 
 - **Given** part A, **then** `design/` holds the shell's written spec and mockups of the text page,
-  the problem page, the problem index and the 404 at 360, 768 and 1280 px in English and Arabic,
+  the problem page, the problem index, an install guide in the shell and the 404 at 360, 768 and 1280 px in English and Arabic,
   and `design/README.md` records the lead's approval at a commit.
 - **Given** part B, **then** `design/` holds the brand direction, type scales for both scripts with
   a chosen display face, the colour extension with contrast ratios, the imagery and icon rules,

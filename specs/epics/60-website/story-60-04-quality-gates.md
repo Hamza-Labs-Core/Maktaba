@@ -28,8 +28,14 @@ change to how a page looks is seen by a person before it merges.
   - the shortest;
   - one with a help link;
   - for help (from 60.12): the longest topic, the shortest, one with a table.
-- **The deploy run:** every page in both languages, in four parallel shards. The deploy waits for
-  it.
+- **A pull request that changes a generator or a template:** the full family it renders, one run
+  per URL.
+- **The deploy run:** the same set as pull requests. It refuses to run while the latest nightly
+  sweep is red.
+- **The nightly sweep on main:** every page in both languages (about 360 URLs), one run per URL,
+  in eight shards, each with a 15-minute timeout and the whole within 60 minutes. A failure makes
+  the nightly red, names the pages, and blocks the next deploy until a fix lands. Main stays
+  deployable by fixing forward or reverting the change that caused it.
 - **Kept:** the reports (HTML and JSON), uploaded as `website-lighthouse`, pass or fail.
 
 **Accessibility** (Playwright + `@axe-core/playwright` on the existing `axe-core`):
@@ -83,9 +89,15 @@ change to how a page looks is seen by a person before it merges.
 **A reference change needs review.**
 - **Updating references:** `pnpm -C web/packages/website e2e:update` on Linux (a container of the
   runner's image, so references never come from a Mac), committed in the pull request.
-- **`_pr-body-check.yml` gains a rule.** When the diff touches `e2e/__screenshots__/`, the body
-  must have a `Reference images:` section listing every changed file with one line on why.
-  Otherwise the check fails, naming the unlisted files.
+- **A `Reference images:` rule.** When the diff touches `e2e/__screenshots__/` (or
+  `static/shots/`, 60.09), the body must have a `Reference images:` section listing every changed
+  file with one line on why. Otherwise the check fails, naming the unlisted files.
+  - The rule reads the file list (`pulls.listFiles`, paginated) and the body fresh from the API
+    (`pulls.get`). Today `_pr-body-check.yml` reads the body from the event payload, so a re-run
+    replays the old body.
+  - It runs from a small workflow on `pull_request` with types `opened`, `edited`,
+    `synchronize` and `reopened`. `ci.yml` uses the default types, which leave out `edited`, so
+    fixing the body would otherwise never re-run the check.
 - **The reviewing session** opens every changed reference image, in both languages, before
   merging (the rule of #893), and says so in its review.
 
@@ -112,8 +124,8 @@ change to how a page looks is seen by a person before it merges.
 - **Given** a pull request that changes the site, **then** Lighthouse on mobile scores ≥ 95 in all
   four categories with CLS 0 for every hand-made page and representative in both languages, or
   the job fails.
-- **Given** the deploy run, **then** every page in both languages meets the same bar before
-  deploying.
+- **Given** the nightly sweep, **then** every page in both languages meets the same bar, and a red
+  sweep blocks the next deploy.
 - **Given** any page in either language, dark or light, **then** axe reports no WCAG 2.2 A or AA
   violation, and the keyboard, focus, target-size, reflow and reduced-motion tests pass.
 - **Given** an Arabic page, **then** layout and `data-mirror` elements mirror and `data-nomirror`
@@ -135,7 +147,8 @@ change to how a page looks is seen by a person before it merges.
 | T06 | Playwright | Arabic pages | check mirror markers | `data-mirror` mirrored, `data-nomirror` not |
 | T07 | lint | site CSS with `margin-left` (fixture) | run | refused |
 | T08 | Playwright visual | every page × 3 widths × 2 languages | compare | matches references |
-| T09 | `tools/ci` | PR body without `Reference images:` while a reference changed | `_pr-body-check` | fails, naming the file |
+| T09 | `tools/ci` | PR body without `Reference images:` while a reference changed | the rule | fails, naming the file |
+| T12 | workflow | the body edited to add the section | `edited` event | the rule re-runs on the new body and passes |
 | T10 | build | every page | parse head | title, description, canonical, alternates, OG, Twitter, card file exists |
 | T11 | build | `sitemap.xml` | parse | one `<url>` per page with both alternates |
 
@@ -144,7 +157,8 @@ change to how a page looks is seen by a person before it merges.
 - **A font that renders a pixel differently after a runner image update:** the references are
   updated in their own pull request, listed and reviewed like any other change. The runner image
   is pinned (`ubuntu-24.04`), so this happens only on purpose.
-- **Lighthouse noise on a shared runner:** three runs and the median. A page that scores 94 on one
+- **Lighthouse noise on a shared runner:** three runs and the median on the sampled set. The
+  nightly sweep's single runs re-measure a failing URL three times before calling it a failure. A page that scores 94 on one
   run and 97 on others is judged on the median. A page whose median is under 95 fails; there is no
   retry.
 - **A generated family that grows** (a new problem type): it is covered by the structural, axe and
@@ -161,4 +175,5 @@ change to how a page looks is seen by a person before it merges.
 | `web/packages/website/scripts/{cards,sitemap,icons}.mjs` | social cards, sitemap, icons |
 | `web/packages/website/scripts/lint-css.mjs` | the logical-properties lint |
 | `.github/workflows/_website.yml` | the quality jobs and artifacts |
-| `.github/workflows/_pr-body-check.yml`, `tools/ci/` (its test) | the `Reference images:` rule |
+| `.github/workflows/reference-images.yml` (new, `pull_request` with `edited`), `tools/ci/reference_images.py` and its test | the `Reference images:` rule, reading the body and files from the API |
+| `.github/workflows/website-nightly.yml` | the full Lighthouse sweep |

@@ -60,11 +60,11 @@ Checked on `main` at 154438067 (2026-11-11).
 | `/problems/<slug>` | 257, **120 distinct slugs** as literals | the API's handlers, `httperror/types.go`, the OpenAPI file, the Android, Apple and web clients that compare types, `docs/licensing.md`, the plugin guide | dead. There is **no registry**: `types.go` holds 18 constants, the rest are literals in each handler, and **seven places build the slug at runtime from a code** (`handlers/cluster/cluster.go:332`, `components/components.go:104`, `plugins/admin.go:145`, `review/review.go:455` and `:459`, `rules/rules.go:410`, `tvremote/viewer.go:68`), so no grep can list every type the API sends |
 | `/install/<guide>/`, `/ar/install/<guide>/` | 45 | the guides' own canonical and language links, maktaba.dev's Apps pages (`scripts/apps.mjs`), the repo README, `deploy/nas/` (the Unraid template and READMEs, the TrueNAS app's README) | built (9 guides × 2 languages), dead |
 | `maktaba.tv/install/synology`, `/install/truenas` (no scheme) | 2 | the release notes template (`tools/release/releasenotes/notes.md.tmpl`) | dead |
-| `/` | 6 | TrueNAS app (`deploy/nas/truenas/ix-dev/community/maktaba/app.yaml` `home:` and sources), its README | dead |
+| `/` | 6 (4 outside tests) | TrueNAS app (`deploy/nas/truenas/ix-dev/community/maktaba/app.yaml` `home:` and sources), its README; two tests | dead |
 | `/docs` | 1 | the desktop app's Help menu (`web/src/lib/desktop.ts:46`) | dead |
 | `/schema/log-line.json` | 1 | the `$id` of `shared/log/schema/line.schema.json` | an identifier. Publishing the schema there costs nothing |
-| `/help`, `/video/v1`, `/watch/123`, `/library/abc`, `/billing` | 9 | **tests only**: deep-link parser inputs and a billing fixture | not pages. No app claims maktaba.tv as an associated domain, so no `apple-app-site-association` or `assetlinks.json` is needed |
-| `/pricing`, `/legal/copyright` | 0 in the product | specs only: Epic 25 story 25.15; Epic 50 story 50.24 (planned in `web/packages/broadcast-edge/site/legal/`) | not built |
+| `/help`, `/video/v1`, `/watch/123`, `/library/abc`, `/billing` | 10 | tests (deep-link parser inputs, a billing fixture) and two code comments that document the deep-link parser (`web/src/lib/native.ts:44`, `apps/mobile/src/native-shell.ts:39`) | not pages. No app claims maktaba.tv as an associated domain, so no `apple-app-site-association` or `assetlinks.json` is needed. The two comments are allow-listed with that reason (60.08) |
+| `/pricing`, `/legal/copyright` | 0 in the product | specs only: Epic 25 story 25.15 (also in the wiki database maktaba.dev publishes, as spec text); Epic 50 story 50.24 (planned in `web/packages/broadcast-edge/site/legal/`) | not built |
 
 ### What can be built on
 
@@ -73,13 +73,14 @@ Checked on `main` at 154438067 (2026-11-11).
 | maktaba.dev | `web/packages/devportal`: plain Node build scripts (no client framework), a Worker in front of static assets (`run_worker_first`, security headers, www and http redirects, `404-page`), custom domains on the apex and `www`. Deployed by `devportal-deploy.yml`, which builds, tests and scans first, **skips green without its Cloudflare secrets**, and smoke-checks the live site after. Live (`https://maktaba.dev/` answers 200), so the account's secrets exist |
 | Cloud web deploy | `cloud-web-deploy.yml`: a token check, build and test, `wrangler deploy`, `tools/cloudflare/smoke.mjs`, and **`rollback: true` by hand**, which runs `wrangler rollback`. app. and admin. attach by **Workers Routes**, because their DNS records are the Tunnel's CNAMEs |
 | Install guides | `web/packages/install` + `web/vite.install.config.ts`: `nas`, `docker`, `synology`, `truenas`, `unraid`, `qnap`, `ugreen`, `after-setup`, `troubleshooting`, each with its `/ar/` twin; dark; the docker and synology pages fill a compose file in the page, and nothing leaves it; the build fails an Arabic page over 20% Latin (`src/latin.ts`, from devportal's `parity.mjs`); Playwright T04/T05 in `web-ui.yml`. Its README ends: publishing it is a maintainer's action |
-| Help | Epic 41: **44 topics** in `web/src/help/content/{en,ar}/*.md`, shown in the app at `/help/<topic>`. They link to app routes (`/settings/…`, `/admin/…`: 167 links in the English topics) and to each other (`/help/…`: 330) |
+| Help | Epic 41: **44 topics** in `web/src/help/content/{en,ar}/*.md`, shown in the app at `/help/<topic>`. They link to app routes (`/settings/…`, `/admin/…`, `/account/…`, `/queue…` and others: 167 links in the English topics, 104 of them to settings and admin) and to each other (`/help/…`: 330) |
 | Privacy | `cloud/internal/privacy`: the relay's machine-readable policy (`CurrentPolicy`: controller Hamza Labs, `privacy@maktaba.tv`, what is and is not collected, retention, rights); `docs/app-privacy.md`: what the apps send, and to whom. No analytics or crash-reporting service is built into any app |
 | Design tokens | `web/design-system/tokens/tokens.json` (color brand/neutral/semantic, `type` and **`type-arabic`** scales, spacing, radius, elevation, motion, breakpoints) → `web/src/styles/tokens.css`. `--font-family` names IBM Plex Sans Arabic, but the web ships no font file; the Apple and Android apps ship IBM Plex Sans Arabic and Amiri Bold |
 | Brand | the app icons in `web/public/icons/` (favicon 32, touch icon, 192, 512, maskable); no wordmark; the Arabic product name in the web catalog is «مكتبة» |
 | Screenshots | maktaba.dev's Apps pages take dark, test-data-only screenshots of every app (MockHome UI tests, Roborazzi references, a scratch branch stack for the web), WebP ≤ 100 KB (`web/packages/devportal/README.md`) |
 | Test tools | `axe-core` is a web dev dependency; no Playwright screenshot references and no Lighthouse run anywhere in CI |
-| Release assets | the GitHub release carries the Mac app (`Maktaba_<v>_aarch64.dmg`, `Maktaba-Core_…dmg`), Windows (`Maktaba_<v>_x64-setup.exe`, `maktaba-windows-portable-<v>.zip`, `Maktaba-Player_<v>_x64.msi`), Linux (`.AppImage`, `.deb`, `.rpm`, the headless payload), the server packages, the Docker, Synology and TrueNAS files, and `release.json` / `latest.json` |
+| Streaming's problems | the streaming service types its problems `https://maktaba.invalid/problems/…` on purpose (`streaming/internal/httpx/problem.go:12`: not a URL a person follows); the Apple and Android clients compare them |
+| Release assets | the GitHub release carries the Mac app (`Maktaba_<v>_aarch64.dmg`, `Maktaba-Core_…dmg`), Windows (`Maktaba_<v>_x64-setup.exe`, `maktaba-windows-portable-<v>.zip`, `Maktaba-Player_<v>_x64.msi`), Linux (`.AppImage`, `.deb`, `.rpm`, the headless payload), the server packages, the Docker, Synology and TrueNAS files, and `release.json` / `latest.json`. `release.json`'s `assets` lists only the server archives, and `checksums.txt` has no desktop installers; the Releases API gives every asset's size and `sha256` digest |
 | Phone and TV apps | TestFlight (`docs/testflight.md`) and Google Play's internal track (`docs/google-play.md`) only: **no public store listing** |
 | Package repositories | `packages.yml` publishes apt, dnf and the Homebrew tap once `vars.MAKTABA_PACKAGES_URL` and `vars.HOMEBREW_TAP_REPO` are set; **neither is set**, so the release notes' repository lines do not render |
 | The server image | `ghcr.io/hamza-labs-core/maktaba-server`, signed, amd64 + arm64; **private**: an anonymous token request to ghcr.io is refused, while the repository is public |
@@ -140,6 +141,8 @@ Checked on `main` at 154438067 (2026-11-11).
 - **Video on the home page,** and marketing motion beyond small transitions that honour
   `prefers-reduced-motion` (Epic 17 kept motion out of scope too).
 - **A pricing page with invented prices.** It waits for Epic 50's plans (60.13).
+- **Pages for the streaming service's `maktaba.invalid` problem types.** They are deliberately
+  not URLs; moving them to maktaba.tv would be a streaming and client change of its own.
 
 ## 5. The site at a glance
 
@@ -162,7 +165,7 @@ Checked on `main` at 154438067 (2026-11-11).
 ### 6.1 Where it lives and how it is built (60.03)
 
 ```
-web/packages/website/            the site: its own package.json, lockfile, wrangler.toml
+web/packages/website/            the site: a package in web's pnpm workspace, with its wrangler.toml
 ├── design/                      60.01: the direction, mockups (HTML → PNG), review records
 ├── copy/                        60.02: the voice guide and each page's copy, en + ar
 ├── src/worker.ts                headers, redirects (www → apex, http → https, /docs), 404 status
@@ -170,7 +173,7 @@ web/packages/website/            the site: its own package.json, lockfile, wrang
 ├── scripts/build.mjs            the build: pages + generated families + install + assets → dist/
 ├── scripts/problems.mjs         /problems from shared/api/problems.json (60.06)
 ├── scripts/help.mjs             /help from web/src/help/content (60.12)
-├── scripts/download.mjs         /download from the release's release.json + downloads.json (60.11)
+├── scripts/download.mjs         /download from the GitHub Releases API + downloads.json (60.11)
 ├── scripts/links.mjs            the link check (60.08)
 ├── static/                      fonts (self-hosted), icons, social cards, screenshots
 └── e2e/                         Playwright: visual references, axe, Lighthouse (60.04)
@@ -178,9 +181,13 @@ web/packages/website/            the site: its own package.json, lockfile, wrang
 
 - **Built like maktaba.dev:** Node build scripts writing static HTML, CSS and a little script for
   copy buttons, the install forms and the language hint. No client framework.
-- **One build, one dist:** the build runs `pnpm -C web build:install` and copies
-  `web/dist-install/` into `dist/` under `/install/` and `/ar/install/`. The install package stays
-  where it is, with its own tests.
+- **One build, one dist:** the build runs `pnpm -C web build:install` and copies the contents of
+  `web/dist-install/` (which already holds `install/<guide>/` and `ar/install/<guide>/`) to the
+  root of `dist/`. The install build's hashed files move to `install/assets/`
+  (`build.assetsDir`), so they never share the site's `/assets/`. Because that build runs over
+  the web workspace, the site's CI and deploy install the web workspace
+  (`pnpm -C web install --frozen-lockfile`). The install package stays where it is, with its own
+  tests.
 - Everything a page shows comes from a source the product already owns:
   - problem pages from the registry;
   - help from Epic 41's Markdown;
@@ -205,8 +212,9 @@ web/packages/website/            the site: its own package.json, lockfile, wrang
     has no such record, and a route would need a dummy proxied record to hang on.
 - **Why Workers static assets, not Pages:**
   - It is what maktaba.dev and the two cloud web Workers already run, so the deploy action,
-    `wrangler rollback`, `tools/cloudflare/smoke.mjs`, the token check and the token table all
-    apply as they are.
+    `wrangler rollback`, `tools/cloudflare/smoke.mjs`, the token check and the token table are
+    reused, extended by 60.03 (a `--base` and negative checks in the smoke, a `dns` piece in the
+    token check, a rollback to a recorded version).
   - Versions give a preview URL per upload for staging and an atomic switch for the deploy.
   - The Worker gives headers and redirects in code that is tested, not in `_headers` files.
   - Cloudflare's own direction is to fold Pages into Workers.
@@ -215,7 +223,10 @@ web/packages/website/            the site: its own package.json, lockfile, wrang
 - **Security headers:**
   - HSTS with `includeSubDomains` **off**: the relay's names are DNS-only and must not inherit
     it by surprise;
-  - a strict CSP (`default-src 'self'`, no third-party origin; `frame-ancestors 'none'`);
+  - a strict CSP (`default-src 'self'`, no third-party origin; `frame-ancestors 'none'`). The one
+    exception is the copyright page (`/legal/copyright/`, `/ar/legal/copyright/`), whose notice
+    form needs Turnstile (`script-src` and `frame-src https://challenges.cloudflare.com`) and the
+    cloud API (`connect-src https://api.maktaba.tv`), on that path only;
   - `Referrer-Policy: strict-origin-when-cross-origin`;
   - `X-Content-Type-Options`;
   - `Permissions-Policy` denying everything the site does not use.
@@ -239,19 +250,28 @@ monthly (security.txt's `Expires`, as on maktaba.dev):
 
    The deploy uses that job's `dist/` artifact.
 2. **Secrets.** Without `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` the job prints a notice
-   and passes, as devportal does. With them it runs `token-check.mjs --pieces workers --zone
+   and passes, as devportal does. With them it runs `token-check.mjs --pieces workers,dns --zone
    maktaba.tv` first.
-3. **Stage.** `wrangler versions upload` makes a new version with a preview URL, and is not yet
-   live. `smoke.mjs website --base <preview URL>` checks it: the front door in both languages,
-   one problem page, one install guide, the 404 status, and the headers.
-4. **Promote.** `wrangler versions deploy <id>@100%`, one atomic switch.
+3. **Record the live version.** `wrangler deployments status` gives the version now serving. It
+   is the version a rollback returns to. A bare `wrangler rollback` would pick the version
+   uploaded before the latest, which with upload-then-promote can be one that never passed.
+4. **Stage.** `wrangler versions upload` makes a new version with a preview URL, and is not yet
+   live. `smoke.mjs website-preview --base <preview URL>` checks what a preview can show: the
+   front door in both languages, one problem page, one install guide, the 404 status, and the
+   headers.
+5. **Promote.** `wrangler versions deploy <id>@100%`, one atomic switch, then
+   `wrangler triggers deploy`, which applies the custom domains. `versions upload` and
+   `versions deploy` do not apply routes or domains. The wrangler version is pinned, since
+   `triggers deploy` is marked experimental.
    - No percentage split for a static site: a page from the new version could ask for a hashed
      asset only the old version has.
    - Epic 50's gradual rollouts are for Workers with state, which this one does not have.
-5. **Smoke live.** The same checks on `https://maktaba.tv`, plus the www and http redirects. When
-   one never passes, the job runs `wrangler rollback` to the previous version and fails.
-6. **By hand,** `rollback: true` returns the Worker to its previous version, exactly as in
-   `cloud-web-deploy.yml`.
+6. **Smoke live.** The full `website` target on `https://maktaba.tv`, plus the www and http
+   redirects. When a check never passes, the job runs `wrangler rollback <recorded id>` and
+   fails.
+7. **By hand,** `rollback: true` runs the same rollback as in `cloud-web-deploy.yml`, to an
+   explicit version: the optional `version` input, or else the version of the deployment before
+   the current one (`wrangler deployments list`).
 
 **No downtime:**
 - each switch is atomic;
@@ -268,13 +288,23 @@ monthly (security.txt's `Expires`, as on maktaba.dev):
   - who meets it (anyone, a signed-in person, an admin, an app or a node);
   - a title, what it means and what you can do, each in English and Arabic;
   - optional links to a help topic or an install troubleshooting section.
-- **The API sends only registered types.**
-  - `httperror.Type(slug)` returns the URI and is the only way to make one.
-  - The 18 constants become calls to it. The seven places that build a slug from a code call it
-    with that code.
-  - Under tests, an unregistered slug panics; in production it logs `problem_type_unregistered`
-    and sends `internal`. This follows the "should never happen" rule (#662).
+- **The API sends only registered types.** The check sits in `httperror.Write`, which every
+  problem passes through, whether it was built by `httperror.Type(slug)`, by a constant or as a
+  struct literal.
+  - The 18 constants and every literal become `Type("…")` values. The seven places (six
+    functions) that build a slug from a code call `TypeForCode(code)`.
+  - **In test binaries** (`testing.Testing()`), an unregistered type is recorded. The API's test
+    run fails when any was recorded (the file named by `MAKTABA_UNREGISTERED_PROBLEMS`, checked
+    after `go test ./...`). A panic would be turned into a 500 by the recoverer middleware, and a
+    test that checks only for an error would still pass. This follows the "should never happen"
+    rule (#662).
+  - **In production,** it logs `problem_type_unregistered`, keeps the status, and sends the
+    registered generic type for that status (`conflict`, `forbidden`, `internal` …). A 409 never
+    becomes a 500.
   - A Go test fails a literal `https://maktaba.tv/problems/` anywhere outside the registry.
+  - Slugs keep today's spelling: `[a-z0-9_-]`. Four shipped slugs use underscores
+    (`smart_playlist`, `automatic_collection`, `stale_queue`, `empty_source`) and clients match
+    them, so they stay. New slugs use hyphens.
 - **Clients:**
   - The Kotlin, Swift and TypeScript constants that compare types are checked against the
     registry by a test in each client.
@@ -350,16 +380,21 @@ monthly (security.txt's `Expires`, as on maktaba.dev):
   - The privacy page says so.
 - **The install forms** keep their rule: nothing a household types leaves the page.
 - **The copyright notice form** sends only what it asks for, to Epic 50's endpoint, with
-  Turnstile, and says where it goes before it is sent (60.07).
+  Turnstile, and says where it goes before it is sent (60.07). Turnstile is the site's one
+  third party, loaded on the copyright page only, and the privacy page names it.
 
 ### 6.8 Quality bar and visual regression (60.04)
 
 - **Lighthouse CI** (`@lhci/cli`) on mobile emulation against the built `dist/`:
   - 95 or more for performance, accessibility, best practices and SEO;
   - cumulative layout shift 0;
-  - pull requests run every hand-made page and three representatives of each generated family
-    (the longest page, the shortest, and one with code), in both languages;
-  - the deploy run checks every page in both languages before it deploys.
+  - pull requests and the deploy run every hand-made page and three representatives of each
+    generated family (the longest page, the shortest, and one with code), in both languages,
+    three runs each;
+  - a pull request that changes a generator or a template runs the full family it renders;
+  - a nightly sweep on main runs **every page** in both languages, one run per URL, in eight
+    shards within 60 minutes. A failure makes the nightly red and the next deploy refuses to run
+    until a fix lands.
 - **axe-core** (already a dev dependency) through Playwright, with WCAG 2.2 AA rules, on every
   page in both languages. Keyboard paths, focus visible, target size (2.5.8) and reflow at 320 px
   are tested directly.
@@ -449,10 +484,10 @@ filter), and nothing runs against the live home or a person's library.
 | Links | every maktaba.tv URL in the repo and the release notes resolves to a file in `dist/`; every internal link on every page resolves | 60.08 |
 | Problem registry | Go: every sent type registered (panic under test), no literal outside it; Kotlin, Swift, TypeScript: client constants ⊂ registry; site: one page per entry | 60.06 |
 | Accessibility | axe WCAG 2.2 AA on every page × 2 languages; keyboard, focus, target size, 320 px reflow | 60.04 |
-| Performance | Lighthouse mobile ≥ 95 ×4, CLS 0: representatives on pull requests, every page on deploy | 60.04 |
+| Performance | Lighthouse mobile ≥ 95 ×4, CLS 0: representatives on pull requests and deploys, every page nightly | 60.04 |
 | Visual | 360 / 768 / 1280 × en / ar, dark (+ light at 1280); reviewed reference changes | 60.04 |
 | Worker | unit tests of headers, redirects, the 404 status, `/docs`; `wrangler dev` smoke in CI | 60.03 |
-| Deploy | token check, version upload, preview smoke, promote, live smoke, rollback on failure; the rollback input dispatched once on staging | 60.03 |
+| Deploy | token check, live version recorded, version upload, preview smoke, promote and triggers, live smoke, rollback to the recorded version on failure; the rollback input dispatched once after the first deploy | 60.03 |
 | Public image | after each release, an anonymous `docker pull` of the tag and `:latest` on amd64 and arm64, with no login | 60.08 |
 | Imagery | the capture script reruns from fixtures; a test refuses an image with metadata, over budget, or missing a language | 60.09 |
 
@@ -462,14 +497,17 @@ or fail.
 
 ## 10. Acceptance (the epic)
 
-- **Links:** every maktaba.tv URL the product, the release notes, maktaba.dev, the docs and the
-  TrueNAS and Unraid files print answers 200 on `https://maktaba.tv`, in its language. A pull
+- **Links:** every maktaba.tv URL the product, the release notes, maktaba.dev's pages and guides,
+  the docs and the TrueNAS and Unraid files print answers 200 on `https://maktaba.tv`, in its
+  language. Spec text (the specs and the wiki database built from them) is not product, and is
+  left out. A pull
   request that adds one with no page fails CI.
 - **Problems:** every problem type the API can send has a page in English and Arabic, and the API
   cannot send a type that has none.
 - **Image:** an anonymous `docker pull ghcr.io/hamza-labs-core/maktaba-server:latest` works, and
   the release run fails when it stops working.
-- **Quality bar, for every page in both languages:**
+- **Quality bar, for every page in both languages** (the nightly sweep measures every page; pull
+  requests and deploys measure the representatives):
   - Lighthouse on mobile scores **95 or more** for performance, accessibility, best practices
     and SEO;
   - **WCAG 2.2 AA**, with axe clean and keyboard paths tested;
@@ -489,8 +527,9 @@ or fail.
   language, taken on demo content.
 - **Copy:** the copy follows the voice guide, and the tagline and voice carry the owner's
   approval.
-- **Privacy:** no page sets a cookie, loads a third-party resource or runs analytics. The privacy
-  page says what Cloudflare's zone analytics keep.
+- **Privacy:** no page sets a cookie or runs analytics, and no page but the copyright page loads a
+  third-party resource (Turnstile, named on the privacy page). The privacy page says what
+  Cloudflare's zone analytics keep.
 - **Deploy:**
   - a push to main deploys after the same checks the pull request ran;
   - without the secrets the run is green and says why;
@@ -509,20 +548,28 @@ or fail.
 2. **Custom domains on `maktaba.tv` and `www.maktaba.tv`.**
    - Rejected: Workers Routes. They need a proxied record to attach to, and the apex has none.
      Routes stay right for app. and admin., whose records the Tunnel owns.
-3. **Atomic promote after a preview-URL smoke, automatic rollback on a failed live smoke.**
+3. **Atomic promote after a preview-URL smoke, automatic rollback to the recorded live version on
+   a failed live smoke.**
    - Rejected: percentage rollouts. A split serves pages whose hashed assets only the other
      version has.
-4. **A problem registry as data (`shared/api/problems.json`), with the API sending only from it.**
+   - Rejected: a bare `wrangler rollback`. It returns to the version uploaded before the latest,
+     which may be one that failed its preview.
+4. **A problem registry as data (`shared/api/problems.json`), checked where every problem is
+   written (`httperror.Write`).**
    - Rejected: generating pages from a grep. The seven runtime-built slugs make any grep
      incomplete.
    - Rejected: a Go-only table. The site and three clients need the same list.
+   - Rejected: renaming the four underscore slugs. Clients match them.
+   - Rejected: sending `internal` for an unregistered type in production. It would turn a 409
+     into a 500.
 5. **Help on maktaba.tv is rendered from Epic 41's own Markdown,** with app routes turned into
    "In Maktaba: Settings → …" text.
    - Rejected: linking to a home's `/help`. A visitor has no home yet.
    - Rejected: a second copy of the help. It would fall behind.
 6. **The copyright page lives on maktaba.tv**, not on the broadcast edge's site as 50.24's build
-   plan has it. It is a legal page for every Maktaba service, and its form posts to Epic 50's
-   endpoint. 50.24's row is updated to point here.
+   plan had it. It is a legal page for every Maktaba service. Its notice form posts to the public
+   endpoint this spec proposes in 50.24 §2. Counter-notices stay where 50.24 puts them, on the
+   signed-in Broadcast page, and the copyright page links there. 50.24's row and §2 are updated.
 7. **The download page lists only what a household can install today,** read from the release.
    - Store badges appear when a public listing URL exists in `downloads.json`.
    - The apt, dnf and Homebrew rows appear when the package repositories are configured.
@@ -537,7 +584,7 @@ or fail.
     - Rejected: dark only (it fails people who need light).
     - Rejected: light first (unlike every app).
 11. **Visual references on every hand-made page, and on representatives of the generated
-    families.** Lighthouse covers every page on deploy.
+    families.** Lighthouse covers every page nightly.
     - Rejected: a screenshot of all 120+ problem pages × 6 on every pull request. They differ
       only in text, which the structural and Latin-share tests check on every entry.
 12. **Mockups as HTML with the real tokens and fonts, rendered to PNG,** kept in the repo with
@@ -547,6 +594,9 @@ or fail.
 13. **No automatic language redirect.** The visitor chooses, and a dismissible hint offers the
     Arabic page.
     - Rejected: redirecting by `Accept-Language`, which breaks caching and links people share.
+14. **Streaming's `maktaba.invalid` problem types get no pages.** They are deliberately not URLs.
+    - Rejected: moving them under maktaba.tv in this epic. That would be a streaming and client
+      change with no page a person follows.
 
 ## 12. Questions only the owner can answer
 

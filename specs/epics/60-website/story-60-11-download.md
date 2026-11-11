@@ -13,12 +13,16 @@ offers something a household cannot install.
 ## Description
 
 **The data.** `scripts/download.mjs` builds the page from:
-- **The latest stable release's `release.json`** (fetched at build time from the GitHub release,
-  with its checksum verified against the signed `checksums.txt`):
+- **The latest stable release, from the GitHub Releases API** (`repos/…/releases/latest`):
   - the version and date;
-  - each asset's name, size and sha256.
+  - each asset's name, `size` and `digest` (`sha256:…`).
 
-  Asset names are matched by pattern, never typed with a version.
+  `release.json` cannot serve here: its `assets` list only the server archives. `checksums.txt`
+  (cosign-signed) covers the server archives and packages but not the desktop installers. Where
+  an asset is in `checksums.txt`, the build checks that the API's digest equals it, and fails
+  otherwise. For the desktop installers the page shows GitHub's digest and the updater
+  signature file the release attaches beside them (`.sig`), and says what each proves. Asset names are matched by
+  pattern, never typed with a version.
 - **`downloads.json`** (in the site), one entry per platform: the patterns, the requirements line,
   the install guide link, and the optional public listing URLs:
   - `appStore`;
@@ -48,8 +52,8 @@ requirements):
 - **Platform first:** the visitor's platform card comes first (from the user agent, as on the home
   page), and `#<platform>` anchors work.
 - **Each card shows** the version, the release date, the file size, and a "Verify this download"
-  disclosure with the sha256 and the cosign command from the release notes (in a code block with
-  copy, in English inside the Arabic page).
+  disclosure with the sha256, plus the cosign command from the release notes for assets that
+  `checksums.txt` lists (in a code block with copy, kept left to right inside the Arabic page).
 - **"What do I need?"** A short block in household words:
   - the computer or NAS that holds your films runs Maktaba;
   - your TV and phones get the Player apps;
@@ -81,10 +85,10 @@ story, so the link check passes.
 
 | ID | Type | Setup | Action | Expected |
 |---|---|---|---|---|
-| T01 | unit | a fixture `release.json` from v0.3.128 | build | the cards above; names and sizes from the fixture |
+| T01 | unit | a fixture Releases API answer from v0.3.129 | build | the cards above; names, sizes and digests from the fixture |
 | T02 | unit | a fixture missing the Windows exe | build | no Windows primary; the portable zip promoted or the card hidden per `downloads.json` |
 | T03 | unit | `downloads.json` with `googlePlay` set | build | the Android card with the badge |
-| T04 | unit | `release.json` whose checksum does not match `checksums.txt` | build | fails |
+| T04 | unit | an API digest that differs from `checksums.txt` for a server archive | build | fails |
 | T05 | unit | package vars set / unset | build | rows shown / hidden |
 | T06 | Playwright | user agents | load `/download/` | that card first |
 | T07 | workflow | a release run (rehearsed with a test tag on a fork or dry run) | publish | the deploy dispatched with the tag |

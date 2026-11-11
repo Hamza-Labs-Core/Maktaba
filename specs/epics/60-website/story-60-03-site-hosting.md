@@ -16,12 +16,13 @@ safe as maktaba.dev's:
 ## Description
 
 **The package.** `web/packages/website/`, laid out as README §6.1:
-- its own `package.json` and lockfile, as devportal has, so the deploy installs only what the
-  site needs;
+- a package in web's pnpm workspace. The install build it runs is `tsc && vite build` over the
+  workspace, so CI and the deploy install the workspace (`pnpm -C web install --frozen-lockfile`);
 - Node build scripts that write `dist/`;
 - `scripts/build.mjs` runs in this order:
-  1. the install build (`pnpm -C web build:install`), copying `web/dist-install/` into
-     `dist/install/` and `dist/ar/install/` (60.05);
+  1. the install build (`pnpm -C web build:install`, with `build.assetsDir: "install/assets"`),
+     copying the contents of `web/dist-install/` (already `install/<guide>/` and
+     `ar/install/<guide>/`) to the root of `dist/` (60.05);
   2. the generated families (`problems.mjs` 60.06, `help.mjs` 60.12, `download.mjs` 60.11);
   3. the hand-made pages;
   4. the copied files;
@@ -77,49 +78,62 @@ run_worker_first = true
 - Custom domains own only their exact hostnames. app., api., admin., relay., watch. and plugins.
   keep their records and routes.
 - **To check before relying on it:** that `preview_urls = true` gives preview URLs while
-  `workers_dev = false`. If it does not, staging uses a second Worker, `maktaba-website-staging`,
-  on `staging.maktaba.tv` (a name no epic uses). That Worker sends `X-Robots-Tag: noindex` and
-  is deployed by the same job.
+  `workers_dev = false`. Cloudflare's docs say an explicit `preview_urls` overrides the
+  `workers_dev` default. If it does not hold, staging follows Epic 50's convention of keeping
+  staging off the production zone. A second Worker, `maktaba-website-staging`, serves
+  `staging-www.maktaba.dev` with `X-Robots-Tag: noindex` and is deployed by the same job.
 
 **CI** (`_website.yml`, called from `ci.yml` on the new `website` path filter, and from the
 deploy):
 - `npm ci`, the build, the unit tests (Worker, scripts), the link check (60.08), and the quality
   run (60.04);
 - the `dist/` artifact uploaded (`website-site`).
-- **The `website` filter covers:**
+- **The `website` filter covers** the site's own sources:
   - `web/packages/website/**`;
   - `web/packages/install/**` and `web/vite.install.config.ts`;
   - `web/src/help/content/**`;
   - `shared/api/problems.json`;
   - `shared/log/schema/**`;
+  - `cloud/internal/privacy/**`;
   - `api/internal/security/disclosure.go`;
   - `web/design-system/tokens/**`;
   - the two workflows.
-- It also covers every file the link check reads, so a new maktaba.tv link runs the check. That
-  list comes from `scripts/links.mjs --paths`, and a `tools/ci` test keeps it equal to the
-  filter.
+- The link check over the whole repo is not behind this filter. It is a fast job that runs on
+  every pull request in the lint stage (60.08), so a new maktaba.tv link anywhere is checked
+  without running Lighthouse or the visual references.
 
 **Deploy** (`website-deploy.yml`):
 - **When:** on a push to main matching the filter, `workflow_dispatch` (input
   `rollback: boolean`), and monthly on the 1st (security.txt).
 - `concurrency: website-deploy`, never cancelling.
-1. `build`: `_website.yml` with `upload: true`. Its Lighthouse step runs **every page** in both
-   languages (60.04).
+1. `build`: `_website.yml` with `upload: true`. Its Lighthouse step runs the representatives
+   (60.04). The deploy also refuses to run while the latest nightly full sweep on main is red.
 2. `deploy`:
    1. **Secrets:** both `CLOUDFLARE_API_TOKEN` (or `CLOUDFLARE_API_TOKEN_WORKERS`) and
       `CLOUDFLARE_ACCOUNT_ID` must be set. Otherwise `::notice title=maktaba.tv not
       deployed::…` and the job passes.
    2. `node tools/cloudflare/token-check.mjs --pieces workers,dns --zone maktaba.tv`.
    3. Download `website-site` (the same three-attempt download as devportal's).
-   4. `wrangler versions upload --message "<sha>"` → the version id and preview URL.
-   5. `node tools/cloudflare/smoke.mjs website --base <preview URL>`.
-   6. `wrangler versions deploy <id>@100% --yes`.
-   7. `node tools/cloudflare/smoke.mjs website`. On failure: `wrangler rollback --message
-      "website-deploy: live smoke failed at <sha>"`, then the job fails.
-   - **With `rollback: true`:** step 4 onwards is replaced by `wrangler rollback --message
-     "website-deploy rollback by <actor>"` and the live smoke, as in `cloud-web-deploy.yml`.
+   4. **Record the live version:** `wrangler deployments status` → `previous_id` (none on the
+      first deploy). A bare `wrangler rollback` would choose the version uploaded before the
+      latest, which with upload-then-promote can be one that failed its preview.
+   5. `wrangler versions upload --message "<sha>"` → the version id and preview URL.
+   6. `node tools/cloudflare/smoke.mjs website-preview --base <preview URL>`.
+   7. `wrangler versions deploy <id>@100% --yes`, then `wrangler triggers deploy`, which applies
+      the custom domains. `versions upload` and `versions deploy` do not apply routes or
+      domains. The wrangler version is pinned, because `triggers deploy` is marked experimental.
+   8. `node tools/cloudflare/smoke.mjs website`. On failure: `wrangler rollback <previous_id>
+      --message "website-deploy: live smoke failed at <sha>"` (on a first deploy, the domains
+      are removed instead), then the job fails.
+   - **With `rollback: true`:** steps 5–7 are replaced by `wrangler rollback <id>`, then the live
+     smoke. `<id>` is the optional `version` input, or else the version of the deployment before
+     the current one in `wrangler deployments list`. The message is "website-deploy rollback by
+     <actor>", as in `cloud-web-deploy.yml`.
 
-**Smoke target** `website` in `tools/cloudflare/smoke.mjs`:
+**Smoke targets** in `tools/cloudflare/smoke.mjs`, which gains a `--base <url>` flag (today a
+host is redirected only through `SMOKE_BASE_<HOST>`) and a `notMarker` check that also passes on
+a connection error. `website-preview` holds the checks a preview URL can answer (all but the
+www, http and `app.` checks). `website` holds them all:
 - `/` answers 200 with `<html lang="en" dir="ltr">` and the language switch to `/ar/`;
 - `/ar/` answers 200 with `<html lang="ar" dir="rtl">`;
 - `/problems/not-found/` answers 200;
@@ -129,15 +143,17 @@ deploy):
 - `/.well-known/security.txt` has `Expires:`;
 - the HSTS and CSP headers on `/`;
 - `https://www.maktaba.tv/install/` answers 301 to `https://maktaba.tv/install/`;
-- `https://app.maktaba.tv/` does not answer from this Worker (its answer carries no
-  `maktaba-website` marker). This guards that no other name was taken.
+- `https://app.maktaba.tv/` does not answer from this Worker: `notMarker` `maktaba-website`,
+  which passes on any other answer or on no answer (today `app.` does not resolve). This guards
+  that no other name was taken.
 
 **Token.** `deploy/cloudflare/README.md`'s token table gains the website row:
 - account: Workers Scripts Edit;
 - the `maktaba.tv` zone: Workers Routes Edit, Zone Read, and **DNS Edit**, because custom domains
   write their records.
 
-`token-check.mjs` learns the `dns` piece. The owner grants it (A2).
+`token-check.mjs` learns the `dns` piece, `{ zone: ["DNS Write", "Zone Read"] }`; today DNS
+Write is only inside the `tunnel` piece. The owner grants it (A2).
 
 ## Acceptance criteria
 
@@ -163,10 +179,11 @@ deploy):
 | T03 | Worker unit | `/nope`, `/ar/nope` | fetch | 404 with the English, Arabic 404 page |
 | T04 | Worker unit | `/docs` | fetch | 301 to `/help/` (to `/` before 60.12) |
 | T05 | build | the build | run | `dist/schema/log-line.json` equals the source; security.txt has Expires and both Canonical lines |
-| T06 | smoke unit | `smoke.mjs website` against a local server (`SMOKE_BASE_MAKTABA`) | run | each check passes; a 200 on the 404 path fails |
-| T07 | `tools/ci` | `ci-paths.yml` and `links.mjs --paths` | compare | equal |
+| T06 | smoke unit | `smoke.mjs website` and `website-preview` against a local server (`--base`, `SMOKE_BASE_MAKTABA`) | run | each check passes; a 200 on the 404 path fails; `notMarker` passes on a refused connection and fails on the marker |
+| T07 | `tools/ci` | `ci-paths.yml` | read the `website` filter | covers the sources listed above |
 | T08 | workflow | deploy without secrets | run | green, notice printed |
-| T09 | workflow | dispatch `rollback: true` (once, after the first deploy) | run | previous version live; smoke passes |
+| T09 | workflow | dispatch `rollback: true` (once, after the first deploy) | run | the recorded previous version live; smoke passes |
+| T11 | workflow unit | a fake `wrangler` that records calls | the deploy steps | `deployments status` before `versions upload`; `triggers deploy` after `versions deploy`; on a failed smoke, `rollback <previous_id>` with that id |
 | T10 | `wrangler dev` | built `dist/` | the smoke against it | passes; the Worker's log kept in the run's artifacts |
 
 ## Strings
@@ -202,6 +219,8 @@ deploy):
 | `web/packages/website/src/pages/{index,404,ar/index,ar/404}.html` | the front door and the 404 |
 | `.github/workflows/_website.yml`, `website-deploy.yml` | build and deploy |
 | `.github/ci-paths.yml`, `.github/workflows/ci.yml`, `_unit.yml` if needed, `tools/ci/tests/test_ci_paths.py` | the `website` filter |
-| `tools/cloudflare/smoke.mjs`, `smoke.test.mjs`, `token-check.mjs` | the `website` target, the `dns` piece |
+| `tools/cloudflare/smoke.mjs`, `smoke.test.mjs` | `--base`, `notMarker`, the `website` and `website-preview` targets |
+| `tools/cloudflare/token-check.mjs`, its test | the `dns` piece |
+| `web/vite.install.config.ts` | `build.assetsDir: "install/assets"` |
 | `deploy/cloudflare/README.md` | the website's token row, and the names it owns |
 | `web/packages/install/README.md` | "Hosting:" points at this site |

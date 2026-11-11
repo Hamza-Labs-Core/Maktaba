@@ -46,7 +46,13 @@ This story builds the first four. They are what that status requires, and they a
   - a signature (typed name).
 
   It also has the DSA Art. 16 fields (an explanation, and the notifier's name and email). It uses
-  Turnstile and is rate-limited. Emails to the agent are entered into the same queue by a service
+  Turnstile and is rate-limited.
+- **Where the form posts** (proposed by [Epic 60](../60-website/story-60-07-legal.md), story
+  60.07, whose copyright page on `maktaba.tv/legal/copyright/` carries the form): the public
+  endpoint `POST https://api.maktaba.tv/v1/moderation/notices`, served by
+  `cloud/internal/handlers/moderation/`. It takes JSON with the fields above plus the Turnstile
+  token. CORS allows the origin `https://maktaba.tv` only. It answers `202` with the `notice_id`.
+  Counter-notices stay on the signed-in Broadcast page; the copyright page links there. Emails to the agent are entered into the same queue by a service
   admin.
 - **Triage.** Each notice gets a `notice_id` and lands in the **moderation queue** in the cloud
   admin (service admins only; the API enforces the role and has a role test).

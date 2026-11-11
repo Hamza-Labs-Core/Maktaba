@@ -27,7 +27,8 @@ from it:
 - **The website:**
   - no cookies;
   - no analytics script;
-  - no third-party requests;
+  - no third-party requests, except Turnstile on the copyright page's form (named, with a link to
+    Cloudflare's Turnstile privacy terms);
   - Cloudflare keeps aggregate request counts for the zone, as for any site it serves, and the
     page says what Cloudflare's own policy covers;
   - the install forms keep every answer in the page;
@@ -66,11 +67,18 @@ from it:
 - **The notice form:** the § 512(c)(3) elements and the DSA Art. 16 fields of 50.24 §2.
   - Turnstile.
   - Before sending, the form says where the notice goes and what Maktaba does with it.
-  - **Sending:** `POST https://api.maktaba.tv/v1/moderation/notices`, the public form endpoint of
-    50.24's `cloud/internal/handlers/moderation`, with CORS allowing `https://maktaba.tv` only.
+  - **Sending:** `POST https://api.maktaba.tv/v1/moderation/notices`, the public endpoint this
+    epic proposes in 50.24 §2 ("Where the form posts"), served by 50.24's
+    `cloud/internal/handlers/moderation`. CORS allows `https://maktaba.tv` only, and the answer
+    is `202` with the `notice_id`.
+  - **The page's CSP** allows exactly what the form needs, on `/legal/copyright/` and its Arabic
+    twin only: `script-src` and `frame-src https://challenges.cloudflare.com` (Turnstile) and
+    `connect-src https://api.maktaba.tv`. Every other page keeps `default-src 'self'`.
   - **Until that endpoint is live,** the form is not shown. The page shows the agent's email and
     the list of what a notice must contain, so a notice can be sent today. No placeholder form.
-- **The counter-notice form:** the same rules, posting to the counter-notice endpoint.
+- **Counter-notices:** 50.24 has the publisher file them from the signed-in Broadcast page on
+  app.maktaba.tv. The copyright page explains the counter-notice and links there. The site has no
+  accounts, so it hosts no counter-notice form.
 - **The repeat-infringer policy:** 3 strikes in 12 months (Epic 50 F16), and what happens after a
   notice.
 - **The image credits** for the demo content in screenshots (60.09): Blender's open movies,
@@ -105,8 +113,8 @@ links there too.
 | T02 | build | `docs/app-privacy.md` changed (fixture) without the page | build | fails naming the section |
 | T03 | Playwright | copyright page, endpoint flag off | load | email and contents list; no form |
 | T04 | Playwright | copyright page, endpoint faked | fill and send | one POST with exactly the form's fields, Turnstile token present |
-| T05 | Worker unit | CSP on `/legal/copyright/` vs other pages | fetch | Turnstile's origin allowed only there |
-| T06 | Playwright | every legal page | check cookies and requests | none set; no other origin |
+| T05 | Worker unit | CSP on `/legal/copyright/`, `/ar/legal/copyright/` vs other pages | fetch | Turnstile's origin and `connect-src https://api.maktaba.tv` only there |
+| T06 | Playwright | every legal page | check cookies and requests | none set; no other origin, except Turnstile and the API on the copyright page |
 | T07 | Go (cloud) | the moderation endpoint's CORS | preflight from `https://maktaba.tv` and from another origin | allowed, refused |
 
 ## Strings
@@ -141,4 +149,4 @@ links there too.
 | `web/packages/website/src/copyright-form.ts` | the forms (shown only when the endpoint is configured) |
 | `web/packages/website/src/worker.ts` | the copyright path's CSP |
 | `cloud/internal/handlers/moderation/` (50.24) | CORS for `https://maktaba.tv` |
-| `specs/epics/50-cloud-no-downtime/story-50-24-takedown-reports.md` | build-plan row → this story |
+| `specs/epics/50-cloud-no-downtime/story-50-24-takedown-reports.md` | build-plan row → this story; §2's endpoint (proposed in this epic's spec pull request) |

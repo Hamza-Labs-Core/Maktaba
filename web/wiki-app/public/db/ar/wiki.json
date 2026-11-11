@@ -6879,7 +6879,8 @@
         "story-51.9",
         "story-53.9",
         "story-55.4",
-        "story-57.3"
+        "story-57.3",
+        "story-60.12"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6923,7 +6924,8 @@
         "story-51.9",
         "story-53.9",
         "story-55.4",
-        "story-57.3"
+        "story-57.3",
+        "story-60.12"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -11504,7 +11506,8 @@
         "story-56.4",
         "story-56.6",
         "story-56.14",
-        "story-57.1"
+        "story-57.1",
+        "story-60.12"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
