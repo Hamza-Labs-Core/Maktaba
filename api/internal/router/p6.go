@@ -200,8 +200,9 @@ func MountP6(r chi.Router, d P6Deps) {
 	}
 	browseHandler.Mount(r)
 
-	// Video patch, delete, process and reprocess write audit rows.
-	videoHandler := &videos.Handler{DB: d.DB, Audit: videos.DBAudit{DB: d.DB}}
+	// Video patch, delete, process and reprocess write audit rows; process and
+	// reprocess queue real pipeline jobs (PostgresJobs: processing_jobs_enqueue).
+	videoHandler := &videos.Handler{DB: d.DB, Audit: videos.DBAudit{DB: d.DB}, JobQ: videos.PostgresJobs{DB: d.DB}}
 	// Story 27.11: a display title set by hand reaches the channels' future
 	// blocks through the library's display_title stage.
 	videoHandler.DisplayTitleRefresh = func(ctx context.Context, libraryID string) error {

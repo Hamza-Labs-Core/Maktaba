@@ -20,9 +20,10 @@
 # A newer image pulled later is switched to at the container's next start the same way, under
 # the launcher's guard: kept once its server has run for a few minutes, and if it cannot start,
 # the volume goes back to what ran before and that image's release is not tried again (the
-# image you ran before still runs). An older image never replaces what the volume runs. If you
-# manage the image yourself (Watchtower, a pinned tag you move), turn the server's own updates
-# off so only one thing updates it: MAKTABA_UPDATE_DISABLE below (or Admin -> Updates -> Pause).
+# image you ran before still runs). An older image never replaces what the volume runs. So the
+# server's own updates and a NAS catalog's (TrueNAS, Unraid, Watchtower, a pull) live side by
+# side: leave both on. To have only the image update it, MAKTABA_UPDATE_DISABLE below (or
+# Admin -> Updates -> Pause); the guard still applies at each start.
 #
 # The lines starting with "#" in a block named [like-this] are optional: remove the "# " in
 # front of a block's settings to turn it on.
@@ -51,7 +52,7 @@ services:
       MAKTABA_PLATFORM: docker
       # your time zone, for the quiet hours (heavy work at night on Light and Standard)
       TZ: Etc/UTC
-      # MAKTABA_UPDATE_DISABLE: "1"   # the image is updated by something else (see above)
+      # MAKTABA_UPDATE_DISABLE: "1"   # only the image updates it (see above); off by default
       # [bridge] this machine's address on your network, for the apps on a bridge network
       # MAKTABA_HOST_IP: 192.168.1.20
     # The host's network (Linux): the machines and apps of your network find this home (mDNS)

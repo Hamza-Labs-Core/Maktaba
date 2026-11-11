@@ -105,6 +105,16 @@ on:
       - 'pipeline/src/maktaba_pipeline/tvrelease/**'
       - 'streaming/internal/frontdoor/**'
       - 'streaming/internal/slot/**'
+      # the image's own update path and its container legs (story 59.12)
+      - 'cmd/maktaba-server/cmd_container*.go'
+      - 'cmd/maktaba-server/container_preflight*.go'
+      - 'api/internal/system/container_image*.go'
+      - 'deploy/docker/server/**'
+      - 'tests/nas/update_leg*.py'
+      - 'tests/nas/update_legs.json'
+      - 'tests/nas/reversion.sh'
+      - 'tests/nas/cell.py'
+      - 'tests/nas/fixtures.sh'
       # the rehearsal itself
       - 'api/rehearsal_*_e2e_test.go'
       - 'api/autoupdate_*e2e_test.go'
@@ -744,9 +754,290 @@ jobs:
             ${{ runner.temp }}/scenario.out
           if-no-files-found: ignore
 
+  # The container legs (Epic 59 story 59.12, tests/nas/update_leg.py): the Docker image's own
+  # update path on NAS shapes. A NAS's catalog (TrueNAS app updates, Unraid, Watchtower, a
+  # household's pull) moves the image's tag, and the image puts a newer release on its volume
+  # at the next start under the launcher's guard; an older image never replaces a newer
+  # runtime. The images: the previous published release (prev, from the registry), this
+  # commit (cur), this commit with its version raised (next) and a release that cannot start
+  # (bad), each architecture's built here on the payload's glibc baseline (as nas.yml's
+  # image job). The legs (tests/nas/update_legs.json): uid 568 with a read-only library, a
+  # 4 GB limit with 20,000 videos, arm64, a restart at each step of an update, an image older
+  # than the volume's runtime. Each: update prev -> cur, then bad rolled back by the guard,
+  # then the home as it was. Required for tagging with the scenarios (the verdict below).
+  nas-images:
+    name: container images (${{ matrix.arch }})
+    if: >-
+      github.event_name != 'workflow_run'
+      || (github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.event == 'push'
+          && github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, payload: x86_64, runner: ubuntu-22.04 }
+          - { arch: arm64, payload: aarch64, runner: ubuntu-22.04-arm }
+    outputs:
+      prev: ${{ steps.versions.outputs.prev }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0 # the versions are named with git describe
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache: false
+
+      - name: Go caches
+        uses: ./.github/actions/go-cache
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+          save-cache: false
+
+      - uses: pnpm/action-setup@v6.0.8
+        with:
+          version: 9.15.4
+          run_install: false
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: web/.nvmrc
+          package-manager-cache: false
+
+      - name: pnpm store
+        uses: ./.github/actions/node-cache
+        with:
+          package-manager: pnpm
+          lock-hash: ${{ hashFiles('web/pnpm-lock.yaml') }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: plugind
+          save-if: false
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            build/linux-app/downloads
+            !build/linux-app/downloads/*.part
+          key: linux-app-downloads-${{ matrix.payload }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
+          restore-keys: linux-app-downloads-${{ matrix.payload }}-
+
+      - name: Web deps and the build tools
+        run: |
+          pnpm -C web install --frozen-lockfile
+          tools/ci/apt-install.sh patchelf
+
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher cloud
+
+      # prev: the latest published stable release that is not this commit's own tag (as the
+      # kit's); cur: this commit as git describe names it; next and bad: past it by commit
+      # counts no real commit reaches (a describe version orders by them)
+      - name: The versions
+        id: versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WANT: ${{ inputs.prev_tag }}
+        run: |
+          set -euo pipefail
+          if [ -n "${WANT}" ]; then
+            prev="${WANT}"
+          else
+            head="$(git rev-parse HEAD)"
+            prev=""
+            for t in $(gh release list --exclude-drafts --exclude-pre-releases --limit 100 --json tagName --jq '.[].tagName' | sort -rV); do
+              git rev-parse -q --verify "refs/tags/$t" >/dev/null || git fetch -q origin "+refs/tags/$t:refs/tags/$t"
+              [ "$(git rev-list -n1 "$t")" = "$head" ] && continue
+              prev="$t"; break
+            done
+          fi
+          [ -n "${prev}" ] || { echo "::error::no published release to update from"; exit 1; }
+          tag="$(git describe --tags --match 'v*' --abbrev=0)"
+          n="$(git rev-list --count "${tag}..HEAD")"
+          sha="$(git rev-parse --short=10 HEAD)"
+          cur="$(git describe --tags --match 'v*' --always)"
+          next="${tag}-$((n + 1000))-g${sha}"
+          bad="${tag}-$((n + 2000))-g${sha}"
+          { echo "prev=${prev}"; echo "cur=${cur}"; echo "next=${next}"; echo "bad=${bad}"; } | tee -a "$GITHUB_OUTPUT"
+
+      - name: The Linux payload (cur)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.versions.outputs.cur }}
+        run: bash tools/release/linux-app/payload.sh --version "$VERSION"
+
+      - name: next and bad
+        env:
+          NEXT: ${{ steps.versions.outputs.next }}
+          BAD: ${{ steps.versions.outputs.bad }}
+        run: |
+          set -euo pipefail
+          tests/nas/reversion.sh build/linux-app/server "$RUNNER_TEMP/payload-next" "$NEXT"
+          tests/nas/reversion.sh build/linux-app/server "$RUNNER_TEMP/payload-bad" "$BAD" --crash
+
+      # cur as nas.yml builds it; next and bad as layers over it holding only the files that
+      # differ (the binaries, payload.json, files.sha256): the artifact stays one payload big
+      - name: The images
+        env:
+          PAYLOAD: ${{ matrix.payload }}
+          ARCH: ${{ matrix.arch }}
+          CUR: ${{ steps.versions.outputs.cur }}
+          NEXT: ${{ steps.versions.outputs.next }}
+          BAD: ${{ steps.versions.outputs.bad }}
+        run: |
+          set -euo pipefail
+          ctx="$RUNNER_TEMP/server-image"
+          mkdir -p "$ctx/$PAYLOAD"
+          cp -a build/linux-app/server "$ctx/$PAYLOAD/server"
+          docker build -q -f deploy/docker/server/Dockerfile \
+            --build-arg VERSION="$CUR" --build-arg COMMIT="$GITHUB_SHA" -t maktaba-server:rh-cur "$ctx"
+          for which in next bad; do
+            d="$RUNNER_TEMP/delta-$which"
+            mkdir -p "$d/server"
+            cp -a "$RUNNER_TEMP/payload-$which/bin" "$RUNNER_TEMP/payload-$which/payload.json" \
+              "$RUNNER_TEMP/payload-$which/files.sha256" "$d/server/"
+            v="$NEXT"; [ "$which" = bad ] && v="$BAD"
+            printf 'FROM maktaba-server:rh-cur\nCOPY server/ /opt/maktaba/server/\nLABEL org.opencontainers.image.version="%s"\n' "$v" >"$d/Dockerfile"
+            docker build -q -t "maktaba-server:rh-$which" "$d"
+          done
+          docker image ls 'maktaba-server'
+          docker save maktaba-server:rh-cur maktaba-server:rh-next maktaba-server:rh-bad \
+            | zstd -T0 -3 -q -o "$RUNNER_TEMP/rh-nas-images-$ARCH.tar.zst"
+          ls -lh "$RUNNER_TEMP/rh-nas-images-$ARCH.tar.zst"
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: rehearsal-nas-images-${{ matrix.arch }}
+          path: ${{ runner.temp }}/rh-nas-images-${{ matrix.arch }}.tar.zst
+          retention-days: 3
+          compression-level: 0
+
+  update-rehearsal-container:
+    name: update-rehearsal-container ${{ matrix.leg }} (${{ matrix.arch }})
+    needs: [nas-images]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      packages: read # the previous release's image
+    strategy:
+      fail-fast: false
+      # tests/nas/update_legs.json, a leg per architecture it names (tools/ci/tests/test_nas_workflow.py)
+      matrix:
+        include:
+          - { leg: nas-568, arch: amd64, runner: ubuntu-24.04 }
+          - { leg: nas-4g, arch: amd64, runner: ubuntu-24.04 }
+          - { leg: nas-arm64, arch: arm64, runner: ubuntu-24.04-arm }
+          - { leg: nas-restart, arch: amd64, runner: ubuntu-24.04 }
+          - { leg: nas-image-older, arch: amd64, runner: ubuntu-24.04 }
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Download rehearsal-nas-images-${{ matrix.arch }}
+        id: artifact-nas-images
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: rehearsal-nas-images-${{ matrix.arch }}
+          path: ${{ runner.temp }}
+      - name: Wait 15s to retry the download of rehearsal-nas-images-${{ matrix.arch }}
+        if: steps.artifact-nas-images.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download rehearsal-nas-images-${{ matrix.arch }} (attempt 2)
+        id: artifact-nas-images-2
+        if: steps.artifact-nas-images.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: rehearsal-nas-images-${{ matrix.arch }}
+          path: ${{ runner.temp }}
+      - name: Wait 45s to retry the download of rehearsal-nas-images-${{ matrix.arch }}
+        if: steps.artifact-nas-images-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download rehearsal-nas-images-${{ matrix.arch }} (attempt 3)
+        id: artifact-nas-images-3
+        if: steps.artifact-nas-images-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: rehearsal-nas-images-${{ matrix.arch }}
+          path: ${{ runner.temp }}
+      - name: Check rehearsal-nas-images-${{ matrix.arch }} downloaded
+        id: artifact-nas-images-check
+        if: steps.artifact-nas-images-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: rehearsal-nas-images-${{ matrix.arch }}
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
+
+      - name: The images
+        env:
+          ARCH: ${{ matrix.arch }}
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          PREV: ${{ needs.nas-images.outputs.prev }}
+        run: |
+          set -euo pipefail
+          zstd -d -q -c "$RUNNER_TEMP/rh-nas-images-$ARCH.tar.zst" | docker load
+          rm -f "$RUNNER_TEMP/rh-nas-images-$ARCH.tar.zst"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          for i in 1 2 3; do
+            docker pull -q "ghcr.io/hamza-labs-core/maktaba-server:${PREV}" && break
+            [ "$i" = 3 ] && { echo "::error::the previous release's image ${PREV} could not be pulled"; exit 1; }
+            sleep $((i * 20))
+          done
+          docker image ls
+
+      - name: The fixture library
+        run: tests/nas/fixtures.sh "$RUNNER_TEMP/fixtures"
+
+      - name: The leg
+        env:
+          LEG: ${{ matrix.leg }}
+          PREV: ${{ needs.nas-images.outputs.prev }}
+        run: |
+          set -euo pipefail
+          python3 tests/nas/update_leg.py --leg "$LEG" \
+            --prev "ghcr.io/hamza-labs-core/maktaba-server:${PREV}" --cur maktaba-server:rh-cur \
+            --next maktaba-server:rh-next --bad maktaba-server:rh-bad \
+            --fixtures "$RUNNER_TEMP/fixtures" --out "$RUNNER_TEMP/nas-leg"
+
+      - name: The leg's summary
+        if: always()
+        run: cat "$RUNNER_TEMP/nas-leg/summary.md" >>"$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "no summary (the leg did not start)" >>"$GITHUB_STEP_SUMMARY"
+
+      # kept pass or fail: the update and the rollback's logs are the leg's evidence
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: rehearsal-nas-leg-${{ matrix.leg }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/nas-leg
+          retention-days: 14
+          if-no-files-found: warn
+
   update-rehearsal:
     name: update-rehearsal
-    needs: [kit, seed, scenario]
+    needs: [kit, seed, scenario, nas-images, update-rehearsal-container]
     # always, but not for a CI run that did not pass (nothing ran: there is no verdict)
     if: >-
       always()
@@ -768,7 +1059,7 @@ jobs:
             echo "Expected to fail until their fix merges (not counted): ${EXPECTED}" >> "$GITHUB_STEP_SUMMARY"
           fi
           fail=0
-          for j in kit seed scenario; do
+          for j in kit seed scenario nas-images update-rehearsal-container; do
             r="$(echo "$RESULTS" | jq -r ".\"$j\".result")"
             [ "$r" = success ] || { echo "::error::$j: $r"; fail=1; }
           done

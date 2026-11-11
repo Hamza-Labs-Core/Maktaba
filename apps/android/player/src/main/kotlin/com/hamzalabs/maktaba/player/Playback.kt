@@ -24,6 +24,7 @@ import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.ErrorKind
 import com.hamzalabs.maktaba.core.api.Failure
 import com.hamzalabs.maktaba.core.api.Rendition
+import com.hamzalabs.maktaba.core.api.busyRetryMs
 import com.hamzalabs.maktaba.core.api.errorDetails
 import com.hamzalabs.maktaba.core.api.Video
 import com.hamzalabs.maktaba.player.media.NowPlaying
@@ -416,10 +417,3 @@ class Playback(
         }
     }
 }
-
-/** How long to wait before asking again for a stream the home had no transcode slot for. */
-internal fun busyRetryMs(retryAfterSec: Long?): Long = (retryAfterSec ?: BUSY_RETRY_SEC).coerceIn(1, 60) * 1000
-
-/** Story 59.05: the home's `Retry-After` for `transcode_busy`, and the wait when it sends none. */
-internal const val BUSY_RETRY_SEC = 10L
-

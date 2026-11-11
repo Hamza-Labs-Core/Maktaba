@@ -20,7 +20,8 @@ import { hrefOf, updateCodeHelp } from "../../help/registry";
 import { UpdatesBackups } from "./UpdatesBackups";
 import { UpdatesSettings } from "../Settings/UpdatesSettings";
 import { RunnersWarning } from "../Settings/RunnersWarning";
-import { useUpdateStatus } from "../../lib/updates";
+import { type ContainerImage, useUpdateStatus } from "../../lib/updates";
+import { formatBytes } from "../../lib/desktopSetup";
 import {
   homeNext,
   homeOf,
@@ -193,6 +194,25 @@ function duration(run: UpdateRun): string {
   return s < 120 ? `${Math.round(s)} s` : `${Math.round(s / 60)} min`;
 }
 
+/** Why the runtime's release runs on the Docker image rather than the image's, or that they
+ * are one (story 59.12: GET /api/system/updates' container block, an admin's only). */
+export function containerWhy(
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  c: ContainerImage
+): string {
+  const vars = { runtime: c.runtime, image: c.image };
+  switch (c.reason) {
+    case "image_older":
+      return t("updates.container.why.imageOlder", vars);
+    case "image_refused":
+      return t("updates.container.why.imageRefused", vars);
+    case "image_pending":
+      return t("updates.container.why.imagePending", vars);
+    default:
+      return t("updates.container.why.same", vars);
+  }
+}
+
 export function AdminUpdates() {
   const toast = useToast();
   const w = useWords();
@@ -345,6 +365,17 @@ export function AdminUpdates() {
     const e = last?.error as { code?: string } | undefined;
     return e?.code ?? last?.state ?? "";
   })();
+  // story 59.12: the data folder's room for a safe update, with what it needs and has
+  const lastReason = (() => {
+    const e = last?.error as { need_bytes?: number; free_bytes?: number } | undefined;
+    if (lastCode === "disk_short" && e?.need_bytes && e.free_bytes !== undefined) {
+      return t("updates.code.disk_short", {
+        need: formatBytes(e.need_bytes),
+        free: formatBytes(e.free_bytes),
+      });
+    }
+    return w.reason(lastCode);
+  })();
   const installNow = (version: string) =>
     act(() => updatesApi.runNow(version), t("updates.held.started", { version }));
   // an ended run stays up front only while it needs someone: machines held, to retry, or
@@ -475,9 +506,7 @@ export function AdminUpdates() {
       )}
       {lastFailed && last && (
         <div className="mkt-updates__callout" data-testid="updates-last-failed">
-          <p>
-            {t("updates.lastRun.failed", { version: last.version, reason: w.reason(lastCode) })}
-          </p>
+          <p>{t("updates.lastRun.failed", { version: last.version, reason: lastReason })}</p>
           <div className="mkt-updates__actions">
             <Button
               variant="secondary"
@@ -509,6 +538,22 @@ export function AdminUpdates() {
               </strong>
             </dd>
           </div>
+          {sysStatus?.container && (
+            <div data-testid="updates-container">
+              <dt>{t("updates.container.title")}</dt>
+              <dd>
+                <span dir="ltr" data-testid="updates-container-versions">
+                  {t("updates.container.versions", {
+                    runtime: sysStatus.container.runtime,
+                    image: sysStatus.container.image,
+                  })}
+                </span>
+                <span className="mkt-updates__sub mkt-muted" data-testid="updates-container-why">
+                  {containerWhy(t, sysStatus.container)}
+                </span>
+              </dd>
+            </div>
+          )}
           <div>
             <dt>{t("updates.home.last")}</dt>
             <dd data-testid="updates-home-last">{lastText(home)}</dd>

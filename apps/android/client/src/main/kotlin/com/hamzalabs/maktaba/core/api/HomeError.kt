@@ -159,6 +159,16 @@ fun details(status: Int, body: String): String {
     }.filter { it.isNotBlank() }.joinToString("\n").ifBlank { "HTTP $status" }
 }
 
+/**
+ * How long a player waits before asking again for a stream the home had no transcode slot for
+ * (503 `transcode_busy`, Epic 59 story 59.05): the home's `Retry-After`, or [BUSY_RETRY_SEC], kept
+ * between 1 s and 60 s. Every Android player (phone, tablet, TV) waits the same.
+ */
+fun busyRetryMs(retryAfterSec: Long?): Long = (retryAfterSec ?: BUSY_RETRY_SEC).coerceIn(1, 60) * 1000
+
+/** Story 59.05: the home's `Retry-After` for `transcode_busy`, and the wait when it sends none. */
+const val BUSY_RETRY_SEC = 10L
+
 /** `Retry-After` in seconds (only the delta form: a home sends that). */
 fun retryAfterSeconds(header: String?): Long? = header?.trim()?.toLongOrNull()?.takeIf { it >= 0 }
 

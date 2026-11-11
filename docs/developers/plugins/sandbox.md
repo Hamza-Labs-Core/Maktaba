@@ -55,7 +55,10 @@ the user Maktaba runs as can open.
 
 If a Linux kernel lacks some layers (no Landlock, no user namespaces), the host still runs only
 if seccomp is in force, and reports *Degraded* with `sandbox_partial`. Without seccomp on
-Linux, or without the Seatbelt profile or AppContainer, it does not run.
+Linux, or without the Seatbelt profile or AppContainer, it does not run. Its Ready condition
+stays true, so the components list (`GET /api/components`) carries the reason as
+`degraded_reason` (with `degraded_reason_params`, such as `missing`), not as `reason`, and the
+Components page shows it beside *Degraded*.
 
 ### Isolation levels (a home in a container, on a NAS)
 

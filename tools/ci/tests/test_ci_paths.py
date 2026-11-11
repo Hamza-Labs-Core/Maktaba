@@ -584,7 +584,14 @@ def test_the_rehearsal_of_main_starts_after_ci_passes_on_the_same_commit() -> No
     assert runs("", name="pull_request") and runs("", name="schedule")
     for job_name, job in wf["jobs"].items():
         if job_name != "kit" and job_name != "update-rehearsal":
-            assert "kit" in job["needs"], job_name
+            # the kit's gate, by needing the kit or by carrying its very condition (the container
+            # legs' images, story 59.12, build beside the kit rather than after it)
+            needs = job.get("needs") or []
+            needs = [needs] if isinstance(needs, str) else needs
+            gated = "kit" in needs or job.get("if") == cond or any(
+                wf["jobs"][n].get("if") == cond for n in needs if n in wf["jobs"]
+            )
+            assert gated, job_name
         for step in job.get("steps", []):
             if str(step.get("uses", "")).startswith("actions/checkout@"):
                 assert step["with"]["ref"] == "${{ github.event.workflow_run.head_sha }}", job_name

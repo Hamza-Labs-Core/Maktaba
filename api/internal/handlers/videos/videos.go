@@ -122,10 +122,47 @@ type Handler struct {
 const DisplayTitleMaxRunes = 200
 
 // JobControl is the Story 7.5 surface: enqueue a per-video job
-// (or bump an existing one).
+// (or bump an existing one). PostgresJobs (jobs.go) is the release one; a
+// refused enqueue is a *NotQueuedError. Without one, /process and
+// /reprocess answer 503: they never answer success with no job.
 type JobControl interface {
-	BumpOrEnqueue(ctx context.Context, videoID, stage string, priority int) (jobID string, err error)
-	RollbackToStage(ctx context.Context, videoID, fromStage string, priority int) (jobIDs []string, err error)
+	BumpOrEnqueue(ctx context.Context, videoID, stage string, priority int) (jobID int64, state string, err error)
+	RollbackToStage(ctx context.Context, videoID, fromStage string, priority int) (jobIDs []int64, err error)
+}
+
+// Priorities of an asked-for run (lower runs sooner; the queue's default is 100).
+const (
+	processPriority   = 50
+	reprocessPriority = 50
+	maxJobPriority    = 999
+)
+
+// noJobQueue is the answer when no JobControl is wired: an honest 503.
+func noJobQueue() *httperror.Error {
+	e := httperror.Unavailable(0)
+	e.Detail = "no job queue on this server: nothing was queued"
+	return e
+}
+
+// notQueued maps a refused enqueue to its problem: a stage that is not a
+// video stage is the caller's (400), a stage switched off is the server's
+// state (409); any other error is a 500.
+func notQueued(err error, what string) *httperror.Error {
+	var nq *NotQueuedError
+	if errors.As(err, &nq) {
+		switch nq.Outcome {
+		case "unknown_stage", "invalid_subject":
+			return (&httperror.Error{
+				Type:   "https://maktaba.tv/problems/stage-not-per-video",
+				Title:  "stage not per-video",
+				Status: http.StatusBadRequest,
+				Detail: "stage " + nq.Stage + " cannot be queued for a video",
+			}).With("outcome", nq.Outcome)
+		default:
+			return httperror.Conflict("", "stage "+nq.Stage+" is switched off: nothing was queued").With("outcome", nq.Outcome)
+		}
+	}
+	return httperror.Internal(what).Wrap(err)
 }
 
 // AuditWriter records the video mutations to audit_log.
@@ -847,22 +884,34 @@ func (h *Handler) Process(w http.ResponseWriter, r *http.Request) {
 	if stage == "" {
 		stage = "transcribe"
 	}
-	prio := req.Priority
-	if prio == 0 {
-		prio = 50
-	}
-	if h.JobQ == nil {
-		h.audit(r, AuditVideoProcessed, v, map[string]any{"stage": stage, "priority": prio, "job_id": ""})
-		common.WriteJSON(w, r, http.StatusOK, map[string]any{"job_id": "", "note": "no-op (no enqueuer)"})
+	if stage == "scan" {
+		httperror.Write(w, r, &httperror.Error{
+			Type:   "https://maktaba.tv/problems/stage-not-per-video",
+			Title:  "stage not per-video",
+			Status: http.StatusBadRequest,
+			Detail: "scan is library-scoped",
+		})
 		return
 	}
-	jobID, err := h.JobQ.BumpOrEnqueue(r.Context(), id, stage, prio)
+	prio := req.Priority
+	if prio == 0 {
+		prio = processPriority
+	}
+	if prio < 1 || prio > maxJobPriority {
+		httperror.Write(w, r, httperror.BadRequest("priority must be between 1 and 999"))
+		return
+	}
+	if h.JobQ == nil {
+		httperror.Write(w, r, noJobQueue())
+		return
+	}
+	jobID, state, err := h.JobQ.BumpOrEnqueue(r.Context(), id, stage, prio)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("enqueue").Wrap(err))
+		httperror.Write(w, r, notQueued(err, "enqueue"))
 		return
 	}
 	h.audit(r, AuditVideoProcessed, v, map[string]any{"stage": stage, "priority": prio, "job_id": jobID})
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"job_id": jobID})
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"job_id": jobID, "stage": stage, "state": state})
 }
 
 // Reprocess implements 7.5 AC-2.
@@ -903,18 +952,23 @@ func (h *Handler) Reprocess(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	if h.JobQ == nil {
-		h.audit(r, AuditVideoReprocessed, v, map[string]any{"from_stage": req.FromStage, "job_ids": []string{}})
-		common.WriteJSON(w, r, http.StatusOK, map[string]any{"job_ids": []string{}})
+	if req.FromStage == "" {
+		httperror.Write(w, r, httperror.BadRequest("from_stage is required"))
 		return
 	}
-	ids, err := h.JobQ.RollbackToStage(r.Context(), id, req.FromStage, 200)
+	if h.JobQ == nil {
+		httperror.Write(w, r, noJobQueue())
+		return
+	}
+	ids, err := h.JobQ.RollbackToStage(r.Context(), id, req.FromStage, reprocessPriority)
 	if err != nil {
-		httperror.Write(w, r, httperror.Internal("reprocess").Wrap(err))
+		httperror.Write(w, r, notQueued(err, "reprocess"))
 		return
 	}
 	h.audit(r, AuditVideoReprocessed, v, map[string]any{"from_stage": req.FromStage, "job_ids": ids})
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"job_ids": ids})
+	common.WriteJSON(w, r, http.StatusAccepted, map[string]any{
+		"job_ids": ids, "from_stage": req.FromStage, "predecessor_state": v.State,
+	})
 }
 
 // parseDisplayTitle reads the PATCH display_title value: a string sets the

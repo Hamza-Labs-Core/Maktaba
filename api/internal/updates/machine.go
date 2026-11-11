@@ -48,6 +48,9 @@ type MachineError struct {
 	Step   string `json:"step"`
 	Code   string `json:"code"`
 	Detail string `json:"detail,omitempty"`
+	// NeedBytes and FreeBytes are a room check's (disk_short, Epic 59 story 59.12).
+	NeedBytes uint64 `json:"need_bytes,omitempty"`
+	FreeBytes uint64 `json:"free_bytes,omitempty"`
 }
 
 // MachineStatus is a machine's report of its run (the supervisor's updater.Status).

@@ -199,6 +199,7 @@ An update is available. Admins open [Admin → Updates](/admin/updates) to see i
 - **What it means:** A file of the new version could not be downloaded, is missing for this machine, or there was no room on the disk.
 - **Does Maktaba fix it itself?** Yes: it tries again at once, then later, then in the next quiet window. Machines download from the home first, then from GitHub.
 - **What you can do:** Check the network and the free disk space, then press **Retry**, or wait.
+- **On a NAS:** an update needs room on the data folder for the new version (about 1 GB) and for the backup taken first (the library database's size and a fifth more). When there is less, the update waits and says how much it needs and how much is free; nothing is changed. Free some space and it goes on.
 
 ### The parts you added could not be readied {#code-packs}
 

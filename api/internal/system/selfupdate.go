@@ -356,6 +356,14 @@ func (s *SelfUpdater) StatusHandler(base http.Handler) http.Handler {
 		if rb := s.LastRollback(); rb != nil {
 			doc["rolled_back"] = rb
 		}
+		// story 59.12: on the Docker image, which release runs (the runtime's or the image's)
+		// and why; an admin's only (the route stays open to every signed-in user)
+		if p := principal.FromContext(r.Context()); p != nil && p.IsAdmin {
+			cur, _ := doc["current_version"].(string)
+			if c := containerImageOf(cur); c != nil {
+				doc["container"] = c
+			}
+		}
 		common.WriteJSON(w, r, http.StatusOK, doc)
 	})
 }

@@ -226,8 +226,10 @@ func (c containerDeps) bootstrap(ctx context.Context, command bool) (*layout.Gua
 			return nil, err
 		}
 	case plan == containerOlder:
-		c.logf("this image's Maktaba %s is older than %s, the newest this volume ran: the volume's %s runs",
-			st.FromVersion, st.Watermark, orNone(st.Version))
+		// story 59.12: a catalog or a household pinned or pulled an older tag; the volume may
+		// be migrated past it, so the runtime it ran last runs (Settings says the same)
+		c.logf("The container image (%s) is older than this home's runtime (%s), so the runtime is running.",
+			layout.NormalizeVersion(st.FromVersion), layout.NormalizeVersion(orNone(st.Version)))
 	}
 	if c.rt.ReadOwner() != appruntime.OwnerHeadless {
 		if err := c.rt.SetOwner(appruntime.OwnerHeadless); err != nil {
@@ -296,7 +298,14 @@ func (c containerDeps) confirm(ctx context.Context, g layout.Guard) {
 			}
 			return
 		}
-		if layout.NormalizeVersion(c.version(ctx)) != g.Version {
+		// a check with no answer (a busy server's rate limit on loopback, a timeout) says
+		// nothing either way: only an answer with another version starts the wait again. The
+		// launcher's guard is what takes a server that stopped answering back (story 59.12: on
+		// a busy NAS every few checks were refused 429, and the image was never kept)
+		switch v := layout.NormalizeVersion(c.version(ctx)); {
+		case v == "":
+			continue
+		case v != g.Version:
 			since = time.Time{}
 			continue
 		}
@@ -460,7 +469,7 @@ func (c containerDeps) run(ctx context.Context, args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	env := withEnv(containerEnv(os.Environ()), extra...)
+	env := withEnv(containerEnv(os.Environ()), append(extra, c.imageEnv()...)...)
 	if len(args) > 0 {
 		return 0, c.exec(c.self, append([]string{c.self}, args...), env)
 	}
@@ -487,6 +496,33 @@ func (c containerDeps) run(ctx context.Context, args []string) (int, error) {
 	<-followed
 	<-confirmed
 	return code, err
+}
+
+// The image's version and whether it was refused, for the server and every role (story
+// 59.12): Settings → Updates on a NAS shows the runtime that runs against the image the
+// container was started from, and why (api/internal/system: the container block).
+const (
+	envImageVersion = "MAKTABA_IMAGE_VERSION"
+	envImageRefused = "MAKTABA_IMAGE_REFUSED"
+)
+
+// imageEnv is what the server is told of this container's image: its release, and "1" when
+// that release could not start here before (the launcher went back from it). Nothing when the
+// image's payload cannot be read.
+func (c containerDeps) imageEnv() []string {
+	if c.payload == "" {
+		return nil
+	}
+	st, err := c.rt.Status(c.payload)
+	if err != nil || st.FromVersion == "" {
+		return nil
+	}
+	v := layout.NormalizeVersion(st.FromVersion)
+	refused := "0"
+	if c.refused() == v {
+		refused = "1"
+	}
+	return []string{envImageVersion + "=" + v, envImageRefused + "=" + refused}
 }
 
 // containerEnv is env with MAKTABA_CONTAINER set (the image sets it; a run of this
