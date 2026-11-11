@@ -7329,7 +7329,7 @@
   "components.reason.isolation_held": "معطّلة: يحتاج هذا الجهاز الرئيسي إلى إذنك لتشغيل إضافات بعزل على مستوى الحاوية فقط.",
   "components.reason.entitlement_missing": "تحتاج هذه الإضافة إلى شراء.",
   "components.reason.plugin_crash_loop": "توقفت من تلقاء نفسها بعد أخطاء متكررة.",
-  "components.reason.sandbox_partial": "تعمل بجزء من عزلها: ينقص هذا النظامَ بعضُه.",
+  "components.reason.sandbox_partial": "تعمل الإضافات بجزء من عزلها فقط، لأن هذا النظام يفتقد بعضه (مثل Landlock في بعض أنوية أجهزة NAS).",
   "components.reason.sandbox_unavailable": "تعذّر بدء العزل، فلا تعمل أي إضافة.",
   "components.reason.runner_crash_loop": "يتعطّل مشغّلها مرارًا.",
   "components.reason.plugin_trusted_unsigned": "تدّعي صلاحيات مكتبة الخاصة دون توقيع مكتبة.",

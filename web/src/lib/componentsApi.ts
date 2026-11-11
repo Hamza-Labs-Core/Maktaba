@@ -58,6 +58,12 @@ export interface MachinePhase {
   health?: Health | null;
   /** the reason's params ({name}, {need}, ...), when the status carries them */
   reason_params?: Record<string, unknown> | null;
+  /**
+   * why a degraded machine runs with less (components.reason.<code>, e.g. sandbox_partial):
+   * a degraded part keeps Ready true, so `reason` is empty
+   */
+  degraded_reason?: string;
+  degraded_reason_params?: Record<string, unknown> | null;
 }
 
 export interface Condition {
@@ -140,6 +146,9 @@ export interface ComponentView {
   health?: Health | null;
   /** the reason's params ({name}, {need}, ...), when the status carries them */
   reason_params?: Record<string, unknown> | null;
+  /** the home's degraded_reason and its params (MachinePhase.degraded_reason) */
+  degraded_reason?: string;
+  degraded_reason_params?: Record<string, unknown> | null;
   /** this machine's last or running install or removal of an asset (story 51.16) */
   progress?: InstallProgress | null;
   /** a plugin entry's own name and summary by language (Epic 54) */

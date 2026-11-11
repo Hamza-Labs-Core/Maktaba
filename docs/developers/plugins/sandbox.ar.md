@@ -53,7 +53,9 @@ AppContainer الخاصة به، فالمقابس للمضيف وحده، لا �
 
 إن افتقرت نواة Linux إلى بعض الطبقات (لا Landlock، ولا مساحات أسماء للمستخدم)، يظل المضيف يعمل
 فقط إن كان seccomp مفعّلًا، ويبلّغ بالحالة *متدهور* مع `sandbox_partial`. أما دون seccomp على
-Linux، أو دون ملف تعريف Seatbelt أو AppContainer، فلا يعمل.
+Linux، أو دون ملف تعريف Seatbelt أو AppContainer، فلا يعمل. ويبقى شرط Ready فيه صحيحًا، لذا
+تحمل قائمة المكوّنات (`GET /api/components`) السبب في `degraded_reason` (مع
+`degraded_reason_params`، مثل `missing`) لا في `reason`، وتعرضه صفحة المكوّنات بجانب *متدهور*.
 
 ### مستويات العزل (جهاز رئيسي داخل حاوية، على خادم تخزين NAS)
 
