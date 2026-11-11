@@ -268,7 +268,6 @@ POST /api/models/{id}/download
 POST /api/models/{id}/test
 POST /api/notifications/read-all
 POST /api/notifications/{id}/read
-POST /api/pairing/approve
 POST /api/pairing/device
 POST /api/pairing/device/token
 POST /api/pairing/exchange
@@ -330,7 +329,6 @@ POST /api/tv/simulcast/destinations
 POST /api/tv/simulcast/destinations/{id}/test
 POST /api/tv/simulcast/outputs/{id}/start
 POST /api/tv/simulcast/outputs/{id}/stop
-POST /api/users
 POST /api/users/{id}/reset-password
 POST /api/users/{id}/unlock
 POST /api/videos/{id}/enrichment/accept

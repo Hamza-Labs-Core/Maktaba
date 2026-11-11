@@ -102,6 +102,8 @@ loops      = ["api:process_recorder", "api:license_refresher", "api:license_relo
               "api:eventbus_run", "api:eventbus_pruner", "api:idempotency_sweep",
               "api:jwt_key_reaper", "api:queues_snapshots", "api:sharepath_reload",
               "api:browse_rowcache_listen", "api:play_queue_sweep",
+              # Epic 57 story 57.02: drops a restricted account's limit from memory when it changes
+              "api:parental_cache_listen",
               # the plugin store's signed lists and the kill switch (story 54.17 §1): idle
               # unless a plugin is installed or Browse was opened in the last 7 days
               "api:plugins_catalog"]

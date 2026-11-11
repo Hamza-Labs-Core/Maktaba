@@ -3312,6 +3312,346 @@
     "/paths/~1system~1updates/get/responses/200/content/application~1json/schema/properties/container/description": {
       "en": "Admins only: the volume's runtime beside the Docker image's release.",
       "ar": "للمسؤول وحده: إصدار وحدة التخزين بجانب إصدار صورة Docker."
+    },
+    "/paths/~1parental~1children/get/summary": {
+      "en": "The restricted accounts the caller looks after",
+      "ar": "الحسابات المقيَّدة التي يتولاها الطالب"
+    },
+    "/paths/~1parental~1children/get/description": {
+      "en": "Each restricted account the caller is a guardian of, with its limit; an admin sees every restricted account. Empty for anyone else.",
+      "ar": "كل حساب مقيَّد يكون الطالب وليًّا له، مع حدّه؛ والمشرف يرى كل الحسابات المقيَّدة. وتكون القائمة فارغة لغيرهما."
+    },
+    "/paths/~1parental~1children/get/responses/200/description": {
+      "en": "The accounts.",
+      "ar": "الحسابات."
+    },
+    "/paths/~1parental~1children/get/responses/200/content/application~1json/schema/properties/children/items/allOf/1/properties/max_tier/description": {
+      "en": "The highest age tier the account may open: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier.",
+      "ar": "أعلى فئة عمرية يفتحها الحساب: `0` لكل الأعمار، ثم `9` و`13` و`16` و`18`؛ و`-1` لا شيء له فئة."
+    },
+    "/paths/~1parental~1children/get/responses/200/content/application~1json/schema/properties/children/items/allOf/1/properties/unrated/description": {
+      "en": "What happens to a video with no age tier: `hide`.",
+      "ar": "ما يحدث لفيديو بلا فئة عمرية: `hide` أي يُخفى."
+    },
+    "/paths/~1parental~1children/get/responses/200/content/application~1json/schema/properties/children/items/allOf/1/properties/allow_only/description": {
+      "en": "Only what a rule allows is open, whatever its tier.",
+      "ar": "لا يُفتح إلا ما تسمح به قاعدة، أيًّا كانت فئته."
+    },
+    "/paths/~1parental~1children/get/responses/200/content/application~1json/schema/properties/children/items/allOf/1/properties/version/description": {
+      "en": "Goes up by one with every change to the limit, its guardians or its rules.",
+      "ar": "يزيد واحدًا مع كل تغيير في الحد أو أوليائه أو قواعده."
+    },
+    "/paths/~1me~1parental/get/summary": {
+      "en": "The caller's own limit",
+      "ar": "حدّ الطالب نفسه"
+    },
+    "/paths/~1me~1parental/get/description": {
+      "en": "Whether the signed-in account is restricted and, when it is, its limit. An app reads it to show only what the account may open; the server enforces the limit whatever the app shows.",
+      "ar": "هل الحساب المسجَّل الدخول مقيَّد، وما حدّه إن كان كذلك. يقرؤه التطبيق ليعرض ما يفتحه الحساب فقط؛ والخادم يفرض الحد أيًّا كان ما يعرضه التطبيق."
+    },
+    "/paths/~1me~1parental/get/responses/200/description": {
+      "en": "The limit, or `restricted: false`.",
+      "ar": "الحد، أو `restricted: false`."
+    },
+    "/paths/~1me~1parental/get/responses/200/content/application~1json/schema/properties/max_tier/description": {
+      "en": "The highest age tier the account may open: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier.",
+      "ar": "أعلى فئة عمرية يفتحها الحساب: `0` لكل الأعمار، ثم `9` و`13` و`16` و`18`؛ و`-1` لا شيء له فئة."
+    },
+    "/paths/~1me~1parental/get/responses/200/content/application~1json/schema/properties/unrated/description": {
+      "en": "What happens to a video with no age tier: `hide`.",
+      "ar": "ما يحدث لفيديو بلا فئة عمرية: `hide` أي يُخفى."
+    },
+    "/paths/~1me~1parental/get/responses/200/content/application~1json/schema/properties/allow_only/description": {
+      "en": "Only what a rule allows is open, whatever its tier.",
+      "ar": "لا يُفتح إلا ما تسمح به قاعدة، أيًّا كانت فئته."
+    },
+    "/paths/~1users~1{id}~1parental/get/summary": {
+      "en": "A restricted account's limit",
+      "ar": "حدّ حساب مقيَّد"
+    },
+    "/paths/~1users~1{id}~1parental/get/description": {
+      "en": "The limit, who looks after the account and what its devices said about age. For the account's guardians and admins.",
+      "ar": "الحد، ومن يتولى الحساب، وما قالته أجهزته عن العمر. لأولياء الحساب وللمشرفين."
+    },
+    "/paths/~1users~1{id}~1parental/get/responses/200/description": {
+      "en": "The limit.",
+      "ar": "الحد."
+    },
+    "/paths/~1users~1{id}~1parental/get/responses/200/content/application~1json/schema/properties/policy/properties/max_tier/description": {
+      "en": "The highest age tier the account may open: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier.",
+      "ar": "أعلى فئة عمرية يفتحها الحساب: `0` لكل الأعمار، ثم `9` و`13` و`16` و`18`؛ و`-1` لا شيء له فئة."
+    },
+    "/paths/~1users~1{id}~1parental/get/responses/200/content/application~1json/schema/properties/policy/properties/unrated/description": {
+      "en": "What happens to a video with no age tier: `hide`.",
+      "ar": "ما يحدث لفيديو بلا فئة عمرية: `hide` أي يُخفى."
+    },
+    "/paths/~1users~1{id}~1parental/get/responses/200/content/application~1json/schema/properties/policy/properties/allow_only/description": {
+      "en": "Only what a rule allows is open, whatever its tier.",
+      "ar": "لا يُفتح إلا ما تسمح به قاعدة، أيًّا كانت فئته."
+    },
+    "/paths/~1users~1{id}~1parental/get/responses/200/content/application~1json/schema/properties/policy/properties/version/description": {
+      "en": "Goes up by one with every change to the limit, its guardians or its rules.",
+      "ar": "يزيد واحدًا مع كل تغيير في الحد أو أوليائه أو قواعده."
+    },
+    "/paths/~1users~1{id}~1parental/get/responses/200/content/application~1json/schema/properties/access/description": {
+      "en": "What the caller is to this account.",
+      "ar": "صفة الطالب تجاه هذا الحساب."
+    },
+    "/paths/~1users~1{id}~1parental/get/responses/200/content/application~1json/schema/properties/signals/description": {
+      "en": "What each signed-in device said about its user's age.",
+      "ar": "ما قاله كل جهاز مسجَّل الدخول عن عمر مستخدمه."
+    },
+    "/paths/~1users~1{id}~1parental/get/responses/404/description": {
+      "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا حساب مقيَّد بهذا المعرّف يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
+    },
+    "/paths/~1users~1{id}~1parental/put/summary": {
+      "en": "Set an account's limit",
+      "ar": "ضبط حدّ حساب"
+    },
+    "/paths/~1users~1{id}~1parental/put/description": {
+      "en": "An admin makes any account that is not an admin restricted, or changes its limit; a guardian changes the limit of an account they look after. Send the `version` last read to refuse a change made over someone else's (409).",
+      "ar": "يجعل المشرف أي حساب ليس مشرفًا حسابًا مقيَّدًا، أو يغيّر حدّه؛ والولي يغيّر حدّ حساب يتولاه. أرسل آخر `version` قُرئ ليُرفض تغيير يطمس تغيير غيرك (409)."
+    },
+    "/paths/~1users~1{id}~1parental/put/requestBody/content/application~1json/schema/properties/max_tier/description": {
+      "en": "The highest age tier the account may open: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier.",
+      "ar": "أعلى فئة عمرية يفتحها الحساب: `0` لكل الأعمار، ثم `9` و`13` و`16` و`18`؛ و`-1` لا شيء له فئة."
+    },
+    "/paths/~1users~1{id}~1parental/put/requestBody/content/application~1json/schema/properties/unrated/description": {
+      "en": "What happens to a video with no age tier: `hide`.",
+      "ar": "ما يحدث لفيديو بلا فئة عمرية: `hide` أي يُخفى."
+    },
+    "/paths/~1users~1{id}~1parental/put/requestBody/content/application~1json/schema/properties/allow_only/description": {
+      "en": "Only what a rule allows is open, whatever its tier.",
+      "ar": "لا يُفتح إلا ما تسمح به قاعدة، أيًّا كانت فئته."
+    },
+    "/paths/~1users~1{id}~1parental/put/requestBody/content/application~1json/schema/properties/version/description": {
+      "en": "The version last read; `0` or absent to skip the check.",
+      "ar": "آخر نسخة قُرئت؛ و`0` أو غيابها يتخطى الفحص."
+    },
+    "/paths/~1users~1{id}~1parental/put/responses/200/description": {
+      "en": "The limit as it now stands.",
+      "ar": "الحد كما صار."
+    },
+    "/paths/~1users~1{id}~1parental/put/responses/200/content/application~1json/schema/properties/policy/properties/max_tier/description": {
+      "en": "The highest age tier the account may open: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier.",
+      "ar": "أعلى فئة عمرية يفتحها الحساب: `0` لكل الأعمار، ثم `9` و`13` و`16` و`18`؛ و`-1` لا شيء له فئة."
+    },
+    "/paths/~1users~1{id}~1parental/put/responses/200/content/application~1json/schema/properties/policy/properties/unrated/description": {
+      "en": "What happens to a video with no age tier: `hide`.",
+      "ar": "ما يحدث لفيديو بلا فئة عمرية: `hide` أي يُخفى."
+    },
+    "/paths/~1users~1{id}~1parental/put/responses/200/content/application~1json/schema/properties/policy/properties/allow_only/description": {
+      "en": "Only what a rule allows is open, whatever its tier.",
+      "ar": "لا يُفتح إلا ما تسمح به قاعدة، أيًّا كانت فئته."
+    },
+    "/paths/~1users~1{id}~1parental/put/responses/200/content/application~1json/schema/properties/policy/properties/version/description": {
+      "en": "Goes up by one with every change to the limit, its guardians or its rules.",
+      "ar": "يزيد واحدًا مع كل تغيير في الحد أو أوليائه أو قواعده."
+    },
+    "/paths/~1users~1{id}~1parental/put/responses/200/content/application~1json/schema/properties/access/description": {
+      "en": "What the caller is to this account.",
+      "ar": "صفة الطالب تجاه هذا الحساب."
+    },
+    "/paths/~1users~1{id}~1parental/put/responses/200/content/application~1json/schema/properties/signals/description": {
+      "en": "What each signed-in device said about its user's age.",
+      "ar": "ما قاله كل جهاز مسجَّل الدخول عن عمر مستخدمه."
+    },
+    "/paths/~1users~1{id}~1parental/put/responses/403/description": {
+      "en": "Not this caller's to change: `code` is `restricted` for a restricted account, `admin_only` for anyone else who is neither an admin nor a guardian of the account. A play-only sign-in through Maktaba Cloud is refused too.",
+      "ar": "ليس لهذا الطالب أن يغيّره: `code` هو `restricted` للحساب المقيَّد، و`admin_only` لمن ليس مشرفًا ولا وليًّا للحساب. ويُرفض كذلك تسجيل الدخول عبر Maktaba Cloud للتشغيل فقط."
+    },
+    "/paths/~1users~1{id}~1parental/put/responses/404/description": {
+      "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا حساب مقيَّد بهذا المعرّف يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
+    },
+    "/paths/~1users~1{id}~1parental/put/responses/409/description": {
+      "en": "An admin account cannot be restricted (`code`: `restricted_admin`), or the limit changed since `version` was read (`stale`).",
+      "ar": "لا يُقيَّد حساب المشرف (`code`: `restricted_admin`)، أو تغيّر الحد منذ قراءة `version` (`stale`)."
+    },
+    "/paths/~1users~1{id}~1parental/delete/summary": {
+      "en": "Lift an account's limit",
+      "ar": "رفع الحد عن حساب"
+    },
+    "/paths/~1users~1{id}~1parental/delete/description": {
+      "en": "Admins only. The account stops being restricted; its guardians and rules go with the limit. The account's own guardian gets 403, any other caller who is not an admin 403 or 404.",
+      "ar": "للمشرفين فقط. يتوقف الحساب عن كونه مقيَّدًا؛ ويزول أولياؤه وقواعده مع الحد. وليّ الحساب نفسه يتلقى 403، وأي طالب آخر ليس مشرفًا يتلقى 403 أو 404."
+    },
+    "/paths/~1users~1{id}~1parental/delete/responses/204/description": {
+      "en": "Lifted.",
+      "ar": "رُفع الحد."
+    },
+    "/paths/~1users~1{id}~1parental/delete/responses/403/description": {
+      "en": "Only an admin can do this (`code`: `admin_only`); a restricted account gets `restricted`.",
+      "ar": "لا يقوم بهذا إلا المشرف (`code`: `admin_only`)؛ والحساب المقيَّد يتلقى `restricted`."
+    },
+    "/paths/~1users~1{id}~1parental/delete/responses/404/description": {
+      "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا حساب مقيَّد بهذا المعرّف يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
+    },
+    "/paths/~1users~1{id}~1parental~1guardians/post/summary": {
+      "en": "Name a guardian of a restricted account",
+      "ar": "تسمية وليّ لحساب مقيَّد"
+    },
+    "/paths/~1users~1{id}~1parental~1guardians/post/description": {
+      "en": "Admins only. The guardian may read and change this account's limit and rules and sign its devices in.",
+      "ar": "للمشرفين فقط. يقرأ الوليّ حدّ هذا الحساب وقواعده ويغيّرها ويسجّل دخول أجهزته."
+    },
+    "/paths/~1users~1{id}~1parental~1guardians/post/responses/200/description": {
+      "en": "The account's guardians.",
+      "ar": "أولياء الحساب."
+    },
+    "/paths/~1users~1{id}~1parental~1guardians/post/responses/403/description": {
+      "en": "Only an admin can do this (`code`: `admin_only`); a restricted account gets `restricted`.",
+      "ar": "لا يقوم بهذا إلا المشرف (`code`: `admin_only`)؛ والحساب المقيَّد يتلقى `restricted`."
+    },
+    "/paths/~1users~1{id}~1parental~1guardians/post/responses/404/description": {
+      "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا حساب مقيَّد بهذا المعرّف يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
+    },
+    "/paths/~1users~1{id}~1parental~1guardians/post/responses/409/description": {
+      "en": "A restricted account cannot look after another account (`code`: `restricted_guardian`), and no account is its own guardian.",
+      "ar": "لا يمكن للحساب المقيَّد أن يكون وليًّا لحساب آخر (`code`: `restricted_guardian`)، ولا يكون حساب وليّ نفسه."
+    },
+    "/paths/~1users~1{id}~1parental~1guardians~1{guardian_id}/delete/summary": {
+      "en": "Remove a guardian",
+      "ar": "إزالة وليّ"
+    },
+    "/paths/~1users~1{id}~1parental~1guardians~1{guardian_id}/delete/description": {
+      "en": "Admins only.",
+      "ar": "للمشرفين فقط."
+    },
+    "/paths/~1users~1{id}~1parental~1guardians~1{guardian_id}/delete/responses/204/description": {
+      "en": "Removed.",
+      "ar": "أُزيل."
+    },
+    "/paths/~1users~1{id}~1parental~1guardians~1{guardian_id}/delete/responses/403/description": {
+      "en": "Only an admin can do this (`code`: `admin_only`); a restricted account gets `restricted`.",
+      "ar": "لا يقوم بهذا إلا المشرف (`code`: `admin_only`)؛ والحساب المقيَّد يتلقى `restricted`."
+    },
+    "/paths/~1users~1{id}~1parental~1guardians~1{guardian_id}/delete/responses/404/description": {
+      "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا حساب مقيَّد بهذا المعرّف يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
+    },
+    "/paths/~1users~1{id}~1parental~1rules/get/summary": {
+      "en": "A restricted account's rules",
+      "ar": "قواعد حساب مقيَّد"
+    },
+    "/paths/~1users~1{id}~1parental~1rules/get/description": {
+      "en": "What is allowed or blocked for the account by name, whatever its tier. For the account's guardians and admins.",
+      "ar": "ما يُسمح به أو يُحجب عن الحساب بالاسم، أيًّا كانت فئته. لأولياء الحساب وللمشرفين."
+    },
+    "/paths/~1users~1{id}~1parental~1rules/get/responses/200/description": {
+      "en": "The rules.",
+      "ar": "القواعد."
+    },
+    "/paths/~1users~1{id}~1parental~1rules/get/responses/404/description": {
+      "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا حساب مقيَّد بهذا المعرّف يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
+    },
+    "/paths/~1users~1{id}~1parental~1rules/post/summary": {
+      "en": "Allow or block something for a restricted account",
+      "ar": "السماح بشيء أو حجبه عن حساب مقيَّد"
+    },
+    "/paths/~1users~1{id}~1parental~1rules/post/description": {
+      "en": "A block always wins over an allow. A rule with `expires_at` stops counting at that time. Allowing a library needs the account to have access to that library.",
+      "ar": "الحجب يغلب السماح دائمًا. والقاعدة التي لها `expires_at` يتوقف أثرها عند ذلك الوقت. والسماح بمكتبة يتطلب أن يكون للحساب وصول إليها."
+    },
+    "/paths/~1users~1{id}~1parental~1rules/post/responses/201/description": {
+      "en": "The rule.",
+      "ar": "القاعدة."
+    },
+    "/paths/~1users~1{id}~1parental~1rules/post/responses/403/description": {
+      "en": "Not this caller's to change: `code` is `restricted` for a restricted account, `admin_only` for anyone else who is neither an admin nor a guardian of the account. A play-only sign-in through Maktaba Cloud is refused too.",
+      "ar": "ليس لهذا الطالب أن يغيّره: `code` هو `restricted` للحساب المقيَّد، و`admin_only` لمن ليس مشرفًا ولا وليًّا للحساب. ويُرفض كذلك تسجيل الدخول عبر Maktaba Cloud للتشغيل فقط."
+    },
+    "/paths/~1users~1{id}~1parental~1rules/post/responses/404/description": {
+      "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا حساب مقيَّد بهذا المعرّف يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
+    },
+    "/paths/~1users~1{id}~1parental~1rules/post/responses/422/description": {
+      "en": "A field is not valid, or the account cannot open the library being allowed (`code`: `no_library_access`).",
+      "ar": "حقل غير صالح، أو لا يستطيع الحساب فتح المكتبة المراد السماح بها (`code`: `no_library_access`)."
+    },
+    "/paths/~1users~1{id}~1parental~1rules~1{rule_id}/delete/summary": {
+      "en": "Remove a rule",
+      "ar": "إزالة قاعدة"
+    },
+    "/paths/~1users~1{id}~1parental~1rules~1{rule_id}/delete/responses/204/description": {
+      "en": "Removed.",
+      "ar": "أُزيلت."
+    },
+    "/paths/~1users~1{id}~1parental~1rules~1{rule_id}/delete/responses/403/description": {
+      "en": "Not this caller's to change: `code` is `restricted` for a restricted account, `admin_only` for anyone else who is neither an admin nor a guardian of the account. A play-only sign-in through Maktaba Cloud is refused too.",
+      "ar": "ليس لهذا الطالب أن يغيّره: `code` هو `restricted` للحساب المقيَّد، و`admin_only` لمن ليس مشرفًا ولا وليًّا للحساب. ويُرفض كذلك تسجيل الدخول عبر Maktaba Cloud للتشغيل فقط."
+    },
+    "/paths/~1users~1{id}~1parental~1rules~1{rule_id}/delete/responses/404/description": {
+      "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا حساب مقيَّد بهذا المعرّف يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
+    },
+    "/paths/~1pairing~1approve/post/summary": {
+      "en": "Approve the code a device shows",
+      "ar": "الموافقة على الرمز الذي يعرضه جهاز"
+    },
+    "/paths/~1pairing~1approve/post/description": {
+      "en": "The signed-in person types the code an app shows, and the app is signed in as them. With `as_user`, a guardian or an admin signs the device in as a restricted account they look after instead. A restricted account approves only for itself. A sign-in through Maktaba Cloud cannot approve.",
+      "ar": "يكتب الشخص المسجَّل الدخول الرمز الذي يعرضه التطبيق، فيُسجَّل دخول التطبيق باسمه. ومع `as_user` يسجّل الوليّ أو المشرف دخول الجهاز باسم حساب مقيَّد يتولاه. والحساب المقيَّد لا يوافق إلا لنفسه. وتسجيل الدخول عبر Maktaba Cloud لا يوافق."
+    },
+    "/paths/~1pairing~1approve/post/requestBody/content/application~1json/schema/properties/as_user/description": {
+      "en": "The restricted account to sign the device in as; absent: the caller.",
+      "ar": "الحساب المقيَّد الذي يُسجَّل دخول الجهاز باسمه؛ وعند غيابه: الطالب نفسه."
+    },
+    "/paths/~1pairing~1approve/post/responses/200/description": {
+      "en": "Approved; the device collects its tokens.",
+      "ar": "تمت الموافقة؛ ويستلم الجهاز رموزه."
+    },
+    "/paths/~1pairing~1approve/post/responses/403/description": {
+      "en": "A sign-in through Maktaba Cloud, or a restricted account naming another account (`code`: `restricted`).",
+      "ar": "تسجيل دخول عبر Maktaba Cloud، أو حساب مقيَّد يسمّي حسابًا آخر (`code`: `restricted`)."
+    },
+    "/paths/~1pairing~1approve/post/responses/404/description": {
+      "en": "The code is unknown or expired, or `as_user` is not a restricted account the caller looks after.",
+      "ar": "الرمز غير معروف أو منتهٍ، أو `as_user` ليس حسابًا مقيَّدًا يتولاه الطالب."
+    },
+    "/paths/~1pairing~1approve/post/responses/409/description": {
+      "en": "The code is already approved.",
+      "ar": "سبقت الموافقة على الرمز."
+    },
+    "/paths/~1users/post/summary": {
+      "en": "Create an account",
+      "ar": "إنشاء حساب"
+    },
+    "/paths/~1users/post/description": {
+      "en": "Admins only. With `parental` the account is restricted from the start, with its limit and, optionally, its guardians; a refused request leaves no account behind.",
+      "ar": "للمشرفين فقط. مع `parental` يكون الحساب مقيَّدًا من البداية، بحدّه وبأوليائه إن ذُكروا؛ والطلب المرفوض لا يترك حسابًا."
+    },
+    "/paths/~1users/post/requestBody/content/application~1json/schema/properties/parental/properties/max_tier/description": {
+      "en": "The highest age tier the account may open: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier.",
+      "ar": "أعلى فئة عمرية يفتحها الحساب: `0` لكل الأعمار، ثم `9` و`13` و`16` و`18`؛ و`-1` لا شيء له فئة."
+    },
+    "/paths/~1users/post/requestBody/content/application~1json/schema/properties/parental/properties/unrated/description": {
+      "en": "What happens to a video with no age tier: `hide`.",
+      "ar": "ما يحدث لفيديو بلا فئة عمرية: `hide` أي يُخفى."
+    },
+    "/paths/~1users/post/requestBody/content/application~1json/schema/properties/parental/properties/allow_only/description": {
+      "en": "Only what a rule allows is open, whatever its tier.",
+      "ar": "لا يُفتح إلا ما تسمح به قاعدة، أيًّا كانت فئته."
+    },
+    "/paths/~1users/post/requestBody/content/application~1json/schema/properties/parental/description": {
+      "en": "Makes the account restricted. Not with `is_admin`.",
+      "ar": "يجعل الحساب مقيَّدًا. لا يجتمع مع `is_admin`."
+    },
+    "/paths/~1users/post/responses/201/description": {
+      "en": "The account.",
+      "ar": "الحساب."
+    },
+    "/paths/~1users/post/responses/403/description": {
+      "en": "Only an admin creates accounts.",
+      "ar": "لا ينشئ الحسابات إلا المشرف."
+    },
+    "/paths/~1users/post/responses/409/description": {
+      "en": "The username is taken; or a restricted account cannot be an admin (`code`: `restricted_admin`) or look after another account (`restricted_guardian`).",
+      "ar": "اسم المستخدم مأخوذ؛ أو لا يمكن أن يكون الحساب المقيَّد مشرفًا (`code`: `restricted_admin`) ولا وليًّا لحساب آخر (`restricted_guardian`)."
     }
   }
 }

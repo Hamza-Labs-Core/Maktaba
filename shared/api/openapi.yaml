@@ -7048,6 +7048,904 @@ paths:
         default:
           $ref: '#/components/responses/InternalError'
       operationId: getSystemUpdates
+  /parental/children:
+    get:
+      tags:
+      - Auth
+      summary: The restricted accounts the caller looks after
+      description: Each restricted account the caller is a guardian of, with its limit; an admin sees every restricted account. Empty for anyone else.
+      responses:
+        '200':
+          description: The accounts.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  children:
+                    type: array
+                    items:
+                      allOf:
+                      - type: object
+                        properties:
+                          id:
+                            type: string
+                            format: uuid
+                          username:
+                            type: string
+                      - type: object
+                        properties:
+                          user_id:
+                            type: string
+                            format: uuid
+                          max_tier:
+                            type: integer
+                            enum:
+                            - -1
+                            - 0
+                            - 9
+                            - 13
+                            - 16
+                            - 18
+                            description: 'The highest age tier the account may open: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier.'
+                          unrated:
+                            type: string
+                            enum:
+                            - hide
+                            description: 'What happens to a video with no age tier: `hide`.'
+                          allow_only:
+                            type: boolean
+                            description: Only what a rule allows is open, whatever its tier.
+                          version:
+                            type: integer
+                            description: Goes up by one with every change to the limit, its guardians or its rules.
+                          updated_by:
+                            type: string
+                            format: uuid
+                          updated_at:
+                            type: string
+                            format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: listParentalChildren
+  /me/parental:
+    get:
+      tags:
+      - Auth
+      summary: The caller's own limit
+      description: Whether the signed-in account is restricted and, when it is, its limit. An app reads it to show only what the account may open; the server enforces the limit whatever the app shows.
+      responses:
+        '200':
+          description: 'The limit, or `restricted: false`.'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restricted:
+                    type: boolean
+                  max_tier:
+                    type: integer
+                    enum:
+                    - -1
+                    - 0
+                    - 9
+                    - 13
+                    - 16
+                    - 18
+                    description: 'The highest age tier the account may open: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier.'
+                  unrated:
+                    type: string
+                    enum:
+                    - hide
+                    description: 'What happens to a video with no age tier: `hide`.'
+                  allow_only:
+                    type: boolean
+                    description: Only what a rule allows is open, whatever its tier.
+                  version:
+                    type: integer
+                required:
+                - restricted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: getMyParental
+  /users/{id}/parental:
+    get:
+      tags:
+      - Auth
+      summary: A restricted account's limit
+      description: The limit, who looks after the account and what its devices said about age. For the account's guardians and admins.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The limit.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy:
+                    type: object
+                    properties:
+                      user_id:
+                        type: string
+                        format: uuid
+                      max_tier:
+                        type: integer
+                        enum:
+                        - -1
+                        - 0
+                        - 9
+                        - 13
+                        - 16
+                        - 18
+                        description: 'The highest age tier the account may open: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier.'
+                      unrated:
+                        type: string
+                        enum:
+                        - hide
+                        description: 'What happens to a video with no age tier: `hide`.'
+                      allow_only:
+                        type: boolean
+                        description: Only what a rule allows is open, whatever its tier.
+                      version:
+                        type: integer
+                        description: Goes up by one with every change to the limit, its guardians or its rules.
+                      updated_by:
+                        type: string
+                        format: uuid
+                      updated_at:
+                        type: string
+                        format: date-time
+                  access:
+                    type: string
+                    enum:
+                    - guardian
+                    - admin
+                    description: What the caller is to this account.
+                  guardians:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        username:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+                  signals:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        refresh_family_id:
+                          type: string
+                          format: uuid
+                        lower:
+                          type: integer
+                        upper:
+                          type: integer
+                        declaration:
+                          type: string
+                        movie_ceiling:
+                          type: integer
+                        tv_ceiling:
+                          type: integer
+                        region:
+                          type: string
+                        tier_limit:
+                          type: integer
+                        observed_at:
+                          type: string
+                          format: date-time
+                      additionalProperties: true
+                    description: What each signed-in device said about its user's age.
+        '404':
+          description: No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: getUserParental
+    put:
+      tags:
+      - Auth
+      summary: Set an account's limit
+      description: An admin makes any account that is not an admin restricted, or changes its limit; a guardian changes the limit of an account they look after. Send the `version` last read to refuse a change made over someone else's (409).
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                max_tier:
+                  type: integer
+                  enum:
+                  - -1
+                  - 0
+                  - 9
+                  - 13
+                  - 16
+                  - 18
+                  description: 'The highest age tier the account may open: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier.'
+                unrated:
+                  type: string
+                  enum:
+                  - hide
+                  description: 'What happens to a video with no age tier: `hide`.'
+                allow_only:
+                  type: boolean
+                  description: Only what a rule allows is open, whatever its tier.
+                version:
+                  type: integer
+                  description: The version last read; `0` or absent to skip the check.
+              required:
+              - max_tier
+      responses:
+        '200':
+          description: The limit as it now stands.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  policy:
+                    type: object
+                    properties:
+                      user_id:
+                        type: string
+                        format: uuid
+                      max_tier:
+                        type: integer
+                        enum:
+                        - -1
+                        - 0
+                        - 9
+                        - 13
+                        - 16
+                        - 18
+                        description: 'The highest age tier the account may open: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier.'
+                      unrated:
+                        type: string
+                        enum:
+                        - hide
+                        description: 'What happens to a video with no age tier: `hide`.'
+                      allow_only:
+                        type: boolean
+                        description: Only what a rule allows is open, whatever its tier.
+                      version:
+                        type: integer
+                        description: Goes up by one with every change to the limit, its guardians or its rules.
+                      updated_by:
+                        type: string
+                        format: uuid
+                      updated_at:
+                        type: string
+                        format: date-time
+                  access:
+                    type: string
+                    enum:
+                    - guardian
+                    - admin
+                    description: What the caller is to this account.
+                  guardians:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        username:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+                  signals:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        refresh_family_id:
+                          type: string
+                          format: uuid
+                        lower:
+                          type: integer
+                        upper:
+                          type: integer
+                        declaration:
+                          type: string
+                        movie_ceiling:
+                          type: integer
+                        tv_ceiling:
+                          type: integer
+                        region:
+                          type: string
+                        tier_limit:
+                          type: integer
+                        observed_at:
+                          type: string
+                          format: date-time
+                      additionalProperties: true
+                    description: What each signed-in device said about its user's age.
+        '403':
+          description: 'Not this caller''s to change: `code` is `restricted` for a restricted account, `admin_only` for anyone else who is neither an admin nor a guardian of the account. A play-only sign-in through Maktaba Cloud is refused too.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: 'An admin account cannot be restricted (`code`: `restricted_admin`), or the limit changed since `version` was read (`stale`).'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: setUserParental
+    delete:
+      tags:
+      - Auth
+      summary: Lift an account's limit
+      description: Admins only. The account stops being restricted; its guardians and rules go with the limit. The account's own guardian gets 403, any other caller who is not an admin 403 or 404.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Lifted.
+        '403':
+          description: 'Only an admin can do this (`code`: `admin_only`); a restricted account gets `restricted`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: liftUserParental
+  /users/{id}/parental/guardians:
+    post:
+      tags:
+      - Auth
+      summary: Name a guardian of a restricted account
+      description: Admins only. The guardian may read and change this account's limit and rules and sign its devices in.
+      x-maktaba-role: admin
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                guardian_id:
+                  type: string
+                  format: uuid
+              required:
+              - guardian_id
+      responses:
+        '200':
+          description: The account's guardians.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  guardians:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        username:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+        '403':
+          description: 'Only an admin can do this (`code`: `admin_only`); a restricted account gets `restricted`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: 'A restricted account cannot look after another account (`code`: `restricted_guardian`), and no account is its own guardian.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: addParentalGuardian
+  /users/{id}/parental/guardians/{guardian_id}:
+    delete:
+      tags:
+      - Auth
+      summary: Remove a guardian
+      description: Admins only.
+      x-maktaba-role: admin
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: path
+        name: guardian_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Removed.
+        '403':
+          description: 'Only an admin can do this (`code`: `admin_only`); a restricted account gets `restricted`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: removeParentalGuardian
+  /users/{id}/parental/rules:
+    get:
+      tags:
+      - Auth
+      summary: A restricted account's rules
+      description: What is allowed or blocked for the account by name, whatever its tier. For the account's guardians and admins.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The rules.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rules:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        user_id:
+                          type: string
+                          format: uuid
+                        effect:
+                          type: string
+                          enum:
+                          - allow
+                          - block
+                        subject_kind:
+                          type: string
+                          enum:
+                          - library
+                          - collection
+                          - series
+                          - channel
+                          - youtube_channel
+                          - plugin
+                          - video
+                        subject_id:
+                          type: string
+                        expires_at:
+                          type: string
+                          format: date-time
+                        created_by:
+                          type: string
+                          format: uuid
+                        created_at:
+                          type: string
+                          format: date-time
+        '404':
+          description: No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: listParentalRules
+    post:
+      tags:
+      - Auth
+      summary: Allow or block something for a restricted account
+      description: A block always wins over an allow. A rule with `expires_at` stops counting at that time. Allowing a library needs the account to have access to that library.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                effect:
+                  type: string
+                  enum:
+                  - allow
+                  - block
+                subject_kind:
+                  type: string
+                  enum:
+                  - library
+                  - collection
+                  - series
+                  - channel
+                  - youtube_channel
+                  - plugin
+                  - video
+                subject_id:
+                  type: string
+                expires_at:
+                  type: string
+                  format: date-time
+              required:
+              - effect
+              - subject_kind
+              - subject_id
+      responses:
+        '201':
+          description: The rule.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  user_id:
+                    type: string
+                    format: uuid
+                  effect:
+                    type: string
+                    enum:
+                    - allow
+                    - block
+                  subject_kind:
+                    type: string
+                    enum:
+                    - library
+                    - collection
+                    - series
+                    - channel
+                    - youtube_channel
+                    - plugin
+                    - video
+                  subject_id:
+                    type: string
+                  expires_at:
+                    type: string
+                    format: date-time
+                  created_by:
+                    type: string
+                    format: uuid
+                  created_at:
+                    type: string
+                    format: date-time
+        '403':
+          description: 'Not this caller''s to change: `code` is `restricted` for a restricted account, `admin_only` for anyone else who is neither an admin nor a guardian of the account. A play-only sign-in through Maktaba Cloud is refused too.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: 'A field is not valid, or the account cannot open the library being allowed (`code`: `no_library_access`).'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: addParentalRule
+  /users/{id}/parental/rules/{rule_id}:
+    delete:
+      tags:
+      - Auth
+      summary: Remove a rule
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: path
+        name: rule_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Removed.
+        '403':
+          description: 'Not this caller''s to change: `code` is `restricted` for a restricted account, `admin_only` for anyone else who is neither an admin nor a guardian of the account. A play-only sign-in through Maktaba Cloud is refused too.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: removeParentalRule
+  /pairing/approve:
+    post:
+      tags:
+      - Devices
+      summary: Approve the code a device shows
+      description: The signed-in person types the code an app shows, and the app is signed in as them. With `as_user`, a guardian or an admin signs the device in as a restricted account they look after instead. A restricted account approves only for itself. A sign-in through Maktaba Cloud cannot approve.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                as_user:
+                  type: string
+                  format: uuid
+                  description: 'The restricted account to sign the device in as; absent: the caller.'
+              required:
+              - code
+      responses:
+        '200':
+          description: Approved; the device collects its tokens.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                    - approved
+        '403':
+          description: 'A sign-in through Maktaba Cloud, or a restricted account naming another account (`code`: `restricted`).'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: The code is unknown or expired, or `as_user` is not a restricted account the caller looks after.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: The code is already approved.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: approvePairingCode
+  /users:
+    post:
+      tags:
+      - Auth
+      summary: Create an account
+      description: Admins only. With `parental` the account is restricted from the start, with its limit and, optionally, its guardians; a refused request leaves no account behind.
+      x-maktaba-role: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                  format: password
+                is_admin:
+                  type: boolean
+                parental:
+                  type: object
+                  properties:
+                    max_tier:
+                      type: integer
+                      enum:
+                      - -1
+                      - 0
+                      - 9
+                      - 13
+                      - 16
+                      - 18
+                      description: 'The highest age tier the account may open: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier.'
+                    unrated:
+                      type: string
+                      enum:
+                      - hide
+                      description: 'What happens to a video with no age tier: `hide`.'
+                    allow_only:
+                      type: boolean
+                      description: Only what a rule allows is open, whatever its tier.
+                    guardians:
+                      type: array
+                      items:
+                        type: string
+                        format: uuid
+                  required:
+                  - max_tier
+                  description: Makes the account restricted. Not with `is_admin`.
+              required:
+              - username
+              - password
+      responses:
+        '201':
+          description: The account.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  username:
+                    type: string
+                  is_admin:
+                    type: boolean
+                  must_change_password:
+                    type: boolean
+        '403':
+          description: Only an admin creates accounts.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: 'The username is taken; or a restricted account cannot be an admin (`code`: `restricted_admin`) or look after another account (`restricted_guardian`).'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: createUser
 components:
   securitySchemes:
     bearerAuth:

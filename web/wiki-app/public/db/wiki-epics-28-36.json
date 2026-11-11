@@ -260,7 +260,8 @@
         "entity-video_tags",
         "entity-videos",
         "ep-get-activity",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-post-users"
       ],
       "files": {
         "story": "specs/epics/29-analytics/story-29-03-analytics-dashboard.md",
@@ -269,7 +270,8 @@
       },
       "api_endpoints": [
         "GET /activity",
-        "GET /components"
+        "GET /components",
+        "POST /users"
       ],
       "db_tables": [
         "libraries",

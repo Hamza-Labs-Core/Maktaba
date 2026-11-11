@@ -62,6 +62,7 @@ var CoreRoutes = componentTable{
 	{Prefix: "/api/pairing/"}, {Prefix: "/api/discovery/"}, {Prefix: "/api/entitlements"}, {Prefix: "/api/devices"},
 	{Prefix: "/api/notifications"}, {Prefix: "/api/activity"}, {Prefix: "/api/watch/"}, {Prefix: "/api/issues"},
 	{Prefix: "/api/explain"}, {Prefix: "/api/home"}, {Prefix: "/api/workers"},
+	{Prefix: "/api/parental"},
 	// the library
 	{Prefix: "/api/videos"}, {Prefix: "/api/libraries"}, {Prefix: "/api/collections"}, {Prefix: "/api/items/"},
 	{Prefix: "/api/series"}, {Prefix: "/api/seasons/"}, {Prefix: "/api/tags"}, {Prefix: "/api/speakers"},

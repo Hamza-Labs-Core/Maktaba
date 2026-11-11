@@ -76,6 +76,12 @@ type Handler struct {
 	// Home describes this home (GET /api/discovery/home, a device code's verify_url);
 	// nil: only the request's own origin is known.
 	Home HomeFunc
+
+	// ApproveAs says whose sign-in an approved device code becomes when the caller
+	// names another account in as_user (Epic 57 story 57.02): a restricted account
+	// the caller looks after, or ErrApproveAsNotFound / ErrApproveAsRestricted.
+	// nil: no one else can be named.
+	ApproveAs func(ctx context.Context, p *principal.Principal, asUser string) (string, error)
 }
 
 // AuditSink is the minimal slice of securityaudit.Writer the pairing

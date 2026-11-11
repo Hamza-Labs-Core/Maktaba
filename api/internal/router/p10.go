@@ -196,6 +196,10 @@ func MountP10(r chi.Router, d P10Deps) discoverypkg.PairingStore {
 		ttl = 5 * time.Minute
 	}
 	ph := &discoveryh.Handler{Store: pstore, TTL: ttl, Home: d.Home}
+	if d.DB != nil {
+		// Epic 57 story 57.02: a guardian approves a device as their child
+		ph.ApproveAs = approveAs(d.DB)
+	}
 	// Exchange can only issue a working session when both a refresh
 	// store (DB) and a signing key set are available. Without them the
 	// handler returns 503 on Exchange instead of returning a body that

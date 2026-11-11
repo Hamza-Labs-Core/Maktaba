@@ -199,6 +199,8 @@ func MountP6(r chi.Router, d P6Deps) {
 		})))
 	}
 	browseHandler.Mount(r)
+	// Epic 57 story 57.02: restricted accounts, guardians and rules.
+	MountParental(r, d.DB, d.Loops, d.BusCtx, d.BusDSN, d.BusResettle)
 
 	// Video patch, delete, process and reprocess write audit rows; process and
 	// reprocess queue real pipeline jobs (PostgresJobs: processing_jobs_enqueue).

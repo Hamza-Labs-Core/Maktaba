@@ -79,6 +79,7 @@
         "api:sharepath_reload",
         "api:browse_rowcache_listen",
         "api:play_queue_sweep",
+        "api:parental_cache_listen",
         "api:plugins_catalog"
       ],
       "on_demand": false,

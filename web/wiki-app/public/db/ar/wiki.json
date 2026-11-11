@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 197,
+    "endpoint": 209,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -12135,6 +12135,382 @@
         "lang": "ar",
         "source": {
           "content": "91d41049f440d0a3"
+        }
+      }
+    },
+    {
+      "id": "ep-get-parental-children",
+      "type": "endpoint",
+      "title": "GET /parental/children",
+      "content": "الحسابات المقيَّدة التي يتولاها الطالب",
+      "tags": [
+        "api",
+        "Auth",
+        "get"
+      ],
+      "related": [
+        "story-57.2",
+        "story-57.7"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/children",
+        "tag": "Auth",
+        "operationId": "listParentalChildren"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "89872d1822d863eb"
+        }
+      }
+    },
+    {
+      "id": "ep-get-me-parental",
+      "type": "endpoint",
+      "title": "GET /me/parental",
+      "content": "حدّ الطالب نفسه",
+      "tags": [
+        "api",
+        "Auth",
+        "get"
+      ],
+      "related": [
+        "story-57.2",
+        "story-57.5",
+        "story-57.6",
+        "story-57.7",
+        "story-57.14",
+        "story-57.15"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/parental",
+        "tag": "Auth",
+        "operationId": "getMyParental"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "0f945fd511b00355"
+        }
+      }
+    },
+    {
+      "id": "ep-get-users-id-parental",
+      "type": "endpoint",
+      "title": "GET /users/{id}/parental",
+      "content": "حدّ حساب مقيَّد",
+      "tags": [
+        "api",
+        "Auth",
+        "get"
+      ],
+      "related": [
+        "story-57.2",
+        "story-57.4",
+        "story-57.7",
+        "story-57.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/users/{id}/parental",
+        "tag": "Auth",
+        "operationId": "getUserParental"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "6e772ff28a3e80da"
+        }
+      }
+    },
+    {
+      "id": "ep-put-users-id-parental",
+      "type": "endpoint",
+      "title": "PUT /users/{id}/parental",
+      "content": "ضبط حدّ حساب",
+      "tags": [
+        "api",
+        "Auth",
+        "put"
+      ],
+      "related": [
+        "story-57.2",
+        "story-57.4",
+        "story-57.7",
+        "story-57.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/users/{id}/parental",
+        "tag": "Auth",
+        "operationId": "setUserParental"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "f73e81b2e9968167"
+        }
+      }
+    },
+    {
+      "id": "ep-delete-users-id-parental",
+      "type": "endpoint",
+      "title": "DELETE /users/{id}/parental",
+      "content": "رفع الحد عن حساب",
+      "tags": [
+        "api",
+        "Auth",
+        "delete"
+      ],
+      "related": [
+        "story-57.2",
+        "story-57.4",
+        "story-57.7",
+        "story-57.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/users/{id}/parental",
+        "tag": "Auth",
+        "operationId": "liftUserParental"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "8f167f365b5f4d9d"
+        }
+      }
+    },
+    {
+      "id": "ep-post-users-id-parental-guardians",
+      "type": "endpoint",
+      "title": "POST /users/{id}/parental/guardians",
+      "content": "تسمية وليّ لحساب مقيَّد",
+      "tags": [
+        "api",
+        "Auth",
+        "post"
+      ],
+      "related": [
+        "story-57.2"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/users/{id}/parental/guardians",
+        "tag": "Auth",
+        "operationId": "addParentalGuardian"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "f3ad95eaf1a6367d"
+        }
+      }
+    },
+    {
+      "id": "ep-delete-users-id-parental-guardians-guardian-id",
+      "type": "endpoint",
+      "title": "DELETE /users/{id}/parental/guardians/{guardian_id}",
+      "content": "إزالة وليّ",
+      "tags": [
+        "api",
+        "Auth",
+        "delete"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/users/{id}/parental/guardians/{guardian_id}",
+        "tag": "Auth",
+        "operationId": "removeParentalGuardian"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "4fffd2b94a1c8521"
+        }
+      }
+    },
+    {
+      "id": "ep-get-users-id-parental-rules",
+      "type": "endpoint",
+      "title": "GET /users/{id}/parental/rules",
+      "content": "قواعد حساب مقيَّد",
+      "tags": [
+        "api",
+        "Auth",
+        "get"
+      ],
+      "related": [
+        "story-57.2"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/users/{id}/parental/rules",
+        "tag": "Auth",
+        "operationId": "listParentalRules"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "f3eacc6528a836c3"
+        }
+      }
+    },
+    {
+      "id": "ep-post-users-id-parental-rules",
+      "type": "endpoint",
+      "title": "POST /users/{id}/parental/rules",
+      "content": "السماح بشيء أو حجبه عن حساب مقيَّد",
+      "tags": [
+        "api",
+        "Auth",
+        "post"
+      ],
+      "related": [
+        "story-57.2"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/users/{id}/parental/rules",
+        "tag": "Auth",
+        "operationId": "addParentalRule"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "97ca6b783b425c60"
+        }
+      }
+    },
+    {
+      "id": "ep-delete-users-id-parental-rules-rule-id",
+      "type": "endpoint",
+      "title": "DELETE /users/{id}/parental/rules/{rule_id}",
+      "content": "إزالة قاعدة",
+      "tags": [
+        "api",
+        "Auth",
+        "delete"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/users/{id}/parental/rules/{rule_id}",
+        "tag": "Auth",
+        "operationId": "removeParentalRule"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "76b84cc4d72cb3e1"
+        }
+      }
+    },
+    {
+      "id": "ep-post-pairing-approve",
+      "type": "endpoint",
+      "title": "POST /pairing/approve",
+      "content": "الموافقة على الرمز الذي يعرضه جهاز",
+      "tags": [
+        "api",
+        "Devices",
+        "post"
+      ],
+      "related": [
+        "story-57.2"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/pairing/approve",
+        "tag": "Devices",
+        "operationId": "approvePairingCode"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "072c8f3ea9a3a737"
+        }
+      }
+    },
+    {
+      "id": "ep-post-users",
+      "type": "endpoint",
+      "title": "POST /users",
+      "content": "إنشاء حساب",
+      "tags": [
+        "api",
+        "Auth",
+        "post"
+      ],
+      "related": [
+        "story-10.1",
+        "story-10.5",
+        "story-10.11",
+        "story-11.13",
+        "story-11.14",
+        "story-16.1",
+        "story-16.8",
+        "story-23.2",
+        "story-23.6",
+        "story-25.20",
+        "story-29.3",
+        "story-50.33",
+        "story-53.4",
+        "story-57.2",
+        "story-57.4",
+        "story-57.7",
+        "story-57.8",
+        "story-57.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/users",
+        "tag": "Auth",
+        "operationId": "createUser"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "86033f75a4c0876a"
         }
       }
     },

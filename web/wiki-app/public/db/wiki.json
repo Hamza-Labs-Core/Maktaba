@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 197,
+    "endpoint": 209,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -9886,6 +9886,310 @@
         "path": "/system/updates",
         "tag": "System",
         "operationId": "getSystemUpdates"
+      }
+    },
+    {
+      "id": "ep-get-parental-children",
+      "type": "endpoint",
+      "title": "GET /parental/children",
+      "content": "The restricted accounts the caller looks after",
+      "tags": [
+        "api",
+        "Auth",
+        "get"
+      ],
+      "related": [
+        "story-57.2",
+        "story-57.7"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/children",
+        "tag": "Auth",
+        "operationId": "listParentalChildren"
+      }
+    },
+    {
+      "id": "ep-get-me-parental",
+      "type": "endpoint",
+      "title": "GET /me/parental",
+      "content": "The caller's own limit",
+      "tags": [
+        "api",
+        "Auth",
+        "get"
+      ],
+      "related": [
+        "story-57.2",
+        "story-57.5",
+        "story-57.6",
+        "story-57.7",
+        "story-57.14",
+        "story-57.15"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/parental",
+        "tag": "Auth",
+        "operationId": "getMyParental"
+      }
+    },
+    {
+      "id": "ep-get-users-id-parental",
+      "type": "endpoint",
+      "title": "GET /users/{id}/parental",
+      "content": "A restricted account's limit",
+      "tags": [
+        "api",
+        "Auth",
+        "get"
+      ],
+      "related": [
+        "story-57.2",
+        "story-57.4",
+        "story-57.7",
+        "story-57.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/users/{id}/parental",
+        "tag": "Auth",
+        "operationId": "getUserParental"
+      }
+    },
+    {
+      "id": "ep-put-users-id-parental",
+      "type": "endpoint",
+      "title": "PUT /users/{id}/parental",
+      "content": "Set an account's limit",
+      "tags": [
+        "api",
+        "Auth",
+        "put"
+      ],
+      "related": [
+        "story-57.2",
+        "story-57.4",
+        "story-57.7",
+        "story-57.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/users/{id}/parental",
+        "tag": "Auth",
+        "operationId": "setUserParental"
+      }
+    },
+    {
+      "id": "ep-delete-users-id-parental",
+      "type": "endpoint",
+      "title": "DELETE /users/{id}/parental",
+      "content": "Lift an account's limit",
+      "tags": [
+        "api",
+        "Auth",
+        "delete"
+      ],
+      "related": [
+        "story-57.2",
+        "story-57.4",
+        "story-57.7",
+        "story-57.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/users/{id}/parental",
+        "tag": "Auth",
+        "operationId": "liftUserParental"
+      }
+    },
+    {
+      "id": "ep-post-users-id-parental-guardians",
+      "type": "endpoint",
+      "title": "POST /users/{id}/parental/guardians",
+      "content": "Name a guardian of a restricted account",
+      "tags": [
+        "api",
+        "Auth",
+        "post"
+      ],
+      "related": [
+        "story-57.2"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/users/{id}/parental/guardians",
+        "tag": "Auth",
+        "operationId": "addParentalGuardian"
+      }
+    },
+    {
+      "id": "ep-delete-users-id-parental-guardians-guardian-id",
+      "type": "endpoint",
+      "title": "DELETE /users/{id}/parental/guardians/{guardian_id}",
+      "content": "Remove a guardian",
+      "tags": [
+        "api",
+        "Auth",
+        "delete"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/users/{id}/parental/guardians/{guardian_id}",
+        "tag": "Auth",
+        "operationId": "removeParentalGuardian"
+      }
+    },
+    {
+      "id": "ep-get-users-id-parental-rules",
+      "type": "endpoint",
+      "title": "GET /users/{id}/parental/rules",
+      "content": "A restricted account's rules",
+      "tags": [
+        "api",
+        "Auth",
+        "get"
+      ],
+      "related": [
+        "story-57.2"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/users/{id}/parental/rules",
+        "tag": "Auth",
+        "operationId": "listParentalRules"
+      }
+    },
+    {
+      "id": "ep-post-users-id-parental-rules",
+      "type": "endpoint",
+      "title": "POST /users/{id}/parental/rules",
+      "content": "Allow or block something for a restricted account",
+      "tags": [
+        "api",
+        "Auth",
+        "post"
+      ],
+      "related": [
+        "story-57.2"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/users/{id}/parental/rules",
+        "tag": "Auth",
+        "operationId": "addParentalRule"
+      }
+    },
+    {
+      "id": "ep-delete-users-id-parental-rules-rule-id",
+      "type": "endpoint",
+      "title": "DELETE /users/{id}/parental/rules/{rule_id}",
+      "content": "Remove a rule",
+      "tags": [
+        "api",
+        "Auth",
+        "delete"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/users/{id}/parental/rules/{rule_id}",
+        "tag": "Auth",
+        "operationId": "removeParentalRule"
+      }
+    },
+    {
+      "id": "ep-post-pairing-approve",
+      "type": "endpoint",
+      "title": "POST /pairing/approve",
+      "content": "Approve the code a device shows",
+      "tags": [
+        "api",
+        "Devices",
+        "post"
+      ],
+      "related": [
+        "story-57.2"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/pairing/approve",
+        "tag": "Devices",
+        "operationId": "approvePairingCode"
+      }
+    },
+    {
+      "id": "ep-post-users",
+      "type": "endpoint",
+      "title": "POST /users",
+      "content": "Create an account",
+      "tags": [
+        "api",
+        "Auth",
+        "post"
+      ],
+      "related": [
+        "story-10.1",
+        "story-10.5",
+        "story-10.11",
+        "story-11.13",
+        "story-11.14",
+        "story-16.1",
+        "story-16.8",
+        "story-23.2",
+        "story-23.6",
+        "story-25.20",
+        "story-29.3",
+        "story-50.33",
+        "story-53.4",
+        "story-57.2",
+        "story-57.4",
+        "story-57.7",
+        "story-57.8",
+        "story-57.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/users",
+        "tag": "Auth",
+        "operationId": "createUser"
       }
     },
     {
