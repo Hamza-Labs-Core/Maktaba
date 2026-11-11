@@ -46,7 +46,13 @@ This story builds the first four. They are what that status requires, and they a
   - a signature (typed name).
 
   It also has the DSA Art. 16 fields (an explanation, and the notifier's name and email). It uses
-  Turnstile and is rate-limited. Emails to the agent are entered into the same queue by a service
+  Turnstile and is rate-limited.
+- **Where the form posts** (proposed by [Epic 60](../60-website/story-60-07-legal.md), story
+  60.07, whose copyright page on `maktaba.tv/legal/copyright/` carries the form): the public
+  endpoint `POST https://api.maktaba.tv/v1/moderation/notices`, served by
+  `cloud/internal/handlers/moderation/`. It takes JSON with the fields above plus the Turnstile
+  token. CORS allows the origin `https://maktaba.tv` only. It answers `202` with the `notice_id`.
+  Counter-notices stay on the signed-in Broadcast page; the copyright page links there. Emails to the agent are entered into the same queue by a service
   admin.
 - **Triage.** Each notice gets a `notice_id` and lands in the **moderation queue** in the cloud
   admin (service admins only; the API enforces the role and has a role test).
@@ -202,7 +208,7 @@ counsel**). A service admin can export them for a lawyer as CSV and JSON.
 | `api/internal/broadcast/takedown.go` (new) | Apply and restore takedowns on the home; acknowledge. |
 | `cloud/migrations/` (new) | `broadcast_notices`, `broadcast_actions`, `broadcast_strikes`, `broadcast_reports`, `broadcast_counter_notices`. |
 | `web/cloud/src/pages/admin/Moderation*.tsx`, `web/cloud/src/i18n/en.json`, `ar.json` | The queue. |
-| `web/packages/broadcast-edge/site/legal/` | Copyright page, forms (EN/AR). |
+| `web/packages/website` ([Epic 60](../60-website/story-60-07-legal.md), story 60.07) | Copyright page, forms (EN/AR), on `maktaba.tv/legal/copyright/`; the broadcast edge links to it. |
 | `docs/runbooks/broadcast-urgent-report.md`, `docs/runbooks/broadcast-takedown.md` (50.12's runbook set) | Runbooks. |
 
 ### Tests

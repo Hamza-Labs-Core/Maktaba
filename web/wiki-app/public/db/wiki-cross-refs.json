@@ -2,8 +2,8 @@
   "schema_version": 2,
   "generated_for": "Maktaba",
   "totals": {
-    "epics": 59,
-    "stories": 720,
+    "epics": 60,
+    "stories": 733,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -421,6 +421,13 @@
       "title": "Maktaba on a NAS",
       "description": "Maktaba on a NAS: Synology, TrueNAS and the rest.\n\nRequirement: a household that keeps its media on a NAS should be able to run its Maktaba home on that NAS, with no other computer on all the time.",
       "readme": "specs/epics/59-nas/README.md"
+    },
+    {
+      "id": "60",
+      "slug": "website",
+      "title": "maktaba.tv, the website households find Maktaba on",
+      "description": "maktaba.tv, the website households find Maktaba on.\n\nRequirement: every maktaba.tv address the product prints opens a real page, in English and in Arabic, and a household that hears of Maktaba can learn what it is, see it, download it for each of its devices, install it and get help, on a site that looks as good as the apps.",
+      "readme": "specs/epics/60-website/README.md"
     }
   ],
   "stories": [
@@ -7640,6 +7647,123 @@
       "slug": "openapi-roles",
       "title": "OpenAPI and role tests for the new admin routes",
       "story_file": "specs/epics/59-nas/story-59-16-openapi-roles.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.01",
+      "epic": 60,
+      "num": "01",
+      "slug": "design",
+      "title": "Design: the visual direction, page layouts and components, as reviewed mockups",
+      "story_file": "specs/epics/60-website/story-60-01-design.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.02",
+      "epic": 60,
+      "num": "02",
+      "slug": "voice-copy",
+      "title": "Voice and copy: plain and warm for households, Arabic written natively",
+      "story_file": "specs/epics/60-website/story-60-02-voice-copy.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.03",
+      "epic": 60,
+      "num": "03",
+      "slug": "site-hosting",
+      "title": "The site, its hosting and its deploy: Workers static assets on the apex and www, staging, rollback",
+      "story_file": "specs/epics/60-website/story-60-03-site-hosting.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.04",
+      "epic": 60,
+      "num": "04",
+      "slug": "quality-gates",
+      "title": "The quality bar in CI: Lighthouse, WCAG 2.2 AA, no layout shift, visual references, SEO and social cards",
+      "story_file": "specs/epics/60-website/story-60-04-quality-gates.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.05",
+      "epic": 60,
+      "num": "05",
+      "slug": "install-guides",
+      "title": "The install guides on maktaba.tv",
+      "story_file": "specs/epics/60-website/story-60-05-install-guides.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.06",
+      "epic": 60,
+      "num": "06",
+      "slug": "problems",
+      "title": "Problem types: one registry the API sends from, one page per type",
+      "story_file": "specs/epics/60-website/story-60-06-problems.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.07",
+      "epic": 60,
+      "num": "07",
+      "slug": "legal",
+      "title": "Legal: privacy, terms, and copyright with Epic 50's notice form",
+      "story_file": "specs/epics/60-website/story-60-07-legal.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.08",
+      "epic": 60,
+      "num": "08",
+      "slug": "link-integrity",
+      "title": "No dead links: the maktaba.tv link check, and a public image after every release",
+      "story_file": "specs/epics/60-website/story-60-08-link-integrity.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.09",
+      "epic": 60,
+      "num": "09",
+      "slug": "product-imagery",
+      "title": "Product imagery: real dark screenshots of every app, in English and Arabic, on demo content",
+      "story_file": "specs/epics/60-website/story-60-09-product-imagery.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.10",
+      "epic": 60,
+      "num": "10",
+      "slug": "home",
+      "title": "The home page",
+      "story_file": "specs/epics/60-website/story-60-10-home.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.11",
+      "epic": 60,
+      "num": "11",
+      "slug": "download",
+      "title": "Download: every device, with its real release asset",
+      "story_file": "specs/epics/60-website/story-60-11-download.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.12",
+      "epic": 60,
+      "num": "12",
+      "slug": "help",
+      "title": "Help on maktaba.tv, from the app's own topics",
+      "story_file": "specs/epics/60-website/story-60-12-help.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.13",
+      "epic": 60,
+      "num": "13",
+      "slug": "pricing",
+      "title": "Pricing, from the plans the cloud enforces",
+      "story_file": "specs/epics/60-website/story-60-13-pricing.md",
       "plan_files": []
     }
   ],

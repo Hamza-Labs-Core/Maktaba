@@ -3,7 +3,7 @@
   "project": "Maktaba",
   "description": "منصة ذكاء وسائط تستضيفها بنفسك: بديل كامل لـ Plex، ونصوص مفرّغة يمكن البحث في كل كلمة منها. انظر specs/architecture.md.",
   "generated_from": [
-    "specs/epics/** (59 epics, 01 to 59: READMEs, stories, plans)",
+    "specs/epics/** (60 epics, 01 to 60: READMEs, stories, plans)",
     "specs/architecture.md (DB tables)",
     "specs/*.md (15 reviews and audits)",
     "specs/diagrams/*.drawio (14 diagrams)",
@@ -15,13 +15,13 @@
     "diagram": 14,
     "endpoint": 197,
     "entity": 42,
-    "epic": 59,
+    "epic": 60,
     "feature": 3,
     "mockup": 63,
     "phase": 17,
     "plan": 372,
     "review": 15,
-    "story": 720
+    "story": 733
   },
   "parts": [
     "wiki-epics-01-09.json",
@@ -30,7 +30,7 @@
     "wiki-epics-28-36.json",
     "wiki-epics-37-45.json",
     "wiki-epics-46-54.json",
-    "wiki-epics-55-59.json"
+    "wiki-epics-55-60.json"
   ],
   "entries": [
     {
@@ -3469,6 +3469,50 @@
       }
     },
     {
+      "id": "epic-60-website",
+      "type": "epic",
+      "title": "maktaba.tv، الموقع الذي تجد فيه الأسر Maktaba",
+      "epic": "60-website",
+      "phase": 5,
+      "engine": null,
+      "content": "maktaba.tv، الموقع الذي تجد فيه الأسر Maktaba.\n\nالمتطلب: كل عنوان على maktaba.tv يطبعه المنتج يفتح صفحة حقيقية بالإنجليزية والعربية، والأسرة التي تسمع عن Maktaba تستطيع أن تعرف ما هو، وأن تراه، وأن تنزّله لكل أجهزتها، وأن تثبّته وتجد المساعدة، على موقع يبدو جميلًا كجمال التطبيقات.",
+      "tags": [
+        "epic",
+        "60-website",
+        "phase-5"
+      ],
+      "related": [
+        "story-60.1",
+        "story-60.2",
+        "story-60.3",
+        "story-60.4",
+        "story-60.5",
+        "story-60.6",
+        "story-60.7",
+        "story-60.8",
+        "story-60.9",
+        "story-60.10",
+        "story-60.11",
+        "story-60.12",
+        "story-60.13"
+      ],
+      "files": {
+        "readme": "specs/epics/60-website/README.md"
+      },
+      "metadata": {
+        "story_count": 13,
+        "plan_count": 0,
+        "mockup_count": 0
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "fb9d1208ed6f80ee",
+          "content": "c41d4a75d5d6e4e6"
+        }
+      }
+    },
+    {
       "id": "diagram-api-streaming-stories",
       "type": "diagram",
       "title": "قصص الواجهة البرمجية والبث",
@@ -6329,7 +6373,8 @@
         "story-56.14",
         "story-57.1",
         "story-57.3",
-        "story-58.17"
+        "story-58.17",
+        "story-60.12"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6834,7 +6879,8 @@
         "story-51.9",
         "story-53.9",
         "story-55.4",
-        "story-57.3"
+        "story-57.3",
+        "story-60.12"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6878,7 +6924,8 @@
         "story-51.9",
         "story-53.9",
         "story-55.4",
-        "story-57.3"
+        "story-57.3",
+        "story-60.12"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7701,7 +7748,8 @@
         "story-54.13",
         "story-54.41",
         "story-55.2",
-        "story-59.16"
+        "story-59.16",
+        "story-60.12"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7756,7 +7804,8 @@
         "story-54.13",
         "story-54.41",
         "story-55.2",
-        "story-59.16"
+        "story-59.16",
+        "story-60.12"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -11012,7 +11061,8 @@
         "story-58.7",
         "story-58.9",
         "story-58.17",
-        "story-59.16"
+        "story-59.16",
+        "story-60.10"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -11456,7 +11506,8 @@
         "story-56.4",
         "story-56.6",
         "story-56.14",
-        "story-57.1"
+        "story-57.1",
+        "story-60.12"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
