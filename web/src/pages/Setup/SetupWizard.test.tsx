@@ -13,7 +13,7 @@ import {
   type StepName,
   type StepProgress,
 } from "../../lib/desktopSetup";
-import { PLEX_POLL_MS, SetupWizard, parsePathMap, type Screen } from "./SetupWizard";
+import { PLEX_POLL_MS, SetupWizard, parsePathMap, sharesAnswer, type Screen } from "./SetupWizard";
 import { PAGE_PATIENCE_MS, STARTING_POLL_MS, ServerStarting } from "./ServerStarting";
 import { DesktopGate } from "../../components/DesktopGate";
 import type { PermissionsApi, PermissionsReport } from "../../lib/macPermissions";
@@ -1420,6 +1420,107 @@ describe("SetupWizard, folder access (story 59.03)", () => {
     expect(
       screen.getByText(/من مجموعات البيانات ← tank\/originals ← الأذونات/)
     ).toBeInTheDocument();
+  });
+});
+
+// Story 59.13 (T06): on a NAS home, setup confirms or asks each folder's share.
+describe("SetupWizard, the NAS's shares (story 59.13)", () => {
+  beforeEach(() => localStorage.clear());
+  const answer = {
+    roots: [],
+    platform: "dsm",
+    shares: {
+      platform: "dsm",
+      servers: ["diskstation", "diskstation.local", "192.168.1.20"],
+      roots: [
+        { path: "/volume1/Movies/en", share: "Movies", folder: "/volume1/Movies", host_path: true },
+        { path: "/mnt/usb/clips", share: "", folder: "/mnt/usb/clips", host_path: true },
+        { path: "/volume1/Private", share: "Private", folder: "/volume1/Private", host_path: true },
+      ],
+    },
+  };
+  const submit = async () => {
+    await userEvent.type(screen.getByLabelText("Folders (one per line)"), "/volume1/Movies/en");
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  };
+
+  it("confirms the found share, asks the unknown one, keeps a folder local only", async () => {
+    const shares = vi.fn(() => ({}));
+    renderWizard(fakeApi({ libraries: vi.fn(() => answer), shares }), "libraries");
+    await submit();
+    expect(await screen.findByRole("heading", { name: "Your NAS's shares" })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Maktaba found this library as the share Movies on diskstation. Is that how your other computers open it?"
+      )
+    ).toBeInTheDocument();
+    const next = screen.getByRole("button", { name: "Next" });
+    expect(next).toBeDisabled(); // the USB folder has no share yet
+    await userEvent.type(screen.getByLabelText("Share name for /mnt/usb/clips"), "Clips");
+    const rows = screen.getAllByTestId("share-root");
+    await userEvent.click(within(rows[2]).getByLabelText("Not shared on the network"));
+    expect(
+      within(rows[2]).getByText(
+        "This folder isn't shared on the network, so other Maktaba computers can't work on it."
+      )
+    ).toBeInTheDocument();
+    await userEvent.click(next);
+    await waitFor(() =>
+      expect(shares).toHaveBeenCalledWith(
+        {
+          server: "diskstation",
+          aliases: ["diskstation", "diskstation.local", "192.168.1.20"],
+          shares: [
+            { path: "/volume1/Movies", share: "Movies" },
+            { path: "/mnt/usb/clips", share: "Clips" },
+            { path: "/volume1/Private", share: "" },
+          ],
+        },
+        expect.any(Function)
+      )
+    );
+    expect(await screen.findByRole("heading", { name: "Choose what to run" })).toBeInTheDocument();
+  });
+
+  it("a refused share lands on its field in the app's words", async () => {
+    const shares = vi.fn(() => {
+      throw stepError("share_server", "server words", "server");
+    });
+    renderWizard(fakeApi({ libraries: vi.fn(() => answer), shares }), "libraries");
+    await submit();
+    await screen.findByRole("heading", { name: "Your NAS's shares" });
+    await userEvent.type(screen.getByLabelText("Share name for /mnt/usb/clips"), "Clips");
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(
+      await screen.findByText(
+        "Give the NAS's name as your other computers see it (for example diskstation)."
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("off a NAS there is no share screen", async () => {
+    renderWizard(fakeApi({ libraries: vi.fn(() => ({ roots: [], shares: null })) }), "libraries");
+    await submit();
+    expect(await screen.findByRole("heading", { name: "Choose what to run" })).toBeInTheDocument();
+  });
+
+  it("in Arabic", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    renderWizard(fakeApi({ libraries: vi.fn(() => answer) }), "libraries");
+    await userEvent.type(screen.getByRole("textbox", { name: /المجلدات|مجلد/ }), "/volume1/Movies");
+    await userEvent.click(screen.getByRole("button", { name: "التالي" }));
+    expect(
+      await screen.findByText(
+        "وجد Maktaba هذه المكتبة على أنها المشاركة Movies على diskstation. هل هكذا تفتحها حواسيبك الأخرى؟"
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("a changed share names the folder itself, not the share's folder", () => {
+    const q = answer.shares;
+    expect(
+      sharesAnswer(q, " diskstation ", { "/volume1/Movies/en": "Films" }, {}).shares[0]
+    ).toEqual({ path: "/volume1/Movies/en", share: "Films" });
   });
 });
 

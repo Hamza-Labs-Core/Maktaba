@@ -257,6 +257,17 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A busy home no longer rate-limits its own plugin work.** Every program on the home's
+  machine shared one rate-limit bucket on loopback (600 requests a minute), so on a large library
+  the pipeline's plugin token mints and ends were refused with 429 and plugin jobs (scans,
+  thumbnails, stages) waited; the launcher's version and health checks were refused too (the
+  update rehearsal's 4 GB leg with 20,000 videos counted 560 in one run). A request carrying the
+  supervisor's per-boot local token now draws on the home's own budget (60,000 a minute,
+  `MAKTABA_INTERNAL_RATE_PER_MIN`) instead of the client limits, and the container's health and
+  version checks send it. The token is the identity, never the address: clients reaching the API
+  through a reverse proxy or the relay agent, also over loopback, keep the client limits, a wrong
+  or partial token counts for nothing, and the sign-in routes' limits are unchanged.
+
 - **Process and reprocess a video queue real work.** `POST /api/videos/{id}/process` and
   `/reprocess` (and GraphQL's `processVideo` and `reprocessVideo`) answered success in every
   build without queuing anything: no job queue was wired to them. They now queue the stage
@@ -758,6 +769,17 @@ build fails when the two differ.
   alerted.
 
 ### Added
+
+- **A NAS as the home of several machines (story 59.13).** Computers join a NAS home as nodes
+  and take transcription and conversions, opening the NAS's folders over SMB: the home works
+  out each of its own folders' share from where the NAS keeps it (Synology `/volume1/Movies`,
+  Unraid `/mnt/user/Movies`, QNAP `/share/Movies` are the share Movies), so a Mac's
+  `/Volumes/Movies` matches with no path map. Setup confirms each share or asks for it (TrueNAS,
+  or a folder mounted at another path) and can mark a folder as not shared on the network;
+  **Machines → This NAS's shares** shows and edits them (`GET`/`PUT
+  /api/cluster/storage/home-shares`, admins only). With no shared folder writable for Maktaba,
+  nodes download speech models themselves and joining says so. A Light-tier NAS joining as a
+  node is warned and needs `--light-nas` (`maktaba join`, `maktaba-server setup --node`).
 
 - **Maktaba on a Synology NAS: a Container Manager project, filled in on maktaba.tv (story
   59.09).** maktaba.tv/install/synology (and /ar/install/synology) is the guide for DSM 7.2 and

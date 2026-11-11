@@ -14,7 +14,7 @@ from ..engine.sql import is_pg, loads
 from ..log import get_logger
 from .canonical import parse_char_map
 from .mounts import Mount, discover
-from .resolver import Resolver, StorageServer, _resolve_ips, build_resolver
+from .resolver import Resolver, ShareMount, StorageServer, _resolve_ips, build_resolver
 
 __all__ = [
     "build_for_machine",
@@ -108,6 +108,7 @@ def build_for_machine(
     legacy: PathMap | Mapping[str, str] | None = None,
     mounts: Sequence[Mount] | None = None,
     system: str | None = None,
+    local: Sequence[ShareMount] = (),
 ) -> Resolver:
     """This machine's resolver: its live mounts (unless given), the servers, the maps."""
     system = system or platform.system()
@@ -120,4 +121,5 @@ def build_for_machine(
         admin=admin,
         legacy=legacy,
         resolve=_resolve_ips if servers else None,
+        local=local,
     )

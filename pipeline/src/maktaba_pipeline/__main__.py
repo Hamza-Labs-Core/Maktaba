@@ -509,6 +509,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "machine (remove the old one there, set its path map and switches again).",
     )
     join_p.add_argument("--yes", "-y", action="store_true", help="Do not ask before re-joining.")
+    join_p.add_argument(
+        "--light-nas",
+        action="store_true",
+        help="Join although this is a Light NAS (it is better as the home or as storage).",
+    )
     from .cluster.cli import add_parser as add_cluster_parser
 
     add_cluster_parser(subparsers)
@@ -544,6 +549,7 @@ def _join(args: argparse.Namespace, parser: argparse.ArgumentParser, log: Any) -
             ask=input if interactive else None,
             rejoin=args.rejoin,
             assume_yes=args.yes,
+            light_nas_ok=args.light_nas,
         )
     except JoinError as exc:
         sys.stderr.write(f"join failed: {exc}\n")

@@ -45,6 +45,7 @@ from ..engine.sync import stages_ahead
 from ..engine.workers import update_worker_stages
 from ..log import get_logger
 from ..pipeline.shutdown import release_claims
+from ..sharepath.nashome import ensure_home_server, local_share_mounts, nas_home
 from ..sharepath.servers import build_for_machine, load_servers
 from . import exitcodes, nodes_db
 from .schema import SCHEMA_REV, HomeSchema, pause_reason, read_home_schema
@@ -184,6 +185,8 @@ class WorkerAgent:
     #: story 31.3: the home's own machine converts its stored paths by itself
     _auto_canon: bool = False
     _storage_dirty: bool = False
+    #: story 59.13: a NAS home's own record and folders as shares (None elsewhere)
+    home_shares: Any = None
 
     @property
     def is_node(self) -> bool:
@@ -322,6 +325,7 @@ class WorkerAgent:
                 admin=None if self.explicit_path_map else self.admin_map,
                 legacy=None if self.explicit_path_map else self.legacy_map,
                 mounts=self.mounts,
+                local=local_share_mounts(self.home_shares),
             )
         )
 
@@ -330,6 +334,7 @@ class WorkerAgent:
         and the per-share storage check, kept on ``instance_identity``. On the home's
         own machine also the automatic path conversion (:mod:`..sharepath.auto`)."""
         self.samples = await load_samples(self.db)
+        await self._ensure_home_shares()
         self.servers = await load_servers(self.db)
         self.admin_map = await _home_admin_map(self.db)
         await asyncio.to_thread(self._rebuild)
@@ -385,10 +390,25 @@ class WorkerAgent:
     async def _refresh_resolver(self) -> None:
         """Every storage check: servers may have been added, shares (re)mounted."""
         self.samples = await load_samples(self.db)
+        if not self.is_node:
+            await self._ensure_home_shares()
         self.servers = await load_servers(self.db)
         if not self.is_node:
             self.admin_map = await _home_admin_map(self.db)
         await asyncio.to_thread(self._rebuild)
+
+    async def _ensure_home_shares(self) -> None:
+        """Story 59.13: on a NAS home, its own record and the share of each local
+        library root (:mod:`..sharepath.nashome`); nothing elsewhere or with an explicit
+        path map."""
+        platform = nas_home()
+        if platform is None or self.explicit_path_map:
+            return
+        roots = [r for lib in self.samples for r in lib.roots]
+        try:
+            self.home_shares = await ensure_home_server(self.db, roots, platform=platform)
+        except Exception as exc:  # noqa: BLE001 - an older schema, a busy database: next time
+            schema_compat.fallback(_log, "home_shares_failed", exc)
 
     def _set_path_map(self, pm: PathMap) -> None:
         self.path_map = pm
@@ -425,6 +445,11 @@ class WorkerAgent:
         share_list = getattr(self.path_map, "share_list", None)
         result["mounts"] = share_list() if callable(share_list) else []
         result["path_map"] = self.path_map.as_json()
+        if self.home_shares is not None:
+            # story 59.13: the NAS's own record, its folders and the ones setup must name
+            result["home_server"] = self.home_shares.server.name
+            result["home_platform"] = self.home_shares.platform
+            result["unnamed_roots"] = list(self.home_shares.unnamed)
         if self.is_node:
             # the home only reports its check: its stages never stop on it
             self.selector.storage = result

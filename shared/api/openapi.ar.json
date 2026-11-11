@@ -2677,6 +2677,78 @@
       "en": "Play queues",
       "ar": "قوائم انتظار التشغيل"
     },
+    "/paths/~1cluster~1storage~1home-shares/get/summary": {
+      "en": "A NAS home's own shares (admin)",
+      "ar": "مشاركات خادم التخزين الشبكي الرئيسي نفسه (للمشرف)"
+    },
+    "/paths/~1cluster~1storage~1home-shares/get/description": {
+      "en": "Admin only. On a NAS home (Epic 59, story 59.13), the storage server record the home keeps for the NAS itself, each of its own folders with the SMB share it is (an empty share is not shared on the network), the library folders that still need a share name, whether some share is mounted at another path from the NAS's own, and whether a shared folder is writable for Maktaba (else the notice no_writable_share, and nodes download speech models themselves).",
+      "ar": "للمشرف فقط. على جهاز رئيسي هو خادم تخزين شبكي (الملحمة 59، القصة 59.13): سجل خادم التخزين الذي يحفظه الجهاز الرئيسي لخادم التخزين نفسه، وكل مجلد من مجلداته مع مشاركة SMB التي يمثّلها (المشاركة الفارغة تعني أن المجلد غير مشارك على الشبكة)، ومجلدات المكتبات التي ما زالت تحتاج اسم مشاركة، وهل تُربط إحدى المشاركات بمسار يختلف عن مسار خادم التخزين نفسه، وهل يستطيع Maktaba الكتابة في مجلد مشارك (وإلا فالتنبيه no_writable_share، وتنزّل العُقد نماذج الكلام بنفسها)."
+    },
+    "/paths/~1cluster~1storage~1home-shares/get/responses/200/description": {
+      "en": "The NAS's shares; nas is false on a home that is not a NAS.",
+      "ar": "مشاركات خادم التخزين؛ قيمة nas خاطئة على جهاز رئيسي ليس خادم تخزين."
+    },
+    "/paths/~1cluster~1storage~1home-shares/get/responses/401/description": {
+      "en": "Not signed in.",
+      "ar": "لم يُسجَّل الدخول."
+    },
+    "/paths/~1cluster~1storage~1home-shares/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرف فقط."
+    },
+    "/paths/~1cluster~1storage~1home-shares/put/summary": {
+      "en": "Name a NAS home's shares (admin)",
+      "ar": "تسمية مشاركات خادم التخزين الشبكي الرئيسي (للمشرف)"
+    },
+    "/paths/~1cluster~1storage~1home-shares/put/description": {
+      "en": "Admin only. Replaces the NAS record's addresses and each folder's share name. The home's pipeline converts the folders' stored paths to the shares at its next storage check.",
+      "ar": "للمشرف فقط. يستبدل عناوين سجل خادم التخزين واسم المشاركة لكل مجلد. يحوّل خط المعالجة على الجهاز الرئيسي المسارات المحفوظة لهذه المجلدات إلى المشاركات في فحص التخزين التالي."
+    },
+    "/paths/~1cluster~1storage~1home-shares/put/responses/200/description": {
+      "en": "The NAS's shares as saved.",
+      "ar": "مشاركات خادم التخزين كما حُفظت."
+    },
+    "/paths/~1cluster~1storage~1home-shares/put/responses/400/description": {
+      "en": "A folder that is not a whole path, or a share name with a slash.",
+      "ar": "مجلد ليس مسارًا كاملًا، أو اسم مشاركة فيه شرطة مائلة."
+    },
+    "/paths/~1cluster~1storage~1home-shares/put/responses/401/description": {
+      "en": "Not signed in.",
+      "ar": "لم يُسجَّل الدخول."
+    },
+    "/paths/~1cluster~1storage~1home-shares/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرف فقط."
+    },
+    "/paths/~1cluster~1storage~1home-shares/put/responses/409/description": {
+      "en": "This home keeps no record of its own shares and the request names no server (not_a_nas_home).",
+      "ar": "لا يحفظ هذا الجهاز الرئيسي سجلًا لمشاركاته، والطلب لا يسمّي خادمًا (not_a_nas_home)."
+    },
+    "/components/schemas/HomeShare/properties/path/description": {
+      "en": "The NAS's own folder (/volume1/Movies).",
+      "ar": "مجلد خادم التخزين نفسه (/volume1/Movies)."
+    },
+    "/components/schemas/HomeShare/properties/share/description": {
+      "en": "The SMB share it is; empty when it is not shared.",
+      "ar": "مشاركة SMB التي يمثّلها؛ فارغة حين لا يكون مشاركًا."
+    },
+    "/components/schemas/HomeShare/properties/host_path/description": {
+      "en": "False for a mount at another path from the NAS's own.",
+      "ar": "خاطئة لنقطة ربط بمسار يختلف عن مسار خادم التخزين نفسه."
+    },
+    "/components/schemas/HomeShare/properties/rule/description": {
+      "en": "The share the platform's folder layout gives it.",
+      "ar": "المشاركة التي يعطيها له ترتيب مجلدات المنصة."
+    },
+    "/components/schemas/HomeShares/properties/server/description": {
+      "en": "The storage server record that is the NAS.",
+      "ar": "سجل خادم التخزين الذي يمثّل خادم التخزين الشبكي نفسه."
+    },
+    "/components/schemas/HomeSharesRequest/properties/server/description": {
+      "en": "Only for a home that has not reported its record yet.",
+      "ar": "فقط لجهاز رئيسي لم يبلّغ عن سجله بعد."
+    },
     "/tags/21/name": {
       "en": "Server",
       "ar": "الخادم"

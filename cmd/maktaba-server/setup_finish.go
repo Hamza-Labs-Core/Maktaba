@@ -81,6 +81,9 @@ func stepFinish(s *setupRun, _ json.RawMessage) (any, error) {
 	if p.PathMap != "" {
 		cfg.Media.PathMap = p.PathMap
 	}
+	if p.ShareServer != "" {
+		cfg.Media.Shares, cfg.Media.ShareServer, cfg.Media.ShareAliases = p.Shares, p.ShareServer, p.ShareAliases
+	}
 	// a joined node config that no install here runs (one removed, or a move
 	// undone, left it): this setup is a new home beside it, never that node
 	// (check said so)

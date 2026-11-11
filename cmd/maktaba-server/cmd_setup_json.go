@@ -97,6 +97,7 @@ var setupSteps = map[string]setupStepFunc{
 	"storage":   stepStorage,
 	"admin":     stepAdmin,
 	"libraries": stepLibraries,
+	"shares":    stepShares,
 	"bundle":    stepBundle,
 	"models":    stepModels,
 	"plex":      stepPlex,

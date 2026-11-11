@@ -7787,5 +7787,21 @@
   "machine.network.bridge": "A bridge network",
   "machine.network.macvlan": "Its own address on your network (macvlan)",
   "stream.wait_transcode": "Another video is being converted on this home. Yours will start when it finishes.",
-  "machine.ports.title": "Ports moved at this start"
+  "machine.ports.title": "Ports moved at this start",
+  "setup.error.share_server": "Give the NAS's name as your other computers see it (for example diskstation).",
+  "setup.error.share_bad": "Line {line}: a share is a name without slashes, for a whole folder path.",
+  "setup.share.title": "Your NAS's shares",
+  "setup.share.server": "The NAS's name on your network",
+  "setup.share.serverNote": "Your other computers open the NAS's folders by this name (for example smb://diskstation/Movies). Maktaba also keeps its other names and addresses.",
+  "setup.share.confirm": "Maktaba found this library as the share {share} on {server}. Is that how your other computers open it?",
+  "setup.share.ask": "Which share is this library on? Type the share's name as your other computers see it.",
+  "setup.share.name": "Share name for {path}",
+  "setup.share.local_only": "This folder isn't shared on the network, so other Maktaba computers can't work on it.",
+  "setup.share.notShared": "Not shared on the network",
+  "settings.share.other_path": "These libraries use a mount at a different path from the NAS's own; nodes will match them by the share name you gave.",
+  "cluster.join.light_nas": "A Light NAS should be the Maktaba home or just storage. As a node it would slow the NAS down without helping the home much.",
+  "cluster.no_writable_share": "No shared folder on this NAS is writable for Maktaba, so nodes will download speech models themselves. Give Maktaba Read/Write on one shared folder to share them.",
+  "machines.nasShares.title": "This NAS's shares",
+  "machines.nasShares.intro": "Other Maktaba computers open this NAS's folders over the network as {server}, also known as",
+  "machines.nasShares.share": "Share name for {path}"
 }

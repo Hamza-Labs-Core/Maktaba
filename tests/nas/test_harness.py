@@ -23,7 +23,7 @@ import summary  # noqa: E402
 MATRIX = cell.load_cells()
 # Every story whose cells and assertions the harness knows (README §7 phases); a new needs
 # value is a typo unless it is added here with its cell.
-KNOWN_NEEDS = {"59.01", "59.02", "59.03", "59.04", "59.05", "59.06", "59.07", "59.08", "59.09", "59.10", "59.11", "59.12", "pg-stale-lock", "scan-grant-race", "plugin-cache-grant", "poster-queue"}
+KNOWN_NEEDS = {"59.01", "59.02", "59.03", "59.04", "59.05", "59.06", "59.07", "59.08", "59.09", "59.10", "59.11", "59.12", "59.13", "pg-stale-lock", "scan-grant-race", "plugin-cache-grant", "poster-queue"}
 # The phase-1 cells story 59.15 lists (README §9): each must be in the matrix
 PHASE_ONE = {"uid-1000", "uid-568", "uid-unraid", "uid-dsm", "media-ro", "media-none", "media-foreign",
              "mem-4g", "mem-6g", "no-landlock-enosys", "no-landlock-eperm"}
@@ -125,6 +125,35 @@ class Pending(unittest.TestCase):
             c = cell.Cell(spec={"name": "x"}, image="img", fixtures=Path(d), out=Path(d), local_port=None, landed=[])
             c.check("no_such_thing")
             self.assertIs(c.results[-1]["ok"], False)
+
+
+class RatePacing(unittest.TestCase):
+    """The harness waits out the server's per-user rate limit instead of failing on it."""
+
+    def api(self, answers: list[tuple[int, object]], retry_after: float = 2.0) -> tuple[cell.API, list[float]]:
+        api = cell.API("http://x")
+        slept: list[float] = []
+
+        def fake_call(*_a: object) -> tuple[int, object]:
+            api.retry_after = retry_after
+            return answers.pop(0)
+
+        api._call = fake_call  # type: ignore[method-assign]
+        orig = cell.time.sleep
+        cell.time.sleep = slept.append  # type: ignore[assignment]
+        self.addCleanup(setattr, cell.time, "sleep", orig)
+        return api, slept
+
+    def test_a_429_is_waited_out_as_the_server_says(self) -> None:
+        api, slept = self.api([(429, {}), (429, {}), (200, {"ok": 1})])
+        self.assertEqual(api.get("/api/videos"), (200, {"ok": 1}))
+        self.assertEqual(slept, [2.0, 2.0])
+
+    def test_the_wait_is_bounded_and_the_429_comes_back(self) -> None:
+        api, slept = self.api([(429, {})] * 20, retry_after=100)
+        self.assertEqual(api.get("/api/videos")[0], 429)
+        self.assertEqual(sum(slept), cell.API.RATE_WAIT_SEC)
+        self.assertTrue(all(x <= 30 for x in slept))
 
 
 class Networking(unittest.TestCase):
@@ -415,3 +444,20 @@ class TrueNASShape(unittest.TestCase):
         del c["services"]["permissions"]
         c["services"]["maktaba"].pop("depends_on")
         self.assertIn("host_path data", self.check(c, v))
+
+
+class SharePaths(unittest.TestCase):
+    """Story 59.13: a NAS home converts its own folders to smb://<nas>/<share>/...; the
+    assertions read a stored path in either form."""
+
+    def cell(self) -> cell.Cell:
+        return cell.Cell(spec={"name": "s", "media": {"path": "/volume1/Movies"}}, image="img",
+                         fixtures=Path("."), out=Path("."), local_port=None, landed=[])
+
+    def test_local_form(self) -> None:
+        c = self.cell()
+        self.assertEqual(c.local_form("smb://diskstation/Movies/ar/درس 01.mp4"), "/volume1/Movies/ar/درس 01.mp4")
+        self.assertEqual(c.local_form("/volume1/Movies/en/a.mp4"), "/volume1/Movies/en/a.mp4")
+        self.assertEqual(c.share("smb://diskstation/Movies/en"), "Movies")
+        self.assertEqual(c.share("/volume1/Movies/en"), "Movies")
+        self.assertTrue(c.on_dsm_share("smb://diskstation/Movies") and c.on_dsm_share("/volume1/Movies"))

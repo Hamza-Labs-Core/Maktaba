@@ -9741,6 +9741,120 @@
         "operationId": "duplicateCollection"
       }
     },
+    "/cluster/storage/home-shares": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "A NAS home's own shares (admin)",
+        "description": "Admin only. On a NAS home (Epic 59, story 59.13), the storage server record the home keeps for the NAS itself, each of its own folders with the SMB share it is (an empty share is not shared on the network), the library folders that still need a share name, whether some share is mounted at another path from the NAS's own, and whether a shared folder is writable for Maktaba (else the notice no_writable_share, and nodes download speech models themselves).",
+        "x-maktaba-role": "admin",
+        "responses": {
+          "200": {
+            "description": "The NAS's shares; nas is false on a home that is not a NAS.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeShares"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "getHomeShares"
+      },
+      "put": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Name a NAS home's shares (admin)",
+        "description": "Admin only. Replaces the NAS record's addresses and each folder's share name. The home's pipeline converts the folders' stored paths to the shares at its next storage check.",
+        "x-maktaba-role": "admin",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HomeSharesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The NAS's shares as saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeShares"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A folder that is not a whole path, or a share name with a slash.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This home keeps no record of its own shares and the request names no server (not_a_nas_home).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "putHomeShares"
+      }
+    },
     "/server/settings": {
       "get": {
         "tags": [
@@ -14877,6 +14991,131 @@
           },
           "show_on_library": {
             "type": "boolean"
+          }
+        }
+      },
+      "HomeShare": {
+        "type": "object",
+        "required": [
+          "path",
+          "share",
+          "local_only",
+          "host_path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "The NAS's own folder (/volume1/Movies)."
+          },
+          "share": {
+            "type": "string",
+            "description": "The SMB share it is; empty when it is not shared."
+          },
+          "local_only": {
+            "type": "boolean"
+          },
+          "host_path": {
+            "type": "boolean",
+            "description": "False for a mount at another path from the NAS's own."
+          },
+          "rule": {
+            "type": "string",
+            "description": "The share the platform's folder layout gives it."
+          }
+        }
+      },
+      "HomeShares": {
+        "type": "object",
+        "required": [
+          "nas",
+          "platform",
+          "server",
+          "addresses",
+          "shares",
+          "unnamed",
+          "other_path",
+          "writable_share",
+          "notices"
+        ],
+        "properties": {
+          "nas": {
+            "type": "boolean"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "server": {
+            "type": "string",
+            "description": "The storage server record that is the NAS."
+          },
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "shares": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HomeShare"
+            }
+          },
+          "unnamed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "other_path": {
+            "type": "boolean"
+          },
+          "writable_share": {
+            "type": "boolean"
+          },
+          "notices": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "HomeSharesRequest": {
+        "type": "object",
+        "required": [
+          "addresses",
+          "shares"
+        ],
+        "properties": {
+          "server": {
+            "type": "string",
+            "description": "Only for a home that has not reported its record yet."
+          },
+          "addresses": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "string"
+            }
+          },
+          "shares": {
+            "type": "array",
+            "maxItems": 256,
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "share"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "share": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       }

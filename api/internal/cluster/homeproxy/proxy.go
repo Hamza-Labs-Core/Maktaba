@@ -23,6 +23,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homelink"
+	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 )
 
@@ -92,7 +93,9 @@ func NewWith(link homelink.Link, logger *slog.Logger, o Options) http.Handler {
 			// the node is the edge for these headers: only what it sets itself goes on
 			for _, h := range []string{delegation.HeaderVia, delegation.HeaderNode, delegation.HeaderKey,
 				delegation.HeaderTs, delegation.HeaderNonce, delegation.HeaderSig, delegation.HeaderBody, delegation.HeaderDelegatedSession,
-				delegation.HeaderOriginNode, delegation.HeaderForwardedClient, delegation.HeaderForwardedClientSig} {
+				delegation.HeaderOriginNode, delegation.HeaderForwardedClient, delegation.HeaderForwardedClientSig,
+				// this machine's per-boot token never leaves it
+				mw.LocalTokenHeader} {
 				pr.Out.Header.Del(h)
 			}
 			pr.SetXForwarded()

@@ -559,6 +559,33 @@ async def test_purged_and_deleted_files_do_not_hold_the_conversion(db: Any, tmp_
     assert all(p.startswith("smb://") for p in (await _paths(db)).values())
 
 
+async def test_a_read_only_librarys_stored_subtitle_does_not_hold_the_conversion(
+    db: Any, tmp_path: Path
+) -> None:
+    """Story 59.03 keeps a read-only library's subtitle in the database (content); its
+    path is where the file would have been and no file is there. Found by the NAS cell
+    (59.13): taken for a missing file it blocked the conversion for good. Its path is
+    converted with the rest; a subtitle row without content is still checked."""
+    home = Home(tmp_path)
+    ids = await _seed(db, home, n=2)
+    vid = ids["vids"][0]
+    await db.execute(
+        "INSERT INTO subtitle_files (video_id, language, format, source, path, content)"
+        " VALUES ($1, 'en', 'vtt', 'generated', $2, $3)",
+        str(vid),
+        home.path("Chan/v0.en.vtt"),
+        "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nhello\n",
+    )
+    state = await auto.run_once(db, home.env())
+    assert state["phase"] == "done", state.get("problems")
+    assert state["plan"]["missing"] == 0
+    row = await db.fetchrow(
+        "SELECT path, deleted_at FROM subtitle_files WHERE video_id = $1", str(vid)
+    )
+    assert row["path"] == "smb://home-nas/Originals/Backup/Youtube/Chan/v0.en.vtt"
+    assert row["deleted_at"] is None
+
+
 async def test_the_conversion_waits_for_the_reported_share_map(db: Any, tmp_path: Path) -> None:
     home = Home(tmp_path)
     await _seed(db, home, n=2)

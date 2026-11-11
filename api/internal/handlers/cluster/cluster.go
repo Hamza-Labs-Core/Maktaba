@@ -403,6 +403,15 @@ type JoinResponse struct {
 	HomePubkey string    `json:"home_pubkey"`
 	Home       JoinHome  `json:"home"`
 	ExpiresAt  time.Time `json:"expires_at"`
+	// Notices are what the joining machine should know about this home (story 59.13:
+	// no_writable_share), each a code the apps translate (cluster.<code>) and its English.
+	Notices []JoinNotice `json:"notices,omitempty"`
+}
+
+// JoinNotice is one notice of a join's answer.
+type JoinNotice struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 // Join implements POST /api/cluster/join.
@@ -512,6 +521,7 @@ func (h *Handler) Join(w http.ResponseWriter, r *http.Request) {
 		HomePubkey: hp,
 		Home:       JoinHome{InstanceID: id.InstanceID, Name: id.Name},
 		ExpiresAt:  expires,
+		Notices:    h.joinNotices(ctx),
 	})
 }
 

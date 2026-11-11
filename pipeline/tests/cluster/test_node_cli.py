@@ -233,3 +233,20 @@ def test_run_hands_its_mode_to_the_stage_handlers(
     assert db.processing_jobs[9].state == "done", db.processing_jobs[9].error
     assert backend.seen == [to_local("/lib/درس.mkv")]
     assert db.audio_cache == {}
+
+
+@pytest.mark.parametrize(("flags", "want"), [([], False), (["--light-nas"], True)])
+def test_join_passes_the_light_nas_choice(
+    monkeypatch: pytest.MonkeyPatch, flags: list[str], want: bool
+) -> None:
+    """Story 59.13: `join --light-nas` is the explicit choice a Light NAS needs to join as a
+    node; without it join() asks (or refuses with no terminal)."""
+    import maktaba_pipeline.__main__ as cli
+    from maktaba_pipeline.cluster import join as join_mod
+
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(join_mod, "join", lambda **kw: seen.update(kw))
+    parser = cli._build_parser()
+    args = parser.parse_args(["join", "--home", "http://h:8080", *flags])
+    assert cli._join(args, parser, None) == 0
+    assert seen["light_nas_ok"] is want
