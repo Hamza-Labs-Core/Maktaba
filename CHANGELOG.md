@@ -2655,7 +2655,8 @@ build fails when the two differ.
   named in setup, the log and Settings. `[server] trusted_proxies` (Settings → Storage &
   discovery) lists the reverse proxies whose `X-Forwarded-For` the API and streaming believe,
   besides this machine's own and the home's approved nodes. Before this, any peer's header was
-  believed.
+  believed. A container waiting for its setup starts the server only once setup has finished,
+  no longer as soon as server.toml appears, before setup's database is made.
 
 ### Fixed
 

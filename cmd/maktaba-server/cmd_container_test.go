@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appruntime"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 )
 
 // The image's payload against the volume's runtime: the first runtime, a newer image, an
@@ -86,6 +88,42 @@ func TestContainerWaitsForSetup(t *testing.T) {
 	c.config = filepath.Join(dir, "none.toml")
 	if c.waitSetup(ctx) {
 		t.Fatal("a stopped container went on")
+	}
+}
+
+// Epic 59 story 59.08: setup writes server.toml before it creates the database, so the
+// container waits until setup's pending file is gone too; a server started earlier ran its
+// own initdb beside setup's (the TrueNAS app's CI).
+func TestContainerWaitsForSetupToFinish(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "server.toml")
+	if err := os.WriteFile(cfgPath, []byte(fmt.Sprintf("[server]\ndata_dir = %q\n", dir)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := config.LoadFrom(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := setupPendingFor(cfg)
+	if err := os.MkdirAll(filepath.Dir(pending), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pending, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	c := containerDeps{config: cfgPath, out: &out, every: 10 * time.Millisecond}
+	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
+	defer cancel()
+	if c.waitSetup(ctx) {
+		t.Fatal("went on while setup's finish step was still running")
+	}
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		_ = os.Remove(pending)
+	}()
+	if !c.waitSetup(context.Background()) {
+		t.Fatal("did not go on once setup finished")
 	}
 }
 
