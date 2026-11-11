@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
@@ -33,10 +35,27 @@ func TestContainerImage(t *testing.T) {
 		{"a describe build ahead of its tag", "0.3.123-4-gabc1234", "0.3.123", "0", &ContainerImage{Runtime: "0.3.123-4-gabc1234", Image: "0.3.123", Running: "runtime", Reason: ImageOlder}},
 		{"not the image", "1.5.0", "", "", nil},
 	} {
-		got := containerImage(c.runtime, env(c.image, c.refused))
+		got := containerImage(c.runtime, env(c.image, c.refused), os.ReadFile)
 		if (got == nil) != (c.want == nil) || (got != nil && *got != *c.want) {
 			t.Errorf("%s: %+v, want %+v", c.name, got, c.want)
 		}
+	}
+}
+
+// The launcher went back from the image's release while the container ran on (its
+// entrypoint had said "not refused" at its start): the record under the launcher root says.
+func TestContainerImageRefusedWhileRunning(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "updates"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "updates", "image-refused.json"), []byte(`{"version":"v1.6.0"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{EnvImageVersion: "1.6.0", EnvImageRefused: "0", "MAKTABA_LAUNCHER_ROOT": root}
+	got := containerImage("1.5.0", func(k string) string { return env[k] }, os.ReadFile)
+	if got == nil || got.Reason != ImageRefused {
+		t.Fatalf("%+v", got)
 	}
 }
 

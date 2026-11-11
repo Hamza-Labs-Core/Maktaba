@@ -1,7 +1,9 @@
 package system
 
 import (
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
@@ -40,9 +42,33 @@ type ContainerImage struct {
 	Reason  string `json:"reason"`
 }
 
+// imageRefusedFile is where the container's entrypoint records the image release the
+// launcher went back from, in the launcher root's updates folder (MAKTABA_LAUNCHER_ROOT):
+// read live, since the launcher can go back while the container runs on.
+const imageRefusedFile = "image-refused.json"
+
+// refusedImage is the image release recorded as refused under the launcher root ("" none).
+func refusedImage(getenv func(string) string, readFile func(string) ([]byte, error)) string {
+	root := strings.TrimSpace(getenv("MAKTABA_LAUNCHER_ROOT"))
+	if root == "" {
+		return ""
+	}
+	b, err := readFile(filepath.Join(root, "updates", imageRefusedFile))
+	if err != nil {
+		return ""
+	}
+	var r struct {
+		Version string `json:"version"`
+	}
+	if json.Unmarshal(b, &r) != nil {
+		return ""
+	}
+	return layout.NormalizeVersion(r.Version)
+}
+
 // containerImage is the block for a server whose release is runtime, from the container's
 // environment (nil outside the Docker image, or before an entrypoint that says).
-func containerImage(runtime string, getenv func(string) string) *ContainerImage {
+func containerImage(runtime string, getenv func(string) string, readFile func(string) ([]byte, error)) *ContainerImage {
 	image := layout.NormalizeVersion(strings.TrimSpace(getenv(EnvImageVersion)))
 	runtime = layout.NormalizeVersion(strings.TrimSpace(runtime))
 	if image == "" || runtime == "" {
@@ -54,7 +80,7 @@ func containerImage(runtime string, getenv func(string) string) *ContainerImage 
 		c.Running, c.Reason = "image", ImageSame
 	case cmp < 0:
 		c.Reason = ImageOlder
-	case strings.TrimSpace(getenv(EnvImageRefused)) == "1":
+	case strings.TrimSpace(getenv(EnvImageRefused)) == "1" || refusedImage(getenv, readFile) == image:
 		c.Reason = ImageRefused
 	default:
 		c.Reason = ImagePending
@@ -63,4 +89,6 @@ func containerImage(runtime string, getenv func(string) string) *ContainerImage 
 }
 
 // containerImageOf is containerImage from this process's environment.
-func containerImageOf(runtime string) *ContainerImage { return containerImage(runtime, os.Getenv) }
+func containerImageOf(runtime string) *ContainerImage {
+	return containerImage(runtime, os.Getenv, os.ReadFile)
+}

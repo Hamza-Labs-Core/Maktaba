@@ -68,7 +68,9 @@ pruned), and when the launcher goes back instead it records the version in
 `updates/image-refused.json` and never switches to that image again (a newer one, yes); the image
 that ran before still runs, as the watermark never rose. A `docker compose run` from a newer image
 switches nothing and prunes nothing (a container may be running). An image managed elsewhere
-(Watchtower) runs with `MAKTABA_UPDATE_DISABLE=1`, so only one thing updates it. A
+(Watchtower, a NAS catalog) needs nothing turned off: the self-update and the image's moves live side
+by side (Epic 59 story 59.12); `MAKTABA_UPDATE_DISABLE=1` stays a household's choice, the image path
+only, the guard still applied at each start. A
 container of the stack built from source (`deploy/compose`, the development and CI stack) keeps Epic
 28.3's answer (`409`, `docker compose pull && docker compose up -d`).
 
