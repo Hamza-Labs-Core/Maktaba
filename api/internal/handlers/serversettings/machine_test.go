@@ -112,3 +112,31 @@ func TestMachineWithoutASupervisor(t *testing.T) {
 		t.Errorf("PUT %d", rec.Code)
 	}
 }
+
+// Epic 59 story 59.16: the web saves quiet hours and the data disk through the same PUT
+// (story 59.02); the supervisor gets those fields and only those sent, never an empty
+// tier it would refuse, and the change is audited apart from a tier pick.
+func TestMachinePutCarriesQuietHoursAndTheDisk(t *testing.T) {
+	r, _, bodies, h := machineFixture(t)
+	for _, c := range []struct{ body, want string }{
+		{`{"quiet_hours":"01:00-06:00"}`, `{"quiet_hours":"01:00-06:00"}`},
+		{`{"quiet_hours":""}`, `{"quiet_hours":""}`},
+		{`{"quiet_hours":null,"quiet_default":true}`, `{"quiet_default":true}`},
+		{`{"data_disk":"rotational"}`, `{"data_disk":"rotational"}`},
+		{`{"tier":"strong","quiet_hours":"02:00-05:00","data_disk":"auto","extra":1}`,
+			`{"tier":"strong","quiet_hours":"02:00-05:00","data_disk":"auto"}`},
+	} {
+		if rec := call(r, admin, "PUT", "/api/server/machine", c.body); rec.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", c.body, rec.Code, rec.Body)
+		}
+		if last := (*bodies)[len(*bodies)-1]; last != c.want {
+			t.Errorf("%s: the supervisor got %s, want %s", c.body, last, c.want)
+		}
+	}
+	for action, want := range map[string]int{ActionTierChanged: 1, ActionMachineChanged: 5} {
+		var n int
+		if err := h.DB.QueryRow(`SELECT count(*) FROM audit_log WHERE action = ?`, action).Scan(&n); err != nil || n != want {
+			t.Errorf("%s: %d audit rows (%v), want %d", action, n, err, want)
+		}
+	}
+}

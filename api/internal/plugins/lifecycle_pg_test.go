@@ -720,7 +720,7 @@ func TestPluginStateMergesTheParts(t *testing.T) {
 }
 
 // Epic 59 story 59.07: the home's level is Container when any machine's is; the switch is
-// SetContainerIsolation's, audited once per change; SetPolicy keeps it.
+// SetContainerIsolation's, audited once per change with the level; SetPolicy keeps it.
 func TestContainerIsolationSwitch(t *testing.T) {
 	f := newLC(t)
 	ctx := context.Background()
@@ -742,6 +742,11 @@ func TestContainerIsolationSwitch(t *testing.T) {
 	}
 	if n := f.count(t, `SELECT count(*) FROM audit_log WHERE action = 'plugin.isolation'`); n != 1 {
 		t.Fatalf("audit rows %d, want 1 (a repeat changes nothing)", n)
+	}
+	// story 59.16 T03: the row has the level the admin said yes to
+	if n := f.count(t, `SELECT count(*) FROM audit_log WHERE action = 'plugin.isolation' AND payload::jsonb->>'level' = $1`,
+		string(IsolationContainer)); n != 1 {
+		t.Fatalf("audit rows with the level %d, want 1", n)
 	}
 	f.allowUnreviewed(t)
 	if p, err := LoadPolicy(ctx, f.db); err != nil || !p.AllowContainerIsolation || !p.AllowUnreviewed {

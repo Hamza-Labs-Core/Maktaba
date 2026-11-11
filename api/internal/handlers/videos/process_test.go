@@ -144,3 +144,29 @@ func TestProcessRefusesNonAdmins(t *testing.T) {
 		t.Fatalf("a refused caller queued %v", jobs.calls)
 	}
 }
+
+// Story 59.16: process and reprocess are an admin's; the role is checked before the video is
+// read, so a non-admin gets 403 whether or not the video exists, and no query runs (the
+// handler has no database here, so one would panic).
+func TestProcessRefusesNonAdminsBeforeAnyQuery(t *testing.T) {
+	r := chi.NewRouter()
+	(&Handler{}).Mount(r)
+	cloud := &principal.Principal{UserID: "a2", IsAdmin: true, AccessAllLibraries: true}
+	cloud.ApplyCloudScope(principal.CloudScopePlay, nil)
+	for _, path := range []string{"/process", "/reprocess"} {
+		for name, p := range map[string]*principal.Principal{
+			"no one": nil, "viewer": {UserID: "u2", Libraries: []string{"lib"}}, "an admin's cloud play sign-in": cloud,
+		} {
+			req := httptest.NewRequest(http.MethodPost, "/api/videos/6f1d2c3b-4a5e-4f60-8a7b-9c0d1e2f3a4b"+path,
+				strings.NewReader(`{"from_stage":"transcribe"}`))
+			if p != nil {
+				req = req.WithContext(principal.WithPrincipal(req.Context(), p))
+			}
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+			if rec.Code != http.StatusForbidden {
+				t.Errorf("%s as %s: %d, want 403", path, name, rec.Code)
+			}
+		}
+	}
+}

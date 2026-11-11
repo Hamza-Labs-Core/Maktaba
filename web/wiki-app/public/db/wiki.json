@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 182,
+    "endpoint": 197,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -6168,7 +6168,8 @@
         "story-57.10",
         "story-58.2",
         "story-58.13",
-        "story-58.17"
+        "story-58.17",
+        "story-59.16"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7924,7 +7925,8 @@
         "story-55.2",
         "story-57.5",
         "story-57.13",
-        "story-58.1"
+        "story-58.1",
+        "story-59.16"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -8020,7 +8022,8 @@
         "story-55.2",
         "story-56.13",
         "story-58.13",
-        "story-58.14"
+        "story-58.14",
+        "story-59.16"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -8986,7 +8989,8 @@
         "story-58.3",
         "story-58.7",
         "story-58.9",
-        "story-58.17"
+        "story-58.17",
+        "story-59.16"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -9489,7 +9493,9 @@
         "System",
         "get"
       ],
-      "related": [],
+      "related": [
+        "story-59.16"
+      ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
@@ -9510,7 +9516,9 @@
         "System",
         "put"
       ],
-      "related": [],
+      "related": [
+        "story-59.16"
+      ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
@@ -9519,6 +9527,365 @@
         "path": "/cluster/storage/home-shares",
         "tag": "System",
         "operationId": "putHomeShares"
+      }
+    },
+    {
+      "id": "ep-get-server-settings",
+      "type": "endpoint",
+      "title": "GET /server/settings",
+      "content": "Read server.toml's settings",
+      "tags": [
+        "api",
+        "Server",
+        "get"
+      ],
+      "related": [
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/server/settings",
+        "tag": "Server",
+        "operationId": "getServerSettings"
+      }
+    },
+    {
+      "id": "ep-put-server-settings",
+      "type": "endpoint",
+      "title": "PUT /server/settings",
+      "content": "Change server.toml's settings",
+      "tags": [
+        "api",
+        "Server",
+        "put"
+      ],
+      "related": [
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/server/settings",
+        "tag": "Server",
+        "operationId": "putServerSettings"
+      }
+    },
+    {
+      "id": "ep-get-server-machine",
+      "type": "endpoint",
+      "title": "GET /server/machine",
+      "content": "This machine's hardware and tier",
+      "tags": [
+        "api",
+        "Server",
+        "get"
+      ],
+      "related": [
+        "story-59.4",
+        "story-59.15",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/server/machine",
+        "tag": "Server",
+        "operationId": "getMachine"
+      }
+    },
+    {
+      "id": "ep-put-server-machine",
+      "type": "endpoint",
+      "title": "PUT /server/machine",
+      "content": "Change the tier, the quiet hours or the data disk",
+      "tags": [
+        "api",
+        "Server",
+        "put"
+      ],
+      "related": [
+        "story-59.4",
+        "story-59.15",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/server/machine",
+        "tag": "Server",
+        "operationId": "putMachine"
+      }
+    },
+    {
+      "id": "ep-get-server-speech",
+      "type": "endpoint",
+      "title": "GET /server/speech",
+      "content": "Speech to text on this machine",
+      "tags": [
+        "api",
+        "Server",
+        "get"
+      ],
+      "related": [
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/server/speech",
+        "tag": "Server",
+        "operationId": "getSpeech"
+      }
+    },
+    {
+      "id": "ep-put-server-speech",
+      "type": "endpoint",
+      "title": "PUT /server/speech",
+      "content": "Turn speech to text on or off, or pick its model",
+      "tags": [
+        "api",
+        "Server",
+        "put"
+      ],
+      "related": [
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/server/speech",
+        "tag": "Server",
+        "operationId": "putSpeech"
+      }
+    },
+    {
+      "id": "ep-post-server-speech-measure",
+      "type": "endpoint",
+      "title": "POST /server/speech/measure",
+      "content": "Measure this machine's speech speed now",
+      "tags": [
+        "api",
+        "Server",
+        "post"
+      ],
+      "related": [
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/server/speech/measure",
+        "tag": "Server",
+        "operationId": "measureSpeech"
+      }
+    },
+    {
+      "id": "ep-get-libraries-id-access",
+      "type": "endpoint",
+      "title": "GET /libraries/{id}/access",
+      "content": "A library's media permissions",
+      "tags": [
+        "api",
+        "Libraries",
+        "get"
+      ],
+      "related": [
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/libraries/{id}/access",
+        "tag": "Libraries",
+        "operationId": "getLibraryAccess"
+      }
+    },
+    {
+      "id": "ep-post-libraries-id-check-access",
+      "type": "endpoint",
+      "title": "POST /libraries/{id}/check-access",
+      "content": "Check a library's media permissions now",
+      "tags": [
+        "api",
+        "Libraries",
+        "post"
+      ],
+      "related": [
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/libraries/{id}/check-access",
+        "tag": "Libraries",
+        "operationId": "checkLibraryAccess"
+      }
+    },
+    {
+      "id": "ep-post-libraries-id-run-now",
+      "type": "endpoint",
+      "title": "POST /libraries/{id}/run-now",
+      "content": "Run a library's waiting work now",
+      "tags": [
+        "api",
+        "Queue",
+        "post"
+      ],
+      "related": [
+        "story-59.2",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/libraries/{id}/run-now",
+        "tag": "Queue",
+        "operationId": "runLibraryNow"
+      }
+    },
+    {
+      "id": "ep-post-queues-jobs-id-run-now",
+      "type": "endpoint",
+      "title": "POST /queues/jobs/{id}/run-now",
+      "content": "Run one waiting job now",
+      "tags": [
+        "api",
+        "Queue",
+        "post"
+      ],
+      "related": [
+        "story-59.2",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/queues/jobs/{id}/run-now",
+        "tag": "Queue",
+        "operationId": "runJobNow"
+      }
+    },
+    {
+      "id": "ep-post-queues-stage-run-now",
+      "type": "endpoint",
+      "title": "POST /queues/{stage}/run-now",
+      "content": "Run a queue's jobs held for the quiet hours now",
+      "tags": [
+        "api",
+        "Queue",
+        "post"
+      ],
+      "related": [
+        "story-59.2",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/queues/{stage}/run-now",
+        "tag": "Queue",
+        "operationId": "runStageNow"
+      }
+    },
+    {
+      "id": "ep-get-plugins-isolation",
+      "type": "endpoint",
+      "title": "GET /plugins/isolation",
+      "content": "Plugin isolation",
+      "tags": [
+        "api",
+        "Plugins",
+        "get"
+      ],
+      "related": [
+        "story-59.7",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/plugins/isolation",
+        "tag": "Plugins",
+        "operationId": "getPluginIsolation"
+      }
+    },
+    {
+      "id": "ep-put-plugins-isolation",
+      "type": "endpoint",
+      "title": "PUT /plugins/isolation",
+      "content": "Allow plugins with container-only isolation",
+      "tags": [
+        "api",
+        "Plugins",
+        "put"
+      ],
+      "related": [
+        "story-59.7",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/plugins/isolation",
+        "tag": "Plugins",
+        "operationId": "putPluginIsolation"
+      }
+    },
+    {
+      "id": "ep-get-system-updates",
+      "type": "endpoint",
+      "title": "GET /system/updates",
+      "content": "This server's release and the newest one",
+      "tags": [
+        "api",
+        "System",
+        "get"
+      ],
+      "related": [
+        "story-28.2",
+        "story-28.5",
+        "story-28.6",
+        "story-35.3",
+        "story-59.12",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/system/updates",
+        "tag": "System",
+        "operationId": "getSystemUpdates"
       }
     },
     {
@@ -9777,7 +10144,8 @@
         "story-29.3",
         "story-51.17",
         "story-54.8",
-        "story-56.10"
+        "story-56.10",
+        "story-59.16"
       ],
       "files": {
         "schema": "specs/architecture.md#8-database-schema",

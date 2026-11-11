@@ -16,7 +16,11 @@ import type {
   FailureList,
 } from "../../lib/queueApi";
 import { useReadOrder } from "../../lib/readOrder";
-import { libraryAccessErrorText, useReadOnlyLibraries } from "../../lib/libraryAccess";
+import {
+  libraryAccessErrorText,
+  libraryRefusalText,
+  useReadOnlyLibraries,
+} from "../../lib/libraryAccess";
 import { JobPermissionNote } from "../../components/LibraryAccessNotes";
 import { useIsAdmin } from "../../components/queue/useIsAdmin";
 import { useFmt } from "../../components/queue/format";
@@ -124,7 +128,9 @@ export function Failures() {
       setSelected(new Set());
       load();
     } catch (e) {
-      setActionError(libraryAccessErrorText(e, t) ?? (e instanceof Error ? e.message : String(e)));
+      setActionError(
+        libraryAccessErrorText(e, t, admin) ?? (e instanceof Error ? e.message : String(e))
+      );
     } finally {
       setBusy(false);
     }
@@ -139,7 +145,9 @@ export function Failures() {
       setNotice(t("queue.failures.restoreQueued"));
       load();
     } catch (e) {
-      setActionError(libraryAccessErrorText(e, t) ?? (e instanceof Error ? e.message : String(e)));
+      setActionError(
+        libraryAccessErrorText(e, t, admin) ?? (e instanceof Error ? e.message : String(e))
+      );
     } finally {
       setBusy(false);
     }
@@ -538,7 +546,7 @@ export function Failures() {
                           size="sm"
                           variant="secondary"
                           disabled={busy || roOf(it)}
-                          title={roOf(it) ? t("library.read_only") : undefined}
+                          title={roOf(it) ? libraryRefusalText(admin, t) : undefined}
                           onClick={() => void restore(it.file_action!.id)}
                         >
                           {t("queue.fa.restore")}
@@ -577,7 +585,7 @@ export function Failures() {
                           size="sm"
                           variant="ghost"
                           disabled={busy || roOf(it)}
-                          title={roOf(it) ? t("library.read_only") : undefined}
+                          title={roOf(it) ? libraryRefusalText(admin, t) : undefined}
                           onClick={() => act("redownload", { job_ids: [it.job_id] })}
                         >
                           {t("queue.failures.action.redownload")}
