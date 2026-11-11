@@ -10,9 +10,12 @@ and is built and deployed the way this portal is: a Cloudflare Worker in front o
 `npm run build` in `web/packages/website` writes `dist/`, in this order:
 
 1. the install build (`pnpm -C web build:install`, Epic 59's guides), copied to the root of the
-   site at `/install/` and `/ar/install/`, its hashed files under `/install/assets/`;
+   site at `/install/` and `/ar/install/`, its hashed files under `/install/assets/`, without
+   each "Screenshot to come" figure whose image does not exist yet (the install package's own
+   preview keeps them);
 2. the generated families (the problem pages, help, download), as their stories add them;
-3. the hand-made pages (`src/pages/`), each wrapped in the page shell (`scripts/shell.mjs`);
+3. the hand-made pages (`src/pages/`: the front door, the `/install/` chooser, the 404 page) and
+   the legal pages, each wrapped in the page shell (`scripts/shell.mjs`);
 4. the copied files: the app icons (`favicon.ico`, `apple-touch-icon.png`, the 192, 512 and
    maskable icons and `manifest.webmanifest`), the log schema at `/schema/log-line.json` (its
    `$id`), and `security.txt` with a `Canonical` line for each domain;
@@ -24,6 +27,24 @@ and is built and deployed the way this portal is: a Cloudflare Worker in front o
    portal's Latin-share check;
 7. the link check's manifest (`scripts/links.mjs --write-manifest dist`): commit
    `dist-manifest.json` when the pages change, because CI fails when it differs from the build.
+
+## The legal pages
+
+`/legal/privacy/`, `/legal/terms/` and `/legal/copyright/` (and `/ar/…`) are written in
+`copy/legal/<page>.<lang>.md`, each language on its own, and `scripts/legal.mjs` builds them;
+one function (`renderLegal`) draws the layout, so the design changes it and not the copy. The
+privacy page is built from its sources: its cloud section is `privacy.CurrentPolicy()`, read
+through `go run ./cmd/privacy-json` in `cloud/` (so the build needs Go), with each value's
+Arabic in `copy/legal/policy.ar.json`; its apps section is written from `docs/app-privacy.md`,
+and each language's copy records that section's sha256 (`apps-source:`). A change to the policy
+or to that section without the page's copy fails the build, naming the section. The terms page
+names the licence in `LICENSE`.
+
+The copyright page's notice form (`src/copyright-form.ts`) is shown only when the build has
+both `WEBSITE_NOTICE_ENDPOINT` (Epic 50's `POST https://api.maktaba.tv/v1/moderation/notices`)
+and `WEBSITE_TURNSTILE_SITEKEY`. Neither is set until that endpoint is live, so the page gives the
+designated agent's email and what a notice must contain, and no form. Only that page's CSP
+allows Turnstile and the API.
 
 ## The Worker
 

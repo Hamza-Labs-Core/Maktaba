@@ -1,0 +1,13 @@
+{
+  "$comment": "The privacy page's cloud section (scripts/legal.mjs): the label of each field of privacy.CurrentPolicy(). The English page shows each value as the relay says it.",
+  "labels": {
+    "controller": "Who is responsible",
+    "contact": "Contact",
+    "purpose": "Why",
+    "data_categories": "What it keeps",
+    "not_collected": "What it never keeps",
+    "lawful_basis": "Lawful basis",
+    "retention_days": "How long",
+    "rights": "Your rights"
+  }
+}

@@ -36,7 +36,8 @@ export const TARGETS = {
 };
 
 // maktaba.tv, the website (Epic 60, story 60.03). The checks a version's preview URL can
-// answer; the problem pages (60.06) and the legal pages (60.07) add theirs as they ship.
+// answer; the install chooser (60.05) and the privacy page (60.07, with the relay's policy in
+// it) are here, and the problem pages (60.06) add theirs as they ship.
 const WEBSITE = "maktaba.tv";
 const SITE = '<meta name="maktaba-site" content="maktaba-website" />';
 const WEBSITE_PAGES = [
@@ -53,6 +54,8 @@ const WEBSITE_PAGES = [
   },
   { host: WEBSITE, path: "/ar/", status: 200, marker: ['<html lang="ar" dir="rtl">', SITE] },
   { host: WEBSITE, path: "/install/docker/", status: 200, marker: '<main id="app">' },
+  { host: WEBSITE, path: "/install/", status: 200, marker: ['href="/install/nas/"', SITE] },
+  { host: WEBSITE, path: "/legal/privacy/", status: 200, marker: ['data-legal="privacy"', 'data-policy="CurrentPolicy"', SITE] },
   { host: WEBSITE, path: "/this-does-not-exist", status: 404, marker: ['content="404"', SITE] },
   { host: WEBSITE, path: "/ar/this-does-not-exist", status: 404, marker: ['<html lang="ar" dir="rtl">', 'content="404"'] },
   { host: WEBSITE, path: "/schema/log-line.json", status: 200, marker: '"$id": "https://maktaba.tv/schema/log-line.json"' },

@@ -50,6 +50,13 @@ jobs:
           node-version-file: web/packages/website/.nvmrc
           package-manager-cache: false
 
+      # the privacy page reads privacy.CurrentPolicy() through `go run ./cmd/privacy-json`
+      # (cloud/, story 60.07), so the page and the relay's GET /privacy cannot disagree
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: cloud/go.mod
+          cache: false
+
       # restore only: main's entries (.github/actions/node-cache); only a push to main saves
       - name: pnpm store
         id: pnpm-cache

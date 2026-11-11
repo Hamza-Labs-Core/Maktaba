@@ -23,7 +23,9 @@ Worker, which:
 | Path                          | What                                     | From                                                 |
 | ----------------------------- | ---------------------------------------- | ---------------------------------------------------- |
 | `/`, `/ar/`                   | the front door (Phase 1)                 | `src/pages/index.html`, `src/pages/ar/index.html`    |
+| `/install/`, `/ar/install/`   | the install chooser (60.05)              | `src/pages/install/index.html` (+ `ar/`)             |
 | `/install/…`, `/ar/install/…` | Epic 59's install guides                 | `web/packages/install` (`pnpm -C web build:install`) |
+| `/legal/…`, `/ar/legal/…`     | privacy, terms, copyright (60.07)        | `copy/legal/`, `scripts/legal.mjs`                   |
 | `/404.html`, `/ar/404.html`   | the 404 page                             | `src/pages/404.html`, `src/pages/ar/404.html`        |
 | `/schema/log-line.json`       | the log schema, at its `$id`             | `shared/log/schema/line.schema.json`                 |
 | `/.well-known/security.txt`   | the disclosure policy, both `Canonical`s | `api/internal/security/disclosure.go`                |
@@ -31,7 +33,16 @@ Worker, which:
 
 A page source in `src/pages/` is the page's `<main>` content after a leading comment
 (`title:`, `description:`, optionally `meta:`). `scripts/shell.mjs` wraps it in the document,
-the header (with the language switch to its twin) and the footer. The look is a neutral
+the header (with the language switch to its twin) and the footer. The install guides lose
+each "Screenshot to come" figure whose image does not exist yet (60.05 T07).
+
+The legal pages are copy (`copy/legal/<page>.<lang>.md`) that `scripts/legal.mjs` turns into a
+structured document and renders with one function (`renderLegal`). The privacy page reads
+`privacy.CurrentPolicy()` through `go run ./cmd/privacy-json` (in `cloud/`: the build needs Go)
+and is written from `docs/app-privacy.md`; a change to either without the page's copy fails the
+build, naming the section. The copyright page's notice form (`src/copyright-form.ts`) is built
+only when `WEBSITE_NOTICE_ENDPOINT` and `WEBSITE_TURNSTILE_SITEKEY` are both set, once Epic 50's
+endpoint is live; until then the page gives the agent's email and what a notice must contain. The look is a neutral
 placeholder (`static/assets/site.css`) until the design of story 60.01 replaces the shell and
 the stylesheet.
 

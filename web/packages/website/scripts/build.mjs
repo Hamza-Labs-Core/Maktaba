@@ -3,9 +3,16 @@
 //
 //   1. the install build (`pnpm -C web build:install`, Epic 59's guides): the contents of
 //      web/dist-install/ (install/<guide>/, ar/install/<guide>/ and their hashed files under
-//      install/assets/) copied to the root of dist/;
+//      install/assets/) copied to the root of dist/, without the placeholder figures whose
+//      screenshot does not exist yet (story 60.05 T07);
 //   2. the generated families (FAMILIES: /problems 60.06, /help 60.12, /download 60.11);
-//   3. the hand-made pages (src/pages/, each wrapped in the shell, scripts/shell.mjs);
+//   3. the hand-made pages (src/pages/, each wrapped in the shell, scripts/shell.mjs): the
+//      front door, the install chooser (/install/, story 60.05) and the 404 page; and the
+//      legal pages (story 60.07) from their copy and sources (scripts/legal.mjs: the privacy
+//      page reads privacy.CurrentPolicy() through `go run ./cmd/privacy-json`, so the build
+//      needs Go), with the copyright notice form only when WEBSITE_NOTICE_ENDPOINT and
+//      WEBSITE_TURNSTILE_SITEKEY are set (src/copyright-form.ts; neither is, until Epic 50's
+//      endpoint is live);
 //   4. the copied files: static/, the icons and manifest (icons.mjs), the log schema at its
 //      $id, security.txt;
 //   5. what every page carries (story 60.04): the head tags an install guide's own <head>
@@ -22,7 +29,9 @@
 // pass it, and the twin check then sees no install pages. It also skips step 7, so a quick
 // build never rewrites the committed manifest without the install guides.
 
+import crypto from "node:crypto";
 import fs from "node:fs";
+import { stripTypeScriptTypes } from "node:module";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -31,6 +40,8 @@ import { completeHead, readHead } from "./head.mjs";
 import { cardPath, renderCard } from "./cards.mjs";
 import { writeIcons } from "./icons.mjs";
 import { ROBOTS, sitemapXml } from "./sitemap.mjs";
+import { LEGAL, legalPages, readSources } from "./legal.mjs";
+import { noticeConfig } from "../src/copyright-form.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const PKG = path.resolve(HERE, "..");
@@ -48,13 +59,24 @@ export const INSTALL_OUT = path.join(REPO, "web/dist-install");
  */
 export const FAMILIES = [];
 
-/** The hand-made pages: their source in src/pages/, their English path (null: no address of
- * its own), and the file each becomes. */
+/** The hand-made pages: their source in src/pages/ (or, for a legal page, its copy in
+ * copy/legal/, scripts/legal.mjs), their English path (null: no address of its own), and the
+ * file each becomes. */
 export const PAGES = [
   { src: "index.html", lang: "en", path: "/", out: "index.html" },
   { src: "ar/index.html", lang: "ar", path: "/", out: "ar/index.html" },
   { src: "404.html", lang: "en", path: null, out: "404.html" },
   { src: "ar/404.html", lang: "ar", path: null, out: "ar/404.html" },
+  { src: "install/index.html", lang: "en", path: "/install/", out: "install/index.html" },
+  { src: "ar/install/index.html", lang: "ar", path: "/install/", out: "ar/install/index.html" },
+  ...LEGAL.flatMap((name) =>
+    ["en", "ar"].map((lang) => ({
+      legal: name,
+      lang,
+      path: `/legal/${name}/`,
+      out: `${lang === "ar" ? "ar/" : ""}legal/${name}/index.html`,
+    }))
+  ),
 ];
 
 /** A page source: a leading comment of `key: value` lines (title, description, meta), then the
@@ -188,8 +210,50 @@ function writer(dist) {
   };
 }
 
-function copyTree(from, dist, write) {
-  for (const rel of walk(from)) write(rel, fs.readFileSync(path.join(from, rel)));
+function copyTree(from, dist, write, html = (s) => s) {
+  for (const rel of walk(from)) {
+    const buf = fs.readFileSync(path.join(from, rel));
+    write(rel, rel.endsWith(".html") ? html(buf.toString("utf8"), rel) : buf);
+  }
+}
+
+// ---- the install guides' screenshots still to come (story 60.05 T07) ---------------------
+
+export const INSTALL_PKG = path.join(REPO, "web/packages/install");
+
+const PLACEHOLDER =
+  /[ \t]*<figure class="placeholder" data-shot="([^"]+)">[\s\S]*?<\/figure>[ \t]*\n?/g;
+
+/** A guide without each placeholder figure ("Screenshot to come") whose image does not exist
+ * yet: a public page shows no "to come" box. The step's text stays, and the figure is kept
+ * once its image exists. The install package's own preview keeps every placeholder. */
+export function dropMissingFigures(html, exists) {
+  return html.replace(PLACEHOLDER, (figure, shot) => (exists(shot) ? figure : ""));
+}
+
+/** Whether a placeholder's image (data-shot, from the install site's root) exists: in the
+ * install package's site or public files, or in the install build. */
+export function shotExists(
+  shot,
+  roots = [
+    path.join(INSTALL_PKG, "site"),
+    path.join(INSTALL_PKG, "public"),
+    path.join(INSTALL_PKG, "public/install"),
+    INSTALL_OUT,
+  ]
+) {
+  if (shot.includes("..")) return false;
+  return roots.some((r) => fs.existsSync(path.join(r, shot)));
+}
+
+// ---- the copyright notice form's script (story 60.07) ---------------------------------------
+
+/** src/copyright-form.ts with its types stripped, under a content-hashed name. */
+export function noticeScriptFile() {
+  const ts = fs.readFileSync(path.join(PKG, "src/copyright-form.ts"), "utf8");
+  const js = stripTypeScriptTypes(ts);
+  const hash = crypto.createHash("sha256").update(js).digest("base64url").slice(0, 10);
+  return { file: `assets/copyright-form-${hash}.js`, js };
 }
 
 export async function build({
@@ -197,6 +261,7 @@ export async function build({
   install = true,
   dist = DIST,
   log = console.log,
+  notice = noticeConfig(process.env),
 } = {}) {
   fs.rmSync(dist, { recursive: true, force: true });
   fs.mkdirSync(dist, { recursive: true });
@@ -206,7 +271,7 @@ export async function build({
   if (install) {
     log("install build: pnpm -C web build:install");
     execFileSync("pnpm", ["-C", path.join(REPO, "web"), "build:install"], { stdio: "inherit" });
-    copyTree(INSTALL_OUT, dist, write);
+    copyTree(INSTALL_OUT, dist, write, (html) => dropMissingFigures(html, (s) => shotExists(s)));
   }
 
   // 2. the generated families
@@ -215,10 +280,31 @@ export async function build({
     await f.build({ write, repo: REPO });
   }
 
-  // 3. the hand-made pages
+  // 3. the hand-made pages, and the legal pages from their copy (legal.mjs). The copyright
+  // page's notice form is there only when its endpoint is configured (copyright-form.ts).
+  let noticeScript = "";
+  if (notice) {
+    const s = noticeScriptFile();
+    write(s.file, s.js);
+    noticeScript = `/${s.file}`;
+    log(`the copyright notice form posts to ${notice.endpoint}`);
+  }
+  const legal = legalPages({ sources: readSources(), notice, noticeScript });
   for (const p of PAGES) {
-    const src = parsePage(fs.readFileSync(path.join(PKG, "src/pages", p.src), "utf8"), p.src);
-    write(p.out, page({ lang: p.lang, path: p.path, ...src }));
+    const src = p.legal
+      ? legal.find((l) => l.name === p.legal && l.lang === p.lang)
+      : parsePage(fs.readFileSync(path.join(PKG, "src/pages", p.src), "utf8"), p.src);
+    write(
+      p.out,
+      page({
+        lang: p.lang,
+        path: p.path,
+        title: src.title,
+        description: src.description,
+        body: src.body,
+        meta: src.meta,
+      })
+    );
   }
 
   // 4. the copied files
