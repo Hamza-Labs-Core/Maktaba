@@ -923,6 +923,19 @@ async def _relayed_requeue_failed(db: Any, ctx: Any, a: dict[str, Any]) -> list[
     return await requeue_failed(db, UUID(vid), str(a.get("why") or "requeued"))
 
 
+def _path_map_frame(pm: Any) -> dict[str, Any]:
+    """The worker's path map for the runner: its entries, and on a resolver the shares
+    and character maps too, so the runner maps a converted path (``smb://nas/Movies/...``)
+    to this machine's folder and a found file back to the very form the conversion wrote."""
+    import dataclasses
+
+    return {
+        "path_map": [list(e) for e in getattr(pm, "entries", ())],
+        "path_shares": [list(dataclasses.astuple(s)) for s in getattr(pm, "shares", ())],
+        "path_char_maps": [list(c) for c in getattr(pm, "char_maps", ())],
+    }
+
+
 async def _relayed_storage_canonicalize(db: Any, ctx: Any) -> dict[str, Any]:
     """The home's path conversion, by the worker for ``storage_canonicalize``'s job: it
     pauses and resumes stages and writes the share map, which a plugin never may; nothing
@@ -1108,9 +1121,7 @@ async def run_native(db: Any, job: Any, ctx: Any, *, connect: Any = None) -> Sta
                     # story 54.35: the extensions' settings without secrets or a service's
                     # address, and which way the job's service calls go
                     **_service_frame(stage, ctx),
-                    "path_map": [
-                        list(e) for e in getattr(getattr(ctx, "path_map", None), "entries", ())
-                    ],
+                    **_path_map_frame(getattr(ctx, "path_map", None)),
                 },
             )
             while True:

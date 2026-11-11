@@ -173,6 +173,27 @@ def runner_context(
     return ctx
 
 
+def job_path_map(msg: dict[str, Any]) -> Any:
+    """The worker's path map from a job's frame, made this process's active one as well:
+    a stage resolves a stored path through :func:`~maktaba_pipeline.engine.paths.to_local`
+    (the scanner walks a library root with it), so a root converted to its share form
+    (``smb://nas/Movies``) is walked at the folder the worker maps it to, never looked
+    for as written. A :class:`~maktaba_pipeline.sharepath.resolver.Resolver`, as the worker's
+    is (its shares and character maps too), so a share root stored without its slash matches
+    and a found file is stored in the form the conversion wrote. Every worker of this machine
+    sends the same map, so the latest job's map is the machine's."""
+    from maktaba_pipeline.engine.paths import set_active_path_map
+    from maktaba_pipeline.sharepath.resolver import Resolver, ShareMount
+
+    path_map = Resolver(
+        tuple((str(a), str(b)) for a, b in msg.get("path_map") or ()),
+        shares=tuple(ShareMount(*(str(x) for x in s)) for s in msg.get("path_shares") or ()),
+        char_maps=tuple((str(a), str(b)) for a, b in msg.get("path_char_maps") or ()),
+    )
+    set_active_path_map(path_map)
+    return path_map
+
+
 def library_roots(areas: dict[str, Any]) -> list[str]:
     """The ``library`` area's folders (``;``-separated, as the sandbox reads them)."""
     return [x for x in str(areas.get("library") or "").split(";") if x]
@@ -301,7 +322,6 @@ class Runner:
         self, msg: dict[str, Any], r: asyncio.StreamReader, w: asyncio.StreamWriter
     ) -> None:
         from maktaba_pipeline.engine.graph import get_stage
-        from maktaba_pipeline.engine.paths import PathMap
         from maktaba_pipeline.plugins import firstparty
         from maktaba_pipeline.plugins.native import failure_to_wire, job_from_wire, result_to_wire
 
@@ -330,7 +350,7 @@ class Runner:
         transport = self._transport(str(msg["token"]))
         db = StatementDB(firstparty.registry(self.plugin_of[stage]), transport, engine_relay=relay)
         sdef = get_stage(stage)
-        path_map = PathMap(tuple((str(a), str(b)) for a, b in msg.get("path_map") or ()))
+        path_map = job_path_map(msg)
         ctx = runner_context(db, job, sdef, relay, str(msg.get("write_mode") or "auto"), path_map)
         with_services(ctx, msg)
         impl = load_impl(self.stages[stage])
