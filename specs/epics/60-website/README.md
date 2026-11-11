@@ -249,9 +249,11 @@ monthly (security.txt's `Expires`, as on maktaba.dev):
    - Lighthouse on every page in both languages (60.04).
 
    The deploy uses that job's `dist/` artifact.
-2. **Secrets.** Without `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` the job prints a notice
-   and passes, as devportal does. With them it runs `token-check.mjs --pieces workers,dns --zone
-   maktaba.tv` first.
+2. **Secrets and the go-live switch.** The job reads only the website's own token,
+   `CLOUDFLARE_API_TOKEN_WEBSITE`, never the shared token that deploys maktaba.dev. Without that
+   token, `CLOUDFLARE_ACCOUNT_ID` or the repository variable `WEBSITE_LIVE = true`, the job
+   prints a notice naming what is missing and passes, as devportal does. With all three it runs
+   `token-check.mjs --pieces workers,dns --zone maktaba.tv` first.
 3. **Record the live version.** `wrangler deployments status` gives the version now serving. It
    is the version a rollback returns to. A bare `wrangler rollback` would pick the version
    uploaded before the latest, which with upload-then-promote can be one that never passed.
@@ -619,7 +621,7 @@ None blocks the epic. Each has a default the stories use.
 | # | Action | Needed by |
 |---|---|---|
 | A1 | **Make the `maktaba-server` package public** on GitHub (the package's settings → Change visibility → Public). Every install guide depends on it | Phase 1 |
-| A2 | Give the Cloudflare token the website uses `maktaba.tv`: Workers Routes Edit, Zone Read and **DNS Edit** (custom domains write their records), beside Workers Scripts Edit. Today's cloud web token has no DNS Edit on the zone (`deploy/cloudflare/README.md`) | Phase 1 |
+| A2 | Make the website's own Cloudflare token: on `maktaba.tv`, Workers Routes Edit, Zone Read and **DNS Edit** (custom domains write their records), beside Workers Scripts Edit. Today's cloud web token has no DNS Edit on the zone (`deploy/cloudflare/README.md`). Set it as the secret `CLOUDFLARE_API_TOKEN_WEBSITE`, and set the repository variable `WEBSITE_LIVE` to `true` when the site should go live | Phase 1 |
 | A3 | Mail for `privacy@maktaba.tv` (already in `CurrentPolicy`) and `copyright@maktaba.tv` (the designated agent's address), for example through Cloudflare Email Routing | Phase 1 |
 | A4 | Register the designated agent with the US Copyright Office (50.24 lists it) | before 50.24's public channels |
 | A5 | Approve the tagline, the voice, the wordmark and the Arabic copy (Q1–Q3) | Phase 2 |

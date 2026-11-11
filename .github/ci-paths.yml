@@ -796,6 +796,29 @@ devportal:
   - '.github/workflows/_devportal.yml'
   - '.github/workflows/devportal-deploy.yml'
 
+# ---- the website (_website.yml) -------------------------------------------------------------
+
+# maktaba.tv (Epic 60, story 60.03): the site, and every source it is built from (the install
+# guides and their build, the help topics, the problem registry, the log schema, the privacy
+# policy, the disclosure policy security.txt is built from, the design tokens), the smoke and
+# deploy tools its job runs, and its workflows. website-deploy.yml deploys on the same paths.
+website:
+  - *ci
+  - 'web/packages/website/**'
+  - 'web/packages/install/**'
+  - 'web/vite.install.config.ts'
+  - 'web/src/help/content/**'
+  - 'shared/api/problems.json'
+  - 'shared/log/schema/**'
+  - 'cloud/internal/privacy/**'
+  - 'api/internal/security/disclosure.go'
+  - 'web/design-system/tokens/**'
+  - 'tools/cloudflare/smoke.mjs'
+  - 'tools/cloudflare/token-check.mjs'
+  - 'tools/cloudflare/website-deploy.mjs'
+  - '.github/workflows/_website.yml'
+  - '.github/workflows/website-deploy.yml'
+
 # ---- the in-repo wiki app and its database (ci.yml's wiki job) ---------------------------
 
 # The database (web/wiki-app/public/db) is generated from the specs, the mockups, the
