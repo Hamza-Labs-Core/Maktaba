@@ -64,6 +64,9 @@ export default defineConfig({
     target: "es2022",
     outDir,
     emptyOutDir: true,
+    // maktaba.tv copies dist-install/ to its root (web/packages/website/scripts/build.mjs): the
+    // guides' hashed files live under /install/assets/, apart from the site's own /assets/
+    assetsDir: "install/assets",
     rollupOptions: { input },
   },
 });

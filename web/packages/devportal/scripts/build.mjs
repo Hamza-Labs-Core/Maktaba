@@ -88,6 +88,7 @@ const GUIDES = {
     "cloud.md",
     "nas.md",
     "nas-apps.md",
+    "website.md",
   ],
   security: ["conformance.md"],
 };

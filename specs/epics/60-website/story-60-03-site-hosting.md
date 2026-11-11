@@ -77,11 +77,13 @@ run_worker_first = true
 
 - Custom domains own only their exact hostnames. app., api., admin., relay., watch. and plugins.
   keep their records and routes.
-- **To check before relying on it:** that `preview_urls = true` gives preview URLs while
-  `workers_dev = false`. Cloudflare's docs say an explicit `preview_urls` overrides the
-  `workers_dev` default. If it does not hold, staging follows Epic 50's convention of keeping
-  staging off the production zone. A second Worker, `maktaba-website-staging`, serves
-  `staging-www.maktaba.dev` with `X-Robots-Tag: noindex` and is deployed by the same job.
+- **Checked (2026-11-11):** `preview_urls = true` gives preview URLs while
+  `workers_dev = false`. Wrangler 4.151 sends both settings as they are written, and warns of
+  exactly this state (preview URLs on, workers.dev off) as a supported one. The whole deploy
+  was proven on a throwaway Worker on workers.dev, then deleted.
+- **A first deploy:** `versions upload` cannot create a Worker. The first deploy creates it with
+  `wrangler deploy` and this config less its routes: it serves no name until the staged version
+  passed its preview smoke and `triggers deploy` attaches the domains.
 
 **CI** (`_website.yml`, called from `ci.yml` on the new `website` path filter, and from the
 deploy):
@@ -109,9 +111,11 @@ deploy):
 1. `build`: `_website.yml` with `upload: true`. Its Lighthouse step runs the representatives
    (60.04). The deploy also refuses to run while the latest nightly full sweep on main is red.
 2. `deploy`:
-   1. **Secrets:** both `CLOUDFLARE_API_TOKEN` (or `CLOUDFLARE_API_TOKEN_WORKERS`) and
-      `CLOUDFLARE_ACCOUNT_ID` must be set. Otherwise `::notice title=maktaba.tv not
-      deployed::…` and the job passes.
+   1. **Secrets and the go-live switch:** the website's own token
+      `CLOUDFLARE_API_TOKEN_WEBSITE` (never the shared token that deploys maktaba.dev),
+      `CLOUDFLARE_ACCOUNT_ID` and the repository variable `WEBSITE_LIVE = true` must all be set.
+      Otherwise `::notice title=maktaba.tv not deployed::…` names what is missing and the job
+      passes.
    2. `node tools/cloudflare/token-check.mjs --pieces workers,dns --zone maktaba.tv`.
    3. Download `website-site` (the same three-attempt download as devportal's).
    4. **Record the live version:** `wrangler deployments status` → `previous_id` (none on the
@@ -163,7 +167,8 @@ Write is only inside the `tunnel` piece. The owner grants it (A2).
 - **Given** a live smoke that fails, **then** the job rolls back to the previous version and fails.
 - **Given** the dispatch with `rollback: true`, **then** the previous version is live and the live
   smoke passes.
-- **Given** no Cloudflare secrets, **then** the deploy job passes with a notice naming them.
+- **Given** no website token, no account id, or `WEBSITE_LIVE` not `true`, **then** the deploy
+  job passes with a notice naming what is missing.
 - **Given** the deploy, **then** app., api., admin., relay., watch. and plugins. answer as before,
   and the zone has no new record except `maktaba.tv` and `www.maktaba.tv`.
 - **Given** a missing path, **then** the answer is the 404 page in the path's language with status
@@ -181,7 +186,7 @@ Write is only inside the `tunnel` piece. The owner grants it (A2).
 | T05 | build | the build | run | `dist/schema/log-line.json` equals the source; security.txt has Expires and both Canonical lines |
 | T06 | smoke unit | `smoke.mjs website` and `website-preview` against a local server (`--base`, `SMOKE_BASE_MAKTABA`) | run | each check passes; a 200 on the 404 path fails; `notMarker` passes on a refused connection and fails on the marker |
 | T07 | `tools/ci` | `ci-paths.yml` | read the `website` filter | covers the sources listed above |
-| T08 | workflow | deploy without secrets | run | green, notice printed |
+| T08 | workflow | deploy without the token, the account or `WEBSITE_LIVE` | run the gate | green, notice naming each missing one; nothing after the gate runs |
 | T09 | workflow | dispatch `rollback: true` (once, after the first deploy) | run | the recorded previous version live; smoke passes |
 | T11 | workflow unit | a fake `wrangler` that records calls | the deploy steps | `deployments status` before `versions upload`; `triggers deploy` after `versions deploy`; on a failed smoke, `rollback <previous_id>` with that id |
 | T10 | `wrangler dev` | built `dist/` | the smoke against it | passes; the Worker's log kept in the run's artifacts |

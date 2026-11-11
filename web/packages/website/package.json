@@ -1,0 +1,22 @@
+{
+  "name": "maktaba-website",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "maktaba.tv, the website households find Maktaba on (Epic 60): a Cloudflare Worker in front of static assets (the front door, the install guides, the 404 page, the log schema, security.txt).",
+  "scripts": {
+    "build": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/build.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "dev": "wrangler dev --var CANONICAL_REDIRECTS:off"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "5.7.3",
+    "vitest": "4.1.12",
+    "wrangler": "4.151.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
