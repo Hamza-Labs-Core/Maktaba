@@ -5,8 +5,9 @@
 ## Why
 
 Time limits, downtime, bedtime, app limits and Always Allowed are Screen Time's, set by a parent
-in Settings for a Family Sharing child. Maktaba builds none of them (README decision 1). Its job
-is to behave well when Screen Time stops it, to be honest in its App Store age rating so Apple's
+in Settings for a Family Sharing child. Maktaba does not rebuild them. The home keeps its own
+time rules for every device (57.14), and 57.16 carries those to Screen Time where Apple allows
+(README decision 1). This story's job is to behave well when Screen Time stops it, to be honest in its App Store age rating so Apple's
 age gate works, and to tell parents in Help how to use Apple's controls with Maktaba.
 
 ## Description
@@ -29,9 +30,9 @@ set Screen Time on the Apple TV too.
 
 ### 2. Nothing Maktaba asks of Screen Time
 
-- No Family Controls authorization, no DeviceActivity, no shields of Maktaba's own, so no
-  `com.apple.developer.family-controls` request to Apple (README decision 6). The research notes
-  that each extension would need its own approval if this changes.
+- No Family Controls authorization, DeviceActivity or shields in this story. Story 57.16 asks
+  Apple for `com.apple.developer.family-controls` and uses them for the home's time rules only
+  (README decision 6). Each extension needs its own approval.
 - No StoreKit and nothing for sale in the iOS app, so Ask to Buy applies only to installing the
   free app. If a later epic sells anything in the app, it must handle StoreKit's
   `Product.PurchaseResult.pending` (an Ask to Buy waiting for a parent) and approvals arriving

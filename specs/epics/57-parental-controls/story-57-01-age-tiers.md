@@ -45,7 +45,8 @@ copy. MaktabaKit bundles the file only as the vectors' source for tests.
 
 README §6.1's order: admin on the video; the strictest admin tier on a containing series,
 collection (manual or automatic), YouTube source or channel; the strictest metadata rating
-(Plex, guide, YouTube `age_limit`, plugin); the library's default; unrated. The result goes in
+(Plex, guide, YouTube `age_limit`, plugin, and `detected` from the transcript when its confidence
+passes the line, 57.17); the library's default; unrated. The result goes in
 `videos.age_tier` with `age_tier_source`.
 
 - **Recompute** is a function `parental.Resolve(video)` called from: the admin routes below, the

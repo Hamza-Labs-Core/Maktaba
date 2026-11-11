@@ -182,7 +182,7 @@ No central check; each package scopes by library:
 | Enrichment | `media_metadata_enrichment.mapped.content_rating` (0077), read by the context card (`contextcard/contextcard.go:136`) | nothing writes it |
 | YouTube | `youtube_videos` (0090): title, date, duration, tab, description | no age field; yt-dlp's `age_limit` is not kept |
 | Classification | `videos.content_type` (0045), `video_classification`, `media_entities` (0074), tags (0034), topics (0046, 0090) | useful for a library's default tier, not a rating |
-| Transcripts | `transcript_segments.search_tsv` (0016) | no screening (non-goal) |
+| Transcripts | `transcript_segments` (0016), with the LLM service in `pipeline/src/maktaba_pipeline/llm/` and the classify stages | not read for a rating today; 57.17 detects a tier from them |
 
 No rating column exists in any migration. The next free migration slot was 0216 at c4b6d541b; at 4ab79c132 it is 0220.
 

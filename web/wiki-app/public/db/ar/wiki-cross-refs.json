@@ -3,7 +3,7 @@
   "generated_for": "Maktaba",
   "totals": {
     "epics": 59,
-    "stories": 716,
+    "stories": 720,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -404,8 +404,8 @@
     {
       "id": "57",
       "slug": "parental-controls",
-      "title": "الرقابة الأبوية على iPhone وiPad، عبر «مدة استخدام الجهاز» من Apple",
-      "description": "الرقابة الأبوية على iPhone وiPad، عبر «مدة استخدام الجهاز» من Apple.\n\nالمتطلب: يجب أن يستطيع أحد الوالدين أن يعطي طفله جهاز iPhone أو iPad عليه Maktaba وهو مطمئن إلى أن الطفل لا يرى إلا ما يسمح به. ويجب أن يصح ذلك في كل مكان قد يظهر فيه المحتوى، على شبكة المنزل وعبر Maktaba Cloud، وألّا يستطيع أي تطبيق، معدَّلًا كان أو لا، الالتفاف عليه. أما اليوم فالقيد الوحيد هو المكتبات التي يستطيع المستخدم قراءتها (`library_acl`). وقد عدّت الملحمة 45 الرقابة الأبوية ناقصة وأرجأت قصة الملفات الشخصية برمز PIN (45.23).",
+      "title": "الرقابة الأبوية",
+      "description": "الرقابة الأبوية: قواعد المنزل على كل جهاز، مع «مدة استخدام الجهاز» من Apple.\n\nالمتطلب: يجب أن يستطيع أحد الوالدين أن يعطي طفله جهاز iPhone أو iPad عليه Maktaba وهو مطمئن إلى أن الطفل لا يرى إلا ما يسمح به. ويجب أن يصح ذلك في كل مكان قد يظهر فيه المحتوى، على شبكة المنزل وعبر Maktaba Cloud، وألّا يستطيع أي تطبيق، معدَّلًا كان أو لا، الالتفاف عليه. أما اليوم فالقيد الوحيد هو المكتبات التي يستطيع المستخدم قراءتها (`library_acl`). وقد عدّت الملحمة 45 الرقابة الأبوية ناقصة وأرجأت قصة الملفات الشخصية برمز PIN (45.23).",
       "readme": "specs/epics/57-parental-controls/README.md"
     },
     {
@@ -7298,6 +7298,42 @@
       "slug": "openapi-roles-rehearsal",
       "title": "OpenAPI واختبارات الأدوار وتمرين الالتفاف",
       "story_file": "specs/epics/57-parental-controls/story-57-13-openapi-roles-rehearsal.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.14",
+      "epic": 57,
+      "num": "14",
+      "slug": "time-rules",
+      "title": "حدود الوقت وفترات المشاهدة، يحفظها الجهاز الرئيسي",
+      "story_file": "specs/epics/57-parental-controls/story-57-14-time-rules.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.15",
+      "epic": 57,
+      "num": "15",
+      "slug": "time-on-clients",
+      "title": "حدود الوقت على كل عميل",
+      "story_file": "specs/epics/57-parental-controls/story-57-15-time-on-clients.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.16",
+      "epic": 57,
+      "num": "16",
+      "slug": "screen-time-rules",
+      "title": "قواعد وقت الجهاز الرئيسي عبر «مدة استخدام الجهاز»",
+      "story_file": "specs/epics/57-parental-controls/story-57-16-screen-time-rules.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.17",
+      "epic": 57,
+      "num": "17",
+      "slug": "detected-tiers",
+      "title": "فئات عمرية تُكتشف من النصوص المفرَّغة",
+      "story_file": "specs/epics/57-parental-controls/story-57-17-detected-tiers.md",
       "plan_files": []
     },
     {

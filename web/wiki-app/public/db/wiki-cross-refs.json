@@ -3,7 +3,7 @@
   "generated_for": "Maktaba",
   "totals": {
     "epics": 59,
-    "stories": 716,
+    "stories": 720,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -404,8 +404,8 @@
     {
       "id": "57",
       "slug": "parental-controls",
-      "title": "Parental controls on iPhone and iPad, on Apple's Screen Time",
-      "description": "Parental controls on iPhone and iPad, on Apple's Screen Time.\n\nRequirement: a parent must be able to hand a child an iPhone or iPad with Maktaba on it and know the child sees only what the parent allows. That has to hold everywhere content can appear, on the home network and through Maktaba Cloud, and no app, modified or not, may get around it. Today the only limit is which libraries a user can read (`library_acl`). Epic 45 listed parental controls as missing and shelved its profiles-with-a-PIN story (45.23).",
+      "title": "Parental controls",
+      "description": "Parental controls: the home's rules on every device, with Apple's Screen Time.\n\nRequirement: a parent must be able to hand a child an iPhone or iPad with Maktaba on it and know the child sees only what the parent allows. That has to hold everywhere content can appear, on the home network and through Maktaba Cloud, and no app, modified or not, may get around it. Today the only limit is which libraries a user can read (`library_acl`). Epic 45 listed parental controls as missing and shelved its profiles-with-a-PIN story (45.23).",
       "readme": "specs/epics/57-parental-controls/README.md"
     },
     {
@@ -7298,6 +7298,42 @@
       "slug": "openapi-roles-rehearsal",
       "title": "OpenAPI, role tests and the bypass rehearsal",
       "story_file": "specs/epics/57-parental-controls/story-57-13-openapi-roles-rehearsal.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.14",
+      "epic": 57,
+      "num": "14",
+      "slug": "time-rules",
+      "title": "Time limits and time slots, kept by the home",
+      "story_file": "specs/epics/57-parental-controls/story-57-14-time-rules.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.15",
+      "epic": 57,
+      "num": "15",
+      "slug": "time-on-clients",
+      "title": "Time limits on every client",
+      "story_file": "specs/epics/57-parental-controls/story-57-15-time-on-clients.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.16",
+      "epic": 57,
+      "num": "16",
+      "slug": "screen-time-rules",
+      "title": "The home's time rules through Screen Time",
+      "story_file": "specs/epics/57-parental-controls/story-57-16-screen-time-rules.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.17",
+      "epic": 57,
+      "num": "17",
+      "slug": "detected-tiers",
+      "title": "Tiers detected from transcripts",
+      "story_file": "specs/epics/57-parental-controls/story-57-17-detected-tiers.md",
       "plan_files": []
     },
     {

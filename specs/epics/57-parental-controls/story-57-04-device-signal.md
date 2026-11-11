@@ -24,7 +24,7 @@ home should use them to tighten, never to loosen.
 - **Rating limit**: `ManagedSettingsStore().effectiveMaximumMovieRating` and
   `effectiveMaximumTVShowRating`, read at sign-in and on every return to the foreground
   (`scenePhase == .active`). Watching for changes needs the Family Controls entitlement, which
-  this epic does not use (README decision 6).
+  only 57.16 asks for (README decision 6); this story does not depend on it.
 - **Region**: `Locale.current.region` is sent so the home picks the right table for the 0–1000
   values; the US anchors apply when the region has no table.
 - **Sending**: `POST /api/me/age-signal` whenever any value differs from what was last sent for

@@ -14,7 +14,7 @@ admin sets it up, while making it easy to set up.
 
 ### 1. What the update does
 
-- Migrations 0220–0222 add columns and tables; **no user becomes restricted**, no library gets a
+- Migrations 0220–0224 add columns and tables; **no user becomes restricted**, no library gets a
   default tier, no rule exists.
 - The background `parental_recompute` fills `age_tier` from ratings that already exist (Plex,
   guide, plugin `content_rating`), by library, newest first, at low priority.
@@ -91,4 +91,4 @@ release leaves the new tables unused. The `.down.sql` files drop them for the up
 | `api/internal/notify/` | the notice |
 | `api/internal/handlers/parental/signal.go` | no `ac` while disabled |
 | `apps/apple/Player/Family/FamilyView.swift` | banner |
-| `shared/db/migrations/0220–0222 .down.sql` | for the rehearsal |
+| `shared/db/migrations/0220–0224 .down.sql` | for the rehearsal |

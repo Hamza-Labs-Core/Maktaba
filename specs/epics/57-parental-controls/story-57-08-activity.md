@@ -21,6 +21,10 @@ the home, and without keeping more than is needed.
 | `asked`, `approved`, `denied` | 57.06 | the subject |
 | `pin_locked` | 57.06 | the guardian whose PIN locked |
 | `signal` | 57.04: a looser device signal waiting | the sign-in's device name |
+| `time_up`, `time_granted` | 57.14: the limit or a slot's end stopped playback; a guardian gave more time | the minutes |
+
+Activity also shows **time watched per day**, by library, read from `parental_time_usage`
+(57.14). It is the same count the limit uses, so the two never disagree.
 
 Not recorded: search terms, browsing, position within a video, IP addresses. For accounts with
 only a device signal (no policy), nothing is recorded.
