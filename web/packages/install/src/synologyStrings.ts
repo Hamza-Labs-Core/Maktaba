@@ -107,7 +107,7 @@ export const SYN = {
     "trouble.memory":
       "Setup says there is not enough memory: Maktaba needs 3.5 GiB. Add memory if the model takes it, or use the NAS as storage for a Maktaba home on another computer.",
     "trouble.port":
-      "Another app on the NAS holds port 8088, 8080 or 8081: Maktaba moves to a free port at the start, and setup and the log show the new one.",
+      "Another app on the NAS holds port 8088, 8080 or 8081: when it starts, Maktaba moves that port to a free one between 8780 and 8790. The container's log names the new port (if it was 8088, open http://<your NAS>:8780), and Settings → This machine shows what moved and which program holds the port.",
     "shot.guide-user": "The DSM user maktaba in User & Group, with no administrator rights",
     "shot.guide-uid": "The output of id maktaba, showing uid 1026 and group 100",
     "shot.guide-folder": "The docker/maktaba folder's permission: maktaba with Read/Write",
@@ -238,7 +238,7 @@ export const SYN = {
     "trouble.memory":
       "يقول الإعداد إن الذاكرة لا تكفي: يحتاج Maktaba إلى 3.5 GiB. أضف ذاكرة إن كان الطراز يقبلها، أو استخدم الجهاز للتخزين لمنزل Maktaba على حاسوب آخر.",
     "trouble.port":
-      "يشغل تطبيق آخر على الجهاز المنفذ 8088 أو 8080 أو 8081: ينتقل Maktaba إلى منفذ حر عند التشغيل، ويعرض الإعداد والسجل المنفذ الجديد.",
+      "يشغل تطبيق آخر على الجهاز المنفذ 8088 أو 8080 أو 8081: عند التشغيل ينقل Maktaba ذلك المنفذ إلى منفذ حر بين 8780 و8790. ويذكر سجل الحاوية المنفذ الجديد (إن كان 8088 فافتح ⁦http://<your NAS>:8780⁩)، وتعرض الإعدادات ← هذا الجهاز ما انتقل وأي برنامج يشغل المنفذ.",
     "shot.guide-user": "مستخدم DSM باسم maktaba في المستخدم والمجموعة، دون صلاحيات المسؤول",
     "shot.guide-uid": "ناتج الأمر id maktaba، ويُظهر المعرّف 1026 والمجموعة 100",
     "shot.guide-folder": "إذن المجلد docker/maktaba: المستخدم maktaba بالقراءة والكتابة",
@@ -272,7 +272,7 @@ export type Lang = keyof typeof SYN;
 
 // A path in Arabic text (/volume1/docker/maktaba, /dev/dri) is isolated left to right, so its
 // slashes stay where they are written ("/dev/dri." not "dev/dri/."); a mark before it goes.
-const PATH = /[\u200e\u200f]?(?<![\w/])(\/(?:[\w.-]*[\w-])?(?:\/[\w.-]*[\w-])*)/g;
+const PATH = /[\u200e\u200f]?(?<![\w/:])(\/(?:[\w.-]*[\w-])?(?:\/[\w.-]*[\w-])*)/g;
 
 export function st(lang: Lang, key: SynKey, vars: Record<string, string | number> = {}): string {
   const s = (SYN[lang][key] as string).replace(/\{(\w+)\}/g, (m, k: string) =>

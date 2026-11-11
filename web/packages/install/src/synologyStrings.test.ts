@@ -29,4 +29,13 @@ describe("paths in the Arabic text", () => {
     expect(st("ar", "field.gpu")).toContain("⁦/dev/dri⁩)");
     expect(st("en", "field.gpu")).not.toContain("⁦");
   });
+
+  it("leaves a slash between words, a command and a URL each in one piece", () => {
+    // "Read/Write" is no path
+    expect(st("ar", "step2.body")).not.toMatch(/Read⁦/);
+    // a whole command stays one run: "stat -c %g /dev/dri/renderD128", in that order
+    expect(st("ar", "field.renderGroup.help")).toMatch(/⁦stat -c %g ⁦\/dev\/dri\/renderD128⁩⁩$/);
+    // a URL is never split at its slashes
+    expect(st("ar", "trouble.port")).toContain("⁦http://<your NAS>:8780⁩");
+  });
 });
