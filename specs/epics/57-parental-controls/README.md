@@ -95,7 +95,7 @@ Checked again at 4ab79c132 (2026-11-10). Nothing in this epic is built yet. Thes
 
 | Change | What it means here |
 |---|---|
-| Slots 0216–0219 were taken by other work | this epic plans 0220–0222 (§6.5) |
+| Slots 0216–0219 were taken by other work | this epic plans 0220–0224 (§6.5) |
 | The settings table is `app_settings` (slot 0042: `key`, `value` jsonb) | `parental.enabled` and `parental.unrated_on_signal` are keys there |
 | Maktaba replaces Plex: the `plex_index` stage is retired (`pipeline/.../engine/retired.py`) and `extensions/plex_items.py` is gone; the `plex_items` rows stay | a Plex `contentRating` is a kept rating, read once by the recompute and never refreshed. No stage calls the recompute for it. A migration that later drops `plex_items` must first copy each rating into `videos.metadata.content_rating`. Plex live TV (`plex_livetv`) is unchanged (57.10) |
 | First-party stages run as plugins under their own Postgres roles (Epic 54; `tools/plugins/roles.py` writes the `fp_roles` migrations) | no stage writes `videos.age_tier`. The stage keeps its input (the YouTube import keeps `age_limit`) and the API's `parental_recompute` job writes the tier. A stage that writes a new column needs that column in its role's grants, in the same change |
