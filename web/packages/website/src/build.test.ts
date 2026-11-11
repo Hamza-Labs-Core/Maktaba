@@ -8,12 +8,31 @@ import { describe, expect, it } from "vitest";
 import * as b from "../scripts/build.mjs";
 // @ts-ignore
 import { page, twinOf } from "../scripts/shell.mjs";
+// @ts-ignore
+import { readPolicy, POLICY_FIELDS } from "../scripts/legal.mjs";
 
 const DIST: string = b.DIST;
 const REPO: string = b.REPO;
 const read = (rel: string) => fs.readFileSync(path.join(DIST, rel), "utf8");
 
 describe("the build's parts", () => {
+  it("60.05 T07: drops a placeholder figure whose screenshot is missing, keeps it once it exists", () => {
+    const fig = (shot: string) =>
+      `      <figure class="placeholder" data-shot="${shot}">\n        <figcaption>📷 <strong>Screenshot to come:</strong> x</figcaption>\n      </figure>\n`;
+    const html = `<li>\n      <p>Step one.</p>\n${fig("screenshots/qnap/a.en.png")}${fig("screenshots/qnap/b.en.png")}    </li>\n`;
+    const out = b.dropMissingFigures(html, (s: string) => s === "screenshots/qnap/b.en.png");
+    expect(out).toContain("<p>Step one.</p>");
+    expect(out).not.toContain('data-shot="screenshots/qnap/a.en.png"');
+    expect(out).toContain('data-shot="screenshots/qnap/b.en.png"');
+    expect(b.dropMissingFigures(html, () => false)).toBe(
+      "<li>\n      <p>Step one.</p>\n    </li>\n"
+    );
+    // the real lookup: a file the install site has, and one it does not
+    expect(b.shotExists("install/install.css")).toBe(true);
+    expect(b.shotExists("screenshots/truenas/no-such.en.png")).toBe(false);
+    expect(b.shotExists("../../../LICENSE")).toBe(false);
+  });
+
   it("reads a page source's leading comment", () => {
     const p = b.parsePage("<!--\ntitle: T: x\ndescription: D\n-->\n<h1>x</h1>\n");
     expect(p).toEqual({ title: "T: x", description: "D", body: "<h1>x</h1>\n" });
@@ -100,6 +119,108 @@ describe("the built site (dist/)", () => {
     for (const src of docker.match(/(?:src|href)="\/[^"]+\.(?:js|css)"/g) ?? [])
       expect(src).toMatch(/="\/(install\/)?assets\//);
     expect(fs.existsSync(path.join(DIST, "install/assets"))).toBe(true);
+  });
+
+  it("60.05 T01: the nine guides and the chooser in both languages, the install assets", () => {
+    const guides = [
+      "nas",
+      "docker",
+      "synology",
+      "truenas",
+      "unraid",
+      "qnap",
+      "ugreen",
+      "after-setup",
+      "troubleshooting",
+    ];
+    const dirs = (rel: string) =>
+      fs
+        .readdirSync(path.join(DIST, rel), { withFileTypes: true })
+        .filter((e) => e.isDirectory() && fs.existsSync(path.join(DIST, rel, e.name, "index.html")))
+        .map((e) => e.name)
+        .sort();
+    expect(dirs("install")).toEqual([...guides].sort());
+    expect(dirs("ar/install")).toEqual([...guides].sort());
+    for (const f of ["install/index.html", "ar/install/index.html"]) {
+      const html = read(f);
+      const prefix = f.startsWith("ar/") ? "/ar" : "";
+      for (const g of guides)
+        expect(html, `${f}: ${g}`).toContain(`href="${prefix}/install/${g}/"`);
+    }
+    expect(fs.readdirSync(path.join(DIST, "install/assets")).some((f) => f.endsWith(".js"))).toBe(
+      true
+    );
+  });
+
+  it("60.05 T07: no guide shows a screenshot still to come", () => {
+    for (const g of ["truenas", "unraid", "qnap", "ugreen"])
+      for (const f of [`install/${g}/index.html`, `ar/install/${g}/index.html`]) {
+        expect(read(f), f).not.toContain('class="placeholder"');
+        expect(read(f), f).not.toContain("Screenshot to come");
+      }
+  });
+
+  it("60.07: the legal pages in both languages, dated", () => {
+    for (const n of ["privacy", "terms", "copyright"])
+      for (const f of [`legal/${n}/index.html`, `ar/legal/${n}/index.html`]) {
+        const html = read(f);
+        expect(html, f).toMatch(/<time datetime="\d{4}-\d{2}-\d{2}">/);
+        expect(html, f).toContain(`data-legal="${n}"`);
+        expect(html, f).toContain('<meta name="maktaba-site" content="maktaba-website" />');
+      }
+  });
+
+  it("60.07 T03 (the build): the copyright page gives the agent's email and the notice's contents, and no form or script", () => {
+    for (const f of ["legal/copyright/index.html", "ar/legal/copyright/index.html"]) {
+      const html = read(f);
+      expect(html, f).toContain('href="mailto:copyright@maktaba.tv"');
+      expect(html, f).toMatch(
+        /<section aria-labelledby="notice">[\s\S]*?<ol>\n(<li>[\s\S]*?<\/li>\n){7}<\/ol>/
+      );
+      expect(html, f).not.toContain("<form");
+      expect(html, f).not.toContain("<script");
+      expect(html, f).not.toContain("challenges.cloudflare.com/turnstile/v0/api.js");
+    }
+    expect(
+      fs.readdirSync(path.join(DIST, "assets")).some((f) => f.startsWith("copyright-form-"))
+    ).toBe(false);
+  });
+
+  it("60.07 T01: the privacy page's cloud section equals `go run ./cmd/privacy-json`", () => {
+    const policy = readPolicy(REPO);
+    const html = read("legal/privacy/index.html");
+    const unesc = (s: string) =>
+      s
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, "&");
+    const field = (f: string) => {
+      const m = html.match(new RegExp(`<dd data-field="${f}">([\\s\\S]*?)</dd>`));
+      expect(m, f).not.toBeNull();
+      return m![1];
+    };
+    for (const f of POLICY_FIELDS as string[]) {
+      const v = policy[f];
+      const dd = field(f);
+      if (Array.isArray(v))
+        expect(
+          [...dd.matchAll(/<li>([^<]*)<\/li>/g)].map((m) => unesc(m[1])),
+          f
+        ).toEqual(v);
+      else if (f === "retention_days") expect(dd, f).toBe(`${v} days, then deleted`);
+      else if (f === "contact") expect(dd, f).toBe(`<a href="mailto:${v}">${v}</a>`);
+      else expect(unesc(dd), f).toBe(v);
+    }
+    // the page's date is never older than the policy's
+    const date = html.match(/<time datetime="([\d-]+)">/)![1];
+    expect(date >= policy.updated_at).toBe(true);
+    // the Arabic page lists as many values as the policy has
+    const ar = read("ar/legal/privacy/index.html");
+    for (const f of ["data_categories", "not_collected", "rights"]) {
+      const m = ar.match(new RegExp(`<dd data-field="${f}">([\\s\\S]*?)</dd>`))!;
+      expect((m[1].match(/<li>/g) ?? []).length, f).toBe(policy[f].length);
+    }
   });
 
   it("links only to pages it has, or to the latest release, GitHub and maktaba.dev", () => {

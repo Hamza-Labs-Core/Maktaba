@@ -72,3 +72,27 @@ func TestNotesNameTheRepositoriesAndTheTap(t *testing.T) {
 		}
 	}
 }
+
+// Story 60.05 T02: every maktaba.tv mention in the notes is a full https://maktaba.tv/…/ link,
+// which GitHub renders as a link and the link check (links.mjs) resolves as written.
+func TestNotesMaktabaLinksAreFullLinks(t *testing.T) {
+	notes, err := Notes("v1.5.0", "", "arm64", Where{PackagesURL: "https://packages.example", TapRepo: "Hamza-Labs-Core/homebrew-tap"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	links := maktabaLinks(notes)
+	for _, want := range []string{"https://maktaba.tv/install/synology/", "https://maktaba.tv/install/truenas/"} {
+		found := false
+		for _, l := range links {
+			found = found || l == want
+		}
+		if !found {
+			t.Errorf("no %s in the notes' links %v", want, links)
+		}
+	}
+	for _, l := range links {
+		if !strings.HasPrefix(l, "https://maktaba.tv/") || !strings.HasSuffix(l, "/") {
+			t.Errorf("%s is not a full https://maktaba.tv/…/ link", l)
+		}
+	}
+}

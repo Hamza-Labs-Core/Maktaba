@@ -120,6 +120,25 @@ describe("headers (T02)", () => {
       "https://challenges.cloudflare.com",
     ]);
     expect(CSP_COPYRIGHT).toContain("frame-ancestors 'none'");
+    // T05: each directive names exactly what the form needs
+    expect(CSP_COPYRIGHT).toContain("script-src 'self' https://challenges.cloudflare.com;");
+    expect(CSP_COPYRIGHT).toContain("frame-src https://challenges.cloudflare.com;");
+    expect(CSP_COPYRIGHT).toContain("connect-src 'self' https://api.maktaba.tv;");
+    expect(CSP_COPYRIGHT).toContain("form-action https://api.maktaba.tv;");
+    expect(CSP_DEFAULT).toContain("form-action 'none'");
+  });
+
+  it("T05: the Worker sends the copyright CSP on the copyright page, in both languages, only", async () => {
+    for (const [p, want] of [
+      ["/legal/copyright/", CSP_COPYRIGHT],
+      ["/ar/legal/copyright/", CSP_COPYRIGHT],
+      ["/legal/privacy/", CSP_DEFAULT],
+      ["/ar/legal/terms/", CSP_DEFAULT],
+      ["/", CSP_DEFAULT],
+    ] as const) {
+      const res = await get(`https://maktaba.tv${p}`);
+      expect(res.headers.get("Content-Security-Policy"), p).toBe(want);
+    }
   });
 });
 

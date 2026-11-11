@@ -26,9 +26,16 @@ const reps = { install: ["/install/nas/"], problems: [] };
 const hand = ["/", "/ar/", "/404", "/ar/404"];
 
 test("the hand-made pages: their paths, the 404 at /404 (status 200, which Lighthouse measures)", () => {
-  assert.deepEqual(handMadeUrls(), hand);
+  // the front door, the 404, the install chooser (60.05) and the legal pages (60.07)
+  const all = [
+    ...hand,
+    "/install/",
+    "/ar/install/",
+    ...["privacy", "terms", "copyright"].flatMap((n) => [`/legal/${n}/`, `/ar/legal/${n}/`]),
+  ];
+  assert.deepEqual(handMadeUrls(), all);
   const re = new RegExp(handMadePattern());
-  for (const u of hand) assert.ok(re.test(`http://127.0.0.1:8787${u}`), u);
+  for (const u of all) assert.ok(re.test(`http://127.0.0.1:8787${u}`), u);
   assert.ok(!re.test("http://127.0.0.1:8787/install/nas/"));
   // the config the runs use carries the pattern, never the placeholder
   assert.ok(!JSON.stringify(config()).includes("HAND_MADE"));

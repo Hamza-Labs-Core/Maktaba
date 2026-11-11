@@ -37,11 +37,13 @@ function csp(over: Record<string, string>): string {
 export const CSP_DEFAULT = csp({});
 
 /** The copyright page only (60.07): its notice form needs Turnstile and posts to the cloud
- * API. No other path gets either origin. */
+ * API (as JSON from its script, or as a plain form without JavaScript: form-action). No other
+ * path gets either origin. */
 export const CSP_COPYRIGHT = csp({
   "script-src": "'self' https://challenges.cloudflare.com",
   "frame-src": "https://challenges.cloudflare.com",
   "connect-src": "'self' https://api.maktaba.tv",
+  "form-action": "https://api.maktaba.tv",
 });
 
 const COPYRIGHT = /^(\/ar)?\/legal\/copyright\/?$/;

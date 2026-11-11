@@ -91,6 +91,8 @@ function website(over = {}) {
     "GET /": () => [200, `<html lang="en" dir="ltr"><a id="lang-switch" class="lang" href="/ar/">العربية</a>${SITE}`, HEADERS],
     "GET /ar/": () => [200, `<html lang="ar" dir="rtl">${SITE}`, HEADERS],
     "GET /install/docker/": () => [200, '<main id="app"></main>'],
+    "GET /install/": () => [200, `<a href="/install/nas/">NAS</a>${SITE}`],
+    "GET /legal/privacy/": () => [200, `<article data-legal="privacy"><dl data-policy="CurrentPolicy"></dl></article>${SITE}`],
     "GET /this-does-not-exist": () => [404, `<meta name="maktaba-page" content="404" />${SITE}`],
     "GET /ar/this-does-not-exist": () => [404, '<html lang="ar" dir="rtl"><meta name="maktaba-page" content="404" />'],
     "GET /schema/log-line.json": () => [200, '{\n  "$id": "https://maktaba.tv/schema/log-line.json"\n}'],

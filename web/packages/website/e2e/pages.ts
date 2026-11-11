@@ -22,9 +22,10 @@ export interface SitePage {
   file: string;
 }
 
-/** The family a page's English path belongs to, or "hand-made". */
+/** The family a page's English path belongs to, or "hand-made". A family's own index (the
+ * /install/ chooser) is a hand-made page (build.mjs's PAGES), not one the family generates. */
 export function kindOf(enPath: string): string {
-  const m = enPath.match(/^\/(install|problems|help)\//);
+  const m = enPath.match(/^\/(install|problems|help)\/[^/]/);
   return m ? m[1] : "hand-made";
 }
 
