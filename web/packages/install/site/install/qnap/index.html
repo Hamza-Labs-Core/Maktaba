@@ -97,8 +97,15 @@
       <p>Over SSH, run:</p>
       <pre><code>docker exec -it maktaba /opt/maktaba/server/bin/maktaba-server container setup</code></pre>
       <p>
-        Answer its questions (the admin's name and password, your libraries). Maktaba starts by
-        itself when it finishes. Open <code>http://&lt;your NAS&gt;:8088</code>.
+        Answer its questions: a name for the admin account (not <code>admin</code>, which Maktaba
+        keeps for itself), its password, and the folders with your videos. The NAS needs the
+        internet for this step: setup downloads the transcription and search tools (about 2 GB) and
+        the speech models. Maktaba starts by itself when it finishes. Open
+        <code>http://&lt;your NAS&gt;:8088</code>. Sign in, then add a library for each folder:
+        <strong>Manage → Manage libraries → Add library</strong> (<a
+          href="/install/after-setup/#libraries"
+          >After setup</a
+        >).
       </p>
       <h2>After setup</h2>
       <p>
