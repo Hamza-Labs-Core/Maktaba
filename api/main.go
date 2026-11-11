@@ -589,6 +589,7 @@ func runServe() error {
 			// Epic 57: the restricted accounts' cache and the age tiers' recompute, for
 			// the surfaces that filter by them
 			parentalHandles := &router.ParentalHandles{}
+			streamSigner := streamURLSigner(auth.keys, logger)
 			router.MountP6(r, router.P6Deps{
 				EventHub:     eventHub,
 				OnParental:   func(c *parental.Cache) { parentalHandles.Cache = c },
@@ -600,6 +601,7 @@ func runServe() error {
 				OnQueues: func(q *queues.Handler) {
 					_, remoteCtl, mountRemote = router.WireP32Remote(q, router.P32RemoteDeps{
 						DB: appDB, Secrets: homeSecrets, Logger: logger, Notifier: notifyHub, Loops: loops,
+						Parental: func() *parental.Cache { return parentalHandles.Cache },
 					})
 				},
 				DB:                   appDB,
@@ -612,7 +614,7 @@ func runServe() error {
 				BusResettle:          func(ctx context.Context) string { return pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping) },
 				EnrichAutoAcceptCtx:  busCtx,
 				PerfRegistry:         perfRegistry,
-				URLSigner:            streamURLSigner(auth.keys, logger),
+				URLSigner:            streamSigner,
 			})
 			logger.Info("p6: handlers mounted", "event", "p6_mounted")
 
@@ -715,6 +717,8 @@ func runServe() error {
 				DataDir:       statsDataDir,
 				Secrets:       homeSecrets,
 				RemoteInfo:    router.RemoteAvailability(remoteCtl),
+				Parental:      parentalHandles.Cache,
+				ChannelSigner: channelSigner(streamSigner),
 			})
 			if mountRemote != nil {
 				mountRemote(r) // Epic 32 story 32.6: /api/tv/remote

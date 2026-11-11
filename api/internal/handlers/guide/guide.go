@@ -12,6 +12,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 // Handler bundles deps for the guide/EPG read surface.
@@ -22,6 +23,9 @@ type Handler struct {
 	// (MAKTABA_PUBLIC_BASE_URL): the XMLTV's programme icons point at its
 	// image routes. Empty: they are the channel's logo.
 	StreamBase string
+	// Live is the parental filter over channels and programmes (Epic 57, story
+	// 57.10; parental.go). The router always sets it; nil filters nothing.
+	Live *parental.LiveTV
 }
 
 // Mount wires the guide routes. The static segments (guide / now / xmltv
@@ -107,6 +111,11 @@ func (h *Handler) Grid(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("list channels").Wrap(err))
 		return
 	}
+	chans, lf, err := h.filter(r, p, chans, start, end)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("load parental policy").Wrap(err))
+		return
+	}
 	ids := metaIDs(chans)
 	rows, err := h.repo().programsOverlapping(r.Context(), ids, start, end)
 	if err != nil {
@@ -116,7 +125,7 @@ func (h *Handler) Grid(w http.ResponseWriter, r *http.Request) {
 	now := h.now()
 	byChan := map[string][]Block{}
 	for _, pr := range rows {
-		byChan[pr.ChannelID] = append(byChan[pr.ChannelID], toBlock(pr, now))
+		byChan[pr.ChannelID] = append(byChan[pr.ChannelID], lf.block(pr, now))
 	}
 	// Filler collapse (rules tv.guide_*) defaults on (AC10); ?collapse=false|off|0 disables.
 	collapse := true
@@ -174,6 +183,16 @@ func (h *Handler) ChannelGuide(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, e)
 		return
 	}
+	kept, lf, err := h.filter(r, p, []ChannelMeta{c}, start, end)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("load parental policy").Wrap(err))
+		return
+	}
+	if len(kept) == 0 {
+		// a channel above the account's limit answers as one that does not exist
+		httperror.Write(w, r, httperror.NotFound("channel "+id))
+		return
+	}
 	rows, err := h.repo().programsOverlapping(r.Context(), []string{id}, start, end)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("read programs").Wrap(err))
@@ -182,7 +201,7 @@ func (h *Handler) ChannelGuide(w http.ResponseWriter, r *http.Request) {
 	now := h.now()
 	blocks := make([]Block, 0, len(rows))
 	for _, pr := range rows {
-		blocks = append(blocks, toBlock(pr, now))
+		blocks = append(blocks, lf.block(pr, now))
 	}
 	if v := r.URL.Query().Get("collapse"); v != "false" && v != "off" && v != "0" {
 		blocks = collapseFiller(blocks, loadFillerRules(r.Context(), h.DB), c.Name, now)
@@ -211,6 +230,12 @@ func (h *Handler) Now(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := h.now()
+	// the current programme and the next: the next may start any time up to a day on
+	chans, lf, err := h.filter(r, p, chans, now.Add(-nowLookback), now.Add(nowLookahead))
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("load parental policy").Wrap(err))
+		return
+	}
 	type nowEntry struct {
 		Channel ChannelHeader `json:"channel"`
 		Current *Block        `json:"current"`
@@ -228,11 +253,11 @@ func (h *Handler) Now(w http.ResponseWriter, r *http.Request) {
 		}
 		e := nowEntry{Channel: toHeader(c), OnAir: live[strings.ToLower(c.ID)]}
 		if cur != nil {
-			b := toBlock(*cur, now)
+			b := lf.block(*cur, now)
 			e.Current = &b
 		}
 		if next != nil {
-			b := toBlock(*next, now)
+			b := lf.block(*next, now)
 			e.Next = &b
 		}
 		out = append(out, e)
@@ -242,6 +267,13 @@ func (h *Handler) Now(w http.ResponseWriter, r *http.Request) {
 		"channels":    out,
 	})
 }
+
+// The window the parental filter judges for /now: the programme on air may have
+// started long ago and the next may be far off; one the window misses is masked.
+const (
+	nowLookback  = 24 * time.Hour
+	nowLookahead = 48 * time.Hour
+)
 
 // ChannelHeader is the channel descriptor embedded in guide payloads.
 type ChannelHeader struct {

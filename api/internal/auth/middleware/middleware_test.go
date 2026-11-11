@@ -375,7 +375,9 @@ func TestDefaultPublicAllowlistIsPinned(t *testing.T) {
 		"/api/discovery/home", // Epic 42 story 42.2: the home's identity for the apps
 		"/api/cluster/join", "/api/cluster/join/*", "/api/cluster/agent",
 		"/api/cluster/link", "/api/cluster/link/stream", "/api/cluster/ca.crt", "/api/cluster/link/pull",
-		"/api/cluster/link/local/*", "/api/tv/remote/webhook", "/api/cluster/self", "/api/cluster/moved/*",
+		"/api/cluster/link/local/*", "/api/tv/remote/webhook",
+		"/api/cluster/self", "/api/cluster/moved/*",
+		"/api/tv/parental/verdict", // Epic 57 story 57.10: the local token is the credential
 		"/api/cluster/kept-aside/report", "/api/cluster/term-claim",
 		"/api/cluster/sso/authorize", "/api/cluster/sso/start", "/api/cluster/sso/callback",
 		"/api/cluster/sso/exchange", "/api/cluster/delegate/introspect", "/api/cluster/delegate/signout",
