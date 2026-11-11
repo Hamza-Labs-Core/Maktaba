@@ -23,6 +23,7 @@ and CI. The source lives at
 - [Maktaba on a NAS: how it fits together](nas.md): one image for any user, what the server
   finds out for itself, the install files, maktaba.tv's guides, the strings and the tests.
 - [Maktaba on a NAS: the TrueNAS app](nas-apps.md): the catalog app, its CI with the catalog's own tooling, and how releases move it.
+- [maktaba.tv: how the website is built and deployed](website.md): the build, the Worker, the deploy with its preview smoke, going live, and rolling back.
 - [Security rules for plugins and contributors](../security/conformance.md): what
   plugins and contributors must follow, and how to report a vulnerability.
 

@@ -1,0 +1,81 @@
+/* maktaba.tv: a neutral placeholder stylesheet. The design of story 60.01 part A replaces this
+   file and the shell (scripts/shell.mjs). Logical properties only (README §6.5): the same rules
+   lay out the English and the Arabic pages. */
+:root {
+  color-scheme: light dark;
+  --text: #1d1d1f;
+  --muted: #55555a;
+  --bg: #ffffff;
+  --link: #0b57d0;
+  --rule: #d8d8dc;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #f2f2f4;
+    --muted: #b4b4ba;
+    --bg: #141416;
+    --link: #8ab4f8;
+    --rule: #3a3a3e;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    1.0625rem/1.6 system-ui,
+    -apple-system,
+    "Segoe UI",
+    "Noto Sans Arabic",
+    sans-serif;
+}
+a {
+  color: var(--link);
+}
+.site-header,
+main,
+.site-footer {
+  max-inline-size: 44rem;
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
+.site-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  padding-block: 1rem;
+  border-block-end: 1px solid var(--rule);
+}
+.site-header nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+}
+.wordmark {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: none;
+}
+main {
+  padding-block: 1.5rem 3rem;
+}
+.lead {
+  color: var(--muted);
+  font-size: 1.15rem;
+}
+section {
+  margin-block-start: 2rem;
+}
+.site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  padding-block: 1.5rem;
+  border-block-start: 1px solid var(--rule);
+  font-size: 0.9rem;
+}
