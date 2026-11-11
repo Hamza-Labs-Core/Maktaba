@@ -34,7 +34,7 @@ operation in the OpenAPI description):
 | `GET /api/stream/capabilities` (gains `software_only`); `POST /api/stream/sessions` (503 `transcode_busy`) | 59.05 | as today | `StreamCapabilities` schema, `/sessions` 503 | as today |
 | `GET /api/components` and its component and machine views (gain `degraded_reason`, `degraded_reason_params`) | 59.07 (#1135) | admin | `listComponents` | table; `TestDegradedReason` |
 | `GET /api/system/updates` (gains `container`: the volume's runtime beside the image, which runs and why) | 59.12 | every signed-in user, as today; `container` only to admins | `getSystemUpdates` | `system` `TestStatusHandlerContainerBlockIsAdminsOnly` |
-| the NAS shares routes | 59.13 | admin | pending #1140 | pending #1140 |
+| `GET /api/cluster/storage/home-shares`, `PUT /api/cluster/storage/home-shares` (a NAS home's own folders as SMB shares) | 59.13 | admin | `getHomeShares`, `putHomeShares` | table; `cluster` `TestHomeSharesRoles` |
 
 Stories 59.01, 59.09, 59.10, 59.11 and 59.14 add no route.
 
