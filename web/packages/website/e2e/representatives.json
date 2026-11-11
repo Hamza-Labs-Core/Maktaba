@@ -1,11 +1,14 @@
 {
-  "$comment": "Story 60.04: the pages that stand for each generated family on pull requests and deploys (Lighthouse, three runs each, and the visual references). e2e/representatives.spec.ts keeps each claim true (the longest is the longest, ...). The install guides all have visual references; these are their Lighthouse sample. problems (60.06) and help (60.12) fill theirs when their pages ship.",
+  "$comment": "Story 60.04: the pages that stand for each generated family on pull requests and deploys (Lighthouse, three runs each, and the visual references). e2e/representatives.spec.ts keeps each claim true (the longest is the longest, ...). The install guides all have visual references; these are their Lighthouse sample. problems (60.06): the longest and the shortest page; its help-link representative joins when story 60.12 builds the help topics the registry names (until then no problem page has a help link to show). help (60.12) fills its own when its pages ship.",
   "install": {
     "longest": "/install/synology/",
     "shortest": "/install/docker/",
     "table": "/install/nas/",
     "code": "/install/truenas/"
   },
-  "problems": {},
+  "problems": {
+    "longest": "/problems/node-signature/",
+    "shortest": "/problems/invalid-query/"
+  },
   "help": {}
 }

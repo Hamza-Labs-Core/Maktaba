@@ -36,8 +36,9 @@ export const TARGETS = {
 };
 
 // maktaba.tv, the website (Epic 60, story 60.03). The checks a version's preview URL can
-// answer; the install chooser (60.05) and the privacy page (60.07, with the relay's policy in
-// it) are here, and the problem pages (60.06) add theirs as they ship.
+// answer; the install chooser (60.05), the privacy page (60.07, with the relay's policy in it)
+// and a problem page and the index (60.06: not-found, a slug the registry has, in both
+// languages) are here.
 const WEBSITE = "maktaba.tv";
 const SITE = '<meta name="maktaba-site" content="maktaba-website" />';
 const WEBSITE_PAGES = [
@@ -56,6 +57,9 @@ const WEBSITE_PAGES = [
   { host: WEBSITE, path: "/install/docker/", status: 200, marker: '<main id="app">' },
   { host: WEBSITE, path: "/install/", status: 200, marker: ['href="/install/nas/"', SITE] },
   { host: WEBSITE, path: "/legal/privacy/", status: 200, marker: ['data-legal="privacy"', 'data-policy="CurrentPolicy"', SITE] },
+  { host: WEBSITE, path: "/problems/not-found/", status: 200, marker: ['data-problem="not-found"', "https://maktaba.tv/problems/not-found", SITE] },
+  { host: WEBSITE, path: "/ar/problems/not-found/", status: 200, marker: ['<html lang="ar" dir="rtl">', 'data-problem="not-found"', SITE] },
+  { host: WEBSITE, path: "/problems/", status: 200, marker: ['href="/problems/not-found/"', SITE] },
   { host: WEBSITE, path: "/this-does-not-exist", status: 404, marker: ['content="404"', SITE] },
   { host: WEBSITE, path: "/ar/this-does-not-exist", status: 404, marker: ['<html lang="ar" dir="rtl">', 'content="404"'] },
   { host: WEBSITE, path: "/schema/log-line.json", status: 200, marker: '"$id": "https://maktaba.tv/schema/log-line.json"' },

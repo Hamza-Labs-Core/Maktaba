@@ -17,11 +17,14 @@
 //       layout-shift assertion; exits 1 when it does not
 //
 // The sets:
-//   - pr (pull requests and the deploy run): every hand-made page and each family's
-//     representatives (e2e/representatives.json), both languages, three runs each, the median
-//     run judged; and, when --changed lists a file a family is generated from (its generator,
-//     its source, or the shell it is rendered in), every other page of that family, one run each;
-//     --extra adds URLs measured three times (the deploy: the pages the last nightly failed).
+//   - pr (pull requests and the deploy run): every hand-made page (with the families' own
+//     indexes, /problems/) and each family's representatives (e2e/representatives.json), both
+//     languages, three runs each, the median run judged; and, when --changed lists a file a
+//     family is generated from (its generator, its source, or the shell it is rendered in), the
+//     other pages of that family, one run each: all of them up to FAMILY_SAMPLE, and beyond that
+//     FAMILY_SAMPLE spread evenly over it (the problem pages are one template over 288 entries,
+//     which the nightly sweeps whole; README §11 decision 11); --extra adds URLs measured three
+//     times (the deploy: the pages the last nightly failed).
 //   - all (the nightly sweep): every page in both languages, one run each, split into --shard I/N
 //     (every Nth page). With --remeasure 3, a URL that fails is measured three more times and
 //     judged on their median: a page under the bar on that median fails, with no other retry.
@@ -66,13 +69,40 @@ export function familiesChanged(changed) {
   return [...out].sort();
 }
 
+/** The generated families' own indexes: one page each, measured as the hand-made pages are. */
+export const FAMILY_INDEXES = ["/problems/"];
+
+/** The most pages of a changed family a pull request measures once each (beyond its
+ * representatives): a family larger than this is sampled evenly, both languages. */
+export const FAMILY_SAMPLE = 16;
+
 /** The hand-made pages' URLs: their own path, or /404 for the 404 page (the Worker answers a
  * missing path with it and status 404, which Lighthouse refuses to measure; /404 is the same
- * page with 200). */
-export function handMadeUrls(pages = PAGES) {
-  return pages.map((p) =>
-    p.path === null ? `/${p.out.replace(/\.html$/, "")}` : inLang(p.lang, p.path)
-  );
+ * page with 200); then the families' indexes, in both languages. */
+export function handMadeUrls(pages = PAGES, indexes = FAMILY_INDEXES) {
+  return [
+    ...pages.map((p) =>
+      p.path === null ? `/${p.out.replace(/\.html$/, "")}` : inLang(p.lang, p.path)
+    ),
+    ...indexes.flatMap((u) => [u, inLang("ar", u)]),
+  ];
+}
+
+/** `max` URLs spread evenly over a family's pages (each English page with its Arabic twin, when
+ * it has one), or all of them when there are no more than `max`. */
+export function sample(urls, max = FAMILY_SAMPLE) {
+  const sorted = [...new Set(urls)].sort();
+  if (sorted.length <= max) return sorted;
+  const has = new Set(sorted);
+  const en = sorted.filter((u) => !u.startsWith("/ar/"));
+  const k = Math.max(1, Math.floor(max / 2));
+  const picked = new Set();
+  for (let i = 0; i < k; i++) {
+    const u = en[Math.round((i * (en.length - 1)) / Math.max(1, k - 1))];
+    picked.add(u);
+    if (has.has(inLang("ar", u))) picked.add(inLang("ar", u));
+  }
+  return [...picked].sort();
 }
 
 /** lighthouserc's pattern for the hand-made pages (the byte-weight bar). */
@@ -127,10 +157,9 @@ export function pick({
   }
   if (set !== "pr") throw new Error(`lighthouse.mjs: unknown set ${set}`);
   const repeated = new Set([...hand, ...Object.values(reps).flat().flatMap(both), ...extra]);
-  const families = new Set(familiesChanged(changed));
-  const single = pages
-    .filter((p) => families.has(p.family) && !repeated.has(p.url))
-    .map((p) => p.url);
+  const single = familiesChanged(changed).flatMap((family) =>
+    sample(pages.filter((p) => p.family === family && !repeated.has(p.url)).map((p) => p.url))
+  );
   return { repeated: [...repeated].sort(), single: [...new Set(single)].sort() };
 }
 

@@ -2,7 +2,7 @@
 // the generated families' representatives) at 360, 768 and 1280 px, English and Arabic, dark;
 // each hand-made page also light at 1280. Full page, animations off, the date frozen, fonts
 // loaded first; compared by pixels (maxDiffPixelRatio 0.001, playwright.config.ts). On a
-// mismatch the expected, actual and diff images land in test-results/ (website-visual-diff).
+// mismatch the expected, actual and diff images land in test-results/ (website-visual-diff-<shard>).
 //
 // The references are rendered only in the CI runner's image (WEBSITE_VISUAL=1, set by
 // _website.yml's container job and scripts/e2e-update.sh), never on a Mac: elsewhere the spec

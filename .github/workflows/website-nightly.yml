@@ -1,5 +1,5 @@
 # maktaba.tv's nightly quality sweep (Epic 60 story 60.04): Lighthouse on mobile on every page
-# of main in both languages, one run per URL, in eight shards of 15 minutes each, the whole within
+# of main in both languages, one run per URL, in sixteen shards of 15 minutes each, the whole within
 # 60 minutes. A URL under the bar is measured three more times and judged on their median; a page
 # whose median is under 95 (or with any layout shift, or a hand-made page over 500 KB) fails.
 #
@@ -35,14 +35,14 @@ jobs:
       quality: false
 
   sweep:
-    name: sweep (shard ${{ matrix.shard }}/8)
+    name: sweep (shard ${{ matrix.shard }}/16)
     needs: [build]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-noble
       options: --ipc=host --init
@@ -113,9 +113,9 @@ jobs:
           done
           rc=0
           if [ "$up" = 1 ]; then
-            node scripts/lighthouse.mjs run --set all --shard "$SHARD/8" --remeasure 3 \
+            node scripts/lighthouse.mjs run --set all --shard "$SHARD/16" --remeasure 3 \
               --base http://127.0.0.1:8787 --out "lighthouse-out/shard-$SHARD" \
-              --title "maktaba.tv nightly: shard $SHARD/8" || rc=$?
+              --title "maktaba.tv nightly: shard $SHARD/16" || rc=$?
           else
             echo "::error::wrangler dev never answered on 127.0.0.1:8787"
             rc=1
@@ -238,11 +238,11 @@ jobs:
       - name: The pages under the bar
         run: |
           mkdir -p results
-          for i in 1 2 3 4 5 6 7 8; do
+          for i in $(seq 1 16); do
             src="shards/website-lighthouse-shard-$i/lighthouse-out/shard-$i"
             if [ -d "$src" ]; then cp -r "$src" "results/shard-$i"; fi
           done
-          node scripts/lighthouse.mjs verdict --shards 8 --in results --out failures.json
+          node scripts/lighthouse.mjs verdict --shards 16 --in results --out failures.json
 
       - name: Upload the failing pages
         if: always()

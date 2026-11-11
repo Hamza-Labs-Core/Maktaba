@@ -250,18 +250,18 @@ def test_state_fails_on_an_api_error(tmp_path: Path) -> None:
     assert code == 1 and "state" not in out
 
 
-def test_the_nightly_sweeps_every_page_in_eight_bounded_shards() -> None:
+def test_the_nightly_sweeps_every_page_in_sixteen_bounded_shards() -> None:
     wf = yaml.safe_load(NIGHTLY.read_text())
     on = wf.get("on", wf.get(True))
     assert set(on) == {"schedule", "workflow_dispatch"}
     jobs = wf["jobs"]
     assert jobs["build"]["with"] == {"quality": False}
     sweep = jobs["sweep"]
-    assert sweep["strategy"]["matrix"]["shard"] == list(range(1, 9))
+    assert sweep["strategy"]["matrix"]["shard"] == list(range(1, 17))
     assert sweep["strategy"]["fail-fast"] is False
     assert sweep["timeout-minutes"] == 15
     run = next(s["run"] for s in sweep["steps"] if "lighthouse.mjs run" in str(s.get("run")))
-    assert "--set all" in run and '--shard "$SHARD/8"' in run and "--remeasure 3" in run
+    assert "--set all" in run and '--shard "$SHARD/16"' in run and "--remeasure 3" in run
     # the whole within 60 minutes: the build's 20, a shard's 15, the verdict's 5
     assert jobs["verdict"]["timeout-minutes"] <= 5
     uploads = [s["with"]["name"] for s in jobs["verdict"]["steps"] if "upload-artifact" in str(s.get("uses"))]

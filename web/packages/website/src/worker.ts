@@ -1,10 +1,10 @@
 // maktaba.tv, the website (Epic 60, story 60.03). Every request comes here first
-// (run_worker_first): the Worker redirects www and http to https://maktaba.tv and /docs to its
-// page, serves the static assets the build assembled (scripts/build.mjs), answers a missing
-// path with the 404 page in its language, and puts the cache and security headers on every
-// response (src/headers.ts). No backend, no KV, no secrets.
+// (run_worker_first): the Worker redirects www and http to https://maktaba.tv and the paths of
+// src/redirects.json (/docs) to their pages, serves the static assets the build assembled
+// (scripts/build.mjs), answers a missing path with the 404 page in its language, and puts the
+// cache and security headers on every response (src/headers.ts). No backend, no KV, no secrets.
 
-import { APEX, DOCS_TARGET, redirect, withHeaders } from "./headers";
+import { APEX, redirect, REDIRECTS, withHeaders } from "./headers";
 
 export interface Env {
   ASSETS: { fetch(req: Request): Promise<Response> };
@@ -32,10 +32,9 @@ export default {
       });
       return withHeaders(res, url.pathname);
     }
-    // the address apps and old links print: help, in the visitor's language
-    if (url.pathname === "/docs" || url.pathname === "/docs/") return redirect(DOCS_TARGET);
-    if (url.pathname === "/ar/docs" || url.pathname === "/ar/docs/")
-      return redirect(`/ar${DOCS_TARGET}`);
+    // the site's redirects (src/redirects.json, which the link check reads too): /docs, the
+    // address apps and old links print, to help in the visitor's language
+    if (Object.hasOwn(REDIRECTS, url.pathname)) return redirect(REDIRECTS[url.pathname]);
 
     let res = await env.ASSETS.fetch(req);
     if (res.status === 404) {

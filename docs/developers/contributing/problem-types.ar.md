@@ -5,6 +5,9 @@
 `https://maktaba.tv/problems/seat-limit`. ولكل معرّف مدخل في سجل واحد هو
 [`shared/api/problems.json`](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/shared/api/problems.json)،
 وينشر موقع maktaba.tv صفحة لكل مدخل، بالعربية والإنجليزية، تشرح ما حدث وما يستطيع المرء فعله.
+ولكل مدخل صفحته في `https://maktaba.tv/problems/<slug>/` و`https://maktaba.tv/ar/problems/<slug>/`،
+تُبنى من السجل مع الموقع (فلا يحتاج المدخل الجديد إلى صفحة يكتبها أحد)، ويجمعها
+[الفهرس](https://maktaba.tv/ar/problems/) كلها بحسب `area`.
 
 ## شكل المدخل
 

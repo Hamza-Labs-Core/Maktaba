@@ -7,13 +7,22 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { findLinks, excluded, storyFor, resolvePage, siteFindings, twinPath } from "./links.mjs";
+import {
+  findLinks,
+  excluded,
+  storyFor,
+  resolvePage,
+  siteFindings,
+  twinPath,
+  loadRedirects,
+  redirectTarget,
+} from "./links.mjs";
 
 const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "links.mjs");
 const PKG = "web/packages/website";
 
 // fixture: a git repository of `files` (path -> text), with the site's data files given.
-function fixture(t, files, { manifest, baseline, allow, problems } = {}) {
+function fixture(t, files, { manifest, baseline, allow, problems, redirects } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), "links-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const all = { ...files };
@@ -21,6 +30,7 @@ function fixture(t, files, { manifest, baseline, allow, problems } = {}) {
   if (baseline) all[`${PKG}/links-baseline.json`] = JSON.stringify(baseline);
   if (allow) all[`${PKG}/links-allow.json`] = JSON.stringify(allow);
   if (problems) all["shared/api/problems.json"] = JSON.stringify(problems);
+  if (redirects) all[`${PKG}/src/redirects.json`] = JSON.stringify(redirects);
   for (const [f, text] of Object.entries(all)) {
     mkdirSync(path.dirname(path.join(root, f)), { recursive: true });
     writeFileSync(path.join(root, f), text);
@@ -138,7 +148,7 @@ test("T03: auto-trailing-slash: /x, /x/ and /x/index.html are one page; the home
       "a.md":
         "https://maktaba.tv\nhttps://maktaba.tv/\nhttps://www.maktaba.tv/install/docker\nhttps://maktaba.tv/docs\n",
     },
-    { manifest: SITE }
+    { manifest: SITE, redirects: { "/docs": "/" } }
   );
   const r = run(root);
   assert.equal(r.code, 0, r.out);
@@ -295,7 +305,7 @@ test("the baseline only shrinks: a listed dead link passes, a new one fails, a l
     /b\.md: https:\/\/maktaba\.tv\/install\/docker\/ now opens a page: remove it from links-baseline\.json/
   );
   assert.match(r.out, /c\.md: https:\/\/maktaba\.tv\/problems\/gone no longer in the file/);
-  assert.match(r.out, /must be empty by the end of Epic 60's Phase 1/);
+  assert.match(r.out, /a new entry is reviewed like an allow-list entry/);
 
   // --prune-baseline drops the live and gone entries, and never adds the new dead link
   assert.equal(run(root, "--prune-baseline").code, 0);
@@ -312,11 +322,14 @@ test("the baseline's stories", () => {
   assert.equal(storyFor("/legal/copyright/"), "60.07");
 });
 
-test("--write-manifest lists dist/'s files and each page's ids, and keeps the Worker's redirects", (t) => {
+test("--write-manifest lists dist/'s files and each page's ids, and the Worker's redirects", (t) => {
   const root = fixture(
     t,
     { "x.md": "nothing\n" },
-    { manifest: { files: [], redirects: { "/docs": "/" } } }
+    {
+      manifest: { files: [], redirects: { "/old": "/" } },
+      redirects: { $comment: "the table", "/docs": "/" },
+    }
   );
   const dist = path.join(root, "dist");
   mkdirSync(path.join(dist, "ar/install/nas"), { recursive: true });
@@ -410,4 +423,77 @@ test("--dist fails on the built site's broken links", (t) => {
   const r = run(root, "--dist", dist);
   assert.equal(r.code, 1);
   assert.match(r.out, /::error::the built site: \/ar\/index\.html: links no twin \(\/\)/);
+});
+
+// ---- the Worker's redirects (src/redirects.json, the table src/worker.ts serves) ------------
+
+test("a link to a redirect passes when its target opens a page, and fails when it does not", (t) => {
+  const root = fixture(
+    t,
+    { "a.md": "https://maktaba.tv/docs\nhttps://maktaba.tv/ar/docs\n" },
+    { manifest: SITE, redirects: { "/docs": "/", "/ar/docs": "/ar/gone/" } }
+  );
+  const r = run(root);
+  assert.equal(r.code, 1, r.out);
+  assert.match(
+    r.out,
+    /a\.md:2: https:\/\/maktaba\.tv\/ar\/docs: redirects to \/ar\/gone\/, which is no page/
+  );
+  assert.doesNotMatch(r.out, /a\.md:1:/);
+});
+
+test("a redirect is the Worker's table, not the manifest's copy; a loop is no page", (t) => {
+  // the manifest's stale copy does not make /old live
+  const root = fixture(
+    t,
+    { "a.md": "https://maktaba.tv/old\nhttps://maktaba.tv/a\n" },
+    {
+      manifest: { ...SITE, redirects: { "/old": "/" } },
+      redirects: { "/a": "/b", "/b": "/a" },
+    }
+  );
+  const r = run(root);
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /a\.md:1: https:\/\/maktaba\.tv\/old: no such page/);
+  assert.match(r.out, /a\.md:2: https:\/\/maktaba\.tv\/a: redirects to \/b, which is no page/);
+});
+
+test("a redirect matches its exact source, keeps no fragment, and the table refuses a non-path", (t) => {
+  const m = { files: ["/index.html"], ids: {}, redirects: { "/docs": "/" } };
+  assert.equal(redirectTarget(m, "/docs"), "/");
+  assert.equal(redirectTarget(m, "/docs/x"), null);
+  assert.equal(redirectTarget(m, "/constructor"), null);
+  const root = fixture(
+    t,
+    { "a.md": "https://maktaba.tv/docs#x\n" },
+    {
+      manifest: SITE,
+      redirects: { "/docs": "/" },
+    }
+  );
+  const r = run(root);
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /a redirect keeps no #fragment/);
+  const bad = fixture(t, { "x.md": "x\n" }, { redirects: { "/docs": "https://elsewhere" } });
+  assert.throws(() => loadRedirects(path.join(bad, PKG)), /not a path/);
+});
+
+test("the site's own table: every source redirects to a page of the committed manifest", () => {
+  const pkg = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const table = loadRedirects(pkg);
+  assert.ok(Object.keys(table).length > 0, "src/redirects.json has redirects");
+  const manifest = JSON.parse(readFileSync(path.join(pkg, "dist-manifest.json"), "utf8"));
+  assert.deepEqual(manifest.redirects, table, "dist-manifest.json carries the Worker's table");
+  for (const [from, to] of Object.entries(table))
+    assert.ok(resolvePage(manifest, to), `${from} → ${to} opens a page`);
+});
+
+test("the built site: a link to a redirect passes when its target is in dist/", (t) => {
+  const dist = site(t, {
+    ...GOOD,
+    "404.html": '<a href="/">home</a><a href="/docs">docs</a><a href="/gone">gone</a>',
+  });
+  assert.deepEqual(siteFindings(dist, { "/docs": "/", "/gone": "/nowhere/" }), [
+    '/404.html: href="/gone": redirects to /nowhere/, no file in dist/',
+  ]);
 });
