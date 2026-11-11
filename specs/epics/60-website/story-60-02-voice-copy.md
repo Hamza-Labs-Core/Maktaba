@@ -67,7 +67,7 @@ minutes, in both languages:
 - **Review:**
   - the copy pull request lists every new text in both languages side by side;
   - the lead reviews it for the voice;
-  - the owner, or a native reader the owner names, approves the Arabic (Q2).
+  - the owner reads and approves every Arabic page (Q2).
 
 **What stays as written elsewhere:**
 - the install guides' text (Epic 59), which is moved onto the voice only where 60.05's
