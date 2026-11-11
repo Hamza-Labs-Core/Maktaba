@@ -1,0 +1,112 @@
+<!doctype html>
+<!-- maktaba.tv/ar/install/nas (Epic 59 story 59.14): the Arabic twin of /install/nas. -->
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Maktaba على خادم تخزين شبكي · Maktaba</title>
+    <meta
+      name="description"
+      content="شغّل جهاز Maktaba الرئيسي على خادم التخزين الشبكي الذي يحفظ وسائطك: Synology أو TrueNAS أو Unraid أو QNAP أو UGREEN أو ASUSTOR أو أي جهاز فيه Docker."
+    />
+    <link rel="alternate" hreflang="en" href="https://maktaba.tv/install/nas/" />
+    <link rel="alternate" hreflang="ar" href="https://maktaba.tv/ar/install/nas/" />
+    <link rel="stylesheet" href="/install/install.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Maktaba على خادم تخزين شبكي</h1>
+      <p class="lead">
+        وسائطك محفوظة على خادم التخزين أصلًا، ويمكن أن يعمل Maktaba عليه أيضًا، دون أن يبقى حاسوب
+        آخر قيد التشغيل.
+      </p>
+      <nav><a href="/install/nas/" hreflang="en" lang="en">English</a></nav>
+    </header>
+    <main class="guide wide">
+      <p>
+        يعمل Maktaba على خادم التخزين حاويةً واحدة: الخادم، وتطبيق الويب، والبث التلفزيوني المباشر،
+        والمعالج الذي يقرأ مكتبتك، وقاعدة بياناته الخاصة. ويعمل بصفة مستخدم عادي على الخادم، لا
+        بصلاحيات الجذر أبدًا، ويحدّث نفسه في فترة هادئة.
+      </p>
+      <h2 id="choose">اختر خادم التخزين</h2>
+      <ul class="choices">
+        <li>
+          <a href="/ar/install/synology/"><strong>Synology</strong></a
+          >: نظام DSM ‏7.2 أو أحدث، ومشروع في «Container Manager» يُملأ من إجاباتك.
+        </li>
+        <li>
+          <a href="/ar/install/truenas/"><strong>TrueNAS</strong></a
+          >: الإصدار المجتمعي 25.04 أو أحدث، تطبيق جاهز.
+        </li>
+        <li>
+          <a href="/ar/install/unraid/"><strong>Unraid</strong></a
+          >: الإصدار 6.12 أو أحدث، قالب من تبويب التطبيقات.
+        </li>
+        <li>
+          <a href="/ar/install/qnap/"><strong>QNAP</strong></a
+          >: نظام QTS أو QuTS hero مع تطبيق «Container Station».
+        </li>
+        <li>
+          <a href="/ar/install/ugreen/"><strong>UGREEN أو ASUSTOR</strong></a
+          >: تطبيق Docker في نظام UGOS Pro، أو نظام ADM مع Portainer.
+        </li>
+        <li>
+          <a href="/ar/install/docker/"><strong>أي جهاز آخر فيه Docker</strong></a
+          >: حاسوب صغير، أو خادم لينكس، أو Portainer، أو Dockge.
+        </li>
+      </ul>
+      <h2 id="fits">هل يناسب خادمي؟</h2>
+      <p>
+        يختار Maktaba فئته من الذاكرة المتاحة له: <strong>خفيف</strong> تحت 6 غيغابايت (وتحت 8
+        غيغابايت على خادم بمعالج ARM)، و<strong>قياسي</strong> تحت 16 غيغابايت، و<strong
+          >قوي</strong
+        >
+        فوق ذلك. ولا تحدّد الفئة إلا الإعدادات الافتراضية، مثل كمية العمل الذي يجري في وقت واحد
+        ونموذج تحويل الكلام. أما الخادم الذي ذاكرته أقل من 4 غيغابايت فخير ما يفيد به أن يكون مساحة
+        تخزين: شغّل جهاز Maktaba الرئيسي على حاسوب آخر، وهو يقرأ وسائطك من الخادم.
+      </p>
+      <div class="table-wrap">
+        <table class="models">
+          <thead>
+            <tr>
+              <th>الطراز</th>
+              <th>المعالج</th>
+              <th>الفيديو</th>
+              <th>الذاكرة (غيغابايت)</th>
+              <th>مع Maktaba</th>
+            </tr>
+          </thead>
+          <tbody id="models"></tbody>
+        </table>
+      </div>
+      <p class="hint" id="models-note">
+        طرازك غير مذكور؟ العبرة بالذاكرة والمعالج، ويفحصهما Maktaba بنفسه عند تشغيله ويعرض ما وجده
+        في «الإعدادات ← هذا الجهاز». وبين القوسين أقصى ذاكرة يقبلها الطراز.
+      </p>
+      <h2 id="prepare">ما تحتاج إلى تجهيزه</h2>
+      <ul>
+        <li>
+          <strong>مستخدم لـ Maktaba</strong> على الخادم، أو المستخدم الذي يملك مجلدات وسائطك أصلًا.
+          دوّن رقميه (المعرّفين uid وgid)، ويبيّن دليل خادمك أين تجدهما.
+        </li>
+        <li>
+          <strong>مجلدات وسائطك</strong>: المشاركات التي فيها الأفلام والمسلسلات والتسجيلات. وقرّر
+          لكل منها هل يكتب فيها Maktaba (الترجمات والنسخ المحوّلة بجانب مقاطعك) أم يقرأ فقط.
+        </li>
+        <li>
+          <strong>مجلد للبيانات</strong> على تخزين محلي سريع، وعلى قرص SSD إن وُجد. فيه قاعدة بيانات
+          Maktaba وصوره المصغّرة، ولا يكون على مشاركة شبكية أو ذاكرة USB أبدًا.
+        </li>
+        <li><strong>نحو 20 دقيقة</strong>، وعنوان الخادم على شبكتك.</li>
+      </ul>
+      <h2 id="next">بعد التثبيت</h2>
+      <p>
+        <a href="/ar/install/after-setup/">بعد الإعداد</a>: الأذونات، وساعات الهدوء، وتحويل الكلام
+        إلى نص، وتحويل الفيديو بالعتاد، والوكيل العكسي، والتحديثات، وإضافة حاسوب فيه معالج رسوميات.
+        <a href="/ar/install/troubleshooting/">حل المشكلات</a>: معنى كل رسالة وطريقة إصلاحها.
+      </p>
+    </main>
+    <script type="module" src="/src/nas-main.ts"></script>
+  </body>
+</html>

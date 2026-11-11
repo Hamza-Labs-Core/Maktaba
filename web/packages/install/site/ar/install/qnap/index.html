@@ -1,0 +1,112 @@
+<!doctype html>
+<!-- maktaba.tv/ar/install/qnap (Epic 59 story 59.14): the Arabic twin of /install/qnap. QTS's
+     menu names stay in English, in quotes, after an Arabic description. -->
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>تثبيت Maktaba على خادم QNAP · Maktaba</title>
+    <meta
+      name="description"
+      content="ثبّت Maktaba على خادم تخزين QNAP باستخدام «Container Station»: المستخدم، والمجلدات، وملف compose، والإعداد."
+    />
+    <link rel="alternate" hreflang="en" href="https://maktaba.tv/install/qnap/" />
+    <link rel="alternate" hreflang="ar" href="https://maktaba.tv/ar/install/qnap/" />
+    <link rel="stylesheet" href="/install/install.css" />
+  </head>
+  <body>
+    <header>
+      <h1>تثبيت Maktaba على خادم QNAP</h1>
+      <p class="lead">يشغّل تطبيق «Container Station» برنامج Maktaba من ملف compose واحد.</p>
+      <nav>
+        <a href="/ar/install/nas/">كل أدلة خوادم التخزين</a> ·
+        <a href="/install/qnap/" hreflang="en" lang="en">English</a>
+      </nav>
+    </header>
+    <main class="guide">
+      <p class="notice">
+        <strong>لم تُجرَّب هذه الخطوات بعد على جهاز QNAP.</strong> وهي تتبع خطوات QNAP نفسها، والملف
+        نفسه يعمل على كل جهاز فيه Docker. أخبرنا بما تجده على
+        <a href="https://github.com/Hamza-Labs-Core/Maktaba/issues">GitHub</a>.
+      </p>
+      <p>
+        لنظام QTS ‏5.1 أو QuTS hero ‏5.1 وما بعدهما، مع تطبيق <strong>«Container Station 3»</strong>
+        من مركز التطبيقات. يستغرق التثبيت نحو 20 دقيقة.
+      </p>
+      <h2>قبل أن تبدأ</h2>
+      <ul>
+        <li>
+          <strong>الذاكرة:</strong> ‏8 غيغابايت أو أكثر مريحة، ويعمل Maktaba بدءًا من 4 غيغابايت.
+        </li>
+        <li>
+          <strong>تحويل الفيديو بالعتاد:</strong> الطرازات التي فيها معالج Intel من فئة Celeron أو
+          Pentium ‏(TS-464 وTS-264 وTS-462 وغيرها) تحوّل الفيديو بتقنية Quick Sync عبر
+          <code>/dev/dri</code>.
+        </li>
+        <li>
+          <strong>المنفذ 8080:</strong> يحجزه نظام QTS لصفحاته. يلاحظ Maktaba ذلك وينقل منفذه إلى ما
+          بين 8780 و8790، ويعرض الإعداد وصفحة «الإعدادات ← هذا الجهاز» المنفذ الجديد. لا تحتاج إلى
+          فعل شيء.
+        </li>
+      </ul>
+      <h2>1. أنشئ مستخدمًا لـ Maktaba</h2>
+      <p>
+        من «Control Panel» ← «Privilege» ← «Users» ← <strong>«Create»</strong> ← «Create a User»:
+        سمّه <code>maktaba</code>، بكلمة مرور قوية، ودون صلاحيات المدير. ثم اقرأ رقميه: فعّل SSH (من
+        «Control Panel» ← «Network &amp; File Services» ← «Telnet / SSH») وشغّل الأمر
+        <code>id maktaba</code>. فالنتيجة <code>uid=1001 gid=100</code> تعني الإجابة
+        <code>1001:100</code>.
+      </p>
+      <h2>2. امنحه مجلداته</h2>
+      <ul>
+        <li>
+          <strong>البيانات:</strong> أنشئ المجلد <code>maktaba</code> داخل المجلد المشترك
+          <code>Container</code> (ينشئه «Container Station»، واجعله على قرص SSD إن وُجد)، وامنح
+          <code>maktaba</code> صلاحية القراءة والكتابة عليه.
+        </li>
+        <li>
+          <strong>الوسائط:</strong> من «Control Panel» ← «Privilege» ← «Shared Folders» ← كل مجلد
+          فيه مقاطع ← «Edit Shared Folder Permission»: القراءة والكتابة لـ <code>maktaba</code> حيث
+          يحفظ Maktaba الترجمات والتحويلات، والقراءة فقط في غيرها.
+        </li>
+      </ul>
+      <p>
+        ومسار المجلد المشترك داخل الحاوية هو مساره على الخادم نفسه، مثل
+        <code>/share/Multimedia</code> أو <code>/share/CACHEDEV1_DATA/Movies</code>.
+      </p>
+      <h2>3. أنشئ ملف compose</h2>
+      <p>
+        افتح <a href="/ar/install/docker/">صفحة التثبيت</a>، واختر <strong>QNAP</strong>، وأجب:
+        المستخدم (<code>1001:100</code>)، والذاكرة، ومجلد البيانات
+        (<code>/share/Container/maktaba</code>)، ومجلدات وسائطك، وتحويل الفيديو بالعتاد، والمنطقة
+        الزمنية. ثم انسخ الملف. لا يغادر شيء مما تكتبه هناك الصفحة.
+      </p>
+      <h2>4. أنشئ التطبيق</h2>
+      <p>
+        من «Container Station» ← <strong>«Applications»</strong> ← <strong>«Create»</strong>: سمّه
+        <code>maktaba</code>، والصق الملف، ثم <strong>«Create»</strong>. فينزّل «Container Station»
+        الصورة ويشغّلها.
+      </p>
+      <figure class="placeholder" data-shot="screenshots/qnap/create-application.ar.png">
+        <figcaption>
+          📷 <strong>صورة قادمة:</strong> <code>screenshots/qnap/create-application.ar.png</code>:
+          نافذة «Create Application» مع ملف compose ملصوقًا.
+        </figcaption>
+      </figure>
+      <h2>5. شغّل الإعداد</h2>
+      <p>شغّل عبر SSH:</p>
+      <pre><code>docker exec -it maktaba /opt/maktaba/server/bin/maktaba-server container setup</code></pre>
+      <p>
+        أجب عن أسئلته (اسم المدير وكلمة مروره، ومكتباتك)، ويبدأ Maktaba بنفسه حين ينتهي. ثم افتح
+        <code>http://&lt;your NAS&gt;:8088</code>.
+      </p>
+      <h2>بعد الإعداد</h2>
+      <p>
+        <a href="/ar/install/after-setup/">بعد الإعداد</a>: الأذونات، وساعات الهدوء، وتحويل الكلام
+        إلى نص، وتحويل الفيديو بالعتاد، والوكيل العكسي، والتحديثات، وإضافة حاسوب فيه معالج رسوميات.
+        <a href="/ar/install/troubleshooting/">حل المشكلات</a>: معنى كل رسالة.
+      </p>
+    </main>
+  </body>
+</html>

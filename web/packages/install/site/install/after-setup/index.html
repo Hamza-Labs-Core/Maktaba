@@ -1,0 +1,96 @@
+<!doctype html>
+<!-- maktaba.tv/install/after-setup (Epic 59 story 59.14): what a household on a NAS does after
+     the install, the same for every NAS. Each section has an id the other guides link to. Its
+     twin in Arabic has the same sections and ids. -->
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>After setup on a NAS · Maktaba</title>
+    <meta
+      name="description"
+      content="Maktaba on a NAS after the install: permissions, quiet hours, speech to text, hardware video, a reverse proxy and the firewall, updates, and adding a computer with a GPU."
+    />
+    <link rel="alternate" hreflang="en" href="https://maktaba.tv/install/after-setup/" />
+    <link rel="alternate" hreflang="ar" href="https://maktaba.tv/ar/install/after-setup/" />
+    <link rel="stylesheet" href="/install/install.css" />
+  </head>
+  <body>
+    <header>
+      <h1>After setup on a NAS</h1>
+      <p class="lead">Maktaba runs. This is what to look at next.</p>
+      <nav>
+        <a href="/install/nas/">All NAS guides</a> ·
+        <a href="/ar/install/after-setup/" hreflang="ar" lang="ar">العربية</a>
+      </nav>
+    </header>
+    <main class="guide">
+      <p>
+        <strong>Settings → This machine</strong> shows what Maktaba found: your NAS, the user it
+        runs as, its tier and memory, the video hardware, and the network.
+      </p>
+      <h2 id="permissions">Permissions</h2>
+      <p>
+        Each library shows <strong>Read and write</strong>, <strong>Read only</strong> or
+        <strong>No access</strong>. A read-only library works fully for watching and searching;
+        Maktaba keeps its subtitles in its database and leaves your files untouched, and only the
+        writing features (converted copies, subtitles beside the videos) are off there. To change
+        it, give the user Maktaba runs as the access you want in your NAS's settings (the library
+        page says where), then press <strong>Check access</strong>.
+      </p>
+      <h2 id="quiet-hours">Quiet hours</h2>
+      <p>
+        On a Light or Standard NAS, heavy work (speech to text, thumbnails, conversions) waits for
+        the quiet hours, 01:00 to 06:00 by default, so the NAS stays quick for its own files during
+        the day. Change them in Settings → This machine. A waiting job shows when it will run, and
+        <strong>Run now</strong> starts it at once.
+      </p>
+      <h2 id="speech">Speech to text</h2>
+      <p>
+        Maktaba measures how fast this NAS transcribes and shows it in Settings → This machine,
+        under Speech to text, with the time its waiting audio will take. On a Light NAS it is off
+        until you turn it on. Smaller models are faster but make more mistakes, especially in
+        Arabic. When the wait is long, a computer with a GPU can join the home and do the work
+        (below).
+      </p>
+      <h2 id="video">Hardware video</h2>
+      <p>
+        With an Intel or AMD chip, Settings → This machine says <strong>Video: hardware</strong> and
+        the formats it converts. It needs the render device <code>/dev/dri</code> passed to the
+        container, and the device's group added to it:
+        <code>stat -c %g /dev/dri/renderD128</code> on the NAS prints the number, which goes under
+        <code>group_add</code> in the compose file (Extra Parameters' <code>--group-add</code> on
+        Unraid). Without it Maktaba converts in software, and players play files as they are
+        whenever they can.
+      </p>
+      <h2 id="proxy">Reverse proxy and firewall</h2>
+      <p>
+        Maktaba needs no reverse proxy: its own HTTPS name works on a NAS as anywhere. If you put
+        the NAS's proxy in front anyway, pass the whole site to port 8088 with WebSocket on, no
+        buffering, and no upload limit. A proxy at another address goes in Settings → Storage &amp;
+        discovery → <strong>Trusted proxies</strong>. If the NAS has a firewall, allow TCP 8088,
+        8080 and 8081 and UDP 5353 from your home network.
+      </p>
+      <h2 id="updates">Updates</h2>
+      <p>
+        Maktaba updates itself inside its update window (Admin → Updates), each release checked
+        before it is installed, and goes back by itself if a release cannot start. When your NAS's
+        app catalog offers a newer image, applying it is safe too: the newer of the two runs, and an
+        older image never replaces what Maktaba already runs.
+      </p>
+      <h2 id="gpu-node">Adding a computer with a GPU</h2>
+      <p>
+        A NAS is a good home for the library, but a computer with a graphics card transcribes many
+        times faster. Install Maktaba on that computer and choose to join this home; then, in Admin
+        → Machines, approve it under <strong>Asking to join</strong> with the code it shows. It
+        takes the heavy work and reads your media from the NAS's shares. A Light NAS should stay the
+        home or the storage, not join another home as a machine.
+      </p>
+      <p>
+        Something wrong? <a href="/install/troubleshooting/">Troubleshooting</a> explains each
+        message.
+      </p>
+    </main>
+  </body>
+</html>

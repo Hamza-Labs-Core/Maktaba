@@ -1,0 +1,116 @@
+<!doctype html>
+<!-- maktaba.tv/install/nas (Epic 59 story 59.14): the NAS guides' landing page. Which guide to
+     follow, whether a model fits (the table is nas-models.json, filled in by nas-main.ts), and
+     what to prepare. Its twin in Arabic has the same sections. -->
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Maktaba on a NAS · Maktaba</title>
+    <meta
+      name="description"
+      content="Run your Maktaba home on the NAS that keeps your media: Synology, TrueNAS, Unraid, QNAP, UGREEN, ASUSTOR or any machine with Docker."
+    />
+    <link rel="alternate" hreflang="en" href="https://maktaba.tv/install/nas/" />
+    <link rel="alternate" hreflang="ar" href="https://maktaba.tv/ar/install/nas/" />
+    <link rel="stylesheet" href="/install/install.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Maktaba on a NAS</h1>
+      <p class="lead">
+        Your media already lives on the NAS. Maktaba can live there too, with no other computer left
+        running.
+      </p>
+      <nav><a href="/ar/install/nas/" hreflang="ar" lang="ar">العربية</a></nav>
+    </header>
+    <main class="guide wide">
+      <p>
+        Maktaba runs on a NAS as one container: the server, the web app, live TV, the pipeline that
+        reads your library, and its own database. It runs as an ordinary user of the NAS, never as
+        root, and updates itself in a quiet window.
+      </p>
+      <h2 id="choose">Choose your NAS</h2>
+      <ul class="choices">
+        <li>
+          <a href="/install/synology/"><strong>Synology</strong></a
+          >: DSM 7.2 or newer, a Container Manager project filled in from your answers.
+        </li>
+        <li>
+          <a href="/install/truenas/"><strong>TrueNAS</strong></a
+          >: Community Edition 25.04 or newer, an app.
+        </li>
+        <li>
+          <a href="/install/unraid/"><strong>Unraid</strong></a
+          >: 6.12 or newer, a template from the Apps tab.
+        </li>
+        <li>
+          <a href="/install/qnap/"><strong>QNAP</strong></a
+          >: QTS or QuTS hero with Container Station.
+        </li>
+        <li>
+          <a href="/install/ugreen/"><strong>UGREEN or ASUSTOR</strong></a
+          >: UGOS Pro's Docker, or ADM with Portainer.
+        </li>
+        <li>
+          <a href="/install/docker/"><strong>Any other machine with Docker</strong></a
+          >: a mini PC, a Linux server, Portainer or Dockge.
+        </li>
+      </ul>
+      <h2 id="fits">Will my NAS run it?</h2>
+      <p>
+        Maktaba picks a tier from the memory it may use: <strong>Light</strong> under 6 GB (under 8
+        GB on an ARM NAS), <strong>Standard</strong> under 16 GB, <strong>Strong</strong> above. The
+        tier only sets defaults, such as how much work runs at once and the speech model. A NAS
+        under 4 GB serves best as storage: run the Maktaba home on another computer, and it reads
+        your media from the NAS.
+      </p>
+      <div class="table-wrap">
+        <table class="models">
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th>Processor</th>
+              <th>Video</th>
+              <th>Memory (GB)</th>
+              <th>With Maktaba</th>
+            </tr>
+          </thead>
+          <tbody id="models"></tbody>
+        </table>
+      </div>
+      <p class="hint" id="models-note">
+        Your model is not listed? What counts is the memory and the processor. Maktaba checks both
+        itself when it starts and says what it found in Settings → This machine. In brackets: the
+        most memory the model takes.
+      </p>
+      <h2 id="prepare">What to prepare</h2>
+      <ul>
+        <li>
+          <strong>A user for Maktaba</strong> on the NAS, or the user that already owns your media
+          folders. Write down its numbers (uid and gid): the guide for your NAS says where to find
+          them.
+        </li>
+        <li>
+          <strong>Your media folders</strong>: the shares with films, series and recordings. Decide
+          for each whether Maktaba may write there (subtitles and converted copies beside your
+          videos) or only read.
+        </li>
+        <li>
+          <strong>A data folder</strong> on fast local storage, an SSD if there is one. Maktaba's
+          database and thumbnails live there; never on a network share or a USB stick.
+        </li>
+        <li><strong>About 20 minutes</strong>, and the NAS's address on your network.</li>
+      </ul>
+      <h2 id="next">After the install</h2>
+      <p>
+        <a href="/install/after-setup/">After setup</a>: permissions, quiet hours, speech to text,
+        hardware video, a reverse proxy, updates, and adding a computer with a GPU.
+        <a href="/install/troubleshooting/">Troubleshooting</a>: what each message means and how to
+        fix it.
+      </p>
+    </main>
+    <script type="module" src="/src/nas-main.ts"></script>
+  </body>
+</html>

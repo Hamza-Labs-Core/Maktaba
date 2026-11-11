@@ -113,6 +113,12 @@ jobs:
           node tools/lint/no-admin-in-user-bundle.mjs web/dist-cloud
           pnpm -C web exec vite build --config vite.admin.config.ts
 
+      # Story 59.14 (T02): maktaba.tv's install pages build, and the build fails on an Arabic
+      # page whose prose is mostly Latin (maktaba.dev's check, web/packages/install/src/latin.ts)
+      - name: maktaba.tv's install pages build, Arabic checked
+        if: inputs.web
+        run: pnpm -C web exec vite build --config vite.install.config.ts
+
       # Story 48.2: one token source. Fails when the committed Tokens.swift /
       # Tokens.kt are stale against web/design-system/tokens/, when
       # web/src/styles/tokens.css drifts from the JSON, or when a text colour is

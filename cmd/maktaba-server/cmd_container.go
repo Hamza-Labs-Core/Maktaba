@@ -399,7 +399,9 @@ func (c containerDeps) waitSetup(ctx context.Context) bool {
 			return true
 		}
 		if !said {
-			c.logf("%s", setupHint(c.platform))
+			for _, line := range strings.Split(setupHint(c.platform), "\n") {
+				c.logf("%s", line)
+			}
 			said = true
 		}
 		select {
@@ -424,13 +426,16 @@ func setupRunning(cfgPath string) bool {
 // setupHint is what a container not set up says once: how to run its setup on platform
 // (MAKTABA_PLATFORM, which the TrueNAS app sets; its households have no compose file to run).
 func setupHint(platform string) string {
-	if strings.EqualFold(strings.TrimSpace(platform), mediaaccess.PlatformTrueNAS) {
-		return "Maktaba is not set up yet: open this app's Shell in TrueNAS (Apps → Installed → Maktaba → " +
-			"Workloads → maktaba → Shell) and run `/opt/maktaba/server/bin/maktaba-server container setup`; " +
-			"the server starts here by itself once it is done"
+	key := "container.setup_compose"
+	switch strings.ToLower(strings.TrimSpace(platform)) {
+	case mediaaccess.PlatformTrueNAS:
+		key = "container.setup_truenas"
+	case mediaaccess.PlatformDSM:
+		key = "container.setup_dsm"
+	case mediaaccess.PlatformUnraid:
+		key = "container.setup_unraid"
 	}
-	return "Maktaba is not set up yet: run its setup in this image, `docker compose run --rm maktaba setup`; " +
-		"the server starts here by itself once it is done"
+	return containerText(key)
 }
 
 // run is the command: the bootstrap, then the given command (replacing this process) or,

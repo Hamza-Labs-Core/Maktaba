@@ -27,6 +27,7 @@
     "dist-cloud",
     "dist-admin",
     "dist-install",
+    "packages/install/e2e",
     "node_modules",
     "mockups",
     "wiki-app",
