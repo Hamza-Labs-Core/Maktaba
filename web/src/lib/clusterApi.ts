@@ -313,6 +313,13 @@ export const clusterApi = {
   deleteServer: (name: string) => api.delete<void>(`/api/cluster/storage-servers/${q(name)}`),
   canonicalize: (action: CanonAction) =>
     api.post<CanonStatus>("/api/cluster/storage/canonicalize", { action }),
+  // Epic 59 story 59.13: a NAS home's own folders and the SMB share each one is
+  getHomeShares: () => api.get<HomeShares>("/api/cluster/storage/home-shares"),
+  putHomeShares: (body: {
+    addresses: string[];
+    shares: { path: string; share: string }[];
+    server?: string;
+  }) => api.put<HomeShares>("/api/cluster/storage/home-shares", body),
   // Epic 37: switching the home to another machine
   switchover: () => api.get<SwitchStatus>("/api/cluster/switchover"),
   startSwitch: (to_node: string) =>
@@ -469,6 +476,33 @@ export interface EmergencyState {
 }
 
 /** "123 456", "123-456" -> "123456"; anything else -> null. */
+/** One of a NAS home's own folders and its share (story 59.13). */
+export interface HomeShare {
+  path: string;
+  /** "" when the folder is not shared on the network */
+  share: string;
+  local_only: boolean;
+  /** false: a mount at another path from the NAS's own */
+  host_path: boolean;
+  /** the share the NAS's folder layout gives it */
+  rule?: string;
+}
+
+/** GET /api/cluster/storage/home-shares (story 59.13). */
+export interface HomeShares {
+  nas: boolean;
+  platform: string;
+  server: string;
+  addresses: string[];
+  shares: HomeShare[];
+  /** library folders with no share yet */
+  unnamed: string[];
+  other_path: boolean;
+  writable_share: boolean;
+  /** codes the app translates as cluster.<code> */
+  notices: string[];
+}
+
 export function normalizePairingCode(raw: string): string | null {
   const digits = raw.replace(/[\s-]/g, "");
   return /^\d{6}$/.test(digits) ? digits : null;

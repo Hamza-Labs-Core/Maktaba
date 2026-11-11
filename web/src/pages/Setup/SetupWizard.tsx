@@ -996,11 +996,164 @@ export function parsePathMap(text: string): { from: string; to: string }[] | nul
   return out;
 }
 
-/** The libraries step's answer: each folder's access (story 59.03; absent from an older server). */
+/** One library folder's share as setup worked it out (story 59.13). */
+export interface ShareProposal {
+  path: string;
+  /** the share the NAS's folder layout gives it ("" none: the household names it) */
+  share: string;
+  /** the share's own folder (the root, or a folder above it) */
+  folder: string;
+  /** false: a mount at another path from the NAS's own */
+  host_path: boolean;
+}
+
+/** The share step's question on a NAS home (story 59.13). */
+export interface ShareQuestion {
+  platform: string;
+  roots: ShareProposal[];
+  /** the names the NAS goes by: the first is suggested, all are kept */
+  servers: string[];
+}
+
+/** The libraries step's answer: each folder's access (story 59.03; absent from an older server)
+ * and, on a NAS home, the share step's question (story 59.13). */
 export interface LibrariesStepResult {
   roots?: Partial<RootAccess>[];
   runs_as?: RunsAs | null;
   platform?: string;
+  shares?: ShareQuestion | null;
+}
+
+/** The share step's answer for the `shares` step. */
+export function sharesAnswer(
+  q: ShareQuestion,
+  server: string,
+  names: Record<string, string>,
+  localOnly: Record<string, boolean>
+): { server: string; aliases: string[]; shares: { path: string; share: string }[] } {
+  const seen = new Set<string>();
+  const shares: { path: string; share: string }[] = [];
+  for (const r of q.roots) {
+    const folder = r.share && names[r.path] === r.share ? r.folder : r.path;
+    if (seen.has(folder)) continue;
+    seen.add(folder);
+    shares.push({ path: folder, share: localOnly[r.path] ? "" : (names[r.path] ?? "").trim() });
+  }
+  return { server: server.trim(), aliases: q.servers, shares };
+}
+
+/** "Is that how your other computers open it?" (story 59.13): each folder's share, confirmed
+ * or typed, or marked as not shared on the network; and the NAS's name. */
+export function ShareStep({
+  api,
+  question,
+  onDone,
+  onBack,
+}: {
+  api: SetupApi;
+  question: ShareQuestion;
+  onDone: () => void;
+  onBack: () => void;
+}) {
+  const { t } = useI18n();
+  const words = useContext(WordsContext);
+  const s = useStep(api);
+  const [server, setServer] = useState((question.servers[0] ?? "").replace(/\.local$/i, ""));
+  const [names, setNames] = useState<Record<string, string>>(() =>
+    Object.fromEntries(question.roots.map((r) => [r.path, r.share]))
+  );
+  const [localOnly, setLocalOnly] = useState<Record<string, boolean>>({});
+  const missing = question.roots.some((r) => !localOnly[r.path] && !(names[r.path] ?? "").trim());
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (missing) return;
+    const r = await s.run("shares", sharesAnswer(question, server, names, localOnly));
+    if (r) onDone();
+  };
+  const otherPath = question.roots.some((r) => !r.host_path);
+  return (
+    <form className="mkt-setup__form" onSubmit={submit}>
+      <h3>{t("setup.share.title")}</h3>
+      <label className="mk-field__label" htmlFor="mkt-setup-share-server">
+        {t("setup.share.server")}
+      </label>
+      <input
+        id="mkt-setup-share-server"
+        className="mk-control"
+        dir="ltr"
+        list="mkt-setup-share-servers"
+        value={server}
+        onChange={(e) => setServer(e.target.value)}
+        aria-invalid={s.fieldError("server") ? true : undefined}
+        required
+      />
+      <datalist id="mkt-setup-share-servers">
+        {question.servers.map((n) => (
+          <option key={n} value={n} />
+        ))}
+      </datalist>
+      <p className="mkt-setup__note">{t("setup.share.serverNote")}</p>
+      {s.fieldError("server") && (
+        <p className="mkt-setup__warn" role="alert">
+          {s.fieldError("server")}
+        </p>
+      )}
+      <ul className="mkt-setup__roots">
+        {question.roots.map((r) => (
+          <li key={r.path} data-testid="share-root">
+            <bdi dir="ltr">{r.path}</bdi>
+            <p>
+              {r.share
+                ? t("setup.share.confirm", { share: r.share, server: server || "…" })
+                : t("setup.share.ask")}
+            </p>
+            {localOnly[r.path] ? (
+              <p className="mkt-setup__note">{t("setup.share.local_only")}</p>
+            ) : (
+              <input
+                className="mk-control"
+                dir="ltr"
+                aria-label={t("setup.share.name", { path: r.path })}
+                value={names[r.path] ?? ""}
+                onChange={(e) => setNames({ ...names, [r.path]: e.target.value })}
+              />
+            )}
+            <Checkbox
+              label={t("setup.share.notShared")}
+              checked={!!localOnly[r.path]}
+              onChange={(e) => setLocalOnly({ ...localOnly, [r.path]: e.target.checked })}
+            />
+          </li>
+        ))}
+      </ul>
+      {otherPath && <p className="mkt-setup__note">{t("settings.share.other_path")}</p>}
+      {s.fieldError("shares") && (
+        <p className="mkt-setup__warn" role="alert">
+          {s.fieldError("shares")}
+        </p>
+      )}
+      {s.formError && (
+        <p className="mkt-setup__warn" role="alert">
+          {codedText(
+            t,
+            "setup.error",
+            s.formError.code,
+            s.formError.params,
+            words,
+            s.formError.message
+          )}
+        </p>
+      )}
+      <div className="mkt-setup__actions">
+        <Button variant="secondary" onClick={onBack}>
+          {t("common.edit")}
+        </Button>
+        <Button type="submit" loading={s.busy} disabled={missing}>
+          {t("setup.next")}
+        </Button>
+      </div>
+    </form>
+  );
 }
 
 /** The folders worth stopping on: any that is not plainly read and write. */
@@ -1022,7 +1175,11 @@ function Libraries({ api, step, platform, next, back }: StepProps) {
     roots: Partial<RootAccess>[];
     runsAs: RunsAs | null;
   } | null>(null);
+  // story 59.13: on a NAS home, each folder's share, after the access screen
+  const [shares, setShares] = useState<ShareQuestion | null>(null);
+  const [askShares, setAskShares] = useState(false);
   const s = useStep(api);
+  const afterAccess = () => (shares && shares.roots.length > 0 ? setAskShares(true) : next());
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const pathMap = parsePathMap(map);
@@ -1034,10 +1191,29 @@ function Libraries({ api, step, platform, next, back }: StepProps) {
       .filter(Boolean);
     const r = await s.run<LibrariesStepResult>("libraries", { roots: list, path_map: pathMap });
     if (!r) return;
+    const q =
+      r.shares && Array.isArray(r.shares.roots) && r.shares.roots.length > 0 ? r.shares : null;
+    setShares(q);
     const show = rootsToShow(r);
     if (show) setChecked({ roots: show, runsAs: r.runs_as ?? null });
+    else if (q) setAskShares(true);
     else next();
   };
+  if (askShares && shares) {
+    return (
+      <Frame title={t("setup.libraries.title")} step={step} error={null} onBack={back}>
+        <ShareStep
+          api={api}
+          question={shares}
+          onDone={next}
+          onBack={() => {
+            setAskShares(false);
+            setChecked(null);
+          }}
+        />
+      </Frame>
+    );
+  }
   if (checked) {
     return (
       <Frame title={t("setup.libraries.title")} step={step} error={null} onBack={back}>
@@ -1074,7 +1250,7 @@ function Libraries({ api, step, platform, next, back }: StepProps) {
             <Button variant="secondary" onClick={() => setChecked(null)}>
               {t("common.edit")}
             </Button>
-            <Button onClick={next}>{t("setup.next")}</Button>
+            <Button onClick={afterAccess}>{t("setup.next")}</Button>
           </div>
         </div>
       </Frame>
