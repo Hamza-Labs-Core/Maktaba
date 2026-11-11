@@ -14,7 +14,11 @@ import { useReadOrder } from "../../lib/readOrder";
 import { useIsAdmin } from "../../components/queue/useIsAdmin";
 import { useFmt } from "../../components/queue/format";
 import { useBytes } from "../../components/queue/offline";
-import { libraryAccessErrorText, useReadOnlyLibraries } from "../../lib/libraryAccess";
+import {
+  libraryAccessErrorText,
+  libraryRefusalText,
+  useReadOnlyLibraries,
+} from "../../lib/libraryAccess";
 import { useAction } from "../../components/queue/useAction";
 import { TitleRow } from "../../help/HelpLink";
 import "../../styles/queue.css";
@@ -311,7 +315,7 @@ export function Duplicates() {
       )}
       {(error || loadError) && (
         <p role="alert" className="mkt-q-error">
-          {error ? (libraryAccessErrorText(cause, t) ?? error) : t("queue.error.load")}
+          {error ? (libraryAccessErrorText(cause, t, admin) ?? error) : t("queue.error.load")}
         </p>
       )}
       {groups === null && !loadError && <p className="mkt-loading">{t("common.loading")}</p>}
@@ -385,7 +389,7 @@ export function Duplicates() {
                   disabled={
                     queued || groupReadOnly(g) || (busy != null && busy !== `apply:${g.id}`)
                   }
-                  title={groupReadOnly(g) ? t("library.read_only") : undefined}
+                  title={groupReadOnly(g) ? libraryRefusalText(admin, t) : undefined}
                   onClick={() => void apply(g)}
                 >
                   {t("queue.dup.apply")}

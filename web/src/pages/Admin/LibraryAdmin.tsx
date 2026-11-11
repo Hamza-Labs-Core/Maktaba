@@ -18,6 +18,7 @@ import { queueApi } from "../../lib/queueApi";
 import {
   fixText,
   isReadOnly,
+  libraryRefusalText,
   libraryAccessApi,
   type LibraryAccessReport,
 } from "../../lib/libraryAccess";
@@ -190,7 +191,7 @@ function LibraryAdminInner() {
     const state = access ? access.access : lib?.access;
     if (!isReadOnly(state)) return undefined;
     const fix = (access?.roots ?? []).map((r) => fixText(r.fix, t)).find(Boolean) ?? "";
-    return fix ? `${t("library.read_only")}. ${fix}` : t("library.read_only");
+    return libraryRefusalText(true, t, fix);
   }, [access, lib?.access, t]);
   const h = useMemo(() => (row ? libraryHealth(row, summary ?? undefined) : null), [row, summary]);
 

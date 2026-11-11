@@ -90,6 +90,7 @@ Stories 59.01, 59.09, 59.10, 59.11 and 59.14 add no route.
 | T05 | Go and maktaba.dev | `shared/api/openapi.json` | every route, the Arabic overlay | described; roles marked; every text in Arabic |
 | T06 | Go handler | `GET /api/system/updates` as a viewer / admin | call | 200 each; `container` only for the admin |
 | T07 | Go handler | `PUT /api/server/machine` with quiet hours, the data disk | PUT as admin | the supervisor gets those fields only; audited |
+| T08 | Web unit | a read-only library's refusal, as an admin and as a non-admin, in English and Arabic | its reason; a 409's text | admin: the read-only reason and the fix; anyone else: `library.not_available_here`, no fix |
 
 ## Strings
 
@@ -97,12 +98,21 @@ Stories 59.01, 59.09, 59.10, 59.11 and 59.14 add no route.
 |---|---|---|
 | `library.not_available_here` | Not available in this library | غير متاح في هذه المكتبة |
 
+Web catalogs (`web/src/i18n/en.json`, `ar.json`); no native app shows a library action a
+library's access refuses.
+
 ## Edge cases
 
 - **The `access` field for viewers:** a library's `access` (`rw`, `ro`, `none`) is shown to
   every reader of the library, so an app can disable a write it would refuse; the folders'
-  paths and the uids are only in the admin's `GET /api/libraries/{id}/access`. Viewers see a
-  disabled action's reason only as `library.not_available_here`.
+  paths and the uids are only in the admin's `GET /api/libraries/{id}/access`. Anyone who is not
+  an admin sees a library's refusal only as `library.not_available_here`: the web's one reason
+  for it (`libraryRefusalText`) and its 409 text (`libraryAccessErrorText`, `errorText` with
+  `admin: false`) give an admin the read-only reason with the fix, and anyone else this string.
+  Every action a library's access can refuse (convert, dedup, YouTube downloads, repair, empty
+  trash, delete, restore, a duplicate's apply) is an admin's, so a non-admin is never offered
+  one: the queue pages tell a non-admin they are an admin's, the library and video pages show
+  them no such action, and the native apps have none.
 - **Quiet hours from the web:** Settings → This machine saves quiet hours and the data disk
   through `PUT /api/server/machine`; the API forwards each field sent and nothing else (an empty
   tier would be refused as no tier).

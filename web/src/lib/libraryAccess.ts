@@ -86,12 +86,25 @@ export function fixText(fix: AccessFix | null | undefined, t: T): string {
   return s === fix.key ? "" : s;
 }
 
-/** A 409 `library_read_only` or `library_no_access` in the app's words; null otherwise. */
-export function libraryAccessErrorText(e: unknown, t: T): string | null {
+/**
+ * Why an action a library's access rules out is not offered (story 59.16). An admin reads
+ * the reason with the fix (`fix`, the folder's, may name a share or a uid); anyone else only
+ * `library.not_available_here`, which says nothing of the home's folders or users.
+ */
+export function libraryRefusalText(admin: boolean, t: T, fix = ""): string {
+  if (!admin) return t("library.not_available_here");
+  return fix ? `${t("library.read_only")}. ${fix}` : t("library.read_only");
+}
+
+/**
+ * A 409 `library_read_only` or `library_no_access` in the app's words; null otherwise. A
+ * caller who is not an admin (`admin` false) reads `library.not_available_here`.
+ */
+export function libraryAccessErrorText(e: unknown, t: T, admin = true): string | null {
   if (!(e instanceof ApiError) || e.status !== 409) return null;
   const code = e.problem.code;
-  if (code === "library_read_only" || code === "library_no_access") return t(`error.${code}`);
-  return null;
+  if (code !== "library_read_only" && code !== "library_no_access") return null;
+  return admin ? t(`error.${code}`) : t("library.not_available_here");
 }
 
 /**

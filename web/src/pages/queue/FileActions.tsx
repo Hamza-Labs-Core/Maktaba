@@ -12,7 +12,11 @@ import type { FileAction, FileActionFilter, LibraryTrash } from "../../lib/queue
 import { useIsAdmin } from "../../components/queue/useIsAdmin";
 import { useFmt } from "../../components/queue/format";
 import { useBytes, useDate } from "../../components/queue/offline";
-import { libraryAccessErrorText, useReadOnlyLibraries } from "../../lib/libraryAccess";
+import {
+  libraryAccessErrorText,
+  libraryRefusalText,
+  useReadOnlyLibraries,
+} from "../../lib/libraryAccess";
 import { useAction } from "../../components/queue/useAction";
 import { TitleRow } from "../../help/HelpLink";
 import "../../styles/queue.css";
@@ -223,7 +227,7 @@ export function FileActions() {
       )}
       {(error || loadError) && (
         <p role="alert" className="mkt-q-error">
-          {error ? (libraryAccessErrorText(cause, t) ?? error) : t("queue.error.load")}
+          {error ? (libraryAccessErrorText(cause, t, admin) ?? error) : t("queue.error.load")}
         </p>
       )}
       {items === null && !loadError && <p className="mkt-loading">{t("common.loading")}</p>}
@@ -314,7 +318,9 @@ export function FileActions() {
                               readOnly.has(a.library_id) ||
                               (busy != null && busy !== `restore:${a.id}`)
                             }
-                            title={readOnly.has(a.library_id) ? t("library.read_only") : undefined}
+                            title={
+                              readOnly.has(a.library_id) ? libraryRefusalText(admin, t) : undefined
+                            }
                             onClick={() => void restore(a)}
                           >
                             {t("queue.fa.restore")}

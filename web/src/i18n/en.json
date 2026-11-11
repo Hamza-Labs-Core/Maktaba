@@ -7638,6 +7638,7 @@
   "library.access.runs_as": "Maktaba runs as user {uid}, group {gid}",
   "library.access.check": "Check access",
   "library.read_only": "This library is read-only for Maktaba",
+  "library.not_available_here": "Not available in this library",
   "library.fix.dsm": "In Control Panel → Shared Folder → {share} → Edit → Permissions, give the user {name} Read/Write (or Read only if you prefer).",
   "library.fix.truenas": "In Datasets → {dataset} → Permissions, add an ACL entry for user {uid} with Modify (or Read).",
   "library.fix.unraid": "In Shares → {share}, check that user nobody (99) can read it.",
