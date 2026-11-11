@@ -119,6 +119,8 @@ func JWTBearer(set *keys.Set, expectedAud string) func(http.Handler) http.Handle
 				Libraries:          c.Lib,
 				AccessAllLibraries: c.IsAdmin,
 				Source:             principal.SourceJWT,
+				RefreshFamily:      c.Fam,
+				AgeCeiling:         c.Ac,
 			}
 			// a cloud sign-in's token: its link scope caps it (a play
 			// token is no admin, whatever is_admin says)
