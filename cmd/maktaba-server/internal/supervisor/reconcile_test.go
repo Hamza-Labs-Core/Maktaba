@@ -1035,3 +1035,20 @@ func TestCapabilitiesGateOffEnv(t *testing.T) {
 		t.Fatalf("no %s=off: %v", EnvComponentsCapabilitiesGate, env)
 	}
 }
+
+// Epic 59 story 59.08: on a Docker bridge the mDNS loop is kept off with its own reason,
+// whatever the desired state says.
+func TestReconcileLoopOffOnABridge(t *testing.T) {
+	tab := &fakeTable{}
+	st := &fakeStore{}
+	r, _ := newTestReconciler(components.Default(), tab, st)
+	mdns := &Loop{Name: "supervisor:mdns", ConfigOn: true, Forced: ReasonBridgeNetwork, Run: func(_ context.Context) {
+		t.Error("mdns ran on a bridge")
+	}}
+	r.Loops = []*Loop{mdns}
+	r.defaults()
+	passWith(r, map[string]store.Desired{"discovery.mdns": want("discovery.mdns", "enabled", 1)})
+	if row, _ := st.row("discovery.mdns"); row.Phase != components.PhaseOff || row.Reason() != "bridge_network" {
+		t.Fatalf("mdns %+v", row)
+	}
+}

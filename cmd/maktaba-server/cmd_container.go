@@ -387,12 +387,15 @@ func serverVersion(ctx context.Context, cfgPath string) string {
 	return v.Version
 }
 
-// waitSetup waits for server.toml (setup writes it last), saying once how to set up; false
-// when ctx ended first (the container stopped).
+// waitSetup waits for a finished setup, saying once how to set up; false when ctx ended
+// first (the container stopped). server.toml alone is not that: setup's finish step writes
+// it before it creates the database, and a server started then runs its own initdb on the
+// same folder as setup's (the TrueNAS app's CI saw both fail, Epic 59 story 59.08). So setup's
+// pending file (state/setup.json, removed once the finish step is done) must be gone too.
 func (c containerDeps) waitSetup(ctx context.Context) bool {
 	said := false
 	for {
-		if _, err := os.Stat(c.config); err == nil {
+		if _, err := os.Stat(c.config); err == nil && !setupRunning(c.config) {
 			return true
 		}
 		if !said {
@@ -405,6 +408,17 @@ func (c containerDeps) waitSetup(ctx context.Context) bool {
 		case <-time.After(c.every):
 		}
 	}
+}
+
+// setupRunning is whether a setup of the install at cfgPath has not finished (its pending
+// file is there). A config that does not load is not this check's to judge: the server says.
+func setupRunning(cfgPath string) bool {
+	cfg, _, err := config.LoadFrom(cfgPath)
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(setupPendingFor(cfg))
+	return err == nil
 }
 
 // setupHint is what a container not set up says once: how to run its setup on platform

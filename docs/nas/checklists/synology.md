@@ -10,7 +10,7 @@ Run on each device, before Synology's first release and after each DSM major (7.
 install follows the Synology guide on maktaba.tv (`/install/synology`, Epic 59 story 59.09)
 with the project file from its install page; the result goes in [results/](results/README.md),
 one file per device. Screenshots are dark, in English and Arabic, under
-`docs/nas/checklists/screenshots/synology/`. Steps 1 to 15 run on the DS425+; the steps
+`docs/nas/checklists/screenshots/synology/`. Steps 1 to 16 run on the DS425+; the steps
 marked for another model run on that one.
 
 The `nas-shapes` cells `dsm`, `synology-compose` and `dsm-data-denied` (tests/nas) already
@@ -102,17 +102,24 @@ kernel's cgroup and Landlock, disk sleep.
 - **See:** the home updates inside the window, the pre-update dump is in backups, the container keeps running as 1026:100, and Settings shows the new version; the log and the report are attached to the result file, with no password, token or pairing code in them.
 - **Screenshots:** `synology/15-updated.en.png`, `synology/15-updated.ar.png`
 
+## Networking
+
+### 16. The apps find the home (59.08)
+- **Do:** with the default install (host network, no D-Bus socket mounted), open the Apple Player and the Android app on the same Wi-Fi and look for homes; then, on a computer, run `avahi-browse -art` (Linux) or `dns-sd -B _maktaba._tcp` (Mac).
+- **See:** both apps list the home by itself, at `<nas>-maktaba.local`; DSM's own names (`<nas>.local` in Finder or `avahi-resolve -n <nas>.local` from a Linux PC) and its SMB share in Finder's sidebar still resolve and show, and the NAS was not renamed (no `-2` in its name). With the system D-Bus socket mounted as the guide's option, the home is listed at the NAS's own name instead.
+- **Screenshots:** `synology/16-discovered.en.png`, `synology/16-discovered.ar.png`
+
 ## Other models
 
-### 16. DS923+ (Ryzen, 4 GB): Light tier, software video
+### 17. DS923+ (Ryzen, 4 GB): Light tier, software video
 - **Do:** DS923+: steps 1 to 5 with the file for other models (no `/dev/dri`) and 4 GB; open Settings → This machine and play the same HEVC file.
 - **See:** the tier is Light; This machine says "Video: software", that no render device is available to the container, and that this home converts video in software, so players play files as they are when they can; the transcode is at most 720p, and a second one waits with "Another video is being converted on this home". Speech to text is off, with base offered in the quiet hours.
-- **Screenshots:** `synology/16-ryzen.en.png`, `synology/16-ryzen.ar.png`
+- **Screenshots:** `synology/17-ryzen.en.png`, `synology/17-ryzen.ar.png`
 
-### 17. DS223 (ARM, 2 GB): storage only
+### 18. DS223 (ARM, 2 GB): storage only
 - **Do:** DS223: steps 1 to 4 with the file for other models (Container Manager runs on ARMv8 since DSM 7.2); run setup in the browser.
 - **See:** setup refuses with the NAS-as-storage text (the memory read, the 3.5 GiB floor, and that the NAS can still hold the library for a Maktaba home on another computer); nothing is half installed. The guide's model table says the same before the household starts.
-- **Screenshots:** `synology/17-storage-only.en.png`, `synology/17-storage-only.ar.png`
+- **Screenshots:** `synology/18-storage-only.en.png`, `synology/18-storage-only.ar.png`
 
 ## The guide's DSM screenshots
 
@@ -123,27 +130,27 @@ where DSM has one, once with DSM in English and once in the language the Arabic 
 (e.g. `guide-user.en.png`), then mark each one ready in `web/packages/install/src/synologyGuide.ts`
 (`SCREENS`): the page shows a screenshot only once it is marked.
 
-### 18. The DSM user
+### 19. The DSM user
 - **Do:** Control Panel → User & Group → maktaba → Edit, on the User Groups tab (users only, no administrators).
 - **See:** the dialog shows `maktaba` in users and not in administrators.
 - **Screenshots:** `synology/guide-user.en.png`, `synology/guide-user.ar.png`
 
-### 19. The uid from Task Scheduler
+### 20. The uid from Task Scheduler
 - **Do:** Task Scheduler → Create → Scheduled Task → User-defined script, user root, script `id maktaba > /volume1/docker/maktaba-id.txt`; Run; open the file in File Station (Text Editor); delete the task.
 - **See:** `uid=1026(maktaba) gid=100(users) …`.
 - **Screenshots:** `synology/guide-uid.en.png`, `synology/guide-uid.ar.png`
 
-### 20. The folder's and the shares' permissions
+### 21. The folder's and the shares' permissions
 - **Do:** File Station → docker → maktaba → Properties → Permission; then Control Panel → Shared Folder → Movies → Edit → Permissions.
 - **See:** `maktaba` with Read/Write on the folder, Read only on Movies.
 - **Screenshots:** `synology/guide-folder.en.png`, `synology/guide-folder.ar.png`, `synology/guide-share.en.png`, `synology/guide-share.ar.png`
 
-### 21. The project
+### 22. The project
 - **Do:** Container Manager → Project → Create, the YAML pasted, before Next.
 - **See:** name `maktaba`, path `docker/maktaba`, the YAML in the editor.
 - **Screenshots:** `synology/guide-project.en.png`, `synology/guide-project.ar.png`
 
-### 22. The firewall
+### 23. The firewall
 - **Do:** Control Panel → Security → Firewall → Edit Rules → Create: ports 8088, 8080 and 8081 (TCP), source your LAN's subnet, Allow.
 - **See:** the rule above the deny-all rule; `http://<nas>:8088` opens from a phone on the LAN.
 - **Screenshots:** `synology/guide-firewall.en.png`, `synology/guide-firewall.ar.png`

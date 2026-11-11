@@ -139,12 +139,11 @@ func (t *Tracker) TSClients() map[uuid.UUID]int {
 
 // TouchHLS records an HLS fetch by the request's client.
 func (t *Tracker) TouchHLS(ch uuid.UUID, r *http.Request) {
+	// the address the public mux resolved (the web port's gate forwards for the browser;
+	// X-Forwarded-For is believed only from loopback or a trusted proxy, story 59.08)
 	key := r.RemoteAddr
 	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 		key = host
-	}
-	if f := r.Header.Get("X-Forwarded-For"); f != "" {
-		key = f // the web port's gate forwards for the browser
 	}
 	t.mu.Lock()
 	m := t.hls[ch]

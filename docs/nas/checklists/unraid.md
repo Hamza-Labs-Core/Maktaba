@@ -45,7 +45,12 @@ Screenshots are dark, in English and Arabic, under `docs/nas/checklists/screensh
 - **See:** both end on the new version; the container keeps running as 99:100.
 - **Screenshots:** `unraid/07-updated.en.png`, `unraid/07-updated.ar.png`
 
-### 8. Logs and the setup report
+### 8. The apps find the home (59.08)
+- **Do:** with the default install (host network, no D-Bus socket mounted), open the Apple Player and the Android app on the same Wi-Fi and look for homes; then, on a computer, run `avahi-browse -art` (Linux) or `dns-sd -B _maktaba._tcp` (Mac).
+- **See:** both apps list the home by itself, at `<nas>-maktaba.local`; Unraid's own name (`<nas>.local`) and its SMB shares still resolve and show, and the NAS was not renamed (no `-2` in its name). With the system D-Bus socket mounted as the guide's option, the home is listed at the NAS's own name instead.
+- **Screenshots:** `unraid/08-discovered.en.png`, `unraid/08-discovered.ar.png`
+
+### 9. Logs and the setup report
 - **Do:** save `docker logs maktaba` and copy the report from Settings → This machine.
 - **See:** both are attached to the result file, with no secret in them.
 - **Screenshots:** none

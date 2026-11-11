@@ -37,7 +37,10 @@ ARG COMMIT=unknown
 # and initdb, postgres and Python's pwd look the user up), as the official Postgres image does;
 # on amd64 the VA-API drivers a NAS's chip needs (story 59.05): iHD (Broadwell and newer: J4125,
 # N100; Debian's non-free component, for that package alone), i965 (older Intel), Mesa (AMD),
-# and vainfo, which streaming reads the profiles with (THIRD_PARTY_NOTICES)
+# and vainfo, which streaming reads the profiles with (THIRD_PARTY_NOTICES). avahi-utils is
+# avahi-publish-service, for a household that mounts the host's system D-Bus socket so the
+# home is published through the NAS's own Avahi (story 59.08); without that mount it is never
+# run, and Maktaba's own responder answers beside the NAS's under <host>-maktaba.
 RUN set -eu; va=""; \
     if [ "$(dpkg --print-architecture)" = amd64 ]; then \
       printf 'Types: deb\nURIs: http://deb.debian.org/debian\nSuites: bookworm bookworm-updates\nComponents: non-free\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n' \
@@ -46,7 +49,7 @@ RUN set -eu; va=""; \
     fi; \
     apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-       ca-certificates ffmpeg libnss-wrapper tini tzdata $va \
+       avahi-utils ca-certificates ffmpeg libnss-wrapper tini tzdata $va \
     && rm -rf /var/lib/apt/lists/*
 
 # the default user for a plain `docker run`; nothing depends on it: the image runs as whatever

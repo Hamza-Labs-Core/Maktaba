@@ -1,5 +1,5 @@
 // The Synology guide's DSM screenshots (story 59.09). DSM's own screens can only be taken on a
-// DiskStation: docs/nas/checklists/synology.md (steps 18 to 22) lists each one. A screenshot
+// DiskStation: docs/nas/checklists/synology.md (steps 19 to 23) lists each one. A screenshot
 // is shown once it is taken, saved as web/packages/install/public/install/synology/<id>.<en|ar>.png
 // and marked ready here; until then the step shows its text alone (synologyGuide.test.ts checks
 // that every ready one has both files, and that the checklist names every one).

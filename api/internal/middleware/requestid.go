@@ -12,7 +12,7 @@ import (
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
 
-// RequestID is the first middleware after RealIP. It either accepts a
+// RequestID is the first middleware after the client address (shared/go/clientip). It either accepts a
 // client-supplied X-Request-Id (when it parses as a valid UUID v7) or
 // mints a fresh v7. The id is stored on the request context and echoed
 // in the response header so a client retrying a request can pin the

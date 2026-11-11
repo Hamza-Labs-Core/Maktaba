@@ -48,7 +48,7 @@ func register(instance, service, domain string, port int, txt []string) (announc
 		return nil, errors.New("no multicast interface has an address")
 	}
 	host := announcedHost(r)
-	srv, err := zeroconf.RegisterProxy(zeroconfInstance(dnsLabel(instance, 63)), service, domain, port, host, ips, txt, nil)
+	srv, err := zeroconf.RegisterProxy(zeroconfInstance(dnsLabel(instance, 63)), service, domain, port, host, ips, txt, announceInterfaces())
 	if err != nil {
 		return nil, err
 	}
@@ -115,22 +115,60 @@ func bareHost(h string) string {
 	return h
 }
 
-// interfaceIPs are the addresses zeroconf.Register announces: every IPv4 of the up,
-// multicast interfaces, and their global IPv6 (link-local when an interface has none).
+// interfaceIPs are the addresses zeroconf.Register announces: every IPv4 of the
+// announced interfaces (announceInterfaces), and their global IPv6 (link-local when an
+// interface has none).
 func interfaceIPs() []string {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return nil
-	}
 	var out []string
-	for _, ifi := range ifaces {
-		if ifi.Flags&net.FlagUp == 0 || ifi.Flags&net.FlagMulticast == 0 {
-			continue
-		}
+	for _, ifi := range announceInterfaces() {
 		addrs, _ := ifi.Addrs()
 		out = append(out, announcedIPs(addrs)...)
 	}
 	return out
+}
+
+// announceInterfaces are the interfaces zeroconf announces on (Epic 59 story 59.08): the
+// up, multicast ones but Docker's bridges and their veth ends (docker0, br-*, veth*), which
+// no app is on; and of those only the one holding MAKTABA_HOST_IP when one does (a NAS
+// with bonded links or VLANs, where the household reaches the home at that address).
+func announceInterfaces() []net.Interface {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	return pickInterfaces(ifaces, os.Getenv("MAKTABA_HOST_IP"), func(ifi net.Interface) []net.Addr {
+		addrs, _ := ifi.Addrs()
+		return addrs
+	})
+}
+
+// pickInterfaces is announceInterfaces over ifaces, hostIP and each one's addresses.
+func pickInterfaces(ifaces []net.Interface, hostIP string, addrsOf func(net.Interface) []net.Addr) []net.Interface {
+	var out []net.Interface
+	for _, ifi := range ifaces {
+		if ifi.Flags&net.FlagUp == 0 || ifi.Flags&net.FlagMulticast == 0 || dockerInterface(ifi.Name) {
+			continue
+		}
+		out = append(out, ifi)
+	}
+	want := net.ParseIP(strings.TrimSpace(hostIP))
+	if want == nil {
+		return out
+	}
+	for _, ifi := range out {
+		for _, a := range addrsOf(ifi) {
+			if ipnet, ok := a.(*net.IPNet); ok && ipnet.IP.Equal(want) {
+				return []net.Interface{ifi}
+			}
+		}
+	}
+	return out
+}
+
+// dockerInterface is a Docker bridge (docker0, a compose network's br-<id>) or the host
+// end of a container's link (veth…).
+func dockerInterface(name string) bool {
+	return name == "docker0" || strings.HasPrefix(name, "br-") || strings.HasPrefix(name, "veth")
 }
 
 // announcedIPs picks one interface's announced addresses.

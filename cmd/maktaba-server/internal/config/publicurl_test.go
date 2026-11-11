@@ -39,3 +39,27 @@ func TestPublicURLLoadsFromTOML(t *testing.T) {
 		t.Fatalf("defaults lost: %q", cfg.Server.StreamAddr)
 	}
 }
+
+// Epic 59 story 59.08: a container's MAKTABA_HOST_IP is the address devices reach it at,
+// so public_url and the web address default to it (on a bridge network the container's
+// own address is the bridge's); a value that is no address is not used.
+func TestLANIPFromMaktabaHostIP(t *testing.T) {
+	t.Setenv(EnvHostIP, "192.168.1.50")
+	if got := detectLANIP(); got != "192.168.1.50" {
+		t.Fatalf("MAKTABA_HOST_IP: %s", got)
+	}
+	c := Config{Server: ServerSection{StreamAddr: "0.0.0.0:8081", WebListen: "0.0.0.0:8088"}}
+	old := lanIP
+	lanIP = detectLANIP
+	t.Cleanup(func() { lanIP = old })
+	if got := c.PublicStreamURL(); got != "http://192.168.1.50:8081" {
+		t.Errorf("public_url: %s", got)
+	}
+	if got := c.PublicWebURL(); got != "http://192.168.1.50:8088" {
+		t.Errorf("web address: %s", got)
+	}
+	t.Setenv(EnvHostIP, "nas.local")
+	if got := detectLANIP(); got == "nas.local" {
+		t.Errorf("a name is not an address: %s", got)
+	}
+}

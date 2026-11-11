@@ -148,6 +148,38 @@ def wer_rise(baseline: dict[str, Any], key: str, clips: list[dict[str, Any]]) ->
 
 SERVER_TOML = server_toml()
 
+#: Story 59.08: the NAS's own mDNS responder, in a sibling container on the host's network
+AVAHI_IMAGE = "debian:12-slim"
+AVAHI_SCRIPT = """set -e
+apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+  avahi-daemon avahi-utils dbus >/dev/null
+# the NAS knows the user Maktaba's container runs as (a NAS account): the system bus looks
+# up a caller's groups and drops a uid it does not know
+getent passwd "$NAS_UID" >/dev/null || useradd -u "$NAS_UID" -M -s /usr/sbin/nologin maktaba-nas
+mkdir -p /run/dbus && rm -f /run/dbus/pid /run/dbus/system_bus_socket
+dbus-daemon --system --fork
+avahi-daemon --no-chroot --no-rlimits -D
+for i in $(seq 1 60); do avahi-daemon -c && break; sleep 1; done
+# ready once Avahi owns its name on the bus (Maktaba asks the bus that, once, at its start)
+for i in $(seq 1 60); do
+  dbus-send --system --print-reply --dest=org.freedesktop.DBus / org.freedesktop.DBus.GetNameOwner \
+    string:org.freedesktop.Avahi >/dev/null 2>&1 && break
+  sleep 1
+done
+avahi-publish-service "NAS share" _smb._tcp 445 >/tmp/publish.log 2>&1 &
+touch /tmp/avahi-ready
+exec sleep infinity
+"""
+
+
+def host_ip() -> str:
+    """The runner's LAN address, where a bridge cell's published ports answer."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.connect(("192.0.2.1", 9))
+        return str(s.getsockname()[0])
+
 
 def quiet_window_ahead(now: datetime, hours: int = 3) -> tuple[str, str]:
     """A one-hour quiet window opening `hours` from now (UTC, the container's TZ), so that
@@ -412,8 +444,18 @@ class Cell:
             a += ["--security-opt", f"seccomp={HERE / self.spec['seccomp']}"]
         for k, v in self.spec.get("env", {}).items():
             a += ["-e", f"{k}={v}"]
+        if self.bridged:
+            a += ["-e", f"MAKTABA_HOST_IP={host_ip()}"]
+        if self.spec.get("avahi") == "dbus":
+            # the NAS's system bus (the sibling's), as a household mounts the host's (59.08)
+            a += ["-v", f"{self.vol('dbus')}:/run/dbus"]
         a += list(self.spec.get("docker", []))
         return a + self.mounts()
+
+    @property
+    def bridged(self) -> bool:
+        """The cell runs on Docker's default bridge (story 59.08), its ports published."""
+        return self.spec.get("network") == "bridge"
 
     def unraid_shape(self) -> list[str]:
         """The Unraid template as dockerMan runs it (59.11), its paths on the cell's volumes and
@@ -463,7 +505,13 @@ class Cell:
     def network(self) -> list[str]:
         if self.local_port:
             return ["-p", f"127.0.0.1:{self.local_port}:28088"]
+        if self.bridged:
+            # the bridge variant of the compose files: 8088, 8080 and 8081, never 54329
+            return ["-p", "8088:8088", "-p", "8080:8080", "-p", "8081:8081"]
         return ["--network", "host"]
+
+    def setup_network(self) -> list[str]:
+        return [] if self.local_port or self.bridged else ["--network", "host"]
 
     # -- steps
 
@@ -473,7 +521,7 @@ class Cell:
         data = self.spec.get("data", {})
         owner = data.get("owner", "1000:1000")
         mode = data.get("mode", "0750")
-        for v in ("data", "media", "noaccess"):
+        for v in ("data", "media", "noaccess", "dbus"):
             docker("volume", "create", self.vol(v))
         # mounted at its own path first, so Docker's copy of the image's folder into an empty
         # volume (owned by 1000) happens before the owner is set
@@ -519,7 +567,7 @@ class Cell:
             p = self.compose_cmd("run", "--rm", "-T", "maktaba", "setup", "--answers", "/dev/stdin", "--lang", "en",
                                  *self.bundle(), input=json.dumps(answers), check=False, timeout=45 * 60)
         else:
-            p = docker("run", "--rm", "-i", *self.shape(), *(["--network", "host"] if not self.local_port else []),
+            p = docker("run", "--rm", "-i", *self.shape(), *self.setup_network(),
                        self.image, "setup", "--answers", "/dev/stdin", "--lang", "en", *self.bundle(),
                        input=json.dumps(answers), check=False, timeout=45 * 60)
         (self.out / "setup.log").write_text((p.stdout or "") + (p.stderr or ""), encoding="utf-8")
@@ -533,6 +581,8 @@ class Cell:
         return ["--bundle", "core"] if "59.01" in self.landed else []
 
     def start(self) -> None:
+        if self.spec.get("avahi"):
+            self.start_avahi()
         log("start the server container")
         if self.compose is not None:
             self.compose_cmd("up", "-d", "--pull", "never")
@@ -543,6 +593,128 @@ class Cell:
             docker("run", "-d", "--name", self.container + "-relay", "--network", f"container:{self.container}",
                    "alpine/socat", "TCP-LISTEN:28088,fork,reuseaddr", "TCP:127.0.0.1:8088")
         self.api = API(f"http://127.0.0.1:{self.local_port or 8088}")
+
+    # -- story 59.08: the NAS's own mDNS responder beside Maktaba
+
+    @property
+    def avahi(self) -> str:
+        return self.container + "-avahi"
+
+    def start_avahi(self) -> None:
+        """The NAS's avahi-daemon in a sibling container on the host's network: its own
+        system bus (shared with Maktaba in the dbus cell), avahi-daemon dropping root to its
+        own `avahi` user (another uid than Maktaba's), and a share it publishes, as a NAS
+        publishes its SMB service."""
+        log("the NAS's avahi-daemon, beside Maktaba")
+        mounts = ["-v", f"{self.vol('dbus')}:/run/dbus"]
+        uid = (self.user or "1000").split(":")[0]
+        docker("run", "-d", "--name", self.avahi, "--network", "host", "-e", f"NAS_UID={uid}", *mounts, AVAHI_IMAGE,
+               "sh", "-c", AVAHI_SCRIPT)
+
+        def up() -> bool:
+            st = docker("inspect", "-f", "{{.State.Running}}", self.avahi, check=False).stdout.strip()
+            if st != "true":
+                raise AssertionError("the avahi container stopped: " + docker("logs", self.avahi, check=False).stderr[-600:])
+            return docker("exec", self.avahi, "test", "-e", "/tmp/avahi-ready", check=False).returncode == 0
+
+        wait("avahi-daemon in its container", up, 10 * 60)
+
+    def avahi_sh(self, script: str, timeout: int = 120) -> str:
+        p = docker("exec", self.avahi, "sh", "-c", script, check=False, timeout=timeout)
+        return (p.stdout or "") + (p.stderr or "")
+
+    def browse(self) -> list[list[str]]:
+        """avahi-browse's resolved services (=;iface;proto;name;type;domain;host;addr;port;txt)."""
+        out = self.avahi_sh("timeout 20 avahi-browse -a -r -t -p -k 2>/dev/null || true")
+        return [line.split(";") for line in out.splitlines() if line.startswith("=;")]
+
+    def host_name(self) -> str:
+        return self.avahi_sh("hostname").strip().split(".")[0]
+
+    def maktaba_seen(self) -> list[str]:
+        """Waits for avahi-browse to list the NAS's share and Maktaba; Maktaba's record."""
+        found: dict[str, list[str]] = {}
+
+        def both() -> bool:
+            for rec in self.browse():
+                if len(rec) > 6 and rec[4] in ("_maktaba._tcp", "_smb._tcp"):
+                    found[rec[4]] = rec
+            return "_maktaba._tcp" in found and "_smb._tcp" in found
+
+        try:
+            wait("the NAS's share and Maktaba in avahi-browse", both, 5 * 60, every=10)
+        finally:
+            (self.out / "avahi-browse.txt").write_text(self.avahi_sh("timeout 20 avahi-browse -a -r -t -p -k || true"),
+                                                       encoding="utf-8")
+        return found["_maktaba._tcp"]
+
+    def nas_name_intact(self) -> str:
+        host = self.host_name()
+        out = self.avahi_sh(f"avahi-resolve -4 -n {host}.local")
+        if host not in out or "Failed" in out:
+            raise AssertionError(f"the NAS's own name does not resolve: {out.strip()}")
+        log_text = docker("logs", self.avahi, check=False)
+        if "Host name conflict" in (log_text.stdout or "") + (log_text.stderr or ""):
+            raise AssertionError("avahi-daemon renamed the NAS (a host name conflict)")
+        return host
+
+    def assert_mdns_own(self) -> str:
+        """T02: no D-Bus mount: Maktaba's own responder answers beside the NAS's avahi-daemon,
+        under <host>-maktaba; avahi-browse shows both, and the NAS keeps its name."""
+        rec = self.maktaba_seen()
+        host = self.nas_name_intact()
+        if rec[6].lower() != f"{host}-maktaba.local".lower():
+            raise AssertionError(f"Maktaba announced at {rec[6]}, not {host}-maktaba.local")
+        own = self.avahi_sh(f"avahi-resolve -4 -n {host}-maktaba.local")
+        if "Failed" in own or not own.strip():
+            raise AssertionError(f"{host}-maktaba.local does not resolve: {own.strip()}")
+        top = docker("top", self.container, "-eo", "pid,comm").stdout
+        if "avahi-publish" in top:
+            raise AssertionError("avahi-publish-service runs without a D-Bus mount")
+        return f"{rec[3]} at {rec[6]}:{rec[8]} beside the NAS's _smb._tcp; {host}.local intact"
+
+    def assert_mdns_dbus(self) -> str:
+        """T08: the system bus mounted: Maktaba publishes through the NAS's Avahi, at the
+        NAS's own name."""
+        rec = self.maktaba_seen()
+        host = self.nas_name_intact()
+        if rec[6].lower() != f"{host}.local".lower():
+            clog = docker("logs", self.container, check=False)
+            said = [ln for ln in ((clog.stdout or "") + (clog.stderr or "")).splitlines() if "advertising _maktaba" in ln]
+            raise AssertionError(f"Maktaba announced at {rec[6]}, not through Avahi at {host}.local"
+                                 f" ({said[-1].strip() if said else 'no advertising line'})")
+        top = docker("top", self.container, "-eo", "pid,comm").stdout
+        if "avahi-publish" not in top:
+            raise AssertionError("no avahi-publish-service in the container")
+        return f"{rec[3]} at {rec[6]}:{rec[8]} through the NAS's Avahi"
+
+    def assert_bridge(self) -> str:
+        """T04: on a bridge mDNS and SSDP are off, setup and the log say how apps connect,
+        public_url comes from MAKTABA_HOST_IP, and an app connects by the address."""
+        ip = host_ip()
+        url = f"http://{ip}:8088"
+        m = self.machine()
+        net = (m.get("machine") or {}).get("network") or {}
+        if net.get("mode") != "bridge":
+            raise AssertionError(f"network read as {net}")
+        if m.get("web_url") != url:
+            raise AssertionError(f"web_url {m.get('web_url')!r}, want {url}")
+        text = "This container is on a bridge network"
+        setup_log = (self.out / "setup.log").read_text(encoding="utf-8")
+        if text not in setup_log or url not in setup_log:
+            raise AssertionError("setup did not say the bridge text with the address")
+        clog = docker("logs", self.container, check=False)
+        clog_text = (clog.stdout or "") + (clog.stderr or "")
+        for want in ("network: bridge", "mDNS and SSDP off", text, "شبكة جسرية"):
+            if want not in clog_text:
+                raise AssertionError(f"the container log lacks {want!r}")
+        if "advertising _maktaba._tcp" in clog_text:
+            raise AssertionError("mDNS announced on a bridge")
+        # an app on the LAN: the host's address, the published port
+        s, _ = API(url).get("/api/system/health", timeout=10)
+        if s != 200:
+            raise AssertionError(f"{url}/api/system/health: {s}")
+        return f"{net.get('interface')} ({net.get('driver')}), {url} answers"
 
     def wait_ready(self) -> None:
         api = self.api
@@ -1330,6 +1502,8 @@ class Cell:
                 (out / name).write_text(f"not kept: {e}\n", encoding="utf-8")
 
         keep("container.log", "logs", "-t", self.container)
+        if self.spec.get("avahi"):
+            keep("avahi.log", "logs", "-t", self.avahi)
         keep("inspect.json", "inspect", self.container)
         keep("processes-top.txt", "top", self.container, "-eo", "uid,gid,pid,ppid,rss,comm")
         keep("cgroup-memory.txt", "exec", self.container, "sh", "-c",
@@ -1355,9 +1529,9 @@ class Cell:
     def teardown(self, quiet: bool = False) -> None:
         if self.compose is not None and (self.out / "docker-compose.yml").is_file():
             self.compose_cmd("down", "--remove-orphans", check=False)
-        for c in (self.container + "-relay", self.container):
+        for c in (self.container + "-relay", self.container, self.avahi):
             docker("rm", "-f", c, check=False)
-        for v in ("data", "media", "noaccess"):
+        for v in ("data", "media", "noaccess", "dbus"):
             docker("volume", "rm", "-f", self.vol(v), check=False)
 
     # -- the whole cell

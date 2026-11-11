@@ -49,9 +49,11 @@ type machineTier struct {
 // runningQuiet and runningDisk its quiet hours and whether Postgres was tuned for
 // spinning disks (Epic 59 story 59.02).
 var (
-	runningTier  atomic.Pointer[machineTier]
-	runningQuiet atomic.Pointer[string]
-	runningDisk  atomic.Pointer[bool]
+	runningTier atomic.Pointer[machineTier]
+	// runningPortMoves are the ports this start moved (Epic 59 story 59.08)
+	runningPortMoves atomic.Pointer[[]portMove]
+	runningQuiet     atomic.Pointer[string]
+	runningDisk      atomic.Pointer[bool]
 )
 
 // detectMachine reads the hardware (tests replace it).
@@ -135,6 +137,10 @@ type machineDoc struct {
 	// render node and its driver and codecs, or why it is software (no_device, group_add,
 	// device_failed). Absent until the streaming role has written one.
 	Video json.RawMessage `json:"video,omitempty"`
+	// WebURL is this machine's web address as devices reach it (Epic 59 story 59.08: the
+	// bridge note names it); PortMoves the ports this start moved, and who holds them.
+	WebURL    string     `json:"web_url"`
+	PortMoves []portMove `json:"port_moves"`
 }
 
 // machineDocOf is the document for what runs (mt) and what server.toml saves (file).
@@ -156,6 +162,11 @@ func machineDocOf(mt machineTier, file config.Config, canRestart bool) machineDo
 	d.Rotational, d.DiskHow = pgbundle.DataRotational(file, filepath.Join(file.StateDir(), "postgres"))
 	if b, err := os.ReadFile(supervisor.VideoStatusPath(file)); err == nil && json.Valid(b) {
 		d.Video = b
+	}
+	d.WebURL = file.PublicWebURL()
+	d.PortMoves = []portMove{}
+	if pm := runningPortMoves.Load(); pm != nil {
+		d.PortMoves = *pm
 	}
 	d.Saved = "auto"
 	if next.Chosen {

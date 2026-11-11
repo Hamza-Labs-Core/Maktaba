@@ -302,7 +302,9 @@ func buildHomeTV(bg *background, logger *slog.Logger, cfg config.Config, pool *p
 	// SSDP (udp/1900) and HDHomeRun discovery (udp/65001), absolute URLs only
 	ssdp := &hdhr.SSDPController{Repo: hdhrRepo, Logger: logger, LocationBase: publicBase,
 		HTTPAddr: os.Getenv("MAKTABA_HTTP_ADDR")}
-	bg.Loop("hdhr_ssdp", ssdp.Run)
+	if ssdpOn(os.Getenv) {
+		bg.Loop("hdhr_ssdp", ssdp.Run)
+	}
 	return mounts, nil
 }
 

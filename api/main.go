@@ -70,6 +70,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 	errrpt "github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 	health "github.com/Hamza-Labs-Core/Maktaba/shared/health/go"
@@ -240,6 +241,12 @@ func runServe() error {
 	// DATABASE_URL pool below opens with pgdsn.Open, which settles it per connection,
 	// and the event bus's listener with pgdsn.ForLibPQ.
 	boundNodeDatabaseURL(nodeCfg)
+	// Epic 59 story 59.08: the reverse proxies whose forwarded client address is believed
+	// ([server] trusted_proxies); a bad entry refuses to start, as the cloud's does
+	trustedProxies, err := clientip.FromEnv()
+	if err != nil {
+		return err
+	}
 
 	// MAKTABA_AUTO_MIGRATE=true runs `migrate up` synchronously before
 	// the HTTP servers bind. The dev/e2e compose stacks set this so
@@ -370,7 +377,13 @@ func runServe() error {
 	capabilities := components.NewCapabilities(components.CapabilitiesOptions{Logger: logger,
 		AllOn: components.CapabilitiesGateOff() || runner.ReconcileOff()})
 
+	// Epic 59 story 59.08: the approved nodes forward their clients' addresses
+	nodes := &trustedNodes{}
+	if statsDB != nil {
+		go nodes.run(context.Background(), statsDB, trustedNodesEvery, logger)
+	}
 	r := router.New(router.Deps{
+		TrustedHop:         nodes.Has,
 		Capabilities:       capabilities,
 		License:            licRef,
 		Usage:              usageCounter,
@@ -382,6 +395,7 @@ func runServe() error {
 		StatsDataDir:       statsDataDir,
 		StatsDB:            statsDB,
 		ErrorReporter:      errReporter,
+		TrustedProxies:     trustedProxies,
 	})
 
 	// Diagnostics / log-collection surface (/api/admin/logs/* +

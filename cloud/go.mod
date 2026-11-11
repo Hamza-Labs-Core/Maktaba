@@ -7,6 +7,7 @@ go 1.26.0
 godebug multipathtcp=0
 
 require (
+	github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/log/go v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go v0.0.0
 	github.com/fxamacker/cbor/v2 v2.9.4
@@ -48,3 +49,6 @@ require (
 replace github.com/Hamza-Labs-Core/Maktaba/shared/log/go => ../shared/log/go
 
 replace github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go => ../shared/logkeeper/go
+
+// The client-address resolver (Epic 59 story 59.08); cloud/Dockerfile copies it beside cloud/.
+replace github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip => ../shared/go/clientip

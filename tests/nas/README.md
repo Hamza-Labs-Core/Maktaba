@@ -81,6 +81,9 @@ runs every cell, a change to `web/` alone runs nothing.
 | `compose_engine` | the compose cell's file was taken unchanged by the engine it names (`docker compose config`, then `up`), its version and API recorded (59.09) |
 | `stt_light_off` | on the Light tier speech is off by default, its reason `light`, the model base, in the quiet hours only; on arm64 no second listen (59.06) |
 | `stt_engine` | the speech engine (the stt extra's aarch64 pins, `pipeline/constraints-stt.txt`) goes into the pipeline's venv and imports, with no torch and no transformers: on arm64 from the payload's wheelhouse alone (`--no-index`), on amd64 from PyPI; its pip log is `stt-install.log` (59.06) |
+| `mdns_own` | (T02) with no D-Bus mount, the sibling's `avahi-browse -a -r -t -p` lists both the NAS's `_smb._tcp` and `_maktaba._tcp`, Maktaba's at `<host>-maktaba.local`, which `avahi-resolve` resolves; the NAS's own `<host>.local` still resolves and avahi-daemon logged no host name conflict; no `avahi-publish-service` runs (59.08) |
+| `mdns_dbus` | (T08) the bus mounted: `_maktaba._tcp` is listed at the NAS's own `<host>.local` (Avahi published it) and `avahi-publish-service` runs in the container (59.08) |
+| `bridge` | (T04) `GET /api/server/machine` reads the network as `bridge` and `web_url` is `http://<MAKTABA_HOST_IP>:8088`; `setup.log` and the container log carry the bridge text with that address (the log in English and Arabic) and `mDNS and SSDP off`, and nothing was advertised; the health route answers at the runner's address on the published port (59.08) |
 | `stt_measure` | an admin's Measure again (`POST /api/server/speech/measure`): the server transcribes the bundled Arabic and English clips with the tier's model; the real-time factor and each clip's word error rate are reported (`stt:wer`, `api-speech.json`), and a rise of more than 5 points over [`stt-baseline.json`](stt-baseline.json) for that model and architecture fails (no entry yet: recorded only) (59.06) |
 
 An assertion still waiting for its story is written `{"name": "tier_light", "needs": ["59.04"]}`:
@@ -99,8 +102,12 @@ it is reported as pending (⏳) until that story is in `landed`.
    a NAS's own compose file run unchanged by that Docker engine in a dind container, 59.09),
    `kill_restart`, `quiet_hours_ahead` (a one-hour quiet window opening three hours from now,
    UTC; every other cell has none, `[schedule] quiet_hours = ""`), `speech` (story 59.06:
-   `[transcription] speech = "on"` and the tier's model instead of the cells' tiny one); then
-   `asserts`.
+   `[transcription] speech = "on"` and the tier's model instead of the cells' tiny one),
+   `avahi` (story 59.08: `"sibling"` starts the NAS's avahi-daemon in a `debian:12-slim`
+   container on the host's network, its own system bus and its own `avahi` user, publishing
+   an `_smb._tcp` share; `"dbus"` also mounts that bus at `/run/dbus` in Maktaba's container),
+   `network: "bridge"` (story 59.08: Docker's default bridge, 8088, 8080 and 8081 published,
+   `MAKTABA_HOST_IP` the runner's address, setup on the bridge too); then `asserts`.
 2. A new assertion is a method `assert_<name>` of `Cell` in `cell.py` returning a short detail,
    raising `AssertionError` to fail. Use `self.api` (signed in as the admin) and `docker(...)`.
 3. A cell or assertion for a story not merged yet carries `needs: ["59.NN"]`; the story's pull
@@ -152,6 +159,12 @@ a container cannot change its host's hierarchy. The v1 memory limit
 (`memory.limit_in_bytes`, its "no limit" near 2^63) is read by 59.04's unit tests
 (`cmd/maktaba-server/internal/hostinfo`), and the device checklist records what a DS425+ reads.
 
+**Networking (59.08):** `mdns-own` (no D-Bus mount: Maktaba's own responder beside the NAS's
+avahi-daemon), `mdns-dbus` (the NAS's bus mounted: published through its Avahi) and `bridge`
+(mDNS and SSDP off, the bridge text, an app by address). Each keeps `avahi-browse.txt` and
+`avahi.log` (the sibling's) beside the container's log. What apps on a real NAS find is in the
+device checklists.
+
 **The TrueNAS app (59.10):** `truenas_app.py` runs truenas/apps' own tooling (at the commit
 `truenas/catalog.env` pins, cloned by `truenas/clone-catalog.sh`) on
 `deploy/nas/truenas/ix-dev/community/maktaba`: nas.yml's `truenas-lint` (the catalog's metadata
@@ -162,4 +175,4 @@ image: the permissions step gives the volume to 568, setup from the app's Shell,
 platform truenas and the app's memory limit read; then the catalog's own deploy of each test
 values file). Both keep their logs as artifacts (`nas-truenas-lint`, `nas-truenas-deploy`).
 
-**Later phases add cells:** `bridge` and `offline` (59.08, 59.01), and the update legs (`update-rehearsal-container`, 59.12).
+**Later phases add cells:** `offline` (59.01), and the update legs (`update-rehearsal-container`, 59.12).

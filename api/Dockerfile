@@ -40,6 +40,7 @@ COPY api/go.mod api/go.sum ./api/
 COPY tools/healthcheck/go.mod ./tools/healthcheck/
 COPY shared/components/go.mod ./shared/components/
 COPY shared/errrpt/go/go.mod  ./shared/errrpt/go/
+COPY shared/go/clientip/go.mod ./shared/go/clientip/
 COPY shared/go/componentpack/go.mod ./shared/go/componentpack/
 COPY shared/go/layout/go.mod ./shared/go/layout/
 COPY shared/go/mediaaccess/go.mod ./shared/go/mediaaccess/

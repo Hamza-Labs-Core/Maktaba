@@ -54,6 +54,35 @@ service that owns the relevant state; it does not spread across runtimes.
 - **Cloud:** a home links to a Maktaba Cloud account and keeps an outbound tunnel to the
   relay, so apps can reach it away from home without opening ports.
 
+### Client addresses
+
+The API and streaming resolve each request's client address once, in their router's
+first middleware (`shared/go/clientip`), and rewrite `r.RemoteAddr` to it. A handler, a
+rate limiter or a log line reads `r.RemoteAddr` and never reads `X-Forwarded-For` itself:
+that header is text the client can write.
+
+The middleware believes `X-Forwarded-For` (else `X-Real-IP`) only from a trusted peer:
+loopback, which is this machine's own proxies (the web port's, the relay agent, direct
+access), the home's approved nodes (each forwards its own clients' requests to the home; the
+API reads their addresses from `cluster_nodes` every 30 s), and the reverse proxies listed in
+server.toml:
+
+```toml
+[server]
+# a reverse proxy in front of Maktaba (a NAS's, for example): addresses or CIDRs
+trusted_proxies = ["198.51.100.5", "203.0.113.0/24"]
+```
+
+It walks the header right to left past the trusted hops; the first address that is not
+trusted is the client. From any other peer the header is ignored and the peer is the
+client. The list is empty by default, is set in Settings → Storage & discovery, and
+reaches both roles as `MAKTABA_TRUSTED_PROXIES`; a bad entry stops them from starting. A
+check that must know whether the caller is a program on this machine (`MarkLocalCaller`,
+`StripVia`, the stream gate's viewer header) runs on the connection's own address, before
+the rewrite or through `clientip.Peer`. A node forwards the home only the client it
+resolved; the home believes it when the node's address is in the home's list. The cloud
+has its own `[server] trusted_proxies` for `CF-Connecting-IP`, which takes CIDRs only.
+
 ## Design principles
 
 - **Content-addressed identity.** A video is identified by a BLAKE3 hash of its content,

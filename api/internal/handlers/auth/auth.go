@@ -982,8 +982,9 @@ func isNativeClient(r *http.Request) bool {
 }
 
 func remoteIP(r *http.Request) string {
-	// The router runs chi's RealIP middleware, so RemoteAddr already
-	// reflects the client-side address. Strip the port.
+	// The router resolves the client address (shared/go/clientip: X-Forwarded-For
+	// from loopback or a trusted proxy only), so RemoteAddr already reflects the
+	// client-side address. Strip the port.
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr

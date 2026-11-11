@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 )
 
 // ClientHeader is the app's label (Epic 44): "<app>/<version> (<platform>; <device>)",
@@ -133,14 +135,13 @@ type Viewer struct {
 }
 
 // FromRequest is the viewer of a front-door request: the person from the gate's
-// ViewerHeader on a loopback connection, the app from X-Maktaba-Client (else the
-// User-Agent), the address from X-Forwarded-For (else the connection).
+// ViewerHeader on a loopback connection (the connection's own address, clientip.Peer),
+// the app from X-Maktaba-Client (else the User-Agent), the address the public mux
+// resolved (RemoteAddr: X-Forwarded-For only from loopback or a trusted proxy, Epic 59
+// story 59.08), never a forwarded header read here.
 func FromRequest(r *http.Request) Viewer {
 	v := Viewer{Addr: remoteHost(r.RemoteAddr)}
-	if f := r.Header.Get("X-Forwarded-For"); f != "" {
-		v.Addr = strings.TrimSpace(strings.Split(f, ",")[0])
-	}
-	if h := r.Header.Get(ViewerHeader); h != "" && loopback(r.RemoteAddr) {
+	if h := r.Header.Get(ViewerHeader); h != "" && loopback(clientip.Peer(r)) {
 		if id, err := uuid.Parse(h); err == nil {
 			v.User = id
 		}
