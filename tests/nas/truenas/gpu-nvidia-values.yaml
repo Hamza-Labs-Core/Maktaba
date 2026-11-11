@@ -1,0 +1,35 @@
+# render-only (a GitHub runner has no NVIDIA runtime): an NVIDIA card selected in the form
+resources:
+  limits:
+    cpus: 8
+    memory: 16384
+  gpus:
+    use_all_gpus: false
+    kfd_device_exists: false
+    nvidia_gpu_selection:
+      "0000:01:00.0":
+        use_gpu: true
+        uuid: GPU-2f6e4a1c-0d3b-4c39-9a51-5b7e3f0c2d11
+
+TZ: Etc/UTC
+maktaba:
+  additional_envs: []
+network:
+  host_network: true
+  host_ip: ""
+
+run_as:
+  user: 568
+  group: 568
+
+ix_volumes:
+  maktaba-data: /opt/tests/mnt/maktaba-nvidia-data
+
+storage:
+  data:
+    type: ix_volume
+    ix_volume_config:
+      dataset_name: maktaba-data
+      create_host_path: true
+  media: []
+  additional_storage: []

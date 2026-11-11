@@ -22,6 +22,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appruntime"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/mediaaccess"
 )
 
 // container: the Docker install's entrypoint (deploy/docker/server/Dockerfile, behind
@@ -97,6 +98,9 @@ type containerDeps struct {
 	start func(ctx context.Context, path string, args, env []string) (int, error)
 	// follow copies what is appended to the log to out until ctx ends.
 	follow func(ctx context.Context, path string, out io.Writer)
+	// platform is the NAS the container says it runs on (MAKTABA_PLATFORM; "" none): the
+	// setup hint names that NAS's way to run a command (story 59.10).
+	platform string
 	// preflight runs before anything else (story 59.01): the variables every child gets,
 	// or a refusal (exit 78). nil: none (tests).
 	preflight func() ([]string, error)
@@ -132,6 +136,7 @@ func newContainerDeps() containerDeps {
 			followLog(ctx, path, out, 250*time.Millisecond)
 		},
 		preflight: newPreflight().run,
+		platform:  mediaaccess.PlatformFromEnv(),
 	}
 }
 
@@ -391,8 +396,7 @@ func (c containerDeps) waitSetup(ctx context.Context) bool {
 			return true
 		}
 		if !said {
-			c.logf("Maktaba is not set up yet: run its setup in this image, `docker compose run --rm maktaba setup`; " +
-				"the server starts here by itself once it is done")
+			c.logf("%s", setupHint(c.platform))
 			said = true
 		}
 		select {
@@ -401,6 +405,18 @@ func (c containerDeps) waitSetup(ctx context.Context) bool {
 		case <-time.After(c.every):
 		}
 	}
+}
+
+// setupHint is what a container not set up says once: how to run its setup on platform
+// (MAKTABA_PLATFORM, which the TrueNAS app sets; its households have no compose file to run).
+func setupHint(platform string) string {
+	if strings.EqualFold(strings.TrimSpace(platform), mediaaccess.PlatformTrueNAS) {
+		return "Maktaba is not set up yet: open this app's Shell in TrueNAS (Apps → Installed → Maktaba → " +
+			"Workloads → maktaba → Shell) and run `/opt/maktaba/server/bin/maktaba-server container setup`; " +
+			"the server starts here by itself once it is done"
+	}
+	return "Maktaba is not set up yet: run its setup in this image, `docker compose run --rm maktaba setup`; " +
+		"the server starts here by itself once it is done"
 }
 
 // run is the command: the bootstrap, then the given command (replacing this process) or,

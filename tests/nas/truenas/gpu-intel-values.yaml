@@ -1,0 +1,33 @@
+# render-only (a GitHub runner has no /dev/dri): Intel/AMD "allocate GPU", host-path data
+resources:
+  limits:
+    cpus: 4
+    memory: 8192
+  gpus:
+    use_all_gpus: true
+    kfd_device_exists: false
+    nvidia_gpu_selection: {}
+
+TZ: Europe/London
+maktaba:
+  additional_envs: []
+network:
+  host_network: true
+  host_ip: ""
+
+run_as:
+  user: 568
+  group: 568
+
+storage:
+  data:
+    type: host_path
+    host_path_config:
+      acl_enable: false
+      path: /opt/tests/mnt/maktaba-hostpath-data
+  media:
+    - path: /opt/tests/mnt/tank/media
+      read_only: false
+    - path: /opt/tests/mnt/tank/archive
+      read_only: true
+  additional_storage: []

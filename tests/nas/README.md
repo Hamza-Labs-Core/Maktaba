@@ -54,6 +54,7 @@ runs every cell, a change to `web/` alone runs nothing.
 |---|---|
 | `ready` | the health route, the sign-in and every role answered (step 4) |
 | `only_uid` | every process in the container (`docker top`) runs as the cell's uid |
+| `healthcheck` | the image's `maktaba-server healthcheck` (the TrueNAS app's healthcheck, run by `docker exec`) answers healthy: the web app's health route answered 200 (59.10) |
 | `scan` | the libraries' roots are the fixtures' and a scan finds all 40 clips |
 | `thumbnail` | an Arabic clip's poster is served |
 | `transcode` | a forced software transcode of the HEVC clip serves its master playlist, a rendition and a first segment |
@@ -120,5 +121,15 @@ now. A new one goes in a table here (`| Need | What the cells found |`) until it
 (`/dev/null` as the render node: the test encode fails) and `vaapi-no-group` (a node the user may
 not open): each ends in libx264 with its reason in Settings. Real VA-API is in the device
 checklists (J4125, N100).
+
+**The TrueNAS app (59.10):** `truenas_app.py` runs truenas/apps' own tooling (at the commit
+`truenas/catalog.env` pins, cloned by `truenas/clone-catalog.sh`) on
+`deploy/nas/truenas/ix-dev/community/maktaba`: nas.yml's `truenas-lint` (the catalog's metadata
+check, port check and render of each test values file, then the shape the story asks of each
+render, and `truenas/*-values.yaml`, renders a runner cannot start: an Intel/AMD GPU, an NVIDIA
+card, host-path data) and `truenas-deploy` (the ixVolume render started with this commit's
+image: the permissions step gives the volume to 568, setup from the app's Shell, ready as 568,
+platform truenas and the app's memory limit read; then the catalog's own deploy of each test
+values file). Both keep their logs as artifacts (`nas-truenas-lint`, `nas-truenas-deploy`).
 
 **Later phases add cells:** `bridge` and `offline` (59.08, 59.01), and the update legs (`update-rehearsal-container`, 59.12).

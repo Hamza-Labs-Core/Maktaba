@@ -1,0 +1,77 @@
+# Maktaba as a TrueNAS Custom App (TrueNAS 25.04 and newer), for use until the Maktaba app is
+# in TrueNAS's catalog: Apps → Discover → ⋮ → Install via YAML, name it `maktaba`, paste this,
+# then change the lines marked CHANGE. Each release publishes this file pinned to its image
+# (maktaba-truenas-custom-app.yaml on the release page). The guide: maktaba.tv/install/truenas.
+#
+# Before you install:
+#   1. Datasets → Add Dataset on your SSD pool if you have one (else your main pool), named
+#      for example `apps/maktaba`, with the preset **Apps**: the apps user (568) gets Modify.
+#   2. For each media dataset: Datasets → {dataset} → Permissions → Edit → Add Item: user
+#      `apps` (568), Read (or Modify), Save Access Control List. Maktaba changes no
+#      permissions itself; a folder it cannot read shows No access with this same fix.
+#
+# After it is running: open the app's Shell (Apps → Installed → maktaba → Workloads →
+# maktaba → Shell) and run
+#     /opt/maktaba/server/bin/maktaba-server container setup
+# Maktaba then starts by itself; open http://<your NAS>:8088.
+#
+# Updates: Maktaba updates itself inside its update window (Admin → Updates). A Custom App
+# is not moved by the catalog; once the Maktaba app is in it, install that instead with the
+# same data path, and the home carries on.
+
+services:
+  maktaba:
+    image: ghcr.io/hamza-labs-core/maktaba-server:v0.3.121
+    restart: unless-stopped
+    # TrueNAS's apps user and group. Never root: Maktaba refuses to start as root.
+    user: "568:568"
+    group_add:
+      - "568"
+    # the launcher drains the server on a stop (the pipeline's jobs, then Postgres)
+    stop_grace_period: 90s
+    # the NAS's own network: the apps and TVs of your network find the home by themselves
+    # (mDNS, Maktaba's own responder) and reach it at the NAS's address. Maktaba's ports
+    # (8088, 8080, 8081, 54329) do not clash with TrueNAS's (80, 443).
+    network_mode: host
+    environment:
+      MAKTABA_PLATFORM: truenas
+      TZ: Etc/UTC # CHANGE: your time zone, for example Asia/Riyadh
+    # the app's memory limit: Maktaba sizes itself to it (Light under 6 GB, Standard, Strong
+    # from 16 GB). ZFS's ARC gives memory back when needed, and Maktaba counts it as available.
+    deploy:
+      resources:
+        limits:
+          memory: 8G # CHANGE if you like
+    healthcheck:
+      # healthy once the web app answers, and while it waits for its first setup
+      test: ["CMD", "/opt/maktaba/server/bin/maktaba-server", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10m
+    security_opt:
+      - no-new-privileges=true
+    cap_drop:
+      - ALL
+    volumes:
+      # everything Maktaba keeps (settings, the version it updates itself to, the database,
+      # logs, models). Keep this path when you reinstall: the home is in it.
+      - /mnt/ssd/apps/maktaba:/var/lib/maktaba # CHANGE the left side: your data dataset
+      # your media, each at its own path, so a Maktaba cluster's machines see the same share.
+      # Remove `:ro` to let Maktaba write beside your videos; with it, the library shows
+      # Read only and subtitles are kept in the database.
+      - /mnt/tank/media:/mnt/tank/media:ro # CHANGE both sides: your media dataset
+    # Intel or AMD video (VA-API, an N100 or a Ryzen APU): remove the # of these lines.
+    # devices:
+    #   - /dev/dri:/dev/dri
+    # group_add (add to the list above): "44" (video) and "107" (render), TrueNAS's groups.
+    # NVIDIA (Apps → Configuration → Settings → Install NVIDIA Drivers first): video (NVENC)
+    # and faster speech to text. TrueNAS 25.10 dropped Pascal and older cards: Maktaba then
+    # converts on the CPU and Settings → This machine says why. Add under `resources:` above
+    #         reservations:
+    #           devices:
+    #             - driver: nvidia
+    #               count: all
+    #               capabilities: [gpu]
+    # and under `environment:` above
+    #   NVIDIA_DRIVER_CAPABILITIES: all

@@ -2631,6 +2631,19 @@ build fails when the two differ.
   priority with one thread per two cores, and no more speech workers start than the memory
   holds. The second listen stays on x86_64 with an NVIDIA GPU.
 
+- **Maktaba as a TrueNAS app (story 59.10).** TrueNAS 25.04 and newer gets Maktaba's app in the
+  catalog's own format (`deploy/nas/truenas`), ready for its community train: it runs as `apps`
+  (568), keeps its data on a dataset with the Apps preset (an SSD pool when there is one) or an
+  ixVolume the catalog's permissions step hands to 568, mounts each media folder at its own path
+  with a read-only toggle, uses the host network, and offers TrueNAS's GPU choice (Intel/AMD for
+  VA-API, NVIDIA). Until the app is in the catalog, each release carries
+  `maktaba-truenas-custom-app.yaml` to install as a Custom App. The setup runs from the app's
+  Shell (`maktaba-server container setup`); a new `maktaba-server healthcheck` keeps the app
+  healthy while it waits for that setup. On TrueNAS a data folder Maktaba cannot write says
+  "Edit the dataset's permissions and add an ACL entry for user 568 with Modify, or use the Apps
+  preset." CI runs the catalog's own tooling on the app (render, metadata, ports, deploy), and the
+  maktaba.tv guide and device checklist cover TrueNAS 25.04 and 25.10.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings

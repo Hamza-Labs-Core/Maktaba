@@ -31,6 +31,12 @@
 #              secrets.MAKTABA_REPO_SIGNING_PASSPHRASE  when the key has one
 #   Homebrew   vars.HOMEBREW_TAP_REPO (owner/homebrew-tap), secrets.HOMEBREW_TAP_TOKEN (contents:write on it)
 # The Mac app's cask also needs vars.TAURI_UPDATER_PUBKEY (without it the tap gets the formula).
+#   TrueNAS    vars.TRUENAS_APPS_FORK (owner/apps, the project account's fork of truenas/apps),
+#              secrets.TRUENAS_APPS_TOKEN (contents:write on the fork, pull requests on
+#              truenas/apps), and vars.TRUENAS_APP_IN_CATALOG = true once the Maktaba app is in
+#              the catalog's community train (story 59.10): each release's bump pull request
+#              with the release's own maktaba-truenas-app-<version>.tar.gz (rendered by
+#              release.yml, verified here against the signed checksums.txt; no checkout).
 
 name: Packages
 
@@ -365,3 +371,96 @@ jobs:
           cask=()
           [ ! -f maktaba-app.rb ] || cask=(maktaba-app.rb)
           bash tools/release/homebrew-tap.sh push tap "${TAG}" dl/maktaba.rb "${cask[@]}"
+
+  # Story 59.10: the release's bump of the Maktaba app in truenas/apps' community train, as
+  # the catalog's own flow takes it (its CI then renders and deploys the app). This job runs on
+  # workflow_run with a token, so it checks out no code and runs none of the repository's:
+  # release.yml (on the tag) rendered the app pinned to its image's digest as a release asset,
+  # maktaba-truenas-app-<version>.tar.gz; this job verifies it against the release's
+  # Sigstore-signed checksums.txt (the identity machines verify: release.yml at the tag), checks
+  # it holds only the app's own folder, and copies those files into the pull request as data.
+  # The pull request comes from the project account's fork. Nothing before the app is in the
+  # catalog.
+  truenas-catalog:
+    name: TrueNAS catalog
+    needs: gate
+    if: needs.gate.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: packages
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.gate.outputs.tag }}
+      FORK: ${{ vars.TRUENAS_APPS_FORK }}
+      IN_CATALOG: ${{ vars.TRUENAS_APP_IN_CATALOG }}
+    steps:
+      - name: Configured
+        id: config
+        env:
+          HAS_TOKEN: ${{ secrets.TRUENAS_APPS_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          if [ "${IN_CATALOG}" != true ]; then
+            echo "::notice::the Maktaba app is not in TrueNAS's catalog yet (vars.TRUENAS_APP_IN_CATALOG): ${TAG}'s Custom App YAML is on the release page"
+            echo "ready=false" >>"${GITHUB_OUTPUT}"
+          elif [ -n "${FORK}" ] && [ "${HAS_TOKEN}" = true ]; then
+            echo "ready=true" >>"${GITHUB_OUTPUT}"
+          else
+            missing="vars.TRUENAS_APPS_FORK"
+            [ -n "${FORK}" ] && missing="secrets.TRUENAS_APPS_TOKEN"
+            echo "::error::the app is in TrueNAS's catalog, but its bump is set up only in part (missing: ${missing})"
+            exit 1
+          fi
+
+      - uses: sigstore/cosign-installer@v3.10.0
+        if: steps.config.outputs.ready == 'true'
+
+      # The release's app, verified: its checksum in the signed checksums.txt, and nothing in
+      # the archive but regular files and folders under ix-dev/community/maktaba/
+      - name: The release's app, verified
+        if: steps.config.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          app="maktaba-truenas-app-${ver}.tar.gz"
+          mkdir -p dl
+          gh release download "${TAG}" -R "${GITHUB_REPOSITORY}" --dir dl --pattern checksums.txt \
+            --pattern checksums.txt.sigstore.json --pattern "${app}"
+          cosign verify-blob --bundle dl/checksums.txt.sigstore.json \
+            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com dl/checksums.txt
+          grep -qxF "${app}" < <(awk '{sub(/^\.\//, "", $2); print $2}' dl/checksums.txt) ||
+            { echo "::error::${app} is not in the release's signed checksums.txt"; exit 1; }
+          (cd dl && sha256sum --check --ignore-missing --strict checksums.txt)
+          bad="$(tar -tvzf "dl/${app}" | awk '$1 !~ /^[-d]/ || $NF !~ /^ix-dev\/community\/maktaba(\/|$)/ || $NF ~ /(^|\/)\.\.(\/|$)/')"
+          [ -z "${bad}" ] || { echo "::error::${app} holds more than the app's own files: ${bad}"; exit 1; }
+          mkdir -p app && tar -xzf "dl/${app}" -C app --no-same-owner --no-same-permissions
+          grep -qF "${ver}" app/ix-dev/community/maktaba/ix_values.yaml ||
+            { echo "::error::${app} does not pin ${TAG}"; exit 1; }
+
+      - name: The bump pull request
+        if: steps.config.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.TRUENAS_APPS_TOKEN }}
+        run: |
+          set -euo pipefail
+          branch="maktaba-${TAG}"
+          if [ -n "$(gh pr list -R truenas/apps --head "${branch}" --state all --json number --jq '.[].number')" ]; then
+            echo "::notice::truenas/apps already has the pull request for ${TAG}"; exit 0
+          fi
+          git clone -q --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${FORK}.git" fork
+          cd fork
+          git remote add upstream https://github.com/truenas/apps.git
+          git fetch -q --depth 1 upstream master
+          git checkout -q -b "${branch}" upstream/master
+          rm -rf ix-dev/community/maktaba
+          cp -R ../app/ix-dev/community/maktaba ix-dev/community/maktaba
+          git add ix-dev/community/maktaba
+          git -c user.name="Maktaba release" -c user.email="releases@maktaba.tv" commit -q -m "maktaba: ${TAG#v}"
+          git push -q origin "${branch}"
+          gh pr create -R truenas/apps --head "${FORK%%/*}:${branch}" --base master \
+            --title "maktaba: ${TAG#v}" \
+            --body "Maktaba ${TAG#v} (https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}): the image pinned to the release's digest. The app is developed in https://github.com/${GITHUB_REPOSITORY}/tree/${TAG}/deploy/nas/truenas, where this catalog's own tooling (render, metadata, ports, deploy) runs on every change."
