@@ -377,13 +377,7 @@ func runServe() error {
 	capabilities := components.NewCapabilities(components.CapabilitiesOptions{Logger: logger,
 		AllOn: components.CapabilitiesGateOff() || runner.ReconcileOff()})
 
-	// Epic 59 story 59.08: the approved nodes forward their clients' addresses
-	nodes := &trustedNodes{}
-	if statsDB != nil {
-		go nodes.run(context.Background(), statsDB, trustedNodesEvery, logger)
-	}
 	r := router.New(router.Deps{
-		TrustedHop:         nodes.Has,
 		Capabilities:       capabilities,
 		License:            licRef,
 		Usage:              usageCounter,

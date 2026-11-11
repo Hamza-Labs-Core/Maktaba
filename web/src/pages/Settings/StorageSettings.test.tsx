@@ -223,6 +223,29 @@ describe("StorageSettings", () => {
     expect(screen.queryByText(/server\.trusted_proxies/)).toBeNull();
   });
 
+  it("refuses a trusted proxy entry that trusts every address before saving", async () => {
+    const user = userEvent.setup();
+    open();
+    const box = await screen.findByLabelText(/^Trusted proxies/);
+    await user.type(box, "192.168.1.5{Enter}0.0.0.0/0");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText(/^Trusted proxies/)).toHaveAccessibleDescription(
+        /0\.0\.0\.0\/0 trusts every address/
+      )
+    );
+    expect(put).not.toHaveBeenCalled();
+    await user.clear(box);
+    await user.type(box, "::/0");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText(/^Trusted proxies/)).toHaveAccessibleDescription(
+        /::\/0 trusts every address/
+      )
+    );
+    expect(put).not.toHaveBeenCalled();
+  });
+
   it("leaves the trusted proxies out for a server that has none to set", async () => {
     const older: Partial<typeof S.server> = { ...S.server };
     delete older.trusted_proxies;

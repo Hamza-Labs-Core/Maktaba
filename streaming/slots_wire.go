@@ -20,6 +20,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/frontdoor"
@@ -208,7 +209,7 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 func slotReports(slots *frontdoor.Slots) func(chi.Router) {
 	return func(r chi.Router) {
 		r.Post("/internal/tv/slot-exited/{slot}", func(w http.ResponseWriter, req *http.Request) {
-			if !slot.Loopback(req.RemoteAddr) || req.Header.Get("X-Forwarded-For") != "" {
+			if !slot.Loopback(clientip.Peer(req)) || req.Header.Get("X-Forwarded-For") != "" {
 				http.Error(w, "loopback only", http.StatusForbidden)
 				return
 			}

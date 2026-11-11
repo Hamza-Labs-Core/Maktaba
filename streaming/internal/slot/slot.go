@@ -276,7 +276,8 @@ func (s *State) Drain() {
 	s.mu.Unlock()
 }
 
-// Loopback reports whether a request's remote address is this machine.
+// Loopback reports whether a remote address is this machine. Callers pass the connection's
+// own address (clientip.Peer), never a client the address middleware resolved.
 func Loopback(remoteAddr string) bool {
 	host, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {

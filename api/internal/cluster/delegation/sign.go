@@ -21,6 +21,18 @@
 // delegated (X-Maktaba-Delegated-Session absent). Vectors:
 // shared/testdata/cluster/delegation_vectors.json.
 //
+// The client the node resolved for a request it proxies (homeproxy) travels beside the
+// signature, in a header of its own so the signed string above stays as it is and a home
+// of any version still verifies the request (Epic 59 story 59.08):
+//
+//	X-Maktaba-Forwarded-Client:     <client address>
+//	X-Maktaba-Forwarded-Client-Sig: b64(HMAC-SHA256(key, "maktaba-forwarded-client" ‖ "\n" ‖
+//	                                X-Maktaba-Node-Sig ‖ "\n" ‖ client address))
+//
+// Bound to the request's own signature (and so to its method, path, body, timestamp and
+// nonce), it cannot be moved to another request. The home believes that client and no
+// node's X-Forwarded-For: a node's address is never trusted for what it forwards.
+//
 // On the cluster link (story 35.16) the same checks travel on the machine's mTLS control
 // channel; this signed HTTP is the legacy path while cluster.link.mode = prefer.
 package delegation
@@ -35,6 +47,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"time"
@@ -42,20 +55,22 @@ import (
 
 // Header names.
 const (
-	HeaderNode                   = "X-Maktaba-Node"
-	HeaderKey                    = "X-Maktaba-Node-Key"
-	HeaderTs                     = "X-Maktaba-Node-Ts"
-	HeaderNonce                  = "X-Maktaba-Node-Nonce"
-	HeaderSig                    = "X-Maktaba-Node-Sig"
-	HeaderBody                   = "X-Maktaba-Node-Body" // "unsigned" when the body is not hashed
-	HeaderDelegatedSession       = "X-Maktaba-Delegated-Session"
-	HeaderOriginNode             = "X-Maktaba-Origin-Node"
-	HeaderVia                    = "X-Maktaba-Via"
-	ViaNode                      = "node"
-	UnsignedPayload              = "UNSIGNED-PAYLOAD"
-	KeySize                      = 32
-	MaxSkew                      = 60 * time.Second
-	maxSignedBody          int64 = 8 << 20
+	HeaderNode                     = "X-Maktaba-Node"
+	HeaderKey                      = "X-Maktaba-Node-Key"
+	HeaderTs                       = "X-Maktaba-Node-Ts"
+	HeaderNonce                    = "X-Maktaba-Node-Nonce"
+	HeaderSig                      = "X-Maktaba-Node-Sig"
+	HeaderBody                     = "X-Maktaba-Node-Body" // "unsigned" when the body is not hashed
+	HeaderDelegatedSession         = "X-Maktaba-Delegated-Session"
+	HeaderOriginNode               = "X-Maktaba-Origin-Node"
+	HeaderVia                      = "X-Maktaba-Via"
+	HeaderForwardedClient          = "X-Maktaba-Forwarded-Client"
+	HeaderForwardedClientSig       = "X-Maktaba-Forwarded-Client-Sig"
+	ViaNode                        = "node"
+	UnsignedPayload                = "UNSIGNED-PAYLOAD"
+	KeySize                        = 32
+	MaxSkew                        = 60 * time.Second
+	maxSignedBody            int64 = 8 << 20
 )
 
 // testNonce lets the vector tests fix the nonce (never set outside tests).
@@ -87,6 +102,14 @@ func Canonical(method, pathQuery string, ts int64, nonce, bodyHash, sessionHash 
 func Sign(key []byte, method, pathQuery string, ts int64, nonce, bodyHash, sessionHash string) string {
 	m := hmac.New(sha256.New, key)
 	m.Write([]byte(Canonical(method, pathQuery, ts, nonce, bodyHash, sessionHash)))
+	return base64.StdEncoding.EncodeToString(m.Sum(nil))
+}
+
+// ForwardedClientSig is the HMAC binding a forwarded client address to the request
+// signature sig (X-Maktaba-Node-Sig) with the same key.
+func ForwardedClientSig(key []byte, sig, client string) string {
+	m := hmac.New(sha256.New, key)
+	m.Write([]byte("maktaba-forwarded-client\n" + sig + "\n" + client))
 	return base64.StdEncoding.EncodeToString(m.Sum(nil))
 }
 
@@ -153,8 +176,19 @@ func SignRequest(r *http.Request, nodeID string, key Key, now time.Time) error {
 	} else {
 		r.Header.Del(HeaderBody)
 	}
-	r.Header.Set(HeaderSig, Sign(key.Secret, r.Method, pathQuery(r), ts, nonce, bodyHash,
-		SessionHash(r.Header.Get(HeaderDelegatedSession))))
+	sig := Sign(key.Secret, r.Method, pathQuery(r), ts, nonce, bodyHash,
+		SessionHash(r.Header.Get(HeaderDelegatedSession)))
+	r.Header.Set(HeaderSig, sig)
+	// the forwarded client (homeproxy sets it) is signed too; anything that is not one
+	// address is dropped rather than sent unsigned
+	r.Header.Del(HeaderForwardedClientSig)
+	if c := r.Header.Get(HeaderForwardedClient); c != "" {
+		if ip, err := netip.ParseAddr(c); err != nil || ip.Zone() != "" || ip.String() != c {
+			r.Header.Del(HeaderForwardedClient)
+		} else {
+			r.Header.Set(HeaderForwardedClientSig, ForwardedClientSig(key.Secret, sig, c))
+		}
+	}
 	return nil
 }
 

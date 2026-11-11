@@ -5381,6 +5381,7 @@
   "storage.field.web_public_url": "Public web app URL",
   "storage.field.web_public_url.help": "This web app's address from outside your home. Empty if none.",
   "storage.field.trusted_proxies": "Trusted proxies: forwarded client addresses are believed only from these",
+  "storage.error.trusted_proxies_every": "{entry} trusts every address, so anyone could pick the address Maktaba sees. Enter the proxy's own address instead, such as 192.168.1.5.",
   "storage.field.trusted_proxies.help": "The addresses or networks of a reverse proxy in front of Maktaba (your NAS's, for example), one per line, such as 192.168.1.5 or 192.168.1.0/24. Empty if none.",
   "storage.restart.needed": "Saved changes are waiting for a restart.",
   "storage.restart.button": "Restart the server",

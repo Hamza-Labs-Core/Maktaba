@@ -63,9 +63,7 @@ that header is text the client can write.
 
 The middleware believes `X-Forwarded-For` (else `X-Real-IP`) only from a trusted peer:
 loopback, which is this machine's own proxies (the web port's, the relay agent, direct
-access), the home's approved nodes (each forwards its own clients' requests to the home; the
-API reads their addresses from `cluster_nodes` every 30 s), and the reverse proxies listed in
-server.toml:
+access), and the reverse proxies listed in server.toml:
 
 ```toml
 [server]
@@ -76,12 +74,33 @@ trusted_proxies = ["198.51.100.5", "203.0.113.0/24"]
 It walks the header right to left past the trusted hops; the first address that is not
 trusted is the client. From any other peer the header is ignored and the peer is the
 client. The list is empty by default, is set in Settings → Storage & discovery, and
-reaches both roles as `MAKTABA_TRUSTED_PROXIES`; a bad entry stops them from starting. A
+reaches both roles as `MAKTABA_TRUSTED_PROXIES`; a bad entry, or a `/0` (`0.0.0.0/0`,
+`::/0`, which would believe every peer), stops them from starting and is refused by the
+settings form. A
 check that must know whether the caller is a program on this machine (`MarkLocalCaller`,
 `StripVia`, the stream gate's viewer header) runs on the connection's own address, before
-the rewrite or through `clientip.Peer`. A node forwards the home only the client it
-resolved; the home believes it when the node's address is in the home's list. The cloud
-has its own `[server] trusted_proxies` for `CF-Connecting-IP`, which takes CIDRs only.
+the rewrite or through `clientip.Peer`; so do the streaming checks that answer this machine
+only (the link-required gate, the TV slots, the offline station), since a chain of trusted
+hops resolves to its leftmost address, which a client can write as `127.0.0.1`. A zoned
+link-local address in the header (`fe80::1%eth0`) loses its zone.
+
+The home's approved nodes are trusted by signature, never by address. A node's home proxy
+(`homeproxy`) puts the client it resolved in `X-Maktaba-Forwarded-Client`, and its link's
+signer adds `X-Maktaba-Forwarded-Client-Sig`, an HMAC with the node's delegation key over
+that address and the request's own signature (so over its method, path, body, timestamp and
+nonce). `delegation.Accept`, which wraps the home's public handler before the router, checks
+it after the request signature and puts the client in the context
+(`clientip.WithAttested`); the router's middleware uses it in place of every header and
+keeps the node's address for `clientip.Peer`. Over the node's authenticated cluster link
+the header is the machine's own word and needs no HMAC. From an unsigned request, or with
+a wrong HMAC, the headers are dropped and the node's address is the client. Node trust
+needs no setting, cannot be turned off and is independent of `trusted_proxies`: an empty
+list still believes signed node clients, and listing a node's address is never needed. A
+revoked or removed node fails the signature check (its keys are revoked and its membership
+is read on each request), so it loses trust on its next request. The signed string is
+unchanged, so mixed versions work: an older home ignores the extra headers, and an older
+node, which sends none, shows as its own address. The cloud has its own
+`[server] trusted_proxies` for `CF-Connecting-IP`, which takes CIDRs only.
 
 ## Design principles
 

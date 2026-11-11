@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 )
 
 // The cluster link (Epic 35 story 35.16, design §18.5): the home never connects to a
@@ -135,10 +137,13 @@ func LoopbackOnlyWhen(required func() bool) func(http.Handler) http.Handler {
 	}
 }
 
+// loopbackPeer judges the connection's own address (clientip.Peer), never the client the
+// address middleware resolved: a chain of trusted hops may resolve to a leftmost 127.0.0.1
+// a remote client wrote (Epic 59 story 59.08).
 func loopbackPeer(r *http.Request) bool {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	host, _, err := net.SplitHostPort(clientip.Peer(r))
 	if err != nil {
-		host = r.RemoteAddr
+		host = clientip.Peer(r)
 	}
 	ip := net.ParseIP(strings.Trim(host, "[]"))
 	return ip != nil && ip.IsLoopback()

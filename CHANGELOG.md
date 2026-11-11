@@ -2652,6 +2652,21 @@ build fails when the two differ.
   priority with one thread per two cores, and no more speech workers start than the memory
   holds. The second listen stays on x86_64 with an NVIDIA GPU.
 
+- **The home believes the client a machine forwards only from that machine's signature over
+  it, never from its address, and a trusted proxy list cannot trust everyone (story 59.08).**
+  A machine proxying a user's request to the home now signs the client's address with its
+  delegation key, bound to the request's own signature, or sends it on its authenticated
+  cluster link; the home takes that client and no longer trusts any machine's IP address
+  from when it joined, which a reused DHCP address, a carrier NAT or an unlisted proxy could
+  have shared. A revoked or removed machine loses this on its next request; one on an older
+  version shows as its own address, and an older home ignores the new headers. This needs no
+  setting and does not depend on Trusted proxies. `0.0.0.0/0` and `::/0` are refused in
+  `[server] trusted_proxies` and in Settings, which name the entry; the docs point a proxy in
+  a container to its own address rather than the Docker network, whose gateway carries other
+  machines' connections. Streaming's checks for this machine's own callers read the
+  connection's address, so a forwarded `127.0.0.1` passes for none of them, and a zoned
+  link-local client address (`fe80::1%eth0`) keeps its own key.
+
 - **Maktaba as a TrueNAS app (story 59.10).** TrueNAS 25.04 and newer gets Maktaba's app in the
   catalog's own format (`deploy/nas/truenas`), ready for its community train: it runs as `apps`
   (568), keeps its data on a dataset with the Apps preset (an SSD pool when there is one) or an

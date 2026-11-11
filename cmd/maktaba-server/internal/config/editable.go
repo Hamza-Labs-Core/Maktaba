@@ -7,6 +7,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -311,8 +312,13 @@ func (c Checks) Validate(next, saved, running Editable) []FieldError {
 	}
 
 	for i, v := range next.Server.TrustedProxies {
-		if p, err := clientip.ParseEntry(v); err != nil || !p.IsValid() {
-			add(fmt.Sprintf("server.trusted_proxies[%d]", i), "%q is not an IP address or a CIDR (192.168.1.5, 192.168.1.0/24)", v)
+		field := fmt.Sprintf("server.trusted_proxies[%d]", i)
+		switch p, err := clientip.ParseEntry(v); {
+		case errors.Is(err, clientip.ErrEveryAddress):
+			// a /0 would believe every peer's forwarded address (Epic 59 story 59.08)
+			add(field, "%q trusts every address: name the proxy's own address (192.168.1.5) instead", strings.TrimSpace(v))
+		case err != nil || !p.IsValid():
+			add(field, "%q is not an IP address or a CIDR (192.168.1.5, 192.168.1.0/24)", v)
 		}
 	}
 

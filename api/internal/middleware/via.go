@@ -5,6 +5,8 @@ import (
 	"net"
 	"net/http"
 	"strings"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 )
 
 // ViaHeader marks a request the Epic 25 relay agent forwarded from the
@@ -101,11 +103,13 @@ func localCaller(r *http.Request) bool {
 	return true
 }
 
-// FromLoopback reports whether the request's peer address is loopback.
+// FromLoopback reports whether the request's peer address is loopback: the connection's own
+// (clientip.Peer), so it holds after the client-address middleware too.
 func FromLoopback(r *http.Request) bool {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	peer := clientip.Peer(r)
+	host, _, err := net.SplitHostPort(peer)
 	if err != nil {
-		host = r.RemoteAddr
+		host = peer
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
