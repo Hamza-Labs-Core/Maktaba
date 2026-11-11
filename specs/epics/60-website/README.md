@@ -602,19 +602,19 @@ or fail.
 
 ## 12. Questions only the owner can answer
 
-None blocks the epic. Each has a default the stories use.
+All nine are decided (2026-11-11). The stories follow these decisions.
 
-| # | Question | Default used |
+| # | Question | Decided |
 |---|---|---|
-| Q1 | The tagline and the site's voice | proposed by us in 60.02, in both languages; the owner approves before Phase 2 is done |
-| Q2 | Who signs off the Arabic copy? | written natively by us in Modern Standard Arabic, in the same voice; the owner, or a native reader the owner names, approves before Phase 2 is done |
-| Q3 | The wordmark: the app icon alone, or a wordmark in Latin and «مكتبة»? | 60.01 proposes a wordmark in both scripts beside the existing icon; the owner approves |
+| Q1 | The tagline and the site's voice | 60.02 part B proposes several taglines in English and Arabic, each with one line on what it says; the owner chooses one. No direction is set in advance |
+| Q2 | Who signs off the Arabic copy? | written natively by us in Modern Standard Arabic, in the same voice; the owner reads every Arabic page and approves it before Phase 2 is done. No other reader |
+| Q3 | The wordmark: the app icon alone, or a wordmark in Latin and «مكتبة»? | the app icon with the name in both scripts, "Maktaba" and «مكتبة»; 60.01 shows it in the mockups for the owner's approval |
 | Q4 | Any analytics on the site? | none; Cloudflare's aggregate zone counts only (§6.7) |
-| Q5 | Show the phone and TV apps on `/download/` while they are only in TestFlight and Play's internal track? | no; they appear when a public listing or a public TestFlight link exists |
+| Q5 | Show the phone and TV apps on `/download/` while they are only in TestFlight and Play's internal track? | no; they appear only once a public store listing or a public TestFlight or Play testing link exists |
 | Q6 | The name on the legal pages | Hamza Labs, the controller `CurrentPolicy` already names |
 | Q7 | Who reviews the terms and the copyright page's legal text? | we draft them from Epic 50's research, marked as not legal advice; a lawyer the owner chooses reviews them before 50.24's public channels go live |
-| Q8 | A pricing page before Epic 50 decides the plans? | no page and no link (60.13) |
-| Q9 | The display typeface | 60.01 chooses from open-licensed faces, Amiri first; the owner sees it in the part B review |
+| Q8 | A pricing page before Epic 50 decides the plans? | no page and no link until Epic 50 decides the plans (60.13) |
+| Q9 | The display typeface | 60.01 chooses from open-licensed faces, Amiri first; the owner reviews it in the part B mockups |
 
 ### Owner actions (the epic cannot do these)
 
