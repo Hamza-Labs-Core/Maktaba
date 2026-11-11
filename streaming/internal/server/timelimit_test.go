@@ -250,6 +250,52 @@ func TestAKeptAccountsURLWithoutASessionIsRefused(t *testing.T) {
 	}
 }
 
+// Security finding 5: missing state is not "unlimited". A streaming service that
+// just started holds nothing, so it cannot tell a kept account by its registry; the
+// API's own word on the URL decides. With an empty registry a kept account's URL
+// that names no session is refused, and so is a URL that says nothing either way
+// (signed by an older or another signing path); only a URL the API signed as not
+// kept is served without a lease.
+func TestAnEmptyRegistryDoesNotMeanUnlimited(t *testing.T) {
+	f := newTimeFixture(t)
+	get := func(deps Deps, c auth.Claims) (int, string) {
+		c.Usr, c.Lib = f.user, []string{f.lib}
+		path := "/stream/" + f.sess + "/chunk-0-1.m4s"
+		if c.Aud == "streaming-direct" {
+			path = "/stream/direct/" + f.video
+		}
+		rec := httptest.NewRecorder()
+		New(deps).ServeHTTP(rec, httptest.NewRequest("GET", path+"?sig="+mintToken(t, f.priv, c), nil))
+		body := map[string]any{}
+		_ = json.Unmarshal(rec.Body.Bytes(), &body)
+		reason, _ := body["reason"].(string)
+		return rec.Code, reason
+	}
+	bare := f.deps
+	bare.TimeLimits = nil
+	for name, deps := range map[string]Deps{"an empty registry": f.deps, "no registry": bare} {
+		for _, aud := range []struct{ aud, sub string }{{"streaming", f.sess}, {"streaming-direct", f.video}} {
+			if code, reason := get(deps, auth.Claims{Aud: aud.aud, Sub: aud.sub, Tk: "1"}); code != 403 || reason != timelimit.ReasonNoHeartbeat {
+				t.Errorf("%s, %s: a kept account's URL with no session: %d %q", name, aud.aud, code, reason)
+			}
+			if code, reason := get(deps, auth.Claims{Aud: aud.aud, Sub: aud.sub, Tk: "none"}); code != 403 || reason != timelimit.ReasonNoHeartbeat {
+				t.Errorf("%s, %s: a URL that does not say whether the time is kept: %d %q", name, aud.aud, code, reason)
+			}
+			if code, reason := get(deps, auth.Claims{Aud: aud.aud, Sub: aud.sub, Tk: "1", Tls: f.sess}); code != 403 || reason != timelimit.ReasonNoHeartbeat {
+				t.Errorf("%s, %s: a kept account's URL before any lease: %d %q", name, aud.aud, code, reason)
+			}
+			if code, _ := get(deps, auth.Claims{Aud: aud.aud, Sub: aud.sub, Tk: "0"}); code != 200 && code != 206 {
+				t.Errorf("%s, %s: an account whose time is not kept: %d", name, aud.aud, code)
+			}
+		}
+	}
+	// the API gives the lease: the kept account's URL is served
+	f.limit(f.now().Add(time.Hour), nil, f.sess, time.Minute)
+	if code, _ := get(f.deps, auth.Claims{Aud: "streaming", Sub: f.sess, Tk: "1", Tls: f.sess}); code != 200 {
+		t.Errorf("under a lease: %d", code)
+	}
+}
+
 // A direct-play response under way stops once the lease is past: the file is not
 // handed over whole on one lease.
 func TestALongResponseStopsWhenTheLeaseEnds(t *testing.T) {

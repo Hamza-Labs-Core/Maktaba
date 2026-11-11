@@ -164,15 +164,15 @@ func TestKeptAccountsURLsNameTheirSession(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := claimsOf(t, set, signed, c.aud); got.Tls != sess {
-			t.Errorf("%s for a kept account: tls %q, want the session", c.raw, got.Tls)
+		if got := claimsOf(t, set, signed, c.aud); got.Tls != sess || got.Tk != "1" {
+			t.Errorf("%s for a kept account: tls %q tk %q, want the session and 1", c.raw, got.Tls, got.Tk)
 		}
 		signed, _, err = m.SignStreamURL(c.raw, sess, usr, lib, time.Hour)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := claimsOf(t, set, signed, c.aud); got.Tls != "" {
-			t.Errorf("%s for an unlimited account: tls %q, want none", c.raw, got.Tls)
+		if got := claimsOf(t, set, signed, c.aud); got.Tls != "" || got.Tk != "0" {
+			t.Errorf("%s for an unlimited account: tls %q tk %q, want none and 0", c.raw, got.Tls, got.Tk)
 		}
 	}
 	// a clip is signed with its video id for a session: no stream session has that
@@ -183,6 +183,16 @@ func TestKeptAccountsURLsNameTheirSession(t *testing.T) {
 	}
 	if got := claimsOf(t, set, signed, AudDirect); got.Tls != vid {
 		t.Errorf("a kept account's clip: tls %q", got.Tls)
+	}
+	// a signer that was never told how to find out says neither, so streaming
+	// refuses what it signs: forgetting the wiring cannot hand out free time
+	bare, bareSet := newMinter(t)
+	signed, _, err = bare.SignStreamURL("/stream/direct/"+vid, sess, child, lib, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := claimsOf(t, bareSet, signed, AudDirect); got.Tk != "" || got.Tls != "" {
+		t.Errorf("a signer with no time keeper: tk %q tls %q, want neither", got.Tk, got.Tls)
 	}
 	fail = os.ErrDeadlineExceeded
 	for _, who := range []string{child, usr} {

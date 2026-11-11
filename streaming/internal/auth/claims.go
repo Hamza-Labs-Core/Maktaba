@@ -50,6 +50,11 @@ type Claims struct {
 	// Tls is the stream session whose time lease the URL needs (Epic 57 story
 	// 57.14): set on every stream URL of a restricted account. Empty: none needed.
 	Tls string `json:"tls,omitempty"`
+	// Tk is the API's word, on every stream URL, on whether the account's playback
+	// time is kept: "1" kept (the URL then names its session in Tls), "0" not
+	// kept. A stream URL with neither Tls nor Tk "0" is refused: streaming never
+	// infers that an account is unlimited from what it happens to hold.
+	Tk string `json:"tk,omitempty"`
 }
 
 // LibIDs parses the lib[] claim into UUIDs. Returns an error if any

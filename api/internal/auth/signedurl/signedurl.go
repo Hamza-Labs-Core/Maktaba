@@ -9,7 +9,10 @@
 // and, for an account whose playback time the home keeps (Epic 57 story 57.14),
 // tls=the stream session whose lease the URL needs: streaming serves such a URL
 // only while the API keeps that session's lease alive, and refuses a URL without
-// it for an account it holds a limit for. Every URL also carries
+// it for an account it holds a limit for. Every URL says which it is (tk "1" kept,
+// "0" not kept): streaming refuses a URL that says neither, so a signer that was
+// not told how to find out (KeepTime) signs URLs that do not play. Every URL also
+// carries
 // usr=user_id, lib=[the resource's library] (a singleton, architecture
 // §9.4), exp bounded by the session's TTL and MaxTTL, jti and kid. The streaming
 // service verifies the signature against the same key, the audience, that the
@@ -70,9 +73,10 @@ type Minter struct {
 // is signed for it (a URL without the lease claim would play past a limit).
 var ErrTimeUnknown = errors.New("signedurl: the account's time rules could not be read")
 
-// KeepTime makes every URL signed from now on for an account kept reports carry
-// the tls claim (the stream session it was signed for). When kept fails nothing is
-// signed for that account. Set once, before the first URL is signed.
+// KeepTime makes every URL signed from now on say whether its account's time is
+// kept (tk), and carry the tls claim (the stream session it was signed for) when it
+// is. When kept fails nothing is signed for that account. Without it a URL says
+// neither, and streaming refuses it. Set once, before the first URL is signed.
 func (m *Minter) KeepTime(kept func(userID string) (bool, error)) {
 	if m != nil {
 		m.kept = kept
@@ -143,7 +147,9 @@ func (m *Minter) SignStreamURL(rawURL, sessionID, userID, libraryID string, ttl 
 		if err != nil {
 			return "", time.Time{}, fmt.Errorf("%w: %v", ErrTimeUnknown, err)
 		}
+		claims.Tk = "0"
 		if on {
+			claims.Tk = "1"
 			// the caller's session id: a stream session the home opened has a
 			// lease; anything else (a review clip's video id) has none, so
 			// streaming refuses it

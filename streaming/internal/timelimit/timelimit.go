@@ -194,10 +194,21 @@ func (g *Registry) Served(userID, sessionID string) (at time.Time, known bool) {
 	return l.served, true
 }
 
+// NotKept is the tk claim of a stream URL signed for an account whose playback
+// time is not kept; Kept is the claim of one whose time is.
+const (
+	NotKept = "0"
+	Kept    = "1"
+)
+
 // Guard refuses a request the registry does not allow with a 403 parental-time
 // problem, and stops a response under way once the end or the lease is past. It
-// runs after auth.SignedURL. A nil registry is an empty one: nothing was pushed, so
-// no URL that names a session is served.
+// runs after auth.SignedURL. A URL is served without a lease only when the API
+// signed it as one of an account whose time is not kept (tk "0") and nothing is
+// held here for the account; missing state never means unlimited, so a URL with
+// neither claim is refused whatever the registry holds, also when it is empty
+// after a restart. A nil registry is an empty one: no URL that names a session is
+// served.
 func Guard(g *Registry) func(http.Handler) http.Handler {
 	if g == nil {
 		g = New()
@@ -207,6 +218,10 @@ func Guard(g *Registry) func(http.Handler) http.Handler {
 			claims, ok := auth.ClaimsFromContext(r.Context())
 			if !ok || claims == nil {
 				next.ServeHTTP(w, r)
+				return
+			}
+			if claims.Tls == "" && claims.Tk != NotKept {
+				refuse(w, &Refusal{Reason: ReasonNoHeartbeat})
 				return
 			}
 			deadline, refused := g.Check(claims.Usr, claims.Lib, claims.Tls)

@@ -44,6 +44,10 @@ type Claims struct {
 	// time the home keeps; empty on every other token. Streaming serves such a URL
 	// only while that session's lease runs.
 	Tls string `json:"tls,omitempty"`
+	// Tk says, on every stream URL, whether the account's playback time is kept:
+	// "1" kept (Tls names the session), "0" not kept. Streaming refuses a stream
+	// URL with neither Tls nor Tk "0", so it never has to infer it.
+	Tk string `json:"tk,omitempty"`
 }
 
 // Errors exported by Verify.
