@@ -179,6 +179,8 @@ func buildPlacement() placement.Table {
 		// Epic 52: word review, its vocabulary and the language packs' report (home
 		// admins only; the edits write the home's transcripts)
 		"/api/review/", "/api/vocabulary", "/api/language-packs",
+		// Epic 57: the parental controls (story 57.01: the ratings table)
+		"/api/parental/",
 	))
 	return t
 }
