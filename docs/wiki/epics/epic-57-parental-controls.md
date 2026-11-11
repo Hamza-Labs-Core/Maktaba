@@ -28,7 +28,7 @@ that report a child.
 | Unrated | hidden from restricted accounts by default; admins rate whole libraries in one step |
 | Ask a parent | requests to guardians' Players, or a guardian's 6-digit PIN checked on the home with lockouts |
 | Privacy | age band only, activity 90 days on the home, title-free notifications off by default |
-| Migrations | 0216–0218 planned; taken at merge time per `MANIFEST.md` |
+| Migrations | 0220–0222 planned; taken at merge time per `MANIFEST.md` |
 | Scope | iPhone and iPad; Apple TV where it falls out; Android, web and desktop a later epic (the home's filter already covers them) |
 
 ## Stories

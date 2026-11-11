@@ -14,11 +14,11 @@ admin sets it up, while making it easy to set up.
 
 ### 1. What the update does
 
-- Migrations 0216–0218 add columns and tables; **no user becomes restricted**, no library gets a
+- Migrations 0220–0222 add columns and tables; **no user becomes restricted**, no library gets a
   default tier, no rule exists.
 - The background `parental_recompute` fills `age_tier` from ratings that already exist (Plex,
   guide, plugin `content_rating`), by library, newest first, at low priority.
-- `home_settings.parental.enabled` starts **false**. While false:
+- `app_settings.parental.enabled` starts **false**. While false:
   - device signals are **recorded** (57.04) but `ac` is not minted, so nothing is hidden;
   - restricted policies cannot exist yet (none do).
 - `parental.enabled` becomes true by itself the moment an admin makes the first account
@@ -78,7 +78,7 @@ release leaves the new tables unused. The `.down.sql` files drop them for the up
 
 ## Edge cases
 
-- **A home with many machines**: the setting lives in `home_settings` and copies like the rest;
+- **A home with many machines**: the setting lives in `app_settings` and copies like the rest;
   `parental_pins` does not copy (57.06).
 - **SQLite desktop build** (single user): no restricted accounts can be useful there, but the
   tables exist so the schema stays the same.
@@ -91,4 +91,4 @@ release leaves the new tables unused. The `.down.sql` files drop them for the up
 | `api/internal/notify/` | the notice |
 | `api/internal/handlers/parental/signal.go` | no `ac` while disabled |
 | `apps/apple/Player/Family/FamilyView.swift` | banner |
-| `shared/db/migrations/0216–0218 .down.sql` | for the rehearsal |
+| `shared/db/migrations/0220–0222 .down.sql` | for the rehearsal |

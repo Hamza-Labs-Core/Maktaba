@@ -128,7 +128,7 @@ So Apple TV gets the rating limit but not the age range (story 57.11).
 
 - `users` (`shared/db/migrations/0029_users.sql`): `is_admin` boolean, so two roles: admin and
   viewer. `library_acl` (0030; `role` added in 0072) grants per-library read.
-- `principal.Principal` (`api/internal/auth/principal/principal.go:42-77`): `UserID, IsAdmin,
+- `principal.Principal` (`api/internal/auth/principal/principal.go`; `MustChangePassword` was added after this check): `UserID, IsAdmin,
   Libraries, AccessAllLibraries, Source, MustChangePassword, CloudScope`; `HasLibrary` (:161),
   `ApplyCloudScope` (:94). No device or age.
 - JWT claims `usr, lib[], is_admin, scp` (`api/internal/auth/jwt/jwt.go`); access tokens 15 min
@@ -176,7 +176,7 @@ No central check; each package scopes by library:
 
 | Source | Where | Today |
 |---|---|---|
-| Plex | `plex_items.detail->>'contentRating'` (0092; `pipeline/.../extensions/plex_items.py:38`) | kept, unused; also copied into dizqueTV programmes |
+| Plex | `plex_items.detail->>'contentRating'` (0092; `pipeline/.../extensions/plex_items.py:38`) | rows kept, never refreshed: the `plex_index` stage and `extensions/plex_items.py` were retired after this check (README §2.4) |
 | Live guide | `channel_programs.title_snapshot.rating` → XMLTV `<rating>` (`guide/xmltv.go:142`, `snapshot.go:27`) | kept, exported, not enforced |
 | Plugins | `videos.metadata->>'content_rating'` via `set-field` (`plugins/routes.go:356-410`, WIT `:147`) | free text |
 | Enrichment | `media_metadata_enrichment.mapped.content_rating` (0077), read by the context card (`contextcard/contextcard.go:136`) | nothing writes it |
@@ -184,7 +184,7 @@ No central check; each package scopes by library:
 | Classification | `videos.content_type` (0045), `video_classification`, `media_entities` (0074), tags (0034), topics (0046, 0090) | useful for a library's default tier, not a rating |
 | Transcripts | `transcript_segments.search_tsv` (0016) | no screening (non-goal) |
 
-No rating column exists in any migration. The next free migration slot is 0216.
+No rating column exists in any migration. The next free migration slot was 0216 at c4b6d541b; at 4ab79c132 it is 0220.
 
 ### 2.4 The Apple apps
 

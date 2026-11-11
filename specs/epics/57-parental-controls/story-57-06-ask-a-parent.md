@@ -112,7 +112,7 @@ digits. Wrong and locked answers do not say which guardian's PIN was close.
 
 | File | Change |
 |---|---|
-| `shared/db/migrations/0218_parental_requests{,.sqlite}.sql`, `MANIFEST.md` | tables |
+| `shared/db/migrations/0222_parental_requests{,.sqlite}.sql`, `MANIFEST.md` | tables |
 | `api/internal/handlers/parental/requests.go`, `pin.go` (new), tests | routes, limits |
 | `api/internal/notify/` (the notification hub, Epic 33) | kind `parental_request`, delivered to the guardians' notification centre, and to mobile push (slot 0065 categories) only when notifications are on; title-free payload |
 | `apps/apple/MaktabaKit/Sources/MaktabaKit/AskParent.swift`, `ParentPIN.swift` (new) | flows |

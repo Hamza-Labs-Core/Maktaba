@@ -974,7 +974,6 @@
         "ep-post-libraries-id-youtube-sources",
         "ep-patch-libraries-id-youtube-sources-sid",
         "ep-delete-libraries-id-youtube-sources-sid",
-        "ep-get-extensions",
         "ep-get-series",
         "ep-get-series-id",
         "ep-patch-series-id"
@@ -1003,7 +1002,6 @@
         "POST /libraries/{id}/youtube/sources",
         "PATCH /libraries/{id}/youtube/sources/{sid}",
         "DELETE /libraries/{id}/youtube/sources/{sid}",
-        "GET /extensions",
         "GET /series",
         "GET /series/{id}",
         "PATCH /series/{id}"
@@ -1208,7 +1206,7 @@
       "title": "Activity for guardians",
       "epic": "57-parental-controls",
       "phase": 5,
-      "content": "# Story 57.08 — Activity for guardians\n\n> Epic 57 · Phase 2 (API), 3 (iOS) · Depends on: 57.02, 57.06, 57.07 · Needed by: 57.13\n\n## Why\n\nScreen Time reports how long each app was used, not what was watched in it. A parent wants to see\nwhat their child watched, what was blocked and what they asked for, without that record leaving\nthe home, and without keeping more than is needed.\n\n## Description\n\n### 1. What is recorded\n\n`parental_events` (slot 0218), only for restricted accounts:\n\n| Kind | When | Subject |\n|---|---|---|\n| `watched` | a watch session reaches 60 s or 20 % (from `watch_sessions`,",
+      "content": "# Story 57.08 — Activity for guardians\n\n> Epic 57 · Phase 2 (API), 3 (iOS) · Depends on: 57.02, 57.06, 57.07 · Needed by: 57.13\n\n## Why\n\nScreen Time reports how long each app was used, not what was watched in it. A parent wants to see\nwhat their child watched, what was blocked and what they asked for, without that record leaving\nthe home, and without keeping more than is needed.\n\n## Description\n\n### 1. What is recorded\n\n`parental_events` (slot 0222), only for restricted accounts:\n\n| Kind | When | Subject |\n|---|---|---|\n| `watched` | a watch session reaches 60 s or 20 % (from `watch_sessions`,",
       "tags": [
         "story",
         "57-parental-controls",

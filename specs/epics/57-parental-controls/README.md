@@ -33,21 +33,22 @@ child is using them.
 
 ## 2. What exists, and the gaps
 
-Checked on `main` at c4b6d541b (2026-11-08). Details and file paths are in [research.md](research.md).
+Checked on `main` at c4b6d541b (2026-11-08) and again at 4ab79c132 (2026-11-10); what changed
+between the two is in §2.4. Details and file paths are in [research.md](research.md).
 
 ### 2.1 The home
 
 | Area | Today |
 |---|---|
 | Roles | two: admin (`users.is_admin`) and viewer; per-library read through `library_acl` (slots 0029, 0030, 0072) |
-| Principal | `UserID, IsAdmin, Libraries, AccessAllLibraries, Source, CloudScope`; no device, profile or age (`api/internal/auth/principal/principal.go`) |
+| Principal | `UserID, IsAdmin, Libraries, AccessAllLibraries, Source, MustChangePassword, CloudScope`; no device, profile or age (`api/internal/auth/principal/principal.go`) |
 | Tokens | access JWT 15 min with `usr, lib[], is_admin, scp`; cloud tokens 5 min; refresh tokens carry an optional `device_id` (slot 0053) |
 | Access checks | **no central check**: about 15 per-package library scopes (browse, collections, search, recommendations, series, play queue, streaming, channels, guide, libraries, websocket, panels, thumbnails) |
 | Row cache | `browse/rowcache.go` caches Home and hub rows per library, on the stated rule that a row has no per-user part |
 | Streaming | signed URLs (24 h cap) checked by `SignedURL` and `LibraryGuard`; **live channel streams `/stream/channel/{id}/…` and the HDHomeRun routes are not signed** |
 | Channels | a channel with no library (`library_id` null) is visible to every signed-in user |
 | Relay | forwards to the loopback API, so the home's own checks apply; linked sign-ins are play-scoped |
-| Ratings | **no rating column anywhere.** Free-text `content_rating` exists in `videos.metadata` (written only by plugins), in `media_metadata_enrichment.mapped` (nothing writes it), in `plex_items.detail.contentRating` and in the guide's `title_snapshot.rating`. YouTube videos keep no age flag |
+| Ratings | **no rating column anywhere.** Free-text `content_rating` exists in `videos.metadata` (written only by plugins), in `media_metadata_enrichment.mapped` (nothing writes it), in `plex_items.detail.contentRating` (rows kept from before the Plex sync stages were retired; nothing refreshes them) and in the guide's `title_snapshot.rating`. YouTube videos keep no age flag |
 | Pairing | approving a code sign-in signs the device in as the approver; no approve-for-someone-else |
 
 ### 2.2 The Apple Player
@@ -73,6 +74,20 @@ Checked on `main` at c4b6d541b (2026-11-08). Details and file paths are in [rese
 - **G5** The Player ignores what Apple knows about the person holding the device.
 - **G6** No way for a child to ask for something, and no way for a parent to see what was watched.
 - **G7** Help says nothing about Screen Time.
+
+### 2.4 What changed on `main` after the first check
+
+Checked again at 4ab79c132 (2026-11-10). Nothing in this epic is built yet. These changes on
+`main` touch the design:
+
+| Change | What it means here |
+|---|---|
+| Slots 0216–0219 were taken by other work | this epic plans 0220–0222 (§6.5) |
+| The settings table is `app_settings` (slot 0042: `key`, `value` jsonb) | `parental.enabled` and `parental.unrated_on_signal` are keys there |
+| Maktaba replaces Plex: the `plex_index` stage is retired (`pipeline/.../engine/retired.py`) and `extensions/plex_items.py` is gone; the `plex_items` rows stay | a Plex `contentRating` is a kept rating, read once by the recompute and never refreshed. No stage calls the recompute for it. A migration that later drops `plex_items` must first copy each rating into `videos.metadata.content_rating`. Plex live TV (`plex_livetv`) is unchanged (57.10) |
+| First-party stages run as plugins under their own Postgres roles (Epic 54; `tools/plugins/roles.py` writes the `fp_roles` migrations) | no stage writes `videos.age_tier`. The stage keeps its input (the YouTube import keeps `age_limit`) and the API's `parental_recompute` job writes the tier. A stage that writes a new column needs that column in its role's grants, in the same change |
+| `Principal` has `MustChangePassword` | no effect; the field list in §2.1 names it |
+| New content routes: playlists `/api/me/playlists…` (Epic 56) and subtitles `/api/videos/{id}/subtitles` (Epic 59) | both go in the surface registry (57.03): a playlist's items pass the filter, and subtitles for a blocked video answer 404. The router walk (57.13) fails until they are registered |
 
 ## 3. Goals
 
@@ -163,7 +178,8 @@ both (57.01).
 1. an admin's tier on the video;
 2. the strictest admin tier on anything containing it (series, collection, YouTube source,
    channel);
-3. the strictest rating found in metadata: Plex `contentRating`, the guide programme's rating,
+3. the strictest rating found in metadata: a kept Plex `contentRating` (`plex_items`, no longer
+   refreshed, see §2.4), the guide programme's rating,
    YouTube `age_limit` (18 means 18+), a plugin's `content_rating` (`set-field`);
 4. the library's default tier ("everything here is suitable for …"), set by an admin;
 5. unrated.
@@ -239,15 +255,15 @@ streams gain signed URLs. HDHomeRun routes answer only the Plex servers they wer
 
 ### 6.5 Data model and migrations
 
-Slots **0216, 0217 and 0218 are planned.** Per `shared/db/migrations/MANIFEST.md` a slot is taken
+Slots **0220, 0221 and 0222 are planned** (0219 was the last one taken on `main` at 4ab79c132). Per `shared/db/migrations/MANIFEST.md` a slot is taken
 when its migration merges: if `main` has moved past one when a story lands, the story takes the
 next free integer and updates this table. Each has a `.sqlite.sql` twin.
 
 | Slot | Story | File | Contents |
 |---|---|---|---|
-| 0216 | 57.01 | `0216_age_tiers.sql` | `videos` ADD `age_tier smallint null` check in (0, 9, 13, 16, 18), `age_tier_source text null` check `admin_video`/`admin_container`/`plex`/`guide`/`youtube`/`plugin`/`library_default`, `age_tier_admin smallint null`; index `(library_id, age_tier)`; `age_tier smallint null` on `libraries` (the default), `series`, `collections`, `channels`, `youtube_sources`; `youtube_videos` ADD `age_limit smallint null`; `channel_programs` ADD `age_tier smallint null` |
-| 0217 | 57.02, 57.04 | `0217_parental_policies.sql` | `parental_policies` (user_id pk fk cascade, max_tier smallint, unrated text check `hide`/`tier_0`…`tier_18`, allow_only bool, version int, updated_by, updated_at); `parental_guardians` (child_id, guardian_id, pk both, check child ≠ guardian); `parental_rules` (id, user_id, effect `allow`/`block`, subject_kind `library`/`collection`/`series`/`channel`/`youtube_source`/`plugin`/`video`, subject_id text, expires_at null, created_by); `session_age_signals` (refresh_family_id pk, user_id, lower smallint null, upper smallint null, declaration text null, movie_ceiling int null, tv_ceiling int null, region text null, tier_limit smallint null, pending_looser jsonb null, observed_at); `home_settings` keys `parental.enabled`, `parental.unrated_on_signal`; check: a user with a policy is not `is_admin` |
-| 0218 | 57.06, 57.08 | `0218_parental_requests.sql` | `parental_requests` (id, child_id, subject_kind, subject_id, status `pending`/`approved`/`denied`/`expired`, decided_by, decided_at, created_at); `parental_pins` (guardian_id pk, pin_hash argon2id, failed int, locked_until, updated_at); `parental_events` (id, child_id, kind `watched`/`blocked`/`asked`/`approved`/`denied`/`pin_locked`/`signal`, subject_kind, subject_id, at); retention index `(at)`; `parental_pins` joins `cluster_copy_excluded()` (starting from its newest definition on `main`) |
+| 0220 | 57.01 | `0220_age_tiers.sql` | `videos` ADD `age_tier smallint null` check in (0, 9, 13, 16, 18), `age_tier_source text null` check `admin_video`/`admin_container`/`plex`/`guide`/`youtube`/`plugin`/`library_default`, `age_tier_admin smallint null`; index `(library_id, age_tier)`; `age_tier smallint null` on `libraries` (the default), `series`, `collections`, `channels`, `youtube_sources`; `youtube_videos` ADD `age_limit smallint null`; `channel_programs` ADD `age_tier smallint null` |
+| 0221 | 57.02, 57.04 | `0221_parental_policies.sql` | `parental_policies` (user_id pk fk cascade, max_tier smallint, unrated text check `hide`/`tier_0`…`tier_18`, allow_only bool, version int, updated_by, updated_at); `parental_guardians` (child_id, guardian_id, pk both, check child ≠ guardian); `parental_rules` (id, user_id, effect `allow`/`block`, subject_kind `library`/`collection`/`series`/`channel`/`youtube_source`/`plugin`/`video`, subject_id text, expires_at null, created_by); `session_age_signals` (refresh_family_id pk, user_id, lower smallint null, upper smallint null, declaration text null, movie_ceiling int null, tv_ceiling int null, region text null, tier_limit smallint null, pending_looser jsonb null, observed_at); `app_settings` keys `parental.enabled`, `parental.unrated_on_signal`; check: a user with a policy is not `is_admin` |
+| 0222 | 57.06, 57.08 | `0222_parental_requests.sql` | `parental_requests` (id, child_id, subject_kind, subject_id, status `pending`/`approved`/`denied`/`expired`, decided_by, decided_at, created_at); `parental_pins` (guardian_id pk, pin_hash argon2id, failed int, locked_until, updated_at); `parental_events` (id, child_id, kind `watched`/`blocked`/`asked`/`approved`/`denied`/`pin_locked`/`signal`, subject_kind, subject_id, at); retention index `(at)`; `parental_pins` joins `cluster_copy_excluded()` (starting from its newest definition on `main`) |
 
 ### 6.6 API
 

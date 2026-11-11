@@ -12,7 +12,7 @@ the home, and without keeping more than is needed.
 
 ### 1. What is recorded
 
-`parental_events` (slot 0218), only for restricted accounts:
+`parental_events` (slot 0222), only for restricted accounts:
 
 | Kind | When | Subject |
 |---|---|---|

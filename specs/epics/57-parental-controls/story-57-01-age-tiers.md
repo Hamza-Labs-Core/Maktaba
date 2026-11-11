@@ -49,7 +49,8 @@ collection (manual or automatic), YouTube source or channel; the strictest metad
 `videos.age_tier` with `age_tier_source`.
 
 - **Recompute** is a function `parental.Resolve(video)` called from: the admin routes below, the
-  Plex index stage (when `contentRating` changes), the YouTube import (when `age_limit` is set),
+  YouTube import (when `age_limit` is set; the import stage keeps the value and the API's
+  `parental_recompute` job writes the tier, see README §2.4),
   the plugin `set-field` route for `content_rating`, collection membership changes, and series
   detection. A container's tier change enqueues a recompute for its members in batches of 1,000
   (the queue's `parental_recompute` job, idempotent).
@@ -68,15 +69,15 @@ each `{tier: 0|9|13|16|18|null}`; admin only (403 for viewers and guardians who 
 Video and container answers return the new tier, its source, and how many videos a container
 change will recompute.
 
-### 4. Migration (slot 0216, planned; see README §6.5)
+### 4. Migration (slot 0220, planned; see README §6.5)
 
-`0216_age_tiers.sql` and `.sqlite.sql`. Existing rows start with null tiers; a one-off
+`0220_age_tiers.sql` and `.sqlite.sql`. Existing rows start with null tiers; a one-off
 `parental_recompute` over every video runs after the migration (in the background, by library,
 newest first) so Plex, guide and plugin ratings that already exist fill in.
 
 ## Acceptance criteria
 
-- **Given** a Plex item with `contentRating` `gb/15`, **when** its index stage runs, **then** the
+- **Given** a kept `plex_items` row with `contentRating` `gb/15`, **when** the recompute runs, **then** the
   video's tier is 16 with source `plex`.
 - **Given** that video in a collection an admin set to 18, **then** its tier is 18 with source
   `admin_container`; **given** the admin then sets the video itself to 13, **then** it is 13 with
@@ -124,7 +125,8 @@ The OpenAPI summaries carry Arabic in `shared/api/openapi.ar.json` (57.13).
 
 - **A video in two collections** with tiers 9 and 16: 16 (strictest container).
 - **An admin clears a video's tier** (`null`): it falls back down the order, not to unrated.
-- **A Plex rating removed upstream**: recomputed on the next index; falls back.
+- **Plex ratings**: `plex_items` is no longer refreshed (README §2.4), so a kept `contentRating`
+  never changes. The recompute reads it as it is.
 - **SQLite** (the single-user desktop build): the same columns; recompute runs in-process.
 
 ## Build plan
@@ -135,6 +137,6 @@ The OpenAPI summaries carry Arabic in `shared/api/openapi.ar.json` (57.13).
 | `api/internal/parental/ratings.go`, `resolve.go` (new), tests | parse, map, resolve |
 | `api/internal/handlers/parental/tiers.go` (new) | admin routes |
 | `api/internal/plugins/routes.go` | `content_rating` → recompute |
-| `pipeline/src/maktaba_pipeline/extensions/plex_items.py`, the YouTube import | recompute; keep `age_limit` |
-| `shared/db/migrations/0216_age_tiers{,.sqlite}.sql`, `MANIFEST.md` | columns |
+| the YouTube import stage, and its role's grants (`tools/plugins/roles.py`) | keep `age_limit`; enqueue `parental_recompute` |
+| `shared/db/migrations/0220_age_tiers{,.sqlite}.sql`, `MANIFEST.md` | columns |
 | `apps/apple/MaktabaKit/Tests/MaktabaKitTests/RatingVectorsTests.swift` (new) | T02 |
