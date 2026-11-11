@@ -18,7 +18,14 @@ import pytest
 from maktaba_pipeline.cluster import config as node_config
 from maktaba_pipeline.cluster import crypto
 from maktaba_pipeline.cluster.discover import Home
-from maktaba_pipeline.cluster.join import LIGHT_NAS_TEXT, JoinError, is_light_nas, join, pick_home
+from maktaba_pipeline.cluster.join import (
+    LIGHT_NAS_TEXT,
+    NOTICES,
+    JoinError,
+    is_light_nas,
+    join,
+    pick_home,
+)
 
 DB_URL = "postgres://maktaba_node_x:s3cr3t@192.168.1.20:5432/maktaba?sslmode=prefer"
 DB_CA = "-----BEGIN CERTIFICATE-----\nTUFLVEFCQQ==\n-----END CERTIFICATE-----\n"
@@ -270,12 +277,16 @@ def test_windows_cuts_the_config_acl_to_the_user(tmp_path: Path) -> None:
 
 def test_the_homes_notices_are_shown(fake: tuple[FakeHome, str], tmp_path: Path) -> None:
     home, url = fake
+    # the answer is not proven yet: only known codes, in this machine's own words
     home.notices = [
-        {"code": "no_writable_share", "message": "No shared folder on this NAS is writable."}
+        {"code": "no_writable_share", "message": "\x1b[2Jfake text from the home"},
+        {"code": "unknown", "message": "Pairing code: 000 000"},
     ]
     out = io.StringIO()
     _join(url, tmp_path / "node.json", out)
-    assert "Note: No shared folder on this NAS is writable." in out.getvalue()
+    shown = out.getvalue()
+    assert f"Note: {NOTICES['no_writable_share']}" in shown
+    assert "fake text" not in shown and "000 000" not in shown and "\x1b" not in shown
 
 
 def test_a_light_nas_needs_the_explicit_choice(fake: tuple[FakeHome, str], tmp_path: Path) -> None:

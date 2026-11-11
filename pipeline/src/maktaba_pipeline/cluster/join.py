@@ -76,6 +76,13 @@ LIGHT_NAS_TEXT = (
 )
 _GIB = 1 << 30
 
+#: the home's notices this machine knows (cluster.<code> in the apps); any other is not shown
+NOTICES = {
+    "no_writable_share": "No shared folder on this NAS is writable for Maktaba, so nodes will"
+    " download speech models themselves. Give Maktaba Read/Write on one shared folder to share"
+    " them.",
+}
+
 
 def _cgroup_limit() -> int | None:
     """The container's memory limit (cgroup v2, else v1); ``None`` without one."""
@@ -302,10 +309,12 @@ def join(
     except (KeyError, ValueError) as exc:
         raise JoinError("the home's answer has no usable key") from exc
     home_info = resp.get("home") or {}
-    # what this machine should know about the home (story 59.13: no_writable_share)
+    # what this machine should know about the home (story 59.13). The answer comes before the
+    # pairing code proves the home, so only known codes are shown, in this machine's words
     for notice in resp.get("notices") or []:
-        if isinstance(notice, dict) and notice.get("message"):
-            out.write(f"Note: {notice['message']}\n")
+        text = NOTICES.get(str(notice.get("code") or "")) if isinstance(notice, dict) else None
+        if text:
+            out.write(f"Note: {text}\n")
 
     shared = shared_secret(kp.private, home_pub)
     code = sas_code(shared, kp.public, home_pub)
