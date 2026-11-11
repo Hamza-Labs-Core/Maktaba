@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.127
-up_to_commit: 5bcb7d1d9
-built_from: v0.3.126
+tag: v0.3.128
+up_to_commit: 7161c1e85
+built_from: v0.3.127
 ---
 
-# Trail snapshot: v0.3.127
+# Trail snapshot: v0.3.128
 
 ## Keep doing
 
@@ -584,6 +584,7 @@ built_from: v0.3.126
 | #1128 | 2026-11-10 | docs(spec): Epic 57 checked again against main |
 | #1130 | 2026-11-10 | spec(epic57): time rules on every device, and tiers detected from transcripts |
 | #1139 | 2026-11-10 | spec(epic57): Q9 answered, detection covers what a video is |
+| #1140 | 2026-11-11 | feat(59.13): a NAS as the cluster's home: its own folders as SMB shares, setup's share step, Light-NAS join choice |
 | #1148 | 2026-11-11 | fix(api): the home's own callers get their own rate budget, keyed by the local token |
 
 ## Index
