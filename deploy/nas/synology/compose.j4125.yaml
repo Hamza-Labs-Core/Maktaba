@@ -29,7 +29,7 @@ services:
       MAKTABA_PLATFORM: dsm
       # your time zone, for the quiet hours (heavy work at night on Light and Standard)
       TZ: Etc/UTC
-      # MAKTABA_UPDATE_DISABLE: "1"   # the image is updated by something else (see above)
+      # MAKTABA_UPDATE_DISABLE: "1"   # only the image updates it (see above); off by default
       # [bridge] this machine's address on your network, for the apps on a bridge network
       # MAKTABA_HOST_IP: 192.168.1.20
     # The host's network (Linux): the machines and apps of your network find this home (mDNS)

@@ -129,6 +129,41 @@ class Dev(unittest.TestCase):
         self.assertFalse((ROOT / "cloud/installers/nas").exists())
 
 
+class Updates(unittest.TestCase):
+    """Story 59.12: the image's self-update and a NAS catalog's live side by side. No install
+    file turns the self-update off; the files a household copies name `:latest` (the highest
+    stable release), and the release pins every NAS file it publishes to its own tag."""
+
+    FILES = ("cloud/installers/docker/docker-compose.yml", "deploy/nas/synology/compose.yaml",
+             "deploy/nas/synology/compose.j4125.yaml", "deploy/nas/unraid/maktaba.xml",
+             "deploy/nas/truenas/custom-app.yaml")
+
+    def test_no_install_file_turns_the_self_update_off(self) -> None:
+        for name in self.FILES:
+            for line in (ROOT / name).read_text(encoding="utf-8").splitlines():
+                if "MAKTABA_UPDATE_DISABLE" in line:
+                    self.assertTrue(line.lstrip().startswith("#") or "<!--" in line, f"{name}: {line.strip()}")
+        for path in sorted((ROOT / "deploy/nas/truenas/ix-dev").rglob("*")):
+            if path.is_file():
+                self.assertNotIn("MAKTABA_UPDATE_DISABLE", path.read_text(encoding="utf-8", errors="replace"), path)
+
+    def test_the_copied_files_name_latest(self) -> None:
+        for name in self.FILES[:4]:
+            text = (ROOT / name).read_text(encoding="utf-8")
+            self.assertIn("ghcr.io/hamza-labs-core/maktaba-server:latest", text, name)
+
+    def test_the_release_pins_every_nas_file(self) -> None:
+        release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        # the published compose, rewritten to the tag
+        self.assertIn('sed "s|maktaba-server:latest|maktaba-server:${TAG}|" cloud/installers/docker/docker-compose.yml', release)
+        # the Synology files, made from that compose with the same pin
+        self.assertIn('python3 deploy/nas/generate.py --tag "$TAG" --out dist', release)
+        # the TrueNAS app and its Custom App YAML, pinned to the tag and the image's digest
+        self.assertIn('python3 tools/release/truenas_app.py render --tag "${TAG}" --digest "${server_digest}"', release)
+        # Unraid's template stays on :latest (its update check moves it); it is not a release asset
+        self.assertNotIn("maktaba.xml", release)
+
+
 class Cells(unittest.TestCase):
     def cell(self, spec: dict, d: str) -> cell.Cell:
         return cell.Cell(spec=spec, image="maktaba-server:nas", fixtures=Path(d), out=Path(d), local_port=None,

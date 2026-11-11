@@ -631,11 +631,10 @@ func (h *Handler) Scan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.JobEnqueuer == nil {
-		// Soft-fail mode: report 202 with an empty job_id so the route
-		// is callable in environments where the job queue isn't wired
-		// (CI / dev unit tests). Production must inject a real enqueuer.
-		WriteAudit(r.Context(), h.DB, EventScanTriggered, ActorOf(p), id, map[string]any{"job_id": ""})
-		common.WriteJSON(w, r, http.StatusAccepted, map[string]any{"job_id": ""})
+		// No job queue wired: say so (503), never a 202 with no job.
+		e := httperror.Unavailable(0)
+		e.Detail = "no job queue on this server: no scan was queued"
+		httperror.Write(w, r, e)
 		return
 	}
 	jobID, err := h.JobEnqueuer.EnqueueScan(r.Context(), id, 50)

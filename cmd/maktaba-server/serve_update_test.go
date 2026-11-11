@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -12,7 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dbsafe"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/updater"
 )
 
 // The watch checks that the pipeline runs the new release's pipeline (Epic 35 story 35.4
@@ -251,5 +255,29 @@ func TestMachineHealthLeavesThePluginRunners(t *testing.T) {
 	h := &machineHealth{snap: func() (supervisor.Snapshot, bool) { return supervisor.Snapshot{Processes: procs}, true }}
 	if v := h.Check(context.Background(), "v1.5.0"); !v.Healthy || v.Fatal {
 		t.Fatalf("a plugin runner judged the home: %+v", v)
+	}
+}
+
+// Story 59.12: a container's data volume without room for the runtime and the dump is the
+// run's disk_short failure, with both byte counts for the Updates page.
+func TestCodedFailureDiskShort(t *testing.T) {
+	err := codedFailure(&dbsafe.ShortError{Path: "/var/lib/maktaba/runtime", Need: 13 << 30, Free: 12 << 30})
+	var f *updater.Failure
+	if !errors.As(err, &f) || f.Code != "disk_short" || f.Need != 13<<30 || f.Free != 12<<30 ||
+		!strings.HasPrefix(f.Detail, "Not enough free space on the data folder for a safe update") {
+		t.Fatalf("%+v", err)
+	}
+}
+
+// Story 59.12: the heavy workers stop for the dump on Light and Standard, not on Strong
+// nor where the tier is not known.
+func TestLightTier(t *testing.T) {
+	for tier, want := range map[hostinfo.Tier]bool{hostinfo.TierLight: true, hostinfo.TierStandard: true, hostinfo.TierStrong: false} {
+		if got := lightTier(&machineTier{Tier: tier}); got != want {
+			t.Errorf("%s: %v", tier, got)
+		}
+	}
+	if lightTier(nil) {
+		t.Error("an unknown tier")
 	}
 }
