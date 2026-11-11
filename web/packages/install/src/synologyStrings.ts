@@ -79,7 +79,7 @@ export const SYN = {
       "Container Manager → Project → Create: name maktaba, path docker/maktaba, source Create docker-compose.yml. Paste the file above, then Next and Done. Container Manager downloads the image and starts it.",
     "step5.title": "5. Finish setup",
     "step5.body":
-      "When the project runs: Container Manager → Container → maktaba → Details → Terminal → Create, and run /opt/maktaba/server/bin/maktaba-server container setup there. Answer its questions (the admin account, then your libraries); Maktaba starts by itself when it finishes. Then open http://<your NAS>:8088. Settings → This machine shows the user Maktaba runs as, its tier and whether video uses Quick Sync.",
+      "When the project runs: Container Manager → Container → maktaba → Details → Terminal → Create, and run /opt/maktaba/server/bin/maktaba-server container setup there. Answer its questions: a name for the admin account (not admin, which Maktaba keeps for itself), its password, and the shared folders with your videos. The NAS needs the internet for this step: setup downloads the transcription and search tools (about 2 GB) and the speech models. Maktaba starts by itself when it finishes. Then open http://<your NAS>:8088, sign in, and add a library for each shared folder: Manage → Manage libraries → Add library. Settings → This machine shows its tier and whether video uses Quick Sync.",
     after: "After setup",
     "after.firewall":
       "Firewall: if DSM's firewall is on, Control Panel → Security → Firewall → Edit Rules → Create: ports 8088 (the web app), 8080 (apps and the home's other machines) and 8081 (live TV), TCP, from your network only.",
@@ -210,7 +210,7 @@ export const SYN = {
       "Container Manager ← المشروع ← إنشاء: الاسم maktaba، والمسار docker/maktaba، والمصدر إنشاء docker-compose.yml. الصق الملف أعلاه، ثم التالي وتم. ينزّل Container Manager الصورة ويشغّلها.",
     "step5.title": "5. أكمل الإعداد",
     "step5.body":
-      "حين يعمل المشروع: من Container Manager ← الحاوية ← maktaba ← التفاصيل ← الطرفية ← إنشاء، وشغّل هناك الأمر /opt/maktaba/server/bin/maktaba-server container setup. أجب عن أسئلته (حساب المسؤول، ثم مكتباتك)، ويبدأ Maktaba بنفسه حين ينتهي. ثم افتح http://<جهازك>:8088. وتعرض الإعدادات ← هذا الجهاز المستخدم الذي يعمل به Maktaba، وفئته، وهل يستخدم الفيديو Quick Sync.",
+      "حين يعمل المشروع: من Container Manager ← الحاوية ← maktaba ← التفاصيل ← الطرفية ← إنشاء، وشغّل هناك الأمر /opt/maktaba/server/bin/maktaba-server container setup. أجب عن أسئلته: اسمٌ لحساب المسؤول (غير admin الذي يحتفظ به Maktaba لنفسه)، وكلمة مروره، والمجلدات المشتركة التي فيها مقاطعك. ويحتاج الخادم إلى الإنترنت في هذه الخطوة: ينزّل الإعداد أدوات التفريغ والبحث (نحو 2 GB) ونماذج الكلام. ويبدأ Maktaba بنفسه حين ينتهي. ثم افتح http://<جهازك>:8088، وسجّل الدخول، وأضف مكتبة لكل مجلد مشترك: الإدارة ← إدارة المكتبات ← إضافة مكتبة. وتعرض الإعدادات ← هذا الجهاز فئته، وهل يستخدم الفيديو Quick Sync.",
     after: "بعد الإعداد",
     "after.firewall":
       "الجدار الناري: إن كان الجدار الناري في DSM مفعّلًا، فمن لوحة التحكم ← الأمان ← الجدار الناري ← تعديل القواعد ← إنشاء: المنافذ 8088 (تطبيق الويب) و8080 (التطبيقات وأجهزة المنزل الأخرى) و8081 (البث المباشر)، بروتوكول TCP، من شبكتك فقط.",

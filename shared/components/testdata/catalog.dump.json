@@ -3615,7 +3615,8 @@
     "plugin_home_only",
     "plugin_no_gpu",
     "plugin_package_untrusted",
-    "isolation_held"
+    "isolation_held",
+    "bridge_network"
   ],
   "schema": 1
 }

@@ -32,7 +32,7 @@ export const STRINGS = {
       "Maktaba plans for this much and leaves the rest to the NAS. Under 3.5 GB it does not run: the NAS then serves best as storage for a Maktaba on another computer. On an ARM NAS, anything under 8 GB is Light.",
     data: "Maktaba's data folder on the NAS",
     "data.hint":
-      "Fast local storage (an SSD pool if you have one), never a network share or a USB stick. Empty: a Docker volume.",
+      "Fast local storage (an SSD pool if you have one), never a network share or a USB stick. Empty: a Docker volume, for the user 1000 only.",
     media: "Media folders, one per line",
     "media.hint":
       "Each folder is mounted at the same path inside. Tick read-only for the ones Maktaba must never write to.",
@@ -55,13 +55,15 @@ export const STRINGS = {
     copy: "Copy",
     copied: "Copied",
     download: "Download docker-compose.yml",
-    next: "Then run docker compose up -d, and docker compose run --rm maktaba setup once. Open http://<this machine>:8088.",
+    next: "Then run docker compose up -d, and docker compose run --rm maktaba setup once (it downloads about 2 GB of tools and the speech models, so it needs the internet). Open http://<this machine>:8088, sign in, and add a library for each folder: Manage → Manage libraries → Add library.",
     updates:
       "Maktaba updates itself after that, in its update window. The file names the latest release (:latest); your NAS's own app updates, Watchtower included, can stay on too: a newer image goes onto the data folder at the next start, and an older one never replaces a newer Maktaba.",
     "problem.user": "Write the user as two numbers, uid:gid, such as 1000:100.",
     "problem.user-root": "Maktaba never runs as root (uid 0): choose a user of its own.",
     "problem.data":
       "The data folder must be a full path, such as /volume1/docker/maktaba, without a colon.",
+    "problem.data-volume-user":
+      "A Docker volume belongs to the user 1000: for another user, write a data folder that user owns.",
     "problem.media":
       "Each media folder must be a full path, such as /volume1/Movies, without a colon.",
     "problem.media-none": "Add at least one media folder.",
@@ -100,7 +102,7 @@ export const STRINGS = {
       "يخطّط Maktaba لهذا القدر ويترك الباقي لجهاز التخزين. وتحت 3.5 غيغابايت لا يعمل، والأفضل حينها أن يكون الجهاز مخزنًا لـ Maktaba يعمل على حاسوب آخر. وعلى جهاز تخزين بمعالج ARM يكون كل ما دون 8 غيغابايت خفيفًا.",
     data: "مجلد بيانات Maktaba على الجهاز",
     "data.hint":
-      "تخزين محلي سريع (مجمّع SSD إن وُجد)، وليس مجلدًا مشتركًا عبر الشبكة ولا ذاكرة USB أبدًا. إن تركته فارغًا يُستخدم مجلد Docker.",
+      "تخزين محلي سريع (مجمّع SSD إن وُجد)، وليس مجلدًا مشتركًا عبر الشبكة ولا ذاكرة USB أبدًا. إن تركته فارغًا يُستخدم مجلد Docker، وهذا للمستخدم 1000 وحده.",
     media: "مجلدات الوسائط، مجلد في كل سطر",
     "media.hint":
       "يُربط كل مجلد بالمسار نفسه في الداخل. اختر «للقراءة فقط» للمجلدات التي يجب ألا يكتب فيها Maktaba أبدًا.",
@@ -123,13 +125,15 @@ export const STRINGS = {
     copy: "انسخ",
     copied: "نُسخ",
     download: "نزّل docker-compose.yml",
-    next: "ثم شغّل الأمر docker compose up -d، والأمر docker compose run --rm maktaba setup مرة واحدة. وافتح العنوان http://<this machine>:8088.",
+    next: "ثم شغّل الأمر docker compose up -d، والأمر docker compose run --rm maktaba setup مرة واحدة (ينزّل نحو 2 GB من الأدوات ونماذج الكلام، فيحتاج إلى الإنترنت). وافتح العنوان http://<this machine>:8088، وسجّل الدخول، وأضف مكتبة لكل مجلد: الإدارة ← إدارة المكتبات ← إضافة مكتبة.",
     updates:
       "بعد ذلك تحدّث مكتبة نفسها في نافذة التحديث. ويسمّي الملف أحدث إصدار (:latest)؛ ويمكن أن تبقى تحديثات التطبيقات في جهاز NAS، ومنها Watchtower، مفعّلة أيضًا: توضع الصورة الأحدث في مجلد البيانات عند التشغيل التالي، ولا تحلّ الصورة الأقدم أبدًا محلّ نسخة أحدث من مكتبة.",
     "problem.user": "اكتب المستخدم رقمين بهذا الشكل uid:gid، مثل 1000:100.",
     "problem.user-root": "لا يعمل Maktaba أبدًا بالمستخدم الجذر (uid 0)، فاختر مستخدمًا خاصًا به.",
     "problem.data":
       "يجب أن يكون مجلد البيانات مسارًا كاملًا، مثل ‎/volume1/docker/maktaba، بلا نقطتين.",
+    "problem.data-volume-user":
+      "مجلد Docker ملك المستخدم 1000: ولمستخدم غيره اكتب مجلد بيانات يملكه ذلك المستخدم.",
     "problem.media": "يجب أن يكون كل مجلد وسائط مسارًا كاملًا، مثل ‎/volume1/Movies، بلا نقطتين.",
     "problem.media-none": "أضف مجلد وسائط واحدًا على الأقل.",
     "problem.render-group": "اكتب معرّف مجموعة جهاز العرض، وهو رقم يظهره أمر stat.",

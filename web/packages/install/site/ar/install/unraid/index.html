@@ -61,7 +61,14 @@
       <ul>
         <li>
           <strong>البيانات («Data»):</strong> أبقِ <code>/mnt/cache/appdata/maktaba</code>، أو مجلد
-          التطبيقات على مجمّع آخر.
+          التطبيقات على مجمّع آخر. واجعله ملكًا لـ Maktaba قبل «Apply»: فلو أنشأه Docker لأنشأه
+          بصلاحيات الجذر، ولتوقّف Maktaba فورًا لأنه لا يعمل بصلاحيات الجذر أبدًا. افتح الطرفية
+          (<strong>&gt;_</strong> أعلى اليمين) وشغّل
+          <code
+            >mkdir -p /mnt/cache/appdata/maktaba &amp;&amp; chown 99:100
+            /mnt/cache/appdata/maktaba</code
+          >
+          (أو مسارك إن غيّرته).
         </li>
         <li>
           <strong>الوسائط («Media»):</strong> مشاركتك، مثل <code>/mnt/user/Media</code>. اجعل
@@ -102,9 +109,15 @@
       <p>من «Docker» اضغط أيقونة Maktaba ← <strong>«Console»</strong>، وشغّل:</p>
       <pre><code>/opt/maktaba/server/bin/maktaba-server container setup</code></pre>
       <p>
-        أجب عن أسئلته (اسم المدير وكلمة مروره، ومكتباتك)، ويبدأ Maktaba بنفسه حين ينتهي. ثم افتح
+        أجب عن أسئلته: اسمٌ لحساب المدير (غير <code>admin</code> الذي يحتفظ به Maktaba لنفسه)، وكلمة
+        مروره، والمجلدات التي فيها مقاطعك. ويحتاج الخادم إلى الإنترنت في هذه الخطوة: ينزّل الإعداد
+        أدوات التفريغ والبحث (نحو 2 GB) ونماذج الكلام. ويبدأ Maktaba بنفسه حين ينتهي. ثم افتح
         <strong>«WebUI»</strong> من قائمة الأيقونة، أو العنوان
-        <code>http://&lt;your server&gt;:8088</code>.
+        <code>http://&lt;your server&gt;:8088</code>. وسجّل الدخول بعدها، وأضف مكتبة لكل مجلد:
+        <strong>«الإدارة ← إدارة المكتبات ← إضافة مكتبة»</strong> (<a
+          href="/ar/install/after-setup/#libraries"
+          >بعد الإعداد</a
+        >).
       </p>
       <figure class="placeholder" data-shot="screenshots/unraid/console.ar.png">
         <figcaption>

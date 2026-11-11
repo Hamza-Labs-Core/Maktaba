@@ -102,7 +102,7 @@ var checkOK = map[string]any{"ok": true, "data_dir": "/home/me/.local/share/makt
 // "=>", then a good one), models (a token), Plex linked.
 func interactive(t *testing.T) *script {
 	return &script{t: t,
-		lines:   []string{"", "admin", "/media/x", "", "/media/y", "/mnt/media", "/mnt/media => /srv/media"},
+		lines:   []string{"", "owner", "/media/x", "", "/media/y", "/mnt/media", "/mnt/media => /srv/media"},
 		secrets: []string{"pw-one", "pw-two", "s3cret!", "s3cret!", "hf_token"},
 		yes:     []bool{true}}
 }
@@ -156,7 +156,7 @@ func TestAppSetupInteractive(t *testing.T) {
 			t.Errorf("output lacks %q:\n%s", w, out.String())
 		}
 	}
-	if got := f.inputs["admin"][0]; got != `{"password":"s3cret!","username":"admin"}` {
+	if got := f.inputs["admin"][0]; got != `{"password":"s3cret!","username":"owner"}` {
 		t.Errorf("admin input %s", got)
 	}
 	if got := f.inputs["libraries"][1]; got != `{"path_map":[{"from":"/mnt/media","to":"/srv/media"}],"roots":["/media/y"]}` {

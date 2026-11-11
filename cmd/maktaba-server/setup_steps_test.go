@@ -286,11 +286,14 @@ func TestSetupAdmin(t *testing.T) {
 		{map[string]string{"username": "", "password": "s3cret-long"}, "username_length", "username", map[string]any{"max": float64(64)}},
 		{map[string]string{"username": " admin", "password": "s3cret-long"}, "username_space", "username", nil},
 		{map[string]string{"username": "ad\x01min", "password": "s3cret-long"}, "username_control", "username", nil},
-		{map[string]string{"username": "admin", "password": "s3cret"}, "password_short", "password", map[string]any{"min": float64(8)}},
-		{map[string]string{"username": "admin", "password": strings.Repeat("x", 257)}, "password_long", "password", map[string]any{"max": float64(256)}},
+		// the sentinel account of migration 0029 has this name: adduser would fail at finish
+		{map[string]string{"username": "admin", "password": "s3cret-long"}, "username_reserved", "username", map[string]any{"name": "admin"}},
+		{map[string]string{"username": "Admin", "password": "s3cret-long"}, "username_reserved", "username", map[string]any{"name": "admin"}},
+		{map[string]string{"username": "owner", "password": "s3cret"}, "password_short", "password", map[string]any{"min": float64(8)}},
+		{map[string]string{"username": "owner", "password": strings.Repeat("x", 257)}, "password_long", "password", map[string]any{"max": float64(256)}},
 		// the api reads the password as a line: a line break would cut it there
-		{map[string]string{"username": "admin", "password": "s3cret-long\nrest"}, "password_newline", "password", nil},
-		{map[string]string{"username": "admin", "password": "s3cret-long\r"}, "password_newline", "password", nil},
+		{map[string]string{"username": "owner", "password": "s3cret-long\nrest"}, "password_newline", "password", nil},
+		{map[string]string{"username": "owner", "password": "s3cret-long\r"}, "password_newline", "password", nil},
 	} {
 		code, _, ev := runStep(t, "admin", c.in)
 		params, _ := ev["params"].(map[string]any)
@@ -308,12 +311,12 @@ func TestSetupAdminHashes(t *testing.T) {
 		t.Skip("starts the api program; runs without -short")
 	}
 	e := newSetupEnv(t)
-	code, _, ev := runStep(t, "admin", map[string]string{"username": "admin", "password": "s3cret-long"})
-	if code != 0 || data(t, ev)["username"] != "admin" {
+	code, _, ev := runStep(t, "admin", map[string]string{"username": "owner", "password": "s3cret-long"})
+	if code != 0 || data(t, ev)["username"] != "owner" {
 		t.Fatalf("admin = %d %v", code, ev)
 	}
 	p := pendingOf(t, e)
-	if p.Admin == nil || p.Admin.Username != "admin" || !strings.HasPrefix(p.Admin.PasswordHash, "$argon2id$") {
+	if p.Admin == nil || p.Admin.Username != "owner" || !strings.HasPrefix(p.Admin.PasswordHash, "$argon2id$") {
 		t.Fatalf("pending admin = %+v", p.Admin)
 	}
 	raw, _ := os.ReadFile(filepath.Join(e.state, "state", "setup.json"))

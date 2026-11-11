@@ -61,7 +61,9 @@ reasons = ["dependency_off", "licence_missing", "platform_unsupported", "not_eno
            # third-party plugins on joined machines (Epic 54, story 54.42)
            "plugin_home_only", "plugin_no_gpu", "plugin_package_untrusted",
            # third-party plugins on a home whose isolation is the container's (Epic 59, 59.07)
-           "isolation_held"]
+           "isolation_held",
+           # mDNS and SSDP off on a Docker bridge network (Epic 59, 59.08)
+           "bridge_network"]
 
 # GET /api/capabilities answers these words (README §4.12). chapters and
 # recommendations have no component behind them yet and always answer "on".

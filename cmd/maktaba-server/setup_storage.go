@@ -65,6 +65,14 @@ func stepStorage(s *setupRun, in json.RawMessage) (any, error) {
 			disks = []storage.Disk{}
 		}
 		suggested := storage.Suggest(disks, def)
+		if config.Container() != "" {
+			// In the image the data folder is the volume mounted at /var/lib/maktaba (every
+			// NAS guide's data folder); the other disks a container sees are the household's
+			// media mounts, and the roomiest of them (a TrueNAS media pool) would put the
+			// database inside a library, or fail on a read-only one (Epic 59, found by
+			// following the guides).
+			suggested = def
+		}
 		if rec, ok := config.ReadStorageRecord(config.TOMLDir()); ok && filepath.Clean(rec.DataDir) == cur {
 			suggested = cur // chosen before (the user came back to this screen)
 		}

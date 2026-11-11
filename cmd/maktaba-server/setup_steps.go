@@ -358,8 +358,18 @@ func validAdminName(u string) error {
 			return failStep("username_control", "username", "A username cannot hold control characters.")
 		}
 	}
+	if strings.EqualFold(u, reservedAdminName) {
+		return failStep("username_reserved", "username", "The name %s is kept by Maktaba itself: choose another, such as your own name.",
+			reservedAdminName).with("name", reservedAdminName)
+	}
 	return nil
 }
+
+// reservedAdminName is the sentinel account's name (migration 0029 seeds it in every
+// database for the admin-token path, story 10.9): an admin of that name collides with it
+// (users_username_lower_unique), so `adduser` in the finish step fails after everything else
+// was done. Found by following the NAS guides, where setup offered it as the default.
+const reservedAdminName = "admin"
 
 // validAdminPassword: the api's own limits, and one line (the api reads the
 // password as a line: a line break would cut it there).
