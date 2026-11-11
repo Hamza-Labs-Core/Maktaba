@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
 
 // healthcheck: a container's health (Epic 59 story 59.10), what the TrueNAS app's compose
@@ -67,6 +68,7 @@ func checkHealth(ctx context.Context, cfgPath string, client *http.Client) (stri
 	if err != nil {
 		return err.Error(), false
 	}
+	withLocalToken(req, cfg)
 	resp, err := client.Do(req)
 	if err != nil {
 		return url + ": " + err.Error(), false
@@ -77,4 +79,15 @@ func checkHealth(ctx context.Context, cfgPath string, client *http.Client) (stri
 		return fmt.Sprintf("%s answered %d", url, resp.StatusCode), false
 	}
 	return url + " answered 200", true
+}
+
+// withLocalToken sends this machine's per-boot local token (the supervisor's, when this
+// process can read it) on a request to its own API: the API's limits for clients then let
+// it by, and it draws on the home's own budget (the API's middleware.InternalCallers), so
+// a busy home does not refuse its own health and version checks. No token, no header.
+func withLocalToken(req *http.Request, cfg config.Config) {
+	b, err := os.ReadFile(supervisor.LocalTokenPath(cfg))
+	if tok := strings.TrimSpace(string(b)); err == nil && tok != "" {
+		req.Header.Set("X-Maktaba-Local-Token", tok)
+	}
 }

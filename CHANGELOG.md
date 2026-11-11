@@ -246,6 +246,17 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A busy home no longer rate-limits its own plugin work.** Every program on the home's
+  machine shared one rate-limit bucket on loopback (600 requests a minute), so on a large library
+  the pipeline's plugin token mints and ends were refused with 429 and plugin jobs (scans,
+  thumbnails, stages) waited; the launcher's version and health checks were refused too (the
+  update rehearsal's 4 GB leg with 20,000 videos counted 560 in one run). A request carrying the
+  supervisor's per-boot local token now draws on the home's own budget (60,000 a minute,
+  `MAKTABA_INTERNAL_RATE_PER_MIN`) instead of the client limits, and the container's health and
+  version checks send it. The token is the identity, never the address: clients reaching the API
+  through a reverse proxy or the relay agent, also over loopback, keep the client limits, a wrong
+  or partial token counts for nothing, and the sign-in routes' limits are unchanged.
+
 - **The Components page says why a component is degraded.** A degraded component keeps its
   Ready condition true, so the list's `reason` stayed empty and an admin saw *Running with
   problems* with no cause (story 59.07: `plugins.host` on a NAS kernel without Landlock). The

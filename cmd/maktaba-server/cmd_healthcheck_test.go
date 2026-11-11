@@ -70,3 +70,42 @@ func TestSetupHint(t *testing.T) {
 		t.Fatalf("docker: %q", h)
 	}
 }
+
+// The health and version checks send this machine's local token, so a busy home's client
+// limits never refuse them (the API's InternalCallers); with no token file they send none.
+func TestOwnChecksCarryLocalToken(t *testing.T) {
+	dir := t.TempDir()
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.URL.Path+"="+r.Header.Get("X-Maktaba-Local-Token"))
+		if r.URL.Path == "/api/system/version" {
+			_, _ = w.Write([]byte(`{"version":"0.3.1"}`))
+		}
+	}))
+	defer srv.Close()
+	_, port, _ := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	cfg := filepath.Join(dir, "server.toml")
+	data := filepath.Join(dir, "data")
+	toml := "[server]\nlisten = \"0.0.0.0:" + port + "\"\ndata_dir = \"" + data + "\"\n"
+	if err := os.WriteFile(cfg, []byte(toml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// no token file yet: no header
+	checkHealth(context.Background(), cfg, srv.Client())
+	if v := serverVersion(context.Background(), cfg); v != "0.3.1" {
+		t.Fatalf("version %q", v)
+	}
+	if err := os.MkdirAll(filepath.Join(data, "supervisor"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(data, "supervisor", "local.token"), []byte("tok-abc\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	checkHealth(context.Background(), cfg, srv.Client())
+	serverVersion(context.Background(), cfg)
+	want := []string{"/api/system/health=", "/api/system/version=", "/api/system/health=tok-abc", "/api/system/version=tok-abc"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}

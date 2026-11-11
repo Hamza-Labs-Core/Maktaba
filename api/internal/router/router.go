@@ -67,6 +67,10 @@ type Deps struct {
 	// (useful in tests).
 	IPRatePerMin   int
 	UserRatePerMin int
+	// InternalRatePerMin is the home's own callers' budget (mw.InternalCallers: a request
+	// with the supervisor's local token skips the two client limits and draws on it);
+	// 0 is mw.DefaultInternalRatePerMin, below 0 unlimited.
+	InternalRatePerMin int
 
 	// SchemaRev is the binary's expected schema revision; surfaced in
 	// /api/system/version (Story 7.20 AC-2).
@@ -152,6 +156,13 @@ func New(d Deps) chi.Router {
 	r.Use(mw.Metrics)
 	r.Use(mw.Usage(d.Usage))
 
+	// the home's own processes (the supervisor's local token, never the address: a proxy's
+	// and the relay agent's clients also arrive over loopback) have their own budget
+	internal := d.InternalRatePerMin
+	if internal == 0 {
+		internal = mw.DefaultInternalRatePerMin
+	}
+	r.Use(mw.InternalCallers(internal))
 	if d.IPRatePerMin > 0 {
 		r.Use(mw.PerIP(d.IPRatePerMin))
 	}
