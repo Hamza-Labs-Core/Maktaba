@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 180,
+    "endpoint": 182,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -11624,6 +11624,60 @@
         "lang": "ar",
         "source": {
           "content": "2d09f7dbbeb4b8f0"
+        }
+      }
+    },
+    {
+      "id": "ep-get-cluster-storage-home-shares",
+      "type": "endpoint",
+      "title": "GET /cluster/storage/home-shares",
+      "content": "مشاركات خادم التخزين الشبكي الرئيسي نفسه (للمشرف)",
+      "tags": [
+        "api",
+        "System",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/cluster/storage/home-shares",
+        "tag": "System",
+        "operationId": "getHomeShares"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "4b4bd7a7b571b9c7"
+        }
+      }
+    },
+    {
+      "id": "ep-put-cluster-storage-home-shares",
+      "type": "endpoint",
+      "title": "PUT /cluster/storage/home-shares",
+      "content": "تسمية مشاركات خادم التخزين الشبكي الرئيسي (للمشرف)",
+      "tags": [
+        "api",
+        "System",
+        "put"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/cluster/storage/home-shares",
+        "tag": "System",
+        "operationId": "putHomeShares"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "9767d26272bf035c"
         }
       }
     },

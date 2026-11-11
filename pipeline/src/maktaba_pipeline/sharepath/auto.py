@@ -75,7 +75,8 @@ from . import migrate as mig
 from .autoreg import Lookups, register_from_mounts
 from .canonical import is_canonical
 from .mounts import Mount, discover
-from .resolver import Resolver, build_resolver
+from .nashome import ensure_home_server, local_share_mounts, nas_home
+from .resolver import Resolver, ShareMount, build_resolver
 from .servers import load_servers
 
 __all__ = [
@@ -198,6 +199,10 @@ class AutoEnv:
     on_change: Callable[[], None] | None = None
     #: tests: called after every chunk written (to stop a run mid-way)
     after_chunk: Callable[[int, int], Awaitable[None]] | None = None
+    #: story 59.13, tests: the NAS platform (``None``: ``MAKTABA_PLATFORM``; ``""``: none)
+    #: and the names nodes mount this home by (``None``: its host name and addresses)
+    platform: str | None = None
+    home_names: Sequence[str] | None = None
 
     def live_mounts(self) -> list[Mount]:
         return list(discover(self.system) if self.mounts is None else self.mounts)
@@ -592,7 +597,12 @@ async def fingerprint(db: Any, mounts: Sequence[Mount]) -> dict[str, Any]:
     return {
         "legacy": await _legacy_count(db),
         "mounts": sorted(f"{m.host}/{m.share}={m.local}" for m in mounts),
-        "servers": sorted(f"{s.name}:{','.join(s.addresses)}" for s in servers),
+        "servers": sorted(
+            f"{s.name}:{','.join(s.addresses)}"
+            # a NAS home's shares (story 59.13): a folder named since is a change
+            + (f":{json.dumps(dict(s.exports), sort_keys=True)}" if s.exports else "")
+            for s in servers
+        ),
     }
 
 
@@ -720,6 +730,16 @@ async def _run_once(db: Any, env: AutoEnv) -> dict[str, Any]:
                 env.on_change()
         state["servers_skipped"] = skipped
     admin = await _home_admin_map(db)
+    # story 59.13: a NAS home's own folders are the shares they are
+    local: list[ShareMount] = []
+    platform = env.platform if env.platform is not None else nas_home()
+    if platform:
+        home = await ensure_home_server(
+            db, await _legacy_roots(db), platform=platform, names=env.home_names
+        )
+        local = local_share_mounts(home)
+        if local:
+            servers = await load_servers(db)
     resolver = await asyncio.to_thread(
         lambda: build_resolver(
             servers=servers,
@@ -728,6 +748,7 @@ async def _run_once(db: Any, env: AutoEnv) -> dict[str, Any]:
             admin=admin,
             resolve=env.lookups.resolve if servers else None,
             exists=None if env.exists is os.path.exists else env.exists,
+            local=local,
         )
     )
     state["fingerprint"] = await fingerprint(db, mounts)

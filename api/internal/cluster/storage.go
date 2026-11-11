@@ -65,6 +65,16 @@ type StorageStore interface {
 	Canonicalize(ctx context.Context) (*CanonStatus, error)
 	// RequestCanonicalize asks the home's pipeline for one of CanonActions.
 	RequestCanonicalize(ctx context.Context, action, by string) error
+	// LibraryAccess is every live library root with its library's media access (Epic 59
+	// story 59.03: rw, ro, none; nil never checked), for a NAS home's writable folder
+	// (story 59.13).
+	LibraryAccess(ctx context.Context) ([]RootAccess, error)
+}
+
+// RootAccess is one library root and its library's media access.
+type RootAccess struct {
+	Path   string  `json:"path"`
+	Access *string `json:"access"`
 }
 
 // CanonStatus is the storage_canonicalize row (story 31.3, automatic).
@@ -212,14 +222,45 @@ func (p *PGStorage) RequestCanonicalize(ctx context.Context, action, by string) 
 	return err
 }
 
+func (p *PGStorage) LibraryAccess(ctx context.Context) ([]RootAccess, error) {
+	rows, err := p.DB.QueryContext(ctx, `SELECT lr.path, l.access FROM library_roots lr
+		JOIN libraries l ON l.id = lr.library_id WHERE l.deleted_at IS NULL ORDER BY lr.path`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []RootAccess{}
+	for rows.Next() {
+		var ra RootAccess
+		var access sql.NullString
+		if err := rows.Scan(&ra.Path, &access); err != nil {
+			return nil, err
+		}
+		if access.Valid {
+			a := access.String
+			ra.Access = &a
+		}
+		out = append(out, ra)
+	}
+	return out, rows.Err()
+}
+
 // MemoryStorage is the in-memory StorageStore (SQLite homes, tests).
 type MemoryStorage struct {
 	mu      sync.Mutex
 	Storage json.RawMessage
 	PathMap json.RawMessage
 	// Canon is the automatic conversion's row (nil: none yet).
-	Canon   *CanonStatus
+	Canon *CanonStatus
+	// Access is LibraryAccess's answer.
+	Access  []RootAccess
 	servers map[string]StorageServer
+}
+
+func (m *MemoryStorage) LibraryAccess(context.Context) ([]RootAccess, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]RootAccess{}, m.Access...), nil
 }
 
 var _ StorageStore = (*MemoryStorage)(nil)

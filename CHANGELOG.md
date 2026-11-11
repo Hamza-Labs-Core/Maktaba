@@ -770,6 +770,17 @@ build fails when the two differ.
 
 ### Added
 
+- **A NAS as the home of several machines (story 59.13).** Computers join a NAS home as nodes
+  and take transcription and conversions, opening the NAS's folders over SMB: the home works
+  out each of its own folders' share from where the NAS keeps it (Synology `/volume1/Movies`,
+  Unraid `/mnt/user/Movies`, QNAP `/share/Movies` are the share Movies), so a Mac's
+  `/Volumes/Movies` matches with no path map. Setup confirms each share or asks for it (TrueNAS,
+  or a folder mounted at another path) and can mark a folder as not shared on the network;
+  **Machines → This NAS's shares** shows and edits them (`GET`/`PUT
+  /api/cluster/storage/home-shares`, admins only). With no shared folder writable for Maktaba,
+  nodes download speech models themselves and joining says so. A Light-tier NAS joining as a
+  node is warned and needs `--light-nas` (`maktaba join`, `maktaba-server setup --node`).
+
 - **Maktaba on a Synology NAS: a Container Manager project, filled in on maktaba.tv (story
   59.09).** maktaba.tv/install/synology (and /ar/install/synology) is the guide for DSM 7.2 and
   newer: a model table that says which DiskStations fit (J4125 models with Quick Sync, Ryzen

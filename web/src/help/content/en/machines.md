@@ -59,6 +59,12 @@ Every machine must read the same files. Maktaba stores a file on a network share
 
 On the home's card, **Storage servers** lists each NAS by the **Name used in paths** and the **Addresses** it is reached by. If the NAS gets a new IP address, edit it here once. The setting for names with `" : ? * < > |` matches how the NAS stores such names over SMB.
 
+### This NAS's shares {#nas-shares}
+
+When the home is a NAS, other computers open its folders over the network (on a Mac, the share Movies is `/Volumes/Movies`). **This NAS's shares** lists each of the NAS's own folders with the share it is, as `smb://name/share`. On Synology, Unraid and QNAP Maktaba works the share out from where the NAS keeps the folder (`/volume1/Movies` is Movies); on TrueNAS, or for a folder mounted elsewhere, type it. Tick **Not shared on the network** for a folder no other computer can open: nodes leave its work to the home. Then click **Save**.
+
+If no shared folder is writable for Maktaba, the card says so: nodes then download speech models themselves. Give Maktaba Read/Write on one shared folder to share them.
+
 ### Canonical paths {#canonical-paths}
 
 The home converts the stored file paths to the shared `smb://server/share/...` form by itself, once every share is mounted and a check passes. The **Canonical paths** panel shows where it is. **Check now** asks it to look at once, **Revert last conversion** puts the old paths back (automatic conversion then waits), and **Convert automatically again** ends that wait. The settings are in [Settings → Rules](/help/rules#storage).

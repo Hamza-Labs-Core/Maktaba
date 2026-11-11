@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import sys
 import uuid
 from pathlib import Path
 from typing import Any
@@ -355,3 +356,63 @@ async def test_an_admin_map_set_while_running_is_followed(db: Database) -> None:
     )
     await agent.beat()
     assert agent.path_map.as_json() == {"Y:/": "/new/"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(sys.platform == "win32", reason="a NAS home is Linux: its folders are /paths")
+@pytest.mark.parametrize("platform", ["dsm", None])
+async def test_a_nas_home_reports_its_own_shares_and_a_plain_home_none(
+    db: Database, monkeypatch: pytest.MonkeyPatch, platform: str | None
+) -> None:
+    """Story 59.13: at its start a DSM home keeps a record of itself (the share Movies for
+    its own /volume1/Movies, by DSM's layout), resolves smb://diskstation/Movies/... to its
+    own folder, and reports the record in its storage check (home_server, home_platform);
+    a home with no NAS platform keeps no record and reports none."""
+    from maktaba_pipeline.engine.paths import active_path_map, set_active_path_map, to_local
+
+    if platform:
+        monkeypatch.setenv("MAKTABA_PLATFORM", platform)
+    else:
+        monkeypatch.delenv("MAKTABA_PLATFORM", raising=False)
+    monkeypatch.setenv(
+        "MAKTABA_HOME_SHARES",
+        json.dumps({"server": "diskstation", "aliases": ["diskstation.local"]}),
+    )
+    await db.execute(
+        "INSERT INTO instance_identity (id, instance_id, name) VALUES (1, $1, 'home')"
+        " ON CONFLICT (id) DO NOTHING",
+        str(uuid.uuid4()),
+    )
+    roots = ["/volume1/Movies/en"]
+    await db.execute(
+        "INSERT INTO libraries (id, name, roots) VALUES ($1, 'l', $2)",
+        str(uuid.uuid4()),
+        roots if is_pg(db) else json.dumps(roots),
+    )
+    agent = WorkerAgent(
+        db=db,
+        worker_id="w1",
+        selector=StageSelector(
+            graph=[], requested=None, excluded=frozenset(), handlers=frozenset()
+        ),
+        graph=[],
+        shutdown=asyncio.Event(),
+        mounts=[],
+    )
+    prev = active_path_map()
+    try:
+        await agent.start_home()
+        row = await db.fetchrow("SELECT storage FROM instance_identity WHERE id = 1")
+        storage = loads(row["storage"]) if isinstance(row["storage"], str) else row["storage"]
+        servers = await db.fetch("SELECT name, exports FROM storage_servers")
+        if platform:
+            assert (storage["home_server"], storage["home_platform"]) == ("diskstation", "dsm")
+            assert storage.get("unnamed_roots", []) == []
+            assert [r["name"] for r in servers] == ["diskstation"]
+            assert to_local("smb://diskstation/Movies/en/a.mkv") == "/volume1/Movies/en/a.mkv"
+        else:
+            assert "home_server" not in storage
+            assert servers == []
+            assert to_local("smb://diskstation/Movies/en/a.mkv").startswith("smb://")
+    finally:
+        set_active_path_map(prev)

@@ -126,7 +126,7 @@ func runnerEnvDrop(k string) bool {
 // RunnerEnv is a runner's environment: the supervisor's own without any database
 // address, secret or token, plus where its sockets and areas are.
 func RunnerEnv(cfg config.Config, base []string) []string {
-	out := make([]string, 0, len(base)+6)
+	out := make([]string, 0, len(base)) // append grows it for the six set below
 	for _, kv := range base {
 		k, _, _ := strings.Cut(kv, "=")
 		if !runnerEnvDrop(k) {
