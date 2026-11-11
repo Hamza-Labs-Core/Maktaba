@@ -5,7 +5,10 @@
 // renews. Streaming serves such a session only before the account's end and while
 // that session's own lease runs. A stream URL of a restricted account names its
 // session (the tls claim): with no lease for it here (never given, ended, or lost
-// with a restart) nothing is served until the API gives one.
+// with a restart) nothing is served until the API gives one. A URL that names no
+// session is served only to an account nothing is held for here: the API signs
+// every URL of an account whose time it keeps with the claim, so one without it,
+// for an account that has an entry, is refused.
 package timelimit
 
 import (
@@ -134,14 +137,18 @@ func (g *Registry) room() {
 }
 
 // Check says whether userID may be served now from libraries, for the stream
-// session its URL names (sessionID "": the URL names none, so the account was not
-// restricted when it was signed). deadline is when to ask again (zero: never).
+// session its URL names. sessionID "": the URL names none; it is served only when
+// nothing is held for the account in those libraries, and refused when anything is
+// (the account's time is kept, and this URL has no lease to be counted under).
+// deadline is when to ask again (zero: never).
 func (g *Registry) Check(userID string, libraries []string, sessionID string) (deadline time.Time, refused *Refusal) {
 	now := g.now()
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	kept := false
 	for _, lib := range libraries {
 		e, ok := g.ends[userID+"|"+lib]
+		kept = kept || ok
 		if !ok || e.at == nil {
 			continue
 		}
@@ -157,7 +164,10 @@ func (g *Registry) Check(userID string, libraries []string, sessionID string) (d
 		}
 	}
 	if sessionID == "" {
-		return deadline, nil
+		if kept {
+			return time.Time{}, &Refusal{Reason: ReasonNoHeartbeat}
+		}
+		return time.Time{}, nil
 	}
 	l := g.leases[userID+"|"+sessionID]
 	if l == nil || !now.Before(l.until) {
@@ -186,20 +196,16 @@ func (g *Registry) Served(userID, sessionID string) (at time.Time, known bool) {
 
 // Guard refuses a request the registry does not allow with a 403 parental-time
 // problem, and stops a response under way once the end or the lease is past. It
-// runs after auth.SignedURL. A nil registry serves no URL that needs a lease.
+// runs after auth.SignedURL. A nil registry is an empty one: nothing was pushed, so
+// no URL that names a session is served.
 func Guard(g *Registry) func(http.Handler) http.Handler {
+	if g == nil {
+		g = New()
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			claims, ok := auth.ClaimsFromContext(r.Context())
 			if !ok || claims == nil {
-				next.ServeHTTP(w, r)
-				return
-			}
-			if g == nil {
-				if claims.Tls != "" {
-					refuse(w, &Refusal{Reason: ReasonNoHeartbeat})
-					return
-				}
 				next.ServeHTTP(w, r)
 				return
 			}

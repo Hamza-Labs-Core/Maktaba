@@ -144,3 +144,50 @@ func TestSignClipURL_ForTheVideo(t *testing.T) {
 		t.Fatalf("clip sub=%s want the video", c.Sub)
 	}
 }
+
+// Epic 57 story 57.14, security finding 4: every stream URL signed for an account
+// whose time is kept names its stream session (tls), on the session route and on
+// direct play alike; an unlimited account's URL does not; and when it cannot be
+// told whether the account is kept, nothing is signed.
+func TestKeptAccountsURLsNameTheirSession(t *testing.T) {
+	m, set := newMinter(t)
+	const child = "44444444-0000-4000-8000-000000000001"
+	var fail error
+	m.KeepTime(func(userID string) (bool, error) { return userID == child, fail })
+
+	for _, c := range []struct{ raw, aud string }{
+		{"/stream/" + sess + "/manifest.m3u8", AudSession},
+		{"/stream/" + sess + "/manifest.mpd", AudSession},
+		{"/stream/direct/" + vid, AudDirect},
+	} {
+		signed, _, err := m.SignStreamURL(c.raw, sess, child, lib, time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := claimsOf(t, set, signed, c.aud); got.Tls != sess {
+			t.Errorf("%s for a kept account: tls %q, want the session", c.raw, got.Tls)
+		}
+		signed, _, err = m.SignStreamURL(c.raw, sess, usr, lib, time.Hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := claimsOf(t, set, signed, c.aud); got.Tls != "" {
+			t.Errorf("%s for an unlimited account: tls %q, want none", c.raw, got.Tls)
+		}
+	}
+	// a clip is signed with its video id for a session: no stream session has that
+	// id, so streaming holds no lease for it and refuses it
+	signed, _, err := m.SignStreamURL("/stream/clip/"+vid+"?track=0", vid, child, lib, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := claimsOf(t, set, signed, AudDirect); got.Tls != vid {
+		t.Errorf("a kept account's clip: tls %q", got.Tls)
+	}
+	fail = os.ErrDeadlineExceeded
+	for _, who := range []string{child, usr} {
+		if _, _, err := m.SignStreamURL("/stream/direct/"+vid, sess, who, lib, time.Hour); err == nil {
+			t.Errorf("signed for %s although the time rules could not be read", who)
+		}
+	}
+}

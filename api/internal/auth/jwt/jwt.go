@@ -39,6 +39,11 @@ type Claims struct {
 	// "play" or "manage"; empty for every other token. A verifier caps
 	// the principal by it (principal.ApplyCloudScope).
 	Scp string `json:"scp,omitempty"`
+	// Tls is the stream session whose time lease a stream URL needs (Epic 57
+	// story 57.14): set on every stream URL signed for an account whose playback
+	// time the home keeps; empty on every other token. Streaming serves such a URL
+	// only while that session's lease runs.
+	Tls string `json:"tls,omitempty"`
 }
 
 // Errors exported by Verify.

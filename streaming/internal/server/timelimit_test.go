@@ -129,9 +129,8 @@ func TestSegmentsAfterTheEndTimeAreRefused(t *testing.T) {
 		body["type"] != "https://maktaba.invalid/problems/parental-time" {
 		t.Fatalf("at the end: %d %v", code, body)
 	}
-	// a URL signed before the account was restricted is held to the account's end too
-	if code, _ := f.segment(f.deps, ""); code != 403 {
-		t.Fatalf("a URL with no lease claim after the end: %d", code)
+	if code, body := f.segment(f.deps, ""); code != 403 || body["reason"] != timelimit.ReasonLimitReached {
+		t.Fatalf("a URL with no lease claim after the end: %d %v", code, body)
 	}
 	// the guardian gives more time: the API pushes a later end and the stream goes on
 	f.limit(f.now().Add(10*time.Minute), nil, f.sess, time.Minute)
@@ -152,14 +151,11 @@ func TestASessionIsServedOnlyUnderItsOwnLease(t *testing.T) {
 	if code, body := f.segment(f.deps, f.sess); code != 403 || body["reason"] != timelimit.ReasonNoHeartbeat {
 		t.Fatalf("no lease held: %d %v", code, body)
 	}
-	// and with no registry at all
+	// and a server given no registry holds none either
 	bare := f.deps
 	bare.TimeLimits = nil
 	if code, _ := f.segment(bare, f.sess); code != 403 {
 		t.Fatalf("no registry: %d", code)
-	}
-	if code, _ := f.segment(bare, ""); code != 200 {
-		t.Fatalf("an unrestricted account with no registry: %d", code)
 	}
 
 	// another session of the account has a lease: it does not carry this one
@@ -200,6 +196,57 @@ func TestASessionIsServedOnlyUnderItsOwnLease(t *testing.T) {
 	f.limit(end, nil, uuid.NewString(), time.Minute)
 	if code, _ := f.segment(f.deps, f.sess); code != 403 {
 		t.Fatalf("a lease dropped for room still served: %d", code)
+	}
+}
+
+// Security finding 4: the guard does not fail open on a URL that names no session.
+// For an account whose time is kept (anything is held for it in the library) such a
+// URL is refused, before the end as well as after it; with its session named and a
+// live lease it is served until the end; an account nothing is held for is served
+// as before, and so is the kept account's URL once the API clears its limit.
+func TestAKeptAccountsURLWithoutASessionIsRefused(t *testing.T) {
+	f := newTimeFixture(t)
+	if code, _ := f.segment(f.deps, ""); code != 200 {
+		t.Fatalf("an account with no limit, URL with no session: %d", code)
+	}
+	end := f.now().Add(30 * time.Minute)
+	f.limit(end, nil, f.sess, time.Minute)
+	if code, body := f.segment(f.deps, ""); code != 403 || body["reason"] != timelimit.ReasonNoHeartbeat {
+		t.Fatalf("a kept account's URL with no session, before the end: %d %v", code, body)
+	}
+	// a restricted account with no rule has an entry with no end: kept all the same
+	other := uuid.NewString()
+	f.reg.Set(other, f.lib, &timelimit.Limit{})
+	tok := mintToken(t, f.priv, auth.Claims{Aud: "streaming-direct", Sub: f.video, Usr: other, Lib: []string{f.lib}})
+	rec := httptest.NewRecorder()
+	New(f.deps).ServeHTTP(rec, httptest.NewRequest("GET", "/stream/direct/"+f.video+"?sig="+tok, nil))
+	if rec.Code != 403 {
+		t.Fatalf("direct play for a kept account with no session named: %d", rec.Code)
+	}
+	// with its session named it is served until the end time, and not after
+	for i := 0; i < 29; i++ {
+		f.pass(time.Minute)
+		f.limit(end, nil, f.sess, time.Minute) // the counted call of that minute
+		if code, _ := f.segment(f.deps, f.sess); code != 200 {
+			t.Fatalf("minute %d under a live lease: %d", i+1, code)
+		}
+	}
+	f.pass(time.Minute)
+	f.limit(end, nil, f.sess, time.Minute)
+	if code, body := f.segment(f.deps, f.sess); code != 403 || body["reason"] != timelimit.ReasonLimitReached {
+		t.Fatalf("at the end time: %d %v", code, body)
+	}
+	// another account in the same library is not touched by any of it
+	free := mintToken(t, f.priv, auth.Claims{Aud: "streaming-direct", Sub: f.video, Usr: uuid.NewString(), Lib: []string{f.lib}})
+	rec = httptest.NewRecorder()
+	New(f.deps).ServeHTTP(rec, httptest.NewRequest("GET", "/stream/direct/"+f.video+"?sig="+free, nil))
+	if rec.Code != 200 && rec.Code != 206 {
+		t.Fatalf("an account with no limit: %d", rec.Code)
+	}
+	// the restriction is lifted: the API clears the entry
+	f.reg.Set(f.user, f.lib, nil)
+	if code, _ := f.segment(f.deps, ""); code != 200 {
+		t.Fatalf("after the limit was cleared: %d", code)
 	}
 }
 

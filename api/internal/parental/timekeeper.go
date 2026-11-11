@@ -383,6 +383,12 @@ func (k *TimeKeeper) Kept(ctx context.Context, p *principal.Principal) (bool, er
 	return k.counted(ctx, p)
 }
 
+// KeptUser is Kept by account id, for the stream URL signer: an error means the
+// signer signs nothing for the account.
+func (k *TimeKeeper) KeptUser(ctx context.Context, userID string) (bool, error) {
+	return k.restricted(ctx, userID)
+}
+
 // Progress is Beat for a caller that does not need the state.
 func (k *TimeKeeper) Progress(ctx context.Context, userID, sessionID string) error {
 	_, err := k.Beat(ctx, userID, sessionID)

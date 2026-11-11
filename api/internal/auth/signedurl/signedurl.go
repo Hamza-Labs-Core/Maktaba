@@ -6,7 +6,11 @@
 //	/stream/{session_id}/manifest.{m3u8,mpd}  aud=streaming        sub=session_id
 //	/stream/direct/{video_id}                 aud=streaming-direct sub=video_id
 //
-// with usr=user_id, lib=[the resource's library] (a singleton, architecture
+// and, for an account whose playback time the home keeps (Epic 57 story 57.14),
+// tls=the stream session whose lease the URL needs: streaming serves such a URL
+// only while the API keeps that session's lease alive, and refuses a URL without
+// it for an account it holds a limit for. Every URL also carries
+// usr=user_id, lib=[the resource's library] (a singleton, architecture
 // §9.4), exp bounded by the session's TTL and MaxTTL, jti and kid. The streaming
 // service verifies the signature against the same key, the audience, that the
 // subject is the session/video in the path, and that lib[] covers the resource's
@@ -58,6 +62,21 @@ type Minter struct {
 	set    *keys.Set
 	MaxTTL time.Duration
 	Now    func() time.Time
+	// kept says whether an account's playback time is kept (KeepTime).
+	kept func(userID string) (bool, error)
+}
+
+// ErrTimeUnknown: whether the account's time is kept could not be read, so no URL
+// is signed for it (a URL without the lease claim would play past a limit).
+var ErrTimeUnknown = errors.New("signedurl: the account's time rules could not be read")
+
+// KeepTime makes every URL signed from now on for an account kept reports carry
+// the tls claim (the stream session it was signed for). When kept fails nothing is
+// signed for that account. Set once, before the first URL is signed.
+func (m *Minter) KeepTime(kept func(userID string) (bool, error)) {
+	if m != nil {
+		m.kept = kept
+	}
 }
 
 // New wraps a key set (its active key signs).
@@ -115,10 +134,26 @@ func (m *Minter) SignStreamURL(rawURL, sessionID, userID, libraryID string, ttl 
 		now = m.Now().UTC()
 	}
 	exp := now.Add(ttl)
-	tok, err := jwt.Sign(m.set, jwt.Claims{
+	claims := jwt.Claims{
 		Iss: "maktaba", Aud: aud, Sub: sub, Iat: now.Unix(), Exp: exp.Unix(),
 		Usr: userID, Lib: []string{libraryID},
-	})
+	}
+	if m.kept != nil {
+		on, err := m.kept(userID)
+		if err != nil {
+			return "", time.Time{}, fmt.Errorf("%w: %v", ErrTimeUnknown, err)
+		}
+		if on {
+			// the caller's session id: a stream session the home opened has a
+			// lease; anything else (a review clip's video id) has none, so
+			// streaming refuses it
+			claims.Tls = strings.ToLower(sessionID)
+			if claims.Tls == "" {
+				return "", time.Time{}, errors.New("signedurl: a kept account's URL needs its stream session")
+			}
+		}
+	}
+	tok, err := jwt.Sign(m.set, claims)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("%w: %v", ErrKeyUnavailable, err)
 	}
