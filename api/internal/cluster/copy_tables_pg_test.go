@@ -82,6 +82,10 @@ var copyReviewed = []string{
 	// rules and each session's age signal (ids, tiers and times, no secret); a
 	// promoted copy keeps every child's limit
 	"parental_guardians", "parental_policies", "parental_rules", "session_age_signals",
+	// slot 0224 (story 57.17): what the home's model detected for each video (a tier,
+	// a confidence, categories and times, no secret); a promoted copy keeps the
+	// detected tiers and what an admin already reviewed
+	"video_content_signals",
 }
 
 // Every table of a migrated database is either reviewed as copied or left out.
