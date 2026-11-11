@@ -246,6 +246,13 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The Components page says why a component is degraded.** A degraded component keeps its
+  Ready condition true, so the list's `reason` stayed empty and an admin saw *Running with
+  problems* with no cause (story 59.07: `plugins.host` on a NAS kernel without Landlock). The
+  components list and each machine now carry `degraded_reason` and `degraded_reason_params`
+  (`reason` keeps its meaning; admin only, as before), and the Components page and its drawer
+  show the reason in English and Arabic: plugins run with only part of their sandbox.
+
 - **A video with no title shows its file name without the extension.** A video whose file
   carries no title metadata was listed by its raw file name, extension and all
   (`My Lecture 03.mp4`). The library, home rows, search, series, collections, playlists, the

@@ -1702,6 +1702,50 @@ describe("Components page: a reason's params fill its words", () => {
     });
   }
 
+  for (const locale of ["en", "ar"] as const) {
+    it(`a degraded component says why, in the row and the drawer, from degraded_reason (${locale})`, async () => {
+      // story 59.07: plugins.host on a kernel without Landlock is degraded with Ready true,
+      // so `reason` is empty and the reason comes as degraded_reason
+      localStorage.setItem("mkt:locale", locale);
+      const M = locale === "ar" ? AR : EN;
+      const degraded = {
+        phase: "degraded",
+        degraded_reason: "sandbox_partial",
+        degraded_reason_params: { missing: "landlock" },
+      };
+      setRow("runtime.ml", degraded);
+      serveDetail("runtime.ml", [{ machine: "home", observed_generation: 3, ...degraded }]);
+      const user = userEvent.setup();
+      open();
+      await screen.findByRole("heading", { name: M["components.page.title"] });
+      await waitFor(() => expect(document.querySelector("[data-component]")).not.toBeNull());
+      const said = M["components.reason.sandbox_partial"]!;
+      const chip = within(row("runtime.ml")).getByTestId("comp-chip");
+      expect(chip).toHaveTextContent(M["components.phase.degraded"]!);
+      expect(chip).toHaveTextContent(said);
+      await user.click(within(row("runtime.ml")).getAllByRole("button").at(-1)!);
+      const drawer = await screen.findByRole("dialog", { name: M["components.runtime.ml.title"] });
+      await waitFor(() => expect(drawer).toHaveTextContent(said));
+      expect(drawer.textContent).not.toContain("sandbox_partial");
+    });
+  }
+
+  it("a failure's reason wins over a degraded_reason", async () => {
+    setRow("runtime.ml", {
+      phase: "failed",
+      reason: "download_failed",
+      reason_params: { name: "release" },
+      degraded_reason: "sandbox_partial",
+    });
+    open();
+    await waitFor(() => expect(document.querySelector("[data-component]")).not.toBeNull());
+    const chip = within(row("runtime.ml")).getByTestId("comp-chip");
+    expect(chip).toHaveTextContent(
+      EN["components.reason.download_failed"]!.replace("{name}", "release")
+    );
+    expect(chip).not.toHaveTextContent(EN["components.reason.sandbox_partial"]!);
+  });
+
   it("a param that names no component stays as it came", async () => {
     setRow("runtime.ml", {
       phase: "failed",
