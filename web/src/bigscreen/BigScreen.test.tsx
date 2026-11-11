@@ -240,6 +240,34 @@ describe("Home", () => {
     );
   });
 
+  it("names an untitled video by its file name without the extension, in the hero and the queue to continue", async () => {
+    serve({
+      "/api/home": {
+        ...HOME,
+        continue_watching: [
+          card("v1", { position_sec: 120, title: null, filename: "Night lecture.mkv" }),
+        ],
+      },
+      "/api/me/play-queues/current": {
+        id: "Q",
+        source: { kind: "library", id: "L1" },
+        shuffle: false,
+        current_pos: 0,
+        version: 1,
+        device_id: "phone-1",
+        source_done: true,
+        used_at: new Date(Date.now() - 60_000).toISOString(),
+        items: [{ pos: 0, origin: "source", id: "v9", title: null, filename: "Dawn talk.mp4" }],
+      },
+    });
+    renderBig();
+    const hero = await screen.findByTestId("big-hero");
+    expect(within(hero).getByText("Night lecture")).toBeInTheDocument();
+    const queue = await screen.findByTestId("big-continue-queue");
+    expect(queue).toHaveTextContent("Dawn talk");
+    expect(document.body).not.toHaveTextContent(/\.(mkv|mp4)/);
+  });
+
   it("Resume plays from where the user stopped; a card opens its page", async () => {
     post.mockReturnValue(new Promise(() => {}));
     renderBig();
@@ -550,6 +578,18 @@ describe("A video's page", () => {
     await waitFor(() => expect(where).toBe("/big/watch/v1?t=300"));
   });
 
+  it("titles an untitled video by its file name without the extension", async () => {
+    post.mockReturnValue(new Promise(() => {}));
+    serve({
+      "/api/videos/v1": { id: "v1", title: null, filename: "Night lecture.mkv", duration_sec: 600 },
+    });
+    renderBig("/big/video/v1");
+    const page = await screen.findByTestId("big-video");
+    expect(
+      within(page).getByRole("heading", { level: 1, name: "Night lecture" })
+    ).toBeInTheDocument();
+  });
+
   it("Play from the start starts at 0", async () => {
     post.mockReturnValue(new Promise(() => {}));
     renderBig("/big/video/v1");
@@ -685,6 +725,14 @@ describe("The player", () => {
     expect(document.querySelector(".bs-tabs")).toBeNull();
     fireEvent.click(next);
     await waitFor(() => expect(where).toBe("/big/watch/e3?series=S1"));
+  });
+
+  it("titles an untitled video by its file name without the extension", async () => {
+    openSession();
+    serve({ "/api/videos/v1": { id: "v1", title: null, filename: "Night lecture.mkv" } });
+    renderBig("/big/watch/v1");
+    const w = await screen.findByTestId("big-watch");
+    expect(await within(w).findByRole("heading", { name: "Night lecture" })).toBeInTheDocument();
   });
 
   it("Space plays, the media keys seek, and the Subtitles panel turns a track on; Back closes the panel", async () => {

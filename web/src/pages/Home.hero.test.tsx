@@ -97,6 +97,14 @@ describe("Featured hero", () => {
     await waitFor(() => expect(get.mock.calls.filter((c) => c[0] === "/api/home")).toHaveLength(2));
   });
 
+  it("titles an untitled featured lesson by its file name without the extension", async () => {
+    const untitled = { ...card("v7"), title: null, filename: "Night lecture.mkv" };
+    serve({ ...BASE, featured: { kind: "video", video: untitled, picked: true } });
+    renderPage(<Home />, { path: "/", user: memberUser });
+    const hero = await screen.findByTestId("featured-hero");
+    expect(within(hero).getByRole("heading", { name: "Night lecture" })).toBeInTheDocument();
+  });
+
   it("gives a viewer no reset, and no hero when there is nothing to feature", async () => {
     serve({ ...BASE, featured: { kind: "video", video: card("v7"), picked: true } });
     const { unmount } = renderPage(<Home />, { path: "/", user: memberUser });

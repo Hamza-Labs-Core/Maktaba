@@ -151,3 +151,30 @@ func TestVersionMatches(t *testing.T) {
 		t.Fatal("stale version must not match")
 	}
 }
+
+// The review queue names a video with no metadata title by its file name
+// without the extension.
+func TestPending_TitlelessVideoShowsItsFileNameWithoutTheExtension(t *testing.T) {
+	db := queueDB(t)
+	if _, err := db.Exec(`UPDATE videos SET title = NULL, filename = 'Lecture B.mp4' WHERE id = $1`, vidB); err != nil {
+		t.Fatal(err)
+	}
+	r := chi.NewRouter()
+	(&Handler{DB: db}).Mount(r)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req(http.MethodGet, "/api/enrichment/pending", "", true))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct{ Items []PendingItem }
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	titles := map[string]string{}
+	for _, it := range body.Items {
+		titles[it.VideoID] = it.VideoTitle
+	}
+	if titles[vidB] != "Lecture B" || titles[vidC] != "My own title" {
+		t.Fatalf("titles %v, want %s as %q", titles, vidB, "Lecture B")
+	}
+}

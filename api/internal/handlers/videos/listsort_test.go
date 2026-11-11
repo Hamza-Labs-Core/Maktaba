@@ -354,3 +354,42 @@ func TestListNoLibraries(t *testing.T) {
 }
 
 func encodeB64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
+
+// Grouped by series and sorted by name, a loose video with no metadata title
+// sorts by its file name without the extension: "Lesson" before "Lesson 2"
+// (with the extension, "lesson 2.mp4" sorted before "lesson.mp4"), and the
+// card still carries the raw filename for the client.
+func TestListGroupedTitlelessVideosSortWithoutTheExtension(t *testing.T) {
+	db := extDB(t)
+	const libC = "00000000-0000-4000-8000-00000000000c"
+	for _, q := range []string{
+		`CREATE TABLE series (id TEXT PRIMARY KEY, name TEXT, name_override TEXT, poster_path TEXT, library_id TEXT)`,
+		`INSERT INTO videos (id, library_id, path, filename, title, state, created_at)
+			VALUES ('00000000-0000-4000-8000-0000000000c1', '` + libC + `', 'p', 'Lesson 2.mp4', NULL, 'ready', '2026-10-01T12:00:00Z'),
+			       ('00000000-0000-4000-8000-0000000000c2', '` + libC + `', 'p', 'Lesson.mp4', NULL, 'ready', '2026-10-01T12:00:00Z')`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/videos?"+url.Values{"library": {libC}, "group": {"series"}, "sort": {"name"}}.Encode(), nil)
+	req = req.WithContext(principal.WithPrincipal(req.Context(), &principal.Principal{UserID: extUser, IsAdmin: true, AccessAllLibraries: true}))
+	rr := httptest.NewRecorder()
+	(&Handler{DB: db}).List(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Items []GroupedItem `json:"items"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, it := range body.Items {
+		got = append(got, it.Filename)
+	}
+	if want := []string{"Lesson.mp4", "Lesson 2.mp4"}; !slices.Equal(got, want) {
+		t.Fatalf("order %v, want %v", got, want)
+	}
+}

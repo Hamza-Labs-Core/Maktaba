@@ -311,6 +311,23 @@ describe("AutoCollectionPage", () => {
     await waitFor(() => expect(titles()).toHaveLength(3));
   });
 
+  it("names an untitled video by its file name without the extension", async () => {
+    get.mockImplementation((url: string) =>
+      url === `/api/libraries/${ID}/collections/topic/t1`
+        ? Promise.resolve({
+            ...PAGE,
+            items: [{ id: "v9", title: null, filename: "Night lecture.mkv" }],
+            next: null,
+          })
+        : Promise.reject(new Error(`unmocked GET ${url}`))
+    );
+    renderAuto();
+    await screen.findByRole("heading", { level: 1, name: "الصيام" });
+    const [li] = screen.getAllByRole("listitem");
+    expect(li).toHaveTextContent("Night lecture");
+    expect(li).not.toHaveTextContent(".mkv");
+  });
+
   it("is not found for a 404, or a kind that is not one", async () => {
     get.mockRejectedValue(new ApiError({ type: "about:blank", title: "nf", status: 404 }));
     const first = renderAuto("clip", memberUser);
