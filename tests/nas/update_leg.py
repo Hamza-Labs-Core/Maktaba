@@ -149,6 +149,25 @@ class UpdateLeg(nas.Cell):
                 if s not in (200, 201):
                     raise AssertionError(f"POST /api/libraries {root}: {s} {d}")
 
+    def under(self, root: str) -> list[dict[str, Any]]:
+        """The videos under root, paging only the library that holds it (cell.py's pages every
+        library: with the bulk library that is 100 requests, past the per-user rate limit)."""
+        assert self.api is not None
+        out: list[dict[str, Any]] = []
+        for lib in self.libraries():
+            if not any(root == r or root.startswith(r.rstrip("/") + "/") for r in lib.get("roots") or []):
+                continue
+            cursor = ""
+            while True:
+                s, d = self.api.get(f"/api/videos?library={lib['id']}&limit=200" + (f"&cursor={cursor}" if cursor else ""))
+                if s != 200 or not isinstance(d, dict):
+                    raise AssertionError(f"GET /api/videos: {s} {d}")
+                out += d.get("items") or []
+                cursor = d.get("next") or ""
+                if not cursor:
+                    break
+        return [v for v in out if (v.get("path") or "").startswith(root.rstrip("/") + "/")]
+
     def counted(self) -> dict[str, int]:
         """Each library's videos: the fixture libraries' paged (40 clips), the bulk library's
         from its counts on GET /api/libraries/manage, the Manage libraries page's (one request:
