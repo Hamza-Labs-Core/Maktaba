@@ -80,7 +80,8 @@
         "api:browse_rowcache_listen",
         "api:play_queue_sweep",
         "api:parental_cache_listen",
-        "api:plugins_catalog"
+        "api:plugins_catalog",
+        "api:parental_recompute"
       ],
       "on_demand": false,
       "placement": "any",

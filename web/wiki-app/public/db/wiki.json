@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 209,
+    "endpoint": 216,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -9886,6 +9886,168 @@
         "path": "/system/updates",
         "tag": "System",
         "operationId": "getSystemUpdates"
+      }
+    },
+    {
+      "id": "ep-put-videos-id-age-tier",
+      "type": "endpoint",
+      "title": "PUT /videos/{id}/age-tier",
+      "content": "Set a video's age tier",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/videos/{id}/age-tier",
+        "tag": "Parental controls",
+        "operationId": "setVideoAgeTier"
+      }
+    },
+    {
+      "id": "ep-put-libraries-id-age-tier",
+      "type": "endpoint",
+      "title": "PUT /libraries/{id}/age-tier",
+      "content": "Set a library's default age tier",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.1",
+        "story-57.7"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/libraries/{id}/age-tier",
+        "tag": "Parental controls",
+        "operationId": "setLibraryAgeTier"
+      }
+    },
+    {
+      "id": "ep-put-series-id-age-tier",
+      "type": "endpoint",
+      "title": "PUT /series/{id}/age-tier",
+      "content": "Set a series' age tier",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/series/{id}/age-tier",
+        "tag": "Parental controls",
+        "operationId": "setSeriesAgeTier"
+      }
+    },
+    {
+      "id": "ep-put-collections-id-age-tier",
+      "type": "endpoint",
+      "title": "PUT /collections/{id}/age-tier",
+      "content": "Set a collection's age tier",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/collections/{id}/age-tier",
+        "tag": "Parental controls",
+        "operationId": "setCollectionAgeTier"
+      }
+    },
+    {
+      "id": "ep-put-channels-id-age-tier",
+      "type": "endpoint",
+      "title": "PUT /channels/{id}/age-tier",
+      "content": "Set a channel's age tier",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/channels/{id}/age-tier",
+        "tag": "Parental controls",
+        "operationId": "setChannelAgeTier"
+      }
+    },
+    {
+      "id": "ep-put-libraries-id-youtube-sources-sid-age-tier",
+      "type": "endpoint",
+      "title": "PUT /libraries/{id}/youtube/sources/{sid}/age-tier",
+      "content": "Set a YouTube source's age tier",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/libraries/{id}/youtube/sources/{sid}/age-tier",
+        "tag": "Parental controls",
+        "operationId": "setYouTubeSourceAgeTier"
+      }
+    },
+    {
+      "id": "ep-get-parental-ratings",
+      "type": "endpoint",
+      "title": "GET /parental/ratings",
+      "content": "The rating labels and their age tiers",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/ratings",
+        "tag": "Parental controls",
+        "operationId": "getParentalRatings"
       }
     },
     {

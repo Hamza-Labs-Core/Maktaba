@@ -205,6 +205,11 @@ both (57.01).
 4. the library's default tier ("everything here is suitable for …"), set by an admin;
 5. unrated.
 
+A plugin's rating and a detected one can only tighten: beside another rating they count when they
+are the strictest, and when one is the video's only rating and the library has a default, the
+tier is the stricter of the two. They never bring a video under a tier an admin set, the
+library's default included.
+
 The result is stored on the video (`videos.age_tier`, `age_tier_source`) and recomputed when any
 input changes, so the filter is one indexed comparison and never re-derives in a query.
 

@@ -75,6 +75,9 @@ var copyReviewed = []string{
 	// instead of a plugin runner (machine ids, stage names, counts and times, no secret);
 	// a promoted copy keeps the reading
 	"stage_fallbacks",
+	// slot 0220 (story 57.01): the queue of the age tiers' recompute (a kind, an id and
+	// a place in the work, no secret); a promoted copy finishes the jobs that waited
+	"parental_recompute_jobs",
 	// slot 0221 (Epic 57): who is restricted, their guardians, their allow and block
 	// rules and each session's age signal (ids, tiers and times, no secret); a
 	// promoted copy keeps every child's limit

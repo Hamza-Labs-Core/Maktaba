@@ -770,6 +770,11 @@ func runServe() error {
 			loops.Declare("watch_reaper", runner.Func(reaper.Run))
 			// Epic 56 story 56.01: queues not used for 7 days go, checked every hour
 			loops.Declare("play_queue_sweep", runner.Func(func(ctx context.Context) { playqueue.Sweep(ctx, appDB, time.Hour, logger) }))
+			// Epic 57 story 57.01: the admin's age-tier routes, the ratings table, and the
+			// recompute that writes each video's tier from the queue of slot 0220
+			if recompute := router.MountP57Tiers(r, router.P57TiersDeps{DB: appDB, Logger: logger}); recompute != nil {
+				loops.Declare("parental_recompute", runner.Func(func(ctx context.Context) { _ = recompute.Run(ctx) }))
+			}
 			usageCounter.Attach(appDB)
 			loops.Declare("usage_counter", runner.Func(func(ctx context.Context) { usageCounter.Run(ctx, usage.DefaultFlushEvery) }))
 			logger.Info("p29: watch-analytics handlers mounted + reaper started",

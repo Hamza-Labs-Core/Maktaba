@@ -976,7 +976,14 @@
         "ep-delete-libraries-id-youtube-sources-sid",
         "ep-get-series",
         "ep-get-series-id",
-        "ep-patch-series-id"
+        "ep-patch-series-id",
+        "ep-put-videos-id-age-tier",
+        "ep-put-libraries-id-age-tier",
+        "ep-put-series-id-age-tier",
+        "ep-put-collections-id-age-tier",
+        "ep-put-channels-id-age-tier",
+        "ep-put-libraries-id-youtube-sources-sid-age-tier",
+        "ep-get-parental-ratings"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-01-age-tiers.md",
@@ -1004,7 +1011,14 @@
         "DELETE /libraries/{id}/youtube/sources/{sid}",
         "GET /series",
         "GET /series/{id}",
-        "PATCH /series/{id}"
+        "PATCH /series/{id}",
+        "PUT /videos/{id}/age-tier",
+        "PUT /libraries/{id}/age-tier",
+        "PUT /series/{id}/age-tier",
+        "PUT /collections/{id}/age-tier",
+        "PUT /channels/{id}/age-tier",
+        "PUT /libraries/{id}/youtube/sources/{sid}/age-tier",
+        "GET /parental/ratings"
       ],
       "db_tables": [],
       "metadata": {
@@ -1217,6 +1231,7 @@
         "ep-get-libraries-id",
         "ep-patch-libraries-id",
         "ep-delete-libraries-id",
+        "ep-put-libraries-id-age-tier",
         "ep-get-parental-children",
         "ep-get-me-parental",
         "ep-get-users-id-parental",
@@ -1235,6 +1250,7 @@
         "GET /libraries/{id}",
         "PATCH /libraries/{id}",
         "DELETE /libraries/{id}",
+        "PUT /libraries/{id}/age-tier",
         "GET /parental/children",
         "GET /me/parental",
         "GET /users/{id}/parental",

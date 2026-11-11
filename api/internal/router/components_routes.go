@@ -82,6 +82,8 @@ var CoreRoutes = componentTable{
 	// Epic 52: word review never answers component_off: fixes are the API's own edits and
 	// work while review.words is off; the pages read its phase from /api/components
 	{Prefix: "/api/review/"}, {Prefix: "/api/vocabulary"}, {Prefix: "/api/language-packs"},
+	// Epic 57: the parental controls are never switched off with a component
+	{Prefix: "/api/parental/"},
 }
 
 func (r componentRule) matches(method, pattern string) bool {

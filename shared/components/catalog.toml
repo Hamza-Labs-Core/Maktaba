@@ -106,7 +106,9 @@ loops      = ["api:process_recorder", "api:license_refresher", "api:license_relo
               "api:parental_cache_listen",
               # the plugin store's signed lists and the kill switch (story 54.17 §1): idle
               # unless a plugin is installed or Browse was opened in the last 7 days
-              "api:plugins_catalog"]
+              "api:plugins_catalog",
+              # the age tiers' recompute (story 57.01): works the queue of slot 0220
+              "api:parental_recompute"]
 settings   = ["rules.storage", "rules.system_health", "rules.search"]
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = ["full", "core", "worker"]
