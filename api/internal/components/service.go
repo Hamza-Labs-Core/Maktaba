@@ -254,8 +254,13 @@ type MachineView struct {
 	Reason  string `json:"reason,omitempty"`
 	// ReasonParams fill the reason's words (components.reason.<reason>): the params of
 	// the status condition that gave the reason, as text ({"name":"release"}).
-	ReasonParams       map[string]string `json:"reason_params,omitempty"`
-	ObservedGeneration int64             `json:"observed_generation"`
+	ReasonParams map[string]string `json:"reason_params,omitempty"`
+	// DegradedReason is why a degraded machine runs with less (components.reason.<code>),
+	// with its params: a degraded part keeps its Ready condition true, so Reason (a false
+	// condition's) is empty (plugins.host's sandbox_partial, story 59.07). Empty otherwise.
+	DegradedReason       string            `json:"degraded_reason,omitempty"`
+	DegradedReasonParams map[string]string `json:"degraded_reason_params,omitempty"`
+	ObservedGeneration   int64             `json:"observed_generation"`
 	// Health is the machine's uptime, restarts, last error, version, memory and disk
 	// (story 51.14, health.go).
 	Health *Health        `json:"health,omitempty"`
@@ -293,11 +298,15 @@ type View struct {
 	Phase  string `json:"phase"`
 	Reason string `json:"reason,omitempty"`
 	// ReasonParams are the home's reason's params (MachineView.ReasonParams).
-	ReasonParams  map[string]string `json:"reason_params,omitempty"`
-	Expected      Effect            `json:"expected"`
-	Machines      []MachineView     `json:"machines"`
-	RequiredBy    []string          `json:"required_by"`
-	InstallSizeMB int64             `json:"install_size_mb"`
+	ReasonParams map[string]string `json:"reason_params,omitempty"`
+	// DegradedReason and DegradedReasonParams are the home's (MachineView.DegradedReason):
+	// why a degraded component runs with less, when Reason is empty.
+	DegradedReason       string            `json:"degraded_reason,omitempty"`
+	DegradedReasonParams map[string]string `json:"degraded_reason_params,omitempty"`
+	Expected             Effect            `json:"expected"`
+	Machines             []MachineView     `json:"machines"`
+	RequiredBy           []string          `json:"required_by"`
+	InstallSizeMB        int64             `json:"install_size_mb"`
 	// Health is the home's (machines[0] when it is the home); nil with no status row
 	// from the home yet.
 	Health *Health `json:"health,omitempty"`
@@ -530,12 +539,16 @@ func (s *Service) view(snap *snapshot, c *components.Component, parts bool) View
 		mv := MachineView{Machine: m, Phase: roll.Phase, Reason: reason, ReasonParams: reasonParams(roll),
 			ObservedGeneration: roll.ObservedGeneration,
 			Health:             healthOf(c, rows, roll.Phase, v.InstallSizeMB, snap.stale(m, snap.now))}
+		if reason == "" {
+			mv.DegradedReason, mv.DegradedReasonParams = degradedReason(roll)
+		}
 		if parts {
 			mv.Parts = rows
 		}
 		v.Machines = append(v.Machines, mv)
 		if m == store.Home {
 			v.Phase, v.Reason, v.ReasonParams, v.Health = mv.Phase, mv.Reason, mv.ReasonParams, mv.Health
+			v.DegradedReason, v.DegradedReasonParams = mv.DegradedReason, mv.DegradedReasonParams
 		}
 	}
 	v.RequiredBy = requiredBy(cat, snap.rows, c.ID)
@@ -593,27 +606,48 @@ func reasonParams(s store.Status) map[string]string {
 		if c.Status != "false" || c.Reason == "" {
 			continue
 		}
-		if len(c.Params) == 0 {
-			return nil
-		}
-		out := make(map[string]string, len(c.Params))
-		for k, v := range c.Params {
-			switch x := v.(type) {
-			case string:
-				out[k] = x
-			case nil:
-				out[k] = ""
-			default:
-				b, err := json.Marshal(x)
-				if err != nil {
-					b = []byte(fmt.Sprint(x))
-				}
-				out[k] = string(b)
-			}
-		}
-		return out
+		return paramsText(c.Params)
 	}
 	return nil
+}
+
+// degradedReason is why a degraded status runs with less, and its params as text: the
+// reason of its first condition that carries one, when no false condition gives a reason
+// (plugins.host's sandbox_partial on a kernel without Landlock keeps Ready true, so
+// Status.Reason is empty). "" for any other phase, or when the reason says it already.
+func degradedReason(s store.Status) (string, map[string]string) {
+	if s.Phase != components.PhaseDegraded || s.Reason() != "" {
+		return "", nil
+	}
+	for _, c := range s.Conditions {
+		if c.Reason != "" {
+			return c.Reason, paramsText(c.Params)
+		}
+	}
+	return "", nil
+}
+
+// paramsText is a condition's params, each as text; nil when it has none.
+func paramsText(params map[string]any) map[string]string {
+	if len(params) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(params))
+	for k, v := range params {
+		switch x := v.(type) {
+		case string:
+			out[k] = x
+		case nil:
+			out[k] = ""
+		default:
+			b, err := json.Marshal(x)
+			if err != nil {
+				b = []byte(fmt.Sprint(x))
+			}
+			out[k] = string(b)
+		}
+	}
+	return out
 }
 
 func nonNil(s []string) []string {

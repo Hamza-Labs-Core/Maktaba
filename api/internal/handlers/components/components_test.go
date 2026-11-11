@@ -614,6 +614,86 @@ func TestReasonParams(t *testing.T) {
 	}
 }
 
+// A degraded component keeps its Ready condition true, so `reason` (a false condition's)
+// stays empty; degraded_reason says why it runs with less (story 59.07: plugins.host's
+// sandbox_partial on a kernel without Landlock), on the list, the component and each
+// machine. `reason` keeps its meaning, a running component has neither, and a viewer still
+// cannot read the list.
+func TestDegradedReason(t *testing.T) {
+	f := newFixture(t)
+	if err := f.st.ReportStatus(context.Background(), store.Home, "supervisor", []store.Status{{
+		Machine: store.Home, ID: components.PluginsHost, Part: "supervisor", Phase: components.PhaseDegraded,
+		Conditions: []store.Condition{
+			{Type: components.CondReady, Status: "true", Reason: components.ReasonSandboxPartial, Params: map[string]any{"missing": "landlock"}},
+		}}}); err != nil {
+		t.Fatal(err)
+	}
+	check := func(where string, v map[string]any) {
+		t.Helper()
+		if v["phase"] != components.PhaseDegraded {
+			t.Fatalf("%s: phase %v", where, v["phase"])
+		}
+		if _, has := v["reason"]; has {
+			t.Fatalf("%s: reason %v (a degraded part's Ready stays true)", where, v["reason"])
+		}
+		params, _ := v["degraded_reason_params"].(map[string]any)
+		if v["degraded_reason"] != components.ReasonSandboxPartial || params["missing"] != "landlock" {
+			t.Fatalf("%s: degraded_reason %v, params %v", where, v["degraded_reason"], v["degraded_reason_params"])
+		}
+	}
+	var one map[string]any
+	decode(t, f.do("GET", "/api/components/"+components.PluginsHost, "", admin()), 200, &one)
+	check("component", one)
+	machines, _ := one["machines"].([]any)
+	if len(machines) != 1 {
+		t.Fatalf("machines %v", one["machines"])
+	}
+	check("machine", machines[0].(map[string]any))
+
+	var l struct {
+		Components []map[string]any `json:"components"`
+	}
+	decode(t, f.do("GET", "/api/components", "", admin()), 200, &l)
+	listed := 0
+	for _, c := range l.Components {
+		if c["id"] == components.PluginsHost {
+			listed++
+			check("list", c)
+			continue
+		}
+		if _, has := c["degraded_reason"]; has {
+			t.Fatalf("%v: degraded_reason %v without a degraded status", c["id"], c["degraded_reason"])
+		}
+	}
+	if listed != 1 {
+		t.Fatalf("plugins.host listed %d times", listed)
+	}
+	if rec := f.do("GET", "/api/components", "", viewer()); rec.Code != http.StatusForbidden {
+		t.Fatalf("a viewer reads the list: %d", rec.Code)
+	}
+}
+
+// A failed component's reason stays in `reason`, with no degraded_reason beside it.
+func TestDegradedReasonNotForAFailure(t *testing.T) {
+	f := newFixture(t)
+	if err := f.st.ReportStatus(context.Background(), store.Home, "supervisor", []store.Status{{
+		Machine: store.Home, ID: "transcription", Part: "supervisor", Phase: components.PhaseDegraded,
+		Conditions: []store.Condition{
+			{Type: "Ready", Status: "true", Reason: "sandbox_partial"},
+			{Type: "Started", Status: "false", Reason: "settings_invalid"},
+		}}}); err != nil {
+		t.Fatal(err)
+	}
+	var one map[string]any
+	decode(t, f.do("GET", "/api/components/transcription", "", admin()), 200, &one)
+	if one["reason"] != "settings_invalid" {
+		t.Fatalf("reason %v", one["reason"])
+	}
+	if _, has := one["degraded_reason"]; has {
+		t.Fatalf("degraded_reason %v beside a reason", one["degraded_reason"])
+	}
+}
+
 func itoa(n int64) string {
 	b, _ := json.Marshal(n)
 	return string(b)
