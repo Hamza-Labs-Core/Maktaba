@@ -78,12 +78,7 @@
       "video",
       "viewport"
     ],
-    "/ar/install/docker/index.html": [
-      "app",
-      "color-scheme",
-      "description",
-      "viewport"
-    ],
+    "/ar/install/docker/index.html": ["app", "color-scheme", "description", "viewport"],
     "/ar/install/nas/index.html": [
       "choose",
       "color-scheme",
@@ -95,17 +90,8 @@
       "prepare",
       "viewport"
     ],
-    "/ar/install/qnap/index.html": [
-      "color-scheme",
-      "description",
-      "viewport"
-    ],
-    "/ar/install/synology/index.html": [
-      "color-scheme",
-      "description",
-      "guide",
-      "viewport"
-    ],
+    "/ar/install/qnap/index.html": ["color-scheme", "description", "viewport"],
+    "/ar/install/synology/index.html": ["color-scheme", "description", "guide", "viewport"],
     "/ar/install/troubleshooting/index.html": [
       "color-scheme",
       "data-folder",
@@ -121,21 +107,9 @@
       "viewport",
       "write-denied"
     ],
-    "/ar/install/truenas/index.html": [
-      "color-scheme",
-      "description",
-      "viewport"
-    ],
-    "/ar/install/ugreen/index.html": [
-      "color-scheme",
-      "description",
-      "viewport"
-    ],
-    "/ar/install/unraid/index.html": [
-      "color-scheme",
-      "description",
-      "viewport"
-    ],
+    "/ar/install/truenas/index.html": ["color-scheme", "description", "viewport"],
+    "/ar/install/ugreen/index.html": ["color-scheme", "description", "viewport"],
+    "/ar/install/unraid/index.html": ["color-scheme", "description", "viewport"],
     "/index.html": [
       "color-scheme",
       "description",
@@ -161,12 +135,7 @@
       "video",
       "viewport"
     ],
-    "/install/docker/index.html": [
-      "app",
-      "color-scheme",
-      "description",
-      "viewport"
-    ],
+    "/install/docker/index.html": ["app", "color-scheme", "description", "viewport"],
     "/install/nas/index.html": [
       "choose",
       "color-scheme",
@@ -178,17 +147,8 @@
       "prepare",
       "viewport"
     ],
-    "/install/qnap/index.html": [
-      "color-scheme",
-      "description",
-      "viewport"
-    ],
-    "/install/synology/index.html": [
-      "color-scheme",
-      "description",
-      "guide",
-      "viewport"
-    ],
+    "/install/qnap/index.html": ["color-scheme", "description", "viewport"],
+    "/install/synology/index.html": ["color-scheme", "description", "guide", "viewport"],
     "/install/troubleshooting/index.html": [
       "color-scheme",
       "data-folder",
@@ -204,21 +164,9 @@
       "viewport",
       "write-denied"
     ],
-    "/install/truenas/index.html": [
-      "color-scheme",
-      "description",
-      "viewport"
-    ],
-    "/install/ugreen/index.html": [
-      "color-scheme",
-      "description",
-      "viewport"
-    ],
-    "/install/unraid/index.html": [
-      "color-scheme",
-      "description",
-      "viewport"
-    ]
+    "/install/truenas/index.html": ["color-scheme", "description", "viewport"],
+    "/install/ugreen/index.html": ["color-scheme", "description", "viewport"],
+    "/install/unraid/index.html": ["color-scheme", "description", "viewport"]
   },
   "redirects": {}
 }
