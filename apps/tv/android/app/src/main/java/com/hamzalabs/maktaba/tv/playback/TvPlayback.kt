@@ -17,7 +17,9 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
+import com.hamzalabs.maktaba.core.api.ErrorKind
 import com.hamzalabs.maktaba.core.api.Failure
+import com.hamzalabs.maktaba.core.api.busyRetryMs
 import com.hamzalabs.maktaba.core.api.errorDetails
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -40,6 +42,9 @@ import kotlinx.coroutines.withContext
  * refuses `/stream/` without it). Reports the position every 10 s, so Continue Watching picks up
  * here; reopens before the signed URL ends or when the player fails; closes the session on
  * [stop]. A transcode opened at a position keeps the video's times, so the player seeks there.
+ * A home with no transcode slot free (503 `transcode_busy`, Epic 59 story 59.05) is no error:
+ * [waiting] carries the sentence while the stream is asked for again after the home's
+ * `Retry-After` (10 s), as the phone Player does.
  *
  * The same lifecycle as the phone Player's `Playback` (apps/android/player), for one screen.
  */
@@ -59,6 +64,12 @@ class TvPlayback(
     /** Why nothing plays (the error screen): what it means to a person, and the home's own words. */
     var problem by mutableStateOf<Failure?>(null)
         private set
+    /**
+     * The home has no transcode slot free (503 `transcode_busy`, story 59.05): no error screen,
+     * the sentence shown while the stream is asked for again after the home's `Retry-After`.
+     */
+    var waiting by mutableStateOf<Failure?>(null)
+        private set
     /** Opening (or waiting for a fresh transcode): show that something is happening. */
     var opening by mutableStateOf(true)
         private set
@@ -73,7 +84,7 @@ class TvPlayback(
     fun start() {
         if (running != null) return
         running = scope.launch {
-            open(fromMs = startMs)
+            openWhenFree(fromMs = startMs)
             if (player != null) watch()
         }
     }
@@ -94,6 +105,7 @@ class TvPlayback(
         p?.release()
         session = null
         player = null
+        waiting = null
     }
 
     /** Tries again after [problem] (a person pressed Try again). */
@@ -102,8 +114,20 @@ class TvPlayback(
         stop()
         problem = null
         running = scope.launch {
-            open(fromMs = at)
+            openWhenFree(fromMs = at)
             if (player != null) watch()
+        }
+    }
+
+    /**
+     * Opens at [fromMs]; while the home has no transcode slot free ([waiting]), asks again after
+     * its `Retry-After` (10 s) until one is: the same wait as the phone Player's.
+     */
+    private suspend fun openWhenFree(fromMs: Long) {
+        while (true) {
+            open(fromMs)
+            val w = waiting ?: return
+            delay(busyRetryMs(w.retryAfterSec))
         }
     }
 
@@ -132,6 +156,7 @@ class TvPlayback(
                 throw e
             }
             session = s.sessionId
+            waiting = null
             ended = false
             openedAt = System.currentTimeMillis()
             renewAt = s.expiresMillis?.let { it - 60_000 } ?: Long.MAX_VALUE
@@ -146,7 +171,13 @@ class TvPlayback(
             Log.w("MaktabaTV", "playback: ${e.errorDetails()}", e)
             player?.release()
             player = null
-            problem = Failure.of(e)
+            val f = Failure.of(e)
+            if (f.kind == ErrorKind.TranscodeBusy) {
+                waiting = f
+            } else {
+                waiting = null
+                problem = f
+            }
         } finally {
             opening = false
         }
@@ -185,7 +216,7 @@ class TvPlayback(
             }
             if (failed != null || System.currentTimeMillis() >= renewAt) {
                 val wasPlaying = p.playWhenReady
-                open(fromMs = at)
+                openWhenFree(fromMs = at)
                 if (!wasPlaying) player?.playWhenReady = false
             }
         }

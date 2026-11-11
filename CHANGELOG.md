@@ -3258,6 +3258,12 @@ build fails when the two differ.
   clip probed before it that never had that step its poster and transcript, in the
   background.
 
+- **Android TV waits for a free transcoder (story 59.05).** When every transcode slot of the
+  home is taken (503 `transcode_busy`, a Light-tier NAS converts one video at a time), the TV
+  player no longer stops on its error screen: it shows the waiting sentence under Preparing and
+  asks again after the home's `Retry-After` (10 s), the same wait as the phone, tablet, Apple and
+  desktop players, until the video starts.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were
