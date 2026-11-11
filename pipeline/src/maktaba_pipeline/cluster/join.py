@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import os
 import platform
 import sys
 import time
@@ -21,7 +22,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -31,7 +32,7 @@ from .. import __version__
 from ..engine.workers import stable_hostname
 from . import config as node_config
 from . import linkcert
-from .capabilities import capabilities
+from .capabilities import capabilities, memory_bytes
 from .config import HomeRef, NodeConfig
 from .crypto import (
     b64d,
@@ -46,7 +47,7 @@ from .crypto import (
 from .discover import Home, discover_homes
 from .storage import candidate_roots
 
-__all__ = ["JoinError", "join", "join_request_body", "pick_home"]
+__all__ = ["LIGHT_NAS_TEXT", "JoinError", "is_light_nas", "join", "join_request_body", "pick_home"]
 
 POLL_SEC = 2.0
 WAIT_SEC = 15 * 60.0
@@ -66,6 +67,47 @@ _MESSAGES = {
 
 class JoinError(RuntimeError):
     """The join did not complete; the message is for the person at the terminal."""
+
+
+#: story 59.13 (cluster.join.light_nas in the apps)
+LIGHT_NAS_TEXT = (
+    "A Light NAS should be the Maktaba home or just storage. As a node it would slow the NAS"
+    " down without helping the home much."
+)
+_GIB = 1 << 30
+
+
+def _cgroup_limit() -> int | None:
+    """The container's memory limit (cgroup v2, else v1); ``None`` without one."""
+    for path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            raw = Path(path).read_text(encoding="ascii").strip()
+        except OSError:
+            continue
+        if raw.isdigit() and int(raw) < (1 << 60):
+            return int(raw)
+    return None
+
+
+def is_light_nas(env: Mapping[str, str] | None = None) -> bool:
+    """A NAS (``MAKTABA_PLATFORM``) on the Light tier: its memory limit under 6 GiB (8 GiB
+    on arm64), the rule of the server's ``hostinfo.TierFor``."""
+    from ..sharepath.nashome import NAS_PLATFORMS
+
+    env = os.environ if env is None else env
+    if (env.get("MAKTABA_PLATFORM") or "").strip().lower() not in NAS_PLATFORMS:
+        return False
+    tier = (env.get("MAKTABA_TIER") or "").strip().lower()
+    if tier:
+        return tier == "light"
+    mem = memory_bytes()
+    limit = _cgroup_limit()
+    if limit is not None and (mem is None or limit < mem):
+        mem = limit
+    if not mem:
+        return False
+    edge = 8 * _GIB if platform.machine().lower() in ("arm64", "aarch64") else 6 * _GIB
+    return mem < edge
 
 
 def _http(method: str, url: str, body: dict[str, Any] | None = None) -> tuple[int, dict[str, Any]]:
@@ -200,6 +242,8 @@ def join(
     wait_sec: float = WAIT_SEC,
     rejoin: bool = False,
     assume_yes: bool = False,
+    light_nas_ok: bool = False,
+    light_nas: Callable[[], bool] = is_light_nas,
 ) -> NodeConfig:
     """Run the join; returns the saved, joined node config. Raises :class:`JoinError`.
 
@@ -223,6 +267,17 @@ def join(
             )
         return cfg
     kp = keypair_from_private(b64d(cfg.private_key))
+    if light_nas():
+        # story 59.13: nothing hard-blocks, but joining needs the household's choice
+        if light_nas_ok:
+            out.write(f"{LIGHT_NAS_TEXT} Joining as you chose (--light-nas).\n")
+        elif ask is not None and ask(f"{LIGHT_NAS_TEXT}\nJoin anyway? [y/N] ").strip().lower() in (
+            "y",
+            "yes",
+        ):
+            pass
+        else:
+            raise JoinError(f"{LIGHT_NAS_TEXT} To join it anyway, run join again with --light-nas.")
 
     out.write("Looking for the Maktaba home on this network...\n")
     home = pick_home(discover(home_url), ask=ask, out=out)
@@ -247,6 +302,10 @@ def join(
     except (KeyError, ValueError) as exc:
         raise JoinError("the home's answer has no usable key") from exc
     home_info = resp.get("home") or {}
+    # what this machine should know about the home (story 59.13: no_writable_share)
+    for notice in resp.get("notices") or []:
+        if isinstance(notice, dict) and notice.get("message"):
+            out.write(f"Note: {notice['message']}\n")
 
     shared = shared_secret(kp.private, home_pub)
     code = sas_code(shared, kp.public, home_pub)
