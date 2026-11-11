@@ -300,3 +300,63 @@ func TestContainerTellsTheServerItsImage(t *testing.T) {
 		t.Fatalf("no payload: %v", env)
 	}
 }
+
+// Story 59.12 (found by the nas-4g leg): on a busy home some version checks get no answer
+// (the loopback's rate limit, 429); they do not start the wait again, so the newer image is
+// still kept. An answer with another version does start it again.
+func TestContainerConfirmKeepsThroughUnansweredChecks(t *testing.T) {
+	c, out := containerFor(t, onePayload(t, "1.5.0"))
+	ctx := context.Background()
+	if _, err := c.bootstrap(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	newer := withImage(t, c, "1.6.0")
+	g, err := newer.bootstrap(ctx, false)
+	if err != nil || g == nil {
+		t.Fatalf("%+v %v", g, err)
+	}
+	clock := time.Unix(0, 0)
+	var n int
+	newer.now = func() time.Time { return clock }
+	newer.settle = time.Minute
+	newer.version = func(context.Context) string {
+		n++
+		clock = clock.Add(10 * time.Second)
+		if n%3 == 0 {
+			return "" // refused: 429
+		}
+		return "v1.6.0"
+	}
+	done := make(chan struct{})
+	go func() { newer.confirm(ctx, *g); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("not kept through unanswered checks")
+	}
+	if !strings.Contains(out.String(), "runs: kept") {
+		t.Fatalf("said %q", out.String())
+	}
+
+	// another version answering starts the wait again
+	if err := layout.WriteGuard(c.launcherRoot, *g); err != nil {
+		t.Fatal(err)
+	}
+	n, clock = 0, time.Unix(0, 0)
+	var answered []string
+	newer.version = func(context.Context) string {
+		n++
+		clock = clock.Add(10 * time.Second)
+		v := "v1.6.0"
+		if n == 5 {
+			v = "v1.5.0"
+		}
+		answered = append(answered, v)
+		return v
+	}
+	newer.confirm(ctx, *g)
+	// kept only after 6 more right answers past the wrong one (a minute at 10 s each)
+	if len(answered) < 5+7 {
+		t.Fatalf("kept after %d checks: %v", len(answered), answered)
+	}
+}

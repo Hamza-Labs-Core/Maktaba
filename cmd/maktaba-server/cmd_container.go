@@ -298,7 +298,14 @@ func (c containerDeps) confirm(ctx context.Context, g layout.Guard) {
 			}
 			return
 		}
-		if layout.NormalizeVersion(c.version(ctx)) != g.Version {
+		// a check with no answer (a busy server's rate limit on loopback, a timeout) says
+		// nothing either way: only an answer with another version starts the wait again. The
+		// launcher's guard is what takes a server that stopped answering back (story 59.12: on
+		// a busy NAS every few checks were refused 429, and the image was never kept)
+		switch v := layout.NormalizeVersion(c.version(ctx)); {
+		case v == "":
+			continue
+		case v != g.Version:
 			since = time.Time{}
 			continue
 		}
