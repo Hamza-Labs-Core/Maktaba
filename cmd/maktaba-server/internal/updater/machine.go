@@ -224,6 +224,14 @@ type Machine struct {
 	// TV over then waits for the next restart, which the run's TV gate holds for a quiet
 	// TV (nil: none).
 	TVOnAir func() bool
+	// Lighten stops the heavy workers (speech to text and transcodes: the pipeline) before
+	// the home's pre-update dump on a Light or Standard machine, so the dump does not run
+	// out of memory under a NAS's limit (Epic 59 story 59.12); Relight starts them again
+	// when the update goes no further (after the switch the new release starts them). nil:
+	// nothing stopped.
+	Lighten func(ctx context.Context) error
+	Relight func(ctx context.Context) error
+	lightened bool // Lighten ran in this apply (the apply's goroutine only)
 	// TVHandover reports whether this machine's TV processes (the front door, the slots)
 	// can run on across the restart onto target, the release the next start runs (story
 	// 35.7), and why not; arm also makes serve's next exit 75 hand them over. nil: they
@@ -848,6 +856,7 @@ func (m *Machine) apply(ctx context.Context) {
 			return
 		}
 		f := failure(StepBackup, err)
+		m.relight()
 		m.undoSwitch("the backup failed")
 		_ = m.mutate(func(j *Journal) { j.State, j.Error = StateApplyFailed, f })
 		m.errorf("the backup before the switch failed, nothing was switched: %s", f.Error())
@@ -857,6 +866,7 @@ func (m *Machine) apply(ctx context.Context) {
 	if err := m.withJournal(func(j *Journal) error { return m.Installer.Switch(ctx, j) }); err != nil {
 		f := failure(StepSwitch, err)
 		_ = m.endStep(StepSwitch, "failed", f.Error())
+		m.relight()
 		m.undoSwitch("switch failed")
 		_ = m.mutate(func(j *Journal) { j.State, j.Error = StateApplyFailed, f })
 		m.errorf("switch failed: %s", f.Error())
@@ -880,9 +890,36 @@ func (m *Machine) apply(ctx context.Context) {
 		}
 		f := failure(StepRestart, err)
 		_ = m.endStep(StepRestart, "failed", f.Error())
+		m.relight()
 		m.undoSwitch("restart failed")
 		_ = m.mutate(func(j *Journal) { j.State, j.Error = StateApplyFailed, f })
 		m.errorf("restart failed, nothing was installed: %s", f.Error())
+	}
+}
+
+// lighten stops the heavy workers before the dump (Machine.Lighten); a stop that failed is
+// said and the dump goes on (the workers' memory is a risk, not a certainty).
+func (m *Machine) lighten(ctx context.Context) {
+	if m.Lighten == nil {
+		return
+	}
+	m.lightened = true // even a stop that failed may have stopped some
+	if err := m.Lighten(ctx); err != nil {
+		m.warnf("the heavy workers did not all stop before the backup: %v", err)
+		return
+	}
+	m.logf("speech to text and transcodes are stopped for the backup (a Light or Standard machine): " +
+		"the new release starts them, or this one again if the update goes no further")
+}
+
+// relight starts what lighten stopped (the update went no further).
+func (m *Machine) relight() {
+	if !m.lightened || m.Relight == nil {
+		return
+	}
+	m.lightened = false
+	if err := m.Relight(context.Background()); err != nil {
+		m.warnf("the heavy workers did not all start again: %v", err)
 	}
 }
 

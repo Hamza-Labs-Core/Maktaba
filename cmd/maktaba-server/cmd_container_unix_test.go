@@ -117,7 +117,8 @@ func TestContainerBootstrapOlderAndCommand(t *testing.T) {
 	if g, _ := layout.ReadGuard(c.launcherRoot); g != nil {
 		t.Fatalf("a guard: %+v", g)
 	}
-	if !strings.Contains(out.String(), "older than 1.5.0") || !strings.Contains(out.String(), "when the container starts") {
+	if !strings.Contains(out.String(), "The container image (1.4.0) is older than this home's runtime (1.5.0), so the runtime is running.") ||
+		!strings.Contains(out.String(), "when the container starts") {
 		t.Fatalf("said %q", out.String())
 	}
 }
@@ -269,5 +270,33 @@ func TestRunLauncherPassesTheStopOn(t *testing.T) {
 	code, err := runLauncher(context.Background(), "/bin/sh", []string{"-c", "exit 75"}, os.Environ(), io.Discard)
 	if err != nil || code != 75 {
 		t.Fatalf("an exit of its own: %d %v", code, err)
+	}
+}
+
+// Story 59.12: the server is told the image's release and whether it was refused, so
+// Settings → Updates says which runs and why (an older image: the runtime; a refused one:
+// the release before).
+func TestContainerTellsTheServerItsImage(t *testing.T) {
+	c, _ := containerFor(t, onePayload(t, "1.5.0"))
+	ctx := context.Background()
+	if _, err := c.bootstrap(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	if env := c.imageEnv(); !slices.Equal(env, []string{"MAKTABA_IMAGE_VERSION=1.5.0", "MAKTABA_IMAGE_REFUSED=0"}) {
+		t.Fatalf("the same image: %v", env)
+	}
+	older := withImage(t, c, "1.4.0")
+	if _, err := older.bootstrap(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	if env := older.imageEnv(); !slices.Equal(env, []string{"MAKTABA_IMAGE_VERSION=1.4.0", "MAKTABA_IMAGE_REFUSED=0"}) {
+		t.Fatalf("an older image: %v", env)
+	}
+	c.refuse("1.6.0")
+	if env := withImage(t, c, "1.6.0").imageEnv(); !slices.Equal(env, []string{"MAKTABA_IMAGE_VERSION=1.6.0", "MAKTABA_IMAGE_REFUSED=1"}) {
+		t.Fatalf("a refused image: %v", env)
+	}
+	if env := (containerDeps{}).imageEnv(); env != nil {
+		t.Fatalf("no payload: %v", env)
 	}
 }
