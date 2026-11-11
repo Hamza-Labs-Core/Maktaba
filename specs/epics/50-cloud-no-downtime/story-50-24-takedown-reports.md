@@ -202,7 +202,7 @@ counsel**). A service admin can export them for a lawyer as CSV and JSON.
 | `api/internal/broadcast/takedown.go` (new) | Apply and restore takedowns on the home; acknowledge. |
 | `cloud/migrations/` (new) | `broadcast_notices`, `broadcast_actions`, `broadcast_strikes`, `broadcast_reports`, `broadcast_counter_notices`. |
 | `web/cloud/src/pages/admin/Moderation*.tsx`, `web/cloud/src/i18n/en.json`, `ar.json` | The queue. |
-| `web/packages/broadcast-edge/site/legal/` | Copyright page, forms (EN/AR). |
+| `web/packages/website` ([Epic 60](../60-website/story-60-07-legal.md), story 60.07) | Copyright page, forms (EN/AR), on `maktaba.tv/legal/copyright/`; the broadcast edge links to it. |
 | `docs/runbooks/broadcast-urgent-report.md`, `docs/runbooks/broadcast-takedown.md` (50.12's runbook set) | Runbooks. |
 
 ### Tests

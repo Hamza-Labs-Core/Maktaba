@@ -1,6 +1,6 @@
 {
   "version": "2.0",
-  "part": "wiki-epics-55-59.json",
+  "part": "wiki-epics-55-60.json",
   "entries": [
     {
       "id": "story-55.1",
@@ -2518,6 +2518,354 @@
       ],
       "metadata": {
         "slug": "openapi-roles"
+      }
+    },
+    {
+      "id": "story-60.1",
+      "type": "story",
+      "title": "Design: the visual direction, page layouts and components, as reviewed mockups",
+      "epic": "60-website",
+      "phase": 5,
+      "content": "# Story 60.01 — Design: the visual direction, page layouts and components, as reviewed mockups\n\n> Epic 60 · Phase 1 (part A: the shell) and Phase 2 (part B: the full direction) · Depends on: —\n> · Gates: every page story (60.05–60.07 on part A; 60.10–60.13, and the Phase 3 moves, on part B)\n\n## Why\n\nmaktaba.tv is the first thing a household sees of Maktaba, and it is judged by how it looks before\nanything is read. Epic 17 gave the apps a design system and left the marketing site as a\nseparate effort. The site needs its own direction:\n- a brand look;\n- a type scale that works in Arabic as well ",
+      "tags": [
+        "story",
+        "60-website",
+        "phase-5"
+      ],
+      "related": [
+        "epic-60-website"
+      ],
+      "files": {
+        "story": "specs/epics/60-website/story-60-01-design.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "design"
+      }
+    },
+    {
+      "id": "story-60.2",
+      "type": "story",
+      "title": "Voice and copy: plain and warm for households, Arabic written natively",
+      "epic": "60-website",
+      "phase": 5,
+      "content": "# Story 60.02 — Voice and copy: plain and warm for households, Arabic written natively\n\n> Epic 60 · Phase 1 (part A: the voice guide) and Phase 2 (part B: the tagline and page copy) ·\n> Depends on: — · Needed by: every page story\n\n## Why\n\nThe site speaks to households, not to developers. Most of what exists about Maktaba speaks to\ndevelopers: specs, the wiki, release notes. A household needs to read what Maktaba does for it,\nin words it uses at home, in its own language. An Arabic page that reads as translated English\ntells an Arabic-speaking family the product was not made for it.\n\n## Descrip",
+      "tags": [
+        "story",
+        "60-website",
+        "phase-5"
+      ],
+      "related": [
+        "epic-60-website"
+      ],
+      "files": {
+        "story": "specs/epics/60-website/story-60-02-voice-copy.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "voice-copy"
+      }
+    },
+    {
+      "id": "story-60.3",
+      "type": "story",
+      "title": "The site, its hosting and its deploy: Workers static assets on the apex and www, staging, rollback",
+      "epic": "60-website",
+      "phase": 5,
+      "content": "# Story 60.03 — The site, its hosting and its deploy: Workers static assets on the apex and www, staging, rollback\n\n> Epic 60 · Phase 1 · Depends on: 60.01 part A (the shell), owner actions A2 (the token) ·\n> Needed by: every other story\n\n## Why\n\nmaktaba.tv serves nothing. Before any page can stop a dead link, the site needs a package, a\nbuild, a home on Cloudflare that leaves the zone's other names alone, and a deploy that is as\nsafe as maktaba.dev's:\n- it runs from CI;\n- it is green when its secrets are missing;\n- it is smoke-checked;\n- it can be rolled back.\n\n## Description\n\n**The package.*",
+      "tags": [
+        "story",
+        "60-website",
+        "phase-5"
+      ],
+      "related": [
+        "epic-60-website"
+      ],
+      "files": {
+        "story": "specs/epics/60-website/story-60-03-site-hosting.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "site-hosting"
+      }
+    },
+    {
+      "id": "story-60.4",
+      "type": "story",
+      "title": "The quality bar in CI: Lighthouse, WCAG 2.2 AA, no layout shift, visual references, SEO and social cards",
+      "epic": "60-website",
+      "phase": 5,
+      "content": "# Story 60.04 — The quality bar in CI: Lighthouse, WCAG 2.2 AA, no layout shift, visual references, SEO and social cards\n\n> Epic 60 · Phase 1 · Depends on: 60.03 · Needed by: every page story (each lands under these\n> gates)\n\n## Why\n\nA site that is good on the day it is designed drifts the day after:\n- a heavier image;\n- a heading out of order;\n- a button that loses its focus ring;\n- an Arabic page whose arrows point the wrong way.\n\nThe quality bar in the epic's Acceptance only holds if CI measures it on every change, and if a\nchange to how a page looks is seen by a person before it merges.\n\n#",
+      "tags": [
+        "story",
+        "60-website",
+        "phase-5"
+      ],
+      "related": [
+        "epic-60-website"
+      ],
+      "files": {
+        "story": "specs/epics/60-website/story-60-04-quality-gates.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "quality-gates"
+      }
+    },
+    {
+      "id": "story-60.5",
+      "type": "story",
+      "title": "The install guides on maktaba.tv",
+      "epic": "60-website",
+      "phase": 5,
+      "content": "# Story 60.05 — The install guides on maktaba.tv\n\n> Epic 60 · Phase 1 (publish) and Phase 3 (onto the full design) · Depends on: 60.03, 60.04,\n> owner action A1 (the public image)\n\n## Why\n\nEpic 59 built nine install guides in English and Arabic (`web/packages/install`), with forms that\nfill the compose file in the page. They are linked from:\n- the release notes;\n- maktaba.dev's Apps pages;\n- the repo README;\n- the Unraid template;\n- the TrueNAS app's README;\n- each other.\n\nThey have never been deployed, and the image every guide pulls is private. Publishing them is the\nfastest way to turn 45 d",
+      "tags": [
+        "story",
+        "60-website",
+        "phase-5"
+      ],
+      "related": [
+        "epic-60-website"
+      ],
+      "files": {
+        "story": "specs/epics/60-website/story-60-05-install-guides.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "install-guides"
+      }
+    },
+    {
+      "id": "story-60.6",
+      "type": "story",
+      "title": "Problem types: one registry the API sends from, one page per type",
+      "epic": "60-website",
+      "phase": 5,
+      "content": "# Story 60.06 — Problem types: one registry the API sends from, one page per type\n\n> Epic 60 · Phase 1 (registry and pages), Phase 3 (onto the full design) · Depends on: 60.03,\n> 60.04, 60.02 part A\n\n## Why\n\nEvery error the API sends is an RFC 9457 problem whose `type` is a URI under\n`https://maktaba.tv/problems/`. People follow them: from the API's own HTML error page, from a\nlog, from a client that shows the link. Today 257 links to 120 distinct slugs point at nothing.\n\nThere is also nothing to generate pages from:\n- `api/internal/httperror/types.go` says it is the registry, but holds 18 con",
+      "tags": [
+        "story",
+        "60-website",
+        "phase-5"
+      ],
+      "related": [
+        "epic-60-website"
+      ],
+      "files": {
+        "story": "specs/epics/60-website/story-60-06-problems.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "problems"
+      }
+    },
+    {
+      "id": "story-60.7",
+      "type": "story",
+      "title": "Legal: privacy, terms, and copyright with Epic 50's notice form",
+      "epic": "60-website",
+      "phase": 5,
+      "content": "# Story 60.07 — Legal: privacy, terms, and copyright with Epic 50's notice form\n\n> Epic 60 · Phase 1 (pages), Phase 3 (onto the full design) · Depends on: 60.03, 60.04, 60.02\n> part A; the notice form's sending part on Epic 50 story 50.24's cloud handlers · Owner actions:\n> A3 (mailboxes), A4 (the designated agent), Q6, Q7\n\n## Why\n\n- **Privacy:** a household deciding whether to trust Maktaba with its library reads the privacy\n  page first. App Store and Google Play listings need a privacy policy URL too.\n- **Terms:** the project offers downloads and, with Epic 50, a paid cloud service, and bot",
+      "tags": [
+        "story",
+        "60-website",
+        "phase-5"
+      ],
+      "related": [
+        "epic-60-website"
+      ],
+      "files": {
+        "story": "specs/epics/60-website/story-60-07-legal.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "legal"
+      }
+    },
+    {
+      "id": "story-60.8",
+      "type": "story",
+      "title": "No dead links: the maktaba.tv link check, and a public image after every release",
+      "epic": "60-website",
+      "phase": 5,
+      "content": "# Story 60.08 — No dead links: the maktaba.tv link check, and a public image after every release\n\n> Epic 60 · Phase 1 · Depends on: 60.03; 60.05 and 60.06 for the pages it checks; owner action A1\n\n## Why\n\nThe product printed maktaba.tv links for months while the site served nothing. Nobody noticed,\nbecause nothing checks a link against a page. The same happened to the image: every guide pulls\nit, it is private, and no check pulls it the way a household would. Both need a check that fails\nCI, not a reminder.\n\n## Description\n\n**The link check** (`web/packages/website/scripts/links.mjs`):\n- **Whi",
+      "tags": [
+        "story",
+        "60-website",
+        "phase-5"
+      ],
+      "related": [
+        "epic-60-website"
+      ],
+      "files": {
+        "story": "specs/epics/60-website/story-60-08-link-integrity.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "link-integrity"
+      }
+    },
+    {
+      "id": "story-60.9",
+      "type": "story",
+      "title": "Product imagery: real dark screenshots of every app, in English and Arabic, on demo content",
+      "epic": "60-website",
+      "phase": 5,
+      "content": "# Story 60.09 — Product imagery: real dark screenshots of every app, in English and Arabic, on demo content\n\n> Epic 60 · Phase 2 · Depends on: 60.01 part B (frames, backdrop, how many per page), 60.02 part B\n> (alt text) · Needed by: 60.10, 60.11\n\n## Why\n\nThe home and download pages have to show Maktaba: what a household will see on its TV, its phone\nand its computer. Drawings or stock photos would promise something the apps do not look like.\nScreenshots of the owner's library would publish a person's films and folders. The pictures must\nbe the real apps, on content anyone may show, in both la",
+      "tags": [
+        "story",
+        "60-website",
+        "phase-5"
+      ],
+      "related": [
+        "epic-60-website"
+      ],
+      "files": {
+        "story": "specs/epics/60-website/story-60-09-product-imagery.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "product-imagery"
+      }
+    },
+    {
+      "id": "story-60.10",
+      "type": "story",
+      "title": "The home page",
+      "epic": "60-website",
+      "phase": 5,
+      "content": "# Story 60.10 — The home page\n\n> Epic 60 · Phase 2 · Depends on: 60.01 part B (approved), 60.02 part B (approved copy), 60.09\n> (the screenshots), 60.04 (the gates)\n\n## Why\n\nA household that hears of Maktaba arrives at `maktaba.tv`. In under a minute it should know:\n- what Maktaba is;\n- that it works in its language;\n- what it will look like on its TV and phone;\n- where to get it.\n\nPhase 1's front door is only links. This page is what the design and copy work is for.\n\n## Description\n\nThe page follows 60.01 part B's home layout and 60.02's copy. The section order below is the\ndefault, and the a",
+      "tags": [
+        "story",
+        "60-website",
+        "phase-5"
+      ],
+      "related": [
+        "epic-60-website",
+        "ep-get-home"
+      ],
+      "files": {
+        "story": "specs/epics/60-website/story-60-10-home.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /home"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "home"
+      }
+    },
+    {
+      "id": "story-60.11",
+      "type": "story",
+      "title": "Download: every device, with its real release asset",
+      "epic": "60-website",
+      "phase": 5,
+      "content": "# Story 60.11 — Download: every device, with its real release asset\n\n> Epic 60 · Phase 2 · Depends on: 60.01 part B (download cards), 60.02 part B, 60.09, 60.08 (the\n> public image) · Owner actions: A6 (store listings), A7 (package repositories)\n\n## Why\n\nToday a household that wants Maktaba opens a GitHub release with about 150 files and has to guess\nwhich one is theirs. The release notes explain it in developer terms. The download page names each\ndevice in household words and offers the one right file, with the others a click away. It never\noffers something a household cannot install.\n\n## Des",
+      "tags": [
+        "story",
+        "60-website",
+        "phase-5"
+      ],
+      "related": [
+        "epic-60-website"
+      ],
+      "files": {
+        "story": "specs/epics/60-website/story-60-11-download.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "download"
+      }
+    },
+    {
+      "id": "story-60.12",
+      "type": "story",
+      "title": "Help on maktaba.tv, from the app's own topics",
+      "epic": "60-website",
+      "phase": 5,
+      "content": "# Story 60.12 — Help on maktaba.tv, from the app's own topics\n\n> Epic 60 · Phase 3 · Depends on: 60.01 part B (help layouts), 60.03, 60.04, Epic 41's topics\n\n## Why\n\nEpic 41 wrote help for every feature, 44 topics in English and Arabic, shown inside the app at\n`/help/<topic>`. A household that has not installed Maktaba yet cannot open it. Neither can one\nwhose home is down, which is exactly when help is needed. The desktop app's Help menu already\nopens `https://maktaba.tv/docs`. Epic 41 left a public help site out of scope. This story\npublishes the same topics, not a second copy, so the two ca",
+      "tags": [
+        "story",
+        "60-website",
+        "phase-5"
+      ],
+      "related": [
+        "epic-60-website",
+        "ep-get-videos",
+        "ep-get-settings",
+        "ep-put-settings"
+      ],
+      "files": {
+        "story": "specs/epics/60-website/story-60-12-help.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /videos",
+        "GET /settings",
+        "PUT /settings"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "help"
+      }
+    },
+    {
+      "id": "story-60.13",
+      "type": "story",
+      "title": "Pricing, from the plans the cloud enforces",
+      "epic": "60-website",
+      "phase": 5,
+      "content": "# Story 60.13 — Pricing, from the plans the cloud enforces\n\n> Epic 60 · Phase 3, **gated on Epic 50 deciding its plans** · Depends on: 60.01 part B, 60.02,\n> Epic 50's plan data · Owner question: Q8\n\n## Why\n\nMaktaba is free to run at home. Epic 16 gates a few features behind a licence, and Epic 50 makes a\ncloud relay people can pay for. A household will want to know what is free and what costs money,\nbefore it installs. Today the plan limits do not agree with each other (Epic 50 gap G13), and no\nprices are decided. A page with invented prices would be worse than no page. The project builds a\nf",
+      "tags": [
+        "story",
+        "60-website",
+        "phase-5"
+      ],
+      "related": [
+        "epic-60-website"
+      ],
+      "files": {
+        "story": "specs/epics/60-website/story-60-13-pricing.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "pricing"
       }
     }
   ]

@@ -3,7 +3,7 @@
   "project": "Maktaba",
   "description": "Self-hosted media intelligence platform: full Plex alternative + every-word-searchable transcripts. See specs/architecture.md.",
   "generated_from": [
-    "specs/epics/** (59 epics, 01 to 59: READMEs, stories, plans)",
+    "specs/epics/** (60 epics, 01 to 60: READMEs, stories, plans)",
     "specs/architecture.md (DB tables)",
     "specs/*.md (15 reviews and audits)",
     "specs/diagrams/*.drawio (14 diagrams)",
@@ -15,13 +15,13 @@
     "diagram": 14,
     "endpoint": 197,
     "entity": 42,
-    "epic": 59,
+    "epic": 60,
     "feature": 3,
     "mockup": 63,
     "phase": 17,
     "plan": 372,
     "review": 15,
-    "story": 720
+    "story": 733
   },
   "parts": [
     "wiki-epics-01-09.json",
@@ -30,7 +30,7 @@
     "wiki-epics-28-36.json",
     "wiki-epics-37-45.json",
     "wiki-epics-46-54.json",
-    "wiki-epics-55-59.json"
+    "wiki-epics-55-60.json"
   ],
   "entries": [
     {
@@ -3032,6 +3032,43 @@
       }
     },
     {
+      "id": "epic-60-website",
+      "type": "epic",
+      "title": "maktaba.tv, the website households find Maktaba on",
+      "epic": "60-website",
+      "phase": 5,
+      "engine": null,
+      "content": "maktaba.tv, the website households find Maktaba on.\n\nRequirement: every maktaba.tv address the product prints opens a real page, in English and in Arabic, and a household that hears of Maktaba can learn what it is, see it, download it for each of its devices, install it and get help, on a site that looks as good as the apps.",
+      "tags": [
+        "epic",
+        "60-website",
+        "phase-5"
+      ],
+      "related": [
+        "story-60.1",
+        "story-60.2",
+        "story-60.3",
+        "story-60.4",
+        "story-60.5",
+        "story-60.6",
+        "story-60.7",
+        "story-60.8",
+        "story-60.9",
+        "story-60.10",
+        "story-60.11",
+        "story-60.12",
+        "story-60.13"
+      ],
+      "files": {
+        "readme": "specs/epics/60-website/README.md"
+      },
+      "metadata": {
+        "story_count": 13,
+        "plan_count": 0,
+        "mockup_count": 0
+      }
+    },
+    {
       "id": "diagram-api-streaming-stories",
       "type": "diagram",
       "title": "Api Streaming Stories",
@@ -5189,7 +5226,8 @@
         "story-56.14",
         "story-57.1",
         "story-57.3",
-        "story-58.17"
+        "story-58.17",
+        "story-60.12"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6321,7 +6359,8 @@
         "story-54.13",
         "story-54.41",
         "story-55.2",
-        "story-59.16"
+        "story-59.16",
+        "story-60.12"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6370,7 +6409,8 @@
         "story-54.13",
         "story-54.41",
         "story-55.2",
-        "story-59.16"
+        "story-59.16",
+        "story-60.12"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -8990,7 +9030,8 @@
         "story-58.7",
         "story-58.9",
         "story-58.17",
-        "story-59.16"
+        "story-59.16",
+        "story-60.10"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
