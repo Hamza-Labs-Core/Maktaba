@@ -1555,7 +1555,8 @@ class Cell:
         def idle() -> str:
             c = scan_counts()
             busy = c.get("pending", 0) + c.get("ready", 0) + c.get("running", 0)
-            if busy == 0 and c.get("done_24h", 0) >= before + wanted:
+            # a scan asked while one waits is merged into it: at least one more done
+            if busy == 0 and c.get("done_24h", 0) >= before + min(wanted, 1):
                 return f"{c.get('done_24h', 0) - before} scan(s) done"
             if c.get("failed_open", 0):
                 raise AssertionError(f"a scan failed: {c}")
@@ -1564,28 +1565,6 @@ class Cell:
         done = wait("the rescan of the converted libraries", idle, 10 * 60, every=10)
         time.sleep(20)  # the scan's last inserts commit with its job; a margin for the listing
         return done
-
-    def process_and_wait(self, video_id: str, stage: str) -> str:
-        """POST /api/videos/{id}/process for one stage, then the job to its end."""
-        assert self.api is not None
-        api = self.api
-        s, d = api.call("POST", f"/api/videos/{video_id}/process", {"stage": stage})
-        if s != 200 or not isinstance(d, dict) or not d.get("job_id"):
-            raise AssertionError(f"POST /api/videos/{video_id}/process {stage}: {s} {d}")
-        job_id = d["job_id"]
-
-        def ended() -> str:
-            s, j = api.get(f"/api/jobs/{job_id}")
-            if s != 200 or not isinstance(j, dict):
-                raise AssertionError(f"GET /api/jobs/{job_id}: {s} {j}")
-            state = j.get("state")
-            if state == "done":
-                return "done"
-            if state in ("failed", "cancelled", "superseded"):
-                raise AssertionError(f"the {stage} job {job_id} ended {state}: {j.get('error')}")
-            return ""
-
-        return wait(f"the {stage} job of a converted video", ended, 10 * 60, every=5)
 
     def subtitle_served(self, video_id: str, lang: str, words: str) -> str:
         """A transcode session of the video lists its subtitle in lang as an HLS subtitle
@@ -1631,7 +1610,7 @@ class Cell:
     #: runs one statement with the pipeline process's own database address and the venv's asyncpg;
     #: prints the rows as JSON (argv: the statement, its arguments as a JSON list)
     SQL_SCRIPT = """
-import asyncio, glob, json, sys
+import asyncio, glob, json, os, sys
 import asyncpg
 dsn = None
 for env in glob.glob("/proc/[0-9]*/environ"):
@@ -1645,6 +1624,12 @@ for env in glob.glob("/proc/[0-9]*/environ"):
     dsn = next((kv.split(b"=", 1)[1].decode() for kv in kvs
                 if kv.startswith((b"MAKTABA_DATABASE_URL=", b"DATABASE_URL="))), None)
     if dsn:
+        # the address never carries the password: the process's passfile does (PGPASSFILE
+        # and the other PG* variables the supervisor gives it), and asyncpg reads them too
+        for kv in kvs:
+            k, _, v = kv.partition(b"=")
+            if k.startswith(b"PG"):
+                os.environ[k.decode()] = v.decode()
         break
 if not dsn:
     sys.exit("no pipeline process with MAKTABA_DATABASE_URL or DATABASE_URL")
@@ -1686,8 +1671,8 @@ asyncio.run(main())
         """After the share map's settle the home converts its own folders' paths
         (smb://<nas>/Movies/..., same video ids, nothing lost or added), and keeps working
         on them: a rescan of the converted libraries finds the same files (no duplicate, no
-        removal), a poster is made from a converted path (a thumbnail job, which always runs
-        ffmpeg on the file), a transcode plays, the read-only library's stored subtitle
+        removal), a clip added afterwards is stored in the share form and gets its poster
+        from that path (the thumbnail stage runs ffmpeg on the file), a transcode plays, the read-only library's stored subtitle
         (subtitle_files.content, seeded as the subtitles stage keeps it: this cell
         transcribes nothing) has its path converted, stays the one live row and is served,
         the Arabic side-car beside a converted file reaches the player, and Check access
@@ -1751,10 +1736,29 @@ asyncio.run(main())
         if dups:
             raise AssertionError(f"{dups} duplicate paths after the rescan")
 
-        thumb = self.process_and_wait(lesson, "thumbnail")
-        st_, b = api.get(f"/api/videos/{lesson}/poster?size=small", raw=True)
-        if st_ != 200 or len(b) < 100:
-            raise AssertionError(f"the poster of a converted video: {st_} {len(b) if isinstance(b, bytes) else b}")
+        # a clip added to the converted library (from the host: the container's mount is
+        # read-only): the rescan stores it in the share form, and the pipeline's own stages
+        # (probe, hash, thumbnail: ffmpeg on the file) make its poster from that path
+        name = "Lesson 21 (after the conversion).mp4"
+        m_owner = self.spec.get("media", {}).get("owner", "1000:1000")
+        as_root(self.image,
+                f"cp '/d/en/Lesson 01.mp4' '/d/en/{name}' && printf 'maktaba 59.13' >> '/d/en/{name}'"
+                f" && chown {m_owner} '/d/en/{name}' && chmod 644 '/d/en/{name}'",
+                f"{self.vol('media')}:/d")
+        self.rescan_settled()
+        grown = self.media_paths()
+        added = {i: p for i, p in grown.items() if i not in again}
+        want_new = f"smb://{server}/{posixpath.basename(self.media.rstrip('/'))}/en/{name}"
+        if list(added.values()) != [want_new] or any(grown[i] != again[i] for i in again):
+            raise AssertionError(f"the rescan after a new clip: added {added}, want only {want_new}")
+        new_id = next(iter(added))
+
+        def poster() -> int:
+            st_, b_ = api.get(f"/api/videos/{new_id}/poster?size=small", raw=True)
+            return len(b_) if st_ == 200 and isinstance(b_, bytes) and len(b_) > 100 else 0
+
+        poster_bytes = wait("the new clip's poster (made from its share path)", poster, 15 * 60, every=10)
+        thumb = f"new clip at {want_new}: poster {poster_bytes} bytes"
         trans = self.transcode(force_software=True)
 
         # the stored subtitle: its path converted with the rest, still the one live row (the
@@ -1773,7 +1777,7 @@ asyncio.run(main())
         side = self.subtitle_served(lesson, "ar", "تفتح المكتبة")
         access = self.assert_access_ro()  # Check access on the converted roots, through the API's share map
         return (f"{len(after)} paths → smb://{server}/… in {took} min (batch {self.canon_batch}); rescan: {scans}, "
-                f"same {len(again)} videos; thumbnail job {thumb}, poster {len(b)} bytes; {trans}; "
+                f"same {len(again)} videos; {thumb}; {trans}; "
                 f"stored subtitle at {want_sub}: {sub}; side-car: {side}; access: {access}")
 
     def home_server(self) -> str:
