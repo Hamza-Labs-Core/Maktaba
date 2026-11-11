@@ -82,6 +82,10 @@ var copyReviewed = []string{
 	// rules and each session's age signal (ids, tiers and times, no secret); a
 	// promoted copy keeps every child's limit
 	"parental_guardians", "parental_policies", "parental_rules", "session_age_signals",
+	// slot 0223 (story 57.14): each restricted account's time rules, the seconds it
+	// watched each day and the extra time a guardian gave (ids, days, minutes, no
+	// secret); a promoted copy keeps the day's count, so a move gives no time back
+	"parental_time_grants", "parental_time_rules", "parental_time_usage",
 }
 
 // Every table of a migrated database is either reviewed as copied or left out.
