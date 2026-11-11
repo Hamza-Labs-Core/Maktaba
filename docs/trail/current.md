@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.126
-up_to_commit: 9a88b8bb2
-built_from: v0.3.125
+tag: v0.3.127
+up_to_commit: 5bcb7d1d9
+built_from: v0.3.126
 ---
 
-# Trail snapshot: v0.3.126
+# Trail snapshot: v0.3.127
 
 ## Keep doing
 
@@ -191,6 +191,11 @@ built_from: v0.3.125
 - Generate each NAS file from the base compose with one rule, run every variant through `docker compose config` in CI, and check the tier rule for each architecture a cell runs on before choosing its tier assertion. For the TrueNAS app run the catalog's own tooling (`tests/nas/truenas_app.py`) and copy `metadata.diff` back from the lint artifact. (#1117, #1118, #1119)
 - A job started by `workflow_run`, or any job holding a token or secret, takes a release's signed assets as data and never checks out or runs the repository's code; every action it uses is pinned by commit. A release never commits a new pin to main (that commit would be the next release candidate). (#1118, #1124)
 - Wait in a test harness for what the code under test asks for (a bus name owned, a service that answers), not a daemon's fork or a file's appearance; one log line naming the path taken and why turns a blind CI round into a fix. A red job is not a failed test until its log says so: read the failing step first. (#1119, #1125)
+- Put the old behaviour back to check a timing test still catches its bug, and stress a timing fix both alone and inside the whole parallel suite with every core busy; let the test hold the phase it measures (slots held, then cancelled) instead of sizing every phase from one calibration run. (#1144)
+- When a route's work goes through an injected interface, make the nil case an error (503) and add a production-router test that checks the work happened (a row, a job), not only the status code. (#1147)
+- Run a NAS shape with a large library in the update rehearsal, and read each leg's `report.json` before trusting a fast green: the 40-clip legs passed at once, only the 20,000-video leg found the keep bug. (#1138)
+- When a fix lands on the phone Player, check `apps/tv/android` for its own copy of the same flow. (#1134)
+- Check a field's meaning in the code (its comment, the helper behind it) before choosing between widening it and adding one. (#1135)
 
 ## Stop doing
 
@@ -233,6 +238,9 @@ built_from: v0.3.125
 - Writing `COALESCE(title, filename)` or `title || filename` for a name users see. (#1125)
 - Treating a machine's join-time address as its identity. (#1121)
 - Polling for a file as the sign another process finished, or calling a sibling daemon ready on its fork. (#1119)
+- Soft-fail branches that answer 2xx when a dependency is missing; treating a probe with no answer as a negative answer in a wait that must see a steady state. (#1147, #1138)
+- Re-running a timing flake without reading which assertion failed (it was the test's own precondition). (#1144)
+- Moving code between Android modules without changing a test in each module it leaves and enters: `affected-tests` asks for a changed test beside every changed source file. (#1134)
 
 ## What we learned
 
@@ -284,6 +292,8 @@ built_from: v0.3.125
 - Symbol tables: Android releases have no binary UUID, so R8 tables are keyed by app and version; native tables by the first 16 bytes of the GNU build id, read only when the whole id matches; a stripped library makes no table, so a crash is never marked read with `.dynsym` names alone. Tombstone caller pcs are looked up as they come; Apple return addresses move back a byte first. The desktop installers run no ProGuard. (#961, #967)
 - The home has no central access check: about 15 packages each scope by library, live channel streams and the HDHomeRun routes are unsigned, a channel with no library is visible to every signed-in user, and the browse row cache assumes rows have no per-user part. (#979)
 - Epic 57's device side is Apple's Screen Time: the effective movie and TV rating limit is readable without Family Controls (iOS 15+, tvOS 26+), watching it needs the entitlement, which needs Apple's approval per extension, so the app re-reads on foreground. Declared Age Range is iOS, iPadOS and macOS 26+ only and a plain capability. (#979)
+- A component's `reason` means why it is not ready; a ready but degraded component (`sandbox_partial` on a true Ready condition) carries `degraded_reason` instead, so clients that treat `reason` as a failure stay right. `shared/api/openapi.json` is what the router coverage test and the portal read; `openapi.yaml` and `openapi.ar.json` (keyed by the English text) are kept beside it by hand. (#1135)
+- A dependency that is optional "for tests" and soft-fails to success hides a missing production wiring: video process and reprocess answered 200 with no job in every build since Story 7.5 (`MountP6` never passed `JobQ`); they now queue forced runs, and a missing queue is 503. (#1147)
 
 **CI and releases**
 - Homes' `releaseverify` accepts only a release whose Sigstore certificate's trigger (OID 1.3.6.1.4.1.57264.1.20) is `push`; a dispatched release differs in that claim alone and is refused, and a re-run of a dispatched run stays `workflow_dispatch`. A tag pushed with `GITHUB_TOKEN` starts no run, so tags come from a session's push; v0.3.83 to v0.3.85 have no release, so v0.3.86 is the first published release of their components (`since` says 0.3.86). (#725, #730, #748)
@@ -329,6 +339,7 @@ built_from: v0.3.125
 - An integrity check must not take its trusted source from the file it checks. (#1014)
 - `pull_request` workflows do not start while a PR conflicts with main: only `CI (branch head)` runs until main is merged in. Every `download-artifact` step needs the 3-attempt chain and its check step. (#1109, #1118)
 - A conflict in a generated bundle (`firstparty.json`'s digest) is resolved by taking main's copy and regenerating. `merge-main.sh` can place an entry in the second `### Fixed` list of `[Unreleased]`: read where it landed. A test fake that ignores the SQL breaks silently when the query grows. (#1098, #1095, #1092)
+- A timing test sized from one calibration run flakes when the runner's load changes between calibration and run (plugind's slot-wait test; the host was right). Locally, Homebrew's `rustc` comes first on PATH without `wasm32-wasip2`, so `make plugind-guests` fails though rustup has the target: put rustup's stable toolchain first; without the guests every guest-based host test fails with "is missing". (#1144)
 
 **Database and migrations**
 - Number a migration slot only when merging main (slots are taken while a PR builds); a slot above a gap fails migration-lint; `SchemaRev` lives in three places. Check `git ls-tree origin/main shared/db/migrations/` right before each push, not only at the start; at each renumber rebuild `cluster_copy_excluded()` on the newest definition (Up adds, Down restores that one) and raise the three SchemaRev constants together. Slots moved three and four times while a PR waited; a moved migration is written again from its generator (`roles.py sql`, which `roles.py check` compares against every manifest), never sliced from the old file (a slice that kept `--` lines opened `StatementBegin` twice; migration-lint's `goose-annotations` now refuses it). Prove a migration parses with `go run . migrate up` from `api/` on a new database. The store's D1 migrations number separately but still collide within one series. (#669, #692, #678, #672, #657, #693, #762, #767, #778, #781, #815, d20261107-paid-plugins-merge-problems, #925, #949)
@@ -406,6 +417,7 @@ built_from: v0.3.125
 - NAS cells: setup must run before the server container exists (`maktaba-server container` starts the launcher as soon as `server.toml` appears): write `server.toml`, run `setup --answers /dev/stdin` in a throwaway `docker run -i` container (`--answers-fd 0` means unset), then start the server. Docker copies the image's `/var/lib/maktaba` (owner 1000) into an empty volume on its first mount, so mount a fresh volume before chowning it. Setup's roots only feed the folder picker; libraries are made by `POST /api/libraries`. The access token lasts minutes (sign in again on a 401) and login allows 10 a minute, so wait on the public health route first. On a Mac, check that nothing else listens on a port before publishing a container on it. Python inside a single-quoted bash block cannot carry escaped quotes: keep it in a script with its own test. The cells found four product faults, each a pending check: a scan right after a library is made walks nothing (the runner's sandbox has no grant for the new root yet), no poster in a fresh container (no `content_hash` job is queued), the runners are refused `$HOME/.maktaba/cache` (`HOME` is the volume in the image), and a stale Postgres socket lock after `docker kill` (fixed by pull request 1094, its check on). A cell that transcodes asserts `scan` first (`transcode_auto` found no clip without it). A device cell picks a node outside Docker's default allow list: `/dev/null`, `/dev/zero`, `/dev/random` and `/dev/tty` are always rwm, so they stay openable read-write; the host's `/dev/kmsg` mounted `:r` gives the container's user EACCES. (#1091, #1100, #1110)
 - Machine facts (`internal/hostinfo`) are read from files under a root, so fixture trees drive every test: the cgroup v2/v1 memory limit and CPU quota, `MemAvailable` plus the ZFS ARC above `c_min`, the data disk through dm and md slaves to `queue/rotational`. The tier follows the memory limit alone (`TierFor`, `DefaultsFor`); the supervisor's STT plan counts transcribe-only workers beside the main worker, so a tier's pipeline-worker cap is `Workers` minus one. A route under `/api/system/` is reachable with a temporary password (`AllowedWhilePasswordChange`), so supervisor-backed settings go under `/api/server/` (`/api/server/machine`). (#1089)
 - VA-API (59.05): the probe opens the render node read-write (EACCES or EPERM means `group_add`), then runs vainfo, then a 2-second 1080p `h264_vaapi` test encode; VA-API goes before QSV on a NAS or in a container (`MAKTABA_HWACCEL_VAAPI_FIRST`, from hostinfo's platform). The CPU decodes and each rung uploads when the device lacks the source's decode profile or the source is tone-mapped. The tier's transcode limits reach streaming as `MAKTABA_TRANSCODE_*`; a full slot set answers 503 `transcode_busy` with Retry-After 10, and every player waits and asks again (Android, Apple, web; the desktop player has the sentence). The verdict is `<state>/streaming/video.json`, shown in Settings → This machine. The amd64 image takes Debian `non-free` for `intel-media-va-driver-non-free` alone (Expat licence; non-free for Intel's prebuilt GPU kernels). (#1110, #1111)
+- The Android TV app is its own Gradle root (`apps/tv/android`) on `:core` and `:client` but not `:player`: a phone Player fix never reaches it, so shared behaviour lives in `:client` (the busy-transcode wait, `busyRetryMs`, now asks again on TV too). (#1134)
 
 **Apps and UI tests**
 - In Arabic text a path is reordered at its slashes: wrap each path, command or URL in U+2066/U+2069, and measure positions with a Range before judging a bidi screenshot. Prettier rewrites escaped isolates as literal characters, so later replacements that search for the escape match nothing; a Vite dev server can serve a stale module until restarted with `--force`. Build an image `src` only from a fixed list (CodeQL flags one built from the page's language). (#1120)
@@ -501,6 +513,7 @@ built_from: v0.3.125
 - A commented compose block is only as good as a CI step that uncomments it (the NVIDIA block never worked). arm64 under 8 GiB is Light. (#1117)
 - The TrueNAS catalog's renderer needs `openat2` (Linux amd64 only, not Docker Desktop's emulation); its README takes only a title and basic tags, default ports are unique across the catalog (live TV defaults to 30575), and host paths are made only with `create_host_path`. `docker top -eo` needs `pid`. (#1118)
 - NAS networking: Maktaba answers mDNS as `<host>-maktaba.local` beside the NAS's avahi-daemon (shared UDP 5353), or publishes through a mounted host system bus; a system D-Bus drops a uid it cannot look up, so a container on the host's bus runs as an account the host knows. A `veth` default route marks a Docker bridge, where mDNS and SSDP go off. setup writes server.toml before it creates the database, so the container waits for `state/setup.json` to be gone too. (#1119)
+- Updates on a NAS (59.12): the image's self-update and the catalog's tag moves both stay on; an image older than the home's runtime runs the runtime, and admins see a `container` block in `GET /api/system/updates`. The preflight checks the volume for the runtime and the dump (`disk_short`). The rehearsal's five container legs update from the previous published image and roll a `bad` image back. The nas-4g leg found that 429s on loopback version checks restarted the 3-minute keep wait: a check with no answer now says nothing. Paging `/api/videos` for 20,000 videos hits the per-user rate limit; read counts from `/api/libraries/manage`. A docker logs offset keeps a restart test from matching an earlier start's line. (#1138)
 
 ## Open
 
@@ -547,14 +560,14 @@ built_from: v0.3.125
 - Plugin event emits: the `unavailable` and `home_unreachable` refusals are logged but have no test. (#1048)
 - Parity tests still over the 5 s soft cap on CI: classify's waves 1 and 4, repair, the N16 self-test and livetv staging; core-media's now fits. (#1049, #1068)
 - No sweep was made of other process-wide state the moved first-party stages may read; the guard covers only `to_local`. (#1062)
-- Epic 59 (Maktaba on a NAS; replaces Epic 25’s NAS plan): 59.01–59.11 are in; cgroup v1 (DSM's 4.4 kernels) cannot be imitated on GitHub's cgroup v2 runners; facts each story checks on real devices (DSM kernels and Landlock, DSM’s responder, J4125 HEVC decode on DSM 7.2.2+, Avahi on TrueNAS 25.04+); real VA-API is untested until the device checklists run, and no real NAS has run the speech measure (a DS223/DS423 and a J4125). The setup text still says the venv step downloads about 2 GB, even offline (59.14); a Full home needs PyPI for its ML wheels until a `runtime.ml` pack. Speech baselines exist only for `small/x86_64` and `base/aarch64`. On upgrade, the identity sweep queues hashing, posters and transcription for every older scanned video: a burst of background work. (#1087, #1089, #1096, #1110, #1090, #1112, #1098, #1119, #1120)
+- Epic 59 (Maktaba on a NAS; replaces Epic 25’s NAS plan): 59.01–59.12 are in; cgroup v1 (DSM's 4.4 kernels) cannot be imitated on GitHub's cgroup v2 runners; facts each story checks on real devices (DSM kernels and Landlock, DSM’s responder, J4125 HEVC decode on DSM 7.2.2+, Avahi on TrueNAS 25.04+); real VA-API is untested until the device checklists run, and no real NAS has run the speech measure (a DS223/DS423 and a J4125). The setup text still says the venv step downloads about 2 GB, even offline (59.14); a Full home needs PyPI for its ML wheels until a `runtime.ml` pack. Speech baselines exist only for `small/x86_64` and `base/aarch64`. On upgrade, the identity sweep queues hashing, posters and transcription for every older scanned video: a burst of background work. (#1087, #1089, #1096, #1110, #1090, #1112, #1098, #1119, #1120)
 - N16: CPU p95 over 11 runs is their maximum, and a rare job costing about 4x CPU in both processes came within 0.8 ms of failing `topic_assign`; the plugin API's ~0.58 ms of CPU a call is the bulk of the per-call cost. (#1059)
 - NAS shapes (59.15): every waiting check has landed (59.03, `logs_clean`, `thumbnail`, `isolation_container`, `restart-after-kill`, the strict `first_scan`); `offline` and `bridge` need a harness that reaches the API without the host network; the device checklists (`docs/nas/checklists`) stay draft until their first run on a device. (#1091, #1103, #1104, #1094, #1095, #1097, #1098, #1109)
 - `EncodePlan.Burn` has no caller: the API's `burn_subs` reaches no transcode. (#1110)
-- The Android TV app shows the busy-transcode sentence on its error screen but does not ask again by itself. (#1110, #1111)
-- Timing-sensitive on CI runners: Android TV's `TvConnectTest` route harness (a ConcurrentModificationException) and the iPad `PlayerMockHomeTests.testADelayKeepsTheQuerysAnswer` bound. plugind's `a_wait_for_a_slot_is_not_the_jobs_time` failed once on a PR and on main. (#1111, #1119, #1120)
+- Timing-sensitive on CI runners: Android TV's `TvConnectTest` route harness (a ConcurrentModificationException) and the iPad `PlayerMockHomeTests.testADelayKeepsTheQuerysAnswer` bound. (#1111, #1119, #1120)
 - NAS owner actions: submit the Unraid template to Community Applications and the TrueNAS app to truenas/apps (text in `deploy/nas/*/README.md`), then set `vars.TRUENAS_APPS_FORK`, `secrets.TRUENAS_APPS_TOKEN` and `vars.TRUENAS_APP_IN_CATALOG`; host the install pages on maktaba.tv; run the Unraid 7, UGREEN and TrueNAS 25.04/25.10 checklists, and the "the apps find the home" steps on real hardware (Synology 13, TrueNAS 15, Unraid 8). QNAP stays untested. On a bridge the server does not learn a published port that differs from its own; the app's icon URL exists only once the catalog hosts it. Synology still needs the guide's DSM screenshots (checklist steps 19 to 23, marked ready in `synologyGuide.ts`), a check of whether DSM has an Arabic UI, and the DS425+, DS923+ and DS223 checklists. (#1117, #1118, #1120)
-- The Components list shows Degraded without a reason (its reason comes only from false conditions); plugin routes are absent from `openapi.json` (59.16). (#1109)
+- Plugin routes, and `GET /api/system/updates` with its `container` block, are absent from `openapi.json` (59.16). (#1109, #1138)
+- The loopback's per-IP rate limit refused the home's own plugin invocations (560 × 429 under a 20,000-video scan); the tagged commit gives the home's own callers their own budget, keyed by the local token; its pull request is listed under Missing events. The in-window self-update inside a container is not rehearsed in a container. (#1138)
 - `relay.yml` and `release.yml` still use cosign-installer by tag (optional hygiene). (#1124)
 
 ## Missing events
@@ -570,8 +583,8 @@ built_from: v0.3.125
 | #1042 | 2026-11-08 | fix(web): an open screen keeps its feature gate when the feature goes off right after the first answer |
 | #1128 | 2026-11-10 | docs(spec): Epic 57 checked again against main |
 | #1130 | 2026-11-10 | spec(epic57): time rules on every device, and tiers detected from transcripts |
-| #1135 | 2026-11-10 | fix(components): the list says why a component is degraded |
 | #1139 | 2026-11-10 | spec(epic57): Q9 answered, detection covers what a video is |
+| #1148 | 2026-11-11 | fix(api): the home's own callers get their own rate budget, keyed by the local token |
 
 ## Index
 
@@ -1164,9 +1177,14 @@ built_from: v0.3.125
 | 1117-epic59-other-nas | 2026-11-10 | pr | The plain compose as the NAS base, the Unraid template, maktaba.tv's install page (story 59.11) |
 | 1118-epic59-truenas | 2026-11-10 | pr | The TrueNAS app, its Custom App YAML and the catalog's own CI (story 59.10) |
 | 1124-pin-cosign-installer | 2026-11-10 | pr | ci(packages): cosign-installer pinned to its commit in the release-privileged jobs |
+| 1134-tv-transcode-busy-retry | 2026-11-10 | pr | fix(tv): Android TV asks again while every transcoder is busy (59.05) |
+| 1135-components-degraded-reason | 2026-11-10 | pr | fix(components): the list says why a component is degraded |
+| 1144-plugind-slot-wait-flake | 2026-11-10 | pr | test(plugind): the slot-wait test holds the slots itself, so a loaded runner cannot flake it |
 | d20261110-epic59-stranded-trail-events | 2026-11-10 | incident | Epic 59 trail events written but never opened as pull requests |
 | 1119-epic59-08-networking | 2026-11-11 | pr | Epic 59 story 59.08: networking on a NAS (mDNS beside the NAS's own, bridge, trusted proxies) |
 | 1120-epic59-synology | 2026-11-11 | pr | Maktaba on a Synology NAS: the Container Manager project and maktaba.tv/install/synology (story 59.09) |
 | 1121-epic59-08-clientip-hardening | 2026-11-11 | pr | Epic 59 story 59.08 follow-up: which forwarded client addresses the home believes |
 | 1125-title-without-extension | 2026-11-11 | pr | fix(titles): a video with no title shows its file name without the extension |
+| 1138-epic59-12-updates | 2026-11-11 | pr | Updates on a NAS: the image beside its runtime, and the update rehearsal's container legs (story 59.12) |
+| 1147-video-process-noop | 2026-11-11 | pr | fix(api): video process and reprocess queue real jobs, never a silent success |
 
