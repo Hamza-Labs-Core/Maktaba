@@ -31,6 +31,15 @@ const PENDING: Record<string, string> = {
   "59.16": "OpenAPI and role tests: its one string lands with it",
 };
 
+// Keys a story's code named differently from its spec's table, spec key → catalog key. Story
+// 59.12 put its texts under the Updates page's own prefixes (updates.code.*, as every update
+// failure code; updates.container.*, the page's Container block).
+const ALIASES: Record<string, string> = {
+  "update.disk_short": "updates.code.disk_short",
+  "update.image_older": "updates.container.why.imageOlder",
+  "update.runtime_vs_image": "updates.container.versions",
+};
+
 interface Row {
   story: string;
   key: string;
@@ -62,9 +71,14 @@ describe("Epic 59's strings", () => {
       expect(preflight).toContain(`"${r.key}": {`);
       return;
     }
-    expect(catalogEn[r.key], `${r.key} in en.json`).toBeTruthy();
-    expect(catalogAr[r.key], `${r.key} in ar.json`).toBeTruthy();
-    expect(catalogAr[r.key]).toMatch(ARABIC);
+    const key = ALIASES[r.key] ?? r.key;
+    expect(catalogEn[key], `${key} in en.json`).toBeTruthy();
+    expect(catalogAr[key], `${key} in ar.json`).toBeTruthy();
+    expect(catalogAr[key]).toMatch(ARABIC);
+  });
+
+  it("aliases only keys the stories name", () => {
+    for (const k of Object.keys(ALIASES)) expect(all.some((r) => r.key === k)).toBe(true);
   });
 
   it("names only stories that still have strings to land", () => {
