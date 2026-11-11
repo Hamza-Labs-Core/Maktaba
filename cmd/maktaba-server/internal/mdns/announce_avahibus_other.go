@@ -6,4 +6,8 @@ package mdns
 // The same file is in api/internal/discovery and cmd/maktaba-server/internal/mdns (two
 // modules); tools/ci/mdns_copies.py checks they stay the same.
 
+import "errors"
+
 func avahiOnBus() bool { return false }
+
+func avahiBusCheck() error { return errors.New("no system bus on this platform") }

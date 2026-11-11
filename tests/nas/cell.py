@@ -157,6 +157,12 @@ mkdir -p /run/dbus && rm -f /run/dbus/pid /run/dbus/system_bus_socket
 dbus-daemon --system --fork
 avahi-daemon --no-chroot --no-rlimits -D
 for i in $(seq 1 60); do avahi-daemon -c && break; sleep 1; done
+# ready once Avahi owns its name on the bus (Maktaba asks the bus that, once, at its start)
+for i in $(seq 1 60); do
+  dbus-send --system --print-reply --dest=org.freedesktop.DBus / org.freedesktop.DBus.GetNameOwner \
+    string:org.freedesktop.Avahi >/dev/null 2>&1 && break
+  sleep 1
+done
 avahi-publish-service "NAS share" _smb._tcp 445 >/tmp/publish.log 2>&1 &
 touch /tmp/avahi-ready
 exec sleep infinity
@@ -629,7 +635,7 @@ class Cell:
         own = self.avahi_sh(f"avahi-resolve -4 -n {host}-maktaba.local")
         if "Failed" in own or not own.strip():
             raise AssertionError(f"{host}-maktaba.local does not resolve: {own.strip()}")
-        top = docker("top", self.container, "-eo", "comm").stdout
+        top = docker("top", self.container, "-eo", "pid,comm").stdout
         if "avahi-publish" in top:
             raise AssertionError("avahi-publish-service runs without a D-Bus mount")
         return f"{rec[3]} at {rec[6]}:{rec[8]} beside the NAS's _smb._tcp; {host}.local intact"
@@ -640,8 +646,11 @@ class Cell:
         rec = self.maktaba_seen()
         host = self.nas_name_intact()
         if rec[6].lower() != f"{host}.local".lower():
-            raise AssertionError(f"Maktaba announced at {rec[6]}, not through Avahi at {host}.local")
-        top = docker("top", self.container, "-eo", "comm").stdout
+            clog = docker("logs", self.container, check=False)
+            said = [ln for ln in ((clog.stdout or "") + (clog.stderr or "")).splitlines() if "advertising _maktaba" in ln]
+            raise AssertionError(f"Maktaba announced at {rec[6]}, not through Avahi at {host}.local"
+                                 f" ({said[-1].strip() if said else 'no advertising line'})")
+        top = docker("top", self.container, "-eo", "pid,comm").stdout
         if "avahi-publish" not in top:
             raise AssertionError("no avahi-publish-service in the container")
         return f"{rec[3]} at {rec[6]}:{rec[8]} through the NAS's Avahi"

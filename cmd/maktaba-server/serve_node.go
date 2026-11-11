@@ -336,7 +336,7 @@ func advertiseMachine(ctx context.Context, cfg config.Config, ns *nodeServices) 
 				logged = true
 			}
 		} else if changed {
-			fmt.Fprintf(os.Stderr, "[serve] advertising _maktaba._tcp role=%s on port %d\n", m.Role, apiPort)
+			fmt.Fprintf(os.Stderr, "[serve] advertising _maktaba._tcp role=%s on port %d (%s)\n", m.Role, apiPort, mdns.Responder())
 		}
 		select {
 		case <-ctx.Done():

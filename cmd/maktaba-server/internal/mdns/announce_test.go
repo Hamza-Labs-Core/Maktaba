@@ -446,3 +446,18 @@ func TestPickInterfaces(t *testing.T) {
 		t.Errorf("an address no interface holds: %s", got)
 	}
 }
+
+// Epic 59 story 59.08: the log names the responder; every kind has its own name.
+func TestResponderKindNames(t *testing.T) {
+	seen := map[string]bool{}
+	for _, k := range []responderKind{viaZeroconf, viaDNSSD, viaAvahi, viaZeroconfOwnHost, viaDNSAPI, viaResolved} {
+		s := k.String()
+		if s == "" || seen[s] {
+			t.Errorf("kind %d: name %q empty or shared", k, s)
+		}
+		seen[s] = true
+	}
+	if s := Responder(); s == "" {
+		t.Error("Responder is empty")
+	}
+}
