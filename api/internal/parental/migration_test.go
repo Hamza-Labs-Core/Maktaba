@@ -85,10 +85,13 @@ func TestSlot0221UpAndDownOnPostgres(t *testing.T) {
 		}
 		return n
 	}
+	// the slot's own functions by name: slot 0220's parental_* functions (the age
+	// tiers' recompute) stay when 0221 goes down
 	leftovers := func() int {
 		var n int
 		if err := db.QueryRow(`SELECT
-			(SELECT count(*) FROM pg_proc WHERE proname LIKE 'parental\_%' OR proname = 'users_restricted_admin_guard')
+			(SELECT count(*) FROM pg_proc WHERE proname IN ('parental_policies_guard', 'parental_guardians_guard',
+				'parental_policy_notify', 'users_restricted_admin_guard'))
 			+ (SELECT count(*) FROM pg_trigger WHERE tgname = 'users_restricted_admin_guard_trg')
 			+ (SELECT count(*) FROM app_settings WHERE key LIKE 'parental.%')`).Scan(&n); err != nil {
 			t.Fatal(err)
