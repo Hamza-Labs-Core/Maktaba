@@ -229,8 +229,8 @@ type Machine struct {
 	// out of memory under a NAS's limit (Epic 59 story 59.12); Relight starts them again
 	// when the update goes no further (after the switch the new release starts them). nil:
 	// nothing stopped.
-	Lighten func(ctx context.Context) error
-	Relight func(ctx context.Context) error
+	Lighten   func(ctx context.Context) error
+	Relight   func(ctx context.Context) error
 	lightened bool // Lighten ran in this apply (the apply's goroutine only)
 	// TVHandover reports whether this machine's TV processes (the front door, the slots)
 	// can run on across the restart onto target, the release the next start runs (story
