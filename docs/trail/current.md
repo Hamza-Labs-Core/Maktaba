@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.131
-up_to_commit: b6a687285
-built_from: v0.3.130
+tag: v0.3.132
+up_to_commit: ea0087b53
+built_from: v0.3.131
 ---
 
-# Trail snapshot: v0.3.131
+# Trail snapshot: v0.3.132
 
 ## Keep doing
 
@@ -202,6 +202,11 @@ built_from: v0.3.130
 - Follow each NAS guide literally after any change to setup or the container entrypoint, from an empty data folder with the container started before setup; a pexpect run of the terminal setup does it cheaply. Keep every run's log, saved before the container is removed. (#1164)
 - Reproduce a limit with production caps and request shapes before changing it, keeping the client cases (proxy, relay, forged header) beside the fix. (#1148)
 - Before writing a guide's setup step, read what the container does before it is set up (`waitSetup`, `setupHint` in `cmd_container.go`). When text moves (a log line into a bilingual table), grep for tests that read it in its old place, the `tests/nas` Python harnesses included. Run `pnpm -C web exec tsc -p tsconfig.json` after adding a test under `web/src`, and trial-merge a parallel story's branch in a scratch worktree to see its conflicts and strings early. (#1137)
+- Gate a deploy whose account already holds a working token on a dedicated secret and a go-live variable, with a test that runs the gate script itself; prove a deploy script end to end on a throwaway workers.dev Worker with its own config, deleted afterwards. (#1161)
+- Give every new gate a positive control (an unsized image, a shifting page, a removed focus ring) so it cannot pass vacuously. (#1171)
+- Read each handler before writing its problem text: several generic types go out with odd statuses. (#1162)
+- When main turns red right after concurrent merges, fix it in one small data-only pull request, after checking no open pull request touches the same files. (#1169)
+- Read a pull request's head sha from `gh pr view` before reporting it, and a cancelled job's step timings before re-running it. (#1176, #1177)
 
 ## Stop doing
 
@@ -252,6 +257,10 @@ built_from: v0.3.130
 - Sending a secret header with a client that follows redirects (Go copies custom headers to the redirect's host). (#1148)
 - Running repository-wide checks on unstaged files and taking their pass as proof. (#1160)
 - Writing guide steps from another guide's wording without checking the code path (#1120's Synology step 5 sent households to a browser page the container does not serve before setup). (#1137)
+- Adding a package under `web/packages/` without the exclusions devportal has in web's root vitest, `tsconfig.json` and eslint config: the web unit job then runs its tests without their setup. (#1161)
+- Piping into `head` or `grep -q` in `tools/` scripts (`test_no_head_pipes.py` refuses it; use `sed -n` or `case`). (#1162)
+- Merging a branch cut before a new repo-wide check without merging main and re-running the check. (#1169)
+- Re-running a job cancelled at its own time limit, or blaming the step it stopped in, before comparing its total time with the limit (a near-limit job dies in whichever step runs last). (#1176, #1177)
 
 ## What we learned
 
@@ -348,7 +357,7 @@ built_from: v0.3.130
 - An EXIT trap's last status becomes the script's exit status: `[ cond ] && cmd` in a trap fails a good run when `cond` is false. A deploy script run from a Mac avoids `chown --reference` and GNU `sed -i`. (#1010)
 - `test_a_slower_plugin_fails_n16_with_both_numbers` trips on some shared runners with code that passes elsewhere (#1018, #1021); classify `detect`'s N16 failures were a real per-call cost that a fixed allowance could not hold. (#1059)
 - An integrity check must not take its trusted source from the file it checks. (#1014)
-- `pull_request` workflows do not start while a PR conflicts with main: only `CI (branch head)` runs until main is merged in. Every `download-artifact` step needs the 3-attempt chain and its check step. (#1109, #1118)
+- `pull_request` workflows do not start while a PR conflicts with main: only `CI (branch head)` runs until main is merged in. Every `download-artifact` step needs the 3-attempt chain and its check step. A re-run uses the pull request's own copy of the workflow: a limit raised on main reaches it only once main is merged in. (#1109, #1118, #1171, #1176)
 - A conflict in a generated bundle (`firstparty.json`'s digest) is resolved by taking main's copy and regenerating. `merge-main.sh` can place an entry in the second `### Fixed` list of `[Unreleased]`: read where it landed. A test fake that ignores the SQL breaks silently when the query grows. (#1098, #1095, #1092)
 - A timing test sized from one calibration run flakes when the runner's load changes between calibration and run (plugind's slot-wait test; the host was right). Locally, Homebrew's `rustc` comes first on PATH without `wasm32-wasip2`, so `make plugind-guests` fails though rustup has the target: put rustup's stable toolchain first; without the guests every guest-based host test fails with "is missing". (#1144)
 
@@ -533,10 +542,14 @@ built_from: v0.3.130
 
 **maktaba.tv (Epic 60)**
 - The zone is active with no DNS records at all; hundreds of repo links point at it (most at `/problems/`). The server image `ghcr.io/hamza-labs-core/maktaba-server` is private while the repository is public, and every install guide pulls it. (#1158)
-- Problem types have no real registry: `httperror/types.go` holds 18 constants while call sites build slugs at runtime, four shipped slugs use underscores clients match, and the recoverer turns a panic into a 500, so a panic-based guard is invisible to status-only tests. Epic 60 adds `shared/api/problems.json`, checked in `httperror.Write`. (#1158)
-- Wrangler: `versions upload`/`versions deploy` never apply routes or custom domains (`wrangler triggers deploy` does), and a bare `wrangler rollback` can return to a version that never went live; record the live version and roll back to it. (#1158)
+- Problem types now have a registry: `shared/api/problems.json` holds 288 entries in English and Arabic, most from the codes runtime call sites relay (plugins/admin alone, 114, mostly from the store and the supervisor), so the story's estimate of 120 literals was repo-wide. `httperror.Write` checks every type: under test an unregistered or empty type is written to `MAKTABA_UNREGISTERED_PROBLEMS` and fails the unit job; production logs `problem_type_unregistered` and sends the status's generic type. `literal_test.go` keeps literal slugs out of `api/` and `cloud/`. Swapping a literal for the same constant needs a `No-Test-Change` trailer, not new tests. Local golangci-lint is v1 and CI's v2: trust CI's lint on `api/`. (#1158, #1162)
+- Wrangler: `versions upload`/`versions deploy` never apply routes or custom domains (`wrangler triggers deploy` does), and a bare `wrangler rollback` can return to a version that never went live; record the live version and roll back to it. `versions upload` cannot create a Worker, so a first deploy bootstraps it with `wrangler deploy` on the config less its routes (`workers_dev = false`), and `triggers deploy` attaches the domains after the preview smoke; `preview_urls = true` with `workers_dev = false` holds. Read the upload's version and preview URL from `WRANGLER_OUTPUT_FILE_PATH`, and sort `deployments list --json` by `created_on`. (#1158, #1161)
 - `release.json`'s `assets` lists only the server archives and `checksums.txt` has no desktop installers; the Releases API gives every asset's size and sha256 `digest`. `_pr-body-check.yml` reads the body from the event payload and `ci.yml` does not trigger on `edited`; `ci-paths.yml` has no negation. (#1158)
 - `lint / maktaba.tv links` (`web/packages/website/scripts/links.mjs`) checks every maktaba.tv link in tracked files, problem links against `shared/api/problems.json` and the rest against `dist-manifest.json`; dead links wait in `links-baseline.json` with their fixing story, and the check fails on a new dead link and on a baseline entry now live or gone, so the baseline only shrinks. Write maktaba.tv in prose without a path. `tools/release/image-public.sh` pulls the server image with no login, as a leaf job of `release.yml` and daily in `image-public.yml`. (#1160)
+- The link check reads every tracked file, so a pull request that moves or adds maktaba.tv strings runs `links.mjs` before merging even if its CI passed: three merges in an hour (#1160, #1162, #1161) each green alone turned main red. `--write-manifest` writes JSON Prettier rejects: run `prettier --write` on `dist-manifest.json` after it. (#1169)
+- maktaba.tv's site (`web/packages/website`) is a Worker before static assets; its deploy reads only `CLOUDFLARE_API_TOKEN_WEBSITE` and goes live only with `vars.WEBSITE_LIVE == 'true'`, because the shared token already deploys maktaba.dev. `_website.yml` runs the build, tests, links and a Worker smoke, a Playwright and axe quality job (WCAG 2.2 AA, RTL, 70 visual references) and Lighthouse (mobile, median of 3, at least 95 in all four, CLS 0); the nightly sweep gates the deploy. (#1161, #1171)
+- Website CI gotchas: container jobs cannot write to `runner.temp` (a host path); resvg-js ignores `fontBuffers` (pass `fontFiles`, the bold Latin face under its own family); a lockfile written on macOS can lack Linux optional packages (regenerate it from scratch); visual references come from the amd64 Playwright image through Docker, never the Mac; spawn lhci asynchronously; restart `wrangler dev` after rebuilding `dist/`; Vite drops `blocking="render"`, so add it in a `transformIndexHtml` hook. (#1171)
+- Epic 60's questions Q1–Q9 are decided: one chosen tagline from several in both languages, a single approver for the Arabic, the app icon with the name in both scripts, Q4–Q9 as their defaults; the Arabic name on the site is «مكتبة». (#1176)
 
 ## Open
 
@@ -596,8 +609,11 @@ built_from: v0.3.130
 - `relay.yml` and `release.yml` still use cosign-installer by tag (optional hygiene). (#1124)
 
 - NAS guides: device screenshots (dark, en+ar) for Unraid, QNAP and UGREEN beside TrueNAS's and Synology's; the menu names on an Arabic DSM/QTS to check on a device; the QNAP guide is untested on a device. (#1137)
-- Epic 60 (maktaba.tv, spec only): owner actions A1–A7 (README §12; making the `maktaba-server` package public blocks Phase 1), Q1–Q9 keep their defaults until answered; the implementing stories check `preview_urls = true` with `workers_dev = false` and that `wrangler triggers deploy` attaches the custom domains; the build PRs, Phase 1 first. (#1158)
+- Epic 60 (maktaba.tv): owner actions A1–A7 (README §12): A1, making the `maktaba-server` package public, blocks Phase 1; A2 is now the secret `CLOUDFLARE_API_TOKEN_WEBSITE` with DNS Edit on `maktaba.tv`, then `vars.WEBSITE_LIVE = true`. Design part A (pull request 1163) waits for approval of the look, the voice guide and the font name, and replaces `scripts/shell.mjs`, `static/assets/site.css` and the visual references; the menu tests run once the shell declares `maktaba-menu: phone`; `icon.svg` waits for a vector source of the mark; Epic 59's Arabic install guides move to «مكتبة». (#1158, #1161, #1171, #1176)
 - The `maktaba-server` package is still private: every guide's anonymous pull fails, and each release's `image-public` job and the daily `Image public` run stay red until it is public (owner action A1). The site build should write and check the link manifest (T07), and the links baseline must be empty by the end of Epic 60's Phase 1. (#1160, #1164)
+- `links-baseline.json` holds 9 entries (60.06's `/problems/` index and pages, 60.05's install guides); the site build could run `--write-manifest` and Prettier itself so the manifest cannot fall behind. (#1169, #1171)
+- Problem registry (60.06): the pages generator (`problems.mjs`) waits for the design; every `install` field is null until troubleshooting anchors exist; the streaming service sends `maktaba.invalid/problems/*` slugs outside the registry. Odd sends: `TypeForbidden` with 401, `TypeConflict` with 410, `invalid-credentials` for a refused cloud link (422), batch undo's 409 for a missing edit, `token-expired` never sent; the components handler's `fail` does not recognise `*pl.Problem`, so `plugin_revoked` may answer 500 through `/api/components` (traced, not run). (#1162)
+- `lint / repo` has 20 minutes; if its routing tests near that, split or speed them up rather than raising it again. (#1177)
 - NAS after #1164: a restart rebuilds the pipeline venv in place under running workers (transient `ModuleNotFoundError`, runner exit 75); setup downloads `large-v3-turbo` on a Light NAS where speech is off; the terminal setup keeps no log its errors point to; NAS UIs, GPUs, VA-API, mDNS beside the NAS's responder, Unraid's shfs refusal and discovery need real hardware. (#1164)
 
 ## Missing events
@@ -614,9 +630,7 @@ built_from: v0.3.130
 | #1128 | 2026-11-10 | docs(spec): Epic 57 checked again against main |
 | #1130 | 2026-11-10 | spec(epic57): time rules on every device, and tiers detected from transcripts |
 | #1139 | 2026-11-10 | spec(epic57): Q9 answered, detection covers what a video is |
-| #1161 | 2026-11-11 | feat(website): maktaba.tv's package, Worker, build, CI and gated deploy (60.03) |
-| #1162 | 2026-11-11 | feat(api): problem-type registry the API sends from (story 60.06) |
-| #1169 | 2026-11-11 | fix(website): the link check after the registry and the site (60.06, 60.03) |
+| #1175 | 2026-11-11 | Website: legal pages (data and logic), install chooser, guides without placeholder figures (60.07, 60.05) |
 
 ## Index
 
@@ -1225,5 +1239,11 @@ built_from: v0.3.130
 | 1148-internal-callers-rate-limit | 2026-11-11 | pr | fix(api): the home's own callers get their own rate budget, keyed by the local token |
 | 1158-epic60-website | 2026-11-11 | decision | Epic 60 spec: maktaba.tv, the website households find Maktaba on |
 | 1160-link-integrity | 2026-11-11 | pr | feat(ci): maktaba.tv link check, public-image check, Reference images rule (60.08, 60.04) |
+| 1161-website-hosting | 2026-11-11 | pr | Epic 60 story 60.03: maktaba.tv's package, Worker, build, CI and a deploy gated on its own token and WEBSITE_LIVE |
+| 1162-problem-registry | 2026-11-11 | pr | Story 60.06, registry half: the problem-type registry the API sends from |
 | 1164-epic59-nas-guides-e2e | 2026-11-11 | pr | Epic 59: the NAS guides followed on Docker; setup's race, the reserved admin name, the data folder, Unraid's appdata |
+| 1169-links-after-registry | 2026-11-11 | pr | The maktaba.tv link check after the registry and the site |
+| 1171-website-quality-gates | 2026-11-11 | pr | website: the quality bar in CI (Epic 60 story 60.04) |
+| 1176-epic60-owner-decisions | 2026-11-11 | pr | Epic 60: the owner questions Q1–Q9 recorded as decided |
+| 1177-lint-repo-timeout | 2026-11-11 | pr | CI: lint / repo gets 20 minutes |
 
