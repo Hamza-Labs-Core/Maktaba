@@ -73,7 +73,10 @@ async def _pg_state(db: Database) -> tuple[set[str], set[str], bool, bool]:
     triggers = {
         r["tgname"]
         for r in await db.fetch(
+            # slot 0220's own: slot 0221's triggers (restricted accounts) begin with
+            # parental_ and stay when 0220 goes down
             "SELECT tgname FROM pg_trigger WHERE NOT tgisinternal AND tgname LIKE '%parental%'"
+            " AND tgname NOT LIKE 'parental%'"
         )
     }
     queue = await db.fetchval("SELECT to_regclass('parental_recompute_jobs') IS NOT NULL")
