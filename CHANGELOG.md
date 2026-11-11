@@ -246,6 +246,15 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Process and reprocess a video queue real work.** `POST /api/videos/{id}/process` and
+  `/reprocess` (and GraphQL's `processVideo` and `reprocessVideo`) answered success in every
+  build without queuing anything: no job queue was wired to them. They now queue the stage
+  through the pipeline's queue (`processing_jobs_enqueue`, as a scan or a retrigger does), as
+  a forced run (reprocess: a forced cascade, so every later stage runs again too), and answer
+  the job's id. A stage that is not a video's is a 400, one switched off a 409, and a server
+  with no job queue a 503; the library scan also answers 503 instead of a 202 with no job when
+  it has no queue. Admins only, as before.
+
 - **The Components page says why a component is degraded.** A degraded component keeps its
   Ready condition true, so the list's `reason` stayed empty and an admin saw *Running with
   problems* with no cause (story 59.07: `plugins.host` on a NAS kernel without Landlock). The
