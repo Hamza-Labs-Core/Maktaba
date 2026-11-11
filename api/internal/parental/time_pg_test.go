@@ -18,23 +18,41 @@ import (
 
 type pushed struct {
 	userID, libraryID, reason string
-	endAt, next               *time.Time
+	endAt, next, lease        *time.Time
+	cleared                   bool
 }
 
+// fakePusher is streaming as the keeper sees it: it keeps what it is told, and says
+// what it served each session.
 type fakePusher struct {
-	mu   sync.Mutex
-	got  []pushed
-	fail error
+	mu      sync.Mutex
+	got     []pushed
+	fail    error
+	served  map[string]time.Time // by stream session id
+	unknown bool                 // streaming holds nothing for the account
 }
 
-func (f *fakePusher) SetTimeLimit(_ context.Context, userID, libraryID string, endAt *time.Time, reason string, next *time.Time) error {
+func (f *fakePusher) SetTimeLimit(_ context.Context, userID, libraryID string, lim *parental.TimeLimit) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.fail != nil {
 		return f.fail
 	}
-	f.got = append(f.got, pushed{userID, libraryID, reason, endAt, next})
+	if lim == nil {
+		f.got = append(f.got, pushed{userID: userID, libraryID: libraryID, cleared: true})
+		return nil
+	}
+	f.got = append(f.got, pushed{userID, libraryID, lim.Reason, lim.EndAt, lim.NextAllowedAt, lim.LeaseUntil, false})
 	return nil
+}
+
+func (f *fakePusher) TimeServed(_ context.Context, _, _, sessionID, _ string) (time.Time, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.fail != nil {
+		return time.Time{}, false, f.fail
+	}
+	return f.served[sessionID], !f.unknown, nil
 }
 
 func (f *fakePusher) last(t *testing.T) pushed {
@@ -54,13 +72,14 @@ type timeEnv struct {
 	push   *fakePusher
 	keeper *parental.TimeKeeper
 	child  *principal.Principal
+	open   map[string]bool
 }
 
 // setupTime: the child is restricted, the home is in Riyadh, and the clock stands
 // at 17:00 on Tuesday 10 November 2026.
 func setupTime(t *testing.T) *timeEnv {
 	t.Helper()
-	e := &timeEnv{env: setup(t), loc: homeZone(t), push: &fakePusher{}}
+	e := &timeEnv{env: setup(t), loc: homeZone(t), push: &fakePusher{served: map[string]time.Time{}}, open: map[string]bool{}}
 	e.clock = at(t, e.loc, "2026-11-10 17:00:00")
 	e.store.Now = func() time.Time { return e.clock }
 	e.restrict(uChild)
@@ -92,56 +111,94 @@ func (e *timeEnv) used(lib string) int {
 	return e.count(`SELECT COALESCE(sum(seconds), 0)::int FROM parental_time_usage WHERE user_id = $1 AND library_id = $2`, uChild, lib)
 }
 
-// post is one progress post of a session, after the clock moved on by d.
-func (e *timeEnv) post(d time.Duration, session, video string, pos float64) {
+// session is a stream session row of userID, opened now.
+func (e *timeEnv) session(userID, video string) string {
+	e.t.Helper()
+	id := uuid.NewString()
+	e.exec(`INSERT INTO streaming_sessions (id, user_id, video_id, opened_at) VALUES ($1::uuid, $2::uuid, $3::uuid, $4)`,
+		id, userID, video, e.clock)
+	return id
+}
+
+// post is one call for a session of the child after the clock moved on by d: the
+// first one opens it (the API marks it), each later one is a progress post.
+func (e *timeEnv) post(d time.Duration, session, video string) {
 	e.t.Helper()
 	e.clock = e.clock.Add(d)
-	if err := e.keeper.Progress(context.Background(), uChild, session, video, pos); err != nil {
+	ctx := context.Background()
+	if !e.open[session] {
+		e.open[session] = true
+		var lib string
+		if err := e.store.DB.QueryRow(`SELECT library_id::text FROM videos WHERE id = $1`, video).Scan(&lib); err != nil {
+			e.t.Fatal(err)
+		}
+		if err := e.keeper.Opened(ctx, uChild, lib, video, session); err != nil {
+			e.t.Fatalf("Opened: %v", err)
+		}
+		return
+	}
+	if err := e.keeper.Progress(ctx, uChild, session); err != nil {
 		e.t.Fatalf("Progress: %v", err)
 	}
 }
 
-// T02: progress posts from two sessions both count; a paused one adds none; one
-// post never adds more than the heartbeat interval.
+// T02: calls from two sessions both count; a paused one (it stops calling, and
+// streaming serves it nothing) adds none; one call never adds more than the
+// heartbeat interval.
 func TestUsageCountsEverySessionAndNoPause(t *testing.T) {
 	e := setupTime(t)
 	ctx := context.Background()
 	e.rules(limit(everyDay, 60, ""))
 	v1, v2 := e.video(libOpen), e.video(libClosed)
 
-	e.post(0, "s-ipad", v1, 100) // the first post of a session only marks it
-	e.post(0, "s-tablet", v2, 0)
+	e.post(0, "s-ipad", v1) // opening a session only marks it
+	e.post(0, "s-tablet", v2)
 	if e.used(libOpen)+e.used(libClosed) != 0 {
-		t.Fatalf("a first post counted %d + %d seconds", e.used(libOpen), e.used(libClosed))
+		t.Fatalf("opening counted %d + %d seconds", e.used(libOpen), e.used(libClosed))
 	}
-	e.post(10*time.Second, "s-ipad", v1, 110)
-	e.post(0, "s-tablet", v2, 10)
-	e.post(10*time.Second, "s-ipad", v1, 120)
-	e.post(0, "s-tablet", v2, 20)
+	e.post(10*time.Second, "s-ipad", v1)
+	e.post(0, "s-tablet", v2)
+	e.post(10*time.Second, "s-ipad", v1)
+	e.post(0, "s-tablet", v2)
 	if e.used(libOpen) != 20 || e.used(libClosed) != 20 {
 		t.Fatalf("two sessions playing 20 s each: %d and %d", e.used(libOpen), e.used(libClosed))
 	}
-	// the iPad pauses: the position stands still, the tablet plays on
-	e.post(10*time.Second, "s-ipad", v1, 120)
-	e.post(0, "s-tablet", v2, 30)
-	e.post(10*time.Second, "s-ipad", v1, 120)
-	e.post(0, "s-tablet", v2, 40)
-	if e.used(libOpen) != 20 || e.used(libClosed) != 40 {
-		t.Fatalf("paused iPad, playing tablet: %d and %d, want 20 and 40", e.used(libOpen), e.used(libClosed))
+	// the iPad pauses for ten minutes: it stops calling and streaming serves it
+	// nothing. The tablet plays on.
+	for i := 0; i < 60; i++ {
+		e.post(10*time.Second, "s-tablet", v2)
 	}
-	// a post after a long gap adds the heartbeat interval and no more
-	e.post(10*time.Minute, "s-tablet", v2, 50)
-	if e.used(libClosed) != 100 {
-		t.Fatalf("after a ten minute gap: %d, want 100", e.used(libClosed))
+	if e.used(libOpen) != 20 || e.used(libClosed) != 620 {
+		t.Fatalf("paused iPad, playing tablet: %d and %d, want 20 and 620", e.used(libOpen), e.used(libClosed))
 	}
+	e.post(0, "s-ipad", v1) // it plays again: the pause is not counted
+	e.post(10*time.Second, "s-ipad", v1)
+	if e.used(libOpen) != 30 {
+		t.Fatalf("after the pause: %d, want 30", e.used(libOpen))
+	}
+	// a call after a long gap adds what streaming served in the lease, and the
+	// heartbeat interval, no more, when streaming cannot say
+	e.push.served["s-tablet"] = e.clock.Add(15 * time.Second)
+	e.post(10*time.Minute, "s-tablet", v2)
+	if e.used(libClosed) != 645 {
+		t.Fatalf("after a gap streaming served 25 s of: %d, want 645", e.used(libClosed))
+	}
+	e.push.unknown = true
+	e.post(10*time.Minute, "s-tablet", v2)
+	if e.used(libClosed) != 705 {
+		t.Fatalf("after a gap streaming knows nothing of: %d, want 705", e.used(libClosed))
+	}
+	e.push.unknown = false
 	// the account's limit sees both libraries
+	total := time.Duration(e.used(libOpen)+e.used(libClosed)) * time.Second
 	st, err := e.keeper.Time(ctx, e.child, libOpen)
-	if err != nil || !st.Allowed || st.Remaining != time.Hour-120*time.Second {
-		t.Fatalf("Time = %+v (%v), want 58 minutes left", st, err)
+	if err != nil || !st.Allowed || st.Remaining != time.Hour-total {
+		t.Fatalf("Time = %+v (%v), want %v left", st, err, time.Hour-total)
 	}
-	// streaming was told the same end
-	if p := e.push.last(t); p.userID != uChild || p.endAt == nil || !p.endAt.Equal(e.clock.Add(st.Remaining)) {
-		t.Fatalf("streaming was told %+v, want the end at %v", p, e.clock.Add(st.Remaining))
+	// streaming was told the same end, and serves for one interval more
+	if p := e.push.last(t); p.userID != uChild || p.endAt == nil || !p.endAt.Equal(e.clock.Add(st.Remaining)) ||
+		p.lease == nil || !p.lease.Equal(e.clock.Add(parental.HeartbeatCap)) {
+		t.Fatalf("streaming was told %+v, want the end at %v and a lease of one interval", p, e.clock.Add(st.Remaining))
 	}
 	// the count is the database's: a new keeper (the home restarted) goes on from it
 	again := parental.NewTimeKeeper(parental.NewCache(e.store), nil)
@@ -149,15 +206,136 @@ func TestUsageCountsEverySessionAndNoPause(t *testing.T) {
 		t.Fatalf("after a restart: %+v (%v)", st2, err)
 	}
 	// an account with no policy is never counted
-	if err := e.keeper.Progress(ctx, uViewer, "s-viewer", v1, 5); err != nil {
+	if err := e.keeper.Opened(ctx, uViewer, libOpen, v1, "s-viewer"); err != nil {
 		t.Fatal(err)
 	}
 	e.clock = e.clock.Add(10 * time.Second)
-	if err := e.keeper.Progress(ctx, uViewer, "s-viewer", v1, 15); err != nil {
+	if err := e.keeper.Progress(ctx, uViewer, "s-viewer"); err != nil {
 		t.Fatal(err)
 	}
 	if n := e.count(`SELECT count(*) FROM parental_time_usage WHERE user_id = $1`, uViewer); n != 0 {
 		t.Fatalf("an unrestricted account was counted: %d rows", n)
+	}
+}
+
+// Security finding 1: when the keeper holds as many session marks as it keeps, a
+// new session is still counted (the oldest mark is counted and dropped, never the
+// new one skipped), and a session id the home did not open for the account neither
+// makes a mark nor counts for anyone.
+func TestFullMarksStillCount(t *testing.T) {
+	e := setupTime(t)
+	ctx := context.Background()
+	e.rules(limit(everyDay, 60, ""))
+	e.keeper.MarksKept = 2
+	v := e.video(libOpen)
+	ids := []string{e.session(uChild, v), e.session(uChild, v), e.session(uChild, v), e.session(uChild, v)}
+	for _, id := range ids { // four sessions open, two marks kept
+		if err := e.keeper.Opened(ctx, uChild, libOpen, v, id); err != nil {
+			t.Fatalf("Opened: %v", err)
+		}
+	}
+	for i := 0; i < 3; i++ { // all four play for 30 seconds
+		e.clock = e.clock.Add(10 * time.Second)
+		for _, id := range ids {
+			if err := e.keeper.Progress(ctx, uChild, id); err != nil {
+				t.Fatalf("Progress: %v", err)
+			}
+		}
+	}
+	if got := e.used(libOpen); got < 4*30 {
+		t.Fatalf("four sessions played 30 s each with two marks kept: %d s counted, want at least 120", got)
+	}
+
+	before := e.used(libOpen)
+	pushes := len(e.push.got)
+	foreign := e.session(uGuardian, v)
+	for _, id := range []string{uuid.NewString(), foreign, "not-a-session"} {
+		e.clock = e.clock.Add(10 * time.Second)
+		if err := e.keeper.Progress(ctx, uChild, id); !errors.Is(err, parental.ErrUnknownSession) {
+			t.Fatalf("Progress(%s) = %v, want ErrUnknownSession", id, err)
+		}
+	}
+	if e.used(libOpen) != before || len(e.push.got) != pushes {
+		t.Fatalf("a session that is not the child's was counted or renewed the lease: %d s, %d pushes", e.used(libOpen)-before, len(e.push.got)-pushes)
+	}
+	// the child's own sessions were not let off by those calls
+	e.clock = e.clock.Add(10 * time.Second)
+	if err := e.keeper.Progress(ctx, uChild, ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	if e.used(libOpen) < before+40 {
+		t.Fatalf("after the foreign calls the child's session counted %d s, want at least 40", e.used(libOpen)-before)
+	}
+}
+
+// Security finding 2: the count does not hang on the client. A session that never
+// posts progress is served for one heartbeat interval only (the lease), and what
+// streaming served it is counted with the account's next stream; nothing but a
+// counted call renews the lease; and when the count cannot be written the lease is
+// not renewed and the seconds stay owed.
+func TestTimeCountsWithoutTheClient(t *testing.T) {
+	e := setupTime(t)
+	ctx := context.Background()
+	e.rules(limit(everyDay, 60, ""))
+	v := e.video(libOpen)
+
+	// a client opens a stream and never posts progress
+	st, err := e.keeper.Admit(ctx, e.child, libOpen)
+	if err != nil || !st.Allowed {
+		t.Fatalf("Admit = %+v (%v)", st, err)
+	}
+	if p := e.push.last(t); p.lease == nil || !p.lease.Equal(e.clock.Add(parental.HeartbeatCap)) {
+		t.Fatalf("streaming was told %+v, want a lease of one heartbeat interval", p)
+	}
+	e.post(0, "s-silent", v)
+	// the rules change and the child reads its own time: neither is a counted call
+	if err := e.keeper.Refresh(ctx, uChild, libOpen); err != nil {
+		t.Fatal(err)
+	}
+	if p := e.push.last(t); p.lease != nil {
+		t.Fatalf("a refresh renewed the lease: %+v", p)
+	}
+	// streaming served it until the lease ran out; ten minutes later it opens again
+	e.push.served["s-silent"] = e.clock.Add(parental.HeartbeatCap)
+	e.clock = e.clock.Add(10 * time.Minute)
+	if st, err = e.keeper.Admit(ctx, e.child, libOpen); err != nil || st.Remaining != 59*time.Minute {
+		t.Fatalf("after a silent stream: %+v (%v), want 59 minutes left", st, err)
+	}
+	if e.used(libOpen) != 60 {
+		t.Fatalf("a stream with no progress posts counted %d s, want 60", e.used(libOpen))
+	}
+	// closing a session counts it up to its close: nothing more was served
+	if err := e.keeper.Closed(ctx, "s-silent"); err != nil || e.used(libOpen) != 60 {
+		t.Fatalf("Closed: %v, %d s counted", err, e.used(libOpen))
+	}
+	if p := e.push.last(t); p.lease == nil || p.lease.After(e.clock) {
+		t.Fatalf("the last session closed and the lease goes on: %+v", p)
+	}
+	// and again, with streaming unable to say what it served: the whole interval
+	e.post(0, "s-silent-2", v)
+	e.push.fail = errors.New("streaming is away")
+	e.clock = e.clock.Add(10 * time.Minute)
+	if _, err = e.keeper.Admit(ctx, e.child, libOpen); err == nil {
+		t.Fatal("streaming could not be told, and the stream was admitted")
+	}
+	if e.used(libOpen) != 120 {
+		t.Fatalf("with streaming away the silent stream counted %d s, want 120", e.used(libOpen))
+	}
+	e.push.fail = nil
+
+	// the count cannot be written: no lease is renewed, and the seconds stay owed
+	e.post(0, "s-ipad", v)
+	e.exec(`ALTER TABLE parental_time_usage RENAME TO parental_time_usage_away`)
+	pushes := len(e.push.got)
+	e.clock = e.clock.Add(20 * time.Second)
+	err = e.keeper.Progress(ctx, uChild, "s-ipad")
+	e.exec(`ALTER TABLE parental_time_usage_away RENAME TO parental_time_usage`)
+	if err == nil || len(e.push.got) != pushes {
+		t.Fatalf("the count failed, and Progress said %v and told streaming %d times", err, len(e.push.got)-pushes)
+	}
+	e.post(10*time.Second, "s-ipad", v)
+	if e.used(libOpen) != 150 {
+		t.Fatalf("after the write came back: %d s, want 150", e.used(libOpen))
 	}
 }
 
@@ -168,9 +346,9 @@ func TestLimitReachedClosesEveryDevice(t *testing.T) {
 	ctx := context.Background()
 	e.rules(limit(everyDay, 60, ""))
 	v := e.video(libOpen)
-	e.post(0, "s-ipad", v, 0)
+	e.post(0, "s-ipad", v)
 	for i := 1; i <= 60; i++ {
-		e.post(time.Minute, "s-ipad", v, float64(i*60))
+		e.post(time.Minute, "s-ipad", v)
 	}
 	if e.used(libOpen) != 3600 {
 		t.Fatalf("after an hour: %d seconds", e.used(libOpen))
@@ -200,8 +378,8 @@ func TestGrantAllowsTheGrantedMinutes(t *testing.T) {
 	ctx := context.Background()
 	e.rules(limit(everyDay, 1, ""))
 	v := e.video(libOpen)
-	e.post(0, "s1", v, 0)
-	e.post(time.Minute, "s1", v, 60)
+	e.post(0, "s1", v)
+	e.post(time.Minute, "s1", v)
 	if st, _ := e.keeper.Time(ctx, e.child, libOpen); st.Allowed {
 		t.Fatalf("the limit is reached: %+v", st)
 	}
@@ -226,7 +404,7 @@ func TestGrantAllowsTheGrantedMinutes(t *testing.T) {
 	}
 	// 20 minutes of it are watched
 	for i := 1; i <= 20; i++ {
-		e.post(time.Minute, "s1", v, float64(60+i*60))
+		e.post(time.Minute, "s1", v)
 	}
 	if n := e.count(`SELECT used_seconds FROM parental_time_grants WHERE id = $1`, g.ID); n != 1200 {
 		t.Fatalf("the grant has %d seconds used, want 1200", n)
@@ -235,7 +413,7 @@ func TestGrantAllowsTheGrantedMinutes(t *testing.T) {
 		t.Fatalf("20 minutes into the grant: %+v", st)
 	}
 	for i := 21; i <= 30; i++ {
-		e.post(time.Minute, "s1", v, float64(60+i*60))
+		e.post(time.Minute, "s1", v)
 	}
 	if st, _ := e.keeper.Time(ctx, e.child, libOpen); st.Allowed || st.Reason != parental.ReasonLimitReached {
 		t.Fatalf("the grant is used up: %+v", st)
@@ -261,9 +439,9 @@ func TestGrantAllowsTheGrantedMinutes(t *testing.T) {
 	if st, _ := e.keeper.Time(ctx, e.child, libOpen); !st.Allowed || st.Remaining != 15*time.Minute {
 		t.Fatalf("a grant outside the slot: %+v", st)
 	}
-	e.post(0, "s2", v, 0)
+	e.post(0, "s2", v)
 	for i := 1; i <= 15; i++ {
-		e.post(time.Minute, "s2", v, float64(i*60))
+		e.post(time.Minute, "s2", v)
 	}
 	if st, _ := e.keeper.Time(ctx, e.child, libOpen); st.Allowed {
 		t.Fatalf("the grant outside the slot is used up: %+v", st)
@@ -277,9 +455,9 @@ func TestLibraryRuleNarrows(t *testing.T) {
 	ctx := context.Background()
 	e.rules(limit(everyDay, 120, ""), limit(everyDay, 30, libOpen))
 	v := e.video(libOpen)
-	e.post(0, "s1", v, 0)
+	e.post(0, "s1", v)
 	for i := 1; i <= 30; i++ {
-		e.post(time.Minute, "s1", v, float64(i*60))
+		e.post(time.Minute, "s1", v)
 	}
 	if st, _ := e.keeper.Time(ctx, e.child, libOpen); st.Allowed || st.Reason != parental.ReasonLimitReached {
 		t.Fatalf("the library is at its 30 minutes: %+v", st)
@@ -415,8 +593,8 @@ func TestHomeTimezone(t *testing.T) {
 	}
 	e.rules(limit(everyDay, 60, ""))
 	v := e.video(libOpen)
-	e.post(0, "s1", v, 0)
-	e.post(time.Minute, "s1", v, 60)
+	e.post(0, "s1", v)
+	e.post(time.Minute, "s1", v)
 	if n := e.count(`SELECT seconds FROM parental_time_usage WHERE user_id = $1 AND day = '2026-11-10'`, uChild); n != 60 {
 		t.Fatalf("the current day's count: %d", n)
 	}
@@ -436,8 +614,8 @@ func TestTimeUsageRange(t *testing.T) {
 	ctx := context.Background()
 	e.rules(limit(everyDay, 60, ""))
 	v := e.video(libOpen)
-	e.post(0, "s1", v, 0)
-	e.post(30*time.Second, "s1", v, 30)
+	e.post(0, "s1", v)
+	e.post(30*time.Second, "s1", v)
 	if _, err := e.store.GrantTime(ctx, uGuardian, uChild, 15); err != nil {
 		t.Fatal(err)
 	}
