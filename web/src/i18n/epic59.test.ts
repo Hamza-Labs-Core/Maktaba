@@ -27,7 +27,9 @@ const preflight = readFileSync("../cmd/maktaba-server/container_preflight.go", "
 // checked once the story merges (remove it from here in that pull request).
 const PENDING: Record<string, string> = {
   "59.13": "a NAS in a cluster: in flight",
-  "59.16": "OpenAPI and role tests: its one string lands with it",
+  // #1142 (the routes, OpenAPI and roles) adds no catalog key: library.not_available_here waits
+  // for the screen that shows a viewer a disabled action's reason
+  "59.16": "library.not_available_here: no screen uses it yet",
 };
 
 // Keys a story's code named differently from its spec's table, spec key → catalog key. Story
