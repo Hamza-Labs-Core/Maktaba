@@ -7316,7 +7316,7 @@
   "components.reason.isolation_held": "Off: this home needs your permission for plugins with container-only isolation.",
   "components.reason.entitlement_missing": "This plugin needs a purchase.",
   "components.reason.plugin_crash_loop": "Stopped itself after repeated errors.",
-  "components.reason.sandbox_partial": "Runs with part of its sandbox: this system lacks some of it.",
+  "components.reason.sandbox_partial": "Plugins run with only part of their sandbox, because this system lacks some of it (for example Landlock on some NAS kernels).",
   "components.reason.sandbox_unavailable": "Could not start its sandbox, so no plugin runs.",
   "components.reason.runner_crash_loop": "Its runner keeps crashing.",
   "components.reason.plugin_trusted_unsigned": "Claims Maktaba's own rights without Maktaba's signature.",

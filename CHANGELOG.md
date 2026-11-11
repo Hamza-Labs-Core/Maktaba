@@ -246,11 +246,12 @@ build fails when the two differ.
 
 ### Fixed
 
-- **Android TV waits for a free transcoder (story 59.05).** When every transcode slot of the
-  home is taken (503 `transcode_busy`, a Light-tier NAS converts one video at a time), the TV
-  player no longer stops on its error screen: it shows the waiting sentence under Preparing and
-  asks again after the home's `Retry-After` (10 s), the same wait as the phone, tablet, Apple and
-  desktop players, until the video starts.
+- **The Components page says why a component is degraded.** A degraded component keeps its
+  Ready condition true, so the list's `reason` stayed empty and an admin saw *Running with
+  problems* with no cause (story 59.07: `plugins.host` on a NAS kernel without Landlock). The
+  components list and each machine now carry `degraded_reason` and `degraded_reason_params`
+  (`reason` keeps its meaning; admin only, as before), and the Components page and its drawer
+  show the reason in English and Arabic: plugins run with only part of their sandbox.
 
 - **A video with no title shows its file name without the extension.** A video whose file
   carries no title metadata was listed by its raw file name, extension and all
@@ -3256,6 +3257,12 @@ build fails when the two differ.
   transcribed again) and saves the length; and once this release runs, the queue gives every
   clip probed before it that never had that step its poster and transcript, in the
   background.
+
+- **Android TV waits for a free transcoder (story 59.05).** When every transcode slot of the
+  home is taken (503 `transcode_busy`, a Light-tier NAS converts one video at a time), the TV
+  player no longer stops on its error screen: it shows the waiting sentence under Preparing and
+  asks again after the home's `Retry-After` (10 s), the same wait as the phone, tablet, Apple and
+  desktop players, until the video starts.
 
 ## [0.2.0] - 2026-10-19
 

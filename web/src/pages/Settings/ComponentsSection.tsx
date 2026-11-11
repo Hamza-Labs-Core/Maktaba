@@ -618,7 +618,16 @@ function Row({
       ? ""
       : planWait
         ? t("components.licence.waiting")
-        : reasonText(t, locale, v.reason, titleOf, reasonParams(v));
+        : v.reason
+          ? reasonText(t, locale, v.reason, titleOf, reasonParams(v))
+          : // a degraded component keeps Ready true: its reason comes apart (sandbox_partial)
+            reasonText(
+              t,
+              locale,
+              v.degraded_reason,
+              titleOf,
+              v.degraded_reason_params ?? undefined
+            );
   const step = v.progress?.busy ? detailText(t, locale, v.progress, bytes) : "";
   const chip = [
     phaseWord(t, v.phase, v.kind),

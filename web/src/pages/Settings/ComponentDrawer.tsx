@@ -211,6 +211,9 @@ export function ComponentDrawer({
               {phaseWord(t, m.phase, view.kind)}
               {reason(m.reason, m.reason_params ?? undefined) &&
                 ` · ${reason(m.reason, m.reason_params ?? undefined)}`}
+              {!m.reason &&
+                reason(m.degraded_reason, m.degraded_reason_params ?? undefined) &&
+                ` · ${reason(m.degraded_reason, m.degraded_reason_params ?? undefined)}`}
               {m.health && <HealthFacts health={m.health} kind={view.kind} reason={reason} />}
               {(m.parts ?? []).map((p) => (
                 <div key={p.part} className="mkt-comp-drawer__part">
