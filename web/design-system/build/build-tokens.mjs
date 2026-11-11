@@ -204,7 +204,13 @@ export function emitSiteCss({ base, themes }) {
   for (const { path, value } of walk(dark)) {
     lines.push(`  --${flatPath(path)}: ${cssValueFor(value)};`);
   }
-  lines.push("}", "", "@media (prefers-color-scheme: light) {", "  :root {", "    color-scheme: light;");
+  lines.push(
+    "}",
+    "",
+    "@media (prefers-color-scheme: light) {",
+    "  :root {",
+    "    color-scheme: light;"
+  );
   for (const { path, value } of walk(light)) {
     if (darkKeys.has(flatPath(path))) lines.push(`    --${flatPath(path)}: ${cssValueFor(value)};`);
   }

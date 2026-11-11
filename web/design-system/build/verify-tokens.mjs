@@ -157,7 +157,8 @@ for (const re of [
 ]) {
   if (!re.test(siteCss)) fail(`${SITE_CSS_PATH} missing expected pattern: ${re}`);
 }
-if (webCss.includes("--site-")) fail("web/src/styles/tokens.css holds a --site- token: the site group is the site's alone");
+if (webCss.includes("--site-"))
+  fail("web/src/styles/tokens.css holds a --site- token: the site group is the site's alone");
 
 // ---------------------------------------------------------------------------
 // Step 6 — self-tests: each check catches what it is for
