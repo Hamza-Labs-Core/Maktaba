@@ -1,11 +1,12 @@
 ---
 schema: 1
-tag: v0.3.124
-up_to_commit: 18128e8ad
-built_from: v0.3.123
+tag: v0.3.125
+up_to_commit: 7d96532ec
+built_from: v0.3.124
 ---
 
-# Trail snapshot: v0.3.124
+# Trail snapshot: v0.3.125
+
 
 ## Keep doing
 
@@ -53,6 +54,7 @@ built_from: v0.3.123
 - A PR that waits behind a red main keeps its own `landed` key; re-merge main once it is green and confirm the PR's own check ran, not just "green", before merging. (#1097, #1098)
 - A watcher prints every check that is not green, never a truncated list of all: a summary cut at 80 lines hid the failed checks. Read the cell's and the rehearsal's log artifacts before calling a failure a flake. (#1112, #1109)
 - A finding that belongs to another PR's change gets its own small PR, not a ride in an unrelated story. (#1124)
+- A fallback users see (a title that falls back to the file name) lives in one helper per layer, never copied into each query and client: `videotitle`, `videoTitle`, `VideoTitle`. A test that pins a fix is first seen failing on the old code. (#1125)
 
 **Releases and live**
 - Prove update, rollback, restore and migration paths in CI first: nothing touching update, restore, migration, supervisor, launcher, front door or TV-staging code ships unless `update-rehearsal` passed on that exact commit. One release at a time on the live install. (d20261031-standing-rules, #435, #433, #460, #461)
@@ -184,8 +186,9 @@ built_from: v0.3.123
 - When two of your PRs touch the same test files, merge main into the second after the first lands and run the combined suite: each PR's green checks prove only its own half. Read a parity world's job outcomes, not just its pass: a fake that refuses a stage's call turns it into retries and a weaker proof. (#1068)
 - Try a new image or engine locally before CI: every uid shape ran on Docker first, and the real speech engine in a `linux/arm64` container found the PyAV break and the Arabic clip problem in minutes. Run the web and pipeline tests, not only Go's, after every merge with main. (#1090, #1112, #1092)
 - Prove crash and restart paths with a real-Postgres Go test in CI (the replica tier runs `TestReal*` with `-v`, so a skip shows), never on the live home. (#1094)
-- Generate each NAS file from the base compose with one rule, run every variant through `docker compose config` in CI, and check the tier rule for each architecture a cell runs on before choosing its tier assertion. For the TrueNAS app run the catalog's own tooling (`tests/nas/truenas_app.py`) and copy `metadata.diff` back from the lint artifact. (#1117, #1118)
+- Generate each NAS file from the base compose with one rule, run every variant through `docker compose config` in CI, and check the tier rule for each architecture a cell runs on before choosing its tier assertion. For the TrueNAS app run the catalog's own tooling (`tests/nas/truenas_app.py`) and copy `metadata.diff` back from the lint artifact. (#1117, #1118, #1119)
 - A job started by `workflow_run`, or any job holding a token or secret, takes a release's signed assets as data and never checks out or runs the repository's code; every action it uses is pinned by commit. A release never commits a new pin to main (that commit would be the next release candidate). (#1118, #1124)
+- Wait in a test harness for what the code under test asks for (a bus name owned, a service that answers), not a daemon's fork or a file's appearance; one log line naming the path taken and why turns a blind CI round into a fix. A red job is not a failed test until its log says so: read the failing step first. (#1119, #1125)
 
 ## Stop doing
 
@@ -225,6 +228,8 @@ built_from: v0.3.123
 - Seeding a CI baseline from a local machine: CTranslate2's ARM kernels differ by CPU. (#1112)
 - Ending a child's turn on a background `trail check`, or on any background command: nothing may wake it again. (d20261110-epic59-stranded-trail-events)
 - Adding actions by tag to jobs that hold a token for another repository. (#1124)
+- Writing `COALESCE(title, filename)` or `title || filename` for a name users see. (#1125)
+- Polling for a file as the sign another process finished, or calling a sibling daemon ready on its fork. (#1119)
 
 ## What we learned
 
@@ -258,6 +263,7 @@ built_from: v0.3.123
 - Plugins on Windows: Python 3.12 there has no `socket.AF_UNIX` and an AppContainer process may not create a named pipe, so the supervisor serves a per-run pipe (protected DACL, first instance) and relays it to the host's AF_UNIX socket; the host opens its socket through Winsock before entering the AppContainer, both sockets in its own run folder (granting `<data>\run` would expose the supervisor's token). Go 1.24+ needs only `x/sys/windows` for an overlapped pipe; GitHub's `shell: bash` runs with `-e`. First-party runners run there too: a process cannot enter an AppContainer itself, so the supervisor starts each group through `maktaba-server runner-sandbox-run`, which grants the group's profile the policy's folders (paths resolved as the filesystem names them, protected folders and drive roots refused, stale grants revoked), and the runner exits 70 unless its token is an AppContainer's; the supervisor serves every pipe and a broker pairs worker and runner connections. Declare `argtypes` and `restype` for every ctypes call taking a handle: an undeclared argument is a C int and `GetCurrentProcess()`'s -1 overflows it. (#863, #879, #956)
 - Developer mode's reload is an ordinary update (same version, new digest folder). A middleware wrapping a router cannot read what the router's own middleware puts on the context; test a log field with a value sent in. A queued job carries `origin_request_id`, and a coalesce keeps the first. (#810, #888)
 - The cloud: `server.Run` owns each role's listener; `server.trusted_proxies` decides when `CF-Connecting-IP` is believed and the access log logs the resolved IP (it read the client-controlled leftmost `X-Forwarded-For`). A shared i18n provider takes its catalogs from the app that mounts it, and a source map carries comments, so keep admin names out of `web/cloud` comments. (#871, #882, #883)
+- A home's client IP: `shared/go/clientip` walks `X-Forwarded-For` right to left over trusted hops (loopback plus `[server] trusted_proxies`, `/0` refused), replacing chi's RealIP, which believed the header from any peer; loopback-only checks read the peer. A joining machine's recorded address is not an identity: a node's forwarded client is believed only through its delegation signature or its authenticated cluster link. (#1119)
 - Plugin SDK builds: componentize-py (with `--stub-wasi`) and jco (`--disable all`) import every interface of their world, so `mkp world` narrows it from the audit's own tables; a componentize-py component needs 38 core instances (cap now 64; memories stay 4). Wasmtime checks a deadline only at epoch ticks (100 ms). TinyGo's wasip2 runtime always imports stdin and filesystem, so the Go template targets `wasm-unknown` (a reactor: `main` never runs, and it exports its own `cabi_realloc`). (#848, #851)
 - A plugin's data version lives in `plugin_installs.data_version`, set while it is behind the manifest's; the plugin's other stages pause behind one home-only `__migrate` job (a reserved stage name passed to `run`, used only when the manifest says `migrate = true`). Rollback compares the data's own version, not manifests. (#799)
 - The API's `/metrics` gathers `shared/metrics`' registry plus the default registry's `maktaba_*` families it lacks (a family in both fails the scrape); merged scrape targets keep the first target's copy of a shared series. A machine's numbers reach the API through the supervisor's `/metrics` by prefix (`supervisorMetricsPrefixes`); a reading the system cannot give is left out, never written as 0. The home's `/metrics` asks every joined machine's supervisor agent over the cluster channel (`MachineAgents` plus `CommandWithin`, NAT already handled; a timed command stays out of the hub's event log), side by side since `prometheus.Gatherers` asks sources one after another; another machine's metrics are untrusted: only `maktaba_component_*` and `maktaba_host_*`, repeated series dropped after relabelling, `ContinueOnError`. (#896, #905, #915)
@@ -489,6 +495,7 @@ built_from: v0.3.123
 - Speech on a NAS: CTranslate2 and faster-whisper on aarch64, the model picked by tier. eSpeak NG's Arabic is unintelligible to Whisper (the Arabic clip is a public-domain LibriVox reading), and faster-whisper 1.2.1's `decode_audio` breaks on PyAV 19, so the measure decodes with ffmpeg. (#1112)
 - A commented compose block is only as good as a CI step that uncomments it (the NVIDIA block never worked). arm64 under 8 GiB is Light. (#1117)
 - The TrueNAS catalog's renderer needs `openat2` (Linux amd64 only, not Docker Desktop's emulation); its README takes only a title and basic tags, default ports are unique across the catalog (live TV defaults to 30575), and host paths are made only with `create_host_path`. `docker top -eo` needs `pid`. (#1118)
+- NAS networking: Maktaba answers mDNS as `<host>-maktaba.local` beside the NAS's avahi-daemon (shared UDP 5353), or publishes through a mounted host system bus; a system D-Bus drops a uid it cannot look up, so a container on the host's bus runs as an account the host knows. A `veth` default route marks a Docker bridge, where mDNS and SSDP go off. setup writes server.toml before it creates the database, so the container waits for `state/setup.json` to be gone too. (#1119)
 
 ## Open
 
@@ -535,13 +542,13 @@ built_from: v0.3.123
 - Plugin event emits: the `unavailable` and `home_unreachable` refusals are logged but have no test. (#1048)
 - Parity tests still over the 5 s soft cap on CI: classify's waves 1 and 4, repair, the N16 self-test and livetv staging; core-media's now fits. (#1049, #1068)
 - No sweep was made of other process-wide state the moved first-party stages may read; the guard covers only `to_local`. (#1062)
-- Epic 59 (Maktaba on a NAS; replaces Epic 25’s NAS plan): 59.01–59.07, 59.10 and 59.11 are in; facts each story checks on real devices (DSM kernels and Landlock, DSM’s responder, J4125 HEVC decode on DSM 7.2.2+, Avahi on TrueNAS 25.04+); real VA-API is untested until the device checklists run, and no real NAS has run the speech measure (a DS223/DS423 and a J4125). The setup text still says the venv step downloads about 2 GB, even offline (59.14); a Full home needs PyPI for its ML wheels until a `runtime.ml` pack. Speech baselines exist only for `small/x86_64` and `base/aarch64`. On upgrade, the identity sweep queues hashing, posters and transcription for every older scanned video: a burst of background work. (#1087, #1089, #1096, #1110, #1090, #1112, #1098)
+- Epic 59 (Maktaba on a NAS; replaces Epic 25’s NAS plan): 59.01–59.08, 59.10 and 59.11 are in (59.09 merged without an event); facts each story checks on real devices (DSM kernels and Landlock, DSM’s responder, J4125 HEVC decode on DSM 7.2.2+, Avahi on TrueNAS 25.04+); real VA-API is untested until the device checklists run, and no real NAS has run the speech measure (a DS223/DS423 and a J4125). The setup text still says the venv step downloads about 2 GB, even offline (59.14); a Full home needs PyPI for its ML wheels until a `runtime.ml` pack. Speech baselines exist only for `small/x86_64` and `base/aarch64`. On upgrade, the identity sweep queues hashing, posters and transcription for every older scanned video: a burst of background work. (#1087, #1089, #1096, #1110, #1090, #1112, #1098, #1119)
 - N16: CPU p95 over 11 runs is their maximum, and a rare job costing about 4x CPU in both processes came within 0.8 ms of failing `topic_assign`; the plugin API's ~0.58 ms of CPU a call is the bulk of the per-call cost. (#1059)
 - NAS shapes (59.15): every waiting check has landed (59.03, `logs_clean`, `thumbnail`, `isolation_container`, `restart-after-kill`, the strict `first_scan`); `offline` and `bridge` need a harness that reaches the API without the host network; the device checklists (`docs/nas/checklists`) stay draft until their first run on a device. (#1091, #1103, #1104, #1094, #1095, #1097, #1098, #1109)
 - `EncodePlan.Burn` has no caller: the API's `burn_subs` reaches no transcode. (#1110)
 - The Android TV app shows the busy-transcode sentence on its error screen but does not ask again by itself. (#1110, #1111)
 - Timing-sensitive on CI runners: Android TV's `TvConnectTest` route harness (a ConcurrentModificationException) and the iPad `PlayerMockHomeTests.testADelayKeepsTheQuerysAnswer` bound. (#1111)
-- NAS owner actions: submit the Unraid template to Community Applications and the TrueNAS app to truenas/apps (text in `deploy/nas/*/README.md`), then set `vars.TRUENAS_APPS_FORK`, `secrets.TRUENAS_APPS_TOKEN` and `vars.TRUENAS_APP_IN_CATALOG`; host the install pages on maktaba.tv; run the Unraid 7, UGREEN and TrueNAS 25.04/25.10 checklists. QNAP stays untested. On a bridge the server does not learn a published port that differs from its own; the app's icon URL exists only once the catalog hosts it. (#1117, #1118)
+- NAS owner actions: submit the Unraid template to Community Applications and the TrueNAS app to truenas/apps (text in `deploy/nas/*/README.md`), then set `vars.TRUENAS_APPS_FORK`, `secrets.TRUENAS_APPS_TOKEN` and `vars.TRUENAS_APP_IN_CATALOG`; host the install pages on maktaba.tv; run the Unraid 7, UGREEN and TrueNAS 25.04/25.10 checklists, and the "the apps find the home" steps on real hardware (Synology 13, TrueNAS 15, Unraid 8). QNAP stays untested. On a bridge the server does not learn a published port that differs from its own; the app's icon URL exists only once the catalog hosts it. (#1117, #1118)
 - The Components list shows Degraded without a reason (its reason comes only from false conditions); plugin routes are absent from `openapi.json` (59.16). (#1109)
 - `relay.yml` and `release.yml` still use cosign-installer by tag (optional hygiene). (#1124)
 
@@ -556,7 +563,10 @@ built_from: v0.3.123
 | #973 | 2026-11-08 | fix(supervisor): plugin runners wait for the venv like the pipeline |
 | #1023 | 2026-11-08 | test(rehearsal): scenario 16.7, wave 7's TV change across an update |
 | #1042 | 2026-11-08 | fix(web): an open screen keeps its feature gate when the feature goes off right after the first answer |
-| #1119 | 2026-11-10 | Epic 59.08: networking on a NAS (mDNS beside the NAS, bridge, moved ports, trusted proxies, reverse-proxy guide) |
+| #1120 | 2026-11-10 | Epic 59.09: Synology — Container Manager project, DSM users and shares, the J4125's GPU, the maktaba.tv guide |
+| #1121 | 2026-11-10 | fix(api): node clients believed by signature only; /0 refused; loopback checks read the peer (59.08) |
+| #1128 | 2026-11-10 | docs(spec): Epic 57 checked again against main |
+| #1130 | 2026-11-10 | spec(epic57): time rules on every device, and tiers detected from transcripts |
 
 ## Index
 
@@ -1150,4 +1160,6 @@ built_from: v0.3.123
 | 1118-epic59-truenas | 2026-11-10 | pr | The TrueNAS app, its Custom App YAML and the catalog's own CI (story 59.10) |
 | 1124-pin-cosign-installer | 2026-11-10 | pr | ci(packages): cosign-installer pinned to its commit in the release-privileged jobs |
 | d20261110-epic59-stranded-trail-events | 2026-11-10 | incident | Epic 59 trail events written but never opened as pull requests |
+| 1119-epic59-08-networking | 2026-11-11 | pr | Epic 59 story 59.08: networking on a NAS (mDNS beside the NAS's own, bridge, trusted proxies) |
+| 1125-title-without-extension | 2026-11-11 | pr | fix(titles): a video with no title shows its file name without the extension |
 
