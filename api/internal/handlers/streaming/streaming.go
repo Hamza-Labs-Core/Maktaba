@@ -44,6 +44,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/watch"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
@@ -386,6 +387,14 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !p.AccessAllLibraries && !p.HasLibrary(libraryID) {
+		// Epic 57: for an account the parental filter limits, a video in a library it
+		// cannot read (a block rule takes the library out of its access) answers as a
+		// missing one: "no access" would say the video is there (found by the bypass
+		// rehearsal, story 57.13).
+		if parental.From(r.Context()).Limits() {
+			httperror.Write(w, r, httperror.NotFound("video "+req.VideoID))
+			return
+		}
 		httperror.Write(w, r, &httperror.Error{
 			Type:   "https://maktaba.tv/problems/access-denied",
 			Title:  "access denied",

@@ -17,6 +17,7 @@ const DIR = "../specs/epics/57-parental-controls";
 const STORIES = [
   "story-57-01-age-tiers.md",
   "story-57-10-live-tv.md",
+  "story-57-12-existing-homes.md",
   "story-57-15-time-on-clients.md",
 ];
 

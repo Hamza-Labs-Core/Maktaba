@@ -50,6 +50,8 @@ func MountP57Requests(r chi.Router, d P57RequestsDeps) {
 	if d.Cache != nil {
 		store = d.Cache.Store()
 	}
+	// story 57.12: a child's device that signs in before parental controls are set up
+	NotifyChildDevices(store, d.Notifier, d.Logger)
 	accounts := users.New(d.DB)
 	h := &parentalh.AskHandler{
 		Handler: parentalh.Handler{Store: store, Cache: d.Cache, Time: d.Time},

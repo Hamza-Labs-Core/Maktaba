@@ -2075,9 +2075,10 @@
       "related": [
         "epic-07-api-server",
         "plan-07.10-streaming-session-lifecycle",
-        "ep-post-sessions",
-        "ep-get-sessions-id",
-        "ep-delete-sessions-id",
+        "ep-post-stream-sessions",
+        "ep-get-stream-sessions-id",
+        "ep-delete-stream-sessions-id",
+        "ep-get-stream-capabilities",
         "ep-get-capabilities",
         "story-8.8",
         "story-10.8"
@@ -2088,9 +2089,10 @@
         "mockups": []
       },
       "api_endpoints": [
-        "POST /sessions",
-        "GET /sessions/{id}",
-        "DELETE /sessions/{id}",
+        "POST /stream/sessions",
+        "GET /stream/sessions/{id}",
+        "DELETE /stream/sessions/{id}",
+        "GET /stream/capabilities",
         "GET /capabilities"
       ],
       "db_tables": [
@@ -2118,10 +2120,10 @@
         "epic-07-api-server",
         "plan-07.11-watch-progress-sync",
         "entity-playback_state",
-        "ep-post-sessions",
-        "ep-get-sessions-id",
-        "ep-delete-sessions-id",
-        "ep-post-sessions-id-progress",
+        "ep-post-stream-sessions",
+        "ep-get-stream-sessions-id",
+        "ep-delete-stream-sessions-id",
+        "ep-post-stream-sessions-id-progress",
         "ep-get-ws",
         "story-7.10",
         "story-7.16"
@@ -2132,10 +2134,10 @@
         "mockups": []
       },
       "api_endpoints": [
-        "POST /sessions",
-        "GET /sessions/{id}",
-        "DELETE /sessions/{id}",
-        "POST /sessions/{id}/progress",
+        "POST /stream/sessions",
+        "GET /stream/sessions/{id}",
+        "DELETE /stream/sessions/{id}",
+        "POST /stream/sessions/{id}/progress",
         "GET /ws"
       ],
       "db_tables": [
@@ -2619,7 +2621,7 @@
       "related": [
         "epic-08-streaming",
         "plan-08.01-server-skeleton",
-        "ep-post-sessions",
+        "ep-post-stream-sessions",
         "story-10.6",
         "story-10.7"
       ],
@@ -2629,7 +2631,7 @@
         "mockups": []
       },
       "api_endpoints": [
-        "POST /sessions"
+        "POST /stream/sessions"
       ],
       "db_tables": [],
       "metadata": {
@@ -2685,7 +2687,7 @@
       "related": [
         "epic-08-streaming",
         "plan-08.03-direct-play",
-        "ep-post-sessions",
+        "ep-post-stream-sessions",
         "story-8.2"
       ],
       "files": {
@@ -2694,7 +2696,7 @@
         "mockups": []
       },
       "api_endpoints": [
-        "POST /sessions"
+        "POST /stream/sessions"
       ],
       "db_tables": [],
       "metadata": {
@@ -2814,6 +2816,7 @@
       "related": [
         "epic-08-streaming",
         "plan-08.07-hwaccel-detect",
+        "ep-get-stream-capabilities",
         "ep-get-capabilities",
         "story-8.5"
       ],
@@ -2823,6 +2826,7 @@
         "mockups": []
       },
       "api_endpoints": [
+        "GET /stream/capabilities",
         "GET /capabilities"
       ],
       "db_tables": [],
@@ -2880,7 +2884,7 @@
       "related": [
         "epic-08-streaming",
         "plan-08.09-session-store",
-        "ep-post-sessions",
+        "ep-post-stream-sessions",
         "story-8.8"
       ],
       "files": {
@@ -2889,7 +2893,7 @@
         "mockups": []
       },
       "api_endpoints": [
-        "POST /sessions"
+        "POST /stream/sessions"
       ],
       "db_tables": [
         "streaming_sessions"

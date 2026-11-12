@@ -8109,5 +8109,19 @@
   "live.admin.hdhrAllowed.tooMany": "That is more than {max} addresses.",
   "live.admin.hdhrAllowed.saved": "Addresses saved.",
   "live.admin.hdhrAllowed.invalid": "One of these is not an address or a range. Check each line.",
-  "live.admin.hdhrAllowed.loadFailed": "Could not load the addresses."
+  "live.admin.hdhrAllowed.loadFailed": "Could not load the addresses.",
+  "parental.notice.title": "A child may be using Maktaba",
+  "parental.notice.body": "A device signed in to Maktaba says a child uses it. Set up parental controls.",
+  "parental.notice.action": "Set up",
+  "parental.notice.dismiss": "Dismiss",
+  "parental.notice.failed": "Could not dismiss the notice. Try again.",
+  "parental.enabled": "Parental controls",
+  "parental.enabled.on": "Parental controls are on. A device that says a child uses it is held to that child's age.",
+  "parental.enabled.off": "Parental controls are off. Nothing is hidden from anyone. They turn on when you make an account restricted or give a library a default age rating.",
+  "parental.enabled.turnOn": "Turn on",
+  "parental.enabled.turnOff": "Turn off",
+  "parental.enabled.offBlocked": "Lift every restriction before turning this off.",
+  "parental.enabled.failed": "Could not change this. Try again.",
+  "parental.enabled.devices": "Devices that say a child uses them: {count}",
+  "notify.parental.child_device": "A device signed in to Maktaba says a child uses it. Set up parental controls."
 }

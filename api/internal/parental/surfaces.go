@@ -266,6 +266,11 @@ func buildSurfaces() SurfaceTable {
 		"/api/parental/review",
 		"/api/parental/review/{video_id}",
 	)
+	exact(Refuse, all, "turning parental controls on or off in the home, the notice that a child's device signed in, and the tiers Rate libraries starts with are an admin's; each handler refuses every other account too (57.12)",
+		"/api/parental/settings",
+		"/api/parental/settings/notice/dismiss",
+		"/api/parental/library-suggestions",
+	)
 	exact(Open, all, "what the home can do and which strings it has; no content",
 		"/api/capabilities",
 		"/api/entitlements",

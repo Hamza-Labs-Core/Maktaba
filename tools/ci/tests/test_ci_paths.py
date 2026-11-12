@@ -125,7 +125,8 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     "api only": (
         ["api/internal/handlers/browse/browse.go"],
         GO_SERVER,
-        {"lint": {"go"}, "unit": {"go"}, "integration": {"integration", "compat_prev"}},
+        # Epic 57 (story 57.13): the parental bypass rehearsal runs for the API's code
+        {"lint": {"go"}, "unit": {"go"}, "integration": {"integration", "compat_prev", "parental_bypass"}},
     ),
     "the affected-tests gate: its Go module, the hook and the map workflow": (
         ["tools/affected-tests/analyze.go", ".githooks/pre-push", ".github/workflows/coverage-map.yml"],
@@ -230,8 +231,16 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
         {
             "lint": {"go", "pipeline"},
             "unit": {"go", "pipeline"},
-            "integration": {"integration", "compat_prev"},
+            "integration": {"integration", "compat_prev", "parental_bypass"},
         },
+    ),
+    # Epic 57 (story 57.13): the streaming service signs the channel URLs and holds a
+    # restricted account's stream to its time: the bypass rehearsal runs for it, the
+    # previous release's API tests do not; a pipeline change runs neither ("pipeline only")
+    "streaming only: the parental bypass rehearsal": (
+        ["streaming/internal/hls/serve.go"],
+        {"unit", "integration", "replica", "e2e", "media-e2e", "build-artifacts", "launcher"},
+        {"lint": {"go"}, "unit": {"go"}, "integration": {"integration", "parental_bypass"}},
     ),
 }
 

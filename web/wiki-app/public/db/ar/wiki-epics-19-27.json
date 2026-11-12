@@ -3222,8 +3222,7 @@
         "entity-collection_items",
         "entity-collections",
         "ep-get-collections",
-        "ep-post-collections",
-        "ep-post-sessions"
+        "ep-post-collections"
       ],
       "files": {
         "story": "specs/epics/26-content-intelligence/story-26-04-auto-collection-builder.md",
@@ -3232,8 +3231,7 @@
       },
       "api_endpoints": [
         "GET /collections",
-        "POST /collections",
-        "POST /sessions"
+        "POST /collections"
       ],
       "db_tables": [
         "collection_items",
@@ -3532,14 +3530,17 @@
       ],
       "related": [
         "epic-27-live-channels",
-        "plan-27.01-channel-definition"
+        "plan-27.01-channel-definition",
+        "ep-get-channels"
       ],
       "files": {
         "story": "specs/epics/27-live-channels/story-27-01-channel-definition.md",
         "plan": "specs/epics/27-live-channels/plan-27-01-channel-definition.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /channels"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "channel-definition"
@@ -3600,14 +3601,17 @@
       ],
       "related": [
         "epic-27-live-channels",
-        "plan-27.03-live-stream-engine"
+        "plan-27.03-live-stream-engine",
+        "ep-get-channels"
       ],
       "files": {
         "story": "specs/epics/27-live-channels/story-27-03-live-stream-engine.md",
         "plan": "specs/epics/27-live-channels/plan-27-03-live-stream-engine.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /channels"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "live-stream-engine"
@@ -3634,14 +3638,17 @@
       ],
       "related": [
         "epic-27-live-channels",
-        "plan-27.04-epg-generation"
+        "plan-27.04-epg-generation",
+        "ep-get-channels"
       ],
       "files": {
         "story": "specs/epics/27-live-channels/story-27-04-epg-generation.md",
         "plan": "specs/epics/27-live-channels/plan-27-04-epg-generation.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /channels"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "epg-generation"
@@ -3772,7 +3779,8 @@
         "epic-27-live-channels",
         "plan-27.08-channel-admin-ui",
         "ep-get-collections",
-        "ep-post-collections"
+        "ep-post-collections",
+        "ep-get-channels"
       ],
       "files": {
         "story": "specs/epics/27-live-channels/story-27-08-channel-admin-ui.md",
@@ -3781,7 +3789,8 @@
       },
       "api_endpoints": [
         "GET /collections",
-        "POST /collections"
+        "POST /collections",
+        "GET /channels"
       ],
       "db_tables": [],
       "metadata": {
@@ -3809,14 +3818,17 @@
       ],
       "related": [
         "epic-27-live-channels",
-        "plan-27.09-home-widget"
+        "plan-27.09-home-widget",
+        "ep-get-channels"
       ],
       "files": {
         "story": "specs/epics/27-live-channels/story-27-09-home-widget.md",
         "plan": "specs/epics/27-live-channels/plan-27-09-home-widget.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /channels"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "home-widget"
@@ -3845,7 +3857,8 @@
         "epic-27-live-channels",
         "plan-27.10-filler-bumper-system",
         "entity-videos",
-        "ep-get-pools"
+        "ep-get-pools",
+        "ep-get-channels"
       ],
       "files": {
         "story": "specs/epics/27-live-channels/story-27-10-filler-bumper-system.md",
@@ -3853,7 +3866,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /pools"
+        "GET /pools",
+        "GET /channels"
       ],
       "db_tables": [
         "videos"

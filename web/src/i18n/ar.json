@@ -8122,5 +8122,19 @@
   "live.admin.hdhrAllowed.tooMany": "هذا أكثر من {max} عنوانًا.",
   "live.admin.hdhrAllowed.saved": "حُفظت العناوين.",
   "live.admin.hdhrAllowed.invalid": "أحد هذه ليس عنوانًا ولا نطاقًا. راجع كل سطر.",
-  "live.admin.hdhrAllowed.loadFailed": "تعذّر تحميل العناوين."
+  "live.admin.hdhrAllowed.loadFailed": "تعذّر تحميل العناوين.",
+  "parental.notice.title": "ربما يستخدم طفلٌ Maktaba",
+  "parental.notice.body": "يشير جهاز مسجَّل الدخول إلى Maktaba إلى أن طفلًا يستخدمه. اضبط الرقابة الأبوية.",
+  "parental.notice.action": "إعداد",
+  "parental.notice.dismiss": "إغلاق",
+  "parental.notice.failed": "تعذَّر إغلاق الإشعار. حاول مرة أخرى.",
+  "parental.enabled": "الرقابة الأبوية",
+  "parental.enabled.on": "الرقابة الأبوية مفعَّلة. الجهاز الذي يشير إلى أن طفلًا يستخدمه يُقيَّد بعمر ذلك الطفل.",
+  "parental.enabled.off": "الرقابة الأبوية متوقفة. لا يُخفى شيء عن أحد. تتفعَّل حين تجعل حسابًا مقيَّدًا أو تعطي مكتبة تصنيفًا عمريًا افتراضيًا.",
+  "parental.enabled.turnOn": "تفعيل",
+  "parental.enabled.turnOff": "إيقاف",
+  "parental.enabled.offBlocked": "ارفع كل التقييدات قبل إيقاف هذا.",
+  "parental.enabled.failed": "تعذَّر تغيير هذا. حاول مرة أخرى.",
+  "parental.enabled.devices": "الأجهزة التي تشير إلى أن طفلًا يستخدمها: {count}",
+  "notify.parental.child_device": "يشير جهاز مسجَّل الدخول إلى Maktaba إلى أن طفلًا يستخدمه. اضبط الرقابة الأبوية."
 }

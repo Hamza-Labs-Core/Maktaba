@@ -15,6 +15,8 @@
 //   GET    /api/me/parental/guardians                     a restricted account
 //   POST   /api/me/parental/unlock                        a restricted account
 //   GET    /api/admin/library-acl                         admin: the home's accounts, to pick from
+//   GET|PUT /api/parental/settings                        admin: the home's switch (57.12)
+//   POST   /api/parental/settings/notice/dismiss          admin
 //
 // Every reader is defensive: a missing list is an empty one, a missing field its
 // zero. A refusal is an ApiError the caller shows.
@@ -505,4 +507,45 @@ export function retryAfter(e: unknown): number | null {
   if (!(e instanceof ApiError) || e.status !== 429) return null;
   const p = e.problem as unknown as Record<string, unknown>;
   return numOrNull(p.retry_after) ?? e.retryAfter ?? null;
+}
+
+// ---- the home's switch (story 57.12) ----
+
+export interface ParentalSettings {
+  /** parental controls are on in this home */
+  enabled: boolean;
+  restrictedAccounts: number;
+  /** false while any account is restricted */
+  canDisable: boolean;
+  /** sign-ins whose device said a child may be using it, not applied while off */
+  childDevices: number;
+  /** show the notice that a child's device signed in before setup */
+  childDeviceNotice: boolean;
+}
+
+function settingsOf(v: unknown): ParentalSettings {
+  const o = obj(v);
+  return {
+    // a home that does not say is on: the page never offers to "turn on" what is on
+    enabled: o.enabled !== false,
+    restrictedAccounts: num(o.restricted_accounts),
+    canDisable: o.can_disable === true,
+    childDevices: num(o.child_devices),
+    childDeviceNotice: o.child_device_notice === true,
+  };
+}
+
+/** GET /api/parental/settings (admin). */
+export async function fetchParentalSettings(): Promise<ParentalSettings> {
+  return settingsOf(await api.get<unknown>("/api/parental/settings"));
+}
+
+/** PUT /api/parental/settings (admin): off answers 409 `restrictions_exist` while an account is restricted. */
+export async function setParentalEnabled(enabled: boolean): Promise<ParentalSettings> {
+  return settingsOf(await api.put<unknown>("/api/parental/settings", { enabled }));
+}
+
+/** POST /api/parental/settings/notice/dismiss (admin). */
+export async function dismissChildDeviceNotice(): Promise<ParentalSettings> {
+  return settingsOf(await api.post<unknown>("/api/parental/settings/notice/dismiss"));
 }

@@ -217,6 +217,9 @@ type SignalState struct {
 	// Removed says the signal was cleared away altogether (ClearSignal with nothing
 	// pending).
 	Removed bool
+	// Off says parental controls are not turned on in this home (story 57.12): the
+	// statement was recorded and limits nothing, so TierLimit and Pending are empty.
+	Off bool
 }
 
 // pendingSignal is pending_looser: the looser statement, whole, so that clearing
@@ -276,14 +279,20 @@ func (s *Store) RecordSignal(ctx context.Context, userID, family string, in Sign
 	var (
 		out      SignalState
 		awaiting bool // a looser statement began to wait, or the one waiting changed
+		off      bool // parental controls are not on: recorded, limiting nothing
 	)
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
 		out, awaiting = SignalState{}, false
 		if err := lockSignal(ctx, tx, family); err != nil {
 			return err
 		}
+		on, err := enabledIn(ctx, tx)
+		if err != nil {
+			return err
+		}
+		off = !on
 		var one int
-		err := tx.QueryRowContext(ctx,
+		err = tx.QueryRowContext(ctx,
 			`SELECT 1 FROM refresh_tokens
 			  WHERE family_id = $1 AND user_id = $2 AND revoked_at IS NULL AND expires_at > $3 LIMIT 1`,
 			family, userID, now).Scan(&one)
@@ -390,6 +399,15 @@ func (s *Store) RecordSignal(ctx context.Context, userID, family string, in Sign
 	if err != nil {
 		return nil, err
 	}
+	if off {
+		// recorded by the same ratchet, and in force for no one until an admin turns
+		// parental controls on; the admins are told a child's device signed in
+		out = SignalState{Off: true}
+		if limit < Tier18 && s.OnChildDevice != nil {
+			s.OnChildDevice(ctx, userID, family)
+		}
+		return &out, nil
+	}
 	if awaiting && s.OnSignalPending != nil {
 		s.OnSignalPending(ctx, userID, family)
 	}
@@ -468,6 +486,9 @@ type SignInSignal struct {
 	// Unrated is the home's rule for unrated content on a sign-in limited only by
 	// its device (SettingUnratedOnSignal).
 	Unrated string
+	// Off says parental controls are not turned on (story 57.12): no device signal,
+	// stored or carried by a token, limits a request.
+	Off bool
 }
 
 // unratedOnSignal reads the setting's stored JSON; anything that is not an unrated
@@ -486,22 +507,29 @@ func (s *Store) SignInSignal(ctx context.Context, userID, family string) (*SignI
 	out := &SignInSignal{Limit: NoLimit}
 	var (
 		setting sql.NullString
+		enabled sql.NullString
 		limit   sql.NullInt64
 		found   sql.NullBool
 		pending sql.NullBool
 	)
-	args := []any{SettingUnratedOnSignal}
-	q := `SELECT (SELECT value::text FROM app_settings WHERE key = $1), NULL::int, NULL::bool, NULL::bool`
+	args := []any{SettingUnratedOnSignal, SettingEnabled}
+	q := `SELECT (SELECT value::text FROM app_settings WHERE key = $1), (SELECT value::text FROM app_settings WHERE key = $2),
+	             NULL::int, NULL::bool, NULL::bool`
 	if isUUID(userID) && isUUID(family) {
-		q = `SELECT (SELECT value::text FROM app_settings WHERE key = $1), g.tier_limit, g.user_id IS NOT NULL, g.pending_looser IS NOT NULL
+		q = `SELECT (SELECT value::text FROM app_settings WHERE key = $1), (SELECT value::text FROM app_settings WHERE key = $2),
+		            g.tier_limit, g.user_id IS NOT NULL, g.pending_looser IS NOT NULL
 		       FROM (SELECT 1) one
-		       LEFT JOIN session_age_signals g ON g.refresh_family_id = $2 AND g.user_id = $3`
+		       LEFT JOIN session_age_signals g ON g.refresh_family_id = $3 AND g.user_id = $4`
 		args = append(args, family, userID)
 	}
-	if err := s.DB.QueryRowContext(ctx, q, args...).Scan(&setting, &limit, &found, &pending); err != nil {
+	if err := s.DB.QueryRowContext(ctx, q, args...).Scan(&setting, &enabled, &limit, &found, &pending); err != nil {
 		return nil, fmt.Errorf("parental: sign-in signal: %w", err)
 	}
 	out.Unrated = unratedOnSignal(setting)
+	if !enabledValue(enabled) {
+		out.Off = true
+		return out, nil
+	}
 	if found.Valid && found.Bool {
 		out.Limit, out.Pending = limitOf(intPtr(limit)), pending.Bool
 	}
@@ -509,14 +537,22 @@ func (s *Store) SignInSignal(ctx context.Context, userID, family string) (*SignI
 }
 
 // AgeCeiling is the `ac` claim for an access token of userID's sign-in: the stored
-// signal's limit, nil when the sign-in has none.
+// signal's limit, nil when the sign-in has none, and nil while parental controls are
+// not turned on in this home (story 57.12: the signal is recorded, not applied).
 func (s *Store) AgeCeiling(ctx context.Context, userID, family string) (*int, error) {
 	if !isUUID(userID) || !isUUID(family) {
 		return nil, nil
 	}
-	var limit sql.NullInt64
+	var (
+		limit   sql.NullInt64
+		enabled sql.NullString
+	)
 	err := s.DB.QueryRowContext(ctx,
-		`SELECT tier_limit FROM session_age_signals WHERE refresh_family_id = $1 AND user_id = $2`, family, userID).Scan(&limit)
+		`SELECT g.tier_limit, (SELECT value::text FROM app_settings WHERE key = $3)
+		   FROM session_age_signals g WHERE g.refresh_family_id = $1 AND g.user_id = $2`, family, userID, SettingEnabled).Scan(&limit, &enabled)
+	if err == nil && !enabledValue(enabled) {
+		return nil, nil
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -576,6 +612,11 @@ func (c *Cache) signalFor(ctx context.Context, p *principal.Principal) (*SignInS
 	sig, err := c.signal(ctx, p.UserID, family)
 	if err != nil {
 		return nil, err
+	}
+	if sig.Off {
+		// parental controls are off in this home: a claim minted before they were
+		// turned off limits nothing either
+		return nil, nil
 	}
 	if claim < sig.Limit {
 		out := *sig

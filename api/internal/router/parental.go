@@ -5,12 +5,15 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
+	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	discoveryh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/discovery"
 	parentalh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/parental"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 )
@@ -65,7 +68,8 @@ func MountParental(r chi.Router, db *sql.DB, loops *runner.Runner, busCtx contex
 	}
 	h := &parentalh.Handler{Store: cache.Store(), Cache: cache}
 	h.Mount(r)
-	h.MountSignal(r) // story 57.04: the device's signal
+	h.MountSignal(r)   // story 57.04: the device's signal
+	h.MountSettings(r) // story 57.12: turning it on in an existing home
 	return cache
 }
 
@@ -81,5 +85,44 @@ func approveAs(db *sql.DB) func(context.Context, *principal.Principal, string) (
 			return "", discoveryh.ErrApproveAsNotFound
 		}
 		return id, err
+	}
+}
+
+// ParentalCapabilities is P51Deps.Parental over the restricted accounts' cache: the
+// caller's `parental` block of GET /api/capabilities (story 57.12). Nil without a
+// cache.
+func ParentalCapabilities(cache *parental.Cache) func(r *http.Request, p *principal.Principal) (any, error) {
+	if cache == nil {
+		return nil
+	}
+	return func(r *http.Request, p *principal.Principal) (any, error) {
+		return parentalh.Capabilities(r, cache, p)
+	}
+}
+
+// NoticeChildDevice is the kind of the notice admins get when a device says a child
+// may be using it while parental controls are not turned on (story 57.12). The web
+// shows it as `notify.parental.child_device`, linking to Family.
+const NoticeChildDevice = "parental.child_device"
+
+// childDeviceEvery keeps the notice to one per sign-in: a repeat about the same
+// sign-in is dropped for as long as the notice is kept.
+const childDeviceEvery = 10 * 365 * 24 * time.Hour
+
+// NotifyChildDevices tells the admins, once per sign-in, that a child's device signed
+// in before parental controls were set up. The notice names no account and no device.
+func NotifyChildDevices(store *parental.Store, n notify.Notifier, logger *slog.Logger) {
+	if store == nil || n == nil {
+		return
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	store.OnChildDevice = func(ctx context.Context, _, family string) {
+		err := n.Notify(context.WithoutCancel(ctx), NoticeChildDevice, notify.Payload{
+			Link: "/family", Subject: "sign_in:" + family, Every: childDeviceEvery})
+		if err != nil {
+			logger.Warn("parental: the child-device notice was not made", "event", "parental_notice_failed", "error", err.Error())
+		}
 	}
 }

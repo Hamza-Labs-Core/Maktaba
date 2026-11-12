@@ -46,6 +46,9 @@ func setup(t *testing.T) *env {
 	e.exec(`INSERT INTO libraries (id, name, roots) VALUES ($1,'Secret Kids Films','{/media/p-open}'), ($2,'Grown Ups','{/media/p-closed}')`,
 		libOpen, libClosed)
 	e.exec(`INSERT INTO library_acl (user_id, library_id) VALUES ($1,$2)`, uChild, libOpen)
+	// a home where parental controls were set up (slot 0225 starts them off; story
+	// 57.12's own tests turn them off again)
+	e.exec(`UPDATE app_settings SET value = 'true' WHERE key = 'parental.enabled'`)
 	return e
 }
 

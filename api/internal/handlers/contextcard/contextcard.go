@@ -32,6 +32,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 )
 
@@ -236,6 +237,12 @@ func (h *Handler) moreLikeThis(r *http.Request, p *principal.Principal, videoID 
 		if !p.AccessAllLibraries && !p.HasLibrary(lib) {
 			continue
 		}
+		// Epic 57: as in aclDedupeCap, a video the caller's limit hides is left out
+		if e := parental.From(r.Context()); e.Limits() {
+			if ok, err := parental.AllowedVideo(r.Context(), h.DB, e, rel.VideoID); err != nil || !ok {
+				continue
+			}
+		}
 		s := score
 		rel.Score = &s
 		rel.Reason = "more_like_this"
@@ -260,6 +267,15 @@ func (h *Handler) aclDedupeCap(r *http.Request, p *principal.Principal, selfID s
 		}
 		if !p.AccessAllLibraries && !p.HasLibrary(lib) {
 			continue
+		}
+		// Epic 57: a related video above the caller's limit, or under a block rule, is
+		// left out like one in a library it cannot read (found by the bypass rehearsal,
+		// story 57.13: the card of an allowed episode named its 16+ sibling). A limit
+		// that cannot be checked leaves the video out.
+		if e := parental.From(r.Context()); e.Limits() {
+			if ok, err := parental.AllowedVideo(r.Context(), h.DB, e, rel.VideoID); err != nil || !ok {
+				continue
+			}
 		}
 		seen[rel.VideoID] = true
 		out = append(out, rel)

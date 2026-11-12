@@ -47,8 +47,12 @@ type signalResponse struct {
 	// for an admin or a guardian.
 	PendingLooser bool `json:"pending_looser"`
 	// Refresh tells the app to refresh its access token now, so the next one
-	// carries the limit (`ac`).
+	// carries the limit (`ac`). False while parental controls are off: nothing
+	// changed for this sign-in.
 	Refresh bool `json:"refresh"`
+	// Enabled is false while parental controls are not turned on in this home
+	// (story 57.12): the statement was recorded and limits nothing.
+	Enabled bool `json:"enabled"`
 }
 
 // PostSignal implements POST /api/me/age-signal.
@@ -86,7 +90,7 @@ func (h *Handler) PostSignal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.changed(p.UserID)
-	common.WriteJSON(w, r, http.StatusOK, signalResponse{TierLimit: st.TierLimit, PendingLooser: st.Pending, Refresh: true})
+	common.WriteJSON(w, r, http.StatusOK, signalResponse{TierLimit: st.TierLimit, PendingLooser: st.Pending, Refresh: !st.Off, Enabled: !st.Off})
 }
 
 type clearResponse struct {

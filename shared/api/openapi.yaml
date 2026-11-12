@@ -5,7 +5,7 @@ info:
   summary: Self-hosted video library with automatic transcription, semantic search, and adaptive streaming.
   description: "The Maktaba API is the control plane for a self-hosted video library. It exposes\nlibraries, videos, transcripts, search, processing jobs, streaming sessions, and\nuser state over a uniform JSON surface.\n\n## Conventions\n\n- **Transport.** HTTP/1.1 and HTTP/2 over TLS. JSON request and response bodies\n  use `Content-Type: application/json; charset=utf-8`. Error responses use\n  [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json`.\n- **Identifiers.** Resource ids are UUIDv4 unless documented otherwise.\n  `Job.id` and `AudioTrack.id` are 64-bit integers.\n- **Times.** All timestamps are RFC 3339 / ISO 8601 in UTC (`Z` suffix).\n  Durations and offsets are seconds as floats.\n- **Pagination.** Cursor-based. Pass `limit` (default 50, max 200) and the\n  opaque `cursor` returned from the previous page. The page envelope is\n  `{ items: [...], next: \"<cursor>\" | null }`. Cursors encode\n  `(updated_at DESC, id DESC)` and rotate when the schema version\
     \ changes.\n- **Idempotency.** All `POST /api/jobs/{id}/{action}` endpoints are idempotent.\n  Clients may set `Idempotency-Key: <uuid>` on `POST` and `PATCH` requests; the\n  server replays the original response for 24 hours.\n- **Request correlation.** Every response carries `X-Request-Id` (UUIDv7).\n  Clients may pass their own `X-Request-Id` to thread it through.\n- **Rate limits.** Default: 600 requests / minute / authenticated user, 6 000 /\n  minute / IP. Exhausted requests get `429 Too Many Requests` with `Retry-After`\n  and headers `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.\n\n## Authentication\n\nTwo equivalent paths backed by the same identity:\n\n- **Web** uses `httpOnly` cookies set by `POST /api/auth/login`. State-changing\n  requests must also include the `X-CSRF-Token` header (value mirrored from the\n  `csrf_token` cookie).\n- **Mobile / desktop / TV** uses bearer JWT (RS256, 15 min) with a long-lived\n  opaque refresh token. Public keys are\
-    \ exposed at `/api/.well-known/jwks.json`.\n\nSingle-user installs may pass a static admin token via `Authorization: Bearer`.\n\n## Streaming\n\nThe `/api/sessions` endpoints mint short-lived signed URLs that the client\nsends to the Streaming Service (separate origin) directly. Bytes never round\ntrip the API.\n\n## WebSocket\n\n`GET /api/ws` upgrades to a multiplexed event stream. Messages are JSON\n`{ type, data, at }` envelopes. Clients subscribe by sending\n`{ type: \"subscribe\", channels: [\"jobs\", \"playback\", \"library\"] }` on connect.\n"
+    \ exposed at `/api/.well-known/jwks.json`.\n\nSingle-user installs may pass a static admin token via `Authorization: Bearer`.\n\n## Streaming\n\nThe `/api/stream/sessions` endpoints mint short-lived signed URLs that the client\nsends to the Streaming Service (separate origin) directly. Bytes never round\ntrip the API.\n\n## WebSocket\n\n`GET /api/ws` upgrades to a multiplexed event stream. Messages are JSON\n`{ type, data, at }` envelopes. Clients subscribe by sending\n`{ type: \"subscribe\", channels: [\"jobs\", \"playback\", \"library\"] }` on connect.\n"
   contact:
     name: Maktaba
     url: https://github.com/maktaba/maktaba
@@ -499,6 +499,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
       operationId: getLibraryStats
+      description: For a restricted account (one under parental controls) the numbers count only the videos it may see, and a library a rule blocks answers 404.
   /videos:
     get:
       tags:
@@ -1122,7 +1123,7 @@ paths:
 
         Results carry per-stage timing under `took_ms`. When semantic backend is
 
-        offline, the response sets `degraded=true` and falls back to FTS only.
+        offline, the response sets `degraded=true` and falls back to FTS only. For a restricted account (one under parental controls) the results, their totals and their snippets are of the videos it may see only.
 
         '
       parameters:
@@ -1221,7 +1222,7 @@ paths:
       tags:
       - Search
       summary: Hybrid search with a structured request body
-      description: Same semantics as `GET /search`; the body form is preferred when filters get long.
+      description: Same semantics as `GET /search`; the body form is preferred when filters get long. For a restricted account (one under parental controls) the results, their totals and their snippets are of the videos it may see only.
       requestBody:
         required: true
         content:
@@ -1282,6 +1283,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
       operationId: searchSuggest
+      description: For a restricted account (one under parental controls) the suggestions come from its own earlier searches only, never from a title.
   /search/save:
     post:
       tags:
@@ -1755,6 +1757,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
       operationId: listTags
+      description: For a restricted account (one under parental controls) only the tags carried by at least one video it may see are listed.
     post:
       tags:
       - Tags
@@ -1794,7 +1797,7 @@ paths:
         '403':
           $ref: '#/components/responses/Restricted'
       operationId: createTag
-  /sessions:
+  /stream/sessions:
     post:
       tags:
       - Sessions
@@ -1852,7 +1855,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
       operationId: createSession
-  /sessions/{id}:
+  /stream/sessions/{id}:
     parameters:
     - in: path
       name: id
@@ -1897,7 +1900,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
       operationId: closeSession
-  /sessions/{id}/progress:
+  /stream/sessions/{id}/progress:
     parameters:
     - in: path
       name: id
@@ -1962,7 +1965,52 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
       operationId: sessionProgressHeartbeat
-  /sessions/capabilities:
+  /stream/sessions/{id}/errors:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: The stream session's id.
+    post:
+      tags:
+      - Sessions
+      summary: Report a playback failure
+      description: A player says what went wrong with its own stream session, for the home's log. Reports are rate limited per session and per account; one over the limit is accepted and dropped.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              properties:
+                video_id:
+                  type: string
+                  format: uuid
+                outcome:
+                  type: string
+                  description: 'What the player did: `fatal`, `reopen` or `stalled`.'
+                code:
+                  type: string
+                  description: The player's own name for the error.
+                message:
+                  type: string
+                position_sec:
+                  type: number
+      responses:
+        '202':
+          description: Accepted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: reportPlaybackError
+  /stream/capabilities:
     get:
       tags:
       - Sessions
@@ -4221,15 +4269,18 @@ paths:
       tags:
       - Components
       summary: What this home has on
-      description: Each feature a client shows (`live_tv`, `transcripts`, `search`, ...) and whether it is on, off, or not available, so an app hides or explains what is off. Answers 304 to a matching `If-None-Match`; `/ws/home` sends `capabilities_changed` when it moves.
+      description: Each feature a client shows (`live_tv`, `transcripts`, `search`, ...) and whether it is on, off, or not available, so an app hides or explains what is off. Answers 304 to a matching `If-None-Match`; `/ws/home` sends `capabilities_changed` when it moves. The answer also carries the caller's own `parental` block, and the ETag covers it, so a changed limit is a changed answer.
       responses:
         '200':
-          description: The features.
+          description: The features, and the caller's `parental` block.
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: true
+                properties:
+                  parental:
+                    $ref: '#/components/schemas/ParentalCapabilities'
         default:
           $ref: '#/components/responses/InternalError'
         '429':
@@ -4238,6 +4289,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '304':
           description: Unchanged since the ETag sent.
+        '503':
+          description: 'The account''s limits cannot be read now (`code: parental_unavailable`): try again after `Retry-After`. An app must not treat this as an account nothing limits.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       operationId: getCapabilities
   /components:
     get:
@@ -8532,7 +8589,7 @@ paths:
                 region: US
       responses:
         '200':
-          description: Recorded. `tier_limit` is the limit in force, which is the earlier one when what was sent is looser.
+          description: Recorded. `tier_limit` is the limit in force, which is the earlier one when what was sent is looser. While parental controls are off in this home (`enabled` false) the signal is recorded and limits nothing.
           content:
             application/json:
               schema:
@@ -8555,17 +8612,20 @@ paths:
                     description: 'What was sent is looser than the limit in force: it is kept and waits for an admin or a guardian to clear it.'
                   refresh:
                     type: boolean
-                    enum:
-                    - true
-                    description: 'Always `true`: refresh the access token now so the next one carries the limit.'
+                    description: 'Refresh the access token now so the next one carries the limit. False while parental controls are off: nothing changed for this sign-in.'
+                  enabled:
+                    type: boolean
+                    description: Parental controls are on in this home. When false, `tier_limit` is null and `pending_looser` false whatever the device said.
                 required:
                 - tier_limit
                 - pending_looser
                 - refresh
+                - enabled
                 example:
                   tier_limit: 9
                   pending_looser: false
                   refresh: true
+                  enabled: true
         '409':
           description: 'The credential names no app sign-in (`code`: `no_sign_in`): a web session, an API token, or an access token minted before this release. An app refreshes its access token and sends the signal again.'
           content:
@@ -10959,6 +11019,283 @@ paths:
         default:
           $ref: '#/components/responses/InternalError'
       operationId: getMyParentalTime
+  /parental/settings:
+    get:
+      tags:
+      - Parental controls
+      summary: Read whether parental controls are on
+      description: The home's switch, how many accounts are restricted, and whether to show the notice that a child's device signed in before parental controls were set up.
+      x-maktaba-role: admin
+      responses:
+        '200':
+          description: The settings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParentalSettings'
+        '403':
+          description: 'Admin only. A restricted account gets `code: restricted`, any other account `code: admin_only`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: getParentalSettings
+    put:
+      tags:
+      - Parental controls
+      summary: Turn parental controls on or off
+      description: 'On: every recorded device signal applies from the next request, and each app''s next access token carries its limit. Off: device signals are recorded and limit nothing. Off is refused while any account is restricted.'
+      x-maktaba-role: admin
+      requestBody:
+        required: true
+        description: The switch.
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - enabled
+              properties:
+                enabled:
+                  type: boolean
+                  description: True turns parental controls on, false off.
+      responses:
+        '200':
+          description: The settings after the change.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParentalSettings'
+        '403':
+          description: 'Admin only. A restricted account gets `code: restricted`, any other account `code: admin_only`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: 'An account is restricted, so parental controls stay on: `code` is `restrictions_exist` and `type` is `https://maktaba.tv/problems/parental-restrictions-exist`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: setParentalSettings
+  /parental/settings/notice/dismiss:
+    post:
+      tags:
+      - Parental controls
+      summary: Dismiss the notice that a child's device signed in
+      description: The notice stays away, for every admin, until another device says a child may be using it.
+      x-maktaba-role: admin
+      responses:
+        '200':
+          description: The settings, with the notice off.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParentalSettings'
+        '403':
+          description: 'Admin only. A restricted account gets `code: restricted`, any other account `code: admin_only`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: dismissParentalNotice
+  /parental/library-suggestions:
+    get:
+      tags:
+      - Parental controls
+      summary: List the libraries with the tier Rate libraries starts with
+      description: 'Every library with its default age tier and the one the form offers for a library that has none: All ages when at least nine in ten of its classified videos are lectures, otherwise none. Nothing is stored until an admin sets a tier with `PUT /libraries/{id}/age-tier`.'
+      x-maktaba-role: admin
+      responses:
+        '200':
+          description: The libraries, by name.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - libraries
+                properties:
+                  libraries:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - library_id
+                      - name
+                      - tier
+                      - suggested_tier
+                      - classified
+                      - lectures
+                      properties:
+                        library_id:
+                          type: string
+                          format: uuid
+                        name:
+                          type: string
+                        tier:
+                          type:
+                          - integer
+                          - 'null'
+                          enum:
+                          - 0
+                          - 9
+                          - 13
+                          - 16
+                          - 18
+                          - null
+                          description: The default tier stored now, or null.
+                        suggested_tier:
+                          type:
+                          - integer
+                          - 'null'
+                          enum:
+                          - 0
+                          - null
+                          description: 'What the form starts with: `0` (All ages) or null (Not rated).'
+                        classified:
+                          type: integer
+                          description: How many of its videos have a content type.
+                        lectures:
+                          type: integer
+                          description: How many of those are lectures or sermons.
+        '403':
+          description: 'Admin only. A restricted account gets `code: restricted`, any other account `code: admin_only`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: listParentalLibrarySuggestions
+  /channels:
+    get:
+      tags:
+      - Parental controls
+      summary: List the channels
+      description: The live TV channels the caller may read, each with what it plays now. A restricted account is not sent a channel above its limit or under a block rule, and a programme above its limit is not named. An admin's answer also has each channel's `age_tier`.
+      responses:
+        '200':
+          description: The channels.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - items
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        number:
+                          type: integer
+                        name:
+                          type: string
+                        age_tier:
+                          type:
+                          - integer
+                          - 'null'
+                          enum:
+                          - 0
+                          - 9
+                          - 13
+                          - 16
+                          - 18
+                          - null
+                          description: 'The channel''s age tier, set with `PUT /channels/{id}/age-tier`: a tier, or null when none is set. Only an administrator''s answer has this field; it is absent for everyone else.'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: listChannels
+  /libraries/manage:
+    get:
+      tags:
+      - Libraries
+      summary: List every library for the management page
+      description: Each library with its folders, counts, last scan and what it follows on YouTube, and the folders two libraries share. Each library carries its default `age_tier`.
+      x-maktaba-role: admin
+      responses:
+        '200':
+          description: The libraries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - items
+                - conflict_groups
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        name:
+                          type: string
+                        age_tier:
+                          type:
+                          - integer
+                          - 'null'
+                          enum:
+                          - 0
+                          - 9
+                          - 13
+                          - 16
+                          - 18
+                          - null
+                          description: 'The library''s default age tier, set with `PUT /libraries/{id}/age-tier`: a tier, or null when none is set.'
+                  conflict_groups:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '403':
+          $ref: '#/components/responses/Restricted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: listManagedLibraries
   /pairing/approve:
     post:
       tags:
@@ -13931,6 +14268,73 @@ components:
           - plex
         show_on_library:
           type: boolean
+    ParentalSettings:
+      type: object
+      description: Whether parental controls are on in this home, and what an admin is told while they are off.
+      required:
+      - enabled
+      - restricted_accounts
+      - can_disable
+      - child_devices
+      - child_device_notice
+      properties:
+        enabled:
+          type: boolean
+          description: Parental controls are on. They start off in a home that has set nothing up, and turn on by themselves when an admin makes the first account restricted or gives the first library a default age tier. While they are off a device's age signal is recorded and limits nothing. A restricted account's own limit is applied whatever this says.
+        restricted_accounts:
+          type: integer
+          description: How many accounts are restricted.
+        can_disable:
+          type: boolean
+          description: 'False while any account is restricted: lift every restriction before turning parental controls off.'
+        child_devices:
+          type: integer
+          description: How many sign-ins' devices said a child may be using them (a limit under 18) and are not applied because parental controls are off. Zero once they are on.
+        child_device_notice:
+          type: boolean
+          description: 'Show the notice that a child may be using Maktaba: parental controls are off and such a device spoke since an admin last dismissed the notice.'
+      example:
+        enabled: false
+        restricted_accounts: 0
+        can_disable: true
+        child_devices: 1
+        child_device_notice: true
+    ParentalCapabilities:
+      type: object
+      description: 'The caller''s own part of the home''s capabilities: what an app needs about parental controls before it draws anything.'
+      required:
+      - enabled
+      - restricted
+      - tier_limit
+      - can_manage
+      properties:
+        enabled:
+          type: boolean
+          description: Parental controls are on in this home.
+        restricted:
+          type: boolean
+          description: The account is restricted. A sign-in limited only by its device is not a restricted account.
+        tier_limit:
+          type:
+          - integer
+          - 'null'
+          enum:
+          - -1
+          - 0
+          - 9
+          - 13
+          - 16
+          - 18
+          - null
+          description: 'The age-tier limit this sign-in is held to, by the account''s policy or by its device, whichever is stricter: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier; `null` when nothing limits it.'
+        can_manage:
+          type: boolean
+          description: 'The caller is an admin, or the guardian of at least one restricted account: show the Family screens.'
+      example:
+        enabled: true
+        restricted: true
+        tier_limit: 9
+        can_manage: false
   requestBodies:
     WsClientMessage:
       description: JSON envelope sent from client to server over the WebSocket. Use `subscribe` / `unsubscribe`.

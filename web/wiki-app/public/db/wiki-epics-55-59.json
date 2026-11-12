@@ -262,17 +262,14 @@
         "phase-5"
       ],
       "related": [
-        "epic-55-desktop-player-parity",
-        "ep-post-sessions"
+        "epic-55-desktop-player-parity"
       ],
       "files": {
         "story": "specs/epics/55-desktop-player-parity/story-55-09-profile.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [
-        "POST /sessions"
-      ],
+      "api_endpoints": [],
       "db_tables": [],
       "metadata": {
         "slug": "profile"
@@ -601,7 +598,8 @@
         "ep-post-libraries",
         "ep-get-collections",
         "ep-post-collections",
-        "ep-get-extensions"
+        "ep-get-extensions",
+        "ep-get-libraries-manage"
       ],
       "files": {
         "story": "specs/epics/56-tv-library-view/story-56-07-plex-collections.md",
@@ -613,7 +611,8 @@
         "POST /libraries",
         "GET /collections",
         "POST /collections",
-        "GET /extensions"
+        "GET /extensions",
+        "GET /libraries/manage"
       ],
       "db_tables": [],
       "metadata": {
@@ -983,7 +982,8 @@
         "ep-put-collections-id-age-tier",
         "ep-put-channels-id-age-tier",
         "ep-put-libraries-id-youtube-sources-sid-age-tier",
-        "ep-get-parental-ratings"
+        "ep-get-parental-ratings",
+        "ep-get-channels"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-01-age-tiers.md",
@@ -1018,7 +1018,8 @@
         "PUT /collections/{id}/age-tier",
         "PUT /channels/{id}/age-tier",
         "PUT /libraries/{id}/youtube/sources/{sid}/age-tier",
-        "GET /parental/ratings"
+        "GET /parental/ratings",
+        "GET /channels"
       ],
       "db_tables": [],
       "metadata": {
@@ -1095,7 +1096,7 @@
         "ep-get-videos",
         "ep-get-search",
         "ep-post-search",
-        "ep-post-sessions"
+        "ep-post-stream-sessions"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-03-server-filter.md",
@@ -1106,7 +1107,7 @@
         "GET /videos",
         "GET /search",
         "POST /search",
-        "POST /sessions"
+        "POST /stream/sessions"
       ],
       "db_tables": [
         "collection_items",
@@ -1364,8 +1365,8 @@
       ],
       "related": [
         "epic-57-parental-controls",
-        "ep-post-sessions",
-        "ep-post-channels-id-play"
+        "ep-post-channels-id-play",
+        "ep-get-channels"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-10-live-tv.md",
@@ -1373,8 +1374,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "POST /sessions",
-        "POST /channels/{id}/play"
+        "POST /channels/{id}/play",
+        "GET /channels"
       ],
       "db_tables": [],
       "metadata": {
@@ -1640,7 +1641,7 @@
       ],
       "related": [
         "epic-58-smart-tv-platforms",
-        "ep-post-sessions"
+        "ep-post-stream-sessions"
       ],
       "files": {
         "story": "specs/epics/58-smart-tv-platforms/story-58-02-device-playback-caps.md",
@@ -1648,7 +1649,7 @@
         "mockups": []
       },
       "api_endpoints": [
-        "POST /sessions"
+        "POST /stream/sessions"
       ],
       "db_tables": [],
       "metadata": {
@@ -1938,7 +1939,7 @@
       ],
       "related": [
         "epic-58-smart-tv-platforms",
-        "ep-post-sessions",
+        "ep-post-stream-sessions",
         "ep-get-components"
       ],
       "files": {
@@ -1947,7 +1948,7 @@
         "mockups": []
       },
       "api_endpoints": [
-        "POST /sessions",
+        "POST /stream/sessions",
         "GET /components"
       ],
       "db_tables": [],
@@ -2051,7 +2052,7 @@
       "related": [
         "epic-58-smart-tv-platforms",
         "ep-get-videos",
-        "ep-post-sessions",
+        "ep-post-stream-sessions",
         "ep-get-home"
       ],
       "files": {
@@ -2061,7 +2062,7 @@
       },
       "api_endpoints": [
         "GET /videos",
-        "POST /sessions",
+        "POST /stream/sessions",
         "GET /home"
       ],
       "db_tables": [],
@@ -2566,7 +2567,8 @@
         "ep-delete-libraries-id",
         "ep-get-jobs",
         "ep-get-jobs-id",
-        "ep-post-sessions",
+        "ep-post-stream-sessions",
+        "ep-get-stream-capabilities",
         "ep-get-settings",
         "ep-put-settings",
         "ep-get-queues",
@@ -2606,7 +2608,8 @@
         "DELETE /libraries/{id}",
         "GET /jobs",
         "GET /jobs/{id}",
-        "POST /sessions",
+        "POST /stream/sessions",
+        "GET /stream/capabilities",
         "GET /settings",
         "PUT /settings",
         "GET /queues",

@@ -18,6 +18,8 @@ export interface FamilyHome {
   libraries?: unknown[];
   series?: unknown[];
   videos?: unknown[];
+  /** GET /api/parental/settings (an admin's); absent: 404, as an older home answers */
+  settings?: unknown | ApiError;
 }
 
 const answer = (v: unknown) => (v instanceof ApiError ? Promise.reject(v) : Promise.resolve(v));
@@ -27,6 +29,7 @@ export function familyGet(h: FamilyHome) {
   return (url: string) => {
     const [path, qs = ""] = url.split("?");
     if (path === "/api/parental/children") return answer({ children: h.children ?? [] });
+    if (path === "/api/parental/settings") return answer(h.settings ?? problem(404));
     if (path === "/api/admin/library-acl")
       return h.accounts instanceof ApiError
         ? answer(h.accounts)

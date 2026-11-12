@@ -120,6 +120,10 @@ func TestDeviceSignalRidesTheAccessToken(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO parental_policies (user_id, max_tier, version) VALUES ($1, 16, 1)`, childID); err != nil {
 		t.Fatal(err)
 	}
+	// the home has set parental controls up (slot 0225 starts them off)
+	if _, err := db.Exec(`UPDATE app_settings SET value = 'true' WHERE key = 'parental.enabled'`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.Exec(`INSERT INTO parental_guardians (child_id, guardian_id) VALUES ($1, $2)`, childID, guardianID); err != nil {
 		t.Fatal(err)
 	}
