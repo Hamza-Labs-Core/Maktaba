@@ -185,6 +185,12 @@ public final class AppSession {
     /// The signed-in account's parental limit and watching time (Epic 57), asked only by an
     /// app that shows them (`parental: true`: the Player).
     public let parental = ParentalStore()
+    /// Called when the signed-in account's limit changed (the store's `epoch` moved), with
+    /// the home and the user: the app drops what it kept on the device for the account. Set
+    /// once at launch and handed to the store at every sign-in before its first question,
+    /// so the first answer's change (a limit that came while the app was closed) is heard
+    /// whatever screen shows.
+    @ObservationIgnored public var parentalChanged: (@MainActor (_ home: URL, _ user: String) -> Void)?
     /// The device's age signal for this sign-in (story 57.04); sends nothing until the app
     /// gives it a source (`ageSignal.use`).
     public let ageSignal = AgeSignalSender()
@@ -798,6 +804,8 @@ public final class AppSession {
             capabilities.start()
             if usesParental {
                 parental.use(client, isAdmin: me.user.isAdmin, key: ParentalStore.key(home: client.home, user: me.user.id))
+                let home = client.home, user = me.user.id
+                parental.onChange = { [weak self] in self?.parentalChanged?(home, user) }
                 parental.start()
                 // what the device says about its user's age, then the limit it made
                 ageSignal.onApplied = { [weak self] in await self?.parental.refresh() }

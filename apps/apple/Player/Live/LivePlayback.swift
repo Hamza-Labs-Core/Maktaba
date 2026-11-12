@@ -234,6 +234,12 @@ final class LivePlayback {
             guard !Task.isCancelled else { return }
             player.replaceCurrentItem(with: nil)
             Log.failure("play live channel", error)
+            if ChannelAccess.programmeRefused(error) {
+                // 57.10: the home refused the programme itself (the access answer came
+                // before the programme changed, or this device's clock is off): the slate
+                phase = .held
+                return
+            }
             phase = TimeUp(error).map(Phase.timeUp) ?? .failed(HomeFailure(error))
         }
     }

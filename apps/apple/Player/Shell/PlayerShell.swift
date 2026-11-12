@@ -87,12 +87,8 @@ struct PlayerShell: View {
         }
         .onChange(of: context.session.capabilities.answered) { settleLaunch() }
         // Epic 57 story 57.05: when the account's limit changes, what the Player kept for it
-        // goes (the shelves on the device, the pictures in memory, the queue), and the
-        // screens read the home again (`parentalEpoch` below)
-        .task {
-            let home = context.client.home, user = context.user.id
-            context.session.parental.onChange = { ParentalCaches.drop(home: home, user: user) }
-        }
+        // goes (`ParentalCaches.drop`, set on the session at launch), and the screens read
+        // the home again (`parentalEpoch` below)
         .onChange(of: sections) { settleLaunch() }
         .onChange(of: link, initial: true) { _, route in
             guard let route else { return }

@@ -55,8 +55,9 @@ struct WatchView: View {
                     BlockedPageView(context: context, subject: .video(id),
                                     stoppedLine: midPlay ? ParentalWords.text("parental.player.stopped") : nil,
                                     back: close) { playback.resumeAfterStop() }
-                case let .time(up, position):
-                    TimeUpView(context: context, up: up, position: position, library: playback.video?.libraryID, back: close) {
+                case let .time(up, _):
+                    // "saved at": the place the home holds, not where the picture stopped
+                    TimeUpView(context: context, up: up, position: playback.savedPosition, library: playback.video?.libraryID, back: close) {
                         playback.resumeAfterStop()
                     }
                 }

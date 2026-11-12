@@ -270,6 +270,45 @@ final class FakeParentalSource: ParentalSource, @unchecked Sendable {
         #expect(third.epoch == 0 && cleared == 1)
     }
 
+    /// Reads overlap (the timer, the app coming to the front, a blocked page's poll, the
+    /// age signal's answer): one at a time, so an older answer never lands after a newer
+    /// one. At sign-in the read from before the device's signal ("no limit") used to come
+    /// back after the one from after it and put the sign-in back to unlimited.
+    @MainActor @Test func anOlderAnswerNeverLandsAfterANewerOne() async {
+        let source = HeldLimitSource()
+        let s = ParentalStore(every: .seconds(3600), sleep: { _ in try await Task.sleep(for: .seconds(3600)) })
+        s.use(source, isAdmin: false)
+        // the sign-in's first read: the home has not heard the device's signal yet
+        let first = Task { await s.refresh() }
+        await source.waitForQuestions(1)
+        // the signal was taken: the limit is read again while the first read is still out
+        let second = Task { await s.refresh() }
+        for _ in 0..<1_000 { await Task.yield() }
+        #expect(source.questions == 1, "the second read waits for the first: one question at a time")
+        source.answer(ParentalFixtures.unrestricted)
+        await source.waitForQuestions(2)
+        source.answer(ParentalFixtures.deviceLimited)
+        await first.value
+        await second.value
+        #expect(s.current.limited && s.current.deviceLimit == 9, "the newer answer stands")
+        #expect(source.questions == 2, "and the home was asked again after the second call, once")
+
+        // signing out drops a read under way: the next sign-in's read does not wait for it
+        let old = Task { await s.refresh() }
+        await source.waitForQuestions(3)
+        s.reset()
+        let other = HeldLimitSource()
+        s.use(other, isAdmin: false)
+        let fresh = Task { await s.refresh() }
+        await other.waitForQuestions(1)
+        other.answer(ParentalFixtures.unrestricted)
+        await fresh.value
+        #expect(s.answered && !s.current.limited)
+        source.answer(ParentalFixtures.child)
+        await old.value
+        #expect(!s.current.limited, "the last sign-in's answer changes nothing")
+    }
+
     @MainActor @Test func aHomeThatDoesNotAnswerKeepsTheLastLimit() async {
         let source = FakeParentalSource()
         source.set(ParentalFixtures.child)
@@ -335,6 +374,39 @@ final class FakeParentalSource: ParentalSource, @unchecked Sendable {
         let o = store(other)
         await o.refresh()
         #expect(o.time == nil)
+    }
+}
+
+/// A source whose limit question waits until the test answers it, oldest first.
+final class HeldLimitSource: ParentalSource, @unchecked Sendable {
+    private let lock = NSLock()
+    private var waiting: [CheckedContinuation<ParentalLimit?, Never>] = []
+    private var asked = 0
+
+    /// How many limit questions were asked.
+    var questions: Int { lock.withLock { asked } }
+
+    func myParental() async throws -> ParentalLimit? {
+        await withCheckedContinuation { c in
+            lock.withLock {
+                asked += 1
+                waiting.append(c)
+            }
+        }
+    }
+
+    func parentalChildren() async throws -> [ParentalChild] { [] }
+    func myParentalTime(library: String?) async throws -> ParentalTime? { nil }
+
+    /// Waits until `n` questions were asked.
+    func waitForQuestions(_ n: Int) async {
+        while questions < n { await Task.yield() }
+    }
+
+    /// Answers the oldest question under way.
+    func answer(_ json: String) {
+        let limit = try! JSONDecoder.home.decode(ParentalLimit.self, from: Data(json.utf8))
+        lock.withLock { waiting.removeFirst() }.resume(returning: limit)
     }
 }
 
@@ -804,34 +876,102 @@ final class HeldWaits: @unchecked Sendable {
         #expect(ParentalStub.seen("POST /api/me/age-signal").count == 1)
     }
 
-    @MainActor @Test func theAnswerIsKeptForTheNextLaunchAndForgottenWhenSignedOut() async {
+    /// Story 57.04: the age band is kept in memory only. Nothing about an age is written to
+    /// the device (a preferences file is unencrypted and goes into backups); what an earlier
+    /// build wrote there is removed at sign-in; the next launch asks Apple again.
+    @MainActor @Test func theAgeBandIsKeptInMemoryOnlyAndAnEarlierBuildsCopyIsRemoved() async {
         ParentalStub.reset()
         ParentalStub.on("POST /api/me/age-signal", 200, #"{"tier_limit":9,"pending_looser":false,"refresh":true}"#)
         ParentalStub.on("POST /api/auth/refresh", 200, ParentalFixtures.tokens)
         let client = ParentalStub.client()
         let source = FixedAgeSignal(.shared(lower: 9, upper: 12, declaration: "guardian_declared"))
-        let (first, defaults) = sender(source, client: client)
-        await first.sync()
+        let defaults = UserDefaults(suiteName: "age-signal-\(UUID().uuidString)")!
+        // what a build before this one left behind
+        let legacy = AgeSignalSender.legacyKey(home: ParentalStub.home, user: "u1")
+        defaults.set(try! JSONEncoder().encode(AgeRangeAnswer.shared(lower: 13, upper: 17, declaration: "self_declared")), forKey: legacy)
 
-        // the next launch: the same sign-in sends the same range without asking Apple again
+        let first = AgeSignalSender(defaults: defaults)
+        first.use(source)
+        first.signedIn(client: client, user: "u1")
+        #expect(defaults.object(forKey: legacy) == nil, "the earlier build's copy is removed")
+        #expect(first.range == nil, "and not read: Apple is asked")
+        await first.sync()
+        #expect(first.range == .shared(lower: 9, upper: 12, declaration: "guardian_declared"))
+        let written = defaults.dictionaryRepresentation().keys.filter { $0.lowercased().contains("agesignal") }
+        #expect(written.isEmpty, "nothing about an age is written to the device: \(written)")
+
+        // the next launch: nothing was kept, so Apple is asked again and the same range sent
         let second = AgeSignalSender(defaults: defaults)
         second.use(source)
         second.signedIn(client: client, user: "u1")
-        #expect(second.range == .shared(lower: 9, upper: 12, declaration: "guardian_declared"))
+        #expect(second.range == nil)
         await second.sync()
-        #expect(source.asked == 1)
+        #expect(source.asked == 2)
         #expect(ParentalStub.seen("POST /api/me/age-signal").count == 2)
 
         // Profile > Age range asks again
         source.answer = .declined
         await second.sync(askAgain: true)
-        #expect(source.asked == 2 && second.range == .declined)
+        #expect(source.asked == 3 && second.range == .declined)
 
         second.signedOut(forget: true)
-        let third = AgeSignalSender(defaults: defaults)
-        third.use(source)
-        third.signedIn(client: client, user: "u1")
-        #expect(third.range == nil, "a new sign-in asks afresh")
+        #expect(second.range == nil, "a new sign-in asks afresh")
+    }
+
+    /// "Not available" is not an answer (the first sync of a launch can run before there is
+    /// a window to ask from): the range is asked for again at the next sync, and an answer
+    /// already had is kept over a later "not available".
+    @MainActor @Test func anAgeRangeThatCouldNotBeAskedForIsAskedForAgain() async {
+        ParentalStub.reset()
+        ParentalStub.on("POST /api/me/age-signal", 200, #"{"tier_limit":9,"pending_looser":false,"refresh":true}"#)
+        ParentalStub.on("POST /api/auth/refresh", 200, ParentalFixtures.tokens)
+        let source = FixedAgeSignal(.notAvailable)
+        let (s, _) = sender(source, client: ParentalStub.client())
+        await s.sync()
+        #expect(source.asked == 1 && s.range == nil, "nothing was asked: nothing is kept")
+        #expect(ParentalStub.seen.isEmpty)
+        // the app came to the front, with a window now
+        source.answer = .shared(lower: 9, upper: 12, declaration: "guardian_declared")
+        await s.sync()
+        #expect(source.asked == 2, "asked again in the same launch")
+        #expect(s.range == .shared(lower: 9, upper: 12, declaration: "guardian_declared"))
+        #expect(ParentalStub.seen("POST /api/me/age-signal").count == 1)
+        // an answer is not asked for again by itself, and "not available" does not replace it
+        await s.sync()
+        #expect(source.asked == 2)
+        source.answer = .notAvailable
+        await s.sync(askAgain: true)
+        #expect(source.asked == 3 && s.range == .shared(lower: 9, upper: 12, declaration: "guardian_declared"))
+    }
+
+    /// Profile > Share age range again, tapped while a sync is under way (the one the app
+    /// coming to the front started): the ask is not dropped, the pass that follows makes it.
+    @MainActor @Test func askingForTheAgeRangeAgainDuringASyncIsNotDropped() async {
+        ParentalStub.reset()
+        ParentalStub.on("POST /api/me/age-signal", 200, #"{"tier_limit":9,"pending_looser":false,"refresh":true}"#)
+        ParentalStub.on("POST /api/auth/refresh", 200, ParentalFixtures.tokens)
+        let source = HeldAgeSignal()
+        let s = AgeSignalSender(defaults: UserDefaults(suiteName: "age-signal-\(UUID().uuidString)")!)
+        s.use(source)
+        s.signedIn(client: ParentalStub.client(), user: "u1")
+        let foreground = Task { await s.sync() }
+        while source.asked < 1 { await Task.yield() }
+        // the first pass waits on Apple; the person taps "Share age range again"
+        await s.sync(askAgain: true)
+        #expect(source.asked == 1, "one question at a time")
+        source.answer(.declined)
+        // nothing is sent for "declined", so the next question (if any) comes without a wait
+        var turns = 0
+        while source.asked < 2, turns < 100_000 {
+            await Task.yield()
+            turns += 1
+        }
+        #expect(source.asked == 2, "the tap's question was asked once the first pass ended")
+        if source.asked == 2 { source.answer(.shared(lower: 13, upper: 17, declaration: "self_declared")) }
+        await foreground.value
+        #expect(s.range == .shared(lower: 13, upper: 17, declaration: "self_declared"))
+        let range = ParentalStub.seen("POST /api/me/age-signal").last?.json["age_range"] as? [String: Any]
+        #expect(range?["lower"] as? Int == 13, "and what it answered was sent")
     }
 
     // MARK: 57.07
@@ -1137,6 +1277,56 @@ final class HeldWaits: @unchecked Sendable {
         #expect(m.events.value?.isEmpty == true)
     }
 
+    /// More, tapped twice: the page is read once and its rows are listed once.
+    @MainActor @Test func aSecondTapOnMoreDoesNotAddThePageTwice() async {
+        ParentalStub.reset()
+        ParentalStub.on("GET /api/users/c2/parental/activity", 200,
+                        #"{"events":[{"id":"e3","kind":"watched","at":"2026-11-11T15:00:00Z"}],"next_cursor":"c-2"}"#)
+        ParentalStub.on("GET /api/users/c2/parental/activity", 200,
+                        #"{"events":[{"id":"e2","kind":"blocked","at":"2026-11-10T20:00:00Z"}],"next_cursor":"c-3"}"#)
+        // (were the cursor sent twice, the home would answer the same page again)
+        ParentalStub.on("GET /api/users/c2/parental/activity", 200,
+                        #"{"events":[{"id":"e2","kind":"blocked","at":"2026-11-10T20:00:00Z"}],"next_cursor":"c-3"}"#)
+        let m = ActivityModel(client: ParentalStub.client(), child: ParentalPerson(id: "c2", username: "Sara"))
+        await m.load()
+        async let first: Void = m.more()
+        async let second: Void = m.more()
+        _ = await (first, second)
+        #expect(m.events.value?.map(\.id) == ["e3", "e2"], "each row once")
+        #expect(ParentalStub.seen("GET /api/users/c2/parental/activity").map(\.query) == ["", "cursor=c-2"], "the page was asked for once")
+        #expect(!m.readingMore && m.next == "c-3")
+        // and a page the home repeats adds nothing
+        await m.more()
+        #expect(m.events.value?.map(\.id) == ["e3", "e2"])
+    }
+
+    /// Requests are picked on the device from pages of every kind: with newer pages that
+    /// hold none, the reading goes on to the first request rather than say "nothing yet"
+    /// above a More button.
+    @MainActor @Test func theRequestsFilterReadsOnToTheFirstRequest() async {
+        ParentalStub.reset()
+        func page(_ ids: [String], kind: String, next: String?) -> String {
+            let events = ids.map { #"{"id":"\#($0)","kind":"\#(kind)","at":"2026-11-11T15:00:00Z"}"# }.joined(separator: ",")
+            return #"{"events":[\#(events)]\#(next.map { #","next_cursor":"\#($0)""# } ?? "")}"#
+        }
+        let route = "GET /api/users/c2/parental/activity"
+        ParentalStub.on(route, 200, page(["w1", "w2"], kind: "watched", next: "c-2"))   // load (All)
+        ParentalStub.on(route, 200, page(["w1", "w2"], kind: "watched", next: "c-2"))   // Requests: nothing here
+        ParentalStub.on(route, 200, page(["w3", "w4"], kind: "watched", next: "c-3"))   // nor here
+        ParentalStub.on(route, 200, page(["a1"], kind: "asked", next: "c-4"))           // the first request
+        ParentalStub.on(route, 200, page(["d1"], kind: "denied", next: nil))            // More
+        let m = ActivityModel(client: ParentalStub.client(), child: ParentalPerson(id: "c2", username: "Sara"))
+        await m.load()
+        #expect(ParentalStub.seen(route).count == 1, "All shows every kind: one page is enough")
+        await m.show(.requests)
+        let utc = Calendar(identifier: .gregorian)
+        #expect(m.days(calendar: utc).flatMap(\.events).map(\.id) == ["a1"], "read on to the first request")
+        #expect(ParentalStub.seen(route).map(\.query) == ["", "", "cursor=c-2", "cursor=c-3"])
+        #expect(m.next == "c-4", "and no further: More reads the rest")
+        await m.more()
+        #expect(Set(m.days(calendar: utc).flatMap(\.events).map(\.id)) == ["a1", "d1"] && m.next == nil)
+    }
+
     // MARK: what a rule may name, a play-only sign-in
 
     /// 57.07: a collection, a YouTube source and a plugin can be picked for a rule, each from
@@ -1286,6 +1476,26 @@ final class HeldWaits: @unchecked Sendable {
         // the fixed double the TV's UI tests launch with says the same
         let spec = FixedAgeSignal(spec: "none::1000:400")
         #expect(spec?.answer == .notAvailable && spec?.tv == 400 && spec?.movie == 1000)
+    }
+}
+
+/// An age signal source whose age-range question waits until the test answers it.
+@MainActor
+final class HeldAgeSignal: AgeSignalSource {
+    private var waiting: [CheckedContinuation<AgeRangeAnswer, Never>] = []
+    private(set) var asked = 0
+    var region: String? { "US" }
+
+    func requestAgeRange() async -> AgeRangeAnswer {
+        asked += 1
+        return await withCheckedContinuation { waiting.append($0) }
+    }
+
+    func ratingCeilings() -> (movie: Int?, tv: Int?) { (nil, nil) }
+
+    /// Answers the question under way.
+    func answer(_ a: AgeRangeAnswer) {
+        waiting.removeFirst().resume(returning: a)
     }
 }
 
@@ -1484,6 +1694,22 @@ final class Clock: @unchecked Sendable {
     }
 }
 
+@Suite struct ThePINPadsWords {
+    /// VoiceOver's line for the dots names both numbers in one script: in Arabic the count
+    /// was formatted and the 6 was a literal, read as two kinds of digit.
+    @MainActor @Test func theDigitsEnteredAreCountedInTheLanguagesOwnDigits() {
+        let entry = PinEntry(client: ParentalStub.client(), subject: .video("v2"), guardian: ParentalPerson(id: "g1", username: "Huda"))
+        [4, 2, 7].forEach(entry.press)
+        #expect(entry.progressLabel(en) == "3 of 6 digits entered")
+        let arabic = entry.progressLabel(ar)
+        let digits = arabic.filter { $0.wholeNumberValue != nil }
+        #expect(digits.count == 2, "the count and the length: \(arabic)")
+        #expect(digits.map(\.wholeNumberValue) == [3, 6])
+        #expect(digits.allSatisfy(\.isASCII) || digits.allSatisfy { !$0.isASCII }, "one script for both numbers: \(arabic)")
+        #expect(arabic.hasPrefix("أُدخل"))
+    }
+}
+
 @Suite struct LiveTVUnderALimit {
     @Test func theAccessAnswerSaysWhenToAskAgain() throws {
         let json = #"{"channel_id":"ch-1","restricted":true,"allowed":false,"until":"2026-11-11T20:00:00Z"}"#
@@ -1494,6 +1720,25 @@ final class Clock: @unchecked Sendable {
         #expect(a.askAgain(after: homeTime("2026-11-11T20:00:30Z")!) == 5)
         let open = try JSONDecoder.home.decode(ChannelAccess.self, from: Data(#"{"channel_id":"ch-1","restricted":false,"allowed":true,"until":null}"#.utf8))
         #expect(open.allowed && open.until == nil && open.askAgain() == 300)
+    }
+
+    /// The home's own refusal of the programme on now (the channel's play or its stream) is
+    /// the slate, whatever this device's clock made of the access answer's `until`; the
+    /// account's time being over, a hidden channel and a plain failure are not.
+    @Test func theHomesRefusalOfTheProgrammeIsTheSlate() {
+        let programme = APIError.status(403, #"{"type":"https://maktaba.tv/problems/parental-restricted","status":403,"code":"restricted","reason":"programme","retry_at":"2026-11-11T20:00:00Z"}"#)
+        #expect(ChannelAccess.programmeRefused(programme))
+        #expect(ParentalRefusal(programme) == .programme(retryAt: homeTime("2026-11-11T20:00:00Z")))
+        let noTime = APIError.status(403, #"{"status":403,"code":"restricted","reason":"programme"}"#)
+        #expect(ChannelAccess.programmeRefused(noTime), "with no time to ask again at, still the slate")
+        #expect(!ChannelAccess.programmeRefused(APIError.status(403, #"{"status":403,"code":"restricted"}"#)), "a restricted account's refusal of something else")
+        #expect(!ChannelAccess.programmeRefused(APIError.status(403, ParentalFixtures.timeOver)), "time's up is its own screen")
+        #expect(!ChannelAccess.programmeRefused(APIError.status(404, ParentalFixtures.notFound)), "a hidden channel is the blocked page")
+        #expect(!ChannelAccess.programmeRefused(APIError.transport("down")))
+        // a device clock ten minutes fast, or slow: the wait stays within its bounds
+        let a = ChannelAccess(restricted: true, allowed: true, until: homeTime("2026-11-11T20:00:00Z"))
+        #expect(a.askAgain(after: homeTime("2026-11-11T20:10:00Z")!) == 5)
+        #expect(a.askAgain(after: homeTime("2026-11-11T19:50:00Z")!) == 300)
     }
 
     @Test func aProgrammeAboveTheLimitIsMaskedToItsTime() throws {

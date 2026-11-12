@@ -268,7 +268,7 @@ struct TVPinScreen: View {
             }
             .environment(\.layoutDirection, .leftToRight)
             .accessibilityElement()
-            .accessibilityLabel(Text(verbatim: ParentalWords.text("parental.pin.digits", entry.digits.count)))
+            .accessibilityLabel(Text(verbatim: entry.progressLabel()))
             .accessibilityIdentifier("pin.dots")
             Group {
                 if entry.state == .checking {
@@ -698,8 +698,9 @@ struct TVParentalStopView: View {
 
     var body: some View {
         switch stop {
-        case let .time(up, position):
-            TVTimeUpView(client: playback.client, session: session, up: up, position: position,
+        case let .time(up, _):
+            // "saved at": the place the home holds, not where the picture stopped
+            TVTimeUpView(client: playback.client, session: session, up: up, position: playback.savedPosition,
                          library: playback.video.libraryID, back: back) { playback.resumeAfterStop() }
         case let .blocked(midPlay):
             TVBlockedPage(client: playback.client, session: session, subject: .video(playback.video.id),

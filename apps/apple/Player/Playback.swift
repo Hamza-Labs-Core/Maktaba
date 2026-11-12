@@ -32,7 +32,8 @@ final class Playback {
     /// stream is asked for again as the home's `Retry-After` says.
     private(set) var waiting: HomeFailure?
     /// Epic 57: the home stopped this video for a parental reason. Playback stopped, the
-    /// position was sent, and nothing is tried again until `resumeAfterStop`.
+    /// home holds the place of the last post it took (`savedPosition`), and nothing is tried
+    /// again until `resumeAfterStop`.
     private(set) var parentalStop: ParentalStop?
     /// Whether this sign-in is under a parental limit (the session's store): a "not found"
     /// then may be a block.
@@ -45,6 +46,12 @@ final class Playback {
         /// 403 `parental-time`: the time's-up screen, with where the video stopped.
         case time(TimeUp, position: Double)
     }
+
+    /// The place the home holds for this video: the position of the last progress post it
+    /// took, else where the stream was opened. A refused post is not stored by the home
+    /// (it answers before it writes), so after a stop for time this, not where the picture
+    /// stopped, is what "saved at" may say: another device resumes here.
+    private(set) var savedPosition: Double?
 
     // What the controls show.
     private(set) var position: Double = 0
@@ -78,6 +85,8 @@ final class Playback {
     }
 
     private var session: String?
+    /// Where the stream was last opened (the home's resume point, or the place asked for).
+    private var openedFrom: Double?
     /// When to reopen: just before the signed URL ends.
     private var renewAt = Date.distantFuture
     private var openedAt = Date.distantPast
@@ -222,10 +231,16 @@ final class Playback {
         guard let stop = parentalStop, let current = video else { return }
         // the next video was the blocked one: a parent allowed it, so it plays
         if case let .blocked(id, _) = stop, id != current.id {
-            parentalStop = nil
+            // the stop stays until the home gives the video: one that still cannot be read
+            // (still hidden, the home not reached) leaves the blocked page, never a spinner
             Task {
-                guard let v = try? await client.video(id) else { return }
-                play(v)
+                do {
+                    let v = try await client.video(id)
+                    guard parentalStop == stop else { return }
+                    play(v)
+                } catch {
+                    Log.failure("open the video a parent allowed", error)
+                }
             }
             return
         }
@@ -383,6 +398,8 @@ final class Playback {
             }
         }
         session = nil
+        openedFrom = nil
+        savedPosition = nil
         player = nil
         failure = nil
         waiting = nil
@@ -482,6 +499,7 @@ final class Playback {
                 Task { [client] in await client.closeStream(old) }
             }
             session = s.sessionID
+            openedFrom = start
             waiting = nil
             ladder = s.ladder ?? []
             try await client.waitUntilPlayable(url, headers: auth.headers)
@@ -621,10 +639,25 @@ final class Playback {
         Task { [client, weak self] in
             do {
                 try await client.postProgress(session: session, positionSec: Int(at), completed: completed)
+                self?.progressTaken(session: session, at: at)
             } catch {
                 self?.progressRefused(error, session: session, at: at)
             }
         }
+    }
+
+    /// The home took a progress post of `taken`: its place for this video is `at`.
+    func progressTaken(session taken: String, at: Double) {
+        guard session == taken else { return }
+        savedPosition = at
+    }
+
+    /// This playback as if `open` had opened `session` for `video` (the tests' seam: a
+    /// stream's refusals are matched by its session, which only the home gives).
+    func adopt(session: String, video: Video? = nil, openedFrom: Double? = nil) {
+        self.session = session
+        self.openedFrom = openedFrom
+        if let video { self.video = video }
     }
 
     /// The home refused a progress post. `parental-time`: the time is over, so the video
@@ -654,13 +687,16 @@ final class Playback {
         }
     }
 
-    /// Stops for a parental reason: the position is sent (best effort; the home has every
-    /// post until now), the player goes, and the screen shows the blocked page or time's up.
-    private func stopForParental(_ stop: ParentalStop) {
+    /// Stops for a parental reason: the player goes, and the screen shows the blocked page or
+    /// time's up. A stop for time sends no position: the home answers a post 403 before it
+    /// writes anything once the time is over, so the place it holds is the last post it took
+    /// (`savedPosition`), and the time's-up screen says that one.
+    func stopForParental(_ stop: ParentalStop) {
         let at = player?.currentTime().seconds ?? position
         if let session, at.isFinite, at > 0, case .blocked(_, true) = stop {
             Task { [client] in await client.reportProgress(session: session, positionSec: Int(at)) }
         }
+        if savedPosition == nil { savedPosition = openedFrom }
         var kept = stop
         if case let .time(up, start) = stop, at.isFinite, at > start { kept = .time(up, position: at) }
         Log.ui.info("playback: stopped by the home for a parental reason")

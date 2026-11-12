@@ -9539,13 +9539,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld of 6 digits entered"
+            "value" : "%1$lld of %2$lld digits entered"
           }
         },
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أُدخل %lld من 6 أرقام"
+            "value" : "أُدخل %1$lld من %2$lld أرقام"
           }
         }
       }

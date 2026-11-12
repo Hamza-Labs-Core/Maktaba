@@ -100,6 +100,9 @@ struct ChannelScreen: View {
                            limited: context.session.parental.current.limited, again: again)) {
             await watchAccess(playback.channelID)
         }
+        // the home refused the programme itself: the slate at once; `watchAccess` goes on
+        // asking, and starts the channel again when the home says it may be watched
+        .onChange(of: playback.phase) { _, phase in phaseChanged(phase) }
         .onChange(of: model.channels.map(\.id), initial: true) { _, _ in playback.update(channels: model.channels) }
         .onChange(of: model.onNow(playback.channelID)?.current?.displayTitle(), initial: true) { _, title in playback.showProgramme(title) }
         .onDisappear {
@@ -173,6 +176,30 @@ struct ChannelScreen: View {
                 }
             }
             do { try await Task.sleep(for: .seconds(wait)) } catch { return }
+        }
+    }
+
+    /// The playback's phase, for the slate. The home refused the programme itself (`held`):
+    /// the slate at once; `watchAccess` goes on asking and starts the channel again when
+    /// the home says it may be watched. A channel that stopped under a limit may be the
+    /// home ending a programme that is now above it, before this device's clock said to ask
+    /// again: the home is asked now, once, and the slate replaces the error if that is why.
+    private func phaseChanged(_ phase: LivePlayback.Phase) {
+        switch phase {
+        case .held:
+            if !slated { slated = true }
+        case let .failed(failure):
+            // (a channel the home does not give is the blocked page: nothing to ask)
+            guard context.session.parental.current.limited, failure.kind != .notFound else { return }
+            let channel = playback.channelID
+            Task {
+                guard let access = try? await context.client.channelAccess(channel), access.restricted, !access.allowed,
+                      playback.channelID == channel, playback.phase == phase else { return }
+                slated = true
+                await playback.hold()
+            }
+        case .starting, .playing, .ended, .timeUp:
+            break
         }
     }
 

@@ -94,6 +94,33 @@ final class PlayerImageCacheTests: XCTestCase {
         XCTAssertEqual(server.count, 2, "it did try the home first")
     }
 
+    /// Epic 57: when the account's limit changes the pictures kept on disk go too (a poster
+    /// of what the limit now hides was among them), so with the home out of reach nothing
+    /// kept shows; a new cache on the same folder (the next launch) finds none either.
+    func testClearingEmptiesTheDiskAsWellAsMemory() async throws {
+        let server = FakeServer(png: Self.png(width: 64, height: 96), cacheControl: "max-age=3600")
+        let c = cache(server)
+        _ = try await c.image(for: request("v1"), maxPixelSize: 96)
+        _ = try await c.image(for: request("v2"), maxPixelSize: 96)
+        let before = await c.diskBytes
+        XCTAssertGreaterThan(before, 0, "two posters on disk")
+        await c.clear()
+        let (bytes, inMemory) = (await c.diskBytes, await c.memoryCount)
+        XCTAssertEqual(bytes, 0, "nothing left on disk")
+        XCTAssertEqual(inMemory, 0, "nor in memory")
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        XCTAssertTrue(files.isEmpty, "the files themselves are gone: \(files)")
+        server.offline = true
+        for c in [c, cache(server)] {
+            do {
+                _ = try await c.image(for: request("v1"), maxPixelSize: 96)
+                XCTFail("a cleared picture must not show from the device")
+            } catch {
+                XCTAssertNil(error as? ImageCacheError, "the home was asked and could not be reached: \(error)")
+            }
+        }
+    }
+
     func testNoPosterIsNotFound() async {
         let server = FakeServer(png: Data(), status: 404)
         do {
