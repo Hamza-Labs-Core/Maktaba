@@ -82,9 +82,11 @@ type Surface struct {
 	Owner string
 	// Reason says why the class is right.
 	Reason string
-	// Probe says how the bypass rehearsal (57.13) asks the route for a fixture:
-	// the request path with {video}, {series}, {collection}, {library} or
-	// {channel} for the fixture's id. Empty: the route takes no fixture.
+	// Probe says how the bypass rehearsal (57.13) asks a read for a fixture: the
+	// request path with {video}, {series}, {collection}, {library} or {channel}
+	// for the fixture's id. It is a hint only: the rehearsal walks every mounted
+	// Filtered and ByID route itself (api/internal/router/p57_bypass_pg_test.go)
+	// and fails on one it cannot reach with a real fixture, whatever Probe says.
 	Probe string
 }
 
