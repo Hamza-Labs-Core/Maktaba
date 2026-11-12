@@ -9,6 +9,9 @@ import SwiftUI
 struct ParentalProfileSection: View {
     let context: PlayerContext
     @State private var family = false
+    /// The home's switch as an admin reads it (story 57.12): its child-device notice shows
+    /// above Family until an admin dismisses it.
+    @State private var settings: ParentalSettings?
 
     private var store: ParentalStore { context.session.parental }
     private var signal: AgeSignalSender { context.session.ageSignal }
@@ -69,6 +72,11 @@ struct ParentalProfileSection: View {
                     .accessibilityIdentifier("profile.parental.askAgain")
                 }
                 if store.canManage {
+                    if context.user.isAdmin, settings?.childDeviceNotice == true {
+                        // a signed-in device says a child uses it, and parental controls
+                        // are off: said here, set up in Family
+                        ChildDeviceNoticeText()
+                    }
                     Button {
                         family = true
                     } label: {
@@ -84,14 +92,25 @@ struct ParentalProfileSection: View {
                     }
                     .foregroundStyle(Color.mktText)
                     .accessibilityIdentifier("profile.family")
+                    // on the Family row alone: a modifier on the section goes to each of its
+                    // rows, and two rows presenting one sheet close it as it opens
+                    .sheet(isPresented: $family) {
+                        FamilyView(context: context)
+                            #if os(macOS)
+                            .frame(minWidth: 520, minHeight: 560)
+                            #endif
+                    }
+                    // read when Profile shows and when Family closes (the notice was
+                    // dismissed, or parental controls were set up)
+                    .task(id: family) { await readSettings() }
                 }
             }
-            .sheet(isPresented: $family) {
-                FamilyView(context: context)
-                    #if os(macOS)
-                    .frame(minWidth: 520, minHeight: 560)
-                    #endif
-            }
         }
+    }
+
+    /// The home's switch, for an admin only (anyone else is refused by the home).
+    private func readSettings() async {
+        guard !family, context.user.isAdmin, store.canManage else { return }
+        if let s = try? await context.client.parentalSettings() { settings = s }
     }
 }

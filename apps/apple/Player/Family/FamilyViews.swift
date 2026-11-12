@@ -71,6 +71,9 @@ struct FamilyView: View {
         NavigationStack {
             List {
                 FamilyReadOnlyNote()
+                // story 57.12: a signed-in device says a child uses it, and parental
+                // controls are off: an admin is told once, with where to set them up
+                if model.showsChildDeviceNotice { ChildDeviceNoticeSection(model: model) }
                 Section {
                     switch model.children {
                     case .loading:
@@ -153,7 +156,9 @@ struct FamilyView: View {
                         }
                         .accessibilityIdentifier("family.rateLibraries")
                     }
+                    if let settings = model.settings { ParentalSwitchSection(model: model, settings: settings) }
                 }
+                FamilyHelpSection()
             }
             .maktabaSurface()
             .navigationTitle(Text(verbatim: word("family.title")))
@@ -181,6 +186,102 @@ struct FamilyView: View {
 
     private func header(_ key: String) -> some View {
         Text(verbatim: word(key)).accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// "A child may be using Maktaba" (story 57.12), for an admin while parental controls are
+/// off and a signed-in device says a child uses it: Set up goes to Rate libraries (then Make
+/// an account restricted, on this screen), Dismiss puts it away for every admin until a
+/// child's device speaks again.
+private struct ChildDeviceNoticeSection: View {
+    let model: FamilyModel
+
+    var body: some View {
+        Section {
+            ChildDeviceNoticeText()
+            NavigationLink {
+                RateLibrariesView(client: model.client)
+            } label: {
+                Text(verbatim: word("parental.notice.action"))
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Color.mktBrassText)
+                    .frame(minHeight: 44)
+            }
+            .accessibilityIdentifier("family.notice.setUp")
+            Button { Task { await model.dismissChildDeviceNotice() } } label: {
+                Text(verbatim: word("parental.notice.dismiss")).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            }
+            .accessibilityIdentifier("family.notice.dismiss")
+            .familyChange()
+        }
+    }
+}
+
+/// The notice's words: its title and what to do, as one element.
+struct ChildDeviceNoticeText: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: MaktabaTokens.Spacing.s2) {
+            IconLine(word("parental.notice.title"), systemImage: "figure.and.child.holdinghands")
+                .font(.maktabaBody(16, weight: .semibold, relativeTo: .body))
+                .foregroundStyle(Color.mktText)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("family.notice.title")
+            Text(verbatim: word("parental.notice.body"))
+                .font(.maktabaBody(15, relativeTo: .subheadline))
+                .foregroundStyle(Color.mktMuted)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("family.notice.body")
+        }
+        .padding(.vertical, MaktabaTokens.Spacing.s1)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("family.notice")
+    }
+}
+
+/// The home's switch for parental controls (admins, story 57.12). It turns on by itself with
+/// the first restricted account or the first library rating; off is refused by the home
+/// while an account is restricted (409 `restrictions_exist`), and the screen says so.
+private struct ParentalSwitchSection: View {
+    let model: FamilyModel
+    let settings: ParentalSettings
+
+    var body: some View {
+        Section {
+            Toggle(isOn: Binding { settings.enabled } set: { on in Task { await model.setEnabled(on) } }) {
+                Text(verbatim: word("parental.enabled"))
+            }
+            .frame(minHeight: 44)
+            .disabled(model.switching)
+            .accessibilityIdentifier("family.enabled")
+            .familyChange()
+        } footer: {
+            VStack(alignment: .leading, spacing: MaktabaTokens.Spacing.s1) {
+                Text(verbatim: word(settings.enabled ? "parental.enabled.on" : "parental.enabled.off"))
+                if settings.enabled, !settings.canDisable {
+                    Text(verbatim: word("parental.enabled.offBlocked"))
+                        .accessibilityIdentifier("family.enabled.offBlocked")
+                }
+            }
+        }
+    }
+}
+
+/// Help, at the foot of Family: Screen Time sets how long and when, Maktaba what; and a
+/// guardian with no iPhone or iPad uses Family on the home's web page.
+private struct FamilyHelpSection: View {
+    var body: some View {
+        Section {
+            IconLine(word("help.parental.screenTime"), systemImage: "hourglass")
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("family.help.screenTime")
+            IconLine(word("help.parental.web"), systemImage: "globe")
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("family.help.web")
+        } header: {
+            Text(verbatim: word("help.parental.title")).accessibilityAddTraits(.isHeader)
+        }
+        .font(.maktabaBody(15, relativeTo: .subheadline))
+        .foregroundStyle(Color.mktMuted)
     }
 }
 
@@ -402,11 +503,18 @@ struct PinView: View {
 
 /// Rate libraries (admins): each library's default tier, which every video in it with no
 /// rating of its own takes.
+///
+/// Story 57.12: a library with no tier that is mostly lectures or Quran recitation starts as
+/// All ages (`GET /api/parental/library-suggestions`). That is only offered: the row says
+/// "Suggested", and nothing is saved until the admin saves the suggestions or picks a tier.
 struct RateLibrariesView: View {
     let client: APIClient
     @State private var libraries: Load<[LibrarySummary]> = .loading
     /// What was set here (the home's library list does not say a library's tier).
     @State private var chosen: [String: Int?] = [:]
+    /// The tiers the home suggests and the admin has not saved, by library.
+    @State private var offered: [String: Int] = [:]
+    @State private var saving = false
     @State private var notice: FamilyNotice?
 
     var body: some View {
@@ -418,51 +526,92 @@ struct RateLibrariesView: View {
                     Text(verbatim: failure.message(video: false)).foregroundStyle(Color.mktMuted)
                         .accessibilityIdentifier("rateLibraries.failed")
                 case let .ready(list):
-                    ForEach(list) { library in
-                        Menu {
-                            ForEach(AgeTier.content, id: \.self) { tier in
-                                Button { Task { await set(library, tier) } } label: { Text(verbatim: AgeTier.label(tier)) }
-                            }
-                            Button { Task { await set(library, nil) } } label: { Text(verbatim: word("family.rateLibraries.notRated")) }
-                        } label: {
-                            LabeledContent {
-                                if let set = chosen[library.id] {
-                                    Text(verbatim: set.map { AgeTier.label($0) } ?? word("family.rateLibraries.notRated"))
-                                }
-                            } label: {
-                                Text(verbatim: library.name).foregroundStyle(Color.mktText)
-                            }
-                            .frame(minHeight: 44)
-                        }
-                        .accessibilityIdentifier("family.rate.\(library.id)")
-                    }
+                    ForEach(list) { library in row(library) }
                 }
             } footer: {
                 Text(verbatim: word("family.rateLibraries.detail"))
             }
+            if !offered.isEmpty { suggestions }
         }
         .maktabaSurface()
         .navigationTitle(Text(verbatim: word("family.rateLibraries")))
         .familyNotice($notice)
-        .task {
-            do {
-                libraries = .ready(try await client.librarySummaries())
-            } catch {
-                if !Log.isCancellation(error) { libraries = .failed(HomeFailure(error)) }
+        .accessibilityIdentifier("screen.rateLibraries")
+        .task { await load() }
+    }
+
+    /// One library: its tier (or the one suggested for it), and a menu to set it.
+    private func row(_ library: LibrarySummary) -> some View {
+        Menu {
+            ForEach(AgeTier.content, id: \.self) { tier in
+                Button { Task { await set(library.id, tier) } } label: { Text(verbatim: AgeTier.label(tier)) }
             }
-            // the tiers the home has stored, where it says them (a newer home, to an admin)
-            if let stored = try? await client.libraryAgeTiers() {
-                for (id, tier) in stored where chosen[id] == nil { chosen[id] = tier }
+            Button { Task { await set(library.id, nil) } } label: { Text(verbatim: word("family.rateLibraries.notRated")) }
+        } label: {
+            LabeledContent {
+                if let tier = offered[library.id] {
+                    Text(verbatim: word("family.rateLibraries.suggested", AgeTier.label(tier)))
+                } else if let set = chosen[library.id] {
+                    Text(verbatim: set.map { AgeTier.label($0) } ?? word("family.rateLibraries.notRated"))
+                }
+            } label: {
+                Text(verbatim: library.name).foregroundStyle(Color.mktText)
+            }
+            .frame(minHeight: 44)
+        }
+        .accessibilityIdentifier("family.rate.\(library.id)")
+    }
+
+    /// Save what the home suggests, for every library it suggests a tier for.
+    private var suggestions: some View {
+        Section {
+            Button { Task { await saveSuggested() } } label: {
+                Text(verbatim: word("family.rateLibraries.saveSuggested")).frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .disabled(saving)
+            .accessibilityIdentifier("family.rate.saveSuggested")
+            .familyChange()
+        } footer: {
+            Text(verbatim: word("family.rateLibraries.suggested.detail"))
+        }
+    }
+
+    private func load() async {
+        do {
+            libraries = .ready(try await client.librarySummaries())
+        } catch {
+            if !Log.isCancellation(error) { libraries = .failed(HomeFailure(error)) }
+        }
+        // the tiers the home has stored, where it says them (a newer home, to an admin)
+        if let stored = try? await client.libraryAgeTiers() {
+            for (id, tier) in stored where chosen[id] == nil { chosen[id] = tier }
+        }
+        // what the form starts with for a library with no tier (story 57.12); a library
+        // rated here meanwhile keeps what was chosen
+        if let list = try? await client.librarySuggestions() {
+            for s in list {
+                if chosen[s.id] == nil { chosen[s.id] = .some(s.tier) }
+                if let tier = s.offered, (chosen[s.id] ?? nil) == nil { offered[s.id] = tier }
             }
         }
     }
 
-    private func set(_ library: LibrarySummary, _ tier: Int?) async {
+    private func set(_ library: String, _ tier: Int?) async {
         do {
-            try await client.setLibraryAgeTier(library.id, tier)
-            chosen[library.id] = .some(tier)
+            try await client.setLibraryAgeTier(library, tier)
+            chosen[library] = .some(tier)
+            offered[library] = nil
         } catch {
             if !Log.isCancellation(error) { notice = FamilyNotice(error) }
+        }
+    }
+
+    private func saveSuggested() async {
+        saving = true
+        defer { saving = false }
+        for (library, tier) in offered.sorted(by: { $0.key < $1.key }) {
+            await set(library, tier)
+            if notice != nil { return }
         }
     }
 }

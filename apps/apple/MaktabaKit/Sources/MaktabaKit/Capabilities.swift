@@ -57,6 +57,40 @@ public struct Capabilities: Equatable, Sendable {
         }
     }
 
+    /// The `parental` block (Epic 57 story 57.12): what an app needs before it draws anything.
+    public struct Parental: Equatable, Sendable, Decodable {
+        /// Parental controls are turned on in this home.
+        public let enabled: Bool
+        /// This account is restricted.
+        public let restricted: Bool
+        /// The limit this sign-in is held to, by the account or its device (nil: none).
+        public let tierLimit: Int?
+        /// The caller is an admin, or a guardian of at least one account.
+        public let canManage: Bool
+
+        public init(enabled: Bool, restricted: Bool = false, tierLimit: Int? = nil, canManage: Bool = false) {
+            self.enabled = enabled
+            self.restricted = restricted
+            self.tierLimit = tierLimit
+            self.canManage = canManage
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case enabled, restricted
+            case tierLimit = "tier_limit"
+            case canManage = "can_manage"
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            // a switch that is missing or cannot be read counts as on, as on the home
+            enabled = c.lenient(.enabled) ?? true
+            restricted = c.lenient(.restricted) ?? false
+            tierLimit = c.lenient(.tierLimit)
+            canManage = c.lenient(.canManage) ?? false
+        }
+    }
+
     /// The known features the home answered "off".
     public let off: Set<Feature>
     /// nil: a viewer (or no answer yet).
@@ -64,11 +98,14 @@ public struct Capabilities: Equatable, Sendable {
     /// Plugin panels (story 54.20): true only when the home answers `plugin_panels: "on"`.
     /// Unlike the known features, a missing key is off, so the app never asks an older home.
     public let panels: Bool
+    /// The caller's parental block; nil on a home from before it (and before the first answer).
+    public let parental: Parental?
 
-    public init(off: Set<Feature> = [], admin: Admin? = nil, panels: Bool = false) {
+    public init(off: Set<Feature> = [], admin: Admin? = nil, panels: Bool = false, parental: Parental? = nil) {
         self.off = off
         self.admin = admin
         self.panels = panels
+        self.parental = parental
     }
 
     /// Every feature on, nothing known about the person: before the first answer, on a home
@@ -124,7 +161,7 @@ public struct Capabilities: Equatable, Sendable {
         let off = Set((w.features ?? [:]).compactMap { $0.value == "off" ? Feature(rawValue: $0.key) : nil })
         let admin = w.admin.map { Admin(manageComponents: $0.manageComponents ?? false, off: $0.off ?? [:]) }
         let panels = w.features?["plugin_panels"] == "on"
-        return (Capabilities(off: off, admin: admin, panels: panels), w.etag)
+        return (Capabilities(off: off, admin: admin, panels: panels, parental: w.parental), w.etag)
     }
 
     private struct Wire: Decodable {
@@ -140,6 +177,18 @@ public struct Capabilities: Equatable, Sendable {
         let etag: String?
         let features: [String: String]?
         let admin: AdminBlock?
+        let parental: Parental?
+
+        enum CodingKeys: String, CodingKey { case etag, features, admin, parental }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            etag = try c.decodeIfPresent(String.self, forKey: .etag)
+            features = try c.decodeIfPresent([String: String].self, forKey: .features)
+            admin = try c.decodeIfPresent(AdminBlock.self, forKey: .admin)
+            // a block of another shape reads as none: it never hides the features
+            parental = c.lenient(.parental)
+        }
     }
 }
 

@@ -18,6 +18,8 @@ public enum FamilyNotice: Equatable, Sendable {
     case adminAccount
     /// 409 `restricted_guardian`: a restricted account cannot look after another.
     case restrictedGuardian
+    /// 409 `restrictions_exist`: parental controls stay on while an account is restricted.
+    case restrictionsExist
     case failed(HomeFailure)
 
     public init(_ error: Error) {
@@ -28,6 +30,7 @@ public enum FamilyNotice: Equatable, Sendable {
         case .passwordWrong: self = .wrongPassword
         case .restrictedAdmin: self = .adminAccount
         case .restrictedGuardian: self = .restrictedGuardian
+        case .restrictionsExist: self = .restrictionsExist
         default:
             let f = HomeFailure(error)
             self = f.kind == .noAccess ? .readOnly : .failed(f)
@@ -42,6 +45,7 @@ public enum FamilyNotice: Equatable, Sendable {
         case .wrongPassword: ParentalWords.text("family.pin.wrongPassword", locale)
         case .adminAccount: ParentalWords.text("family.makeRestricted.admin", locale)
         case .restrictedGuardian: ParentalWords.text("family.guardians.restricted", locale)
+        case .restrictionsExist: ParentalWords.text("parental.enabled.offBlocked", locale)
         case let .failed(f): f.message(video: false)
         }
     }
@@ -63,7 +67,16 @@ public final class FamilyModel {
     /// The home's accounts, for an admin (`GET /api/admin/library-acl`): who can be made
     /// restricted, who can be named a guardian. Empty for anyone else.
     public private(set) var accounts: [ParentalPerson] = []
+    /// The home's switch for parental controls, for an admin (story 57.12); nil for anyone
+    /// else, on a home from before it, and until the home answers.
+    public private(set) var settings: ParentalSettings?
+    /// The switch is being changed.
+    public private(set) var switching = false
     public var notice: FamilyNotice?
+
+    /// The notice an admin sees while the switch is off and a signed-in device says a child
+    /// uses it ("A child may be using Maktaba"), until an admin dismisses it.
+    public var showsChildDeviceNotice: Bool { isAdmin && settings?.childDeviceNotice == true }
 
     public init(client: APIClient, isAdmin: Bool) {
         self.client = client
@@ -81,6 +94,39 @@ public final class FamilyModel {
         if let r = try? await client.parentalRequests() { requests = r }
         if let set = try? await client.parentalPINSet() { pinSet = set }
         if isAdmin, let people = try? await client.homeAccounts() { accounts = Self.sorted(people) }
+        if isAdmin, let s = try? await client.parentalSettings() { settings = s }
+    }
+
+    /// Turns parental controls on or off (an admin). The home refuses off while an account is
+    /// restricted (409 `restrictions_exist`): the switch stays on and the screen says to
+    /// lift every restriction first.
+    public func setEnabled(_ on: Bool) async {
+        guard isAdmin, !switching, settings?.enabled != on else { return }
+        switching = true
+        defer { switching = false }
+        do {
+            settings = try await client.setParentalEnabled(on)
+        } catch {
+            if Log.isCancellation(error) { return }
+            notice = FamilyNotice(error)
+            // what the home has now (a restriction made elsewhere since this was read)
+            if let s = try? await client.parentalSettings() { settings = s }
+        }
+    }
+
+    /// Dismisses the child-device notice (an admin): it goes at once, and comes back only if
+    /// the home refuses.
+    public func dismissChildDeviceNotice() async {
+        guard isAdmin, let before = settings, before.childDeviceNotice else { return }
+        settings = ParentalSettings(enabled: before.enabled, restrictedAccounts: before.restrictedAccounts,
+                                    canDisable: before.canDisable, childDevices: before.childDevices, childDeviceNotice: false)
+        do {
+            settings = try await client.dismissParentalNotice()
+        } catch {
+            if Log.isCancellation(error) { return }
+            settings = before
+            notice = FamilyNotice(error)
+        }
     }
 
     public static func sorted(_ list: [ParentalPerson], _ locale: Locale = AppLanguage.locale) -> [ParentalPerson] {
