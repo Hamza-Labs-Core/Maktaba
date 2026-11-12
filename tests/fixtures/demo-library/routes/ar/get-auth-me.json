@@ -1,0 +1,14 @@
+{
+ "user_id": "u-demo",
+ "is_admin": true,
+ "libraries": [],
+ "id": "u-demo",
+ "username": "haddad",
+ "user": {
+  "id": "u-demo",
+  "username": "haddad",
+  "is_admin": true,
+  "must_change_password": false
+ },
+ "home_name": "الجهاز الرئيسي"
+}

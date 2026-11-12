@@ -1,0 +1,125 @@
+{
+ "server_time": "{{now}}",
+ "channels": [
+  {
+   "channel": {
+    "id": "ch-films",
+    "number": 1,
+    "name": "Film Night",
+    "slug": "films",
+    "logo_url": null
+   },
+   "current": {
+    "channel_id": "ch-films",
+    "kind": "program",
+    "start": "{{now-120}}",
+    "stop": "{{now+780}}",
+    "title": "Cosmos Laundromat",
+    "sub_title": "Cosmos Laundromat",
+    "desc": "On a desolate island, a weary sheep meets a strange salesman who offers him every life he could want.",
+    "poster": "/api/videos/v-cosmos-laundromat/poster",
+    "on_air": "Cosmos Laundromat",
+    "strip_title": "Cosmos Laundromat",
+    "is_live": true,
+    "progress": 0.1333
+   },
+   "next": {
+    "channel_id": "ch-films",
+    "kind": "program",
+    "start": "{{now+780}}",
+    "stop": "{{now+1680}}",
+    "title": "Big Buck Bunny",
+    "sub_title": "Big Buck Bunny",
+    "desc": "A gentle giant rabbit has had enough of three bullies in the forest, and plans a sweet revenge.",
+    "poster": "/api/videos/v-big-buck-bunny/poster",
+    "on_air": "Big Buck Bunny",
+    "strip_title": "Big Buck Bunny"
+   },
+   "on_air": true
+  },
+  {
+   "channel": {
+    "id": "ch-shorts",
+    "number": 2,
+    "name": "Shorts",
+    "slug": "shorts",
+    "logo_url": null
+   },
+   "current": {
+    "channel_id": "ch-shorts",
+    "kind": "program",
+    "start": "{{now-240}}",
+    "stop": "{{now+660}}",
+    "title": "Sprite Fright",
+    "sub_title": "Sprite Fright",
+    "desc": "Teenagers camping in a mossy forest learn the hard way that its tiny guardians want to be left alone.",
+    "poster": "/api/videos/v-sprite-fright/poster",
+    "series": "Open Shorts",
+    "season": 2,
+    "episode": 2,
+    "on_air": "Sprite Fright",
+    "strip_title": "Sprite Fright",
+    "strip_series": "Open Shorts",
+    "is_live": true,
+    "progress": 0.2667
+   },
+   "next": {
+    "channel_id": "ch-shorts",
+    "kind": "program",
+    "start": "{{now+660}}",
+    "stop": "{{now+960}}",
+    "title": "Caminandes: Llamigos",
+    "sub_title": "Caminandes: Llamigos",
+    "desc": "In the snowy Patagonian winter, Koro meets a hungry penguin and they fight over the last berries.",
+    "poster": "/api/videos/v-llamigos/poster",
+    "series": "Open Shorts",
+    "season": 1,
+    "episode": 2,
+    "on_air": "Caminandes: Llamigos",
+    "strip_title": "Caminandes: Llamigos",
+    "strip_series": "Open Shorts"
+   },
+   "on_air": true
+  },
+  {
+   "channel": {
+    "id": "ch-family",
+    "number": 3,
+    "name": "Family",
+    "slug": "family",
+    "logo_url": null
+   },
+   "current": {
+    "channel_id": "ch-family",
+    "kind": "program",
+    "start": "{{now-60}}",
+    "stop": "{{now+840}}",
+    "title": "Big Buck Bunny",
+    "sub_title": "Big Buck Bunny",
+    "desc": "A gentle giant rabbit has had enough of three bullies in the forest, and plans a sweet revenge.",
+    "poster": "/api/videos/v-big-buck-bunny/poster",
+    "on_air": "Big Buck Bunny",
+    "strip_title": "Big Buck Bunny",
+    "is_live": true,
+    "progress": 0.0667
+   },
+   "next": {
+    "channel_id": "ch-family",
+    "kind": "program",
+    "start": "{{now+840}}",
+    "stop": "{{now+1140}}",
+    "title": "Caminandes: Llamigos",
+    "sub_title": "Caminandes: Llamigos",
+    "desc": "In the snowy Patagonian winter, Koro meets a hungry penguin and they fight over the last berries.",
+    "poster": "/api/videos/v-llamigos/poster",
+    "series": "Open Shorts",
+    "season": 1,
+    "episode": 2,
+    "on_air": "Caminandes: Llamigos",
+    "strip_title": "Caminandes: Llamigos",
+    "strip_series": "Open Shorts"
+   },
+   "on_air": true
+  }
+ ]
+}

@@ -1,0 +1,284 @@
+{
+ "continue_watching": [
+  {
+   "id": "v-sintel",
+   "title": "سينتل",
+   "filename": "sintel.mkv",
+   "library_id": "lib-films",
+   "duration_sec": 888,
+   "state": "ready",
+   "created_at": "{{now-172800}}",
+   "published_at": "2010-06-01T00:00:00Z",
+   "position_sec": 380,
+   "completed": false,
+   "last_watched_at": "{{now-10800}}"
+  },
+  {
+   "id": "v-llamigos",
+   "title": "كاميناندس: صديقا اللاما",
+   "filename": "llamigos.mp4",
+   "library_id": "lib-shorts",
+   "duration_sec": 150,
+   "state": "ready",
+   "created_at": "{{now-345600}}",
+   "published_at": "2016-06-01T00:00:00Z",
+   "position_sec": 70,
+   "completed": false,
+   "last_watched_at": "{{now-72000}}"
+  }
+ ],
+ "recently_added": [
+  {
+   "id": "v-spring",
+   "title": "الربيع",
+   "filename": "spring.mkv",
+   "library_id": "lib-films",
+   "duration_sec": 464,
+   "state": "ready",
+   "created_at": "{{now-86400}}",
+   "published_at": "2019-06-01T00:00:00Z"
+  },
+  {
+   "id": "v-sintel",
+   "title": "سينتل",
+   "filename": "sintel.mkv",
+   "library_id": "lib-films",
+   "duration_sec": 888,
+   "state": "ready",
+   "created_at": "{{now-172800}}",
+   "published_at": "2010-06-01T00:00:00Z"
+  },
+  {
+   "id": "v-gran-dillama",
+   "title": "كاميناندس: اللاما الكبير",
+   "filename": "gran-dillama.mp4",
+   "library_id": "lib-shorts",
+   "duration_sec": 146,
+   "state": "ready",
+   "created_at": "{{now-345600}}",
+   "published_at": "2013-06-01T00:00:00Z"
+  },
+  {
+   "id": "v-llamigos",
+   "title": "كاميناندس: صديقا اللاما",
+   "filename": "llamigos.mp4",
+   "library_id": "lib-shorts",
+   "duration_sec": 150,
+   "state": "ready",
+   "created_at": "{{now-345600}}",
+   "published_at": "2016-06-01T00:00:00Z"
+  },
+  {
+   "id": "v-coffee-run",
+   "title": "مشوار القهوة",
+   "filename": "coffee-run.mp4",
+   "library_id": "lib-shorts",
+   "duration_sec": 184,
+   "state": "ready",
+   "created_at": "{{now-345600}}",
+   "published_at": "2020-06-01T00:00:00Z"
+  },
+  {
+   "id": "v-sprite-fright",
+   "title": "رعب الجنيات",
+   "filename": "sprite-fright.mp4",
+   "library_id": "lib-shorts",
+   "duration_sec": 629,
+   "state": "ready",
+   "created_at": "{{now-345600}}",
+   "published_at": "2021-06-01T00:00:00Z"
+  },
+  {
+   "id": "v-big-buck-bunny",
+   "title": "الأرنب الكبير",
+   "filename": "big-buck-bunny.mkv",
+   "library_id": "lib-films",
+   "duration_sec": 596,
+   "state": "ready",
+   "created_at": "{{now-432000}}",
+   "published_at": "2008-06-01T00:00:00Z"
+  },
+  {
+   "id": "v-tears-of-steel",
+   "title": "دموع من فولاذ",
+   "filename": "tears-of-steel.mkv",
+   "library_id": "lib-films",
+   "duration_sec": 734,
+   "state": "ready",
+   "created_at": "{{now-777600}}",
+   "published_at": "2012-06-01T00:00:00Z"
+  },
+  {
+   "id": "v-cosmos-laundromat",
+   "title": "مغسلة الكون",
+   "filename": "cosmos-laundromat.mkv",
+   "library_id": "lib-films",
+   "duration_sec": 730,
+   "state": "ready",
+   "created_at": "{{now-1209600}}",
+   "published_at": "2015-06-01T00:00:00Z"
+  },
+  {
+   "id": "v-elephants-dream",
+   "title": "حلم الفيلة",
+   "filename": "elephants-dream.mkv",
+   "library_id": "lib-films",
+   "duration_sec": 654,
+   "state": "ready",
+   "created_at": "{{now-1814400}}",
+   "published_at": "2006-06-01T00:00:00Z"
+  }
+ ],
+ "recently_watched": [
+  {
+   "id": "v-sintel",
+   "title": "سينتل",
+   "filename": "sintel.mkv",
+   "library_id": "lib-films",
+   "duration_sec": 888,
+   "state": "ready",
+   "created_at": "{{now-172800}}",
+   "published_at": "2010-06-01T00:00:00Z",
+   "position_sec": 380,
+   "completed": false,
+   "last_watched_at": "{{now-10800}}"
+  },
+  {
+   "id": "v-llamigos",
+   "title": "كاميناندس: صديقا اللاما",
+   "filename": "llamigos.mp4",
+   "library_id": "lib-shorts",
+   "duration_sec": 150,
+   "state": "ready",
+   "created_at": "{{now-345600}}",
+   "published_at": "2016-06-01T00:00:00Z",
+   "position_sec": 70,
+   "completed": false,
+   "last_watched_at": "{{now-72000}}"
+  },
+  {
+   "id": "v-big-buck-bunny",
+   "title": "الأرنب الكبير",
+   "filename": "big-buck-bunny.mkv",
+   "library_id": "lib-films",
+   "duration_sec": 596,
+   "state": "ready",
+   "created_at": "{{now-432000}}",
+   "published_at": "2008-06-01T00:00:00Z",
+   "position_sec": 596,
+   "completed": true,
+   "last_watched_at": "{{now-108000}}"
+  },
+  {
+   "id": "v-gran-dillama",
+   "title": "كاميناندس: اللاما الكبير",
+   "filename": "gran-dillama.mp4",
+   "library_id": "lib-shorts",
+   "duration_sec": 146,
+   "state": "ready",
+   "created_at": "{{now-345600}}",
+   "published_at": "2013-06-01T00:00:00Z",
+   "position_sec": 146,
+   "completed": true,
+   "last_watched_at": "{{now-172800}}"
+  },
+  {
+   "id": "v-elephants-dream",
+   "title": "حلم الفيلة",
+   "filename": "elephants-dream.mkv",
+   "library_id": "lib-films",
+   "duration_sec": 654,
+   "state": "ready",
+   "created_at": "{{now-1814400}}",
+   "published_at": "2006-06-01T00:00:00Z",
+   "position_sec": 654,
+   "completed": true,
+   "last_watched_at": "{{now-345600}}"
+  }
+ ],
+ "pinned": [
+  {
+   "library": {
+    "id": "lib-films",
+    "name": "أفلام"
+   },
+   "recently_added": [
+    {
+     "id": "v-spring",
+     "title": "الربيع",
+     "filename": "spring.mkv",
+     "library_id": "lib-films",
+     "duration_sec": 464,
+     "state": "ready",
+     "created_at": "{{now-86400}}",
+     "published_at": "2019-06-01T00:00:00Z"
+    },
+    {
+     "id": "v-sintel",
+     "title": "سينتل",
+     "filename": "sintel.mkv",
+     "library_id": "lib-films",
+     "duration_sec": 888,
+     "state": "ready",
+     "created_at": "{{now-172800}}",
+     "published_at": "2010-06-01T00:00:00Z"
+    },
+    {
+     "id": "v-big-buck-bunny",
+     "title": "الأرنب الكبير",
+     "filename": "big-buck-bunny.mkv",
+     "library_id": "lib-films",
+     "duration_sec": 596,
+     "state": "ready",
+     "created_at": "{{now-432000}}",
+     "published_at": "2008-06-01T00:00:00Z"
+    },
+    {
+     "id": "v-tears-of-steel",
+     "title": "دموع من فولاذ",
+     "filename": "tears-of-steel.mkv",
+     "library_id": "lib-films",
+     "duration_sec": 734,
+     "state": "ready",
+     "created_at": "{{now-777600}}",
+     "published_at": "2012-06-01T00:00:00Z"
+    },
+    {
+     "id": "v-cosmos-laundromat",
+     "title": "مغسلة الكون",
+     "filename": "cosmos-laundromat.mkv",
+     "library_id": "lib-films",
+     "duration_sec": 730,
+     "state": "ready",
+     "created_at": "{{now-1209600}}",
+     "published_at": "2015-06-01T00:00:00Z"
+    },
+    {
+     "id": "v-elephants-dream",
+     "title": "حلم الفيلة",
+     "filename": "elephants-dream.mkv",
+     "library_id": "lib-films",
+     "duration_sec": 654,
+     "state": "ready",
+     "created_at": "{{now-1814400}}",
+     "published_at": "2006-06-01T00:00:00Z"
+    }
+   ],
+   "continue_watching": [
+    {
+     "id": "v-sintel",
+     "title": "سينتل",
+     "filename": "sintel.mkv",
+     "library_id": "lib-films",
+     "duration_sec": 888,
+     "state": "ready",
+     "created_at": "{{now-172800}}",
+     "published_at": "2010-06-01T00:00:00Z",
+     "position_sec": 380,
+     "completed": false,
+     "last_watched_at": "{{now-10800}}"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,12 @@
+{
+ "library_ids": [
+  "lib-films"
+ ],
+ "items": [
+  {
+   "id": "lib-films",
+   "name": "أفلام",
+   "position": 0
+  }
+ ]
+}

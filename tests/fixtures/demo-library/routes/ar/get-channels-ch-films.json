@@ -1,0 +1,36 @@
+{
+ "id": "ch-films",
+ "number": 1,
+ "name": "سهرة الأفلام",
+ "slug": "films",
+ "logo_url": null,
+ "library_id": "lib-films",
+ "logo_path": "",
+ "art": {
+  "watermark": {
+   "overridden": false,
+   "position": "top-right",
+   "width_pct": 12,
+   "margin_pct": 2
+  },
+  "loading": {
+   "overridden": false
+  },
+  "strip": null
+ },
+ "category": "general",
+ "mode": "sequential",
+ "mode_config": {},
+ "transition": "cut",
+ "enabled": true,
+ "sort_order": 1,
+ "created_at": "{{now-17280000}}",
+ "updated_at": "{{now-864000}}",
+ "now_playing": {
+  "title": "مغسلة الكون",
+  "start_at": "{{now-120}}",
+  "end_at": "{{now+780}}",
+  "progress": 0.1333
+ },
+ "guide_until": "{{now+86400}}"
+}

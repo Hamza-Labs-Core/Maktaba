@@ -1,0 +1,25 @@
+{
+ "id": "v-elephants-dream",
+ "library_id": "lib-films",
+ "path": "",
+ "filename": "elephants-dream.mkv",
+ "title": "Elephants Dream",
+ "description": "Two men explore a vast machine that only one of them believes in: the first open movie.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 654,
+ "size_bytes": 163500000,
+ "content_hash": "velephantsdream0000000000000000000000000000000000000000000000000",
+ "created_at": "{{now-1814400}}",
+ "updated_at": "{{now-1813800}}",
+ "published_at": "2006-06-01T00:00:00Z",
+ "playable": true,
+ "tags": [],
+ "poster_url": "/api/videos/v-elephants-dream/poster",
+ "backdrop_url": "/api/videos/v-elephants-dream/backdrop",
+ "playback_state": {
+  "position_sec": 654,
+  "completed": true,
+  "updated_at": "{{now-345600}}"
+ }
+}

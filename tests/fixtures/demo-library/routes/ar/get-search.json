@@ -1,0 +1,105 @@
+{
+ "search_id": "sr-demo",
+ "expires_at": "{{now+1800}}",
+ "q": "تنين",
+ "mode": "hybrid",
+ "filters": {},
+ "took_ms": {
+  "fts": 9,
+  "semantic": 14,
+  "fusion": 1
+ },
+ "page_size": 20,
+ "passages_page_size": 20,
+ "videos": [
+  {
+   "video_id": "v-sintel",
+   "title": "سينتل",
+   "duration_sec": 888,
+   "library_id": "lib-films",
+   "library_name": "أفلام",
+   "poster_url": "/api/videos/v-sintel/poster",
+   "score": 0.9,
+   "in_transcripts": true,
+   "title_snippet": "سينتل"
+  }
+ ],
+ "videos_total": 1,
+ "transcript_videos": [
+  {
+   "video_id": "v-sintel",
+   "title": "سينتل",
+   "duration_sec": 888,
+   "library_id": "lib-films",
+   "library_name": "أفلام",
+   "poster_url": "/api/videos/v-sintel/poster",
+   "best_score": 0.08,
+   "matches": 2,
+   "in_title": true,
+   "passages": [
+    {
+     "segment_id": 9001,
+     "start_sec": 212,
+     "end_sec": 216,
+     "snippet": "Have you seen a baby <mark>dragon</mark>? I lost him in the snow.",
+     "score": 0.08
+    },
+    {
+     "segment_id": 9002,
+     "start_sec": 214,
+     "end_sec": 218,
+     "snippet": "هل رأيت <mark>تنينًا</mark> صغيرًا؟ أضعته في الثلج.",
+     "score": 0.07
+    }
+   ]
+  },
+  {
+   "video_id": "v-elephants-dream",
+   "title": "حلم الفيلة",
+   "duration_sec": 654,
+   "library_id": "lib-films",
+   "library_name": "أفلام",
+   "poster_url": "/api/videos/v-elephants-dream/poster",
+   "best_score": 0.06,
+   "matches": 1,
+   "in_title": false,
+   "passages": [
+    {
+     "segment_id": 9003,
+     "start_sec": 431,
+     "end_sec": 435,
+     "snippet": "الآلة تتنفس مثل <mark>تنين</mark> نائم.",
+     "score": 0.06
+    }
+   ]
+  }
+ ],
+ "transcript_total": 2,
+ "hits": [
+  {
+   "segment_id": 9001,
+   "video_id": "v-sintel",
+   "start_sec": 212,
+   "end_sec": 216,
+   "snippet": "Have you seen a baby <mark>dragon</mark>? I lost him in the snow.",
+   "score": 0.08
+  },
+  {
+   "segment_id": 9002,
+   "video_id": "v-sintel",
+   "start_sec": 214,
+   "end_sec": 218,
+   "snippet": "هل رأيت <mark>تنينًا</mark> صغيرًا؟ أضعته في الثلج.",
+   "score": 0.07
+  },
+  {
+   "segment_id": 9003,
+   "video_id": "v-elephants-dream",
+   "start_sec": 431,
+   "end_sec": 435,
+   "snippet": "الآلة تتنفس مثل <mark>تنين</mark> نائم.",
+   "score": 0.06
+  }
+ ],
+ "total": 3
+}

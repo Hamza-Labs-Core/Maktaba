@@ -1,0 +1,205 @@
+{
+ "library": {
+  "id": "lib-shorts",
+  "name": "أفلام قصيرة",
+  "videos": 4
+ },
+ "rows": {
+  "continue_watching": [
+   {
+    "id": "v-llamigos",
+    "title": "كاميناندس: صديقا اللاما",
+    "filename": "llamigos.mp4",
+    "library_id": "lib-shorts",
+    "duration_sec": 150,
+    "state": "ready",
+    "created_at": "{{now-345600}}",
+    "published_at": "2016-06-01T00:00:00Z",
+    "position_sec": 70,
+    "completed": false,
+    "last_watched_at": "{{now-72000}}"
+   }
+  ],
+  "recently_added": [
+   {
+    "id": "v-gran-dillama",
+    "title": "كاميناندس: اللاما الكبير",
+    "filename": "gran-dillama.mp4",
+    "library_id": "lib-shorts",
+    "duration_sec": 146,
+    "state": "ready",
+    "created_at": "{{now-345600}}",
+    "published_at": "2013-06-01T00:00:00Z"
+   },
+   {
+    "id": "v-llamigos",
+    "title": "كاميناندس: صديقا اللاما",
+    "filename": "llamigos.mp4",
+    "library_id": "lib-shorts",
+    "duration_sec": 150,
+    "state": "ready",
+    "created_at": "{{now-345600}}",
+    "published_at": "2016-06-01T00:00:00Z"
+   },
+   {
+    "id": "v-coffee-run",
+    "title": "مشوار القهوة",
+    "filename": "coffee-run.mp4",
+    "library_id": "lib-shorts",
+    "duration_sec": 184,
+    "state": "ready",
+    "created_at": "{{now-345600}}",
+    "published_at": "2020-06-01T00:00:00Z"
+   },
+   {
+    "id": "v-sprite-fright",
+    "title": "رعب الجنيات",
+    "filename": "sprite-fright.mp4",
+    "library_id": "lib-shorts",
+    "duration_sec": 629,
+    "state": "ready",
+    "created_at": "{{now-345600}}",
+    "published_at": "2021-06-01T00:00:00Z"
+   }
+  ],
+  "recently_watched": [
+   {
+    "id": "v-gran-dillama",
+    "title": "كاميناندس: اللاما الكبير",
+    "filename": "gran-dillama.mp4",
+    "library_id": "lib-shorts",
+    "duration_sec": 146,
+    "state": "ready",
+    "created_at": "{{now-345600}}",
+    "published_at": "2013-06-01T00:00:00Z",
+    "position_sec": 146,
+    "completed": true,
+    "last_watched_at": "{{now-172800}}"
+   },
+   {
+    "id": "v-llamigos",
+    "title": "كاميناندس: صديقا اللاما",
+    "filename": "llamigos.mp4",
+    "library_id": "lib-shorts",
+    "duration_sec": 150,
+    "state": "ready",
+    "created_at": "{{now-345600}}",
+    "published_at": "2016-06-01T00:00:00Z",
+    "position_sec": 70,
+    "completed": false,
+    "last_watched_at": "{{now-72000}}"
+   }
+  ],
+  "most_watched": [
+   {
+    "id": "v-gran-dillama",
+    "title": "كاميناندس: اللاما الكبير",
+    "filename": "gran-dillama.mp4",
+    "library_id": "lib-shorts",
+    "duration_sec": 146,
+    "state": "ready",
+    "created_at": "{{now-345600}}",
+    "published_at": "2013-06-01T00:00:00Z",
+    "plays": 3
+   },
+   {
+    "id": "v-llamigos",
+    "title": "كاميناندس: صديقا اللاما",
+    "filename": "llamigos.mp4",
+    "library_id": "lib-shorts",
+    "duration_sec": 150,
+    "state": "ready",
+    "created_at": "{{now-345600}}",
+    "published_at": "2016-06-01T00:00:00Z",
+    "plays": 3
+   }
+  ],
+  "series": [
+   {
+    "id": "s-open-shorts",
+    "name": "حكايات قصيرة",
+    "library_id": "lib-shorts",
+    "year": 2013,
+    "numbering": "season",
+    "season_count": 2,
+    "episode_count": 4,
+    "watched_count": 1,
+    "in_progress": 1,
+    "poster_video_id": "v-gran-dillama"
+   }
+  ],
+  "years": [
+   {
+    "year": 2021,
+    "videos": 1
+   },
+   {
+    "year": 2020,
+    "videos": 1
+   },
+   {
+    "year": 2016,
+    "videos": 1
+   },
+   {
+    "year": 2013,
+    "videos": 1
+   }
+  ],
+  "on_deck": [],
+  "recently_added_grouped": [
+   {
+    "kind": "video",
+    "video": {
+     "id": "v-gran-dillama",
+     "title": "كاميناندس: اللاما الكبير",
+     "filename": "gran-dillama.mp4",
+     "library_id": "lib-shorts",
+     "duration_sec": 146,
+     "state": "ready",
+     "created_at": "{{now-345600}}",
+     "published_at": "2013-06-01T00:00:00Z"
+    }
+   },
+   {
+    "kind": "video",
+    "video": {
+     "id": "v-llamigos",
+     "title": "كاميناندس: صديقا اللاما",
+     "filename": "llamigos.mp4",
+     "library_id": "lib-shorts",
+     "duration_sec": 150,
+     "state": "ready",
+     "created_at": "{{now-345600}}",
+     "published_at": "2016-06-01T00:00:00Z"
+    }
+   },
+   {
+    "kind": "video",
+    "video": {
+     "id": "v-coffee-run",
+     "title": "مشوار القهوة",
+     "filename": "coffee-run.mp4",
+     "library_id": "lib-shorts",
+     "duration_sec": 184,
+     "state": "ready",
+     "created_at": "{{now-345600}}",
+     "published_at": "2020-06-01T00:00:00Z"
+    }
+   },
+   {
+    "kind": "video",
+    "video": {
+     "id": "v-sprite-fright",
+     "title": "رعب الجنيات",
+     "filename": "sprite-fright.mp4",
+     "library_id": "lib-shorts",
+     "duration_sec": 629,
+     "state": "ready",
+     "created_at": "{{now-345600}}",
+     "published_at": "2021-06-01T00:00:00Z"
+    }
+   }
+  ]
+ }
+}
