@@ -53,6 +53,8 @@ on:
       - 'tools/cloudflare/website-deploy.mjs'
       - '.github/workflows/_website.yml'
       - '.github/workflows/website-deploy.yml'
+      # the demo library the product shots are taken on (60.09): a change rebuilds the same site
+      - 'tests/fixtures/demo-library/**'
   workflow_dispatch:
     inputs:
       rollback:
