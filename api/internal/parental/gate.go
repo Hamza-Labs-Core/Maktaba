@@ -5,7 +5,9 @@ package parental
 // node's forwarded requests all pass it. For each request it finds the route's
 // entry in the surface registry and, for a restricted account:
 //
-//   - Open, Filtered: the handler runs, with the account's limit in the context;
+//   - Open: the handler runs before any policy is read (so for every account,
+//     and when no policy can be read);
+//   - Guarded, Filtered: the handler runs, with the account's limit in the context;
 //   - ByID: the object in the path is checked first; a hidden one is served as a
 //     fresh random id, so the answer is the handler's own for a missing object;
 //   - Refuse: 403 `restricted`;
@@ -122,12 +124,24 @@ func (g *Gate) Middleware(routes chi.Routes) func(http.Handler) http.Handler {
 				return
 			}
 			s, known := g.Table.Lookup(method, pattern)
+			if known && s.Class == Open {
+				// no library content, and nothing in the handler reads the limit:
+				// it runs before any policy is read, so it answers when none can
+				// be (a machine's and the cluster's routes with the home's
+				// database down, signing in, health)
+				next.ServeHTTP(w, r)
+				return
+			}
 			e, err := g.Limit(r.Context(), p)
 			if err != nil {
-				// the policy could not be read: nothing is shown, and a route that
-				// needs none still works (signing in, health)
-				if known && s.Class == Open {
-					next.ServeHTTP(w, r.WithContext(With(r.Context(), nothing(p.UserID))))
+				// the policy could not be read: nothing is shown. A route with no
+				// content of its own that reads the limit or the role still runs,
+				// with a limit that shows nothing and with no admin role.
+				if known && s.Class == Guarded {
+					np := *p
+					np.IsAdmin, np.AccessAllLibraries = false, false
+					ctx := principal.WithPrincipal(With(r.Context(), nothing(p.UserID)), &np)
+					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				}
 				httperror.Write(w, r, httperror.Unavailable(5))
@@ -164,7 +178,7 @@ func (g *Gate) Middleware(routes chi.Routes) func(http.Handler) http.Handler {
 				return
 			}
 			switch s.Class {
-			case Open, Filtered:
+			case Guarded, Filtered:
 				next.ServeHTTP(w, r)
 			case ByID:
 				id := rctx.URLParam(s.Param)
