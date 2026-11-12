@@ -203,6 +203,82 @@ public final class ParentalStore {
     }
 }
 
+// MARK: the time of what plays (57.15)
+
+/// The watching time of what plays, asked of the home for the playing video's library: a
+/// rule on one library counts only when the home is told the library, so the answer without
+/// it (`ParentalStore.time`, Home's line) can say "allowed" while that library's time is over.
+///
+/// - Over the video (`follow`): asked now and every 30 s; `reading` feeds the countdown and
+///   the warnings.
+/// - After the home stopped the video for time (`waitUntilAllowed`): never asked at once (the
+///   home just said no, and an answer for the wrong question must not reopen the stream),
+///   only after a full wait, then every 30 s, and it says yes only when the home's answer
+///   for this library is "allowed".
+@MainActor @Observable
+public final class PlayingTime {
+    /// How often the home is asked.
+    public nonisolated static let every: Duration = .seconds(30)
+
+    public private(set) var reading: ParentalStore.TimeReading?
+    public let library: String?
+
+    @ObservationIgnored private let source: any ParentalSource
+    @ObservationIgnored private let every: Duration
+    @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
+    @ObservationIgnored private let now: @Sendable () -> Date
+    /// One full wait has passed since the stop: only then may the home be asked.
+    @ObservationIgnored private var waited = false
+
+    public init(source: any ParentalSource, library: String?, every: Duration = PlayingTime.every,
+                sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+                now: @escaping @Sendable () -> Date = { Date() }) {
+        self.source = source
+        self.library = library
+        self.every = every
+        self.sleep = sleep
+        self.now = now
+    }
+
+    /// Asks the home once. Nil when it could not say (or has no time rules: a home from
+    /// before them); the last reading is kept then.
+    @discardableResult
+    public func ask() async -> ParentalTime? {
+        do {
+            guard let t = try await source.myParentalTime(library: library) else { return nil }
+            reading = ParentalStore.TimeReading(t, at: now())
+            return t
+        } catch {
+            if !Log.isCancellation(error) { Log.failure("parental time", error, logger: Log.network) }
+            return nil
+        }
+    }
+
+    /// Over the video: asks now, then every 30 s until the task is cancelled.
+    public func follow() async {
+        while !Task.isCancelled {
+            await ask()
+            do { try await sleep(every) } catch { return }
+        }
+    }
+
+    /// After a stop for time: true once the home says there is time again for this library
+    /// (a parent gave some, the slot opened); false when the task was cancelled. The first
+    /// question comes only after one full wait; called again later (the app came back to
+    /// the front), it asks at once only if that wait already passed.
+    public func waitUntilAllowed() async -> Bool {
+        while !Task.isCancelled {
+            if !waited {
+                do { try await sleep(every) } catch { return false }
+                waited = true
+            }
+            if let t = await ask(), t.allowed { return true }
+            do { try await sleep(every) } catch { return false }
+        }
+        return false
+    }
+}
+
 // MARK: the countdown (57.15)
 
 /// What the time shows, worked out from the home's answer alone.
@@ -404,15 +480,37 @@ public final class PinEntry {
     public let guardian: ParentalPerson
     private let client: APIClient
     private let now: () -> Date
+    private let sleep: @Sendable (Duration) async throws -> Void
 
     public private(set) var digits = ""
     public private(set) var state = State.entering
 
-    public init(client: APIClient, subject: ParentalSubject, guardian: ParentalPerson, now: @escaping () -> Date = { Date() }) {
+    public init(client: APIClient, subject: ParentalSubject, guardian: ParentalPerson,
+                now: @escaping () -> Date = { Date() },
+                sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
         self.client = client
         self.subject = subject
         self.guardian = guardian
+        self.sleep = sleep
         self.now = now
+    }
+
+    /// Whether PIN entry is closed now, and until when.
+    public var lockedUntil: Date? {
+        if case let .locked(until) = state { return until }
+        return nil
+    }
+
+    /// While PIN entry is closed: waits until the lock ends, then opens it again (the state
+    /// goes back to entering, so the screen's keys take the remote or the finger again
+    /// without the sheet being closed). The screen runs it for as long as it shows; a
+    /// cancelled wait changes nothing.
+    public func reopenWhenLockEnds() async {
+        guard case let .locked(until) = state else { return }
+        while now() < until {
+            do { try await sleep(.seconds(max(1, until.timeIntervalSince(now()).rounded(.up)))) } catch { return }
+        }
+        if state == .locked(until: until) { state = .entering }
     }
 
     public var canType: Bool {
@@ -456,13 +554,16 @@ public final class PinEntry {
         }
     }
 
-    /// The line under the dots.
-    public func line(_ locale: Locale = AppLanguage.locale) -> String? {
+    /// The line under the dots. While PIN entry is closed it counts down by the minute: the
+    /// screen draws it again as time passes, with the time it is drawn at (`at`).
+    public func line(_ locale: Locale = AppLanguage.locale, at: Date? = nil) -> String? {
         switch state {
         case .entering, .checking: return nil
         case .wrong: return ParentalWords.text("parental.pin.wrong", locale)
         case let .locked(until):
-            let left = max(60, Int(until.timeIntervalSince(now()).rounded(.up)))
+            // whole minutes, rounded up: "1 min" until the lock ends
+            let seconds = max(1, until.timeIntervalSince(at ?? now()))
+            let left = Int((seconds / 60).rounded(.up)) * 60
             return ParentalWords.text("parental.pin.locked", locale, ParentalWords.length(seconds: left, locale))
         case .unlocked: return ParentalWords.text(subject.kind == "time" ? "parental.pin.unlockedTime" : "parental.pin.unlocked", locale)
         case .failed: return ParentalWords.text("parental.ask.failed", locale)

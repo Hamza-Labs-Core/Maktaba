@@ -121,10 +121,21 @@ public final class FamilyModel {
     public func approve(_ item: ParentalRequestItem, for length: ApprovalLength) async {
         // more time is for today only: the home makes a grant of the minutes asked
         if item.request.isTime {
-            await answer(item) { try await self.client.approveRequest(item.id, expiresAt: nil) }
+            await answer(item) { try await self.client.approveRequest(item.id) }
             return
         }
-        await answer(item) { try await self.client.approveRequest(item.id, expiresAt: length.expiresAt()) }
+        await answer(item) {
+            let ending = length.ending()
+            do {
+                try await self.client.approveRequest(item.id, ending: ending)
+            } catch where ending == .dayEnd && ParentalEnding.untilRefused(error) {
+                // a home from before `until`: the day's end is worked out here, in the
+                // home's time zone (its time rules say it), not this device's
+                let zone = (try? await self.client.timeRules(item.child.id))?.timeZone
+                let calendar = ApprovalLength.homeCalendar(timeZone: zone)
+                try await self.client.approveRequest(item.id, ending: length.expiresAt(calendar: calendar).map { .at($0) } ?? .never)
+            }
+        }
     }
 
     public func deny(_ item: ParentalRequestItem) async {
@@ -232,15 +243,25 @@ public final class ChildModel {
             let rule = try await client.addParentalRule(child.id, effect: effect, subject: subject)
             rules.removeAll { $0.id == rule.id }
             rules.append(rule)
+            await rereadAccount()
         } catch {
             await failed(error)
         }
+    }
+
+    /// The home moves the limit's `version` on every rule change: the account is read again,
+    /// so the next change of the limit sends the version the home now has (else it answers
+    /// 409 `stale` to the guardian's own change). Quiet on failure: a stale version then
+    /// reads the page again, as for someone else's change.
+    private func rereadAccount() async {
+        if let fresh = try? await client.parentalAccount(child.id) { account = .ready(fresh) }
     }
 
     public func remove(_ rule: ParentalRule) async {
         do {
             try await client.removeParentalRule(rule.id, of: child.id)
             rules.removeAll { $0.id == rule.id }
+            await rereadAccount()
         } catch {
             await failed(error)
         }
