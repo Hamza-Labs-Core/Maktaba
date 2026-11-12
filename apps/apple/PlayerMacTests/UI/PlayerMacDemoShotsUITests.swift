@@ -64,7 +64,7 @@ final class PlayerMacDemoShotsUITests: XCTestCase {
         home?.stop()
         let home = try MockHome(demo: language)
         home.clock = MockHome.demoClock
-        if let seconds = home.demoVideo("v-sintel")?["duration_sec"] as? Int { home.streamSeconds = (seconds - 420) / 2 * 2 }
+        if let seconds = home.demoVideo("v-sintel")?["duration_sec"] as? Int { home.streamSeconds = seconds / 2 * 2 }
         try home.start()
         self.home = home
         self.language = language

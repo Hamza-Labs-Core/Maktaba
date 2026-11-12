@@ -68,6 +68,12 @@ final class TVDemoShotsUITests: XCTestCase {
     func testPlayer() throws {
         for language in ["en", "ar"] {
             try signIn(language)
+            // the TV counts a session's stream from where it opened (Resume: the demo's
+            // `position_sec`), so the stream is the rest of the film
+            if let home, let length = home.demoVideo("v-sintel")?["duration_sec"] as? Int,
+               let at = home.demoDocument("get-me-videos-v-sintel")?["position_sec"] as? Int {
+                home.streamSeconds = (length - at) / 2 * 2
+            }
             let card = element("video.card.v-sintel.art")
             XCTAssertTrue(card.waitForExistence(timeout: 20), "Sintel on Home; the home saw \(seen)")
             remote.press(.down)

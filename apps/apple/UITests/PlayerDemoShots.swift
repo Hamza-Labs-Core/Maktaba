@@ -36,19 +36,19 @@ final class PlayerDemoShots: PlayerUITestCase {
     }
 
     /// Sintel playing with the Arabic subtitles on (in both languages: the Arabic line is what
-    /// the page shows off): on the iPhone in landscape, the controls gone so the line reads clear
-    /// of them; on the iPad upright with its controls up.
+    /// the page shows off), the controls gone so the line reads clear of them: on the iPhone in
+    /// landscape, on the iPad upright (its sidebar floats over a landscape player).
     func testPlayer() throws {
         defer { XCUIDevice.shared.orientation = .portrait }
         for language in ["en", "ar"] {
             try demo(language)
-            // opened at 7:00, the stream is the rest of the film (the demo's `duration_sec`): the
-            // player counts a session's stream from where it opened
-            if let seconds = home.demoVideo("v-sintel")?["duration_sec"] as? Int { home.streamSeconds = (seconds - 420) / 2 * 2 }
+            // the stream as long as the film (the demo's `duration_sec`): the player seeks to 7:00
+            // in it (`Playback.load`); the cue lasts the whole film
+            if let seconds = home.demoVideo("v-sintel")?["duration_sec"] as? Int { home.streamSeconds = seconds / 2 * 2 }
             // signed in upright (in landscape the keyboard covers the sign-in's choices), turned
             // once the player is open
             XCUIDevice.shared.orientation = .portrait
-            launchSignedIn(language, section: "home", open: "watch/v-sintel@420", controlsStay: isPad,
+            launchSignedIn(language, section: "home", open: "watch/v-sintel@420", controlsStay: false,
                            extra: ["-playback.subtitles_on", "YES", "-playback.subtitle_language", "ar"])
             let surface = element("player.surface")
             XCTAssertTrue(surface.waitForExistence(timeout: 30), "the player")
@@ -62,17 +62,8 @@ final class PlayerDemoShots: PlayerUITestCase {
             // a frame of the picture and the cue drawn: the position moves past where it opened
             let start = Int(state["position"] ?? "") ?? 0
             XCTAssertTrue(waitUntil(timeout: 15) { (Int(self.state["position"] ?? "") ?? 0) >= start + 2 }, "it plays on: \(state)")
-            if isPad {
-                // the iPad's controls up: upright, the line sits on the picture, clear of them
-                if !app.buttons["player.playPause"].exists {
-                    surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
-                }
-                XCTAssertTrue(app.buttons["player.playPause"].waitForExistence(timeout: 5), "the controls")
-            } else {
-                // the iPhone's hide 4 s after the last touch (`WatchView.hideAfter`): in landscape
-                // the line would sit on the scrubber
-                XCTAssertTrue(app.buttons["player.playPause"].waitForNonExistence(timeout: 15), "the controls gone")
-            }
+            // the controls hide 4 s after the last touch (`WatchView.hideAfter`)
+            XCTAssertTrue(app.buttons["player.playPause"].waitForNonExistence(timeout: 15), "the controls gone")
             demoShot("player")
         }
     }

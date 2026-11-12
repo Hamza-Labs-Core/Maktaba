@@ -431,9 +431,12 @@ final class MockHome: @unchecked Sendable {
     }
 
     /// A demo video's JSON (`GET /api/videos/<id>`), nil without a demo or such a video.
-    func demoVideo(_ id: String) -> [String: Any]? {
+    func demoVideo(_ id: String) -> [String: Any]? { demoDocument("get-videos-\(id)") }
+
+    /// The demo's route file `name` (`get-me-videos-v-sintel`: where Sintel resumes), as JSON.
+    func demoDocument(_ name: String) -> [String: Any]? {
         guard let demo else { return nil }
-        return demoFile("get-videos-\(id)", demo).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }
+        return demoFile(name, demo).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }
     }
 
     /// The id of the demo's first video in `GET /api/videos` (the first running job's subject).
