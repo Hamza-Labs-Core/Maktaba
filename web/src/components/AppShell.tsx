@@ -199,7 +199,7 @@ export function AppShell() {
   useScrollTopOnNavigate();
   const { pathname } = useLocation();
   const { user, logout } = useAuth();
-  const { t } = useI18n();
+  const { t, n } = useI18n();
   const { focusSearchRef } = useShortcuts();
   const toast = useToast();
   const nav = useNavigate();
@@ -218,9 +218,9 @@ export function AppShell() {
       <span
         className="mkt-nav-count"
         data-testid="family-count"
-        aria-label={t("family.requests.waiting", { count: parental.pendingRequests })}
+        aria-label={t("family.requests.waiting", { count: n(parental.pendingRequests) })}
       >
-        {parental.pendingRequests > 99 ? "99+" : parental.pendingRequests}
+        {parental.pendingRequests > 99 ? `${n(99)}+` : n(parental.pendingRequests)}
       </span>
     ) : null;
   const healthDown = useSystemStatus(manage) === "down";
@@ -489,7 +489,7 @@ export function AppShell() {
 // screen the sidebar already lists them.
 export function MoreMenu() {
   const { user, logout } = useAuth();
-  const { t } = useI18n();
+  const { t, n } = useI18n();
   const nav = useNavigate();
   const [signOutRefused, setSignOutRefused] = useState(false);
   const updateStatus = useUpdateStatus();
@@ -544,10 +544,10 @@ export function MoreMenu() {
                     <span
                       className="mkt-nav-count"
                       aria-label={t("family.requests.waiting", {
-                        count: parental.pendingRequests,
+                        count: n(parental.pendingRequests),
                       })}
                     >
-                      {parental.pendingRequests > 99 ? "99+" : parental.pendingRequests}
+                      {parental.pendingRequests > 99 ? `${n(99)}+` : n(parental.pendingRequests)}
                     </span>
                   )}
                 </NavLink>

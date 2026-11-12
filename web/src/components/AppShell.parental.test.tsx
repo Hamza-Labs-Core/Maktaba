@@ -2,7 +2,9 @@
 // restricted account a personal access token (403 restricted), so its pages carry no
 // link to that page; a guardian who is not an admin gets the way to the time rules.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { ToastProvider } from "@ds/components/Toast/Toast";
 
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("../lib/api", async () => {
@@ -10,9 +12,11 @@ vi.mock("../lib/api", async () => {
   return { ...actual, api: { ...actual.api, get } };
 });
 
-import { MoreMenu, secondaryNav } from "./AppShell";
+import { AppShell, MoreMenu, secondaryNav } from "./AppShell";
+import { I18nProvider } from "../lib/i18n";
+import { ShortcutProvider } from "../lib/keyboard/shortcuts";
 import { ParentalFixture, type MyParental } from "../lib/parental";
-import { renderPage, memberUser, adminUser } from "../test/pageHarness";
+import { renderPage, memberUser, adminUser, TestAuth } from "../test/pageHarness";
 import type { User } from "../lib/auth";
 import { APITokens } from "../pages/Profile/APITokens";
 import { errorText, restrictedText } from "../lib/errorText";
@@ -98,9 +102,60 @@ describe("the More page", () => {
     expect(within(link).getByLabelText("Requests waiting: 4")).toHaveTextContent("4");
   });
 
+  it("counts them in the language's own digits, to the eye and to a screen reader", () => {
+    more({ children: [child], pendingRequests: 4 }, memberUser, "ar");
+    const link = screen.getByRole("link", { name: new RegExp(ar["nav.family"]) });
+    const count = within(link).getByLabelText("طلبات بالانتظار: ٤");
+    expect(count).toHaveTextContent("٤");
+    expect(count).not.toHaveTextContent("4");
+  });
+
+  it("past ninety-nine says so in the language's own digits", () => {
+    const { unmount } = more({ children: [child], pendingRequests: 120 }, memberUser, "ar");
+    expect(screen.getByLabelText("طلبات بالانتظار: ١٢٠")).toHaveTextContent("٩٩+");
+    unmount();
+    more({ children: [child], pendingRequests: 120 });
+    expect(screen.getByLabelText("Requests waiting: 120")).toHaveTextContent("99+");
+  });
+
   it("names them in Arabic", () => {
     more({ children: [child] }, memberUser, "ar");
     expect(screen.getByRole("link", { name: ar["nav.family"] })).toBeInTheDocument();
+  });
+});
+
+describe("the sidebar's Family count", () => {
+  function shell(pendingRequests: number, locale: "en" | "ar") {
+    localStorage.setItem("mkt:locale", locale);
+    return render(
+      <MemoryRouter>
+        <I18nProvider>
+          <ToastProvider>
+            <TestAuth user={memberUser}>
+              <ShortcutProvider>
+                <ParentalFixture value={{ children: [child], pendingRequests }}>
+                  <AppShell />
+                </ParentalFixture>
+              </ShortcutProvider>
+            </TestAuth>
+          </ToastProvider>
+        </I18nProvider>
+      </MemoryRouter>
+    );
+  }
+
+  it("is in the language's own digits, to the eye and to a screen reader", async () => {
+    shell(4, "ar");
+    const count = await screen.findByTestId("family-count");
+    expect(count).toHaveTextContent("٤");
+    expect(count).toHaveAttribute("aria-label", "طلبات بالانتظار: ٤");
+  });
+
+  it("is Western digits in English", async () => {
+    shell(4, "en");
+    const count = await screen.findByTestId("family-count");
+    expect(count).toHaveTextContent("4");
+    expect(count).toHaveAttribute("aria-label", "Requests waiting: 4");
   });
 });
 
