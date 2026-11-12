@@ -129,6 +129,7 @@
     "subtitles",
     "runtime.lang",
     "review.words",
+    "parental.detect",
     "model.embedder",
     "search.semantic",
     "classify",

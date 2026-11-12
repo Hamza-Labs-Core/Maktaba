@@ -11,6 +11,7 @@ import com.hamzalabs.maktaba.core.browse.KEY_FOR_YOU
 import com.hamzalabs.maktaba.desktop.InPlayer
 import com.hamzalabs.maktaba.desktop.Lang
 import com.hamzalabs.maktaba.desktop.TestHome
+import com.hamzalabs.maktaba.desktop.settle
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -81,8 +82,7 @@ class HomeScreenTest {
             waitForIdle()
             assertEquals(0, onAllNodes(hasTestTag("row-$KEY_FOR_YOU")).fetchSemanticsNodes().size)
             gate.countDown()
-            Thread.sleep(500)
-            waitForIdle()
+            settle(fake)
             assertTrue("the card stays gone", state.recs!!.rails.all { r -> r.items.none { it.videoId == "r1" } })
             assertFalse(state.dismissFailed)
             assertEquals(0, onAllNodes(hasTestTag("card-r1")).fetchSemanticsNodes().size)

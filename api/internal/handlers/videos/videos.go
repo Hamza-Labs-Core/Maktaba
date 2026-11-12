@@ -43,6 +43,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libaccess"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 )
 
@@ -68,6 +69,9 @@ type Video struct {
 	Tags          []string        `json:"tags,omitempty"`
 	LatestTrans   *string         `json:"latest_transcript_id,omitempty"`
 	PlaybackState *PlaybackState  `json:"playback_state,omitempty"`
+	// AgeTierAdmin is the age tier an admin set on this video itself (Epic 57): a
+	// tier or null. Only an admin's answer to GET /api/videos/{id} has it.
+	AgeTierAdmin *parental.AdminTier `json:"age_tier_admin,omitempty"`
 
 	// List only (Epic 45): the publish date (PublishedExpr) and, under
 	// sort=plays, everyone's plays.
@@ -480,6 +484,11 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": []Video{}, "next": nil})
 		return
 	}
+	// Epic 57 story 57.03: a restricted account's list, its letters, its groups and
+	// its play counts are all of the videos it may see
+	if e := parental.From(r.Context()); e.Limits() {
+		conds = append(conds, parental.Predicate(e, "videos"))
+	}
 
 	if letter != "" {
 		cond, largs, err := h.letterCond(r.Context(), letter, conds, args, len(args)+1)
@@ -678,6 +687,8 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// the rating control's current value, for an admin alone
+	v.AgeTierAdmin = parental.AdminTierOf(r.Context(), h.DB, principal.FromContext(r.Context()), parental.TierOnVideo, id)
 
 	common.WriteJSON(w, r, http.StatusOK, v)
 }
@@ -1028,7 +1039,7 @@ func fillDisplay(v *Video, auto, manual, src sql.NullString) {
 
 // loadVideo reads the row by id; sql.ErrNoRows surfaces unchanged.
 func (h *Handler) loadVideo(ctx context.Context, id string) (Video, error) {
-	row := h.DB.QueryRowContext(ctx, `SELECT `+videoColumns+` FROM videos WHERE id = $1`, id)
+	row := h.DB.QueryRowContext(ctx, `SELECT `+videoColumns+` FROM videos WHERE id = $1`+parental.Where(ctx, "videos"), id)
 	return scanVideoRow(row)
 }
 

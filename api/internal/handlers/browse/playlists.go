@@ -96,7 +96,7 @@ func (h *Handler) summaries(ctx context.Context, uid string, s scope, only strin
 		args = append(args, only)
 		one = " AND p.id = " + pidx(len(args))
 	}
-	vis := and(visible, s.cond("v.library_id", &args))
+	vis := and(shown(ctx), s.cond("v.library_id", &args))
 	rows, err := h.DB.QueryContext(ctx, `SELECT p.id, p.name, p.description, p.created_at, p.updated_at, p.hand_ordered,
 			p.kind, CAST(p.smart_query AS TEXT), COUNT(v.id), COALESCE(SUM(v.duration_sec), 0)
 		FROM user_playlists p
@@ -149,7 +149,7 @@ func (h *Handler) summaries(ctx context.Context, uid string, s scope, only strin
 	if only != "" {
 		args = append(args, only)
 	}
-	vis = and(visible, s.cond("v.library_id", &args))
+	vis = and(shown(ctx), s.cond("v.library_id", &args))
 	args = append(args, posterCount)
 	prow, err := h.DB.QueryContext(ctx, `SELECT playlist_id, video_id FROM (
 			SELECT i.playlist_id, i.video_id, ROW_NUMBER() OVER (PARTITION BY i.playlist_id ORDER BY `+playlistOrder+`) AS rn
@@ -212,7 +212,7 @@ func (h *Handler) playlistsOfLibrary(ctx context.Context, p *principal.Principal
 	}
 	rows, err := h.DB.QueryContext(ctx, `SELECT DISTINCT i.playlist_id FROM user_playlist_items i
 		JOIN user_playlists p ON p.id = i.playlist_id JOIN videos v ON v.id = i.video_id
-		WHERE p.user_id = $1 AND v.library_id = $2 AND `+visible, uid, lib)
+		WHERE p.user_id = $1 AND v.library_id = $2 AND `+shown(ctx), uid, lib)
 	if err != nil {
 		return nil, err
 	}
@@ -424,7 +424,7 @@ func (h *Handler) ownPlaylist(ctx context.Context, q interface {
 // with the caller's playback.
 func (h *Handler) playlistCards(ctx context.Context, uid string, s scope, id string) ([]Card, error) {
 	args := []any{uid, id}
-	vis := and(visible, s.cond("v.library_id", &args))
+	vis := and(shown(ctx), s.cond("v.library_id", &args))
 	return h.playbackCards(ctx, `SELECT `+cardColumns+`, ps.position_sec, ps.completed
 		FROM user_playlist_items i JOIN user_playlists p ON p.id = i.playlist_id
 		JOIN videos v ON v.id = i.video_id
@@ -835,7 +835,7 @@ func (h *Handler) OrderPlaylist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	args := []any{id}
-	vis := and(visible, s.cond("v.library_id", &args))
+	vis := and(shown(ctx), s.cond("v.library_id", &args))
 	rows, err := tx.QueryContext(ctx, `SELECT i.video_id, CASE WHEN v.id IS NULL THEN 0 ELSE 1 END
 		FROM user_playlist_items i LEFT JOIN videos v ON v.id = i.video_id AND `+vis+`
 		WHERE i.playlist_id = $1 ORDER BY i.position, i.video_id`, args...)

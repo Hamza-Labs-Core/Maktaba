@@ -285,7 +285,12 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	// Story 26.8: the YouTube augmentation is purely additive and never
 	// blocks or mutates the local results computed above.
 	if req.includes("youtube") {
-		resp.YouTube = h.fetchYouTube(ctx, req.Q, youtubeInlineTimeout)
+		if limited(ctx) {
+			// story 57.03: a restricted account does not search YouTube
+			resp.YouTube = &YTBlock{Items: []YTItem{}, Reason: "disabled"}
+		} else {
+			resp.YouTube = h.fetchYouTube(ctx, req.Q, youtubeInlineTimeout)
+		}
 	}
 	common.WriteJSON(w, r, http.StatusOK, resp)
 }
@@ -356,6 +361,12 @@ func (h *Handler) compute(ctx context.Context, req Request, rl Rules) (*run, Res
 	}
 	if errFT != nil {
 		return nil, took, fmt.Errorf("fts: %w", errFT)
+	}
+	// story 57.03: the meaning search's index knows no limit; its passages are
+	// kept for the videos the account may see (the SQL legs carry the clause)
+	var errSem error
+	if sem, errSem = h.allowedHits(ctx, sem); errSem != nil {
+		return nil, took, fmt.Errorf("semantic: %w", errSem)
 	}
 
 	t2 := time.Now()
@@ -606,6 +617,7 @@ func (h *Handler) runFTSVideos(ctx context.Context, q string, limit int, f Filte
 	if isSQLite(h.DB) {
 		args = []any{"%" + escapeLike(strings.ToLower(q)) + "%", strings.ToLower(q)}
 		where := append([]string{`lower(s.text) LIKE $1 ESCAPE '\'`}, whereVideos(f, &args)...)
+		where = append(where, limitWhere(ctx)...)
 		args = append(args, limit)
 		query = `
 			SELECT t.video_id, count(*), max(` + sqliteScore + `) AS best
@@ -619,6 +631,7 @@ func (h *Handler) runFTSVideos(ctx context.Context, q string, limit int, f Filte
 	} else {
 		args = []any{q}
 		where := append([]string{`s.search_tsv @@ plainto_tsquery('maktaba_search', $1)`}, whereVideos(f, &args)...)
+		where = append(where, limitWhere(ctx)...)
 		args = append(args, limit)
 		args = append(args, ftsCandidates)
 		query = `
@@ -699,6 +712,7 @@ func (h *Handler) ftsMatching(ctx context.Context, q string, sem []Hit) (map[int
 func (h *Handler) runTitles(ctx context.Context, q string, limit int, f Filters) ([]savedTitle, error) {
 	args := []any{"%" + escapeLike(q) + "%", q}
 	where := append([]string{"v.deleted_at IS NULL"}, whereVideos(f, &args)...)
+	where = append(where, limitWhere(ctx)...)
 	args = append(args, limit)
 	var query string
 	if isSQLite(h.DB) {
@@ -753,6 +767,7 @@ func (h *Handler) cards(ctx context.Context, p *principal.Principal, ids []strin
 		}
 		where = append(where, "v.library_id IN ("+placeholders(p.Libraries, &args)+")")
 	}
+	where = append(where, limitWhere(ctx)...) // story 57.03: a hidden video has no card
 	idCol, libCol := "v.id::text", "COALESCE(v.library_id::text, '')"
 	if isSQLite(h.DB) {
 		idCol, libCol = "v.id", "COALESCE(v.library_id, '')"

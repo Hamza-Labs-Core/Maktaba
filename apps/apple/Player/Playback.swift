@@ -26,9 +26,32 @@ final class Playback {
     private(set) var player: AVPlayer?
     /// Why it does not play (the watch screen says it and what can be done).
     private(set) var failure: HomeFailure?
-    /// The home has no transcode slot free (503 `transcode_busy`, story 59.05): no error
-    /// screen, the sentence shown while the stream is asked for again every 10 s.
+    /// The home has no transcode slot free (503 `transcode_busy`, story 59.05), or cannot
+    /// read a restricted account's watching time right now (503 `parental_time_unknown`,
+    /// story 57.14): no error screen and no time's-up screen, the sentence shown while the
+    /// stream is asked for again as the home's `Retry-After` says.
     private(set) var waiting: HomeFailure?
+    /// Epic 57: the home stopped this video for a parental reason. Playback stopped, the
+    /// home holds the place of the last post it took or refused for time (`savedPosition`),
+    /// and nothing is tried again until `resumeAfterStop`.
+    private(set) var parentalStop: ParentalStop?
+    /// Whether this sign-in is under a parental limit (the session's store): a "not found"
+    /// then may be a block.
+    @ObservationIgnored var limited: () -> Bool = { false }
+
+    enum ParentalStop: Equatable {
+        /// The home no longer gives the video `id` (404 on open or on a renewal, or for the
+        /// queue's or the series' next one): the blocked page. `midPlay`: it was playing.
+        case blocked(id: String, midPlay: Bool)
+        /// 403 `parental-time`: the time's-up screen, with where the video stopped.
+        case time(TimeUp, position: Double)
+    }
+
+    /// The place the home holds for this video: the position of the last progress post it
+    /// took, or of the one it refused because the time is over (the home stores that post's
+    /// position before it answers 403), else where the stream was opened. After a stop for
+    /// time this is what "saved at" says: another device resumes here.
+    private(set) var savedPosition: Double?
 
     // What the controls show.
     private(set) var position: Double = 0
@@ -62,6 +85,8 @@ final class Playback {
     }
 
     private var session: String?
+    /// Where the stream was last opened (the home's resume point, or the place asked for).
+    private var openedFrom: Double?
     /// When to reopen: just before the signed URL ends.
     private var renewAt = Date.distantFuture
     private var openedAt = Date.distantPast
@@ -83,6 +108,39 @@ final class Playback {
 
     private var timeObserver: Any?
     private var itemObservers: [NSObjectProtocol] = []
+    /// The audio session's interruptions (a call, an alarm, a Screen Time shield): each sends
+    /// the position at once (story 57.09).
+    private var interruptionObserver: NSObjectProtocol?
+    /// The app leaving and taking the front, heard by the playback itself (story 57.09): a
+    /// player shown by any screen (the watch screen, the Libraries section's cover) sends
+    /// its position and pauses under a limit without that screen having to say so.
+    private var sceneObservers: [NSObjectProtocol] = []
+    private let center: NotificationCenter
+    private let sceneNotes: SceneNotes
+    /// Where the app was at the last `sceneChanged` (a screen and the notifications both
+    /// say it: the second saying changes nothing).
+    private var scene = Scene.active
+
+    private enum Scene { case active, inactive, background }
+
+    /// The notifications that say the app left the front, went to the background, came back.
+    struct SceneNotes {
+        var inactive: Notification.Name?
+        var background: Notification.Name?
+        var active: Notification.Name?
+
+        /// The system's: iPhone and iPad (the Mac has no background to be held in; its
+        /// watch screen says when the window leaves the front).
+        static var platform: SceneNotes {
+            #if os(iOS)
+            SceneNotes(inactive: UIApplication.willResignActiveNotification,
+                       background: UIApplication.didEnterBackgroundNotification,
+                       active: UIApplication.didBecomeActiveNotification)
+            #else
+            SceneNotes()
+            #endif
+        }
+    }
     private var statusObservation: NSKeyValueObservation?
     private var groupsTask: Task<Void, Never>?
     /// Loading the enabled audio tracks' formats, when they were not read yet.
@@ -100,14 +158,16 @@ final class Playback {
     /// The person's audio choice, by language.
     private var chosenAudio: String?
 
-    init(client: APIClient) {
+    init(client: APIClient, center: NotificationCenter = .default, scene: SceneNotes = .platform) {
         self.client = client
+        self.center = center
+        sceneNotes = scene
     }
 
     /// Plays `v` from `start` seconds; nil: where the person left off (a finished video
     /// starts again).
     func play(_ v: Video, from start: Double? = nil) {
-        if v.id == video?.id, failure == nil {
+        if v.id == video?.id, failure == nil, parentalStop == nil {
             if let start { seek(to: start) }
             return
         }
@@ -140,8 +200,59 @@ final class Playback {
         } else {
             if ended { seek(to: 0) }
             p.play()
+            // the stream's heartbeat at once (57.14): the home serves a kept account's stream
+            // only while progress is posted, and none was while it was paused
+            report()
         }
         isPlaying = p.rate > 0
+    }
+
+    /// The app left the front (story 57.09): the position is sent at once, so a Screen Time
+    /// shield, downtime or the app's end loses nothing. In the background a sign-in under a
+    /// parental limit also pauses and ends Picture in Picture, and nothing here plays again
+    /// until the person taps play (a shielded app must not start itself again); other
+    /// sign-ins keep playing in the background as before (story 48.24).
+    func sceneChanged(active: Bool, background: Bool) {
+        let now: Scene = active ? .active : background ? .background : .inactive
+        guard now != scene else { return }
+        scene = now
+        guard !active, let p = player else { return }
+        report()
+        guard background, limited(), p.rate > 0 || pip.isActive else { return }
+        Log.ui.info("playback: paused in the background under a parental limit")
+        p.pause()
+        pip.stop()
+        isPlaying = false
+    }
+
+    /// The home allows watching again (a parent gave more time, or allowed the video): the
+    /// video opens where it stopped.
+    func resumeAfterStop() {
+        guard let stop = parentalStop, let current = video else { return }
+        // the next video was the blocked one: a parent allowed it, so it plays
+        if case let .blocked(id, _) = stop, id != current.id {
+            // the stop stays until the home gives the video: one that still cannot be read
+            // (still hidden, the home not reached) leaves the blocked page, never a spinner
+            Task {
+                do {
+                    let v = try await client.video(id)
+                    guard parentalStop == stop else { return }
+                    play(v)
+                } catch {
+                    Log.failure("open the video a parent allowed", error)
+                }
+            }
+            return
+        }
+        let at: Double = if case let .time(_, position) = stop { position } else { position }
+        parentalStop = nil
+        failure = nil
+        running?.cancel()
+        running = Task {
+            await openWhenFree(from: at)
+            guard player != nil else { return }
+            await watch()
+        }
     }
 
     /// Moves `seconds` forward (back when negative), not before the start nor past the end.
@@ -205,7 +316,13 @@ final class Playback {
                 PlayerQueues.played(v.id, client)
                 play(v)
             } catch {
-                failure = HomeFailure(error)
+                // a queue or a series made before the limit tightened: its next video is one
+                // the home no longer gives (57.05: the blocked page, not an error)
+                if PlaybackVerdict.open(error, limited: limited()) == .blocked {
+                    stopForParental(.blocked(id: n.videoID, midPlay: false))
+                } else {
+                    failure = HomeFailure(error)
+                }
             }
         }
     }
@@ -218,9 +335,54 @@ final class Playback {
         upNextDismissed = true
     }
 
+    /// The system interrupted the sound (iPhone and iPad): the position is sent now, not at
+    /// the next 10 s, so nothing is lost if the app does not come back.
+    private func observeInterruptions() {
+        #if os(iOS)
+        guard interruptionObserver == nil else { return }
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
+            let began = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue
+            guard began else { return }
+            MainActor.assumeIsolated { self?.interrupted() }
+        }
+        #endif
+    }
+
+    private func interrupted() {
+        Log.ui.info("playback: interrupted by the system; position sent")
+        report()
+        if let p = player, p.rate == 0, isPlaying { isPlaying = false }
+    }
+
+    private func endInterruptions() {
+        if let interruptionObserver { NotificationCenter.default.removeObserver(interruptionObserver) }
+        interruptionObserver = nil
+        for o in sceneObservers { center.removeObserver(o) }
+        sceneObservers = []
+    }
+
+    /// Hears the app leave and take the front while a player is open.
+    private func observeScene() {
+        guard sceneObservers.isEmpty else { return }
+        // a player opens with the app at the front: what was heard for the last video (it
+        // may have been stopped in the background, unheard since) says nothing of now
+        scene = .active
+        let heard: [(Notification.Name?, Bool, Bool)] = [
+            (sceneNotes.inactive, false, false), (sceneNotes.background, false, true), (sceneNotes.active, true, false),
+        ]
+        for (name, active, background) in heard {
+            guard let name else { continue }
+            sceneObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.sceneChanged(active: active, background: background) }
+            })
+        }
+    }
+
     func stop() {
         running?.cancel()
         running = nil
+        endInterruptions()
         groupsTask?.cancel()
         nextTask?.cancel()
         upNextTask?.cancel()
@@ -236,9 +398,12 @@ final class Playback {
             }
         }
         session = nil
+        openedFrom = nil
+        savedPosition = nil
         player = nil
         failure = nil
         waiting = nil
+        parentalStop = nil
         video = nil
         proxy?.stop()
         proxy = nil
@@ -334,6 +499,7 @@ final class Playback {
                 Task { [client] in await client.closeStream(old) }
             }
             session = s.sessionID
+            openedFrom = start
             waiting = nil
             ladder = s.ladder ?? []
             try await client.waitUntilPlayable(url, headers: auth.headers)
@@ -348,7 +514,19 @@ final class Playback {
             return
         } catch {
             let f = HomeFailure(error)
-            if f.kind.transcodeRetrySeconds != nil {
+            // Epic 57: the account's time is over (403 `parental-time`), or the home no
+            // longer gives this video to a limited sign-in (404, at an open or a renewal)
+            switch PlaybackVerdict.open(error, limited: limited()) {
+            case let .timeUp(up):
+                stopForParental(.time(up, position: start))
+                return
+            case .blocked:
+                stopForParental(.blocked(id: video.id, midPlay: player != nil))
+                return
+            case .other, .reopen:
+                break
+            }
+            if f.kind.waitRetrySeconds != nil {
                 // what plays now plays on (a reopen: the 10 s watch asks again); with nothing
                 // playing, the sentence shows while `openWhenFree` asks again
                 if player != nil { return }
@@ -361,13 +539,14 @@ final class Playback {
         }
     }
 
-    /// Opens at `start`; while the home has no transcode slot free (`waiting`), asks again
-    /// every 10 s (its `Retry-After`) until one is (story 59.05).
+    /// Opens at `start`; while the home has no transcode slot free, or cannot read the
+    /// account's watching time (`waiting`), asks again after its `Retry-After` until it can
+    /// (stories 59.05 and 57.14).
     private func openWhenFree(from start: Double) async {
         while !Task.isCancelled {
             await open(from: start)
             if failure != nil { waiting = nil }
-            guard let after = waiting?.kind.transcodeRetrySeconds else { return }
+            guard let after = waiting?.kind.waitRetrySeconds else { return }
             do { try await Task.sleep(for: .seconds(after)) } catch { return }
         }
     }
@@ -393,6 +572,8 @@ final class Playback {
             observeTime(of: p)
             startRoutes(of: p)
             startNowPlaying()
+            observeInterruptions()
+            observeScene()
         }
         ended = false
         Log.ui.info("playback: opened at \(start, privacy: .public) s, playing \(playing, privacy: .public)")
@@ -447,13 +628,95 @@ final class Playback {
         return true
     }
 
-    /// Reports where it is now (best effort).
+    /// Reports where it is now (best effort): the resume point, and for an account whose time
+    /// the home keeps the stream's heartbeat, posted every 10 s while it plays (the home wants
+    /// one at least every 60 s). The home's refusal of it stops the video (`progressRefused`).
     private func report(completed: Bool = false) {
         guard let session, let p = player else { return }
         var at = p.currentTime().seconds
         if completed, duration > 0 { at = duration }
         guard at.isFinite, at > 0 || completed else { return }
-        Task { [client] in await client.reportProgress(session: session, positionSec: Int(at), completed: completed) }
+        Task { [client, weak self] in
+            do {
+                try await client.postProgress(session: session, positionSec: Int(at), completed: completed)
+                self?.progressTaken(session: session, at: at)
+            } catch {
+                self?.progressRefused(error, session: session, at: at, sent: Double(Int(at)))
+            }
+        }
+    }
+
+    /// The home took a progress post of `taken`: its place for this video is `at`.
+    func progressTaken(session taken: String, at: Double) {
+        guard session == taken else { return }
+        savedPosition = at
+    }
+
+    /// This playback as if `open` had opened `session` for `video` (the tests' seam: a
+    /// stream's refusals are matched by its session, which only the home gives).
+    func adopt(session: String, video: Video? = nil, openedFrom: Double? = nil) {
+        self.session = session
+        self.openedFrom = openedFrom
+        if let video { self.video = video }
+    }
+
+    /// The home refused a progress post. `parental-time`: the time is over, so the video
+    /// stops on the time's-up screen; when the reason is `no_heartbeat` (the stream sent no
+    /// progress for a minute: a long pause, the app held in the background) the stream is
+    /// opened again once, and the home then says whether there is time. Any other failure is
+    /// left to the next post. `sent` is the position the refused post carried (nil: `at`):
+    /// the home stored it when it refused for time, so "saved at" says it.
+    func progressRefused(_ error: Error, session refused: String, at: Double, sent: Double? = nil) {
+        guard session == refused, parentalStop == nil else { return }
+        switch PlaybackVerdict.progress(error, limited: limited()) {
+        case .other:
+            return
+        case .blocked:
+            // the video was hidden from the account while it played: the stream has ended
+            if let id = video?.id { stopForParental(.blocked(id: id, midPlay: true)) }
+        case .reopen:
+            guard let p = player else { return }
+            let again = reopening(p, fallback: at)
+            running?.cancel()
+            running = Task {
+                await open(from: again.at, playing: again.playing)
+                guard player != nil else { return }
+                await watch()
+            }
+        case let .timeUp(up):
+            if up.keepsRefusedPosition { savedPosition = sent ?? at }
+            stopForParental(.time(up, position: at))
+        }
+    }
+
+    /// Stops for a parental reason: the player goes, and the screen shows the blocked page or
+    /// time's up. A stop for time sends no further position: the place the home holds is the
+    /// last post it took, or the one it refused for time (`savedPosition`), and the time's-up
+    /// screen says that one.
+    func stopForParental(_ stop: ParentalStop) {
+        let at = player?.currentTime().seconds ?? position
+        if let session, at.isFinite, at > 0, case .blocked(_, true) = stop {
+            Task { [client] in await client.reportProgress(session: session, positionSec: Int(at)) }
+        }
+        if savedPosition == nil { savedPosition = openedFrom }
+        var kept = stop
+        if case let .time(up, start) = stop, at.isFinite, at > start { kept = .time(up, position: at) }
+        Log.ui.info("playback: stopped by the home for a parental reason")
+        endInterruptions()
+        unobserveItem()
+        if let timeObserver, let player { player.removeTimeObserver(timeObserver) }
+        timeObserver = nil
+        player?.pause()
+        player = nil
+        pip.stop()
+        NowPlaying.shared.end(self)
+        nowShown = nil
+        waiting = nil
+        failure = nil
+        isPlaying = false
+        upNextTask?.cancel()
+        upNextCountdown = nil
+        parentalStop = kept
     }
 
     // MARK: the item

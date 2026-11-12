@@ -37,6 +37,8 @@ import { useI18n } from "../../lib/i18n";
 import { AdminGate } from "../../components/AdminGate";
 import { RegistrationToggle } from "./RegistrationToggle";
 import { TitleRow } from "../../help/HelpLink";
+import { useMyParental } from "../../lib/parental";
+import { ChildrenTime } from "../Parental/FamilyTime";
 import type { CloudLinkInfo } from "../Profile/CloudLink";
 
 interface AdminUser {
@@ -95,6 +97,9 @@ function UsersInner() {
   const [deleting, setDeleting] = useState<AdminUser | null>(null);
   const [revoking, setRevoking] = useState<AdminUser | null>(null);
   const [resetting, setResetting] = useState<AdminUser | null>(null);
+
+  // the restricted accounts, from the home (GET /api/parental/children)
+  const restrictedAccounts = useMyParental().children;
 
   function persist(next: AdminUser[]) {
     setUsers(next);
@@ -177,6 +182,17 @@ function UsersInner() {
           </tbody>
         </table>
       )}
+
+      {/* Epic 57 story 57.15: Users > the user > Time, for each restricted account */}
+      <section className="mkt-admin__time" aria-labelledby="mkt-admin-time-title">
+        <h2 id="mkt-admin-time-title">{t("parental.family.title")}</h2>
+        <p className="mkt-muted">{t("parental.family.intro")}</p>
+        {restrictedAccounts.length > 0 ? (
+          <ChildrenTime accounts={restrictedAccounts} />
+        ) : (
+          <p className="mkt-muted">{t("family.users.none")}</p>
+        )}
+      </section>
 
       {createOpen && (
         <UserFormModal

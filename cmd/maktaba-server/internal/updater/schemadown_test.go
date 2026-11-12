@@ -74,3 +74,15 @@ func TestReversibleSmartPlaylists(t *testing.T) {
 		t.Fatalf("0184..0197: %s", why)
 	}
 }
+
+// Parental controls (Epic 57: slots 0220..0225) are undone by their Down scripts: the
+// update rehearsal's waves roll a release with these slots back and want no dump put
+// back. Slot 0225 once set app_settings `parental.enabled` with an UPDATE (over slot
+// 0221's seed), which no Down script can undo, and every rollback restored the database.
+func TestReversibleParentalControls(t *testing.T) {
+	_, here, _, _ := runtime.Caller(0)
+	dir := filepath.Join(filepath.Dir(here), "..", "..", "..", "..", "shared", "db", "migrations")
+	if ok, why := Reversible(dir, 219, 225); !ok {
+		t.Fatalf("0220..0225: %s", why)
+	}
+}

@@ -308,6 +308,18 @@ actor ImageCache {
 
     /// The bytes on disk (the tests' view).
     var diskBytes: Int { diskIndex().values.reduce(0) { $0 + $1.bytes } }
+
+    /// Empties the cache, memory and disk (Epic 57: the account's limit changed, and the
+    /// posters of what it now hides are among what was kept). A fetch under way still
+    /// answers the view that asked; what it writes is one fresh file.
+    func clear() {
+        clearMemory()
+        guard let directory else { return }
+        for name in diskIndex().keys {
+            try? FileManager.default.removeItem(at: directory.appending(path: name, directoryHint: .notDirectory))
+        }
+        disk = [:]
+    }
 }
 
 /// Which picture requests carry a home's token: only the home's own `/api/` routes (same

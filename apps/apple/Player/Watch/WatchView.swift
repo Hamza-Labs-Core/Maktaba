@@ -11,6 +11,8 @@ import SwiftUI
 struct WatchView: View {
     let playback: Playback
     let session: AppSession
+    /// The signed-in Player, for the parental screens (nil: taken from the session).
+    var context: PlayerContext?
     /// What Close does besides stopping (the watch route goes back).
     var onClose: (() -> Void)?
 
@@ -35,6 +37,30 @@ struct WatchView: View {
                 if let left = playback.upNextCountdown, let next = playback.next {
                     UpNextCard(episode: next, secondsLeft: left, playNow: playback.playNext, cancel: playback.cancelUpNext)
                 }
+                // story 57.15: the time left today in its last 15 minutes, and the warnings
+                // at 5 minutes and at 1, from the home's answer (asked every 30 s here)
+                if session.parental.current.restricted {
+                    VStack {
+                        TimeLeftBar(store: session.parental, overVideo: true,
+                                    playing: .init(client: playback.client, library: playback.video?.libraryID))
+                        Spacer()
+                    }
+                    .padding(.top, 56)
+                    .allowsHitTesting(false)
+                }
+            } else if let stop = playback.parentalStop, let context = signedIn {
+                // Epic 57: the home stopped the video. Nothing is tried again from here.
+                switch stop {
+                case let .blocked(id, midPlay):
+                    BlockedPageView(context: context, subject: .video(id),
+                                    stoppedLine: midPlay ? ParentalWords.text("parental.player.stopped") : nil,
+                                    back: close) { playback.resumeAfterStop() }
+                case let .time(up, _):
+                    // "saved at": the place the home holds, not where the picture stopped
+                    TimeUpView(context: context, up: up, position: playback.savedPosition, library: playback.video?.libraryID, back: close) {
+                        playback.resumeAfterStop()
+                    }
+                }
             } else {
                 Group {
                     if let failure = playback.failure {
@@ -43,7 +69,8 @@ struct WatchView: View {
                     } else {
                         VStack(spacing: 16) {
                             ProgressView().tint(.white)
-                            // no transcode slot free (story 59.05): it asks again by itself
+                            // no transcode slot free (story 59.05), or the home cannot read
+                            // the account's watching time yet (57.14): it asks again by itself
                             if let waiting = playback.waiting {
                                 Text(waiting.message(video: true))
                                     .font(.body)
@@ -81,6 +108,13 @@ struct WatchView: View {
         .onAppear(perform: touched)
         .onChange(of: playback.isPlaying) { touched() }
         .onDisappear { hideTask?.cancel() }
+    }
+
+    /// Who is signed in, for the parental screens.
+    private var signedIn: PlayerContext? {
+        if let context { return context }
+        guard case let .signedIn(user) = session.phase, let client = session.client else { return nil }
+        return PlayerContext(session: session, user: user, client: client)
     }
 
     /// The two halves of the video: a tap toggles the controls, a double-tap seeks. The

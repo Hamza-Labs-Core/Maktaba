@@ -15,9 +15,11 @@
 package collections
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -27,6 +29,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 // SmartFilter is the parsed shape of the “smart_query“ JSON. We
@@ -145,7 +148,11 @@ func (h *Handler) LiveItemsFor(
 	if err != nil {
 		return nil, 0, err
 	}
-	q, args := buildSmartSQL(filter, cursor, limit)
+	// The parental limit (Epic 57 story 57.03) is part of what is ranked: a
+	// restricted account's positions and pages are of the videos it may see, so
+	// a gap in the positions does not count the hidden ones, and a first page of
+	// one says whether the collection shows it anything (SmartShows).
+	q, args := buildSmartSQL(filter, cursor, limit, parental.Where(ctx, "videos"))
 	frag, fargs, none := libraryScope(p, "library_id", len(args)+1)
 	if none {
 		return []CollectionItem{}, 0, nil
@@ -174,6 +181,96 @@ func (h *Handler) LiveItemsFor(
 		nextCursor = items[len(items)-1].Position + 1
 	}
 	return items, nextCursor, nil
+}
+
+// smartRecorder takes the list's answer for SmartShows.
+type smartRecorder struct {
+	code int
+	hdr  http.Header
+	body bytes.Buffer
+}
+
+func (r *smartRecorder) Header() http.Header {
+	if r.hdr == nil {
+		r.hdr = http.Header{}
+	}
+	return r.hdr
+}
+
+func (r *smartRecorder) Write(b []byte) (int, error) {
+	if r.code == 0 {
+		r.code = http.StatusOK
+	}
+	return r.body.Write(b)
+}
+
+func (r *smartRecorder) WriteHeader(code int) {
+	if r.code == 0 {
+		r.code = code
+	}
+}
+
+// SmartShows reports whether the smart collection id lists at least one video for
+// the caller of ctx under the limit e (parental.SmartCheck; Epic 57 story 57.03).
+// A restricted account is shown a smart collection only when it does: one with
+// nothing it may see answers as missing and is not listed. It asks what the
+// items route asks, for one item: the saved filter through GET /api/videos, the
+// older shape through the ranked query. A query that cannot be read lists
+// nothing, so it shows nothing.
+func (h *Handler) SmartShows(ctx context.Context, e *parental.Effective, id string) (bool, error) {
+	p := principal.FromContext(ctx)
+	if p == nil {
+		return false, nil
+	}
+	ctx = parental.With(ctx, e)
+	c := Collection{ID: id}
+	var sq []byte
+	err := h.DB.QueryRowContext(ctx, `SELECT CAST(library_id AS TEXT), smart_query FROM collections WHERE id = $1 AND is_smart`, id).
+		Scan(&c.LibraryID, &sq)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	c.IsSmart, c.SmartQuery = true, sq
+	f, err := parseSmartQuery(c.SmartQuery, c.LibraryID)
+	if err != nil {
+		return false, nil
+	}
+	if f.Filters != nil && h.ListVideos != nil {
+		qs := url.Values{}
+		for k, v := range f.Filters {
+			qs.Set(k, v)
+		}
+		qs.Set("library", c.LibraryID)
+		qs.Set("limit", "1")
+		req, err := http.NewRequestWithContext(context.WithValue(ctx, chi.RouteCtxKey, chi.NewRouteContext()),
+			http.MethodGet, "/api/videos?"+qs.Encode(), nil)
+		if err != nil {
+			return false, err
+		}
+		rec := &smartRecorder{}
+		h.ListVideos(rec, req)
+		if rec.code >= http.StatusInternalServerError {
+			return false, errors.New("collections: the videos list answered " + itoa(rec.code))
+		}
+		if rec.code != http.StatusOK {
+			return false, nil // a filter value the list refuses lists nothing
+		}
+		var page struct {
+			Items []json.RawMessage `json:"items"`
+		}
+		if err := json.Unmarshal(rec.body.Bytes(), &page); err != nil {
+			return false, err
+		}
+		return len(page.Items) > 0, nil
+	}
+	items, _, err := h.LiveItemsFor(ctx, p, c, 0, 1)
+	if err != nil {
+		return false, nil // the items route answers such a query with an empty list
+	}
+	return len(items) > 0, nil
 }
 
 // Freeze implements AC-3: materialise the smart query's current items
@@ -258,7 +355,10 @@ func parseSmartQuery(raw json.RawMessage, libraryID string) (SmartFilter, error)
 // “ORDER BY id“); a real implementation would use the same cursor
 // primitive as Story 7.2, but the smart-query API doesn't promise a
 // stable cursor across catalog changes.
-func buildSmartSQL(f SmartFilter, cursor, limit int) (string, []any) {
+//
+// limitClause is the parental clause over `videos` (" AND ..." or ""): it holds
+// no placeholders.
+func buildSmartSQL(f SmartFilter, cursor, limit int, limitClause string) (string, []any) {
 	args := []any{}
 	where := []string{}
 	idx := 1
@@ -291,7 +391,9 @@ func buildSmartSQL(f SmartFilter, cursor, limit int) (string, []any) {
 	}
 	whereClause := ""
 	if len(where) > 0 {
-		whereClause = "WHERE " + strings.Join(where, " AND ")
+		whereClause = "WHERE " + strings.Join(where, " AND ") + limitClause
+	} else if limitClause != "" {
+		whereClause = "WHERE TRUE" + limitClause
 	}
 	order := "ORDER BY created_at DESC, id DESC"
 	if f.OrderBy == "title" {

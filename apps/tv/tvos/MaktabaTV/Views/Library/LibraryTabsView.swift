@@ -127,7 +127,7 @@ struct CardShelf: View {
             ScrollView(.horizontal) {
                 LazyHStack(spacing: 48) {
                     ForEach(videos) { v in
-                        NavigationLink { VideoPage(id: v.id) } label: {
+                        NavigationLink { VideoPage(id: v.id).parentalFresh() } label: {
                             VideoCard(id: v.id, title: v.displayTitle, progress: v.positionSec.map { p in
                                 (v.durationSec ?? 0) > 0 ? p / v.durationSec! : 0 } ?? 0)
                         }
@@ -215,14 +215,14 @@ struct LibraryGridTab: View {
                     if bySeries {
                         ForEach(series) { c in
                             NavigationLink {
-                                if c.isSeries { SeriesView(id: c.id) } else { VideoPage(id: c.id) }
+                                if c.isSeries { SeriesView(id: c.id).parentalFresh() } else { VideoPage(id: c.id).parentalFresh() }
                             } label: { VideoCard(id: c.picture, title: c.label) }
                             .buttonStyle(.borderless)
                             .onAppear { if c.id == series.last?.id, next != nil { Task { await load(more: true) } } }
                         }
                     } else {
                         ForEach(videos) { v in
-                            NavigationLink { VideoPage(id: v.id) } label: { VideoCard(id: v.id, title: v.displayTitle) }
+                            NavigationLink { VideoPage(id: v.id).parentalFresh() } label: { VideoCard(id: v.id, title: v.displayTitle) }
                                 .buttonStyle(.borderless)
                                 .onAppear { if v.id == videos.last?.id, next != nil { Task { await load(more: true) } } }
                         }
@@ -304,7 +304,7 @@ struct CollectionsTab: View {
                 }
                 LazyVGrid(columns: columns, spacing: 64) {
                     ForEach(items) { c in
-                        NavigationLink { CollectionPageView(library: library, collection: c) } label: {
+                        NavigationLink { CollectionPageView(library: library, collection: c).parentalFresh() } label: {
                             VStack(alignment: .leading) {
                                 VideoCard(id: c.posterVideoIDs.first ?? "", title: c.name)
                                 if let b = Self.badge(c) { Text(b).font(Theme.body(22)).foregroundStyle(Theme.gold) }
@@ -347,7 +347,7 @@ struct PlaylistsGrid: View {
             }
             LazyVGrid(columns: columns, spacing: 64) {
                 ForEach(lists ?? []) { p in
-                    NavigationLink { PlaylistPageView(id: p.id) } label: {
+                    NavigationLink { PlaylistPageView(id: p.id).parentalFresh() } label: {
                         VStack(alignment: .leading) {
                             VideoCard(id: p.posterVideoIDs.first ?? "", title: p.name)
                             if p.smart { Text("Smart").font(Theme.body(22)).foregroundStyle(Theme.gold) }

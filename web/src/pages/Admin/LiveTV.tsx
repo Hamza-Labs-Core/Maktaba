@@ -36,6 +36,7 @@ import { RemotePanel } from "./LiveTV/RemotePanel";
 import { PublicPanel } from "./LiveTV/PublicPanel";
 import { SimulcastPanel } from "./LiveTV/Simulcast";
 import { StreamingHosts } from "./LiveTV/StreamingHosts";
+import { TunerAllowed } from "./LiveTV/TunerAllowed";
 import { useTvCluster } from "./LiveTV/useTvCluster";
 import { TitleRow } from "../../help/HelpLink";
 import "../../styles/tvcluster.css";
@@ -196,6 +197,9 @@ function LiveTVInner() {
         <CopyField label={t("livetv.xmltvUrl")} value={info.xmltv_url} />
         <CopyField label={t("livetv.m3uUrl")} value={info.m3u_url} />
       </Card>
+
+      {/* Epic 57 story 57.10: who else on the network may use the tuner */}
+      <TunerAllowed />
 
       <Card className="mkt-livetv__card">
         <h2>{t("livetv.plexTitle")}</h2>

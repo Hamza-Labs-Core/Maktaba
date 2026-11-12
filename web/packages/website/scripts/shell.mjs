@@ -134,20 +134,37 @@ export function shellAssets() {
   return memo;
 }
 
+/** The shell's last element (the footer's live region), which the first paint waits for. */
+export const LAST_ID = "announce";
+
+/**
+ * The first paint waits for the whole document: `<link rel="expect" blocking="render">` names
+ * the shell's last element (LAST_ID), and the browser draws nothing until it has parsed it. The
+ * parser hands the page over in pieces (it yields when a piece takes long, or when the rest has
+ * not arrived), and a paint between two pieces drew a header with no language switch yet: the
+ * nav sat where the switch belongs and slid over when the switch was parsed (a layout shift of
+ * 0.0007 to 0.0016 at 1280 px, on a different page each time: e2e/cls.spec.ts on #1187 and
+ * #1204). A document that ends without the element is drawn when its parsing ends, and a
+ * browser that does not know `expect` draws as before.
+ */
+export const RENDER_WHOLE = `<link rel="expect" href="#${LAST_ID}" blocking="render" />`;
+
 /** The display face's files a part B page preloads (design/README.md, "Display face"): an
  * English page its Latin file, an Arabic page both (its Latin names are set in it too). */
 export const PRELOAD_DISPLAY = { en: ["latin"], ar: ["arabic", "latin"] };
 
-/** What the shell puts in every <head>: the fonts its language preloads, the stylesheet, the
- * head script (before the first paint) and the shell script (deferred). A part B page
- * (`variant: "b"`) also preloads the display face and loads part B's stylesheet after the
- * shell's; `headScripts` are a page's own scripts, run before the first paint. */
+/** What the shell puts in every <head>: the wait for the whole document (RENDER_WHOLE), the
+ * fonts its language preloads, the stylesheet, the head script (before the first paint) and the
+ * shell script (deferred). A part B page (`variant: "b"`) also preloads the display face and
+ * loads part B's stylesheet after the shell's; `headScripts` are a page's own scripts, run
+ * before the first paint. */
 export function shellHead(lang, indent = "  ", { variant = "a", headScripts = [] } = {}) {
   const a = shellAssets();
   const b = variant === "b";
   const preload = (href) =>
     `<link rel="preload" href="${href}" as="font" type="font/woff2" crossorigin />`;
   return [
+    RENDER_WHOLE,
     ...PRELOAD[lang].map((f) => preload(a.fonts[f])),
     ...(b ? PRELOAD_DISPLAY[lang].map((f) => preload(a.display[f])) : []),
     `<script src="${a.head}"></script>`,
@@ -553,7 +570,7 @@ export function footer(lang, sitePath, { variant = "a", links = bLinks() } = {})
     <a href="${switchHref(lang, sitePath)}" hreflang="${o.lang}" lang="${o.lang}" dir="${o.dir}">${esc(t.readIn)}</a>
   </div></div>
 </footer>
-<p class="visually-hidden" id="announce" aria-live="polite"></p>`;
+<p class="visually-hidden" id="${LAST_ID}" aria-live="polite"></p>`;
 }
 
 // ---- the parts pages build with (design/README.md, "Components") -----------------------------

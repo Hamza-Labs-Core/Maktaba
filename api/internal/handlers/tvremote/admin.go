@@ -29,6 +29,10 @@ type Handler struct {
 	Remote *remote.Controller
 	// Publisher posts the public site's state (Epic 34); nil: none runs.
 	Publisher *remote.Publisher
+	// Parental refuses a restricted account a channel it may not watch (Epic 57
+	// story 57.10): by channel id for a tune, by session id for a heartbeat. Nil
+	// error: go on. Nil func: nothing is asked (tests).
+	Parental func(r *http.Request, p *principal.Principal, channelID, sessionID string) *httperror.Error
 }
 
 // Mount registers the routes.

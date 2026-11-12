@@ -7,6 +7,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/signedurl"
+	parentalh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/streaming"
 )
 
@@ -36,4 +37,11 @@ func streamURLSigner(authKeys *keys.Set, logger *slog.Logger) streaming.URLSigne
 	logger.Warn("no stream signing key and no JWT keys: video playback will be refused",
 		"env", signedurl.EnvKeyFile, "event", "stream_signing_missing")
 	return nil
+}
+
+// channelSigner is the same signer for a channel's stream URL (Epic 57 story
+// 57.10); nil when there is none.
+func channelSigner(s streaming.URLSigner) parentalh.ChannelSigner {
+	c, _ := s.(parentalh.ChannelSigner)
+	return c
 }

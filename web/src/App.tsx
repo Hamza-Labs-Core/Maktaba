@@ -56,6 +56,14 @@ import { HelpIndex, HelpTopic } from "./help/Help";
 import { IS_REMOTE, SERVER_PAGES } from "./lib/edition";
 import { serverRoutes } from "./serverRoutes";
 import { RemoteHome } from "./pages/RemoteHome";
+import { ParentalProvider } from "./lib/parental";
+import { Family } from "./pages/Parental/Family";
+import { ChildPage } from "./pages/Parental/Child";
+import { ActivityPage } from "./pages/Parental/Activity";
+import { RequestsPage } from "./pages/Parental/Requests";
+import { ParentPinPage } from "./pages/Parental/ParentPin";
+import { TimeRulesPage } from "./pages/Parental/TimeRules";
+import { TierReview } from "./pages/Parental/TierReview";
 import { logRouteChanged, routePattern } from "./lib/errorLog";
 
 // Epic 46: big-screen mode, its own full-screen frame and chunk
@@ -109,94 +117,105 @@ export function App() {
                 <AuthProvider>
                   <FlagsProvider>
                     <CapabilitiesProvider>
-                      <BrowserRouter basename={ROUTER_BASENAME}>
-                        <DesktopBridge />
-                        <RouteLog />
-                        <ShortcutProvider>
-                          <Routes>
-                            <Route element={<PublicPages />}>
-                              <Route path="/login" element={<Login />} />
-                              <Route path="/register" element={<Register />} />
-                              {/* Maktaba Cloud opens a connected home here, signed in (42.9) */}
-                              <Route path="/cloud-sign-in" element={<CloudSignIn />} />
+                      <ParentalProvider>
+                        <BrowserRouter basename={ROUTER_BASENAME}>
+                          <DesktopBridge />
+                          <RouteLog />
+                          <ShortcutProvider>
+                            <Routes>
+                              <Route element={<PublicPages />}>
+                                <Route path="/login" element={<Login />} />
+                                <Route path="/register" element={<Register />} />
+                                {/* Maktaba Cloud opens a connected home here, signed in (42.9) */}
+                                <Route path="/cloud-sign-in" element={<CloudSignIn />} />
+                                <Route
+                                  path="/big/*"
+                                  element={
+                                    <RequireAuth>
+                                      <Suspense fallback={null}>
+                                        <BigScreen />
+                                      </Suspense>
+                                    </RequireAuth>
+                                  }
+                                />
+                              </Route>
                               <Route
-                                path="/big/*"
                                 element={
                                   <RequireAuth>
-                                    <Suspense fallback={null}>
-                                      <BigScreen />
-                                    </Suspense>
+                                    <AppShell />
                                   </RequireAuth>
                                 }
-                              />
-                            </Route>
-                            <Route
-                              element={
-                                <RequireAuth>
-                                  <AppShell />
-                                </RequireAuth>
-                              }
-                            >
-                              <Route path="/" element={IS_REMOTE ? <RemoteHome /> : <Home />} />
-                              <Route path="/library" element={<Libraries />} />
-                              <Route path="/library/pinned" element={<PinnedLibraries />} />
-                              <Route path="/library/:libraryId" element={<LibraryPage />} />
-                              <Route
-                                path="/library/:libraryId/collections"
-                                element={<CollectionsRedirect />}
-                              />
-                              <Route
-                                path="/library/:libraryId/collections/:kind/:groupId"
-                                element={<AutoCollectionPage />}
-                              />
-                              <Route
-                                path="/collections/:collectionId"
-                                element={<CollectionPage />}
-                              />
-                              <Route path="/videos" element={<LibraryBrowser />} />
-                              <Route path="/series" element={<SeriesBrowser />} />
-                              <Route path="/playlists" element={<Playlists />} />
-                              <Route path="/playlists/:playlistId" element={<PlaylistPage />} />
-                              <Route path="/series/:id" element={<SeriesDetail />} />
-                              <Route path="/videos/:videoId" element={<VideoDetail />} />
-                              <Route path="/videos/:videoId/watch" element={<VideoPlayer />} />
-                              <Route path="/search" element={<Search />} />
-                              <Route path="/search/video/:videoId" element={<SearchVideo />} />
-                              <Route
-                                path="/guide"
-                                element={
-                                  <FeatureRoute id="live_tv">
-                                    <Guide />
-                                  </FeatureRoute>
-                                }
-                              />
-                              <Route
-                                path="/live/:number"
-                                element={
-                                  <FeatureRoute id="live_tv">
-                                    <Player />
-                                  </FeatureRoute>
-                                }
-                              />
-                              <Route path="/more" element={<MoreMenu />} />
-                              <Route path="/help" element={<HelpIndex />} />
-                              <Route path="/help/:topic" element={<HelpTopic />} />
-                              <Route path="/account" element={<Account />} />
-                              <Route path="/account/devices" element={<ConnectedDevices />} />
-                              <Route path="/account/connect" element={<ConnectApp />} />
-                              <Route path="/account/sessions" element={<Sessions />} />
-                              <Route path="/account/tokens" element={<APITokens />} />
-                              <Route path="/account/history" element={<WatchHistory />} />
-                              <Route path="/account/report" element={<ReportProblem />} />
-                              <Route path="/account/reports" element={<MyReports />} />
-                              <Route path="/account/preferences/*" element={<Preferences />} />
-                              <Route path="/pair" element={<Pair />} />
-                              {SERVER_PAGES && serverRoutes()}
-                              <Route path="*" element={<NotFound />} />
-                            </Route>
-                          </Routes>
-                        </ShortcutProvider>
-                      </BrowserRouter>
+                              >
+                                <Route path="/" element={IS_REMOTE ? <RemoteHome /> : <Home />} />
+                                <Route path="/library" element={<Libraries />} />
+                                <Route path="/library/pinned" element={<PinnedLibraries />} />
+                                <Route path="/library/:libraryId" element={<LibraryPage />} />
+                                <Route
+                                  path="/library/:libraryId/collections"
+                                  element={<CollectionsRedirect />}
+                                />
+                                <Route
+                                  path="/library/:libraryId/collections/:kind/:groupId"
+                                  element={<AutoCollectionPage />}
+                                />
+                                <Route
+                                  path="/collections/:collectionId"
+                                  element={<CollectionPage />}
+                                />
+                                <Route path="/videos" element={<LibraryBrowser />} />
+                                <Route path="/series" element={<SeriesBrowser />} />
+                                <Route path="/playlists" element={<Playlists />} />
+                                <Route path="/playlists/:playlistId" element={<PlaylistPage />} />
+                                <Route path="/series/:id" element={<SeriesDetail />} />
+                                <Route path="/videos/:videoId" element={<VideoDetail />} />
+                                <Route path="/videos/:videoId/watch" element={<VideoPlayer />} />
+                                <Route path="/search" element={<Search />} />
+                                <Route path="/search/video/:videoId" element={<SearchVideo />} />
+                                <Route
+                                  path="/guide"
+                                  element={
+                                    <FeatureRoute id="live_tv">
+                                      <Guide />
+                                    </FeatureRoute>
+                                  }
+                                />
+                                <Route
+                                  path="/live/:number"
+                                  element={
+                                    <FeatureRoute id="live_tv">
+                                      <Player />
+                                    </FeatureRoute>
+                                  }
+                                />
+                                <Route path="/more" element={<MoreMenu />} />
+                                <Route path="/help" element={<HelpIndex />} />
+                                <Route path="/help/:topic" element={<HelpTopic />} />
+                                <Route path="/account" element={<Account />} />
+                                <Route path="/account/devices" element={<ConnectedDevices />} />
+                                <Route path="/account/connect" element={<ConnectApp />} />
+                                <Route path="/account/sessions" element={<Sessions />} />
+                                <Route path="/account/tokens" element={<APITokens />} />
+                                <Route path="/account/history" element={<WatchHistory />} />
+                                <Route path="/account/report" element={<ReportProblem />} />
+                                <Route path="/account/reports" element={<MyReports />} />
+                                <Route path="/account/preferences/*" element={<Preferences />} />
+                                <Route path="/pair" element={<Pair />} />
+                                {/* Epic 57: family settings (admins, guardians) and the
+                                  review of detected ratings; the home refuses anyone else */}
+                                <Route path="/family" element={<Family />} />
+                                <Route path="/family/requests" element={<RequestsPage />} />
+                                <Route path="/family/pin" element={<ParentPinPage />} />
+                                <Route path="/family/:userId" element={<ChildPage />} />
+                                <Route path="/family/:userId/activity" element={<ActivityPage />} />
+                                <Route path="/family/:userId/time" element={<TimeRulesPage />} />
+                                <Route path="/parental/review" element={<TierReview />} />
+                                {SERVER_PAGES && serverRoutes()}
+                                <Route path="*" element={<NotFound />} />
+                              </Route>
+                            </Routes>
+                          </ShortcutProvider>
+                        </BrowserRouter>
+                      </ParentalProvider>
                     </CapabilitiesProvider>
                   </FlagsProvider>
                 </AuthProvider>

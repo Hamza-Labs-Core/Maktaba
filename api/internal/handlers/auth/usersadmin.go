@@ -14,6 +14,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 )
 
@@ -129,6 +130,69 @@ type createUserRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	IsAdmin  bool   `json:"is_admin"`
+	// Parental makes the new account restricted from the start (Epic 57 story
+	// 57.02): the limit and, optionally, who looks after it.
+	Parental *createParental `json:"parental,omitempty"`
+}
+
+// createParental is the limit a new restricted account starts with.
+type createParental struct {
+	MaxTier   *int     `json:"max_tier"`
+	Unrated   string   `json:"unrated"`
+	AllowOnly bool     `json:"allow_only"`
+	Guardians []string `json:"guardians"`
+}
+
+// Problem types for the rules a restricted account lives under (the same ones
+// handlers/parental answers with).
+var (
+	TypeRestrictedAdmin    = httperror.Type("restricted-admin")
+	TypeRestrictedGuardian = httperror.Type("restricted-guardian")
+)
+
+func restrictedAdmin() *httperror.Error {
+	return httperror.Conflict(TypeRestrictedAdmin, "a restricted account cannot be an admin").
+		With("code", "restricted_admin")
+}
+
+// input checks the limit before anything is written.
+func (c *createParental) input() (parental.PolicyInput, *httperror.Error) {
+	var errs []httperror.FieldError
+	if c.MaxTier == nil || !parental.ValidPolicyLimit(*c.MaxTier) {
+		errs = append(errs, httperror.FieldError{Field: "parental.max_tier", Message: "must be one of -1, 0, 9, 13, 16, 18"})
+	}
+	unrated := c.Unrated
+	if unrated == "" {
+		unrated = parental.UnratedHide
+	}
+	if !parental.ValidUnrated(unrated) {
+		errs = append(errs, httperror.FieldError{Field: "parental.unrated",
+			Message: "must be hide or one of tier_0, tier_9, tier_13, tier_16, tier_18"})
+	}
+	if len(c.Guardians) > 20 {
+		errs = append(errs, httperror.FieldError{Field: "parental.guardians", Message: "at most 20"})
+	}
+	if len(errs) > 0 {
+		return parental.PolicyInput{}, httperror.Unprocessable(errs)
+	}
+	return parental.PolicyInput{MaxTier: *c.MaxTier, Unrated: unrated, AllowOnly: c.AllowOnly}, nil
+}
+
+// restrict gives the account just made its limit and guardians. On a failure the
+// account is deleted again, so a refused request leaves nothing behind (and never
+// an unrestricted account where a restricted one was asked for).
+func (h *Handler) restrict(ctx context.Context, actorID, userID string, in parental.PolicyInput, guardians []string) error {
+	store := parental.NewStore(h.DB)
+	_, err := store.SetPolicy(ctx, actorID, userID, in)
+	for i := 0; err == nil && i < len(guardians); i++ {
+		err = store.AddGuardian(ctx, actorID, userID, guardians[i])
+	}
+	if err != nil {
+		if delErr := h.UserAdmin.Delete(ctx, userID); delErr != nil {
+			return errors.Join(err, fmt.Errorf("remove the half-made account: %w", delErr))
+		}
+	}
+	return err
 }
 
 // updateUserRequest is the JSON body for PATCH /api/users/{id}. All
@@ -170,6 +234,23 @@ func (h *Handler) AdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		}))
 		return
 	}
+	var limit parental.PolicyInput
+	if req.Parental != nil {
+		if req.IsAdmin {
+			httperror.Write(w, r, restrictedAdmin())
+			return
+		}
+		if h.DB == nil {
+			httperror.Write(w, r, httperror.Unavailable(0))
+			return
+		}
+		in, e := req.Parental.input()
+		if e != nil {
+			httperror.Write(w, r, e)
+			return
+		}
+		limit = in
+	}
 	// Epic 16 Story 16.2 — seat enforcement. The server enforces the
 	// gate (clients only render UI). Checked *before* the store call so
 	// an over-cap request never mutates state.
@@ -186,11 +267,18 @@ func (h *Handler) AdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		h.writeUserStoreError(w, r, err)
 		return
 	}
+	if req.Parental != nil {
+		if err := h.restrict(r.Context(), actor.UserID, u.ID, limit, req.Parental.Guardians); err != nil {
+			h.writeUserStoreError(w, r, err)
+			return
+		}
+	}
 	h.audit(r.Context(), securityaudit.Entry{
 		Event:       securityaudit.EventPasswordChanged,
 		ActorUserID: actor.UserID,
 		TargetID:    u.ID,
-		Payload:     map[string]any{"action": "user.created", "username": u.Username, "is_admin": u.IsAdmin},
+		Payload: map[string]any{"action": "user.created", "username": u.Username, "is_admin": u.IsAdmin,
+			"restricted": req.Parental != nil},
 	})
 	common.WriteJSON(w, r, http.StatusCreated, toUserResponse(u))
 }
@@ -306,6 +394,16 @@ func (h *Handler) writeUserStoreError(w http.ResponseWriter, r *http.Request, er
 		httperror.Write(w, r, httperror.Conflict(TypeLastAdmin, "operation would leave the system with no admin"))
 	case errors.Is(err, users.ErrNotFound):
 		httperror.Write(w, r, httperror.NotFound("user"))
+	case parental.IsRestrictedAdmin(err):
+		// slot 0221: a restricted account is never an admin (Epic 57 story 57.02)
+		httperror.Write(w, r, restrictedAdmin())
+	case errors.Is(err, parental.ErrRestrictedGuardian), errors.Is(err, parental.ErrSelfGuardian):
+		httperror.Write(w, r, httperror.Conflict(TypeRestrictedGuardian,
+			"a restricted account cannot look after another account").With("code", "restricted_guardian"))
+	case errors.Is(err, parental.ErrUserNotFound), errors.Is(err, parental.ErrInvalid):
+		httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{
+			{Field: "parental.guardians", Message: "no such user"},
+		}))
 	default:
 		httperror.Write(w, r, httperror.Internal("user store"))
 	}

@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "about": "Age tiers and the rating tables (Epic 57, story 57.01). One file for every reader: the API embeds a copy (api/internal/parental/ratings.json, kept equal by a test) and serves it at GET /api/parental/ratings; the apps read it from there. Each label has a nominal age. As content it takes the smallest tier at or above that age; as a limit it takes the largest tier at or below it.",
+  "tiers": [0, 9, 13, 16, 18],
+  "nothing_allowed": -1,
+  "no_limit": 1000,
+  "tier_labels": {
+    "0": { "key": "parental.tier.all", "en": "All ages", "ar": "لكل الأعمار" },
+    "9": { "key": "parental.tier.9", "en": "9+", "ar": "‎+9" },
+    "13": { "key": "parental.tier.13", "en": "13+", "ar": "‎+13" },
+    "16": { "key": "parental.tier.16", "en": "16+", "ar": "‎+16" },
+    "18": { "key": "parental.tier.18", "en": "18+", "ar": "‎+18" },
+    "unrated": { "key": "parental.tier.unrated", "en": "Unrated", "ar": "بلا تصنيف" },
+    "-1": { "key": "parental.tier.none", "en": "Nothing unless allowed", "ar": "لا شيء إلا ما يُسمح به" }
+  },
+  "bare": ["us-movie", "us-tv"],
+  "prefixes": {
+    "us": ["us-movie", "us-tv"],
+    "gb": ["gb"],
+    "uk": ["gb"],
+    "sa": ["sa"],
+    "au": ["au"],
+    "de": ["de"]
+  },
+  "unrated_labels": ["NR", "Not Rated", "Unrated", "UR", "None"],
+  "systems": {
+    "us-movie": {
+      "name": { "en": "United States, films (MPA)", "ar": "الولايات المتحدة، الأفلام" },
+      "ages": { "G": 0, "PG": 9, "PG-13": 13, "R": 17, "NC-17": 18 }
+    },
+    "us-tv": {
+      "name": { "en": "United States, television", "ar": "الولايات المتحدة، التلفزيون" },
+      "ages": { "TV-Y": 0, "TV-G": 0, "TV-Y7": 7, "TV-PG": 9, "TV-14": 14, "TV-MA": 17 }
+    },
+    "gb": {
+      "name": { "en": "United Kingdom (BBFC)", "ar": "المملكة المتحدة" },
+      "ages": { "U": 0, "PG": 9, "12": 12, "12A": 12, "15": 15, "18": 18 }
+    },
+    "sa": {
+      "name": { "en": "Saudi Arabia (GCAM)", "ar": "المملكة العربية السعودية" },
+      "ages": { "G": 0, "PG": 9, "PG12": 12, "R12": 12, "R15": 15, "R18": 18 }
+    },
+    "au": {
+      "name": { "en": "Australia", "ar": "أستراليا" },
+      "ages": { "G": 0, "PG": 9, "M": 15, "MA15+": 15, "R18+": 18 }
+    },
+    "de": {
+      "name": { "en": "Germany (FSK)", "ar": "ألمانيا" },
+      "ages": { "0": 0, "6": 6, "12": 12, "16": 16, "18": 18 }
+    },
+    "age": {
+      "name": { "en": "Plain age", "ar": "العمر بالأرقام" },
+      "plain": true
+    },
+    "apple-movie": {
+      "name": { "en": "Apple scale, films", "ar": "مقياس Apple للأفلام" },
+      "limits_only": true,
+      "scale": { "0": "nothing", "100": "us-movie/G", "200": "us-movie/PG", "300": "us-movie/PG-13", "400": "us-movie/R", "500": "us-movie/NC-17", "1000": "no_limit" }
+    },
+    "apple-tv": {
+      "name": { "en": "Apple scale, television", "ar": "مقياس Apple للتلفزيون" },
+      "limits_only": true,
+      "scale": { "0": "nothing", "100": "us-tv/TV-Y", "200": "us-tv/TV-Y7", "300": "us-tv/TV-G", "400": "us-tv/TV-PG", "500": "us-tv/TV-14", "600": "us-tv/TV-MA", "1000": "no_limit" }
+    }
+  }
+}

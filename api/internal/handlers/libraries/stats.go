@@ -33,6 +33,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 // CachedStatsResponse is the AC-1 over-the-wire shape. It is a strict
@@ -85,6 +86,18 @@ func (h *Handler) StatsCached(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		httperror.Write(w, r, httperror.Internal("load library").Wrap(err))
+		return
+	}
+
+	// story 57.03: a restricted account's numbers are counted over the videos it
+	// may see, never read from (or written to) the row every account shares
+	if limit := parental.Where(r.Context(), "videos"); limit != "" {
+		resp, err := computeStats(r.Context(), h.DB, id, limit)
+		if err != nil {
+			httperror.Write(w, r, httperror.Unavailable(5).Wrap(err))
+			return
+		}
+		common.WriteJSON(w, r, http.StatusOK, resp)
 		return
 	}
 
@@ -165,6 +178,15 @@ func readCacheRow(ctx context.Context, db *sql.DB, id string) (*CachedStatsRespo
 // one per job-state) so this is the canonical "rebuild" implementation
 // that the operational “stats-rebuild“ command also calls.
 func recomputeStats(ctx context.Context, db *sql.DB, id string) (*CachedStatsResponse, error) {
+	return computeStats(ctx, db, id, "")
+}
+
+// computeStats is the library's numbers from the source tables. limit is a
+// restricted account's filter clause on videos (" AND ...", story 57.03; "": every
+// video): every count, sum and facet is then over the videos that pass it, a facet
+// that cannot be counted fails the answer, and the jobs and the last sweep (whose
+// numbers are of every file) are left out.
+func computeStats(ctx context.Context, db *sql.DB, id, limit string) (*CachedStatsResponse, error) {
 	resp := &CachedStatsResponse{
 		ByState:       map[string]int{},
 		ByLanguage:    map[string]int{},
@@ -178,7 +200,7 @@ func recomputeStats(ctx context.Context, db *sql.DB, id string) (*CachedStatsRes
 		SELECT state, COUNT(*),
 		       COALESCE(SUM(duration_sec), 0),
 		       COALESCE(SUM(size_bytes), 0)
-		FROM videos WHERE library_id = $1
+		FROM videos WHERE library_id = $1`+limit+`
 		GROUP BY state
 	`, id)
 	if err != nil {
@@ -198,6 +220,9 @@ func recomputeStats(ctx context.Context, db *sql.DB, id string) (*CachedStatsRes
 		resp.TotalDurationSec += int64(dur)
 		resp.SourceSizeBytes += sz
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	if resp.TotalVideos > 0 {
 		ready := resp.ByState["ready"] + resp.ByState["ready_no_audio"]
@@ -211,18 +236,26 @@ func recomputeStats(ctx context.Context, db *sql.DB, id string) (*CachedStatsRes
 	// Language facet.
 	if err := groupCount(ctx, db, `
 		SELECT COALESCE(detected_language, 'und'), COUNT(*)
-		FROM videos WHERE library_id = $1
+		FROM videos WHERE library_id = $1`+limit+`
 		GROUP BY detected_language
 	`, id, resp.ByLanguage); err != nil {
 		return nil, err
 	}
 
 	// Content type facet — only present once 0045 has been applied.
-	_ = groupCount(ctx, db, `
+	if err := groupCount(ctx, db, `
 		SELECT COALESCE(content_type, 'unknown'), COUNT(*)
-		FROM videos WHERE library_id = $1
+		FROM videos WHERE library_id = $1`+limit+`
 		GROUP BY content_type
-	`, id, resp.ByContentType)
+	`, id, resp.ByContentType); err != nil && limit != "" {
+		return nil, err
+	}
+
+	// story 57.03: the jobs and the last sweep are the home's work on every file
+	// of the library, not something a restricted account is shown
+	if limit != "" {
+		return resp, nil
+	}
 
 	// Jobs facet.
 	if err := groupCount(ctx, db, `

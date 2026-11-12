@@ -26,6 +26,13 @@ final class LivePlayback {
         case failed(HomeFailure)
         /// The home ended the remote session.
         case ended
+        /// Epic 57 story 57.14: the account's watching time is over (403 `parental-time`
+        /// from the channel's access, play or stream): nothing plays and the time's-up
+        /// screen shows, not the programme slate.
+        case timeUp(TimeUp)
+        /// Nothing plays: the programme on now is above the account's parental limit, and
+        /// the screen shows its slate (story 57.10).
+        case held
     }
 
     let client: APIClient
@@ -158,6 +165,25 @@ final class LivePlayback {
         showNowPlaying()
     }
 
+    /// Stops this channel without leaving it (story 57.10: the slate shows); `start` plays
+    /// it again. A remote session is ended on the way.
+    func hold() async {
+        running?.cancel()
+        await running?.value
+        running = nil
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        pip.stop()
+        phase = .held
+    }
+
+    /// The home said the account's watching time is over: the channel stops as for the
+    /// slate, and the screen shows time's up.
+    func stopForTime(_ up: TimeUp) async {
+        await hold()
+        phase = .timeUp(up)
+    }
+
     /// Stops playing and ends a remote session; returns once the home was told.
     func close() async {
         running?.cancel()
@@ -172,7 +198,9 @@ final class LivePlayback {
         lanProxy = nil
         relay = nil
         url = nil
-        pip.stop()
+        // taken apart here, on the main thread: left to go with this object, the controller
+        // could be freed on AVKit's queue, which ended the app (`PictureInPicture`)
+        pip.close()
         NowPlaying.shared.end(self)
     }
 
@@ -206,7 +234,13 @@ final class LivePlayback {
             guard !Task.isCancelled else { return }
             player.replaceCurrentItem(with: nil)
             Log.failure("play live channel", error)
-            phase = .failed(HomeFailure(error))
+            if ChannelAccess.programmeRefused(error) {
+                // 57.10: the home refused the programme itself (the access answer came
+                // before the programme changed, or this device's clock is off): the slate
+                phase = .held
+                return
+            }
+            phase = TimeUp(error).map(Phase.timeUp) ?? .failed(HomeFailure(error))
         }
     }
 

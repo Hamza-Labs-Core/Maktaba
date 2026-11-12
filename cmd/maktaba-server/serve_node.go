@@ -210,6 +210,7 @@ func homeStreamProxy(target string) http.Handler {
 		r.Header.Del("X-Maktaba-Via")
 		// the home's front door trusts it only from its own gate (loopback)
 		r.Header.Del(viewerHeader)
+		r.Header.Del(adminTokenHeader)
 	}
 	proxy.FlushInterval = -1
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {

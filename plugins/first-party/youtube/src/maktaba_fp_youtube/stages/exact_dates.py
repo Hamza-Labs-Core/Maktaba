@@ -142,7 +142,7 @@ async def run(db: Any, job: Any, ctx: StageContext) -> StageResult:
             unread += 1  # private or removed: nothing to learn
             continue
         got = exact_info(info)
-        await _store(db, yid, got.upload_date, got.description)
+        await _store(db, yid, got.upload_date, got.description, got.age_limit)
         done.append((yid, got.upload_date.isoformat() if got.upload_date else None))
     return StageResult(
         output_hash=canonical_hash({"dates": sorted(done, key=lambda x: x[0])}),
@@ -156,7 +156,9 @@ async def run(db: Any, job: Any, ctx: StageContext) -> StageResult:
     )
 
 
-async def _store(db: Any, youtube_id: str, d: date | None, description: str | None) -> None:
+async def _store(
+    db: Any, youtube_id: str, d: date | None, description: str | None, age_limit: int | None = None
+) -> None:
     if d is not None:
         await db.execute(
             "UPDATE youtube_videos SET upload_date = $2, date_quality = 'exact',"
@@ -171,6 +173,13 @@ async def _store(db: Any, youtube_id: str, d: date | None, description: str | No
             " WHERE youtube_id = $1",
             youtube_id,
             description,
+        )
+    if age_limit is not None:
+        # YouTube's own age limit: the age tiers read it (Epic 57, story 57.01)
+        await db.execute(
+            "UPDATE youtube_videos SET age_limit = $2 WHERE youtube_id = $1",
+            youtube_id,
+            age_limit,
         )
 
 

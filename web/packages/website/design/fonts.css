@@ -10,9 +10,9 @@
  * for glyph, takes the same scale. The faces are preloaded and `font-display: optional`: a face
  * that arrives in the first moments (as a preloaded one does) is drawn from the first paint,
  * and one that arrives later is not swapped in. A face that arrives inside the short block
- * period still replaces the fallback's layout, so the fallback must measure like the face: on
- * Linux without Liberation Sans, the Latin "English" in the Arabic header changed width when
- * Plex arrived and slid the nav beside it (#1187's CI, 2026-11-12).
+ * period still replaces the fallback's layout, so the fallback must measure like the face, on
+ * Linux too (no Arial there). The nav's slide in #1187's and #1204's CI was not a face
+ * arriving: it was a first paint of a half-parsed header (scripts/shell.mjs, RENDER_WHOLE).
  */
 
 @font-face {

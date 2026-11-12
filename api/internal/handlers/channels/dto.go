@@ -16,6 +16,8 @@ package channels
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 // Mode constants — the closed vocabulary the slot-0081 CHECK enforces.
@@ -61,6 +63,9 @@ type Channel struct {
 	// schedule has no current block (cold/empty channel) or the
 	// channel_programs table isn't present yet.
 	NowPlaying *NowPlaying `json:"now_playing,omitempty"`
+	// AgeTier is the age tier an admin set on the channel (Epic 57): a tier or
+	// null. Only an admin's answer has it.
+	AgeTier *parental.AdminTier `json:"age_tier,omitempty"`
 
 	// Plan says whether the lineup plan wrote this channel and whether a
 	// person changed it since (list/get; builder.go).

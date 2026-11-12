@@ -31,8 +31,12 @@ package main
 //     in full (signature, audience, subject, expiry with its configured leeway:
 //     an expired token is its 403, LibraryGuard), as for every session and
 //     direct path.
-//     A channel's path has no ?sig= and still needs a session; so does the
-//     staging preview. No viewer is named for a signed request. A signed
+//     A channel's path passes the same way with the signed URL of
+//     POST /api/channels/{id}/play (audience streaming-channel, subject the
+//     channel; Epic 57 story 57.10): the streaming service verifies it and asks
+//     the API whether the viewer it names may watch what plays now. That is the
+//     home's gate only (channelSig): a node's channel path needs a session. The staging
+//     preview still needs a session. No viewer is named for a signed request. A signed
 //     answer allows any origin to read it (Access-Control-Allow-Origin: *):
 //     a Cast receiver reads the HLS with fetch from its own page (story
 //     48.33); the signed URL is the credential, never a cookie;
@@ -41,10 +45,17 @@ package main
 //   - names the signed-in person to the streaming service in
 //     X-Maktaba-Viewer (the user_id /api/auth/me answered; one a client sent
 //     is dropped), for the record of who watches a channel (Epic 44 story
-//     44.4). The front door trusts it only on loopback: from this gate.
+//     44.4). The front door trusts it only on loopback: from this gate. It is
+//     also who the streaming service asks the parental verdict about (Epic 57
+//     story 57.10): a channel's stream is refused there when the programme now
+//     is above that account's limit. The admin token's session (an admin with
+//     no account) is marked X-Maktaba-Admin-Token instead; a session with no
+//     account that is no admin's gets no channel (403);
 //
-// /xmltv.xml and /lineup.m3u stay public (players read them); external
-// players tune channels on the streaming port itself.
+// /xmltv.xml and /lineup.m3u are proxied as they are; the streaming service
+// answers them, the tuner routes and a channel's stream with no viewer named
+// only to this machine, the Plex server set up in Maktaba and the addresses an
+// admin listed (Epic 57 story 57.10).
 //
 // The staging preview (Epic 33 story 33.6), /stream/staging/channel/{uuid}/
 // index.m3u8 and its segments, is for admins only: the session must be an
@@ -77,6 +88,22 @@ const streamAuthCacheMax = 1024
 // viewerHeader names the signed-in person to the streaming service
 // (streaming/internal/viewing.ViewerHeader).
 const viewerHeader = "X-Maktaba-Viewer"
+
+// viewerSignInHeader and viewerCeilingHeader name, beside the viewer, the sign-in
+// the session is (the refresh-token family and the age limit its device gave:
+// /api/auth/me's sign_in and age_ceiling), so the streaming service's parental
+// verdict is held to the device's limit as well as the account's (Epic 57 stories
+// 57.04 and 57.10; streaming/internal/liveguard). Ones a client sent are dropped.
+const (
+	viewerSignInHeader  = "X-Maktaba-Viewer-Sign-In"
+	viewerCeilingHeader = "X-Maktaba-Viewer-Age-Ceiling"
+)
+
+// adminTokenHeader tells the streaming service the session is the admin token's: an
+// admin with no account, so no viewer to name (streaming/internal/liveguard
+// AdminTokenHeader). The streaming service believes it only on loopback: from this
+// gate. One a client sent is dropped.
+const adminTokenHeader = "X-Maktaba-Admin-Token"
 
 const uuidRe = `[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`
 
@@ -131,11 +158,17 @@ type streamGate struct {
 	// allow is the path filter (allowedStreamPath; a full node adds its
 	// /stream/via-home/ fallback, Epic 35)
 	allow func(string) bool
+	// channelSig lets a channel's path pass on its signed URL alone (Epic 57 story
+	// 57.10). Only where the streaming service behind this gate verifies that token
+	// and asks about its viewer: the home. A node's gate leaves it off (its own
+	// offline channels check no token), so a channel there needs a session.
+	channelSig bool
 
 	mu    sync.Mutex
 	ok    map[string]time.Time // credential hash → accepted until
 	admin map[string]bool      // credential hash → an admin's session (while in ok)
 	user  map[string]string    // credential hash → the session's user id (while in ok)
+	sign  map[string]signIn    // credential hash → the session's sign-in (while in ok)
 	// chans is the channel verdicts: credential hash + channel id → verdict
 	chans map[string]channelVerdict
 }
@@ -150,7 +183,12 @@ type channelVerdict struct {
 type sessionInfo struct {
 	admin bool
 	user  string
+	signIn
 }
+
+// signIn is the sign-in a session is: its refresh-token family ("" when it has
+// none) and its device's age limit as /api/auth/me wrote it ("" when none).
+type signIn struct{ family, ceiling string }
 
 func newStreamGate(next http.Handler, apiOrigin *url.URL) *streamGate {
 	return &streamGate{
@@ -162,6 +200,7 @@ func newStreamGate(next http.Handler, apiOrigin *url.URL) *streamGate {
 		ok:      map[string]time.Time{},
 		admin:   map[string]bool{},
 		user:    map[string]string{},
+		sign:    map[string]signIn{},
 		chans:   map[string]channelVerdict{},
 		allow:   allowedStreamPath,
 	}
@@ -208,6 +247,13 @@ func (g *streamGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		pagetheme.Error(w, r, "the staging preview is for admins", http.StatusForbidden)
 		return
 	}
+	if ch := streamChannel(r.URL.Path); ch != "" && !staging && !who.admin && who.user == "" {
+		// Epic 57 story 57.10: a channel plays for an account (the streaming service
+		// asks the API what that account may watch now); a session that names none
+		// and is no admin's has no one to ask about
+		pagetheme.Error(w, r, "this sign-in has no account to watch live TV with", http.StatusForbidden)
+		return
+	}
 	if ch := streamChannel(r.URL.Path); ch != "" && !staging && !who.admin {
 		answer, err := g.channel(r, key, ch, cookie, authz)
 		switch {
@@ -229,8 +275,20 @@ func (g *streamGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	out.Header.Del("Cookie")
 	out.Header.Del("Authorization")
 	out.Header.Del(viewerHeader)
-	if who.user != "" {
+	out.Header.Del(viewerSignInHeader)
+	out.Header.Del(viewerCeilingHeader)
+	out.Header.Del(adminTokenHeader)
+	switch {
+	case who.user != "":
 		out.Header.Set(viewerHeader, who.user)
+		if who.family != "" {
+			out.Header.Set(viewerSignInHeader, who.family)
+		}
+		if who.ceiling != "" {
+			out.Header.Set(viewerCeilingHeader, who.ceiling)
+		}
+	case who.admin:
+		out.Header.Set(adminTokenHeader, "1")
 	}
 	g.next.ServeHTTP(w, out)
 }
@@ -240,14 +298,16 @@ const signedTokenMax = 4096
 
 // signedPathRe is a path a signed URL may open without a session: a video
 // session's (sub = the session, aud streaming) or direct play (sub = the video,
-// aud streaming-direct); on a node also behind /stream/via-home/. Channel and
-// staging paths do not match: they need a session.
+// aud streaming-direct); on a node also behind /stream/via-home/. A channel's
+// path is matched apart (streamChannel, aud streaming-channel, the home only);
+// the staging preview always needs a session.
 var signedPathRe = regexp.MustCompile(`^/stream/(?:via-home/)?(?:(direct)/)?(` + uuidRe + `)(?:/|$)`)
 
 // Audiences of the API's signed-URL minter (api/internal/auth/signedurl).
 const (
 	audSession = "streaming"
 	audDirect  = "streaming-direct"
+	audChannel = "streaming-channel"
 )
 
 // signedVerdict is the gate's reading of a ?sig= for a path.
@@ -268,14 +328,23 @@ const (
 // via-home path, the home's) and answers an expired token 403 (Story 23.2
 // AC-3). A second, differently-tuned check here would only refuse tokens the
 // streaming service still accepts.
-func checkSigned(path, sig string) signedVerdict {
-	m := signedPathRe.FindStringSubmatch(path)
-	if m == nil {
-		return signedRefused
-	}
-	wantAud, wantSub := audSession, m[2]
-	if m[1] == "direct" {
-		wantAud = audDirect
+func checkSigned(path, sig string, channelSig bool) signedVerdict {
+	var wantAud, wantSub string
+	if ch := streamChannel(path); ch != "" {
+		if !channelSig {
+			return signedUnreadable
+		}
+		// a channel's signed URL (POST /api/channels/{id}/play, Epic 57 story 57.10)
+		wantAud, wantSub = audChannel, ch
+	} else {
+		m := signedPathRe.FindStringSubmatch(path)
+		if m == nil {
+			return signedRefused
+		}
+		wantAud, wantSub = audSession, m[2]
+		if m[1] == "direct" {
+			wantAud = audDirect
+		}
 	}
 	if len(sig) > signedTokenMax {
 		return signedUnreadable
@@ -301,16 +370,15 @@ func checkSigned(path, sig string) signedVerdict {
 	return signedOK
 }
 
-// serveSigned serves a request that carries a signed URL and no session: only a
-// video session's or direct play's path, with a token for that path. The
+// serveSigned serves a request that carries a signed URL and no session: a video
+// session's, direct play's or a channel's path, with a token for that path. The
 // streaming service then verifies the token in full.
 func (g *streamGate) serveSigned(w http.ResponseWriter, r *http.Request, sig string) {
-	if !signedPathRe.MatchString(r.URL.Path) {
-		// a channel's path: a signed URL does not open it
+	if streamChannel(r.URL.Path) == "" && !signedPathRe.MatchString(r.URL.Path) {
 		pagetheme.Error(w, r, "sign in to watch", http.StatusUnauthorized)
 		return
 	}
-	switch checkSigned(r.URL.Path, sig) {
+	switch checkSigned(r.URL.Path, sig, g.channelSig) {
 	case signedUnreadable:
 		pagetheme.Error(w, r, "sign in to watch", http.StatusUnauthorized)
 		return
@@ -326,6 +394,9 @@ func (g *streamGate) serveSigned(w http.ResponseWriter, r *http.Request, sig str
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	out := r.Clone(r.Context())
 	out.Header.Del(viewerHeader)
+	out.Header.Del(viewerSignInHeader)
+	out.Header.Del(viewerCeilingHeader)
+	out.Header.Del(adminTokenHeader)
 	g.next.ServeHTTP(w, out)
 }
 
@@ -336,7 +407,7 @@ func (g *streamGate) session(r *http.Request, key, cookie, authz string) (bool, 
 	now := g.now()
 	g.mu.Lock()
 	until, hit := g.ok[key]
-	who := sessionInfo{admin: g.admin[key], user: g.user[key]}
+	who := sessionInfo{admin: g.admin[key], user: g.user[key], signIn: g.sign[key]}
 	g.mu.Unlock()
 	if hit && now.Before(until) {
 		return true, who, nil
@@ -357,8 +428,10 @@ func (g *streamGate) session(r *http.Request, key, cookie, authz string) (bool, 
 		return false, sessionInfo{}, err
 	}
 	var me struct {
-		UserID  string `json:"user_id"`
-		IsAdmin bool   `json:"is_admin"`
+		UserID     string       `json:"user_id"`
+		IsAdmin    bool         `json:"is_admin"`
+		SignIn     string       `json:"sign_in"`
+		AgeCeiling *json.Number `json:"age_ceiling"`
 	}
 	if resp.StatusCode == http.StatusOK {
 		_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&me)
@@ -369,11 +442,15 @@ func (g *streamGate) session(r *http.Request, key, cookie, authz string) (bool, 
 		delete(g.ok, key)
 		delete(g.admin, key)
 		delete(g.user, key)
+		delete(g.sign, key)
 		g.forgetChannels(key)
 		g.mu.Unlock()
 		return false, sessionInfo{}, nil
 	}
-	who = sessionInfo{admin: me.IsAdmin, user: me.UserID}
+	who = sessionInfo{admin: me.IsAdmin, user: me.UserID, signIn: signIn{family: me.SignIn}}
+	if me.AgeCeiling != nil {
+		who.ceiling = me.AgeCeiling.String()
+	}
 	g.mu.Lock()
 	if len(g.ok) >= streamAuthCacheMax {
 		for k, t := range g.ok {
@@ -381,21 +458,27 @@ func (g *streamGate) session(r *http.Request, key, cookie, authz string) (bool, 
 				delete(g.ok, k)
 				delete(g.admin, k)
 				delete(g.user, k)
+				delete(g.sign, k)
 			}
 		}
 		if len(g.ok) >= streamAuthCacheMax {
 			g.ok = map[string]time.Time{}
 			g.admin = map[string]bool{}
 			g.user = map[string]string{}
+			g.sign = map[string]signIn{}
 			g.chans = map[string]channelVerdict{}
 		}
 	}
 	if g.user == nil {
 		g.user = map[string]string{}
 	}
+	if g.sign == nil {
+		g.sign = map[string]signIn{}
+	}
 	g.ok[key] = now.Add(streamAuthTTL)
 	g.admin[key] = me.IsAdmin
 	g.user[key] = me.UserID
+	g.sign[key] = who.signIn
 	g.mu.Unlock()
 	return true, who, nil
 }
@@ -461,6 +544,7 @@ func (g *streamGate) channel(r *http.Request, key, ch, cookie, authz string) (ch
 		delete(g.ok, key)
 		delete(g.admin, key)
 		delete(g.user, key)
+		delete(g.sign, key)
 		g.forgetChannels(key)
 		g.mu.Unlock()
 		return channelSignedOut, nil

@@ -81,6 +81,29 @@ The apps ask for Local Network, and on iPhone and iPad the camera only when you 
 
 Playing sound with the screen locked (iPhone and iPad) is part of the Player and needs no permission.
 
+### Parental controls on iPhone and iPad {#parental-controls}
+
+Screen Time sets how long and when. Maktaba sets what. Use both for a child's iPhone or iPad:
+
+1. **Make your child's account restricted in Maktaba.** In Maktaba Player on your own phone, open **Profile → Family** and choose the child's content limit (All ages, 9+, 13+, 16+ or 18+). Family shows for the home's admins and for guardians; if you don't see it, ask an admin to name you as the child's guardian. Your home then hides everything above the limit on every device the child signs in to, and everything with no rating unless you say otherwise.
+2. **Set Screen Time on the child's device.** In **Settings → Family** (or **Settings → Screen Time** on the child's device): set **Downtime** and **App Limits** for Maktaba; under **Content & Privacy Restrictions**, set **TV Shows** and **Movies** for your region; and choose whether to share your child's **age range** with apps.
+3. **Maktaba uses the stricter of the two.** It hides content above the lower of the account's limit and what the device says (the shared age range, and the TV and movie limits). A device can only make the limit stricter. If a device later says something looser, it waits under **Profile → Family →** the child **→ Devices** until you approve it.
+4. **Set Screen Time on your Apple TV too**, if your child uses one. A video sent to an Apple TV with AirPlay keeps playing there for up to 15 minutes after Screen Time stops the iPhone or iPad.
+
+**When your child sees "This isn't available":** they can tap **Ask a parent**, and you answer under **Profile → Family → Requests** (for today, this week, or always). Or type your **parent PIN** on their device to open that one item until 04:00. Set the PIN under **Profile → Family → Parent PIN**; it is checked by your home and never kept on a device. Five wrong tries lock it for 15 minutes.
+
+**Time limits:** under **Profile → Family →** the child **→ Time** you can set watching hours and a daily limit. Your home counts the time on every device, not only Apple's, and the Player shows the time left in the last 15 minutes. When Screen Time or your home stops a video, the place is saved and the video resumes from there next time; it does not start again by itself.
+
+A guardian with no iPhone or iPad can do the same on the web, under **Family** on your home's web page.
+
+**Activity:** **Profile → Family →** the child **→ Activity** lists what was watched, blocked and asked for. It is kept on your home for 90 days and never leaves it.
+
+Maktaba does not see the picture of a video. Ratings come from what an admin sets, from the ratings a video already has, and from what your home reads in a video's transcript and title; check what your child may watch if that matters to you.
+
+**When Screen Time stops the app**, Maktaba saves the place in the video and pauses. It does not start again by itself: open the app and tap **Resume**.
+
+**Maktaba's own time rules and Screen Time are separate.** The time rules you set in Maktaba ([Time limits](/help/users#time-limits)) are kept by your home and hold on every device: phone, TV, web. Maktaba does not write them into Screen Time, so Downtime and App Limits are set by hand in Settings. You can use either or both; each is enforced on its own, so the stricter one wins.
+
 ## What the states and messages mean {#states}
 
 The **Before you start** sheet shows each permission's state:

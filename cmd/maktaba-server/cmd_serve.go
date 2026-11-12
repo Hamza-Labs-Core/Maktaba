@@ -772,6 +772,9 @@ func webHandler(cfg config.Config, node *nodeServices) http.Handler {
 	if api != nil {
 		gate := newStreamGate(gated, api)
 		gate.allow = allow
+		// a channel's signed URL opens only the home's streaming service, which
+		// verifies it (Epic 57 story 57.10)
+		gate.channelSig = node == nil
 		mux.Handle("/stream/", gate)
 	} else {
 		mux.Handle("/stream/", http.HandlerFunc(pagetheme.NotFound))

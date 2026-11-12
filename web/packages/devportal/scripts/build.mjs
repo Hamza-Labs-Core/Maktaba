@@ -83,6 +83,7 @@ const GUIDES = {
     "tests.md",
     "conventions.md",
     "problem-types.md",
+    "parental-controls.md",
     "ci.md",
     "pull-requests.md",
     "cloud.md",

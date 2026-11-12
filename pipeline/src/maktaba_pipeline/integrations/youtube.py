@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any, Literal, Protocol
 
-from ..discovery.ytdlp_sidecars import is_real_playlist, parse_upload_date
+from ..discovery.ytdlp_sidecars import is_real_playlist, parse_age_limit, parse_upload_date
 
 __all__ = [
     "BOT_MARKERS",
@@ -154,10 +154,12 @@ class YtDlpFetcher:
 
 @dataclass(frozen=True, slots=True)
 class VideoInfo:
-    """What a per-video fetch gives: the exact upload date and the description."""
+    """What a per-video fetch gives: the exact upload date, the description and YouTube's
+    age limit (0: none, 18: age-restricted; None when the page does not say)."""
 
     upload_date: date | None
     description: str | None
+    age_limit: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,11 +193,13 @@ class ChannelListing:
 
 
 def exact_info(info: dict[str, Any]) -> VideoInfo:
-    """The exact upload date and the description out of :meth:`VideoInfoFetcher.video_info`."""
+    """The exact upload date, the description and the age limit out of
+    :meth:`VideoInfoFetcher.video_info`."""
     desc = info.get("description")
     return VideoInfo(
         parse_upload_date(info.get("upload_date")),
         desc if isinstance(desc, str) and desc else None,
+        parse_age_limit(info.get("age_limit")),
     )
 
 

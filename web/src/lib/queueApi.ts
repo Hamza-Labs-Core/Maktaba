@@ -285,6 +285,8 @@ export interface SourceOptions {
 
 export interface YouTubeSource {
   id: string;
+  /** Epic 57: the age tier an admin set (null: none); only an admin's answer has it */
+  age_tier?: number | null;
   library_id: string;
   kind: "channel" | "playlist";
   url: string;

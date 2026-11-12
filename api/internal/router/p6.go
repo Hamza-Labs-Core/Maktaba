@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/graphql"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
@@ -50,6 +51,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws/eventbus"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libpaths"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	perfpkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
@@ -116,6 +118,15 @@ type P6Deps struct {
 	// ends. Nil: no sweep (tests). The threshold defaults to 0, so the
 	// sweep does nothing until an admin sets it.
 	EnrichAutoAcceptCtx context.Context
+	// OnParental, when set, is called with the restricted accounts' cache (Epic 57
+	// story 57.02) so main.go keeps it for the surfaces that filter with it.
+	OnParental func(*parental.Cache)
+	// OnParentalTime, when set, is called with the time keeper (story 57.14), for
+	// the surfaces mounted elsewhere that refuse while an account's time is over.
+	OnParentalTime func(*parental.TimeKeeper)
+	// ParentalGate, when set, is the router's gate (Deps.Parental, story 57.03): it
+	// gets the cache as soon as it exists.
+	ParentalGate *parental.Gate
 	// OnQueues, when set, is called with the queue/extensions handler
 	// before it is mounted (story 32.6 hangs the Cloudflare test on it).
 	OnQueues func(*queues.Handler)
@@ -199,6 +210,28 @@ func MountP6(r chi.Router, d P6Deps) {
 		})))
 	}
 	browseHandler.Mount(r)
+	// Epic 57 story 57.02: restricted accounts, guardians and rules.
+	parentalCache := MountParental(d.BusCtx, r, d.DB, d.Loops, d.BusDSN, d.BusResettle)
+	if d.ParentalGate != nil {
+		d.ParentalGate.SetCache(parentalCache)
+		// story 57.03: every live connection (the /ws feeds, the GraphQL
+		// subscriptions) is filtered by its own account's limit, read per event
+		gate := d.ParentalGate
+		hub.Guard = func(p *principal.Principal, channel string) ws.Guard {
+			lg := gate.LiveGuard(p, channel)
+			return func(ctx context.Context, e ws.Event) (bool, bool) { return lg.Event(ctx, e.Type, e.Payload) }
+		}
+	}
+	if d.OnParental != nil {
+		d.OnParental(parentalCache)
+	}
+	// Story 57.14: time limits. From here on d.URLSigner marks every stream URL
+	// with whether its account's time is kept.
+	var timeKeeper *parental.TimeKeeper
+	timeKeeper, d.URLSigner = MountParentalTime(r, parentalCache, d.StreamingClient, d.URLSigner)
+	if d.OnParentalTime != nil {
+		d.OnParentalTime(timeKeeper)
+	}
 
 	// Video patch, delete, process and reprocess write audit rows; process and
 	// reprocess queue real pipeline jobs (PostgresJobs: processing_jobs_enqueue).
@@ -256,6 +289,7 @@ func MountP6(r chi.Router, d P6Deps) {
 		Signer:   d.URLSigner,
 		Settings: runtimeSettings,
 		Offline:  d.StreamOffline,
+		Time:     timeKeeper,
 	}
 	streamHandler.Mount(r)
 
@@ -264,6 +298,11 @@ func MountP6(r chi.Router, d P6Deps) {
 
 	colHandler := &collections.Handler{DB: d.DB, ListVideos: videoHandler.List}
 	colHandler.Mount(r)
+	if d.ParentalGate != nil {
+		// Epic 57 story 57.03: a smart collection that lists nothing a restricted
+		// account may see is hidden from it; the gate asks this handler
+		d.ParentalGate.SetSmartCollections(colHandler.SmartShows)
+	}
 	// Phase 8 / Story 9.14: smart-collection ?freeze convert endpoint.
 	colHandler.MountSmart(r)
 

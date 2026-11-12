@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginpanel"
 )
@@ -249,7 +250,46 @@ func (h *Panels) subject(w http.ResponseWriter, r *http.Request) (kind, id strin
 		panelError(w, http.StatusNotFound, "not_found")
 		return "", "", false
 	}
+	// story 57.03: so is one the parental filter hides from the account
+	if !subjectAllowed(r.Context(), h.L.DB, kind, id) {
+		panelError(w, http.StatusNotFound, "not_found")
+		return "", "", false
+	}
 	return kind, id, true
+}
+
+// subjectAllowed reports whether the request's account may see a panel's subject
+// under its parental limit (Epic 57 story 57.03): the video, the series, a
+// season's series, the library. An account with no limit costs no query; a check
+// that cannot be made refuses.
+func subjectAllowed(ctx context.Context, db *sql.DB, kind, id string) bool {
+	if !parental.From(ctx).Limits() {
+		return true
+	}
+	switch kind {
+	case "video":
+		return parental.Check(ctx, db, parental.SubjectVideo, id)
+	case "series":
+		return parental.Check(ctx, db, parental.SubjectSeries, id)
+	case "season":
+		var series string
+		if err := db.QueryRowContext(ctx, `SELECT CAST(series_id AS text) FROM series_seasons WHERE id = $1`, id).Scan(&series); err != nil {
+			return false
+		}
+		return parental.Check(ctx, db, parental.SubjectSeries, series)
+	case "library":
+		return parental.Check(ctx, db, parental.SubjectLibrary, id)
+	}
+	return false
+}
+
+// pluginAllowed reports whether the request's account is shown a plugin's panels:
+// every account with no parental limit, and a restricted one only when a rule
+// allows the plugin for it (a panel is the plugin's own words and may name titles
+// the filter never sees).
+func pluginAllowed(ctx context.Context, pluginID string) bool {
+	e := parental.From(ctx)
+	return !e.Limits() || e.AllowedBy(parental.Subject{Kind: parental.SubjectPlugin, ID: pluginID}, time.Now())
 }
 
 func (h *Panels) list(w http.ResponseWriter, r *http.Request) {
@@ -299,7 +339,7 @@ func (h *Panels) list(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
-		if panel == nil || !h.on(ctx, pid) {
+		if panel == nil || !pluginAllowed(ctx, pid) || !h.on(ctx, pid) {
 			continue
 		}
 		if v := h.view(ctx, in, panel, kind, id, language, fileChanged); v != nil {
@@ -417,7 +457,7 @@ func (h *Panels) image(w http.ResponseWriter, r *http.Request) {
 	}
 	pid := r.URL.Query().Get("plugin")
 	in, err := loadInstall(r.Context(), h.L.DB, pid, false)
-	if err != nil || in == nil || !h.on(r.Context(), pid) {
+	if err != nil || in == nil || !pluginAllowed(r.Context(), pid) || !h.on(r.Context(), pid) {
 		panelError(w, http.StatusNotFound, "not_found")
 		return
 	}

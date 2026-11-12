@@ -16,8 +16,10 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/channels"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/guide"
+	parentalh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tv"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tvcluster"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange"
 )
@@ -36,6 +38,15 @@ type P27Deps struct {
 	// RemoteInfo reports remote viewing for /api/tv/info (Epic 32 story
 	// 32.9); nil: not available.
 	RemoteInfo func(ctx context.Context) tv.RemoteAvailability
+	// Parental is the restricted accounts' cache (Epic 57). Nil: every request
+	// reads the policy from the database; live TV is filtered either way.
+	Parental *parental.Cache
+	// ChannelSigner signs the channel stream URLs of POST /api/channels/{id}/play
+	// (story 57.10); nil: that route answers 503.
+	ChannelSigner parentalh.ChannelSigner
+	// Time is the time keeper MountP6 made (story 57.14): live TV counts like any
+	// playback. Nil: no time rule is asked for a channel.
+	Time *parental.TimeKeeper
 }
 
 // MountP27 attaches the Epic 27 route handlers onto r. Safe to skip when
@@ -51,11 +62,21 @@ func MountP27(r chi.Router, d P27Deps) {
 	// a channel created, edited, renumbered or deleted by hand: Plex's
 	// channel map follows (the plex_livetv stage decides what to push)
 	// Epic 33: with TV staging on, editor saves go into a TV change draft
+	// Epic 57 story 57.10: a restricted account's channels and programmes. The
+	// guard refuses every /api/channels/{id}… route of a channel it may not see;
+	// the handlers filter their lists and mask programmes above its limit.
+	live := parental.NewLiveTV(d.DB, d.Parental)
+	guarded := r.With(parentalh.LiveGuard(live))
 	chh := &channels.Handler{DB: d.DB, DataDir: d.DataDir, OnLineupChange: tvh.NotifyPlex,
-		Drafts: tvchange.NewDrafts(d.DB)}
-	chh.Mount(r)
-	chh.MountSchedule(r) // Story 27.2 — schedule read + regenerate trigger
-	(&guide.Handler{DB: d.DB, StreamBase: d.PublicBaseURL}).Mount(r)
+		Drafts: tvchange.NewDrafts(d.DB), Live: live}
+	chh.Mount(guarded)
+	chh.MountSchedule(guarded) // Story 27.2 — schedule read + regenerate trigger
+	(&guide.Handler{DB: d.DB, StreamBase: d.PublicBaseURL, Live: live}).Mount(guarded)
+	lh := &parentalh.LiveHandler{DB: d.DB, Live: live, Signer: d.ChannelSigner}
+	if d.Time != nil {
+		lh.Time = d.Time
+	}
+	lh.Mount(r)
 	tvh.Mount(r)
 	// Epic 32: streaming hosts and channels on air across the cluster (admin)
 	tvcluster.New(d.DB).Mount(r)

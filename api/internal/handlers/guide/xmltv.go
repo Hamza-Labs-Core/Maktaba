@@ -25,6 +25,10 @@ func (h *Handler) XMLTV(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
 		return
 	}
+	// an export feeds other software, which no policy follows (story 57.10)
+	if h.refuseExport(w, r, p) {
+		return
+	}
 	chans, err := h.visibleChannels(r, p, r.URL.Query().Get("category"))
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("list channels").Wrap(err))

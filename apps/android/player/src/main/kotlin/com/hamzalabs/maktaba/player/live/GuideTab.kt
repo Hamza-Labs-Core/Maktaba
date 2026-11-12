@@ -229,6 +229,7 @@ private fun Block(window: GuideWindow, p: Programme, nowMs: Long, onClick: () ->
     val (from, to) = window.cut(p) ?: return
     val airing = p.isAiring(nowMs)
     val range = timeRange(p)
+    val title = com.hamzalabs.maktaba.core.ui.programmeTitle(p)
     Box(
         Modifier
             .offset(x = GuideDpPerMinute * from)
@@ -238,11 +239,11 @@ private fun Block(window: GuideWindow, p: Programme, nowMs: Long, onClick: () ->
             .clip(GuideCellShape)
             .background(if (airing) MaktabaTheme.brand.accentSoft else MaktabaTheme.brand.raised)
             .clickable(onClick = onClick)
-            .semantics { contentDescription = "${p.title}, $range" }
+            .semantics { contentDescription = "$title, $range" }
             .testTag("programme-${p.channelId}-${p.start}"),
     ) {
         Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(p.title, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             // a span of times reads left to right in Arabic too
             Text(range, style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.Ltr), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
@@ -253,7 +254,7 @@ private fun Block(window: GuideWindow, p: Programme, nowMs: Long, onClick: () ->
 private fun ProgrammeSheet(channel: LiveChannel, p: Programme, airing: Boolean, onWatch: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (airing) Text(stringResource(R.string.live_on_now), style = MaterialTheme.typography.labelLarge, color = MaktabaTheme.brand.accentText)
-        Text(p.title, style = MaterialTheme.typography.titleLarge)
+        Text(com.hamzalabs.maktaba.core.ui.programmeTitle(p), style = MaterialTheme.typography.titleLarge)
         p.episodeLabel?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
         Text(
             "${channel.name} · ${timeRange(p)}",
@@ -261,7 +262,8 @@ private fun ProgrammeSheet(channel: LiveChannel, p: Programme, airing: Boolean, 
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         p.desc?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-        if (airing) {
+        // a programme above the account's limit offers no Watch: the home would refuse it
+        if (airing && !p.restricted) {
             Button(onClick = onWatch, modifier = Modifier.padding(top = 8.dp).testTag("programme-watch")) { Text(stringResource(R.string.live_watch)) }
         }
     }

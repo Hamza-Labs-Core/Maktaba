@@ -200,7 +200,7 @@ private struct GuideBlockLabel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(block.title)
+            Text(block.displayTitle())
                 .font(Theme.body(28, weight: .medium))
                 .lineLimit(2)
             Text(timeRange)
@@ -265,7 +265,7 @@ private struct GuideDetail: View {
                     .font(Theme.body(28, weight: .semibold))
                     .foregroundStyle(Theme.goldText)
             }
-            Text(block.title)
+            Text(block.displayTitle())
                 .font(Theme.heading(52))
                 .foregroundStyle(Theme.text)
                 .accessibilityIdentifier("live.detail.title")

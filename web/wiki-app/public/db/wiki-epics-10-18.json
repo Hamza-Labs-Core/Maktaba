@@ -22,7 +22,7 @@
         "entity-playback_state",
         "entity-saved_searches",
         "entity-users",
-        "ep-post-sessions",
+        "ep-post-users",
         "story-10.9"
       ],
       "files": {
@@ -31,7 +31,7 @@
         "mockups": []
       },
       "api_endpoints": [
-        "POST /sessions"
+        "POST /users"
       ],
       "db_tables": [
         "playback_state",
@@ -170,7 +170,7 @@
         "epic-10-auth-security",
         "plan-10.05-logout-revocation",
         "ep-post-auth-logout",
-        "ep-post-sessions",
+        "ep-post-users",
         "story-10.2",
         "story-10.3"
       ],
@@ -181,7 +181,7 @@
       },
       "api_endpoints": [
         "POST /auth/logout",
-        "POST /sessions"
+        "POST /users"
       ],
       "db_tables": [
         "web_sessions",
@@ -364,6 +364,7 @@
       "related": [
         "epic-10-auth-security",
         "plan-10.11-brute-force-protection",
+        "ep-post-users",
         "story-10.12"
       ],
       "files": {
@@ -371,7 +372,9 @@
         "plan": "specs/epics/10-auth-security/plan-10-11-brute-force-protection.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "POST /users"
+      ],
       "db_tables": [
         "users"
       ],
@@ -718,10 +721,10 @@
       "related": [
         "epic-11-web-ui",
         "plan-11.03-video-player",
-        "ep-post-sessions",
-        "ep-get-sessions-id",
-        "ep-delete-sessions-id",
-        "ep-post-sessions-id-progress",
+        "ep-post-stream-sessions",
+        "ep-get-stream-sessions-id",
+        "ep-delete-stream-sessions-id",
+        "ep-post-stream-sessions-id-progress",
         "mockup-mockup-11-03-video-player",
         "story-8.5",
         "story-8.11",
@@ -736,10 +739,10 @@
         ]
       },
       "api_endpoints": [
-        "POST /sessions",
-        "GET /sessions/{id}",
-        "DELETE /sessions/{id}",
-        "POST /sessions/{id}/progress"
+        "POST /stream/sessions",
+        "GET /stream/sessions/{id}",
+        "DELETE /stream/sessions/{id}",
+        "POST /stream/sessions/{id}/progress"
       ],
       "db_tables": [],
       "metadata": {
@@ -996,10 +999,10 @@
         "ep-get-search",
         "ep-post-search",
         "ep-post-search-save",
-        "ep-post-sessions",
-        "ep-get-sessions-id",
-        "ep-delete-sessions-id",
-        "ep-post-sessions-id-progress",
+        "ep-post-stream-sessions",
+        "ep-get-stream-sessions-id",
+        "ep-delete-stream-sessions-id",
+        "ep-post-stream-sessions-id-progress",
         "ep-post-devices-register",
         "ep-get-devices",
         "mockup-mockup-11-10-offline-pwa",
@@ -1018,10 +1021,10 @@
         "GET /search",
         "POST /search",
         "POST /search/save",
-        "POST /sessions",
-        "GET /sessions/{id}",
-        "DELETE /sessions/{id}",
-        "POST /sessions/{id}/progress",
+        "POST /stream/sessions",
+        "GET /stream/sessions/{id}",
+        "DELETE /stream/sessions/{id}",
+        "POST /stream/sessions/{id}/progress",
         "POST /devices/register",
         "GET /devices"
       ],
@@ -1114,6 +1117,7 @@
         "ep-get-libraries",
         "ep-post-libraries",
         "ep-get-videos",
+        "ep-post-users",
         "story-10.3"
       ],
       "files": {
@@ -1124,7 +1128,8 @@
       "api_endpoints": [
         "GET /libraries",
         "POST /libraries",
-        "GET /videos"
+        "GET /videos",
+        "POST /users"
       ],
       "db_tables": [
         "audit_log",
@@ -1152,9 +1157,7 @@
         "epic-11-web-ui",
         "plan-11.14-active-sessions-api",
         "ep-post-auth-logout",
-        "ep-post-sessions",
-        "ep-get-sessions-id",
-        "ep-delete-sessions-id",
+        "ep-post-users",
         "story-10.5"
       ],
       "files": {
@@ -1164,9 +1167,7 @@
       },
       "api_endpoints": [
         "POST /auth/logout",
-        "POST /sessions",
-        "GET /sessions/{id}",
-        "DELETE /sessions/{id}"
+        "POST /users"
       ],
       "db_tables": [
         "web_sessions",
@@ -1258,10 +1259,10 @@
       "related": [
         "epic-12-mobile",
         "plan-12.03-native-player",
-        "ep-post-sessions",
-        "ep-get-sessions-id",
-        "ep-delete-sessions-id",
-        "ep-post-sessions-id-progress",
+        "ep-post-stream-sessions",
+        "ep-get-stream-sessions-id",
+        "ep-delete-stream-sessions-id",
+        "ep-post-stream-sessions-id-progress",
         "story-8.5",
         "story-12.5"
       ],
@@ -1271,10 +1272,10 @@
         "mockups": []
       },
       "api_endpoints": [
-        "POST /sessions",
-        "GET /sessions/{id}",
-        "DELETE /sessions/{id}",
-        "POST /sessions/{id}/progress"
+        "POST /stream/sessions",
+        "GET /stream/sessions/{id}",
+        "DELETE /stream/sessions/{id}",
+        "POST /stream/sessions/{id}/progress"
       ],
       "db_tables": [],
       "metadata": {
@@ -2262,14 +2263,17 @@
       ],
       "related": [
         "epic-16-subscriptions",
-        "plan-16.01-free-tier"
+        "plan-16.01-free-tier",
+        "ep-post-users"
       ],
       "files": {
         "story": "specs/epics/16-subscriptions/story-16-01-free-tier.md",
         "plan": "specs/epics/16-subscriptions/plan-16-01-free-tier.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "POST /users"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "free-tier"
@@ -2470,14 +2474,17 @@
       "related": [
         "epic-16-subscriptions",
         "plan-16.08-feature-flags-api",
-        "entity-audit_log"
+        "entity-audit_log",
+        "ep-post-users"
       ],
       "files": {
         "story": "specs/epics/16-subscriptions/story-16-08-feature-flags-api.md",
         "plan": "specs/epics/16-subscriptions/plan-16-08-feature-flags-api.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "POST /users"
+      ],
       "db_tables": [
         "audit_log"
       ],

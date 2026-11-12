@@ -44,6 +44,52 @@
       "install": null
     },
     {
+      "slug": "admin-only",
+      "status": 403,
+      "area": "parental",
+      "audience": "person",
+      "codes": [
+        "admin_only"
+      ],
+      "title": {
+        "en": "Only the home's admin can do this",
+        "ar": "لا يفعل هذا إلا المسؤول"
+      },
+      "means": {
+        "en": "This part of parental controls belongs to the home's admin: turning parental controls on or off, and choosing which accounts are restricted. Your account is not an admin's.",
+        "ar": "هذا الجزء من الرقابة الأبوية خاص بالمسؤول: تشغيل الرقابة الأبوية أو إيقافها، واختيار الحسابات المقيَّدة. وحسابكم ليس حساب مسؤول."
+      },
+      "do": {
+        "en": "Ask the person who runs your home to do it.",
+        "ar": "اطلبوا ممن يدير الجهاز الرئيسي في بيتكم أن يفعل ذلك."
+      },
+      "help": null,
+      "install": null
+    },
+    {
+      "slug": "age-signal-no-sign-in",
+      "status": 409,
+      "area": "parental",
+      "audience": "app",
+      "codes": [
+        "no_sign_in"
+      ],
+      "title": {
+        "en": "This sign-in can't carry an age signal",
+        "ar": "لا يمكن ربط إشارة العمر بهذا الدخول"
+      },
+      "means": {
+        "en": "An app told your home that a child may be using the device, but the credential it sent is not tied to an app sign-in, so your home has nowhere to keep the signal.",
+        "ar": "أبلغ تطبيقٌ الجهاز الرئيسي بأن طفلًا ربما يستخدم الجهاز، لكن بيانات الدخول التي أرسلها غير مرتبطة بتسجيل دخول من تطبيق، فلم يجد الجهاز الرئيسي أين يحفظ الإشارة."
+      },
+      "do": {
+        "en": "The app should refresh its access and send the signal again. If an app shows you this, sign out of it and sign in again.",
+        "ar": "على التطبيق أن يجدّد صلاحية دخوله ثم يرسل الإشارة مجددًا. وإن عرض عليكم تطبيقٌ هذه الرسالة، فسجّلوا الخروج منه ثم سجّلوا الدخول مجددًا."
+      },
+      "help": null,
+      "install": null
+    },
+    {
       "slug": "already-member",
       "status": 409,
       "area": "machines",
@@ -820,6 +866,29 @@
       "do": {
         "en": "Nothing was installed. Do not install this file. Get the plugin again from the plugin store, and report it there if the same thing happens.",
         "ar": "لم يُثبَّت شيء، فلا تثبّتوا هذا الملف. نزّلوا الإضافة مجددًا من متجر الإضافات، وأبلغوا عنها هناك إن تكرّر الأمر."
+      },
+      "help": null,
+      "install": null
+    },
+    {
+      "slug": "device-limited",
+      "status": 403,
+      "area": "parental",
+      "audience": "person",
+      "codes": [
+        "device_limited"
+      ],
+      "title": {
+        "en": "This device is limited by its own settings",
+        "ar": "هذا الجهاز مقيَّد بإعداداته"
+      },
+      "means": {
+        "en": "This device's own parental settings say a child uses it, so it can't be used to remove a device's age limit.",
+        "ar": "تفيد إعدادات الرقابة الأبوية في هذا الجهاز نفسه بأن طفلًا يستخدمه، فلا يمكن استخدامه لإزالة حدّ العمر عن جهاز."
+      },
+      "do": {
+        "en": "Remove the limit from another device, signed in as the home's admin or as the account's guardian.",
+        "ar": "أزيلوا الحدّ من جهاز آخر، بعد تسجيل الدخول بحساب المسؤول أو بحساب وليّ أمر صاحب الحساب."
       },
       "help": null,
       "install": null
@@ -2893,6 +2962,52 @@
       "install": null
     },
     {
+      "slug": "no-account",
+      "status": 403,
+      "area": "live-tv",
+      "audience": "app",
+      "codes": [
+        "no_account"
+      ],
+      "title": {
+        "en": "This sign-in has no account to play a channel for",
+        "ar": "هذا الدخول بلا حساب تُشغَّل القناة له"
+      },
+      "means": {
+        "en": "A live channel is played for an account, so that the account's limits apply. The credential that asked for the channel belongs to no account and is not the admin's.",
+        "ar": "تُشغَّل قناة البث المباشر لحساب بعينه، حتى تُطبَّق حدود ذلك الحساب. وبيانات الدخول التي طلبت القناة لا تخص أي حساب، وليست بيانات المسؤول."
+      },
+      "do": {
+        "en": "Sign in with a person's account and open the channel again. If an app shows you this, ask the person who runs your home, or the app's maker.",
+        "ar": "سجّلوا الدخول بحساب أحد أفراد البيت ثم افتحوا القناة مجددًا. وإن عرض عليكم تطبيقٌ هذه الرسالة، فاسألوا من يدير الجهاز الرئيسي في بيتكم، أو الجهة التي صنعت التطبيق."
+      },
+      "help": null,
+      "install": null
+    },
+    {
+      "slug": "no-library-access",
+      "status": 422,
+      "area": "parental",
+      "audience": "person",
+      "codes": [
+        "no_library_access"
+      ],
+      "title": {
+        "en": "This account can't open that library",
+        "ar": "لا يستطيع هذا الحساب فتح تلك المكتبة"
+      },
+      "means": {
+        "en": "You tried to allow something from a library this account can't open. An exception to an account's limits works only inside the libraries the account already has.",
+        "ar": "حاولتم السماح بشيء من مكتبة لا يستطيع هذا الحساب فتحها. والاستثناء من حدود الحساب لا يعمل إلا داخل المكتبات المتاحة له أصلًا."
+      },
+      "do": {
+        "en": "Ask your home's admin to give the account that library from the Users page, then allow it again.",
+        "ar": "اطلبوا من المسؤول أن يمنح الحساب تلك المكتبة من صفحة المستخدمين، ثم اسمحوا به مجددًا."
+      },
+      "help": null,
+      "install": null
+    },
+    {
       "slug": "no-such-attachment",
       "status": 404,
       "area": "live-tv",
@@ -3252,6 +3367,29 @@
       "do": {
         "en": "No action is needed. To stop it being used, turn it off instead.",
         "ar": "لا حاجة إلى أي إجراء. وإن أردتم إيقاف استخدامه فأوقفوه بدلًا من ذلك."
+      },
+      "help": null,
+      "install": null
+    },
+    {
+      "slug": "not-restricted",
+      "status": 403,
+      "area": "parental",
+      "audience": "person",
+      "codes": [
+        "not_restricted"
+      ],
+      "title": {
+        "en": "Only a restricted account can do this",
+        "ar": "هذا خاص بالحسابات المقيَّدة"
+      },
+      "means": {
+        "en": "Asking a parent, and unlocking with a parent's PIN, are for accounts that have parental controls. This account has none, so there is nothing to ask for.",
+        "ar": "طلب الإذن من أحد الوالدين، والفتح برمز الوالدين، خاصّان بالحسابات التي عليها رقابة أبوية. وهذا الحساب بلا قيود، فلا شيء يُطلب."
+      },
+      "do": {
+        "en": "Nothing is needed. If something you expect is missing, ask your home's admin whether your account has its library.",
+        "ar": "لا حاجة إلى فعل شيء. وإن لم تجدوا شيئًا تتوقعونه، فاسألوا المسؤول هل لحسابكم صلاحية الوصول إلى مكتبته."
       },
       "help": null,
       "install": null
@@ -3692,6 +3830,234 @@
       "install": null
     },
     {
+      "slug": "parental-pin-locked",
+      "status": 429,
+      "area": "parental",
+      "audience": "person",
+      "codes": [
+        "pin_locked"
+      ],
+      "title": {
+        "en": "PIN entry is closed for a while",
+        "ar": "إدخال رمز الوالدين مغلق مؤقتًا"
+      },
+      "means": {
+        "en": "The parent PIN was typed wrong too many times in a row, so Maktaba closed PIN entry for a while to keep it safe.",
+        "ar": "أُدخل رمز الوالدين خطأً مرات كثيرة متتالية، فأغلق برنامج مكتبة إدخال الرمز مؤقتًا حمايةً له."
+      },
+      "do": {
+        "en": "Wait, then try again: the app says how long. Until then a parent can still answer a request from their own account.",
+        "ar": "انتظروا ثم حاولوا مجددًا، والتطبيق يبيّن مدة الانتظار. وإلى ذلك الحين يستطيع أحد الوالدين الرد على الطلب من حسابه."
+      },
+      "help": null,
+      "install": null
+    },
+    {
+      "slug": "parental-pin-wrong",
+      "status": 403,
+      "area": "parental",
+      "audience": "person",
+      "codes": [
+        "pin_wrong"
+      ],
+      "title": {
+        "en": "That PIN isn't right",
+        "ar": "هذا الرمز غير صحيح"
+      },
+      "means": {
+        "en": "The PIN typed is not the PIN of the parent who was chosen. After several wrong tries, PIN entry closes for a while.",
+        "ar": "الرمز المُدخل ليس رمز الوالد الذي اختير. وبعد عدة محاولات خاطئة يُغلق إدخال الرمز مؤقتًا."
+      },
+      "do": {
+        "en": "Try again with care. A parent who forgot their PIN can set a new one from their own account, with their password.",
+        "ar": "حاولوا مجددًا بتمهّل. ومن نسي رمزه من الوالدين يستطيع تعيين رمز جديد من حسابه، بكلمة مروره."
+      },
+      "help": null,
+      "install": null
+    },
+    {
+      "slug": "parental-policy-stale",
+      "status": 409,
+      "area": "parental",
+      "audience": "person",
+      "codes": [],
+      "title": {
+        "en": "These limits changed while you were editing them",
+        "ar": "تغيّرت هذه الحدود أثناء تعديلكم لها"
+      },
+      "means": {
+        "en": "Someone else, or you on another device, saved this account's limits after you opened them. Your change was not saved, so nothing was overwritten.",
+        "ar": "حفظ شخص آخر، أو أنتم من جهاز آخر، حدود هذا الحساب بعد أن فتحتموها. لم يُحفظ تعديلكم، فلم يُستبدل شيء."
+      },
+      "do": {
+        "en": "Open the account's limits again, look at what changed, and make your change once more.",
+        "ar": "افتحوا حدود الحساب مجددًا، وانظروا ما الذي تغيّر، ثم أعيدوا تعديلكم."
+      },
+      "help": null,
+      "install": null
+    },
+    {
+      "slug": "parental-request-decided",
+      "status": 409,
+      "area": "parental",
+      "audience": "person",
+      "codes": [
+        "request_decided"
+      ],
+      "title": {
+        "en": "This request was already answered",
+        "ar": "سبق الرد على هذا الطلب"
+      },
+      "means": {
+        "en": "Another guardian, or you on another device, already approved or denied this request.",
+        "ar": "سبق أن وافق على هذا الطلب أو رفضه وليّ أمر آخر، أو أنتم من جهاز آخر."
+      },
+      "do": {
+        "en": "Nothing is needed. Refresh the list of requests to see what was decided.",
+        "ar": "لا حاجة إلى فعل شيء. حدّثوا قائمة الطلبات لتروا ما تقرّر."
+      },
+      "help": null,
+      "install": null
+    },
+    {
+      "slug": "parental-request-expired",
+      "status": 410,
+      "area": "parental",
+      "audience": "person",
+      "codes": [
+        "request_expired"
+      ],
+      "title": {
+        "en": "This request has expired",
+        "ar": "انتهت مدة هذا الطلب"
+      },
+      "means": {
+        "en": "The request waited too long for an answer, or what it asked for is no longer on your home.",
+        "ar": "انتظر الطلب الرد مدة أطول من المسموح، أو لم يعد ما طُلب فيه موجودًا على الجهاز الرئيسي."
+      },
+      "do": {
+        "en": "If it is still wanted, the child can ask again.",
+        "ar": "إن كان ما زال مطلوبًا، فليطلبه الطفل مجددًا."
+      },
+      "help": null,
+      "install": null
+    },
+    {
+      "slug": "parental-restrictions-exist",
+      "status": 409,
+      "area": "parental",
+      "audience": "admin",
+      "codes": [
+        "restrictions_exist"
+      ],
+      "title": {
+        "en": "Parental controls are still in use",
+        "ar": "الرقابة الأبوية ما زالت مستخدمة"
+      },
+      "means": {
+        "en": "Parental controls can't be turned off while any account is restricted, so that no account loses its limits by accident.",
+        "ar": "لا يمكن إيقاف الرقابة الأبوية ما دام أحد الحسابات مقيَّدًا، حتى لا يفقد حسابٌ حدوده عن غير قصد."
+      },
+      "do": {
+        "en": "Lift the restrictions of every restricted account first, then turn parental controls off.",
+        "ar": "ارفعوا القيود عن كل حساب مقيَّد أولًا، ثم أوقفوا الرقابة الأبوية."
+      },
+      "help": null,
+      "install": null
+    },
+    {
+      "slug": "parental-time",
+      "status": 403,
+      "area": "parental",
+      "audience": "person",
+      "codes": [
+        "parental_time"
+      ],
+      "title": {
+        "en": "Watching time is over for now",
+        "ar": "انتهى وقت المشاهدة الآن"
+      },
+      "means": {
+        "en": "This account has time rules: hours when it may watch, a daily limit, or both. Playback stopped because it is outside those hours, today's time is used up, or the app stopped telling your home that it was still playing.",
+        "ar": "لهذا الحساب قواعد للوقت: ساعات يُسمح فيها بالمشاهدة، أو حدّ يومي، أو كلاهما. وتوقف التشغيل لأن الوقت خارج تلك الساعات، أو لأن وقت اليوم استُنفد، أو لأن التطبيق كفّ عن إبلاغ الجهاز الرئيسي بأن التشغيل مستمر."
+      },
+      "do": {
+        "en": "Watch again at the time the app shows, or ask a parent for more time. If the time looks wrong, a parent can check the account's time rules.",
+        "ar": "عودوا إلى المشاهدة في الوقت الذي يعرضه التطبيق، أو اطلبوا من أحد الوالدين وقتًا إضافيًا. وإن بدا الوقت غير صحيح، فليراجع أحد الوالدين قواعد الوقت للحساب."
+      },
+      "help": null,
+      "install": null
+    },
+    {
+      "slug": "parental-time-unknown",
+      "status": 503,
+      "area": "parental",
+      "audience": "person",
+      "codes": [
+        "parental_time_unknown"
+      ],
+      "title": {
+        "en": "Your home couldn't check the watching time",
+        "ar": "تعذّر على الجهاز الرئيسي التحقق من وقت المشاهدة"
+      },
+      "means": {
+        "en": "This account has time rules, and your home could not read how much time is left just now. It does not play when it can't tell, so that no account gets time it should not have.",
+        "ar": "لهذا الحساب قواعد للوقت، ولم يستطع الجهاز الرئيسي الآن قراءة الوقت المتبقي. وهو لا يشغّل شيئًا ما دام لا يعرف، حتى لا ينال حسابٌ وقتًا ليس له."
+      },
+      "do": {
+        "en": "Wait a few seconds and play again. If it keeps happening, tell the person who runs your home.",
+        "ar": "انتظروا بضع ثوانٍ ثم شغّلوا مجددًا. وإن تكرّر الأمر، فأخبروا من يدير الجهاز الرئيسي في بيتكم."
+      },
+      "help": null,
+      "install": null
+    },
+    {
+      "slug": "parental-too-many-requests",
+      "status": 429,
+      "area": "parental",
+      "audience": "person",
+      "codes": [
+        "too_many_requests"
+      ],
+      "title": {
+        "en": "Too many requests are waiting",
+        "ar": "طلبات كثيرة قيد الانتظار"
+      },
+      "means": {
+        "en": "This account has already asked a parent for several things that have no answer yet. Maktaba keeps only a few waiting at a time.",
+        "ar": "سبق أن طلب هذا الحساب من أحد الوالدين عدة أشياء لم يُردّ عليها بعد. وبرنامج مكتبة لا يُبقي قيد الانتظار إلا عددًا قليلًا في المرة الواحدة."
+      },
+      "do": {
+        "en": "Wait for a parent to answer one of them, then ask again.",
+        "ar": "انتظروا حتى يردّ أحد الوالدين على أحدها، ثم اطلبوا مجددًا."
+      },
+      "help": null,
+      "install": null
+    },
+    {
+      "slug": "parental-unavailable",
+      "status": 503,
+      "area": "parental",
+      "audience": "person",
+      "codes": [
+        "parental_unavailable"
+      ],
+      "title": {
+        "en": "Your home couldn't read this account's limits",
+        "ar": "تعذّر على الجهاز الرئيسي قراءة حدود هذا الحساب"
+      },
+      "means": {
+        "en": "An app asked what this account may use, and your home could not read the account's parental limits just now. It gives no answer rather than one that might leave the limits out.",
+        "ar": "سأل تطبيقٌ عمّا يُتاح لهذا الحساب، ولم يستطع الجهاز الرئيسي الآن قراءة حدود الرقابة الأبوية للحساب. وهو يمتنع عن الإجابة حتى لا يعطي جوابًا قد يُغفل تلك الحدود."
+      },
+      "do": {
+        "en": "Wait a few seconds and try again. If it keeps happening, tell the person who runs your home.",
+        "ar": "انتظروا بضع ثوانٍ ثم حاولوا مجددًا. وإن تكرّر الأمر، فأخبروا من يدير الجهاز الرئيسي في بيتكم."
+      },
+      "help": null,
+      "install": null
+    },
+    {
       "slug": "password-change-required",
       "status": 403,
       "area": "accounts",
@@ -3733,6 +4099,30 @@
         "ar": "حاولوا مجددًا بعد قليل، أو سجّلوا الدخول على عنوان الجهاز الرئيسي نفسه. وإن بقي بعيد المنال، فاطلبوا من المسؤول التأكد من أنه يعمل."
       },
       "help": "machines#home-unreachable",
+      "install": null
+    },
+    {
+      "slug": "password-wrong",
+      "status": 403,
+      "area": "parental",
+      "audience": "person",
+      "codes": [
+        "password_wrong",
+        "too_many_tries"
+      ],
+      "title": {
+        "en": "That password isn't right",
+        "ar": "كلمة المرور غير صحيحة"
+      },
+      "means": {
+        "en": "Setting a parent PIN asks for your account's password again, and the one typed did not match. After several wrong tries, this closes for a while.",
+        "ar": "يتطلب تعيين رمز الوالدين كتابة كلمة مرور حسابكم مرة أخرى، وما كُتب لم يطابقها. وبعد عدة محاولات خاطئة يُغلق ذلك مؤقتًا."
+      },
+      "do": {
+        "en": "Type your password again. If it has closed, wait and try later. If the password is forgotten, the home's admin can reset it from the Users page.",
+        "ar": "اكتبوا كلمة المرور مجددًا. وإن أُغلق الإدخال، فانتظروا ثم حاولوا لاحقًا. وإن نُسيت كلمة المرور، فالمسؤول يستطيع إعادة تعيينها من صفحة المستخدمين."
+      },
+      "help": null,
       "install": null
     },
     {
@@ -5068,6 +5458,75 @@
       "do": {
         "en": "Reload word review to see what is still open, then go on with the next word.",
         "ar": "أعيدوا تحميل مراجعة الكلمات لتروا ما زال مفتوحًا، ثم انتقلوا إلى الكلمة التالية."
+      },
+      "help": null,
+      "install": null
+    },
+    {
+      "slug": "restricted",
+      "status": 403,
+      "area": "parental",
+      "audience": "person",
+      "codes": [
+        "restricted"
+      ],
+      "title": {
+        "en": "This isn't available for this account",
+        "ar": "هذا غير متاح لهذا الحساب"
+      },
+      "means": {
+        "en": "This account has parental controls, and what it tried to do is not allowed for it. On a live channel it can also mean that the programme on air now is above the account's age limit.",
+        "ar": "على هذا الحساب رقابة أبوية، وما حاول فعله غير مسموح له. وفي قناة بث مباشر قد يعني أيضًا أن البرنامج المعروض الآن أعلى من حدّ العمر للحساب."
+      },
+      "do": {
+        "en": "Ask a parent, or the person who runs your home. On a live channel, try again when the next programme starts.",
+        "ar": "اسألوا أحد الوالدين، أو من يدير الجهاز الرئيسي في بيتكم. وفي قناة البث المباشر، حاولوا مجددًا عند بدء البرنامج التالي."
+      },
+      "help": null,
+      "install": null
+    },
+    {
+      "slug": "restricted-admin",
+      "status": 409,
+      "area": "parental",
+      "audience": "admin",
+      "codes": [
+        "restricted_admin"
+      ],
+      "title": {
+        "en": "A restricted account can't be an admin",
+        "ar": "الحساب المقيَّد لا يكون حساب مسؤول"
+      },
+      "means": {
+        "en": "An account with parental controls can't run the home, and an admin's account can't be restricted.",
+        "ar": "الحساب الذي عليه رقابة أبوية لا يدير الجهاز الرئيسي، وحساب المسؤول لا يُقيَّد."
+      },
+      "do": {
+        "en": "Lift the account's restrictions before making it an admin, or make it an ordinary account before restricting it.",
+        "ar": "ارفعوا القيود عن الحساب قبل جعله حساب مسؤول، أو اجعلوه حسابًا عاديًا قبل تقييده."
+      },
+      "help": null,
+      "install": null
+    },
+    {
+      "slug": "restricted-guardian",
+      "status": 409,
+      "area": "parental",
+      "audience": "person",
+      "codes": [
+        "restricted_guardian"
+      ],
+      "title": {
+        "en": "A restricted account can't look after another account",
+        "ar": "الحساب المقيَّد لا يرعى حسابًا آخر"
+      },
+      "means": {
+        "en": "A guardian sets another account's limits, so a guardian's own account can't be restricted, and no account can be its own guardian.",
+        "ar": "وليّ الأمر يضبط حدود حساب آخر، فلا يُقيَّد حساب وليّ الأمر نفسه، ولا يكون حسابٌ وليّ أمر نفسه."
+      },
+      "do": {
+        "en": "Choose a guardian whose account is not restricted, or lift that account's restrictions first.",
+        "ar": "اختاروا وليّ أمر حسابه غير مقيَّد، أو ارفعوا القيود عن ذلك الحساب أولًا."
       },
       "help": null,
       "install": null

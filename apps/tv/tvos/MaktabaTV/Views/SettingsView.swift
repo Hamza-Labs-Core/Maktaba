@@ -19,6 +19,7 @@ struct SettingsView: View {
                         LabeledContent("Address", value: home.url.absoluteString)
                     }
                 }
+                parental
                 // Epic 56: every playlist of the user, and the Playback setting (story 56.11)
                 Section("Playlists") {
                     NavigationLink("Playlists") { PlaylistsGrid(library: nil).padding(80) }
@@ -61,6 +62,38 @@ struct SettingsView: View {
             .frame(maxWidth: 1200)
             .frame(maxWidth: .infinity)
             .background(Theme.background.ignoresSafeArea())
+        }
+    }
+
+    /// Epic 57 story 57.11: for a sign-in the home limits, that a parent manages the account
+    /// and its limit, and the limit this Apple TV's Screen Time set (57.04). No one else
+    /// sees any of it; Family is on a parent's iPhone or iPad.
+    @ViewBuilder private var parental: some View {
+        let limit = session.parental.current
+        if limit.limited || limit.devicePending {
+            Section {
+                if limit.restricted {
+                    IconLine(ParentalWords.text("parental.profile.managed"), systemImage: "person.2.badge.gearshape")
+                        .accessibilityIdentifier("settings.parental.managed")
+                    if let tier = limit.maxTier {
+                        LabeledContent {
+                            Text(verbatim: AgeTier.label(tier))
+                        } label: {
+                            Text(verbatim: ParentalWords.text("parental.profile.limit"))
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("settings.parental.limit")
+                    }
+                }
+                if let device = limit.deviceLimit {
+                    IconLine(ParentalWords.text("ageSignal.limit.device", AgeTier.label(device)), systemImage: "appletv")
+                        .accessibilityIdentifier("settings.parental.device")
+                }
+                if limit.devicePending || session.ageSignal.answer?.pendingLooser == true {
+                    IconLine(ParentalWords.text("ageSignal.limit.pending"), systemImage: "hourglass")
+                        .accessibilityIdentifier("settings.parental.pending")
+                }
+            }
         }
     }
 }

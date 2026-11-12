@@ -68,7 +68,7 @@ suspend fun OkHttpClient.exchange(r: Request): HttpAnswer = suspendCancellableCo
 
         override fun onResponse(call: Call, response: Response) {
             val read = runCatching {
-                response.use { HttpAnswer(it.code, it.body.bytes(), retryAfterSeconds(it.header("Retry-After"))) }
+                response.use { HttpAnswer(it.code, it.body.bytes(), retryAfterSeconds(it.header("Retry-After")), it.headers.getDate("Date")?.time) }
             }
             read.onSuccess { cont.resume(it) }
             read.onFailure { cont.resumeWithException(ApiException.Transport(it.message ?: it.toString())) }
@@ -77,7 +77,7 @@ suspend fun OkHttpClient.exchange(r: Request): HttpAnswer = suspendCancellableCo
 }
 
 /** An answer: its status, its body and, on a 429 or 503, `Retry-After` in seconds. */
-class HttpAnswer(val code: Int, val body: ByteArray, val retryAfterSec: Long? = null) {
+class HttpAnswer(val code: Int, val body: ByteArray, val retryAfterSec: Long? = null, /** The answer's `Date` header. */ val dateMs: Long? = null) {
     operator fun component1() = code
     operator fun component2() = body
 }
@@ -93,7 +93,12 @@ class ApiClient(
     private val now: () -> Long = System::currentTimeMillis,
     /** How a request waits between tries while the relay says the home is reconnecting. */
     private val pause: suspend (Long) -> Unit = { kotlinx.coroutines.delay(it) },
+    /** This device's monotonic clock, in milliseconds: what a wait is measured on ([HomeClock]). */
+    private val monotonic: () -> Long = ::monotonicMs,
 ) {
+    /** A reading of the home's clock from the time [at] an answer just carried (null: it carried none). */
+    internal fun homeClock(at: java.time.Instant?): HomeClock? = at?.let { HomeClock(it.toEpochMilli(), monotonic()) }
+
     private val refreshLock = Mutex()
 
     // ---------- sign-in ----------
@@ -290,12 +295,26 @@ class ApiClient(
         runCatching { send(request("DELETE", "/api/stream/sessions/$session")) }
     }
 
-    suspend fun reportProgress(session: String, positionSec: Int, completed: Boolean = false) {
+    /**
+     * Posts where the video is (`POST /api/stream/sessions/{id}/progress`): the resume point, and
+     * for an account with time rules the stream's heartbeat (Epic 57 story 57.14: at least every
+     * 60 seconds while it plays). It never throws: what the home answered is the [ProgressAnswer],
+     * so a player stops on a refusal ([ProgressAnswer.TimeOver], [ProgressAnswer.Ended]) and
+     * carries on over anything else.
+     */
+    suspend fun reportProgress(session: String, positionSec: Int, completed: Boolean = false): ProgressAnswer {
         val body = buildJsonObject {
             put("position_sec", positionSec)
             if (completed) put("completed", true)
         }
-        runCatching { send(request("POST", "/api/stream/sessions/$session/progress", body = body)) }
+        return try {
+            send(request("POST", "/api/stream/sessions/$session/progress", body = body))
+            ProgressAnswer.Ok
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            ProgressAnswer.of(e)
+        }
     }
 
     /** The video's picture, fetched with the Bearer token (the route needs one). */
@@ -534,8 +553,20 @@ class ApiClient(
             throw e
         }
         if (!HomeReconnect.isReconnecting(answer)) CloudStatusRules.noteRequestFailed(home, answer.code)
+        // the home's clock, by its answer's own Date (to the second)
+        answer.dateMs?.let { homeAheadMs = it - now() }
         return answer
     }
+
+    /** How far the home's clock is ahead of this device's, by its last answer's `Date` (0 before any). */
+    @Volatile private var homeAheadMs = 0L
+
+    /**
+     * The time now by the home's clock: this device's, moved by what the home's last answer
+     * said. An instant the home names (when a channel may be asked for again, when a request
+     * ends) is compared with this, never with the device's own clock, which a child can set.
+     */
+    fun homeNowMs(): Long = now() + homeAheadMs
 
     /**
      * An OkHttp client for the player: this home's `/stream/` requests carry the token. Its own

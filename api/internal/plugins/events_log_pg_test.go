@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // marker is in every refused payload below: it must never reach a log line.
@@ -221,12 +222,18 @@ func TestEmitLogsLineageQuotaLoopAndRate(t *testing.T) {
 	}
 	assertOneRefusal(t, read, testPlugin, "tagged.done", len(payload), EmitQuota)
 
+	// the clock stands still for this call: the bucket fills by one call every 5 ms,
+	// so a call that reached the check any later than that found the bucket filled
+	// again and was refused for the quota above instead
+	clock, emptied := f.s.Tokens.Now, f.s.Tokens.Now()
+	f.s.Tokens.Now = func() time.Time { return emptied }
 	inv.mu.Lock()
-	inv.bucket, inv.bucketAt = 0, f.s.Tokens.Now()
+	inv.bucket, inv.bucketAt = 0, emptied
 	inv.mu.Unlock()
 	if _, code, _ := f.call(t, m.Token, "events/emit", emitBody(f, "tagged.done", payload)); code != CodeRate {
 		t.Fatalf("rate: %s", code)
 	}
+	f.s.Tokens.Now = clock
 	assertOneRefusal(t, read, testPlugin, "tagged.done", len(payload), EmitRate)
 
 	key := "video:" + f.videoA

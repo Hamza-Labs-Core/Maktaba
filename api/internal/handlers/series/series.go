@@ -31,6 +31,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 )
 
@@ -73,6 +74,9 @@ type Item struct {
 	// PosterVideoID is the first episode: the card shows its poster
 	// (GET /api/videos/{id}/poster) when the series has no art of its own.
 	PosterVideoID string `json:"poster_video_id,omitempty"`
+	// AgeTier is the age tier an admin set here (Epic 57): a tier or null. Only an
+	// admin's answer has it.
+	AgeTier *parental.AdminTier `json:"age_tier,omitempty"`
 }
 
 type epRow struct {
@@ -138,11 +142,14 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	eps := h.loadEpisodes(r, p, "", dismissalUser(p))
 
+	restricted := parental.From(r.Context()).Limits()
 	items := []Item{}
 	for _, hd := range headers {
 		group := eps[hd.ID]
-		if len(group) == 0 && !videos.CanRead(p, hd.LibraryID) {
-			continue // no visible episode and not in a readable library (or in none)
+		if len(group) == 0 && (restricted || !videos.CanRead(p, hd.LibraryID)) {
+			// no visible episode and not in a readable library (or in none); a
+			// restricted account's list leaves out a series it can see nothing of
+			continue
 		}
 		item := hd
 		seasons := map[int]bool{}
@@ -203,6 +210,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	if first := firstEpisode(h.loadEpisodes(r, p, id, "")[id], hd.Numbering); first != nil {
 		hd.PosterVideoID = first.videoID
 	}
+	hd.AgeTier = parental.AdminTierOf(r.Context(), h.DB, p, parental.TierOnSeries, id)
 	common.WriteJSON(w, r, http.StatusOK, hd)
 }
 
@@ -553,12 +561,13 @@ func (h *Handler) loadEpisodes(r *http.Request, p *principal.Principal, seriesID
 		       ps.position_sec, ps.completed
 		FROM series_episodes se
 		JOIN videos v ON v.id = se.video_id
-		LEFT JOIN playback_state ps ON ps.video_id = se.video_id AND ps.user_id = $1`
+		LEFT JOIN playback_state ps ON ps.video_id = se.video_id AND ps.user_id = $1
+		WHERE TRUE` + parental.Where(r.Context(), "v")
 	// no user (visibility checks): NULL joins no playback row; an empty
 	// string is not a uuid and Postgres would fail the whole query
 	args := []any{nullIfEmpty(userID)}
 	if seriesID != "" {
-		q += ` WHERE se.series_id = $2`
+		q += ` AND se.series_id = $2`
 		args = append(args, seriesID)
 	}
 	// each series' episodes come newest-added first (Episodes' default)

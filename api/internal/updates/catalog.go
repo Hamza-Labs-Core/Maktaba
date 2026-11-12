@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 )
 
 // CheckInterval is how often the home asks GitHub (design §4: every 6 h, was 24 h).
@@ -133,9 +134,63 @@ func (g ghRelease) release() Release {
 var ErrRateLimited = errors.New("github rate limited")
 
 func (d *Discoverer) get(ctx context.Context, url string, api bool, limit int64) ([]byte, int, error) {
+	var b []byte
+	code, err := d.read(ctx, url, api, limit, func(r io.Reader) (err error) {
+		b, err = io.ReadAll(r)
+		return err
+	})
+	if err != nil {
+		return nil, code, err
+	}
+	return b, code, nil
+}
+
+// errTooLarge marks an answer longer than the caller allows.
+var errTooLarge = errors.New("too large")
+
+// capped passes at most limit bytes of r on; one byte more is errTooLarge. failed
+// keeps what stopped the reading, when it was not the end of r.
+type capped struct {
+	r      io.Reader
+	left   int64
+	failed error
+}
+
+func (c *capped) Read(p []byte) (int, error) {
+	if c.failed != nil {
+		return 0, c.failed
+	}
+	if c.left <= 0 {
+		// only now is one more byte asked for: an answer of exactly limit bytes ends here
+		var one [1]byte
+		n, err := io.ReadFull(c.r, one[:])
+		if n > 0 {
+			err = errTooLarge
+		}
+		return 0, c.fail(err)
+	}
+	if int64(len(p)) > c.left {
+		p = p[:c.left]
+	}
+	n, err := c.r.Read(p)
+	c.left -= int64(n)
+	return n, c.fail(err)
+}
+
+func (c *capped) fail(err error) error {
+	if err != nil && !errors.Is(err, io.EOF) {
+		c.failed = err
+	}
+	return err
+}
+
+// read GETs url and gives the answer's body, at most limit bytes of it, to use while
+// the answer is open. An answer longer than limit is an error whatever use made of
+// what it read. It returns the answer's status.
+func (d *Discoverer) read(ctx context.Context, url string, api bool, limit int64, use func(io.Reader) error) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, 0, err
+		return 0, err
 	}
 	if api {
 		req.Header.Set("Accept", "application/vnd.github+json")
@@ -148,7 +203,7 @@ func (d *Discoverer) get(ctx context.Context, url string, api bool, limit int64)
 	}
 	resp, err := d.client().Do(req)
 	if err != nil {
-		return nil, 0, err
+		return 0, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusTooManyRequests ||
@@ -168,19 +223,36 @@ func (d *Discoverer) get(ctx context.Context, url string, api bool, limit int64)
 		d.mu.Lock()
 		d.retryAfter = d.now().Add(wait)
 		d.mu.Unlock()
-		return nil, resp.StatusCode, fmt.Errorf("%w for %s", ErrRateLimited, wait)
+		return resp.StatusCode, fmt.Errorf("%w for %s", ErrRateLimited, wait)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, resp.StatusCode, fmt.Errorf("GET %s: HTTP %d", url, resp.StatusCode)
+		return resp.StatusCode, fmt.Errorf("GET %s: HTTP %d", url, resp.StatusCode)
 	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	body := &capped{r: resp.Body, left: limit}
+	err = use(body)
+	switch {
+	case errors.Is(body.failed, errTooLarge):
+		return resp.StatusCode, fmt.Errorf("GET %s: larger than %d bytes", url, limit)
+	case body.failed != nil:
+		// the answer broke off: that, whatever use made of the part it read
+		return resp.StatusCode, body.failed
+	}
+	return resp.StatusCode, err
+}
+
+// list asks GitHub for the newest 30 releases. The answer is some 7 MB (about 150
+// assets a release) and is read one release at a time (system.DecodeJSONArray). err
+// is an answer that did not come (or came too long); decodeErr one that came and is
+// not a list of releases.
+func (d *Discoverer) list(ctx context.Context) (rels []ghRelease, decodeErr, err error) {
+	_, err = d.read(ctx, d.base()+"/repos/"+d.repo()+"/releases?per_page=30", true, 8<<20, func(r io.Reader) error {
+		rels, decodeErr = system.DecodeJSONArray[ghRelease](r)
+		return nil // an answer that broke off or is too long is read's error
+	})
 	if err != nil {
-		return nil, resp.StatusCode, err
+		return nil, nil, err
 	}
-	if int64(len(b)) > limit {
-		return nil, resp.StatusCode, fmt.Errorf("GET %s: larger than %d bytes", url, limit)
-	}
-	return b, resp.StatusCode, nil
+	return rels, decodeErr, nil
 }
 
 func (d *Discoverer) base() string {
@@ -261,18 +333,17 @@ func (d *Discoverer) Check(ctx context.Context) (CheckResult, error) {
 	if st.Since == nil {
 		st.Since = &now
 	}
-	body, _, err := d.get(ctx, d.base()+"/repos/"+d.repo()+"/releases?per_page=30", true, 8<<20)
+	rels, decodeErr, err := d.list(ctx)
 	if err != nil {
 		st.LastCheckErr = err.Error()
 		d.Store.SaveState(ctx, st)
 		d.staleHint(ctx, st)
 		return res, err
 	}
-	var rels []ghRelease
-	if err := json.Unmarshal(body, &rels); err != nil {
-		st.LastCheckErr = "decode releases: " + err.Error()
+	if decodeErr != nil {
+		st.LastCheckErr = "decode releases: " + decodeErr.Error()
 		d.Store.SaveState(ctx, st)
-		return res, fmt.Errorf("decode releases: %w", err)
+		return res, fmt.Errorf("decode releases: %w", decodeErr)
 	}
 	wm, err := d.Store.Watermark(ctx)
 	if err != nil {

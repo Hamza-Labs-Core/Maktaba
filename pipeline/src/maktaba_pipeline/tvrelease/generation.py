@@ -43,7 +43,7 @@ _SQLITE_UUID = (
 GC_LOCK = "tv_gc"
 _PROGRAM_COLS = (
     "channel_id, seq, kind, video_id, filler_item_id, start_at, end_at, source_offset,"
-    " source_duration, title_snapshot, source_url"
+    " source_duration, title_snapshot, source_url, age_tier"
 )
 
 

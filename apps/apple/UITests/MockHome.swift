@@ -185,6 +185,8 @@ final class MockHome: @unchecked Sendable {
               headers: [String: String] = [:]) {
         // a playlist as the home's web port types it (AVPlayer reads it by its type)
         let type = path.hasSuffix(".m3u8") ? "application/vnd.apple.mpegurl" : "application/json"
+        // `{{now}}`, `{{now-600}}` in a stubbed body are times relative to now, as in a fixture
+        let body = body.contains("{{now") ? Self.fillTimes(body) : body
         lock.withLock { stubs["\(method) \(path)"] = Answer(status: status, body: Data(body.utf8), contentType: type, delay: delay, headers: headers) }
     }
 
@@ -198,6 +200,20 @@ final class MockHome: @unchecked Sendable {
             let problem = #"{"type":"https://maktaba.tv/problems/component-off","title":"This feature is off","status":409,"code":"component_off","component":"livetv","feature":"live_tv"}"#
             for path in ["/api/channels/now", "/api/channels/guide"] { stub("GET", path, status: 409, body: problem) }
         }
+    }
+
+    /// From now on the home has Epic 57's routes and the signed-in account is as `limit`
+    /// says (`GET /api/me/parental`: `{"restricted":true,"max_tier":9,"version":1}`), looks
+    /// after `children` (`GET /api/parental/children`'s rows) and has `time` to watch
+    /// (`GET /api/me/parental/time`). The fixtures' own home has none of these routes (404),
+    /// so every other test's Player is unlimited.
+    func parental(_ limit: String, children: String = "[]", time: String? = nil) {
+        stub("GET", "/api/me/parental", body: limit)
+        stub("GET", "/api/parental/children", body: #"{"children":\#(children)}"#)
+        stub("GET", "/api/parental/requests", body: #"{"requests":[]}"#)
+        stub("GET", "/api/me/parental-pin", body: #"{"set":false}"#)
+        stub("GET", "/api/me/parental/guardians", body: #"{"guardians":[]}"#)
+        stub("GET", "/api/me/parental/time", body: time ?? #"{"allowed":true,"limited":false,"remaining_seconds":null,"slot_ends_at":null,"next_allowed_at":null,"now":"\#(Self.time(0))"}"#)
     }
 
     static let features = ["live_tv", "transcripts", "subtitles", "semantic_search", "chapters", "youtube", "plex",

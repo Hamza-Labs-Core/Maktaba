@@ -46,6 +46,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme"
 )
 
@@ -386,8 +387,18 @@ func (h *Handler) thumbVisible(r *http.Request, hash string) bool {
 	if p == nil {
 		return false
 	}
+	// a restricted account sees a thumbnail only of a video its limit allows
+	limit := parental.Where(r.Context(), "videos")
 	if p.IsAdmin || p.AccessAllLibraries {
-		return true
+		if limit == "" {
+			return true
+		}
+		if h.DB == nil {
+			return false
+		}
+		var one int
+		return h.DB.QueryRowContext(r.Context(),
+			`SELECT 1 FROM videos WHERE content_hash = $1`+limit+` LIMIT 1`, hash).Scan(&one) == nil
 	}
 	if h.DB == nil || len(p.Libraries) == 0 {
 		return false
@@ -400,7 +411,7 @@ func (h *Handler) thumbVisible(r *http.Request, hash string) bool {
 	}
 	var one int
 	err := h.DB.QueryRowContext(r.Context(),
-		`SELECT 1 FROM videos WHERE content_hash = $1 AND library_id IN (`+strings.Join(ph, ",")+`) LIMIT 1`,
+		`SELECT 1 FROM videos WHERE content_hash = $1 AND library_id IN (`+strings.Join(ph, ",")+`)`+limit+` LIMIT 1`,
 		args...).Scan(&one)
 	return err == nil
 }

@@ -36,6 +36,7 @@ import {
   type Activity,
 } from "../../components/libdash/useLibraryBoard";
 import { YouTubeSourcesPanel } from "../../components/queue/YouTubeSourcesDialog";
+import { AgeTierControl } from "../../components/parental/AgeTierControl";
 import { WordReviewSettings } from "../review/WordReviewSettings";
 import {
   OfflineActionDialog,
@@ -280,6 +281,8 @@ function LibraryAdminInner() {
         <p className="mkt-ld__summary">
           {t("libdash.meta", { videos: n(lib.counts.total), seasons: n(row?.seasons ?? 0) })}
         </p>
+        {/* Epic 57 story 57.01: the rating a video here takes when nothing else rates it */}
+        <AgeTierControl target={{ kind: "library", id: lib.id }} current={lib.age_tier} />
       </header>
 
       <nav className="mkt-lp-nav" aria-label={t("libpage.nav")}>

@@ -8,12 +8,16 @@ package grpcsrv
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/timelimit"
 )
 
 // StreamingServiceName is the gRPC service path. The api streaming
@@ -51,6 +55,9 @@ func serviceDesc(s *Server) *grpc.ServiceDesc {
 			{MethodName: "EvictHashCache", Handler: jsonHandler(s.handleEvictHashCache)},
 			{MethodName: "GetCapabilities", Handler: jsonHandler(s.handleGetCapabilities)},
 			{MethodName: "HealthCheck", Handler: jsonHandler(s.handleHealthCheck)},
+			{MethodName: "SetTimeLimit", Handler: jsonHandler(s.handleSetTimeLimit)},
+			{MethodName: "TimeServed", Handler: jsonHandler(s.handleTimeServed)},
+			{MethodName: "SetTimeKept", Handler: jsonHandler(s.handleSetTimeKept)},
 		},
 	}
 }
@@ -127,6 +134,79 @@ func (s *Server) handleCloseSession(ctx context.Context, m map[string]any) (map[
 		return errResp(err)
 	}
 	return map[string]any{"ok": true}, nil
+}
+
+// handleSetTimeLimit keeps what the API pushed of a restricted account's time limit
+// (Epic 57 story 57.14): the account's end in a library, and one stream session's
+// lease. Anything it cannot read is an error, so the API refuses the stream.
+func (s *Server) handleSetTimeLimit(_ context.Context, m map[string]any) (map[string]any, error) {
+	if s.TimeLimits == nil {
+		return errResp(errors.New("time limits are not kept here"))
+	}
+	userID := jsonString(m["user_id"])
+	if userID == "" {
+		return errResp(errors.New("user_id is required"))
+	}
+	if jsonBool(m["clear_all"]) {
+		// the account has no time rule left: its end goes in every library
+		s.TimeLimits.ClearEnds(userID)
+		return map[string]any{"ok": true}, nil
+	}
+	if jsonBool(m["clear"]) {
+		s.TimeLimits.Set(userID, jsonString(m["library_id"]), nil)
+		return map[string]any{"ok": true}, nil
+	}
+	lim := &timelimit.Limit{Reason: jsonString(m["reason"]), SessionID: jsonString(m["session_id"])}
+	for key, into := range map[string]**time.Time{"end_at": &lim.EndAt, "next_allowed_at": &lim.NextAllowedAt, "lease_until": &lim.LeaseUntil} {
+		v := jsonString(m[key])
+		if v == "" {
+			continue
+		}
+		at, err := time.Parse(time.RFC3339Nano, v)
+		if err != nil {
+			return errResp(fmt.Errorf("%s: %w", key, err))
+		}
+		*into = &at
+	}
+	if (lim.SessionID == "") != (lim.LeaseUntil == nil) {
+		return errResp(errors.New("session_id and lease_until go together"))
+	}
+	s.TimeLimits.Set(userID, jsonString(m["library_id"]), lim)
+	return map[string]any{"ok": true}, nil
+}
+
+// handleSetTimeKept keeps the API's word that an account's playback time is kept
+// from now on (it was made restricted) or no longer is (the restriction was
+// lifted): see timelimit.Registry.SetKept. kept must be said: a body without it
+// changes nothing.
+func (s *Server) handleSetTimeKept(_ context.Context, m map[string]any) (map[string]any, error) {
+	if s.TimeLimits == nil {
+		return errResp(errors.New("time limits are not kept here"))
+	}
+	userID := jsonString(m["user_id"])
+	if userID == "" {
+		return errResp(errors.New("user_id is required"))
+	}
+	kept, said := m["kept"].(bool)
+	if !said {
+		return errResp(errors.New("kept is required"))
+	}
+	s.TimeLimits.SetKept(userID, kept)
+	return map[string]any{"ok": true}, nil
+}
+
+// handleTimeServed says when a stream session of a restricted account was last
+// served anything; known is false when no lease is held for it.
+func (s *Server) handleTimeServed(_ context.Context, m map[string]any) (map[string]any, error) {
+	if s.TimeLimits == nil {
+		return errResp(errors.New("time limits are not kept here"))
+	}
+	at, known := s.TimeLimits.Served(jsonString(m["user_id"]), jsonString(m["session_id"]))
+	out := map[string]any{"known": known}
+	if known && !at.IsZero() {
+		out["served_at"] = at.UTC().Format(time.RFC3339Nano)
+	}
+	return out, nil
 }
 
 func (s *Server) handleEvictHashCache(ctx context.Context, m map[string]any) (map[string]any, error) {

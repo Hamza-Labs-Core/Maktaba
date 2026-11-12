@@ -74,6 +74,9 @@ fun rememberTimeFormat(): (Long) -> String {
 /** Logos already decoded, by home and channel. */
 private val logos = LruCache<String, ImageBitmap>(64)
 
+/** Forgets every decoded logo (the sign-in's parental limit changed: a channel may now be hidden). */
+fun forgetLogos() = logos.evictAll()
+
 /**
  * A channel's logo, fetched with the token ([LiveApi.logo]; the home serves it only to a
  * signed-in caller), else its number on the raised surface.

@@ -13,6 +13,12 @@ Postgres 16, ``INHERIT FALSE``).
 ``sql`` prints the migration body for the current manifests; ``check <migration>`` (CI)
 fails when the newest roles migration is not what ``sql`` prints, so a manifest change
 ships with its migration. SQLite has no roles: its sibling is a no-op.
+
+A core stage that must write under a role of its own, and has no plugin manifest because
+it runs in the worker (it needs the home's language model door, which a plugin's runner
+does not have), is listed in :data:`STAGE_ROLES`. ``stage-sql`` prints its role, which
+goes in the migration that makes the stage's table; ``check`` fails when the newest
+migration that makes the role is not what ``stage-sql`` prints.
 """
 
 from __future__ import annotations
@@ -28,6 +34,24 @@ FIRST_PARTY = ROOT / "plugins" / "first-party"
 MIGRATIONS = ROOT / "shared" / "db" / "migrations"
 
 _IDENT = re.compile(r"^[a-z][a-z0-9_]*$")
+
+#: Core stages with a role of their own: the tables each reads and the tables it writes.
+#: ``content_screen`` (Epic 57, story 57.17) writes what it detected and nothing else:
+#: ``videos`` is read only, so the stage cannot set ``videos.age_tier`` (the API's
+#: recompute is its one writer).
+STAGE_ROLES: dict[str, dict[str, tuple[str, ...]]] = {
+    "content_screen": {
+        "read": (
+            "app_settings",
+            "libraries",
+            "transcript_segments",
+            "transcripts",
+            "video_topic_tags",
+            "videos",
+        ),
+        "write": ("video_content_signals",),
+    },
+}
 
 
 def role_of(plugin_id: str) -> str:
@@ -54,6 +78,26 @@ def role_sql(m: dict[str, object]) -> str:
     assert isinstance(db, dict)
     reads = sorted(set(db.get("read") or ()) - set(db.get("write") or ()))
     writes = sorted(set(db.get("write") or ()))
+    return _role_block(pid, role, reads, writes)
+
+
+def stage_role_of(stage: str) -> str:
+    return "maktaba_fp_" + stage
+
+
+def stage_role_sql(stage: str) -> str:
+    """The role of a core stage in :data:`STAGE_ROLES`, in the plugins' own form."""
+    tables = STAGE_ROLES[stage]
+    writes = sorted(set(tables.get("write") or ()))
+    reads = sorted(set(tables.get("read") or ()) - set(writes))
+    return _role_block(f"core stage {stage}", stage_role_of(stage), reads, writes)
+
+
+def stage_body() -> str:
+    return "\n".join(stage_role_sql(s) for s in sorted(STAGE_ROLES))
+
+
+def _role_block(pid: str, role: str, reads: list[str], writes: list[str]) -> str:
     for t in [*reads, *writes]:
         if not _IDENT.match(t):
             raise SystemExit(f"{pid}: table name {t!r}")
@@ -137,26 +181,62 @@ def newest_roles_migration() -> Path | None:
     return found[-1] if found else None
 
 
+def newest_stage_role_migration(stage: str) -> Path | None:
+    """The newest Postgres migration that makes the stage's role."""
+    needle = f"CREATE ROLE {stage_role_of(stage)} "
+    found = [
+        p
+        for p in sorted(MIGRATIONS.glob("[0-9][0-9][0-9][0-9]_*.sql"))
+        if not p.name.endswith(".sqlite.sql") and needle in p.read_text(encoding="utf-8")
+    ]
+    return found[-1] if found else None
+
+
+def check_stages() -> list[str]:
+    problems = []
+    for stage in sorted(STAGE_ROLES):
+        mig = newest_stage_role_migration(stage)
+        if mig is None:
+            problems.append(
+                f"no migration makes {stage_role_of(stage)}: write one from"
+                " `python3 tools/plugins/roles.py stage-sql`"
+            )
+        elif stage_role_sql(stage) not in mig.read_text(encoding="utf-8"):
+            problems.append(
+                f"{mig.name} is not the role of stage {stage} in STAGE_ROLES: a new migration"
+            )
+    return problems
+
+
 def check() -> list[str]:
+    problems = check_stages()
     want = body()
     mig = newest_roles_migration()
     if not want.strip():
-        return []
+        return problems
     if mig is None:
-        return ["no NNNN_fp_roles migration: write one from `python3 tools/plugins/roles.py sql`"]
+        return [
+            *problems,
+            "no NNNN_fp_roles migration: write one from `python3 tools/plugins/roles.py sql`",
+        ]
     text = mig.read_text(encoding="utf-8")
     if want not in text:
-        return [f"{mig.name} is not the roles of today's manifests: a new NNNN_fp_roles migration"]
-    return []
+        problems.append(
+            f"{mig.name} is not the roles of today's manifests: a new NNNN_fp_roles migration"
+        )
+    return problems
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("action", choices=["sql", "check"])
+    ap.add_argument("action", choices=["sql", "stage-sql", "check"])
     ap.add_argument("--dir", help="a folder of plugin folders (tests)")
     args = ap.parse_args(argv)
     if args.action == "sql":
         sys.stdout.write(body(Path(args.dir)) if args.dir else body())
+        return 0
+    if args.action == "stage-sql":
+        sys.stdout.write(stage_body())
         return 0
     problems = check()
     for p in problems:

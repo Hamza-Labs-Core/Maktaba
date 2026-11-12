@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 197,
+    "endpoint": 250,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -7537,9 +7537,9 @@
       }
     },
     {
-      "id": "ep-post-sessions",
+      "id": "ep-post-stream-sessions",
       "type": "endpoint",
-      "title": "POST /sessions",
+      "title": "POST /stream/sessions",
       "content": "إصدار جلسة بث",
       "tags": [
         "api",
@@ -7552,17 +7552,11 @@
         "story-8.1",
         "story-8.3",
         "story-8.9",
-        "story-10.1",
-        "story-10.5",
         "story-11.3",
         "story-11.10",
-        "story-11.14",
         "story-12.3",
-        "story-26.4",
-        "story-54.15",
-        "story-55.9",
         "story-57.3",
-        "story-57.10",
+        "story-57.14",
         "story-58.2",
         "story-58.13",
         "story-58.17",
@@ -7573,7 +7567,7 @@
       },
       "metadata": {
         "method": "POST",
-        "path": "/sessions",
+        "path": "/stream/sessions",
         "tag": "Sessions",
         "operationId": "createSession"
       },
@@ -7585,9 +7579,9 @@
       }
     },
     {
-      "id": "ep-get-sessions-id",
+      "id": "ep-get-stream-sessions-id",
       "type": "endpoint",
-      "title": "GET /sessions/{id}",
+      "title": "GET /stream/sessions/{id}",
       "content": "جلب جلسة",
       "tags": [
         "api",
@@ -7599,15 +7593,16 @@
         "story-7.11",
         "story-11.3",
         "story-11.10",
-        "story-11.14",
-        "story-12.3"
+        "story-12.3",
+        "story-57.3",
+        "story-57.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
       "metadata": {
         "method": "GET",
-        "path": "/sessions/{id}",
+        "path": "/stream/sessions/{id}",
         "tag": "Sessions",
         "operationId": "getSession"
       },
@@ -7619,9 +7614,9 @@
       }
     },
     {
-      "id": "ep-delete-sessions-id",
+      "id": "ep-delete-stream-sessions-id",
       "type": "endpoint",
-      "title": "DELETE /sessions/{id}",
+      "title": "DELETE /stream/sessions/{id}",
       "content": "إغلاق جلسة بث",
       "tags": [
         "api",
@@ -7633,15 +7628,16 @@
         "story-7.11",
         "story-11.3",
         "story-11.10",
-        "story-11.14",
-        "story-12.3"
+        "story-12.3",
+        "story-57.3",
+        "story-57.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
       "metadata": {
         "method": "DELETE",
-        "path": "/sessions/{id}",
+        "path": "/stream/sessions/{id}",
         "tag": "Sessions",
         "operationId": "closeSession"
       },
@@ -7653,9 +7649,9 @@
       }
     },
     {
-      "id": "ep-post-sessions-id-progress",
+      "id": "ep-post-stream-sessions-id-progress",
       "type": "endpoint",
-      "title": "POST /sessions/{id}/progress",
+      "title": "POST /stream/sessions/{id}/progress",
       "content": "نبضة تقدّم الجلسة",
       "tags": [
         "api",
@@ -7666,14 +7662,16 @@
         "story-7.11",
         "story-11.3",
         "story-11.10",
-        "story-12.3"
+        "story-12.3",
+        "story-57.3",
+        "story-57.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
       "metadata": {
         "method": "POST",
-        "path": "/sessions/{id}/progress",
+        "path": "/stream/sessions/{id}/progress",
         "tag": "Sessions",
         "operationId": "sessionProgressHeartbeat"
       },
@@ -7685,22 +7683,53 @@
       }
     },
     {
-      "id": "ep-get-sessions-capabilities",
+      "id": "ep-post-stream-sessions-id-errors",
       "type": "endpoint",
-      "title": "GET /sessions/capabilities",
-      "content": "إمكانات خادم البث",
+      "title": "POST /stream/sessions/{id}/errors",
+      "content": "الإبلاغ عن فشل في التشغيل",
       "tags": [
         "api",
         "Sessions",
-        "get"
+        "post"
       ],
       "related": [],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
       "metadata": {
+        "method": "POST",
+        "path": "/stream/sessions/{id}/errors",
+        "tag": "Sessions",
+        "operationId": "reportPlaybackError"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "85c0ab252b88f50b"
+        }
+      }
+    },
+    {
+      "id": "ep-get-stream-capabilities",
+      "type": "endpoint",
+      "title": "GET /stream/capabilities",
+      "content": "إمكانات خادم البث",
+      "tags": [
+        "api",
+        "Sessions",
+        "get"
+      ],
+      "related": [
+        "story-7.10",
+        "story-8.7",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
         "method": "GET",
-        "path": "/sessions/capabilities",
+        "path": "/stream/capabilities",
         "tag": "Sessions",
         "operationId": "getStreamCapabilities"
       },
@@ -7708,6 +7737,65 @@
         "lang": "ar",
         "source": {
           "content": "3e55b394212f1617"
+        }
+      }
+    },
+    {
+      "id": "ep-post-watch-start",
+      "type": "endpoint",
+      "title": "POST /watch/start",
+      "content": "بدء مشاهدة",
+      "tags": [
+        "api",
+        "Watch progress",
+        "post"
+      ],
+      "related": [
+        "story-29.1",
+        "story-29.4"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/watch/start",
+        "tag": "Watch progress",
+        "operationId": "startWatch"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "3127e9258a4ced60"
+        }
+      }
+    },
+    {
+      "id": "ep-post-watch-heartbeat",
+      "type": "endpoint",
+      "title": "POST /watch/heartbeat",
+      "content": "إبقاء مشاهدة جارية",
+      "tags": [
+        "api",
+        "Watch progress",
+        "post"
+      ],
+      "related": [
+        "story-29.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/watch/heartbeat",
+        "tag": "Watch progress",
+        "operationId": "heartbeatWatch"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "f0deca51afaf79de"
         }
       }
     },
@@ -7748,6 +7836,7 @@
         "story-54.13",
         "story-54.41",
         "story-55.2",
+        "story-57.12",
         "story-59.16",
         "story-60.12"
       ],
@@ -7804,6 +7893,7 @@
         "story-54.13",
         "story-54.41",
         "story-55.2",
+        "story-57.12",
         "story-59.16",
         "story-60.12"
       ],
@@ -9436,6 +9526,7 @@
       "related": [
         "story-29.3",
         "story-29.4",
+        "story-57.7",
         "story-57.8"
       ],
       "files": {
@@ -9761,6 +9852,7 @@
         "story-54.40",
         "story-55.2",
         "story-57.5",
+        "story-57.12",
         "story-57.13",
         "story-58.1",
         "story-59.16"
@@ -11431,6 +11523,36 @@
       }
     },
     {
+      "id": "ep-get-me-history",
+      "type": "endpoint",
+      "title": "GET /me/history",
+      "content": "سجلّ مشاهدة المستخدم",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-29.2",
+        "story-57.3"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/history",
+        "tag": "Browse",
+        "operationId": "getMyHistory"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "20a975b8d88373e7"
+        }
+      }
+    },
+    {
       "id": "ep-get-me-pinned-libraries",
       "type": "endpoint",
       "title": "GET /me/pinned-libraries",
@@ -12186,6 +12308,1479 @@
         "lang": "ar",
         "source": {
           "content": "91d41049f440d0a3"
+        }
+      }
+    },
+    {
+      "id": "ep-put-videos-id-age-tier",
+      "type": "endpoint",
+      "title": "PUT /videos/{id}/age-tier",
+      "content": "ضبط الفئة العمرية لفيديو",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/videos/{id}/age-tier",
+        "tag": "Parental controls",
+        "operationId": "setVideoAgeTier"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "0c09717eea2ff63f"
+        }
+      }
+    },
+    {
+      "id": "ep-put-libraries-id-age-tier",
+      "type": "endpoint",
+      "title": "PUT /libraries/{id}/age-tier",
+      "content": "ضبط الفئة العمرية الافتراضية لمكتبة",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.1",
+        "story-57.7"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/libraries/{id}/age-tier",
+        "tag": "Parental controls",
+        "operationId": "setLibraryAgeTier"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "4e708bcbfb2fc0cc"
+        }
+      }
+    },
+    {
+      "id": "ep-put-series-id-age-tier",
+      "type": "endpoint",
+      "title": "PUT /series/{id}/age-tier",
+      "content": "ضبط الفئة العمرية لمسلسل",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/series/{id}/age-tier",
+        "tag": "Parental controls",
+        "operationId": "setSeriesAgeTier"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "3f8569a4ae87e28a"
+        }
+      }
+    },
+    {
+      "id": "ep-put-collections-id-age-tier",
+      "type": "endpoint",
+      "title": "PUT /collections/{id}/age-tier",
+      "content": "ضبط الفئة العمرية لمجموعة",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/collections/{id}/age-tier",
+        "tag": "Parental controls",
+        "operationId": "setCollectionAgeTier"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "007cb92e0571c9a9"
+        }
+      }
+    },
+    {
+      "id": "ep-put-channels-id-age-tier",
+      "type": "endpoint",
+      "title": "PUT /channels/{id}/age-tier",
+      "content": "ضبط الفئة العمرية لقناة",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/channels/{id}/age-tier",
+        "tag": "Parental controls",
+        "operationId": "setChannelAgeTier"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "5e7e179aeb052887"
+        }
+      }
+    },
+    {
+      "id": "ep-put-libraries-id-youtube-sources-sid-age-tier",
+      "type": "endpoint",
+      "title": "PUT /libraries/{id}/youtube/sources/{sid}/age-tier",
+      "content": "ضبط الفئة العمرية لمصدر يوتيوب",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/libraries/{id}/youtube/sources/{sid}/age-tier",
+        "tag": "Parental controls",
+        "operationId": "setYouTubeSourceAgeTier"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "6f2f138d3536296c"
+        }
+      }
+    },
+    {
+      "id": "ep-get-parental-review",
+      "type": "endpoint",
+      "title": "GET /parental/review",
+      "content": "الفئات العمرية المكتشفة التي تنتظر المشرف",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.17"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/review",
+        "tag": "Parental controls",
+        "operationId": "listParentalReview"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "2fb2176618771157"
+        }
+      }
+    },
+    {
+      "id": "ep-post-parental-review-video-id",
+      "type": "endpoint",
+      "title": "POST /parental/review/{video_id}",
+      "content": "الإجابة عن فئة عمرية مكتشفة",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.17"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/parental/review/{video_id}",
+        "tag": "Parental controls",
+        "operationId": "decideParentalReview"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "dab8de463f22a7f3"
+        }
+      }
+    },
+    {
+      "id": "ep-get-parental-ratings",
+      "type": "endpoint",
+      "title": "GET /parental/ratings",
+      "content": "تصنيفات المحتوى وفئاتها العمرية",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/ratings",
+        "tag": "Parental controls",
+        "operationId": "getParentalRatings"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "422aa83bc47c4c10"
+        }
+      }
+    },
+    {
+      "id": "ep-get-parental-children",
+      "type": "endpoint",
+      "title": "GET /parental/children",
+      "content": "الحسابات المقيَّدة التي يتولاها المتصل",
+      "tags": [
+        "api",
+        "Auth",
+        "get"
+      ],
+      "related": [
+        "story-57.2",
+        "story-57.7"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/children",
+        "tag": "Auth",
+        "operationId": "listParentalChildren"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "89872d1822d863eb"
+        }
+      }
+    },
+    {
+      "id": "ep-get-me-parental",
+      "type": "endpoint",
+      "title": "GET /me/parental",
+      "content": "حدّ المتصل نفسه",
+      "tags": [
+        "api",
+        "Auth",
+        "get"
+      ],
+      "related": [
+        "story-57.2",
+        "story-57.5",
+        "story-57.6",
+        "story-57.7",
+        "story-57.14",
+        "story-57.15"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/parental",
+        "tag": "Auth",
+        "operationId": "getMyParental"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "0f945fd511b00355"
+        }
+      }
+    },
+    {
+      "id": "ep-post-me-age-signal",
+      "type": "endpoint",
+      "title": "POST /me/age-signal",
+      "content": "إرسال ما يقوله الجهاز عن عمر مستخدمه",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.4",
+        "story-57.12"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/age-signal",
+        "tag": "Parental controls",
+        "operationId": "postMyAgeSignal"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "d6a97ba4bbb5e83f"
+        }
+      }
+    },
+    {
+      "id": "ep-post-users-id-parental-signals-family-clear",
+      "type": "endpoint",
+      "title": "POST /users/{id}/parental/signals/{family}/clear",
+      "content": "مسح إشارة جهاز لتسجيل دخول",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.4"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/users/{id}/parental/signals/{family}/clear",
+        "tag": "Parental controls",
+        "operationId": "clearParentalSignal"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "781bdbb94387aaef"
+        }
+      }
+    },
+    {
+      "id": "ep-get-users-id-parental",
+      "type": "endpoint",
+      "title": "GET /users/{id}/parental",
+      "content": "حدّ حساب مقيَّد",
+      "tags": [
+        "api",
+        "Auth",
+        "get"
+      ],
+      "related": [
+        "story-57.2",
+        "story-57.4",
+        "story-57.7",
+        "story-57.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/users/{id}/parental",
+        "tag": "Auth",
+        "operationId": "getUserParental"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "6e772ff28a3e80da"
+        }
+      }
+    },
+    {
+      "id": "ep-put-users-id-parental",
+      "type": "endpoint",
+      "title": "PUT /users/{id}/parental",
+      "content": "ضبط حدّ حساب",
+      "tags": [
+        "api",
+        "Auth",
+        "put"
+      ],
+      "related": [
+        "story-57.2",
+        "story-57.4",
+        "story-57.7",
+        "story-57.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/users/{id}/parental",
+        "tag": "Auth",
+        "operationId": "setUserParental"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "f73e81b2e9968167"
+        }
+      }
+    },
+    {
+      "id": "ep-delete-users-id-parental",
+      "type": "endpoint",
+      "title": "DELETE /users/{id}/parental",
+      "content": "رفع الحد عن حساب",
+      "tags": [
+        "api",
+        "Auth",
+        "delete"
+      ],
+      "related": [
+        "story-57.2",
+        "story-57.4",
+        "story-57.7",
+        "story-57.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/users/{id}/parental",
+        "tag": "Auth",
+        "operationId": "liftUserParental"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "8f167f365b5f4d9d"
+        }
+      }
+    },
+    {
+      "id": "ep-post-users-id-parental-guardians",
+      "type": "endpoint",
+      "title": "POST /users/{id}/parental/guardians",
+      "content": "تسمية وليّ لحساب مقيَّد",
+      "tags": [
+        "api",
+        "Auth",
+        "post"
+      ],
+      "related": [
+        "story-57.2"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/users/{id}/parental/guardians",
+        "tag": "Auth",
+        "operationId": "addParentalGuardian"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "f3ad95eaf1a6367d"
+        }
+      }
+    },
+    {
+      "id": "ep-delete-users-id-parental-guardians-guardian-id",
+      "type": "endpoint",
+      "title": "DELETE /users/{id}/parental/guardians/{guardian_id}",
+      "content": "إزالة وليّ",
+      "tags": [
+        "api",
+        "Auth",
+        "delete"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/users/{id}/parental/guardians/{guardian_id}",
+        "tag": "Auth",
+        "operationId": "removeParentalGuardian"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "4fffd2b94a1c8521"
+        }
+      }
+    },
+    {
+      "id": "ep-get-users-id-parental-rules",
+      "type": "endpoint",
+      "title": "GET /users/{id}/parental/rules",
+      "content": "قواعد حساب مقيَّد",
+      "tags": [
+        "api",
+        "Auth",
+        "get"
+      ],
+      "related": [
+        "story-57.2"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/users/{id}/parental/rules",
+        "tag": "Auth",
+        "operationId": "listParentalRules"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "f3eacc6528a836c3"
+        }
+      }
+    },
+    {
+      "id": "ep-post-users-id-parental-rules",
+      "type": "endpoint",
+      "title": "POST /users/{id}/parental/rules",
+      "content": "السماح بشيء أو حجبه عن حساب مقيَّد",
+      "tags": [
+        "api",
+        "Auth",
+        "post"
+      ],
+      "related": [
+        "story-57.2"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/users/{id}/parental/rules",
+        "tag": "Auth",
+        "operationId": "addParentalRule"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "97ca6b783b425c60"
+        }
+      }
+    },
+    {
+      "id": "ep-delete-users-id-parental-rules-rule-id",
+      "type": "endpoint",
+      "title": "DELETE /users/{id}/parental/rules/{rule_id}",
+      "content": "إزالة قاعدة",
+      "tags": [
+        "api",
+        "Auth",
+        "delete"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/users/{id}/parental/rules/{rule_id}",
+        "tag": "Auth",
+        "operationId": "removeParentalRule"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "76b84cc4d72cb3e1"
+        }
+      }
+    },
+    {
+      "id": "ep-get-channels-id-access",
+      "type": "endpoint",
+      "title": "GET /channels/{id}/access",
+      "content": "هل يجوز للمتصل مشاهدة القناة الآن",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.10",
+        "story-57.11"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/channels/{id}/access",
+        "tag": "Parental controls",
+        "operationId": "getChannelAccess"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "8391fb3d158cc139"
+        }
+      }
+    },
+    {
+      "id": "ep-post-channels-id-play",
+      "type": "endpoint",
+      "title": "POST /channels/{id}/play",
+      "content": "الحصول على عنوان موقَّع لمشاهدة قناة",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/channels/{id}/play",
+        "tag": "Parental controls",
+        "operationId": "playChannel"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "cb47b55023727267"
+        }
+      }
+    },
+    {
+      "id": "ep-get-tv-parental-verdict",
+      "type": "endpoint",
+      "title": "GET /tv/parental/verdict",
+      "content": "جواب الرقابة الأبوية لمشاهد وقناة (لخدمات هذا الجهاز)",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/tv/parental/verdict",
+        "tag": "Parental controls",
+        "operationId": "getLiveParentalVerdict"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "9b5e29a99cc442ed"
+        }
+      }
+    },
+    {
+      "id": "ep-get-tv-hdhr-allowed",
+      "type": "endpoint",
+      "title": "GET /tv/hdhr/allowed",
+      "content": "عرض العناوين التي يجوز لها استخدام الموالف",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/tv/hdhr/allowed",
+        "tag": "Parental controls",
+        "operationId": "getTunerAllowedAddresses"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "0c87bffc030b77b1"
+        }
+      }
+    },
+    {
+      "id": "ep-put-tv-hdhr-allowed",
+      "type": "endpoint",
+      "title": "PUT /tv/hdhr/allowed",
+      "content": "ضبط العناوين التي يجوز لها استخدام الموالف",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/tv/hdhr/allowed",
+        "tag": "Parental controls",
+        "operationId": "setTunerAllowedAddresses"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "c9e4d8502253b33c"
+        }
+      }
+    },
+    {
+      "id": "ep-post-me-parental-requests",
+      "type": "endpoint",
+      "title": "POST /me/parental/requests",
+      "content": "طلب فتح شيء من أحد الوالدين",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.6"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/parental/requests",
+        "tag": "Parental controls",
+        "operationId": "askParent"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "c8db7229bc407a39"
+        }
+      }
+    },
+    {
+      "id": "ep-get-me-parental-requests",
+      "type": "endpoint",
+      "title": "GET /me/parental/requests",
+      "content": "سرد طلبات المتصل نفسه",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.6"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/parental/requests",
+        "tag": "Parental controls",
+        "operationId": "listOwnParentalRequests"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "ca668a52514e8dc5"
+        }
+      }
+    },
+    {
+      "id": "ep-get-me-parental-guardians",
+      "type": "endpoint",
+      "title": "GET /me/parental/guardians",
+      "content": "من يستطيع الفتح برمز الوالدين",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.6"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/parental/guardians",
+        "tag": "Parental controls",
+        "operationId": "listParentalUnlockers"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "d60bef30934d4298"
+        }
+      }
+    },
+    {
+      "id": "ep-post-me-parental-unlock",
+      "type": "endpoint",
+      "title": "POST /me/parental/unlock",
+      "content": "فتح شيء برمز الوالدين",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.6",
+        "story-57.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/parental/unlock",
+        "tag": "Parental controls",
+        "operationId": "unlockWithParentPin"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "3bb6c58f8f3ad5d5"
+        }
+      }
+    },
+    {
+      "id": "ep-get-me-parental-pin",
+      "type": "endpoint",
+      "title": "GET /me/parental-pin",
+      "content": "هل للمتصل رمز والدين",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.6",
+        "story-57.7"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/parental-pin",
+        "tag": "Parental controls",
+        "operationId": "getParentalPin"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "f7370338ebe3decb"
+        }
+      }
+    },
+    {
+      "id": "ep-put-me-parental-pin",
+      "type": "endpoint",
+      "title": "PUT /me/parental-pin",
+      "content": "تعيين رمز الوالدين للمتصل",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.6",
+        "story-57.7"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/me/parental-pin",
+        "tag": "Parental controls",
+        "operationId": "setParentalPin"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "ce4bdafba9e20cfc"
+        }
+      }
+    },
+    {
+      "id": "ep-get-parental-requests",
+      "type": "endpoint",
+      "title": "GET /parental/requests",
+      "content": "طلبات الأطفال الذين يرعاهم المتصل",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.6",
+        "story-57.7",
+        "story-57.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/requests",
+        "tag": "Parental controls",
+        "operationId": "listParentalRequests"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "67e311ee8755c248"
+        }
+      }
+    },
+    {
+      "id": "ep-post-parental-requests-id-approve",
+      "type": "endpoint",
+      "title": "POST /parental/requests/{id}/approve",
+      "content": "الموافقة على طلب",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.6",
+        "story-57.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/parental/requests/{id}/approve",
+        "tag": "Parental controls",
+        "operationId": "approveParentalRequest"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "5930d3d923bc891b"
+        }
+      }
+    },
+    {
+      "id": "ep-post-parental-requests-id-deny",
+      "type": "endpoint",
+      "title": "POST /parental/requests/{id}/deny",
+      "content": "رفض طلب",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/parental/requests/{id}/deny",
+        "tag": "Parental controls",
+        "operationId": "denyParentalRequest"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "645fe2feea5e66d6"
+        }
+      }
+    },
+    {
+      "id": "ep-get-users-id-parental-activity",
+      "type": "endpoint",
+      "title": "GET /users/{id}/parental/activity",
+      "content": "نشاط حساب مقيَّد",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/users/{id}/parental/activity",
+        "tag": "Parental controls",
+        "operationId": "listParentalActivity"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "a944c781c1007b0b"
+        }
+      }
+    },
+    {
+      "id": "ep-get-parental-users-id-time-rules",
+      "type": "endpoint",
+      "title": "GET /parental/users/{id}/time-rules",
+      "content": "قواعد الوقت لحساب مقيَّد",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/users/{id}/time-rules",
+        "tag": "Parental controls",
+        "operationId": "listParentalTimeRules"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "faf3b6da3094bfff"
+        }
+      }
+    },
+    {
+      "id": "ep-put-parental-users-id-time-rules",
+      "type": "endpoint",
+      "title": "PUT /parental/users/{id}/time-rules",
+      "content": "ضبط قواعد الوقت لحساب مقيَّد",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/parental/users/{id}/time-rules",
+        "tag": "Parental controls",
+        "operationId": "setParentalTimeRules"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "682c02b0434264f1"
+        }
+      }
+    },
+    {
+      "id": "ep-get-parental-users-id-time-usage",
+      "type": "endpoint",
+      "title": "GET /parental/users/{id}/time-usage",
+      "content": "كم شاهد حساب مقيَّد",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/users/{id}/time-usage",
+        "tag": "Parental controls",
+        "operationId": "getParentalTimeUsage"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "0e1c78e714323a61"
+        }
+      }
+    },
+    {
+      "id": "ep-post-parental-users-id-time-grants",
+      "type": "endpoint",
+      "title": "POST /parental/users/{id}/time-grants",
+      "content": "منح حساب مقيَّد وقتًا إضافيًّا اليوم",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/parental/users/{id}/time-grants",
+        "tag": "Parental controls",
+        "operationId": "grantParentalTime"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "e374dc294f915da3"
+        }
+      }
+    },
+    {
+      "id": "ep-get-me-parental-time",
+      "type": "endpoint",
+      "title": "GET /me/parental/time",
+      "content": "وقت المشاهدة للمستخدم نفسه الآن",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.14",
+        "story-57.15"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/parental/time",
+        "tag": "Parental controls",
+        "operationId": "getMyParentalTime"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "6cf2fdb2daec6f53"
+        }
+      }
+    },
+    {
+      "id": "ep-get-parental-settings",
+      "type": "endpoint",
+      "title": "GET /parental/settings",
+      "content": "قراءة حالة تفعيل الرقابة الأبوية",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.12"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/settings",
+        "tag": "Parental controls",
+        "operationId": "getParentalSettings"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "d417d9beb9571f6b"
+        }
+      }
+    },
+    {
+      "id": "ep-put-parental-settings",
+      "type": "endpoint",
+      "title": "PUT /parental/settings",
+      "content": "تفعيل الرقابة الأبوية أو إيقافها",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.12"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/parental/settings",
+        "tag": "Parental controls",
+        "operationId": "setParentalSettings"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "acaee42667459cb7"
+        }
+      }
+    },
+    {
+      "id": "ep-post-parental-settings-notice-dismiss",
+      "type": "endpoint",
+      "title": "POST /parental/settings/notice/dismiss",
+      "content": "إغلاق إشعار تسجيل دخول جهاز طفل",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.12"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/parental/settings/notice/dismiss",
+        "tag": "Parental controls",
+        "operationId": "dismissParentalNotice"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "3cab345b29bff9c8"
+        }
+      }
+    },
+    {
+      "id": "ep-get-parental-library-suggestions",
+      "type": "endpoint",
+      "title": "GET /parental/library-suggestions",
+      "content": "عرض المكتبات مع الفئة التي تبدأ بها شاشة تصنيف المكتبات",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.12"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/library-suggestions",
+        "tag": "Parental controls",
+        "operationId": "listParentalLibrarySuggestions"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "410cd31388a055d9"
+        }
+      }
+    },
+    {
+      "id": "ep-get-channels",
+      "type": "endpoint",
+      "title": "GET /channels",
+      "content": "عرض القنوات",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-27.1",
+        "story-27.3",
+        "story-27.4",
+        "story-27.8",
+        "story-27.9",
+        "story-27.10",
+        "story-32.4",
+        "story-33.12",
+        "story-34.1",
+        "story-34.4",
+        "story-50.20",
+        "story-50.22",
+        "story-51.9",
+        "story-57.1",
+        "story-57.10",
+        "story-57.11"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/channels",
+        "tag": "Parental controls",
+        "operationId": "listChannels"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "55d7bb63a75f1dcc"
+        }
+      }
+    },
+    {
+      "id": "ep-get-libraries-manage",
+      "type": "endpoint",
+      "title": "GET /libraries/manage",
+      "content": "عرض كل المكتبات لصفحة الإدارة",
+      "tags": [
+        "api",
+        "Libraries",
+        "get"
+      ],
+      "related": [
+        "story-45.2",
+        "story-56.7"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/libraries/manage",
+        "tag": "Libraries",
+        "operationId": "listManagedLibraries"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "21d45f8741f396f0"
+        }
+      }
+    },
+    {
+      "id": "ep-post-pairing-approve",
+      "type": "endpoint",
+      "title": "POST /pairing/approve",
+      "content": "الموافقة على الرمز الذي يعرضه جهاز",
+      "tags": [
+        "api",
+        "Devices",
+        "post"
+      ],
+      "related": [
+        "story-57.2"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/pairing/approve",
+        "tag": "Devices",
+        "operationId": "approvePairingCode"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "072c8f3ea9a3a737"
+        }
+      }
+    },
+    {
+      "id": "ep-post-users",
+      "type": "endpoint",
+      "title": "POST /users",
+      "content": "إنشاء حساب",
+      "tags": [
+        "api",
+        "Auth",
+        "post"
+      ],
+      "related": [
+        "story-10.1",
+        "story-10.5",
+        "story-10.11",
+        "story-11.13",
+        "story-11.14",
+        "story-16.1",
+        "story-16.8",
+        "story-23.2",
+        "story-23.6",
+        "story-25.20",
+        "story-29.3",
+        "story-50.33",
+        "story-53.4",
+        "story-57.2",
+        "story-57.4",
+        "story-57.7",
+        "story-57.8",
+        "story-57.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/users",
+        "tag": "Auth",
+        "operationId": "createUser"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "86033f75a4c0876a"
         }
       }
     },
@@ -13142,7 +14737,6 @@
         "story-29.3",
         "story-30.3",
         "story-42.7",
-        "story-57.13",
         "story-59.9",
         "story-10.11"
       ],

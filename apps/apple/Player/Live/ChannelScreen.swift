@@ -18,6 +18,15 @@ struct ChannelScreen: View {
     @State private var keypad = false
     /// Digits typed so far (the number pad); the channel tunes a moment after the last one.
     @State private var typed = ""
+    /// Epic 57 story 57.10: the programme on now is above the account's limit
+    /// (`GET /api/channels/{id}/access`): the slate shows and nothing plays until the home
+    /// says otherwise.
+    @State private var slated = false
+    /// The channel was started (an account with no limit starts it once; a change of
+    /// channel after that is the playback's own).
+    @State private var begun = false
+    /// Moved when the time's-up screen says there is time again: the home is asked afresh.
+    @State private var again = 0
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
 
@@ -40,6 +49,7 @@ struct ChannelScreen: View {
                 .accessibilityHidden(true)
             status
             if controls { overlay.transition(.opacity) }
+            if slated { LiveSlate { dismiss() } }
             if !typed.isEmpty {
                 Text(verbatim: typed)
                     .font(.maktabaHeading(56, relativeTo: .largeTitle))
@@ -80,12 +90,21 @@ struct ChannelScreen: View {
             if let n = Int(typed) { playback.tune(number: n) }
             typed = ""
         }
-        .task {
-            playback.start()
-            await model.keepFresh(context.client, guide: false)
+        .task { await model.keepFresh(context.client, guide: false) }
+        // under a parental limit the channel starts once the home says its programme may be
+        // watched; anyone else's starts as soon as the home has said the account has no
+        // limit. Asked again when the channel changes and when the limit becomes known or
+        // changes: a channel opened in the first moments after sign-in came before the
+        // home's answer about the limit, started as if there were none and showed no slate
+        .task(id: Watching(channel: playback.channelID, known: context.session.parental.answered,
+                           limited: context.session.parental.current.limited, again: again)) {
+            await watchAccess(playback.channelID)
         }
+        // the home refused the programme itself: the slate at once; `watchAccess` goes on
+        // asking, and starts the channel again when the home says it may be watched
+        .onChange(of: playback.phase) { _, phase in phaseChanged(phase) }
         .onChange(of: model.channels.map(\.id), initial: true) { _, _ in playback.update(channels: model.channels) }
-        .onChange(of: model.onNow(playback.channelID)?.current?.title, initial: true) { _, title in playback.showProgramme(title) }
+        .onChange(of: model.onNow(playback.channelID)?.current?.displayTitle(), initial: true) { _, title in playback.showProgramme(title) }
         .onDisappear {
             let p = playback
             Task { await p.close() }
@@ -94,6 +113,102 @@ struct ChannelScreen: View {
             LiveKeypad { digit($0) } done: { keypad = false }
                 .presentationDetents([.height(360)])
         }
+    }
+
+    /// Asks the home whether the programme on `channel` now may be watched, before it starts
+    /// and again when the answer may change (`until`): the slate while it may not, the
+    /// channel again when it may. The home's streaming service refuses the stream itself, so
+    /// this only decides what the screen says.
+    private func watchAccess(_ channel: String) async {
+        let parental = context.session.parental
+        // the home has not said yet whether this account has a limit: nothing starts (an
+        // answer that failed counts as one, and keeps what was known)
+        guard parental.answered || parental.current.limited else { return }
+        guard parental.current.limited else {
+            // no limit (or it was just lifted over a slate): the channel plays
+            if slated || !begun {
+                slated = false
+                begun = true
+                playback.start()
+            }
+            return
+        }
+        var started = false
+        while !Task.isCancelled {
+            let wait: TimeInterval
+            do {
+                let access = try await context.client.channelAccess(channel)
+                let blocked = access.restricted && !access.allowed
+                if blocked {
+                    if !slated {
+                        slated = true
+                        await playback.hold()
+                    }
+                } else if slated || !started {
+                    slated = false
+                    started = true
+                    begun = true
+                    playback.start()
+                }
+                wait = access.askAgain()
+            } catch {
+                if Log.isCancellation(error) { return }
+                if let up = TimeUp(error) {
+                    // 57.14: the account's time is over (403 `parental-time`): time's up, not
+                    // the slate; asked again when that screen says there is time
+                    slated = false
+                    await playback.stopForTime(up)
+                    return
+                }
+                if let after = HomeFailure(error).kind.timeUnknownRetrySeconds {
+                    // the home cannot read the account's time yet: nothing starts, nothing
+                    // is said to be over; asked again as its Retry-After says
+                    wait = TimeInterval(after)
+                } else {
+                    // the home did not say (a hidden channel answers 404): the channel is
+                    // asked for as before, and the player says what the home answers
+                    if !started, !slated {
+                        started = true
+                        begun = true
+                        playback.start()
+                    }
+                    wait = 30
+                }
+            }
+            do { try await Task.sleep(for: .seconds(wait)) } catch { return }
+        }
+    }
+
+    /// The playback's phase, for the slate. The home refused the programme itself (`held`):
+    /// the slate at once; `watchAccess` goes on asking and starts the channel again when
+    /// the home says it may be watched. A channel that stopped under a limit may be the
+    /// home ending a programme that is now above it, before this device's clock said to ask
+    /// again: the home is asked now, once, and the slate replaces the error if that is why.
+    private func phaseChanged(_ phase: LivePlayback.Phase) {
+        switch phase {
+        case .held:
+            if !slated { slated = true }
+        case let .failed(failure):
+            // (a channel the home does not give is the blocked page: nothing to ask)
+            guard context.session.parental.current.limited, failure.kind != .notFound else { return }
+            let channel = playback.channelID
+            Task {
+                guard let access = try? await context.client.channelAccess(channel), access.restricted, !access.allowed,
+                      playback.channelID == channel, playback.phase == phase else { return }
+                slated = true
+                await playback.hold()
+            }
+        case .starting, .playing, .ended, .timeUp:
+            break
+        }
+    }
+
+    /// What `watchAccess` answers for: the channel, and what is known of the limit.
+    private struct Watching: Equatable {
+        let channel: String
+        let known: Bool
+        let limited: Bool
+        let again: Int
     }
 
     private func digit(_ s: String) {
@@ -121,10 +236,19 @@ struct ChannelScreen: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("live.player.starting")
+        case let .failed(failure) where failure.kind == .notFound && context.session.parental.current.limited:
+            // 57.05: a channel the home does not give, under a limit, is the blocked page
+            BlockedPageView(context: context, subject: .channel(playback.channelID), back: { dismiss() }) { playback.start() }
         case let .failed(failure):
             HomeErrorView(failure) { act($0) }
                 .padding(MaktabaTokens.Spacing.s8)
                 .accessibilityIdentifier("live.player.error")
+        case .held:
+            EmptyView()
+        case let .timeUp(up):
+            // 57.14: the account's watching time is over; the channel comes back by itself
+            // when the home says there is time again (a parent gave some, the slot opened)
+            TimeUpView(context: context, up: up, back: { dismiss() }) { again += 1 }
         case .ended:
             VStack(spacing: MaktabaTokens.Spacing.s3) {
                 Image(systemName: "stop.circle").font(.system(size: 48)).foregroundStyle(Color.brass)
@@ -287,7 +411,7 @@ struct LiveBanner: View {
                         .foregroundStyle(Color.mktBrassText)
                         .accessibilityIdentifier("live.player.channel")
                     if let current = now?.current {
-                        Text(current.title)
+                        Text(verbatim: current.displayTitle())
                             .font(.maktabaBody(MaktabaTokens.TypeSize.lg, weight: .semibold))
                             .foregroundStyle(.white)
                             .lineLimit(1)
@@ -328,7 +452,7 @@ struct LiveMiniGuide: View {
                             Text(channel.name)
                                 .font(.maktabaBody(MaktabaTokens.TypeSize.sm, weight: .semibold))
                                 .lineLimit(1)
-                            Text(verbatim: on?.current?.title ?? " ")
+                            Text(verbatim: on?.current?.displayTitle() ?? " ")
                                 .font(.maktabaBody(12))
                                 .lineLimit(1)
                             if let next = on?.next {

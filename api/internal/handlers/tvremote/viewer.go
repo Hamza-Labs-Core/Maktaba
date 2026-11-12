@@ -86,6 +86,19 @@ func (h *Handler) remoteReady(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+// refusedByParental asks the parental gate (Epic 57 story 57.10) about the channel,
+// or the channel of the caller's session, and writes its refusal.
+func (h *Handler) refusedByParental(w http.ResponseWriter, r *http.Request, p *principal.Principal, channelID, sessionID string) bool {
+	if h.Parental == nil {
+		return false
+	}
+	if e := h.Parental(r, p, channelID, sessionID); e != nil {
+		httperror.Write(w, r, e)
+		return true
+	}
+	return false
+}
+
 // Tune answers POST /api/tv/remote/tune.
 func (h *Handler) Tune(w http.ResponseWriter, r *http.Request) {
 	p, ok := signedIn(w, r)
@@ -102,6 +115,9 @@ func (h *Handler) Tune(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(body.ChannelID) == "" {
 		httperror.Write(w, r, httperror.BadRequest("send channel_id"))
+		return
+	}
+	if h.refusedByParental(w, r, p, strings.TrimSpace(body.ChannelID), "") {
 		return
 	}
 	res, err := h.Remote.Tune(r.Context(), viewerOf(p), strings.TrimSpace(body.ChannelID), body.Device)
@@ -122,6 +138,9 @@ func (h *Handler) Tune(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	p, ok := signedIn(w, r)
 	if !ok || !h.remoteReady(w, r) {
+		return
+	}
+	if h.refusedByParental(w, r, p, "", chi.URLParam(r, "id")) {
 		return
 	}
 	b, err := h.Remote.Heartbeat(r.Context(), viewerOf(p), chi.URLParam(r, "id"))

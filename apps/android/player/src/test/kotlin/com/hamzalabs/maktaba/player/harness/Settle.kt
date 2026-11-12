@@ -26,9 +26,10 @@ fun ComposeContentTestRule.settledUntil(timeoutMs: Long, check: () -> Boolean) =
 
 /**
  * [settledUntil], then fails with [what], the paths the app asked [home] and what the screen
- * shows, so a miss on a runner can be read from its report.
+ * shows, so a miss on a runner can be read from its report. It returns as soon as [check]
+ * holds; [timeoutMs] is only the net under a stall, far longer than a slow runner needs.
  */
-fun ComposeContentTestRule.settled(home: FakeHome, what: String, timeoutMs: Long = 10_000, check: () -> Boolean) {
+fun ComposeContentTestRule.settled(home: FakeHome, what: String, timeoutMs: Long = 60_000, check: () -> Boolean) {
     waitForIdle()
     runCatching { settledUntil(timeoutMs, check) }
     assertTrue("$what; asked ${home.paths}; showing ${shown()}", check())

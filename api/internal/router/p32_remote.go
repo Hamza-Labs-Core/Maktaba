@@ -15,10 +15,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	parentalh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tv"
 	tvremoteh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tvremote"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
@@ -68,6 +70,13 @@ type P32RemoteDeps struct {
 	// Notifier receives the budget and simulcast-cap notices (nil: a hub over
 	// DB, whose first subscriber is the notifications table the bell reads).
 	Notifier notify.Notifier
+	// Parental returns the restricted accounts' cache (Epic 57), read when the
+	// routes are mounted (the cache is built after this wiring runs). Nil, or a nil
+	// cache: every request reads the policy from the database.
+	Parental func() *parental.Cache
+	// ParentalTime returns the time keeper (story 57.14), read when the routes are
+	// mounted; nil: remote viewing is not counted or refused by the time rules.
+	ParentalTime func() *parental.TimeKeeper
 }
 
 // WireP32Remote builds the Cloudflare Stream integration over the
@@ -106,7 +115,22 @@ func WireP32Remote(q *queues.Handler, d P32RemoteDeps) (*tvremote.Integration, *
 	}
 	q.Validators[queues.CloudflareExtension] = in.ValidateSettings
 	WireExtensionTesters(q, d.DB, d.Secrets, d.Logger)
-	return in, ctl, func(r chi.Router) { (&tvremoteh.Handler{Integration: in, Remote: ctl, Publisher: pub}).Mount(r) }
+	return in, ctl, func(r chi.Router) {
+		var cache *parental.Cache
+		if d.Parental != nil {
+			cache = d.Parental()
+		}
+		// Epic 57 story 57.10: a restricted account tunes only what it may watch
+		// story 57.14: remote viewing counts toward the time rules too
+		var keeper parentalh.LiveTime
+		if d.ParentalTime != nil {
+			if k := d.ParentalTime(); k != nil {
+				keeper = k
+			}
+		}
+		gate := parentalh.RemoteGate(d.DB, parental.NewLiveTV(d.DB, cache), keeper)
+		(&tvremoteh.Handler{Integration: in, Remote: ctl, Publisher: pub, Parental: gate}).Mount(r)
+	}
 }
 
 // remoteAudit writes remote tunes, ends and key rotations to audit_log

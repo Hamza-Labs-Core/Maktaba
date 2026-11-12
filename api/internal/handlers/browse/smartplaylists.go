@@ -27,6 +27,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/collections"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 // Playlist kinds.
@@ -255,10 +256,13 @@ func (h *Handler) fillSmart(ctx context.Context, p *principal.Principal, ps *Pla
 	}
 	raw, _ := json.Marshal(ps.SmartQuery)
 	key := string(raw) + "|" + strings.Join(p.Libraries, ",") + "|" + strconv.FormatBool(p.AccessAllLibraries) + "|" + ps.UpdatedAt.String()
+	// story 57.03: a restricted account's count is evaluated under its limit every
+	// time; the cache holds only what an account with no limit was shown
+	limited := parental.From(ctx).Limits()
 	smartCounts.mu.Lock()
 	e, ok := smartCounts.byID[ps.ID]
 	smartCounts.mu.Unlock()
-	if !ok || e.key != key || time.Since(e.at) > smartCountTTL {
+	if limited || !ok || e.key != key || time.Since(e.at) > smartCountTTL {
 		cards, err := h.evaluateSmart(ctx, p, *ps.SmartQuery)
 		if err != nil {
 			return err
@@ -272,9 +276,11 @@ func (h *Handler) fillSmart(ctx context.Context, p *principal.Principal, ps *Pla
 				e.posters = append(e.posters, c.ID)
 			}
 		}
-		smartCounts.mu.Lock()
-		smartCounts.byID[ps.ID] = e
-		smartCounts.mu.Unlock()
+		if !limited {
+			smartCounts.mu.Lock()
+			smartCounts.byID[ps.ID] = e
+			smartCounts.mu.Unlock()
+		}
 	}
 	ps.Videos, ps.DurationSec, ps.PosterVideoIDs = int64(e.count), e.duration, append([]string{}, e.posters...)
 	return nil

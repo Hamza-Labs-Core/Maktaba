@@ -25,6 +25,8 @@ import { api, ApiError } from "../lib/api";
 import { videoTitle } from "../lib/videoTitle";
 import { subscribe } from "../lib/ws";
 import { useI18n } from "../lib/i18n";
+import { AgeTierControl } from "../components/parental/AgeTierControl";
+import { BlockedOr } from "../components/parental/AskParent";
 import { LoadError } from "../components/LoadError";
 import { MediaContextCard } from "../components/MediaContextCard";
 import { EnrichmentPanel } from "../components/EnrichmentPanel";
@@ -55,6 +57,8 @@ import { VIDEO_ANSWERS, forgetAnswers } from "../lib/pageCache";
 
 interface Video extends DisplayTitleVideo {
   id: string;
+  /** Epic 57: the age tier an admin set on this video itself (null: none); only an admin's answer has it */
+  age_tier_admin?: number | null;
   title?: string | null;
   filename: string;
   description?: string | null;
@@ -183,11 +187,26 @@ export function VideoDetail() {
     // Only a 404 / 403 means "not found" (a 403 does not say the video exists);
     // anything else is a failure to retry.
     if (err instanceof ApiError && (err.status === 404 || err.status === 403)) {
-      return (
+      const missing = (
         <ErrorState
           kind="not_found"
           title={t("video.notFound")}
           description={t("error.kind.notFound")}
+          action={
+            <Link to="/library" className="mkt-btn mkt-btn--secondary">
+              {t("nav.library")}
+            </Link>
+          }
+        />
+      );
+      // Epic 57: for a limited sign-in a 404 may be the limit: ask a parent
+      if (err.status !== 404 || !videoId) return missing;
+      return (
+        <BlockedOr
+          kind="video"
+          id={videoId}
+          onCheck={reload}
+          fallback={missing}
           action={
             <Link to="/library" className="mkt-btn mkt-btn--secondary">
               {t("nav.library")}
@@ -337,6 +356,8 @@ export function VideoDetail() {
         />
         {/* Phase 2: resume, watched, favorite, add to playlist, the series' lessons */}
         <VideoActions videoId={videoId} />
+        {/* Epic 57 story 57.01: an admin's own rating beats every other source */}
+        <AgeTierControl target={{ kind: "video", id: video.id }} current={video.age_tier_admin} />
       </header>
       <Tabs label={videoTitle(video)} items={items} value={tab} onChange={selectTab} />
       {/* story 54.20: installed plugins' panels, below Maktaba's own sections */}

@@ -24,7 +24,12 @@ from . import http
 from .errors import RuntimeFailed
 from .runtimes import Runtime
 
-__all__ = ["OPS", "PATHS", "Execution", "embeddings_of", "execute", "text_of"]
+__all__ = ["HOME_ONLY", "OPS", "PATHS", "Execution", "embeddings_of", "execute", "text_of"]
+
+#: a request body's own mark (not OpenAI's, never sent to a runtime): run it only on a
+#: runtime that is the serving machine itself (:meth:`LocalLLM.run`). It travels in the
+#: body so that the machine the home routes the request to holds to it too.
+HOME_ONLY = "maktaba_home_only"
 
 OPS = ("chat", "generate", "embed")
 PATHS = {"chat": "/v1/chat/completions", "generate": "/v1/completions", "embed": "/v1/embeddings"}
@@ -38,7 +43,7 @@ class Execution:
 
 
 def openai_body(op: str, model: str, body: Mapping[str, Any], stream: bool) -> dict[str, Any]:
-    out = {k: v for k, v in body.items() if k not in ("model", "stream")}
+    out = {k: v for k, v in body.items() if k not in ("model", "stream", HOME_ONLY)}
     out["model"] = model
     if op != "embed":
         out["stream"] = stream

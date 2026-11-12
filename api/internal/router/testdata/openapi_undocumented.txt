@@ -28,7 +28,6 @@ DELETE /api/reports/maktaba
 DELETE /api/search/recent
 DELETE /api/search/recent/{sid}
 DELETE /api/server/backups/dumps/{name}
-DELETE /api/stream/sessions/{id}
 DELETE /api/tags/{id}
 DELETE /api/tv/cluster/channels/{id}/placement
 DELETE /api/tv/remote/integration
@@ -66,7 +65,6 @@ GET /api/admin/logs/stream
 GET /api/admin/logs/tail
 GET /api/admin/logs/users
 GET /api/admin/perf/budgets
-GET /api/channels
 GET /api/channels/guide
 GET /api/channels/now
 GET /api/channels/playlist.m3u
@@ -103,7 +101,6 @@ GET /api/filler/pools
 GET /api/items/library/{id}/collections
 GET /api/language-packs
 GET /api/libraries/folders
-GET /api/libraries/manage
 GET /api/libraries/{id}/audit
 GET /api/libraries/{id}/impact
 GET /api/libraries/{id}/offline-summary
@@ -114,7 +111,6 @@ GET /api/me/activity
 GET /api/me/activity/settings
 GET /api/me/cloud-link
 GET /api/me/devices
-GET /api/me/history
 GET /api/me/history/{video_id}
 GET /api/me/sessions
 GET /api/me/tokens
@@ -170,8 +166,6 @@ GET /api/security/audit
 GET /api/server/backups
 GET /api/server/storage
 GET /api/server/storage/disks
-GET /api/stream/capabilities
-GET /api/stream/sessions/{id}
 GET /api/system/processes
 GET /api/system/sbom
 GET /api/thumbnails/{hash}/small.jpg
@@ -268,7 +262,6 @@ POST /api/models/{id}/download
 POST /api/models/{id}/test
 POST /api/notifications/read-all
 POST /api/notifications/{id}/read
-POST /api/pairing/approve
 POST /api/pairing/device
 POST /api/pairing/device/token
 POST /api/pairing/exchange
@@ -304,9 +297,6 @@ POST /api/series/{id}/enrichment/accept-all
 POST /api/server/restart
 POST /api/server/storage/check
 POST /api/server/storage/move
-POST /api/stream/sessions
-POST /api/stream/sessions/{id}/errors
-POST /api/stream/sessions/{id}/progress
 POST /api/tv/changes
 POST /api/tv/changes/{id}/approve
 POST /api/tv/changes/{id}/cancel
@@ -330,7 +320,6 @@ POST /api/tv/simulcast/destinations
 POST /api/tv/simulcast/destinations/{id}/test
 POST /api/tv/simulcast/outputs/{id}/start
 POST /api/tv/simulcast/outputs/{id}/stop
-POST /api/users
 POST /api/users/{id}/reset-password
 POST /api/users/{id}/unlock
 POST /api/videos/{id}/enrichment/accept
@@ -343,8 +332,6 @@ POST /api/videos/{id}/transcript/words
 POST /api/videos/{video_id}/downloaded
 POST /api/vocabulary
 POST /api/vocabulary/import
-POST /api/watch/heartbeat
-POST /api/watch/start
 POST /api/watch/stop
 PUT /api/admin/library-acl
 PUT /api/admin/logs/retention

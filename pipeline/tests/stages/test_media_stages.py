@@ -15,6 +15,7 @@ import pytest
 from maktaba_fp_core_media.stages import link as link_stage
 from maktaba_fp_core_media.stages.link import Candidate, build_index, match_candidates
 
+from maktaba_pipeline.discovery.ytdlp_sidecars import VideoInfo, parse_info_json
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import Subject
 from maktaba_pipeline.engine.media import ProcResult, reset_runner, set_runner
@@ -152,7 +153,8 @@ async def test_link_reads_the_ytdlp_info_json_sidecar_through_the_path_map(
     (tmp_path / "chan" / "ep1.info.json").write_text(
         json.dumps(
             {"id": "ytSide", "title": "Side title", "upload_date": "20240301", "duration": 1500,
-             "channel_id": "UCs", "playlist_id": "PLabc", "playlist_title": "Real list", "playlist_index": 3},
+             "channel_id": "UCs", "playlist_id": "PLabc", "playlist_title": "Real list", "playlist_index": 3,
+             "age_limit": 18},
         ),
         encoding="utf-8",
     )  # fmt: skip
@@ -165,6 +167,17 @@ async def test_link_reads_the_ytdlp_info_json_sidecar_through_the_path_map(
     assert (
         await db.fetchval("SELECT title FROM youtube_videos WHERE youtube_id = 'ytSide'")
         == "Side title"
+    )
+    # Epic 57 story 57.01 (T06): YouTube's age limit is stored for the age tiers, and a
+    # later file that does not say keeps it
+    assert (
+        await db.fetchval("SELECT age_limit FROM youtube_videos WHERE youtube_id = 'ytSide'") == 18
+    )
+    again = parse_info_json(json.dumps({"id": "ytSide", "title": "Side title"}))
+    assert isinstance(again, VideoInfo) and again.age_limit is None
+    await link_stage._upsert_youtube_video(db, again)
+    assert (
+        await db.fetchval("SELECT age_limit FROM youtube_videos WHERE youtube_id = 'ytSide'") == 18
     )
     assert await db.fetchval(
         "SELECT is_real FROM youtube_playlists WHERE playlist_id = 'PLabc'"

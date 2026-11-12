@@ -252,7 +252,7 @@ struct LiveChannelCard: View {
                 }
             }
             if let current = now?.current {
-                Text(current.title)
+                Text(current.displayTitle())
                     .font(Theme.body(28, weight: .medium))
                     .foregroundStyle(Theme.text)
                     .lineLimit(2, reservesSpace: true)
@@ -277,7 +277,7 @@ struct LiveChannelCard: View {
 
     private var nextLine: String {
         guard let next = now?.next else { return " " }
-        return String(localized: "Next: \(next.start.formatted(date: .omitted, time: .shortened)) \(next.title)")
+        return String(localized: "Next: \(next.start.formatted(date: .omitted, time: .shortened)) \(next.displayTitle())")
     }
 }
 

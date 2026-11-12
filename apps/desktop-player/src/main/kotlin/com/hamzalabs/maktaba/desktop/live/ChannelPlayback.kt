@@ -8,6 +8,7 @@ import com.hamzalabs.maktaba.core.api.LiveChannel
 import com.hamzalabs.maktaba.core.api.LiveFailure
 import com.hamzalabs.maktaba.core.api.LiveSource
 import com.hamzalabs.maktaba.core.api.LiveStream
+import com.hamzalabs.maktaba.core.api.programmeRefusal
 import com.hamzalabs.maktaba.core.api.errorKind
 import com.hamzalabs.maktaba.core.api.ErrorKind
 import kotlinx.coroutines.CancellationException
@@ -39,6 +40,11 @@ sealed interface ChannelStatus {
     data object Ended : ChannelStatus
     /** Live TV is off on the home (a stale page: `409 component_off`). */
     data object Off : ChannelStatus
+    /**
+     * "Not available right now" (Epic 57 story 57.10): the programme on air is above the
+     * account's limit; the home is asked again at [retryAt] (every minute when it named no time).
+     */
+    data class NotNow(val retryAt: java.time.Instant?) : ChannelStatus
 }
 
 /**
@@ -59,7 +65,14 @@ class ChannelPlayback(
     /** Stops the player. */
     private val hide: () -> Unit = {},
     private val signedOut: () -> Unit = {},
+    /** Whether this sign-in is under a parental limit now (only then is [gate] asked). */
+    private val limited: () -> Boolean = { false },
+    /** Asks the home to play a channel for a limited account: its signed address, or "not now". */
+    private val gate: (suspend (String) -> com.hamzalabs.maktaba.core.api.ChannelNow)? = null,
+    private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
+    private var recheck: Job? = null
+
     var channelId by mutableStateOf<String?>(null)
         private set
     var status by mutableStateOf<ChannelStatus>(ChannelStatus.Tuning)
@@ -78,6 +91,7 @@ class ChannelPlayback(
     fun open(id: String) {
         channelId = id
         job?.cancel()
+        recheck?.cancel()
         job = scope.launch { start(id) }
     }
 
@@ -120,6 +134,7 @@ class ChannelPlayback(
     /** The screen is left (or the window closed): the remote session is ended on the home. */
     suspend fun close() {
         job?.cancel()
+        recheck?.cancel()
         hide()
         withContext(NonCancellable) { runCatching { source.close() } }
     }
@@ -128,7 +143,20 @@ class ChannelPlayback(
         status = ChannelStatus.Tuning
         paused = false
         try {
-            val s = source.open(id)
+            var s = source.open(id)
+            val ask = gate.takeIf { s is LiveStream.Lan && limited() }
+            if (ask != null) {
+                when (val now = ask(id)) {
+                    is com.hamzalabs.maktaba.core.api.ChannelNow.NotNow -> {
+                        notNow(id, now.retryAt, now.clock)
+                        return
+                    }
+                    is com.hamzalabs.maktaba.core.api.ChannelNow.Playing -> {
+                        s = LiveStream.Lan(id, now.url)
+                        askAgain(id, now.until, allowed = true, now.clock)
+                    }
+                }
+            }
             val u = local(s) ?: throw LiveFailure("network", "not a stream this player can play")
             url = u
             opened++
@@ -146,8 +174,54 @@ class ChannelPlayback(
         } catch (e: ApiException.SignedOut) {
             signedOut()
         } catch (e: Exception) {
+            val programme = e.programmeRefusal()
+            if (programme != null) {
+                notNow(id, programme.retryAt)
+                return
+            }
             hide()
             status = if (e.errorKind() == ErrorKind.Off) ChannelStatus.Off else ChannelStatus.Failed(null, retryable = true)
+        }
+    }
+
+    /** The programme on air is above the limit: nothing plays, and the home is asked again later. */
+    private fun notNow(id: String, retryAt: java.time.Instant?, clock: com.hamzalabs.maktaba.core.api.HomeClock? = null) {
+        if (channelId != id) return
+        hide()
+        status = ChannelStatus.NotNow(retryAt)
+        askAgain(id, retryAt, allowed = false, clock)
+    }
+
+    /**
+     * Asks the home about [id] again when it said the answer may change. [clock] is the home's
+     * clock by the answer that named [at] (null: it sent none).
+     */
+    private fun askAgain(id: String, at: java.time.Instant?, allowed: Boolean, clock: com.hamzalabs.maktaba.core.api.HomeClock? = null) {
+        recheck?.cancel()
+        val ask = gate ?: return
+        val wait = com.hamzalabs.maktaba.core.api.channelAskAgainMs(at, allowed, nowMs(), clock) ?: return
+        recheck = scope.launch {
+            kotlinx.coroutines.delay(wait)
+            if (channelId != id) return@launch
+            if (!allowed) {
+                open(id)
+                return@launch
+            }
+            val now = try {
+                ask(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // no answer: what plays goes on (the home's streaming service stops it itself)
+                return@launch
+            }
+            when (now) {
+                is com.hamzalabs.maktaba.core.api.ChannelNow.NotNow -> {
+                    job?.cancel()
+                    notNow(id, now.retryAt, now.clock)
+                }
+                is com.hamzalabs.maktaba.core.api.ChannelNow.Playing -> askAgain(id, now.until, allowed = true, now.clock)
+            }
         }
     }
 }

@@ -44,6 +44,11 @@ class HomeCache(private val file: File) {
         }
     }
 
+    /** Forgets the kept answer (the account's parental limit changed: it was read under another). */
+    fun clear() {
+        synchronized(this) { runCatching { file.delete() } }
+    }
+
     companion object {
         /** The folder under the app's cache folder. */
         const val FOLDER = "home-rows"

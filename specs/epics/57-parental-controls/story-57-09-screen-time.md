@@ -1,6 +1,8 @@
 # Story 57.09 — Screen Time, Family Sharing and the App Store
 
 > Epic 57 · Phase 3 · Depends on: 57.04 · Needed by: —
+> **Status:** built (checked against the code 2026-11-12): the Player's behaviour and Help. Open: the Downtime check on a
+> real child device (T04) has not been run; its steps are in `docs/testflight.md`.
 
 ## Why
 

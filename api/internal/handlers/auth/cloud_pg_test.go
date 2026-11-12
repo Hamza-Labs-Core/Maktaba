@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/argon2id"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/cloudlink"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/cloudlink/cloudlinktest"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/jwt"
@@ -43,11 +44,22 @@ type cloudHome struct {
 	libs  []string
 }
 
+// lightHash is argon2id at its least cost, for fixtures whose tests do not look at
+// what a hash costs.
+func lightHash() argon2id.Params {
+	p := argon2id.DefaultParams()
+	p.Memory, p.Time = 64, 1
+	return p
+}
+
 func newCloudHome(t *testing.T) *cloudHome {
 	t.Helper()
 	db, _ := clustertest.ScratchDB(t)
 	set := testKeys(t)
 	h := NewHandler(Deps{DB: db, Keys: set})
+	// light hashes: these tests sign in and refresh many times, and what a hash
+	// costs is not what they check
+	h.Users.Params, h.RefreshTokens.Params = lightHash(), lightHash()
 	cloud := cloudlinktest.New(t)
 	store := &cloudlink.Store{DB: db}
 	h.Cloud = &CloudLinking{Store: store, Identity: &cloudlink.IdentitySource{Path: cloud.IdentityPath},
@@ -76,7 +88,7 @@ func newCloudHome(t *testing.T) *cloudHome {
 
 func (c *cloudHome) user(name string, admin bool) *users.User {
 	c.t.Helper()
-	u, err := users.New(c.db).Create(context.Background(), users.CreateInput{Username: name, Password: "correct horse battery", IsAdmin: admin})
+	u, err := c.h.Users.Create(context.Background(), users.CreateInput{Username: name, Password: "correct horse battery", IsAdmin: admin})
 	if err != nil {
 		c.t.Fatal(err)
 	}

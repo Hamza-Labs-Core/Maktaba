@@ -40,6 +40,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libaccess"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libpaths"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/mediaaccess"
 )
@@ -60,7 +61,10 @@ type Library struct {
 	Settings  json.RawMessage `json:"settings"`
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
-	Warnings  []string        `json:"warnings,omitempty"`
+	// AgeTier is the library's default age tier, set by an admin (Epic 57): a tier
+	// or null. Only an admin's answer to GET /api/libraries/{id} has it.
+	AgeTier  *parental.AdminTier `json:"age_tier,omitempty"`
+	Warnings []string            `json:"warnings,omitempty"`
 	// CollectionMode is how the library grid shows collections (Epic 56
 	// story 56.08, slot 0193): tab_only, hide_items or show_both.
 	CollectionMode string `json:"collection_mode,omitempty"`
@@ -375,6 +379,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("load library").Wrap(err))
 		return
 	}
+	lib.AgeTier = parental.AdminTierOf(r.Context(), h.DB, p, parental.TierOnLibrary, id)
 	common.WriteJSON(w, r, http.StatusOK, lib)
 }
 

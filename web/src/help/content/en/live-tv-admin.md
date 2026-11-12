@@ -32,6 +32,10 @@ Only admins can open this page. The channels themselves are built on [Channels](
 
 The guide carries pictures: each channel shows its logo, and each programme shows its series' poster (or the first episode's picture when the series has no poster), else the video's own thumbnail, else the channel's logo. Filler time shows the channel's logo. Each programme also has a description (its series, else the channel's name) and the channel's category. The pictures come from the same machine as the guide, contain no password or Plex token, and exist only for videos on a channel's schedule. How long Plex keeps them before asking again is **Guide images kept for (s)** in [Settings → Rules](/settings/rules) under Maktaba TV (see [Rules](/help/rules#tv)).
 
+### Who may use the tuner {#tuner-allowed}
+
+Plex and other guide software cannot sign in, so the tuner address, the guide (XMLTV) and the playlist (M3U) answer only this machine, your Plex server's own address, and the addresses you list under **Addresses allowed to use the tuner**. Everyone else on the network is refused. Type one address or range per line, such as `192.168.1.20` or `192.168.1.0/24`, then click **Save**. This keeps a child's device from reaching live TV around their limits.
+
 ### Add Maktaba to Plex {#add-to-plex}
 
 The quickest way is the **Plex** panel (below). To do it by hand in Plex (**Add it in Plex**):

@@ -88,6 +88,8 @@ export interface LibraryYouTube {
 
 export interface ManagedLibrary {
   id: string;
+  /** Epic 57: the library's default age tier (null: none) */
+  age_tier?: number | null;
   name: string;
   roots: ManagedRoot[];
   settings: Record<string, unknown>;

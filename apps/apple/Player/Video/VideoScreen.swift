@@ -16,6 +16,7 @@ struct VideoScreen: View {
     @State private var page: VideoPage
     /// The scroll view's size: the poster's largest box.
     @State private var area = CGSize(width: 390, height: 800)
+    @Environment(\.dismiss) private var dismiss
 
     init(context: PlayerContext, id: String) {
         self.context = context
@@ -45,7 +46,14 @@ struct VideoScreen: View {
     }
 
     @ViewBuilder private func content(_ page: VideoPage) -> some View {
-        if page.notAvailable {
+        if page.notAvailable, context.session.parental.current.limited {
+            // Epic 57 story 57.05: under a parental limit a video the home does not give is
+            // the blocked page (the home does not tell a hidden video from a missing one,
+            // and sends no title): the reason, Ask a parent, Enter parent PIN
+            BlockedPageView(context: context, subject: .video(id), back: { dismiss() }) {
+                Task { await page.load() }
+            }
+        } else if page.notAvailable {
             ContentUnavailableView {
                 Label {
                     Text("This video isn't available", tableName: "Video", comment: "A video that does not exist or this person may not see")

@@ -96,6 +96,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/tv/info", h.Info)
 	r.Get("/api/tv/hdhr", h.GetHDHR)
 	r.Patch("/api/tv/hdhr", h.PatchHDHR)
+	h.MountHDHRAllowed(r) // Epic 57 story 57.10
 	r.Get("/api/tv/onair", h.OnAir)
 	h.mountPlex(r)
 }

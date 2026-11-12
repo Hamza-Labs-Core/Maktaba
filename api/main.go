@@ -56,6 +56,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/pgdsn"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
@@ -377,7 +378,12 @@ func runServe() error {
 	capabilities := components.NewCapabilities(components.CapabilitiesOptions{Logger: logger,
 		AllOn: components.CapabilitiesGateOff() || runner.ReconcileOff()})
 
+	// Epic 57 story 57.03: the content filter's gate. It refuses every signed-in user
+	// until MountP6 gives it the policy cache (fail closed).
+	parentalGate := parental.NewGate()
+
 	r := router.New(router.Deps{
+		Parental:           parentalGate,
 		Capabilities:       capabilities,
 		License:            licRef,
 		Usage:              usageCounter,
@@ -465,7 +471,7 @@ func runServe() error {
 	// machines' mutual TLS beside plain HTTP (nil: plain HTTP only)
 	var homeLinkSrv *homeLink
 	if nodeCfg.Enabled {
-		rt, closeNode, err := mountNode(r, nodeCfg, statsDataDir, loops, logger)
+		rt, closeNode, err := mountNode(r, nodeCfg, statsDataDir, loops, parentalGate, logger)
 		if err != nil {
 			return err
 		}
@@ -585,16 +591,25 @@ func runServe() error {
 			components.Start(loops, appDB, func() string { return pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping) }, logger)
 			var eventBus *eventbus.Bus
 			eventHub := ws.NewHub()
+			// Epic 57: the restricted accounts' cache and the age tiers' recompute, for
+			// the surfaces that filter by them
+			parentalHandles := &router.ParentalHandles{}
+			streamSigner := streamURLSigner(auth.keys, logger)
 			router.MountP6(r, router.P6Deps{
-				EventHub:     eventHub,
-				OnBus:        func(b *eventbus.Bus) { eventBus = b },
-				Capabilities: capabilities,
-				Loops:        loops,
-				Settings:     runtimeSettings,
-				Secrets:      homeSecrets,
+				EventHub:       eventHub,
+				OnParental:     func(c *parental.Cache) { parentalHandles.Cache = c },
+				OnParentalTime: func(k *parental.TimeKeeper) { parentalHandles.Time = k },
+				ParentalGate:   parentalGate,
+				OnBus:          func(b *eventbus.Bus) { eventBus = b },
+				Capabilities:   capabilities,
+				Loops:          loops,
+				Settings:       runtimeSettings,
+				Secrets:        homeSecrets,
 				OnQueues: func(q *queues.Handler) {
 					_, remoteCtl, mountRemote = router.WireP32Remote(q, router.P32RemoteDeps{
 						DB: appDB, Secrets: homeSecrets, Logger: logger, Notifier: notifyHub, Loops: loops,
+						Parental:     func() *parental.Cache { return parentalHandles.Cache },
+						ParentalTime: func() *parental.TimeKeeper { return parentalHandles.Time },
 					})
 				},
 				DB:                   appDB,
@@ -607,7 +622,7 @@ func runServe() error {
 				BusResettle:          func(ctx context.Context) string { return pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping) },
 				EnrichAutoAcceptCtx:  busCtx,
 				PerfRegistry:         perfRegistry,
-				URLSigner:            streamURLSigner(auth.keys, logger),
+				URLSigner:            streamSigner,
 			})
 			logger.Info("p6: handlers mounted", "event", "p6_mounted")
 
@@ -710,6 +725,9 @@ func runServe() error {
 				DataDir:       statsDataDir,
 				Secrets:       homeSecrets,
 				RemoteInfo:    router.RemoteAvailability(remoteCtl),
+				Parental:      parentalHandles.Cache,
+				Time:          parentalHandles.Time,
+				ChannelSigner: channelSigner(streamSigner),
 			})
 			if mountRemote != nil {
 				mountRemote(r) // Epic 32 story 32.6: /api/tv/remote
@@ -741,13 +759,14 @@ func runServe() error {
 			// stats + export (29.3/29.5/29.6). The session reaper is a
 			// boot goroutine (interrupted-session reap every minute +
 			// daily retention purge), mirroring runPairingSweep.
-			router.MountP29(r, router.P29Deps{DB: appDB, Driver: "postgres", License: licRef, Secrets: homeSecrets})
+			router.MountP29(r, router.P29Deps{DB: appDB, Driver: "postgres", License: licRef, Secrets: homeSecrets, Time: parentalHandles.Time})
 			// Epic 51 story 51.08: the components' admin routes (desired state, holds,
 			// preview and apply), the same service the `components` CLI uses
 			// and the capabilities every user reads, pushed on /ws/home (story 51.09)
 			componentsSvc := router.MountP51(r, router.P51Deps{DB: appDB, License: licRef, Logger: logger,
 				Capabilities: capabilities, DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping),
-				Bus: eventBus, Hub: eventHub, RunCapabilities: true, Loops: loops})
+				Bus: eventBus, Hub: eventHub, RunCapabilities: true, Loops: loops,
+				Parental: router.ParentalCapabilities(parentalHandles.Cache)})
 			// Epic 53 story 53.12: the queue's numbers on the home's /metrics, for the Queue
 			// and Processing dashboards (the home only: a joined machine reads the same table)
 			queues.RegisterMetrics(appDB)
@@ -770,6 +789,18 @@ func runServe() error {
 			loops.Declare("watch_reaper", runner.Func(reaper.Run))
 			// Epic 56 story 56.01: queues not used for 7 days go, checked every hour
 			loops.Declare("play_queue_sweep", runner.Func(func(ctx context.Context) { playqueue.Sweep(ctx, appDB, time.Hour, logger) }))
+			// Epic 57 story 57.01: the admin's age-tier routes, the ratings table, and the
+			// recompute that writes each video's tier from the queue of slot 0220
+			parentalHandles.Recompute = router.MountP57Tiers(r, router.P57TiersDeps{DB: appDB, Logger: logger})
+			if recompute := parentalHandles.Recompute; recompute != nil {
+				loops.Declare("parental_recompute", runner.Func(func(ctx context.Context) { _ = recompute.Run(ctx) }))
+				// Epic 57 story 57.17: the review list of the tiers detected from transcripts
+				router.MountP57Review(r, router.P57ReviewDeps{DB: appDB, Recompute: recompute, Logger: logger})
+			}
+			// Epic 57 stories 57.06 and 57.08: ask a parent, the parent PIN, a child's
+			// activity, and the loop that writes watched events and keeps 90 days
+			router.MountP57Requests(r, router.P57RequestsDeps{DB: appDB, Cache: parentalHandles.Cache,
+				Time: parentalHandles.Time, Notifier: notifyHub, Loops: loops, Logger: logger})
 			usageCounter.Attach(appDB)
 			loops.Declare("usage_counter", runner.Func(func(ctx context.Context) { usageCounter.Run(ctx, usage.DefaultFlushEvery) }))
 			logger.Info("p29: watch-analytics handlers mounted + reaper started",

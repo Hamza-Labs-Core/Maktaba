@@ -167,6 +167,8 @@ func buildPlacement() placement.Table {
 		"/api/extensions", "/api/models", "/api/settings/", "/api/reports", "/api/explain",
 		"/api/issues", "/api/recommendations", "/api/notifications", "/api/devices",
 		"/api/watch/", "/api/activity", "/api/entitlements", "/api/pairing/",
+		// Epic 57: who is restricted and their rules (accounts, kept on the home)
+		"/api/parental",
 		// the home's identity for the apps (Epic 42 story 42.2): the home's, from any machine
 		"/api/discovery/",
 		"/api/stream/", "/graphql", "/ws/",
@@ -179,6 +181,8 @@ func buildPlacement() placement.Table {
 		// Epic 52: word review, its vocabulary and the language packs' report (home
 		// admins only; the edits write the home's transcripts)
 		"/api/review/", "/api/vocabulary", "/api/language-packs",
+		// Epic 57: the parental controls (story 57.01: the ratings table)
+		"/api/parental/",
 	))
 	return t
 }

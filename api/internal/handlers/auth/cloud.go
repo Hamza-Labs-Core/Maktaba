@@ -242,17 +242,21 @@ func (h *Handler) respondCloudNative(w http.ResponseWriter, r *http.Request, u *
 		httperror.Write(w, r, httperror.Internal("resolve library acl").Wrap(err))
 		return
 	}
-	access, err := jwt.Sign(h.Keys, claims)
-	if err != nil {
-		httperror.Write(w, r, httperror.Internal("sign access token").Wrap(err))
-		return
-	}
+	// the refresh token first: the access token names its family (`fam`, Epic 57
+	// story 57.04)
 	rt, err := h.RefreshTokens.Issue(r.Context(), refresh.IssueInput{
 		UserID:     u.ID,
 		ClientMeta: map[string]any{"ip": remoteIP(r), "ua": r.UserAgent(), "origin": "cloud", "cloud_scope": scope},
 	})
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("issue refresh token").Wrap(err))
+		return
+	}
+	claims.Fam = rt.FamilyID
+	access, err := jwt.Sign(h.Keys, claims)
+	if err != nil {
+		_ = h.RefreshTokens.RevokeFamily(r.Context(), rt.FamilyID)
+		httperror.Write(w, r, httperror.Internal("sign access token").Wrap(err))
 		return
 	}
 	if err := h.Cloud.Store.RecordSignIn(r.Context(), cloudlink.KindRefresh, rt.FamilyID, u.ID, scope); err != nil {

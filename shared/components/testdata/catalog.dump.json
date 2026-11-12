@@ -79,7 +79,10 @@
         "api:sharepath_reload",
         "api:browse_rowcache_listen",
         "api:play_queue_sweep",
-        "api:plugins_catalog"
+        "api:parental_cache_listen",
+        "api:plugins_catalog",
+        "api:parental_recompute",
+        "api:parental_activity"
       ],
       "on_demand": false,
       "placement": "any",
@@ -830,6 +833,56 @@
         "lang.ar",
         "lang.en",
         "model.refine"
+      ]
+    },
+    {
+      "bundles": [
+        "full"
+      ],
+      "conflicts": [],
+      "desc_key": "components.parental.detect.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "processing",
+      "id": "parental.detect",
+      "in_payload": false,
+      "kind": "stages",
+      "licence": "",
+      "loops": [],
+      "on_demand": false,
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "plugin": "",
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.130",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "content_screen"
+      ],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.parental.detect.title",
+      "wants": [
+        "transcription",
+        "classify",
+        "llm"
       ]
     },
     {
@@ -3506,6 +3559,7 @@
     "subtitles",
     "runtime.lang",
     "review.words",
+    "parental.detect",
     "model.embedder",
     "search.semantic",
     "classify",

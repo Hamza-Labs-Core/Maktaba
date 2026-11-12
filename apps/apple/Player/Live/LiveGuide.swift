@@ -221,7 +221,7 @@ private struct GuideBlockLabel: View {
     var body: some View {
         let live = block.isOn(at: now)
         VStack(alignment: .leading, spacing: 2) {
-            Text(block.title)
+            Text(verbatim: block.displayTitle())
                 .font(.maktabaBody(MaktabaTokens.TypeSize.sm, weight: .medium))
                 .foregroundStyle(Color.mktText)
                 .lineLimit(2)
@@ -261,7 +261,7 @@ struct LiveProgrammeSheet: View {
                             .font(.maktabaBody(MaktabaTokens.TypeSize.sm, weight: .semibold))
                             .foregroundStyle(Color.mktBrassText)
                     }
-                    Text(block.title)
+                    Text(verbatim: block.displayTitle())
                         .font(.maktabaHeading(MaktabaTokens.TypeSize.h1, relativeTo: .title))
                         .foregroundStyle(Color.mktText)
                         .accessibilityIdentifier("live.detail.title")

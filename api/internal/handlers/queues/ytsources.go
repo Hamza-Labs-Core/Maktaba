@@ -28,10 +28,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lib/pq"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/search"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libaccess"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 // SourceResolver resolves a pasted channel or playlist URL
@@ -77,6 +79,9 @@ type YouTubeSource struct {
 	LastCheckedAt *time.Time      `json:"last_checked_at"`
 	LastFetchedAt *time.Time      `json:"last_fetched_at"`
 	Downloads     SourceDownloads `json:"downloads"`
+	// AgeTier is the age tier an admin set on the source (Epic 57): a tier or null.
+	// Only an admin's answer to GET /api/libraries/{id}/youtube/sources has it.
+	AgeTier *parental.AdminTier `json:"age_tier,omitempty"`
 }
 
 const sourceCols = `s.id::text, s.library_id::text, s.kind, s.url, s.external_id, s.folder, s.mode, s.last_on_mode, s.added_at,
@@ -147,6 +152,12 @@ func (h *Handler) ListSources(w http.ResponseWriter, r *http.Request) {
 	if err := rows.Err(); err != nil {
 		writeErr(w, r, "sources", err)
 		return
+	}
+	// the rating control's current value, for an admin alone (nil for anyone else)
+	if tiers := parental.AdminTiers(ctx, h.DB, principal.FromContext(ctx), parental.TierOnYouTubeSource, id); tiers != nil {
+		for i := range out {
+			out[i].AgeTier = tiers[out[i].ID]
+		}
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": out})
 }

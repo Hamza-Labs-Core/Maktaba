@@ -104,9 +104,16 @@ loops      = ["api:process_recorder", "api:license_refresher", "api:license_relo
               "api:eventbus_run", "api:eventbus_pruner", "api:idempotency_sweep",
               "api:jwt_key_reaper", "api:queues_snapshots", "api:sharepath_reload",
               "api:browse_rowcache_listen", "api:play_queue_sweep",
+              # Epic 57 story 57.02: drops a restricted account's limit from memory when it changes
+              "api:parental_cache_listen",
               # the plugin store's signed lists and the kill switch (story 54.17 §1): idle
               # unless a plugin is installed or Browse was opened in the last 7 days
-              "api:plugins_catalog"]
+              "api:plugins_catalog",
+              # the age tiers' recompute (story 57.01): works the queue of slot 0220
+              "api:parental_recompute",
+              # asking a parent and a child's activity (stories 57.06, 57.08): closes old
+              # requests, records what was watched, deletes activity older than 90 days
+              "api:parental_activity"]
 settings   = ["rules.storage", "rules.system_health", "rules.search"]
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = ["full", "core", "worker"]
@@ -317,6 +324,23 @@ platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 drain     = { grace_s = 30, checkpoint = false }
 bundles   = ["full", "worker"]
 since     = "0.3.86"
+
+# Epic 57 story 57.17: each video's age tier worked out from its transcript on the home's
+# own model, for the parental controls. Home only: a transcript goes to the cluster's LLM
+# door and nowhere else. No model, no detected tiers
+[[component]]
+id        = "parental.detect"
+kind      = "stages"
+group     = "processing"
+title_key = "components.parental.detect.title"
+desc_key  = "components.parental.detect.desc"
+stages    = ["content_screen"]
+wants     = ["transcription", "classify", "llm"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+drain     = { grace_s = 30, checkpoint = false }
+bundles   = ["full"]
+since     = "0.3.130"
 
 [[component]]
 id        = "search.semantic"

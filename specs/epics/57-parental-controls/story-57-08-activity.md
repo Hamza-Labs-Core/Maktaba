@@ -1,6 +1,8 @@
 # Story 57.08 — Activity for guardians
 
 > Epic 57 · Phase 2 (API), 3 (iOS) · Depends on: 57.02, 57.06, 57.07 · Needed by: 57.13
+> **Status:** built (checked against the code 2026-11-12): the API, the Player on iPhone and iPad, and the web
+> (`/family/{id}/activity`).
 
 ## Why
 

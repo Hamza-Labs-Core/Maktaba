@@ -55,6 +55,14 @@ data class Problem(
     val feature: String = "",
     /** The relay's answers name their reason in `error` (story 50.19). */
     val error: String = "",
+    /** Why, in a word (Epic 57: `outside_slot`, `limit_reached`, `no_heartbeat`; `programme`). */
+    val reason: String = "",
+    /** When watching opens again (a `parental-time` refusal), RFC 3339; empty when the home named none. */
+    val nextAllowedAt: String = "",
+    /** When to ask again (a `restricted` programme on live TV), RFC 3339; empty when the home named none. */
+    val retryAt: String = "",
+    /** The home's time for this answer (beside `retry_at` and `next_allowed_at` on a channel), RFC 3339; empty from an older home. */
+    val now: String = "",
 ) {
     /** The last part of [type] (`rendition-not-found`): the home's domain differs by install. */
     val slug: String get() = type.substringAfter("/problems/", "").trimEnd('/')
@@ -67,7 +75,8 @@ data class Problem(
             val o = runCatching { ApiClient.json.parseToJsonElement(text) as? JsonObject }.getOrNull() ?: return null
             fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull.orEmpty()
             val p = Problem(s("type"), s("title"), s("status").toDoubleOrNull()?.toInt() ?: 0, s("detail"), s("code"),
-                s("component"), s("feature"), s("error"))
+                s("component"), s("feature"), s("error"),
+                s("reason"), s("next_allowed_at"), s("retry_at"), s("now"))
             return if (p.type.isEmpty() && p.title.isEmpty() && p.code.isEmpty() && p.error.isEmpty()) null else p
         }
     }
@@ -124,11 +133,25 @@ fun Throwable.errorKind(): ErrorKind {
  * A failure as a screen keeps it: its [kind] (what a person reads) and the home's own words for
  * the Details disclosure and the log ([details]: never the main message).
  */
-data class Failure(val kind: ErrorKind, val details: String? = null, val retryAfterSec: Long? = null) {
+data class Failure(
+    val kind: ErrorKind,
+    val details: String? = null,
+    val retryAfterSec: Long? = null,
+    /** Whether, and how surely, this is the home saying it cannot read the account's watching time. */
+    val timeUnknown: TimeUnknown = TimeUnknown.No,
+) {
+    /**
+     * Whether the screen says "your home can't check your watching time": the home's own code
+     * for it, or, from a home older than that code, a bare 503 to a [restricted] account. A
+     * rate limit (429) or any other outage keeps its own words.
+     */
+    fun cannotCheckTime(restricted: Boolean): Boolean =
+        timeUnknown == TimeUnknown.Yes || (restricted && timeUnknown == TimeUnknown.OlderHome)
+
     companion object {
         fun of(e: Throwable): Failure {
             val status = e.findCause<ApiException.Status>()
-            return Failure(e.errorKind(), e.errorDetails(), status?.retryAfterSec)
+            return Failure(e.errorKind(), e.errorDetails(), status?.retryAfterSec, status?.let { timeUnknown(it.code, it.problem) } ?: TimeUnknown.No)
         }
     }
 }

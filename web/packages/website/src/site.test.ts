@@ -123,6 +123,21 @@ describe("T10: every page's head", () => {
       expect(read(f)).not.toContain('rel="canonical"');
     }
   });
+
+  // the first paint waits for the whole document (scripts/shell.mjs, RENDER_WHOLE): a paint of
+  // a half-parsed header drew the nav where the language switch belongs
+  // (e2e/first-paint.spec.ts forces it)
+  it("every page, the 404 pages too, waits for its last element before the first paint", () => {
+    const files = walk(DIST).filter((f) => f.endsWith(".html"));
+    expect(files.length).toBeGreaterThan(pages.length);
+    for (const f of files) {
+      const html = read(f);
+      const head = html.slice(0, html.indexOf("</head>"));
+      expect(head, f).toContain('<link rel="expect" href="#announce" blocking="render" />');
+      expect(html.match(/\bid="announce"/g), f).toHaveLength(1);
+      expect(html.indexOf('id="announce"'), f).toBeGreaterThan(html.lastIndexOf("</footer>"));
+    }
+  });
 });
 
 describe("T11: sitemap.xml and robots.txt", () => {

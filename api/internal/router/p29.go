@@ -24,6 +24,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/analytics"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/watch"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 )
@@ -43,6 +44,10 @@ type P29Deps struct {
 	// Secrets holds the home's salt for the viewers' addresses (AnalyticsSalt). Nil:
 	// no address is hashed.
 	Secrets secrets.Store
+
+	// Time, when set, refuses a watch while its account's time is over (Epic 57
+	// story 57.14): the keeper MountP6 made (P6Deps.OnParentalTime).
+	Time *parental.TimeKeeper
 }
 
 // MountP29 attaches the Epic 29 route handlers onto r. Safe to skip when
@@ -55,7 +60,11 @@ func MountP29(r chi.Router, d P29Deps) {
 	if d.Secrets != nil {
 		salt = AnalyticsSalt(context.Background(), d.Secrets, nil)
 	}
-	(&watch.Handler{DB: d.DB, IPSalt: salt}).Mount(r)
+	wh := &watch.Handler{DB: d.DB, IPSalt: salt}
+	if d.Time != nil { // a nil keeper must stay a nil interface
+		wh.Time = d.Time
+	}
+	wh.Mount(r)
 	ah := &analytics.Handler{DB: d.DB, Driver: d.Driver}
 	if d.License != nil {
 		ah.Advanced = func() (bool, string) {

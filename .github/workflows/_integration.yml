@@ -11,6 +11,7 @@ on:
     inputs:
       integration: { type: boolean, default: true }
       compat_prev: { type: boolean, default: true }
+      parental_bypass: { type: boolean, default: true }
 
 permissions:
   contents: read
@@ -109,6 +110,21 @@ jobs:
       # path that could deadlock with the retention is caught here
       - name: Strict lock order on the test databases
         run: psql "postgres://maktaba:maktaba@localhost:5432/maktaba" -c "ALTER ROLE maktaba SET maktaba.lock_order_strict = 'on'"
+
+      # The tier's Go tests make a scratch database each from a migrated template and drop
+      # it (some hundreds in a run), and nothing on this server outlives the job: it does
+      # not wait for the disk. Measured on six of the API's packages that use it most
+      # (2026-11-12): 211 s of package time with fsync on, 168 s with it off. The tier's
+      # budget is unchanged.
+      - name: The test Postgres does not wait for the disk
+        run: |
+          psql "postgres://maktaba:maktaba@localhost:5432/maktaba" \
+            -c "ALTER SYSTEM SET fsync = off" \
+            -c "ALTER SYSTEM SET synchronous_commit = off" \
+            -c "ALTER SYSTEM SET full_page_writes = off" \
+            -c "SELECT pg_reload_conf()"
+          sleep 1
+          test "$(psql "postgres://maktaba:maktaba@localhost:5432/maktaba" -Atc "SHOW fsync")" = off
 
       - name: Run migrations (first run — applies pending)
         run: make migrate
@@ -259,3 +275,98 @@ jobs:
 
       - name: The previous release on this build's database
         run: make compat-prev
+
+  # Epic 57 story 57.13: the parental bypass rehearsal. A home is seeded on this job's
+  # Postgres behind the production router, and a caller held to 9+ (the restricted child,
+  # the child through the cloud, through the relay's loopback path, and an unrestricted
+  # account whose device said 9+) asks every probe of the surface registry
+  # (api/internal/parental/surfaces.go) and every surface a GET cannot ask for what is
+  # above its limit. An answer that names a hidden subject, or that differs from the
+  # answer for an id that names nothing, fails the job. The rehearsal also proves itself:
+  # an unrestricted viewer must be shown the fixtures, and with the filter taken off one
+  # surface it must fail naming it. The story's other attempts (the role table, the time
+  # rules on a fake clock, the device signal's ratchet, the registry walk) run beside it.
+  parental-bypass:
+    if: inputs.parental_bypass
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg16
+        env:
+          POSTGRES_USER: maktaba
+          POSTGRES_PASSWORD: maktaba
+          POSTGRES_DB: maktaba
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U maktaba"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      MAKTABA_TEST_PG_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api
+
+      - name: The rehearsal
+        working-directory: api
+        # the home logs every request it answers: the whole output, the home's log with
+        # it, is kept below whether the rehearsal passes or not
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/parental-bypass"
+          mkdir -p "$out"
+          set +e
+          go test -tags parental_bypass -count=1 -timeout 10m -v \
+            -run 'TestParentalBypass|TestP57|TestPGTime|TestDeviceSignalRidesTheAccessToken|TestEveryRouteHasParentalSurface|TestParentalSurfaces' \
+            ./internal/router/ > "$out/rehearsal.log" 2>&1
+          rc=$?
+          set -e
+          # the tests' own lines; the home's request log stays in the file
+          grep -E '^(=== RUN|--- |\s+p57_|\s+parental_|PASS|FAIL|ok|panic)' "$out/rehearsal.log" | grep -v '^=== RUN' || true
+          ../tools/ci/no-pg-skips.sh "$out/rehearsal.log"
+          # every test the rehearsal names must have run and passed: one that was
+          # renamed, deleted or skipped fails the job (the list is held to the code by
+          # TestParentalBypassListNamesEveryTest)
+          while IFS= read -r t; do
+            case "$t" in ''|'#'*) continue ;; esac
+            grep -q -- "--- PASS: $t " "$out/rehearsal.log" || { echo "::error::$t did not pass"; rc=1; }
+          done < ../tools/ci/parental-bypass-tests.txt
+          {
+            echo "### Parental bypass rehearsal"
+            echo
+            echo '```'
+            grep -E 'registry probes, [0-9]+ requests, [0-9]+ leaks|surfaces show the fixtures' "$out/rehearsal.log" | sed -E 's/^ +[a-z0-9_]+\.go:[0-9]+: //' || true
+            echo "passed: $(grep -c -- '--- PASS' "$out/rehearsal.log" || true), failed: $(grep -c -- '--- FAIL' "$out/rehearsal.log" || true)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+
+      - name: Keep the home's log
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: parental-bypass-log
+          path: ${{ runner.temp }}/parental-bypass
+          if-no-files-found: ignore
+

@@ -1229,6 +1229,24 @@
         }
       }
     },
+    "tv.parental.askOnPhone" : {
+      "comment" : "Epic 57: the blocked page on Apple TV, under Ask a parent",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يمكن لأحد الوالدين الرد من Maktaba على iPhone أو iPad."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A parent can answer from Maktaba on their iPhone or iPad."
+          }
+        }
+      }
+    },
     "▲ ▼ for another channel." : {
       "localizations" : {
         "ar" : {

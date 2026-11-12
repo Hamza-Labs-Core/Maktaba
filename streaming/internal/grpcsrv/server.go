@@ -30,6 +30,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/probe"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/session"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slots"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/timelimit"
 )
 
 // OpenSessionRequest mirrors §9.9's proto shape.
@@ -134,6 +135,11 @@ type Server struct {
 	Host              string // hostname, recorded in row.Host
 	Now               func() time.Time
 	SessionTTL        time.Duration // expires_at = now + TTL (default 30 min)
+
+	// TimeLimits keeps what the API pushes of restricted accounts' time limits
+	// (Epic 57 story 57.14), shared with the HTTP server's guard. Nil: the push is
+	// answered with an error, and the API refuses the stream.
+	TimeLimits *timelimit.Registry
 
 	// Transcode spawns FFmpeg for transcode-mode sessions (HLB-328).
 	// Nil → no FFmpeg is spawned (the pre-HLB-328 behaviour: manifest

@@ -18,6 +18,14 @@ final class LivePlayback {
         case failed(HomeFailure)
         /// The home ended the remote session.
         case ended
+        /// Epic 57 story 57.10: the programme on now is above the account's parental limit
+        /// (`GET /api/channels/{id}/access`): nothing plays and the slate shows, until the
+        /// home says the channel may be watched again (the next programme, a parent's change).
+        case slated
+        /// Epic 57 story 57.14: the account's watching time is over (403 `parental-time`
+        /// from the channel's access, play or stream): nothing plays and the time's-up
+        /// screen shows, not the slate.
+        case timeUp(TimeUp)
     }
 
     let client: APIClient
@@ -25,6 +33,10 @@ final class LivePlayback {
     private(set) var channels: [LiveChannel]
     private(set) var index: Int
     private(set) var phase = Phase.starting
+    /// Whether this sign-in is under a parental limit (the session's store): the home is
+    /// then asked whether the programme on a channel may be watched before it is tuned, and
+    /// again when the answer may change.
+    @ObservationIgnored var limited: () -> Bool = { false }
     /// Bumped on every tune: the banner shows again.
     private(set) var tunes = 0
     /// The picture waits for data while the channel plays (a buffering stall): AVPlayer's
@@ -152,6 +164,10 @@ final class LivePlayback {
         stallObserver = nil
     }
 
+    /// How long the slate stays before the home is asked again, after it refused the
+    /// programme itself.
+    static let afterRefusal: Duration = .seconds(30)
+
     private func retune(settle: Bool) {
         guard let id = channel?.id else { return }
         tunes += 1
@@ -170,14 +186,79 @@ final class LivePlayback {
     /// Opens and watches one channel until the task is cancelled; the channel's remote
     /// session (if it had one) is ended on the way out.
     private func play(_ id: String) async {
-        let source = LiveSource(api: client, channel: id)
-        await run(source)
-        // in a task of its own: this one is cancelled by now (leaving, another channel), and a
-        // cancelled task's request would never reach the home
-        await Task { await source.close() }.value
+        while !Task.isCancelled {
+            // under a parental limit the channel starts once the home says its programme may
+            // be watched (the slate until then); anyone else's starts at once
+            var recheck: Date?
+            if limited() {
+                guard let next = await waitUntilAllowed(id) else { return }
+                recheck = next
+            }
+            let source = LiveSource(api: client, channel: id)
+            let slated = await run(source, channel: id, recheck: recheck)
+            // in a task of its own: this one is cancelled by now (leaving, another channel), and a
+            // cancelled task's request would never reach the home
+            await Task { await source.close() }.value
+            // the programme that started is above the limit: wait for the next one
+            guard slated else { return }
+        }
     }
 
-    private func run(_ source: LiveSource) async {
+    /// Asks the home whether the programme on `channel` now may be watched, and waits (the
+    /// slate showing) while it may not. Returns when to ask again once it may; nil when the
+    /// tune was cancelled. The home's streaming service refuses the stream itself, so this
+    /// only decides what the screen says and that nothing is asked for meanwhile. A home
+    /// that does not answer (a channel it does not give answers 404) is tuned as before, and
+    /// the player says what the home answers.
+    private func waitUntilAllowed(_ channel: String) async -> Date? {
+        while !Task.isCancelled {
+            do {
+                let access = try await client.channelAccess(channel)
+                guard !Task.isCancelled else { return nil }
+                if !(access.restricted && !access.allowed) { return Date.now.addingTimeInterval(access.askAgain()) }
+                if phase != .slated {
+                    replaceItem(nil)
+                    phase = .slated
+                }
+                do { try await Task.sleep(for: .seconds(access.askAgain())) } catch { return nil }
+            } catch {
+                if Log.isCancellation(error) { return nil }
+                if let up = TimeUp(error) {
+                    // the account's time is over: time's up, and nothing is asked for
+                    timeIsUp(up)
+                    return nil
+                }
+                guard let after = HomeFailure(error).kind.timeUnknownRetrySeconds else {
+                    return Date.now.addingTimeInterval(30)
+                }
+                // the home cannot read the account's time yet: nothing is tuned and nothing
+                // is said to be over; asked again as its Retry-After says
+                do { try await Task.sleep(for: .seconds(after)) } catch { return nil }
+            }
+        }
+        return nil
+    }
+
+    /// The home said the account's watching time is over: nothing plays, time's up shows.
+    private func timeIsUp(_ up: TimeUp) {
+        replaceItem(nil)
+        phase = .timeUp(up)
+    }
+
+    /// Whether the programme on `channel` now is above the limit (false when the home does
+    /// not say), when to ask again, and the time's-up answer when the home gave that.
+    private func blockedNow(_ channel: String) async -> (blocked: Bool, again: Date, timeUp: TimeUp?) {
+        do {
+            let access = try await client.channelAccess(channel)
+            return (access.restricted && !access.allowed, Date.now.addingTimeInterval(access.askAgain()), nil)
+        } catch {
+            return (false, Date.now.addingTimeInterval(30), TimeUp(error))
+        }
+    }
+
+    /// Plays the channel until the tune is cancelled or it fails. True when it stopped for
+    /// the slate: the programme now on is above the limit.
+    private func run(_ source: LiveSource, channel: String, recheck: Date?) async -> Bool {
         do {
             let (url, path) = try await source.open()
             try Task.checkCancellation()
@@ -186,14 +267,23 @@ final class LivePlayback {
             replaceItem(AVPlayerItem(url: itemURL))
             player.play()
             phase = .playing
-            await watch(source, path: path, opened: itemURL)
+            return await watch(source, path: path, opened: itemURL, channel: channel, recheck: recheck)
         } catch is CancellationError {
-            return
+            return false
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return false }
             replaceItem(nil)
             Log.failure("play live channel", error)
-            phase = .failed(HomeFailure.live(error))
+            if ChannelAccess.programmeRefused(error) {
+                // 57.10: the home refused the programme itself (the access answer came
+                // before the programme changed, or this TV's clock is off): the slate, and
+                // the home is asked again in half a minute (never at once: it just said no)
+                phase = .slated
+                do { try await Task.sleep(for: Self.afterRefusal) } catch { return false }
+                return true
+            }
+            phase = TimeUp(error).map(Phase.timeUp) ?? .failed(HomeFailure.live(error))
+            return false
         }
     }
 
@@ -215,8 +305,9 @@ final class LivePlayback {
     /// While the channel plays: the remote session's news (a new token is kept for a
     /// reopen; an ended session ends here), and an item that failed opened again (an
     /// encoder that restarted), twice, then said.
-    private func watch(_ source: LiveSource, path: LivePath, opened: URL) async {
+    private func watch(_ source: LiveSource, path: LivePath, opened: URL, channel: String, recheck: Date?) async -> Bool {
         relayURL = opened
+        var recheck = recheck
         let events = Task { @MainActor [weak self] in
             for await e in source.events {
                 switch e {
@@ -229,7 +320,22 @@ final class LivePlayback {
         var reopened = 0
         while !Task.isCancelled, phase == .playing {
             try? await Task.sleep(for: .seconds(3))
-            guard !Task.isCancelled, phase == .playing else { return }
+            guard !Task.isCancelled, phase == .playing else { return false }
+            if let due = recheck, Date.now >= due {
+                // the answer may have changed (the next programme started): asked again
+                let now = await blockedNow(channel)
+                guard !Task.isCancelled, phase == .playing else { return false }
+                if let up = now.timeUp {
+                    timeIsUp(up)
+                    return false
+                }
+                if now.blocked {
+                    replaceItem(nil)
+                    phase = .slated
+                    return true
+                }
+                recheck = now.again
+            }
             if waiting, let since = waitingSince, ContinuousClock.now - since >= Self.stuck {
                 // AVPlayer gave up on a segment that came too late and waits for good (seen
                 // on CI: three tries of one segment, then nothing): open the channel again
@@ -240,17 +346,34 @@ final class LivePlayback {
                 continue
             }
             guard player.currentItem?.status == .failed else { continue }
+            if recheck != nil, reopened == 0 {
+                // under a limit a stream that stops may be the home ending a programme now
+                // above it (this TV's clock said to ask later): the home is asked now
+                let now = await blockedNow(channel)
+                guard !Task.isCancelled, phase == .playing else { return false }
+                if let up = now.timeUp {
+                    timeIsUp(up)
+                    return false
+                }
+                if now.blocked {
+                    replaceItem(nil)
+                    phase = .slated
+                    return true
+                }
+                recheck = now.again
+            }
             if reopened >= 2 {
                 phase = .failed(player.currentItem?.error.map(HomeFailure.init)
                     ?? HomeFailure(kind: .server, detail: String(localized: "The channel stopped playing.")))
                 replaceItem(nil)
-                return
+                return false
             }
             reopened += 1
             let url = path == .relay ? (relayURL ?? opened) : opened
             replaceItem(AVPlayerItem(url: url))
             player.play()
         }
+        return false
     }
 
     private func endedByHome() {
@@ -278,6 +401,11 @@ extension HomeFailure {
 /// banner again, Menu to put the mini-guide or the banner away, then to go back to the Live
 /// tab. When each overlay goes is `LiveOverlays`' (MaktabaKit, unit-tested): the banner
 /// `LiveOverlays.bannerTime` after the channel actually plays, however long it took to start.
+///
+/// Epic 57 story 57.10: under a parental limit, a channel whose programme now is above the
+/// limit shows the slate ("Not available right now") and does not play; ▲ / ▼ still surf, and
+/// the channel plays by itself when the home says it may. A masked programme reads "Not
+/// available" in the banner and the mini-guide, with its time.
 ///
 /// A buffering stall (the picture waits while the channel plays) brings the banner back with
 /// a buffering line; both go when the picture moves again (`LiveOverlays`, a short wait shows
@@ -316,6 +444,7 @@ struct LivePlayerScreen: View {
                 Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .buttonStyle(LiveSurfaceStyle())
+            .disabled(timeUp != nil)
             .accessibilityLabel(Text(playback.channel?.name ?? ""))
             .accessibilityIdentifier("live.player.surface")
             Group {
@@ -331,11 +460,14 @@ struct LivePlayerScreen: View {
                 }
             }
             .allowsHitTesting(false)
+            timeUpScreen
         }
         .ignoresSafeArea()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("live.player")
         .onMoveCommand { direction in
+            // time's up is for every channel: its screen has the remote, nothing surfs
+            guard timeUp == nil else { return }
             switch direction {
             case .up: playback.next()
             case .down: playback.previous()
@@ -348,7 +480,11 @@ struct LivePlayerScreen: View {
             change { handled = $0.back(at: $1) }
             if !handled { dismiss() }
         }
-        .onAppear { playback.tune(playback.index) }
+        .onAppear {
+            // Epic 57: under a parental limit the home is asked before each tune
+            if let parental = session?.parental { playback.limited = { parental.current.limited } }
+            playback.tune(playback.index)
+        }
         .onDisappear {
             let p = playback
             Task { await p.close() }
@@ -365,6 +501,20 @@ struct LivePlayerScreen: View {
             try? await Task.sleep(until: next, clock: .continuous)
             guard !Task.isCancelled else { return }
             withAnimation { now = .now }
+        }
+    }
+
+    /// The account's watching time is over (57.14): the home said so for this channel.
+    private var timeUp: TimeUp? {
+        if case let .timeUp(up) = playback.phase { return up }
+        return nil
+    }
+
+    /// The time's-up screen over the player, with Ask for more time and the parent PIN; the
+    /// channel is tuned again when the home says there is time.
+    @ViewBuilder private var timeUpScreen: some View {
+        if let timeUp, let session {
+            TVTimeUpView(client: playback.client, session: session, up: timeUp, back: { dismiss() }) { playback.retry() }
         }
     }
 
@@ -402,8 +552,10 @@ struct LivePlayerScreen: View {
             }
         case .ended:
             playback.retry()
-        case .starting, .playing:
+        case .starting, .playing, .slated:
             change { $0.toggleMiniGuide(at: $1) }
+        case .timeUp:
+            break
         }
     }
 
@@ -415,12 +567,28 @@ struct LivePlayerScreen: View {
                 Text("Tuning…").foregroundStyle(.white.opacity(0.85))
             }
             .accessibilityIdentifier("live.player.starting")
+        case .slated:
+            // 57.10: no title, only that it is not available and that the channel comes back
+            LiveMessage(symbol: "lock.fill", text: ParentalWords.text("live.parental.slate"),
+                        hint: String(localized: "▲ ▼ for another channel."))
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("live.slate")
+        case let .failed(f) where f.kind == .notFound && session?.parental.current.limited == true:
+            // 57.05: a channel the home does not give, under a limit, is not an error
+            LiveMessage(symbol: "lock.fill",
+                        text: ParentalWords.text("parental.blocked.title"),
+                        hint: String(localized: "▲ ▼ for another channel."))
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("live.player.blocked")
         case let .failed(f):
             LiveMessage(symbol: f.symbol, text: f.message(video: true),
                         hint: f.actions.first == .tryAgain
                             ? String(localized: "Select to try again, or ▲ ▼ for another channel.")
                             : String(localized: "▲ ▼ for another channel."))
                 .accessibilityIdentifier("live.player.error")
+        case .timeUp:
+            // the time's-up screen covers the player (`timeUpScreen`)
+            EmptyView()
         case .ended:
             LiveMessage(symbol: "stop.circle", text: String(localized: "The home ended this stream."),
                         hint: String(localized: "Select to watch again, or ▲ ▼ for another channel."))
@@ -479,7 +647,7 @@ struct LiveBanner: View {
                         .foregroundStyle(Theme.goldText)
                         .accessibilityIdentifier("live.player.channel")
                     if let current = now?.current {
-                        Text(current.title)
+                        Text(current.displayTitle())
                             .font(Theme.heading(48))
                             .foregroundStyle(Theme.text)
                             .lineLimit(1)
@@ -495,7 +663,7 @@ struct LiveBanner: View {
                         .foregroundStyle(Theme.muted)
                     }
                     if let next = now?.next {
-                        Text("Next: \(next.start.formatted(date: .omitted, time: .shortened)) \(next.title)")
+                        Text("Next: \(next.start.formatted(date: .omitted, time: .shortened)) \(next.displayTitle())")
                             .font(Theme.body(26))
                             .foregroundStyle(Theme.muted)
                             .lineLimit(1)
@@ -563,11 +731,11 @@ struct LiveMiniGuide: View {
                 .font(Theme.body(28, weight: .semibold))
                 .frame(width: 360, alignment: .leading)
                 .lineLimit(1)
-            Text(verbatim: now?.current?.title ?? " ")
+            Text(verbatim: now?.current?.displayTitle() ?? " ")
                 .font(Theme.body(28))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(1)
-            Text(verbatim: now?.next.map { "\($0.start.formatted(date: .omitted, time: .shortened)) \($0.title)" } ?? " ")
+            Text(verbatim: now?.next.map { "\($0.start.formatted(date: .omitted, time: .shortened)) \($0.displayTitle())" } ?? " ")
                 .font(Theme.body(24))
                 .opacity(0.75)
                 .frame(width: 560, alignment: .leading)

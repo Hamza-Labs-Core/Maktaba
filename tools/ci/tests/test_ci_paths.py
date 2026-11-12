@@ -125,7 +125,8 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     "api only": (
         ["api/internal/handlers/browse/browse.go"],
         GO_SERVER,
-        {"lint": {"go"}, "unit": {"go"}, "integration": {"integration", "compat_prev"}},
+        # Epic 57 (story 57.13): the parental bypass rehearsal runs for the API's code
+        {"lint": {"go"}, "unit": {"go"}, "integration": {"integration", "compat_prev", "parental_bypass"}},
     ),
     "the affected-tests gate: its Go module, the hook and the map workflow": (
         ["tools/affected-tests/analyze.go", ".githooks/pre-push", ".github/workflows/coverage-map.yml"],
@@ -140,7 +141,8 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
             "lint": {"go", "catalog"},
             # the supervisor captures the logs: its change runs the log benches (53.13)
             "unit": {"go", "log_bench"},
-            "integration": {"integration"},
+            # Epic 57 review (finding 20): the bypass rehearsal builds the API with cmd
+            "integration": {"integration", "parental_bypass"},
             "node-packaging": {"release_venv"},
         },
     ),
@@ -232,8 +234,16 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
         {
             "lint": {"go", "pipeline"},
             "unit": {"go", "pipeline"},
-            "integration": {"integration", "compat_prev"},
+            "integration": {"integration", "compat_prev", "parental_bypass"},
         },
+    ),
+    # Epic 57 (story 57.13): the streaming service signs the channel URLs and holds a
+    # restricted account's stream to its time: the bypass rehearsal runs for it, the
+    # previous release's API tests do not; a pipeline change runs neither ("pipeline only")
+    "streaming only: the parental bypass rehearsal": (
+        ["streaming/internal/hls/serve.go"],
+        {"unit", "integration", "replica", "e2e", "media-e2e", "build-artifacts", "launcher"},
+        {"lint": {"go"}, "unit": {"go"}, "integration": {"integration", "parental_bypass"}},
     ),
 }
 
@@ -245,6 +255,36 @@ def test_which_jobs_a_change_runs(name: str) -> None:
     assert ran(runs) == ALWAYS | jobs, f"{name}: ran {sorted(ran(runs) - ALWAYS)}, want {sorted(jobs)}"
     for job, want in want_parts.items():
         assert parts(runs, job) == want, f"{name}: {job} got {sorted(parts(runs, job))}, want {sorted(want)}"
+
+
+# Epic 57 review (finding 20): the bypass rehearsal compiles the API with the shared Go
+# libraries api/go.mod replaces and with cmd, reads the OpenAPI description, and requires
+# the tests of its list. A change to any of them used to run nothing of it until the next
+# change under api/.
+@pytest.mark.parametrize(
+    "path",
+    [
+        "api/internal/parental/filter.go",
+        "streaming/internal/hls/serve.go",
+        "shared/log/go/log.go",
+        "shared/go/clientip/clientip.go",
+        "shared/api/openapi.yaml",
+        "shared/parental/ratings.json",
+        "shared/db/migrations/0220_age_tiers.sql",
+        "cmd/maktaba-server/main.go",
+        "tools/ci/parental-bypass-tests.txt",
+        "tools/ci/no-pg-skips.sh",
+    ],
+)
+def test_the_parental_bypass_rehearsal_runs_for_what_it_builds_and_reads(path: str) -> None:
+    assert "parental_bypass" in parts(run(path), "integration"), path
+
+
+def test_the_parental_bypass_rehearsal_does_not_run_for_the_rest() -> None:
+    for path in ("pipeline/src/maktaba_pipeline/classify/content_screen.py", "web/src/App.tsx",
+                 "tools/affected-tests/analyze.go"):  # fmt: skip
+        r = run(path).get("integration")
+        assert r is None or r.inputs.get("parental_bypass") is not True, path
 
 
 # what runs on an idle Core home: the mac app's Bundle size check counts its processes and

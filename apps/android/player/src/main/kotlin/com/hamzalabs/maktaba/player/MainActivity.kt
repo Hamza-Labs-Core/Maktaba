@@ -56,11 +56,20 @@ class MainActivity : ComponentActivity() {
                     // first run, and whenever a required permission is missing (checked on resume)
                     PermissionsGate(MaktabaApp.Player, helpUrl = { app.session.current.value?.url?.let(::permissionsHelpUrl) }) {
                         SessionGate(app.session, MaktabaApp.Player) { user, client ->
-                            val home = remember(user, client) { PlayerHome(app.session, user, client, app.themes, onPlaying = { playing = it }) }
+                            val home = remember(user, client) {
+                                PlayerHome(
+                                    app.session, user, client, app.themes, onPlaying = { playing = it },
+                                    // Epic 57 story 57.05: the limit as last known, and what goes when it changes
+                                    limitKept = com.hamzalabs.maktaba.core.parental.KeptLimit.InFile.of(filesDir, client.home, user.id),
+                                    dropKept = { dropKeptFor(applicationContext, client.home, user.id) },
+                                )
+                            }
                             // this home's pictures, with its token, in the app's shared caches (NFR-4)
                             val images = remember(client) { ImageCache.loader(applicationContext, client) }
                             // the sections (a bar, a rail or the collapsible rail, by the window and its fold), Live TV only with a channel (FR-5); hidden while a video plays full screen
                             CompositionLocalProvider(LocalPlayerHome provides home, LocalHomeImages provides images) {
+                                // the sign-in's parental limit, read at sign-in and whenever the app comes back (Epic 57)
+                                com.hamzalabs.maktaba.player.shell.FollowParental(home)
                                 // a TV waiting to sign in: a banner on top (not over a playing video), and a notification
                                 PendingSignInsHost(app.session, user, client, enabled = !playing) {
                                     // what is down on the home, on top (Epic 53 story 53.06; not over a playing video)
@@ -85,4 +94,17 @@ class MainActivity : ComponentActivity() {
         VideoLink.route(intent.dataString)?.let { link.value = it }
         ApproveRequests.handle(intent)
     }
+}
+
+/**
+ * What the device keeps for [userId] on [home] outside the screens' own states (Epic 57 story
+ * 57.05): Home's rows on disk and every picture, in memory and on disk. Dropped when the
+ * sign-in's parental limit changes, so nothing read under the limit before is shown.
+ */
+suspend fun dropKeptFor(context: android.content.Context, home: okhttp3.HttpUrl, userId: String) {
+    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        com.hamzalabs.maktaba.core.browse.HomeCache.of(context.cacheDir, home, userId).clear()
+        ImageCache.clear(context)
+    }
+    com.hamzalabs.maktaba.core.ui.forgetPosters()
 }

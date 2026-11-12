@@ -36,6 +36,9 @@ type Block struct {
 	StripRef     string  `json:"strip_ref,omitempty"`
 	IsLive       bool    `json:"is_live,omitempty"`
 	Progress     float64 `json:"progress,omitempty"`
+	// Restricted: the programme is above the account's parental limit. It carries
+	// its time only; the apps show "Not available" (Epic 57, story 57.10).
+	Restricted bool `json:"restricted,omitempty"`
 }
 
 // isFiller reports whether a block kind is filler-ish (collapsed by

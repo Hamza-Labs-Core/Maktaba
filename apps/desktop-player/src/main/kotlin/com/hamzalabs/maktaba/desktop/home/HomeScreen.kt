@@ -78,7 +78,11 @@ fun HomeScreen() {
     val home = LocalDesktopHome.current
     val state = home.homeState()
     LaunchedEffect(state) { state.open() }
-    HomeContent(state, home, home.features())
+    Column(Modifier.fillMaxSize()) {
+        // a restricted account's time today (Epic 57 story 57.15)
+        com.hamzalabs.maktaba.desktop.watch.HomeTime(home.parental, Modifier.padding(top = 12.dp))
+        HomeContent(state, home, home.features())
+    }
 }
 
 /** A row's title in this language. */

@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 )
 
@@ -185,11 +187,18 @@ func (r *repo) history(ctx context.Context, userID string, f historyFilter) ([]H
 	args = append(args, f.limit, f.offset)
 	limitIdx, offsetIdx := pidx(len(args)-1), pidx(len(args))
 
+	// A video the caller's parental limit hides stays in its own history as a row
+	// that is not available (Epic 57 story 57.03): the query says which rows the
+	// limit lets through, and the others are emptied below.
+	shown := "1"
+	if e := parental.From(ctx); e.Limits() {
+		shown = "MAX(CASE WHEN " + parental.Predicate(e, "v") + " THEN 1 ELSE 0 END)"
+	}
 	q := `
 		SELECT v.id, v.title, COALESCE(v.duration_sec,0),
 		       COUNT(ws.id), COALESCE(SUM(ws.duration_sec),0),
 		       COALESCE(MAX(ws.percent_complete),0), MAX(ws.started_at),
-		       COALESCE(ps.position_sec,0), COALESCE(ps.completed,false)
+		       COALESCE(ps.position_sec,0), COALESCE(ps.completed,false), ` + shown + `
 		FROM watch_sessions ws
 		JOIN videos v ON v.id = ws.video_id
 		LEFT JOIN playback_state ps ON ps.user_id = ws.user_id AND ps.video_id = ws.video_id
@@ -207,15 +216,28 @@ func (r *repo) history(ctx context.Context, userID string, f historyFilter) ([]H
 	for rows.Next() {
 		var it HistoryItem
 		var last time.Time
+		var shown int
 		if err := rows.Scan(&it.VideoID, &it.Title, &it.DurationSec,
 			&it.TimesWatched, &it.TotalWatchSec, &it.BestPercent, &last,
-			&it.PositionSec, &it.Completed); err != nil {
+			&it.PositionSec, &it.Completed, &shown); err != nil {
 			return nil, err
 		}
 		it.LastWatchedAt = last.UTC().Format(time.RFC3339)
+		it.Available, it.Key = true, it.VideoID
+		if shown == 0 {
+			it = HistoryItem{Key: unavailableKey(last), TimesWatched: it.TimesWatched,
+				TotalWatchSec: it.TotalWatchSec, LastWatchedAt: it.LastWatchedAt}
+		}
 		out = append(out, it)
 	}
 	return out, rows.Err()
+}
+
+// unavailableKey is the list identity of a history row whose video the caller
+// may not see: made from the time of the last watch alone, so it is the same on
+// every read and names no video.
+func unavailableKey(last time.Time) string {
+	return "na-" + strconv.FormatInt(last.UTC().UnixMicro(), 36)
 }
 
 // videoHistory returns the caller's aggregate + session list for one video.
@@ -295,7 +317,8 @@ func (r *repo) deleteHistory(ctx context.Context, userID, videoID string) error 
 func (r *repo) watchedActivity(ctx context.Context, userID string, n int) ([]ActivityItem, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT ws.video_id, ws.started_at, ws.percent_complete,
-		       COALESCE(`+videotitle.SQL("v.title", "v.filename")+`, '')
+		       COALESCE(`+videotitle.SQL("v.title", "v.filename")+`, ''),
+		       CASE WHEN v.id IS NULL OR `+parental.Predicate(parental.From(ctx), "v")+` THEN 1 ELSE 0 END
 		FROM watch_sessions ws LEFT JOIN videos v ON v.id = ws.video_id
 		WHERE ws.user_id = $1
 		ORDER BY ws.started_at DESC LIMIT $2`, userID, n)
@@ -308,11 +331,18 @@ func (r *repo) watchedActivity(ctx context.Context, userID string, n int) ([]Act
 		var videoID, title string
 		var at time.Time
 		var pct float64
-		if err := rows.Scan(&videoID, &at, &pct, &title); err != nil {
+		var shown int
+		if err := rows.Scan(&videoID, &at, &pct, &title, &shown); err != nil {
 			return nil, err
 		}
+		if shown == 0 {
+			// watched, and hidden by the caller's parental limit now: the entry
+			// stays, saying only that (as its row in the history)
+			out = append(out, ActivityItem{Kind: "watched", At: at.UTC(), Meta: map[string]any{"available": false}})
+			continue
+		}
 		out = append(out, ActivityItem{Kind: "watched", At: at.UTC(),
-			Meta: map[string]any{"video_id": videoID, "percent_complete": pct, "title": title}})
+			Meta: map[string]any{"video_id": videoID, "percent_complete": pct, "title": title, "available": true}})
 	}
 	return out, rows.Err()
 }
@@ -359,7 +389,7 @@ func (r *repo) setPrefs(ctx context.Context, userID string, enabled bool, now ti
 // is false for an unknown id.
 func (r *repo) videoLibrary(ctx context.Context, videoID string) (libraryID string, found bool, err error) {
 	err = r.db.QueryRowContext(ctx,
-		`SELECT library_id FROM videos WHERE id = $1`, videoID).Scan(&libraryID)
+		`SELECT library_id FROM videos WHERE id = $1`+parental.Where(ctx, "videos"), videoID).Scan(&libraryID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}

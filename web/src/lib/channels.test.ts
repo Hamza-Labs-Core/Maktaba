@@ -21,6 +21,47 @@ describe("channels client", () => {
     expect("tune" in channelsApi).toBe(false);
   });
 
+  // Epic 57 story 57.10: a programme above the account's parental limit comes with its
+  // time only; every surface shows it as "Not available", in the page's language.
+  it("names a masked programme Not available and keeps only its time", async () => {
+    const masked = {
+      channel_id: "c1",
+      kind: "program",
+      start: "2026-11-11T20:00:00Z",
+      stop: "2026-11-11T21:00:00Z",
+      title: "",
+      restricted: true,
+    };
+    const open = { ...masked, title: "Cartoons", desc: "For everyone", restricted: undefined };
+    get.mockResolvedValue({
+      server_time: "2026-11-11T19:00:00Z",
+      channels: [{ channel: { id: "c1", number: 1, name: "Kids" }, blocks: [open, masked] }],
+    });
+    document.documentElement.lang = "en";
+    const en = await channelsApi.guide({ start: "a", end: "b" });
+    const [first, second] = en.channels[0]!.programs;
+    expect(first).toMatchObject({ title: "Cartoons", description: "For everyone" });
+    expect(first!.restricted).toBeUndefined();
+    expect(second).toEqual({
+      channel_id: "c1",
+      seq: 1,
+      kind: "program",
+      title: "Not available",
+      start_at: "2026-11-11T20:00:00Z",
+      end_at: "2026-11-11T21:00:00Z",
+      restricted: true,
+    });
+
+    document.documentElement.lang = "ar";
+    get.mockResolvedValue({
+      server_time: "2026-11-11T19:00:00Z",
+      channels: [{ channel: { id: "c1", number: 1, name: "Kids" }, current: masked, next: null }],
+    });
+    const now = await channelsApi.now();
+    expect(now.items[0]!.current).toMatchObject({ title: "غير متاح", restricted: true });
+    document.documentElement.lang = "en";
+  });
+
   it("regenerates through /api/channels/{id}/regenerate", async () => {
     post.mockResolvedValue({ channel_id: "c1", status: "regeneration-queued" });
     await channelsApi.regenerate("c1");

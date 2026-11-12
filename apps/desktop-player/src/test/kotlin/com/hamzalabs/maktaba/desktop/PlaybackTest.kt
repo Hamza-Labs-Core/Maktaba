@@ -4,9 +4,9 @@ import com.hamzalabs.maktaba.core.playback.PlaybackValues
 import com.hamzalabs.maktaba.core.playback.QualityOption
 import com.hamzalabs.maktaba.core.playback.StreamQuality
 import com.hamzalabs.maktaba.core.playback.SubtitleLanguage
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.After
@@ -20,6 +20,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.locks.LockSupport
+import kotlin.coroutines.CoroutineContext
 
 /**
  * Story 55.08 with a fake player: each `POST /api/stream/sessions` is session s1, s2 … (a direct
@@ -27,7 +29,26 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class PlaybackTest {
     private val home = TestHome()
-    private val main = Executors.newSingleThreadExecutor { r -> Thread(r, "test-main").apply { isDaemon = true } }.asCoroutineDispatcher()
+    private val thread = Executors.newSingleThreadExecutor { r -> Thread(r, "test-main").apply { isDaemon = true } }
+
+    /** Steps ever queued for the test's main thread, and those queued or running now ([settle]). */
+    private val steps = AtomicInteger()
+    private val pending = AtomicInteger()
+
+    /** The test's main thread, with its steps counted. */
+    private val main = object : CoroutineDispatcher() {
+        override fun dispatch(context: CoroutineContext, block: Runnable) {
+            steps.incrementAndGet()
+            pending.incrementAndGet()
+            thread.execute {
+                try {
+                    block.run()
+                } finally {
+                    pending.decrementAndGet()
+                }
+            }
+        }
+    }
     private val scope = CoroutineScope(SupervisorJob() + main)
     private val background = CoroutineScope(SupervisorJob() + main)
     private val opened = AtomicInteger()
@@ -73,7 +94,7 @@ class PlaybackTest {
         held.values.forEach { it.countDown() }
         runBlocking(main) { playback.close() }
         home.close()
-        main.close()
+        thread.shutdown()
     }
 
     private fun <T> onMain(block: () -> T): T = runBlocking { withContext(main) { block() } }
@@ -83,6 +104,24 @@ class PlaybackTest {
         while (!onMain(ok)) {
             if (System.currentTimeMillis() > end) throw AssertionError("never: $what")
             Thread.sleep(20)
+        }
+    }
+
+    /**
+     * Lets everything on its way land before a test says nothing more happened: returns once no
+     * step is queued or running on the main thread and no call to the home is queued or running,
+     * with no step queued while it looked. The playback works only on the main thread, a call is
+     * sent only from a step there, and OkHttp counts a call as running until its callback
+     * returns, inside which the client queues its caller's next step: so nothing can be on its
+     * way unseen. It waits for that state, never for a length of time.
+     */
+    private fun settle() {
+        val end = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(STALL_MS)
+        while (true) {
+            val before = steps.get()
+            if (pending.get() == 0 && home.idle && before == steps.get()) return
+            if (System.nanoTime() > end) throw AssertionError("never settled; the home was asked ${synchronized(home.seen) { home.seen.map { it.method + " " + it.url.encodedPath } }}")
+            LockSupport.parkNanos(500_000)
         }
     }
 
@@ -108,7 +147,7 @@ class PlaybackTest {
         onMain { playback.stop() }
         held.getValue(2).countDown()
         until("the late session is closed") { closed("s2") }
-        Thread.sleep(200)
+        settle()
         assertNull("no player once closed", onMain { playback.player })
         assertTrue("every player made is disposed", made.all { it.disposed })
         assertTrue(closed("s1"))
@@ -126,7 +165,7 @@ class PlaybackTest {
         until("B plays") { shownUrl()?.endsWith("/stream/s3.mp4") == true }
         held.getValue(2).countDown()
         until("A's late session is closed") { closed("s2") }
-        Thread.sleep(200)
+        settle()
         assertTrue("B still plays: ${shown()}", shown()!!.endsWith("/stream/s3.mp4"))
         assertTrue("B's session stays open", !closed("s3"))
         assertEquals("B's request", "B", onMain { playback.request?.videoId })
@@ -150,7 +189,7 @@ class PlaybackTest {
         tracks = listOf(AudioOption("English", "eng", index = 0), AudioOption("العربية", "ara", index = 1))
         start("A")
         until("A plays") { playback.player != null && playback.audioOptions.size == 2 }
-        Thread.sleep(300)
+        settle()
         assertEquals(1, opened.get())
     }
 

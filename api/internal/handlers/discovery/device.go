@@ -349,11 +349,24 @@ func (h *Handler) DevicePending(w http.ResponseWriter, r *http.Request) {
 
 type approveRequest struct {
 	Code string `json:"code"`
+	// AsUser signs the device in as a restricted account the caller looks after
+	// (Epic 57 story 57.02); empty: as the caller.
+	AsUser string `json:"as_user,omitempty"`
 }
 
+// What ApproveAs answers when the caller may not sign the named account in.
+var (
+	// ErrApproveAsNotFound: the named account is not a restricted account the
+	// caller looks after (answered 404, as for a missing account).
+	ErrApproveAsNotFound = errors.New("discovery: no such restricted account for this caller")
+	// ErrApproveAsRestricted: a restricted caller named someone else (403).
+	ErrApproveAsRestricted = errors.New("discovery: a restricted account signs in only itself")
+)
+
 // Approve signs the app showing code in as the caller, with the caller's own account
-// and role (the tokens are minted for them when the app collects them): there is no one
-// else to name, so a viewer approves for themselves only.
+// and role (the tokens are minted for them when the app collects them). A guardian or
+// an admin may name a restricted account they look after in as_user, and the device
+// is then that child's; no one else can be named.
 func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 	p := principal.FromContext(r.Context())
 	if p == nil {
@@ -379,6 +392,27 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 		}))
 		return
 	}
+	userID := p.UserID
+	if req.AsUser != "" && req.AsUser != p.UserID {
+		if h.ApproveAs == nil {
+			httperror.Write(w, r, httperror.NotFound("restricted account"))
+			return
+		}
+		switch id, err := h.ApproveAs(r.Context(), p, req.AsUser); {
+		case errors.Is(err, ErrApproveAsRestricted):
+			httperror.Write(w, r, httperror.Forbidden(httperror.Type("restricted"),
+				"a restricted account can sign in only itself").With("code", "restricted"))
+			return
+		case errors.Is(err, ErrApproveAsNotFound):
+			httperror.Write(w, r, httperror.NotFound("restricted account"))
+			return
+		case err != nil:
+			httperror.Write(w, r, httperror.Internal("approve as").Wrap(err))
+			return
+		default:
+			userID = id
+		}
+	}
 	now := h.now()
 	if _, ok := h.requests.get(code, now); !ok {
 		httperror.Write(w, r, codeNotHeld())
@@ -388,7 +422,7 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 	// an approval stands once (one atomic insert): approving again, as anyone, would
 	// hand the app another session or another person's
 	switch err := h.Store.Insert(r.Context(), discovery.PairingTicket{
-		Code: key, UserID: p.UserID, IssuedAt: now, ExpiresAt: now.Add(DeviceCodeTTL),
+		Code: key, UserID: userID, IssuedAt: now, ExpiresAt: now.Add(DeviceCodeTTL),
 	}); {
 	case errors.Is(err, discovery.ErrCodeExists):
 		httperror.Write(w, r, httperror.Conflict("", "code already approved"))

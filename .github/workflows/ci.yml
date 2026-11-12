@@ -104,6 +104,7 @@ jobs:
       log_bench: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.log_bench == 'true' }}
       integration: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.integration == 'true' }}
       compat_prev: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.compat_prev == 'true' }}
+      parental_bypass: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.parental_bypass == 'true' }}
       replica: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.replica == 'true' }}
       components: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.components == 'true' }}
       components_chaos: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.components_chaos == 'true' }}
@@ -228,11 +229,12 @@ jobs:
 
   integration:
     needs: [changes]
-    if: needs.changes.outputs.integration == 'true' || needs.changes.outputs.compat_prev == 'true'
+    if: needs.changes.outputs.integration == 'true' || needs.changes.outputs.compat_prev == 'true' || needs.changes.outputs.parental_bypass == 'true'
     uses: ./.github/workflows/_integration.yml
     with:
       integration: ${{ needs.changes.outputs.integration == 'true' }}
       compat_prev: ${{ needs.changes.outputs.compat_prev == 'true' }}
+      parental_bypass: ${{ needs.changes.outputs.parental_bypass == 'true' }}
 
   replica:
     # Epic 37: the machines' copies and switching the home against real Postgres 16,

@@ -37,6 +37,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 )
 
@@ -133,7 +134,12 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	key := p.UserID + ":" + surface
-	if cached, ok := h.cacheLookup(key); ok {
+	// A kept answer was built under the limit of the request that made it. The
+	// limit differs by sign-in (a device's signal) and changes when a guardian
+	// tightens it, so a request with a limit is always read fresh and never
+	// kept (Epic 57 story 57.03), as the home's row cache does.
+	limited := parental.From(r.Context()).Limits()
+	if cached, ok := h.cacheLookup(key); ok && !limited {
 		cached.CacheHit = true
 		common.WriteJSON(w, r, http.StatusOK, cached)
 		return
@@ -183,7 +189,9 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt:   now.Add(h.ttlFor(r.Context())),
 	}
 
-	h.cacheStore(key, resp)
+	if !limited {
+		h.cacheStore(key, resp)
+	}
 	common.WriteJSON(w, r, http.StatusOK, resp)
 }
 
@@ -233,9 +241,13 @@ func (h *Handler) DismissItem(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("recommendations store unavailable"))
 		return
 	}
+	// a video that is not there is dismissed like one that is: nothing is kept and
+	// the answer is the same (the insert once failed on the video's foreign key and
+	// answered 500, also for a video hidden from a restricted account, which the
+	// gate asks about under an id that names nothing)
 	if _, err := h.DB.ExecContext(r.Context(), `
 		INSERT INTO recommendation_dismissals (user_id, reason_kind, video_id)
-		VALUES ($1, '', $2)
+		SELECT $1, '', v.id FROM videos v WHERE CAST(v.id AS TEXT) = $2
 		ON CONFLICT DO NOTHING
 	`, p.UserID, videoID); err != nil {
 		httperror.Write(w, r, httperror.Internal("could not record dismissal").Wrap(err))
@@ -283,7 +295,7 @@ func (h *Handler) continueRail(r *http.Request, p *principal.Principal, limit in
 		  AND v.duration_sec IS NOT NULL
 		  AND v.duration_sec > 0
 		  AND ps.position_sec / v.duration_sec BETWEEN 0.05 AND 0.95
-		  AND ps.completed = FALSE`+scope+`
+		  AND ps.completed = FALSE`+scope+parental.Where(r.Context(), "v")+`
 		ORDER BY ps.updated_at DESC, ps.video_id ASC LIMIT $2
 	`, args...)
 	if err != nil {
@@ -334,7 +346,7 @@ func (h *Handler) forYouRail(r *http.Request, p *principal.Principal, limit int)
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT ur.video_id, ur.score FROM user_recs ur
 		JOIN videos v ON v.id = ur.video_id
-		WHERE ur.user_id = $1`+scope+`
+		WHERE ur.user_id = $1`+scope+parental.Where(r.Context(), "v")+`
 		ORDER BY ur.score DESC, v.created_at DESC, ur.video_id ASC LIMIT $2
 	`, args...)
 	if err != nil {
@@ -400,7 +412,7 @@ func (h *Handler) libraryRail(r *http.Request, p *principal.Principal, limit int
 		SELECT v.id FROM videos v
 		WHERE v.state = 'ready' AND NOT EXISTS (
 		  SELECT 1 FROM playback_state ps WHERE ps.user_id = $1 AND ps.video_id = v.id
-		)`+scope+`
+		)`+scope+parental.Where(r.Context(), "v")+`
 		ORDER BY v.created_at DESC, v.id DESC LIMIT $`+strconv.Itoa(len(args)), args...)
 	if err != nil {
 		return rail

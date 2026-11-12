@@ -164,7 +164,7 @@ private fun NowCard(api: TvApi, e: NowEntry, nowMs: Long, modifier: Modifier, on
                 )
             }
             Text(
-                current?.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.live_no_content),
+                current?.let { com.hamzalabs.maktaba.core.ui.programmeTitle(it) }?.takeIf { it.isNotBlank() } ?: stringResource(R.string.live_no_content),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaktabaPalette.Text,
                 maxLines = 1,
@@ -174,7 +174,7 @@ private fun NowCard(api: TvApi, e: NowEntry, nowMs: Long, modifier: Modifier, on
             Spacer(Modifier.weight(1f))
             if (next != null) {
                 Text(
-                    stringResource(R.string.live_next, next.startMs?.let(time)?.let { "$it  ${next.title}" } ?: next.title),
+                    stringResource(R.string.live_next, com.hamzalabs.maktaba.core.ui.programmeTitle(next).let { t -> next.startMs?.let(time)?.let { "$it  $t" } ?: t }),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaktabaPalette.Faint,
                     maxLines = 1,
@@ -358,7 +358,7 @@ private fun GuideRowView(api: TvApi, row: GuideChannel, viewStart: Long, viewEnd
                 ) {
                     Column {
                         Text(
-                            c.programme?.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.live_no_content),
+                            c.programme?.let { com.hamzalabs.maktaba.core.ui.programmeTitle(it) }?.takeIf { it.isNotBlank() } ?: stringResource(R.string.live_no_content),
                             style = MaterialTheme.typography.titleSmall,
                             color = if (isFocused) MaktabaPalette.OnGold else MaktabaPalette.Text,
                             maxLines = 1,
@@ -399,7 +399,7 @@ private fun ProgrammeSheet(channel: LiveChannel, p: Programme, onWatch: () -> Un
     Dialog(onDismissRequest = onClose) {
         ReadingPanel(Modifier.widthIn(max = 640.dp).testTag("programme-sheet"), contentPadding = 32.dp) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(p.title, style = MaterialTheme.typography.headlineSmall, color = MaktabaPalette.Text)
+                Text(com.hamzalabs.maktaba.core.ui.programmeTitle(p), style = MaterialTheme.typography.headlineSmall, color = MaktabaPalette.Text)
                 p.episodeLabel?.let { Text(it, style = MaterialTheme.typography.titleMedium, color = MaktabaPalette.Muted) }
                 val start = p.startMs
                 val stop = p.stopMs

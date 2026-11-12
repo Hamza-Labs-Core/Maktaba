@@ -10,6 +10,7 @@
 // Centralising the contract here means there is exactly one place to
 // reconcile against the Go handlers once the backend merges — no surface
 // hard-codes a path or a field name of its own.
+import { lookupMessage } from "./i18n";
 import { api, uploadWithProgress } from "./api";
 
 // ─── Channel ──────────────────────────────────────────────────────────
@@ -22,6 +23,8 @@ export type ChannelTransition = "cut" | "crossfade";
 
 export interface Channel {
   id: string;
+  /** Epic 57: the age tier an admin set (null: none); only an admin's answer has it */
+  age_tier?: number | null;
   number: number;
   name: string;
   slug?: string;
@@ -230,6 +233,11 @@ export interface Program {
   on_air?: string | null;
   /** The reference of a Quran verse the title quotes («البقرة ١٨٣»): the strip's last page. */
   strip_ref?: string | null;
+  /**
+   * Above the account's parental limit (Epic 57 story 57.10): the home sends its
+   * time only, and its title here is "Not available" in the page's language.
+   */
+  restricted?: boolean;
 }
 
 export interface GuideChannel {
@@ -400,6 +408,7 @@ interface WireBlock {
   episode?: number;
   on_air?: string;
   strip_ref?: string;
+  restricted?: boolean;
 }
 
 interface WireHeader {
@@ -431,7 +440,29 @@ function episodeLabel(b: WireBlock): string | null {
   return b.sub_title ? `${se} · ${b.sub_title}` : se;
 }
 
+/**
+ * "Not available", in the page's language (the document's, which lib/i18n keeps):
+ * a masked programme gets it as its title where the home's answers are read, so
+ * every surface that shows a programme (the guide, the now cards, the player's
+ * banner, big screen) says it without knowing about parental controls.
+ */
+function notAvailable(): string {
+  const lang = typeof document !== "undefined" ? document.documentElement.lang : "";
+  return lookupMessage(lang === "ar" ? "ar" : "en", "live.parental.notAvailable") ?? "";
+}
+
 function fromBlock(b: WireBlock, seq: number): Program {
+  if (b.restricted === true) {
+    return {
+      channel_id: b.channel_id,
+      seq,
+      kind: (b.kind as ProgramKind) || "program",
+      title: notAvailable(),
+      start_at: b.start,
+      end_at: b.stop,
+      restricted: true,
+    };
+  }
   return {
     channel_id: b.channel_id,
     seq,

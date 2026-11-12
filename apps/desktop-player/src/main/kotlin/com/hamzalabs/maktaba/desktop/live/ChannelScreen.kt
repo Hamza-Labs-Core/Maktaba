@@ -55,6 +55,7 @@ import com.hamzalabs.maktaba.core.api.ChannelGuide
 import com.hamzalabs.maktaba.core.api.Feature
 import com.hamzalabs.maktaba.core.api.LiveSource
 import com.hamzalabs.maktaba.core.api.LiveStream
+import com.hamzalabs.maktaba.core.api.channelNow
 import com.hamzalabs.maktaba.desktop.LocalTexts
 import com.hamzalabs.maktaba.desktop.Playback
 import com.hamzalabs.maktaba.desktop.StreamProxy
@@ -106,6 +107,11 @@ fun ChannelScreen(id: String) {
                 player = null
             },
             signedOut = home::signedOut,
+            // under a parental limit the home is asked before the channel plays (Epic 57 story 57.10)
+            limited = { home.parental.mine.value.limited },
+            gate = { home.client.channelNow(it) },
+            // the home's instants against the home's clock, not this computer's
+            nowMs = home.client::homeNowMs,
         ).also { cp = it }
     }
     LaunchedEffect(id) {
@@ -158,6 +164,10 @@ fun ChannelScreen(id: String) {
                 ChannelStatus.Playing -> VideoSurface(player, Modifier.fillMaxSize())
                 is ChannelStatus.Failed -> Stopped(s.key?.let { t[it] } ?: t["live.cantPlay"], retry = if (s.retryable) playback::retry else null, close = { home.nav.back() })
                 ChannelStatus.Ended -> Stopped(t["live.sessionEnded"], retry = null, close = { home.nav.back() })
+                is ChannelStatus.NotNow -> Stopped(
+                    t["live.parental.slate"] + (s.retryAt?.let { "\n" + t["live.parental.back", com.hamzalabs.maktaba.desktop.watch.ParentalTime.next(it, t.lang)] } ?: ""),
+                    retry = null, close = { home.nav.back() },
+                )
                 ChannelStatus.Off -> Stopped(t.featureUnavailableSentence(Feature.LIVE_TV), retry = null, close = { home.nav.back() })
             }
         }
@@ -168,8 +178,8 @@ fun ChannelScreen(id: String) {
             Column(Modifier.weight(1f)) {
                 entry?.let { e ->
                     Text(t["live.channel", e.channel.number, e.channel.name], color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
-                    Text(e.current?.title ?: t["live.nothingOn"], color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    e.next?.let { n -> Text(t["live.next", n.startMs?.let { clockOf(it) } ?: "", n.title], color = Color.LightGray, style = MaterialTheme.typography.bodySmall, maxLines = 1) }
+                    Text(e.current?.let { programmeTitle(it, t) } ?: t["live.nothingOn"], color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("channel-current"))
+                    e.next?.let { n -> Text(nextLine(n, t), color = Color.LightGray, style = MaterialTheme.typography.bodySmall, maxLines = 1, modifier = Modifier.testTag("channel-next")) }
                 }
             }
             IconButton(onClick = { playback.previous(live.lineup) }, modifier = Modifier.testTag("channel-previous")) { Icon(Icons.Filled.KeyboardArrowUp, t["live.previousChannel"], tint = Color.White) }
@@ -221,3 +231,14 @@ private fun Stopped(sentence: String, retry: (() -> Unit)?, close: () -> Unit) {
         }
     }
 }
+
+/**
+ * A programme's title as the channel's bar shows it: "Not available" for one above the account's
+ * limit (the home sends its time only, story 57.10).
+ */
+internal fun programmeTitle(p: com.hamzalabs.maktaba.core.api.Programme, t: com.hamzalabs.maktaba.desktop.Texts): String =
+    if (p.restricted) t["live.parental.notAvailable"] else p.title
+
+/** "Next 20:00 The News", with the next programme's title masked as the current one's is. */
+internal fun nextLine(n: com.hamzalabs.maktaba.core.api.Programme, t: com.hamzalabs.maktaba.desktop.Texts): String =
+    t["live.next", n.startMs?.let { clockOf(it) } ?: "", programmeTitle(n, t)]

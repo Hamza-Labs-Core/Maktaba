@@ -13,6 +13,7 @@ import com.hamzalabs.maktaba.desktop.shell.HomeActions
 import com.hamzalabs.maktaba.desktop.shell.LocalDesktopHome
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import mockwebserver3.Dispatcher
@@ -23,6 +24,13 @@ import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+
+/**
+ * The net under the tests' waits for a state (an answer read, a screen shown): they return as
+ * soon as the state holds, and this is far longer than a slow runner needs, so only a real
+ * stall meets it.
+ */
+const val STALL_MS = 60_000L
 
 /**
  * A home for the desktop Player's tests: a MockWebServer answering `"<METHOD> <path>"` routes
@@ -44,7 +52,35 @@ class TestHome : AutoCloseable {
         server.start()
     }
 
-    val client: ApiClient by lazy { ApiClient(server.url("/"), MemoryTokens(jwt(4_000_000_000L), "r")) }
+    /** The client's calls, on a dispatcher of their own so they can be counted ([idle]). */
+    private val calls = okhttp3.Dispatcher()
+
+    val client: ApiClient by lazy {
+        ApiClient(server.url("/"), MemoryTokens(jwt(4_000_000_000L), "r"), ApiClient.defaultHttp.newBuilder().dispatcher(calls).build())
+    }
+
+    /**
+     * Whether no call to this home is queued or running. OkHttp counts a call as running until
+     * its callback returns, and the client resumes its caller inside that callback, so once this
+     * holds the screen's next step is already queued for the test's thread. A test that moves
+     * the clock for a screen's own wait (the 15 seconds between two reads of a request) waits for
+     * this and then `waitForIdle()` first: the wait has then begun, and the clock moves it. A
+     * clock moved while the answer before it is still on its way moves nothing.
+     */
+    val idle: Boolean get() = running == 0
+
+    /** How many calls to this home are queued or running (one a test holds on the home counts until it is let go). */
+    val running: Int get() = calls.runningCallsCount() + calls.queuedCallsCount()
+
+    /** The scope of [home]'s changes that outlive their page ([DesktopHome.change]). */
+    val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * Whether nothing is on its way: no call to this home is queued or running, and no change a
+     * page started ([DesktopHome.change]) is still alive. A change is alive until it has taken
+     * the home's answer, so once this holds the answer has been applied.
+     */
+    val settled: Boolean get() = idle && background.coroutineContext[Job]!!.children.none()
 
     /** Answers [route] ("GET /api/home") with [body]. */
     fun answer(route: String, body: String, code: Int = 200) {
@@ -72,7 +108,7 @@ class TestHome : AutoCloseable {
 
     fun home(admin: Boolean = false): DesktopHome = DesktopHome(
         User("u1", "amina", isAdmin = admin), client, "Kitchen", prefs,
-        CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        background,
         capabilities = features,
         posters = Posters(null),
         actions = HomeActions(openUrl = { opened += it }),
@@ -88,6 +124,20 @@ class TestHome : AutoCloseable {
         /** Features with [off] off; [admin] answers with the admin block. */
         fun caps(vararg off: String, admin: Boolean = false) = Capabilities(off = off.toSet(), admin = admin)
     }
+}
+
+/**
+ * Lets everything on its way to and from [fake] land before a test says nothing more happened:
+ * returns once [TestHome.settled] holds before and after the screen has run what was left for
+ * it, and the home was asked nothing new meanwhile. It waits for that state, never for a
+ * length of time: [STALL_MS] is the net under a stall.
+ */
+@OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+fun androidx.compose.ui.test.ComposeUiTest.settle(fake: TestHome) = waitUntil(timeoutMillis = STALL_MS) {
+    val asked = fake.seen.size
+    val quiet = fake.settled
+    waitForIdle()
+    quiet && fake.settled && asked == fake.seen.size
 }
 
 /** [content] in the Player's theme, in [lang], around [home]. */

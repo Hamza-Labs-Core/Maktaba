@@ -1,6 +1,9 @@
 # Story 57.04 — The device's signal: Declared Age Range and the Screen Time rating limit
 
 > Epic 57 · Phase 2 (API), 3 (iOS) · Depends on: 57.01, 57.02, 57.03 · Needed by: 57.05, 57.11, 57.12
+> **Status:** built (checked against the code 2026-11-12): the API, and the Player's code on iPhone and iPad. Open: the
+> Declared Age Range capability is not on the App IDs, and the device check on a real child
+> device has not been run (steps in `docs/testflight.md`).
 
 ## Why
 
@@ -31,6 +34,9 @@ home should use them to tighten, never to loosen.
   this sign-in, then a token refresh so the next access token carries the new `ac` claim.
 - **Entitlement**: `com.apple.developer.declared-age-range` in new `Player-iPhone.entitlements` and
   `Player-iPad.entitlements` (XcodeGen `project.yml`). It is a capability with no approval form.
+  As built, the capability is not yet on the App IDs and the targets carry no entitlements file
+  for it: the system answers "not available", no age range is asked or sent, and the Screen Time
+  rating limit is still read and sent. `docs/testflight.md` has the steps.
 
 ### 2. On the home
 
@@ -46,7 +52,11 @@ region}`:
    - looser than the stored one: kept in `pending_looser`, not applied, and a `signal` event is
      written for the child's guardians (57.08) if the account is restricted. For an unrestricted
      account, the admins see it.
-4. Answer `{tier_limit, refresh: true}`. The refresh mints `ac = tier_limit` into the access token.
+4. Answer `{tier_limit, pending_looser, refresh, enabled}`. With `refresh` true the app refreshes
+   its token, and the refresh mints `ac = tier_limit` into the access token. While parental
+   controls are off in the home (57.12) the signal is recorded and limits nothing: `enabled` and
+   `refresh` are false. A credential that is no app sign-in (a web session, an API token) has no
+   device to speak for and answers 409 `no_sign_in`.
 
 `POST /api/users/{id}/parental/signals/{family}/clear` (admin or guardian) applies
 `pending_looser`. Signing in afresh with the account's password starts a new family with no

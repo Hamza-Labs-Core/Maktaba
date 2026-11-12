@@ -62,6 +62,7 @@ var CoreRoutes = componentTable{
 	{Prefix: "/api/pairing/"}, {Prefix: "/api/discovery/"}, {Prefix: "/api/entitlements"}, {Prefix: "/api/devices"},
 	{Prefix: "/api/notifications"}, {Prefix: "/api/activity"}, {Prefix: "/api/watch/"}, {Prefix: "/api/issues"},
 	{Prefix: "/api/explain"}, {Prefix: "/api/home"}, {Prefix: "/api/workers"},
+	{Prefix: "/api/parental"},
 	// the library
 	{Prefix: "/api/videos"}, {Prefix: "/api/libraries"}, {Prefix: "/api/collections"}, {Prefix: "/api/items/"},
 	{Prefix: "/api/series"}, {Prefix: "/api/seasons/"}, {Prefix: "/api/tags"}, {Prefix: "/api/speakers"},
@@ -81,6 +82,8 @@ var CoreRoutes = componentTable{
 	// Epic 52: word review never answers component_off: fixes are the API's own edits and
 	// work while review.words is off; the pages read its phase from /api/components
 	{Prefix: "/api/review/"}, {Prefix: "/api/vocabulary"}, {Prefix: "/api/language-packs"},
+	// Epic 57: the parental controls are never switched off with a component
+	{Prefix: "/api/parental/"},
 }
 
 func (r componentRule) matches(method, pattern string) bool {
