@@ -250,8 +250,7 @@ test("the help topic mockup uses the app's own text", () => {
 // A preloaded face that arrives inside font-display's block period replaces the fallback's
 // layout, so the fallback must measure like the face wherever the site is drawn: Arial (macOS,
 // Windows) and, where Arial is missing, its metric twin Liberation Sans (Linux, CI's image).
-// Without it, the Arabic header's Latin "English" changed width as Plex arrived and slid the nav
-// (#1187's CI, 2026-11-12).
+// (The nav's slide in #1187's CI was not this: e2e/first-paint.spec.ts.)
 test("each fallback face names a metric twin present on Linux as well as Arial", () => {
   const css = readFileSync(join(design, "fonts.css"), "utf8");
   const faces = [...css.matchAll(/@font-face\s*{([^}]*)}/g)].map((m) => m[1]);
