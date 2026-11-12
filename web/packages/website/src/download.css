@@ -1,0 +1,92 @@
+/*
+ * maktaba.tv's download page (story 60.11): what the built page adds to part B's download
+ * layout (design/site.css). The visitor's own card is chosen before the first paint by the head
+ * script (src/download-platform.ts), which marks <html data-platform>: that card is drawn as
+ * design/site.css's .card.mine, first in the grid, with its badge, and the platform note says
+ * which system it guessed. Without script, or for a system the page has no card for, every card
+ * is drawn the same, in the page's order, and no badge or note shows. Logical properties only.
+ */
+
+.cards .badge,
+.platform-note,
+.platform-note [data-for] {
+  display: none;
+}
+
+:root[data-platform] .platform-note {
+  display: inline-flex;
+}
+
+:root[data-platform="mac"] .platform-note [data-for="mac"],
+:root[data-platform="windows"] .platform-note [data-for="windows"],
+:root[data-platform="linux"] .platform-note [data-for="linux"] {
+  display: inline;
+}
+
+:root[data-platform="mac"] #mac,
+:root[data-platform="windows"] #windows,
+:root[data-platform="linux"] #linux {
+  order: -1;
+  border-color: var(--site-accent-mark);
+  background: radial-gradient(70% 90% at 100% 0%, var(--site-accent-glow), transparent 70%),
+    var(--site-surface-section);
+}
+
+:root[dir="rtl"][data-platform="mac"] #mac,
+:root[dir="rtl"][data-platform="windows"] #windows,
+:root[dir="rtl"][data-platform="linux"] #linux {
+  background: radial-gradient(70% 90% at 0% 0%, var(--site-accent-glow), transparent 70%),
+    var(--site-surface-section);
+}
+
+:root[data-platform="mac"] #mac .badge,
+:root[data-platform="windows"] #windows .badge,
+:root[data-platform="linux"] #linux .badge {
+  display: inline-flex;
+}
+
+@media (min-width: 768px) {
+  :root[data-platform="mac"] #mac,
+  :root[data-platform="windows"] #windows,
+  :root[data-platform="linux"] #linux {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: var(--spacing-10);
+    align-items: start;
+  }
+  :root[data-platform] .cards > li > .card-main {
+    grid-column: 1;
+  }
+  :root[data-platform] .cards > li > .card-more {
+    grid-column: 2;
+  }
+}
+
+/* a store listing (A6) or a package repository row (A7), when a card has one */
+.card .stores,
+.card .packages {
+  display: grid;
+  gap: var(--spacing-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card .packages p {
+  margin: 0;
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+/* a file's name in Other formats links the file; the row keeps the mockup's look */
+.disclose li > a {
+  color: var(--color-semantic-fg);
+}
+
+/* the facts' terms are for a screen reader: clip-path alone hides them (no overflow: hidden, so
+   a reader's text spacing clips no text, 1.4.12) */
+.card .facts-row dt {
+  overflow: visible;
+  white-space: nowrap;
+}

@@ -592,7 +592,8 @@ ${items.map((s) => `  <li><h3>${esc(s.title)}</h3>${s.html}</li>`).join("\n")}
  * A whole document. `path` is the page's English path (`/`, `/install/`), or null for a page
  * with no address of its own (the 404 page): no canonical, alternates or card, and the switch
  * goes to the other language's front door. The head's links and social tags are head.mjs's.
- * `body` is the content of <main id="main">.
+ * `body` is the content of <main id="main">; `head`, tags a page adds after the shell's (part B's
+ * stylesheet and display face, a script of its own, its structured data).
  */
 export function page({
   lang,
@@ -607,6 +608,7 @@ export function page({
   social = undefined,
   /** @type {string[]} */ headScripts = [],
   mainAttrs = "",
+  head: extraHead = "",
 }) {
   const dir = lang === "ar" ? "rtl" : "ltr";
   const here = enPath === null ? null : inLang(lang, enPath);
@@ -623,7 +625,7 @@ export function page({
   ${SITE_MARKER}
   ${menuMeta()}${meta ? `\n  ${meta}` : ""}
 ${head}
-${shellHead(lang, "  ", { variant, headScripts })}${jsonLd}
+${shellHead(lang, "  ", { variant, headScripts })}${jsonLd}${extraHead ? `\n  ${extraHead}` : ""}
 </head>
 <body>
 ${header(lang, here, { variant, links })}

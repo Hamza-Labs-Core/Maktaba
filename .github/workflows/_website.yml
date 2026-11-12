@@ -25,6 +25,10 @@ on:
         description: capture the web app's product screenshots on the demo library (story 60.09) and upload them as product-shots-web; ci.yml only, so the deploy never waits on them
         type: boolean
         default: false
+      release:
+        description: the release tag a release run started the deploy for (website-deploy.yml); the download page's build fails when the latest release is older
+        type: string
+        default: ""
       lighthouse_extra:
         description: a JSON list of site paths Lighthouse also measures, 3 runs each (the deploy passes the pages the last nightly sweep failed)
         type: string
@@ -91,8 +95,13 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      # the install build, the pages, the copied files, and the checks (twins, Latin share)
+      # the install build, the pages, the copied files, and the checks (twins, Latin share). The
+      # download page (story 60.11) reads the latest release from the GitHub Releases API with
+      # this run's token, and the build fails when it cannot: never an empty download page
       - name: Build
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WEBSITE_EXPECT_RELEASE: ${{ inputs.release }}
         run: npm run build
 
       # the Worker, the build, the built site (head tags, cards, sitemap: T10, T11), and the
@@ -326,6 +335,8 @@ jobs:
           PIDFILE: logs/worker-quality.pid
         run: |
           mkdir -p logs
+          # the moment before the run: a reference newer than this was written by the run
+          touch "$RUNNER_TEMP/references-before"
           timeout 1500 npx wrangler dev --var CANONICAL_REDIRECTS:off --ip 127.0.0.1 --port 8787 \
             --log-level info > "$LOG" 2>&1 &
           echo $! > "$PIDFILE"
@@ -344,6 +355,37 @@ jobs:
           kill "$(cat "$PIDFILE")" 2>/dev/null || true
           pkill -f "wrangler dev --var CANONICAL_REDIRECTS:off" || true
           exit $rc
+
+      # A reference that does not exist yet is written by the run (playwright.config.ts,
+      # updateSnapshots "missing") in this runner's image, uploaded for the pull request to
+      # commit, and fails the job: a page never passes without its committed references.
+      - name: References this run had to write
+        id: new-references
+        if: always()
+        working-directory: .
+        run: |
+          # by file time, not git: the job runs in a container whose checkout git may refuse to
+          # read (its ownership), which would print nothing and pass. No marker, no pass.
+          marker="$RUNNER_TEMP/references-before"
+          if [ ! -f "$marker" ]; then echo "::error::the run left no marker; the references cannot be checked"; exit 1; fi
+          new=$(find web/packages/website/e2e/__screenshots__ -type f -name '*.png' -newer "$marker")
+          if [ -z "$new" ]; then echo "every reference exists"; exit 0; fi
+          mkdir -p new-references
+          for f in $new; do
+            cp "$f" new-references/
+            echo "::error file=$f::no committed reference: this run wrote it in CI's image (artifact website-new-references-${{ matrix.shard }}); look at it, commit it and list it under Reference images:"
+          done
+          echo "written=true" >> "$GITHUB_OUTPUT"
+          exit 1
+
+      - name: Upload the references this run wrote
+        if: always() && steps.new-references.outputs.written == 'true'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: website-new-references-${{ matrix.shard }}
+          path: new-references/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload the report
         if: always()

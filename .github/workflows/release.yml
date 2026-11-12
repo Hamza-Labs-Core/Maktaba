@@ -2200,3 +2200,30 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: tools/release/release-assets.sh upload "${TAG}" out/*
+
+  # maktaba.tv's download page follows the release (Epic 60 story 60.11): once this run's
+  # publish step has run, tools/release/website-dispatch.sh starts website-deploy.yml on main
+  # for the tag when it is now GitHub's latest release, and does nothing otherwise (whichever of
+  # release.yml and desktop-release.yml publishes last starts it). The deploy goes live only
+  # with vars.WEBSITE_LIVE. Nothing needs this job and it continues on error, so it never holds
+  # back or fails a release (tools/ci/tests/test_release_website_dispatch.py).
+  website:
+    name: rebuild maktaba.tv's download page
+    needs: [sign-and-release]
+    if: ${{ !cancelled() && needs.sign-and-release.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    continue-on-error: true
+    permissions:
+      contents: read
+      actions: write # gh workflow run website-deploy.yml
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          sparse-checkout: tools/release
+          persist-credentials: false
+      - name: Start the site's deploy when this release is the latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: tools/release/website-dispatch.sh "${TAG}"

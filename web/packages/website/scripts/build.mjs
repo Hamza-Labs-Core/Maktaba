@@ -46,6 +46,7 @@ import { writeIcons } from "./icons.mjs";
 import { ROBOTS, sitemapXml } from "./sitemap.mjs";
 import { LEGAL, legalPages, readSources } from "./legal.mjs";
 import { PROBLEMS } from "./problems.mjs";
+import { DOWNLOAD } from "./download.mjs";
 import { noticeConfig } from "../src/copyright-form.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -63,9 +64,11 @@ export const INSTALL_OUT = path.join(REPO, "web/dist-install");
  * whether a site path (and its #fragment) is already built, so a family links only pages that
  * exist (the problem pages link a help topic once 60.12's pages are built: help.mjs goes before
  * problems.mjs), and `script(src)` publishes a script of src/ under a content-hashed name.
- * Stories 60.12 (help.mjs) and 60.11 (download.mjs) add theirs here.
+ * Story 60.12 (help.mjs) adds its own here, before download.mjs, whose cards link a help topic
+ * once it is built. The download page (60.11) reads the latest release from the GitHub Releases
+ * API and fails the build when it cannot (scripts/download.mjs).
  */
-export const FAMILIES = [PROBLEMS];
+export const FAMILIES = [PROBLEMS, DOWNLOAD];
 
 /** The hand-made pages: their source in src/pages/ (or, for the home page, scripts/home.mjs
  * from its copy and screenshots; for a legal page, its copy in copy/legal/, scripts/legal.mjs),
