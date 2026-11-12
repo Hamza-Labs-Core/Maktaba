@@ -88,8 +88,8 @@ const SITE = '<meta name="maktaba-site" content="maktaba-website" />';
 const HEADERS = { "Strict-Transport-Security": "max-age=31536000", "Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'" };
 function website(over = {}) {
   return {
-    "GET /": () => [200, `<html lang="en" dir="ltr"><a id="lang-switch" class="lang-switch" href="/ar/">العربية</a>${SITE}`, HEADERS],
-    "GET /ar/": () => [200, `<html lang="ar" dir="rtl">${SITE}`, HEADERS],
+    "GET /": () => [200, `<html lang="en" dir="ltr"><a id="lang-switch" class="lang-switch" href="/ar/">العربية</a><main id="main" class="home" data-page="home"></main>${SITE}`, HEADERS],
+    "GET /ar/": () => [200, `<html lang="ar" dir="rtl"><main id="main" class="home" data-page="home"></main>${SITE}`, HEADERS],
     "GET /install/docker/": () => [200, '<main id="app"></main>'],
     "GET /install/": () => [200, `<a href="/install/nas/">NAS</a>${SITE}`],
     "GET /legal/privacy/": () => [200, `<article data-legal="privacy"><dl data-policy="CurrentPolicy"></dl></article>${SITE}`],
@@ -110,6 +110,21 @@ test("website-preview passes on a good site reached through --base", async () =>
     assert.deepEqual(await run("website-preview", { ...quiet, env: {}, base: `${f.url}/` }), []);
     // only the target's own host was asked
     assert.ok(f.seen.every((s) => s.host === new URL(f.url).host));
+  } finally {
+    await f.close();
+  }
+});
+
+test("story 60.10 T05: the front door without the home page's marker fails", async () => {
+  const f = await fakeServer(
+    website({
+      "GET /ar/": () => [200, `<html lang="ar" dir="rtl">${SITE}`, HEADERS],
+    })
+  );
+  try {
+    const fails = await run("website-preview", { ...quiet, env: {}, base: f.url });
+    assert.equal(fails.length, 1);
+    assert.match(fails[0], /data-page="home"/);
   } finally {
     await f.close();
   }
@@ -142,7 +157,7 @@ test("a 200 on the 404 path fails, and so does HSTS with includeSubDomains", asy
   const f = await fakeServer(
     website({
       "GET /this-does-not-exist": () => [200, `<meta name="maktaba-page" content="404" />${SITE}`],
-      "GET /": () => [200, `<html lang="en" dir="ltr"><a id="lang-switch" class="lang-switch" href="/ar/"></a>${SITE}`, { ...HEADERS, "Strict-Transport-Security": "max-age=31536000; includeSubDomains" }],
+      "GET /": () => [200, `<html lang="en" dir="ltr"><a id="lang-switch" class="lang-switch" href="/ar/"></a><main data-page="home"></main>${SITE}`, { ...HEADERS, "Strict-Transport-Security": "max-age=31536000; includeSubDomains" }],
     })
   );
   try {

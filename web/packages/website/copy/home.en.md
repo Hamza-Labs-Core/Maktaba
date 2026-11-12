@@ -5,9 +5,9 @@ voice of [voice.md](voice.md). The Arabic is written on its own in
 [home.ar.md](home.ar.md), with the same keys. The mockups (`design/mockups/part-b.mjs`)
 read both files, so what is reviewed in the renders is this text.
 
-The screenshots named in the alt texts are stand-ins from maktaba.dev's Apps pages, on
-test data, until 60.09's demo-library captures replace them; each alt text then moves to
-what the new picture shows.
+The alt texts describe the demo-library captures of story 60.09 that the built home page
+shows (`scripts/home.mjs`, `SHOTS`); the mockups still draw maktaba.dev's stand-ins under
+them.
 
 ## meta.title
 
@@ -47,7 +47,7 @@ Free and open source. For Mac, Windows, Linux and most NAS.
 
 ## hero.shot.alt
 
-Maktaba's big screen on a TV: the lesson you were watching, ready to resume, and the row of what you are in the middle of.
+Maktaba on a TV: your library, with the two films you are in the middle of ready to carry on.
 
 ## screens.kicker
 
@@ -71,7 +71,7 @@ Big screen, from the Mac, Windows or Linux app, or the TV's browser
 
 ## screens.tv.alt
 
-Big screen on a TV: the libraries as large cards, the first one chosen with a gold ring.
+The live TV guide on a TV: three channels, Film Night, Shorts and Family, and what each plays over the next two hours.
 
 ## screens.phone.name
 
@@ -83,7 +83,7 @@ In the phone's browser, with the tabs at the bottom
 
 ## screens.phone.alt
 
-Maktaba on a phone: a new series at the top, the row to carry on watching, and the tab bar at the bottom.
+Maktaba on a phone: a featured film at the top, the row to carry on watching, and the tabs at the bottom.
 
 ## screens.tablet.name
 
@@ -95,7 +95,7 @@ In the tablet's browser
 
 ## screens.tablet.alt
 
-A library's page on a tablet: the lessons to carry on, what was added lately, and the menu at the side.
+Search on a tablet: a word found in a film's title and in what is said, in English and in Arabic, each line with its time.
 
 ## screens.computer.name
 
@@ -103,11 +103,11 @@ A computer
 
 ## screens.computer.caption
 
-Maktaba Player for Windows and Linux
+The Mac app, and Maktaba Player for Windows and Linux
 
 ## screens.computer.alt
 
-Maktaba Player on a computer: the new series at the top, then the rows to carry on watching and what comes next.
+The Mac app, in English: the libraries, with Films chosen, beside the rows to carry on watching and what was added lately.
 
 ## screens.browser.name
 
@@ -119,7 +119,7 @@ The whole app, in any browser at home
 
 ## screens.browser.alt
 
-Maktaba's home page in a browser: a new series at the top, the row to carry on watching, and the menu at the side.
+Maktaba's home page in a browser: a featured film at the top, the row to carry on watching, and the menu at the side.
 
 ## does.kicker
 

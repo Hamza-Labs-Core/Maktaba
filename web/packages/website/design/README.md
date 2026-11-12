@@ -26,6 +26,7 @@ English and Arabic.
 | `mockups/src/unraid.*.html`               | the built Unraid guide's header and main, the screenshot placeholders left out (60.05)                                   |
 | `review-sheet.html`                       | every PNG on one page, by mockup, width and language, for review                                                         |
 | `review-phase-1.md`                       | the built pages beside these mockups, each difference fixed or accepted (Phase 1 review, a draft until signed)           |
+| `review-phase-2.md`                       | the built home page beside its part B mockups, each difference fixed or accepted (Phase 2 review, a draft until signed)  |
 | `tests/`                                  | T01, T02's site half, T03, T04 and the copy checks; `make test-tokens` runs them                                         |
 | `fonts/`                                  | the subset and rename scripts behind `../static/fonts/`                                                                  |
 
