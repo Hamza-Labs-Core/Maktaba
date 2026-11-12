@@ -33,6 +33,7 @@ import { UpdateBanner } from "./UpdateBanner";
 import { MacPermissionsReminder } from "./MacPermissions/MacPermissionsReminder";
 import { TelemetryPrompt } from "./TelemetryPrompt";
 import { IS_REMOTE, SERVER_PAGES } from "../lib/edition";
+import { useMyParental, type MyParental } from "../lib/parental";
 import { useFeatureGate } from "../lib/capabilities";
 
 // Where the update badge sits (Story 28.6): Settings in the sidebar and
@@ -107,6 +108,26 @@ const SECONDARY = [
   { to: "/help", key: "nav.help", icon: "?" },
 ].filter((item) => SERVER_PAGES || !SERVER_SECONDARY.has(item.to));
 
+// Epic 57 (parental controls). A restricted account gets no link to what the home
+// refuses it (403 `restricted`: it mints no personal access token). A guardian who
+// is not an admin gets the way to their children's time rules here; an admin has it
+// in the Manage group. The home decides both; this only spares a dead link.
+const RESTRICTED_HIDDEN: ReadonlySet<string> = new Set(["/account/tokens"]);
+const FAMILY = { to: "/family", key: "nav.family", icon: "◴" };
+
+/** The secondary entries for this account (`manage`: it has the Manage group). */
+export function secondaryNav(
+  parental: Pick<MyParental, "restricted" | "children">,
+  manage: boolean
+): ReadonlyArray<{ to: string; key: string; icon: string }> {
+  if (parental.restricted) return SECONDARY.filter((item) => !RESTRICTED_HIDDEN.has(item.to));
+  if (manage || parental.children.length === 0) return SECONDARY;
+  // before Help, which stays last
+  const help = SECONDARY.findIndex((item) => item.to === "/help");
+  const at = help < 0 ? SECONDARY.length : help;
+  return [...SECONDARY.slice(0, at), FAMILY, ...SECONDARY.slice(at)];
+}
+
 // Admin nav ("Manage") is sidebar-only and rendered only for admins, in the editions
 // that have the server pages (not the player, Epic 42.5). The pages re-check the
 // principal server-side, so this is purely a UX affordance.
@@ -122,7 +143,11 @@ const ADMIN = [
   { to: "/admin/libraries", key: "nav.admin.libraries", icon: "▣" },
   { to: "/queue/libraries", key: "nav.libraryDashboard", icon: "▧" },
   { to: "/admin/users", key: "nav.admin.users", icon: "◉" },
+  // Epic 57 story 57.15: Users > the user > Time (a restricted account's time rules)
+  FAMILY,
   { to: "/admin/library-acl", key: "nav.admin.libraryAcl", icon: "▦" },
+  // Epic 57 story 57.17: the age ratings the home detected, for an admin to confirm
+  { to: "/parental/review", key: "nav.admin.tierReview", icon: "◎" },
   { to: "/admin/channels", key: "nav.admin.channels", icon: "▥" },
   { to: "/admin/filler", key: "nav.admin.filler", icon: "◫" },
   { to: "/admin/live-tv", key: "nav.admin.liveTv", icon: "▶" },
@@ -185,6 +210,7 @@ export function AppShell() {
   const hasUpdate = SERVER_PAGES && updateAvailable(updateStatus);
   const badged = (to: string) => hasUpdate && BADGED.has(to);
   const manage = SERVER_PAGES && !!user?.is_admin;
+  const secondary = secondaryNav(useMyParental(), manage);
   const healthDown = useSystemStatus(manage) === "down";
   // Epic 53 story 53.11: how many error groups are new (the Errors entry's count)
   const newErrors = useNewErrors(manage);
@@ -328,7 +354,7 @@ export function AppShell() {
               </ul>
             </>
           )}
-          {SECONDARY.map((item) => (
+          {secondary.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -455,11 +481,12 @@ export function MoreMenu() {
   const updateStatus = useUpdateStatus();
   const hasUpdate = SERVER_PAGES && updateAvailable(updateStatus);
   const manage = SERVER_PAGES && !!user?.is_admin;
+  const secondary = secondaryNav(useMyParental(), manage);
   const healthDown = useSystemStatus(manage) === "down";
   const groups: Array<{
     title?: string;
     items: ReadonlyArray<{ to: string; key: string; icon: string }>;
-  }> = [{ items: [SERIES, PLAYLISTS, ...SECONDARY] }];
+  }> = [{ items: [SERIES, PLAYLISTS, ...secondary] }];
   if (manage) groups.push({ title: t("nav.admin"), items: ADMIN });
   return (
     <section className="mkt-page mkt-more">

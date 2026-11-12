@@ -1,0 +1,162 @@
+/* Epic 57 (parental controls): the time state, the time rules editor, the review
+   list and the age rating control. Logical properties only, so Arabic mirrors. */
+
+.mkt-parental-time {
+  margin-block: var(--space-3);
+}
+.mkt-parental-time__left {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-subtle);
+  color: var(--color-fg);
+  font-variant-numeric: tabular-nums;
+}
+.mkt-parental-time__left--low {
+  border: 1px solid var(--color-warn);
+  background: var(--color-accent-soft);
+  color: var(--color-fg);
+}
+.mkt-parental-time__warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-block: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-warn);
+  background: var(--color-accent-soft);
+  color: var(--color-fg);
+}
+.mkt-parental-time__warning .mkt-btn {
+  color: inherit;
+}
+
+.mkt-parental-timesup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block: var(--space-4);
+  padding: var(--space-6) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-subtle);
+  text-align: center;
+}
+.mkt-parental-timesup h2,
+.mkt-parental-timesup p {
+  margin: 0;
+}
+.mkt-parental-timesup__ask {
+  color: var(--color-muted);
+}
+.mkt-parental-timesup__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-block-start: var(--space-3);
+}
+
+/* the time rules editor */
+.mkt-parental-rules {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+.mkt-parental-rule {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.mkt-parental-rule fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.mkt-parental-rule legend {
+  padding: 0;
+  margin-block-end: var(--space-1);
+  font-weight: 600;
+}
+.mkt-parental-rule__days,
+.mkt-parental-rule__row,
+.mkt-parental-grant {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-3);
+}
+.mkt-parental-rule__days label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.mkt-parental-rule__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.mkt-parental-usage {
+  width: 100%;
+  border-collapse: collapse;
+}
+.mkt-parental-usage th,
+.mkt-parental-usage td {
+  padding: var(--space-2);
+  border-block-end: 1px solid var(--color-border);
+  text-align: start;
+  font-variant-numeric: tabular-nums;
+}
+.mkt-parental-note {
+  color: var(--color-muted);
+}
+
+/* the review list and the age rating control */
+.mkt-parental-review {
+  width: 100%;
+  border-collapse: collapse;
+}
+.mkt-parental-review th,
+.mkt-parental-review td {
+  padding: var(--space-2);
+  border-block-end: 1px solid var(--color-border);
+  text-align: start;
+  vertical-align: top;
+}
+.mkt-parental-review__cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mkt-parental-review__decide,
+.mkt-age-tier {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-2);
+}
+.mkt-age-tier__result {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--color-muted);
+}
+.mkt-tuner-allowed textarea {
+  width: 100%;
+  min-block-size: 6rem;
+  font-family: var(--font-mono, monospace);
+  direction: ltr;
+  text-align: start;
+}

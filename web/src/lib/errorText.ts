@@ -114,12 +114,22 @@ export function relayPlanText(e: unknown, t: T): string | null {
 }
 
 /**
+ * The home refusing a restricted account something it may not do at all (Epic 57:
+ * 403 `restricted`), in the app's words. null for any other error.
+ */
+export function restrictedText(e: unknown, t: T): string | null {
+  if (!(e instanceof ApiError) || e.status !== 403 || e.problem.code !== "restricted") return null;
+  return t("parental.restricted");
+}
+
+/**
  * The sentence a screen shows for a failed call (admin: component_off says where to turn it
  * on; admin false: a library's refusal is only library.not_available_here).
  */
 export function errorText(e: unknown, t: T, opts: { admin?: boolean } = {}): string {
   return (
     relayPlanText(e, t) ??
+    restrictedText(e, t) ??
     componentOffText(e, t, opts) ??
     libraryAccessErrorText(e, t, opts.admin !== false) ??
     inputDetail(e) ??

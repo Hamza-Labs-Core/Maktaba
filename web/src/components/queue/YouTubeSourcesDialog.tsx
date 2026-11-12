@@ -13,6 +13,7 @@ import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { queueApi, SOURCE_MODES } from "../../lib/queueApi";
 import type { SourceMode, YouTubeSource } from "../../lib/queueApi";
 import { useReadOrder } from "../../lib/readOrder";
+import { AgeTierControl } from "../parental/AgeTierControl";
 import { useFmt } from "./format";
 import { useAction } from "./useAction";
 // its own styles: Manage libraries opens it too, without the Queues page
@@ -487,6 +488,12 @@ export function YouTubeSourcesPanel({
                   <span className="mkt-visually-hidden"> {s.external_id}</span>
                 </Button>
               </div>
+              {editing === s.id && (
+                // Epic 57 story 57.01: a rating on the source reaches every video from it
+                <AgeTierControl
+                  target={{ kind: "youtube_source", libraryId: library.id, id: s.id }}
+                />
+              )}
               {editing === s.id && (
                 <OptionsEditor
                   source={s}

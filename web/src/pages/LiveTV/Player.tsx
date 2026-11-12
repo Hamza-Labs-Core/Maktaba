@@ -65,6 +65,8 @@ import {
 } from "../../lib/channels";
 import { RemoteSession } from "../../lib/remoteTv";
 import { plainDetail } from "../../lib/errorText";
+import { useChannelAccess, useMyParental, useMyTime } from "../../lib/parental";
+import { TimeLeft, TimesUp, TimeWarning, nextWords } from "../../components/parental/TimeState";
 
 const BANNER_MS = 5000;
 /** A channel that played this long is a history entry of its own (push, not replace). */
@@ -191,7 +193,17 @@ const DESK_ROUTES: LiveRoutes = {
 export function Player({ routes = DESK_ROUTES }: { routes?: LiveRoutes } = {}) {
   const { number } = useParams();
   const nav = useNavigate();
-  const { t } = useI18n();
+  const words = useI18n();
+  const { t } = words;
+  // Epic 57 (stories 57.10, 57.15): a sign-in under a parental limit asks the home
+  // whether what the channel plays now may be watched, before it tunes and again
+  // when the programme changes; a restricted account's time is the home's too. The
+  // streaming service refuses the stream on its own either way.
+  const parental = useMyParental();
+  const limited = parental.restricted || parental.maxTier !== null;
+  const { time, ask: askTime } = useMyTime(parental.restricted);
+  // the deep-linked channel the home has said may play
+  const [cleared, setCleared] = useState<string | null>(null);
 
   const [lineup, setLineup] = useState<Channel[] | null>(null);
   const [nowEntries, setNowEntries] = useState<NowEntry[]>([]);
@@ -323,7 +335,8 @@ export function Player({ routes = DESK_ROUTES }: { routes?: LiveRoutes } = {}) {
 
   const player = useTvSwitcher<Channel>({
     channels: lineup,
-    channel: path ? channel : null,
+    // a limited sign-in tunes only once the home has said the channel may play
+    channel: path && (!limited || cleared === channel?.id) ? channel : null,
     resolve,
     pathKey: path ?? "",
     onSettled,
@@ -344,6 +357,30 @@ export function Player({ routes = DESK_ROUTES }: { routes?: LiveRoutes } = {}) {
   });
   sw.current = player;
   const { state } = player;
+
+  // what is on screen, or about to be: the channel the home is asked about
+  const gateChannel = state.target ?? state.current ?? channel;
+  const access = useChannelAccess(limited ? (gateChannel?.id ?? null) : null);
+  const judged = limited && access.channelId !== null && access.channelId === gateChannel?.id;
+  const programmeBlocked = judged && !access.allowed;
+  const timeOver = parental.restricted && time !== null && !time.allowed;
+  const blocked = programmeBlocked || timeOver;
+  useEffect(() => {
+    if (judged && access.allowed && channel && access.channelId === channel.id)
+      setCleared(channel.id);
+  }, [judged, access, channel]);
+  // The picture stops while the answer is no, and the channel is tuned again once
+  // it is yes (the next allowed programme, more time from a parent).
+  const wasBlocked = useRef(false);
+  useEffect(() => {
+    if (blocked) {
+      wasBlocked.current = true;
+      sw.current?.activeVideo()?.pause?.();
+    } else if (wasBlocked.current) {
+      wasBlocked.current = false;
+      sw.current?.retune();
+    }
+  }, [blocked]);
 
   // a failed tune on the LAN counts towards "Watch remotely"
   const lastErr = useRef<SwitchError | null>(null);
@@ -487,14 +524,39 @@ export function Player({ routes = DESK_ROUTES }: { routes?: LiveRoutes } = {}) {
             className={
               "mkt-live__video" + (i === player.activeIndex ? " is-active" : " is-standby")
             }
-            hidden={degraded}
+            hidden={degraded || blocked}
             playsInline
             controls={i === player.activeIndex}
             aria-hidden={i === player.activeIndex ? undefined : true}
             tabIndex={i === player.activeIndex ? undefined : -1}
           />
         ))}
-        {degraded && (
+        {blocked && (
+          <div className="mkt-live__slate" data-testid="live-parental-slate">
+            {timeOver && time ? (
+              <TimesUp reason={time.reason} nextAllowedAt={time.nextAllowedAt} onCheck={askTime} />
+            ) : (
+              <>
+                <p>{t("live.parental.slate")}</p>
+                {access.until && nextWords(access.until, words) && (
+                  <p className="mkt-live__slate-hint">
+                    {t("live.parental.back", { time: nextWords(access.until, words) })}
+                  </p>
+                )}
+              </>
+            )}
+            <Button variant="secondary" onClick={() => nav(routes.guide, { state: routes.state })}>
+              {t("live.openGuide")}
+            </Button>
+          </div>
+        )}
+        {!blocked && (
+          <>
+            <TimeLeft time={time} />
+            <TimeWarning time={time} />
+          </>
+        )}
+        {degraded && !blocked && (
           <div className="mkt-live__slate" data-testid="live-slate">
             <p>
               {unsupported

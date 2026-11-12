@@ -24,6 +24,7 @@ import { ApiError } from "../../lib/api";
 import { videoTitle } from "../../lib/videoTitle";
 import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
+import { AgeTierControl } from "../../components/parental/AgeTierControl";
 import type { VideoCard } from "../../lib/browse";
 import { fetchFacets } from "../../lib/me";
 import {
@@ -338,6 +339,8 @@ function CollectionOf({ id }: { id: string }) {
           {t("collections.sourced")}
         </p>
       )}
+      {/* Epic 57 story 57.01: a rating on the collection reaches every video in it */}
+      <AgeTierControl target={{ kind: "collection", id: col.id }} />
       {admin && (
         <CollectionSettingsPanel
           col={col}

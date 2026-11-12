@@ -25,6 +25,7 @@ import { api, ApiError } from "../lib/api";
 import { videoTitle } from "../lib/videoTitle";
 import { subscribe } from "../lib/ws";
 import { useI18n } from "../lib/i18n";
+import { AgeTierControl } from "../components/parental/AgeTierControl";
 import { LoadError } from "../components/LoadError";
 import { MediaContextCard } from "../components/MediaContextCard";
 import { EnrichmentPanel } from "../components/EnrichmentPanel";
@@ -337,6 +338,8 @@ export function VideoDetail() {
         />
         {/* Phase 2: resume, watched, favorite, add to playlist, the series' lessons */}
         <VideoActions videoId={videoId} />
+        {/* Epic 57 story 57.01: an admin's own rating beats every other source */}
+        <AgeTierControl target={{ kind: "video", id: video.id }} />
       </header>
       <Tabs label={videoTitle(video)} items={items} value={tab} onChange={selectTab} />
       {/* story 54.20: installed plugins' panels, below Maktaba's own sections */}

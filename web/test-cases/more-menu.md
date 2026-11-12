@@ -58,7 +58,7 @@
 - **Preconditions / data:** `/me` → `{ "user": { "id": "u1", "username": "root", "is_admin": true } }`.
 - **Steps:**
   1. Open `/more`.
-- **Expected:** After the MOR-01 list, `h2` "Administration" and a second list: Processing `/queue`, Transcription `/transcription`, Settings `/settings` (first), Users `/admin/users`, Library access `/admin/library-acl`, Channels `/admin/channels`, Filler pools `/admin/filler`, Live TV access `/admin/live-tv`, Analytics `/admin/analytics`, Audit log `/admin/audit`, System health `/admin/health`, Machines `/admin/machines`, Logs `/admin/logs`, All devices `/admin/devices`, Extensions `/admin/extensions` (15). `/admin/enrichment` is not listed — on a phone there is no way to reach it except typing the URL (likely gap).
+- **Expected:** After the MOR-01 list, `h2` "Administration" and a second list: Processing `/queue`, Transcription `/transcription`, Settings `/settings` (first), Users `/admin/users`, Time limits `/family`, Library access `/admin/library-acl`, Detected ratings `/parental/review`, Channels `/admin/channels`, Filler pools `/admin/filler`, Live TV access `/admin/live-tv`, Analytics `/admin/analytics`, Audit log `/admin/audit`, System health `/admin/health`, Machines `/admin/machines`, Logs `/admin/logs`, All devices `/admin/devices`, Extensions `/admin/extensions` (15). `/admin/enrichment` is not listed — on a phone there is no way to reach it except typing the URL (likely gap).
 
 ### MOR-04 — User object without `is_admin` shows no admin group
 

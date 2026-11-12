@@ -25,6 +25,13 @@ object WatchStrings {
             "upnext.playNow" to "Play now",
             "upnext.cancel" to "Cancel",
             "watch.reopening" to "Changing…",
+            // Epic 57 story 57.15: the home's time rules
+            "parental.time.up.title" to "Time's up for today",
+            "parental.time.outside.title" to "Not watching time yet",
+            "parental.time.next" to "You can watch again at {0}",
+            "parental.time.askParent" to "Ask a parent for more time",
+            "parental.time.saved" to "Your place in this video is saved at {0}.",
+            "parental.time.check" to "Check again",
         ),
         ar = mapOf(
             "watch.subtitles" to "الترجمة",
@@ -46,6 +53,12 @@ object WatchStrings {
             "upnext.playNow" to "شغّل الآن",
             "upnext.cancel" to "إلغاء",
             "watch.reopening" to "جارٍ التغيير…",
+            "parental.time.up.title" to "انتهى وقت اليوم",
+            "parental.time.outside.title" to "لم يحن وقت المشاهدة بعد",
+            "parental.time.next" to "يمكنك المشاهدة مجددًا عند {0}",
+            "parental.time.askParent" to "اطلب من أحد والديك وقتًا إضافيًا",
+            "parental.time.saved" to "حُفظ موضعك في هذا المقطع عند {0}.",
+            "parental.time.check" to "تحقّق مجددًا",
         ),
     )
 }

@@ -21,6 +21,8 @@ import com.hamzalabs.maktaba.core.playback.pickTrack
 import com.hamzalabs.maktaba.core.playback.plan
 import com.hamzalabs.maktaba.core.playback.sameLanguage
 import com.hamzalabs.maktaba.desktop.watch.Cue
+import com.hamzalabs.maktaba.desktop.watch.ParentalTime
+import com.hamzalabs.maktaba.desktop.watch.TimeUp
 import com.hamzalabs.maktaba.desktop.watch.Rendition
 import com.hamzalabs.maktaba.desktop.watch.UpNextState
 import com.hamzalabs.maktaba.desktop.watch.at
@@ -164,6 +166,14 @@ class Playback(
         private set
     var problem by mutableStateOf<String?>(null)
         private set
+
+    /**
+     * The home said this account's watching time is over (Epic 57 story 57.15: 403
+     * `parental-time`). The video has stopped and the time's-up screen shows; the home is not
+     * asked again until [checkAgain].
+     */
+    var timeUp by mutableStateOf<TimeUp?>(null)
+        private set
     var playing by mutableStateOf(false)
         private set
     var positionMs by mutableLongStateOf(0L)
@@ -233,7 +243,7 @@ class Playback(
     private var audioTrack: Int? = null
 
     fun play(r: PlayRequest) {
-        if (r.videoId == request?.videoId && problem == null && r.startSec == null) return
+        if (r.videoId == request?.videoId && problem == null && timeUp == null && r.startSec == null) return
         stop()
         request = r
         running = scope.launch { run(r) }
@@ -256,6 +266,7 @@ class Playback(
         player = null
         session = null
         problem = null
+        timeUp = null
         note = null
         request = null
         playing = false
@@ -275,6 +286,13 @@ class Playback(
         hls = false
         upNext.reset(null)
         proxy.forget()
+    }
+
+    /** The viewer's own tap on the time's-up screen: the same video again, from where it stopped. */
+    fun checkAgain() {
+        val r = request ?: return
+        val up = timeUp ?: return
+        play(r.copy(startSec = (up.positionMs / 1000).toInt()))
     }
 
     /** The proxy too: the app is closing or leaving this home. */
@@ -512,6 +530,17 @@ class Playback(
             stop()
             signedOut()
         } catch (e: Exception) {
+            val over = ParentalTime.refusal(e)
+            if (over != null) {
+                // the account's time is over: nothing plays on, not the stream before either
+                if (old != null) background.launch { client.closeStream(old) }
+                session = null
+                release(player)
+                player = null
+                playing = false
+                timeUp = over.copy(positionMs = fromMs)
+                return
+            }
             if (old != null) {
                 // the stream before keeps playing; say why the change did not take
                 note = e.message ?: e.toString()
