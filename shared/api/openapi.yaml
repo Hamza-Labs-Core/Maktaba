@@ -326,6 +326,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: createLibrary
   /libraries/{id}:
     parameters:
@@ -378,6 +380,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: updateLibrary
     delete:
       tags:
@@ -429,6 +433,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: deleteLibrary
   /libraries/{id}/scan:
     parameters:
@@ -467,6 +473,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: scanLibrary
   /libraries/{id}/stats:
     parameters:
@@ -1404,6 +1412,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: listJobs
   /jobs/{id}:
     parameters:
@@ -1427,6 +1437,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: getJob
   /jobs/{id}/pause:
     parameters:
@@ -1463,6 +1475,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: pauseJob
   /jobs/{id}/resume:
     parameters:
@@ -1492,6 +1506,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: resumeJob
   /jobs/{id}/cancel:
     parameters:
@@ -1522,6 +1538,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: cancelJob
   /jobs/{id}/retry:
     parameters:
@@ -1551,6 +1569,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: retryJob
   /queue/stats:
     get:
@@ -1570,6 +1590,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: getQueueStats
   /collections:
     get:
@@ -1769,6 +1791,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: createTag
   /sessions:
     post:
@@ -2146,6 +2170,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: getSettings
     put:
       tags:
@@ -2193,6 +2219,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: listSttBackends
   /settings/stt-test:
     post:
@@ -2233,6 +2261,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: testSttBackend
   /devices/register:
     post:
@@ -2496,6 +2526,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Restricted'
   /speakers/{id}:
     parameters:
     - in: path
@@ -2537,6 +2569,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Restricted'
   /speakers/merge:
     post:
       tags:
@@ -2577,6 +2611,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Restricted'
   /queues:
     get:
       tags:
@@ -2595,6 +2631,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '401': &id003
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: getQueuesSnapshot
   /queues/graph:
     get:
@@ -2620,6 +2658,8 @@ paths:
         default: *id001
         '429': *id002
         '401': *id003
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: getQueueGraph
   /queues/libraries:
     get:
@@ -2641,6 +2681,8 @@ paths:
         default: *id001
         '429': *id002
         '401': *id003
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: getQueueLibraries
   /queues/libraries/activity:
     get:
@@ -2702,6 +2744,8 @@ paths:
         default: *id001
         '429': *id002
         '401': *id003
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: getQueueLibraryActivity
   /queues/health:
     get:
@@ -2737,6 +2781,8 @@ paths:
         default: *id001
         '429': *id002
         '401': *id003
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: getQueueHealth
   /queues/pause-all:
     post:
@@ -2794,6 +2840,8 @@ paths:
         default: *id001
         '429': *id002
         '401': *id003
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: getQueueDetail
     patch:
       tags:
@@ -2869,6 +2917,8 @@ paths:
         default: *id001
         '429': *id002
         '401': *id003
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: getQueueRate
   /queues/{stage}/jobs:
     parameters:
@@ -2915,6 +2965,8 @@ paths:
         default: *id001
         '429': *id002
         '401': *id003
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: listQueueJobs
   /queues/{stage}/failures:
     parameters:
@@ -2939,6 +2991,8 @@ paths:
         default: *id001
         '429': *id002
         '401': *id003
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: getQueueFailures
   /queues/{stage}/pause:
     parameters:
@@ -3352,6 +3406,8 @@ paths:
         default: *id001
         '429': *id002
         '401': *id003
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: patchYouTubeSource
     delete:
       tags:
@@ -3401,6 +3457,8 @@ paths:
         default: *id001
         '429': *id002
         '401': *id003
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: guessYouTubeSource
   /queues/youtube-tartube:
     get:
@@ -3418,6 +3476,8 @@ paths:
         default: *id001
         '429': *id002
         '401': *id003
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: getYouTubeTartubeImport
     post:
       tags:
@@ -3441,6 +3501,8 @@ paths:
         default: *id001
         '429': *id002
         '401': *id003
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: importYouTubeTartubeSources
   /libraries/{id}/offline-summary:
     get:
@@ -3662,6 +3724,8 @@ paths:
         default: *id001
         '429': *id002
         '401': *id003
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: listPools
   /pools/{pool}:
     parameters:
@@ -3750,6 +3814,8 @@ paths:
         default: *id001
         '429': *id002
         '401': *id003
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: listIssues
   /activity:
     get:
@@ -3807,6 +3873,8 @@ paths:
         default: *id001
         '429': *id002
         '401': *id003
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: listActivity
   /jobs/{id}/events:
     parameters:
@@ -3831,6 +3899,8 @@ paths:
         default: *id001
         '429': *id002
         '401': *id003
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: listJobEvents
   /items/{kind}/{id}/history:
     parameters:
@@ -3879,6 +3949,8 @@ paths:
         default: *id001
         '429': *id002
         '401': *id003
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: getItemHistory
   /workers:
     get:
@@ -3900,6 +3972,8 @@ paths:
         default: *id001
         '429': *id002
         '401': *id003
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: listWorkers
   /extensions:
     get:
@@ -3921,6 +3995,8 @@ paths:
         default: *id001
         '429': *id002
         '401': *id003
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: listExtensions
   /extensions/{name}:
     parameters:
@@ -4137,6 +4213,8 @@ paths:
                 type: string
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: streamQueues
   /capabilities:
     get:
@@ -5762,6 +5840,8 @@ paths:
         '422': *id013
         '401': *id010
         default: *id011
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: setFeatured
   /libraries/summary:
     get:
@@ -7234,6 +7314,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         default:
           $ref: '#/components/responses/InternalError'
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: getSystemUpdates
   /videos/{id}/age-tier:
     parameters:
@@ -10385,6 +10467,8 @@ paths:
           $ref: '#/components/responses/RateLimited'
         default:
           $ref: '#/components/responses/InternalError'
+        '403':
+          $ref: '#/components/responses/Restricted'
       operationId: listParentalActivity
   /parental/users/{id}/time-rules:
     get:
@@ -11093,6 +11177,15 @@ components:
             $ref: '#/components/schemas/ProblemDetails'
     NotFound:
       description: Resource not found.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/X-Request-Id'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    Restricted:
+      description: 'A restricted account (one under parental controls) may not do this: `code` is `restricted` and `type` is `https://maktaba.tv/problems/restricted`. Any other account gets the operation''s own answer.'
       headers:
         X-Request-Id:
           $ref: '#/components/headers/X-Request-Id'

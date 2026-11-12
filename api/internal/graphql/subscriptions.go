@@ -45,6 +45,8 @@ func subscribe[T any](ctx context.Context, hub *ws.Hub, channel string, fn func(
 	if principal.FromContext(ctx) == nil {
 		return nil, &restError{Status: http.StatusUnauthorized, Title: "unauthorized", Detail: "auth required"}
 	}
+	// story 57.03: the same per-connection filter as the SSE feeds
+	guard := hub.Watch(principal.FromContext(ctx), channel)
 	sub := hub.Subscribe(channel)
 	out := make(chan T, 16)
 	go func() {
@@ -58,6 +60,13 @@ func subscribe[T any](ctx context.Context, hub *ws.Hub, channel string, fn func(
 			case <-sub.Done:
 				return
 			case e := <-sub.C:
+				send, end := guard(ctx, e)
+				if end {
+					return
+				}
+				if !send {
+					continue
+				}
 				v, ok := fn(e)
 				if !ok {
 					continue

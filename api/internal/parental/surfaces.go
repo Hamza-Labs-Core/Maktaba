@@ -182,11 +182,6 @@ func buildSurfaces() SurfaceTable {
 			t = append(t, Surface{Methods: methods, Pattern: p, Class: Filtered, Reason: reason, Probe: pr})
 		}
 	}
-	closed := func(methods []string, owner, reason string, patterns ...string) {
-		for _, p := range patterns {
-			t = append(t, Surface{Methods: methods, Pattern: p, Class: Closed, Owner: owner, Reason: reason})
-		}
-	}
 	all := []string(nil)
 
 	// ---- open: no content, or the route guards itself ----
@@ -285,12 +280,12 @@ func buildSurfaces() SurfaceTable {
 	)
 	exact(Open, mPost, "a client's own diagnostics, written not read", "/api/diagnostics/envelope")
 	exact(Open, all, "the caller's own search words; no result is in them",
-		"/api/search/recent",
 		"/api/search/recent/{sid}",
 		"/api/search/saved",
 		"/api/search/saved/{id}",
 		"/api/search/save",
 	)
+	exact(Open, mDelete, "clearing the caller's own recent searches", "/api/search/recent")
 	exact(Open, all, "GraphQL answers through sub-requests to the REST routes, each of which passes this gate",
 		"/graphql",
 		"/graphql/schema",
@@ -468,6 +463,14 @@ func buildSurfaces() SurfaceTable {
 		"/api/libraries",
 	)
 
+	// ---- tags and a library's numbers ----
+	filtered(mGet, "the tags carried by at least one video the account may see (handlers/tags)", "",
+		"/api/tags",
+	)
+	byID(mGet, SubjectLibrary, "id", "a library's numbers, counted over the videos the account may see; no jobs, no sweep (handlers/libraries StatsCached)",
+		"/api/libraries/{id}/stats",
+	)
+
 	// ---- libraries as a viewer reads them ----
 	filtered(mGet, "the caller's libraries: the gate takes a blocked library out of the account's access, and counts carry the filter clause", "",
 		"/api/libraries",
@@ -526,34 +529,61 @@ func buildSurfaces() SurfaceTable {
 		"/api/series/{id}",
 		"/api/series/{id}/episodes",
 	)
-	closed(mWrite, "", "curating collections and series is not a restricted account's",
+	// Curating is an admin's (each handler refuses every other account, and a
+	// restricted account is never an admin, 57.02). The gate still checks the
+	// object first, so a hidden collection or series answers as a missing one
+	// before the role check says anything about it.
+	exact(Open, mPost, "making a collection is an admin's: the handler refuses every other account before it reads anything",
 		"/api/collections",
+	)
+	byID(mWrite, SubjectCollection, "id", "a change to one collection: a hidden one is missing before the role check answers",
 		"/api/collections/{id}",
 		"/api/collections/{id}/items",
 		"/api/collections/{id}/items/{video_id}",
 		"/api/collections/{id}/convert",
 		"/api/collections/{id}/duplicate",
 		"/api/collections/{id}/age-tier",
+	)
+	byID(mWrite, SubjectSeries, "id", "a change to one series: a hidden one is missing before the role check answers",
 		"/api/series/{id}",
 		"/api/series/{id}/enrichment/accept-all",
 		"/api/series/{id}/age-tier",
 		"/api/series/{id}/style",
 	)
-	closed(mGet, "", "a series' missing episodes name titles the home does not hold: not filtered yet", "/api/series/{id}/missing")
+	byID(mGet, SubjectSeries, "id", "the gaps in a series' episode numbers, counted from the episodes the account may see: a hidden episode is a gap like a missing one (season and episode numbers only, no titles)",
+		"/api/series/{id}/missing",
+	)
 
 	// ---- images by content hash ----
 	filtered(mGet, "the thumbnail's video must pass the filter (handlers/reports thumbVisible)", "", "/api/thumbnails/{hash}/small.jpg")
 
-	// ---- not filtered yet: closed to a restricted account ----
-	closed(all, "", "search ranks, caches and suggests over every video; its queries do not carry the filter clause yet",
+	// ---- search (handlers/search/parental.go) ----
+	filtered(mPost, "the title and transcript queries carry the filter clause and the meaning search's passages are kept for allowed videos only, so ranks, totals and snippets are of what the account may see; its YouTube block is never asked", "",
 		"/api/search",
-		"/api/search/passages",
+	)
+	filtered(mGet, "a kept search is filtered again, under the limit as it is now, on every read: pages, totals and one video's passages (a hidden video answers as one not in the search)", "",
 		"/api/search/results/{sid}",
+		"/api/search/passages",
+	)
+	filtered(mGet, "the caller's recent searches, each counted again over what it may see now", "",
+		"/api/search/recent",
+	)
+	filtered(mGet, "typeahead: only the caller's own earlier search words (search_history) are read, never a title or a result, so there is nothing of a hidden video to leave out; refused like the rest of search when the policy cannot be read", "",
 		"/api/search/suggest",
 	)
-	closed(mGet, "", "the live event streams of the home and of a library name videos without asking the filter yet",
+
+	// ---- live feeds (parental/live.go): each connection has its own filter ----
+	filtered(mGet, "the home's live feed: every event is asked of the connection's filter, with the limit as it is at that moment", "",
 		"/ws/home",
+	)
+	byID(mGet, SubjectLibrary, "id", "a library's live feed: the library is checked at the start and again for every event, and an event is sent only when every item it names is allowed",
 		"/ws/library/{id}",
+	)
+
+	// ---- plugin panels (plugins/panels.go) ----
+	filtered(mGet, "a plugin's panel on a video, series, season or library: the subject must be allowed and the plugin allowed by a rule for this account (a panel may name other titles)", "",
+		"/api/panels",
+		"/api/panels/image",
 	)
 	return t
 }

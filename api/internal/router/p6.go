@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/graphql"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
@@ -213,6 +214,13 @@ func MountP6(r chi.Router, d P6Deps) {
 	parentalCache := MountParental(r, d.DB, d.Loops, d.BusCtx, d.BusDSN, d.BusResettle)
 	if d.ParentalGate != nil {
 		d.ParentalGate.SetCache(parentalCache)
+		// story 57.03: every live connection (the /ws feeds, the GraphQL
+		// subscriptions) is filtered by its own account's limit, read per event
+		gate := d.ParentalGate
+		hub.Guard = func(p *principal.Principal, channel string) ws.Guard {
+			lg := gate.LiveGuard(p, channel)
+			return func(ctx context.Context, e ws.Event) (bool, bool) { return lg.Event(ctx, e.Type, e.Payload) }
+		}
 	}
 	if d.OnParental != nil {
 		d.OnParental(parentalCache)

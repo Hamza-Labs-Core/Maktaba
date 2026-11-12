@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 // The row cache's tests run on a scratch Postgres (slot 0167's trigger is
@@ -385,5 +386,57 @@ func TestRowCacheLRUPostgres(t *testing.T) {
 	defer e.c.mu.Unlock()
 	if e.c.lru.Len() != 2 || e.c.entries[rowKey{libB, RowSize}] != nil || e.c.entries[rowKey{libA, RowSize}] == nil {
 		t.Errorf("%d entries, B kept %v", e.c.lru.Len(), e.c.entries[rowKey{libB, RowSize}] != nil)
+	}
+}
+
+// Epic 57 story 57.03, test case T05: the shared row cache is not a restricted
+// account's. A row an admin's request warmed holds every video; the child's row
+// is read under its limit, straight from the database, and leaves the cached row
+// as it was.
+func TestRowCacheIsNotARestrictedAccountsPostgres(t *testing.T) {
+	e := newRowCacheEnv(t)
+	e.c.Resume()
+	kid, teen, unrated := e.add(e.db, libA), e.add(e.db, libA), e.add(e.db, libA)
+	if _, err := e.db.Exec(`UPDATE videos SET age_tier = CASE id WHEN $1::uuid THEN 0 WHEN $2::uuid THEN 16 END WHERE id IN ($1::uuid, $2::uuid)`, kid, teen); err != nil {
+		t.Fatal(err)
+	}
+	ids := func(ctx context.Context) []string {
+		t.Helper()
+		m, err := e.h.libraryRows(ctx, []string{libA}, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, c := range m[libA] {
+			out = append(out, c.ID)
+		}
+		slices.Sort(out)
+		return out
+	}
+	all := []string{kid, teen, unrated}
+	slices.Sort(all)
+	if got := ids(t.Context()); !slices.Equal(got, all) {
+		t.Fatalf("the admin's row: %v, want %v", got, all)
+	}
+	warm := e.reads()
+	if got := ids(t.Context()); !slices.Equal(got, all) || e.reads() != warm {
+		t.Fatalf("the admin's second row: %v after %d reads (was %d): not from the cache", got, e.reads(), warm)
+	}
+	child := parental.With(t.Context(), &parental.Effective{
+		UserID: viewer, Restricted: true, MaxTier: parental.Tier9, Unrated: parental.UnratedHide})
+	if got := ids(child); !slices.Equal(got, []string{kid}) {
+		t.Fatalf("the child's row: %v, want only %s", got, kid)
+	}
+	// an allow shows the 16+ video at once: nothing of the child's row is kept
+	allowed := parental.With(t.Context(), &parental.Effective{
+		UserID: viewer, Restricted: true, MaxTier: parental.Tier9, Unrated: parental.UnratedHide,
+		Rules: []parental.Rule{{Effect: parental.EffectAllow, SubjectKind: parental.SubjectVideo, SubjectID: teen}}})
+	want := []string{kid, teen}
+	slices.Sort(want)
+	if got := ids(allowed); !slices.Equal(got, want) {
+		t.Fatalf("the child's row with an allow: %v, want %v", got, want)
+	}
+	if got := ids(t.Context()); !slices.Equal(got, all) || e.reads() != warm {
+		t.Fatalf("the admin's row after the child's: %v after %d reads (was %d)", got, e.reads(), warm)
 	}
 }

@@ -168,6 +168,11 @@ func (h *Handler) runFromRequest(w http.ResponseWriter, r *http.Request, id stri
 		httperror.Write(w, r, httperror.Internal("search").Wrap(err))
 		return nil
 	}
+	// story 57.03: a kept search is read under the account's limit as it is now
+	if err := h.restrict(r.Context(), rn); err != nil {
+		httperror.Write(w, r, httperror.Unavailable(5).Wrap(err))
+		return nil
+	}
 	return rn
 }
 
@@ -359,9 +364,15 @@ func (h *Handler) Recent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rl := h.rules(r.Context())
+	// story 57.03: a restricted account's counts are counted again under its limit,
+	// from each kept result; nobody else's result is read here
+	resultCol, results := "NULL", map[string]string{}
+	if limited(r.Context()) {
+		resultCol = "result"
+	}
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT id, query, mode, filters, title_count, transcript_count, created_at_ms, last_used_at_ms,
-		       expires_at_ms, result IS NOT NULL
+		       expires_at_ms, result IS NOT NULL, `+resultCol+`
 		FROM search_runs WHERE user_id = $1
 		ORDER BY created_at_ms DESC, id DESC LIMIT $2`, p.UserID, rl.RecentLimit)
 	if err != nil {
@@ -376,8 +387,9 @@ func (h *Handler) Recent(w http.ResponseWriter, r *http.Request) {
 		var created, used, expires int64
 		var kept bool
 		var filters string
+		var result sql.NullString
 		if err := rows.Scan(&it.SearchID, &it.Q, &it.Mode, &filters, &it.TitleCount, &it.TranscriptCount,
-			&created, &used, &expires, &kept); err != nil {
+			&created, &used, &expires, &kept, &result); err != nil {
 			httperror.Write(w, r, httperror.Internal("recent searches").Wrap(err))
 			return
 		}
@@ -385,6 +397,9 @@ func (h *Handler) Recent(w http.ResponseWriter, r *http.Request) {
 		it.LastUsedAt = time.UnixMilli(used).UTC()
 		it.ExpiresAt = time.UnixMilli(expires).UTC()
 		it.Live = kept && expires > nowMs
+		if it.Live && result.Valid {
+			results[it.SearchID] = result.String
+		}
 		// the same search run again in another tab: the newest only
 		if key := it.Q + "\x00" + it.Mode + "\x00" + filters; !seen[key] {
 			seen[key] = true
@@ -393,6 +408,10 @@ func (h *Handler) Recent(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := rows.Err(); err != nil {
 		httperror.Write(w, r, httperror.Internal("recent searches").Wrap(err))
+		return
+	}
+	if err := h.recount(r.Context(), items, results); err != nil {
+		httperror.Write(w, r, httperror.Unavailable(5).Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items})

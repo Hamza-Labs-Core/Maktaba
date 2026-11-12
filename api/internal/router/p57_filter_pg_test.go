@@ -24,6 +24,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
@@ -69,11 +70,12 @@ func (s *pfSigner) SignStreamURL(rawURL, _, _, _ string, ttl time.Duration) (str
 func (s *pfSigner) KeepTime(func(string) (bool, error)) {}
 
 type pfEnv struct {
-	t      *testing.T
+	t      testing.TB
 	db     *sql.DB
 	h      http.Handler
 	gate   *parental.Gate
 	signer *pfSigner
+	hub    *ws.Hub
 	// stream, when set, ends each request after that long: a live channel never ends itself
 	stream time.Duration
 }
@@ -85,10 +87,10 @@ var pfStandIns = []struct{ method, path string }{
 	{http.MethodGet, "/api/plugins"}, {http.MethodGet, "/api/users"},
 }
 
-func setupFilter(t *testing.T) *pfEnv {
+func setupFilter(t testing.TB) *pfEnv {
 	t.Helper()
 	db, _ := clustertest.ScratchDB(t)
-	e := &pfEnv{t: t, db: db, gate: parental.NewGate(), signer: &pfSigner{}}
+	e := &pfEnv{t: t, db: db, gate: parental.NewGate(), signer: &pfSigner{}, hub: ws.NewHub()}
 	e.exec(`INSERT INTO users (id, username, pw_hash, is_admin) VALUES
 		($1,'pf-admin','x',true), ($2,'pf-guardian','x',false), ($3,'pf-other-guardian','x',false),
 		($4,'pf-child','x',false), ($5,'pf-child-two','x',false), ($6,'pf-viewer','x',false)`,
@@ -115,7 +117,7 @@ func setupFilter(t *testing.T) *pfEnv {
 	r := router.New(router.Deps{IdempotencyStore: idempotency.NewMemoryStore(), Parental: e.gate})
 	// a streaming service that keeps time limits (story 57.14): without one a
 	// restricted account's stream is refused
-	router.MountP6(r, router.P6Deps{DB: db, StreamingClient: &tmStreaming{leases: map[string]time.Time{}}, URLSigner: e.signer, ParentalGate: e.gate})
+	router.MountP6(r, router.P6Deps{DB: db, StreamingClient: &tmStreaming{leases: map[string]time.Time{}}, URLSigner: e.signer, ParentalGate: e.gate, EventHub: e.hub})
 	if e.gate.Cache() == nil {
 		t.Fatal("MountP6 gave the gate no cache")
 	}
@@ -329,8 +331,9 @@ var pfLists = []string{
 	"/api/me/favorites", "/api/me/playlists", "/api/me/play-queues/current",
 }
 
-// T04, T05, T07: no list, row, count-bearing page or search names a hidden video; a row another
-// account warmed is not the child's; search and the live rows are closed until they are filtered.
+// T04, T05: no list, row, count-bearing page or search names a hidden video; a row another
+// account warmed is not the child's. Search itself and the live rows (T07) are in
+// p57_gaps_pg_test.go.
 func TestP57FilterLists(t *testing.T) {
 	e := setupFilter(t)
 	// the child watched and liked the teen video before it was restricted
@@ -367,11 +370,10 @@ func TestP57FilterLists(t *testing.T) {
 		if json.Unmarshal([]byte(body), &list) == nil && list.Total != nil && *list.Total != 1 {
 			t.Errorf("%s: the list counts %d videos, want the 1 shown", who, *list.Total)
 		}
-		// closed until filtered: the answer of a route that is not there
+		// closed: the answer of a route that is not there (search and the live rows
+		// are filtered now: p57_gaps_pg_test.go)
 		for _, c := range []struct{ method, path, body string }{
-			{http.MethodPost, "/api/search", `{"q":"Zarqa"}`}, {http.MethodGet, "/api/search/suggest?q=Zar", ""},
-			{http.MethodGet, "/api/search/passages?q=Zarqa", ""}, {http.MethodGet, "/ws/home", ""},
-			{http.MethodGet, "/ws/library/" + pfLibA, ""}, {http.MethodGet, "/api/tv/guide", ""},
+			{http.MethodGet, "/api/tv/guide", ""},
 		} {
 			rec := e.raw(who, c.method, c.path, c.body)
 			if rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), pfTeenName) {
@@ -527,8 +529,8 @@ func TestP57FilterRefusals(t *testing.T) {
 		{http.MethodGet, "/api/channels/playlist.m3u", ""},
 		{http.MethodGet, "/api/plugins", ""},
 		{http.MethodPut, "/api/home/featured", `{"video_id":"` + pfKid + `"}`},
-		{http.MethodGet, "/api/tags", ""},
-		{http.MethodGet, "/api/libraries/" + pfLibA + "/stats", ""},
+		{http.MethodPost, "/api/tags", `{"name":"t"}`},
+		{http.MethodDelete, "/api/tags/" + pfKid, ""},
 		{http.MethodGet, "/api/users", ""},
 		{http.MethodPost, "/api/libraries/" + pfLibA + "/scan", `{}`},
 	}

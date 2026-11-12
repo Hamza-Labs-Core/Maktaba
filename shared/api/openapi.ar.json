@@ -1557,6 +1557,10 @@
       "en": "Resource not found.",
       "ar": "المورد غير موجود."
     },
+    "/components/responses/Restricted/description": {
+      "en": "A restricted account (one under parental controls) may not do this: `code` is `restricted` and `type` is `https://maktaba.tv/problems/restricted`. Any other account gets the operation's own answer.",
+      "ar": "الحساب المقيَّد (الخاضع للرقابة الأبوية) لا يقوم بهذا: قيمة `code` هي `restricted` وقيمة `type` هي `https://maktaba.tv/problems/restricted`. وأي حساب آخر يتلقى إجابة العملية نفسها."
+    },
     "/components/responses/ValidationError/description": {
       "en": "Request body or parameters failed validation.",
       "ar": "فشل التحقق من جسم الطلب أو معاملاته."
