@@ -1564,6 +1564,74 @@
           "avifBytes": 66146
         }
       ]
+    },
+    "webphone-home-ar": {
+      "app": "webphone",
+      "screen": "home",
+      "lang": "ar",
+      "width": 480,
+      "height": 1041,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 520,
+          "webp": "/shots/webphone-home-ar-240.webp",
+          "avif": "/shots/webphone-home-ar-240.avif",
+          "webpBytes": 17832,
+          "avifBytes": 15601
+        },
+        {
+          "width": 360,
+          "height": 780,
+          "webp": "/shots/webphone-home-ar-360.webp",
+          "avif": "/shots/webphone-home-ar-360.avif",
+          "webpBytes": 31034,
+          "avifBytes": 27784
+        },
+        {
+          "width": 480,
+          "height": 1041,
+          "webp": "/shots/webphone-home-ar-480.webp",
+          "avif": "/shots/webphone-home-ar-480.avif",
+          "webpBytes": 43982,
+          "avifBytes": 39603
+        }
+      ]
+    },
+    "webphone-home-en": {
+      "app": "webphone",
+      "screen": "home",
+      "lang": "en",
+      "width": 480,
+      "height": 1041,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 520,
+          "webp": "/shots/webphone-home-en-240.webp",
+          "avif": "/shots/webphone-home-en-240.avif",
+          "webpBytes": 18312,
+          "avifBytes": 15722
+        },
+        {
+          "width": 360,
+          "height": 780,
+          "webp": "/shots/webphone-home-en-360.webp",
+          "avif": "/shots/webphone-home-en-360.avif",
+          "webpBytes": 31468,
+          "avifBytes": 28243
+        },
+        {
+          "width": 480,
+          "height": 1041,
+          "webp": "/shots/webphone-home-en-480.webp",
+          "avif": "/shots/webphone-home-en-480.avif",
+          "webpBytes": 45116,
+          "avifBytes": 40141
+        }
+      ]
     }
   }
 }

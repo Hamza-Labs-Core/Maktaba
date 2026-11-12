@@ -212,6 +212,20 @@ test("T06: shots.mjs on a fixture run writes the manifest and the files, and kee
       ["web"]
     );
     assert.match(third.kept[0].why, /missing web-guide-ar/);
+
+    // a run for one app alone (--only tv) leaves every other app's entries in the manifest
+    const fourth = await makeShots({
+      input,
+      repo: root,
+      out,
+      manifestPath,
+      config: { ...cfg, sources: { tv: cfg.sources.tv } },
+      run: green,
+    });
+    assert.deepEqual(fourth.taken, ["tv"]);
+    const m4 = JSON.parse(readFileSync(manifestPath, "utf8"));
+    assert.deepEqual(Object.keys(m4.images), Object.keys(m.images));
+    assert.equal(m4.images["web-home-en"].app, "web");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

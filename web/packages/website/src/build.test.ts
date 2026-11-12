@@ -104,6 +104,33 @@ describe("the built site (dist/)", () => {
     expect(fs.existsSync(path.join(DIST, "index.html")), "run `npm run build` first").toBe(true);
   });
 
+  it("every product screenshot is in its page's language, but the two-language pair and #1198's", () => {
+    // The visual references mask the apps' screenshots, so this is what checks a page shows
+    // its own language's screens. Allowed in the other language: the pair that shows both side
+    // by side (<ul class="pair">), and the Mac window in English on both pages until the Arabic
+    // one mirrors (#1198).
+    const OTHER_ALLOWED = new Set(["mac-library-en"]);
+    const pages = ["index.html", "ar/index.html", "download/index.html", "ar/download/index.html"];
+    for (const rel of pages) {
+      const lang = rel.startsWith("ar/") ? "ar" : "en";
+      const html = read(rel).replace(/<ul class="pair">[\s\S]*?<\/ul>/g, "");
+      const shots = [
+        ...html.matchAll(
+          /<img\b[^>]*\bsrc="\/shots\/([a-z0-9-]+?)-(en|ar)-\d+\.(?:webp|avif)"[^>]*>/g
+        ),
+      ];
+      for (const [tag, key, shotLang] of shots) {
+        expect(tag, `${rel}: an image's lang is its picture's`).toContain(`lang="${shotLang}"`);
+        if (shotLang !== lang)
+          expect(
+            OTHER_ALLOWED.has(`${key}-${shotLang}`),
+            `${rel}: ${key}-${shotLang} is not in the page's language`
+          ).toBe(true);
+      }
+    }
+    expect(read("ar/index.html")).toMatch(/\/shots\/webphone-home-ar-\d+\.webp/);
+  });
+
   it("the home page's headline is the chosen tagline (Q1, 2026-11-12), in both languages", () => {
     const h1 = (rel: string) => read(rel).match(/<h1[^>]*>([^<]*)<\/h1>/)?.[1];
     expect(h1("index.html")).toBe("Your own library, on every screen at home.");

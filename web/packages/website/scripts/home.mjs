@@ -127,7 +127,9 @@ export const SHOTS_MANIFEST = path.join(PKG, "shots-manifest.json");
 export const SHOTS = {
   hero: { kind: "tv", key: "appletv-home-{lang}" },
   tv: { kind: "tv", key: "androidtv-guide-{lang}" },
-  phone: { kind: "phone", key: "iphone-home-{lang}" },
+  // the web app at a phone's width (60.09's webphone capture): the screen the caption names, a
+  // phone's browser, not the iPhone app, which is not publicly installable (Q5)
+  phone: { kind: "phone", key: "webphone-home-{lang}" },
   tablet: { kind: "tablet", key: "web-search-{lang}" },
   computer: { kind: "window", key: "mac-library-en", chrome: "own" },
   browser: { kind: "browser", key: "web-home-{lang}" },
