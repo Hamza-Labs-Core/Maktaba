@@ -9777,7 +9777,7 @@ paths:
       tags:
       - Parental controls
       summary: Open something with a parent PIN
-      description: 'For a restricted account only: a guardian types their PIN on the child''s device. A right PIN allows the item until 04:00 home time and answers a waiting request for it. A wrong PIN, a person who is not a guardian of the account and a person with no PIN all get the same answer, and every answer takes at least 250 ms. Five wrong PINs lock that guardian''s PIN for 15 minutes, then twice as long each time, up to 24 hours; ten wrong PINs in an hour from one account, or twenty from one address, close PIN entry for an hour.'
+      description: 'For a restricted account only: a guardian types their PIN on the child''s device. A right PIN allows the item until 04:00 home time and answers a waiting request for it. A wrong PIN, a person who is not a guardian of the account and a person with no PIN all get the same answer, and every answer takes at least 250 ms. Five wrong PINs lock that guardian''s PIN for 15 minutes, then twice as long each time, up to 24 hours; ten wrong PINs in an hour from one account, or twenty from one address, close PIN entry for an hour. With `subject_kind` `time` a right PIN gives more time for today and no rule: `subject_id` is the minutes, and a waiting request for time is answered.'
       requestBody:
         required: true
         content:
@@ -9802,8 +9802,10 @@ paths:
                   - youtube_source
                   - plugin
                   - video
+                  - time
                 subject_id:
                   type: string
+                  description: 'The item''s id. For kind `time`: the minutes to give, 1 to 480, as text.'
               required:
               - guardian_id
               - pin
@@ -9811,7 +9813,7 @@ paths:
               - subject_id
       responses:
         '200':
-          description: 'Opened: the allow rule, with when it ends.'
+          description: 'Opened: the allow rule, with when it ends; for kind `time`, the time given.'
           content:
             application/json:
               schema:
@@ -9852,6 +9854,32 @@ paths:
                       created_at:
                         type: string
                         format: date-time
+                    description: The allow rule added; absent for kind `time`.
+                  grant:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      user_id:
+                        type: string
+                        format: uuid
+                      day:
+                        type: string
+                        format: date
+                        description: The home day the minutes are for. A home day ends at 04:00 home time.
+                      minutes:
+                        type: integer
+                      used_seconds:
+                        type: integer
+                        description: How much of the grant has been watched.
+                      granted_by:
+                        type: string
+                        format: uuid
+                      created_at:
+                        type: string
+                        format: date-time
+                    description: The time given, for kind `time`; absent for any other kind.
         '403':
           description: '`code` is `pin_wrong` (nothing was opened), or `not_restricted` when the caller is not a restricted account.'
           content:

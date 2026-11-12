@@ -119,8 +119,10 @@ const (
 // Unlocked is what Unlock returns.
 type Unlocked struct {
 	Outcome string
-	// Rule is the allow rule added (UnlockOpened).
+	// Rule is the allow rule added (UnlockOpened), for anything but time.
 	Rule *Rule
+	// Grant is the time given (UnlockOpened, kind `time`).
+	Grant *TimeGrant
 	// RetryAfter is how long PIN entry stays closed (UnlockLocked).
 	RetryAfter time.Duration
 	// LockedGuardian is the guardian whose PIN this try locked ("" for none), and
@@ -206,7 +208,14 @@ func (s *Store) Unlock(ctx context.Context, childID string, all bool, libraries 
 	if !ValidPIN(pin) {
 		return nil, fmt.Errorf("%w: pin", ErrInvalid)
 	}
-	if err := (RuleInput{Effect: EffectAllow, SubjectKind: kind, SubjectID: id}).validate(); err != nil {
+	// kind `time` (story 57.14): id is the minutes, and a right PIN is a time grant
+	minutes, isTime := 0, kind == RequestTime
+	if isTime {
+		var ok bool
+		if minutes, ok = RequestMinutes(id); !ok {
+			return nil, fmt.Errorf("%w: minutes", ErrInvalid)
+		}
+	} else if err := (RuleInput{Effect: EffectAllow, SubjectKind: kind, SubjectID: id}).validate(); err != nil {
 		return nil, err
 	}
 	out := &Unlocked{}
@@ -216,12 +225,14 @@ func (s *Store) Unlock(ctx context.Context, childID string, all bool, libraries 
 		if _, err := policyOf(ctx, tx, childID, true); err != nil {
 			return err
 		}
-		info, err := subjectOf(ctx, tx, kind, id)
-		if err != nil {
-			return err
-		}
-		if info.Removed || info.For(all, libraries).Hidden {
-			return ErrSubjectNotFound
+		if !isTime {
+			info, err := subjectOf(ctx, tx, kind, id)
+			if err != nil {
+				return err
+			}
+			if info.Removed || info.For(all, libraries).Hidden {
+				return ErrSubjectNotFound
+			}
 		}
 		now := s.now().UTC()
 		times, err := s.childFailures(ctx, tx, childID, now)
@@ -319,6 +330,21 @@ func (s *Store) Unlock(ctx context.Context, childID string, all bool, libraries 
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE parental_pins SET failed = 0, locks = 0, locked_until = NULL WHERE guardian_id = $1`, guardianID); err != nil {
 			return err
+		}
+		if isTime {
+			// the grant writes its own `time_granted` event; a waiting request for
+			// time, whatever minutes it asked for, is answered by it
+			if out.Grant, err = grantTimeTx(ctx, tx, now, guardianID, childID, minutes); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE parental_requests SET status = 'approved', decided_by = $2, decided_at = $3
+				  WHERE child_id = $1 AND subject_kind = 'time' AND status = 'pending'`,
+				childID, guardianID, now); err != nil {
+				return err
+			}
+			out.Outcome = UnlockOpened
+			return nil
 		}
 		end := DayEnd(now, loc).UTC()
 		if out.Rule, err = s.addRuleTx(ctx, tx, guardianID, childID, RuleInput{Effect: EffectAllow,

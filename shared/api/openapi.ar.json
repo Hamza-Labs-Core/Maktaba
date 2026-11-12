@@ -4390,16 +4390,36 @@
       "ar": "فتح شيء برمز الوالدين"
     },
     "/paths/~1me~1parental~1unlock/post/description": {
-      "en": "For a restricted account only: a guardian types their PIN on the child's device. A right PIN allows the item until 04:00 home time and answers a waiting request for it. A wrong PIN, a person who is not a guardian of the account and a person with no PIN all get the same answer, and every answer takes at least 250 ms. Five wrong PINs lock that guardian's PIN for 15 minutes, then twice as long each time, up to 24 hours; ten wrong PINs in an hour from one account, or twenty from one address, close PIN entry for an hour.",
-      "ar": "للحساب المقيَّد فقط: يكتب وليّ الأمر رمزه على جهاز الطفل. الرمز الصحيح يسمح بالعنصر حتى الساعة 04:00 بتوقيت المنزل ويجيب عن الطلب المنتظر له. الرمز الخاطئ، والشخص الذي ليس وليّ أمر للحساب، والشخص الذي لا رمز له، كلها تتلقى الرد نفسه، وكل رد يستغرق 250 مللي ثانية على الأقل. خمسة رموز خاطئة تقفل رمز ذلك الوليّ 15 دقيقة، ثم ضعف المدة في كل مرة حتى 24 ساعة؛ وعشرة رموز خاطئة في ساعة من حساب واحد، أو عشرون من عنوان واحد، تغلق إدخال الرمز ساعة."
+      "en": "For a restricted account only: a guardian types their PIN on the child's device. A right PIN allows the item until 04:00 home time and answers a waiting request for it. A wrong PIN, a person who is not a guardian of the account and a person with no PIN all get the same answer, and every answer takes at least 250 ms. Five wrong PINs lock that guardian's PIN for 15 minutes, then twice as long each time, up to 24 hours; ten wrong PINs in an hour from one account, or twenty from one address, close PIN entry for an hour. With `subject_kind` `time` a right PIN gives more time for today and no rule: `subject_id` is the minutes, and a waiting request for time is answered.",
+      "ar": "للحساب المقيَّد فقط: يكتب وليّ الأمر رمزه على جهاز الطفل. الرمز الصحيح يسمح بالعنصر حتى الساعة 04:00 بتوقيت المنزل ويجيب عن الطلب المنتظر له. الرمز الخاطئ، والشخص الذي ليس وليّ أمر للحساب، والشخص الذي لا رمز له، كلها تتلقى الرد نفسه، وكل رد يستغرق 250 مللي ثانية على الأقل. خمسة رموز خاطئة تقفل رمز ذلك الوليّ 15 دقيقة، ثم ضعف المدة في كل مرة حتى 24 ساعة؛ وعشرة رموز خاطئة في ساعة من حساب واحد، أو عشرون من عنوان واحد، تغلق إدخال الرمز ساعة. وإذا كانت قيمة `subject_kind` هي `time` فالرمز الصحيح يمنح وقتًا إضافيًّا لليوم بلا قاعدة: قيمة `subject_id` هي الدقائق، ويُجاب به طلب الوقت المنتظِر."
     },
     "/paths/~1me~1parental~1unlock/post/requestBody/content/application~1json/schema/properties/guardian_id/description": {
       "en": "Whose PIN this is: one of the people `GET /me/parental/guardians` lists.",
       "ar": "صاحب هذا الرمز: أحد من تسردهم `GET /me/parental/guardians`."
     },
     "/paths/~1me~1parental~1unlock/post/responses/200/description": {
-      "en": "Opened: the allow rule, with when it ends.",
-      "ar": "فُتح: قاعدة السماح، مع وقت انتهائها."
+      "en": "Opened: the allow rule, with when it ends; for kind `time`, the time given.",
+      "ar": "فُتح: قاعدة السماح ومتى تنتهي؛ وفي النوع `time` الوقت الممنوح."
+    },
+    "/paths/~1me~1parental~1unlock/post/requestBody/content/application~1json/schema/properties/subject_id/description": {
+      "en": "The item's id. For kind `time`: the minutes to give, 1 to 480, as text.",
+      "ar": "معرّف العنصر. وفي النوع `time`: الدقائق الممنوحة، من 1 إلى 480، نصًّا."
+    },
+    "/paths/~1me~1parental~1unlock/post/responses/200/content/application~1json/schema/properties/rule/description": {
+      "en": "The allow rule added; absent for kind `time`.",
+      "ar": "قاعدة السماح المضافة؛ تغيب في النوع `time`."
+    },
+    "/paths/~1me~1parental~1unlock/post/responses/200/content/application~1json/schema/properties/grant/description": {
+      "en": "The time given, for kind `time`; absent for any other kind.",
+      "ar": "الوقت الممنوح، في النوع `time`؛ يغيب في أي نوع آخر."
+    },
+    "/paths/~1me~1parental~1unlock/post/responses/200/content/application~1json/schema/properties/grant/properties/day/description": {
+      "en": "The home day the minutes are for. A home day ends at 04:00 home time.",
+      "ar": "يوم البيت الذي تخصّه الدقائق. ينتهي يوم البيت عند الساعة 04:00 بتوقيت البيت."
+    },
+    "/paths/~1me~1parental~1unlock/post/responses/200/content/application~1json/schema/properties/grant/properties/used_seconds/description": {
+      "en": "How much of the grant has been watched.",
+      "ar": "ما شوهد من الوقت الممنوح."
     },
     "/paths/~1me~1parental~1unlock/post/responses/403/description": {
       "en": "`code` is `pin_wrong` (nothing was opened), or `not_restricted` when the caller is not a restricted account.",

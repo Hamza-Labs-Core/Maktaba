@@ -343,3 +343,64 @@ func TestAskTimeExpiresAtDayEnd(t *testing.T) {
 		t.Errorf("today's request is %s after the loop, want pending", st)
 	}
 }
+
+// Story 57.14: a guardian gives more time with their PIN on the child's device.
+// A right PIN is a time grant for the minutes typed, no rule, and it answers the
+// waiting request for time; a wrong PIN or bad minutes give nothing.
+func TestUnlockTime(t *testing.T) {
+	e := setup(t)
+	e.askReset()
+	e.riyadh()
+	base := "/api/parental/users/" + uChild
+	e.want(200, "guardian", "PUT", base+"/time-rules", map[string]any{"rules": []map[string]any{{"days": 127, "daily_minutes": 60}}})
+	e.exec(`INSERT INTO parental_time_usage (user_id, day, library_id, seconds) VALUES ($1, '2026-11-10', $2, 3600)`, uChild, libOpen)
+	if out := e.want(200, "child", "GET", "/api/me/parental/time", nil); out["allowed"] != false {
+		t.Fatalf("the limit is reached: %v", out)
+	}
+	waiting := e.want(201, "child", "POST", "/api/me/parental/requests", ask("time", "30"))["request"].(map[string]any)["id"].(string)
+	timeUnlock := func(pin, minutes string) map[string]any {
+		return map[string]any{"guardian_id": uGuardian, "pin": pin, "subject_kind": "time", "subject_id": minutes}
+	}
+
+	for _, bad := range []string{"0", "481", "abc", "030"} {
+		e.want(422, "child", "POST", "/api/me/parental/unlock", timeUnlock(thePIN, bad))
+	}
+	e.want(403, "child", "POST", "/api/me/parental/unlock", timeUnlock("000000", "45"))
+	if n := e.count(`SELECT count(*) FROM parental_time_grants`); n != 0 {
+		t.Fatalf("%d grants after bad minutes and a wrong PIN, want 0", n)
+	}
+	if out := e.want(200, "child", "GET", "/api/me/parental/time", nil); out["allowed"] != false {
+		t.Fatalf("a wrong PIN gave time: %v", out)
+	}
+
+	rulesBefore := e.count(`SELECT count(*) FROM parental_rules WHERE user_id = $1`, uChild)
+	out := e.want(200, "child", "POST", "/api/me/parental/unlock", timeUnlock(thePIN, "45"))
+	grant, _ := out["grant"].(map[string]any)
+	if grant == nil || grant["minutes"] != float64(45) || grant["granted_by"] != uGuardian || out["rule"] != nil {
+		t.Fatalf("the unlock = %v, want a grant of 45 minutes by the guardian and no rule", out)
+	}
+	if n := e.count(`SELECT count(*) FROM parental_rules WHERE user_id = $1`, uChild); n != rulesBefore {
+		t.Errorf("%d rules after a time unlock, want the %d there were", n, rulesBefore)
+	}
+	if st := e.text(`SELECT status || ':' || decided_by::text FROM parental_requests WHERE id = $1`, waiting); st != "approved:"+uGuardian {
+		t.Errorf("the waiting request = %s", st)
+	}
+	if n := e.count(`SELECT count(*) FROM parental_events WHERE child_id = $1 AND kind = 'time_granted' AND actor_id = $2`, uChild, uGuardian); n != 1 {
+		t.Errorf("time_granted events = %d, want 1", n)
+	}
+	if now := e.want(200, "child", "GET", "/api/me/parental/time", nil); now["allowed"] != true {
+		t.Errorf("after the grant: %v, want allowed", now)
+	}
+	// only a restricted account's own device unlocks
+	for _, who := range []string{"viewer", "guardian", "admin"} {
+		if code, _ := e.do(who, "POST", "/api/me/parental/unlock", timeUnlock(thePIN, "15")); code != 403 {
+			t.Errorf("%s unlocking time = %d, want 403", who, code)
+		}
+	}
+	if code, _ := e.do("", "POST", "/api/me/parental/unlock", timeUnlock(thePIN, "15")); code != 401 {
+		t.Errorf("no one unlocking time = %d, want 401", code)
+	}
+	if n := e.count(`SELECT count(*) FROM parental_time_grants`); n != 1 {
+		t.Errorf("%d grants at the end, want 1", n)
+	}
+}

@@ -161,8 +161,11 @@ type unlockRequest struct {
 }
 
 type unlockResponse struct {
-	// Rule is the allow rule added; its expires_at is when the day ends.
-	Rule *parentalpkg.Rule `json:"rule"`
+	// Rule is the allow rule added; its expires_at is when the day ends. Absent
+	// for kind `time`.
+	Rule *parentalpkg.Rule `json:"rule,omitempty"`
+	// Grant is the time given, for kind `time`.
+	Grant *parentalpkg.TimeGrant `json:"grant,omitempty"`
 }
 
 // settle waits until an unlock has taken MinAnswer since start, so a right PIN, a
@@ -210,9 +213,9 @@ func (h *AskHandler) Unlock(w http.ResponseWriter, r *http.Request) {
 	if req.GuardianID == "" {
 		errs = append(errs, httperror.FieldError{Field: "guardian_id", Message: "is required"})
 	}
-	if !parentalpkg.ValidSubjectKind(req.SubjectKind) {
+	if !parentalpkg.ValidRequestKind(req.SubjectKind) {
 		errs = append(errs, httperror.FieldError{Field: "subject_kind",
-			Message: "must be one of video, series, collection, library, channel, youtube_source, plugin"})
+			Message: "must be one of video, series, collection, library, channel, youtube_source, plugin, time"})
 	}
 	if req.SubjectID == "" {
 		errs = append(errs, httperror.FieldError{Field: "subject_id", Message: "is required"})
@@ -242,7 +245,11 @@ func (h *AskHandler) Unlock(w http.ResponseWriter, r *http.Request) {
 	switch out.Outcome {
 	case parentalpkg.UnlockOpened:
 		h.changed(p.UserID)
-		common.WriteJSON(w, r, http.StatusOK, unlockResponse{Rule: out.Rule})
+		if out.Grant != nil {
+			// the grant is committed: a stream running (or refused) now learns of it at once
+			h.refreshed(r, p.UserID)
+		}
+		common.WriteJSON(w, r, http.StatusOK, unlockResponse{Rule: out.Rule, Grant: out.Grant})
 		return
 	case parentalpkg.UnlockLocked:
 		if out.LockedGuardian != "" || out.LockedAccount {
