@@ -32,6 +32,7 @@ Worker, which:
 | `/schema/log-line.json`         | the log schema, at its `$id`                   | `shared/log/schema/line.schema.json`                 |
 | `/.well-known/security.txt`     | the disclosure policy, both `Canonical`s       | `api/internal/security/disclosure.go`                |
 | `/robots.txt`                   | every page may be crawled                      | `scripts/build.mjs`                                  |
+| `/shots/…`                      | the apps' product screenshots (60.09)          | `scripts/shots.mjs`, `shots-manifest.json`           |
 
 A page source in `src/pages/` is the page's `<main>` content after a leading comment
 (`title:`, `description:`, optionally `meta:`). `scripts/shell.mjs` wraps it in the document,
@@ -56,6 +57,17 @@ only when `WEBSITE_NOTICE_ENDPOINT` and `WEBSITE_TURNSTILE_SITEKEY` are both set
 endpoint is live; until then the page gives the agent's email and what a notice must contain. The look is a neutral
 placeholder (`static/assets/site.css`) until the design of story 60.01 replaces the shell and
 the stylesheet.
+
+## Product screenshots
+
+`static/shots/` holds every app's screenshots on the demo library (`tests/fixtures/demo-library/`),
+dark, in English and Arabic, as WebP and AVIF at each width `shots.config.json` sets, each under
+150 KB, with their sizes in `shots-manifest.json`. `npm run shots -- --from-run <run id>` makes
+them from a CI run's `product-shots-*` artifacts and Android's Roborazzi references; an app whose
+job did not pass keeps its previous images. `npm run shots:web` captures the web app locally
+(`scripts/capture-web.mjs`). The steps, and who captures what, are in
+`docs/developers/contributing/website.md` ("Product screenshots"). Tests: `scripts/shots.test.mjs`
+(T01, T06).
 
 ## Build and run
 
@@ -82,10 +94,12 @@ source it is built from, by hand, and monthly (security.txt's Expires). The step
 when that smoke fails. A first deploy creates the Worker with no routes first, since a version
 cannot be uploaded to a Worker that does not exist.
 
-It goes live only when the secret `CLOUDFLARE_API_TOKEN_WEBSITE` (the website's own token, with
-DNS Edit on `maktaba.tv`), the secret `CLOUDFLARE_ACCOUNT_ID` and the repository variable
-`WEBSITE_LIVE = true` are all set. Otherwise the job prints a notice naming what is missing and
-passes. See `deploy/cloudflare/README.md` for the token.
+It uses `CLOUDFLARE_API_TOKEN_WEBSITE` when set, else the shared `CLOUDFLARE_API_TOKEN` (with
+DNS Edit on `maktaba.tv`). It goes live only when the repository variable `WEBSITE_LIVE = true`
+is set, with a token and `CLOUDFLARE_ACCOUNT_ID`; otherwise it writes nothing, prints a notice
+naming what is missing and passes. The read-only token check runs on every run once a token and
+the account are set, and names any missing permission before go-live. See
+`deploy/cloudflare/README.md` for the token.
 
 **Rollback by hand:** Actions → Deploy maktaba.tv → Run workflow with `rollback: true`, and
 optionally `version` (an id from the run summary or `wrangler deployments list`). Without a

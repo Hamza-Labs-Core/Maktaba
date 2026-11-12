@@ -58,6 +58,8 @@ _go: &go
 # the pipeline, and what its tests read outside it
 _pipeline: &pipeline
   - 'pipeline/**'
+  # how CI installs the pipeline's environment (every extra but torch's CUDA tree)
+  - 'tools/ci/pipeline-deps.sh'
   - 'shared/**'
   # the plugin SDK and Maktaba's first-party plugins ride in the pipeline's wheel
   - 'plugins/**'
@@ -534,6 +536,8 @@ e2e:
   - 'tests/e2e/**'
   - 'pyproject.toml'
   - '.github/workflows/_e2e.yml'
+  # how CI installs the pipeline's environment (every extra but torch's CUDA tree)
+  - 'tools/ci/pipeline-deps.sh'
 
 # the api's and streaming's tests with a real ffmpeg (tools/media-e2e.sh)
 media_e2e:
@@ -562,6 +566,8 @@ perf_ci:
   - 'pipeline/uv.lock'
   - 'pipeline/.python-version'
   - '.github/workflows/_perf-ci.yml'
+  # how CI installs the pipeline's environment (every extra but torch's CUDA tree)
+  - 'tools/ci/pipeline-deps.sh'
 
 # make build-go (api, streaming, the cloudlink), the relay binary and make build-web
 build_artifacts:
@@ -706,6 +712,8 @@ linux_app:
 android_apps:
   - *ci
   - 'apps/android/**'
+  # the demo library the Demo*ScreenshotTests and DemoLibraryTest read (60.09)
+  - 'tests/fixtures/demo-library/**'
   # the problem types and codes the apps compare are checked against the registry (60.06)
   - 'shared/api/problems.json'
   - '.github/workflows/_android-apps.yml'
@@ -720,6 +728,8 @@ android_apps:
 android_tv:
   - *ci
   - 'apps/tv/android/**'
+  # the demo library the TV's DemoScreenshotTest reads (60.09)
+  - 'tests/fixtures/demo-library/**'
   - 'apps/android/core/**'
   - 'apps/android/client/**'
   - 'apps/android/gradle/libs.versions.toml'
@@ -734,6 +744,8 @@ android_tv:
 desktop_player:
   - *ci
   - 'apps/desktop-player/**'
+  # the demo library the client's DemoLibraryTest reads (60.09)
+  - 'tests/fixtures/demo-library/**'
   - 'apps/android/client/**'
   - 'apps/android/core/src/main/res/font/**'
   - 'apps/android/gradle/libs.versions.toml'
@@ -752,6 +764,8 @@ apple_apps:
   - 'apps/tv/tvos/**'
   - 'tools/apple/**'
   - '.github/workflows/_apple-apps.yml'
+  # the demo library the product screenshots' UI tests bundle and serve (story 60.09)
+  - 'tests/fixtures/demo-library/**'
 
 # The Player's UI tests (a build per device, six shards each, the Mac): what the Player's
 # targets build (project.yml: Player/, Shared/Assets.xcassets, MaktabaKit's package) and their
@@ -773,7 +787,12 @@ apple_player_ui:
   - 'tools/apple/ui-durations.json'
   - 'tools/apple/check-app-log.py'
   - 'tools/apple/sim-settle.py'
+  - 'tools/apple/export-shots.py'
   - '.github/workflows/_apple-apps.yml'
+  # its on-demand caller for the shots alone (60.09)
+  - '.github/workflows/product-shots.yml'
+  # the demo library the product screenshots (PlayerDemoShots, the Mac's) are taken on (60.09)
+  - 'tests/fixtures/demo-library/**'
 
 # ---- the developer portal (_devportal.yml) ----------------------------------------------
 
@@ -829,6 +848,8 @@ website:
   - 'tools/cloudflare/website-deploy.mjs'
   - '.github/workflows/_website.yml'
   - '.github/workflows/website-deploy.yml'
+  # the product screenshots (60.09): the demo library, and the web app they photograph
+  - 'tests/fixtures/demo-library/**'
 
 # ---- the in-repo wiki app and its database (ci.yml's wiki job) ---------------------------
 

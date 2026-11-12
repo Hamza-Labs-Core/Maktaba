@@ -1,0 +1,25 @@
+{
+ "id": "v-sintel",
+ "library_id": "lib-films",
+ "path": "",
+ "filename": "sintel.mkv",
+ "title": "Sintel",
+ "description": "A lone young woman searches the frozen mountains for the baby dragon she once rescued and raised.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 888,
+ "size_bytes": 222000000,
+ "content_hash": "vsintel000000000000000000000000000000000000000000000000000000000",
+ "created_at": "{{now-172800}}",
+ "updated_at": "{{now-172200}}",
+ "published_at": "2010-06-01T00:00:00Z",
+ "playable": true,
+ "tags": [],
+ "poster_url": "/api/videos/v-sintel/poster",
+ "backdrop_url": "/api/videos/v-sintel/backdrop",
+ "playback_state": {
+  "position_sec": 380,
+  "completed": false,
+  "updated_at": "{{now-10800}}"
+ }
+}

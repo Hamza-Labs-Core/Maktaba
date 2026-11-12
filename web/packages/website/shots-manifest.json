@@ -1,0 +1,1569 @@
+{
+  "from": "run 43164926292 (fff3b22c8)",
+  "images": {
+    "android-phone-film-ar": {
+      "app": "android-phone",
+      "screen": "film",
+      "lang": "ar",
+      "width": 480,
+      "height": 1041,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 520,
+          "webp": "/shots/android-phone-film-ar-240.webp",
+          "avif": "/shots/android-phone-film-ar-240.avif",
+          "webpBytes": 10666,
+          "avifBytes": 9692
+        },
+        {
+          "width": 360,
+          "height": 780,
+          "webp": "/shots/android-phone-film-ar-360.webp",
+          "avif": "/shots/android-phone-film-ar-360.avif",
+          "webpBytes": 18634,
+          "avifBytes": 16546
+        },
+        {
+          "width": 480,
+          "height": 1041,
+          "webp": "/shots/android-phone-film-ar-480.webp",
+          "avif": "/shots/android-phone-film-ar-480.avif",
+          "webpBytes": 27210,
+          "avifBytes": 23352
+        }
+      ]
+    },
+    "android-phone-film-en": {
+      "app": "android-phone",
+      "screen": "film",
+      "lang": "en",
+      "width": 480,
+      "height": 1041,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 520,
+          "webp": "/shots/android-phone-film-en-240.webp",
+          "avif": "/shots/android-phone-film-en-240.avif",
+          "webpBytes": 12376,
+          "avifBytes": 10596
+        },
+        {
+          "width": 360,
+          "height": 780,
+          "webp": "/shots/android-phone-film-en-360.webp",
+          "avif": "/shots/android-phone-film-en-360.avif",
+          "webpBytes": 21040,
+          "avifBytes": 17988
+        },
+        {
+          "width": 480,
+          "height": 1041,
+          "webp": "/shots/android-phone-film-en-480.webp",
+          "avif": "/shots/android-phone-film-en-480.avif",
+          "webpBytes": 31034,
+          "avifBytes": 26198
+        }
+      ]
+    },
+    "android-phone-home-ar": {
+      "app": "android-phone",
+      "screen": "home",
+      "lang": "ar",
+      "width": 480,
+      "height": 1041,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 520,
+          "webp": "/shots/android-phone-home-ar-240.webp",
+          "avif": "/shots/android-phone-home-ar-240.avif",
+          "webpBytes": 15712,
+          "avifBytes": 13531
+        },
+        {
+          "width": 360,
+          "height": 780,
+          "webp": "/shots/android-phone-home-ar-360.webp",
+          "avif": "/shots/android-phone-home-ar-360.avif",
+          "webpBytes": 27568,
+          "avifBytes": 24312
+        },
+        {
+          "width": 480,
+          "height": 1041,
+          "webp": "/shots/android-phone-home-ar-480.webp",
+          "avif": "/shots/android-phone-home-ar-480.avif",
+          "webpBytes": 39856,
+          "avifBytes": 34436
+        }
+      ]
+    },
+    "android-phone-home-en": {
+      "app": "android-phone",
+      "screen": "home",
+      "lang": "en",
+      "width": 480,
+      "height": 1041,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 520,
+          "webp": "/shots/android-phone-home-en-240.webp",
+          "avif": "/shots/android-phone-home-en-240.avif",
+          "webpBytes": 16872,
+          "avifBytes": 14287
+        },
+        {
+          "width": 360,
+          "height": 780,
+          "webp": "/shots/android-phone-home-en-360.webp",
+          "avif": "/shots/android-phone-home-en-360.avif",
+          "webpBytes": 29888,
+          "avifBytes": 25428
+        },
+        {
+          "width": 480,
+          "height": 1041,
+          "webp": "/shots/android-phone-home-en-480.webp",
+          "avif": "/shots/android-phone-home-en-480.avif",
+          "webpBytes": 42048,
+          "avifBytes": 36244
+        }
+      ]
+    },
+    "androidtv-guide-ar": {
+      "app": "androidtv",
+      "screen": "guide",
+      "lang": "ar",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/androidtv-guide-ar-640.webp",
+          "avif": "/shots/androidtv-guide-ar-640.avif",
+          "webpBytes": 12854,
+          "avifBytes": 12590
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/androidtv-guide-ar-960.webp",
+          "avif": "/shots/androidtv-guide-ar-960.avif",
+          "webpBytes": 21756,
+          "avifBytes": 19904
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/androidtv-guide-ar-1280.webp",
+          "avif": "/shots/androidtv-guide-ar-1280.avif",
+          "webpBytes": 31204,
+          "avifBytes": 26273
+        }
+      ]
+    },
+    "androidtv-guide-en": {
+      "app": "androidtv",
+      "screen": "guide",
+      "lang": "en",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/androidtv-guide-en-640.webp",
+          "avif": "/shots/androidtv-guide-en-640.avif",
+          "webpBytes": 13464,
+          "avifBytes": 13008
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/androidtv-guide-en-960.webp",
+          "avif": "/shots/androidtv-guide-en-960.avif",
+          "webpBytes": 23720,
+          "avifBytes": 21120
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/androidtv-guide-en-1280.webp",
+          "avif": "/shots/androidtv-guide-en-1280.avif",
+          "webpBytes": 32266,
+          "avifBytes": 27091
+        }
+      ]
+    },
+    "androidtv-home-ar": {
+      "app": "androidtv",
+      "screen": "home",
+      "lang": "ar",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/androidtv-home-ar-640.webp",
+          "avif": "/shots/androidtv-home-ar-640.avif",
+          "webpBytes": 17492,
+          "avifBytes": 15076
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/androidtv-home-ar-960.webp",
+          "avif": "/shots/androidtv-home-ar-960.avif",
+          "webpBytes": 29290,
+          "avifBytes": 25510
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/androidtv-home-ar-1280.webp",
+          "avif": "/shots/androidtv-home-ar-1280.avif",
+          "webpBytes": 41668,
+          "avifBytes": 35460
+        }
+      ]
+    },
+    "androidtv-home-en": {
+      "app": "androidtv",
+      "screen": "home",
+      "lang": "en",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/androidtv-home-en-640.webp",
+          "avif": "/shots/androidtv-home-en-640.avif",
+          "webpBytes": 19536,
+          "avifBytes": 16427
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/androidtv-home-en-960.webp",
+          "avif": "/shots/androidtv-home-en-960.avif",
+          "webpBytes": 32640,
+          "avifBytes": 27651
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/androidtv-home-en-1280.webp",
+          "avif": "/shots/androidtv-home-en-1280.avif",
+          "webpBytes": 46558,
+          "avifBytes": 38622
+        }
+      ]
+    },
+    "androidtv-player-ar": {
+      "app": "androidtv",
+      "screen": "player",
+      "lang": "ar",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/androidtv-player-ar-640.webp",
+          "avif": "/shots/androidtv-player-ar-640.avif",
+          "webpBytes": 11106,
+          "avifBytes": 11138
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/androidtv-player-ar-960.webp",
+          "avif": "/shots/androidtv-player-ar-960.avif",
+          "webpBytes": 18288,
+          "avifBytes": 17472
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/androidtv-player-ar-1280.webp",
+          "avif": "/shots/androidtv-player-ar-1280.avif",
+          "webpBytes": 25758,
+          "avifBytes": 23167
+        }
+      ]
+    },
+    "androidtv-player-en": {
+      "app": "androidtv",
+      "screen": "player",
+      "lang": "en",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/androidtv-player-en-640.webp",
+          "avif": "/shots/androidtv-player-en-640.avif",
+          "webpBytes": 11188,
+          "avifBytes": 11233
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/androidtv-player-en-960.webp",
+          "avif": "/shots/androidtv-player-en-960.avif",
+          "webpBytes": 18536,
+          "avifBytes": 17647
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/androidtv-player-en-1280.webp",
+          "avif": "/shots/androidtv-player-en-1280.avif",
+          "webpBytes": 25616,
+          "avifBytes": 23440
+        }
+      ]
+    },
+    "appletv-guide-ar": {
+      "app": "appletv",
+      "screen": "guide",
+      "lang": "ar",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/appletv-guide-ar-640.webp",
+          "avif": "/shots/appletv-guide-ar-640.avif",
+          "webpBytes": 16224,
+          "avifBytes": 15021
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/appletv-guide-ar-960.webp",
+          "avif": "/shots/appletv-guide-ar-960.avif",
+          "webpBytes": 29054,
+          "avifBytes": 25699
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/appletv-guide-ar-1280.webp",
+          "avif": "/shots/appletv-guide-ar-1280.avif",
+          "webpBytes": 41050,
+          "avifBytes": 36772
+        }
+      ]
+    },
+    "appletv-guide-en": {
+      "app": "appletv",
+      "screen": "guide",
+      "lang": "en",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/appletv-guide-en-640.webp",
+          "avif": "/shots/appletv-guide-en-640.avif",
+          "webpBytes": 17370,
+          "avifBytes": 15945
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/appletv-guide-en-960.webp",
+          "avif": "/shots/appletv-guide-en-960.avif",
+          "webpBytes": 31544,
+          "avifBytes": 26771
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/appletv-guide-en-1280.webp",
+          "avif": "/shots/appletv-guide-en-1280.avif",
+          "webpBytes": 44116,
+          "avifBytes": 39605
+        }
+      ]
+    },
+    "appletv-home-ar": {
+      "app": "appletv",
+      "screen": "home",
+      "lang": "ar",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/appletv-home-ar-640.webp",
+          "avif": "/shots/appletv-home-ar-640.avif",
+          "webpBytes": 13066,
+          "avifBytes": 11739
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/appletv-home-ar-960.webp",
+          "avif": "/shots/appletv-home-ar-960.avif",
+          "webpBytes": 22496,
+          "avifBytes": 19843
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/appletv-home-ar-1280.webp",
+          "avif": "/shots/appletv-home-ar-1280.avif",
+          "webpBytes": 32648,
+          "avifBytes": 28611
+        }
+      ]
+    },
+    "appletv-home-en": {
+      "app": "appletv",
+      "screen": "home",
+      "lang": "en",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/appletv-home-en-640.webp",
+          "avif": "/shots/appletv-home-en-640.avif",
+          "webpBytes": 13822,
+          "avifBytes": 12213
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/appletv-home-en-960.webp",
+          "avif": "/shots/appletv-home-en-960.avif",
+          "webpBytes": 23720,
+          "avifBytes": 20921
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/appletv-home-en-1280.webp",
+          "avif": "/shots/appletv-home-en-1280.avif",
+          "webpBytes": 34206,
+          "avifBytes": 30038
+        }
+      ]
+    },
+    "appletv-player-ar": {
+      "app": "appletv",
+      "screen": "player",
+      "lang": "ar",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/appletv-player-ar-640.webp",
+          "avif": "/shots/appletv-player-ar-640.avif",
+          "webpBytes": 18094,
+          "avifBytes": 17088
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/appletv-player-ar-960.webp",
+          "avif": "/shots/appletv-player-ar-960.avif",
+          "webpBytes": 29694,
+          "avifBytes": 27116
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/appletv-player-ar-1280.webp",
+          "avif": "/shots/appletv-player-ar-1280.avif",
+          "webpBytes": 40836,
+          "avifBytes": 34609
+        }
+      ]
+    },
+    "appletv-player-en": {
+      "app": "appletv",
+      "screen": "player",
+      "lang": "en",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/appletv-player-en-640.webp",
+          "avif": "/shots/appletv-player-en-640.avif",
+          "webpBytes": 18498,
+          "avifBytes": 17019
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/appletv-player-en-960.webp",
+          "avif": "/shots/appletv-player-en-960.avif",
+          "webpBytes": 29374,
+          "avifBytes": 27030
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/appletv-player-en-1280.webp",
+          "avif": "/shots/appletv-player-en-1280.avif",
+          "webpBytes": 40512,
+          "avifBytes": 34401
+        }
+      ]
+    },
+    "appletv-series-ar": {
+      "app": "appletv",
+      "screen": "series",
+      "lang": "ar",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/appletv-series-ar-640.webp",
+          "avif": "/shots/appletv-series-ar-640.avif",
+          "webpBytes": 10026,
+          "avifBytes": 8645
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/appletv-series-ar-960.webp",
+          "avif": "/shots/appletv-series-ar-960.avif",
+          "webpBytes": 17884,
+          "avifBytes": 14594
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/appletv-series-ar-1280.webp",
+          "avif": "/shots/appletv-series-ar-1280.avif",
+          "webpBytes": 26926,
+          "avifBytes": 22202
+        }
+      ]
+    },
+    "appletv-series-en": {
+      "app": "appletv",
+      "screen": "series",
+      "lang": "en",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/appletv-series-en-640.webp",
+          "avif": "/shots/appletv-series-en-640.avif",
+          "webpBytes": 10612,
+          "avifBytes": 8821
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/appletv-series-en-960.webp",
+          "avif": "/shots/appletv-series-en-960.avif",
+          "webpBytes": 18734,
+          "avifBytes": 15268
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/appletv-series-en-1280.webp",
+          "avif": "/shots/appletv-series-en-1280.avif",
+          "webpBytes": 27968,
+          "avifBytes": 23362
+        }
+      ]
+    },
+    "ipad-film-ar": {
+      "app": "ipad",
+      "screen": "film",
+      "lang": "ar",
+      "width": 960,
+      "height": 1393,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 480,
+          "height": 696,
+          "webp": "/shots/ipad-film-ar-480.webp",
+          "avif": "/shots/ipad-film-ar-480.avif",
+          "webpBytes": 22540,
+          "avifBytes": 19643
+        },
+        {
+          "width": 720,
+          "height": 1045,
+          "webp": "/shots/ipad-film-ar-720.webp",
+          "avif": "/shots/ipad-film-ar-720.avif",
+          "webpBytes": 38236,
+          "avifBytes": 32455
+        },
+        {
+          "width": 960,
+          "height": 1393,
+          "webp": "/shots/ipad-film-ar-960.webp",
+          "avif": "/shots/ipad-film-ar-960.avif",
+          "webpBytes": 55894,
+          "avifBytes": 45868
+        }
+      ]
+    },
+    "ipad-film-en": {
+      "app": "ipad",
+      "screen": "film",
+      "lang": "en",
+      "width": 960,
+      "height": 1393,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 480,
+          "height": 696,
+          "webp": "/shots/ipad-film-en-480.webp",
+          "avif": "/shots/ipad-film-en-480.avif",
+          "webpBytes": 23054,
+          "avifBytes": 20181
+        },
+        {
+          "width": 720,
+          "height": 1045,
+          "webp": "/shots/ipad-film-en-720.webp",
+          "avif": "/shots/ipad-film-en-720.avif",
+          "webpBytes": 40520,
+          "avifBytes": 34083
+        },
+        {
+          "width": 960,
+          "height": 1393,
+          "webp": "/shots/ipad-film-en-960.webp",
+          "avif": "/shots/ipad-film-en-960.avif",
+          "webpBytes": 58572,
+          "avifBytes": 47947
+        }
+      ]
+    },
+    "ipad-home-ar": {
+      "app": "ipad",
+      "screen": "home",
+      "lang": "ar",
+      "width": 960,
+      "height": 1393,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 480,
+          "height": 696,
+          "webp": "/shots/ipad-home-ar-480.webp",
+          "avif": "/shots/ipad-home-ar-480.avif",
+          "webpBytes": 26392,
+          "avifBytes": 22972
+        },
+        {
+          "width": 720,
+          "height": 1045,
+          "webp": "/shots/ipad-home-ar-720.webp",
+          "avif": "/shots/ipad-home-ar-720.avif",
+          "webpBytes": 46014,
+          "avifBytes": 39256
+        },
+        {
+          "width": 960,
+          "height": 1393,
+          "webp": "/shots/ipad-home-ar-960.webp",
+          "avif": "/shots/ipad-home-ar-960.avif",
+          "webpBytes": 67848,
+          "avifBytes": 56427
+        }
+      ]
+    },
+    "ipad-home-en": {
+      "app": "ipad",
+      "screen": "home",
+      "lang": "en",
+      "width": 960,
+      "height": 1393,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 480,
+          "height": 696,
+          "webp": "/shots/ipad-home-en-480.webp",
+          "avif": "/shots/ipad-home-en-480.avif",
+          "webpBytes": 27472,
+          "avifBytes": 23542
+        },
+        {
+          "width": 720,
+          "height": 1045,
+          "webp": "/shots/ipad-home-en-720.webp",
+          "avif": "/shots/ipad-home-en-720.avif",
+          "webpBytes": 48192,
+          "avifBytes": 40784
+        },
+        {
+          "width": 960,
+          "height": 1393,
+          "webp": "/shots/ipad-home-en-960.webp",
+          "avif": "/shots/ipad-home-en-960.avif",
+          "webpBytes": 70308,
+          "avifBytes": 58950
+        }
+      ]
+    },
+    "ipad-player-ar": {
+      "app": "ipad",
+      "screen": "player",
+      "lang": "ar",
+      "width": 960,
+      "height": 1393,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 480,
+          "height": 696,
+          "webp": "/shots/ipad-player-ar-480.webp",
+          "avif": "/shots/ipad-player-ar-480.avif",
+          "webpBytes": 15622,
+          "avifBytes": 13944
+        },
+        {
+          "width": 720,
+          "height": 1045,
+          "webp": "/shots/ipad-player-ar-720.webp",
+          "avif": "/shots/ipad-player-ar-720.avif",
+          "webpBytes": 26050,
+          "avifBytes": 23019
+        },
+        {
+          "width": 960,
+          "height": 1393,
+          "webp": "/shots/ipad-player-ar-960.webp",
+          "avif": "/shots/ipad-player-ar-960.avif",
+          "webpBytes": 38766,
+          "avifBytes": 32985
+        }
+      ]
+    },
+    "ipad-player-en": {
+      "app": "ipad",
+      "screen": "player",
+      "lang": "en",
+      "width": 960,
+      "height": 1393,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 480,
+          "height": 696,
+          "webp": "/shots/ipad-player-en-480.webp",
+          "avif": "/shots/ipad-player-en-480.avif",
+          "webpBytes": 15678,
+          "avifBytes": 13948
+        },
+        {
+          "width": 720,
+          "height": 1045,
+          "webp": "/shots/ipad-player-en-720.webp",
+          "avif": "/shots/ipad-player-en-720.avif",
+          "webpBytes": 26052,
+          "avifBytes": 22994
+        },
+        {
+          "width": 960,
+          "height": 1393,
+          "webp": "/shots/ipad-player-en-960.webp",
+          "avif": "/shots/ipad-player-en-960.avif",
+          "webpBytes": 38782,
+          "avifBytes": 33009
+        }
+      ]
+    },
+    "iphone-film-ar": {
+      "app": "iphone",
+      "screen": "film",
+      "lang": "ar",
+      "width": 480,
+      "height": 1044,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 522,
+          "webp": "/shots/iphone-film-ar-240.webp",
+          "avif": "/shots/iphone-film-ar-240.avif",
+          "webpBytes": 14472,
+          "avifBytes": 11632
+        },
+        {
+          "width": 360,
+          "height": 783,
+          "webp": "/shots/iphone-film-ar-360.webp",
+          "avif": "/shots/iphone-film-ar-360.avif",
+          "webpBytes": 25252,
+          "avifBytes": 20446
+        },
+        {
+          "width": 480,
+          "height": 1044,
+          "webp": "/shots/iphone-film-ar-480.webp",
+          "avif": "/shots/iphone-film-ar-480.avif",
+          "webpBytes": 36752,
+          "avifBytes": 28910
+        }
+      ]
+    },
+    "iphone-film-en": {
+      "app": "iphone",
+      "screen": "film",
+      "lang": "en",
+      "width": 480,
+      "height": 1044,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 522,
+          "webp": "/shots/iphone-film-en-240.webp",
+          "avif": "/shots/iphone-film-en-240.avif",
+          "webpBytes": 15426,
+          "avifBytes": 12016
+        },
+        {
+          "width": 360,
+          "height": 783,
+          "webp": "/shots/iphone-film-en-360.webp",
+          "avif": "/shots/iphone-film-en-360.avif",
+          "webpBytes": 27332,
+          "avifBytes": 21330
+        },
+        {
+          "width": 480,
+          "height": 1044,
+          "webp": "/shots/iphone-film-en-480.webp",
+          "avif": "/shots/iphone-film-en-480.avif",
+          "webpBytes": 38670,
+          "avifBytes": 30702
+        }
+      ]
+    },
+    "iphone-home-ar": {
+      "app": "iphone",
+      "screen": "home",
+      "lang": "ar",
+      "width": 480,
+      "height": 1044,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 522,
+          "webp": "/shots/iphone-home-ar-240.webp",
+          "avif": "/shots/iphone-home-ar-240.avif",
+          "webpBytes": 13006,
+          "avifBytes": 11869
+        },
+        {
+          "width": 360,
+          "height": 783,
+          "webp": "/shots/iphone-home-ar-360.webp",
+          "avif": "/shots/iphone-home-ar-360.avif",
+          "webpBytes": 22950,
+          "avifBytes": 20186
+        },
+        {
+          "width": 480,
+          "height": 1044,
+          "webp": "/shots/iphone-home-ar-480.webp",
+          "avif": "/shots/iphone-home-ar-480.avif",
+          "webpBytes": 32804,
+          "avifBytes": 29099
+        }
+      ]
+    },
+    "iphone-home-en": {
+      "app": "iphone",
+      "screen": "home",
+      "lang": "en",
+      "width": 480,
+      "height": 1044,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 522,
+          "webp": "/shots/iphone-home-en-240.webp",
+          "avif": "/shots/iphone-home-en-240.avif",
+          "webpBytes": 13948,
+          "avifBytes": 12436
+        },
+        {
+          "width": 360,
+          "height": 783,
+          "webp": "/shots/iphone-home-en-360.webp",
+          "avif": "/shots/iphone-home-en-360.avif",
+          "webpBytes": 24472,
+          "avifBytes": 21464
+        },
+        {
+          "width": 480,
+          "height": 1044,
+          "webp": "/shots/iphone-home-en-480.webp",
+          "avif": "/shots/iphone-home-en-480.avif",
+          "webpBytes": 34690,
+          "avifBytes": 30774
+        }
+      ]
+    },
+    "iphone-player-ar": {
+      "app": "iphone",
+      "screen": "player",
+      "lang": "ar",
+      "width": 480,
+      "height": 221,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 110,
+          "webp": "/shots/iphone-player-ar-240.webp",
+          "avif": "/shots/iphone-player-ar-240.avif",
+          "webpBytes": 4688,
+          "avifBytes": 4136
+        },
+        {
+          "width": 360,
+          "height": 166,
+          "webp": "/shots/iphone-player-ar-360.webp",
+          "avif": "/shots/iphone-player-ar-360.avif",
+          "webpBytes": 8360,
+          "avifBytes": 7112
+        },
+        {
+          "width": 480,
+          "height": 221,
+          "webp": "/shots/iphone-player-ar-480.webp",
+          "avif": "/shots/iphone-player-ar-480.avif",
+          "webpBytes": 12556,
+          "avifBytes": 10755
+        }
+      ]
+    },
+    "iphone-player-en": {
+      "app": "iphone",
+      "screen": "player",
+      "lang": "en",
+      "width": 480,
+      "height": 221,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 110,
+          "webp": "/shots/iphone-player-en-240.webp",
+          "avif": "/shots/iphone-player-en-240.avif",
+          "webpBytes": 4690,
+          "avifBytes": 4146
+        },
+        {
+          "width": 360,
+          "height": 166,
+          "webp": "/shots/iphone-player-en-360.webp",
+          "avif": "/shots/iphone-player-en-360.avif",
+          "webpBytes": 8378,
+          "avifBytes": 7148
+        },
+        {
+          "width": 480,
+          "height": 221,
+          "webp": "/shots/iphone-player-en-480.webp",
+          "avif": "/shots/iphone-player-en-480.avif",
+          "webpBytes": 12712,
+          "avifBytes": 10756
+        }
+      ]
+    },
+    "iphone-remote-ar": {
+      "app": "iphone",
+      "screen": "remote",
+      "lang": "ar",
+      "width": 480,
+      "height": 1044,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 522,
+          "webp": "/shots/iphone-remote-ar-240.webp",
+          "avif": "/shots/iphone-remote-ar-240.avif",
+          "webpBytes": 7730,
+          "avifBytes": 7236
+        },
+        {
+          "width": 360,
+          "height": 783,
+          "webp": "/shots/iphone-remote-ar-360.webp",
+          "avif": "/shots/iphone-remote-ar-360.avif",
+          "webpBytes": 13642,
+          "avifBytes": 12224
+        },
+        {
+          "width": 480,
+          "height": 1044,
+          "webp": "/shots/iphone-remote-ar-480.webp",
+          "avif": "/shots/iphone-remote-ar-480.avif",
+          "webpBytes": 19494,
+          "avifBytes": 17055
+        }
+      ]
+    },
+    "iphone-remote-en": {
+      "app": "iphone",
+      "screen": "remote",
+      "lang": "en",
+      "width": 480,
+      "height": 1044,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 522,
+          "webp": "/shots/iphone-remote-en-240.webp",
+          "avif": "/shots/iphone-remote-en-240.avif",
+          "webpBytes": 8136,
+          "avifBytes": 7377
+        },
+        {
+          "width": 360,
+          "height": 783,
+          "webp": "/shots/iphone-remote-en-360.webp",
+          "avif": "/shots/iphone-remote-en-360.avif",
+          "webpBytes": 14536,
+          "avifBytes": 12676
+        },
+        {
+          "width": 480,
+          "height": 1044,
+          "webp": "/shots/iphone-remote-en-480.webp",
+          "avif": "/shots/iphone-remote-en-480.avif",
+          "webpBytes": 20410,
+          "avifBytes": 17747
+        }
+      ]
+    },
+    "mac-library-ar": {
+      "app": "mac",
+      "screen": "library",
+      "lang": "ar",
+      "width": 1024,
+      "height": 674,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 421,
+          "webp": "/shots/mac-library-ar-640.webp",
+          "avif": "/shots/mac-library-ar-640.avif",
+          "webpBytes": 17548,
+          "avifBytes": 15437
+        },
+        {
+          "width": 960,
+          "height": 632,
+          "webp": "/shots/mac-library-ar-960.webp",
+          "avif": "/shots/mac-library-ar-960.avif",
+          "webpBytes": 29140,
+          "avifBytes": 24970
+        },
+        {
+          "width": 1024,
+          "height": 674,
+          "webp": "/shots/mac-library-ar-1024.webp",
+          "avif": "/shots/mac-library-ar-1024.avif",
+          "webpBytes": 31402,
+          "avifBytes": 26340
+        }
+      ]
+    },
+    "mac-library-en": {
+      "app": "mac",
+      "screen": "library",
+      "lang": "en",
+      "width": 1024,
+      "height": 674,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 421,
+          "webp": "/shots/mac-library-en-640.webp",
+          "avif": "/shots/mac-library-en-640.avif",
+          "webpBytes": 18702,
+          "avifBytes": 16060
+        },
+        {
+          "width": 960,
+          "height": 632,
+          "webp": "/shots/mac-library-en-960.webp",
+          "avif": "/shots/mac-library-en-960.avif",
+          "webpBytes": 31060,
+          "avifBytes": 26037
+        },
+        {
+          "width": 1024,
+          "height": 674,
+          "webp": "/shots/mac-library-en-1024.webp",
+          "avif": "/shots/mac-library-en-1024.avif",
+          "webpBytes": 33552,
+          "avifBytes": 27534
+        }
+      ]
+    },
+    "mac-player-ar": {
+      "app": "mac",
+      "screen": "player",
+      "lang": "ar",
+      "width": 1024,
+      "height": 674,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 421,
+          "webp": "/shots/mac-player-ar-640.webp",
+          "avif": "/shots/mac-player-ar-640.avif",
+          "webpBytes": 23572,
+          "avifBytes": 20722
+        },
+        {
+          "width": 960,
+          "height": 632,
+          "webp": "/shots/mac-player-ar-960.webp",
+          "avif": "/shots/mac-player-ar-960.avif",
+          "webpBytes": 37708,
+          "avifBytes": 34079
+        },
+        {
+          "width": 1024,
+          "height": 674,
+          "webp": "/shots/mac-player-ar-1024.webp",
+          "avif": "/shots/mac-player-ar-1024.avif",
+          "webpBytes": 41382,
+          "avifBytes": 36099
+        }
+      ]
+    },
+    "mac-player-en": {
+      "app": "mac",
+      "screen": "player",
+      "lang": "en",
+      "width": 1024,
+      "height": 674,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 421,
+          "webp": "/shots/mac-player-en-640.webp",
+          "avif": "/shots/mac-player-en-640.avif",
+          "webpBytes": 23342,
+          "avifBytes": 20678
+        },
+        {
+          "width": 960,
+          "height": 632,
+          "webp": "/shots/mac-player-en-960.webp",
+          "avif": "/shots/mac-player-en-960.avif",
+          "webpBytes": 37246,
+          "avifBytes": 33962
+        },
+        {
+          "width": 1024,
+          "height": 674,
+          "webp": "/shots/mac-player-en-1024.webp",
+          "avif": "/shots/mac-player-en-1024.avif",
+          "webpBytes": 40688,
+          "avifBytes": 35990
+        }
+      ]
+    },
+    "web-film-ar": {
+      "app": "web",
+      "screen": "film",
+      "lang": "ar",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-film-ar-720.webp",
+          "avif": "/shots/web-film-ar-720.avif",
+          "webpBytes": 27120,
+          "avifBytes": 25221
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-film-ar-1080.webp",
+          "avif": "/shots/web-film-ar-1080.avif",
+          "webpBytes": 47130,
+          "avifBytes": 42050
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-film-ar-1440.webp",
+          "avif": "/shots/web-film-ar-1440.avif",
+          "webpBytes": 66288,
+          "avifBytes": 58126
+        }
+      ]
+    },
+    "web-film-en": {
+      "app": "web",
+      "screen": "film",
+      "lang": "en",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-film-en-720.webp",
+          "avif": "/shots/web-film-en-720.avif",
+          "webpBytes": 28076,
+          "avifBytes": 25561
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-film-en-1080.webp",
+          "avif": "/shots/web-film-en-1080.avif",
+          "webpBytes": 48078,
+          "avifBytes": 42968
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-film-en-1440.webp",
+          "avif": "/shots/web-film-en-1440.avif",
+          "webpBytes": 68346,
+          "avifBytes": 59202
+        }
+      ]
+    },
+    "web-guide-ar": {
+      "app": "web",
+      "screen": "guide",
+      "lang": "ar",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-guide-ar-720.webp",
+          "avif": "/shots/web-guide-ar-720.avif",
+          "webpBytes": 19066,
+          "avifBytes": 18100
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-guide-ar-1080.webp",
+          "avif": "/shots/web-guide-ar-1080.avif",
+          "webpBytes": 35068,
+          "avifBytes": 32183
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-guide-ar-1440.webp",
+          "avif": "/shots/web-guide-ar-1440.avif",
+          "webpBytes": 50790,
+          "avifBytes": 44429
+        }
+      ]
+    },
+    "web-guide-en": {
+      "app": "web",
+      "screen": "guide",
+      "lang": "en",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-guide-en-720.webp",
+          "avif": "/shots/web-guide-en-720.avif",
+          "webpBytes": 20408,
+          "avifBytes": 19115
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-guide-en-1080.webp",
+          "avif": "/shots/web-guide-en-1080.avif",
+          "webpBytes": 37042,
+          "avifBytes": 33838
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-guide-en-1440.webp",
+          "avif": "/shots/web-guide-en-1440.avif",
+          "webpBytes": 54478,
+          "avifBytes": 46417
+        }
+      ]
+    },
+    "web-home-ar": {
+      "app": "web",
+      "screen": "home",
+      "lang": "ar",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-home-ar-720.webp",
+          "avif": "/shots/web-home-ar-720.avif",
+          "webpBytes": 24596,
+          "avifBytes": 22704
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-home-ar-1080.webp",
+          "avif": "/shots/web-home-ar-1080.avif",
+          "webpBytes": 42610,
+          "avifBytes": 37888
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-home-ar-1440.webp",
+          "avif": "/shots/web-home-ar-1440.avif",
+          "webpBytes": 59402,
+          "avifBytes": 52543
+        }
+      ]
+    },
+    "web-home-en": {
+      "app": "web",
+      "screen": "home",
+      "lang": "en",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-home-en-720.webp",
+          "avif": "/shots/web-home-en-720.avif",
+          "webpBytes": 25638,
+          "avifBytes": 23803
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-home-en-1080.webp",
+          "avif": "/shots/web-home-en-1080.avif",
+          "webpBytes": 44146,
+          "avifBytes": 40040
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-home-en-1440.webp",
+          "avif": "/shots/web-home-en-1440.avif",
+          "webpBytes": 63006,
+          "avifBytes": 55503
+        }
+      ]
+    },
+    "web-search-ar": {
+      "app": "web",
+      "screen": "search",
+      "lang": "ar",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-search-ar-720.webp",
+          "avif": "/shots/web-search-ar-720.avif",
+          "webpBytes": 23614,
+          "avifBytes": 21290
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-search-ar-1080.webp",
+          "avif": "/shots/web-search-ar-1080.avif",
+          "webpBytes": 41622,
+          "avifBytes": 37855
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-search-ar-1440.webp",
+          "avif": "/shots/web-search-ar-1440.avif",
+          "webpBytes": 59800,
+          "avifBytes": 52281
+        }
+      ]
+    },
+    "web-search-en": {
+      "app": "web",
+      "screen": "search",
+      "lang": "en",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-search-en-720.webp",
+          "avif": "/shots/web-search-en-720.avif",
+          "webpBytes": 24268,
+          "avifBytes": 21979
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-search-en-1080.webp",
+          "avif": "/shots/web-search-en-1080.avif",
+          "webpBytes": 42986,
+          "avifBytes": 38835
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-search-en-1440.webp",
+          "avif": "/shots/web-search-en-1440.avif",
+          "webpBytes": 62488,
+          "avifBytes": 53776
+        }
+      ]
+    },
+    "web-series-ar": {
+      "app": "web",
+      "screen": "series",
+      "lang": "ar",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-series-ar-720.webp",
+          "avif": "/shots/web-series-ar-720.avif",
+          "webpBytes": 26636,
+          "avifBytes": 23374
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-series-ar-1080.webp",
+          "avif": "/shots/web-series-ar-1080.avif",
+          "webpBytes": 49082,
+          "avifBytes": 42258
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-series-ar-1440.webp",
+          "avif": "/shots/web-series-ar-1440.avif",
+          "webpBytes": 72462,
+          "avifBytes": 60655
+        }
+      ]
+    },
+    "web-series-en": {
+      "app": "web",
+      "screen": "series",
+      "lang": "en",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-series-en-720.webp",
+          "avif": "/shots/web-series-en-720.avif",
+          "webpBytes": 28320,
+          "avifBytes": 25077
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-series-en-1080.webp",
+          "avif": "/shots/web-series-en-1080.avif",
+          "webpBytes": 53226,
+          "avifBytes": 45240
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-series-en-1440.webp",
+          "avif": "/shots/web-series-en-1440.avif",
+          "webpBytes": 79286,
+          "avifBytes": 66146
+        }
+      ]
+    }
+  }
+}

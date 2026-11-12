@@ -1,0 +1,20 @@
+{
+ "items": [
+  {
+   "id": "sub-en",
+   "lang": "en",
+   "label": "English",
+   "format": "vtt",
+   "source": "sidecar",
+   "default": true
+  },
+  {
+   "id": "sub-ar",
+   "lang": "ar",
+   "label": "العربية",
+   "format": "vtt",
+   "source": "sidecar",
+   "default": false
+  }
+ ]
+}

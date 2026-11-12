@@ -1,0 +1,20 @@
+{
+ "id": "v-spring",
+ "library_id": "lib-films",
+ "path": "",
+ "filename": "spring.mkv",
+ "title": "Spring",
+ "description": "A shepherd girl and her dog face the ancient spirits of the forest to keep the cycle of life turning.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 464,
+ "size_bytes": 116000000,
+ "content_hash": "vspring000000000000000000000000000000000000000000000000000000000",
+ "created_at": "{{now-86400}}",
+ "updated_at": "{{now-85800}}",
+ "published_at": "2019-06-01T00:00:00Z",
+ "playable": true,
+ "tags": [],
+ "poster_url": "/api/videos/v-spring/poster",
+ "backdrop_url": "/api/videos/v-spring/backdrop"
+}

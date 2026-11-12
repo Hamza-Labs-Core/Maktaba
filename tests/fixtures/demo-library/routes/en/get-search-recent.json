@@ -1,0 +1,15 @@
+{
+ "items": [
+  {
+   "search_id": "sr-demo",
+   "q": "dragon",
+   "mode": "hybrid",
+   "created_at": "{{now-600}}",
+   "last_used_at": "{{now-600}}",
+   "expires_at": "{{now+1800}}",
+   "title_count": 1,
+   "transcript_count": 2,
+   "live": true
+  }
+ ]
+}

@@ -40,6 +40,9 @@ no page of its own), and [the index](https://maktaba.tv/problems/) lists them al
   household, not for a developer. Write the Arabic from the meaning, in Modern Standard Arabic,
   with the app catalog's words («الجهاز الرئيسي» for the home, «مكتبة» for Maktaba). Put what a
   person must type (a file name, a setting, a request) in backquotes.
+  The Arabic addresses the household in the plural («يمكنكم»، «تأكدوا»، «بيتكم»), never the
+  singular, and names the product «مكتبة» («برنامج مكتبة» where the bare word reads as a library),
+  never Latin «Maktaba», as maktaba.tv's voice guide does.
 - **`help`:** a user guide topic and anchor (`users#seat-limit`) when one covers it; a test checks
   the anchor exists in both languages. **`install`:** an install guide's troubleshooting anchor,
   or `null`.

@@ -221,6 +221,9 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
+          # keep the wheels: pruned (setup-uv's default) main's entry held 6 MB, and every
+          # run downloaded the whole set from PyPI again
+          prune-cache: false
           # restore main's uv cache; only a push to main saves it
           save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
@@ -255,7 +258,8 @@ jobs:
       - name: Install pipeline deps
         if: inputs.go || inputs.pipeline
         working-directory: pipeline
-        run: uv sync --frozen --all-extras
+        # every extra but torch's CUDA tree, plus torch's CPU build for mypy
+        run: ../tools/ci/pipeline-deps.sh --cpu-torch
 
       # Epic 51 (story 51.13): a rules section that removes a field or changes its kind
       # bumps its major version (compared with schema.json at the last release tag; the

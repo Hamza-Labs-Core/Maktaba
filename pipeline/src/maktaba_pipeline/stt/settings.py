@@ -42,6 +42,9 @@ class WhisperSettings:
     #: and the cache grew to 70+ GB in an hour)
     gpu_limit_gb: float = 24.0
     gpu_cache_gb: float = 2.0
+    #: seconds without work after which the model is let go (MLX: Whisper and the second
+    #: listen, :mod:`.mlx_memory`); 0 keeps it loaded
+    unload_idle_s: float = 600.0
     temperatures: tuple[float, ...] = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
     compression_ratio_threshold: float = 2.4
     logprob_threshold: float = -1.0

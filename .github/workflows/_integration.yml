@@ -77,12 +77,16 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
+          # keep the wheels: pruned (setup-uv's default) main's entry held 6 MB, and every
+          # run downloaded the whole set from PyPI again
+          prune-cache: false
           # restore main's uv cache; only a push to main saves it
           save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Install pipeline deps
         working-directory: pipeline
-        run: uv sync --frozen --all-extras
+        # every extra but torch's CUDA tree: no test runs torch (tools/ci/pipeline-deps.sh)
+        run: ../tools/ci/pipeline-deps.sh
 
       - name: Wait for services
         # Service containers report healthy via Docker's healthcheck, but

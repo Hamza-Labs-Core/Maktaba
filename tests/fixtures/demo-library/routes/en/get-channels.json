@@ -1,0 +1,112 @@
+{
+ "items": [
+  {
+   "id": "ch-films",
+   "number": 1,
+   "name": "Film Night",
+   "slug": "films",
+   "logo_url": null,
+   "library_id": "lib-films",
+   "logo_path": "",
+   "art": {
+    "watermark": {
+     "overridden": false,
+     "position": "top-right",
+     "width_pct": 12,
+     "margin_pct": 2
+    },
+    "loading": {
+     "overridden": false
+    },
+    "strip": null
+   },
+   "category": "general",
+   "mode": "sequential",
+   "mode_config": {},
+   "transition": "cut",
+   "enabled": true,
+   "sort_order": 1,
+   "created_at": "{{now-17280000}}",
+   "updated_at": "{{now-864000}}",
+   "now_playing": {
+    "title": "Sintel",
+    "start_at": "{{now-900}}",
+    "end_at": "{{now+900}}",
+    "progress": 0.5
+   },
+   "guide_until": "{{now+86400}}"
+  },
+  {
+   "id": "ch-shorts",
+   "number": 2,
+   "name": "Shorts",
+   "slug": "shorts",
+   "logo_url": null,
+   "library_id": "lib-shorts",
+   "logo_path": "",
+   "art": {
+    "watermark": {
+     "overridden": false,
+     "position": "top-right",
+     "width_pct": 12,
+     "margin_pct": 2
+    },
+    "loading": {
+     "overridden": false
+    },
+    "strip": null
+   },
+   "category": "general",
+   "mode": "sequential",
+   "mode_config": {},
+   "transition": "cut",
+   "enabled": true,
+   "sort_order": 2,
+   "created_at": "{{now-17280000}}",
+   "updated_at": "{{now-864000}}",
+   "now_playing": {
+    "title": "Sprite Fright",
+    "start_at": "{{now}}",
+    "end_at": "{{now+900}}",
+    "progress": 0
+   },
+   "guide_until": "{{now+86400}}"
+  },
+  {
+   "id": "ch-family",
+   "number": 3,
+   "name": "Family",
+   "slug": "family",
+   "logo_url": null,
+   "library_id": "lib-films",
+   "logo_path": "",
+   "art": {
+    "watermark": {
+     "overridden": false,
+     "position": "top-right",
+     "width_pct": 12,
+     "margin_pct": 2
+    },
+    "loading": {
+     "overridden": false
+    },
+    "strip": null
+   },
+   "category": "general",
+   "mode": "sequential",
+   "mode_config": {},
+   "transition": "cut",
+   "enabled": true,
+   "sort_order": 3,
+   "created_at": "{{now-17280000}}",
+   "updated_at": "{{now-864000}}",
+   "now_playing": {
+    "title": "Caminandes: Gran Dillama",
+    "start_at": "{{now}}",
+    "end_at": "{{now+900}}",
+    "progress": 0
+   },
+   "guide_until": "{{now+86400}}"
+  }
+ ]
+}

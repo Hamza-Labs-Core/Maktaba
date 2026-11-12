@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **Messages in Arabic speak to the whole household (story 60.06).** The Arabic of every
+  message the API sends, and of its page on maktaba.tv, now addresses the household in the plural
+  and names the product «مكتبة» («برنامج مكتبة» where the bare word reads as a library), as the
+  site's voice guide does. The English and what each message means are unchanged.
+
 - **Updates on a NAS (story 59.12).** The Docker image's own updates and a NAS catalog's
   (TrueNAS app updates, Unraid's update check, Watchtower, a pull in Container Manager) now live
   side by side: neither needs turning off. **Admin → Updates** shows, on the image, the release
@@ -256,6 +261,13 @@ build fails when the two differ.
   days and opens an issue when a cost grows by more than 20 % (Epic 53 story 53.13).
 
 ### Fixed
+
+- **Transcription gives its memory back when idle.** On a Mac, each transcription runner kept
+  Whisper and the second listen's model loaded (5 to 10 GB each, with two runners on a large
+  Mac) for as long as it ran. After ten minutes without transcription work it now lets both go,
+  and loads them again for the next file. The second listen also keeps to the cap on its GPU
+  memory cache when it loads before Whisper, and a finished file's audio is no longer held
+  until the next one finishes.
 
 - **The NAS guides, followed step by step, now end with a working home.** The Docker,
   Synology, TrueNAS, Unraid, QNAP and UGREEN guides were run on NAS-shaped containers, and five

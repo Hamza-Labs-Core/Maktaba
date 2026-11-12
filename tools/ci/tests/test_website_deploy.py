@@ -1,6 +1,9 @@
-"""maktaba.tv's deploy (Epic 60 story 60.03, T08): website-deploy.yml goes live only when the
-website's own token, the account and the go-live variable are all set; otherwise the job prints
-a notice naming what is missing and passes. The gate's own script is run here with each mix.
+"""maktaba.tv's deploy (Epic 60 story 60.03, T08): website-deploy.yml goes live only when a
+token (the website's own, else the shared CLOUDFLARE_API_TOKEN), the account and the go-live
+variable are all set; otherwise the job prints a notice naming what is missing and passes.
+WEBSITE_LIVE is the only switch, so nothing that writes may run without it; the read-only token
+check runs as soon as a token and the account are set. The gate's own script is run here with
+each mix.
 
 Run: uv run --no-project --with pyyaml==6.0.3 --with pytest==8.4.2 pytest tools/ci/tests
 """
@@ -19,6 +22,10 @@ import yaml
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github/workflows/website-deploy.yml"
 GATED = "steps.gate.outputs.ok == 'true'"
+CHECK = "steps.gate.outputs.check == 'true'"
+TOKEN = "${{ secrets.CLOUDFLARE_API_TOKEN_WEBSITE || secrets.CLOUDFLARE_API_TOKEN }}"
+# the steps that may run before the site is live: they read and write nothing on Cloudflare
+READ_ONLY = {"actions/checkout@v6.0.2", "actions/setup-node@v6.4.0", "Token check", "Token check report"}
 # the retries of the artifact download run only when the gated first attempt failed
 RETRIES = re.compile(r"^steps\.artifact-website-site(-\d)?\.outcome == 'failure'$")
 
@@ -37,31 +44,52 @@ def test_no_pull_request_ever_deploys() -> None:
     assert on["push"]["branches"] == ["main"]
 
 
-def test_the_gate_reads_the_websites_own_token_the_account_and_the_go_live_variable() -> None:
+def test_the_gate_reads_a_token_the_account_and_the_go_live_variable() -> None:
     gate = steps()[0]
     assert gate["id"] == "gate"
     assert gate["env"] == {
-        "TOKEN": "${{ secrets.CLOUDFLARE_API_TOKEN_WEBSITE }}",
+        "TOKEN": TOKEN,
         "ACCOUNT": "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}",
         "LIVE": "${{ vars.WEBSITE_LIVE }}",
     }
 
 
-def test_the_shared_cloudflare_tokens_are_never_read() -> None:
+def test_every_token_read_is_the_websites_own_else_the_shared_one() -> None:
     text = WORKFLOW.read_text()
-    tokens = set(re.findall(r"secrets\.(CLOUDFLARE_API_TOKEN\w*)", text))
-    assert tokens == {"CLOUDFLARE_API_TOKEN_WEBSITE"}
+    reads = re.findall(r"\$\{\{ secrets\.CLOUDFLARE_API_TOKEN[^}]*\}\}", text)
+    assert reads and set(reads) == {TOKEN}
 
 
-def test_every_step_after_the_gate_runs_only_behind_it() -> None:
+def name_of(step: dict) -> str:
+    return step.get("name") or step.get("uses")
+
+
+def test_nothing_that_writes_runs_without_the_go_live_variable() -> None:
+    """WEBSITE_LIVE is the only switch: every step but the read-only ones (checkout, Node, the
+    token check and its report) needs ok, which only WEBSITE_LIVE = true sets."""
     for step in steps()[1:]:
         cond = str(step.get("if", ""))
-        name = step.get("name") or step.get("uses")
-        assert GATED in cond or RETRIES.match(cond), f"{name}: runs without the gate ({cond!r})"
-    # and nothing reaches Cloudflare without it: every step that reads a secret is gated
+        name = name_of(step)
+        if name in READ_ONLY:
+            assert CHECK in cond, f"{name}: should run once a token and the account are set ({cond!r})"
+            continue
+        assert GATED in cond or RETRIES.match(cond), f"{name}: runs without WEBSITE_LIVE ({cond!r})"
+    # every step that reads a secret is either the read-only token check or behind ok
     for step in steps()[1:]:
         if "secrets." in yaml.safe_dump(step):
-            assert GATED in str(step.get("if", "")), step.get("name")
+            cond = str(step.get("if", ""))
+            assert GATED in cond or name_of(step) == "Token check", name_of(step)
+
+
+def test_the_token_check_is_read_only_and_does_not_fail_the_run_before_go_live() -> None:
+    token = next(s for s in steps() if s.get("id") == "token")
+    assert token["run"].count("token-check.mjs --pieces workers,dns --zone maktaba.tv") == 1
+    assert "wrangler" not in token["run"] and "website-deploy.mjs" not in token["run"]
+    assert token["continue-on-error"] == "${{ steps.gate.outputs.ok != 'true' }}"
+    # the check itself only reads: every Cloudflare call in it is a GET
+    src = (ROOT / "tools/cloudflare/token-check.mjs").read_text()
+    calls = re.findall(r"\bcf\.(\w+)\(", src)
+    assert calls and set(calls) <= {"get", "zoneId"}, calls
 
 
 def run_gate(tmp_path: Path, **env: str) -> tuple[str, str]:
@@ -74,30 +102,32 @@ def run_gate(tmp_path: Path, **env: str) -> tuple[str, str]:
 
 
 @pytest.mark.parametrize(
-    "env,missing",
+    "env,missing,check",
     [
-        ({}, ["CLOUDFLARE_API_TOKEN_WEBSITE", "CLOUDFLARE_ACCOUNT_ID", "WEBSITE_LIVE"]),
-        # the account's secrets as they are today: still not live without the variable
-        ({"TOKEN": "t", "ACCOUNT": "a"}, ["WEBSITE_LIVE"]),
-        ({"TOKEN": "t", "ACCOUNT": "a", "LIVE": "false"}, ["WEBSITE_LIVE"]),
-        ({"ACCOUNT": "a", "LIVE": "true"}, ["CLOUDFLARE_API_TOKEN_WEBSITE"]),
+        ({}, ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "WEBSITE_LIVE"], "false"),
+        # the account's secrets as they are today: the token check runs, nothing is deployed
+        ({"TOKEN": "t", "ACCOUNT": "a"}, ["WEBSITE_LIVE"], "true"),
+        ({"TOKEN": "t", "ACCOUNT": "a", "LIVE": "false"}, ["WEBSITE_LIVE"], "true"),
+        ({"TOKEN": "t", "ACCOUNT": "a", "LIVE": "TRUE"}, ["WEBSITE_LIVE"], "true"),
+        ({"ACCOUNT": "a", "LIVE": "true"}, ["CLOUDFLARE_API_TOKEN"], "false"),
+        ({"TOKEN": "t", "LIVE": "true"}, ["CLOUDFLARE_ACCOUNT_ID"], "false"),
     ],
 )
 def test_without_any_of_the_three_the_job_passes_with_a_notice_naming_it(
-    tmp_path: Path, env: dict[str, str], missing: list[str]
+    tmp_path: Path, env: dict[str, str], missing: list[str], check: str
 ) -> None:
     stdout, out = run_gate(tmp_path, **env)
-    assert out == "ok=false\n"
-    assert stdout.startswith("::notice title=maktaba.tv not deployed::")
+    assert out == f"check={check}\nok=false\n"
+    assert "::notice title=maktaba.tv not deployed::" in stdout
     for name in missing:
         assert name in stdout
-    for name in {"CLOUDFLARE_API_TOKEN_WEBSITE", "CLOUDFLARE_ACCOUNT_ID", "WEBSITE_LIVE"} - set(missing):
-        assert name not in stdout
+    for name in {"CLOUDFLARE_ACCOUNT_ID", "WEBSITE_LIVE"} - set(missing):
+        assert name not in stdout.split("::notice", 1)[1]
 
 
 def test_with_all_three_the_deploy_runs(tmp_path: Path) -> None:
     stdout, out = run_gate(tmp_path, TOKEN="t", ACCOUNT="acc", LIVE="true")
-    assert out == "ok=true\n"
+    assert out == "check=true\nok=true\n"
     assert "::add-mask::acc" in stdout
     assert "notice" not in stdout
 

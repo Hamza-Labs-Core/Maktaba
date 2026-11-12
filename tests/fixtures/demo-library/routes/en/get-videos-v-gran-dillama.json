@@ -1,0 +1,25 @@
+{
+ "id": "v-gran-dillama",
+ "library_id": "lib-shorts",
+ "path": "",
+ "filename": "gran-dillama.mp4",
+ "title": "Caminandes: Gran Dillama",
+ "description": "Koro the llama wants the grass on the other side of the fence, whatever it takes.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 146,
+ "size_bytes": 36500000,
+ "content_hash": "vgrandillama0000000000000000000000000000000000000000000000000000",
+ "created_at": "{{now-345600}}",
+ "updated_at": "{{now-345000}}",
+ "published_at": "2013-06-01T00:00:00Z",
+ "playable": true,
+ "tags": [],
+ "poster_url": "/api/videos/v-gran-dillama/poster",
+ "backdrop_url": "/api/videos/v-gran-dillama/backdrop",
+ "playback_state": {
+  "position_sec": 146,
+  "completed": true,
+  "updated_at": "{{now-172800}}"
+ }
+}

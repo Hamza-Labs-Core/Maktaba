@@ -112,6 +112,42 @@ When a change to a page's look is meant:
    with one line on why. The `Reference images` check fails, naming the files, until each is
    listed. Each image stays under 1 MB, with no metadata.
 
+## Product screenshots
+
+The home and download pages show the real apps (story 60.09): dark, in English and Arabic, on
+the demo library in `tests/fixtures/demo-library/` (Blender's open movies, credited in its
+README; the household is "The Haddad family"). The site's images are in `static/shots/`, made
+by `scripts/shots.mjs`, with each one's sizes in `shots-manifest.json`.
+
+**Where each app's captures come from** (one CI run on main has them all):
+
+| App | Captured by | CI artifact or file |
+|---|---|---|
+| Web | `scripts/capture-web.mjs`: Vite serves the web app, Playwright answers `/api/*` from the demo library, 1440×900 at 2× | `product-shots-web` (the website job's `product shots (web)`) |
+| iPhone, iPad | the MockHome UI tests on a per-run simulator; the Remote's Queue from the Remote UI tests (iPhone only) | `product-shots-iphone`, `product-shots-iphone-remote`, `product-shots-ipad` |
+| Apple TV | `tv-ui-tests` on a per-run tvOS simulator | `product-shots-appletv` |
+| Mac | the Mac app's CI UI tests (never on a local Mac) | `product-shots-mac` |
+| Android TV, phone | Roborazzi references on the demo library | `apps/android/player/src/test/screenshots/demo/`, `apps/tv/android/app/src/test/screenshots/demo/` |
+
+**Rerunning them at a release:**
+
+1. Pick the CI run of the release's commit on main (`gh run list -w CI -b main`). For the Apple apps alone,
+   `gh workflow run product-shots.yml --ref main` runs only their shot tests.
+2. From `web/packages/website`: `npm run shots -- --from-run <run id>`. It downloads the run's
+   `product-shots-*` artifacts, crops each capture to the frame's safe area, writes WebP and
+   AVIF at each breakpoint width without metadata, keeps each file under 150 KB, and rewrites
+   `shots-manifest.json`. An app whose job did not pass, or whose captures are not all there,
+   keeps its previous images, and the script names it (exit status 2). A run is never forced
+   green for screenshots.
+3. Open every changed image in both languages: nothing clipped, no person's name, LAN address
+   or path, the Arabic screens right to left.
+4. `npm run build` (the link check's manifest lists the new files), commit, and list each image
+   under `Reference images:` in the pull request's body, as for the visual references.
+
+The widths per app and the crop are in `shots.config.json`: the design (60.01) changes them
+there. To see the web captures on your machine: `pnpm -C web install`, then `npm run shots:web`
+(writes `shots-capture/web/`). Apple's are never taken on a local Mac.
+
 ## The nightly sweep
 
 `website-nightly.yml` runs every night on `main` (and by hand): Lighthouse on every page in both
@@ -141,12 +177,14 @@ detached again.
 
 ## Going live
 
-The deploy goes live only when all three are set: the secret `CLOUDFLARE_API_TOKEN_WEBSITE` (the
-website's own token, with DNS Edit on `maktaba.tv`, because custom domains write their records),
-the secret `CLOUDFLARE_ACCOUNT_ID`, and the repository variable `WEBSITE_LIVE` set to `true`.
-Without any of them the job prints a notice naming what is missing and passes. The shared
-`CLOUDFLARE_API_TOKEN`, which deploys this portal, is never read, so maktaba.tv cannot go live by
-accident. `deploy/cloudflare/README.md` has the token's permissions.
+The deploy's token is `CLOUDFLARE_API_TOKEN_WEBSITE` when that secret is set, and otherwise the
+shared `CLOUDFLARE_API_TOKEN` that also deploys this portal (it needs DNS Edit on `maktaba.tv`,
+because custom domains write their records). The repository variable `WEBSITE_LIVE` set to `true`
+is the only go-live switch: without it, or without a token or `CLOUDFLARE_ACCOUNT_ID`, nothing is
+written and the job prints a notice naming what is missing and passes. The token check only
+reads, so it runs on every run once a token and the account are set, and names any missing
+permission before go-live (an annotation and the run's summary; it fails the run only once the
+site is live). `deploy/cloudflare/README.md` has the token's permissions.
 
 ## Rolling back
 

@@ -202,6 +202,18 @@ targets:
       - path: UITests/MockHome.swift
       - path: UITests/TypingInFields.swift
       - path: UITests/Fixtures
+      # the demo library (story 60.09: the product screenshots), its folders as they are
+      - path: ../../tests/fixtures/demo-library/routes
+        type: folder
+        buildPhase: resources
+        group: DemoLibrary
+      - path: ../../tests/fixtures/demo-library/art
+        type: folder
+        buildPhase: resources
+        group: DemoLibrary
+      - path: ../../tests/fixtures/demo-library/library.json
+        buildPhase: resources
+        group: DemoLibrary
     dependencies: [{ target: Maktaba Player Mac }]
     # the runner is sandboxed: MockHome listens on the loopback inside it. CI's ad-hoc signed
     # run signs the app with this file too: the app's own adds a keychain group, which needs
@@ -271,6 +283,18 @@ targets:
       - path: Player/Components/PlaceholderTiming.swift
       - path: Player/Watch/WatchLogic.swift
       - path: Player/Watch/PlayerTracks.swift
+      # the demo library (story 60.09: the product screenshots), its folders as they are
+      - path: ../../tests/fixtures/demo-library/routes
+        type: folder
+        buildPhase: resources
+        group: DemoLibrary
+      - path: ../../tests/fixtures/demo-library/art
+        type: folder
+        buildPhase: resources
+        group: DemoLibrary
+      - path: ../../tests/fixtures/demo-library/library.json
+        buildPhase: resources
+        group: DemoLibrary
     dependencies: [{ target: Maktaba Player }]
     settings:
       base:
@@ -282,6 +306,18 @@ targets:
     sources:
       - path: UITests
         excludes: ["Player*.swift"]
+      # the demo library (story 60.09: the product screenshots), its folders as they are
+      - path: ../../tests/fixtures/demo-library/routes
+        type: folder
+        buildPhase: resources
+        group: DemoLibrary
+      - path: ../../tests/fixtures/demo-library/art
+        type: folder
+        buildPhase: resources
+        group: DemoLibrary
+      - path: ../../tests/fixtures/demo-library/library.json
+        buildPhase: resources
+        group: DemoLibrary
     dependencies: [{ target: Maktaba Remote }]
     settings:
       base:
@@ -302,6 +338,18 @@ targets:
       - path: Player/Components/PlaceholderTiming.swift
       - path: Player/Watch/WatchLogic.swift
       - path: Player/Watch/PlayerTracks.swift
+      # the demo library (story 60.09: the product screenshots), its folders as they are
+      - path: ../../tests/fixtures/demo-library/routes
+        type: folder
+        buildPhase: resources
+        group: DemoLibrary
+      - path: ../../tests/fixtures/demo-library/art
+        type: folder
+        buildPhase: resources
+        group: DemoLibrary
+      - path: ../../tests/fixtures/demo-library/library.json
+        buildPhase: resources
+        group: DemoLibrary
     dependencies: [{ target: Maktaba Player iPad }]
     settings:
       base:
@@ -314,6 +362,18 @@ targets:
     sources:
       - path: UITests
         excludes: ["Player*.swift"]
+      # the demo library (story 60.09: the product screenshots), its folders as they are
+      - path: ../../tests/fixtures/demo-library/routes
+        type: folder
+        buildPhase: resources
+        group: DemoLibrary
+      - path: ../../tests/fixtures/demo-library/art
+        type: folder
+        buildPhase: resources
+        group: DemoLibrary
+      - path: ../../tests/fixtures/demo-library/library.json
+        buildPhase: resources
+        group: DemoLibrary
     dependencies: [{ target: Maktaba Remote iPad }]
     settings:
       base:
@@ -358,6 +418,18 @@ targets:
       - path: UITests/MockHome.swift
       - path: UITests/TypingInFields.swift
       - path: UITests/Fixtures
+      # the demo library (story 60.09: the product screenshots), its folders as they are
+      - path: ../../tests/fixtures/demo-library/routes
+        type: folder
+        buildPhase: resources
+        group: DemoLibrary
+      - path: ../../tests/fixtures/demo-library/art
+        type: folder
+        buildPhase: resources
+        group: DemoLibrary
+      - path: ../../tests/fixtures/demo-library/library.json
+        buildPhase: resources
+        group: DemoLibrary
     dependencies:
       - target: Maktaba TV
     settings:

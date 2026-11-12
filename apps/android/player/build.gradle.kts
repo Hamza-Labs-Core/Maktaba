@@ -90,6 +90,8 @@ android {
         unitTests.all { test ->
             test.systemProperty("robolectric.graphicsMode", "NATIVE")
             test.maxHeapSize = "3g"
+            // the demo library (story 60.09) the Demo*ScreenshotTests read at test time
+            test.inputs.dir(file("../../../tests/fixtures/demo-library")).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("demoLibrary")
         }
     }
 }

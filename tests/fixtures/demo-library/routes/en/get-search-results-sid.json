@@ -1,0 +1,23 @@
+{
+ "search_id": "sr-demo",
+ "expires_at": "{{now+1800}}",
+ "q": "dragon",
+ "mode": "hybrid",
+ "list": "titles",
+ "offset": 0,
+ "limit": 20,
+ "total": 1,
+ "items": [
+  {
+   "video_id": "v-sintel",
+   "title": "Sintel",
+   "duration_sec": 888,
+   "library_id": "lib-films",
+   "library_name": "Films",
+   "poster_url": "/api/videos/v-sintel/poster",
+   "score": 0.9,
+   "in_transcripts": true,
+   "title_snippet": "Sintel"
+  }
+ ]
+}

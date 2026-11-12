@@ -349,6 +349,12 @@ class BatchedTranscriber:
         self.audio_lost = 0.0
         self._jobs: list[_Job] = []  # the files in flight (the GPU thread's list)
         self._mx: Any = None
+        #: MLX-Whisper's model was loaded by :meth:`_load` (not hooks a test gave, nor
+        #: CTranslate2's, which takes turns with the second listen on the GPU,
+        #: :mod:`.gpu_turns`): it is let go when idle (:mod:`.mlx_memory`) and loaded again
+        #: for the next file
+        self._mlx_loaded = False
+        self.unloads = 0
 
     # --- public ---------------------------------------------------------------
 
@@ -373,17 +379,21 @@ class BatchedTranscriber:
         decoding of every window of this file (Whisper's ``initial_prompt``)."""
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[Transcript] = loop.create_future()
-        self._ensure_thread()
-        self._inbox.put((audio, fut, loop, resume, progress, scale, prompt or None))
+        self._ensure_thread((audio, fut, loop, resume, progress, scale, prompt or None))
         return await fut
 
     # --- the GPU thread ---------------------------------------------------------
 
-    def _ensure_thread(self) -> None:
+    def _ensure_thread(self, item: _Submission | None = None) -> None:
+        """Start the GPU thread unless it runs, then queue ``item``: both under the lock a
+        thread letting its model go (:meth:`_unload_if_idle`) takes, so that the file is
+        either seen by that thread, which then stays, or queued for a new one."""
         with self._lock:
             if self._thread is None or not self._thread.is_alive():
                 self._thread = threading.Thread(target=self._run, name="whisper-batch", daemon=True)
                 self._thread.start()
+            if item is not None:
+                self._inbox.put(item)
 
     def _load(self) -> None:
         """MLX-Whisper's model, mel, window, decode and word alignment."""
@@ -409,10 +419,11 @@ class BatchedTranscriber:
             get_tokenizer,
         )
 
+        from .mlx_memory import apply_limits
+
         s = self.settings
         t0 = time.monotonic()
-        mx.set_memory_limit(int(s.gpu_limit_gb * 1e9))
-        mx.set_cache_limit(int(s.gpu_cache_gb * 1e9))
+        apply_limits(mx, s)
         self._mx = mx
         from ..engine.health import register_metric
 
@@ -508,6 +519,7 @@ class BatchedTranscriber:
         self._detect = detect
         if s.word_timestamps:
             self._align_batch = lambda items, feats: align_batch(model, tok, items, feats)
+        self._mlx_loaded = True
         _log.info("whisper.loaded", model=s.model, seconds=round(time.monotonic() - t0, 1))
 
     def _register_metrics(self) -> None:
@@ -576,41 +588,76 @@ class BatchedTranscriber:
             self._thread = None
             return
         jobs = self._jobs
+        idle_since = time.monotonic()
         while True:
             self._admit(jobs, block=True)
             if not jobs:
+                if self._unload_if_idle(time.monotonic() - idle_since):
+                    return
                 continue
             self.in_flight = len(jobs)
             try:
                 self._pass(jobs)
-                cap = self.settings.gpu_cache_gb * 1e9
-                if self._mx is not None and self._mx.get_cache_memory() > cap:
-                    self._mx.clear_cache()
+                from .mlx_memory import trim
+
+                trim(self._mx, self.settings)
             except Exception as exc:  # noqa: BLE001 - a broken batch fails its files only
                 _log.exception("whisper.batch_failed", files=len(jobs))
-                for j in jobs:
-                    self.audio_lost += j.unsaved_sec
-                    j.loop.call_soon_threadsafe(_set_exception, j.future, exc)
-                jobs.clear()
+                self._fail(jobs, exc)
                 continue
-            for j in [j for j in jobs if j.done]:
-                jobs.remove(j)
-                try:
-                    result = Transcript(
-                        sentences=to_sentences(j.segments),
-                        audio_sec=j.audio_sec,
-                        language=self.settings.language,
-                        model=self.settings.model,
-                        gpu_sec=time.monotonic() - j.admitted,
-                        detected_language=j.language or None,
-                        backend=self.backend,
-                        backend_version=self.backend_version,
-                    )
-                except Exception as exc:  # noqa: BLE001 - the thread outlives one file
-                    self.audio_lost += j.unsaved_sec
-                    j.loop.call_soon_threadsafe(_set_exception, j.future, exc)
-                    continue
-                j.loop.call_soon_threadsafe(_set_result, j.future, result)
+            finally:
+                idle_since = time.monotonic()
+            self._finish(jobs)
+
+    def _unload_if_idle(self, idle_s: float) -> bool:
+        """On the GPU thread, with no file in flight: after ``unload_idle_s`` without work,
+        let the model go (its weights and MLX's cached buffers) and end the thread; the
+        next file starts it again and loads the model. True when it did."""
+        from .mlx_memory import release, unload_idle_s
+
+        limit = unload_idle_s(self.settings)
+        if not self._mlx_loaded or limit <= 0 or idle_s < limit:
+            return False
+        with self._lock:
+            if not self._inbox.empty():
+                return False
+            self._decode = self._mel_of = self._window_of = self._encode = None
+            self._detect = self._align_batch = self._align = None
+            self._tokenizer = None
+            self._mlx_loaded = False
+            self.unloads += 1
+            self._thread = None
+        self.in_flight = 0
+        release(self._mx, self.settings.model, idle_s, engine=self.backend)
+        return True
+
+    def _fail(self, jobs: list[_Job], exc: BaseException) -> None:
+        for j in jobs:
+            self.audio_lost += j.unsaved_sec
+            j.loop.call_soon_threadsafe(_set_exception, j.future, exc)
+        jobs.clear()
+
+    def _finish(self, jobs: list[_Job]) -> None:
+        """Hand back the files whose last window is done (in a method of its own: no
+        finished file, with its whole spectrogram, stays referenced from the loop)."""
+        for j in [j for j in jobs if j.done]:
+            jobs.remove(j)
+            try:
+                result = Transcript(
+                    sentences=to_sentences(j.segments),
+                    audio_sec=j.audio_sec,
+                    language=self.settings.language,
+                    model=self.settings.model,
+                    gpu_sec=time.monotonic() - j.admitted,
+                    detected_language=j.language or None,
+                    backend=self.backend,
+                    backend_version=self.backend_version,
+                )
+            except Exception as exc:  # noqa: BLE001 - the thread outlives one file
+                self.audio_lost += j.unsaved_sec
+                j.loop.call_soon_threadsafe(_set_exception, j.future, exc)
+                continue
+            j.loop.call_soon_threadsafe(_set_result, j.future, result)
 
     def _decode_rows(
         self, features: Any, temps: list[float], prompts: list[str | None]

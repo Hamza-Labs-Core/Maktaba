@@ -165,9 +165,9 @@ registry's.
 | `problem.do` | What you can do | ما الذي يمكنكم فعله |
 | `problem.whoHelps` | Who can help | من يمكنه المساعدة |
 | `problem.who.anyone` | Anyone may see this, signed in or not. | قد تظهر هذه الرسالة لأي شخص، قبل تسجيل الدخول أو بعده. |
-| `problem.who.person` | You may see this while using Maktaba. | قد تظهر لكم هذه الرسالة أثناء استخدام مكتبة. |
+| `problem.who.person` | You may see this while using Maktaba. | قد تظهر لكم هذه الرسالة أثناء استخدام برنامج مكتبة. |
 | `problem.who.admin` | You'll see this if you run the home. | تظهر لكم هذه الرسالة إن كنتم من يدير الجهاز الرئيسي. |
-| `problem.who.app` | An app that works with Maktaba gets this, and may show it to you. | تصل هذه الرسالة إلى التطبيقات التي تعمل مع مكتبة، وقد تعرضها عليكم. |
+| `problem.who.app` | An app that works with Maktaba gets this, and may show it to you. | تصل هذه الرسالة إلى التطبيقات التي تعمل مع برنامج مكتبة، وقد تعرضها عليكم. |
 | `problem.who.node` | Your home's machines send this to each other. | تتبادل أجهزة البيت هذه الرسالة فيما بينها. |
 | `problem.helps.person` (anyone, person) | If it keeps happening, ask the person who runs your home. If that's you, Troubleshooting goes through the common causes. | وإن تكرّر الأمر، فاسألوا من يدير الجهاز الرئيسي في بيتكم. وإن كنتم أنتم من يديره، فصفحة حل المشكلات تشرح أسبابه الشائعة. |
 | `problem.helps.admin` (admin, node) | If it keeps happening, Troubleshooting goes through the common causes. If it doesn't explain it, tell us on GitHub. | وإن تكرّر الأمر، فصفحة حل المشكلات تشرح أسبابه الشائعة. وإن لم تجدوا فيها الجواب، فأخبرونا على GitHub. |
