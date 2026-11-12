@@ -382,11 +382,45 @@ func buildSurfaces() SurfaceTable {
 		"/api/channels/playlist.m3u",
 	)
 
-	// ---- live TV: story 57.10 filters these ----
-	prefix(Closed, "57.10", "channels, their guide, schedule, art and live streams",
+	// ---- live TV (story 57.10): the handlers filter with parental.LiveTV ----
+	filtered(mGet, "the channel list hides a channel above the limit or under a block rule", "",
 		"/api/channels",
 	)
-	prefix(Closed, "57.10", "what is on air, the TV surface's info, remote TV and the TV's admin",
+	filtered(mGet, "the guide and what is on now hide such a channel and mask a programme above the limit to its time", "",
+		"/api/channels/guide",
+		"/api/channels/now",
+	)
+	for _, tail := range []string{"", "/guide", "/schedule"} {
+		filtered(mGet, "one channel, its guide and its schedule: a hidden channel answers as a missing one, a programme above the limit is masked",
+			"/api/channels/{channel}"+tail, "/api/channels/{id}"+tail)
+	}
+	filtered(mGet, "whether the caller may watch the channel now (404 for a hidden channel, 403 `restricted` for the programme)",
+		"/api/channels/{channel}/access", "/api/channels/{id}/access")
+	filtered(mPost, "the channel's signed URL: refused as /access refuses; the streaming service asks again on every request", "",
+		"/api/channels/{id}/play",
+	)
+	filtered(all, "remote viewing asks the same check for a tune and at every heartbeat; ending a session shows nothing", "",
+		"/api/tv/remote/tune",
+		"/api/tv/remote/sessions/{id}/heartbeat",
+		"/api/tv/remote/sessions/{id}",
+	)
+	exact(Open, mGet, "a channel's logo and art are images with no programme in them; players and tuners load them with no session",
+		"/api/channels/{id}/logo",
+		"/api/channels/{id}/art/{kind}",
+	)
+	exact(Open, mGet, "where the TV streams from (addresses and switches, no channel or programme)",
+		"/api/tv/info",
+	)
+	exact(Open, all, "the streaming service's question, answered to the local token only; every user gets 403",
+		"/api/tv/parental/verdict",
+	)
+	exact(Open, all, "the stream provider's webhook, checked by its own signature; no content",
+		"/api/tv/remote/webhook",
+	)
+	// every other live TV route is the admin's (building channels, the tuner, releases,
+	// simulcast, the cluster): closed, and a new one stays closed until it is named
+	prefix(Closed, "", "the TV's admin routes and any live TV route not named above",
+		"/api/channels",
 		"/api/tv/",
 	)
 

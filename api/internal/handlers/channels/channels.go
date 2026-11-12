@@ -16,6 +16,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange"
 )
 
@@ -35,6 +36,9 @@ type Handler struct {
 	// into the open editor draft instead of the air (Epic 33, story 33.12; staging.go).
 	// Nil: direct writes.
 	Drafts *tvchange.Drafts
+	// Live is the parental filter over channels and what they play (Epic 57, story
+	// 57.10; parental.go). The router always sets it; nil filters nothing.
+	Live *parental.LiveTV
 
 	rootCache artRootCache // the art folders served from (artpaths.go)
 	artLocks  sync.Map     // channel id + kind → *sync.Mutex (artLock)
@@ -94,16 +98,22 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	for _, c := range all {
 		ids = append(ids, c.ID)
 	}
+	lf, err := h.filter(r, p, ids, now, now.Add(time.Second))
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("load parental policy").Wrap(err))
+		return
+	}
 	overrides := h.overriddenKinds(r.Context(), ids)
 	plan, until := h.planStatuses(r.Context()), h.guideUntil(r.Context())
 	for _, c := range all {
-		if !h.canRead(p, c.LibraryID) {
+		if !h.canRead(p, c.LibraryID) || !lf.channel(c.ID) {
 			continue
 		}
 		applyOverrideFlags(&c, overrides[c.ID])
 		attachBuilderInfo(&c, plan, until)
 		redactPaths(p, &c)
-		if np, err := h.repo().nowPlaying(r.Context(), c.ID, now); err == nil && np != nil {
+		// a programme above the account's limit is not named
+		if np, err := h.repo().nowPlaying(r.Context(), c.ID, now); err == nil && np != nil && lf.playingAt(c.ID, now) {
 			c.NowPlaying = np
 		}
 		items = append(items, c)
@@ -260,7 +270,18 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.NotFound("channel "+id))
 		return
 	}
-	if np, err := h.repo().nowPlaying(r.Context(), c.ID, h.now()); err == nil && np != nil {
+	now := h.now()
+	lf, err := h.filter(r, p, []string{c.ID}, now, now.Add(time.Second))
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("load parental policy").Wrap(err))
+		return
+	}
+	if !lf.channel(c.ID) {
+		// above the account's parental limit: the same answer as an unknown id
+		httperror.Write(w, r, httperror.NotFound("channel "+id))
+		return
+	}
+	if np, err := h.repo().nowPlaying(r.Context(), c.ID, now); err == nil && np != nil && lf.playingAt(c.ID, now) {
 		c.NowPlaying = np
 	}
 	h.attachOverrides(r.Context(), &c)

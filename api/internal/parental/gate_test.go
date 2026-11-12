@@ -176,11 +176,20 @@ func TestSurfaceLookup(t *testing.T) {
 	if owned := tbl.Owned("57.10"); len(owned) != 1 || owned[0] != "* /api/admin/deep*" {
 		t.Errorf("Owned(57.10) = %v", owned)
 	}
-	// the live registry: live TV waits for 57.10
-	for _, p := range []string{"/api/channels", "/api/channels/{id}/now", "/api/tv/guide"} {
-		if s, ok := Surfaces.Lookup(http.MethodGet, p); !ok || s.Class != Closed || s.Owner != "57.10" {
-			t.Errorf("%s = %+v, want closed and owned by 57.10", p, s)
+	// the live registry: the live TV routes story 57.10 filters are named; any other
+	// route under them stays closed
+	for _, p := range []string{"/api/channels", "/api/channels/guide", "/api/channels/{id}/access"} {
+		if s, ok := Surfaces.Lookup(http.MethodGet, p); !ok || s.Class != Filtered {
+			t.Errorf("%s = %+v, want filtered", p, s)
 		}
+	}
+	for _, p := range []string{"/api/channels/sources", "/api/channels/{id}/new", "/api/tv/guide", "/api/tv/onair"} {
+		if s, ok := Surfaces.Lookup(http.MethodGet, p); !ok || s.Class != Closed {
+			t.Errorf("%s = %+v, want closed", p, s)
+		}
+	}
+	if s, ok := Surfaces.Lookup(http.MethodPatch, "/api/channels/{id}"); !ok || s.Class != Closed {
+		t.Errorf("PATCH /api/channels/{id} = %+v, want closed", s)
 	}
 }
 

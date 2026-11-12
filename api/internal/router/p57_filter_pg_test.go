@@ -371,7 +371,7 @@ func TestP57FilterLists(t *testing.T) {
 		for _, c := range []struct{ method, path, body string }{
 			{http.MethodPost, "/api/search", `{"q":"Zarqa"}`}, {http.MethodGet, "/api/search/suggest?q=Zar", ""},
 			{http.MethodGet, "/api/search/passages?q=Zarqa", ""}, {http.MethodGet, "/ws/home", ""},
-			{http.MethodGet, "/ws/library/" + pfLibA, ""}, {http.MethodGet, "/api/channels", ""}, {http.MethodGet, "/api/tv/guide", ""},
+			{http.MethodGet, "/ws/library/" + pfLibA, ""}, {http.MethodGet, "/api/tv/guide", ""},
 		} {
 			rec := e.raw(who, c.method, c.path, c.body)
 			if rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), pfTeenName) {

@@ -33,6 +33,9 @@ type ScheduleBlock struct {
 	SourceOffset   int       `json:"source_offset_ms"`
 	SourceDuration int       `json:"source_duration_ms"`
 	Title          string    `json:"title,omitempty"`
+	// Restricted: the programme is above the account's parental limit; it carries
+	// its time only (Epic 57, story 57.10).
+	Restricted bool `json:"restricted,omitempty"`
 }
 
 // Schedule returns the generated program blocks for a channel in the
@@ -86,6 +89,20 @@ func (h *Handler) Schedule(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("read schedule").Wrap(err))
 		return
+	}
+	lf, err := h.filter(r, p, []string{c.ID}, start, end)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("load parental policy").Wrap(err))
+		return
+	}
+	if !lf.channel(c.ID) {
+		httperror.Write(w, r, httperror.NotFound("channel "+id))
+		return
+	}
+	for i := range blocks {
+		if b := &blocks[i]; !lf.programme(c.ID, b.Seq) {
+			*b = ScheduleBlock{Seq: b.Seq, Kind: b.Kind, StartAt: b.StartAt, EndAt: b.EndAt, Restricted: true}
+		}
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{
 		"channel_id": id,

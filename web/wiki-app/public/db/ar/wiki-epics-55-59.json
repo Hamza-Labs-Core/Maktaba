@@ -1596,7 +1596,8 @@
       ],
       "related": [
         "epic-57-parental-controls",
-        "ep-post-sessions"
+        "ep-post-sessions",
+        "ep-post-channels-id-play"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-10-live-tv.md",
@@ -1604,7 +1605,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "POST /sessions"
+        "POST /sessions",
+        "POST /channels/{id}/play"
       ],
       "db_tables": [],
       "metadata": {

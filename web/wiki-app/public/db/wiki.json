@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 234,
+    "endpoint": 239,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -10379,6 +10379,113 @@
         "path": "/users/{id}/parental/rules/{rule_id}",
         "tag": "Auth",
         "operationId": "removeParentalRule"
+      }
+    },
+    {
+      "id": "ep-get-channels-id-access",
+      "type": "endpoint",
+      "title": "GET /channels/{id}/access",
+      "content": "Whether the caller may watch a channel now",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/channels/{id}/access",
+        "tag": "Parental controls",
+        "operationId": "getChannelAccess"
+      }
+    },
+    {
+      "id": "ep-post-channels-id-play",
+      "type": "endpoint",
+      "title": "POST /channels/{id}/play",
+      "content": "Get a signed address to watch a channel",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/channels/{id}/play",
+        "tag": "Parental controls",
+        "operationId": "playChannel"
+      }
+    },
+    {
+      "id": "ep-get-tv-parental-verdict",
+      "type": "endpoint",
+      "title": "GET /tv/parental/verdict",
+      "content": "The parental answer for a viewer and a channel (this machine's services)",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/tv/parental/verdict",
+        "tag": "Parental controls",
+        "operationId": "getLiveParentalVerdict"
+      }
+    },
+    {
+      "id": "ep-get-tv-hdhr-allowed",
+      "type": "endpoint",
+      "title": "GET /tv/hdhr/allowed",
+      "content": "List the addresses that may use the tuner",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/tv/hdhr/allowed",
+        "tag": "Parental controls",
+        "operationId": "getTunerAllowedAddresses"
+      }
+    },
+    {
+      "id": "ep-put-tv-hdhr-allowed",
+      "type": "endpoint",
+      "title": "PUT /tv/hdhr/allowed",
+      "content": "Set the addresses that may use the tuner",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/tv/hdhr/allowed",
+        "tag": "Parental controls",
+        "operationId": "setTunerAllowedAddresses"
       }
     },
     {

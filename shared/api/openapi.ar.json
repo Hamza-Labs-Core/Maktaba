@@ -4768,6 +4768,178 @@
     "/paths/~1me~1parental~1time/get/responses/422/description": {
       "en": "`library_id` is not an id.",
       "ar": "قيمة `library_id` ليست معرّفًا."
+    },
+    "/paths/~1channels~1{id}~1access/parameters/0/description": {
+      "en": "The channel's id.",
+      "ar": "معرّف القناة."
+    },
+    "/paths/~1channels~1{id}~1access/get/summary": {
+      "en": "Whether the caller may watch a channel now",
+      "ar": "هل يجوز للمتصل مشاهدة القناة الآن"
+    },
+    "/paths/~1channels~1{id}~1access/get/description": {
+      "en": "Says whether the programme now on the channel is within the caller's parental limit, and when that may change. A player asks before it starts and again at `until`, and shows its \"not available right now\" screen while `allowed` is false. An account with no limit always gets `allowed: true`.",
+      "ar": "يبيّن هل البرنامج المعروض الآن على القناة ضمن حدّ الرقابة الأبوية للمتصل، ومتى قد يتغيّر ذلك. يسأل المشغّل قبل أن يبدأ ثم مرة أخرى عند `until`، ويعرض شاشة «غير متاح الآن» ما دامت `allowed` خاطئة. والحساب الذي لا حدّ له ينال دائمًا `allowed: true`."
+    },
+    "/paths/~1channels~1{id}~1access/get/responses/200/description": {
+      "en": "The answer for now.",
+      "ar": "الجواب في هذه اللحظة."
+    },
+    "/paths/~1channels~1{id}~1access/get/responses/200/content/application~1json/schema/properties/channel_id/description": {
+      "en": "The channel.",
+      "ar": "القناة."
+    },
+    "/paths/~1channels~1{id}~1access/get/responses/200/content/application~1json/schema/properties/restricted/description": {
+      "en": "True when the caller has a parental limit.",
+      "ar": "صحيح حين يكون للمتصل حدّ رقابة أبوية."
+    },
+    "/paths/~1channels~1{id}~1access/get/responses/200/content/application~1json/schema/properties/allowed/description": {
+      "en": "True when the caller may watch the programme now on the channel.",
+      "ar": "صحيح حين يجوز للمتصل مشاهدة البرنامج المعروض الآن على القناة."
+    },
+    "/paths/~1channels~1{id}~1access/get/responses/200/content/application~1json/schema/properties/until/description": {
+      "en": "When the answer may change: the start of the next programme that flips it, in UTC. Null when nothing in the next 12 hours changes it. Ask again at this time.",
+      "ar": "متى قد يتغيّر الجواب: بداية البرنامج التالي الذي يقلبه، بالتوقيت العالمي. والقيمة null حين لا شيء يغيّره في الساعات الاثنتي عشرة القادمة. اسأل مجددًا في هذا الوقت."
+    },
+    "/paths/~1channels~1{id}~1access/get/responses/404/description": {
+      "en": "No such channel that the caller may see. A channel above a restricted account's limit, or blocked for it, answers the same as one that does not exist.",
+      "ar": "لا توجد قناة بهذا المعرّف يجوز للمتصل رؤيتها. والقناة التي تتجاوز حدّ حساب مقيَّد أو المحجوبة عنه تجيب كما تجيب قناة غير موجودة."
+    },
+    "/paths/~1channels~1{id}~1play/parameters/0/description": {
+      "en": "The channel's id.",
+      "ar": "معرّف القناة."
+    },
+    "/paths/~1channels~1{id}~1play/post/summary": {
+      "en": "Get a signed address to watch a channel",
+      "ar": "الحصول على عنوان موقَّع لمشاهدة قناة"
+    },
+    "/paths/~1channels~1{id}~1play/post/description": {
+      "en": "Answers the channel's live stream address, signed for this caller. The home's streaming service serves a channel only to a request that carries this signature, to the home's web port for a signed-in account, or to an address allowed to use the tuner. For a signed address and for a signed-in account it asks, on every request and again when a programme starts, whether what plays now is within that viewer's parental limit, and it refuses when it cannot get an answer. When the programme now on the channel is above the caller's parental limit the answer is 403 with `code: restricted`, `reason: programme` and `retry_at`, and the player shows its \"not available right now\" screen until then. The stream itself stops for a restricted viewer when such a programme starts. A sign-in with no account, other than the admin token, gets 403 `no_account`. On another machine of the home a channel plays with a sign-in through that machine's web port, not with this address.",
+      "ar": "يجيب بعنوان البث الحي للقناة موقّعًا لهذا المتصل. خدمة البث في المنزل لا تقدّم قناة إلا لطلب يحمل هذا التوقيع، أو لمنفذ الويب في المنزل عن حساب مسجَّل الدخول، أو لعنوان مسموح له باستخدام الموالف. وللعنوان الموقّع وللحساب المسجَّل الدخول تسأل، في كل طلب وعند بدء كل برنامج، هل ما يُعرض الآن ضمن حد الرقابة الأبوية لذلك المشاهد، وترفض إن لم تحصل على جواب. وإذا كان البرنامج المعروض الآن على القناة فوق حد الرقابة الأبوية للمتصل فالرد 403 مع `code: restricted` و`reason: programme` و`retry_at`، ويعرض المشغّل شاشة «غير متاح الآن» حتى ذلك الوقت. ويتوقف البث نفسه عن المشاهد المقيَّد عند بدء برنامج كهذا. وتسجيل الدخول الذي لا حساب له، غير رمز المشرف، يتلقى 403 `no_account`. وعلى جهاز آخر من أجهزة المنزل تُشغَّل القناة بتسجيل الدخول عبر منفذ الويب لذلك الجهاز، لا بهذا العنوان."
+    },
+    "/paths/~1channels~1{id}~1play/post/responses/200/description": {
+      "en": "The signed address.",
+      "ar": "العنوان الموقَّع."
+    },
+    "/paths/~1channels~1{id}~1play/post/responses/200/content/application~1json/schema/properties/channel_id/description": {
+      "en": "The channel.",
+      "ar": "القناة."
+    },
+    "/paths/~1channels~1{id}~1play/post/responses/200/content/application~1json/schema/properties/url/description": {
+      "en": "The channel's HLS playlist address with its signature. Ask for a new one before `expires_at`.",
+      "ar": "عنوان قائمة HLS للقناة مع توقيعه. اطلب عنوانًا جديدًا قبل `expires_at`."
+    },
+    "/paths/~1channels~1{id}~1play/post/responses/200/content/application~1json/schema/properties/expires_at/description": {
+      "en": "When the signature stops working.",
+      "ar": "متى يتوقف التوقيع عن العمل."
+    },
+    "/paths/~1channels~1{id}~1play/post/responses/200/content/application~1json/schema/properties/until/description": {
+      "en": "When the answer may change: the start of the next programme that flips it, in UTC. Null when nothing in the next 12 hours changes it. Ask again at this time.",
+      "ar": "متى قد يتغيّر الجواب: بداية البرنامج التالي الذي يقلبه، بالتوقيت العالمي. والقيمة null حين لا شيء يغيّره في الساعات الاثنتي عشرة القادمة. اسأل مجددًا في هذا الوقت."
+    },
+    "/paths/~1channels~1{id}~1play/post/responses/403/description": {
+      "en": "The programme now on the channel is above the caller's limit: `code` is `restricted`, `reason` is `programme` and `retry_at` is when to ask again (absent when nothing in the next 12 hours changes it).",
+      "ar": "البرنامج المعروض الآن على القناة فوق حدّ المتصل: قيمة `code` هي `restricted` وقيمة `reason` هي `programme` و`retry_at` هو وقت السؤال مجددًا (يغيب حين لا شيء يغيّره في الساعات الاثنتي عشرة القادمة)."
+    },
+    "/paths/~1channels~1{id}~1play/post/responses/404/description": {
+      "en": "No such channel that the caller may see. A channel above a restricted account's limit, or blocked for it, answers the same as one that does not exist.",
+      "ar": "لا توجد قناة بهذا المعرّف يجوز للمتصل رؤيتها. والقناة التي تتجاوز حدّ حساب مقيَّد أو المحجوبة عنه تجيب كما تجيب قناة غير موجودة."
+    },
+    "/paths/~1tv~1parental~1verdict/get/summary": {
+      "en": "The parental answer for a viewer and a channel (this machine's services)",
+      "ar": "جواب الرقابة الأبوية لمشاهد وقناة (لخدمات هذا الجهاز)"
+    },
+    "/paths/~1tv~1parental~1verdict/get/description": {
+      "en": "For the streaming service on the home machine, which asks before it serves a live channel to a named viewer. It carries the machine's local token in `X-Maktaba-Local-Token`; no user sign-in opens it.",
+      "ar": "لخدمة البث على جهاز المنزل، التي تسأل قبل أن تقدّم قناة مباشرة لمشاهد مسمّى. تحمل الرمز المحلي للجهاز في `X-Maktaba-Local-Token`؛ ولا يفتحه تسجيل دخول أي مستخدم."
+    },
+    "/paths/~1tv~1parental~1verdict/get/parameters/0/description": {
+      "en": "The channel's id.",
+      "ar": "معرّف القناة."
+    },
+    "/paths/~1tv~1parental~1verdict/get/parameters/1/description": {
+      "en": "The viewer's account id.",
+      "ar": "معرّف حساب المشاهد."
+    },
+    "/paths/~1tv~1parental~1verdict/get/responses/200/description": {
+      "en": "The answer for now.",
+      "ar": "الجواب في هذه اللحظة."
+    },
+    "/paths/~1tv~1parental~1verdict/get/responses/200/content/application~1json/schema/properties/restricted/description": {
+      "en": "True when the viewer has a parental limit.",
+      "ar": "صحيح حين يكون للمشاهد حدّ رقابة أبوية."
+    },
+    "/paths/~1tv~1parental~1verdict/get/responses/200/content/application~1json/schema/properties/channel_allowed/description": {
+      "en": "True when the viewer may see the channel at all.",
+      "ar": "صحيح حين يجوز للمشاهد رؤية القناة أصلًا."
+    },
+    "/paths/~1tv~1parental~1verdict/get/responses/200/content/application~1json/schema/properties/allowed/description": {
+      "en": "True when the viewer may watch the programme now on the channel.",
+      "ar": "صحيح حين يجوز للمشاهد مشاهدة البرنامج المعروض الآن على القناة."
+    },
+    "/paths/~1tv~1parental~1verdict/get/responses/200/content/application~1json/schema/properties/until/description": {
+      "en": "When the answer may change: the start of the next programme that flips it, in UTC. Null when nothing in the next 12 hours changes it. Ask again at this time.",
+      "ar": "متى قد يتغيّر الجواب: بداية البرنامج التالي الذي يقلبه، بالتوقيت العالمي. والقيمة null حين لا شيء يغيّره في الساعات الاثنتي عشرة القادمة. اسأل مجددًا في هذا الوقت."
+    },
+    "/paths/~1tv~1parental~1verdict/get/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1tv~1parental~1verdict/get/responses/403/description": {
+      "en": "The local token is missing or wrong.",
+      "ar": "الرمز المحلي مفقود أو خاطئ."
+    },
+    "/paths/~1tv~1hdhr~1allowed/get/summary": {
+      "en": "List the addresses that may use the tuner",
+      "ar": "عرض العناوين التي يجوز لها استخدام الموالف"
+    },
+    "/paths/~1tv~1hdhr~1allowed/get/description": {
+      "en": "The tuner (the HDHomeRun emulation Plex records from) and the guide files beside it carry every channel with no sign-in, so they answer only this machine, the Plex server set up in Maktaba, and the addresses listed here.",
+      "ar": "الموالف (محاكاة HDHomeRun التي يسجّل منها Plex) وملفات الدليل المرافقة له تحمل كل القنوات بلا تسجيل دخول، ولذلك لا تجيب إلا هذا الجهاز وخادم Plex المُعَدّ في مكتبة والعناوين المدرجة هنا."
+    },
+    "/paths/~1tv~1hdhr~1allowed/get/responses/200/description": {
+      "en": "The addresses.",
+      "ar": "العناوين."
+    },
+    "/paths/~1tv~1hdhr~1allowed/get/responses/200/content/application~1json/schema/properties/addresses/description": {
+      "en": "IP addresses or CIDR ranges, for example `192.168.1.20` or `192.168.1.0/24`. The answer has them normalised, without repeats.",
+      "ar": "عناوين IP أو نطاقات CIDR، مثل `192.168.1.20` أو `192.168.1.0/24`. ويعيدها الجواب موحَّدة الصيغة وبلا تكرار."
+    },
+    "/paths/~1tv~1hdhr~1allowed/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1tv~1hdhr~1allowed/put/summary": {
+      "en": "Set the addresses that may use the tuner",
+      "ar": "ضبط العناوين التي يجوز لها استخدام الموالف"
+    },
+    "/paths/~1tv~1hdhr~1allowed/put/description": {
+      "en": "Replaces the list. An empty list leaves the tuner open only to this machine and the Plex server set up in Maktaba.",
+      "ar": "يستبدل القائمة. والقائمة الفارغة تُبقي الموالف مفتوحًا لهذا الجهاز ولخادم Plex المُعَدّ في مكتبة فقط."
+    },
+    "/paths/~1tv~1hdhr~1allowed/put/requestBody/description": {
+      "en": "The addresses.",
+      "ar": "العناوين."
+    },
+    "/paths/~1tv~1hdhr~1allowed/put/requestBody/content/application~1json/schema/properties/addresses/description": {
+      "en": "IP addresses or CIDR ranges, for example `192.168.1.20` or `192.168.1.0/24`. The answer has them normalised, without repeats.",
+      "ar": "عناوين IP أو نطاقات CIDR، مثل `192.168.1.20` أو `192.168.1.0/24`. ويعيدها الجواب موحَّدة الصيغة وبلا تكرار."
+    },
+    "/paths/~1tv~1hdhr~1allowed/put/responses/200/description": {
+      "en": "The addresses after the change.",
+      "ar": "العناوين بعد التغيير."
+    },
+    "/paths/~1tv~1hdhr~1allowed/put/responses/200/content/application~1json/schema/properties/addresses/description": {
+      "en": "IP addresses or CIDR ranges, for example `192.168.1.20` or `192.168.1.0/24`. The answer has them normalised, without repeats.",
+      "ar": "عناوين IP أو نطاقات CIDR، مثل `192.168.1.20` أو `192.168.1.0/24`. ويعيدها الجواب موحَّدة الصيغة وبلا تكرار."
+    },
+    "/paths/~1tv~1hdhr~1allowed/put/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1tv~1hdhr~1allowed/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
     }
   }
 }

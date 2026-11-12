@@ -227,6 +227,9 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		"/api/cluster/ca.crt":       {},
 		"/api/cluster/link/pull":    {},
 		"/api/cluster/link/local/*": {},
+		// Epic 57 story 57.10 — the streaming service's parental question about a
+		// live channel; the handler takes this machine's local token only.
+		"/api/tv/parental/verdict": {},
 		// Epic 32 story 32.7 — Cloudflare Notifications for the live inputs;
 		// the handler refuses any request without the webhook secret header.
 		"/api/tv/remote/webhook": {},
