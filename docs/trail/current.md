@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.136
-up_to_commit: 5946ca851
-built_from: v0.3.135
+tag: v0.3.137
+up_to_commit: d5795d508
+built_from: v0.3.136
 ---
 
-# Trail snapshot: v0.3.136
+# Trail snapshot: v0.3.137
 
 ## Keep doing
 
@@ -210,9 +210,12 @@ built_from: v0.3.135
 - Keep each website page kind's content apart from one render function (`renderLegal`, `renderProblem`, `renderIndex`), so the design swap stays a template and CSS change; build legal and policy text from the code that makes it true, with a hash or value-by-value check that fails naming the section. (#1175, #1180)
 - When a site family grows, estimate the gates' runtime (tests × pages, Lighthouse runs × 11.5 s) before pushing. (#1180)
 - Before pushing a change that touches the website or merges main into it, run `npm run build` in `web/packages/website`, commit `dist-manifest.json`, and run Prettier over all of `web`; a mockup's head follows a built page's rules (no canonical or alternates naming an address that is no page). (#1163)
-- Keep every write of a deploy behind its one go-live switch, with a test that fails if a writing step lacks it; run read-only checks (a token's permissions) long before go-live, so a go-live surprise becomes a known gap. (#1183)
+- Keep every write of a deploy behind its one go-live switch, with a test that fails if a writing step lacks it; run read-only checks (a token's permissions) long before go-live, so a go-live surprise becomes a known gap. Before requiring a permission, check whether a working deploy already does the same without it: a failed probe names what a token cannot read, not what the deploy needs. (#1183, #1200)
 - Retry only what is not a measurement (a crashed Lighthouse run), and log each retry; a real score is judged once. (#1188)
 - Before calling a long-running process's memory a leak, check whether it is flat: reproduce with the real models and measure per job (`footprint`, MLX's active and cache memory). Put a module's new tests in its existing test file, so the affected-tests gate sees them. (#1191)
+- Children for one story work on separate branches merged into one pull request, each told at once when a shared fixture's shape changes; look at the captures before fixing a fixture's shape. (#1186)
+- Re-run a check that read stale input (a pull request body from before an edit) rather than merging past its red entry. (#1186)
+- Compare built pages with their mockups at every width and in both languages before the first push. (#1192)
 
 ## Stop doing
 
@@ -271,6 +274,8 @@ built_from: v0.3.135
 - Rendering a full-site visual update on emulated amd64 (Apple Silicon) at the default worker count: shots time out; `--workers=2` renders clean. (#1175)
 - Opening a second pull request on a spec table while another that edits it is open: rows in one table share a hunk and conflict. (#1184)
 - Treating a crashed Lighthouse run as a page under the bar. (#1188)
+- Ending a child's brief without telling it not to end its turn before its report: a child stopped on a running CI job. (#1186)
+- Starting a watcher whose check-name pattern was not tested (`^quality` never matched `website / quality …` and ran to its bound). (#1192)
 
 ## What we learned
 
@@ -558,12 +563,14 @@ built_from: v0.3.135
 - `release.json`'s `assets` lists only the server archives and `checksums.txt` has no desktop installers; the Releases API gives every asset's size and sha256 `digest`. `_pr-body-check.yml` reads the body from the event payload and `ci.yml` does not trigger on `edited`; `ci-paths.yml` has no negation. (#1158)
 - `lint / maktaba.tv links` (`web/packages/website/scripts/links.mjs`) checks every maktaba.tv link in tracked files, problem links against `shared/api/problems.json` and the rest against `dist-manifest.json`; dead links wait in `links-baseline.json` with their fixing story, and the check fails on a new dead link and on a baseline entry now live or gone, so the baseline only shrinks. Write maktaba.tv in prose without a path. `tools/release/image-public.sh` pulls the server image with no login, as a leaf job of `release.yml` and daily in `image-public.yml`. (#1160)
 - The link check reads every tracked file, so a pull request that moves or adds maktaba.tv strings runs `links.mjs` before merging even if its CI passed: three merges in an hour (#1160, #1162, #1161) each green alone turned main red. `--write-manifest` writes JSON Prettier rejects: run `prettier --write` on `dist-manifest.json` after it. (#1169)
-- maktaba.tv's site (`web/packages/website`) is a Worker before static assets; its deploy reads `CLOUDFLARE_API_TOKEN_WEBSITE` when set and the shared `CLOUDFLARE_API_TOKEN` otherwise, and `vars.WEBSITE_LIVE == 'true'` is the only go-live switch: every writing step needs it (`tools/ci/tests/test_website_deploy.py`). The token check only reads, so it runs on every deploy run; before go-live a failure is an annotation, not a red run. A "cancelled" deploy in its never-cancelling concurrency group is a queued run replaced by a newer one. `_website.yml` runs the build, tests, links and a Worker smoke, a Playwright and axe quality job (WCAG 2.2 AA, RTL, 70 visual references) and Lighthouse (mobile, median of 3, at least 95 in all four, CLS 0); the nightly sweep gates the deploy. (#1161, #1171, #1183)
+- maktaba.tv's site (`web/packages/website`) is a Worker before static assets; its deploy reads `CLOUDFLARE_API_TOKEN_WEBSITE` when set and the shared `CLOUDFLARE_API_TOKEN` otherwise, and checks `--pieces workers` only: a Worker's custom domains need no DNS Write, Cloudflare creates their records and certificates (as maktaba.dev shows; `dns` was dropped from `token-check.mjs`, DNS Write stays in `tunnel`), and `vars.WEBSITE_LIVE == 'true'` is the only go-live switch: every writing step needs it (`tools/ci/tests/test_website_deploy.py`). The token check only reads, so it runs on every deploy run; before go-live a failure is an annotation, not a red run. A "cancelled" deploy in its never-cancelling concurrency group is a queued run replaced by a newer one. `_website.yml` runs the build, tests, links and a Worker smoke, a Playwright and axe quality job (WCAG 2.2 AA, RTL, 70 visual references) and Lighthouse (mobile, median of 3, at least 95 in all four, CLS 0); the nightly sweep gates the deploy. (#1161, #1171, #1183, #1200)
 - Website CI gotchas: container jobs cannot write to `runner.temp` (a host path); resvg-js ignores `fontBuffers` (pass `fontFiles`, the bold Latin face under its own family); a lockfile written on macOS can lack Linux optional packages (regenerate it from scratch); visual references come from the amd64 Playwright image through Docker, never the Mac; spawn lhci asynchronously; restart `wrangler dev` after rebuilding `dist/`; Vite drops `blocking="render"`, so add it in a `transformIndexHtml` hook. (#1171)
 - Website build gotchas: a page loading Go output needs setup-go and `./.github/actions/go-mod-download` (`test_go_mod_download.py`); e2e page kinds and build.mjs's `PAGES` must agree (a hand-made family index is hand-made everywhere); `stripTypeScriptTypes` lets one `.ts` file be both renderer and page script; a static file named like `x-noscript.css` matches the content-hash pattern in `src/headers.ts` and gets cached a year; a filter revealed by script shifts layout (put the box in place, hide it with a `<noscript>` stylesheet); with `updateSnapshots: "none"` CI cannot hand back new references (use `scripts/e2e-update.sh`); a registry-built list's reference is its first screen with list and count masked; the affected-tests gate wants a test change per changed source file. (#1175, #1180)
 - The website quality job runs in four Playwright shards; a pull request changing a family over 16 pages measures 16 spread evenly plus the representatives; the nightly Lighthouse sweep has sixteen shards. Worker redirects live in `src/redirects.json`, read by `links.mjs`. (#1180)
 - Lighthouse's runtime errors (`NO_NAVSTART`, `NO_FCP`) are no measurement and stop the whole lhci collect: `scripts/lighthouse.mjs` measures again the URLs left unmeasured, up to two more times; any other collect failure stops at once. (#1188)
 - The design shell is approved (#1163): the `site` token group, the self-hosted text face "Maktaba Text" (an IBM Plex Sans Arabic subset, renamed because the OFL reserves "Plex"), `design/README.md`, mockups and renders in both languages, and the voice guide (`copy/voice.md`); Arabic addresses the household in the plural. A design pull request kept open while pages are built on a placeholder collects conflicts and stale generated files. (#1163)
+- Every built page wears the approved shell (`scripts/shell.mjs`, `shellAssets()`: one hashed stylesheet, the head script before first paint, no inline style or script, `default-src 'self'`) and declares `maktaba-menu="phone"`. Linux CI has no Arial, so a metric-matched fallback matches nothing there and a late `swap` face moves lines: the faces are `font-display: optional`, and Arabic pages preload all four files. Lighthouse rounds a real shift to CLS 0.000; the Playwright layout-shift test, which wants no entry, is the stricter gate. With Docker down locally, a failing quality shard's visual-diff artifact holds every reference the change needs. (#1192)
+- The demo library (`tests/fixtures/demo-library/`, Blender open movies under CC BY, the Haddad household) serves the home's own answer shapes, so the web (Playwright routing), Apple (`MockHome(demo:)`) and Android (Roborazzi) shoot every app from it; `scripts/shots.mjs --from-run` turns a CI run's captures into `static/shots/`. A screenshot test waits on a condition (the subtitle's letters, a poster's loaded tag), never a delay; ffmpeg writes a `Lavc` comment into every JPEG; the Android hero calls an unpicked item the newest series. (#1186)
 - Epic 60's questions Q1–Q9 are decided: one chosen tagline from several in both languages, a single approver for the Arabic, the app icon with the name in both scripts, Q4–Q9 as their defaults; the Arabic name on the site is «مكتبة». (#1176)
 
 ## Open
@@ -624,11 +631,12 @@ built_from: v0.3.135
 - `relay.yml` and `release.yml` still use cosign-installer by tag (optional hygiene). (#1124)
 
 - NAS guides: device screenshots (dark, en+ar) for Unraid, QNAP and UGREEN beside TrueNAS's and Synology's; the menu names on an Arabic DSM/QTS to check on a device; the QNAP guide is untested on a device. (#1137)
-- Epic 60 (maktaba.tv): owner actions A3–A7 (README §12) wait; A1 is done and A2 is the shared token, whose token check found DNS Write on `maktaba.tv` missing (custom domains write their records); go-live (`vars.WEBSITE_LIVE = true`) is the owner's call. The approved shell (#1163) goes onto every built page next, replacing `scripts/shell.mjs`, `static/assets/site.css` and the visual references; the menu tests run once the shell declares `maktaba-menu: phone`; `icon.svg` waits for a vector source of the mark; Epic 59's Arabic install guides move to «مكتبة». (#1158, #1161, #1171, #1176, #1163, #1183)
+- Epic 60 (maktaba.tv): owner actions A3–A7 (README §12) wait; A1 is done and A2 is the shared token, which lacks only the Zone WAF Write `cloudflare-zone.yml` reports; go-live (`vars.WEBSITE_LIVE = true`) is the owner's call. `design/review-phase-1.md` is a draft for the lead to sign; the footer's Help link and the 404 point at Troubleshooting until 60.12; the legal contents list has no scroll-aware mark (part B); the language hint is one way only; `icon.svg` waits for a vector source of the mark; Epic 59's Arabic install guides move to «مكتبة». (#1158, #1161, #1171, #1176, #1163, #1183, #1192, #1200)
 - The site build should write and check the link manifest (T07). The other images (streaming, pipeline, caddy, cloud) are still private, outside Epic 60. (#1160, #1164, #1184)
 - `links-baseline.json` is empty since the problem pages and the redirects file landed; the site build could still run `--write-manifest` and Prettier itself so the manifest cannot fall behind. (#1169, #1171, #1180)
-- Problem registry (60.06): its 578 pages (`problems.mjs`) render on the placeholder shell until the approved shell (#1163) swaps the render functions; 60.12 adds a `help-link` representative, its family before `problems` in `FAMILIES`; every `install` field is null until troubleshooting anchors exist; the streaming service sends `maktaba.invalid/problems/*` slugs outside the registry. Odd sends: `TypeForbidden` with 401, `TypeConflict` with 410, `invalid-credentials` for a refused cloud link (422), batch undo's 409 for a missing edit, `token-expired` never sent; the components handler's `fail` does not recognise `*pl.Problem`, so `plugin_revoked` may answer 500 through `/api/components` (traced, not run). (#1162, #1180)
+- Problem registry (60.06): its 578 pages (`problems.mjs`) wear the approved shell since #1192; 60.12 adds a `help-link` representative, its family before `problems` in `FAMILIES`; every `install` field is null until troubleshooting anchors exist; the streaming service sends `maktaba.invalid/problems/*` slugs outside the registry. Odd sends: `TypeForbidden` with 401, `TypeConflict` with 410, `invalid-credentials` for a refused cloud link (422), batch undo's 409 for a missing edit, `token-expired` never sent; the components handler's `fail` does not recognise `*pl.Problem`, so `plugin_revoked` may answer 500 through `/api/components` (traced, not run). (#1162, #1180)
 - Legal pages (60.07): the notice form goes live with Epic 50's `POST /v1/moderation/notices` (CORS for `https://maktaba.tv`, 202 with `notice_id`), which must also accept the no-JS urlencoded post or the plain-form path is dropped; owner actions A3 (mailboxes), A4 (designated agent, then the postal line) and Q7 (legal review before 50.24's public channels) wait; demo image credits wait for 60.09. (#1175)
+- Product shots (60.09): maktaba.dev's Apps pages could use them; no iPad Remote shot; the Mac app's Arabic window does not mirror and its shots are 1024×674 with no player controls; Apple TV and iPhone/iPad "On now" follow the simulator's clock; Android TV's player shot has no subtitle and Media3's controls do not mirror in Arabic; 60.01 part B sets frames and widths, 60.10 and 60.11 place the images. (#1186)
 - `lint / repo` has 20 minutes; if its routing tests near that, split or speed them up rather than raising it again. (#1177)
 - ml runners during a backlog still hold two copies of the same models (about 9-10 GB each): sharing one per machine or a smaller top tier is a supervisor decision; check whether a fingerprint change queued the whole library again (about 6,700 videos a day transcribed); the `light` runner sat at 2.8 GB RSS and 62% CPU. (#1191)
 - NAS after #1164: a restart rebuilds the pipeline venv in place under running workers (transient `ModuleNotFoundError`, runner exit 75); setup downloads `large-v3-turbo` on a Light NAS where speech is off; the terminal setup keeps no log its errors point to; NAS UIs, GPUs, VA-API, mDNS beside the NAS's responder, Unraid's shfs refusal and discovery need real hardware. (#1164)
@@ -649,7 +657,7 @@ built_from: v0.3.135
 | #1128 | 2026-11-10 | docs(spec): Epic 57 checked again against main |
 | #1130 | 2026-11-10 | spec(epic57): time rules on every device, and tiers detected from transcripts |
 | #1139 | 2026-11-10 | spec(epic57): Q9 answered, detection covers what a video is |
-| #1186 | 2026-11-12 | feat(website): product screenshots on a demo library (60.09) |
+| #1187 | 2026-11-12 | Epic 60: design part B and the home and download copy (60.01, 60.02) |
 | #1190 | 2026-11-11 | ci: install the pipeline without torch's CUDA tree, and keep its wheels cached |
 
 ## Index
@@ -1272,6 +1280,9 @@ built_from: v0.3.135
 | 1163-website-design-shell | 2026-11-12 | pr | Epic 60 stories 60.01 part A and 60.02 part A: maktaba.tv's design shell and voice guide, approved |
 | 1183-website-shared-token | 2026-11-12 | pr | maktaba.tv deploys with the shared Cloudflare token; WEBSITE_LIVE is the only switch; the token check runs before go-live |
 | 1184-epic60-a1-image-public | 2026-11-12 | pr | Epic 60: owner action A1 done, the server image is public |
+| 1186-product-shots | 2026-11-12 | pr | maktaba.tv product screenshots of every app on an openly licensed demo library (60.09) |
 | 1188-lighthouse-runtime-retry | 2026-11-12 | pr | maktaba.tv's Lighthouse gate measures again a run Lighthouse could not finish, never a low score |
 | 1191-ml-runner-memory | 2026-11-12 | pr | ml runners let idle models go and keep MLX's cache capped |
+| 1192-website-shell | 2026-11-12 | pr | maktaba.tv: the part A shell on every page the site builds |
+| 1200-website-token-no-dns | 2026-11-12 | correction | maktaba.tv's token check no longer requires DNS Write: Cloudflare creates a custom domain's record itself |
 
