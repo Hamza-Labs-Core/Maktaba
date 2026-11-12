@@ -83,12 +83,18 @@ func startStreaming(t *testing.T, bin, name string, env []string) *proc {
 	cmd := exec.Command(bin, "serve")
 	cmd.Env = append(os.Environ(), env...)
 	cmd.Stdout, cmd.Stderr = lf, lf
+	ownGroup(cmd)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 	p := &proc{cmd: cmd, logs: lf, name: name}
 	t.Cleanup(func() {
 		p.kill()
+		// its ffmpeg children too, and gone before the temp dir (registered
+		// earlier, so removed after this) is removed: see endGroup
+		if !endGroup(cmd.Process.Pid, 15*time.Second) {
+			t.Logf("%s: processes of its group were still there 15s after the kill", name)
+		}
 		_ = lf.Close()
 		if t.Failed() {
 			b, _ := os.ReadFile(logPath)

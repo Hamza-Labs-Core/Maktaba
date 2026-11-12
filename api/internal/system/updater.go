@@ -377,9 +377,10 @@ func (u *Updater) fetchReleases(ctx context.Context) ([]ghRelease, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("github releases: HTTP %d", resp.StatusCode)
 	}
-	var rels []ghRelease
-	// Cap the body so a hostile/buggy response can't OOM us.
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&rels); err != nil {
+	// Cap the body so a hostile/buggy response can't OOM us, and read it one
+	// release at a time (DecodeJSONArray).
+	rels, err := DecodeJSONArray[ghRelease](io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
 		return nil, fmt.Errorf("decode releases: %w", err)
 	}
 	return rels, nil
