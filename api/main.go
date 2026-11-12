@@ -471,7 +471,7 @@ func runServe() error {
 	// machines' mutual TLS beside plain HTTP (nil: plain HTTP only)
 	var homeLinkSrv *homeLink
 	if nodeCfg.Enabled {
-		rt, closeNode, err := mountNode(r, nodeCfg, statsDataDir, loops, logger)
+		rt, closeNode, err := mountNode(r, nodeCfg, statsDataDir, loops, parentalGate, logger)
 		if err != nil {
 			return err
 		}
