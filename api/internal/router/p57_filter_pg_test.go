@@ -375,8 +375,32 @@ func TestP57FilterByID(t *testing.T) {
 	}
 }
 
+// seriesCardEpisodes is the episode count on a series' card in who's grouped list
+// (GET /api/videos?group=series), or -1 when the list has no such card.
+func (e *pfEnv) seriesCardEpisodes(who, series string) int {
+	e.t.Helper()
+	code, body := e.get(who, "/api/videos?group=series&library_id="+pfLibA)
+	var list struct {
+		Items []struct {
+			Kind, ID     string
+			EpisodeCount int `json:"episode_count"`
+		} `json:"items"`
+	}
+	if code != http.StatusOK || json.Unmarshal([]byte(body), &list) != nil {
+		e.t.Fatalf("%s: the grouped list answers %d %s", who, code, body)
+	}
+	for _, it := range list.Items {
+		if it.Kind == "series" && it.ID == series {
+			return it.EpisodeCount
+		}
+	}
+	return -1
+}
+
 var pfLists = []string{
 	"/api/videos", "/api/videos?library_id=" + pfLibA, "/api/videos?q=Zarqa", "/api/videos/facets",
+	// one card per series (group.go): the card counts and names the episodes that pass only
+	"/api/videos?group=series", "/api/videos?group=series&library_id=" + pfLibA, "/api/videos?group=series&sort=name",
 	"/api/libraries", "/api/libraries/summary", "/api/libraries/" + pfLibA, "/api/libraries/" + pfLibA + "/hub",
 	"/api/libraries/" + pfLibA + "/categories", "/api/libraries/" + pfLibA + "/collections", "/api/libraries/" + pfLibA + "/series",
 	"/api/home", "/api/home/featured", "/api/recommendations", "/api/me/activity", "/api/me/history",
@@ -401,6 +425,9 @@ func TestP57FilterLists(t *testing.T) {
 	if code != http.StatusOK || !strings.Contains(body, pfTeen) || !strings.Contains(body, pfUnrated) {
 		t.Fatalf("the viewer's list lacks the 16+ or the unrated video: %d %s", code, body)
 	}
+	if n := e.seriesCardEpisodes("viewer", pfSeries); n != 2 {
+		t.Fatalf("the viewer's card of the show counts %d episodes, want 2", n)
+	}
 	for _, who := range []string{"child", "child-cookie", "child-token", "child-all"} {
 		for _, p := range pfLists {
 			code, body := e.get(who, p)
@@ -422,6 +449,11 @@ func TestP57FilterLists(t *testing.T) {
 		}
 		if json.Unmarshal([]byte(body), &list) == nil && list.Total != nil && *list.Total != 1 {
 			t.Errorf("%s: the list counts %d videos, want the 1 shown", who, *list.Total)
+		}
+		// a series card counts the episodes that pass only: the show has an all-ages
+		// and a 16+ episode
+		if n := e.seriesCardEpisodes(who, pfSeries); n != 1 {
+			t.Errorf("%s: the show's card counts %d episodes, want the 1 shown", who, n)
 		}
 		// closed: the answer of a route that is not there (search and the live rows
 		// are filtered now: p57_gaps_pg_test.go)
