@@ -64,19 +64,19 @@ final class PlayerDemoShots: PlayerUITestCase {
             XCTAssertTrue(waitUntil(timeout: 15) { (Int(self.state["position"] ?? "") ?? 0) >= start + 2 }, "it plays on: \(state)")
             // the controls hide 4 s after the last touch (`WatchView.hideAfter`)
             XCTAssertTrue(app.buttons["player.playPause"].waitForNonExistence(timeout: 15), "the controls gone")
-            // the line drawn on the picture: the test stream starts its timestamps again every
-            // 4 s (two segments in turn), and the player can drop the line there or, on the iPad,
-            // draw it under the picture, so the shot waits for its white letters inside the
-            // picture (on the iPad, the 16:9 frame in the surface; the iPhone's is the screen)
-            let frame = surface.frame
-            let picture = isPad ? CGRect(x: frame.minX, y: frame.midY - frame.width * 9 / 32, width: frame.width, height: frame.width * 9 / 16) : nil
+            // the line drawn: the test stream starts its timestamps again every 4 s (two segments
+            // in turn), and the player can drop the line there, so the shot waits for its white
+            // letters (where the player puts it: on the iPad in English, under the picture); the
+            // iPad's top edge left out, where a status bar's clock is white too
+            let screen = app.frame
+            let area = isPad ? CGRect(x: 0, y: 40, width: screen.width, height: screen.height - 40) : nil
             var shot = XCUIScreen.main.screenshot()
             let end = Date().addingTimeInterval(30)
-            while brightPixels(shot, in: picture) < 500, Date() < end {
+            while brightPixels(shot, in: area) < 500, Date() < end {
                 usleep(500_000)
                 shot = XCUIScreen.main.screenshot()
             }
-            XCTAssertGreaterThanOrEqual(brightPixels(shot, in: picture), 500, "the subtitle line on the picture")
+            XCTAssertGreaterThanOrEqual(brightPixels(shot, in: area), 500, "the subtitle line")
             demoShot("player", shot)
         }
     }
