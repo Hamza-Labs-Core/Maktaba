@@ -653,6 +653,10 @@ func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backe
 		if extraMounts, err = buildHomeTV(bg, logger, cfg, pool, layout); err != nil {
 			return nil, err
 		}
+		// Epic 57 story 57.10: live TV under parental controls. Every TV mount sits
+		// behind the guard: a channel's stream needs a viewer the API allows it now
+		// (or a tuner's address), the tuner and guide files a tuner's address.
+		extraMounts = guardMounts(liveTVGuard(logger, cfg, jwks, pool), extraMounts)
 	}
 
 	return server.New(server.Deps{
