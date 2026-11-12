@@ -564,8 +564,9 @@ build-tokens:  ## Stories 17.1 + 48.2 — generate dist/ CSS/TS/JSON and the app
 	@node $(WEB_DIR)/design-system/build/build-tokens.mjs
 
 .PHONY: test-tokens
-test-tokens:  ## Stories 17.1 + 48.2 — fail on stale Tokens.swift/Tokens.kt, tokens.css drift from the JSON, or text under 4.5:1.
+test-tokens:  ## Stories 17.1 + 48.2 + 60.01 — fail on stale Tokens.swift/Tokens.kt/site-tokens.css, tokens.css drift, weak contrast, or a stale maktaba.tv mockup.
 	@node $(WEB_DIR)/design-system/build/verify-tokens.mjs
+	@node --test $(WEB_DIR)/packages/website/design/tests/contrast.test.mjs $(WEB_DIR)/packages/website/design/tests/logical.test.mjs $(WEB_DIR)/packages/website/design/tests/mockups.test.mjs
 
 # ---------------------------------------------------------------------------
 # Native app shells (Epics 12/13) — Capacitor (iOS/Android) + Tauri (desktop)

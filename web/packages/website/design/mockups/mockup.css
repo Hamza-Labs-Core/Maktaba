@@ -1,0 +1,30 @@
+/* Mockup-only helpers for the component sheet (story 60.01): not part of the shell. */
+
+.sheet .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3) var(--spacing-5);
+  align-items: center;
+  margin-block: var(--spacing-3) var(--spacing-6);
+}
+
+.sheet .row.narrow {
+  max-inline-size: 16rem;
+}
+
+/* The focus ring, drawn without a keyboard so the render shows it. */
+.demo-focus {
+  outline: 2px solid var(--site-accent-focus);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+.button.demo-focus {
+  border-radius: var(--radius-md);
+}
+
+.lang-hint .sheet-small {
+  min-block-size: 36px;
+  padding-inline: var(--spacing-3);
+  font-weight: 400;
+}
