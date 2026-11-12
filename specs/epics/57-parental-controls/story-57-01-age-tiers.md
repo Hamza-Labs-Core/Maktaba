@@ -1,6 +1,7 @@
 # Story 57.01 — Age tiers on the home's content
 
 > Epic 57 · Phase 1 · Depends on: — · Needed by: 57.03, 57.04, 57.10, 57.11, 57.12
+> **Status:** built (checked against the code 2026-11-12). The web has the tier fields for admins.
 
 ## Why
 

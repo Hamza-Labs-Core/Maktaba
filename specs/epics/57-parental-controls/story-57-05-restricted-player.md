@@ -1,6 +1,9 @@
 # Story 57.05 — The restricted Player on iPhone and iPad
 
 > Epic 57 · Phase 3 (first) · Depends on: 57.03, 57.04 · Needed by: 57.06, 57.07, 57.11
+> **Status:** built (checked against the code 2026-11-12) on iPhone and iPad. The child's side (the blocked page, Ask a
+> parent, the parent PIN) is also built on the web, the Android Player (phone and tablet),
+> Android TV and the desktop Player.
 
 ## Why
 
@@ -13,10 +16,13 @@ should not show. Everything must work in Arabic, mirrored.
 
 ### 1. Knowing it is restricted
 
-`GET /api/capabilities` gains `parental: {restricted, tier_limit, source: account|device|both,
-can_manage, version}` (see README §6.6). `Capabilities.swift` decodes it. A change of `version`
-clears the Player's per-account caches (Home shelves, search history kept on the device, the
-queue window), so nothing hidden lingers on screen.
+`GET /api/capabilities` gains `parental: {enabled, restricted, tier_limit, can_manage}` (see
+README §6.6); the route answers 503 `parental_unavailable` when the limits cannot be read, never
+a block that says nothing limits the account. The limit itself, with its `version` and what the
+device said (`device_limit`, `device_pending`), is `GET /api/me/parental`, which the Player asks
+at sign-in, at each return to the front and every 5 minutes. A change of the limit clears the
+Player's per-account caches (Home shelves, the pictures in memory, the queue window), so nothing
+hidden lingers on screen.
 
 ### 2. What changes on screen for a restricted sign-in
 
@@ -25,7 +31,7 @@ queue window), so nothing hidden lingers on screen.
 | Home, Libraries, Series, Collections, Playlists | nothing special: the home already sends only allowed items |
 | Search | no YouTube results section and no Import from YouTube |
 | Video page opened by a link, Continue, or a stale queue item that answers 404 | the **blocked page**: "This isn't available", the reason line if the home's `/api/me/parental` says the account or device is limited, **Ask a parent** and **Enter parent PIN** (57.06) |
-| Player, during play, when a renewal is refused | playback stops, position saved, the blocked page |
+| Player, during play, when opening the session again or a progress post is refused | playback stops, position saved, the blocked page; nothing is tried again |
 | Profile | "Managed by Huda" and the limit (`parental.tier.*`), Age range row (57.04), no admin items |
 | Live TV | only allowed channels (57.10); a channel that becomes blocked mid-programme shows the blocked slate |
 | Plugin panels | only from allowed plugins (the home decides) |

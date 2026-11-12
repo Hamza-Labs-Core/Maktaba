@@ -1,6 +1,7 @@
 # Story 57.14 — Time limits and time slots, kept by the home
 
 > Epic 57 · Phase 2b · Depends on: 57.02, 57.03, 57.06 · Needed by: 57.15, 57.16, 57.13
+> **Status:** built (checked against the code 2026-11-12). What differs from the text is corrected in place (§3 to §5).
 
 ## Why
 
@@ -43,26 +44,46 @@ Which libraries a child's Player opens at all stays `library_acl` and the `libra
 
 ### 3. Enforcement
 
-`parental.Time(ctx, principal, libraryID)` answers `allowed`, `remaining` and `reason`
-(`outside_slot`, `limit_reached`). It is called where playback starts and continues:
+The time keeper (`api/internal/parental/timekeeper.go`) answers `allowed`, `remaining` and
+`reason` (`outside_slot`, `limit_reached`). It is asked at the four places a stream session
+passes through the API:
 
-- stream session creation and signed URL minting (API);
-- each heartbeat and each segment request for a restricted session (streaming, through the
-  session's record, not a database read per segment: the API pushes an end time to the session);
-- channel streams (57.10).
+- `POST /api/stream/sessions`: before a session is opened, and again each time a client opens
+  one again for fresh URLs. There is no separate renewal route;
+- once the session has its id, it gets a **lease** of 60 seconds on the streaming service;
+- `POST /api/stream/sessions/{id}/progress`: the stream's heartbeat. It counts the time since
+  the call before (never more than 60 seconds) and renews the lease. A client posts it at least
+  every 60 seconds;
+- `DELETE /api/stream/sessions/{id}`: counted up to the close, lease ended.
+
+The streaming service serves a kept account's segments only under that lease and up to the end
+time the API pushed (no database read per segment). Every stream URL carries a signed `tk`
+claim (`1`: this account's time is kept; `0`: it is not), and a kept account's URL also carries
+`tls`, the stream session whose lease it needs. A URL that says neither is refused, so missing
+state never means unlimited.
 
 When time is up: no new stream starts, and a running one ends within 60 seconds. The API
-answers `403` with problem type `parental-time`, carrying `reason` and `next_allowed_at`. This
-is not a 404: the child is meant to know. Browsing stays open, so a child can still look and ask.
+answers `403` with problem type `parental-time` (`code: parental_time`), carrying `reason`
+(`outside_slot`, `limit_reached`, or `no_heartbeat` when no counted call came for the session
+within 60 seconds) and, when the rules allow watching again, `next_allowed_at`. When the time
+cannot be read or counted the answer is `503` with `Retry-After`: never free time on an error.
+This is not a 404: the child is meant to know. Browsing stays open, so a child can still look
+and ask. A client stops on the refusal and does not ask again by itself.
 
-`GET /api/me/parental/time` gives the child's own state (`remaining_seconds`, `slot_ends_at`,
-`next_allowed_at`); clients use it for the countdown (57.15).
+`GET /api/me/parental/time` gives the child's own state (`allowed`, `limited`, `reason`,
+`remaining_seconds`, `slot_ends_at`, `next_allowed_at`, `now`); clients use it for the countdown
+(57.15). It only reads: it counts nothing and keeps no stream running.
 
 ### 4. More time
 
-Ask a parent (57.06) gains the subject `time`: a child asks for 15, 30 or 60 minutes more. A
-guardian approves in their Player or with the parent PIN. The grant (`parental_time_grants`)
-adds minutes to that day only and may also open a closed slot until the minutes run out.
+Ask a parent (57.06) gains the subject `time`: `subject_kind` is `time` and `subject_id` is the
+minutes as text, a whole number from 1 to 480 (the apps offer 15, 30 and 60). A guardian
+approves in their Player or on the web (`POST /api/parental/requests/{id}/approve`, with an
+optional `minutes`; the answer is `{request, grant}`), or types the parent PIN on the child's
+device (`POST /api/me/parental/unlock` with kind `time`; the answer is `{grant}`). A guardian
+can also give time unasked: `POST /api/parental/users/{id}/time-grants {minutes}` (1 to 480,
+201). The grant (`parental_time_grants`) adds minutes to that day only and may also open a
+closed slot until the minutes run out. A running or refused stream learns of a grant at once.
 
 ### 5. Routes and roles
 
@@ -73,7 +94,9 @@ adds minutes to that day only and may also open a closed slot until the minutes 
 | `POST /api/parental/users/{id}/time-grants` | admin; a guardian of that child |
 | `GET /api/me/parental/time` | the signed-in user |
 
-A viewer, the child and another child's guardian get 403; each has a role test.
+A viewer and the child get 403 on the first three; another child's guardian gets 404, as on
+the other routes of a child. An account that is not restricted is 404. A play-only sign-in through
+Maktaba Cloud reads and does not write. The role table of 57.13 holds each cell.
 
 ## Acceptance criteria
 
@@ -85,7 +108,8 @@ A viewer, the child and another child's guardian get 403; each has a role test.
   stops at 30 and the others go on to 120.
 - **Given** a device clock set back two hours, **then** nothing changes.
 - **Given** a 30 minute grant after the limit, **then** playback works for 30 more minutes that day.
-- **Given** a viewer, the child or another guardian, **when** they change the rules, **then** 403.
+- **Given** a viewer or the child, **when** they change the rules, **then** 403; **given** another
+  child's guardian, **then** 404.
 
 ## Test cases
 
@@ -93,10 +117,10 @@ A viewer, the child and another child's guardian get 403; each has a role test.
 |---|---|---|---|---|
 | T01 | Go unit | rule sets and clock times, with midnight slots and the 04:00 day line | `Time` | allowed, remaining, reason |
 | T02 | Go Postgres | heartbeats from two sessions | count | usage sums both; paused adds none |
-| T03 | Go Postgres | limit reached | create session, mint URL | `parental-time` |
+| T03 | Go Postgres | limit reached | open a session, open it again, post progress | `parental-time` |
 | T04 | streaming Go test | session with an end time | segments after it | refused within 60 s |
 | T05 | Go Postgres | grant | play | allowed for the granted minutes |
-| T06 | Go role table | seven principals | each route | 200 or 403 as the table says |
+| T06 | Go role table | eight callers | each route | 200, 403 or 404 as the table says |
 | T07 | Go Postgres and SQLite | migrations 0223 up and down | — | clean |
 
 ## Edge cases
