@@ -42,8 +42,9 @@ final class PlayerDemoShots: PlayerUITestCase {
         defer { XCUIDevice.shared.orientation = .portrait }
         for language in ["en", "ar"] {
             try demo(language)
-            // the stream as long as the film (the demo's `duration_sec`), at 7:00
-            if let seconds = home.demoVideo("v-sintel")?["duration_sec"] as? Int { home.streamSeconds = seconds / 2 * 2 }
+            // opened at 7:00, the stream is the rest of the film (the demo's `duration_sec`): the
+            // player counts a session's stream from where it opened
+            if let seconds = home.demoVideo("v-sintel")?["duration_sec"] as? Int { home.streamSeconds = (seconds - 420) / 2 * 2 }
             // signed in upright (in landscape the keyboard covers the sign-in's choices), turned
             // once the player is open
             XCUIDevice.shared.orientation = .portrait
