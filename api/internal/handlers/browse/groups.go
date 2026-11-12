@@ -390,6 +390,7 @@ func (h *Handler) libraryCollections(ctx context.Context, s scope, lib string, w
 		}
 	}
 	out := []LibraryCollection{}
+	var smart []string
 	for rows.Next() {
 		var c LibraryCollection
 		var n sql.NullInt64
@@ -401,6 +402,9 @@ func (h *Handler) libraryCollections(ctx context.Context, s scope, lib string, w
 			cid, ok := parental.CanonicalUUID(c.ID)
 			if !ok || blocked[cid] || (n.Valid && n.Int64 == 0) {
 				continue
+			}
+			if !n.Valid {
+				smart = append(smart, c.ID) // a saved filter: asked below, once the rows are read
 			}
 		}
 		c.SourceKind, c.sortTitle = sk.String, st.String
@@ -418,7 +422,28 @@ func (h *Handler) libraryCollections(ctx context.Context, s scope, lib string, w
 		c.PosterVideoIDs = []string{}
 		out = append(out, c)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(smart) == 0 {
+		return out, nil
+	}
+	_ = rows.Close()
+	// a saved filter that lists nothing the account may see is left out too
+	// (parental.Allowed evaluates it; a failed check hides it)
+	hide := map[string]bool{}
+	for _, id := range smart {
+		if ok, err := parental.Allowed(ctx, h.DB, limit, parental.SubjectCollection, id); err != nil || !ok {
+			hide[id] = true
+		}
+	}
+	kept := out[:0]
+	for _, c := range out {
+		if !hide[c.ID] {
+			kept = append(kept, c)
+		}
+	}
+	return kept, nil
 }
 
 // collectionPosters gives each card of the page its first four visible videos,

@@ -6,6 +6,7 @@ package parental_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -214,7 +215,7 @@ func TestFilterAllowed(t *testing.T) {
 		{"block a collection", parental.SubjectCollection, fCol, false},
 		{"allow a collection", parental.SubjectCollection, fCol, true},
 		{"9+, unrated hidden", parental.SubjectCollection, fEmpty, false}, // nothing in it passes
-		{"9+, unrated hidden", parental.SubjectCollection, fSmart, true},  // its list is filtered instead
+		{"9+, unrated hidden", parental.SubjectCollection, fSmart, false}, // no check of its list in the context: refused
 		{"9+, unrated hidden", parental.SubjectCollection, missing, true},
 		{"9+, unrated hidden", parental.SubjectLibrary, libOpen, true},
 		{"block a library", parental.SubjectLibrary, libClosed, false},
@@ -230,6 +231,45 @@ func TestFilterAllowed(t *testing.T) {
 		if err != nil || got != c.want {
 			t.Errorf("%s: Allowed(%s %s) = %v (%v), want %v", c.policy, c.kind, c.id, got, err, c.want)
 		}
+	}
+
+	// a smart collection is as visible as its list: the context's check says whether
+	// it lists anything for this account; an error refuses; a block still wins
+	for _, c := range []struct {
+		name   string
+		policy string
+		shows  bool
+		err    error
+		want   bool
+	}{
+		{"lists something", "9+, unrated hidden", true, nil, true},
+		{"lists nothing", "9+, unrated hidden", false, nil, false},
+		{"cannot be evaluated", "9+, unrated hidden", true, errors.New("boom"), false},
+	} {
+		asked := ""
+		sctx := parental.WithSmartCheck(ctx, func(cctx context.Context, eff *parental.Effective, id string) (bool, error) {
+			asked = id
+			if parental.From(cctx) != eff {
+				t.Errorf("%s: the check's context does not carry the limit asked about", c.name)
+			}
+			return c.shows, c.err
+		})
+		got, err := parental.Allowed(sctx, e.db, ps[c.policy], parental.SubjectCollection, fSmart)
+		if got != c.want || (err != nil) != (c.err != nil) || asked != fSmart {
+			t.Errorf("a smart collection that %s: Allowed = %v (%v), asked %q; want %v", c.name, got, err, asked, c.want)
+		}
+	}
+	never := parental.WithSmartCheck(ctx, func(context.Context, *parental.Effective, string) (bool, error) {
+		t.Error("the check was asked about a collection that is not smart, is missing, or needs no check")
+		return true, nil
+	})
+	for _, id := range []string{fCol, fEmpty, missing} {
+		if _, err := parental.Allowed(never, e.db, ps["9+, unrated hidden"], parental.SubjectCollection, id); err != nil {
+			t.Error(err)
+		}
+	}
+	if ok, _ := parental.Allowed(never, e.db, &parental.Effective{}, parental.SubjectCollection, fSmart); !ok {
+		t.Error("an account with no limit is not shown the smart collection")
 	}
 
 	// a rule stored with another spelling of the id still names it

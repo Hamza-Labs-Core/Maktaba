@@ -44,7 +44,7 @@ func TestBuildSmartSQL_FilterClausesAreParameterised(t *testing.T) {
 		States:       []string{"ready"},
 		Tags:         []string{"tafsir"},
 	}
-	q, args := buildSmartSQL(f, 0, 50)
+	q, args := buildSmartSQL(f, 0, 50, "")
 	// Should contain WHERE clauses for each filter.
 	for _, want := range []string{"library_id =", "detected_language =", "content_type =", "state =", "video_tags"} {
 		if !strings.Contains(q, want) {
@@ -58,21 +58,21 @@ func TestBuildSmartSQL_FilterClausesAreParameterised(t *testing.T) {
 }
 
 func TestBuildSmartSQL_OrderByTitle(t *testing.T) {
-	q, _ := buildSmartSQL(SmartFilter{OrderBy: "title"}, 0, 10)
+	q, _ := buildSmartSQL(SmartFilter{OrderBy: "title"}, 0, 10, "")
 	if !strings.Contains(q, "ORDER BY title") {
 		t.Errorf("expected ORDER BY title, got: %s", q)
 	}
 }
 
 func TestBuildSmartSQL_LimitDefaultsTo100(t *testing.T) {
-	q, _ := buildSmartSQL(SmartFilter{}, 0, 0)
+	q, _ := buildSmartSQL(SmartFilter{}, 0, 0, "")
 	if !strings.Contains(q, "LIMIT 100") {
 		t.Errorf("expected LIMIT 100, got: %s", q)
 	}
 }
 
 func TestBuildSmartSQL_LimitClampedAtUpperBound(t *testing.T) {
-	q, _ := buildSmartSQL(SmartFilter{}, 0, 9999)
+	q, _ := buildSmartSQL(SmartFilter{}, 0, 9999, "")
 	if !strings.Contains(q, "LIMIT 100") {
 		t.Errorf("expected clamp to 100, got: %s", q)
 	}

@@ -298,6 +298,11 @@ func MountP6(r chi.Router, d P6Deps) {
 
 	colHandler := &collections.Handler{DB: d.DB, ListVideos: videoHandler.List}
 	colHandler.Mount(r)
+	if d.ParentalGate != nil {
+		// Epic 57 story 57.03: a smart collection that lists nothing a restricted
+		// account may see is hidden from it; the gate asks this handler
+		d.ParentalGate.SetSmartCollections(colHandler.SmartShows)
+	}
 	// Phase 8 / Story 9.14: smart-collection ?freeze convert endpoint.
 	colHandler.MountSmart(r)
 

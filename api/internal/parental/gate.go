@@ -49,6 +49,7 @@ var ErrNoCache = errors.New("parental: the gate has no policy cache")
 // Gate is the middleware and the one place a request's limit is worked out.
 type Gate struct {
 	cache atomic.Pointer[Cache]
+	smart atomic.Pointer[SmartCheck]
 	// Table is the registry the gate acts on (Surfaces unless a test sets another).
 	Table SurfaceTable
 }
@@ -59,6 +60,17 @@ func NewGate() *Gate { return &Gate{Table: Surfaces} }
 
 // SetCache gives the gate the restricted accounts' cache (MountParental's).
 func (g *Gate) SetCache(c *Cache) { g.cache.Store(c) }
+
+// SetSmartCollections gives the gate the check of a smart collection's list
+// (handlers/collections Handler.SmartShows). Until it is set a restricted account
+// is shown no smart collection (fail closed).
+func (g *Gate) SetSmartCollections(f SmartCheck) {
+	if f == nil {
+		g.smart.Store(nil)
+		return
+	}
+	g.smart.Store(&f)
+}
 
 // Cache is the gate's cache (nil before SetCache).
 func (g *Gate) Cache() *Cache { return g.cache.Load() }
@@ -123,6 +135,9 @@ func (g *Gate) Middleware(routes chi.Routes) func(http.Handler) http.Handler {
 			}
 			ctx := With(r.Context(), e)
 			if e.Limits() {
+				if f := g.smart.Load(); f != nil {
+					ctx = WithSmartCheck(ctx, *f)
+				}
 				// an account with a policy of its own is never an admin, whatever
 				// its token still says
 				op, err := g.own(ctx, p, e)
