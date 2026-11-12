@@ -179,6 +179,11 @@ public enum ParentalRefusal: Equatable, Sendable {
     case notYours
     /// 410 `request_expired`, 409 `request_decided`.
     case requestGone
+    /// 409 `restricted_admin`: an admin cannot be made restricted.
+    case restrictedAdmin
+    /// 409 `restricted_guardian`: a restricted account (or the account itself) cannot look
+    /// after it.
+    case restrictedGuardian
 
     public init?(_ error: Error) {
         guard case let APIError.status(status, body, retryAfter)? = error as? APIError else { return nil }
@@ -200,6 +205,8 @@ public enum ParentalRefusal: Equatable, Sendable {
         case (429, "too_many_requests"): self = .tooManyRequests
         case (409, "stale"): self = .stale
         case (409, "no_sign_in"): self = .noSignIn
+        case (409, "restricted_admin"): self = .restrictedAdmin
+        case (409, "restricted_guardian"): self = .restrictedGuardian
         case (403, "device_limited"): self = .deviceLimited
         case (403, "admin_only"), (403, "cloud_scope"), (403, "scope"): self = .notYours
         case (410, _), (409, "request_decided"): self = .requestGone
@@ -1016,6 +1023,48 @@ public extension APIClient {
     /// statement, or removes the signal when none waits.
     func clearSignal(_ family: String, of user: String) async throws {
         _ = try await sendRaw(request("POST", "/api/users/\(Self.segment(user))/parental/signals/\(Self.segment(family))/clear"))
+    }
+
+    /// `GET /api/admin/library-acl` (admins): the home's accounts, by name. The one admin
+    /// route that lists them, as the web's Users and Family pages read it; anyone else is
+    /// refused by the home.
+    func homeAccounts() async throws -> [ParentalPerson] {
+        struct A: Decodable {
+            let users: [ParentalPerson]
+            init(from decoder: Decoder) throws {
+                users = try decoder.container(keyedBy: AnyKey.self).lenientList(AnyKey(stringValue: "users"))
+            }
+        }
+        let a: A = try await get("/api/admin/library-acl")
+        return a.users
+    }
+
+    /// `GET /api/libraries/manage` (admins): each library's stored default tier. A library is
+    /// in the answer only when the home says its tier (`age_tier`: a tier, or null for none);
+    /// a home from before that field says nothing, so nothing is known.
+    func libraryAgeTiers() async throws -> [String: Int?] {
+        struct Row: Decodable {
+            let id: String
+            let known: Bool
+            let tier: Int?
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: AnyKey.self)
+                id = try c.decode(String.self, forKey: AnyKey(stringValue: "id"))
+                let key = AnyKey(stringValue: "age_tier")
+                known = c.contains(key)
+                tier = c.lenient(key)
+            }
+        }
+        struct A: Decodable {
+            let items: [Row]
+            init(from decoder: Decoder) throws {
+                items = try decoder.container(keyedBy: AnyKey.self).lenientList(AnyKey(stringValue: "items"))
+            }
+        }
+        let a: A = try await get("/api/libraries/manage")
+        var out: [String: Int?] = [:]
+        for row in a.items where row.known { out[row.id] = .some(row.tier) }
+        return out
     }
 
     /// `GET /api/parental/requests?status=pending`: the requests the caller may answer.

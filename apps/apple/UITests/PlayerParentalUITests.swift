@@ -280,6 +280,137 @@ final class PlayerParentalUITests: PlayerUITestCase {
         XCTAssertEqual(home.requests.last { $0.path == "/api/users/c2/parental/activity" }?.value("kind"), "blocked")
     }
 
+    /// 57.07: Allowed > Add offers every kind a rule may name; a collection is picked from the
+    /// guardian's own libraries and sent as the rule's subject, and a YouTube source too. The
+    /// plugins are an admin's to list: the picker says what the home answered.
+    func testAGuardianAddsRulesForACollectionAndAYouTubeSource() {
+        guardian()
+        home.stub("GET", "/api/libraries/lib-docs/youtube/sources",
+                  body: #"{"items":[{"id":"yt-1","library_id":"lib-docs","kind":"channel","url":"https://youtube.example/@docs","folder":"Docs channel","mode":"on"}]}"#)
+        home.stub("GET", "/api/libraries/lib-lectures/youtube/sources", body: #"{"items":[]}"#)
+        home.stub("GET", "/api/plugins", status: 403,
+                  body: #"{"type":"https://maktaba.tv/problems/forbidden","title":"forbidden","status":403,"code":"admin_only"}"#)
+        home.stub("POST", "/api/users/c2/parental/rules", status: 201,
+                  body: #"{"id":"ru7","user_id":"c2","effect":"allow","subject_kind":"collection","subject_id":"col-mine","created_at":"{{now}}"}"#)
+        launchSignedIn(sections: ["profile"], section: "profile")
+        XCTAssertTrue(element("profile.family").waitForExistence(timeout: 20), "Family")
+        element("profile.family").tap()
+        XCTAssertTrue(element("family.child.c2").waitForExistence(timeout: 10), "the child")
+        element("family.child.c2").tap()
+        XCTAssertTrue(element("child.allowed").waitForExistence(timeout: 10), "the child's page")
+        element("child.allowed").tap()
+        XCTAssertTrue(element("rules.none").waitForExistence(timeout: 10), "no rule yet")
+
+        element("rules.add").tap()
+        for kind in ["library", "collection", "series", "channel", "youtube_source", "plugin", "video"] {
+            XCTAssertTrue(element("rules.add.\(kind)").waitForExistence(timeout: 5), "Add offers a \(kind)")
+        }
+        shot("parental-rules-add")
+        element("rules.add.collection").tap()
+        let picked = element("picker.row.col-mine")
+        XCTAssertTrue(picked.waitForExistence(timeout: 15), "the home's collections; the home saw \(home.seen.suffix(6))")
+        XCTAssertTrue(picked.label.contains("Picked"), picked.label)
+        picked.tap()
+        waitUntil("the rule sent") { self.count("POST", "/api/users/c2/parental/rules") == 1 }
+        var sent = body("POST", "/api/users/c2/parental/rules")
+        XCTAssertEqual(sent?["effect"] as? String, "allow")
+        XCTAssertEqual(sent?["subject_kind"] as? String, "collection")
+        XCTAssertEqual(sent?["subject_id"] as? String, "col-mine")
+        XCTAssertTrue(element("rules.rule.ru7").waitForExistence(timeout: 10), "the rule in the list")
+
+        home.stub("POST", "/api/users/c2/parental/rules", status: 201,
+                  body: #"{"id":"ru8","user_id":"c2","effect":"allow","subject_kind":"youtube_source","subject_id":"yt-1","created_at":"{{now}}"}"#)
+        element("rules.add").tap()
+        element("rules.add.youtube_source").tap()
+        let source = element("picker.row.yt-1")
+        XCTAssertTrue(source.waitForExistence(timeout: 15), "the libraries' YouTube sources")
+        XCTAssertTrue(source.label.contains("Docs channel"), source.label)
+        source.tap()
+        waitUntil("the second rule sent") { self.count("POST", "/api/users/c2/parental/rules") == 2 }
+        sent = body("POST", "/api/users/c2/parental/rules")
+        XCTAssertEqual(sent?["subject_kind"] as? String, "youtube_source")
+        XCTAssertEqual(sent?["subject_id"] as? String, "yt-1")
+        XCTAssertTrue(element("rules.rule.ru8").waitForExistence(timeout: 10), "the rule in the list")
+
+        // a guardian who is not an admin cannot list the plugins: the picker says so
+        element("rules.add").tap()
+        element("rules.add.plugin").tap()
+        XCTAssertTrue(element("picker.failed").waitForExistence(timeout: 15), "what the home answered")
+        XCTAssertEqual(count("POST", "/api/users/c2/parental/rules"), 2, "nothing more was sent")
+    }
+
+    /// 57.07: an admin makes one of the home's accounts restricted (the accounts the home
+    /// lists to admins, `GET /api/admin/library-acl`) with a limit, and names a guardian on a
+    /// child's page.
+    func testAnAdminMakesAnAccountRestrictedAndAddsAGuardian() {
+        guardian()
+        home.stub("GET", "/api/admin/library-acl",
+                  body: #"{"users":[{"id":"u1","username":"tester"},{"id":"c2","username":"Sara"},{"id":"u3","username":"Omar"},{"id":"u4","username":"Huda"}],"libraries":[],"grants":[]}"#)
+        home.stub("GET", "/api/users/c2/parental", body: Self.account.replacingOccurrences(of: #""access":"guardian""#, with: #""access":"admin""#))
+        home.stub("PUT", "/api/users/u3/parental",
+                  body: #"{"policy":{"user_id":"u3","max_tier":13,"unrated":"hide","allow_only":false,"version":1},"access":"admin","guardians":[],"signals":[]}"#)
+        home.stub("POST", "/api/users/c2/parental/guardians", status: 201, body: #"{"guardian_id":"u4"}"#)
+        launchSignedIn(sections: ["profile"], section: "profile")
+        XCTAssertTrue(element("profile.family").waitForExistence(timeout: 20), "Family")
+        element("profile.family").tap()
+        let make = element("family.makeRestricted")
+        XCTAssertTrue(make.waitForExistence(timeout: 15), "Make an account restricted, for an admin; the home saw \(home.seen.suffix(6))")
+        make.tap()
+        XCTAssertTrue(element("restrict.account.u3").waitForExistence(timeout: 10), "the home's other accounts")
+        XCTAssertTrue(element("restrict.account.u4").exists)
+        XCTAssertFalse(element("restrict.account.u1").exists, "not the admin themself")
+        XCTAssertFalse(element("restrict.account.c2").exists, "not one restricted already")
+        shot("parental-make-restricted")
+        element("restrict.account.u3").tap()
+        XCTAssertTrue(element("restrict.tier.13").waitForExistence(timeout: 5), "the limits")
+        element("restrict.tier.13").tap()
+        waitUntil("the limit sent") { self.count("PUT", "/api/users/u3/parental") == 1 }
+        let put = body("PUT", "/api/users/u3/parental")
+        XCTAssertEqual(put?["max_tier"] as? Int, 13)
+        XCTAssertEqual(put?["version"] as? Int, 0, "a new limit")
+        waitUntil("the sheet closes") { !self.element("screen.restrict").exists }
+
+        element("family.child.c2").tap()
+        let add = element("child.guardian.add")
+        scrollUntil(add)
+        XCTAssertTrue(add.waitForExistence(timeout: 10), "Add a guardian, for an admin")
+        add.tap()
+        XCTAssertTrue(element("child.guardian.add.u4").waitForExistence(timeout: 5), "the home's other accounts")
+        XCTAssertFalse(element("child.guardian.add.u1").exists, "not who looks after the child already")
+        XCTAssertFalse(element("child.guardian.add.c2").exists, "not the child")
+        element("child.guardian.add.u4").tap()
+        waitUntil("the guardian sent") { self.count("POST", "/api/users/c2/parental/guardians") == 1 }
+        XCTAssertEqual(body("POST", "/api/users/c2/parental/guardians")?["guardian_id"] as? String, "u4")
+    }
+
+    /// A play-only sign-in through Maktaba Cloud (`cloud_scope: play` in who-am-I): Family
+    /// says up front that nothing can be changed here, and its controls are disabled, before
+    /// the home has refused anything.
+    func testAPlayOnlyCloudSignInSeesFamilyWithItsControlsDisabled() {
+        guardian()
+        home.stub("GET", "/api/auth/me",
+                  body: #"{"user_id":"u1","is_admin":false,"libraries":[],"id":"u1","username":"tester","user":{"id":"u1","username":"tester","is_admin":false,"must_change_password":false},"home_name":"UI Test Home","cloud_scope":"play"}"#)
+        launchSignedIn(sections: ["profile"], section: "profile")
+        XCTAssertTrue(element("profile.family").waitForExistence(timeout: 20), "Family, for a guardian")
+        element("profile.family").tap()
+        XCTAssertTrue(element("family.readOnly").waitForExistence(timeout: 10), "why nothing can be changed")
+        XCTAssertEqual(element("family.readOnly").label, "Connect at home, or ask an admin for manage access, to change this.")
+        XCTAssertTrue(element("family.request.r1").waitForExistence(timeout: 10), "the request still shows")
+        XCTAssertFalse(element("family.request.approve.r1").isEnabled, "Approve is disabled")
+        XCTAssertFalse(element("family.request.deny.r1").isEnabled, "Deny is disabled")
+        shot("parental-family-play-only")
+
+        element("family.child.c2").tap()
+        XCTAssertTrue(element("child.allowed").waitForExistence(timeout: 10), "the child's page still opens")
+        XCTAssertTrue(element("family.readOnly").exists, "and says the same")
+        XCTAssertFalse(element("child.allowOnly").isEnabled, "the limit is disabled")
+        element("child.allowed").tap()
+        XCTAssertTrue(element("rules.add").waitForExistence(timeout: 10), "the rules still show")
+        XCTAssertFalse(element("rules.add").isEnabled, "Add is disabled")
+        XCTAssertEqual(count("POST", "/api/parental/requests/r1/approve"), 0, "nothing was sent")
+        XCTAssertEqual(count("PUT", "/api/users/c2/parental"), 0)
+    }
+
     // MARK: 57.15
 
     private func timeOver(_ next: String = "{{now+3600}}") -> String {

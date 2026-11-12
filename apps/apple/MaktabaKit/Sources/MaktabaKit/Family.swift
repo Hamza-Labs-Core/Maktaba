@@ -14,6 +14,10 @@ public enum FamilyNotice: Equatable, Sendable {
     /// 403 `device_limited`: this device is itself limited.
     case deviceLimited
     case wrongPassword
+    /// 409 `restricted_admin`: an admin cannot be made restricted.
+    case adminAccount
+    /// 409 `restricted_guardian`: a restricted account cannot look after another.
+    case restrictedGuardian
     case failed(HomeFailure)
 
     public init(_ error: Error) {
@@ -22,6 +26,8 @@ public enum FamilyNotice: Equatable, Sendable {
         case .notYours, .restricted: self = .readOnly
         case .deviceLimited: self = .deviceLimited
         case .passwordWrong: self = .wrongPassword
+        case .restrictedAdmin: self = .adminAccount
+        case .restrictedGuardian: self = .restrictedGuardian
         default:
             let f = HomeFailure(error)
             self = f.kind == .noAccess ? .readOnly : .failed(f)
@@ -34,6 +40,8 @@ public enum FamilyNotice: Equatable, Sendable {
         case .readOnly: ParentalWords.text("family.readOnlyCloud", locale)
         case .deviceLimited: ParentalWords.text("family.deviceLimited", locale)
         case .wrongPassword: ParentalWords.text("family.pin.wrongPassword", locale)
+        case .adminAccount: ParentalWords.text("family.makeRestricted.admin", locale)
+        case .restrictedGuardian: ParentalWords.text("family.guardians.restricted", locale)
         case let .failed(f): f.message(video: false)
         }
     }
@@ -52,6 +60,9 @@ public final class FamilyModel {
     public private(set) var requests: [ParentalRequestItem] = []
     /// nil: not known yet.
     public private(set) var pinSet: Bool?
+    /// The home's accounts, for an admin (`GET /api/admin/library-acl`): who can be made
+    /// restricted, who can be named a guardian. Empty for anyone else.
+    public private(set) var accounts: [ParentalPerson] = []
     public var notice: FamilyNotice?
 
     public init(client: APIClient, isAdmin: Bool) {
@@ -69,6 +80,32 @@ public final class FamilyModel {
         }
         if let r = try? await client.parentalRequests() { requests = r }
         if let set = try? await client.parentalPINSet() { pinSet = set }
+        if isAdmin, let people = try? await client.homeAccounts() { accounts = Self.sorted(people) }
+    }
+
+    public static func sorted(_ list: [ParentalPerson], _ locale: Locale = AppLanguage.locale) -> [ParentalPerson] {
+        list.sorted { $0.username.compare($1.username, options: [.caseInsensitive], locale: locale) == .orderedAscending }
+    }
+
+    /// The accounts an admin may make restricted: everyone who is not restricted already and
+    /// is not the admin themself (`me`). The list does not say who else is an admin: the home
+    /// refuses one (409 `restricted_admin`), and the screen says so.
+    public func restrictable(me: String) -> [ParentalPerson] {
+        let children = Set((children.value ?? []).map(\.id))
+        return accounts.filter { $0.id != me && !children.contains($0.id) }
+    }
+
+    /// Makes `person` restricted at `maxTier` (an admin; `PUT /api/users/{id}/parental` with
+    /// no version: a new limit), unrated content hidden. True when the home took it.
+    public func restrict(_ person: ParentalPerson, maxTier: Int) async -> Bool {
+        do {
+            _ = try await client.setParental(person.id, maxTier: maxTier, unrated: "hide", allowOnly: false, version: 0)
+            await load()
+            return true
+        } catch {
+            if !Log.isCancellation(error) { notice = FamilyNotice(error) }
+            return false
+        }
     }
 
     /// By name, in the app's language's order (Arabic collation in Arabic).
@@ -204,6 +241,22 @@ public final class ChildModel {
         do {
             try await client.removeParentalRule(rule.id, of: child.id)
             rules.removeAll { $0.id == rule.id }
+        } catch {
+            await failed(error)
+        }
+    }
+
+    /// Who an admin may name a guardian of this child, from the home's `accounts`: not the
+    /// child, not a guardian already, not another restricted account (`restricted`).
+    public func guardianCandidates(_ accounts: [ParentalPerson], restricted: Set<String>) -> [ParentalPerson] {
+        let have = Set((account.value?.guardians ?? []).map(\.id))
+        return accounts.filter { $0.id != child.id && !have.contains($0.id) && !restricted.contains($0.id) }
+    }
+
+    public func addGuardian(_ guardian: ParentalPerson) async {
+        do {
+            try await client.addGuardian(guardian.id, of: child.id)
+            await load()
         } catch {
             await failed(error)
         }
@@ -443,5 +496,125 @@ public enum TimeRuleWords {
         let p = clock.split(separator: ":").compactMap { Int($0) }
         guard p.count >= 2 else { return day }
         return calendar.date(bySettingHour: p[0], minute: p[1], second: 0, of: day) ?? day
+    }
+}
+
+// MARK: what a rule may name (57.07)
+
+/// One thing a guardian may pick for an allow or block rule.
+public struct RuleChoice: Identifiable, Hashable, Sendable {
+    public let id: String
+    public let title: String
+
+    public init(id: String, title: String) {
+        self.id = id
+        self.title = title
+    }
+}
+
+/// The things of each kind a rule may name, read from what the guardian's own account sees.
+/// The home decides who may read each list (plugins are an admin's: a guardian who is not
+/// one gets the home's refusal, shown in the picker), and checks the rule itself.
+public enum RuleChoices {
+    /// The kinds the Add menu offers, in its order.
+    public static let kinds = ["library", "collection", "series", "channel", "youtube_source", "plugin", "video"]
+
+    /// The choices of `kind`, by title in the app's language's order. A video is searched
+    /// for (`query`, at least two characters); the other kinds are listed whole.
+    public static func load(_ client: APIClient, kind: String, query: String = "",
+                            _ locale: Locale = AppLanguage.locale) async throws -> [RuleChoice] {
+        let found: [RuleChoice]
+        switch kind {
+        case "library":
+            found = try await client.librarySummaries().map { RuleChoice(id: $0.id, title: $0.name) }
+        case "collection":
+            // the home's own collections (a rule names a row of `collections`); the pipeline's
+            // topic and clip groups are not collections a rule can name
+            var all: [RuleChoice] = []
+            for library in try await client.librarySummaries() {
+                let list = try await client.libraryCollections(library.id)
+                all += list.filter { $0.kind != "topic" && $0.kind != "clip" }
+                    .map { RuleChoice(id: $0.id, title: joined(library.name, $0.name)) }
+            }
+            found = all
+        case "series":
+            found = try await client.seriesList().map { RuleChoice(id: $0.id, title: $0.name) }
+        case "channel":
+            found = try await client.channelsNow().channels.map { RuleChoice(id: $0.channel.id, title: $0.channel.name) }
+        case "youtube_source":
+            var all: [RuleChoice] = []
+            for library in try await client.librarySummaries() {
+                all += try await client.youtubeSources(library: library.id)
+                    .map { RuleChoice(id: $0.id, title: joined(library.name, $0.name)) }
+            }
+            found = all
+        case "plugin":
+            found = try await client.installedPlugins(locale)
+        default:
+            let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard q.count >= 2 else { return [] }
+            found = try await client.search(q).titles.map { RuleChoice(id: $0.videoID, title: $0.title) }
+        }
+        var seen = Set<String>()
+        return found.filter { seen.insert($0.id).inserted }
+            .sorted { $0.title.compare($1.title, options: [.caseInsensitive], locale: locale) == .orderedAscending }
+    }
+
+    /// "Lectures · Seerah": the library first, as the two read in either direction.
+    static func joined(_ library: String, _ name: String) -> String {
+        library.isEmpty ? name : "\(library) · \(name)"
+    }
+}
+
+/// A YouTube source of a library (`GET /api/libraries/{id}/youtube/sources`): a channel or a
+/// playlist the home downloads from.
+public struct YouTubeSourceRow: Decodable, Identifiable, Hashable, Sendable {
+    public let id: String
+    public let url: String
+    public let folder: String?
+
+    /// Its folder's name, else its address (as the home names it in a request).
+    public var name: String { folder?.isEmpty == false ? folder ?? url : url }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        id = try c.decode(String.self, forKey: AnyKey(stringValue: "id"))
+        url = c.lenient(AnyKey(stringValue: "url")) ?? ""
+        folder = c.lenient(AnyKey(stringValue: "folder"))
+    }
+}
+
+public extension APIClient {
+    func youtubeSources(library: String) async throws -> [YouTubeSourceRow] {
+        struct A: Decodable {
+            let items: [YouTubeSourceRow]
+            init(from decoder: Decoder) throws {
+                items = try decoder.container(keyedBy: AnyKey.self).lenientList(AnyKey(stringValue: "items"))
+            }
+        }
+        let a: A = try await get("/api/libraries/\(Self.segment(library))/youtube/sources")
+        return a.items
+    }
+
+    /// `GET /api/plugins` (admins): the installed plugins, each by its name in the app's
+    /// language (else its English, else its id).
+    func installedPlugins(_ locale: Locale = AppLanguage.locale) async throws -> [RuleChoice] {
+        struct Names: Decodable { let name: [String: String]? }
+        struct Plugin: Decodable {
+            let id: String
+            let names: Names?
+        }
+        struct A: Decodable {
+            let plugins: [Plugin]
+            init(from decoder: Decoder) throws {
+                plugins = try decoder.container(keyedBy: AnyKey.self).lenientList(AnyKey(stringValue: "plugins"))
+            }
+        }
+        let a: A = try await get("/api/plugins")
+        let language = locale.language.languageCode?.identifier ?? "en"
+        return a.plugins.map { p in
+            let name = p.names?.name?[language] ?? p.names?.name?["en"] ?? ""
+            return RuleChoice(id: p.id, title: name.isEmpty ? p.id : name)
+        }
     }
 }
