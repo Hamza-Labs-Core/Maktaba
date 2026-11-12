@@ -215,7 +215,13 @@ describe("the limit after a rule or a guardian changed", () => {
     const h: FamilyHome = {
       policy: versioned(3),
       rules: [
-        { id: "r1", effect: "allow", subject_kind: "library", subject_id: "lib-1", created_at: "x" },
+        {
+          id: "r1",
+          effect: "allow",
+          subject_kind: "library",
+          subject_id: "lib-1",
+          created_at: "x",
+        },
       ],
       libraries: [{ id: "lib-1", name: "Cartoons" }],
     };
