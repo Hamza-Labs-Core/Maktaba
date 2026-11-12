@@ -622,7 +622,7 @@ All nine are decided (2026-11-11). The stories follow these decisions.
 
 | # | Action | Needed by |
 |---|---|---|
-| A1 | **Make the `maktaba-server` package public** on GitHub (the package's settings → Change visibility → Public). Every install guide depends on it | Phase 1 |
+| A1 | **Done (2026-11-11).** The `maktaba-server` package is public: an anonymous token request to ghcr.io answers 200 and its tags list without signing in. Every install guide depends on it; 60.08's release and daily checks keep it so | Phase 1 |
 | A2 | No separate website token (decided 2026-11-11): the shared `CLOUDFLARE_API_TOKEN` deploys maktaba.tv. It needs the website's row of `deploy/cloudflare/README.md` (on `maktaba.tv`: Workers Routes Edit, Zone Read and **DNS Edit**, since custom domains write their records; Workers Scripts Edit on the account). The deploy's read-only token check names any missing permission on each run; add it to the existing token. Set the repository variable `WEBSITE_LIVE` to `true` only when the site should go live | Phase 1 |
 | A3 | Mail for `privacy@maktaba.tv` (already in `CurrentPolicy`) and `copyright@maktaba.tv` (the designated agent's address), for example through Cloudflare Email Routing | Phase 1 |
 | A4 | Register the designated agent with the US Copyright Office (50.24 lists it) | before 50.24's public channels |
