@@ -471,7 +471,7 @@ func (h *Handler) EmptyTrash(w http.ResponseWriter, r *http.Request) {
 			down = append(down, root+" ("+e.Error()+")")
 		}
 		sort.Strings(down)
-		httperror.Write(w, r, httperror.Conflict("https://maktaba.tv/problems/library-roots-unreachable",
+		httperror.Write(w, r, httperror.Conflict(httperror.Type("library-roots-unreachable"),
 			"this machine cannot reach "+strings.Join(down, ", ")+"; reconnect it and scan again before emptying the trash"))
 		return
 	}

@@ -195,7 +195,7 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     ),
     "design tokens": (
         ["web/design-system/tokens/color.json"],
-        {"unit", "e2e", "build-artifacts"},
+        {"unit", "e2e", "build-artifacts", "website"},
         {"lint": {"web"}, "unit": {"web", "tokens"}},
     ),
     "desktop shell": (
@@ -207,6 +207,8 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     # the wiki database is generated from the specs: a spec runs the wiki job's check
     "a spec: the wiki database's check": (["specs/epics/40-x/story.md"], {"wiki"}, {"lint": set()}),
     "a developer guide: the portal": (["docs/developers/plugins/manifest.md"], {"devportal"}, {"lint": set()}),
+    # maktaba.tv's deploy tool: the Cloudflare tools' tests and the site's own job
+    "the website's deploy tool": (["tools/cloudflare/website-deploy.mjs"], {"cloudflare", "website"}, {"lint": set()}),
     # the portal publishes the wiki, and the diagrams it shows
     "a diagram: the wiki and the portal": (["specs/diagrams/data-flow.drawio"], {"wiki", "devportal"}, {"lint": set()}),
     "a doc the pipeline's tests read": (
@@ -924,3 +926,39 @@ def test_guard_catches_a_filter_step_without_the_merge_base() -> None:
 def test_linux_downloads_only_on_main_and_release_pushes(event: str, ref: str, want: bool) -> None:
     cond = ci_paths.load_workflow().jobs["linux-app-downloads"]["if"]
     assert ci_paths.evaluate(cond, {"github": {"event_name": event, "ref": ref}}) is want
+
+
+# ---- maktaba.tv (Epic 60, story 60.03) --------------------------------------------------------
+
+# T07: the sources the site is built from (story 60.03, "The website filter covers").
+WEBSITE_SOURCES = [
+    "web/packages/website/src/worker.ts",
+    "web/packages/install/site/install/docker/index.html",
+    "web/vite.install.config.ts",
+    "web/src/help/content/en/getting-started.md",
+    "shared/api/problems.json",
+    "shared/log/schema/line.schema.json",
+    "cloud/internal/privacy/policy.go",
+    "cloud/cmd/privacy-json/main.go",
+    "docs/app-privacy.md",
+    "LICENSE",
+    "api/internal/security/disclosure.go",
+    "web/design-system/tokens/color.json",
+    ".github/workflows/_website.yml",
+    ".github/workflows/website-deploy.yml",
+]
+
+
+@pytest.mark.parametrize("path", WEBSITE_SOURCES)
+def test_the_website_filter_covers_each_source_the_site_is_built_from(path: str) -> None:
+    assert run(path)["website"] is not None, f"{path} does not run the website job"
+
+
+def test_the_website_deploy_runs_on_the_website_filters_paths() -> None:
+    root = Path(__file__).resolve().parents[3]
+    filters = yaml.safe_load((root / ".github/ci-paths.yml").read_text())
+    # less the shared group (*ci, a nested list once read): the deploy's own trigger
+    want = [g for g in filters["website"] if not isinstance(g, list)]
+    deploy = yaml.safe_load((root / ".github/workflows/website-deploy.yml").read_text())
+    on = deploy.get("on", deploy.get(True))
+    assert on["push"]["paths"] == want

@@ -32,6 +32,7 @@
     "mockups",
     "wiki-app",
     "packages/devportal",
+    "packages/website",
     "design-system/build",
     "design-system/storybook",
     "design-system/**/*.stories.tsx"

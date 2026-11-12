@@ -32,7 +32,7 @@ func RequireComponent(r *runner.Runner, id string) func(http.Handler) http.Handl
 }
 
 // TypeComponentOff is the problem type of component_off (story 51.09).
-const TypeComponentOff = "https://maktaba.tv/problems/component-off"
+var TypeComponentOff = httperror.Type("component-off")
 
 // ComponentOff is the 409 a route of an off component answers: its id, and the feature
 // it serves when it serves one (story 51.09), so every app has words for it.

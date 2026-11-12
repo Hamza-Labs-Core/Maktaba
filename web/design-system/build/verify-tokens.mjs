@@ -5,7 +5,9 @@
 //   2. dist/ parses and holds the expected tokens; the dark theme is Ink & Brass.
 //   3. web/src/styles/tokens.css matches the JSON (checks.mjs `parity`).
 //   4. Every text/background pair is >= 4.5:1 in light and dark (`contrastProblems`).
-//   5. Self-tests: a stale native file, a drifted tokens.css colour and a low-contrast
+//   5. maktaba.tv's CSS (story 60.01 T02) holds the `site` group, dark on :root and light
+//      under prefers-color-scheme, and the app's tokens.css holds none of it.
+//   6. Self-tests: a stale generated file, a drifted tokens.css colour and a low-contrast
 //      pair are each caught, so the checks above cannot pass vacuously.
 //
 // Filename intentionally avoids `.test.mjs` so vitest's default glob
@@ -17,7 +19,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadTokens, nativeFiles, resolvedThemes } from "./build-tokens.mjs";
+import { loadTokens, nativeFiles, resolvedThemes, SITE_CSS_PATH } from "./build-tokens.mjs";
 import { contrastPairs, contrastProblems, parity } from "./checks.mjs";
 import { KOTLIN_PATH, SWIFT_PATH } from "./native.mjs";
 
@@ -135,10 +137,34 @@ const pairs = contrastPairs(themes);
 const weakest = pairs.reduce((a, b) => (b.ratio < a.ratio ? b : a));
 
 // ---------------------------------------------------------------------------
-// Step 5 — self-tests: each check catches what it is for
+// Step 5 — the site's CSS (story 60.01 T02)
 // ---------------------------------------------------------------------------
 
-// 5a. A stale native file fails `--check`; the current ones pass.
+const siteCss = await readFile(join(repoRoot, SITE_CSS_PATH), "utf8");
+for (const re of [
+  /^:root \{\n  color-scheme: dark;/m,
+  /--color-semantic-bg: #0B111C;/,
+  /--site-measure-text: \S+;/,
+  /--site-type-display-1-size: \S+;/,
+  /--site-type-arabic-display-1-size: \S+;/,
+  /--site-surface-hero: \S+;/,
+  /--site-surface-section: \S+;/,
+  /--site-surface-shot: \S+;/,
+  /--site-accent-cta: \S+;/,
+  /--site-accent-cta-hover: \S+;/,
+  /--site-space-section: [^;]+;/,
+  /@media \(prefers-color-scheme: light\) \{\n  :root \{\n    color-scheme: light;[\s\S]*--color-semantic-bg: var\(--color-neutral-0\);/,
+]) {
+  if (!re.test(siteCss)) fail(`${SITE_CSS_PATH} missing expected pattern: ${re}`);
+}
+if (webCss.includes("--site-"))
+  fail("web/src/styles/tokens.css holds a --site- token: the site group is the site's alone");
+
+// ---------------------------------------------------------------------------
+// Step 6 — self-tests: each check catches what it is for
+// ---------------------------------------------------------------------------
+
+// 6a. A stale native file fails `--check`; the current ones pass.
 const scratch = await mkdtemp(join(tmpdir(), "maktaba-tokens-"));
 try {
   const files = nativeFiles(tokens);
@@ -151,7 +177,7 @@ try {
   if (runBuilder(["--check", "--out-root", scratch]).status !== 0) {
     fail("self-test: --check rejected an up-to-date copy of the native files");
   }
-  for (const rel of [SWIFT_PATH, KOTLIN_PATH]) {
+  for (const rel of [SWIFT_PATH, KOTLIN_PATH, SITE_CSS_PATH]) {
     const path = join(scratch, rel);
     const good = await readFile(path, "utf8");
     await writeFile(path, good.replace("E3B252", "E3B253"), "utf8");
@@ -169,7 +195,7 @@ try {
   await rm(scratch, { recursive: true, force: true });
 }
 
-// 5b. A drifted semantic colour in tokens.css (light and dark) is caught.
+// 6b. A drifted semantic colour in tokens.css (light and dark) is caught.
 for (const [from, to, what] of [
   ["--color-fg: #1c1810;", "--color-fg: #1c1811;", "light --color-fg"],
   ["--color-bg: #0b111c;", "--color-bg: #0b111d;", "dark --color-bg"],
@@ -186,7 +212,7 @@ for (const [from, to, what] of [
   }
 }
 
-// 5c. A low-contrast pair is caught.
+// 6c. A low-contrast pair is caught.
 const dim = structuredClone(themes);
 dim.dark.color.semantic.muted = "#3A4252";
 if (!contrastProblems(dim).some((p) => p.startsWith("dark: muted on"))) {
@@ -194,7 +220,7 @@ if (!contrastProblems(dim).some((p) => p.startsWith("dark: muted on"))) {
 }
 
 console.log(
-  `test-tokens: OK — native files current, tokens.css matches the JSON, ` +
+  `test-tokens: OK — generated files current, the site's CSS holds the site group, tokens.css matches the JSON, ` +
     `${pairs.length} text/background pairs >= 4.5:1 (weakest: ${weakest.theme} ` +
     `${weakest.text} on ${weakest.surface}, ${weakest.ratio.toFixed(2)}:1)`
 );

@@ -1,0 +1,20 @@
+{
+ "id": "v-cosmos-laundromat",
+ "library_id": "lib-films",
+ "path": "",
+ "filename": "cosmos-laundromat.mkv",
+ "title": "مغسلة الكون",
+ "description": "على جزيرة مقفرة، يلتقي خروف متعب ببائع غريب يعرض عليه كل حياة يتمناها.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 730,
+ "size_bytes": 182500000,
+ "content_hash": "vcosmoslaundromat00000000000000000000000000000000000000000000000",
+ "created_at": "{{now-1209600}}",
+ "updated_at": "{{now-1209000}}",
+ "published_at": "2015-06-01T00:00:00Z",
+ "playable": true,
+ "tags": [],
+ "poster_url": "/api/videos/v-cosmos-laundromat/poster",
+ "backdrop_url": "/api/videos/v-cosmos-laundromat/backdrop"
+}

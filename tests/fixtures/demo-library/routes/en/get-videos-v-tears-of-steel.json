@@ -1,0 +1,20 @@
+{
+ "id": "v-tears-of-steel",
+ "library_id": "lib-films",
+ "path": "",
+ "filename": "tears-of-steel.mkv",
+ "title": "Tears of Steel",
+ "description": "In a future Amsterdam, a band of scientists tries to undo a broken heart before the robots win.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 734,
+ "size_bytes": 183500000,
+ "content_hash": "vtearsofsteel000000000000000000000000000000000000000000000000000",
+ "created_at": "{{now-777600}}",
+ "updated_at": "{{now-777000}}",
+ "published_at": "2012-06-01T00:00:00Z",
+ "playable": true,
+ "tags": [],
+ "poster_url": "/api/videos/v-tears-of-steel/poster",
+ "backdrop_url": "/api/videos/v-tears-of-steel/backdrop"
+}

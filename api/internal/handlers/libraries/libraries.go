@@ -288,7 +288,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	roots, fieldErrs := h.normaliseAndValidateRoots(req.Roots)
 	if len(fieldErrs) > 0 {
 		e := httperror.Unprocessable(fieldErrs)
-		e.Type = "https://maktaba.tv/problems/library-roots-invalid"
+		e.Type = httperror.Type("library-roots-invalid")
 		httperror.Write(w, r, e)
 		return
 	}
@@ -317,7 +317,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		fieldErrs, warnings := ValidateLibrarySettings(decoded)
 		if len(fieldErrs) > 0 {
 			e := httperror.Unprocessable(fieldErrs)
-			e.Type = "https://maktaba.tv/problems/library-settings-invalid"
+			e.Type = httperror.Type("library-settings-invalid")
 			httperror.Write(w, r, e)
 			return
 		}
@@ -332,7 +332,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if isUniqueViolation(err, "name") {
 			httperror.Write(w, r, &httperror.Error{
-				Type:   "https://maktaba.tv/problems/library-name-exists",
+				Type:   httperror.Type("library-name-exists"),
 				Title:  "name already exists",
 				Status: http.StatusConflict,
 				Detail: req.Name + " is already in use",
@@ -447,7 +447,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		roots, fieldErrs := h.normaliseAndValidateRoots(*req.Roots)
 		if len(fieldErrs) > 0 {
 			e := httperror.Unprocessable(fieldErrs)
-			e.Type = "https://maktaba.tv/problems/library-roots-invalid"
+			e.Type = httperror.Type("library-roots-invalid")
 			httperror.Write(w, r, e)
 			return
 		}
@@ -485,7 +485,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		fieldErrs, warnings := ValidateLibrarySettings(decoded)
 		if len(fieldErrs) > 0 {
 			e := httperror.Unprocessable(fieldErrs)
-			e.Type = "https://maktaba.tv/problems/library-settings-invalid"
+			e.Type = httperror.Type("library-settings-invalid")
 			httperror.Write(w, r, e)
 			return
 		}
@@ -500,7 +500,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if isUniqueViolation(err, "name") {
 			httperror.Write(w, r, &httperror.Error{
-				Type:   "https://maktaba.tv/problems/library-name-exists",
+				Type:   httperror.Type("library-name-exists"),
 				Title:  "name already exists",
 				Status: http.StatusConflict,
 				Detail: cur.Name + " is already in use",
@@ -826,7 +826,7 @@ func (h *Handler) checkRootOverlap(ctx context.Context, exceptID string, roots [
 			for _, b := range existing {
 				if pathsOverlap(a, b) {
 					return &httperror.Error{
-						Type:   "https://maktaba.tv/problems/library-roots-overlap",
+						Type:   httperror.Type("library-roots-overlap"),
 						Title:  "library roots overlap",
 						Status: http.StatusUnprocessableEntity,
 						Detail: overlapDetail(a, b) + " (library " + name + ")",

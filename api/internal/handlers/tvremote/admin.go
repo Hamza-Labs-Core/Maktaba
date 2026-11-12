@@ -118,7 +118,7 @@ func (h *Handler) SetEnabled(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := h.Integration.SetEnabled(r.Context(), *body.Enabled); err != nil {
 		if errors.Is(err, remote.ErrNeedsGreenTest) {
-			httperror.Write(w, r, httperror.Conflict("https://maktaba.tv/problems/tv-remote-needs-test", err.Error()))
+			httperror.Write(w, r, httperror.Conflict(httperror.Type("tv-remote-needs-test"), err.Error()))
 			return
 		}
 		httperror.Write(w, r, httperror.Internal("tv remote enable").Wrap(err))

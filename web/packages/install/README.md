@@ -75,5 +75,7 @@ guide is right to left in Arabic and dark, and is photographed in both languages
 `screenshots/ugreen/project`, each `.en.png` and `.ar.png`, beside TrueNAS's above and
 Synology's (`src/synologyGuide.ts`).
 
-**Hosting:** the site builds to `web/dist-install/` as static files for maktaba.tv's `/install/`
-and `/ar/install/` paths; publishing it there is a maintainer's action.
+**Hosting:** the site builds to `web/dist-install/` (its hashed files under `install/assets/`),
+and maktaba.tv's build (`web/packages/website`, Epic 60 story 60.03) copies it to the root of
+the website, at `/install/` and `/ar/install/`. `website-deploy.yml` deploys it with the rest of
+the site.

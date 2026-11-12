@@ -101,7 +101,8 @@ jobs:
           enable-cache: false
       - name: Install pipeline deps
         working-directory: pipeline
-        run: uv sync --frozen --all-extras
+        # every extra but torch's CUDA tree: no test runs torch (tools/ci/pipeline-deps.sh)
+        run: ../tools/ci/pipeline-deps.sh
       # Every test that needs no service (the unit tier and the unmarked ones), one coverage
       # context each. pytest_preimport imports the package first, so import-time code is not
       # pinned on whichever test imported a module first. A red test still records what it
@@ -112,11 +113,11 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/tools/affected-tests
         run: |
           set -uo pipefail
-          uv run --frozen --all-extras --with pytest-cov pytest -q -p no:cacheprovider -p pytest_preimport \
+          uv run --frozen --no-sync --with pytest-cov pytest -q -p no:cacheprovider -p pytest_preimport \
             -m "not integration and not e2e" --cov=src/maktaba_pipeline --cov-context=test --cov-report= \
             || echo "::warning::some pipeline tests failed under coverage; their tests stay unmapped"
           mkdir -p ../build/coverage-python
-          uv run --frozen --all-extras --with pytest-cov coverage json --show-contexts \
+          uv run --frozen --no-sync --with pytest-cov coverage json --show-contexts \
             -o ../build/coverage-python/python.coverage.json
       - uses: actions/upload-artifact@v7.0.1
         with:

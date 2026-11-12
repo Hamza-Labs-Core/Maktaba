@@ -1,0 +1,25 @@
+{
+ "id": "v-big-buck-bunny",
+ "library_id": "lib-films",
+ "path": "",
+ "filename": "big-buck-bunny.mkv",
+ "title": "الأرنب الكبير",
+ "description": "أرنب ضخم طيب القلب يضيق ذرعًا بثلاثة متنمرين في الغابة، فيدبّر لهم انتقامًا لطيفًا.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 596,
+ "size_bytes": 149000000,
+ "content_hash": "vbigbuckbunny000000000000000000000000000000000000000000000000000",
+ "created_at": "{{now-432000}}",
+ "updated_at": "{{now-431400}}",
+ "published_at": "2008-06-01T00:00:00Z",
+ "playable": true,
+ "tags": [],
+ "poster_url": "/api/videos/v-big-buck-bunny/poster",
+ "backdrop_url": "/api/videos/v-big-buck-bunny/backdrop",
+ "playback_state": {
+  "position_sec": 596,
+  "completed": true,
+  "updated_at": "{{now-108000}}"
+ }
+}

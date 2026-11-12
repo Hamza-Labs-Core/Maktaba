@@ -1,0 +1,37 @@
+{
+  "name": "maktaba-website",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "maktaba.tv, the website households find Maktaba on (Epic 60): a Cloudflare Worker in front of static assets (the front door, the install guides, the 404 page, the log schema, security.txt).",
+  "scripts": {
+    "build": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/build.mjs",
+    "test": "vitest run && node --test scripts/*.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "dev": "wrangler dev --var CANONICAL_REDIRECTS:off",
+    "e2e": "playwright test",
+    "e2e:update": "bash scripts/e2e-update.sh",
+    "lint:css": "node scripts/lint-css.mjs",
+    "lighthouse": "node scripts/lighthouse.mjs",
+    "shots": "node scripts/shots.mjs",
+    "shots:web": "node scripts/capture-web.mjs"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.10.2",
+    "@fontsource/ibm-plex-sans-arabic": "5.2.8",
+    "@lhci/cli": "0.15.1",
+    "@playwright/test": "1.64.1",
+    "@resvg/resvg-js": "2.6.2",
+    "@types/node": "^25.6.0",
+    "sharp": "0.35.5",
+    "typescript": "5.7.3",
+    "vitest": "4.1.12",
+    "wrangler": "4.151.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "overrides": {
+    "playwright-core": "1.64.1"
+  }
+}

@@ -1,0 +1,55 @@
+{
+ "rails": [
+  {
+   "id": "continue",
+   "title": "Continue Watching",
+   "reason_kind": "continue_watching",
+   "items": [
+    {
+     "video_id": "v-sintel",
+     "position_sec": 380,
+     "duration_sec": 888,
+     "remaining_sec": 508,
+     "last_watched_at": "{{now-10800}}"
+    },
+    {
+     "video_id": "v-llamigos",
+     "position_sec": 70,
+     "duration_sec": 150,
+     "remaining_sec": 80,
+     "last_watched_at": "{{now-72000}}"
+    }
+   ]
+  },
+  {
+   "id": "for-you",
+   "title": "For You",
+   "reason_kind": "for_you",
+   "items": [
+    {
+     "video_id": "v-spring",
+     "score": 0.95
+    },
+    {
+     "video_id": "v-coffee-run",
+     "score": 0.9
+    },
+    {
+     "video_id": "v-sprite-fright",
+     "score": 0.85
+    },
+    {
+     "video_id": "v-tears-of-steel",
+     "score": 0.8
+    },
+    {
+     "video_id": "v-cosmos-laundromat",
+     "score": 0.75
+    }
+   ]
+  }
+ ],
+ "generated_at": "{{now}}",
+ "expires_at": "{{now+60}}",
+ "cache_hit": false
+}

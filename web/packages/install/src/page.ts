@@ -126,8 +126,10 @@ export function mount(root: HTMLElement, base: string, lang: Lang): void {
   );
   const hostIp = el("input", { id: "host-ip", name: "host-ip", value: "", dir: "ltr" });
   const ipField = field(lang, "host-ip", "hostIp", hostIp, "hostIp.hint");
+  // named by the heading above it, "Your compose file" (WCAG 4.1.2, story 60.04's axe run)
   const out = el("textarea", {
     id: "out",
+    "aria-labelledby": "out-heading",
     readonly: "",
     rows: "30",
     dir: "ltr",
@@ -224,7 +226,7 @@ export function mount(root: HTMLElement, base: string, lang: Lang): void {
     el(
       "section",
       { class: "result" },
-      el("h2", {}, t(lang, "result")),
+      el("h2", { id: "out-heading" }, t(lang, "result")),
       errors,
       out,
       el("div", { class: "actions" }, copy, download),

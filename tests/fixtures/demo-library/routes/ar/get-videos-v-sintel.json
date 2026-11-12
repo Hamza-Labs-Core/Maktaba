@@ -1,0 +1,25 @@
+{
+ "id": "v-sintel",
+ "library_id": "lib-films",
+ "path": "",
+ "filename": "sintel.mkv",
+ "title": "سينتل",
+ "description": "شابة وحيدة تجوب الجبال المتجمدة بحثًا عن تنين صغير أنقذته يومًا وربّته حتى كبر.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 888,
+ "size_bytes": 222000000,
+ "content_hash": "vsintel000000000000000000000000000000000000000000000000000000000",
+ "created_at": "{{now-172800}}",
+ "updated_at": "{{now-172200}}",
+ "published_at": "2010-06-01T00:00:00Z",
+ "playable": true,
+ "tags": [],
+ "poster_url": "/api/videos/v-sintel/poster",
+ "backdrop_url": "/api/videos/v-sintel/backdrop",
+ "playback_state": {
+  "position_sec": 380,
+  "completed": false,
+  "updated_at": "{{now-10800}}"
+ }
+}

@@ -22,9 +22,12 @@ const (
 )
 
 // Problem types and codes of the refusals.
+var (
+	TypeReadOnly = httperror.Type("library-read-only")
+	TypeNoAccess = httperror.Type("library-no-access")
+)
+
 const (
-	TypeReadOnly = "https://maktaba.tv/problems/library-read-only"
-	TypeNoAccess = "https://maktaba.tv/problems/library-no-access"
 	CodeReadOnly = "library_read_only"
 	CodeNoAccess = "library_no_access"
 	// DetailReadOnly is library.read_only's English (the web shows its own words for the code).

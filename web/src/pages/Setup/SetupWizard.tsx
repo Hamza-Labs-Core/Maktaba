@@ -924,7 +924,7 @@ function useStep(api: SetupApi) {
 
 function Admin({ api, step, next, back }: StepProps) {
   const { t } = useI18n();
-  const [username, setUsername] = useState("admin");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [mismatch, setMismatch] = useState(false);

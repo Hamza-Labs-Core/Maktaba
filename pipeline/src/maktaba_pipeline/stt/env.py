@@ -51,6 +51,7 @@ def settings_from_env(max_batch: int | None = None) -> WhisperSettings:
         max_batch=batch,
         gpu_limit_gb=float(env.get("MAKTABA_STT_GPU_GB", "24")),
         gpu_cache_gb=float(env.get("MAKTABA_STT_GPU_CACHE_GB", "2")),
+        unload_idle_s=float(env.get("MAKTABA_STT_UNLOAD_IDLE_S", "600") or 0),
     )
 
 

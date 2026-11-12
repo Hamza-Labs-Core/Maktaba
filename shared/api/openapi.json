@@ -17870,7 +17870,7 @@
           "type": {
             "type": "string",
             "format": "uri",
-            "description": "Stable problem identifier (`https://maktaba.tv/problems/<slug>`).",
+            "description": "Stable problem identifier (`https://maktaba.tv/problems/<slug>`). Every slug is an entry of the problem-type registry, `shared/api/problems.json`, which says in English and Arabic what it means and what to do; https://maktaba.tv/problems/ publishes a page for each.",
             "examples": [
               "https://maktaba.tv/problems/validation"
             ]

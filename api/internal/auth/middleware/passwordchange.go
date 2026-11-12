@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 )
 
@@ -16,7 +18,7 @@ import (
 // carry Principal.MustChangePassword, and the gate refuses the rest.
 
 // TypePasswordChangeRequired is the problem type a must-change session gets.
-const TypePasswordChangeRequired = "https://maktaba.tv/problems/password-change-required"
+var TypePasswordChangeRequired = httperror.Type("password-change-required")
 
 // AllowedWhilePasswordChange lists what a session with a temporary password may
 // still reach: anything outside /api (the web app itself), the auth endpoints (who

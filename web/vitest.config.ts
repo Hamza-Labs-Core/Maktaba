@@ -41,8 +41,9 @@ export default defineConfig({
       "design-system/**/*.test.{ts,tsx}",
       "packages/**/*.test.{ts,tsx}",
     ],
-    // the developer portal has its own vitest (node, over its built site): packages/devportal
-    exclude: ["**/node_modules/**", "packages/devportal/**"],
+    // the developer portal and maktaba.tv have their own vitest (node, over their built site):
+    // packages/devportal, packages/website (_website.yml)
+    exclude: ["**/node_modules/**", "packages/devportal/**", "packages/website/**"],
     // Half the cores, 2 to 8 (vitest's own default is every core but one). The run is
     // bound by the main process past about 7 workers: 27 forks on a 28-core Mac took
     // 88 s, 7 took 90 s. More only starve each other, and on a runner or machine that

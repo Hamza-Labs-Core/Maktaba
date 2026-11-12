@@ -46,7 +46,7 @@ const (
 )
 
 // TypeSmartPlaylist is the 409 of an item write on a smart playlist.
-const TypeSmartPlaylist = "https://maktaba.tv/problems/smart_playlist"
+var TypeSmartPlaylist = httperror.Type("smart_playlist")
 
 // SmartQuery is a smart playlist's rules.
 type SmartQuery struct {

@@ -193,12 +193,14 @@ export function mount(root: HTMLElement, base: string, lang: Lang): void {
     update();
   });
 
-  const heading = el("h2", {});
+  const heading = el("h2", { id: "out-heading" });
   const note = el("p", { class: "hint", id: "version" });
   const small = el("p", { class: "problems", id: "too-small" });
   const errors = el("ul", { class: "problems", role: "alert" });
+  // named by the heading above it (WCAG 4.1.2, story 60.04's axe run)
   const out = el("textarea", {
     id: "out",
+    "aria-labelledby": "out-heading",
     readonly: "",
     rows: "30",
     dir: "ltr",

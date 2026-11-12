@@ -145,7 +145,7 @@ type Offline interface {
 
 // ProblemUnavailableOffline is the problem of a video a node cannot play while
 // the home's database does not answer (it is not in the node's catalog).
-const ProblemUnavailableOffline = "https://maktaba.tv/problems/video-unavailable-offline"
+var ProblemUnavailableOffline = httperror.Type("video-unavailable-offline")
 
 // offlineDBTimeout bounds a node's database call: past it the catalog answers.
 const offlineDBTimeout = 3 * time.Second
@@ -217,11 +217,11 @@ func streamingNotFound(err error) bool {
 
 // ProblemInsufficientStorage: the streaming service has too little free on its
 // cache's disk to prepare (transcode) the video.
-const ProblemInsufficientStorage = "https://maktaba.tv/problems/insufficient-storage"
+var ProblemInsufficientStorage = httperror.Type("insufficient-storage")
 
 // ProblemTranscodeBusy: every transcode this home runs at once is taken (its hardware
 // tier's limit in software, Epic 59 story 59.05): the player waits and asks again.
-const ProblemTranscodeBusy = "https://maktaba.tv/problems/transcode-busy"
+var ProblemTranscodeBusy = httperror.Type("transcode-busy")
 
 // streamingBusy reports whether the streaming service refused a transcode because every
 // slot is taken (it answers "resource-exhausted" in band).
@@ -396,7 +396,7 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.tv/problems/access-denied",
+			Type:   httperror.Type("access-denied"),
 			Title:  "access denied",
 			Status: http.StatusForbidden,
 			Detail: "no access to this library",
@@ -473,7 +473,7 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 				"start_sec", req.StartSec, "err", err.Error(), "event", "stream_open_failed")
 			w.Header().Set("Retry-After", "5")
 			httperror.Write(w, r, &httperror.Error{
-				Type:   "https://maktaba.tv/problems/streaming-unavailable",
+				Type:   httperror.Type("streaming-unavailable"),
 				Title:  "streaming unavailable",
 				Status: http.StatusServiceUnavailable,
 				Detail: err.Error(),
@@ -508,7 +508,7 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 			if signErr != nil {
 				w.Header().Set("Retry-After", "5")
 				httperror.Write(w, r, &httperror.Error{
-					Type:   "https://maktaba.tv/problems/signing-unavailable",
+					Type:   httperror.Type("signing-unavailable"),
 					Title:  "signing unavailable",
 					Status: http.StatusServiceUnavailable,
 					Detail: signErr.Error(),
@@ -963,7 +963,7 @@ func (d *sessionDebouncer) Allow(id string, now time.Time) bool {
 }
 
 // ProblemHomeBusy: a capped relayed stream can't be prepared now (story 50.19, relay.homeBusy).
-const ProblemHomeBusy = "https://maktaba.tv/problems/home-busy"
+var ProblemHomeBusy = httperror.Type("home-busy")
 
 // RelayCapHeader is the bitrate the relay asks a request's media to fit (Maktaba Cloud sets it
 // on capped plans, story 50.19 §3).

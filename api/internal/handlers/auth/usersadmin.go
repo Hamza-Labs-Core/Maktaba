@@ -21,14 +21,14 @@ import (
 // Problem-type URIs for the admin user-management surface (Story 10.1
 // AC-Edge). The store enforces the invariants; these map its sentinel
 // errors onto the wire.
-const (
-	TypeUsernameExists = "https://maktaba.tv/problems/username-exists"
-	TypeLastAdmin      = "https://maktaba.tv/problems/last-admin"
+var (
+	TypeUsernameExists = httperror.TypeUsernameExists
+	TypeLastAdmin      = httperror.Type("last-admin")
 	// TypeSeatLimit is returned when provisioning another user would
 	// exceed the licensed seat cap (Epic 16 Story 16.2). It is a 403:
 	// the request is well-formed and the caller is authorised, but the
 	// instance's entitlement forbids the action.
-	TypeSeatLimit = "https://maktaba.tv/problems/seat-limit"
+	TypeSeatLimit = httperror.Type("seat-limit")
 )
 
 // SeatLimiter reports the maximum number of provisionable user seats

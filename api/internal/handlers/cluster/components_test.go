@@ -19,7 +19,7 @@ type fakeComponents struct {
 
 func (f *fakeComponents) Approve(_ *http.Request, nodeID string, keep []string) error {
 	if f.refuse {
-		return (&httperror.Error{Status: http.StatusBadRequest, Title: "unknown component"}).With("code", "unknown_component")
+		return (&httperror.Error{Type: httperror.TypeForCode("unknown_component"), Status: http.StatusBadRequest, Title: "unknown component"}).With("code", "unknown_component")
 	}
 	if f.approved == nil {
 		f.approved = map[string][]string{}

@@ -82,11 +82,13 @@ const GUIDES = {
     "local-setup.md",
     "tests.md",
     "conventions.md",
+    "problem-types.md",
     "ci.md",
     "pull-requests.md",
     "cloud.md",
     "nas.md",
     "nas-apps.md",
+    "website.md",
   ],
   security: ["conformance.md"],
 };

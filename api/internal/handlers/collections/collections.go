@@ -77,7 +77,7 @@ type Collection struct {
 func (c Collection) Automatic() bool { return c.SourceKind != nil }
 
 // TypeAutomaticCollection is the 409 of a member or name edit on a sourced collection.
-const TypeAutomaticCollection = "https://maktaba.tv/problems/automatic_collection"
+var TypeAutomaticCollection = httperror.Type("automatic_collection")
 
 func automaticRefused() *httperror.Error {
 	return httperror.Conflict(TypeAutomaticCollection,
@@ -920,7 +920,7 @@ func scanCollection(rs rowScanner) (Collection, error) {
 
 func nameExists() *httperror.Error {
 	return &httperror.Error{
-		Type:   "https://maktaba.tv/problems/collection-name-exists",
+		Type:   httperror.Type("collection-name-exists"),
 		Title:  "name already exists",
 		Status: http.StatusConflict,
 	}

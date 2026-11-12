@@ -452,11 +452,11 @@ func writeEditErr(w http.ResponseWriter, r *http.Request, err error) {
 	var be *transcript.BatchError
 	switch {
 	case errors.As(err, &be):
-		httperror.Write(w, r, httperror.Conflict("https://maktaba.tv/problems/"+be.Err.Error(),
+		httperror.Write(w, r, httperror.Conflict(httperror.TypeForCode(be.Err.Error()),
 			"an edit of the batch cannot be undone").With("code", be.Err.Error()).With("edit_id", be.EditID))
 	case errors.Is(err, transcript.ErrStale), errors.Is(err, transcript.ErrNotActive),
 		errors.Is(err, transcript.ErrChangedSince), errors.Is(err, transcript.ErrUndone):
-		httperror.Write(w, r, httperror.Conflict("https://maktaba.tv/problems/"+err.Error(), err.Error()).With("code", err.Error()))
+		httperror.Write(w, r, httperror.Conflict(httperror.TypeForCode(err.Error()), err.Error()).With("code", err.Error()))
 	case errors.Is(err, transcript.ErrNotFound):
 		httperror.Write(w, r, httperror.NotFound("edit or sentence"))
 	default:
@@ -510,16 +510,16 @@ func (h *Handler) Resolve(w http.ResponseWriter, r *http.Request) {
 		if f.LockedByName != nil {
 			name = *f.LockedByName
 		}
-		httperror.Write(w, r, httperror.Conflict("https://maktaba.tv/problems/locked", "being reviewed by "+name).
+		httperror.Write(w, r, httperror.Conflict(httperror.Type("locked"), "being reviewed by "+name).
 			With("code", "locked").With("locked_by_name", name))
 		return
 	}
 	if f.Status == "stale" {
-		httperror.Write(w, r, httperror.Conflict("https://maktaba.tv/problems/stale", "the sentence changed: open it again").With("code", "stale"))
+		httperror.Write(w, r, httperror.Conflict(httperror.Type("stale"), "the sentence changed: open it again").With("code", "stale"))
 		return
 	}
 	if f.Status != "open" && f.Status != "skipped" {
-		httperror.Write(w, r, httperror.Conflict("https://maktaba.tv/problems/resolved", "already resolved").With("code", "resolved"))
+		httperror.Write(w, r, httperror.Conflict(httperror.Type("resolved"), "already resolved").With("code", "resolved"))
 		return
 	}
 	batch := ""

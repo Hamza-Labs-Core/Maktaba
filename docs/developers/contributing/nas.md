@@ -19,14 +19,17 @@ updates the volume itself, as a headless Linux install does (`cmd/maktaba-server
   message on two lines, English then Arabic: a NAS's log viewer cannot switch language.
 - **Not set up yet:** the container waits and says, in both languages and in the NAS's own
   words (`MAKTABA_PLATFORM`: `dsm`, `truenas`, `unraid`), how to run
-  `maktaba-server container setup` in its terminal.
+  `maktaba-server container setup` in its terminal. Every guide starts the container before
+  its setup, so the launcher starts only once `server.toml` is there, setup's pending file
+  (`state/setup.json`) is gone and the database setup's finish step makes exists: setup writes
+  `server.toml` at its first answer, before the pending file.
 
 ## What the server finds out for itself
 
 | Part | Where | What it does |
 |---|---|---|
 | Hardware and tiers | `internal/hostinfo` | memory from the cgroup limit, ZFS's cache counted as available, CPU quota, AVX2, render devices; Light, Standard or Strong by memory alone (defaults, never limits) |
-| Data folder | `setup_datadir.go` | refuses network file systems and Unraid's `/mnt/user`; notes spinning disks; Postgres tuned per tier |
+| Data folder | `setup_datadir.go`, `setup_storage.go` | refuses network file systems and Unraid's `/mnt/user`; in the image proposes the data volume, never a media mount, and never offers a read-only mount; notes spinning disks; Postgres tuned per tier |
 | Media permissions | `shared/go/mediaaccess` | each library read and write, read only or no access, with the fix in the NAS's own screens (`fix.go`); read-only libraries keep their subtitles in the database |
 | Video | the transcode test encode | VA-API beside NVENC and QSV; the render group named when the device is there but not openable |
 | Speech | the pipeline | CTranslate2 on arm64; the model picked by a measured speed |

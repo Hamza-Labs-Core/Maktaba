@@ -41,6 +41,7 @@ __all__ = [
     "loaded",
     "loaded_recogniser",
     "loaded_recogniser_all",
+    "reap_idle",
     "recogniser",
     "unavailable",
 ]
@@ -59,17 +60,43 @@ class CohereRecogniser:
     the model is loaded and run on one dedicated thread, like Whisper's
     (:class:`~maktaba_pipeline.stt.batched.BatchedTranscriber`); calls queue for it."""
 
-    def __init__(self, model_id: str, path: Path | None = None, *, source: str = "hf") -> None:
+    def __init__(
+        self,
+        model_id: str,
+        path: Path | None = None,
+        *,
+        source: str = "hf",
+        settings: WhisperSettings | None = None,
+    ) -> None:
         self.model_id = model_id
         #: where the weights came from: ``hf`` (Hugging Face) or ``share`` (the home's copy)
         self.source = source
         self._path = path
+        #: Whisper's settings: MLX's memory limits and the idle time (:mod:`.mlx_memory`)
+        self.settings = settings
+        #: when it last heard anything, and how many calls are hearing now: an idle one lets
+        #: its model go (:func:`reap_idle`) and loads it again for its next call
+        self.last_used = time.monotonic()
+        self.unloads = 0
+        self._users = 0
+        self._use = threading.Lock()
         self._gpu = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cohere")
         try:
-            self._model: Any = self._gpu.submit(self._load).result()
+            self._model: Any = self._gpu.submit(self._start).result()
         except BaseException:
             self._gpu.shutdown(wait=False)
             raise
+
+    def _start(self) -> Any:
+        """On the model's thread: MLX's limits for the process (the second listen may load
+        before Whisper does, and MLX's cache is unbounded until they are set), then the
+        model."""
+        mx = _mlx()
+        if mx is not None:
+            from .mlx_memory import apply_limits
+
+            apply_limits(mx, self.settings)
+        return self._load()
 
     def _load(self) -> Any:
         from mlx_audio.stt.utils import (  # type: ignore[import-untyped,import-not-found,unused-ignore]
@@ -80,7 +107,47 @@ class CohereRecogniser:
 
     def __call__(self, stretches: list[Any]) -> list[str]:
         """The text of each stretch (each at most 30 s), decoded together in batches."""
-        return self._gpu.submit(self._hear, stretches).result()
+        with self._use:
+            self._users += 1
+        try:
+            return self._gpu.submit(self._hear_loaded, stretches).result()
+        finally:
+            with self._use:
+                self._users -= 1
+                self.last_used = time.monotonic()
+
+    def touch(self) -> None:
+        """Handed out again (:func:`recogniser`): not idle."""
+        with self._use:
+            self.last_used = time.monotonic()
+
+    def unload_if_idle(self, now: float, idle_s: float) -> bool:
+        """Let the model go when nothing has used it for ``idle_s`` (on its own thread:
+        MLX's stream is that thread's), and MLX's freed buffers with it. A call meanwhile
+        waits for it, then loads the model again. True when it let it go."""
+        with self._use:
+            if self._model is None or self._users or now - self.last_used < idle_s:
+                return False
+
+            def drop() -> None:
+                from .mlx_memory import release
+
+                self._model = None
+                release(_mlx(), self.model_id, now - self.last_used, source=self.source)
+
+            self._gpu.submit(drop).result()
+            self.unloads += 1
+            return True
+
+    def _hear_loaded(self, stretches: list[Any]) -> list[str]:
+        """On the model's thread: the model loaded again if it was let go while idle."""
+        if self._model is None:
+            t0 = time.monotonic()
+            self._model = self._start()
+            _log.info(
+                "cohere.reloaded", model=self.model_id, seconds=round(time.monotonic() - t0, 1)
+            )
+        return self._hear(stretches)
 
     def _hear(self, stretches: list[Any]) -> list[str]:
         """On the model's thread. Uses the model's own batch decoder
@@ -101,7 +168,21 @@ class CohereRecogniser:
             batch_size=self._model._resolve_batch_size(None),
             max_tokens=_MAX_TOKENS,
         )
-        return [str(t).strip() for t in texts]
+        out = [str(t).strip() for t in texts]
+        from .mlx_memory import trim
+
+        # what Whisper does after each pass: the decode's freed buffers back past the cap
+        trim(mx, self.settings)
+        return out
+
+
+def _mlx() -> Any:
+    """``mlx.core``, or None where MLX is not installed."""
+    try:
+        import mlx.core as mx  # type: ignore[import-untyped,import-not-found,unused-ignore]
+    except ImportError:
+        return None
+    return mx
 
 
 #: a loaded recogniser: :class:`CohereRecogniser` on MLX, :class:`.cohere_cuda.CudaRecogniser`
@@ -183,6 +264,8 @@ def recogniser(
         raise RuntimeError("mlx-audio is not installed (the stt extra)")
     with _REC_LOCK:
         rec = _REC.get(model_id)
+        if rec is not None and isinstance(rec, CohereRecogniser):
+            rec.touch()
         if rec is None:
             failed = load_failure(model_id)
             if failed is not None:
@@ -208,7 +291,50 @@ def recogniser(
                 _failed(model_id, f"{type(exc).__name__}: {exc}", "cohere.load_failed")
                 raise
             _FAILED.pop(model_id, None)
+            if isinstance(rec, CohereRecogniser):
+                _start_reaper(settings)
         return rec
+
+
+def reap_idle(now: float | None = None, settings: WhisperSettings | None = None) -> list[str]:
+    """Let each MLX recogniser nobody has used for ``unload_idle_s`` (:mod:`.mlx_memory`)
+    drop its model; it stays the process's recogniser and loads the model again for its
+    next call. The models let go."""
+    from .mlx_memory import unload_idle_s
+
+    idle_s = unload_idle_s(settings)
+    if idle_s <= 0:
+        return []
+    now = time.monotonic() if now is None else now
+    with _REC_LOCK:
+        recs = [r for r in _REC.values() if isinstance(r, CohereRecogniser)]
+    return [r.model_id for r in recs if r.unload_if_idle(now, idle_s)]
+
+
+#: the running reaper, if any (changed only under ``_REC_LOCK``)
+_REAPER: list[threading.Thread] = []
+
+
+def _start_reaper(settings: WhisperSettings | None) -> None:
+    """One thread per process that lets idle MLX recognisers' models go (a recogniser is
+    never dropped, so it runs for the life of the process). Called under ``_REC_LOCK``."""
+    from .mlx_memory import unload_idle_s
+
+    idle_s = unload_idle_s(settings)
+    if idle_s <= 0 or _REAPER:
+        return
+
+    def run() -> None:
+        while True:
+            time.sleep(min(60.0, max(1.0, idle_s / 4)))
+            try:
+                reap_idle(settings=settings)
+            except Exception:  # noqa: BLE001 - the next round tries again
+                _log.warning("cohere.reap_failed", exc_info=True)
+
+    t = threading.Thread(target=run, name="cohere-reaper", daemon=True)
+    _REAPER[:] = [t]
+    t.start()
 
 
 def _failed(model_id: str, message: str, event: str, no_room: bool = False) -> None:
@@ -263,7 +389,7 @@ def _new(
 ) -> Recogniser:
     """A recogniser on this machine's engine."""
     if engine.current() == engine.MLX:
-        return CohereRecogniser(model_id, path, source=source)
+        return CohereRecogniser(model_id, path, source=source, settings=settings)
     from .cohere_cuda import CudaRecogniser
 
     return CudaRecogniser(

@@ -511,7 +511,7 @@ SHA-256 sums); the Maktaba server release embeds or downloads the matching tarba
 ```
 
 Required token permissions (runbook): Workers Scripts Edit, Workers R2 Storage Edit, Workers Routes /
-Custom Domains (zone) Edit, DNS Edit on the zone (custom domain), Turnstile Edit, Access: Apps and
+Custom Domains (zone) Edit (no DNS Edit: Cloudflare creates a custom domain's record), Turnstile Edit, Access: Apps and
 Policies Edit (only for `access` mode), Stream Edit, Account Analytics Read. The admin page lists
 which are missing after "Test connection" (extends E32 README R6.2, `tvremote.Integration`).
 

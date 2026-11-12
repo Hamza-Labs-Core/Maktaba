@@ -6,6 +6,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
+    <meta name="maktaba-menu" content="none" />
     <title>حل المشكلات على خادم التخزين · Maktaba</title>
     <meta
       name="description"
@@ -16,6 +17,7 @@
     <link rel="stylesheet" href="/install/install.css" />
   </head>
   <body>
+    <a class="skip-link" href="#main">انتقلوا إلى المحتوى</a>
     <header>
       <h1>حل المشكلات على خادم التخزين</h1>
       <p class="lead">كل رسالة يعرضها Maktaba، ومعناها، وطريقة إصلاحها.</p>
@@ -24,7 +26,7 @@
         <a href="/install/troubleshooting/" hreflang="en" lang="en">English</a>
       </nav>
     </header>
-    <main class="guide">
+    <main id="main" class="guide">
       <p>
         الرسائل التي تُطبع قبل أن يعمل تطبيق الويب تظهر في سجل الحاوية (تبويب السجل في «Container
         Manager»، وسجلات التطبيق في TrueNAS، وسجل Docker في Unraid)، بالإنجليزية ثم بالعربية.
@@ -86,6 +88,19 @@
         مشاركة المصفوفة <code>/mnt/user</code>. اختر مجلدًا على قرص SSD أو مجمّع تخزين، مثل
         <code>/mnt/cache/appdata/maktaba</code>. وعلى الأقراص الدوّارة يعمل Maktaba، لكنه أبطأ
         قليلًا.
+      </p>
+      <h2 id="setup-download">يتوقف الإعداد أثناء تجهيز Maktaba</h2>
+      <p>
+        يقول الإعداد <strong>فشل تثبيت الأدوات</strong> أو <strong>فشل تنزيل النماذج</strong>: لم
+        يصل الخادم إلى الإنترنت. فالإعداد ينزّل أدوات التفريغ والبحث (نحو 2 GB) ونماذج الكلام مرة
+        واحدة. افحص شبكة الخادم وخادم الأسماء فيه، ثم شغّل أمر الإعداد من جديد: فيكمل من حيث توقف.
+      </p>
+      <h2 id="empty-library">المكتبة فارغة بعد الإعداد</h2>
+      <p>
+        المجلدات التي أعطيتها للإعداد تملأ قائمة المجلدات فقط: أضف كل مكتبة من
+        <strong>«الإدارة ← إدارة المكتبات ← إضافة مكتبة»</strong>. وعلى خادم من الفئة الخفيفة أو
+        القياسية ينتظر أول فحص لها ساعات الهدوء (من 01:00 إلى 06:00 افتراضيًا)، ويبدأه الزر
+        <strong>شغّل الآن</strong> في صفحة المكتبة فورًا.
       </p>
     </main>
   </body>

@@ -52,10 +52,14 @@ _go: &go
   - 'tools/affected-tests/**'
   # api/internal/handlers/browse's native fixtures are the Apple apps' own
   - 'apps/apple/MaktabaKit/Tests/Fixtures/**'
+  # the problem registry's help links are checked against the help topics (story 60.06)
+  - 'web/src/help/content/**'
 
 # the pipeline, and what its tests read outside it
 _pipeline: &pipeline
   - 'pipeline/**'
+  # how CI installs the pipeline's environment (every extra but torch's CUDA tree)
+  - 'tools/ci/pipeline-deps.sh'
   - 'shared/**'
   # the plugin SDK and Maktaba's first-party plugins ride in the pipeline's wheel
   - 'plugins/**'
@@ -87,6 +91,8 @@ _web: &web
   # the Synology install page's tests read the project files and the device checklist (59.09)
   - 'deploy/nas/**'
   - 'docs/nas/checklists/synology.md'
+  # the problem types the web compares are checked against the registry (story 60.06)
+  - 'shared/api/problems.json'
   # Epic 59's strings check reads the stories' Strings tables and the container's texts (59.14)
   - 'specs/epics/59-nas/story-*.md'
   - 'cmd/maktaba-server/container_preflight.go'
@@ -95,6 +101,12 @@ _web: &web
 _tokens: &tokens
   - 'web/design-system/**'
   - 'web/src/styles/tokens.css'
+  # maktaba.tv's design shell (story 60.01): its CSS is built from the tokens, and its
+  # mockups, fonts and voice guide are checked with them (contrast, logical CSS, renders)
+  - 'web/packages/website/design/**'
+  - 'web/packages/website/static/fonts/**'
+  - 'web/packages/website/copy/**'
+  - 'web/public/icons/icon-192.png'
   - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Tokens.swift'
   - 'apps/android/core/src/main/kotlin/com/hamzalabs/maktaba/core/ui/Tokens.kt'
 
@@ -200,6 +212,9 @@ unit_go:
   - '.github/workflows/_unit.yml'
   # it writes its runner's Go cache entry, every module in it first
   - 'tools/ci/go-cache-fill.sh'
+  # the problem registry's check and its positive control (story 60.06)
+  - 'tools/ci/unregistered-problems.sh'
+  - 'tools/ci/unregistered-problems-control.sh'
 
 # the pipeline's unit tier, and its cluster tests on Windows
 unit_pipeline:
@@ -535,6 +550,8 @@ e2e:
   - 'tests/e2e/**'
   - 'pyproject.toml'
   - '.github/workflows/_e2e.yml'
+  # how CI installs the pipeline's environment (every extra but torch's CUDA tree)
+  - 'tools/ci/pipeline-deps.sh'
 
 # the api's and streaming's tests with a real ffmpeg (tools/media-e2e.sh)
 media_e2e:
@@ -563,6 +580,8 @@ perf_ci:
   - 'pipeline/uv.lock'
   - 'pipeline/.python-version'
   - '.github/workflows/_perf-ci.yml'
+  # how CI installs the pipeline's environment (every extra but torch's CUDA tree)
+  - 'tools/ci/pipeline-deps.sh'
 
 # make build-go (api, streaming, the cloudlink), the relay binary and make build-web
 build_artifacts:
@@ -707,6 +726,10 @@ linux_app:
 android_apps:
   - *ci
   - 'apps/android/**'
+  # the demo library the Demo*ScreenshotTests and DemoLibraryTest read (60.09)
+  - 'tests/fixtures/demo-library/**'
+  # the problem types and codes the apps compare are checked against the registry (60.06)
+  - 'shared/api/problems.json'
   - '.github/workflows/_android-apps.yml'
   # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
   - 'tools/ci/gradle-wrapper.sh'
@@ -719,6 +742,8 @@ android_apps:
 android_tv:
   - *ci
   - 'apps/tv/android/**'
+  # the demo library the TV's DemoScreenshotTest reads (60.09)
+  - 'tests/fixtures/demo-library/**'
   - 'apps/android/core/**'
   - 'apps/android/client/**'
   - 'apps/android/gradle/libs.versions.toml'
@@ -733,6 +758,8 @@ android_tv:
 desktop_player:
   - *ci
   - 'apps/desktop-player/**'
+  # the demo library the client's DemoLibraryTest reads (60.09)
+  - 'tests/fixtures/demo-library/**'
   - 'apps/android/client/**'
   - 'apps/android/core/src/main/res/font/**'
   - 'apps/android/gradle/libs.versions.toml'
@@ -746,9 +773,13 @@ desktop_player:
 apple_apps:
   - *ci
   - 'apps/apple/**'
+  # the problem types and codes the apps compare are checked against the registry (60.06)
+  - 'shared/api/problems.json'
   - 'apps/tv/tvos/**'
   - 'tools/apple/**'
   - '.github/workflows/_apple-apps.yml'
+  # the demo library the product screenshots' UI tests bundle and serve (story 60.09)
+  - 'tests/fixtures/demo-library/**'
 
 # The Player's UI tests (a build per device, six shards each, the Mac): what the Player's
 # targets build (project.yml: Player/, Shared/Assets.xcassets, MaktabaKit's package) and their
@@ -770,7 +801,12 @@ apple_player_ui:
   - 'tools/apple/ui-durations.json'
   - 'tools/apple/check-app-log.py'
   - 'tools/apple/sim-settle.py'
+  - 'tools/apple/export-shots.py'
   - '.github/workflows/_apple-apps.yml'
+  # its on-demand caller for the shots alone (60.09)
+  - '.github/workflows/product-shots.yml'
+  # the demo library the product screenshots (PlayerDemoShots, the Mac's) are taken on (60.09)
+  - 'tests/fixtures/demo-library/**'
 
 # ---- the developer portal (_devportal.yml) ----------------------------------------------
 
@@ -798,6 +834,36 @@ devportal:
   - 'tools/plugin-sdk/js/src/flowchart.ts'
   - '.github/workflows/_devportal.yml'
   - '.github/workflows/devportal-deploy.yml'
+
+# ---- the website (_website.yml) -------------------------------------------------------------
+
+# maktaba.tv (Epic 60, story 60.03): the site, and every source it is built from (the install
+# guides and their build, the help topics, the problem registry, the log schema, the privacy
+# policy, the disclosure policy security.txt is built from, the design tokens), the smoke and
+# deploy tools its job runs, and its workflows. website-deploy.yml deploys on the same paths.
+website:
+  - *ci
+  - 'web/packages/website/**'
+  - 'web/packages/install/**'
+  - 'web/vite.install.config.ts'
+  - 'web/src/help/content/**'
+  - 'shared/api/problems.json'
+  - 'shared/log/schema/**'
+  - 'cloud/internal/privacy/**'
+  - 'cloud/cmd/privacy-json/**'
+  - 'docs/app-privacy.md'
+  - 'LICENSE'
+  - 'api/internal/security/disclosure.go'
+  - 'web/design-system/tokens/**'
+  - 'web/public/icons/**'
+  - 'tools/ci/website_nightly_state.sh'
+  - 'tools/cloudflare/smoke.mjs'
+  - 'tools/cloudflare/token-check.mjs'
+  - 'tools/cloudflare/website-deploy.mjs'
+  - '.github/workflows/_website.yml'
+  - '.github/workflows/website-deploy.yml'
+  # the product screenshots (60.09): the demo library, and the web app they photograph
+  - 'tests/fixtures/demo-library/**'
 
 # ---- the in-repo wiki app and its database (ci.yml's wiki job) ---------------------------
 
