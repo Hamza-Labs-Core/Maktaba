@@ -1,6 +1,7 @@
 package com.hamzalabs.maktaba.player.harness
 
 import androidx.compose.ui.test.IdlingResource
+import com.hamzalabs.maktaba.core.DemoLibrary
 import com.hamzalabs.maktaba.core.MapStore
 import com.hamzalabs.maktaba.core.MemoryTokens
 import com.hamzalabs.maktaba.core.api.ApiClient
@@ -21,6 +22,7 @@ import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
 import okhttp3.ConnectionPool
+import okio.Buffer
 import okhttp3.Dispatcher as CallDispatcher
 import org.junit.rules.ExternalResource
 import java.util.concurrent.CountDownLatch
@@ -40,7 +42,18 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Every request is kept: [requests] is a copy of them, taken under the lock the server's
  * thread appends with, to assert what a screen asked for.
  */
-class FakeHome : ExternalResource() {
+class FakeHome(
+    /**
+     * The demo library (story 60.09) in one language, read when the test starts (once its
+     * qualifiers name the language): every route its table has is answered from it (an [answer]
+     * still comes first), and its account is the one signed in.
+     */
+    private val demoLibrary: (() -> DemoLibrary)? = null,
+) : ExternalResource() {
+    /** The demo library this home answers from, once the test has started; null for the scratch fixtures. */
+    var demo: DemoLibrary? = null
+        private set
+
     private val server = MockWebServer()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val routes = linkedMapOf<String, (RecordedRequest) -> MockResponse>()
@@ -57,7 +70,7 @@ class FakeHome : ExternalResource() {
     val paths: List<String> get() = requests.map { it.url.encodedPath }
 
     /** Who is signed in. */
-    val user = User(id = "u1", username = "layla")
+    val user: User get() = demo?.let { User(id = it.userId, username = it.username, isAdmin = it.isAdmin) } ?: User(id = "u1", username = "layla")
 
     lateinit var home: PlayerHome
         private set
@@ -97,6 +110,10 @@ class FakeHome : ExternalResource() {
     }
 
     init {
+        if (demoLibrary == null) installScratch()
+    }
+
+    private fun installScratch() {
         answer("/api/libraries") { json(LIBRARIES) }
         answer("/api/libraries/summary") { json(LIBRARY_SUMMARY) }
         answer("/api/videos") { json(VIDEOS) }
@@ -146,11 +163,16 @@ class FakeHome : ExternalResource() {
     }
 
     override fun before() {
+        demo = demoLibrary?.invoke()
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 synchronized(recorded) { recorded += request }
                 val path = request.url.encodedPath
-                return routes[path]?.invoke(request) ?: MockResponse.Builder().code(404).build()
+                return routes[path]?.invoke(request)
+                    ?: demo?.answer(request.method, path)?.let { a ->
+                        MockResponse.Builder().code(a.status).setHeader("Content-Type", a.contentType).body(Buffer().write(a.body)).build()
+                    }
+                    ?: MockResponse.Builder().code(404).build()
             }
         }
         server.start()
