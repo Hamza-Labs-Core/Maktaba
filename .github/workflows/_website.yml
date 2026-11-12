@@ -25,6 +25,10 @@ on:
         description: capture the web app's product screenshots on the demo library (story 60.09) and upload them as product-shots-web; ci.yml only, so the deploy never waits on them
         type: boolean
         default: false
+      release:
+        description: the release tag a release run started the deploy for (website-deploy.yml); the download page's build fails when the latest release is older
+        type: string
+        default: ""
       lighthouse_extra:
         description: a JSON list of site paths Lighthouse also measures, 3 runs each (the deploy passes the pages the last nightly sweep failed)
         type: string
@@ -91,8 +95,13 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      # the install build, the pages, the copied files, and the checks (twins, Latin share)
+      # the install build, the pages, the copied files, and the checks (twins, Latin share). The
+      # download page (story 60.11) reads the latest release from the GitHub Releases API with
+      # this run's token, and the build fails when it cannot: never an empty download page
       - name: Build
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WEBSITE_EXPECT_RELEASE: ${{ inputs.release }}
         run: npm run build
 
       # the Worker, the build, the built site (head tags, cards, sitemap: T10, T11), and the

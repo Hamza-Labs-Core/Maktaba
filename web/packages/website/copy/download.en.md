@@ -201,3 +201,59 @@ Find your install guide
 ## all
 
 Every file in this release, on GitHub
+
+## note.windows
+
+This looks like a Windows PC. If it isn’t, every system is below.
+
+## note.linux
+
+This looks like a Linux computer. If it isn’t, every system is below.
+
+## windows.verify.text
+
+GitHub records this SHA-256 for the file. To compare, run this in PowerShell where the file is:
+
+## linux.verify.text
+
+GitHub records this SHA-256 for the file. To compare, run this in a terminal where the file is:
+
+## verify.sig
+
+The release also attaches {file}, the file’s signature: the app checks a signature like it before it installs any update.
+
+## server.name
+
+Server packages
+
+## server.apt
+
+Debian and Ubuntu, from the apt repository
+
+## server.dnf
+
+Fedora and RHEL, from the dnf repository
+
+## server.brew
+
+macOS, with Homebrew
+
+## server.other.install
+
+The install script (`install.sh`)
+
+## server.other.linux-amd64
+
+The server alone, Linux x86-64 (`.tar.gz`)
+
+## server.other.linux-arm64
+
+The server alone, Linux ARM64 (`.tar.gz`)
+
+## server.other.darwin-arm64
+
+The server alone, macOS with Apple silicon (`.tar.gz`)
+
+## server.other.windows
+
+The server alone, Windows (`.zip`)

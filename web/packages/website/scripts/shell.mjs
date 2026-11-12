@@ -120,6 +120,8 @@ export function shellAssets() {
     head: add("head", "js", fs.readFileSync(path.join(PKG, "src/shell-head.js"), "utf8")),
     js: add("shell", "js", fs.readFileSync(path.join(DESIGN, "shell.js"), "utf8")),
     mark: add("mark", "png", fs.readFileSync(path.join(PKG, "src/mark-64.png"))),
+    // part B's display face (Maktaba Display), by file name: its pages preload what they set
+    display: published,
   };
   return memo;
 }
@@ -419,9 +421,19 @@ ${items.map((s) => `  <li><h3>${esc(s.title)}</h3>${s.html}</li>`).join("\n")}
  * A whole document. `path` is the page's English path (`/`, `/install/`), or null for a page
  * with no address of its own (the 404 page): no canonical, alternates or card, and the switch
  * goes to the other language's front door. The head's links and social tags are head.mjs's.
- * `body` is the content of <main id="main">.
+ * `body` is the content of <main id="main">; `head`, tags a page adds after the shell's (part B's
+ * stylesheet and display face, a script of its own, its structured data).
  */
-export function page({ lang, path: enPath, title, description, body, meta = "", mainClass = "" }) {
+export function page({
+  lang,
+  path: enPath,
+  title,
+  description,
+  body,
+  meta = "",
+  mainClass = "",
+  head: extraHead = "",
+}) {
   const dir = lang === "ar" ? "rtl" : "ltr";
   const here = enPath === null ? null : inLang(lang, enPath);
   const head = headHtml({ lang, path: enPath, title, description });
@@ -437,7 +449,7 @@ export function page({ lang, path: enPath, title, description, body, meta = "", 
   ${SITE_MARKER}
   ${menuMeta()}${meta ? `\n  ${meta}` : ""}
 ${head}
-${shellHead(lang)}${jsonLd}
+${shellHead(lang)}${jsonLd}${extraHead ? `\n  ${extraHead}` : ""}
 </head>
 <body>
 ${header(lang, here)}

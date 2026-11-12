@@ -191,7 +191,11 @@ def test_the_build_measures_the_pages_the_last_sweep_failed_and_the_deploy_needs
     assert jobs["nightly"]["permissions"] == {"contents": "read", "actions": "read"}
     assert jobs["nightly"]["if"] == "${{ !inputs.rollback }}"
     assert jobs["build"]["needs"] == ["nightly"]
-    assert jobs["build"]["with"] == {"lighthouse_extra": "${{ needs.nightly.outputs.failed }}"}
+    assert jobs["build"]["with"] == {
+        "lighthouse_extra": "${{ needs.nightly.outputs.failed }}",
+        # the tag a release run started this deploy for (story 60.11)
+        "release": "${{ inputs.release || '' }}",
+    }
     assert jobs["deploy"]["needs"] == ["nightly", "build"]
     # the deploy goes on only when that build (with those pages) passed
     assert "needs.build.result == 'success'" in jobs["deploy"]["if"]
