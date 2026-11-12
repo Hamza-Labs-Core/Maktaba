@@ -1,7 +1,7 @@
 # maktaba.tv: the website
 
 maktaba.tv is the site households find Maktaba on (Epic 60): the front door, the install
-guides, and later the download, help, problem and legal pages, every page in English and Arabic.
+guides, the download, problem and legal pages, and later help, every page in English and Arabic.
 (maktaba.dev is for developers.)
 
 The site is a Cloudflare Worker (`src/worker.ts`) in front of static assets (`dist/`), the same
@@ -21,18 +21,19 @@ Worker, which:
 
 ## What is on the site
 
-| Path                            | What                                           | From                                                 |
-| ------------------------------- | ---------------------------------------------- | ---------------------------------------------------- |
-| `/`, `/ar/`                     | the front door (Phase 1)                       | `src/pages/index.html`, `src/pages/ar/index.html`    |
-| `/install/`, `/ar/install/`     | the install chooser (60.05)                    | `src/pages/install/index.html` (+ `ar/`)             |
-| `/install/…`, `/ar/install/…`   | Epic 59's install guides                       | `web/packages/install` (`pnpm -C web build:install`) |
-| `/legal/…`, `/ar/legal/…`       | privacy, terms, copyright (60.07)              | `copy/legal/`, `scripts/legal.mjs`                   |
-| `/problems/…`, `/ar/problems/…` | a page per problem type, and the index (60.06) | `shared/api/problems.json`, `scripts/problems.mjs`   |
-| `/404.html`, `/ar/404.html`     | the 404 page                                   | `src/pages/404.html`, `src/pages/ar/404.html`        |
-| `/schema/log-line.json`         | the log schema, at its `$id`                   | `shared/log/schema/line.schema.json`                 |
-| `/.well-known/security.txt`     | the disclosure policy, both `Canonical`s       | `api/internal/security/disclosure.go`                |
-| `/robots.txt`                   | every page may be crawled                      | `scripts/build.mjs`                                  |
-| `/shots/…`                      | the apps' product screenshots (60.09)          | `scripts/shots.mjs`, `shots-manifest.json`           |
+| Path                            | What                                              | From                                                                  |
+| ------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------- |
+| `/`, `/ar/`                     | the home page (60.10)                             | `scripts/home.mjs`, `copy/home.*.md`, `static/shots`                  |
+| `/install/`, `/ar/install/`     | the install chooser (60.05)                       | `src/pages/install/index.html` (+ `ar/`)                              |
+| `/install/…`, `/ar/install/…`   | Epic 59's install guides                          | `web/packages/install` (`pnpm -C web build:install`)                  |
+| `/legal/…`, `/ar/legal/…`       | privacy, terms, copyright (60.07)                 | `copy/legal/`, `scripts/legal.mjs`                                    |
+| `/problems/…`, `/ar/problems/…` | a page per problem type, and the index (60.06)    | `shared/api/problems.json`, `scripts/problems.mjs`                    |
+| `/download/`, `/ar/download/`   | every device's file of the latest release (60.11) | the GitHub Releases API, `src/downloads.json`, `scripts/download.mjs` |
+| `/404.html`, `/ar/404.html`     | the 404 page                                      | `src/pages/404.html`, `src/pages/ar/404.html`                         |
+| `/schema/log-line.json`         | the log schema, at its `$id`                      | `shared/log/schema/line.schema.json`                                  |
+| `/.well-known/security.txt`     | the disclosure policy, both `Canonical`s          | `api/internal/security/disclosure.go`                                 |
+| `/robots.txt`                   | every page may be crawled                         | `scripts/build.mjs`                                                   |
+| `/shots/…`                      | the apps' product screenshots (60.09)             | `scripts/shots.mjs`, `shots-manifest.json`                            |
 
 A page source in `src/pages/` is the page's `<main>` content after a leading comment
 (`title:`, `description:`, optionally `meta:`, and `main:`, a class for `<main>`).
@@ -44,6 +45,16 @@ exist yet (60.05 T07). The shell's stylesheet (`design/` with `src/site.css`), s
 (`design/shell.js`, `src/shell-head.js`), fonts and mark are published under content-hashed
 names in `/assets/`. The Worker writes the address asked for into the 404 page.
 
+The home page (story 60.10) is `scripts/home.mjs`: 60.01 part B's home mockup with 60.02's copy
+(`copy/home.<lang>.md`, read as the mockups read it) and 60.09's screenshots (`SHOTS`, each a
+`<picture>` with its sizes), drawn in part B's shell (`page({ variant: "b" })`: the wordmark
+lockups, the Phase 2 nav, part B's stylesheet `design/site.css` with `src/part-b.css`, the display
+face preloaded). Download goes to `/download/` once story 60.11 builds it, until then to the
+latest release; a feature links its help topic once 60.12 builds it (`FEATURES`). Its one
+script, `src/home.ts`, runs in the head: it names the visitor's system on `<html>` (the button
+reads "Download for Mac" from its first frame) and adds it to each `/download/` link
+(`/download/#mac`). The other pages keep part A's shell until their part B layouts.
+
 The problem pages are generated from the registry the API sends from, `shared/api/problems.json`
 (`scripts/problems.mjs`): one page per entry in each language, and the index, `/problems/`, grouped
 by area, with a filter that runs in the page (`src/problems-filter.ts`, hidden without JavaScript,
@@ -52,6 +63,22 @@ function renders each (`renderProblem`, `renderIndex`), in the sections of 60.01
 so the design replaces those two functions. The build fails, naming the entry and the field, when
 an entry lacks a text in either language or names an area `AREAS` has no heading for. A help topic
 or install anchor is linked only when its page is built.
+
+The download page (`scripts/download.mjs`, story 60.11) is built from the latest stable release,
+read from the GitHub Releases API at build time (`GITHUB_TOKEN` or `GH_TOKEN` when set; CI
+passes its own), and `src/downloads.json`, one entry per platform: the patterns its files are
+matched by (`{v}`, the release's version), the requirements line, the guide, and the public store
+listings (A6). For every file the release's signed `checksums.txt` lists, the API's digest must
+equal it, or the build fails naming the file; a platform with no file and no listing has no card;
+the server packages' card shows only with `MAKTABA_PACKAGES_URL` or `HOMEBREW_TAP_REPO` (A7). When
+the API cannot be read the build fails: a deploy never ships an empty download page. The page
+names its release (`<meta name="maktaba-release">`). The visitor's platform comes first before
+the first paint (`src/download-platform.ts` marks `<html data-platform>`, `src/download.css`
+draws it), and its look is part B's (`design/site.css`) in a stylesheet of its own.
+`WEBSITE_RELEASE_FIXTURE=scripts/fixtures/release` builds from the saved v0.3.135 answer, offline;
+the unit tests (`scripts/download.test.mjs`) and the visual references read it. A release run
+starts the deploy for its tag once it is the latest (`tools/release/website-dispatch.sh`, from
+`release.yml` and `desktop-release.yml`).
 
 The legal pages are copy (`copy/legal/<page>.<lang>.md`) that `scripts/legal.mjs` turns into a
 structured document and renders with one function (`renderLegal`). The privacy page reads
@@ -83,7 +110,7 @@ npm run dev                # wrangler dev on http://localhost:8787, no canonical
 ```
 
 `scripts/build.mjs` runs, in order: the install build, the generated families (`FAMILIES`:
-problems 60.06, then help 60.12 and download 60.11), the hand-made pages, the copied files, and
+problems 60.06, download 60.11, and help 60.12 before download once it lands), the hand-made pages, the copied files, and
 the checks (every page has its twin in the other language; an Arabic page is Arabic, by
 maktaba.dev's Latin-share check), and writes the link check's manifest (60.08).
 

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "maktaba.tv, the website households find Maktaba on (Epic 60): a Cloudflare Worker in front of static assets (the front door, the install guides, the 404 page, the log schema, security.txt).",
+  "description": "maktaba.tv, the website households find Maktaba on (Epic 60): a Cloudflare Worker in front of static assets (the home page, the install guides, the 404 page, the log schema, security.txt).",
   "scripts": {
     "build": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/build.mjs",
     "test": "vitest run && node --test scripts/*.test.mjs",

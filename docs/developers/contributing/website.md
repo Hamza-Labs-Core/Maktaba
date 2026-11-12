@@ -13,7 +13,7 @@ and is built and deployed the way this portal is: a Cloudflare Worker in front o
    site at `/install/` and `/ar/install/`, its hashed files under `/install/assets/`, without
    each "Screenshot to come" figure whose image does not exist yet (the install package's own
    preview keeps them);
-2. the generated families (the problem pages, help, download), as their stories add them;
+2. the generated families: the problem pages, the download page (below), and help once its story adds it;
 3. the hand-made pages (`src/pages/`: the front door, the `/install/` chooser, the 404 page) and
    the legal pages, each wrapped in the page shell (`scripts/shell.mjs`);
 4. the copied files: the app icons (`favicon.ico`, `apple-touch-icon.png`, the 192, 512 and
@@ -66,6 +66,51 @@ both `WEBSITE_NOTICE_ENDPOINT` (Epic 50's `POST https://api.maktaba.tv/v1/modera
 and `WEBSITE_TURNSTILE_SITEKEY`. Neither is set until that endpoint is live, so the page gives the
 designated agent's email and what a notice must contain, and no form. Only that page's CSP
 allows Turnstile and the API.
+
+## The download page
+
+`/download/` and `/ar/download/` (story 60.11) offer each device the one right file of the latest
+release. `scripts/download.mjs` builds them, as a generated family:
+
+- **The release, at build time.** It reads `releases/latest` from the GitHub Releases API (with
+  `GITHUB_TOKEN` or `GH_TOKEN` when set: CI passes the run's own token): the version, the date,
+  and each asset's name, size and `sha256` digest, then the release's `checksums.txt`. For every
+  file `checksums.txt` lists, GitHub's digest must equal the signed one, or the build fails naming
+  the file. A draft or a pre-release is never used. When the API cannot be read the build fails
+  and says why, so a deploy never ships an empty download page and the live one keeps the version
+  it had. The page shows the version it was built for, and names it in
+  `<meta name="maktaba-release">`; nothing is computed in the browser.
+- **`src/downloads.json`,** one entry per platform, in the page's order: the patterns its files
+  are matched by (`{v}` is the release's version, never typed), the requirements line (the same
+  words as `copy/download.<lang>.md`), the install guide or help topic (linked once the site has
+  built it), and how its file is verified. The first `primary` pattern with an asset is the
+  button; a later one takes its place when an earlier leg of the release failed. **A platform
+  with no matching asset and no public listing has no card.**
+- **A store listing** (an `appStore`, `testFlightPublic`, `googlePlay` or `playTestingPublic`
+  address on the iPhone and iPad, Apple TV or Android entry) shows that app's card with its store
+  link. Add the public address to the entry and nothing else: the card's words are in
+  `downloads.json` (`name`, and `stores` for the links), since no page names an app before anyone
+  can install it. The store's official badge replaces the link's words with the first listing.
+- **The package repositories:** the server packages' card, with the apt, dnf and Homebrew rows
+  the release notes print, shows only when the build has `MAKTABA_PACKAGES_URL` or
+  `HOMEBREW_TAP_REPO`.
+- **The visitor's platform first,** with no request: `src/download-platform.ts` runs in the head
+  before the first paint, reads `#<platform>` in the address or else the user agent, and marks
+  `<html data-platform>`, which `src/download.css` draws as the wide card at the top; once the
+  page is parsed the card moves first in the document too, where it is already drawn, so nothing
+  shifts. Each card has a `#mac`, `#windows`, `#linux` or `#nas` anchor.
+- **Its look** is part B's (`design/site.css`, with `src/download.css`), in a stylesheet of its
+  own, after the shell's.
+
+`WEBSITE_RELEASE_FIXTURE=scripts/fixtures/release npm run build` builds from a saved release
+(v0.3.135's answer and `checksums.txt`) with no network; the unit tests
+(`scripts/download.test.mjs`) read the same files. The visual references draw that saved
+release's values into the page before the shot (each value the release sets is in an element
+marked `data-release`), so a new release changes no reference.
+
+**When it rebuilds.** After `release.yml` or `desktop-release.yml` publishes a release,
+`tools/release/website-dispatch.sh` starts `website-deploy.yml` on main for the tag once it is
+GitHub's latest release. The deploy goes live only with `vars.WEBSITE_LIVE`, like every other.
 
 ## The Worker
 
@@ -122,7 +167,9 @@ in. `npx playwright test e2e/a11y.spec.ts` runs one spec; `WEBSITE_BASE` points 
 
 The references live in `e2e/__screenshots__/` as `<page>-<width>-<lang>[-light].png`: every
 page at 360, 768 and 1280 px in both languages, dark, and each hand-made page in light at 1280.
-When a change to a page's look is meant:
+The apps' screenshots on a page (`static/shots/`) are masked in the frame's near-black
+(`SHOT_MASK` in `e2e/visual.spec.ts`): a reference holds the frames and the layout, so new
+screenshots at a release change no reference. When a change to a page's look is meant:
 
 1. `npm run build`, then `npm run e2e:update` (`pnpm -C web/packages/website e2e:update` from the
    repository root). It needs Docker: it renders the references in
@@ -168,6 +215,17 @@ by `scripts/shots.mjs`, with each one's sizes in `shots-manifest.json`.
 The widths per app and the crop are in `shots.config.json`: the design (60.01) changes them
 there. To see the web captures on your machine: `pnpm -C web install`, then `npm run shots:web`
 (writes `shots-capture/web/`). Apple's are never taken on a local Mac.
+
+**Placing a screenshot on a page:** the home page names the capture each frame shows in
+`SHOTS` (`scripts/home.mjs`), by its manifest key (`appletv-home-{lang}`: the page's language),
+and the width each frame draws at in `SIZES`, the `<img sizes>` the browser picks a file by.
+`picture()` writes the `<picture>` (AVIF, then WebP, every width, the width and height from the
+manifest), lazy except the hero's, which the head preloads. A new frame needs its alt text in
+both copy files. Leave out a capture the issue tracker says is wrong in one language (a Mac
+window that does not mirror, Eastern Arabic digits): `scripts/home.test.mjs` names the ones
+the page may not show. Lighthouse fails the page on a "properly size images" or "next-gen
+formats" finding (`lighthouserc.json`), so a `sizes` that asks for a file much larger than the
+frame fails the pull request.
 
 ## The nightly sweep
 

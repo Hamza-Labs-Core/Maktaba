@@ -1,0 +1,148 @@
+{
+  "$comment": "The download page's platforms (story 60.11), in the order the page lists them; scripts/download.mjs reads it with the latest stable release. Each pattern is a regular expression over an asset's name, with {v} standing for the release's version (never a typed version). primary: the button's file, the first pattern with an asset (a later one is the fallback when an earlier leg failed); other: the other formats, each a copy key and a pattern, missing ones left out; requires: patterns every one of which must match for a card with no primary file (NAS and Docker links to its chooser); name: the card's title for a platform the copy does not name yet (the phone and TV apps); needs: the requirements line, the same words as copy/download.<lang>.md's <id>.needs; guide: the install guide or help topic, linked only once the site has built it; verify: terminal (the sha256 and a shasum command for the platform's shell) or cosign (the signed checksums.txt). appStore, testFlightPublic, googlePlay and playTestingPublic: a public store listing or testing link (owner action A6); a card with no asset and no listing is not shown. packages: the apt, dnf and Homebrew rows, shown only when the build has MAKTABA_PACKAGES_URL or HOMEBREW_TAP_REPO (owner action A7).",
+  "stores": {
+    "$comment": "The store links' words, for a card shown by its listing alone (A6). They live here, not in copy/download.*.md, since no page names an app before it is publicly installable (Q5; design/tests/mockups.test.mjs). The store's official badge (each store's badge rules, self-hosted as SVG in static/badges/) replaces the words with the first listing.",
+    "appStore": { "en": "Download on the App Store", "ar": "التنزيل من App Store" },
+    "testFlightPublic": {
+      "en": "Join the public test on TestFlight",
+      "ar": "الانضمام إلى التجربة العامة على TestFlight"
+    },
+    "googlePlay": { "en": "Get it on Google Play", "ar": "التنزيل من Google Play" },
+    "playTestingPublic": {
+      "en": "Join the public test on Google Play",
+      "ar": "الانضمام إلى التجربة العامة على Google Play"
+    }
+  },
+  "platforms": [
+    {
+      "id": "mac",
+      "icon": "laptop",
+      "ua": "mac",
+      "primary": ["^Maktaba_{v}_aarch64\\.dmg$", "^Maktaba-Core_{v}_aarch64\\.dmg$"],
+      "other": [{ "key": "mac.other.core", "pattern": "^Maktaba-Core_{v}_aarch64\\.dmg$" }],
+      "needs": {
+        "en": "A Mac with Apple silicon, macOS 13 or later",
+        "ar": "جهاز Mac بمعالج Apple، ونظام macOS 13 أو أحدث"
+      },
+      "guide": "/help/mac-app/",
+      "verify": "terminal",
+      "shell": "mac"
+    },
+    {
+      "id": "windows",
+      "icon": "window",
+      "ua": "windows",
+      "primary": ["^Maktaba_{v}_x64-setup\\.exe$", "^maktaba-windows-portable-{v}\\.zip$"],
+      "other": [
+        { "key": "windows.other.portable", "pattern": "^maktaba-windows-portable-{v}\\.zip$" },
+        { "key": "windows.other.player", "pattern": "^Maktaba-Player_{v}_x64\\.msi$" }
+      ],
+      "needs": {
+        "en": "Windows 10 or later, 64-bit",
+        "ar": "Windows 10 أو أحدث، بنظام 64 بت"
+      },
+      "guide": "/help/desktop-player/",
+      "verify": "terminal",
+      "shell": "windows"
+    },
+    {
+      "id": "linux",
+      "icon": "terminal",
+      "ua": "linux",
+      "primary": ["^Maktaba_{v}_amd64\\.AppImage$"],
+      "other": [
+        { "key": "linux.other.deb", "pattern": "^Maktaba_{v}_amd64\\.deb$" },
+        { "key": "linux.other.rpm", "pattern": "^Maktaba-{v}-1\\.x86_64\\.rpm$" },
+        { "key": "linux.other.arm", "pattern": "^Maktaba_{v}_aarch64\\.AppImage$" },
+        { "key": "linux.other.player", "pattern": "^maktaba-player_{v}_amd64\\.deb$" },
+        { "key": "linux.other.headless", "pattern": "^install\\.sh$" }
+      ],
+      "needs": {
+        "en": "A 64-bit PC with a desktop; ARM64 under Other formats",
+        "ar": "حاسوب 64 بت بواجهة رسومية؛ ونسخة ARM64 ضمن الصيغ الأخرى"
+      },
+      "guide": "/help/getting-started/",
+      "verify": "terminal",
+      "shell": "linux"
+    },
+    {
+      "id": "nas",
+      "icon": "box",
+      "href": "/install/nas/",
+      "requires": ["^maktaba-docker-compose\\.yml$"],
+      "other": [
+        { "key": "nas.other.compose", "pattern": "^maktaba-docker-compose\\.yml$" },
+        { "key": "nas.other.synology", "pattern": "^maktaba-synology-compose\\.yaml$" },
+        { "key": "nas.other.truenas", "pattern": "^maktaba-truenas-custom-app\\.yaml$" }
+      ],
+      "needs": {
+        "en": "Synology, TrueNAS, Unraid, QNAP, UGREEN, or any machine with Docker",
+        "ar": "Synology وTrueNAS وUnraid وQNAP وUGREEN، أو أي جهاز فيه Docker"
+      },
+      "guide": "/install/nas/",
+      "verify": "cosign"
+    },
+    {
+      "id": "server",
+      "icon": "server",
+      "packages": true,
+      "other": [
+        { "key": "server.other.install", "pattern": "^install\\.sh$" },
+        {
+          "key": "server.other.linux-amd64",
+          "pattern": "^maktaba-server-{v}-linux-amd64\\.tar\\.gz$"
+        },
+        {
+          "key": "server.other.linux-arm64",
+          "pattern": "^maktaba-server-{v}-linux-arm64\\.tar\\.gz$"
+        },
+        {
+          "key": "server.other.darwin-arm64",
+          "pattern": "^maktaba-server-{v}-darwin-arm64\\.tar\\.gz$"
+        },
+        { "key": "server.other.windows", "pattern": "^maktaba-server-{v}-windows-amd64\\.zip$" }
+      ],
+      "needs": {
+        "en": "For a machine you look after yourself: the server alone, kept up to date by its package manager",
+        "ar": "لجهاز تديرونه بأنفسكم: الخادم وحده، ويحدّثه مدير الحزم"
+      },
+      "guide": "/install/",
+      "verify": "cosign"
+    },
+    {
+      "id": "iphone",
+      "name": { "en": "iPhone and iPad", "ar": "iPhone وiPad" },
+      "icon": "phone",
+      "needs": {
+        "en": "Maktaba Player, to watch from your home’s Maktaba",
+        "ar": "مشغّل مكتبة، للمشاهدة من برنامج مكتبة في بيتكم"
+      },
+      "guide": "/help/apple-apps/",
+      "appStore": null,
+      "testFlightPublic": null
+    },
+    {
+      "id": "appletv",
+      "name": { "en": "Apple TV", "ar": "Apple TV" },
+      "icon": "tv",
+      "needs": {
+        "en": "Maktaba Player on the TV, from your home’s Maktaba",
+        "ar": "مشغّل مكتبة على التلفاز، من برنامج مكتبة في بيتكم"
+      },
+      "guide": "/help/apple-tv/",
+      "appStore": null
+    },
+    {
+      "id": "android",
+      "name": { "en": "Android and Android TV", "ar": "Android وAndroid TV" },
+      "icon": "phone",
+      "needs": {
+        "en": "Maktaba Player, to watch from your home’s Maktaba",
+        "ar": "مشغّل مكتبة، للمشاهدة من برنامج مكتبة في بيتكم"
+      },
+      "guide": "/help/android-apps/",
+      "googlePlay": null,
+      "playTestingPublic": null
+    }
+  ]
+}

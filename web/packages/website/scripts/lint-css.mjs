@@ -26,6 +26,11 @@ export const DEFAULT_DIRS = [
   path.join(PKG, "design/shell.css"),
   path.join(PKG, "design/fonts.css"),
   path.join(PKG, "src/site.css"),
+  // part B's (the home page, story 60.10, and the download page, story 60.11): design/site.css
+  // and what the built site adds
+  path.join(PKG, "design/site.css"),
+  path.join(PKG, "src/part-b.css"),
+  path.join(PKG, "src/download.css"),
 ];
 
 // properties whose very name is physical, and what to write instead

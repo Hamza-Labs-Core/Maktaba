@@ -1,6 +1,7 @@
 // Story 60.04 T08, the visual references: every page (the hand-made ones, every install guide,
 // the generated families' representatives) at 360, 768 and 1280 px, English and Arabic, dark;
-// each hand-made page also light at 1280. Full page, animations off, the date frozen, fonts
+// each hand-made page also light at 1280; a page built from the latest release with the saved
+// release's values (RELEASE_DATA). Full page, animations off, the date frozen, fonts
 // loaded first; compared by pixels (maxDiffPixelRatio 0.001, playwright.config.ts). On a
 // mismatch the expected, actual and diff images land in test-results/ (website-visual-diff-<shard>).
 //
@@ -11,6 +12,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { label, PKG, settle, sitePages, type SitePage } from "./pages";
+// @ts-ignore: plain JavaScript build scripts
+import * as dl from "../scripts/download.mjs";
 
 export const WIDTHS = [360, 768, 1280];
 const FROZEN = new Date("2026-01-01T09:00:00Z");
@@ -45,6 +48,55 @@ export const FIRST_SCREEN: Record<string, string[]> = {
   "/problems/": [".areas", "#count"],
 };
 
+/**
+ * Pages built from data that changes on its own: their reference holds the template, drawn with
+ * saved data. The download page (story 60.11) is built from the latest release, which moves with
+ * every tag; each value it takes from the release sits in an element marked data-release, and
+ * before the shot each is drawn with the saved release's (scripts/fixtures/release/, the unit
+ * tests' too). A built page whose cards differ from the saved release's fails, naming both.
+ */
+export const RELEASE_DATA: Record<string, (lang: "en" | "ar") => Promise<string>> = {
+  "/download/": async (lang) => {
+    const got = await dl.readRelease({ env: { WEBSITE_RELEASE_FIXTURE: dl.FIXTURE } });
+    const data = dl.releaseData(got);
+    return dl.renderBody(data, dl.cards(data, dl.readPlatforms(), {}), {
+      lang,
+      manifest: dl.readManifest(),
+    });
+  },
+};
+
+/** Draws each data-release element of the page with the saved data's (RELEASE_DATA). */
+async function drawSaved(page: import("@playwright/test").Page, html: string): Promise<void> {
+  const problem = await page.evaluate((saved) => {
+    const doc = new DOMParser().parseFromString(saved, "text/html");
+    const want = new Map(
+      [...doc.querySelectorAll<HTMLElement>("[data-release]")].map((e) => [
+        e.dataset.release!,
+        e.innerHTML,
+      ])
+    );
+    const have = [...document.querySelectorAll<HTMLElement>("[data-release]")];
+    // the same values, in any order: the page puts the visitor's platform card first (its head
+    // script, by user agent), so the order follows the browser, not the release
+    const keys = have.map((e) => e.dataset.release!).sort();
+    const savedKeys = [...want.keys()].sort();
+    if (keys.length !== new Set(keys).size || keys.join() !== savedKeys.join())
+      return `the built page's release values (${keys.join(", ")}) are not the saved release's (${savedKeys.join(", ")})`;
+    for (const e of have) e.innerHTML = want.get(e.dataset.release!)!;
+    return "";
+  }, html);
+  expect(problem, "the built release's cards are the saved release's").toBe("");
+}
+
+/** The apps' screenshots (story 60.09, static/shots/) are masked, in the frame's own near-black:
+ * a reference holds the page (the frames, their sizes, the captions), not the pictures, which
+ * `npm run shots -- --from-run` renews at every release and scripts/shots.test.mjs checks. It
+ * also keeps each reference under 1 MB: the home page's, with its eight photographs, are 1.5 MB.
+ * The masked box is the picture's own, sized by its width and height before it loads. */
+export const SHOT_MASK = 'main picture:has(img[src^="/shots/"])';
+const SHOT_MASK_COLOR = "#06090F";
+
 /** A reference's file name: <page>-<width>-<lang>[-light].png */
 export const shotName = (p: SitePage, width: number, light = false) =>
   `${p.name}-${width}-${p.lang}${light ? "-light" : ""}.png`;
@@ -75,10 +127,14 @@ for (const p of visualPages()) {
         await page.goto(p.url);
         await settle(page);
         const en = p.lang === "ar" ? p.url.slice(3) : p.url;
+        if (RELEASE_DATA[en]) await drawSaved(page, await RELEASE_DATA[en](p.lang));
         const firstScreen = FIRST_SCREEN[en];
+        // a page has its first-screen masks (Playwright's default colour) or its screenshots'
+        const shots = !firstScreen && (await page.locator(SHOT_MASK).count()) > 0;
         await expect(page).toHaveScreenshot(shotName(p, s.width, s.light), {
           fullPage: !firstScreen,
-          mask: (firstScreen ?? []).map((sel) => page.locator(sel)),
+          mask: (firstScreen ?? (shots ? [SHOT_MASK] : [])).map((sel) => page.locator(sel)),
+          ...(shots ? { maskColor: SHOT_MASK_COLOR } : {}),
           animations: "disabled",
           caret: "hide",
         });

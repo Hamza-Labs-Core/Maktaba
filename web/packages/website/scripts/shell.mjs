@@ -79,6 +79,7 @@ export function shellAssets() {
   // the text face's files are hashed above (pages preload them); any other face fonts.css
   // names (part B's display face, Maktaba Display) is published, hashed, as it is met
   const published = {};
+  const display = {};
   const fontsCss = fs
     .readFileSync(path.join(DESIGN, "fonts.css"), "utf8")
     .replace(
@@ -96,6 +97,7 @@ export function shellAssets() {
           const file = hashed(name, "woff2", content);
           files.push({ file, content });
           published[name] = `/${file}`;
+          if (face === "display") display[f.replace(/^700-/, "")] = published[name];
         }
         return `url("${published[name]}")`;
       }
@@ -113,10 +115,18 @@ export function shellAssets() {
     files.push({ file, content });
     return `/${file}`;
   };
+  // part B's stylesheet (design/site.css: the hero, device frames, feature blocks, the
+  // wordmark), with what only the built site needs (src/part-b.css), for the part B pages only
+  const partB = [
+    fs.readFileSync(path.join(DESIGN, "site.css"), "utf8"),
+    fs.readFileSync(path.join(PKG, "src/part-b.css"), "utf8"),
+  ].join("\n");
   memo = {
     files,
     fonts,
+    display,
     css: add("site", "css", css),
+    partB: add("part-b", "css", partB),
     head: add("head", "js", fs.readFileSync(path.join(PKG, "src/shell-head.js"), "utf8")),
     js: add("shell", "js", fs.readFileSync(path.join(DESIGN, "shell.js"), "utf8")),
     mark: add("mark", "png", fs.readFileSync(path.join(PKG, "src/mark-64.png"))),
@@ -124,16 +134,26 @@ export function shellAssets() {
   return memo;
 }
 
+/** The display face's files a part B page preloads (design/README.md, "Display face"): an
+ * English page its Latin file, an Arabic page both (its Latin names are set in it too). */
+export const PRELOAD_DISPLAY = { en: ["latin"], ar: ["arabic", "latin"] };
+
 /** What the shell puts in every <head>: the fonts its language preloads, the stylesheet, the
- * head script (before the first paint) and the shell script (deferred). */
-export function shellHead(lang, indent = "  ") {
+ * head script (before the first paint) and the shell script (deferred). A part B page
+ * (`variant: "b"`) also preloads the display face and loads part B's stylesheet after the
+ * shell's; `headScripts` are a page's own scripts, run before the first paint. */
+export function shellHead(lang, indent = "  ", { variant = "a", headScripts = [] } = {}) {
   const a = shellAssets();
+  const b = variant === "b";
+  const preload = (href) =>
+    `<link rel="preload" href="${href}" as="font" type="font/woff2" crossorigin />`;
   return [
-    ...PRELOAD[lang].map(
-      (f) => `<link rel="preload" href="${a.fonts[f]}" as="font" type="font/woff2" crossorigin />`
-    ),
+    ...PRELOAD[lang].map((f) => preload(a.fonts[f])),
+    ...(b ? PRELOAD_DISPLAY[lang].map((f) => preload(a.display[f])) : []),
     `<script src="${a.head}"></script>`,
+    ...headScripts.map((src) => `<script src="${src}"></script>`),
     `<link rel="stylesheet" href="${a.css}" />`,
+    ...(b ? [`<link rel="stylesheet" href="${a.partB}" />`] : []),
     `<script src="${a.js}" defer></script>`,
   ]
     .map((l) => `${indent}${l}`)
@@ -285,6 +305,124 @@ export const T = {
   },
 };
 
+/** Part B's shell words (design/README.md, part B; design/mockups/shell.mjs's SHELL_B): the
+ * Phase 2 nav, the home link's name and the footer's groups. A link to a page the site does not
+ * build yet (`/download/` before story 60.11, `/help/` before 60.12) gives way to what part A
+ * links instead (bLinks). */
+export const T_B = {
+  en: {
+    help: "Help",
+    homeName: "Maktaba, home",
+    footerAbout:
+      "Maktaba keeps a household’s films and series on its own computer, and plays them on every screen at home, in Arabic and English. Free and open source, under the MIT licence.",
+    groups: (l) => [
+      [
+        "Get Maktaba",
+        [
+          ...(l.download === LATEST_RELEASE ? [] : [["Download", l.download]]),
+          ["Install guides", "/install/"],
+          ["Every file on GitHub", LATEST_RELEASE],
+        ],
+      ],
+      [
+        "Help",
+        [
+          l.help === HELP ? ["Troubleshooting", HELP] : ["Help topics", l.help],
+          ["Messages and what they mean", "/problems/"],
+        ],
+      ],
+      [
+        "Legal",
+        [
+          ["Privacy", "/legal/privacy/"],
+          ["Terms", "/legal/terms/"],
+          ["Copyright", "/legal/copyright/"],
+        ],
+      ],
+      [
+        "Elsewhere",
+        [
+          ["maktaba.dev, for developers", DEVPORTAL],
+          ["Source on GitHub", GITHUB],
+          ["Security", "/.well-known/security.txt"],
+        ],
+      ],
+    ],
+  },
+  ar: {
+    help: "المساعدة",
+    homeName: "مكتبة، الصفحة الرئيسية",
+    footerAbout:
+      "يحفظ برنامج مكتبة أفلام البيت ومسلسلاته على حاسوبه الخاص، ويعرضها على كل شاشة فيه، بالعربية والإنجليزية. وهو برنامج حرّ مفتوح المصدر برخصة MIT.",
+    groups: (l) => [
+      [
+        "الحصول على مكتبة",
+        [
+          ...(l.download === LATEST_RELEASE ? [] : [["التنزيل", l.download]]),
+          ["أدلة التثبيت", "/install/"],
+          ["كل الملفات على GitHub", LATEST_RELEASE],
+        ],
+      ],
+      [
+        "المساعدة",
+        [
+          l.help === HELP ? ["حل المشكلات", HELP] : ["مواضيع المساعدة", l.help],
+          ["الرسائل ومعانيها", "/problems/"],
+        ],
+      ],
+      [
+        "الشؤون القانونية",
+        [
+          ["الخصوصية", "/legal/privacy/"],
+          ["شروط الاستخدام", "/legal/terms/"],
+          ["حقوق النشر", "/legal/copyright/"],
+        ],
+      ],
+      [
+        "روابط أخرى",
+        [
+          ["موقع المطوّرين maktaba.dev", `${DEVPORTAL}ar/`],
+          ["الشيفرة المصدرية على GitHub", GITHUB],
+          ["الأمان", "/.well-known/security.txt"],
+        ],
+      ],
+    ],
+  },
+};
+
+/** Where part B's Download and Help go: their pages once built (`resolves`, build.mjs's
+ * resolver), else the latest release and the troubleshooting guide, as part A links them. */
+export function bLinks(resolves = () => false) {
+  return {
+    download: resolves("/download/") ? "/download/" : LATEST_RELEASE,
+    help: resolves("/help/") ? "/help/" : HELP,
+  };
+}
+
+// ---- the wordmark (part B, design/README.md "Wordmark") ----------------------------------------
+// The app icon (static/icon.svg) defined once per page as a symbol and drawn with <use>, beside
+// the name in the display face: the page's script in the header, both in the footer. The icon
+// never mirrors.
+
+const ICON_SVG = fs.readFileSync(path.join(PKG, "static/icon.svg"), "utf8");
+const iconInner = ICON_SVG.replace(/^[\s\S]*?<defs>/, "<defs>").replace(/<\/svg>\s*$/, "");
+const iconDefs = iconInner.match(/<defs>[\s\S]*?<\/defs>/)[0];
+const iconBody = iconInner.replace(iconDefs, "");
+
+/** The icon's symbol, once per part B page. */
+export const SPRITE = `<svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false">${iconDefs}<symbol id="mk-icon" viewBox="0 0 512 512">${iconBody}</symbol></svg>`;
+
+/** The lockup: the icon, then the name in the page's script, or in both (`both`). */
+export function wordmark(lang, { size = 32, both = false } = {}) {
+  const names = both
+    ? lang === "ar"
+      ? `<span class="wm-name" lang="ar">مكتبة</span><span class="wm-rule"></span><span class="wm-name" lang="en" dir="ltr">Maktaba</span>`
+      : `<span class="wm-name" lang="en">Maktaba</span><span class="wm-rule"></span><span class="wm-name" lang="ar" dir="rtl">مكتبة</span>`
+    : `<span class="wm-name">${lang === "ar" ? "مكتبة" : "Maktaba"}</span>`;
+  // the size is a class (src/part-b.css): the site's CSP refuses a style attribute
+  return `<span class="wordmark wm-${size}"><svg class="mk-icon" data-nomirror width="${size}" height="${size}" viewBox="0 0 512 512" aria-hidden="true" focusable="false"><use href="#mk-icon"/></svg>${names}</span>`;
+}
+
 const external = (href) => /^https?:/.test(href);
 const local = (lang, href) =>
   external(href) || href.startsWith("/.well-known/") ? href : inLang(lang, href);
@@ -310,7 +448,8 @@ const switchHref = (lang, sitePath) =>
   sitePath === null ? inLang(T[lang].other.lang, "/") : twinOf(lang, sitePath);
 
 /** The skip link, the header with the nav, the language switch and the Menu button. */
-export function header(lang, sitePath, { skipTo = "main" } = {}) {
+export function header(lang, sitePath, { skipTo = "main", variant = "a", links = bLinks() } = {}) {
+  if (variant === "b") return headerB(lang, sitePath, links);
   const t = T[lang];
   const o = t.other;
   const current = currentOf(sitePath);
@@ -336,6 +475,35 @@ export function header(lang, sitePath, { skipTo = "main" } = {}) {
 </header>${hint(lang, sitePath)}`;
 }
 
+/** Part B's header (design/README.md, part B): the single-script lockup, then the Phase 2 nav
+ * (Download, Install, Help, Messages), the language switch and the Menu button. */
+function headerB(lang, sitePath, links) {
+  const t = { ...T[lang], ...T_B[lang] };
+  const o = t.other;
+  const current = currentOf(sitePath);
+  const item = (key, href) => {
+    const ext = external(href);
+    return `<li><a href="${local(lang, href)}"${current === key ? ' aria-current="page"' : ""}>${esc(t[key])}${ext ? ` ${ICONS.out}` : ""}</a></li>`;
+  };
+  return `<a class="skip" href="#main">${esc(t.skip)}</a>
+${SPRITE}
+<header class="site-header">
+  <div class="frame bar">
+    <a class="mark" href="${inLang(lang, "/")}" aria-label="${esc(t.homeName)}">${wordmark(lang, { size: 32 })}</a>
+    <nav class="nav" id="site-nav" aria-label="${esc(t.nav)}">
+      <ul>
+        ${item("download", links.download)}
+        ${item("install", "/install/")}
+        ${item("help", links.help)}
+        ${item("messages", "/problems/")}
+      </ul>
+    </nav>
+    <a id="lang-switch" class="lang-switch" href="${switchHref(lang, sitePath)}" hreflang="${o.lang}" lang="${o.lang}" dir="${o.dir}">${ICONS.lang}<span>${esc(o.label)}</span></a>
+    <button class="menu-button" type="button" aria-expanded="false" aria-controls="site-nav">${ICONS.menu}${esc(t.menu)}</button>
+  </div>
+</header>${hint(lang, sitePath)}`;
+}
+
 /** The language hint (§6.5): on an English page, the line offering the Arabic one, written in
  * Arabic; drawn only when src/shell-head.js finds a browser that prefers Arabic. */
 export function hint(lang, sitePath) {
@@ -350,8 +518,9 @@ export function hint(lang, sitePath) {
 
 /** The footer: the mark and what Maktaba is, four groups of links, the copyright line and the
  * language link as a sentence; then the page's polite live region (the copy buttons' "Copied"). */
-export function footer(lang, sitePath) {
-  const t = T[lang];
+export function footer(lang, sitePath, { variant = "a", links = bLinks() } = {}) {
+  const b = variant === "b";
+  const t = b ? { ...T[lang], ...T_B[lang], groups: T_B[lang].groups(links) } : T[lang];
   const o = t.other;
   const { mark } = shellAssets();
   const groups = t.groups
@@ -370,7 +539,11 @@ export function footer(lang, sitePath) {
   return `<footer class="site-footer">
   <nav class="frame cols" aria-label="${esc(t.footerNav)}">
     <div class="about">
-      <a class="mark" href="${inLang(lang, "/")}"><img src="${mark}" width="24" height="24" alt="" data-nomirror />${esc(t.name)}</a>
+      ${
+        b
+          ? `<a class="mark" href="${inLang(lang, "/")}" aria-label="${esc(t.homeName)}">${wordmark(lang, { size: 28, both: true })}</a>`
+          : `<a class="mark" href="${inLang(lang, "/")}"><img src="${mark}" width="24" height="24" alt="" data-nomirror />${esc(t.name)}</a>`
+      }
       <p>${esc(t.footerAbout)}</p>
     </div>
     ${groups}
@@ -419,12 +592,27 @@ ${items.map((s) => `  <li><h3>${esc(s.title)}</h3>${s.html}</li>`).join("\n")}
  * A whole document. `path` is the page's English path (`/`, `/install/`), or null for a page
  * with no address of its own (the 404 page): no canonical, alternates or card, and the switch
  * goes to the other language's front door. The head's links and social tags are head.mjs's.
- * `body` is the content of <main id="main">.
+ * `body` is the content of <main id="main">; `head`, tags a page adds after the shell's (part B's
+ * stylesheet and display face, a script of its own, its structured data).
  */
-export function page({ lang, path: enPath, title, description, body, meta = "", mainClass = "" }) {
+export function page({
+  lang,
+  path: enPath,
+  title,
+  description,
+  body,
+  meta = "",
+  mainClass = "",
+  variant = "a",
+  links = bLinks(),
+  social = undefined,
+  /** @type {string[]} */ headScripts = [],
+  mainAttrs = "",
+  head: extraHead = "",
+}) {
   const dir = lang === "ar" ? "rtl" : "ltr";
   const here = enPath === null ? null : inLang(lang, enPath);
-  const head = headHtml({ lang, path: enPath, title, description });
+  const head = headHtml({ lang, path: enPath, title, description, social });
   const jsonLd = enPath === "/" ? `\n  ${organizationJsonLd(lang)}` : "";
   return `<!doctype html>
 <html lang="${lang}" dir="${dir}">
@@ -437,14 +625,14 @@ export function page({ lang, path: enPath, title, description, body, meta = "", 
   ${SITE_MARKER}
   ${menuMeta()}${meta ? `\n  ${meta}` : ""}
 ${head}
-${shellHead(lang)}${jsonLd}
+${shellHead(lang, "  ", { variant, headScripts })}${jsonLd}${extraHead ? `\n  ${extraHead}` : ""}
 </head>
 <body>
-${header(lang, here)}
-<main id="main"${mainClass ? ` class="${mainClass}"` : ""}>
+${header(lang, here, { variant, links })}
+<main id="main"${mainClass ? ` class="${mainClass}"` : ""}${mainAttrs ? ` ${mainAttrs}` : ""}>
 ${body.trim()}
 </main>
-${footer(lang, here)}
+${footer(lang, here, { variant, links })}
 </body>
 </html>
 `;

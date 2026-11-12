@@ -28,6 +28,10 @@
 # the deploy goes on only when they pass; a failed sweep whose pages cannot be read refuses the
 # deploy outright. A rollback is never held back by it.
 #
+# A release run starts it too (release.yml and desktop-release.yml, through
+# tools/release/website-dispatch.sh, with `release` = the tag, story 60.11): the build reads the
+# latest release for the download page, so the page names it within one deploy.
+#
 # The steps (tools/cloudflare/website-deploy.mjs): the token check; record the version serving
 # now; upload the new version (not live) and smoke its preview URL; promote it at 100% and
 # apply the custom domains (`triggers deploy`); smoke the live site, and on failure roll back
@@ -70,6 +74,10 @@ on:
         default: false
       version:
         description: "With rollback: the version id to return to (empty: the deployment before the current one)"
+        type: string
+        default: ""
+      release:
+        description: "The release tag a release run started this deploy for (tools/release/website-dispatch.sh): the build fails when the latest release is older"
         type: string
         default: ""
   # the 1st of each month, 06:37 UTC: security.txt's Expires rolls forward
@@ -118,6 +126,7 @@ jobs:
     uses: ./.github/workflows/_website.yml
     with:
       lighthouse_extra: ${{ needs.nightly.outputs.failed }}
+      release: ${{ inputs.release || '' }}
 
   deploy:
     needs: [nightly, build]

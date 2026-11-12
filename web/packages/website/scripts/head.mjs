@@ -32,9 +32,10 @@ export const ICON_TAGS = [
 /**
  * The tags of a page, each with the pattern that finds it already in a <head>. `path` is the
  * page's English path (`/`, `/install/nas/`), or null for a page with no address of its own (the
- * 404 page): it gets the icons only.
+ * 404 page): it gets the icons only. `social` is the title the card and the shared link show,
+ * when it is not the page's <title> (the home page's is its tagline).
  */
-export function headTags({ lang, path, title, description }) {
+export function headTags({ lang, path, title, description, social = title }) {
   const tags = ICON_TAGS.map((tag) => ({ find: tagKey(tag), tag }));
   if (path === null) return tags;
   const here = `${ORIGIN}${inLang(lang, path)}`;
@@ -48,17 +49,17 @@ export function headTags({ lang, path, title, description }) {
     `<link rel="alternate" hreflang="x-default" href="${ORIGIN}${path}" />`,
     meta("property", "og:type", "website"),
     meta("property", "og:site_name", SITE_NAME[lang]),
-    meta("property", "og:title", title),
+    meta("property", "og:title", social),
     meta("property", "og:description", description),
     meta("property", "og:url", here),
     meta("property", "og:image", card),
     meta("property", "og:image:width", String(CARD.width)),
     meta("property", "og:image:height", String(CARD.height)),
-    meta("property", "og:image:alt", title),
+    meta("property", "og:image:alt", social),
     meta("property", "og:locale", LOCALE[lang]),
     meta("property", "og:locale:alternate", LOCALE[other]),
     meta("name", "twitter:card", "summary_large_image"),
-    meta("name", "twitter:title", title),
+    meta("name", "twitter:title", social),
     meta("name", "twitter:description", description),
     meta("name", "twitter:image", card),
   ];
@@ -107,6 +108,7 @@ export function readHead(html, file = "page") {
   const title = html.match(/<title>([^<]*)<\/title>/)?.[1];
   const description = html.match(/<meta\s+name="description"\s+content="([^"]*)"/)?.[1];
   const lang = html.match(/<html[^>]*\slang="([^"]+)"/)?.[1];
+  const og = html.match(/<meta\s+property="og:title"\s+content="([^"]*)"/)?.[1];
   if (!title) throw new Error(`${file}: no <title>`);
   if (!description) throw new Error(`${file}: no <meta name="description">`);
   const unesc = (s) =>
@@ -116,7 +118,12 @@ export function readHead(html, file = "page") {
       .replace(/&gt;/g, ">")
       .replace(/&#39;/g, "'")
       .replace(/&amp;/g, "&");
-  return { title: unesc(title.trim()), description: unesc(description.trim()), lang };
+  return {
+    title: unesc(title.trim()),
+    description: unesc(description.trim()),
+    lang,
+    social: og ? unesc(og.trim()) : undefined,
+  };
 }
 
 /** The Organization a home page names (JSON-LD). */

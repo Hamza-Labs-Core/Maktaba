@@ -83,8 +83,9 @@ export function familiesChanged(changed) {
   return [...out].sort();
 }
 
-/** The generated families' own indexes: one page each, measured as the hand-made pages are. */
-export const FAMILY_INDEXES = ["/problems/"];
+/** The generated families' own indexes: one page each, measured as the hand-made pages are (the
+ * download page, story 60.11, is a family of one page). */
+export const FAMILY_INDEXES = ["/problems/", "/download/"];
 
 /** The most pages of a changed family a pull request measures once each (beyond its
  * representatives): a family larger than this is sampled evenly, both languages. */
