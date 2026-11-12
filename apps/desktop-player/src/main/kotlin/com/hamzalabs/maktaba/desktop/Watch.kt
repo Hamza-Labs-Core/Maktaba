@@ -62,6 +62,7 @@ import com.hamzalabs.maktaba.core.api.Feature
 import com.hamzalabs.maktaba.desktop.watch.AudioMenu
 import com.hamzalabs.maktaba.desktop.watch.QualityMenu
 import com.hamzalabs.maktaba.desktop.watch.SubtitlesMenu
+import com.hamzalabs.maktaba.desktop.watch.TimesUp
 import com.hamzalabs.maktaba.desktop.watch.WatchAction
 import com.hamzalabs.maktaba.desktop.watch.watchAction
 
@@ -117,7 +118,10 @@ fun Watch(
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             val problem = playback.problem
             val player = playback.player
+            val timeUp = playback.timeUp
             when {
+                // Epic 57 story 57.15: the home's time rules stopped the video
+                timeUp != null -> TimesUp(timeUp, onCheck = { playback.checkAgain() })
                 problem != null -> Problem(t["watch.failed", problem])
                 player == null -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     CircularProgressIndicator()
