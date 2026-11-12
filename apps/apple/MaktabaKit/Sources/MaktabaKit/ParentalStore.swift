@@ -365,6 +365,12 @@ public struct TimeUp: Equatable, Sendable {
 
     /// From a refusal of anything the home gates by time (a stream, a watch, a channel's
     /// access or play): 403 `parental-time`. Nil for any other answer.
+    /// Whether the home stored the position of the progress post it refused with this: it
+    /// does for `outside_slot` and `limit_reached` (the time is over, and the post says
+    /// where the viewer stopped), not for `no_heartbeat` (a session it is not counting).
+    /// So after such a refusal "saved at" may say the position sent.
+    public var keepsRefusedPosition: Bool { reason == "outside_slot" || reason == "limit_reached" }
+
     public init?(_ error: Error) {
         guard case let .time(reason, next)? = ParentalRefusal(error) else { return nil }
         self.init(reason: reason, nextAllowedAt: next)

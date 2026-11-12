@@ -148,12 +148,12 @@ class ChannelPlayback(
             if (ask != null) {
                 when (val now = ask(id)) {
                     is com.hamzalabs.maktaba.core.api.ChannelNow.NotNow -> {
-                        notNow(id, now.retryAt)
+                        notNow(id, now.retryAt, now.clock)
                         return
                     }
                     is com.hamzalabs.maktaba.core.api.ChannelNow.Playing -> {
                         s = LiveStream.Lan(id, now.url)
-                        askAgain(id, now.until, allowed = true)
+                        askAgain(id, now.until, allowed = true, now.clock)
                     }
                 }
             }
@@ -185,18 +185,21 @@ class ChannelPlayback(
     }
 
     /** The programme on air is above the limit: nothing plays, and the home is asked again later. */
-    private fun notNow(id: String, retryAt: java.time.Instant?) {
+    private fun notNow(id: String, retryAt: java.time.Instant?, clock: com.hamzalabs.maktaba.core.api.HomeClock? = null) {
         if (channelId != id) return
         hide()
         status = ChannelStatus.NotNow(retryAt)
-        askAgain(id, retryAt, allowed = false)
+        askAgain(id, retryAt, allowed = false, clock)
     }
 
-    /** Asks the home about [id] again when it said the answer may change. */
-    private fun askAgain(id: String, at: java.time.Instant?, allowed: Boolean) {
+    /**
+     * Asks the home about [id] again when it said the answer may change. [clock] is the home's
+     * clock by the answer that named [at] (null: it sent none).
+     */
+    private fun askAgain(id: String, at: java.time.Instant?, allowed: Boolean, clock: com.hamzalabs.maktaba.core.api.HomeClock? = null) {
         recheck?.cancel()
         val ask = gate ?: return
-        val wait = com.hamzalabs.maktaba.core.api.channelAskAgainMs(at, allowed, nowMs()) ?: return
+        val wait = com.hamzalabs.maktaba.core.api.channelAskAgainMs(at, allowed, nowMs(), clock) ?: return
         recheck = scope.launch {
             kotlinx.coroutines.delay(wait)
             if (channelId != id) return@launch
@@ -215,9 +218,9 @@ class ChannelPlayback(
             when (now) {
                 is com.hamzalabs.maktaba.core.api.ChannelNow.NotNow -> {
                     job?.cancel()
-                    notNow(id, now.retryAt)
+                    notNow(id, now.retryAt, now.clock)
                 }
-                is com.hamzalabs.maktaba.core.api.ChannelNow.Playing -> askAgain(id, now.until, allowed = true)
+                is com.hamzalabs.maktaba.core.api.ChannelNow.Playing -> askAgain(id, now.until, allowed = true, now.clock)
             }
         }
     }

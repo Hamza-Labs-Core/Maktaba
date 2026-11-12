@@ -19,7 +19,8 @@ import (
 //
 //	OpenSession   timeAdmit   before the session is opened or renewed
 //	OpenSession   timeOpened  once it has its id: the session gets its lease
-//	PostProgress  timeBeat    the stream's heartbeat: counted, lease renewed
+//	PostProgress  timeBeat    the stream's heartbeat: counted, lease renewed; a
+//	                          post refused for time still stores its position
 //	CloseSession  timeClosed  counted up to the close, lease ended
 //
 // The stream URLs are signed with the session's id and say whether the account's
@@ -97,7 +98,12 @@ func (h *Handler) timeOpened(w http.ResponseWriter, r *http.Request, userID, lib
 // timeBeat counts one progress post of ownerID's session and renews its lease;
 // when the time is over, or the session cannot be counted, the answer is written
 // and the lease runs out.
-func (h *Handler) timeBeat(w http.ResponseWriter, r *http.Request, ownerID, sessionID string) bool {
+//
+// atTimeStop (nil: nothing) runs before the 403 of a post refused because the
+// account's time is over (limit_reached, outside_slot): PostProgress stores the
+// position the post carries there. It does not run for a session the keeper does
+// not know as the account's (no_heartbeat), nor when the time cannot be counted.
+func (h *Handler) timeBeat(w http.ResponseWriter, r *http.Request, ownerID, sessionID string, atTimeStop func()) bool {
 	if h.Time == nil {
 		return true
 	}
@@ -110,6 +116,9 @@ func (h *Handler) timeBeat(w http.ResponseWriter, r *http.Request, ownerID, sess
 		writeTimeUnknown(w, r, "progress", err)
 		return false
 	case !st.Allowed:
+		if atTimeStop != nil {
+			atTimeStop()
+		}
 		writeTimeOver(w, r, st.Reason, st.NextAllowedAt)
 		return false
 	}

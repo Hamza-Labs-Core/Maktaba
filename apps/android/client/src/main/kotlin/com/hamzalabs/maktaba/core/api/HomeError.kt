@@ -61,6 +61,8 @@ data class Problem(
     val nextAllowedAt: String = "",
     /** When to ask again (a `restricted` programme on live TV), RFC 3339; empty when the home named none. */
     val retryAt: String = "",
+    /** The home's time for this answer (beside `retry_at` and `next_allowed_at` on a channel), RFC 3339; empty from an older home. */
+    val now: String = "",
 ) {
     /** The last part of [type] (`rendition-not-found`): the home's domain differs by install. */
     val slug: String get() = type.substringAfter("/problems/", "").trimEnd('/')
@@ -74,7 +76,7 @@ data class Problem(
             fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull.orEmpty()
             val p = Problem(s("type"), s("title"), s("status").toDoubleOrNull()?.toInt() ?: 0, s("detail"), s("code"),
                 s("component"), s("feature"), s("error"),
-                s("reason"), s("next_allowed_at"), s("retry_at"))
+                s("reason"), s("next_allowed_at"), s("retry_at"), s("now"))
             return if (p.type.isEmpty() && p.title.isEmpty() && p.code.isEmpty() && p.error.isEmpty()) null else p
         }
     }

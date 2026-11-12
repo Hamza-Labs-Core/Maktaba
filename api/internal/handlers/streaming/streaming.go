@@ -763,12 +763,13 @@ func (h *Handler) PostProgress(w http.ResponseWriter, r *http.Request) {
 	// Resolve the owner, video_id + duration.
 	var ownerID, videoID string
 	var duration sql.NullFloat64
+	var closed bool
 	err := h.DB.QueryRowContext(r.Context(), `
-		SELECT s.user_id, s.video_id, v.duration_sec
+		SELECT s.user_id, s.video_id, v.duration_sec, s.closed_at IS NOT NULL
 		FROM streaming_sessions s
 		LEFT JOIN videos v ON v.id = s.video_id
 		WHERE s.id = $1
-	`, sessionID).Scan(&ownerID, &videoID, &duration)
+	`, sessionID).Scan(&ownerID, &videoID, &duration, &closed)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httperror.Write(w, r, httperror.NotFound("session "+sessionID))
@@ -817,33 +818,28 @@ func (h *Handler) PostProgress(w http.ResponseWriter, r *http.Request) {
 		common.WriteJSON(w, r, http.StatusOK, map[string]any{"debounced": true})
 		return
 	}
-	if !h.timeBeat(w, r, ownerID, sessionID) { // story 57.14: the stream's heartbeat
+	// store keeps the position: the play's record and the resume point.
+	store := func() error {
+		return h.storeProgress(r, sessionID, ownerID, videoID, req.PositionSec, duration.Float64, completed)
+	}
+	// Story 57.14: the stream's heartbeat. A post refused because the account's
+	// time is over still carries where the viewer stopped: it is stored first, as
+	// an accepted post's would be, when the session is the caller's own and still
+	// open. Storing renews no lease and counts no time (the keeper is not called
+	// for it), and the answer stays the 403.
+	var atTimeStop func()
+	if !closed && p.UserID != "" && strings.EqualFold(p.UserID, ownerID) {
+		atTimeStop = func() {
+			if err := store(); err != nil {
+				mlog.From(r.Context()).Warn("position of a post refused for time not stored",
+					"session_id", sessionID, "err", err.Error(), "event", "stream_time_stop_position_failed")
+			}
+		}
+	}
+	if !h.timeBeat(w, r, ownerID, sessionID, atTimeStop) {
 		return
 	}
-
-	// The play (Epic 44 story 44.3): one watch_sessions row per stream session,
-	// kept by its progress. Before the upsert below, which it measures against.
-	// Best effort: the resume point matters more than the play's record.
-	if err := watch.RecordStreamProgress(r.Context(), h.DB, watch.StreamProgress{
-		StreamSessionID: sessionID, UserID: ownerID, VideoID: videoID,
-		PositionSec: req.PositionSec, VideoDurationSec: duration.Float64, Completed: completed,
-		Client: client.From(r.Context()), IPHash: watch.HashIP(h.IPSalt, r), Now: h.now(),
-	}); err != nil {
-		mlog.From(r.Context()).Warn("play not recorded",
-			"session_id", sessionID, "err", err.Error(), "event", "stream_play_record_failed")
-	}
-
-	// Upsert. The (user, video) PK lets a closed-session POST still
-	// land (EC: "POST after DELETE /sessions/{id}").
-	_, err = h.DB.ExecContext(r.Context(), `
-		INSERT INTO playback_state (user_id, video_id, position_sec, completed, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (user_id, video_id) DO UPDATE SET
-		  position_sec = EXCLUDED.position_sec,
-		  completed    = EXCLUDED.completed,
-		  updated_at   = EXCLUDED.updated_at
-	`, ownerID, videoID, req.PositionSec, completed, h.now())
-	if err != nil {
+	if err := store(); err != nil {
 		httperror.Write(w, r, httperror.Internal("upsert progress").Wrap(err))
 		return
 	}
@@ -855,6 +851,32 @@ func (h *Handler) PostProgress(w http.ResponseWriter, r *http.Request) {
 		"position_sec": req.PositionSec,
 		"completed":    completed,
 	})
+}
+
+// storeProgress stores one progress post's position for the session's owner: the
+// play's record (Epic 44 story 44.3: one watch_sessions row per stream session,
+// kept by its progress) and then the resume point, which the record is measured
+// against. The record is best effort: the resume point matters more.
+func (h *Handler) storeProgress(r *http.Request, sessionID, ownerID, videoID string, positionSec, durationSec float64, completed bool) error {
+	if err := watch.RecordStreamProgress(r.Context(), h.DB, watch.StreamProgress{
+		StreamSessionID: sessionID, UserID: ownerID, VideoID: videoID,
+		PositionSec: positionSec, VideoDurationSec: durationSec, Completed: completed,
+		Client: client.From(r.Context()), IPHash: watch.HashIP(h.IPSalt, r), Now: h.now(),
+	}); err != nil {
+		mlog.From(r.Context()).Warn("play not recorded",
+			"session_id", sessionID, "err", err.Error(), "event", "stream_play_record_failed")
+	}
+	// Upsert. The (user, video) PK lets a closed-session POST still
+	// land (EC: "POST after DELETE /sessions/{id}").
+	_, err := h.DB.ExecContext(r.Context(), `
+		INSERT INTO playback_state (user_id, video_id, position_sec, completed, updated_at)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (user_id, video_id) DO UPDATE SET
+		  position_sec = EXCLUDED.position_sec,
+		  completed    = EXCLUDED.completed,
+		  updated_at   = EXCLUDED.updated_at
+	`, ownerID, videoID, positionSec, completed, h.now())
+	return err
 }
 
 // mayActOn reports whether p may read or act on a session owned by

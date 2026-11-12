@@ -3082,7 +3082,7 @@
             }
           },
           "403": {
-            "description": "The account's watching time is over (Parental controls): the problem type is `https://maktaba.tv/problems/parental-time`, `code` is `parental_time`, `reason` is `outside_slot`, `limit_reached`, or `no_heartbeat` when the session is not one the home is counting for this account, and `next_allowed_at` is when the rules allow watching again (absent when no moment in the next eight days does, and with `no_heartbeat`). The position is not saved and the stream ends within 60 seconds.",
+            "description": "The account's watching time is over (Parental controls): the problem type is `https://maktaba.tv/problems/parental-time`, `code` is `parental_time`, `reason` is `outside_slot`, `limit_reached`, or `no_heartbeat` when the session is not one the home is counting for this account, and `next_allowed_at` is when the rules allow watching again (absent when no moment in the next eight days does, and with `no_heartbeat`). With `outside_slot` and `limit_reached` the position the post carries is stored first, as an accepted post's is, when the session is the caller's own and still open: the resume point is where the viewer stopped. Storing it counts no time and keeps no stream running. With `no_heartbeat` nothing is stored. The stream ends within 60 seconds.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14768,7 +14768,7 @@
           "Parental controls"
         ],
         "summary": "Whether the caller may watch a channel now",
-        "description": "Says whether the programme now on the channel is within the caller's parental limit, and when that may change. A player asks before it starts and again at `until`, and shows its \"not available right now\" screen while `allowed` is false. An account with no limit always gets `allowed: true`. Live TV counts toward the account's time rules like any playback: while its watching time is over the answer is 403 `parental-time`.",
+        "description": "Says whether the programme now on the channel is within the caller's parental limit, and when that may change. A player asks before it starts and again at `until`, and shows its \"not available right now\" screen while `allowed` is false. An account with no limit always gets `allowed: true`. Live TV counts toward the account's time rules like any playback: while its watching time is over the answer is 403 `parental-time`. Every answer with a time to wait for carries `now`, the home's time for that answer: wait `until` minus `now` on the device's own monotonic clock.",
         "responses": {
           "200": {
             "description": "The answer for now.",
@@ -14803,6 +14803,11 @@
                       ],
                       "format": "date-time",
                       "description": "When the answer may change: the start of the next programme that flips it, in UTC. Null when nothing in the next 12 hours changes it. Ask again at this time."
+                    },
+                    "now": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "The home's time for this answer, in UTC. Wait `until` minus `now` on the device's own monotonic clock, and do not compare `until` with the device's clock, which may be wrong. A home older than this field does not send it."
                     }
                   }
                 }
@@ -14810,7 +14815,7 @@
             }
           },
           "403": {
-            "description": "The account's watching time is over for now: problem type `parental-time`, `code` is `parental_time`, `reason` is `outside_slot` or `limit_reached`, and `next_allowed_at` is when the rules allow playback again (absent when no moment in the next eight days does). The player shows its time's-up screen.",
+            "description": "The account's watching time is over for now: problem type `parental-time`, `code` is `parental_time`, `reason` is `outside_slot` or `limit_reached`, and `next_allowed_at` is when the rules allow playback again (absent when no moment in the next eight days does). The player shows its time's-up screen. The problem carries `now`, the home's time for the answer: wait `next_allowed_at` minus `now`.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14899,6 +14904,11 @@
                       ],
                       "format": "date-time",
                       "description": "When the answer may change: the start of the next programme that flips it, in UTC. Null when nothing in the next 12 hours changes it. Ask again at this time."
+                    },
+                    "now": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "The home's time for this answer, in UTC. Wait `until` minus `now` on the device's own monotonic clock, and do not compare `until` with the device's clock, which may be wrong. A home older than this field does not send it."
                     }
                   }
                 }
@@ -14906,7 +14916,7 @@
             }
           },
           "403": {
-            "description": "The programme now on the channel is above the caller's limit: `code` is `restricted`, `reason` is `programme` and `retry_at` is when to ask again (absent when nothing in the next 12 hours changes it). Or the account's watching time is over: problem type `parental-time`, `code` is `parental_time`, with `reason` (`outside_slot` or `limit_reached`) and `next_allowed_at`.",
+            "description": "The programme now on the channel is above the caller's limit: `code` is `restricted`, `reason` is `programme` and `retry_at` is when to ask again (absent when nothing in the next 12 hours changes it). Or the account's watching time is over: problem type `parental-time`, `code` is `parental_time`, with `reason` (`outside_slot` or `limit_reached`) and `next_allowed_at`. Both carry `now`, the home's time for the answer: wait `retry_at` or `next_allowed_at` minus `now`.",
             "content": {
               "application/problem+json": {
                 "schema": {

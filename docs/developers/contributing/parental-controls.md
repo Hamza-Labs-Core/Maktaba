@@ -234,6 +234,10 @@ A player must:
    | `reason` | `outside_slot` (not a watching hour), `limit_reached` (the day's time is used), or `no_heartbeat` (the home is not counting this session: no progress came for 60 seconds) |
    | `next_allowed_at` | when the rules allow watching again; absent when no moment in the next eight days does, and with `no_heartbeat` |
 
+   Send the position with the progress post as always: a post refused with `outside_slot` or
+   `limit_reached` still stores the position it carries, for the caller's own open session, so
+   the resume point is where the viewer stopped. A `no_heartbeat` refusal stores nothing.
+
 3. **Not retry by itself.** Asking again does not give time. Play again when the person asks,
    or when `GET /api/me/parental/time` says `allowed` (after a grant, or at `next_allowed_at`).
 4. **Treat a 404 from a progress post as the stream ending.** The video was hidden from the
@@ -259,6 +263,11 @@ Play through `POST /api/channels/{id}/play`, which answers the signed URL, or 40
 with `reason: "programme"` and `retry_at` while the programme on air is above the limit. A
 channel above the limit is 404. In the guide, a programme above the limit comes with its time
 and no title.
+
+Both answers, and their 403s with `retry_at` or `next_allowed_at`, carry `now`, the home's time
+for that answer. Wait `until` minus `now` (or `retry_at` minus `now`) on the device's monotonic
+clock; do not compare `until` with the device's clock. A home older than `now` does not send
+it: then use the response's `Date` header, or the device's clock.
 
 ## Adding an API route: the registry
 

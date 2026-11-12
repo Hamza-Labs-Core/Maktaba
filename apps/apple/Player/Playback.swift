@@ -32,8 +32,8 @@ final class Playback {
     /// stream is asked for again as the home's `Retry-After` says.
     private(set) var waiting: HomeFailure?
     /// Epic 57: the home stopped this video for a parental reason. Playback stopped, the
-    /// home holds the place of the last post it took (`savedPosition`), and nothing is tried
-    /// again until `resumeAfterStop`.
+    /// home holds the place of the last post it took or refused for time (`savedPosition`),
+    /// and nothing is tried again until `resumeAfterStop`.
     private(set) var parentalStop: ParentalStop?
     /// Whether this sign-in is under a parental limit (the session's store): a "not found"
     /// then may be a block.
@@ -48,9 +48,9 @@ final class Playback {
     }
 
     /// The place the home holds for this video: the position of the last progress post it
-    /// took, else where the stream was opened. A refused post is not stored by the home
-    /// (it answers before it writes), so after a stop for time this, not where the picture
-    /// stopped, is what "saved at" may say: another device resumes here.
+    /// took, or of the one it refused because the time is over (the home stores that post's
+    /// position before it answers 403), else where the stream was opened. After a stop for
+    /// time this is what "saved at" says: another device resumes here.
     private(set) var savedPosition: Double?
 
     // What the controls show.
@@ -641,7 +641,7 @@ final class Playback {
                 try await client.postProgress(session: session, positionSec: Int(at), completed: completed)
                 self?.progressTaken(session: session, at: at)
             } catch {
-                self?.progressRefused(error, session: session, at: at)
+                self?.progressRefused(error, session: session, at: at, sent: Double(Int(at)))
             }
         }
     }
@@ -664,8 +664,9 @@ final class Playback {
     /// stops on the time's-up screen; when the reason is `no_heartbeat` (the stream sent no
     /// progress for a minute: a long pause, the app held in the background) the stream is
     /// opened again once, and the home then says whether there is time. Any other failure is
-    /// left to the next post.
-    func progressRefused(_ error: Error, session refused: String, at: Double) {
+    /// left to the next post. `sent` is the position the refused post carried (nil: `at`):
+    /// the home stored it when it refused for time, so "saved at" says it.
+    func progressRefused(_ error: Error, session refused: String, at: Double, sent: Double? = nil) {
         guard session == refused, parentalStop == nil else { return }
         switch PlaybackVerdict.progress(error, limited: limited()) {
         case .other:
@@ -683,14 +684,15 @@ final class Playback {
                 await watch()
             }
         case let .timeUp(up):
+            if up.keepsRefusedPosition { savedPosition = sent ?? at }
             stopForParental(.time(up, position: at))
         }
     }
 
     /// Stops for a parental reason: the player goes, and the screen shows the blocked page or
-    /// time's up. A stop for time sends no position: the home answers a post 403 before it
-    /// writes anything once the time is over, so the place it holds is the last post it took
-    /// (`savedPosition`), and the time's-up screen says that one.
+    /// time's up. A stop for time sends no further position: the place the home holds is the
+    /// last post it took, or the one it refused for time (`savedPosition`), and the time's-up
+    /// screen says that one.
     func stopForParental(_ stop: ParentalStop) {
         let at = player?.currentTime().seconds ?? position
         if let session, at.isFinite, at > 0, case .blocked(_, true) = stop {

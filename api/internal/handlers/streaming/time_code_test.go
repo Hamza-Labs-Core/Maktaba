@@ -34,7 +34,7 @@ func TestTimeUnknownAnswersItsOwnCode(t *testing.T) {
 	calls := map[string]func(w http.ResponseWriter, r *http.Request) bool{
 		"admit":    func(w http.ResponseWriter, r *http.Request) bool { return h.timeAdmit(w, r, p, "lib") },
 		"opened":   func(w http.ResponseWriter, r *http.Request) bool { return h.timeOpened(w, r, "u1", "lib", "v1", "s1") },
-		"progress": func(w http.ResponseWriter, r *http.Request) bool { return h.timeBeat(w, r, "u1", "s1") },
+		"progress": func(w http.ResponseWriter, r *http.Request) bool { return h.timeBeat(w, r, "u1", "s1", nil) },
 	}
 	for name, call := range calls {
 		rec := httptest.NewRecorder()

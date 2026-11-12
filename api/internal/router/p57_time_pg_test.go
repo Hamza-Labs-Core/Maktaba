@@ -262,11 +262,11 @@ func TestPGTimeLimitRefusesStreams(t *testing.T) {
 		t.Fatal("a refused session was opened at streaming, or its URL handed out")
 	}
 	time.Sleep(1100 * time.Millisecond) // progress is taken once a second per session; a skipped post renews nothing
-	state := e.count(`SELECT count(*) FROM playback_state WHERE user_id = $1 AND position_sec = 77`, tmChild)
 	code, body = e.do("child", http.MethodPost, "/api/stream/sessions/"+session+"/progress", map[string]any{"position_sec": 77})
 	refused("a progress post", code, body)
-	if e.count(`SELECT count(*) FROM playback_state WHERE user_id = $1 AND position_sec = 77`, tmChild) != state {
-		t.Fatal("a refused progress post was written")
+	// the position the refused post carries is stored: where the viewer stopped
+	if e.count(`SELECT count(*) FROM playback_state WHERE user_id = $1 AND video_id = $2 AND position_sec = 77`, tmChild, tmVideo) != 1 {
+		t.Fatal("the position of a progress post refused for time was not stored")
 	}
 	// streaming was told the account's playback has ended: it serves no more of
 	// any session, whatever its lease

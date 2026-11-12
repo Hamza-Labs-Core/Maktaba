@@ -38,7 +38,7 @@ class ChannelGateTest {
 
     private class Rig(val cp: ChannelPlayback, val shown: MutableList<String>, val asked: MutableList<String>, var hidden: Int = 0)
 
-    private fun TestScope.rig(limited: Boolean = true, answer: (Int) -> ChannelNow): Rig {
+    private fun TestScope.rig(limited: Boolean = true, clockAheadMs: Long = 0, answer: (Int) -> ChannelNow): Rig {
         val shown = mutableListOf<String>()
         val asked = mutableListOf<String>()
         lateinit var rig: Rig
@@ -53,7 +53,7 @@ class ChannelGateTest {
                 asked += id
                 answer(asked.size)
             },
-            nowMs = { t0.toEpochMilli() + testScheduler.currentTime },
+            nowMs = { t0.toEpochMilli() + clockAheadMs + testScheduler.currentTime },
         )
         rig = Rig(cp, shown, asked)
         return rig
@@ -79,6 +79,30 @@ class ChannelGateTest {
         // nothing is due to change: the home is not asked again
         advanceTimeBy(3_600_000)
         assertEquals(1, r.asked.size)
+    }
+
+    /**
+     * The home's answer carries its own time: the wait is counted from it, and the clock the
+     * playback was given (a day fast here: by it the home's time passed long ago) is not asked.
+     */
+    @Test
+    fun theWaitIsCountedFromTheHomesOwnTimeInTheAnswer() = runTest {
+        val back = t0.plusSeconds(600)
+        val r = rig(clockAheadMs = 86_400_000) { n ->
+            val clock = com.hamzalabs.maktaba.core.api.HomeClock(t0.toEpochMilli(), com.hamzalabs.maktaba.core.api.monotonicMs())
+            if (n == 1) ChannelNow.NotNow(back, clock) else ChannelNow.Playing(signed("c1"), null, clock)
+        }
+        r.cp.open("c1")
+        runCurrent()
+        assertEquals(ChannelStatus.NotNow(back), r.cp.status)
+        // not every five seconds until the device's clock agrees
+        advanceTimeBy(599_000)
+        runCurrent()
+        assertEquals(1, r.asked.size)
+        advanceTimeBy(2_001)
+        runCurrent()
+        assertEquals(2, r.asked.size)
+        assertEquals(ChannelStatus.Playing, r.cp.status)
     }
 
     @Test

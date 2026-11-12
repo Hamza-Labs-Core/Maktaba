@@ -69,6 +69,7 @@ import com.hamzalabs.maktaba.core.api.LiveFailure
 import com.hamzalabs.maktaba.core.api.ChannelNow
 import com.hamzalabs.maktaba.core.api.GatedReopen
 import com.hamzalabs.maktaba.core.api.LiveSource
+import com.hamzalabs.maktaba.core.api.HomeClock
 import com.hamzalabs.maktaba.core.api.channelAskAgainMs
 import com.hamzalabs.maktaba.core.api.channelNow
 import com.hamzalabs.maktaba.core.api.programmeRefusal
@@ -185,12 +186,12 @@ class LivePlayback(
                 if (s is LiveStream.Lan && limited()) {
                     when (val now = api.channelNow(id)) {
                         is ChannelNow.NotNow -> {
-                            refused(id, now.retryAt)
+                            refused(id, now.retryAt, now.clock)
                             return@launch
                         }
                         is ChannelNow.Playing -> {
                             url = now.url
-                            askAgain(id, now.until, allowed = true)
+                            askAgain(id, now.until, allowed = true, now.clock)
                         }
                     }
                 }
@@ -222,18 +223,21 @@ class LivePlayback(
     }
 
     /** The programme on air is above the limit: nothing plays, and the home is asked again later. */
-    private fun refused(id: String, retryAt: Instant?) {
+    private fun refused(id: String, retryAt: Instant?, clock: HomeClock? = null) {
         if (channelId != id) return
         player?.stop()
         notNow = TvNotNowState(retryAt)
-        askAgain(id, retryAt, allowed = false)
+        askAgain(id, retryAt, allowed = false, clock)
     }
 
-    /** Asks the home about [id] again when it said the answer may change. */
-    private fun askAgain(id: String, at: Instant?, allowed: Boolean) {
+    /**
+     * Asks the home about [id] again when it said the answer may change. [clock] is the home's
+     * clock by the answer that named [at] (null: it sent none).
+     */
+    private fun askAgain(id: String, at: Instant?, allowed: Boolean, clock: HomeClock? = null) {
         recheck?.cancel()
         // the home's instant against the home's clock, not the TV's
-        val wait = channelAskAgainMs(at, allowed, api.homeNowMs()) ?: return
+        val wait = channelAskAgainMs(at, allowed, api.homeNowMs(), clock) ?: return
         recheck = scope.launch {
             delay(wait)
             if (channelId != id) return@launch
@@ -250,8 +254,8 @@ class LivePlayback(
                 return@launch
             }
             when (now) {
-                is ChannelNow.NotNow -> refused(id, now.retryAt)
-                is ChannelNow.Playing -> askAgain(id, now.until, allowed = true)
+                is ChannelNow.NotNow -> refused(id, now.retryAt, now.clock)
+                is ChannelNow.Playing -> askAgain(id, now.until, allowed = true, now.clock)
             }
         }
     }

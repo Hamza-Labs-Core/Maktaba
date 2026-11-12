@@ -1722,6 +1722,47 @@ final class Clock: @unchecked Sendable {
         #expect(open.allowed && open.until == nil && open.askAgain() == 300)
     }
 
+    /// The answer carries the home's own time (`now`): the wait is `until` minus `now`, both
+    /// the home's, whatever this device's clock says. A home that sends no `now` is measured
+    /// against the device's clock as before.
+    @Test func theWaitIsMeasuredOnTheHomesClockNotTheDevices() throws {
+        let json = #"{"channel_id":"ch-1","restricted":true,"allowed":false,"until":"2026-11-11T20:00:00Z","now":"2026-11-11T19:58:00Z"}"#
+        let a = try JSONDecoder.home.decode(ChannelAccess.self, from: Data(json.utf8))
+        #expect(a.now == homeTime("2026-11-11T19:58:00Z"))
+        // a device clock that is right, ten minutes fast, a day slow, a year fast: 2 minutes
+        for device in ["2026-11-11T19:58:00Z", "2026-11-11T20:08:00Z", "2026-11-10T19:58:00Z", "2027-11-11T19:58:00Z"] {
+            #expect(a.askAgain(after: homeTime(device)!) == 121, "device clock \(device)")
+        }
+        // the bounds hold on the home's clock too
+        let far = ChannelAccess(restricted: true, allowed: true, until: homeTime("2026-11-11T20:00:00Z"), now: homeTime("2026-11-11T18:00:00Z"))
+        #expect(far.askAgain(after: homeTime("2026-11-11T19:59:59Z")!) == 300)
+        let past = ChannelAccess(restricted: true, allowed: false, until: homeTime("2026-11-11T20:00:00Z"), now: homeTime("2026-11-11T20:00:30Z"))
+        #expect(past.askAgain(after: homeTime("2026-11-11T19:00:00Z")!) == 5)
+        // the home's time with a fraction of a second is read too
+        let fraction = try JSONDecoder.home.decode(ChannelAccess.self, from: Data(#"{"restricted":true,"allowed":true,"until":"2026-11-11T20:00:00Z","now":"2026-11-11T19:59:30.250Z"}"#.utf8))
+        #expect(fraction.askAgain(after: .distantPast) == 30.75)
+        // nothing changes in the next 12 hours: five minutes, with or without the home's time
+        #expect(ChannelAccess(restricted: true, allowed: true, now: homeTime("2026-11-11T19:58:00Z")).askAgain() == 300)
+        // an older home sends no `now`, or one that cannot be read: the device's clock
+        for old in [#"{"restricted":true,"allowed":false,"until":"2026-11-11T20:00:00Z"}"#,
+                    #"{"restricted":true,"allowed":false,"until":"2026-11-11T20:00:00Z","now":null}"#,
+                    #"{"restricted":true,"allowed":false,"until":"2026-11-11T20:00:00Z","now":"soon"}"#] {
+            let b = try JSONDecoder.home.decode(ChannelAccess.self, from: Data(old.utf8))
+            #expect(b.now == nil)
+            #expect(b.askAgain(after: homeTime("2026-11-11T19:59:00Z")!) == 61)
+            #expect(b.askAgain(after: homeTime("2026-11-11T20:10:00Z")!) == 5)
+        }
+    }
+
+    /// The home stores the position of a progress post it refuses because the time is over,
+    /// so "saved at" may say the position sent; a session it is not counting stores nothing.
+    @Test func aPostRefusedForTimeKeepsItsPosition() {
+        #expect(TimeUp(reason: "limit_reached", nextAllowedAt: nil).keepsRefusedPosition)
+        #expect(TimeUp(reason: "outside_slot", nextAllowedAt: nil).keepsRefusedPosition)
+        #expect(!TimeUp(reason: "no_heartbeat", nextAllowedAt: nil).keepsRefusedPosition)
+        #expect(!TimeUp(reason: "something_new", nextAllowedAt: nil).keepsRefusedPosition, "an unknown reason promises nothing")
+    }
+
     /// The home's own refusal of the programme on now (the channel's play or its stream) is
     /// the slate, whatever this device's clock made of the access answer's `until`; the
     /// account's time being over, a hidden channel and a plain failure are not.
