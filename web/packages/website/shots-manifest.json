@@ -1,6 +1,346 @@
 {
   "from": "../../../../../../../../../private/tmp/claude-501/-Users-mahmouddarwish--t3-worktrees-Maktaba-t3-d2d39aa3/80fe98bd-cb5b-4c88-b529-064a938d631e/scratchpad/in",
   "images": {
+    "android-phone-film-ar": {
+      "app": "android-phone",
+      "screen": "film",
+      "lang": "ar",
+      "width": 480,
+      "height": 1041,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 520,
+          "webp": "/shots/android-phone-film-ar-240.webp",
+          "avif": "/shots/android-phone-film-ar-240.avif",
+          "webpBytes": 10666,
+          "avifBytes": 9692
+        },
+        {
+          "width": 360,
+          "height": 780,
+          "webp": "/shots/android-phone-film-ar-360.webp",
+          "avif": "/shots/android-phone-film-ar-360.avif",
+          "webpBytes": 18634,
+          "avifBytes": 16546
+        },
+        {
+          "width": 480,
+          "height": 1041,
+          "webp": "/shots/android-phone-film-ar-480.webp",
+          "avif": "/shots/android-phone-film-ar-480.avif",
+          "webpBytes": 27210,
+          "avifBytes": 23352
+        }
+      ]
+    },
+    "android-phone-film-en": {
+      "app": "android-phone",
+      "screen": "film",
+      "lang": "en",
+      "width": 480,
+      "height": 1041,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 520,
+          "webp": "/shots/android-phone-film-en-240.webp",
+          "avif": "/shots/android-phone-film-en-240.avif",
+          "webpBytes": 12376,
+          "avifBytes": 10596
+        },
+        {
+          "width": 360,
+          "height": 780,
+          "webp": "/shots/android-phone-film-en-360.webp",
+          "avif": "/shots/android-phone-film-en-360.avif",
+          "webpBytes": 21040,
+          "avifBytes": 17988
+        },
+        {
+          "width": 480,
+          "height": 1041,
+          "webp": "/shots/android-phone-film-en-480.webp",
+          "avif": "/shots/android-phone-film-en-480.avif",
+          "webpBytes": 31034,
+          "avifBytes": 26198
+        }
+      ]
+    },
+    "android-phone-home-ar": {
+      "app": "android-phone",
+      "screen": "home",
+      "lang": "ar",
+      "width": 480,
+      "height": 1041,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 520,
+          "webp": "/shots/android-phone-home-ar-240.webp",
+          "avif": "/shots/android-phone-home-ar-240.avif",
+          "webpBytes": 15712,
+          "avifBytes": 13531
+        },
+        {
+          "width": 360,
+          "height": 780,
+          "webp": "/shots/android-phone-home-ar-360.webp",
+          "avif": "/shots/android-phone-home-ar-360.avif",
+          "webpBytes": 27568,
+          "avifBytes": 24312
+        },
+        {
+          "width": 480,
+          "height": 1041,
+          "webp": "/shots/android-phone-home-ar-480.webp",
+          "avif": "/shots/android-phone-home-ar-480.avif",
+          "webpBytes": 39856,
+          "avifBytes": 34436
+        }
+      ]
+    },
+    "android-phone-home-en": {
+      "app": "android-phone",
+      "screen": "home",
+      "lang": "en",
+      "width": 480,
+      "height": 1041,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 520,
+          "webp": "/shots/android-phone-home-en-240.webp",
+          "avif": "/shots/android-phone-home-en-240.avif",
+          "webpBytes": 16872,
+          "avifBytes": 14287
+        },
+        {
+          "width": 360,
+          "height": 780,
+          "webp": "/shots/android-phone-home-en-360.webp",
+          "avif": "/shots/android-phone-home-en-360.avif",
+          "webpBytes": 29888,
+          "avifBytes": 25428
+        },
+        {
+          "width": 480,
+          "height": 1041,
+          "webp": "/shots/android-phone-home-en-480.webp",
+          "avif": "/shots/android-phone-home-en-480.avif",
+          "webpBytes": 42048,
+          "avifBytes": 36244
+        }
+      ]
+    },
+    "androidtv-guide-ar": {
+      "app": "androidtv",
+      "screen": "guide",
+      "lang": "ar",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/androidtv-guide-ar-640.webp",
+          "avif": "/shots/androidtv-guide-ar-640.avif",
+          "webpBytes": 12854,
+          "avifBytes": 12590
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/androidtv-guide-ar-960.webp",
+          "avif": "/shots/androidtv-guide-ar-960.avif",
+          "webpBytes": 21756,
+          "avifBytes": 19904
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/androidtv-guide-ar-1280.webp",
+          "avif": "/shots/androidtv-guide-ar-1280.avif",
+          "webpBytes": 31204,
+          "avifBytes": 26273
+        }
+      ]
+    },
+    "androidtv-guide-en": {
+      "app": "androidtv",
+      "screen": "guide",
+      "lang": "en",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/androidtv-guide-en-640.webp",
+          "avif": "/shots/androidtv-guide-en-640.avif",
+          "webpBytes": 13464,
+          "avifBytes": 13008
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/androidtv-guide-en-960.webp",
+          "avif": "/shots/androidtv-guide-en-960.avif",
+          "webpBytes": 23720,
+          "avifBytes": 21120
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/androidtv-guide-en-1280.webp",
+          "avif": "/shots/androidtv-guide-en-1280.avif",
+          "webpBytes": 32266,
+          "avifBytes": 27091
+        }
+      ]
+    },
+    "androidtv-home-ar": {
+      "app": "androidtv",
+      "screen": "home",
+      "lang": "ar",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/androidtv-home-ar-640.webp",
+          "avif": "/shots/androidtv-home-ar-640.avif",
+          "webpBytes": 17492,
+          "avifBytes": 15076
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/androidtv-home-ar-960.webp",
+          "avif": "/shots/androidtv-home-ar-960.avif",
+          "webpBytes": 29290,
+          "avifBytes": 25510
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/androidtv-home-ar-1280.webp",
+          "avif": "/shots/androidtv-home-ar-1280.avif",
+          "webpBytes": 41668,
+          "avifBytes": 35460
+        }
+      ]
+    },
+    "androidtv-home-en": {
+      "app": "androidtv",
+      "screen": "home",
+      "lang": "en",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/androidtv-home-en-640.webp",
+          "avif": "/shots/androidtv-home-en-640.avif",
+          "webpBytes": 19536,
+          "avifBytes": 16427
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/androidtv-home-en-960.webp",
+          "avif": "/shots/androidtv-home-en-960.avif",
+          "webpBytes": 32640,
+          "avifBytes": 27651
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/androidtv-home-en-1280.webp",
+          "avif": "/shots/androidtv-home-en-1280.avif",
+          "webpBytes": 46558,
+          "avifBytes": 38622
+        }
+      ]
+    },
+    "androidtv-player-ar": {
+      "app": "androidtv",
+      "screen": "player",
+      "lang": "ar",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/androidtv-player-ar-640.webp",
+          "avif": "/shots/androidtv-player-ar-640.avif",
+          "webpBytes": 11106,
+          "avifBytes": 11138
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/androidtv-player-ar-960.webp",
+          "avif": "/shots/androidtv-player-ar-960.avif",
+          "webpBytes": 18288,
+          "avifBytes": 17472
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/androidtv-player-ar-1280.webp",
+          "avif": "/shots/androidtv-player-ar-1280.avif",
+          "webpBytes": 25758,
+          "avifBytes": 23167
+        }
+      ]
+    },
+    "androidtv-player-en": {
+      "app": "androidtv",
+      "screen": "player",
+      "lang": "en",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/androidtv-player-en-640.webp",
+          "avif": "/shots/androidtv-player-en-640.avif",
+          "webpBytes": 11188,
+          "avifBytes": 11233
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/androidtv-player-en-960.webp",
+          "avif": "/shots/androidtv-player-en-960.avif",
+          "webpBytes": 18536,
+          "avifBytes": 17647
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/androidtv-player-en-1280.webp",
+          "avif": "/shots/androidtv-player-en-1280.avif",
+          "webpBytes": 25616,
+          "avifBytes": 23440
+        }
+      ]
+    },
     "web-film-ar": {
       "app": "web",
       "screen": "film",

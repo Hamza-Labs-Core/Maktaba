@@ -176,11 +176,16 @@ export function buildRoutes(lang, lib = loadLibrary()) {
   // the hero: a film the household picked (unpicked, a home features its newest series)
   const featured = byId.get(lib.featured);
   add("GET", "/api/home", {
-    featured: featured ? { kind: "video", video: row(featured), series: null, picked: true } : null,
+    featured: featured
+      ? { kind: "video", video: row(featured), series: null, picked: true }
+      : null,
     on_deck: [],
     favorites: [],
     collection_rows: [],
-    recently_added_grouped: newest.map((v) => ({ kind: "video", video: row(v) })),
+    recently_added_grouped: newest.map((v) => ({
+      kind: "video",
+      video: row(v),
+    })),
     continue_watching: inProgress.map(progressRow),
     recently_added: newest.map((v) => row(v)),
     recently_watched: watched.map(progressRow),

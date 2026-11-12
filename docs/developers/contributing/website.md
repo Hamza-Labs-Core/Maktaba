@@ -127,7 +127,7 @@ by `scripts/shots.mjs`, with each one's sizes in `shots-manifest.json`.
 | iPhone, iPad | the MockHome UI tests on a per-run simulator | `product-shots-iphone`, `product-shots-ipad` |
 | Apple TV | `tv-ui-tests` on a per-run tvOS simulator | `product-shots-appletv` |
 | Mac | the Mac app's CI UI tests (never on a local Mac) | `product-shots-mac` |
-| Android TV, phone | Roborazzi references on the demo library | `apps/android/**/src/test/screenshots/demo/` |
+| Android TV, phone | Roborazzi references on the demo library | `apps/android/player/src/test/screenshots/demo/`, `apps/tv/android/app/src/test/screenshots/demo/` |
 
 **Rerunning them at a release:**
 

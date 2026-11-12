@@ -124,7 +124,7 @@ npm run lighthouse -- run --set pr --base http://127.0.0.1:8788 --out lighthouse
 | iPhone وiPad | اختبارات الواجهة على MockHome في محاكٍ يُنشأ لكل جولة | `product-shots-iphone` و`product-shots-ipad` |
 | Apple TV | `tv-ui-tests` في محاكي tvOS يُنشأ لكل جولة | `product-shots-appletv` |
 | Mac | اختبارات واجهة تطبيق Mac في التكامل المستمر (لا على جهاز Mac محلي أبدًا) | `product-shots-mac` |
-| Android TV والهاتف | صور Roborazzi المرجعية على المكتبة التجريبية | `apps/android/**/src/test/screenshots/demo/` |
+| Android TV والهاتف | صور Roborazzi المرجعية على المكتبة التجريبية | `apps/android/player/src/test/screenshots/demo/`, `apps/tv/android/app/src/test/screenshots/demo/` |
 
 **إعادة التقاطها عند كل إصدار:**
 
