@@ -204,7 +204,8 @@ export function TimeRulesPage() {
       </TitleRow>
       <p className="mkt-parental-note">
         {t("parental.time.intro")}{" "}
-        {data.rules.timeZone && (
+        {/* a home with no zone set answers its machine's own ("Local"): no name to show */}
+        {data.rules.timeZone && data.rules.timeZone !== "Local" && (
           <>
             {t("parental.time.zone")} <bdi>{data.rules.timeZone}</bdi>.
           </>
