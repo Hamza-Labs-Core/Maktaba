@@ -23,6 +23,8 @@ export type ChannelTransition = "cut" | "crossfade";
 
 export interface Channel {
   id: string;
+  /** Epic 57: the age tier an admin set (null: none); only an admin's answer has it */
+  age_tier?: number | null;
   number: number;
   name: string;
   slug?: string;

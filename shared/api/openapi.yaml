@@ -3315,7 +3315,7 @@ paths:
       tags:
       - Queue
       summary: A library's YouTube channels and playlists, with their downloads
-      description: Admin only (403 otherwise); audited when it writes. Epic 47.
+      description: 'Admin only (403 otherwise); audited when it writes. Epic 47. Each source carries `age_tier`: the age tier set with `PUT /api/libraries/{id}/youtube/sources/{sid}/age-tier` (Epic 57), or null when none is set.'
       parameters:
       - name: id
         in: path
@@ -6214,6 +6214,7 @@ paths:
       tags:
       - Series
       summary: A series
+      description: 'The series header. An administrator''s answer also has `age_tier`: the age tier set with `PUT /api/series/{id}/age-tier` (Epic 57), or null when none is set. The field is absent for everyone else.'
       parameters:
       - in: path
         name: id
@@ -11554,6 +11555,18 @@ components:
         access_partial:
           type: boolean
           description: Some files could not be read, or a write failed since the check.
+        age_tier:
+          type:
+          - integer
+          - 'null'
+          enum:
+          - 0
+          - 9
+          - 13
+          - 16
+          - 18
+          - null
+          description: 'The library''s default age tier (Epic 57), set with `PUT /api/libraries/{id}/age-tier`: a tier, or null when none is set. Only an administrator''s answer has this field; it is absent for everyone else.'
     LibraryCreate:
       type: object
       required:
@@ -11708,6 +11721,18 @@ components:
             format: uuid
           playback_state:
             $ref: '#/components/schemas/PlaybackState'
+          age_tier_admin:
+            type:
+            - integer
+            - 'null'
+            enum:
+            - 0
+            - 9
+            - 13
+            - 16
+            - 18
+            - null
+            description: 'The age tier an administrator set on this video itself (Epic 57), with `PUT /api/videos/{id}/age-tier`: a tier, or null when the administrator set none. It is not what the video resolves to from its other sources. Only an administrator''s answer has this field; it is absent for everyone else.'
     VideoUpdate:
       type: object
       properties:
@@ -12302,6 +12327,18 @@ components:
           type: boolean
         sort_title:
           type: string
+        age_tier:
+          type:
+          - integer
+          - 'null'
+          enum:
+          - 0
+          - 9
+          - 13
+          - 16
+          - 18
+          - null
+          description: 'The age tier an administrator set on the collection (Epic 57), with `PUT /api/collections/{id}/age-tier`: a tier, or null when none is set. Only an administrator''s answer to `GET /api/collections/{id}` has this field; it is absent for everyone else.'
     CollectionCreate:
       type: object
       required:

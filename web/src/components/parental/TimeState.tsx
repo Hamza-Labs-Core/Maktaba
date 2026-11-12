@@ -6,6 +6,8 @@
 //   TimesUp      the screen when the home refuses with `parental-time`: why, when
 //                watching opens again, the saved place. Playback has stopped and
 //                nothing asks again by itself; "Check again" is the viewer's tap.
+//                A restricted account asks for more time there, or a parent types
+//                their PIN (AskParent).
 //   HomeTime     Home's line: the time left, or that the time is over.
 //
 // The web keeps no count: every number is the home's last answer (lib/parental).
@@ -21,6 +23,7 @@ import {
   TIME_WARNINGS_S,
 } from "../../lib/parental";
 import type { MyTime, TimeReason } from "../../lib/parentalApi";
+import { AskTime } from "./AskParent";
 import "../../styles/parental.css";
 
 type Words = Pick<I18nState, "t" | "n" | "locale" | "formatDate">;
@@ -141,6 +144,7 @@ export function TimesUp({ reason, nextAllowedAt, savedAt, onCheck, action }: Tim
       {next && <p>{t("parental.time.next", { time: next })}</p>}
       {savedAt && <p>{t("parental.time.saved", { position: savedAt })}</p>}
       <p className="mkt-parental-timesup__ask">{t("parental.time.askParent")}</p>
+      <AskTime onCheck={onCheck} />
       <div className="mkt-parental-timesup__actions">
         {onCheck && (
           <Button variant="secondary" onClick={onCheck}>

@@ -50,6 +50,9 @@ type Collection struct {
 	SmartQuery  json.RawMessage `json:"smart_query,omitempty"`
 	CreatedAt   time.Time       `json:"created_at"`
 	UpdatedAt   time.Time       `json:"updated_at"`
+	// AgeTier is the age tier an admin set here (Epic 57): a tier or null. Only an
+	// admin's answer to GET /api/collections/{id} has it.
+	AgeTier *parental.AdminTier `json:"age_tier,omitempty"`
 	// HandOrdered: someone reordered this manual collection, and its items
 	// keep that order; otherwise they are newest-added first (slot 0163).
 	HandOrdered bool `json:"hand_ordered"`
@@ -331,6 +334,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	c.AgeTier = parental.AdminTierOf(r.Context(), h.DB, principal.FromContext(r.Context()), parental.TierOnCollection, c.ID)
 	common.WriteJSON(w, r, http.StatusOK, c)
 }
 

@@ -74,6 +74,9 @@ type Item struct {
 	// PosterVideoID is the first episode: the card shows its poster
 	// (GET /api/videos/{id}/poster) when the series has no art of its own.
 	PosterVideoID string `json:"poster_video_id,omitempty"`
+	// AgeTier is the age tier an admin set here (Epic 57): a tier or null. Only an
+	// admin's answer has it.
+	AgeTier *parental.AdminTier `json:"age_tier,omitempty"`
 }
 
 type epRow struct {
@@ -207,6 +210,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	if first := firstEpisode(h.loadEpisodes(r, p, id, "")[id], hd.Numbering); first != nil {
 		hd.PosterVideoID = first.videoID
 	}
+	hd.AgeTier = parental.AdminTierOf(r.Context(), h.DB, p, parental.TierOnSeries, id)
 	common.WriteJSON(w, r, http.StatusOK, hd)
 }
 

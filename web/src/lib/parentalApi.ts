@@ -51,11 +51,20 @@ export interface MyLimit {
   restricted: boolean;
   /** the limit this sign-in is held to, account or device; null: none */
   maxTier: number | null;
+  /** the limit this sign-in's device gave, when it gave one */
+  deviceLimit: number | null;
+  /** the device has since said something looser, which waits for a guardian or an admin */
+  devicePending: boolean;
 }
 
 export async function fetchMyLimit(): Promise<MyLimit> {
   const r = obj(await api.get<unknown>("/api/me/parental"));
-  return { restricted: r.restricted === true, maxTier: numOrNull(r.max_tier) };
+  return {
+    restricted: r.restricted === true,
+    maxTier: numOrNull(r.max_tier),
+    deviceLimit: numOrNull(r.device_limit),
+    devicePending: r.device_pending === true,
+  };
 }
 
 export interface Child {

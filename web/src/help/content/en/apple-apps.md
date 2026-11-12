@@ -100,6 +100,10 @@ A guardian with no iPhone or iPad can do the same on the web, under **Family** o
 
 Maktaba does not see the picture of a video. Ratings come from what an admin sets, from the ratings a video already has, and from what your home reads in a video's transcript and title; check what your child may watch if that matters to you.
 
+**When Screen Time stops the app**, Maktaba saves the place in the video and pauses. It does not start again by itself: open the app and tap **Resume**.
+
+**Maktaba's own time rules and Screen Time are separate.** The time rules you set in Maktaba ([Time limits](/help/users#time-limits)) are kept by your home and hold on every device: phone, TV, web. Maktaba does not write them into Screen Time, so Downtime and App Limits are set by hand in Settings. You can use either or both; each is enforced on its own, so the stricter one wins.
+
 ## What the states and messages mean {#states}
 
 The **Before you start** sheet shows each permission's state:

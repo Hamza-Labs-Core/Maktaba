@@ -128,4 +128,39 @@ describe("AgeTierControl (57.01)", () => {
       "بلا تصنيف من عندي",
     ]);
   });
+
+  // the GET of each rated thing carries what an admin set (age_tier), for an admin alone
+  it('shows the rating the home says is set, with no "choose"', () => {
+    show({ kind: "library", id: "l1" }, { current: 13 });
+    const select = screen.getByLabelText("Age rating for everything in this library");
+    expect(select).toHaveValue("13");
+    expect(select.querySelector('option[value=""]')).toBeNull();
+  });
+
+  it('shows "no rating" when the home says none is set (null), not "choose"', () => {
+    show({ kind: "series", id: "s1" }, { current: null });
+    expect(screen.getByLabelText("Age rating")).toHaveValue("none");
+  });
+
+  it("follows the page's answer when it comes late, until the admin chooses", async () => {
+    const target: TierTarget = { kind: "channel", id: "c1" };
+    const ui = (current?: number | null) => (
+      <I18nProvider>
+        <TestAuth user={adminUser}>
+          <AgeTierControl target={target} {...(current === undefined ? {} : { current })} />
+        </TestAuth>
+      </I18nProvider>
+    );
+    localStorage.setItem("mkt:locale", "en");
+    const { rerender } = render(ui());
+    expect(screen.getByLabelText("Age rating")).toHaveValue("");
+    rerender(ui(9));
+    expect(screen.getByLabelText("Age rating")).toHaveValue("9");
+    // an answer without the field (an older home, a PATCH's answer) changes nothing
+    rerender(ui());
+    expect(screen.getByLabelText("Age rating")).toHaveValue("9");
+    await userEvent.selectOptions(screen.getByLabelText("Age rating"), "16");
+    rerender(ui(0));
+    expect(screen.getByLabelText("Age rating")).toHaveValue("16");
+  });
 });

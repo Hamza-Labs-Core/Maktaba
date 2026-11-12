@@ -69,6 +69,9 @@ type Video struct {
 	Tags          []string        `json:"tags,omitempty"`
 	LatestTrans   *string         `json:"latest_transcript_id,omitempty"`
 	PlaybackState *PlaybackState  `json:"playback_state,omitempty"`
+	// AgeTierAdmin is the age tier an admin set on this video itself (Epic 57): a
+	// tier or null. Only an admin's answer to GET /api/videos/{id} has it.
+	AgeTierAdmin *parental.AdminTier `json:"age_tier_admin,omitempty"`
 
 	// List only (Epic 45): the publish date (PublishedExpr) and, under
 	// sort=plays, everyone's plays.
@@ -684,6 +687,8 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// the rating control's current value, for an admin alone
+	v.AgeTierAdmin = parental.AdminTierOf(r.Context(), h.DB, principal.FromContext(r.Context()), parental.TierOnVideo, id)
 
 	common.WriteJSON(w, r, http.StatusOK, v)
 }

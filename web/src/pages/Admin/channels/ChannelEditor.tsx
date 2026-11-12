@@ -313,7 +313,9 @@ export function ChannelEditor({
       {isEdit && draft.slug && <PreferHost slug={draft.slug} />}
       {/* Epic 57 stories 57.01 and 57.10: a channel with no rating is hidden from a
           restricted account */}
-      {isEdit && draft.id && <AgeTierControl target={{ kind: "channel", id: draft.id }} />}
+      {isEdit && draft.id && (
+        <AgeTierControl target={{ kind: "channel", id: draft.id }} current={draft.age_tier} />
+      )}
       {isEdit && <p className="mkt-muted">{t("channels.nextBoundaryNote")}</p>}
     </div>
   );

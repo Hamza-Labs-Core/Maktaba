@@ -5,10 +5,12 @@
 //   PUT /api/libraries/{id}/youtube/sources/{sid}/age-tier                {tier | null}
 //     → {tier, source, recompute_count}
 //
-// Admins only, and the home refuses anyone else (403). No route of the home reads a
-// container's rating back, so the control starts on "choose" unless the page knows
-// the rating (`current`), and shows what the home answered after a save.
-import { useId, useState } from "react";
+// Admins only, and the home refuses anyone else (403). The GET of each of these
+// carries what an admin set (`age_tier`; a video's `age_tier_admin`), for an admin
+// alone: the page passes it as `current` and the control shows it. An older home
+// sends no such field: `current` is then left out and the control starts on
+// "choose". After a save it shows what the home answered.
+import { useEffect, useId, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { ApiError } from "../../lib/api";
 import { useOptionalAuth } from "../../lib/auth";
@@ -65,6 +67,12 @@ export function AgeTierControl({ target, current, label, onSaved }: AgeTierContr
   const { t, n } = useI18n();
   const id = useId();
   const [choice, setChoice] = useState<Choice>(choiceOf(current));
+  // the page's answer may come after the control is on screen, or be read again:
+  // follow it until the admin chooses something themselves
+  const [touched, setTouched] = useState(false);
+  useEffect(() => {
+    if (!touched && current !== undefined) setChoice(choiceOf(current));
+  }, [current, touched]);
   const [busy, setBusy] = useState(false);
   const [answer, setAnswer] = useState<TierAnswer | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -100,7 +108,14 @@ export function AgeTierControl({ target, current, label, onSaved }: AgeTierContr
         <span className="mkt-field__label">
           {label ?? t(isLibrary ? "parental.tier.libraryDefault" : "parental.tier.label")}
         </span>
-        <select id={id} value={choice} onChange={(e) => setChoice(e.target.value as Choice)}>
+        <select
+          id={id}
+          value={choice}
+          onChange={(e) => {
+            setTouched(true);
+            setChoice(e.target.value as Choice);
+          }}
+        >
           {choice === "" && <option value="">{t("parental.tier.choose")}</option>}
           <TierOptions clearLabel={t("parental.tier.clear")} />
         </select>
