@@ -126,7 +126,7 @@ describe("the warnings", () => {
     const { rerender } = render(show(time({ remainingSeconds: 400 })));
     expect(screen.queryByRole("alert")).toBeNull();
 
-    rerender(show(time({ remainingSeconds: 290 })));
+    rerender(show(time({ remainingSeconds: 300 })));
     expect(screen.getByRole("alert")).toHaveTextContent("Watching ends in 5 minutes.");
     // it goes away by itself, and the next answer under the same line does not bring it back
     act(() => vi.advanceTimersByTime(WARNING_MS + 10));
@@ -134,8 +134,25 @@ describe("the warnings", () => {
     rerender(show(time({ remainingSeconds: 200 })));
     expect(screen.queryByRole("alert")).toBeNull();
 
-    rerender(show(time({ remainingSeconds: 55 })));
+    rerender(show(time({ remainingSeconds: 60 })));
     expect(screen.getByRole("alert")).toHaveTextContent("Watching ends in 1 minute.");
+  });
+
+  it("says the time that is left, not the line that was crossed", () => {
+    // a video opened with two and a half minutes left: the first answer is already
+    // under the five-minute line
+    const { unmount } = page(<TimeWarning time={time({ remainingSeconds: 150 })} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Watching ends in 2 minutes.");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("5 minutes");
+    unmount();
+    // the same words as the time left beside it
+    page(<TimeWarning time={time({ remainingSeconds: 40 })} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Watching ends in less than a minute.");
+  });
+
+  it("says the time that is left in Arabic too", () => {
+    page(<TimeWarning time={time({ remainingSeconds: 200 })} />, "ar");
+    expect(screen.getByRole("alert")).toHaveTextContent("تنتهي المشاهدة بعد ٣ دقائق.");
   });
 
   it("warns again after more time came and ran down", () => {
@@ -149,7 +166,7 @@ describe("the warnings", () => {
     // a parent gave 30 minutes
     rerender(show(time({ remainingSeconds: 1850 })));
     rerender(show(time({ remainingSeconds: 299 })));
-    expect(screen.getByRole("alert")).toHaveTextContent("5 minutes");
+    expect(screen.getByRole("alert")).toHaveTextContent("4 minutes");
   });
 
   it("can be closed", async () => {

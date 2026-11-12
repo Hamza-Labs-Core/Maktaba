@@ -196,7 +196,7 @@ describe("VideoPlayer under the home's time rules (57.15)", () => {
 
   it("warns five minutes before the end", async () => {
     post.mockResolvedValue(SESSION);
-    myTime = { allowed: true, limited: true, remaining_seconds: 280 };
+    myTime = { allowed: true, limited: true, remaining_seconds: 300 };
     renderPlayer();
     expect(await screen.findByTestId("parental-time-warning")).toHaveTextContent(
       "Watching ends in 5 minutes."
