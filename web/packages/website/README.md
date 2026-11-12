@@ -23,7 +23,7 @@ Worker, which:
 
 | Path                            | What                                           | From                                                 |
 | ------------------------------- | ---------------------------------------------- | ---------------------------------------------------- |
-| `/`, `/ar/`                     | the front door (Phase 1)                       | `src/pages/index.html`, `src/pages/ar/index.html`    |
+| `/`, `/ar/`                     | the home page (60.10)                          | `scripts/home.mjs`, `copy/home.*.md`, `static/shots` |
 | `/install/`, `/ar/install/`     | the install chooser (60.05)                    | `src/pages/install/index.html` (+ `ar/`)             |
 | `/install/…`, `/ar/install/…`   | Epic 59's install guides                       | `web/packages/install` (`pnpm -C web build:install`) |
 | `/legal/…`, `/ar/legal/…`       | privacy, terms, copyright (60.07)              | `copy/legal/`, `scripts/legal.mjs`                   |
@@ -43,6 +43,16 @@ header and footer (`inShell`), and lose each "Screenshot to come" figure whose i
 exist yet (60.05 T07). The shell's stylesheet (`design/` with `src/site.css`), scripts
 (`design/shell.js`, `src/shell-head.js`), fonts and mark are published under content-hashed
 names in `/assets/`. The Worker writes the address asked for into the 404 page.
+
+The home page (story 60.10) is `scripts/home.mjs`: 60.01 part B's home mockup with 60.02's copy
+(`copy/home.<lang>.md`, read as the mockups read it) and 60.09's screenshots (`SHOTS`, each a
+`<picture>` with its sizes), drawn in part B's shell (`page({ variant: "b" })`: the wordmark
+lockups, the Phase 2 nav, part B's stylesheet `design/site.css` with `src/part-b.css`, the display
+face preloaded). Download goes to `/download/` once story 60.11 builds it, until then to the
+latest release; a feature links its help topic once 60.12 builds it (`FEATURES`). Its one
+script, `src/home.ts`, runs in the head: it names the visitor's system on `<html>` (the button
+reads "Download for Mac" from its first frame) and adds it to each `/download/` link
+(`/download/#mac`). The other pages keep part A's shell until their part B layouts.
 
 The problem pages are generated from the registry the API sends from, `shared/api/problems.json`
 (`scripts/problems.mjs`): one page per entry in each language, and the index, `/problems/`, grouped

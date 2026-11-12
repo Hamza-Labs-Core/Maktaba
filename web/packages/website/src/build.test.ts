@@ -104,9 +104,10 @@ describe("the built site (dist/)", () => {
     expect(fs.existsSync(path.join(DIST, "index.html")), "run `npm run build` first").toBe(true);
   });
 
-  it("the front door's headline is the chosen tagline (Q1, 2026-11-12), in both languages", () => {
-    expect(read("index.html")).toContain("<h1>Your own library, on every screen at home.</h1>");
-    expect(read("ar/index.html")).toContain("<h1>مكتبتكم، على كل شاشة في البيت.</h1>");
+  it("the home page's headline is the chosen tagline (Q1, 2026-11-12), in both languages", () => {
+    const h1 = (rel: string) => read(rel).match(/<h1[^>]*>([^<]*)<\/h1>/)?.[1];
+    expect(h1("index.html")).toBe("Your own library, on every screen at home.");
+    expect(h1("ar/index.html")).toBe("مكتبتكم، على كل شاشة في البيت.");
   });
 
   it("T05: serves the log schema at its $id, byte for byte", () => {
@@ -123,11 +124,23 @@ describe("the built site (dist/)", () => {
     expect(txt.match(/^Canonical: /gm)).toHaveLength(2);
   });
 
-  it("has the front door and the 404 page in both languages", () => {
+  it("has the home page (60.10) and the 404 page in both languages", () => {
     const en = read("index.html");
     expect(en).toContain('<html lang="en" dir="ltr">');
     expect(en).toContain('id="lang-switch" class="lang-switch" href="/ar/"');
     expect(read("ar/index.html")).toContain('<html lang="ar" dir="rtl">');
+    // the home page's marker (tools/cloudflare/smoke.mjs), the chosen tagline, part B's shell
+    expect(en).toContain('data-page="home"');
+    expect(en).toContain("Your own library, on every screen at home.");
+    expect(read("ar/index.html")).toContain('data-page="home"');
+    expect(read("ar/index.html")).toContain("مكتبتكم، على كل شاشة في البيت.");
+    for (const f of ["index.html", "ar/index.html"]) {
+      expect(read(f), f).toMatch(
+        /<link rel="stylesheet" href="\/assets\/part-b-[\w-]{10}\.css" \/>/
+      );
+      expect(read(f), f).toMatch(/<script src="\/assets\/home-[\w-]{10}\.js"><\/script>/);
+      expect(read(f), f).toContain('<use href="#mk-icon"/>');
+    }
     for (const f of ["404.html", "ar/404.html"]) expect(read(f), f).toContain('content="404"');
     expect(read("404.html")).toContain("This page isn’t here");
     expect(read("ar/404.html")).toContain("هذه الصفحة غير موجودة");
