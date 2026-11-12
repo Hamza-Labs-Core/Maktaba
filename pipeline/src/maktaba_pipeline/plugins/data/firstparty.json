@@ -1,5 +1,5 @@
 {
- "digest": "a836e42865c6b74531ea8e70f41767d9a7beb3e4ab29413f8cb5e779a8019c50",
+ "digest": "283cf4523d6da226f5a6bdecf41275d774466ea1a53bf8ae5d2af2533ad2a99a",
  "plugins": [
   {
    "digest": "90cee3b8a50fbfef9b0b1d9f12fbf0516ee5098ee7913c1d5133714f73b1b1b3",
@@ -3433,7 +3433,7 @@
    }
   },
   {
-   "digest": "f89cc23462b9e6791aec4735205a72d8d752793b34e36c60b81d65e1e2eeb6a4",
+   "digest": "55c0008be3e094bc91bb35365844bb588279a6317ec3b8d19cb24091a21dc448",
    "folder": "livetv",
    "id": "tv.maktaba.livetv",
    "manifest": "# tv.maktaba.livetv: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 7\n# (story 54.34): plans the live TV channels and writes them (or stages them as a TV change).\nschema     = 1\nid         = \"tv.maktaba.livetv\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.livetv.name\"\nsummary = \"fp.livetv.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"livetv\"\ndb.read   = [\"app_settings\", \"channel_art_overrides\", \"clip_group_items\", \"clip_groups\", \"collection_items\", \"episode_tags\", \"job_stages\", \"libraries\", \"media_metadata_enrichment\", \"processing_jobs\", \"promo_links\", \"season_style\", \"season_tags\", \"series\", \"series_episodes\", \"series_seasons\", \"tv_slots\", \"video_topic_tags\", \"videos\", \"youtube_channels\", \"youtube_videos\"]\ndb.write  = [\"channel_plans\", \"channel_programs\", \"channel_schedule_state\", \"channels\", \"external_links\", \"filler_items\", \"filler_pools\", \"tv_change_events\", \"tv_changes\", \"tv_release_channels\", \"tv_releases\", \"tv_routing\", \"tv_sched_gen_seq\"]\nsettings  = [\"planner\", \"detect\", \"tv\", \"tv_output\", \"tv_staging\", \"display_titles\"]\nfiles.read  = [\"data.channels\"]\nfiles.write = [\"data.review\"]\n\n[[stage]]\nname         = \"plan_channels\"\nsubject      = \"catalog\"\nexport       = \"plan-channels\"\nversion      = 5\nlabel        = \"Plan channels\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 1\nentry_for    = [\"catalog\"]\ndebounce_sec = 300\ndebounce_max_sec = 3600\nplacement    = \"home\"\nedges        = [{ to = \"write_channels\", map = \"same\" }]\nentry        = \"maktaba_fp_livetv.stages.plan_channels:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"write_channels\"\nsubject      = \"catalog\"\nexport       = \"write-channels\"\nversion      = 5\nlabel        = \"Write channels\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 2\nplacement    = \"home\"\nentry        = \"maktaba_fp_livetv.stages.write_channels:IMPL\"\nfingerprint  = { input = true, output = false }\n",
@@ -3702,30 +3702,6 @@
     },
     {
      "mode": "write",
-     "name": "generation.copy_channel.3",
-     "reads": [],
-     "scope": "catalog",
-     "scope_arg": 0,
-     "sha256": "c7fd6738d283634f9f75df4910a383cab08271f66b88f925b9dd12c87f756937",
-     "text": "INSERT INTO channel_programs (id, channel_id, seq, kind, video_id, filler_item_id, start_at, end_at, source_offset, source_duration, title_snapshot, source_url, sched_gen) SELECT gen_random_uuid(), channel_id, seq, kind, video_id, filler_item_id, start_at, end_at, source_offset, source_duration, title_snapshot, source_url, $3 FROM channel_programs WHERE channel_id = $1 AND sched_gen = $2",
-     "writes": [
-      "channel_programs"
-     ]
-    },
-    {
-     "mode": "write",
-     "name": "generation.copy_channel.4",
-     "reads": [],
-     "scope": "catalog",
-     "scope_arg": 0,
-     "sha256": "fea3cd4fa20b5477e731a91162b83422142df8d415f412ddaa977db0cc79d823",
-     "text": "INSERT INTO channel_programs (id, channel_id, seq, kind, video_id, filler_item_id, start_at, end_at, source_offset, source_duration, title_snapshot, source_url, sched_gen) SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))), channel_id, seq, kind, video_id, filler_item_id, start_at, end_at, source_offset, source_duration, title_snapshot, source_url, $3 FROM channel_programs WHERE channel_id = $1 AND sched_gen = $2",
-     "writes": [
-      "channel_programs"
-     ]
-    },
-    {
-     "mode": "write",
      "name": "generation.copy_channel.5",
      "reads": [],
      "scope": "catalog",
@@ -3747,6 +3723,30 @@
      "sha256": "7d6ad8c3c2f36ba324a88e335bf4eb81f36e7971ec6f4d59332c4be268a52088",
      "text": "SELECT count(*) FROM channel_programs WHERE channel_id = $1 AND sched_gen = $2",
      "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "generation.copy_channel.7",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "fc46b1af6e6c3d3c10e9be35e0212c629de019be98e1f5aa43950f1cd55260b7",
+     "text": "INSERT INTO channel_programs (id, channel_id, seq, kind, video_id, filler_item_id, start_at, end_at, source_offset, source_duration, title_snapshot, source_url, age_tier, sched_gen) SELECT gen_random_uuid(), channel_id, seq, kind, video_id, filler_item_id, start_at, end_at, source_offset, source_duration, title_snapshot, source_url, age_tier, $3 FROM channel_programs WHERE channel_id = $1 AND sched_gen = $2",
+     "writes": [
+      "channel_programs"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "generation.copy_channel.8",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "52866434afc560baa6ada7addfacecdb879362241e19a0aa482d7ab24d6305a8",
+     "text": "INSERT INTO channel_programs (id, channel_id, seq, kind, video_id, filler_item_id, start_at, end_at, source_offset, source_duration, title_snapshot, source_url, age_tier, sched_gen) SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))), channel_id, seq, kind, video_id, filler_item_id, start_at, end_at, source_offset, source_duration, title_snapshot, source_url, age_tier, $3 FROM channel_programs WHERE channel_id = $1 AND sched_gen = $2",
+     "writes": [
+      "channel_programs"
+     ]
     },
     {
      "mode": "read",
@@ -4266,6 +4266,20 @@
      "scope_arg": 0,
      "sha256": "36c4b10763e4185a42820356adf26a25a77f2c7abcb5483a89a23ac5ca012e53",
      "text": "INSERT INTO channel_programs\n                        (channel_id, seq, kind, video_id, filler_item_id,\n                         start_at, end_at, source_offset, source_duration, title_snapshot,\n                         source_url, sched_gen)\n                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+     "writes": [
+      "channel_programs"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "repo.replace_future_blocks.3",
+     "reads": [
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "756d44fe170e31d656a8a63a682d809023c48cf109d7b43981517379018f54b9",
+     "text": "UPDATE channel_programs SET age_tier = (SELECT v.age_tier FROM videos v WHERE v.id = channel_programs.video_id) WHERE channel_id = $1 AND sched_gen = $3 AND start_at >= $2",
      "writes": [
       "channel_programs"
      ]
@@ -4907,7 +4921,7 @@
    }
   },
   {
-   "digest": "2a43d1e9f2620a2dc54be478246e0022673e628fb1c3a470bc8df9fbdbda48e0",
+   "digest": "1aae13e4d004367455216f68abb1db642fe42933838e5269fcafd2344979475e",
    "folder": "livetv-slots",
    "id": "tv.maktaba.livetv-slots",
    "manifest": "# tv.maktaba.livetv-slots: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 7\n# (story 54.34): stages, swaps, rolls back and cleans up TV changes (Epic 33's slots).\nschema     = 1\nid         = \"tv.maktaba.livetv-slots\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.livetv-slots.name\"\nsummary = \"fp.livetv-slots.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"livetv.slots\"\ndb.read   = [\"app_settings\", \"channel_art_overrides\", \"channel_plans\", \"collection_items\", \"filler_items\", \"filler_pools\", \"job_stages\", \"series\", \"series_episodes\", \"tv_slots\", \"videos\"]\ndb.write  = [\"channel_programs\", \"channel_schedule_state\", \"channels\", \"external_links\", \"tv_change_events\", \"tv_changes\", \"tv_release_channels\", \"tv_releases\", \"tv_routing\", \"tv_sched_gen_seq\"]\nsettings  = [\"tv\", \"tv_output\", \"tv_staging\", \"display_titles\"]\nfiles.read  = [\"data.channels\"]\nfiles.write = []\n\n[[stage]]\nname         = \"tv_stage\"\nsubject      = \"catalog\"\nexport       = \"tv-stage\"\nversion      = 1\nlabel        = \"Stage TV change\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 3\nplacement    = \"home\"\nmax_attempts = 2\nentry        = \"maktaba_fp_livetv_slots.stages.tv_stage:IMPL\"\n\n[[stage]]\nname         = \"tv_swap\"\nsubject      = \"catalog\"\nexport       = \"tv-swap\"\nversion      = 1\nlabel        = \"Swap TV change\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 4\nplacement    = \"home\"\nmax_attempts = 1\nentry        = \"maktaba_fp_livetv_slots.stages.tv_swap:IMPL\"\n\n[[stage]]\nname         = \"tv_gc\"\nsubject      = \"catalog\"\nexport       = \"tv-gc\"\nversion      = 1\nlabel        = \"TV staging clean-up\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 5\nplacement    = \"home\"\nentry        = \"maktaba_fp_livetv_slots.stages.tv_gc:IMPL\"\n\n[[stage]]\nname         = \"tv_rollback\"\nsubject      = \"catalog\"\nexport       = \"tv-rollback\"\nversion      = 1\nlabel        = \"Roll back TV change\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 6\nplacement    = \"home\"\nmax_attempts = 2\nentry        = \"maktaba_fp_livetv_slots.stages.tv_rollback:IMPL\"\n",
@@ -5380,30 +5394,6 @@
     },
     {
      "mode": "write",
-     "name": "generation.copy_channel.3",
-     "reads": [],
-     "scope": "catalog",
-     "scope_arg": 0,
-     "sha256": "c7fd6738d283634f9f75df4910a383cab08271f66b88f925b9dd12c87f756937",
-     "text": "INSERT INTO channel_programs (id, channel_id, seq, kind, video_id, filler_item_id, start_at, end_at, source_offset, source_duration, title_snapshot, source_url, sched_gen) SELECT gen_random_uuid(), channel_id, seq, kind, video_id, filler_item_id, start_at, end_at, source_offset, source_duration, title_snapshot, source_url, $3 FROM channel_programs WHERE channel_id = $1 AND sched_gen = $2",
-     "writes": [
-      "channel_programs"
-     ]
-    },
-    {
-     "mode": "write",
-     "name": "generation.copy_channel.4",
-     "reads": [],
-     "scope": "catalog",
-     "scope_arg": 0,
-     "sha256": "fea3cd4fa20b5477e731a91162b83422142df8d415f412ddaa977db0cc79d823",
-     "text": "INSERT INTO channel_programs (id, channel_id, seq, kind, video_id, filler_item_id, start_at, end_at, source_offset, source_duration, title_snapshot, source_url, sched_gen) SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))), channel_id, seq, kind, video_id, filler_item_id, start_at, end_at, source_offset, source_duration, title_snapshot, source_url, $3 FROM channel_programs WHERE channel_id = $1 AND sched_gen = $2",
-     "writes": [
-      "channel_programs"
-     ]
-    },
-    {
-     "mode": "write",
      "name": "generation.copy_channel.5",
      "reads": [],
      "scope": "catalog",
@@ -5425,6 +5415,30 @@
      "sha256": "7d6ad8c3c2f36ba324a88e335bf4eb81f36e7971ec6f4d59332c4be268a52088",
      "text": "SELECT count(*) FROM channel_programs WHERE channel_id = $1 AND sched_gen = $2",
      "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "generation.copy_channel.7",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "fc46b1af6e6c3d3c10e9be35e0212c629de019be98e1f5aa43950f1cd55260b7",
+     "text": "INSERT INTO channel_programs (id, channel_id, seq, kind, video_id, filler_item_id, start_at, end_at, source_offset, source_duration, title_snapshot, source_url, age_tier, sched_gen) SELECT gen_random_uuid(), channel_id, seq, kind, video_id, filler_item_id, start_at, end_at, source_offset, source_duration, title_snapshot, source_url, age_tier, $3 FROM channel_programs WHERE channel_id = $1 AND sched_gen = $2",
+     "writes": [
+      "channel_programs"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "generation.copy_channel.8",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "52866434afc560baa6ada7addfacecdb879362241e19a0aa482d7ab24d6305a8",
+     "text": "INSERT INTO channel_programs (id, channel_id, seq, kind, video_id, filler_item_id, start_at, end_at, source_offset, source_duration, title_snapshot, source_url, age_tier, sched_gen) SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)), 2) || '-' || substr('89ab', 1 + (abs(random()) % 4), 1) || substr(hex(randomblob(2)), 2) || '-' || hex(randomblob(6))), channel_id, seq, kind, video_id, filler_item_id, start_at, end_at, source_offset, source_duration, title_snapshot, source_url, age_tier, $3 FROM channel_programs WHERE channel_id = $1 AND sched_gen = $2",
+     "writes": [
+      "channel_programs"
+     ]
     },
     {
      "mode": "read",
@@ -5788,6 +5802,20 @@
      "scope_arg": 0,
      "sha256": "36c4b10763e4185a42820356adf26a25a77f2c7abcb5483a89a23ac5ca012e53",
      "text": "INSERT INTO channel_programs\n                        (channel_id, seq, kind, video_id, filler_item_id,\n                         start_at, end_at, source_offset, source_duration, title_snapshot,\n                         source_url, sched_gen)\n                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+     "writes": [
+      "channel_programs"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "repo.replace_future_blocks.3",
+     "reads": [
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "756d44fe170e31d656a8a63a682d809023c48cf109d7b43981517379018f54b9",
+     "text": "UPDATE channel_programs SET age_tier = (SELECT v.age_tier FROM videos v WHERE v.id = channel_programs.video_id) WHERE channel_id = $1 AND sched_gen = $3 AND start_at >= $2",
      "writes": [
       "channel_programs"
      ]

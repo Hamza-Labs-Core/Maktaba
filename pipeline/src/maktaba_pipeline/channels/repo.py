@@ -652,6 +652,17 @@ class SqlRepo:
                     b.source_url,
                     gen,
                 )
+            # Epic 57 story 57.10: each planned programme's tier is its video's (NULL
+            # for filler, idents and an unrated video). The API judges by the video's
+            # tier now first; this one is what it falls back on.
+            await self._c.execute(
+                "UPDATE channel_programs SET age_tier = (SELECT v.age_tier FROM videos v"
+                " WHERE v.id = channel_programs.video_id)"
+                " WHERE channel_id = $1 AND sched_gen = $3 AND start_at >= $2",
+                channel_id,
+                from_at,
+                gen,
+            )
 
     async def _display_snapshots(self, blocks: list[Block]) -> list[dict[str, Any]]:
         """Each block's snapshot with its video's display title laid over it (Story
