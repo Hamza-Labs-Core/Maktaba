@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.api.MyParental
 import com.hamzalabs.maktaba.desktop.InPlayer
 import com.hamzalabs.maktaba.desktop.Lang
+import com.hamzalabs.maktaba.desktop.STALL_MS
 import com.hamzalabs.maktaba.desktop.TestHome
 import com.hamzalabs.maktaba.desktop.Texts
 import com.hamzalabs.maktaba.desktop.home.HomeScreen
@@ -43,7 +44,7 @@ class ParentalPagesTest {
         val home = fake.signedInRestricted()
         runComposeUiTest {
             setContent { InPlayer(home) { Box(Modifier.size(1200.dp, 900.dp)) { HomeScreen() } } }
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-home-left")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-home-left")).fetchSemanticsNodes().isNotEmpty() }
             onNodeWithText("45 minutes left today").assertExists()
         }
     }
@@ -54,7 +55,7 @@ class ParentalPagesTest {
         val home = fake.signedInRestricted()
         runComposeUiTest {
             setContent { InPlayer(home, Lang.Ar) { Box(Modifier.size(1200.dp, 900.dp)) { HomeScreen() } } }
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-home-over")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-home-over")).fetchSemanticsNodes().isNotEmpty() }
             onNodeWithText("انتهى وقت اليوم").assertExists()
         }
     }
@@ -84,25 +85,25 @@ class ParentalPagesTest {
         val home = fake.signedInRestricted()
         runComposeUiTest {
             setContent { InPlayer(home) { Box(Modifier.size(1200.dp, 900.dp)) { VideoPage("v1", null) } } }
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-blocked")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-blocked")).fetchSemanticsNodes().isNotEmpty() }
             onNodeWithText("This isn't available").assertExists()
             onNodeWithText("Your account is limited to 9+.").assertExists()
             assertEquals("not the page of a missing video", 0, onAllNodes(hasTestTag("not-available")).fetchSemanticsNodes().size)
             // the PIN button joins the row once the home has said who holds one, and moves Ask a
             // parent aside: a click sent before that can land beside the button it was aimed at
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-pin")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-pin")).fetchSemanticsNodes().isNotEmpty() }
             waitForIdle()
             // Ask a parent names the video, not minutes
             onNodeWithText("Ask a parent").performClick()
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-ask-state")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-ask-state")).fetchSemanticsNodes().isNotEmpty() }
             assertEquals("""{"subject_kind":"video","subject_id":"v1"}""", fake.asked("POST /api/me/parental/requests").single().body!!.utf8())
             // a parent types their PIN: no minutes to choose, and the page becomes the video's
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-pin")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-pin")).fetchSemanticsNodes().isNotEmpty() }
             onNodeWithTag("parental-pin").performClick()
             assertEquals(0, onAllNodes(hasTestTag("parental-pin-minutes-30")).fetchSemanticsNodes().size)
             onNodeWithTag("parental-pin-field").performTextInput("123456")
             onNodeWithTag("parental-pin-submit").performClick()
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("video-page")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("video-page")).fetchSemanticsNodes().isNotEmpty() }
             assertEquals(
                 """{"guardian_id":"g1","pin":"123456","subject_kind":"video","subject_id":"v1"}""",
                 fake.asked("POST /api/me/parental/unlock").single().body!!.utf8(),
@@ -116,7 +117,7 @@ class ParentalPagesTest {
         val limited = fake.signedInRestricted()
         runComposeUiTest {
             setContent { InPlayer(limited, Lang.Ar) { Box(Modifier.size(1200.dp, 900.dp)) { VideoPage("v1", null) } } }
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-blocked")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-blocked")).fetchSemanticsNodes().isNotEmpty() }
             onNodeWithText("هذا غير متاح").assertExists()
             onNodeWithText("اطلب من أحد الوالدين").assertExists()
         }
@@ -124,7 +125,7 @@ class ParentalPagesTest {
             val free = other.home()
             runComposeUiTest {
                 setContent { InPlayer(free) { Box(Modifier.size(1200.dp, 900.dp)) { VideoPage("v1", null) } } }
-                waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("not-available")).fetchSemanticsNodes().isNotEmpty() }
+                waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("not-available")).fetchSemanticsNodes().isNotEmpty() }
                 assertEquals(0, onAllNodes(hasTestTag("parental-blocked")).fetchSemanticsNodes().size)
             }
         }
@@ -144,14 +145,14 @@ class ParentalPagesTest {
                     InPlayer(home) { Box(Modifier.size(1200.dp, 900.dp)) { VideoPage("v1", null) } }
                 }
             }
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-blocked")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-blocked")).fetchSemanticsNodes().isNotEmpty() }
             val before = fake.asked("GET /api/videos/v1").size
             focused.value = false
             waitForIdle()
             assertEquals("leaving reads nothing", before, fake.asked("GET /api/videos/v1").size)
             fake.answer("GET /api/videos/v1", """{"id":"v1","title":"Fiqh 7","duration_sec":3000}""")
             focused.value = true
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("video-page")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("video-page")).fetchSemanticsNodes().isNotEmpty() }
             onNodeWithText("Fiqh 7").assertExists()
         }
     }

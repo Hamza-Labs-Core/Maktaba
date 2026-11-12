@@ -1,18 +1,12 @@
 package com.hamzalabs.maktaba.desktop
 
 import com.hamzalabs.maktaba.desktop.watch.TimeUp
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 import java.time.Instant
 import java.util.Collections
-import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -23,9 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class PlaybackTimeTest {
     private val home = TestHome()
-    private val main = Executors.newSingleThreadExecutor { r -> Thread(r, "test-main").apply { isDaemon = true } }.asCoroutineDispatcher()
-    private val scope = CoroutineScope(SupervisorJob() + main)
-    private val background = CoroutineScope(SupervisorJob() + main)
+    private val main = TestMain(home)
     private val asked = AtomicInteger()
     private val over = AtomicBoolean(true)
 
@@ -42,7 +34,7 @@ class PlaybackTimeTest {
 
     private val made: MutableList<FakeVideo> = Collections.synchronizedList(mutableListOf())
     private val players = Players { url, _, _, _ -> FakeVideo(url).also { made += it } }
-    private val playback = Playback(home.client, scope, background, signedOut = {}, players = players)
+    private val playback = Playback(home.client, main.scope, main.background, signedOut = {}, players = players, nowMs = main.nowMs)
 
     init {
         home.answer("POST /api/stream/sessions") {
@@ -61,20 +53,14 @@ class PlaybackTimeTest {
 
     @After
     fun tearDown() {
-        runBlocking(main) { playback.close() }
-        home.close()
+        main.run { playback.close() }
         main.close()
+        home.close()
     }
 
-    private fun <T> onMain(block: () -> T): T = runBlocking { withContext(main) { block() } }
+    private fun <T> onMain(block: () -> T): T = main.run(block)
 
-    private fun until(what: String, ms: Long = 10_000, ok: () -> Boolean) {
-        val end = System.currentTimeMillis() + ms
-        while (!onMain(ok)) {
-            if (System.currentTimeMillis() > end) throw AssertionError("never: $what")
-            Thread.sleep(20)
-        }
-    }
+    private fun until(what: String, ok: () -> Boolean) = main.until(what, ok)
 
     @Test
     fun aRefusedVideoShowsTimesUpAndIsNotAskedForAgain() {
@@ -83,8 +69,8 @@ class PlaybackTimeTest {
         assertEquals(TimeUp("limit_reached", Instant.parse("2026-11-12T04:00:00Z"), positionMs = 754_000), onMain { playback.timeUp })
         assertNull("nothing plays", onMain { playback.player })
         assertNull("it is not the general failure", onMain { playback.problem })
-        // the Player does not retry
-        Thread.sleep(300)
+        // the Player does not retry: a minute on, the home was asked that once
+        main.pass(60_000)
         assertEquals(1, asked.get())
         // no player was ever made for it
         assertEquals(0, made.size)

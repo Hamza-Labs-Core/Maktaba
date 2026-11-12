@@ -25,6 +25,13 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
+ * The net under the tests' waits for a state (an answer read, a screen shown): they return as
+ * soon as the state holds, and this is far longer than a slow runner needs, so only a real
+ * stall meets it.
+ */
+const val STALL_MS = 60_000L
+
+/**
  * A home for the desktop Player's tests: a MockWebServer answering `"<METHOD> <path>"` routes
  * (404 otherwise), what it was asked, and a [DesktopHome] on it. Scratch data only.
  */
