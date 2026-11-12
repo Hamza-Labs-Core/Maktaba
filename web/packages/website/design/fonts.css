@@ -6,14 +6,17 @@
  * (about 83 KB). Self-hosted; no third-party request. See ../static/fonts/README.md.
  *
  * The fallback faces are Arial scaled to Plex's average Latin width and vertical
- * metrics, so the swap from the fallback to the real face moves nothing (CLS 0).
+ * metrics. The faces are preloaded and `font-display: optional`: a face that arrives in the
+ * first moments (as a preloaded one does) is drawn from the first paint, and one that arrives
+ * later is not swapped in, so nothing moves (CLS 0) even where Arial is missing (Linux) and the
+ * fallback is another face.
  */
 
 @font-face {
   font-family: "Maktaba Text";
   font-style: normal;
   font-weight: 400;
-  font-display: swap;
+  font-display: optional;
   src: url("../static/fonts/maktaba-text-400-latin.woff2") format("woff2");
   unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+02C6, U+02DA, U+02DC, U+2000-206F,
     U+20AC, U+2122, U+2190-2193, U+2212, U+FEFF, U+FFFD;
@@ -23,7 +26,7 @@
   font-family: "Maktaba Text";
   font-style: normal;
   font-weight: 400;
-  font-display: swap;
+  font-display: optional;
   src: url("../static/fonts/maktaba-text-400-arabic.woff2") format("woff2");
   unicode-range: U+0600-06FF, U+200C-200F, U+2066-2069, U+FB50-FDFF, U+FE70-FEFF;
 }
@@ -32,7 +35,7 @@
   font-family: "Maktaba Text";
   font-style: normal;
   font-weight: 600;
-  font-display: swap;
+  font-display: optional;
   src: url("../static/fonts/maktaba-text-600-latin.woff2") format("woff2");
   unicode-range: U+0020-007E, U+00A0-00FF, U+0131, U+0152-0153, U+02C6, U+02DA, U+02DC, U+2000-206F,
     U+20AC, U+2122, U+2190-2193, U+2212, U+FEFF, U+FFFD;
@@ -42,7 +45,7 @@
   font-family: "Maktaba Text";
   font-style: normal;
   font-weight: 600;
-  font-display: swap;
+  font-display: optional;
   src: url("../static/fonts/maktaba-text-600-arabic.woff2") format("woff2");
   unicode-range: U+0600-06FF, U+200C-200F, U+2066-2069, U+FB50-FDFF, U+FE70-FEFF;
 }

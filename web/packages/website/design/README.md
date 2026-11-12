@@ -104,9 +104,12 @@ alone (WCAG 1.4.11 covers what is needed to understand or operate).
 OFL asks: `../static/fonts/README.md`). Weights **400 and 600** only: the shell uses no other.
 Each weight is split by `unicode-range` into a Latin and an Arabic file, so an English page
 downloads 29 KB of fonts and an Arabic page 83 KB, inside the 150 KB budget with room for part
-B's display face. Preloaded, `font-display: swap`.
+B's display face. Preloaded, `font-display: optional` (below).
 
-**No layout shift on swap.** `Maktaba Text Fallback` is Arial scaled to Plex's metrics:
+**No layout shift.** The faces are `optional`: a preloaded face arrives in the first moments
+and is drawn from the first paint; one that comes later is not swapped in, so a line never moves
+(the built site measured a shift of 0.00005 with `swap` on Linux, where Arial is missing). Should
+a face fall back, `Maktaba Text Fallback` is Arial scaled to Plex's metrics:
 `size-adjust: 101.6%` (400) and `97.15%` (600) from the average Latin advance, with
 `ascent-override` and `descent-override` from Plex's 1.085/0.415 em. Every text style also sets
 an explicit line height, so a line box is the same height in either face. Code uses the

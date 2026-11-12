@@ -10,7 +10,7 @@
   if (root.lang !== "en") return;
   try {
     if (localStorage.getItem("maktaba.langHint")) return;
-  } catch (e) {
+  } catch {
     // storage refused (a private window): the hint shows, and hiding it lasts for the page
   }
   var langs =

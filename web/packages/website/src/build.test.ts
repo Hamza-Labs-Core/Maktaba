@@ -200,7 +200,7 @@ describe("the built site (dist/)", () => {
       );
       expect(html, f).not.toContain("<form");
       // no script but the shell's own two (its head script and the menu's)
-      const scripts = [...html.matchAll(/<script\b[^>]*>/g)].map((m) => m[0]);
+      const scripts = [...html.matchAll(/<script\b[^>]*>/gi)].map((m) => m[0]);
       expect(scripts, f).toHaveLength(2);
       for (const s of scripts)
         expect(s, f).toMatch(
