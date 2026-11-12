@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **Messages in Arabic speak to the whole household (story 60.06).** The Arabic of every
+  message the API sends, and of its page on maktaba.tv, now addresses the household in the plural
+  and names the product «مكتبة» («برنامج مكتبة» where the bare word reads as a library), as the
+  site's voice guide does. The English and what each message means are unchanged.
+
 - **Updates on a NAS (story 59.12).** The Docker image's own updates and a NAS catalog's
   (TrueNAS app updates, Unraid's update check, Watchtower, a pull in Container Manager) now live
   side by side: neither needs turning off. **Admin → Updates** shows, on the image, the release

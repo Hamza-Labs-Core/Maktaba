@@ -134,7 +134,7 @@ test("who sees it and who helps follow the audience", () => {
   assert.ok(html("app").includes("the app's maker"));
   // the Arabic says «مكتبة», never the Latin name, and addresses the reader in the plural
   for (const a of AUDIENCES) assert.doesNotMatch(T.ar.who[a], /Maktaba/);
-  assert.ok(html("person", "ar").includes("قد تظهر لكم هذه الرسالة أثناء استخدام مكتبة."));
+  assert.ok(html("person", "ar").includes("قد تظهر لكم هذه الرسالة أثناء استخدام برنامج مكتبة."));
   assert.equal(T.ar.do, "ما الذي يمكنكم فعله");
 });
 

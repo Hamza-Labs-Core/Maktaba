@@ -28,6 +28,12 @@
 //   - all (the nightly sweep): every page in both languages, one run each, split into --shard I/N
 //     (every Nth page). With --remeasure 3, a URL that fails is measured three more times and
 //     judged on their median: a page under the bar on that median fails, with no other retry.
+//
+// A run that Lighthouse itself could not finish (a runtimeError: NO_NAVSTART, NO_FCP and the
+// like, "Please run Lighthouse again") makes lhci collect stop. That is no measurement, so the
+// pages the collect left unmeasured (the one it stopped on, and those after it) are measured
+// again, up to RUNTIME_RETRIES more times, each retry logged. A score under the bar is a
+// measurement: it is never retried here and fails on its first judgement.
 
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -190,26 +196,101 @@ function lhci(args, cwd, log) {
     child.on("error", reject);
     child.on("close", (status) => {
       fs.appendFileSync(log, `$ lhci ${args.join(" ")}\n${out}\n`);
-      resolve({ status });
+      resolve({ status, out });
     });
   });
 }
 
-/** Measures `urls` (each `runs` times) in a work folder of its own; returns its lhrs and the
- * failing assertions by URL. */
-async function measure({ base, urls, runs, work, rcFile, chrome, log, additive = false }) {
+/** How many more times a collect that Lighthouse could not finish is run. */
+export const RUNTIME_RETRIES = 2;
+
+/** The Lighthouse runtimeError code a failed collect's output names, or null when it failed for
+ * another reason (which is never retried). */
+export function runtimeErrorOf(output = "") {
+  return (
+    output.match(/Runtime error encountered:[^\n]*\(([A-Z][A-Z_]+)\)/)?.[1] ??
+    output.match(/"runtimeError":\s*\{\s*"code":\s*"([A-Z][A-Z_]+)"/)?.[1] ??
+    null
+  );
+}
+
+/** The lhr files in a work folder, by the path of the URL they measured. */
+function lhrsByUrl(work) {
+  const dir = path.join(work, ".lighthouseci");
+  const out = {};
+  if (!fs.existsSync(dir)) return out;
+  for (const f of fs.readdirSync(dir).filter((f) => /^lhr-.*\.json$/.test(f))) {
+    const file = path.join(dir, f);
+    let lhr;
+    try {
+      lhr = JSON.parse(fs.readFileSync(file, "utf8"));
+    } catch {
+      continue;
+    }
+    const url = new URL(lhr.requestedUrl ?? lhr.finalDisplayedUrl ?? lhr.finalUrl).pathname;
+    (out[url] ??= []).push({ file, failed: lhr.runtimeError?.code ?? null });
+  }
+  return out;
+}
+
+/** After a stopped collect: the URLs without `runs` good measurements. Their partial or failed
+ * lhrs are removed, so each is measured afresh and judged on `runs` runs, as the others. */
+export function unfinished(work, urls, runs) {
+  const have = lhrsByUrl(work);
+  const out = [];
+  for (const u of urls) {
+    const lhrs = have[u] ?? [];
+    if (lhrs.length >= runs && !lhrs.some((l) => l.failed)) continue;
+    for (const l of lhrs) fs.rmSync(l.file, { force: true });
+    out.push(u);
+  }
+  return out;
+}
+
+/** Measures `urls` (each `runs` times) in a work folder of its own. A collect that Lighthouse
+ * could not finish (a runtimeError) is run again for the URLs it left unmeasured, up to
+ * RUNTIME_RETRIES more times; any other failure stops at once. */
+export async function measure({
+  base,
+  urls,
+  runs,
+  work,
+  rcFile,
+  chrome,
+  log,
+  additive = false,
+  run = lhci,
+  say = console.log,
+}) {
   fs.mkdirSync(work, { recursive: true });
   if (!urls.length) return;
-  const args = [
-    "collect",
-    `--config=${rcFile}`,
-    `--chromePath=${chrome}`,
-    `--numberOfRuns=${runs}`,
-    ...urls.map((u) => `--url=${base}${u}`),
-  ];
-  if (additive) args.push("--additive");
-  const r = await lhci(args, work, log);
-  if (r.status !== 0) throw new Error(`lhci collect failed (${r.status}): see ${log}`);
+  let todo = urls;
+  for (let attempt = 0; ; attempt++) {
+    const args = [
+      "collect",
+      `--config=${rcFile}`,
+      `--chromePath=${chrome}`,
+      `--numberOfRuns=${runs}`,
+      ...todo.map((u) => `--url=${base}${u}`),
+    ];
+    if (additive || attempt > 0) args.push("--additive");
+    const r = await run(args, work, log);
+    // a collect that finished can still have kept a run Lighthouse could not finish
+    const kept = Object.values(lhrsByUrl(work))
+      .flat()
+      .find((l) => l.failed)?.failed;
+    if (r.status === 0 && !kept) return;
+    const code = r.status === 0 ? kept : runtimeErrorOf(r.out);
+    if (!code || attempt >= RUNTIME_RETRIES)
+      throw new Error(
+        `lhci collect failed (${r.status}${code ? `, Lighthouse's ${code} after ${attempt + 1} attempts` : ""}): see ${log}`
+      );
+    todo = unfinished(work, todo, runs);
+    const line = `lighthouse: Lighthouse could not finish a run (${code}); measuring the ${todo.length} unmeasured URL(s) again (retry ${attempt + 1} of ${RUNTIME_RETRIES})`;
+    say(line);
+    fs.appendFileSync(log, `${line}\n`);
+    if (!todo.length) return;
+  }
 }
 
 async function judge({ work, rcFile, log }) {
