@@ -473,16 +473,19 @@ final class MockHome: @unchecked Sendable {
         let playlist = "application/vnd.apple.mpegurl"
         let base = (name as NSString).deletingPathExtension
         switch name {
-        case "manifest.m3u8":
-            return resource(master, "m3u8").map { Answer(status: 200, body: $0, contentType: playlist) }
-        case "video.m3u8", "picture.m3u8", "audio-en.m3u8", "audio-ar.m3u8":
-            return Answer(status: 200, body: Data(Self.segments(base, seconds: seconds).utf8), contentType: playlist)
+        // the demo's cases first (a case with no guard above them would take their names)
         case "manifest.m3u8" where demo != nil:
             return resource("demo-master", "m3u8").map { Answer(status: 200, body: $0, contentType: playlist) }
         case "video-0.ts" where demo != nil, "video-1.ts" where demo != nil:
             return resource("demo-picture-\(base.suffix(1))", "ts").map { Answer(status: 200, body: $0, contentType: "video/mp2t") }
         case "subs-en.vtt" where demo != nil, "subs-ar.vtt" where demo != nil:
             return resource("demo-\(base)", "vtt").map { Answer(status: 200, body: $0, contentType: "text/vtt") }
+        case "subs-en.m3u8" where demo != nil, "subs-ar.m3u8" where demo != nil:
+            return Answer(status: 200, body: Data(Self.subtitleSegments(base, seconds: seconds).utf8), contentType: playlist)
+        case "manifest.m3u8":
+            return resource(master, "m3u8").map { Answer(status: 200, body: $0, contentType: playlist) }
+        case "video.m3u8", "picture.m3u8", "audio-en.m3u8", "audio-ar.m3u8":
+            return Answer(status: 200, body: Data(Self.segments(base, seconds: seconds).utf8), contentType: playlist)
         case "subs-en.m3u8", "subs-ar.m3u8":
             let text = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:\(seconds)\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:\(seconds).000,\n\(base).vtt\n#EXT-X-ENDLIST\n"
             return Answer(status: 200, body: Data(text.utf8), contentType: playlist)
@@ -491,6 +494,19 @@ final class MockHome: @unchecked Sendable {
             let type = ext == "ts" ? "video/mp2t" : ext == "vtt" ? "text/vtt" : "application/octet-stream"
             return resource(base, ext).map { Answer(status: 200, body: $0, contentType: type) }
         }
+    }
+
+    /// The demo's subtitle playlist of `seconds`: `<name>.vtt` (its cue lasting the film) for
+    /// each of the picture's segments, after the same discontinuities (a subtitle segment
+    /// counts its times in its own discontinuity's: one segment for the whole stream lines up
+    /// with the first 4 s only, and the player drops the line past them).
+    static func subtitleSegments(_ name: String, seconds: Int) -> String {
+        var out = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n"
+        for i in 0 ..< max(1, seconds / 2) {
+            if i > 0, i % 2 == 0 { out += "#EXT-X-DISCONTINUITY\n" }
+            out += "#EXTINF:2.000,\n\(name).vtt\n"
+        }
+        return out + "#EXT-X-ENDLIST\n"
     }
 
     /// A media playlist of `seconds`: `<prefix>-0.ts` and `<prefix>-1.ts` in turn, each pair
