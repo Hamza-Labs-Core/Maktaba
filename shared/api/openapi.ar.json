@@ -5070,8 +5070,8 @@
       "ar": "العناوين."
     },
     "/paths/~1tv~1hdhr~1allowed/get/responses/200/content/application~1json/schema/properties/addresses/description": {
-      "en": "IP addresses or CIDR ranges, for example `192.168.1.20` or `192.168.1.0/24`. The answer has them normalised, without repeats.",
-      "ar": "عناوين IP أو نطاقات CIDR، مثل `192.168.1.20` أو `192.168.1.0/24`. ويعيدها الجواب موحَّدة الصيغة وبلا تكرار."
+      "en": "IP addresses or CIDR ranges, for example `192.0.2.20` or `192.0.2.0/24`. The answer has them normalised, without repeats.",
+      "ar": "عناوين IP أو نطاقات CIDR، مثل `192.0.2.20` أو `192.0.2.0/24`. ويعيدها الجواب موحَّدة الصيغة وبلا تكرار."
     },
     "/paths/~1tv~1hdhr~1allowed/get/responses/403/description": {
       "en": "Admin only.",
@@ -5090,16 +5090,16 @@
       "ar": "العناوين."
     },
     "/paths/~1tv~1hdhr~1allowed/put/requestBody/content/application~1json/schema/properties/addresses/description": {
-      "en": "IP addresses or CIDR ranges, for example `192.168.1.20` or `192.168.1.0/24`. The answer has them normalised, without repeats.",
-      "ar": "عناوين IP أو نطاقات CIDR، مثل `192.168.1.20` أو `192.168.1.0/24`. ويعيدها الجواب موحَّدة الصيغة وبلا تكرار."
+      "en": "IP addresses or CIDR ranges, for example `192.0.2.20` or `192.0.2.0/24`. The answer has them normalised, without repeats.",
+      "ar": "عناوين IP أو نطاقات CIDR، مثل `192.0.2.20` أو `192.0.2.0/24`. ويعيدها الجواب موحَّدة الصيغة وبلا تكرار."
     },
     "/paths/~1tv~1hdhr~1allowed/put/responses/200/description": {
       "en": "The addresses after the change.",
       "ar": "العناوين بعد التغيير."
     },
     "/paths/~1tv~1hdhr~1allowed/put/responses/200/content/application~1json/schema/properties/addresses/description": {
-      "en": "IP addresses or CIDR ranges, for example `192.168.1.20` or `192.168.1.0/24`. The answer has them normalised, without repeats.",
-      "ar": "عناوين IP أو نطاقات CIDR، مثل `192.168.1.20` أو `192.168.1.0/24`. ويعيدها الجواب موحَّدة الصيغة وبلا تكرار."
+      "en": "IP addresses or CIDR ranges, for example `192.0.2.20` or `192.0.2.0/24`. The answer has them normalised, without repeats.",
+      "ar": "عناوين IP أو نطاقات CIDR، مثل `192.0.2.20` أو `192.0.2.0/24`. ويعيدها الجواب موحَّدة الصيغة وبلا تكرار."
     },
     "/paths/~1tv~1hdhr~1allowed/put/responses/400/description": {
       "en": "Invalid request.",
