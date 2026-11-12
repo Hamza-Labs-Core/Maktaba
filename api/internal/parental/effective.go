@@ -33,6 +33,15 @@ type Effective struct {
 	// expired ones at the time asked about, so a cached value stays correct as
 	// rules run out.
 	Rules []Rule
+
+	// The sign-in's device signal (story 57.04), set by WithSignal only.
+	// SignalLimit is the device's limit when it has one (MaxTier is already the
+	// stricter of it and the policy's). SignalOnly says the account has no policy
+	// and the device alone limits this sign-in. SignalPending says the device has
+	// since said something looser that waits for an admin or a guardian.
+	SignalLimit   *int
+	SignalOnly    bool
+	SignalPending bool
 }
 
 func (e *Effective) has(effect string, s Subject, now time.Time) bool {

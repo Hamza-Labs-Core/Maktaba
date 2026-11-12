@@ -512,6 +512,12 @@ type meResponse struct {
 	Unrated    string `json:"unrated,omitempty"`
 	AllowOnly  bool   `json:"allow_only,omitempty"`
 	Version    int    `json:"version,omitempty"`
+	// DeviceLimit is the limit this sign-in's device gave (story 57.04), when it
+	// gave one; max_tier is already the stricter of it and the account's.
+	// DevicePending says the device has since said something looser that waits for
+	// an admin or a guardian.
+	DeviceLimit   *int `json:"device_limit,omitempty"`
+	DevicePending bool `json:"device_pending,omitempty"`
 }
 
 // Me implements GET /api/me/parental: the limit this request is held to.
@@ -533,7 +539,9 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	out := meResponse{Restricted: e.Restricted}
+	// restricted is about the account: a sign-in limited only by its device is
+	// not a restricted account, and still reads its limit here
+	out := meResponse{Restricted: e.Restricted && !e.SignalOnly, DeviceLimit: e.SignalLimit, DevicePending: e.SignalPending}
 	if e.Restricted {
 		tier := e.MaxTier
 		out.MaxTier, out.Unrated, out.AllowOnly, out.Version = &tier, e.Unrated, e.AllowOnly, e.Version

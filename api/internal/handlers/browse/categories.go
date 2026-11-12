@@ -57,12 +57,12 @@ func (h *Handler) Categories(w http.ResponseWriter, r *http.Request) {
 	}{
 		// a speaker an admin named (one still called by its diarization label is not one)
 		{"speakers", `SELECT sp.name, sp.name, COUNT(DISTINCT v.id), MIN(CAST(v.id AS TEXT)) FROM speakers sp JOIN videos v ON v.id = sp.video_id
-			WHERE v.library_id = $1 AND ` + visible + ` AND sp.name <> '' AND sp.name <> COALESCE(sp.cluster_label, '')
+			WHERE v.library_id = $1 AND ` + shown(ctx) + ` AND sp.name <> '' AND sp.name <> COALESCE(sp.cluster_label, '')
 			GROUP BY sp.name`},
 		{"topics", `SELECT CAST(t.id AS TEXT), t.name, COUNT(*), MIN(CAST(v.id AS TEXT)) FROM video_tags vt JOIN tags t ON t.id = vt.tag_id
-			JOIN videos v ON v.id = vt.video_id WHERE v.library_id = $1 AND ` + visible + ` GROUP BY t.id, t.name`},
+			JOIN videos v ON v.id = vt.video_id WHERE v.library_id = $1 AND ` + shown(ctx) + ` GROUP BY t.id, t.name`},
 		{"languages", `SELECT v.detected_language, v.detected_language, COUNT(*), MIN(CAST(v.id AS TEXT)) FROM videos v
-			WHERE v.library_id = $1 AND ` + visible + ` AND v.detected_language IS NOT NULL AND v.detected_language <> ''
+			WHERE v.library_id = $1 AND ` + shown(ctx) + ` AND v.detected_language IS NOT NULL AND v.detected_language <> ''
 			GROUP BY v.detected_language`},
 	} {
 		cats, err := h.categories(ctx, k.q, id)

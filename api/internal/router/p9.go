@@ -16,6 +16,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/auth"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 )
 
@@ -61,6 +62,8 @@ func MountP9(r chi.Router, d P9Deps) *auth.Handler {
 		AccessTTL:     d.AccessTTL,
 		Seats:         d.Seats,
 	})
+	// Epic 57 story 57.04: a refresh carries the sign-in's device age limit (`ac`)
+	h.AgeCeiling = parental.NewStore(d.DB).AgeCeiling
 	settings := d.Settings
 	if settings == nil {
 		settings = runtimecfg.New(d.DB)

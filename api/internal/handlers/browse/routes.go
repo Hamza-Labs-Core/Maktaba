@@ -43,7 +43,7 @@ func (h *Handler) Summary(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var args []any
 	rows, err := h.DB.QueryContext(ctx, `SELECT l.id, l.name, COUNT(v.id), COALESCE(SUM(v.duration_sec), 0), MAX(v.created_at)
-		FROM libraries l LEFT JOIN videos v ON v.library_id = l.id AND `+visible+`
+		FROM libraries l LEFT JOIN videos v ON v.library_id = l.id AND `+shown(ctx)+`
 		WHERE `+and(s.cond("l.id", &args))+`
 		GROUP BY l.id, l.name ORDER BY l.name, l.id`, args...)
 	if err != nil {
@@ -437,7 +437,7 @@ func (h *Handler) promotedRows(ctx context.Context, uid string, s scope, lib str
 	}
 	for _, head := range heads {
 		iargs := []any{u, head.ID}
-		vis := and(visible, s.cond("v.library_id", &iargs))
+		vis := and(shown(ctx), s.cond("v.library_id", &iargs))
 		iargs = append(iargs, RowSize)
 		cards, err := h.playbackCards(ctx, `SELECT `+cardColumns+`, ps.position_sec, ps.completed
 			FROM collection_items ci JOIN collections c ON c.id = ci.collection_id JOIN videos v ON v.id = ci.video_id
@@ -489,7 +489,7 @@ func (h *Handler) Hub(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	lib := LibraryRef{ID: id}
 	var n int64
-	err := h.DB.QueryRowContext(ctx, `SELECT l.name, (SELECT COUNT(*) FROM videos v WHERE v.library_id = l.id AND `+visible+`)
+	err := h.DB.QueryRowContext(ctx, `SELECT l.name, (SELECT COUNT(*) FROM videos v WHERE v.library_id = l.id AND `+shown(ctx)+`)
 		FROM libraries l WHERE l.id = $1`, id).Scan(&lib.Name, &n)
 	if errors.Is(err, sql.ErrNoRows) {
 		httperror.Write(w, r, httperror.NotFound("library "+id))
@@ -567,7 +567,7 @@ func (h *Handler) mostWatched(ctx context.Context, lib string, n int) ([]Card, e
 		      JOIN videos wv ON wv.id = ws.video_id
 		      WHERE wv.library_id = $1 AND ws.started_at >= $2 GROUP BY ws.video_id) c
 		JOIN videos v ON v.id = c.video_id
-		WHERE `+visible+`
+		WHERE `+shown(ctx)+`
 		ORDER BY c.plays DESC, v.created_at DESC, v.id DESC LIMIT $3`, lib, since, n)
 	if err != nil {
 		return nil, err
@@ -591,7 +591,7 @@ func (h *Handler) series(ctx context.Context, lib string) ([]SeriesRef, error) {
 	rows, err := h.DB.QueryContext(ctx, `SELECT s.id, COALESCE(s.name_override, s.name) AS sname, COUNT(v.id)
 		FROM series s JOIN series_episodes se ON se.series_id = s.id
 		JOIN videos v ON v.id = se.video_id
-		WHERE v.library_id = $1 AND `+visible+`
+		WHERE v.library_id = $1 AND `+shown(ctx)+`
 		GROUP BY s.id, s.name, s.name_override ORDER BY sname, s.id LIMIT $2`, lib, maxSeries)
 	if err != nil {
 		return nil, err
@@ -635,7 +635,7 @@ func (h *Handler) seriesPosters(ctx context.Context, lib string, out []SeriesRef
 			v.id) AS n
 		FROM series_episodes se JOIN series s ON s.id = se.series_id
 		JOIN videos v ON v.id = se.video_id
-		WHERE se.series_id IN (`+in+`) AND v.library_id = $1 AND `+visible+`) firsts WHERE n = 1`, args...)
+		WHERE se.series_id IN (`+in+`) AND v.library_id = $1 AND `+shown(ctx)+`) firsts WHERE n = 1`, args...)
 	if err != nil {
 		return err
 	}
@@ -662,7 +662,7 @@ func (h *Handler) years(ctx context.Context, lib string) ([]YearCount, error) {
 		yearExpr = `CAST(substr(` + publishedAt + `, 1, 4) AS INTEGER)`
 	}
 	rows, err := h.DB.QueryContext(ctx, `SELECT `+yearExpr+` AS y, COUNT(*)
-		FROM videos v WHERE v.library_id = $1 AND `+publishedAt+` IS NOT NULL AND `+visible+`
+		FROM videos v WHERE v.library_id = $1 AND `+publishedAt+` IS NOT NULL AND `+shown(ctx)+`
 		GROUP BY y ORDER BY y DESC`, lib)
 	if err != nil {
 		return nil, err

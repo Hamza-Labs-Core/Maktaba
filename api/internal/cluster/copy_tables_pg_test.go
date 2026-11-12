@@ -82,6 +82,10 @@ var copyReviewed = []string{
 	// rules and each session's age signal (ids, tiers and times, no secret); a
 	// promoted copy keeps every child's limit
 	"parental_guardians", "parental_policies", "parental_rules", "session_age_signals",
+	// slot 0222 (stories 57.06, 57.08) adds none: parental_pins is a secret's hash, and
+	// parental_pin_failures, parental_requests and parental_events are read and written
+	// by the home's API alone (as the analytics tables are), so cluster_copy_excluded()
+	// leaves all four out
 	// slot 0224 (story 57.17): what the home's model detected for each video (a tier,
 	// a confidence, categories and times, no secret); a promoted copy keeps the
 	// detected tiers and what an admin already reviewed
