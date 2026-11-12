@@ -74,6 +74,14 @@ import MaktabaKit
         center.post(name: notes.active!, object: nil)
         center.post(name: notes.background!, object: nil)
         #expect(p.player == nil)
+
+        // the next video of the same playback (the Libraries section keeps one): stopped
+        // while held in the background, it still hears the next time the app is held
+        await p.load(AVPlayerItem(url: URL(string: "http://127.0.0.1:9/stream/none.m3u8")!), at: 0, playing: true)
+        #expect(p.isPlaying)
+        center.post(name: notes.background!, object: nil)
+        #expect(!p.isPlaying, "the second video pauses in the background too")
+        p.stop()
     }
 
     /// With no limit the notifications change nothing that plays (story 48.24).

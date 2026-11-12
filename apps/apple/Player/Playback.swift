@@ -348,6 +348,9 @@ final class Playback {
     /// Hears the app leave and take the front while a player is open.
     private func observeScene() {
         guard sceneObservers.isEmpty else { return }
+        // a player opens with the app at the front: what was heard for the last video (it
+        // may have been stopped in the background, unheard since) says nothing of now
+        scene = .active
         let heard: [(Notification.Name?, Bool, Bool)] = [
             (sceneNotes.inactive, false, false), (sceneNotes.background, false, true), (sceneNotes.active, true, false),
         ]
