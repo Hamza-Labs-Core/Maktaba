@@ -16,6 +16,14 @@ final class QueuePlayer {
     /// Why a Play did not start (the page says it): nothing to play, or the queue failed.
     var failure: String?
     var starting = false
+    /// Epic 57: a queue item the home does not give under a parental limit (its id): the
+    /// blocked page shows in the player's place.
+    var blocked: String?
+    /// Whether this sign-in is under a parental limit (set where the player is made).
+    @ObservationIgnored var limited: () -> Bool = { false }
+
+    /// The player's cover shows: a video plays (or was stopped by the home), or one is blocked.
+    var showing: Bool { playback != nil || blocked != nil }
 
     init(client: APIClient) {
         self.client = client
@@ -62,9 +70,22 @@ final class QueuePlayer {
     /// Plays `it` from where this person stopped (its card's position).
     func show(_ it: QueueItem) async {
         let old = playback
-        guard let video = try? await client.video(it.videoID) else { return }
+        let video: Video
+        do {
+            video = try await client.video(it.videoID)
+        } catch {
+            // a stale item of the queue that is now hidden (404 under a limit): the blocked page
+            guard PlaybackVerdict.open(error, limited: limited()) == .blocked else { return }
+            await old?.stop()
+            playback = nil
+            item = it
+            blocked = it.videoID
+            return
+        }
         await old?.stop()
+        blocked = nil
         let p = TVPlayback(client: client, video: video)
+        p.limited = limited
         let at = it.completed == true ? 0 : (it.positionSec ?? 0)
         p.start(at: at > 10 ? at : 0)
         item = it
@@ -75,6 +96,7 @@ final class QueuePlayer {
         let p = playback
         playback = nil
         item = nil
+        blocked = nil
         Task { await p?.stop() }
     }
 }
@@ -97,16 +119,43 @@ struct QueuePlayerScreen: View {
     @State private var left: Int?
     @State private var cancelled = false
     @State private var endedAt: Date?
+    @Environment(\.appSession) private var session
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             Color.black
-            if let p = queue.playback, let player = p.player {
+            if let id = queue.blocked, let session {
+                // Epic 57: a queue item the home does not give: the blocked page
+                TVBlockedPage(client: queue.client, session: session, subject: .video(id), back: { queue.close() }) {
+                    if let item = queue.item { Task { await queue.show(item) } }
+                }
+            } else if let p = queue.playback, let stop = p.parentalStop, let session {
+                // the home stopped the video: the time's-up screen or the blocked page
+                TVParentalStopView(playback: p, stop: stop, session: session) { queue.close() }
+            } else if let p = queue.playback, let player = p.player {
                 SystemPlayer(player: player, menu: menu)
                     .id(p.video.id)
                     .accessibilityIdentifier("queue.player")
+                // the time left today, in its last 15 minutes (57.15)
+                if let session {
+                    TVTimeLeft(store: session.parental, overVideo: true)
+                        .padding(80)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .allowsHitTesting(false)
+                }
+            } else if let p = queue.playback, let failure = p.failure {
+                // why it does not play, with what can be done (it showed a spinner for good)
+                HomeErrorView(failure) { action in
+                    if action == .tryAgain { p.retry() } else { queue.close() }
+                }
+                .buttonStyle(.gold)
+                .foregroundStyle(.white)
+                .environment(\.colorScheme, .dark)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("player.error")
             } else {
                 ProgressView().tint(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             if let next, let left, !cancelled {
                 UpNextCard(item: next, secondsLeft: left, playNow: { queue.next() }, cancel: { cancelled = true })

@@ -2,7 +2,8 @@ import MaktabaKit
 import SwiftUI
 
 /// A video's page: its picture, title, length and description, and Resume (where this
-/// person stopped, focused first) or Play.
+/// person stopped, focused first) or Play. Under a parental limit, a video the home does not
+/// give is the blocked page (Epic 57 story 57.11).
 struct VideoPage: View {
     let id: String
     @Environment(\.client) private var client
@@ -16,10 +17,18 @@ struct VideoPage: View {
     @Environment(\.appSession) private var session
     /// Story 54.20: installed plugins' panels, the TV's subset (kv, badges, markers).
     @State private var panels: [PanelView] = []
+    /// Epic 57: the home does not give this video under the account's parental limit (a
+    /// hidden video answers exactly as a missing one): the blocked page, not an error.
+    @State private var blocked = false
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         Group {
-            if let video, let client {
+            if blocked, let client, let session {
+                TVBlockedPage(client: client, session: session, subject: .video(id), back: { dismiss() }) {
+                    Task { await load() }
+                }
+            } else if let video, let client {
                 HStack(alignment: .top, spacing: 64) {
                     AuthorizedImage(client: client, video: video.id)
                         .frame(width: 880)
@@ -40,7 +49,7 @@ struct VideoPage: View {
                                 Button("Play", systemImage: "play.fill") { play(video, from: 0) }
                             }
                             if let seriesID {
-                                NavigationLink { SeriesView(id: seriesID) } label: { Label("Go to series", systemImage: "list.bullet") }
+                                NavigationLink { SeriesView(id: seriesID).parentalFresh() } label: { Label("Go to series", systemImage: "list.bullet") }
                             }
                         }
                         .buttonStyle(.gold)
@@ -77,6 +86,7 @@ struct VideoPage: View {
         }
         guard let client else { return }
         let p = TVPlayback(client: client, video: v)
+        if let parental = session?.parental { p.limited = { parental.current.limited } }
         p.start(at: at)
         played = p
         playing = p
@@ -98,10 +108,15 @@ struct VideoPage: View {
             video = try await client.video(id)
             seriesID = try? await client.myVideo(id).series?.id
             problem = nil
+            blocked = false
             panels = session?.capabilities.current.panels == true
                 ? ((try? await client.panels(kind: "video", id: id, language: SubjectPanels.language)) ?? [])
                 : []
         } catch {
+            if session?.parental.current.limited == true, !Log.isCancellation(error), HomeFailure(error).kind == .notFound {
+                blocked = true
+                return
+            }
             problem = HomeFailure.shown("load video", error) ?? problem
         }
     }

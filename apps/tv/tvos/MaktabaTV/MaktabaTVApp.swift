@@ -20,7 +20,11 @@ struct MaktabaTVApp: App {
             UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier ?? "")
             SecItemDelete([kSecClass as String: kSecClassGenericPassword] as CFDictionary)
         }
-        _session = State(initialValue: AppSession(app: Bundle.main.bundleIdentifier ?? "com.hamzalabs.maktaba.tv"))
+        // Epic 57: the TV asks the home for the account's parental limit and watching time
+        // (`session.parental`) and tells it the Screen Time limits set on this Apple TV
+        let session = AppSession(app: Bundle.main.bundleIdentifier ?? "com.hamzalabs.maktaba.tv", parental: true)
+        session.ageSignal.use(TVAgeSignal.source())
+        _session = State(initialValue: session)
     }
 
     var body: some Scene {
@@ -70,6 +74,8 @@ struct RootView: View {
         // what the home has on, asked again each time the app comes to the front (story 51.11)
         .onChange(of: scenePhase == .active) { _, active in
             if active, session.signedIn { Task { await session.capabilities.refresh() } }
+            // the parental limit, the time left and the device's Screen Time limits too (Epic 57)
+            if active { Task { await session.parentalForeground() } }
         }
         .alert(words.text(session.pendingLink != nil ? .linkTitle : .connect), isPresented: Binding(
             get: { session.phase != .choosingHome && (session.pendingLink != nil || session.connectProblem != nil) },
