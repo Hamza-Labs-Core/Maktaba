@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 239,
+    "endpoint": 241,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -6282,6 +6282,53 @@
         "path": "/sessions/capabilities",
         "tag": "Sessions",
         "operationId": "getStreamCapabilities"
+      }
+    },
+    {
+      "id": "ep-post-watch-start",
+      "type": "endpoint",
+      "title": "POST /watch/start",
+      "content": "Start a watch",
+      "tags": [
+        "api",
+        "Watch progress",
+        "post"
+      ],
+      "related": [
+        "story-29.1",
+        "story-29.4"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/watch/start",
+        "tag": "Watch progress",
+        "operationId": "startWatch"
+      }
+    },
+    {
+      "id": "ep-post-watch-heartbeat",
+      "type": "endpoint",
+      "title": "POST /watch/heartbeat",
+      "content": "Keep a watch going",
+      "tags": [
+        "api",
+        "Watch progress",
+        "post"
+      ],
+      "related": [
+        "story-29.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/watch/heartbeat",
+        "tag": "Watch progress",
+        "operationId": "heartbeatWatch"
       }
     },
     {

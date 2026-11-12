@@ -726,8 +726,8 @@
       "ar": "مثل `start-sec-clamped`."
     },
     "/paths/~1sessions/post/responses/403/description": {
-      "en": "User cannot access this video.",
-      "ar": "لا يمكن للمستخدم الوصول إلى هذا الفيديو."
+      "en": "User cannot access this video. Or the account's watching time is over (Parental controls): the problem type is `https://maktaba.tv/problems/parental-time`, `code` is `parental_time`, `reason` is `outside_slot` or `limit_reached`, and `next_allowed_at` is when the rules allow watching again (absent when no moment in the next eight days does). No session is opened.",
+      "ar": "لا يمكن للمستخدم الوصول إلى هذا الفيديو. أو انتهى وقت المشاهدة للحساب (الرقابة الأبوية): نوع المشكلة `https://maktaba.tv/problems/parental-time`، وقيمة `code` هي `parental_time`، وقيمة `reason` هي `outside_slot` أو `limit_reached`، و`next_allowed_at` هو الوقت الذي تسمح فيه القواعد بالمشاهدة مرة أخرى (يغيب إذا لم تسمح بها في أي لحظة خلال الأيام الثمانية القادمة). لا تُفتح أي جلسة."
     },
     "/paths/~1sessions/post/responses/507/description": {
       "en": "Too little free on the streaming service's disk to prepare (transcode) the video (code `insufficient_storage`).",
@@ -758,12 +758,20 @@
       "ar": "نبضة تقدّم الجلسة"
     },
     "/paths/~1sessions~1{id}~1progress/post/description": {
-      "en": "Server-side debounced (1 Hz). Mirrors the position into `playback_state`.\nExcluded from rate limits.\n",
-      "ar": "يُخمَّد على الخادم (مرة واحدة في الثانية). ينسخ الموضع إلى `playback_state`.\nمستثنى من حدود المعدّل.\n"
+      "en": "Server-side debounced (1 Hz). Mirrors the position into `playback_state`.\nExcluded from rate limits. For a restricted account this is the stream's heartbeat: it counts the watching time and keeps the stream running, so send it at least every 60 seconds.\n",
+      "ar": "يُخمَّد على الخادم (مرة واحدة في الثانية). ينسخ الموضع إلى `playback_state`.\nمستثنى من حدود المعدّل. وهو للحساب المقيَّد نبضة البث: يعدّ وقت المشاهدة ويُبقي البث جاريًا، فأرسله مرة كل 60 ثانية على الأقل.\n"
     },
     "/paths/~1sessions~1{id}~1progress/post/responses/200/description": {
       "en": "Accepted.",
       "ar": "مقبول."
+    },
+    "/paths/~1sessions~1{id}~1progress/post/responses/403/description": {
+      "en": "The account's watching time is over (Parental controls): the problem type is `https://maktaba.tv/problems/parental-time`, `code` is `parental_time`, `reason` is `outside_slot`, `limit_reached`, or `no_heartbeat` when the session is not one the home is counting for this account, and `next_allowed_at` is when the rules allow watching again (absent when no moment in the next eight days does, and with `no_heartbeat`). The position is not saved and the stream ends within 60 seconds.",
+      "ar": "انتهى وقت المشاهدة للحساب (الرقابة الأبوية): نوع المشكلة `https://maktaba.tv/problems/parental-time`، وقيمة `code` هي `parental_time`، وقيمة `reason` هي `outside_slot` أو `limit_reached`، أو `no_heartbeat` إذا لم تكن الجلسة من الجلسات التي يعدّها البيت لهذا الحساب، و`next_allowed_at` هو الوقت الذي تسمح فيه القواعد بالمشاهدة مرة أخرى (يغيب إذا لم تسمح بها في أي لحظة خلال الأيام الثمانية القادمة، ومع `no_heartbeat`). لا يُحفظ الموضع وينتهي البث خلال 60 ثانية."
+    },
+    "/paths/~1sessions~1{id}~1progress/post/responses/503/description": {
+      "en": "A restricted account's watching time could not be counted: the progress is refused, never taken uncounted; ask again after `Retry-After`.",
+      "ar": "تعذّر عدّ وقت المشاهدة لحساب مقيَّد: يُرفض التقدّم ولا يُقبل دون عدّ؛ أعد الطلب بعد `Retry-After`."
     },
     "/paths/~1sessions~1capabilities/get/summary": {
       "en": "Streaming server capabilities",
@@ -776,6 +784,74 @@
     "/paths/~1sessions~1capabilities/get/responses/200/description": {
       "en": "Capabilities.",
       "ar": "الإمكانات."
+    },
+    "/paths/~1watch~1start/post/summary": {
+      "en": "Start a watch",
+      "ar": "بدء مشاهدة"
+    },
+    "/paths/~1watch~1start/post/description": {
+      "en": "Opens a watch session for the caller's history and statistics. When the caller has paused tracking nothing is opened and `tracking` is false. For any signed-in user. It counts no watching time and keeps no stream running: the stream session's progress posts do that.",
+      "ar": "يفتح جلسة مشاهدة لسجلّ المتصل وإحصاءاته. إذا أوقف المتصل التتبّع فلا يُفتح شيء وتكون `tracking` خاطئة. لكل مستخدم مسجَّل الدخول. لا يعدّ وقت مشاهدة ولا يُبقي بثًّا جاريًا: ذلك عمل إرسال التقدّم في جلسة البث."
+    },
+    "/paths/~1watch~1start/post/requestBody/content/application~1json/schema/properties/device_type/description": {
+      "en": "What kind of device plays, for the statistics; absent: what the app's `X-Maktaba-Client` header says.",
+      "ar": "نوع الجهاز الذي يشغّل، للإحصاءات؛ إن غاب: ما تقوله ترويسة التطبيق `X-Maktaba-Client`."
+    },
+    "/paths/~1watch~1start/post/responses/201/description": {
+      "en": "The watch session was opened.",
+      "ar": "فُتحت جلسة المشاهدة."
+    },
+    "/paths/~1watch~1start/post/responses/200/description": {
+      "en": "Tracking is paused for the caller: nothing was opened and `tracking` is false.",
+      "ar": "التتبّع موقوف للمتصل: لم يُفتح شيء وقيمة `tracking` خاطئة."
+    },
+    "/paths/~1watch~1start/post/responses/400/description": {
+      "en": "`video_id` is not an id.",
+      "ar": "قيمة `video_id` ليست معرّفًا."
+    },
+    "/paths/~1watch~1start/post/responses/403/description": {
+      "en": "The account's watching time is over (Parental controls): the problem type is `https://maktaba.tv/problems/parental-time`, `code` is `parental_time`, `reason` is `outside_slot` or `limit_reached`, and `next_allowed_at` is when the rules allow watching again (absent when no moment in the next eight days does).",
+      "ar": "انتهى وقت المشاهدة للحساب (الرقابة الأبوية): نوع المشكلة `https://maktaba.tv/problems/parental-time`، وقيمة `code` هي `parental_time`، وقيمة `reason` هي `outside_slot` أو `limit_reached`، و`next_allowed_at` هو الوقت الذي تسمح فيه القواعد بالمشاهدة مرة أخرى (يغيب إذا لم تسمح بها في أي لحظة خلال الأيام الثمانية القادمة)."
+    },
+    "/paths/~1watch~1start/post/responses/404/description": {
+      "en": "No such video that the caller can reach. A video in a library the caller cannot open answers the same as one that does not exist.",
+      "ar": "لا يوجد فيديو كهذا يستطيع المتصل الوصول إليه. فيديو في مكتبة لا يستطيع المتصل فتحها يُجاب عنه كما يُجاب عن فيديو غير موجود."
+    },
+    "/paths/~1watch~1start/post/responses/503/description": {
+      "en": "A restricted account's watching time could not be read: the watch is refused, never let through on an error; ask again after `Retry-After`.",
+      "ar": "تعذّرت قراءة وقت المشاهدة لحساب مقيَّد: تُرفض المشاهدة ولا تُمرَّر عند الخطأ؛ أعد الطلب بعد `Retry-After`."
+    },
+    "/paths/~1watch~1heartbeat/post/summary": {
+      "en": "Keep a watch going",
+      "ar": "إبقاء مشاهدة جارية"
+    },
+    "/paths/~1watch~1heartbeat/post/description": {
+      "en": "Adds the time since the last heartbeat to an active watch session of the caller and records how far the video has played. A session that was closed is not opened again. For any signed-in user. It counts no watching time against a restricted account's time rules and keeps no stream running.",
+      "ar": "يضيف الوقت المنقضي منذ آخر نبضة إلى جلسة مشاهدة نشطة للمتصل ويسجّل إلى أين وصل تشغيل الفيديو. الجلسة المغلقة لا تُفتح من جديد. لكل مستخدم مسجَّل الدخول. لا يعدّ وقت مشاهدة على قواعد الوقت لحساب مقيَّد ولا يُبقي بثًّا جاريًا."
+    },
+    "/paths/~1watch~1heartbeat/post/responses/200/description": {
+      "en": "The watch session as it is now.",
+      "ar": "جلسة المشاهدة كما هي الآن."
+    },
+    "/paths/~1watch~1heartbeat/post/responses/400/description": {
+      "en": "`session_id` is not an id.",
+      "ar": "قيمة `session_id` ليست معرّفًا."
+    },
+    "/paths/~1watch~1heartbeat/post/responses/403/description": {
+      "en": "The account's watching time is over (Parental controls): the problem type is `https://maktaba.tv/problems/parental-time`, `code` is `parental_time`, `reason` is `outside_slot` or `limit_reached`, and `next_allowed_at` is when the rules allow watching again (absent when no moment in the next eight days does).",
+      "ar": "انتهى وقت المشاهدة للحساب (الرقابة الأبوية): نوع المشكلة `https://maktaba.tv/problems/parental-time`، وقيمة `code` هي `parental_time`، وقيمة `reason` هي `outside_slot` أو `limit_reached`، و`next_allowed_at` هو الوقت الذي تسمح فيه القواعد بالمشاهدة مرة أخرى (يغيب إذا لم تسمح بها في أي لحظة خلال الأيام الثمانية القادمة)."
+    },
+    "/paths/~1watch~1heartbeat/post/responses/404/description": {
+      "en": "No such watch session of the caller, or its video is now hidden from the account.",
+      "ar": "لا توجد جلسة مشاهدة كهذه للمتصل، أو صار الفيديو محجوبًا عن الحساب."
+    },
+    "/paths/~1watch~1heartbeat/post/responses/409/description": {
+      "en": "The watch session is closed.",
+      "ar": "جلسة المشاهدة مغلقة."
+    },
+    "/paths/~1watch~1heartbeat/post/responses/503/description": {
+      "en": "A restricted account's watching time could not be read: the watch is refused, never let through on an error; ask again after `Retry-After`.",
+      "ar": "تعذّرت قراءة وقت المشاهدة لحساب مقيَّد: تُرفض المشاهدة ولا تُمرَّر عند الخطأ؛ أعد الطلب بعد `Retry-After`."
     },
     "/paths/~1settings/get/summary": {
       "en": "Read effective settings",
@@ -1356,6 +1432,74 @@
     "/paths/~1ws~1queues/get/responses/200/description": {
       "en": "text/event-stream",
       "ar": "بثّ أحداث (`text/event-stream`)"
+    },
+    "/paths/~1me~1parental~1requests/post/requestBody/content/application~1json/schema/properties/subject_id/description": {
+      "en": "The item's id. For `time`: the minutes asked for, a whole number from 1 to 480 written as text (`\"30\"`).",
+      "ar": "معرّف العنصر. وللنوع `time`: الدقائق المطلوبة، عدد صحيح من 1 إلى 480 مكتوب نصًّا (`\"30\"`)."
+    },
+    "/paths/~1me~1parental~1requests/post/responses/200/content/application~1json/schema/properties/request/properties/subject_id/description": {
+      "en": "The item's id; for a request for time, the minutes asked for, as text.",
+      "ar": "معرّف العنصر؛ ولطلب الوقت، الدقائق المطلوبة نصًّا."
+    },
+    "/paths/~1me~1parental~1requests/post/responses/200/content/application~1json/schema/properties/request/properties/minutes/description": {
+      "en": "The minutes a request for time asks for; absent for any other kind.",
+      "ar": "الدقائق التي يطلبها طلب الوقت؛ يغيب في أي نوع آخر."
+    },
+    "/paths/~1me~1parental~1requests/post/responses/201/content/application~1json/schema/properties/request/properties/subject_id/description": {
+      "en": "The item's id; for a request for time, the minutes asked for, as text.",
+      "ar": "معرّف العنصر؛ ولطلب الوقت، الدقائق المطلوبة نصًّا."
+    },
+    "/paths/~1me~1parental~1requests/post/responses/201/content/application~1json/schema/properties/request/properties/minutes/description": {
+      "en": "The minutes a request for time asks for; absent for any other kind.",
+      "ar": "الدقائق التي يطلبها طلب الوقت؛ يغيب في أي نوع آخر."
+    },
+    "/paths/~1parental~1requests/get/responses/200/content/application~1json/schema/properties/requests/items/properties/subject_id/description": {
+      "en": "The item's id; for a request for time, the minutes asked for, as text.",
+      "ar": "معرّف العنصر؛ ولطلب الوقت، الدقائق المطلوبة نصًّا."
+    },
+    "/paths/~1parental~1requests/get/responses/200/content/application~1json/schema/properties/requests/items/properties/minutes/description": {
+      "en": "The minutes a request for time asks for; absent for any other kind.",
+      "ar": "الدقائق التي يطلبها طلب الوقت؛ يغيب في أي نوع آخر."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/requestBody/content/application~1json/schema/properties/minutes/description": {
+      "en": "For a request for time only (422 on any other): how many minutes to give, from 1 to 480; absent: the minutes asked for.",
+      "ar": "لطلب الوقت فقط (422 في أي طلب آخر): عدد الدقائق الممنوحة، من 1 إلى 480؛ إن غاب: الدقائق المطلوبة."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/responses/200/content/application~1json/schema/properties/request/properties/subject_id/description": {
+      "en": "The item's id; for a request for time, the minutes asked for, as text.",
+      "ar": "معرّف العنصر؛ ولطلب الوقت، الدقائق المطلوبة نصًّا."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/responses/200/content/application~1json/schema/properties/request/properties/minutes/description": {
+      "en": "The minutes a request for time asks for; absent for any other kind.",
+      "ar": "الدقائق التي يطلبها طلب الوقت؛ يغيب في أي نوع آخر."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/responses/200/content/application~1json/schema/properties/rule/description": {
+      "en": "The allow rule added; absent for a request for time.",
+      "ar": "قاعدة السماح المضافة؛ تغيب في طلب الوقت."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/responses/200/content/application~1json/schema/properties/grant/properties/day/description": {
+      "en": "The home day the minutes are for. A home day ends at 04:00 home time.",
+      "ar": "يوم البيت الذي تخصّه الدقائق. ينتهي يوم البيت عند الساعة 04:00 بتوقيت البيت."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/responses/200/content/application~1json/schema/properties/grant/properties/used_seconds/description": {
+      "en": "How much of the grant has been watched.",
+      "ar": "ما شوهد من الوقت الممنوح."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/responses/200/content/application~1json/schema/properties/grant/description": {
+      "en": "The time given, for a request for time; absent for any other kind.",
+      "ar": "الوقت الممنوح، لطلب الوقت؛ يغيب في أي نوع آخر."
+    },
+    "/paths/~1parental~1requests~1{id}~1deny/post/responses/200/content/application~1json/schema/properties/request/properties/subject_id/description": {
+      "en": "The item's id; for a request for time, the minutes asked for, as text.",
+      "ar": "معرّف العنصر؛ ولطلب الوقت، الدقائق المطلوبة نصًّا."
+    },
+    "/paths/~1parental~1requests~1{id}~1deny/post/responses/200/content/application~1json/schema/properties/request/properties/minutes/description": {
+      "en": "The minutes a request for time asks for; absent for any other kind.",
+      "ar": "الدقائق التي يطلبها طلب الوقت؛ يغيب في أي نوع آخر."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/responses/200/content/application~1json/schema/properties/events/items/properties/minutes/description": {
+      "en": "The minutes of a time event: asked for (`asked`, `approved` and `denied` of a request for time), given (`time_granted`) or watched that day (`time_up`). A time event has no `subject`.",
+      "ar": "دقائق حدث الوقت: المطلوبة (في `asked` و`approved` و`denied` لطلب وقت)، أو الممنوحة (`time_granted`)، أو المشاهَدة في ذلك اليوم (`time_up`). حدث الوقت لا يحمل `subject`."
     },
     "/components/securitySchemes/bearerAuth/description": {
       "en": "RS256 access token (15 min). Mobile / desktop / TV clients pass it as\n`Authorization: Bearer <token>`. The Streaming Service validates the same\nJWT offline against the JWKS at `/.well-known/jwks.json`.\n",
@@ -2778,8 +2922,8 @@
       "ar": "`library_read_only`: المكتبة للقراءة فقط بالنسبة إلى مكتبة، وهذا الطلب يغيّر ملفاتها."
     },
     "/paths/~1sessions/post/responses/503/description": {
-      "en": "`transcode_busy`: every transcode this home runs at once is taken; ask again after `Retry-After`.",
-      "ar": "`transcode_busy`: كل عمليات التحويل التي يشغّلها هذا الجهاز الرئيسي في آن واحد مشغولة؛ أعد الطلب بعد `Retry-After`."
+      "en": "`transcode_busy`: every transcode this home runs at once is taken; ask again after `Retry-After`. Also when a restricted account's watching time cannot be read, or the streaming service cannot be told of it: the stream is refused, never let through uncounted; ask again after `Retry-After`.",
+      "ar": "`transcode_busy`: كل عمليات التحويل التي يشغّلها هذا الجهاز الرئيسي في آن واحد مشغولة؛ أعد الطلب بعد `Retry-After`. وكذلك إذا تعذّرت قراءة وقت المشاهدة لحساب مقيَّد، أو تعذّر إبلاغ خدمة البث به: يُرفض البث ولا يُمرَّر دون عدّ؛ أعد الطلب بعد `Retry-After`."
     },
     "/paths/~1server~1settings/get/summary": {
       "en": "Read server.toml's settings",
@@ -4190,24 +4334,24 @@
       "ar": "طلب فتح شيء من أحد الوالدين"
     },
     "/paths/~1me~1parental~1requests/post/description": {
-      "en": "For a restricted account only. Asks its guardians to allow one item it can reach but its limit hides. Asking again for the same item while the first request waits answers that request. A request waits seven days, and at most 20 wait at once. Each guardian gets one notice, which names neither the child nor the item.",
-      "ar": "للحساب المقيَّد فقط. يطلب من أولياء أمره السماح بعنصر يستطيع الوصول إليه لكن حدّه يحجبه. تكرار الطلب للعنصر نفسه والطلب الأول ما زال منتظرًا يعيد الطلب نفسه. ينتظر الطلب سبعة أيام، ولا ينتظر أكثر من 20 طلبًا في وقت واحد. يصل كل وليّ أمر إشعار واحد لا يذكر اسم الطفل ولا العنصر."
+      "en": "For a restricted account only. Asks its guardians to allow one item it can reach but its limit hides, or, with `subject_kind` `time`, for more watching time today. Asking again for the same item while the first request waits answers that request; an account has one request for time waiting at most, and asking again, for any number of minutes, answers it. A request waits seven days, a request for time only until its home day ends (04:00 home time), and at most 20 wait at once. Each guardian gets one notice, which names neither the child nor the item.",
+      "ar": "للحساب المقيَّد فقط. يطلب من أولياء أمره السماح بعنصر يستطيع الوصول إليه لكن حدّه يحجبه، أو يطلب، بالنوع `time` في `subject_kind`، وقت مشاهدة إضافيًّا اليوم. تكرار الطلب للعنصر نفسه والطلب الأول ما زال منتظرًا يعيد الطلب نفسه؛ وللحساب طلب وقت واحد منتظر على الأكثر، وتكرار طلب الوقت بأي عدد من الدقائق يعيده. ينتظر الطلب سبعة أيام، وينتظر طلب الوقت إلى نهاية يوم البيت فقط (الساعة 04:00 بتوقيت البيت)، ولا ينتظر أكثر من 20 طلبًا في وقت واحد. يصل كل وليّ أمر إشعار واحد لا يذكر اسم الطفل ولا العنصر."
     },
     "/paths/~1me~1parental~1requests/post/responses/200/description": {
-      "en": "A request for this item was already waiting; it is returned.",
-      "ar": "كان هناك طلب منتظر لهذا العنصر؛ يُعاد كما هو."
+      "en": "A request for this item, or for time, was already waiting; it is returned.",
+      "ar": "كان هناك طلب منتظر لهذا العنصر، أو للوقت؛ يُعاد كما هو."
     },
     "/paths/~1me~1parental~1requests/post/responses/200/content/application~1json/schema/properties/request/properties/expires_at/description": {
-      "en": "When a request still waiting stops waiting: seven days after it was made.",
-      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه."
+      "en": "When a request still waiting stops waiting: seven days after it was made, or, for a request for time, the end of the home day it was made on (04:00 home time).",
+      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه، أو، لطلب الوقت، عند نهاية يوم البيت الذي أُنشئ فيه (الساعة 04:00 بتوقيت البيت)."
     },
     "/paths/~1me~1parental~1requests/post/responses/201/description": {
       "en": "The request was made.",
       "ar": "أُنشئ الطلب."
     },
     "/paths/~1me~1parental~1requests/post/responses/201/content/application~1json/schema/properties/request/properties/expires_at/description": {
-      "en": "When a request still waiting stops waiting: seven days after it was made.",
-      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه."
+      "en": "When a request still waiting stops waiting: seven days after it was made, or, for a request for time, the end of the home day it was made on (04:00 home time).",
+      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه، أو، لطلب الوقت، عند نهاية يوم البيت الذي أُنشئ فيه (الساعة 04:00 بتوقيت البيت)."
     },
     "/paths/~1me~1parental~1requests/post/responses/403/description": {
       "en": "Not a restricted account: `code` is `not_restricted`.",
@@ -4306,8 +4450,8 @@
       "ar": "طلبات الأطفال الذين يرعاهم المتصل"
     },
     "/paths/~1parental~1requests/get/description": {
-      "en": "For guardians and admins: a guardian sees the requests of their own children, an admin every request. Newest first. An item in a library the caller cannot open comes with its kind and id only.",
-      "ar": "لأولياء الأمور والمديرين: يرى وليّ الأمر طلبات أطفاله، ويرى المدير كل الطلبات. الأحدث أولًا. العنصر الذي في مكتبة لا يستطيع المتصل فتحها يأتي بنوعه ومعرّفه فقط."
+      "en": "For guardians and admins: a guardian sees the requests of their own children, an admin every request. Newest first. An item in a library the caller cannot open comes with its kind and id only. A request for time has no item: its `subject` carries the kind `time` and the minutes asked for as its `id`.",
+      "ar": "لأولياء الأمور والمديرين: يرى وليّ الأمر طلبات أطفاله، ويرى المدير كل الطلبات. الأحدث أولًا. العنصر الذي في مكتبة لا يستطيع المتصل فتحها يأتي بنوعه ومعرّفه فقط. طلب الوقت لا عنصر له: يحمل `subject` فيه النوع `time` والدقائق المطلوبة في `id`."
     },
     "/paths/~1parental~1requests/get/parameters/0/description": {
       "en": "Only requests with this status; absent: all.",
@@ -4318,8 +4462,8 @@
       "ar": "الطلبات."
     },
     "/paths/~1parental~1requests/get/responses/200/content/application~1json/schema/properties/requests/items/properties/expires_at/description": {
-      "en": "When a request still waiting stops waiting: seven days after it was made.",
-      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه."
+      "en": "When a request still waiting stops waiting: seven days after it was made, or, for a request for time, the end of the home day it was made on (04:00 home time).",
+      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه، أو، لطلب الوقت، عند نهاية يوم البيت الذي أُنشئ فيه (الساعة 04:00 بتوقيت البيت)."
     },
     "/paths/~1parental~1requests/get/responses/200/content/application~1json/schema/properties/requests/items/properties/subject/properties/tier/description": {
       "en": "The age tier of a video, when it has one.",
@@ -4346,20 +4490,20 @@
       "ar": "الموافقة على طلب"
     },
     "/paths/~1parental~1requests~1{id}~1approve/post/description": {
-      "en": "For a guardian of the child who asked, and for admins. Adds an allow rule for the item, the same way a rule added by hand is, ending at `expires_at` when given.",
-      "ar": "لوليّ أمر الطفل صاحب الطلب وللمديرين. تضيف قاعدة سماح للعنصر، كما تُضاف القاعدة يدويًا، تنتهي عند `expires_at` إن أُعطي."
+      "en": "For a guardian of the child who asked, and for admins. Adds an allow rule for the item, the same way a rule added by hand is, ending at `expires_at` when given. A request for time adds no rule: it gives the child minutes for the current home day, the same way `POST /parental/users/{id}/time-grants` does, the minutes asked for or `minutes` when given, and a stream that was refused because the time was over is allowed again at once.",
+      "ar": "لوليّ أمر الطفل صاحب الطلب وللمديرين. تضيف قاعدة سماح للعنصر، كما تُضاف القاعدة يدويًا، تنتهي عند `expires_at` إن أُعطي. طلب الوقت لا يضيف قاعدة: يمنح الطفل دقائق ليوم البيت الحالي، كما يفعل `POST /parental/users/{id}/time-grants`، وهي الدقائق المطلوبة أو قيمة `minutes` إن أُعطيت، والبث الذي رُفض لانتهاء الوقت يُسمح به من جديد فورًا."
     },
     "/paths/~1parental~1requests~1{id}~1approve/post/requestBody/content/application~1json/schema/properties/expires_at/description": {
-      "en": "When the allow rule ends; absent: it does not end. Must be in the future.",
-      "ar": "متى تنتهي قاعدة السماح؛ إن غاب: لا تنتهي. يجب أن يكون في المستقبل."
+      "en": "When the allow rule ends; absent: it does not end. Must be in the future. Not for a request for time (422).",
+      "ar": "متى تنتهي قاعدة السماح؛ إن غاب: لا تنتهي. يجب أن يكون في المستقبل. لا يُقبل في طلب الوقت (422)."
     },
     "/paths/~1parental~1requests~1{id}~1approve/post/responses/200/description": {
-      "en": "Approved: the request and the allow rule.",
-      "ar": "تمت الموافقة: الطلب وقاعدة السماح."
+      "en": "Approved: the request, and the allow rule or, for a request for time, the grant.",
+      "ar": "تمت الموافقة: الطلب، وقاعدة السماح أو، لطلب الوقت، الوقت الممنوح."
     },
     "/paths/~1parental~1requests~1{id}~1approve/post/responses/200/content/application~1json/schema/properties/request/properties/expires_at/description": {
-      "en": "When a request still waiting stops waiting: seven days after it was made.",
-      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه."
+      "en": "When a request still waiting stops waiting: seven days after it was made, or, for a request for time, the end of the home day it was made on (04:00 home time).",
+      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه، أو، لطلب الوقت، عند نهاية يوم البيت الذي أُنشئ فيه (الساعة 04:00 بتوقيت البيت)."
     },
     "/paths/~1parental~1requests~1{id}~1approve/post/responses/403/description": {
       "en": "Not this caller's to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.",
@@ -4390,8 +4534,8 @@
       "ar": "رُفض: الطلب."
     },
     "/paths/~1parental~1requests~1{id}~1deny/post/responses/200/content/application~1json/schema/properties/request/properties/expires_at/description": {
-      "en": "When a request still waiting stops waiting: seven days after it was made.",
-      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه."
+      "en": "When a request still waiting stops waiting: seven days after it was made, or, for a request for time, the end of the home day it was made on (04:00 home time).",
+      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه، أو، لطلب الوقت، عند نهاية يوم البيت الذي أُنشئ فيه (الساعة 04:00 بتوقيت البيت)."
     },
     "/paths/~1parental~1requests~1{id}~1deny/post/responses/403/description": {
       "en": "Not this caller's to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.",
@@ -4442,8 +4586,8 @@
       "ar": "صحيح إذا لم يكن للمتصل وصول إلى مكتبة العنصر: يُعطى نوعه ومعرّفه فقط."
     },
     "/paths/~1users~1{id}~1parental~1activity/get/responses/200/content/application~1json/schema/properties/events/items/properties/guardian/description": {
-      "en": "The guardian an `approved`, `denied` or `pin_locked` event names.",
-      "ar": "وليّ الأمر الذي يذكره حدث `approved` أو `denied` أو `pin_locked`."
+      "en": "The guardian an `approved`, `denied`, `pin_locked` or `time_granted` event names.",
+      "ar": "وليّ الأمر الذي يذكره حدث `approved` أو `denied` أو `pin_locked` أو `time_granted`."
     },
     "/paths/~1users~1{id}~1parental~1activity/get/responses/200/content/application~1json/schema/properties/events/items/properties/device/description": {
       "en": "The device's name, for a `signal` event.",

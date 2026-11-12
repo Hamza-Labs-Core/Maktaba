@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 239,
+    "endpoint": 241,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -7661,6 +7661,65 @@
         "lang": "ar",
         "source": {
           "content": "3e55b394212f1617"
+        }
+      }
+    },
+    {
+      "id": "ep-post-watch-start",
+      "type": "endpoint",
+      "title": "POST /watch/start",
+      "content": "بدء مشاهدة",
+      "tags": [
+        "api",
+        "Watch progress",
+        "post"
+      ],
+      "related": [
+        "story-29.1",
+        "story-29.4"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/watch/start",
+        "tag": "Watch progress",
+        "operationId": "startWatch"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "3127e9258a4ced60"
+        }
+      }
+    },
+    {
+      "id": "ep-post-watch-heartbeat",
+      "type": "endpoint",
+      "title": "POST /watch/heartbeat",
+      "content": "إبقاء مشاهدة جارية",
+      "tags": [
+        "api",
+        "Watch progress",
+        "post"
+      ],
+      "related": [
+        "story-29.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/watch/heartbeat",
+        "tag": "Watch progress",
+        "operationId": "heartbeatWatch"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "f0deca51afaf79de"
         }
       }
     },
