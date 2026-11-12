@@ -23,6 +23,7 @@ import { usePageData } from "../../lib/usePageData";
 import { LoadError } from "../../components/LoadError";
 import { TitleRow } from "../../help/HelpLink";
 import { childPath } from "./Child";
+import { HomeSwitch } from "./HomeSwitch";
 import "../../styles/parental.css";
 
 interface Loaded {
@@ -55,6 +56,7 @@ export function Family() {
         <h1>{t("family.title")}</h1>
       </TitleRow>
       <p className="mkt-parental-note">{t("family.intro")}</p>
+      {admin && <HomeSwitch />}
       {loading && <p className="mkt-loading">{t("common.loading")}</p>}
       {err != null && !data && <LoadError error={err} onRetry={reload} />}
       {data && manages && (

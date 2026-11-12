@@ -235,3 +235,18 @@
 .mkt-parental-asktime p {
   margin: 0;
 }
+
+/* story 57.12: the notice that a child's device signed in before parental controls were set up */
+.mkt-parental-notice {
+  margin-block: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-inline-start: 4px solid var(--color-warn);
+  border-radius: var(--radius-md);
+}
+.mkt-parental-notice h2 {
+  margin-block-start: 0;
+}
+.mkt-parental-notice__action {
+  font-weight: 600;
+}

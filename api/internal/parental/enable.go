@@ -60,6 +60,8 @@ func enabledIn(ctx context.Context, q queryer) (bool, error) {
 	return enabledValue(raw), nil
 }
 
+// auditSetting writes the audit row of a change of the switch. The actor is kept when
+// it is a user of this home (the admin token has no user row).
 func auditSetting(ctx context.Context, tx *sql.Tx, action, actorID string, before, after bool) error {
 	payload, err := json.Marshal(map[string]any{"before": before, "after": after})
 	if err != nil {
@@ -67,7 +69,7 @@ func auditSetting(ctx context.Context, tx *sql.Tx, action, actorID string, befor
 	}
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO audit_log (category, action, actor_user_id, target_id, target_kind, payload)
-		 VALUES ('admin', $1, $2, $3, 'setting', $4)`,
+		 VALUES ('admin', $1, (SELECT id FROM users WHERE id = $2::uuid), $3, 'setting', $4)`,
 		action, nullUUID(actorID), SettingEnabled, string(payload))
 	return err
 }
