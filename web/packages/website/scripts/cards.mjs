@@ -6,7 +6,7 @@
 // The template is an SVG rendered by resvg (no browser). The face is IBM Plex Sans Arabic, the
 // apps' face, which carries Arabic and Latin; @fontsource ships it as WOFF, which resvg cannot
 // read, so woffToSfnt() unpacks each file (WOFF 1.0 is zlib per table) before it is handed over.
-// The colours are the placeholder stylesheet's dark ones (static/assets/site.css); the design of
+// The colours are the placeholder stylesheet's dark ones (before the part A shell); the design of
 // story 60.01 part B restyles this template.
 
 import fs from "node:fs";
@@ -19,7 +19,7 @@ const require = createRequire(import.meta.url);
 
 export const CARD = { width: 1200, height: 630, maxBytes: 200 * 1024 };
 
-// site.css, dark
+// the placeholder stylesheet's dark colours, until part B restyles the card
 const COLOURS = { bg: "#141416", text: "#f2f2f4", muted: "#b4b4ba", accent: "#8ab4f8" };
 const FAMILY = "IBM Plex Sans Arabic";
 const NAME = { en: "Maktaba", ar: "مكتبة" };

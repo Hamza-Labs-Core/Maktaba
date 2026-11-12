@@ -24,7 +24,14 @@ test.describe("T03: the copyright page before the endpoint is live", () => {
       ).toBeVisible();
       await expect(page.locator("section[aria-labelledby=notice] ol > li")).toHaveCount(7);
       await expect(page.locator("form")).toHaveCount(0);
-      await expect(page.locator("script")).toHaveCount(0);
+      // no script but the shell's own (its head script and the menu's): nothing for a form
+      const scripts = await page
+        .locator("script")
+        .evaluateAll((els) =>
+          els.map((e) => new URL((e as HTMLScriptElement).src || "inline:", location.href).pathname)
+        );
+      expect(scripts).toHaveLength(2);
+      for (const s of scripts) expect(s).toMatch(/^\/assets\/(head|shell)-[A-Za-z0-9_-]{10}\.js$/);
     });
   }
 });

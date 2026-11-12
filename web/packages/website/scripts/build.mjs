@@ -4,7 +4,8 @@
 //   1. the install build (`pnpm -C web build:install`, Epic 59's guides): the contents of
 //      web/dist-install/ (install/<guide>/, ar/install/<guide>/ and their hashed files under
 //      install/assets/) copied to the root of dist/, without the placeholder figures whose
-//      screenshot does not exist yet (story 60.05 T07);
+//      screenshot does not exist yet (story 60.05 T07), each guide wrapped in the shell's
+//      header and footer (shell.mjs's inShell, story 60.01 part A);
 //   2. the generated families (FAMILIES: /problems 60.06, /help 60.12, /download 60.11);
 //   3. the hand-made pages (src/pages/, each wrapped in the shell, scripts/shell.mjs): the
 //      front door, the install chooser (/install/, story 60.05) and the 404 page; and the
@@ -13,7 +14,9 @@
 //      needs Go), with the copyright notice form only when WEBSITE_NOTICE_ENDPOINT and
 //      WEBSITE_TURNSTILE_SITEKEY are set (src/copyright-form.ts; neither is, until Epic 50's
 //      endpoint is live);
-//   4. the copied files: static/, the icons and manifest (icons.mjs), the log schema at its
+//   4. the copied files: the shell's (shell.mjs's shellAssets: one stylesheet, two scripts, the
+//      fonts and the mark, under content-hashed names in /assets/), static/ (its fonts only as
+//      the shell publishes them), the icons and manifest (icons.mjs), the log schema at its
 //      $id, security.txt;
 //   5. what every page carries (story 60.04): the head tags an install guide's own <head>
 //      lacks (head.mjs), a social card per page and language (cards.mjs), sitemap.xml and
@@ -35,7 +38,7 @@ import { stripTypeScriptTypes } from "node:module";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { page } from "./shell.mjs";
+import { inShell, page, shellAssets } from "./shell.mjs";
 import { completeHead, readHead } from "./head.mjs";
 import { cardPath, renderCard } from "./cards.mjs";
 import { writeIcons } from "./icons.mjs";
@@ -214,11 +217,23 @@ function writer(dist) {
   };
 }
 
-function copyTree(from, dist, write, html = (s) => s) {
-  for (const rel of walk(from)) {
+function copyTree(from, dist, write, html = (s) => s, keep = () => true) {
+  for (const rel of walk(from).filter(keep)) {
     const buf = fs.readFileSync(path.join(from, rel));
     write(rel, rel.endsWith(".html") ? html(buf.toString("utf8"), rel) : buf);
   }
+}
+
+/** What static/ keeps to itself: the fonts, which the shell publishes under hashed names
+ * (shellAssets); their licence and README are copied. */
+export const STATIC_SKIP = /^fonts\/.*\.woff2$/;
+
+/** An install build page's language and English path, from its file (install/nas/index.html,
+ * ar/install/nas/index.html). */
+export function installPage(rel) {
+  const m = rel.match(/^(ar\/)?(install\/.+\/)index\.html$/);
+  if (!m) throw new Error(`${rel}: not an install guide's page (install/<guide>/index.html)`);
+  return { lang: m[1] ? "ar" : "en", path: `/${m[2]}`, file: rel };
 }
 
 // ---- the install guides' screenshots still to come (story 60.05 T07) ---------------------
@@ -297,7 +312,12 @@ export async function build({
   if (install) {
     log("install build: pnpm -C web build:install");
     execFileSync("pnpm", ["-C", path.join(REPO, "web"), "build:install"], { stdio: "inherit" });
-    copyTree(INSTALL_OUT, dist, write, (html) => dropMissingFigures(html, (s) => shotExists(s)));
+    copyTree(INSTALL_OUT, dist, write, (html, rel) =>
+      inShell(
+        dropMissingFigures(html, (s) => shotExists(s)),
+        installPage(rel)
+      )
+    );
   }
 
   // 2. the generated families
@@ -335,12 +355,14 @@ export async function build({
         description: src.description,
         body: src.body,
         meta: src.meta,
+        mainClass: src.main,
       })
     );
   }
 
   // 4. the copied files
-  copyTree(path.join(PKG, "static"), dist, write);
+  for (const f of shellAssets().files) write(f.file, f.content);
+  copyTree(path.join(PKG, "static"), dist, write, undefined, (rel) => !STATIC_SKIP.test(rel));
   const schema = fs.readFileSync(path.join(REPO, "shared/log/schema/line.schema.json"));
   const id = JSON.parse(schema.toString("utf8")).$id;
   if (id !== "https://maktaba.tv/schema/log-line.json")

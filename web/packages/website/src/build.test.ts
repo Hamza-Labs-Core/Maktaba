@@ -92,7 +92,7 @@ describe("the build's parts", () => {
       description: "D",
       body: "<p>b</p>",
     });
-    expect(html).toContain('id="lang-switch" class="lang" href="/ar/x/"');
+    expect(html).toContain('id="lang-switch" class="lang-switch" href="/ar/x/"');
     expect(html).toContain(
       '<link rel="alternate" hreflang="x-default" href="https://maktaba.tv/x/" />'
     );
@@ -121,10 +121,10 @@ describe("the built site (dist/)", () => {
   it("has the front door and the 404 page in both languages", () => {
     const en = read("index.html");
     expect(en).toContain('<html lang="en" dir="ltr">');
-    expect(en).toContain('id="lang-switch" class="lang" href="/ar/"');
+    expect(en).toContain('id="lang-switch" class="lang-switch" href="/ar/"');
     expect(read("ar/index.html")).toContain('<html lang="ar" dir="rtl">');
     for (const f of ["404.html", "ar/404.html"]) expect(read(f), f).toContain('content="404"');
-    expect(read("404.html")).toContain("This page isn't here");
+    expect(read("404.html")).toContain("This page isn’t here");
     expect(read("ar/404.html")).toContain("هذه الصفحة غير موجودة");
     for (const f of ["index.html", "ar/index.html", "404.html", "ar/404.html"])
       expect(read(f), f).toContain('<meta name="maktaba-site" content="maktaba-website" />');
@@ -191,7 +191,7 @@ describe("the built site (dist/)", () => {
       }
   });
 
-  it("60.07 T03 (the build): the copyright page gives the agent's email and the notice's contents, and no form or script", () => {
+  it("60.07 T03 (the build): the copyright page gives the agent's email and the notice's contents, and no form or script but the shell's", () => {
     for (const f of ["legal/copyright/index.html", "ar/legal/copyright/index.html"]) {
       const html = read(f);
       expect(html, f).toContain('href="mailto:copyright@maktaba.tv"');
@@ -199,7 +199,13 @@ describe("the built site (dist/)", () => {
         /<section aria-labelledby="notice">[\s\S]*?<ol>\n(<li>[\s\S]*?<\/li>\n){7}<\/ol>/
       );
       expect(html, f).not.toContain("<form");
-      expect(html, f).not.toContain("<script");
+      // no script but the shell's own two (its head script and the menu's)
+      const scripts = [...html.matchAll(/<script\b[^>]*>/g)].map((m) => m[0]);
+      expect(scripts, f).toHaveLength(2);
+      for (const s of scripts)
+        expect(s, f).toMatch(
+          /^<script src="\/assets\/(head|shell)-[A-Za-z0-9_-]{10}\.js"( defer)?>$/
+        );
       expect(html, f).not.toContain("challenges.cloudflare.com/turnstile/v0/api.js");
     }
     expect(

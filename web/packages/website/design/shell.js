@@ -52,9 +52,11 @@ for (const button of document.querySelectorAll(".copy")) {
   }
 }
 
-// The problem index's filter: narrows the list in the page as you type, no request.
+// The problem index's filter in the mockup: narrows the list in the page as you type, no
+// request. The built index has its own (src/problems-filter.ts, with Arabic's plural forms on
+// data-count-*), so this one runs only on a count that carries the mockup's data-many.
 const filter = document.getElementById("filter");
-if (filter) {
+if (filter && document.getElementById("count")?.dataset.many) {
   const items = [...document.querySelectorAll(".areas li")];
   const count = document.getElementById("count");
   const none = document.getElementById("no-match");

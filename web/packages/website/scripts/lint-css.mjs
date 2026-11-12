@@ -6,8 +6,9 @@
 //
 //   node scripts/lint-css.mjs [FILE.css ...]
 //
-// With no file it reads the site's stylesheets (static/**/*.css) and the install guides'
-// (web/packages/install/site/**/*.css), which maktaba.tv serves too. Node's standard library
+// With no file it reads the site's stylesheets (static/**/*.css, the shell's design/shell.css and
+// design/fonts.css, src/site.css) and the install guides' (web/packages/install/site/**/*.css),
+// which maktaba.tv serves too. Node's standard library
 // only. A line can opt out with a comment naming why, `/* physical: <why> */`, for a rule that
 // is about the screen and not the text (none today).
 
@@ -17,7 +18,15 @@ import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.resolve(HERE, "..");
-export const DEFAULT_DIRS = [path.join(PKG, "static"), path.resolve(PKG, "../install/site")];
+export const DEFAULT_DIRS = [
+  path.join(PKG, "static"),
+  path.resolve(PKG, "../install/site"),
+  // the shell the site serves (story 60.01 part A, scripts/shell.mjs): its stylesheets, not the
+  // mockups' copy of Epic 59's (design/mockups/vendor/install.css, which stays outside T04)
+  path.join(PKG, "design/shell.css"),
+  path.join(PKG, "design/fonts.css"),
+  path.join(PKG, "src/site.css"),
+];
 
 // properties whose very name is physical, and what to write instead
 const PHYSICAL_PROPS = new Map([
@@ -94,6 +103,7 @@ export function lintCss(text) {
 
 function cssFiles(dir, out = []) {
   if (!fs.existsSync(dir)) return out;
+  if (fs.statSync(dir).isFile()) return [...out, dir];
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) cssFiles(p, out);

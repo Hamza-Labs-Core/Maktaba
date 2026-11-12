@@ -1,38 +1,177 @@
 <!--
 title: مكتبة: أفلامكم ومسلسلاتكم في بيتكم
-description: «مكتبة» خادم وسائط منزلي يجمع أفلامكم ومسلسلاتكم وتسجيلاتكم، بالعربية والإنجليزية، ويعمل على حاسوب أو خادم تخزين شبكي في بيتكم.
+description: يعمل برنامج مكتبة على حاسوب أو خادم تخزين في بيتكم، فيرتّب أفلامكم ومسلسلاتكم ويعرضها على كل شاشة.
 -->
-<h1>مكتبة</h1>
-<p class="lead">
-  تجمع «مكتبة» أفلامكم ومسلسلاتكم وتسجيلاتكم في مكان واحد، على حاسوب أو خادم تخزين شبكي في بيتكم.
-  ويشاهد كل من في البيت على التلفاز أو الهاتف أو الحاسوب، بالعربية أو بالإنجليزية.
-</p>
-
-<section aria-labelledby="install">
-  <h2 id="install">تثبيت «مكتبة»</h2>
-  <p>أدلة خطوة بخطوة للجهاز الذي سيشغّل «مكتبة». وبعد ذلك تحدّث نفسها بنفسها.</p>
-  <ul>
-    <li><a href="/ar/install/nas/">على خادم تخزين شبكي، مثل Synology وTrueNAS وUnraid وQNAP</a></li>
-    <li><a href="/ar/install/docker/">باستخدام Docker، على أي حاسوب يعمل بنظام لينكس</a></li>
-  </ul>
+<section class="page-head with-arch">
+  <svg class="arch" data-nomirror viewBox="0 0 360 460" aria-hidden="true" focusable="false">
+    <defs>
+      <radialGradient id="lamp" cx="180" cy="372" r="190" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-opacity="0.34" />
+        <stop offset="0.55" stop-opacity="0.08" />
+        <stop offset="1" stop-opacity="0" />
+      </radialGradient>
+    </defs>
+    <path
+      d="M42 460V220C42 164 90 136 138 112C164 99 177 80 180 60C183 80 196 99 222 112C270 136 318 164 318 220V460Z"
+      fill="url(#lamp)"
+    />
+    <path
+      class="line"
+      d="M24 460V214C24 150 76 118 128 92C158 77 176 52 180 22C184 52 202 77 232 92C284 118 336 150 336 214V460"
+    />
+    <path
+      class="line soft"
+      d="M42 460V220C42 164 90 136 138 112C164 99 177 80 180 60C183 80 196 99 222 112C270 136 318 164 318 220V460"
+    />
+    <path
+      class="line"
+      d="M112 392C140 378 166 378 180 390C194 378 220 378 248 392M180 390V366M112 392V404C140 392 166 392 180 404C194 392 220 392 248 404V392"
+    />
+  </svg>
+  <div class="frame">
+    <h1>مكتبتكم من الأفلام والمسلسلات، في بيتكم</h1>
+    <p class="lead">
+      يعمل برنامج مكتبة على حاسوب أو خادم تخزين في بيتكم. يرتّب أفلامكم ومسلسلاتكم وتسجيلاتكم، ويصنع
+      لها الترجمات، ويعرضها على الهاتف والحاسوب والتلفاز.
+    </p>
+    <div class="actions">
+      <a class="button" href="/ar/install/"
+        >اختيار دليل التثبيت<svg
+          class="dir-icon"
+          data-mirror
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.75"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path d="M5 12h14M13 6l6 6-6 6" /></svg
+      ></a>
+      <a class="button quiet" href="https://github.com/Hamza-Labs-Core/Maktaba/releases/latest"
+        >تنزيل التطبيقات</a
+      >
+    </div>
+  </div>
 </section>
-
-<section aria-labelledby="download">
-  <h2 id="download">التنزيل</h2>
-  <p>ننشر كل إصدار من «مكتبة» مع ملاحظاته على موقع GitHub.</p>
-  <p>
-    <a href="https://github.com/Hamza-Labs-Core/Maktaba/releases/latest">أحدث إصدار على GitHub</a>
-  </p>
+<section class="band tight" aria-label="ما يقدّمه برنامج مكتبة لبيتكم">
+  <div class="frame">
+    <ul class="facts">
+      <li>
+        <strong>يُعِدّه شخص واحد</strong><span>ويشاهد كل من في البيت، ولكلٍّ منهم حسابه.</span>
+      </li>
+      <li>
+        <strong>يحدّث نفسه</strong
+        ><span>تُثبَّت الإصدارات الجديدة في الساعات الهادئة التي تختارونها.</span>
+      </li>
+      <li>
+        <strong>مكتبتكم تبقى لكم</strong
+        ><span>تبقى أفلامكم في بيتكم، والمشاهدة من خارجه باختياركم.</span>
+      </li>
+    </ul>
+  </div>
 </section>
-
-<section aria-labelledby="help">
-  <h2 id="help">المساعدة</h2>
-  <p>هل يتعطّل شيء؟ يمرّ دليل حلّ المشكلات على أكثرها شيوعًا، واحدةً تلو الأخرى.</p>
-  <p><a href="/ar/install/troubleshooting/">حلّ المشكلات</a></p>
-</section>
-
-<section aria-labelledby="developers">
-  <h2 id="developers">للمطوّرين</h2>
-  <p>تكتبون إضافة، أو تعملون على «مكتبة» نفسها؟ تجدون الأدلة وواجهة البرمجة في موقع المطوّرين.</p>
-  <p><a href="https://maktaba.dev/ar/">maktaba.dev</a></p>
+<section class="band flush-start" aria-label="من أين تبدؤون">
+  <div class="frame">
+    <ul class="ways">
+      <li>
+        <h2>التثبيت على خادم تخزين أو حاسوب</h2>
+        <p>
+          أدلة خطوة بخطوة لأجهزة Synology وTrueNAS وUnraid وQNAP وUGREEN، ولأي جهاز فيه Docker.
+          ويستغرق أغلبها نحو 15 دقيقة.
+        </p>
+        <a class="onward" href="/ar/install/"
+          >اختيار الدليل<svg
+            class="dir-icon"
+            data-mirror
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.75"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path d="M5 12h14M13 6l6 6-6 6" /></svg
+        ></a>
+      </li>
+      <li>
+        <h2>تطبيقات لكل شاشة</h2>
+        <p>
+          تطبيقات مكتبة لأجهزة Mac وiPhone وiPad وApple TV، ولهواتف Android وأجهزة Android TV. وإلى
+          أن تُضاف صفحة التنزيل إلى هذا الموقع، تجدونها مع كل إصدار على GitHub.
+        </p>
+        <a class="onward" href="https://github.com/Hamza-Labs-Core/Maktaba/releases/latest"
+          >التنزيلات على GitHub<svg
+            class="dir-icon"
+            data-mirror
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.75"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              d="M14 5h5v5M19 5l-8 8M18 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h4"
+            /></svg
+        ></a>
+      </li>
+      <li>
+        <h2>حين تظهر لكم رسالة</h2>
+        <p>لكل رسالة من برنامج مكتبة صفحة هنا تشرح ما حدث، وما يمكنكم فعله.</p>
+        <a class="onward" href="/ar/problems/"
+          >الرسائل ومعانيها<svg
+            class="dir-icon"
+            data-mirror
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.75"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path d="M5 12h14M13 6l6 6-6 6" /></svg
+        ></a>
+      </li>
+      <li>
+        <h2>للمطوّرين</h2>
+        <p>الشيفرة المصدرية ودليل كتابة الإضافات وواجهة البرمجة كلها على موقع maktaba.dev.</p>
+        <a class="onward" href="https://maktaba.dev/ar/"
+          >الانتقال إلى maktaba.dev<svg
+            class="dir-icon"
+            data-mirror
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.75"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              d="M14 5h5v5M19 5l-8 8M18 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h4"
+            /></svg
+        ></a>
+      </li>
+    </ul>
+  </div>
 </section>
