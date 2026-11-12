@@ -161,6 +161,17 @@ func (h *TiersHandler) putContainer(t target) http.HandlerFunc {
 			httperror.Write(w, r, httperror.NotFound(t.what+" "+id))
 			return
 		}
+		if t.kind == parental.KindLibrary && tier.Valid {
+			// the first library default tier turns parental controls on (story 57.12)
+			actor := ""
+			if p := principal.FromContext(ctx); p != nil {
+				actor = p.UserID
+			}
+			if err := parental.EnableTx(ctx, tx, actor); err != nil {
+				httperror.Write(w, r, httperror.Internal("turn parental controls on").Wrap(err))
+				return
+			}
+		}
 		count := 0
 		if t.kind != "" {
 			if err := h.Recompute.Enqueue(ctx, tx, t.kind, id); err != nil {

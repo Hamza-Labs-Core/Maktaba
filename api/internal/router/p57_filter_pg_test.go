@@ -78,6 +78,11 @@ type pfEnv struct {
 	hub    *ws.Hub
 	// stream, when set, ends each request after that long: a live channel never ends itself
 	stream time.Duration
+	// as, when set, may answer another principal for a request (the bypass
+	// rehearsal's mutation check takes the filter off one route with it)
+	as func(req *http.Request, p *principal.Principal) *principal.Principal
+	// cache is the restricted accounts' cache the home's mounts share
+	cache *parental.Cache
 }
 
 // pfStandIns are the refused routes this test's router has no real mount for.
@@ -87,7 +92,12 @@ var pfStandIns = []struct{ method, path string }{
 	{http.MethodGet, "/api/plugins"}, {http.MethodGet, "/api/users"},
 }
 
-func setupFilter(t testing.TB) *pfEnv {
+func setupFilter(t testing.TB) *pfEnv { return setupFilterWith(t, nil) }
+
+// setupFilterWith is setupFilter with more of the home mounted: more, when set, mounts
+// on the same router after MountP6 (the whole home of p57_home_pg_test.go), and the
+// stand-ins step aside for the real routes it brought.
+func setupFilterWith(t testing.TB, more func(r chi.Router, e *pfEnv)) *pfEnv {
 	t.Helper()
 	db, _ := clustertest.ScratchDB(t)
 	e := &pfEnv{t: t, db: db, gate: parental.NewGate(), signer: &pfSigner{}, hub: ws.NewHub()}
@@ -113,6 +123,9 @@ func setupFilter(t testing.TB) *pfEnv {
 	e.exec(`INSERT INTO collection_items (collection_id, video_id, position) VALUES ($1, $3, 0), ($1, $4, 1), ($2, $4, 0)`, pfCol, pfCol16, pfKid, pfTeen)
 	e.exec(`INSERT INTO parental_policies (user_id, max_tier, version) VALUES ($1, 9, 1), ($2, 9, 1)`, pfChild, pfChild2)
 	e.exec(`INSERT INTO parental_guardians (child_id, guardian_id) VALUES ($1,$2), ($3,$4)`, pfChild, pfGuardian, pfChild2, pfOtherG)
+	// a home with restricted accounts has parental controls on (story 57.12; slot 0225
+	// starts them off where nothing is set up)
+	e.exec(`UPDATE app_settings SET value = 'true' WHERE key = 'parental.enabled'`)
 
 	r := router.New(router.Deps{IdempotencyStore: idempotency.NewMemoryStore(), Parental: e.gate})
 	// a streaming service that keeps time limits (story 57.14): without one a
@@ -132,8 +145,14 @@ func setupFilter(t testing.TB) *pfEnv {
 		}
 		_, _ = w.Write([]byte(`{"reached":true}`))
 	}
+	if more != nil {
+		more(r, e)
+	}
 	for _, s := range pfStandIns {
 		if r.Match(chi.NewRouteContext(), s.method, s.path) {
+			if more != nil {
+				continue // the whole home mounts the real route
+			}
 			t.Fatalf("%s %s is mounted now: test the real route", s.method, s.path)
 		}
 		r.MethodFunc(s.method, s.path, reached)
@@ -158,6 +177,22 @@ func setupFilter(t testing.TB) *pfEnv {
 			p = &principal.Principal{UserID: pfChild, AccessAllLibraries: true, Source: principal.SourceJWT}
 		case "viewer":
 			p = &principal.Principal{UserID: pfViewer, Libraries: libs, Source: principal.SourceJWT}
+		case "admin-token": // the admin token: an admin with no user row
+			p = &principal.Principal{IsAdmin: true, AccessAllLibraries: true, Source: principal.SourceAdminToken}
+		case "child-cloud": // the child signed in through Maktaba Cloud: a play-only sign-in
+			p = &principal.Principal{UserID: pfChild, Libraries: libs, Source: principal.SourceJWT}
+			p.ApplyCloudScope(principal.CloudScopePlay, libs)
+		case "child-relay": // the same sign-in, forwarded by the relay agent on this machine
+			p = &principal.Principal{UserID: pfChild, Libraries: libs, Source: principal.SourceJWT}
+			p.ApplyCloudScope(principal.CloudScopePlay, libs)
+			req.RemoteAddr = "127.0.0.1:49152"
+			req.Header.Set("X-Maktaba-Via", "relay")
+		case "viewer-device": // an unrestricted account whose device said 9+ (the token's `ac`)
+			limit := parental.Tier9
+			p = &principal.Principal{UserID: pfViewer, Libraries: libs, Source: principal.SourceJWT, AgeCeiling: &limit}
+		}
+		if e.as != nil {
+			p = e.as(req, p)
 		}
 		if p != nil {
 			req = req.WithContext(principal.WithPrincipal(req.Context(), p))

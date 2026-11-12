@@ -1011,7 +1011,8 @@
       "related": [
         "epic-45-libraries-ui",
         "ep-get-libraries",
-        "ep-post-libraries"
+        "ep-post-libraries",
+        "ep-get-libraries-manage"
       ],
       "files": {
         "story": "specs/epics/45-libraries-ui/README.md",
@@ -1020,7 +1021,8 @@
       },
       "api_endpoints": [
         "GET /libraries",
-        "POST /libraries"
+        "POST /libraries",
+        "GET /libraries/manage"
       ],
       "db_tables": [],
       "metadata": {

@@ -10,8 +10,8 @@
       "ar": "مكتبة فيديو مستضافة ذاتيًا مع تفريغ نصي تلقائي وبحث دلالي وبث تكيّفي."
     },
     "/info/description": {
-      "en": "The Maktaba API is the control plane for a self-hosted video library. It exposes\nlibraries, videos, transcripts, search, processing jobs, streaming sessions, and\nuser state over a uniform JSON surface.\n\n## Conventions\n\n- **Transport.** HTTP/1.1 and HTTP/2 over TLS. JSON request and response bodies\n  use `Content-Type: application/json; charset=utf-8`. Error responses use\n  [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json`.\n- **Identifiers.** Resource ids are UUIDv4 unless documented otherwise.\n  `Job.id` and `AudioTrack.id` are 64-bit integers.\n- **Times.** All timestamps are RFC 3339 / ISO 8601 in UTC (`Z` suffix).\n  Durations and offsets are seconds as floats.\n- **Pagination.** Cursor-based. Pass `limit` (default 50, max 200) and the\n  opaque `cursor` returned from the previous page. The page envelope is\n  `{ items: [...], next: \"<cursor>\" | null }`. Cursors encode\n  `(updated_at DESC, id DESC)` and rotate when the schema version changes.\n- **Idempotency.** All `POST /api/jobs/{id}/{action}` endpoints are idempotent.\n  Clients may set `Idempotency-Key: <uuid>` on `POST` and `PATCH` requests; the\n  server replays the original response for 24 hours.\n- **Request correlation.** Every response carries `X-Request-Id` (UUIDv7).\n  Clients may pass their own `X-Request-Id` to thread it through.\n- **Rate limits.** Default: 600 requests / minute / authenticated user, 6 000 /\n  minute / IP. Exhausted requests get `429 Too Many Requests` with `Retry-After`\n  and headers `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.\n\n## Authentication\n\nTwo equivalent paths backed by the same identity:\n\n- **Web** uses `httpOnly` cookies set by `POST /api/auth/login`. State-changing\n  requests must also include the `X-CSRF-Token` header (value mirrored from the\n  `csrf_token` cookie).\n- **Mobile / desktop / TV** uses bearer JWT (RS256, 15 min) with a long-lived\n  opaque refresh token. Public keys are exposed at `/api/.well-known/jwks.json`.\n\nSingle-user installs may pass a static admin token via `Authorization: Bearer`.\n\n## Streaming\n\nThe `/api/sessions` endpoints mint short-lived signed URLs that the client\nsends to the Streaming Service (separate origin) directly. Bytes never round\ntrip the API.\n\n## WebSocket\n\n`GET /api/ws` upgrades to a multiplexed event stream. Messages are JSON\n`{ type, data, at }` envelopes. Clients subscribe by sending\n`{ type: \"subscribe\", channels: [\"jobs\", \"playback\", \"library\"] }` on connect.\n",
-      "ar": "واجهة مكتبة البرمجية هي طبقة التحكم في مكتبة فيديو مستضافة ذاتيًا. تتيح\nالمكتبات والفيديوهات والنصوص المفرّغة والبحث ومهام المعالجة وجلسات البث\nوحالة المستخدم عبر واجهة JSON موحّدة.\n\n## الأعراف\n\n- **النقل.** HTTP/1.1 وHTTP/2 فوق TLS. تستخدم أجسام الطلبات والاستجابات بصيغة JSON\n  الترويسة `Content-Type: application/json; charset=utf-8`. تستخدم استجابات الأخطاء\n  الصيغة `application/problem+json` وفق [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457).\n- **المعرّفات.** معرّفات الموارد من نوع UUIDv4 ما لم يُذكر غير ذلك.\n  `Job.id` و`AudioTrack.id` أعداد صحيحة بطول 64 بت.\n- **الأوقات.** كل الطوابع الزمنية بصيغة RFC 3339 / ISO 8601 بتوقيت UTC (باللاحقة `Z`).\n  المُدد والإزاحات بالثواني كأعداد عشرية.\n- **الترقيم.** قائم على المؤشر. مرّر `limit` (الافتراضي 50، والحد الأقصى 200) والمؤشر\n  المعتم `cursor` المُعاد من الصفحة السابقة. غلاف الصفحة هو\n  `{ items: [...], next: \"<cursor>\" | null }`. ترمّز المؤشرات\n  `(updated_at DESC, id DESC)` وتتبدّل عند تغيّر إصدار المخطط.\n- **التكرار الآمن.** كل نقاط الوصول `POST /api/jobs/{id}/{action}` آمنة التكرار.\n  يمكن للعملاء ضبط `Idempotency-Key: <uuid>` في طلبات `POST` و`PATCH`، ويعيد\n  الخادم الاستجابة الأصلية طوال 24 ساعة.\n- **ربط الطلبات.** تحمل كل استجابة `X-Request-Id` (من نوع UUIDv7).\n  يمكن للعملاء تمرير `X-Request-Id` خاص بهم ليُنقل عبر السلسلة.\n- **حدود المعدّل.** الافتراضي: 600 طلب / دقيقة / مستخدم موثَّق، و6 000 /\n  دقيقة / عنوان IP. تتلقى الطلبات المتجاوزة `429 Too Many Requests` مع `Retry-After`\n  والترويسات `X-RateLimit-Limit` و`X-RateLimit-Remaining` و`X-RateLimit-Reset`.\n\n## المصادقة\n\nمساران متكافئان يستندان إلى الهوية نفسها:\n\n- **الويب** يستخدم ملفات تعريف ارتباط `httpOnly` يضبطها `POST /api/auth/login`. ويجب أن\n  تتضمن الطلبات المغيّرة للحالة أيضًا الترويسة `X-CSRF-Token` (قيمتها منسوخة من\n  ملف تعريف الارتباط `csrf_token`).\n- **الجوال / سطح المكتب / التلفاز** يستخدم JWT من نوع حامل (RS256، صالح 15 دقيقة) مع رمز (token)\n  تحديث معتم طويل الأمد. المفاتيح العامة متاحة في `/api/.well-known/jwks.json`.\n\nيمكن لعمليات التثبيت أحادية المستخدم تمرير رمز مشرف ثابت عبر `Authorization: Bearer`.\n\n## البث\n\nتُصدر نقاط الوصول `/api/sessions` عناوين URL موقّعة قصيرة العمر يرسلها العميل\nمباشرة إلى خدمة البث (على أصل منفصل). لا تمر البايتات أبدًا\nعبر الواجهة البرمجية.\n\n## WebSocket\n\nيُرقّي `GET /api/ws` الاتصال إلى تدفق أحداث متعدد القنوات. الرسائل أغلفة JSON\nبالشكل `{ type, data, at }`. يشترك العملاء بإرسال\n`{ type: \"subscribe\", channels: [\"jobs\", \"playback\", \"library\"] }` عند الاتصال.\n"
+      "en": "The Maktaba API is the control plane for a self-hosted video library. It exposes\nlibraries, videos, transcripts, search, processing jobs, streaming sessions, and\nuser state over a uniform JSON surface.\n\n## Conventions\n\n- **Transport.** HTTP/1.1 and HTTP/2 over TLS. JSON request and response bodies\n  use `Content-Type: application/json; charset=utf-8`. Error responses use\n  [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json`.\n- **Identifiers.** Resource ids are UUIDv4 unless documented otherwise.\n  `Job.id` and `AudioTrack.id` are 64-bit integers.\n- **Times.** All timestamps are RFC 3339 / ISO 8601 in UTC (`Z` suffix).\n  Durations and offsets are seconds as floats.\n- **Pagination.** Cursor-based. Pass `limit` (default 50, max 200) and the\n  opaque `cursor` returned from the previous page. The page envelope is\n  `{ items: [...], next: \"<cursor>\" | null }`. Cursors encode\n  `(updated_at DESC, id DESC)` and rotate when the schema version changes.\n- **Idempotency.** All `POST /api/jobs/{id}/{action}` endpoints are idempotent.\n  Clients may set `Idempotency-Key: <uuid>` on `POST` and `PATCH` requests; the\n  server replays the original response for 24 hours.\n- **Request correlation.** Every response carries `X-Request-Id` (UUIDv7).\n  Clients may pass their own `X-Request-Id` to thread it through.\n- **Rate limits.** Default: 600 requests / minute / authenticated user, 6 000 /\n  minute / IP. Exhausted requests get `429 Too Many Requests` with `Retry-After`\n  and headers `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.\n\n## Authentication\n\nTwo equivalent paths backed by the same identity:\n\n- **Web** uses `httpOnly` cookies set by `POST /api/auth/login`. State-changing\n  requests must also include the `X-CSRF-Token` header (value mirrored from the\n  `csrf_token` cookie).\n- **Mobile / desktop / TV** uses bearer JWT (RS256, 15 min) with a long-lived\n  opaque refresh token. Public keys are exposed at `/api/.well-known/jwks.json`.\n\nSingle-user installs may pass a static admin token via `Authorization: Bearer`.\n\n## Streaming\n\nThe `/api/stream/sessions` endpoints mint short-lived signed URLs that the client\nsends to the Streaming Service (separate origin) directly. Bytes never round\ntrip the API.\n\n## WebSocket\n\n`GET /api/ws` upgrades to a multiplexed event stream. Messages are JSON\n`{ type, data, at }` envelopes. Clients subscribe by sending\n`{ type: \"subscribe\", channels: [\"jobs\", \"playback\", \"library\"] }` on connect.\n",
+      "ar": "واجهة مكتبة البرمجية هي طبقة التحكم في مكتبة فيديو مستضافة ذاتيًا. تتيح\nالمكتبات والفيديوهات والنصوص المفرّغة والبحث ومهام المعالجة وجلسات البث\nوحالة المستخدم عبر واجهة JSON موحّدة.\n\n## الأعراف\n\n- **النقل.** HTTP/1.1 وHTTP/2 فوق TLS. تستخدم أجسام الطلبات والاستجابات بصيغة JSON\n  الترويسة `Content-Type: application/json; charset=utf-8`. تستخدم استجابات الأخطاء\n  الصيغة `application/problem+json` وفق [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457).\n- **المعرّفات.** معرّفات الموارد من نوع UUIDv4 ما لم يُذكر غير ذلك.\n  `Job.id` و`AudioTrack.id` أعداد صحيحة بطول 64 بت.\n- **الأوقات.** كل الطوابع الزمنية بصيغة RFC 3339 / ISO 8601 بتوقيت UTC (باللاحقة `Z`).\n  المُدد والإزاحات بالثواني كأعداد عشرية.\n- **الترقيم.** قائم على المؤشر. مرّر `limit` (الافتراضي 50، والحد الأقصى 200) والمؤشر\n  المعتم `cursor` المُعاد من الصفحة السابقة. غلاف الصفحة هو\n  `{ items: [...], next: \"<cursor>\" | null }`. ترمّز المؤشرات\n  `(updated_at DESC, id DESC)` وتتبدّل عند تغيّر إصدار المخطط.\n- **التكرار الآمن.** كل نقاط الوصول `POST /api/jobs/{id}/{action}` آمنة التكرار.\n  يمكن للعملاء ضبط `Idempotency-Key: <uuid>` في طلبات `POST` و`PATCH`، ويعيد\n  الخادم الاستجابة الأصلية طوال 24 ساعة.\n- **ربط الطلبات.** تحمل كل استجابة `X-Request-Id` (من نوع UUIDv7).\n  يمكن للعملاء تمرير `X-Request-Id` خاص بهم ليُنقل عبر السلسلة.\n- **حدود المعدّل.** الافتراضي: 600 طلب / دقيقة / مستخدم موثَّق، و6 000 /\n  دقيقة / عنوان IP. تتلقى الطلبات المتجاوزة `429 Too Many Requests` مع `Retry-After`\n  والترويسات `X-RateLimit-Limit` و`X-RateLimit-Remaining` و`X-RateLimit-Reset`.\n\n## المصادقة\n\nمساران متكافئان يستندان إلى الهوية نفسها:\n\n- **الويب** يستخدم ملفات تعريف ارتباط `httpOnly` يضبطها `POST /api/auth/login`. ويجب أن\n  تتضمن الطلبات المغيّرة للحالة أيضًا الترويسة `X-CSRF-Token` (قيمتها منسوخة من\n  ملف تعريف الارتباط `csrf_token`).\n- **الجوال / سطح المكتب / التلفاز** يستخدم JWT من نوع حامل (RS256، صالح 15 دقيقة) مع رمز (token)\n  تحديث معتم طويل الأمد. المفاتيح العامة متاحة في `/api/.well-known/jwks.json`.\n\nيمكن لعمليات التثبيت أحادية المستخدم تمرير رمز مشرف ثابت عبر `Authorization: Bearer`.\n\n## البث\n\nتُصدر نقاط الوصول `/api/stream/sessions` عناوين URL موقّعة قصيرة العمر يرسلها العميل\nمباشرة إلى خدمة البث (على أصل منفصل). لا تمر البايتات أبدًا\nعبر الواجهة البرمجية.\n\n## WebSocket\n\nيُرقّي `GET /api/ws` الاتصال إلى تدفق أحداث متعدد القنوات. الرسائل أغلفة JSON\nبالشكل `{ type, data, at }`. يشترك العملاء بإرسال\n`{ type: \"subscribe\", channels: [\"jobs\", \"playback\", \"library\"] }` عند الاتصال.\n"
     },
     "/servers/0/description": {
       "en": "Production",
@@ -498,8 +498,8 @@
       "ar": "بحث هجين في المكتبة"
     },
     "/paths/~1search/get/description": {
-      "en": "Combines BM25 full-text and vector similarity using reciprocal rank fusion.\nResults carry per-stage timing under `took_ms`. When semantic backend is\noffline, the response sets `degraded=true` and falls back to FTS only.\n",
-      "ar": "يجمع بين البحث النصي الكامل BM25 وتشابه المتجهات باستخدام دمج الرتب التبادلي.\nتحمل النتائج توقيت كل مرحلة ضمن `took_ms`. عندما تكون الخلفية الدلالية\nغير متصلة، تضبط الاستجابة `degraded=true` وتعود إلى البحث النصي الكامل وحده.\n"
+      "en": "Combines BM25 full-text and vector similarity using reciprocal rank fusion.\nResults carry per-stage timing under `took_ms`. When semantic backend is\noffline, the response sets `degraded=true` and falls back to FTS only. For a restricted account (one under parental controls) the results, their totals and their snippets are of the videos it may see only.\n",
+      "ar": "يجمع بين البحث النصي الكامل BM25 وتشابه المتجهات باستخدام دمج الرتب التبادلي.\nتحمل النتائج توقيت كل مرحلة ضمن `took_ms`. عندما تكون الخلفية الدلالية\nغير متصلة، تضبط الاستجابة `degraded=true` وتعود إلى البحث النصي الكامل وحده. وللحساب المقيَّد (الخاضع للرقابة الأبوية) تقتصر النتائج وأعدادها ومقتطفاتها على الفيديوهات التي يحق له رؤيتها.\n"
     },
     "/paths/~1search/get/responses/200/description": {
       "en": "Search hits.",
@@ -518,8 +518,8 @@
       "ar": "بحث هجين بجسم طلب منظَّم"
     },
     "/paths/~1search/post/description": {
-      "en": "Same semantics as `GET /search`; the body form is preferred when filters get long.",
-      "ar": "الدلالات نفسها كما في `GET /search`؛ ويُفضَّل شكل الجسم عندما تطول عوامل التصفية."
+      "en": "Same semantics as `GET /search`; the body form is preferred when filters get long. For a restricted account (one under parental controls) the results, their totals and their snippets are of the videos it may see only.",
+      "ar": "الدلالات نفسها كما في `GET /search`؛ ويُفضَّل شكل الجسم عندما تطول عوامل التصفية. وللحساب المقيَّد (الخاضع للرقابة الأبوية) تقتصر النتائج وأعدادها ومقتطفاتها على الفيديوهات التي يحق له رؤيتها."
     },
     "/paths/~1search/post/responses/200/description": {
       "en": "Search hits.",
@@ -709,79 +709,79 @@
       "en": "Tag already exists.",
       "ar": "الوسم موجود مسبقًا."
     },
-    "/paths/~1sessions/post/summary": {
+    "/paths/~1stream~1sessions/post/summary": {
       "en": "Mint a streaming session",
       "ar": "إصدار جلسة بث"
     },
-    "/paths/~1sessions/post/description": {
+    "/paths/~1stream~1sessions/post/description": {
       "en": "Returns a signed manifest URL (HLS / DASH) or direct URL. The client passes\nit to its player; bytes are served by the Streaming Service, not the API.\n",
       "ar": "يعيد عنوان URL موقّعًا لملف البيان (HLS / DASH) أو عنوان URL مباشرًا. يمرّره العميل\nإلى مشغّله؛ وتقدّم خدمة البث البايتات، لا الواجهة البرمجية.\n"
     },
-    "/paths/~1sessions/post/responses/200/description": {
+    "/paths/~1stream~1sessions/post/responses/200/description": {
       "en": "Session minted.",
       "ar": "تم إصدار الجلسة."
     },
-    "/paths/~1sessions/post/responses/200/headers/Maktaba-Warning/description": {
+    "/paths/~1stream~1sessions/post/responses/200/headers/Maktaba-Warning/description": {
       "en": "e.g. `start-sec-clamped`.",
       "ar": "مثل `start-sec-clamped`."
     },
-    "/paths/~1sessions/post/responses/403/description": {
+    "/paths/~1stream~1sessions/post/responses/403/description": {
       "en": "User cannot access this video. Or the account's watching time is over (Parental controls): the problem type is `https://maktaba.tv/problems/parental-time`, `code` is `parental_time`, `reason` is `outside_slot` or `limit_reached`, and `next_allowed_at` is when the rules allow watching again (absent when no moment in the next eight days does). No session is opened.",
       "ar": "لا يمكن للمستخدم الوصول إلى هذا الفيديو. أو انتهى وقت المشاهدة للحساب (الرقابة الأبوية): نوع المشكلة `https://maktaba.tv/problems/parental-time`، وقيمة `code` هي `parental_time`، وقيمة `reason` هي `outside_slot` أو `limit_reached`، و`next_allowed_at` هو الوقت الذي تسمح فيه القواعد بالمشاهدة مرة أخرى (يغيب إذا لم تسمح بها في أي لحظة خلال الأيام الثمانية القادمة). لا تُفتح أي جلسة."
     },
-    "/paths/~1sessions/post/responses/507/description": {
+    "/paths/~1stream~1sessions/post/responses/507/description": {
       "en": "Too little free on the streaming service's disk to prepare (transcode) the video (code `insufficient_storage`).",
       "ar": "المساحة الحرة على قرص خدمة البث أقل من أن تكفي لتجهيز الفيديو (تحويل ترميزه) (الرمز `insufficient_storage`)."
     },
-    "/paths/~1sessions~1{id}/get/summary": {
+    "/paths/~1stream~1sessions~1{id}/get/summary": {
       "en": "Fetch a session",
       "ar": "جلب جلسة"
     },
-    "/paths/~1sessions~1{id}/get/responses/200/description": {
+    "/paths/~1stream~1sessions~1{id}/get/responses/200/description": {
       "en": "Session.",
       "ar": "الجلسة."
     },
-    "/paths/~1sessions~1{id}/delete/summary": {
+    "/paths/~1stream~1sessions~1{id}/delete/summary": {
       "en": "Close a streaming session",
       "ar": "إغلاق جلسة بث"
     },
-    "/paths/~1sessions~1{id}/delete/description": {
+    "/paths/~1stream~1sessions~1{id}/delete/description": {
       "en": "Frees the transcoder slot and revokes the signed URL.",
       "ar": "يحرّر خانة محوّل الترميز ويلغي عنوان URL الموقّع."
     },
-    "/paths/~1sessions~1{id}/delete/responses/204/description": {
+    "/paths/~1stream~1sessions~1{id}/delete/responses/204/description": {
       "en": "Closed.",
       "ar": "أُغلقت."
     },
-    "/paths/~1sessions~1{id}~1progress/post/summary": {
+    "/paths/~1stream~1sessions~1{id}~1progress/post/summary": {
       "en": "Heartbeat session progress",
       "ar": "نبضة تقدّم الجلسة"
     },
-    "/paths/~1sessions~1{id}~1progress/post/description": {
+    "/paths/~1stream~1sessions~1{id}~1progress/post/description": {
       "en": "Server-side debounced (1 Hz). Mirrors the position into `playback_state`.\nExcluded from rate limits. For a restricted account this is the stream's heartbeat: it counts the watching time and keeps the stream running, so send it at least every 60 seconds.\n",
       "ar": "يُخمَّد على الخادم (مرة واحدة في الثانية). ينسخ الموضع إلى `playback_state`.\nمستثنى من حدود المعدّل. وهو للحساب المقيَّد نبضة البث: يعدّ وقت المشاهدة ويُبقي البث جاريًا، فأرسله مرة كل 60 ثانية على الأقل.\n"
     },
-    "/paths/~1sessions~1{id}~1progress/post/responses/200/description": {
+    "/paths/~1stream~1sessions~1{id}~1progress/post/responses/200/description": {
       "en": "Accepted.",
       "ar": "مقبول."
     },
-    "/paths/~1sessions~1{id}~1progress/post/responses/403/description": {
+    "/paths/~1stream~1sessions~1{id}~1progress/post/responses/403/description": {
       "en": "The account's watching time is over (Parental controls): the problem type is `https://maktaba.tv/problems/parental-time`, `code` is `parental_time`, `reason` is `outside_slot`, `limit_reached`, or `no_heartbeat` when the session is not one the home is counting for this account, and `next_allowed_at` is when the rules allow watching again (absent when no moment in the next eight days does, and with `no_heartbeat`). The position is not saved and the stream ends within 60 seconds.",
       "ar": "انتهى وقت المشاهدة للحساب (الرقابة الأبوية): نوع المشكلة `https://maktaba.tv/problems/parental-time`، وقيمة `code` هي `parental_time`، وقيمة `reason` هي `outside_slot` أو `limit_reached`، أو `no_heartbeat` إذا لم تكن الجلسة من الجلسات التي يعدّها البيت لهذا الحساب، و`next_allowed_at` هو الوقت الذي تسمح فيه القواعد بالمشاهدة مرة أخرى (يغيب إذا لم تسمح بها في أي لحظة خلال الأيام الثمانية القادمة، ومع `no_heartbeat`). لا يُحفظ الموضع وينتهي البث خلال 60 ثانية."
     },
-    "/paths/~1sessions~1{id}~1progress/post/responses/503/description": {
+    "/paths/~1stream~1sessions~1{id}~1progress/post/responses/503/description": {
       "en": "A restricted account's watching time could not be counted: the progress is refused, never taken uncounted; ask again after `Retry-After`.",
       "ar": "تعذّر عدّ وقت المشاهدة لحساب مقيَّد: يُرفض التقدّم ولا يُقبل دون عدّ؛ أعد الطلب بعد `Retry-After`."
     },
-    "/paths/~1sessions~1capabilities/get/summary": {
+    "/paths/~1stream~1capabilities/get/summary": {
       "en": "Streaming server capabilities",
       "ar": "إمكانات خادم البث"
     },
-    "/paths/~1sessions~1capabilities/get/description": {
+    "/paths/~1stream~1capabilities/get/description": {
       "en": "Cached 60 s; invalidated by the streaming service when the encoder profile changes.",
       "ar": "مخزّنة مؤقتًا 60 ثانية؛ وتُبطلها خدمة البث عند تغيّر ملف تعريف المرمِّز."
     },
-    "/paths/~1sessions~1capabilities/get/responses/200/description": {
+    "/paths/~1stream~1capabilities/get/responses/200/description": {
       "en": "Capabilities.",
       "ar": "الإمكانات."
     },
@@ -1846,12 +1846,12 @@
       "ar": "ما هو مفعَّل على هذا الجهاز الرئيسي"
     },
     "/paths/~1capabilities/get/description": {
-      "en": "Each feature a client shows (`live_tv`, `transcripts`, `search`, ...) and whether it is on, off, or not available, so an app hides or explains what is off. Answers 304 to a matching `If-None-Match`; `/ws/home` sends `capabilities_changed` when it moves.",
-      "ar": "كل ميزة يعرضها العميل (`live_tv` و`transcripts` و`search`، وغيرها) وهل هي مفعَّلة أو متوقفة أو غير متاحة، كي يُخفي التطبيق ما توقف أو يشرح سببه. يُجيب بالرمز 304 عند تطابق `If-None-Match`، ويُرسل `/ws/home` الحدث `capabilities_changed` عند تغيّرها."
+      "en": "Each feature a client shows (`live_tv`, `transcripts`, `search`, ...) and whether it is on, off, or not available, so an app hides or explains what is off. Answers 304 to a matching `If-None-Match`; `/ws/home` sends `capabilities_changed` when it moves. The answer also carries the caller's own `parental` block, and the ETag covers it, so a changed limit is a changed answer.",
+      "ar": "كل ميزة يعرضها العميل (`live_tv` و`transcripts` و`search`، وغيرها) وهل هي مفعَّلة أو متوقفة أو غير متاحة، كي يُخفي التطبيق ما توقف أو يشرح سببه. يُجيب بالرمز 304 عند تطابق `If-None-Match`، ويُرسل `/ws/home` الحدث `capabilities_changed` عند تغيّرها. تحمل الإجابة كذلك كتلة `parental` الخاصة بالمتصل، ويشملها ETag، فتغيُّر الحدّ تغيُّر في الإجابة."
     },
     "/paths/~1capabilities/get/responses/200/description": {
-      "en": "The features.",
-      "ar": "الميزات."
+      "en": "The features, and the caller's `parental` block.",
+      "ar": "الميزات، وكتلة `parental` الخاصة بالمتصل."
     },
     "/paths/~1capabilities/get/responses/304/description": {
       "en": "Unchanged since the ETag sent.",
@@ -2925,7 +2925,7 @@
       "en": "`library_read_only`: the library is read-only for Maktaba, and this would change its files.",
       "ar": "`library_read_only`: المكتبة للقراءة فقط بالنسبة إلى مكتبة، وهذا الطلب يغيّر ملفاتها."
     },
-    "/paths/~1sessions/post/responses/503/description": {
+    "/paths/~1stream~1sessions/post/responses/503/description": {
       "en": "`transcode_busy`: every transcode this home runs at once is taken; ask again after `Retry-After`. Also when a restricted account's watching time cannot be read, or the streaming service cannot be told of it: the stream is refused, never let through uncounted; ask again after `Retry-After`.",
       "ar": "`transcode_busy`: كل عمليات التحويل التي يشغّلها هذا الجهاز الرئيسي في آن واحد مشغولة؛ أعد الطلب بعد `Retry-After`. وكذلك إذا تعذّرت قراءة وقت المشاهدة لحساب مقيَّد، أو تعذّر إبلاغ خدمة البث به: يُرفض البث ولا يُمرَّر دون عدّ؛ أعد الطلب بعد `Retry-After`."
     },
@@ -4054,8 +4054,8 @@
       "ar": "منطقة الجهاز: حرفان (ISO 3166-1 بأي حالة أحرف) أو ثلاثة أرقام (UN M.49). تُحفظ مع الإشارة. وتُستعمل درجات الولايات المتحدة لكل المناطق حاليًّا."
     },
     "/paths/~1me~1age-signal/post/responses/200/description": {
-      "en": "Recorded. `tier_limit` is the limit in force, which is the earlier one when what was sent is looser.",
-      "ar": "سُجِّلت. `tier_limit` هو الحدّ النافذ، وهو الحدّ السابق إن كان المُرسَل أخفّ."
+      "en": "Recorded. `tier_limit` is the limit in force, which is the earlier one when what was sent is looser. While parental controls are off in this home (`enabled` false) the signal is recorded and limits nothing.",
+      "ar": "سُجِّلت. `tier_limit` هو الحدّ النافذ، وهو الحدّ السابق إن كان المُرسَل أخفّ. ما دامت الرقابة الأبوية متوقفة في هذا المنزل (`enabled` بقيمة false) تُسجَّل الإشارة ولا تقيِّد شيئًا."
     },
     "/paths/~1me~1age-signal/post/responses/200/content/application~1json/schema/properties/tier_limit/description": {
       "en": "The device limit now in force on this sign-in: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier; `null` when the device limits nothing.",
@@ -4066,8 +4066,8 @@
       "ar": "المُرسَل أخفّ من الحدّ النافذ: يُحفظ وينتظر أن يجيزه مشرف أو وليّ."
     },
     "/paths/~1me~1age-signal/post/responses/200/content/application~1json/schema/properties/refresh/description": {
-      "en": "Always `true`: refresh the access token now so the next one carries the limit.",
-      "ar": "دائمًا `true`: جدِّد رمز الوصول الآن ليحمل الرمز التالي الحدّ."
+      "en": "Refresh the access token now so the next one carries the limit. False while parental controls are off: nothing changed for this sign-in.",
+      "ar": "حدِّث رمز الوصول الآن ليحمل الرمز التالي الحدّ. تكون false ما دامت الرقابة الأبوية متوقفة: لم يتغيَّر شيء لتسجيل الدخول هذا."
     },
     "/paths/~1me~1age-signal/post/responses/409/description": {
       "en": "The credential names no app sign-in (`code`: `no_sign_in`): a web session, an API token, or an access token minted before this release. An app refreshes its access token and sends the signal again.",
@@ -5124,6 +5124,218 @@
     "/paths/~1series~1{id}/get/description": {
       "en": "The series header. An administrator's answer also has `age_tier`: the age tier set with `PUT /api/series/{id}/age-tier` (Epic 57), or null when none is set. The field is absent for everyone else.",
       "ar": "ترويسة السلسلة. وتحمل إجابة المشرف أيضًا `age_tier`: التصنيف العمري المضبوط عبر `PUT /api/series/{id}/age-tier` (الملحمة 57)، أو null إذا لم يُضبط. ويغيب الحقل عند غيره."
+    },
+    "/paths/~1libraries~1{id}~1stats/get/description": {
+      "en": "For a restricted account (one under parental controls) the numbers count only the videos it may see, and a library a rule blocks answers 404.",
+      "ar": "وللحساب المقيَّد (الخاضع للرقابة الأبوية) لا تحصي الأرقام إلا الفيديوهات التي يحق له رؤيتها، والمكتبة المشمولة بقاعدة حظر تجيب 404."
+    },
+    "/paths/~1search~1suggest/get/description": {
+      "en": "For a restricted account (one under parental controls) the suggestions come from its own earlier searches only, never from a title.",
+      "ar": "وللحساب المقيَّد (الخاضع للرقابة الأبوية) تأتي الاقتراحات من عمليات بحثه السابقة فقط، لا من عنوان أي فيديو."
+    },
+    "/paths/~1tags/get/description": {
+      "en": "For a restricted account (one under parental controls) only the tags carried by at least one video it may see are listed.",
+      "ar": "وللحساب المقيَّد (الخاضع للرقابة الأبوية) لا تُعرض إلا الوسوم التي يحملها فيديو واحد على الأقل مما يحق له رؤيته."
+    },
+    "/paths/~1stream~1sessions~1{id}~1errors/parameters/0/description": {
+      "en": "The stream session's id.",
+      "ar": "معرّف جلسة البث."
+    },
+    "/paths/~1stream~1sessions~1{id}~1errors/post/summary": {
+      "en": "Report a playback failure",
+      "ar": "الإبلاغ عن فشل في التشغيل"
+    },
+    "/paths/~1stream~1sessions~1{id}~1errors/post/description": {
+      "en": "A player says what went wrong with its own stream session, for the home's log. Reports are rate limited per session and per account; one over the limit is accepted and dropped.",
+      "ar": "يبلِّغ المشغِّل بما تعطَّل في جلسة البث الخاصة به، ليُكتب في سجل المنزل. للبلاغات حدّ معدَّل لكل جلسة ولكل حساب، وما زاد عليه يُقبل ويُهمل."
+    },
+    "/paths/~1stream~1sessions~1{id}~1errors/post/requestBody/content/application~1json/schema/properties/outcome/description": {
+      "en": "What the player did: `fatal`, `reopen` or `stalled`.",
+      "ar": "ما فعله المشغِّل: `fatal` أو `reopen` أو `stalled`."
+    },
+    "/paths/~1stream~1sessions~1{id}~1errors/post/requestBody/content/application~1json/schema/properties/code/description": {
+      "en": "The player's own name for the error.",
+      "ar": "اسم الخطأ كما يسمّيه المشغِّل."
+    },
+    "/paths/~1stream~1sessions~1{id}~1errors/post/responses/202/description": {
+      "en": "Accepted.",
+      "ar": "قُبل."
+    },
+    "/paths/~1capabilities/get/responses/503/description": {
+      "en": "The account's limits cannot be read now (`code: parental_unavailable`): try again after `Retry-After`. An app must not treat this as an account nothing limits.",
+      "ar": "تعذَّرت قراءة حدود الحساب الآن (`code: parental_unavailable`): أعد المحاولة بعد `Retry-After`. يجب ألا يعامل التطبيق ذلك على أنه حساب لا يقيِّده شيء."
+    },
+    "/paths/~1me~1age-signal/post/responses/200/content/application~1json/schema/properties/enabled/description": {
+      "en": "Parental controls are on in this home. When false, `tier_limit` is null and `pending_looser` false whatever the device said.",
+      "ar": "الرقابة الأبوية مفعَّلة في هذا المنزل. حين تكون false تكون `tier_limit` بقيمة null و`pending_looser` بقيمة false أيًّا كان ما قاله الجهاز."
+    },
+    "/paths/~1parental~1settings/get/summary": {
+      "en": "Read whether parental controls are on",
+      "ar": "قراءة حالة تفعيل الرقابة الأبوية"
+    },
+    "/paths/~1parental~1settings/get/description": {
+      "en": "The home's switch, how many accounts are restricted, and whether to show the notice that a child's device signed in before parental controls were set up.",
+      "ar": "مفتاح المنزل، وعدد الحسابات المقيَّدة، وهل يُعرض إشعار بأن جهاز طفل سجَّل الدخول قبل ضبط الرقابة الأبوية."
+    },
+    "/paths/~1parental~1settings/get/responses/200/description": {
+      "en": "The settings.",
+      "ar": "الإعدادات."
+    },
+    "/paths/~1parental~1settings/get/responses/403/description": {
+      "en": "Admin only. A restricted account gets `code: restricted`, any other account `code: admin_only`.",
+      "ar": "للمشرف فقط. يتلقى الحساب المقيَّد `code: restricted`، وأي حساب آخر `code: admin_only`."
+    },
+    "/paths/~1parental~1settings/put/summary": {
+      "en": "Turn parental controls on or off",
+      "ar": "تفعيل الرقابة الأبوية أو إيقافها"
+    },
+    "/paths/~1parental~1settings/put/description": {
+      "en": "On: every recorded device signal applies from the next request, and each app's next access token carries its limit. Off: device signals are recorded and limit nothing. Off is refused while any account is restricted.",
+      "ar": "عند التفعيل: تُطبَّق كل إشارة جهاز مسجَّلة من الطلب التالي، ويحمل رمز الوصول التالي لكل تطبيق حدَّه. عند الإيقاف: تُسجَّل إشارات الأجهزة ولا تقيِّد شيئًا. يُرفض الإيقاف ما دام هناك حساب مقيَّد."
+    },
+    "/paths/~1parental~1settings/put/requestBody/description": {
+      "en": "The switch.",
+      "ar": "المفتاح."
+    },
+    "/paths/~1parental~1settings/put/requestBody/content/application~1json/schema/properties/enabled/description": {
+      "en": "True turns parental controls on, false off.",
+      "ar": "القيمة true تفعِّل الرقابة الأبوية و false توقفها."
+    },
+    "/paths/~1parental~1settings/put/responses/200/description": {
+      "en": "The settings after the change.",
+      "ar": "الإعدادات بعد التغيير."
+    },
+    "/paths/~1parental~1settings/put/responses/403/description": {
+      "en": "Admin only. A restricted account gets `code: restricted`, any other account `code: admin_only`.",
+      "ar": "للمشرف فقط. يتلقى الحساب المقيَّد `code: restricted`، وأي حساب آخر `code: admin_only`."
+    },
+    "/paths/~1parental~1settings/put/responses/409/description": {
+      "en": "An account is restricted, so parental controls stay on: `code` is `restrictions_exist` and `type` is `https://maktaba.tv/problems/parental-restrictions-exist`.",
+      "ar": "هناك حساب مقيَّد، فتبقى الرقابة الأبوية مفعَّلة: قيمة `code` هي `restrictions_exist` وقيمة `type` هي `https://maktaba.tv/problems/parental-restrictions-exist`."
+    },
+    "/paths/~1parental~1settings~1notice~1dismiss/post/summary": {
+      "en": "Dismiss the notice that a child's device signed in",
+      "ar": "إغلاق إشعار تسجيل دخول جهاز طفل"
+    },
+    "/paths/~1parental~1settings~1notice~1dismiss/post/description": {
+      "en": "The notice stays away, for every admin, until another device says a child may be using it.",
+      "ar": "يبقى الإشعار مغلقًا لدى كل المشرفين إلى أن يشير جهاز آخر إلى أن طفلًا قد يستخدمه."
+    },
+    "/paths/~1parental~1settings~1notice~1dismiss/post/responses/200/description": {
+      "en": "The settings, with the notice off.",
+      "ar": "الإعدادات وقد أُغلق الإشعار."
+    },
+    "/paths/~1parental~1settings~1notice~1dismiss/post/responses/403/description": {
+      "en": "Admin only. A restricted account gets `code: restricted`, any other account `code: admin_only`.",
+      "ar": "للمشرف فقط. يتلقى الحساب المقيَّد `code: restricted`، وأي حساب آخر `code: admin_only`."
+    },
+    "/paths/~1parental~1library-suggestions/get/summary": {
+      "en": "List the libraries with the tier Rate libraries starts with",
+      "ar": "عرض المكتبات مع التصنيف الذي تبدأ به شاشة تصنيف المكتبات"
+    },
+    "/paths/~1parental~1library-suggestions/get/description": {
+      "en": "Every library with its default age tier and the one the form offers for a library that has none: All ages when at least nine in ten of its classified videos are lectures, otherwise none. Nothing is stored until an admin sets a tier with `PUT /libraries/{id}/age-tier`.",
+      "ar": "كل مكتبة مع تصنيفها العمري الافتراضي والتصنيف الذي يقترحه النموذج لمكتبة بلا تصنيف: «لكل الأعمار» حين تكون تسعة من كل عشرة على الأقل من فيديوهاتها المصنَّفة محاضرات، وإلا فلا اقتراح. لا يُحفظ شيء حتى يضبط المشرف تصنيفًا عبر `PUT /libraries/{id}/age-tier`."
+    },
+    "/paths/~1parental~1library-suggestions/get/responses/200/description": {
+      "en": "The libraries, by name.",
+      "ar": "المكتبات مرتبة بالاسم."
+    },
+    "/paths/~1parental~1library-suggestions/get/responses/200/content/application~1json/schema/properties/libraries/items/properties/tier/description": {
+      "en": "The default tier stored now, or null.",
+      "ar": "التصنيف الافتراضي المحفوظ الآن، أو null."
+    },
+    "/paths/~1parental~1library-suggestions/get/responses/200/content/application~1json/schema/properties/libraries/items/properties/suggested_tier/description": {
+      "en": "What the form starts with: `0` (All ages) or null (Not rated).",
+      "ar": "ما يبدأ به النموذج: `0` (لكل الأعمار) أو null (غير مصنَّف)."
+    },
+    "/paths/~1parental~1library-suggestions/get/responses/200/content/application~1json/schema/properties/libraries/items/properties/classified/description": {
+      "en": "How many of its videos have a content type.",
+      "ar": "عدد فيديوهاتها التي لها نوع محتوى."
+    },
+    "/paths/~1parental~1library-suggestions/get/responses/200/content/application~1json/schema/properties/libraries/items/properties/lectures/description": {
+      "en": "How many of those are lectures or sermons.",
+      "ar": "عدد المحاضرات والخطب من بينها."
+    },
+    "/paths/~1parental~1library-suggestions/get/responses/403/description": {
+      "en": "Admin only. A restricted account gets `code: restricted`, any other account `code: admin_only`.",
+      "ar": "للمشرف فقط. يتلقى الحساب المقيَّد `code: restricted`، وأي حساب آخر `code: admin_only`."
+    },
+    "/paths/~1channels/get/summary": {
+      "en": "List the channels",
+      "ar": "عرض القنوات"
+    },
+    "/paths/~1channels/get/description": {
+      "en": "The live TV channels the caller may read, each with what it plays now. A restricted account is not sent a channel above its limit or under a block rule, and a programme above its limit is not named. An admin's answer also has each channel's `age_tier`.",
+      "ar": "قنوات البث المباشر التي يحق للمتصل قراءتها، مع ما تعرضه كل قناة الآن. لا تُرسَل إلى الحساب المقيَّد قناة فوق حدّه أو مشمولة بقاعدة حظر، ولا يُسمّى برنامج فوق حدّه. تتضمن إجابة المشرف كذلك `age_tier` لكل قناة."
+    },
+    "/paths/~1channels/get/responses/200/description": {
+      "en": "The channels.",
+      "ar": "القنوات."
+    },
+    "/paths/~1channels/get/responses/200/content/application~1json/schema/properties/items/items/properties/age_tier/description": {
+      "en": "The channel's age tier, set with `PUT /channels/{id}/age-tier`: a tier, or null when none is set. Only an administrator's answer has this field; it is absent for everyone else.",
+      "ar": "التصنيف العمري للقناة، ويُضبط عبر `PUT /channels/{id}/age-tier`: تصنيف، أو null حين لا يكون مضبوطًا. لا يظهر هذا الحقل إلا في إجابة المشرف، ويغيب عند غيره."
+    },
+    "/paths/~1libraries~1manage/get/summary": {
+      "en": "List every library for the management page",
+      "ar": "عرض كل المكتبات لصفحة الإدارة"
+    },
+    "/paths/~1libraries~1manage/get/description": {
+      "en": "Each library with its folders, counts, last scan and what it follows on YouTube, and the folders two libraries share. Each library carries its default `age_tier`.",
+      "ar": "كل مكتبة مع مجلداتها وأعدادها وآخر فحص لها وما تتابعه على يوتيوب، والمجلدات التي تتشاركها مكتبتان. تحمل كل مكتبة تصنيفها الافتراضي `age_tier`."
+    },
+    "/paths/~1libraries~1manage/get/responses/200/description": {
+      "en": "The libraries.",
+      "ar": "المكتبات."
+    },
+    "/paths/~1libraries~1manage/get/responses/200/content/application~1json/schema/properties/items/items/properties/age_tier/description": {
+      "en": "The library's default age tier, set with `PUT /libraries/{id}/age-tier`: a tier, or null when none is set.",
+      "ar": "التصنيف العمري الافتراضي للمكتبة، ويُضبط عبر `PUT /libraries/{id}/age-tier`: تصنيف، أو null حين لا يكون مضبوطًا."
+    },
+    "/components/schemas/ParentalSettings/description": {
+      "en": "Whether parental controls are on in this home, and what an admin is told while they are off.",
+      "ar": "هل الرقابة الأبوية مفعَّلة في هذا المنزل، وما يُبلَّغ به المشرف ما دامت متوقفة."
+    },
+    "/components/schemas/ParentalSettings/properties/enabled/description": {
+      "en": "Parental controls are on. They start off in a home that has set nothing up, and turn on by themselves when an admin makes the first account restricted or gives the first library a default age tier. While they are off a device's age signal is recorded and limits nothing. A restricted account's own limit is applied whatever this says.",
+      "ar": "الرقابة الأبوية مفعَّلة. تبدأ متوقفة في منزل لم يضبط شيئًا، وتتفعَّل تلقائيًا حين يجعل المشرف أول حساب مقيَّدًا أو يعطي أول مكتبة تصنيفًا عمريًا افتراضيًا. ما دامت متوقفة تُسجَّل إشارة العمر التي يرسلها الجهاز ولا تقيِّد شيئًا. أما حدّ الحساب المقيَّد نفسه فيُطبَّق أيًّا كانت هذه القيمة."
+    },
+    "/components/schemas/ParentalSettings/properties/restricted_accounts/description": {
+      "en": "How many accounts are restricted.",
+      "ar": "عدد الحسابات المقيَّدة."
+    },
+    "/components/schemas/ParentalSettings/properties/can_disable/description": {
+      "en": "False while any account is restricted: lift every restriction before turning parental controls off.",
+      "ar": "تكون false ما دام هناك حساب مقيَّد: ارفع كل التقييدات قبل إيقاف الرقابة الأبوية."
+    },
+    "/components/schemas/ParentalSettings/properties/child_devices/description": {
+      "en": "How many sign-ins' devices said a child may be using them (a limit under 18) and are not applied because parental controls are off. Zero once they are on.",
+      "ar": "عدد عمليات تسجيل الدخول التي أشار جهازها إلى أن طفلًا قد يستخدمه (حدّ أقل من 18) ولم تُطبَّق لأن الرقابة الأبوية متوقفة. صفر بعد تفعيلها."
+    },
+    "/components/schemas/ParentalSettings/properties/child_device_notice/description": {
+      "en": "Show the notice that a child may be using Maktaba: parental controls are off and such a device spoke since an admin last dismissed the notice.",
+      "ar": "اعرض إشعار احتمال استخدام طفل لـMaktaba: الرقابة الأبوية متوقفة وقد أرسل جهاز كهذا إشارته منذ آخر مرة أغلق فيها مشرف الإشعار."
+    },
+    "/components/schemas/ParentalCapabilities/description": {
+      "en": "The caller's own part of the home's capabilities: what an app needs about parental controls before it draws anything.",
+      "ar": "الجزء الخاص بالمتصل من قدرات المنزل: ما يحتاجه التطبيق عن الرقابة الأبوية قبل أن يعرض أي شيء."
+    },
+    "/components/schemas/ParentalCapabilities/properties/enabled/description": {
+      "en": "Parental controls are on in this home.",
+      "ar": "الرقابة الأبوية مفعَّلة في هذا المنزل."
+    },
+    "/components/schemas/ParentalCapabilities/properties/restricted/description": {
+      "en": "The account is restricted. A sign-in limited only by its device is not a restricted account.",
+      "ar": "الحساب مقيَّد. تسجيل الدخول الذي يقيِّده جهازه فقط ليس حسابًا مقيَّدًا."
+    },
+    "/components/schemas/ParentalCapabilities/properties/tier_limit/description": {
+      "en": "The age-tier limit this sign-in is held to, by the account's policy or by its device, whichever is stricter: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier; `null` when nothing limits it.",
+      "ar": "حدّ التصنيف العمري المطبَّق على تسجيل الدخول هذا، بحسب سياسة الحساب أو جهازه أيهما أشد: `0` لكل الأعمار، و`9` و`13` و`16` و`18`؛ و`-1` لا شيء مما له تصنيف؛ و`null` حين لا يقيِّده شيء."
+    },
+    "/components/schemas/ParentalCapabilities/properties/can_manage/description": {
+      "en": "The caller is an admin, or the guardian of at least one restricted account: show the Family screens.",
+      "ar": "المتصل مشرف، أو وليّ حساب مقيَّد واحد على الأقل: اعرض شاشات العائلة."
     }
   }
 }

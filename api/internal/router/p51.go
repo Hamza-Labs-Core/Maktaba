@@ -11,10 +11,12 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	componentsh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
@@ -48,6 +50,9 @@ type P51Deps struct {
 	// Loops is the API's Go-loop runner: an admin's restart of a loop component whose
 	// loops run in the API cancels and starts them (nil: such a restart is refused).
 	Loops *runner.Runner
+	// Parental answers a caller's `parental` block of GET /api/capabilities (Epic 57
+	// story 57.12; nil: the block is not sent).
+	Parental func(r *http.Request, p *principal.Principal) (any, error)
 }
 
 // MountP51 mounts the components' admin routes and GET /api/capabilities (nil DB:
@@ -87,7 +92,7 @@ func MountP51(r chi.Router, d P51Deps) *components.Service {
 			AllOn: components.CapabilitiesGateOff()})
 	}
 	caps.SetLicensed(s.Licensed)
-	(&componentsh.Capabilities{Caps: caps}).Mount(r)
+	(&componentsh.Capabilities{Caps: caps, Parental: d.Parental}).Mount(r)
 	if d.RunCapabilities {
 		components.StartCapabilities(caps, s.Store, store.IsSQLite(d.DB), d.DSN,
 			CapabilitiesPublisher(d.DB, d.Bus, d.Hub), logger)

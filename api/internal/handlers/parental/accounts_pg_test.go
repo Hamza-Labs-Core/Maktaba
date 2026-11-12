@@ -62,6 +62,9 @@ func setup(t *testing.T) *env {
 		uAdmin, uGuardian, uOtherG, uChild, uChild2, uViewer)
 	e.exec(`INSERT INTO libraries (id, name, roots) VALUES ($1,'HOpen','{/media/h-open}'), ($2,'HClosed','{/media/h-closed}')`, libOpen, libClosed)
 	e.exec(`INSERT INTO library_acl (user_id, library_id) VALUES ($1,$2)`, uChild, libOpen)
+	// a home where parental controls were set up (slot 0225 starts them off; story
+	// 57.12's own tests turn them off again)
+	e.exec(`UPDATE app_settings SET value = 'true' WHERE key = 'parental.enabled'`)
 	e.reset()
 
 	store := parental.NewStore(db)

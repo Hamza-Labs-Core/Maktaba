@@ -245,6 +245,10 @@ type Store struct {
 	// (family) has a looser device signal waiting (story 57.04; the guardian's
 	// notice of it is story 57.08's).
 	OnSignalPending func(ctx context.Context, userID, family string)
+	// OnChildDevice, when set, is told after the commit that userID's sign-in's
+	// device said a child may be using it (a limit under 18) while parental controls
+	// are not turned on (story 57.12): the admins are told once per sign-in.
+	OnChildDevice func(ctx context.Context, userID, family string)
 }
 
 // NewStore returns a Store over db.
@@ -405,6 +409,10 @@ func (s *Store) SetPolicy(ctx context.Context, actorID, userID string, in Policy
 				userID, in.MaxTier, in.Unrated, in.AllowOnly, nullUUID(actorID), at))
 			if errors.Is(err, sql.ErrNoRows) {
 				return ErrStale // made restricted by someone else meanwhile
+			}
+			if err == nil {
+				// the first restricted account turns parental controls on (story 57.12)
+				err = EnableTx(ctx, tx, actorID)
 			}
 		} else {
 			if in.Version != before.Version {

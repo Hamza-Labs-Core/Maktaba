@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 241,
+    "endpoint": 248,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -6140,9 +6140,9 @@
       }
     },
     {
-      "id": "ep-post-sessions",
+      "id": "ep-post-stream-sessions",
       "type": "endpoint",
-      "title": "POST /sessions",
+      "title": "POST /stream/sessions",
       "content": "Mint a streaming session",
       "tags": [
         "api",
@@ -6155,17 +6155,10 @@
         "story-8.1",
         "story-8.3",
         "story-8.9",
-        "story-10.1",
-        "story-10.5",
         "story-11.3",
         "story-11.10",
-        "story-11.14",
         "story-12.3",
-        "story-26.4",
-        "story-54.15",
-        "story-55.9",
         "story-57.3",
-        "story-57.10",
         "story-58.2",
         "story-58.13",
         "story-58.17",
@@ -6176,15 +6169,15 @@
       },
       "metadata": {
         "method": "POST",
-        "path": "/sessions",
+        "path": "/stream/sessions",
         "tag": "Sessions",
         "operationId": "createSession"
       }
     },
     {
-      "id": "ep-get-sessions-id",
+      "id": "ep-get-stream-sessions-id",
       "type": "endpoint",
-      "title": "GET /sessions/{id}",
+      "title": "GET /stream/sessions/{id}",
       "content": "Fetch a session",
       "tags": [
         "api",
@@ -6196,7 +6189,6 @@
         "story-7.11",
         "story-11.3",
         "story-11.10",
-        "story-11.14",
         "story-12.3"
       ],
       "files": {
@@ -6204,15 +6196,15 @@
       },
       "metadata": {
         "method": "GET",
-        "path": "/sessions/{id}",
+        "path": "/stream/sessions/{id}",
         "tag": "Sessions",
         "operationId": "getSession"
       }
     },
     {
-      "id": "ep-delete-sessions-id",
+      "id": "ep-delete-stream-sessions-id",
       "type": "endpoint",
-      "title": "DELETE /sessions/{id}",
+      "title": "DELETE /stream/sessions/{id}",
       "content": "Close a streaming session",
       "tags": [
         "api",
@@ -6224,7 +6216,6 @@
         "story-7.11",
         "story-11.3",
         "story-11.10",
-        "story-11.14",
         "story-12.3"
       ],
       "files": {
@@ -6232,15 +6223,15 @@
       },
       "metadata": {
         "method": "DELETE",
-        "path": "/sessions/{id}",
+        "path": "/stream/sessions/{id}",
         "tag": "Sessions",
         "operationId": "closeSession"
       }
     },
     {
-      "id": "ep-post-sessions-id-progress",
+      "id": "ep-post-stream-sessions-id-progress",
       "type": "endpoint",
-      "title": "POST /sessions/{id}/progress",
+      "title": "POST /stream/sessions/{id}/progress",
       "content": "Heartbeat session progress",
       "tags": [
         "api",
@@ -6258,28 +6249,53 @@
       },
       "metadata": {
         "method": "POST",
-        "path": "/sessions/{id}/progress",
+        "path": "/stream/sessions/{id}/progress",
         "tag": "Sessions",
         "operationId": "sessionProgressHeartbeat"
       }
     },
     {
-      "id": "ep-get-sessions-capabilities",
+      "id": "ep-post-stream-sessions-id-errors",
       "type": "endpoint",
-      "title": "GET /sessions/capabilities",
-      "content": "Streaming server capabilities",
+      "title": "POST /stream/sessions/{id}/errors",
+      "content": "Report a playback failure",
       "tags": [
         "api",
         "Sessions",
-        "get"
+        "post"
       ],
       "related": [],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
       "metadata": {
+        "method": "POST",
+        "path": "/stream/sessions/{id}/errors",
+        "tag": "Sessions",
+        "operationId": "reportPlaybackError"
+      }
+    },
+    {
+      "id": "ep-get-stream-capabilities",
+      "type": "endpoint",
+      "title": "GET /stream/capabilities",
+      "content": "Streaming server capabilities",
+      "tags": [
+        "api",
+        "Sessions",
+        "get"
+      ],
+      "related": [
+        "story-7.10",
+        "story-8.7",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
         "method": "GET",
-        "path": "/sessions/capabilities",
+        "path": "/stream/capabilities",
         "tag": "Sessions",
         "operationId": "getStreamCapabilities"
       }
@@ -10855,6 +10871,151 @@
         "path": "/me/parental/time",
         "tag": "Parental controls",
         "operationId": "getMyParentalTime"
+      }
+    },
+    {
+      "id": "ep-get-parental-settings",
+      "type": "endpoint",
+      "title": "GET /parental/settings",
+      "content": "Read whether parental controls are on",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/settings",
+        "tag": "Parental controls",
+        "operationId": "getParentalSettings"
+      }
+    },
+    {
+      "id": "ep-put-parental-settings",
+      "type": "endpoint",
+      "title": "PUT /parental/settings",
+      "content": "Turn parental controls on or off",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/parental/settings",
+        "tag": "Parental controls",
+        "operationId": "setParentalSettings"
+      }
+    },
+    {
+      "id": "ep-post-parental-settings-notice-dismiss",
+      "type": "endpoint",
+      "title": "POST /parental/settings/notice/dismiss",
+      "content": "Dismiss the notice that a child's device signed in",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/parental/settings/notice/dismiss",
+        "tag": "Parental controls",
+        "operationId": "dismissParentalNotice"
+      }
+    },
+    {
+      "id": "ep-get-parental-library-suggestions",
+      "type": "endpoint",
+      "title": "GET /parental/library-suggestions",
+      "content": "List the libraries with the tier Rate libraries starts with",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/library-suggestions",
+        "tag": "Parental controls",
+        "operationId": "listParentalLibrarySuggestions"
+      }
+    },
+    {
+      "id": "ep-get-channels",
+      "type": "endpoint",
+      "title": "GET /channels",
+      "content": "List the channels",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-27.1",
+        "story-27.3",
+        "story-27.4",
+        "story-27.8",
+        "story-27.9",
+        "story-27.10",
+        "story-32.4",
+        "story-33.12",
+        "story-34.1",
+        "story-34.4",
+        "story-50.20",
+        "story-50.22",
+        "story-51.9",
+        "story-57.1",
+        "story-57.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/channels",
+        "tag": "Parental controls",
+        "operationId": "listChannels"
+      }
+    },
+    {
+      "id": "ep-get-libraries-manage",
+      "type": "endpoint",
+      "title": "GET /libraries/manage",
+      "content": "List every library for the management page",
+      "tags": [
+        "api",
+        "Libraries",
+        "get"
+      ],
+      "related": [
+        "story-45.2",
+        "story-56.7"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/libraries/manage",
+        "tag": "Libraries",
+        "operationId": "listManagedLibraries"
       }
     },
     {
