@@ -17,10 +17,17 @@ import com.hamzalabs.maktaba.core.api.myTime
 import com.hamzalabs.maktaba.core.api.parentPinHolders
 import com.hamzalabs.maktaba.core.api.unlockWithPin
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * What the signed-in account is under parental controls, for one home's screens (Epic 57):
@@ -49,7 +56,7 @@ class ParentalState(private val client: ApiClient, private val kept: KeptLimit? 
     var onChange: (suspend () -> Unit)? = null
 
     /** The home answered in this launch (a home too old to have the route counts). */
-    private var answered = false
+    @Volatile private var answered = false
 
     /**
      * Whether nothing kept on the device may show yet: the sign-in is under a limit, or was when
@@ -61,8 +68,27 @@ class ParentalState(private val client: ApiClient, private val kept: KeptLimit? 
     private val _time = MutableStateFlow<MyTime?>(null)
     val time: StateFlow<MyTime?> = _time.asStateFlow()
 
-    /** Reads the limit again (at sign-in, and when the app comes back to the front). */
+    /** Counts the reads sent, so answers are taken in the order they were asked for. */
+    private val asked = AtomicInteger()
+
+    /** The read whose answer [mine] holds. */
+    private var taken = 0
+
+    /** One answer is taken at a time: the one after waits until what the one before dropped is gone. */
+    private val taking = Mutex()
+
+    /**
+     * Reads the limit again (at sign-in, and when the app comes back to the front).
+     *
+     * Reads may overlap (the app comes back while one is on its way): an answer to a read sent
+     * before the one already taken is older than what is known and is left. Taking an answer is
+     * never left halfway: once the home has answered, a caller that goes away (the app leaves
+     * the front and cancels the read) still has the kept things dropped, [epoch] moved and the
+     * mark written, in that order; the caller is told it was cancelled after. The mark is
+     * written last, so a drop the process did not live through is done again at the next launch.
+     */
     suspend fun refresh() {
+        val ticket = asked.incrementAndGet()
         val next = try {
             client.myParental()
         } catch (e: CancellationException) {
@@ -71,22 +97,31 @@ class ParentalState(private val client: ApiClient, private val kept: KeptLimit? 
             // no answer: what is known stays
             null
         }
-        if (next != null) {
-            val now = KeptLimit.Mark(next.signature(), next.limited)
-            // against this launch's last answer, or the one before the app was closed
-            val before = if (answered) KeptLimit.Mark(_mine.value.signature(), _mine.value.limited) else kept?.read()
-            answered = true
-            _mine.value = next
-            if (before != now) {
-                kept?.write(now)
-                // never asked on this device and no limit now: nothing was kept under one
-                if (before != null || next.limited) {
-                    onChange?.invoke()
-                    _epoch.value++
+        withContext(NonCancellable) {
+            taking.withLock {
+                if (next != null && ticket > taken) {
+                    taken = ticket
+                    take(next)
                 }
+                if (!_mine.value.restricted) _time.value = null
             }
         }
-        if (!_mine.value.restricted) _time.value = null
+        currentCoroutineContext().ensureActive()
+    }
+
+    private suspend fun take(next: MyParental) {
+        val now = KeptLimit.Mark(next.signature(), next.limited)
+        // against this launch's last answer, or the one before the app was closed
+        val before = if (answered) KeptLimit.Mark(_mine.value.signature(), _mine.value.limited) else kept?.read()
+        answered = true
+        _mine.value = next
+        if (before == now) return
+        // never asked on this device and no limit now: nothing was kept under one
+        if (before != null || next.limited) {
+            onChange?.invoke()
+            _epoch.value++
+        }
+        kept?.write(now)
     }
 
     /** Asks the home for the time now; the last answer stays when it does not say. */

@@ -17,6 +17,8 @@ import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.NoStall
 import com.hamzalabs.maktaba.player.libraries.PlayerQueues
 import com.hamzalabs.maktaba.player.shell.PlayerHome
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -74,6 +76,43 @@ class LimitChangeTest {
         assertSame("the scope of a stopped video's last calls stays", background, signedIn.keep("watch.background") { Any() })
         assertNull("the queue's window goes", PlayerQueues.of(client).doc)
         assertEquals("Home's rows on disk and the pictures go", before + 1, dropped)
+    }
+
+    /**
+     * The app leaves the front while Home's rows on disk are being deleted (the read of the
+     * limit is cancelled there): the rows and pictures still go, the pages still read again,
+     * and the limit read after that finds nothing left to drop.
+     */
+    @Test
+    fun leavingTheAppWhileTheKeptThingsGoStillDropsThemAll() = runBlocking {
+        val client = home.home.client
+        val dropping = CompletableDeferred<Unit>()
+        val goOn = CompletableDeferred<Unit>()
+        var dropped = 0
+        val mark = Remembered()
+        val signedIn = PlayerHome(
+            home.home.session, home.home.user, client, ThemeStore(MapStore()), limitKept = mark,
+            dropKept = {
+                dropping.complete(Unit)
+                goOn.await()
+                dropped++
+            },
+        )
+        home.answer("/api/me/parental") { limit(1, tier = 13) }
+        val page = signedIn.keep("video.v1") { Any() }
+        val read = launch { signedIn.parental.refresh() }
+        dropping.await()
+        assertNull("the limit is not marked as seen before the drop ends", mark.mark)
+        read.cancel()
+        goOn.complete(Unit)
+        read.join()
+        assertEquals("Home's rows on disk and the pictures went", 1, dropped)
+        assertEquals("the screens read again", 1, signedIn.parental.epoch.value)
+        assertNotSame(page, signedIn.keep("video.v1") { Any() })
+        assertNotNull(mark.mark)
+        signedIn.parental.refresh()
+        assertEquals("the same limit read again drops nothing", 1, dropped)
+        assertEquals(1, signedIn.parental.epoch.value)
     }
 
     private fun kept(): CachedHome = CachedHome(ApiClient.json.decodeFromString(HomeRails.serializer(), HomeFixtures.HOME))
