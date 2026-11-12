@@ -19,6 +19,7 @@ import {
   LISTINGS,
   packageRows,
   parseChecksums,
+  plain,
   readCopy,
   readManifest,
   readPlatforms,
@@ -294,7 +295,7 @@ test("downloads.json's requirements lines are copy/download.*.md's, word for wor
     const c = readCopy(lang);
     for (const p of readPlatforms()) {
       const key = `${p.id}.needs`;
-      if (key in c) assert.equal(p.needs[lang], c[key].replace(/<[^>]+>/g, ""), `${lang} ${key}`);
+      if (key in c) assert.equal(p.needs[lang], plain(c[key]), `${lang} ${key}`);
       else assert.ok(p.needs[lang], `${lang} ${key}`);
     }
   }
@@ -372,4 +373,10 @@ test("cosign: the release notes' command for the tag", () => {
     .split("\n")
     .filter((l) => !l.includes("identity") && !l.includes("issuer")))
     assert.ok(notes.includes(line), line);
+});
+
+test("plain(): a copy string's text, no tag left however nested, entities as text", () => {
+  assert.equal(plain("Run <code>brew</code> &amp; wait"), "Run brew & wait");
+  assert.equal(plain("<scr<script>ipt>alert(1)</script>"), "alert(1)");
+  assert.equal(plain("a &lt;b&gt; c"), "a b c");
 });

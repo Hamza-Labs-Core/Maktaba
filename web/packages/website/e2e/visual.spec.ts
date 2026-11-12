@@ -77,9 +77,12 @@ async function drawSaved(page: import("@playwright/test").Page, html: string): P
       ])
     );
     const have = [...document.querySelectorAll<HTMLElement>("[data-release]")];
-    const keys = have.map((e) => e.dataset.release!);
-    if (keys.join() !== [...want.keys()].join())
-      return `the built page's release values (${keys.join(", ")}) are not the saved release's (${[...want.keys()].join(", ")})`;
+    // the same values, in any order: the page puts the visitor's platform card first (its head
+    // script, by user agent), so the order follows the browser, not the release
+    const keys = have.map((e) => e.dataset.release!).sort();
+    const savedKeys = [...want.keys()].sort();
+    if (keys.length !== new Set(keys).size || keys.join() !== savedKeys.join())
+      return `the built page's release values (${keys.join(", ")}) are not the saved release's (${savedKeys.join(", ")})`;
     for (const e of have) e.innerHTML = want.get(e.dataset.release!)!;
     return "";
   }, html);

@@ -55,12 +55,19 @@ const inline = (s) =>
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
 /** A copy string's text, its tags dropped (for an attribute or the <title>). */
-export const plain = (html) =>
-  html
-    .replace(/<[^<>]*>/g, "")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
+// Every caller escapes the result again (esc, the head's attributes), so this is text, not HTML:
+// the tags are dropped until none is left, and any < or > that is left goes too.
+export const plain = (html) => {
+  let out = html;
+  for (let prev = ""; prev !== out; ) {
+    prev = out;
+    out = out.replace(/<[^<>]*>/g, "");
+  }
+  return out
+    .replace(/[<>]/g, "")
+    .replace(/&lt;|&gt;/g, "")
     .replace(/&amp;/g, "&");
+};
 
 /** copy/download.<lang>.md as { key: html }: each `## key` heading and the text under it,
  * backticks as <code> (the mockups read it the same way, design/mockups/part-b.mjs). */
