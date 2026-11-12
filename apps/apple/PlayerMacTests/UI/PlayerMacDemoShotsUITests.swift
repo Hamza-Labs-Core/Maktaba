@@ -44,7 +44,13 @@ final class PlayerMacDemoShotsUITests: XCTestCase {
                           "the Arabic subtitles; the home saw \(seen)")
             XCTAssertTrue(wait(30) { self.reported().contains { $0 > 420 } }, "it plays on: reported \(reported())")
             // the controls up: the pointer over the picture
-            app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
+            // (a move, from one point to another: a pointer already there shows nothing)
+            let window = app.windows.firstMatch
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.4)).hover()
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
+            if !wait(3, { self.app.buttons["player.playPause"].exists }) {
+                window.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.6)).hover()
+            }
             _ = wait(1) { false }
             shot("player")
         }
