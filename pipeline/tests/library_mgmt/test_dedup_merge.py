@@ -507,9 +507,8 @@ async def test_a_merge_carries_what_restricts_the_loser_to_the_keeper(
     the merge of A into B left B with no admin tier and no block, so the child could
     open it."""
     w = await make_world(db, tmp_path)
-    k, _kp = await w.video("k.mkv", b"K" * 5000)
-    lo, _lp = await w.video("l.mkv", b"L" * 5000)
-    k, lo = str(k), str(lo)
+    k = str((await w.video("k.mkv", b"K" * 5000))[0])
+    lo = str((await w.video("l.mkv", b"L" * 5000))[0])
     await _child(db, U1, "child-one")
     await _child(db, U2, "child-two")
     soon, late = T0 + timedelta(days=1), T0 + timedelta(days=30)
@@ -594,10 +593,9 @@ async def test_a_merge_carries_what_restricts_the_loser_to_the_keeper(
 async def test_a_merge_never_loosens_the_keeper(db: Database, tmp_path: Path) -> None:
     """The other way round: the keeper is the stricter one, and stays so."""
     w = await make_world(db, tmp_path)
-    k, _kp = await w.video("k.mkv", b"K" * 5000)
-    lo, _lp = await w.video("l.mkv", b"L" * 5000)
-    other, _op = await w.video("o.mkv", b"O" * 5000)
-    k, lo, other = str(k), str(lo), str(other)
+    k = str((await w.video("k.mkv", b"K" * 5000))[0])
+    lo = str((await w.video("l.mkv", b"L" * 5000))[0])
+    other = str((await w.video("o.mkv", b"O" * 5000))[0])
     await _child(db, U1, "child-one")
     await db.execute("UPDATE videos SET age_tier_admin = 16 WHERE id = $1", k)
     await db.execute("UPDATE videos SET age_tier_admin = 0 WHERE id = $1", lo)
@@ -618,8 +616,7 @@ async def test_a_merge_never_loosens_the_keeper(db: Database, tmp_path: Path) ->
 
     # a keeper's signal an admin reviewed is the admin's word: a stricter loser's
     # detected tier does not replace it (the loser's admin tier, if any, still carries)
-    lo2, _p = await w.video("l2.mkv", b"M" * 5000)
-    lo2 = str(lo2)
+    lo2 = str((await w.video("l2.mkv", b"M" * 5000))[0])
     await db.execute(
         "UPDATE video_content_signals SET tier = 9, reviewed_at = $2 WHERE video_id = $1",
         k, to_ts(db, T0),
