@@ -173,7 +173,14 @@ export function buildRoutes(lang, lib = loadLibrary()) {
 
   // ---- home and recommendations --------------------------------------------------------
   const pinned = libs.slice(0, 1);
+  // the hero: a film the household picked (unpicked, a home features its newest series)
+  const featured = byId.get(lib.featured);
   add("GET", "/api/home", {
+    featured: featured ? { kind: "video", video: row(featured), series: null, picked: true } : null,
+    on_deck: [],
+    favorites: [],
+    collection_rows: [],
+    recently_added_grouped: newest.map((v) => ({ kind: "video", video: row(v) })),
     continue_watching: inProgress.map(progressRow),
     recently_added: newest.map((v) => row(v)),
     recently_watched: watched.map(progressRow),
@@ -508,7 +515,8 @@ export function buildRoutes(lang, lib = loadLibrary()) {
   });
   const blocksOf = (c) => {
     const blocks = [];
-    let at = GUIDE_START - c.number * 7 * 60; // channels start off step, as a real guide does
+    // each channel a quarter hour further into its lineup, every slot on the quarter hour
+    let at = GUIDE_START - c.number * 900;
     for (let i = 0; at < GUIDE_END; i++) {
       const v = byId.get(c.lineup[i % c.lineup.length]);
       // a programme is the title and the channel's filler, to the next quarter hour
