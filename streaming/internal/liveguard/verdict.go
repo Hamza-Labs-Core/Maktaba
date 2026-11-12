@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,12 +29,40 @@ type Verdict struct {
 	// Until is when the answer may change (the next programme that flips it); nil when
 	// nothing in the API's horizon does.
 	Until *time.Time `json:"until"`
+	// Time is set when the viewer's time rules refuse playback now (Epic 57 story
+	// 57.14): the stream is refused with the parental-time problem, whatever the
+	// programme. Nil: the time rules allow it.
+	Time *TimeRefusal `json:"-"`
+	// TimeEndsAt is when a stream running now must end by the time rules; nil when
+	// nothing ends it. The verdict is asked again then.
+	TimeEndsAt *time.Time `json:"-"`
+}
+
+// TimeRefusal is why the time rules refuse, as the API's parental-time problem
+// says it: Reason is outside_slot or limit_reached.
+type TimeRefusal struct {
+	Reason        string
+	NextAllowedAt *time.Time
+}
+
+// Question is what the guard asks the API about one viewer and one channel.
+type Question struct {
+	User, Channel uuid.UUID
+	// Family and Ceiling are the viewer's sign-in as the stream's credential
+	// carries it: the refresh-token family ("" when it has none) and the age limit
+	// its device gave (nil when none). The API holds the answer to that device's
+	// limit as well as to the account's policy.
+	Family  string
+	Ceiling *int
+	// Served is how long the guard served the viewer this channel since it last
+	// said so, in whole seconds: the API counts it toward the viewer's time rules.
+	Served time.Duration
 }
 
 // Verdicts answers whether a viewer may watch a channel now. An error is never an
-// allowance: the guard refuses.
+// allowance: the guard refuses. An answer means the API counted q.Served.
 type Verdicts interface {
-	Verdict(ctx context.Context, user, channel uuid.UUID) (Verdict, error)
+	Verdict(ctx context.Context, q Question) (Verdict, error)
 }
 
 // LocalTokenHeader carries this machine's local token to the API
@@ -64,7 +93,7 @@ func APIVerdictsFromEnv() *APIVerdicts {
 var ErrNoAPI = errors.New("liveguard: no API to ask the parental verdict (MAKTABA_LINK_PULL_URL, MAKTABA_SUPERVISOR_TOKEN_FILE)")
 
 // Verdict implements Verdicts.
-func (a *APIVerdicts) Verdict(ctx context.Context, user, channel uuid.UUID) (Verdict, error) {
+func (a *APIVerdicts) Verdict(ctx context.Context, ask Question) (Verdict, error) {
 	if a == nil || a.BaseURL == "" || a.TokenFile == "" {
 		return Verdict{}, ErrNoAPI
 	}
@@ -75,7 +104,16 @@ func (a *APIVerdicts) Verdict(ctx context.Context, user, channel uuid.UUID) (Ver
 	}
 	ctx, cancel := context.WithTimeout(ctx, VerdictTimeout)
 	defer cancel()
-	q := url.Values{"channel": {channel.String()}, "user": {user.String()}}
+	q := url.Values{"channel": {ask.Channel.String()}, "user": {ask.User.String()}}
+	if ask.Family != "" {
+		q.Set("family", ask.Family)
+	}
+	if ask.Ceiling != nil {
+		q.Set("ac", strconv.Itoa(*ask.Ceiling))
+	}
+	if secs := int(ask.Served / time.Second); secs > 0 {
+		q.Set("served", strconv.Itoa(secs))
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.BaseURL+"/api/tv/parental/verdict?"+q.Encode(), nil)
 	if err != nil {
 		return Verdict{}, err
@@ -101,18 +139,29 @@ func (a *APIVerdicts) Verdict(ctx context.Context, user, channel uuid.UUID) (Ver
 	// every field must be there: a body that is not the verdict (a proxy's page, an
 	// older API) allows nothing
 	var v struct {
-		Restricted     *bool      `json:"restricted"`
-		ChannelAllowed *bool      `json:"channel_allowed"`
-		Allowed        *bool      `json:"allowed"`
-		Until          *time.Time `json:"until"`
+		Restricted        *bool      `json:"restricted"`
+		ChannelAllowed    *bool      `json:"channel_allowed"`
+		Allowed           *bool      `json:"allowed"`
+		Until             *time.Time `json:"until"`
+		TimeAllowed       *bool      `json:"time_allowed"`
+		TimeReason        string     `json:"time_reason"`
+		TimeNextAllowedAt *time.Time `json:"time_next_allowed_at"`
+		TimeEndsAt        *time.Time `json:"time_ends_at"`
 	}
 	if err := json.Unmarshal(body, &v); err != nil {
 		return Verdict{}, fmt.Errorf("liveguard: the parental verdict is unreadable: %w", err)
 	}
-	if v.Restricted == nil || v.ChannelAllowed == nil || v.Allowed == nil {
+	// time_allowed too: an API that does not say whether the time rules allow the
+	// stream has not said that they do
+	if v.Restricted == nil || v.ChannelAllowed == nil || v.Allowed == nil || v.TimeAllowed == nil {
 		return Verdict{}, errors.New("liveguard: the parental verdict is incomplete")
 	}
-	return Verdict{Restricted: *v.Restricted, ChannelAllowed: *v.ChannelAllowed, Allowed: *v.Allowed, Until: v.Until}, nil
+	out := Verdict{Restricted: *v.Restricted, ChannelAllowed: *v.ChannelAllowed, Allowed: *v.Allowed, Until: v.Until,
+		TimeEndsAt: v.TimeEndsAt}
+	if !*v.TimeAllowed {
+		out.Time = &TimeRefusal{Reason: v.TimeReason, NextAllowedAt: v.TimeNextAllowedAt}
+	}
+	return out, nil
 }
 
 // VerdictTTL is the longest a verdict is reused: a rule a guardian changes reaches a
@@ -123,7 +172,17 @@ const VerdictTTL = 15 * time.Second
 // verdictCacheMax bounds the cache.
 const verdictCacheMax = 4096
 
-type verdictKey struct{ user, channel uuid.UUID }
+// verdictKey is one viewer on one channel through one sign-in: the answer differs by
+// the sign-in's device limit, so two sign-ins of one account do not share it.
+type verdictKey struct {
+	user, channel uuid.UUID
+	family        string
+	ceiling       int // noCeiling when the sign-in carries none
+}
+
+// noCeiling is verdictKey.ceiling for a sign-in with no device limit (no tier is
+// this low: the limits are -1, 0, 9, 13, 16, 18).
+const noCeiling = -1 << 31
 
 type cachedVerdict struct {
 	v     Verdict
@@ -156,12 +215,15 @@ func (c *cache) put(k verdictKey, v Verdict, now time.Time) {
 	c.m[k] = cachedVerdict{v: v, until: now.Add(reuse(v, now))}
 }
 
-// reuse is how long v stands from now: VerdictTTL, cut at the verdict's Until.
+// reuse is how long v stands from now: VerdictTTL, cut at the verdict's Until and
+// at the moment the time rules end the stream.
 func reuse(v Verdict, now time.Time) time.Duration {
 	d := VerdictTTL
-	if v.Until != nil {
-		if left := v.Until.Sub(now); left < d {
-			d = left
+	for _, at := range []*time.Time{v.Until, v.TimeEndsAt} {
+		if at != nil {
+			if left := at.Sub(now); left < d {
+				d = left
+			}
 		}
 	}
 	if d < 0 {

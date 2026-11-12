@@ -92,6 +92,8 @@ type TimeKeeper struct {
 
 	mu    sync.Mutex
 	marks map[string]*sessionMark // by stream session id
+	// remote is when each remote viewing session was last counted (timelive.go)
+	remote map[string]time.Time
 }
 
 func NewTimeKeeper(cache *Cache, push TimePusher) *TimeKeeper {

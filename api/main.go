@@ -608,7 +608,8 @@ func runServe() error {
 				OnQueues: func(q *queues.Handler) {
 					_, remoteCtl, mountRemote = router.WireP32Remote(q, router.P32RemoteDeps{
 						DB: appDB, Secrets: homeSecrets, Logger: logger, Notifier: notifyHub, Loops: loops,
-						Parental: func() *parental.Cache { return parentalHandles.Cache },
+						Parental:     func() *parental.Cache { return parentalHandles.Cache },
+						ParentalTime: func() *parental.TimeKeeper { return parentalHandles.Time },
 					})
 				},
 				DB:                   appDB,
@@ -725,6 +726,7 @@ func runServe() error {
 				Secrets:       homeSecrets,
 				RemoteInfo:    router.RemoteAvailability(remoteCtl),
 				Parental:      parentalHandles.Cache,
+				Time:          parentalHandles.Time,
 				ChannelSigner: channelSigner(streamSigner),
 			})
 			if mountRemote != nil {

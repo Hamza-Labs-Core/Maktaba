@@ -615,6 +615,13 @@ type meResponse struct {
 	// CloudScope: this sign-in came through Maktaba Cloud, with this link
 	// scope (play: watch only); absent for a sign-in on the home.
 	CloudScope string `json:"cloud_scope,omitempty"`
+	// SignIn and AgeCeiling are the sign-in this request came through (Epic 57
+	// stories 57.04 and 57.10): the family of its refresh token, and the age limit
+	// its device gave (-1 nothing, 0, 9, 13, 16, 18). The web port's stream gate
+	// passes them to the streaming service, so a channel it serves there is held to
+	// the device's limit as well as the account's. Absent for a sign-in with none.
+	SignIn     string `json:"sign_in,omitempty"`
+	AgeCeiling *int   `json:"age_ceiling,omitempty"`
 }
 
 // Me returns the authenticated principal's projection. The global
@@ -658,6 +665,8 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, r, http.StatusOK, meResponse{
 		HomeName:   homeName,
 		CloudScope: p.CloudScope,
+		SignIn:     p.RefreshFamily,
+		AgeCeiling: p.AgeCeiling,
 		UserID:     p.UserID,
 		IsAdmin:    p.IsAdmin,
 		Libraries:  libs,

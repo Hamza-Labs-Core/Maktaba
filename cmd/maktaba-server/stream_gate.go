@@ -89,6 +89,16 @@ const streamAuthCacheMax = 1024
 // (streaming/internal/viewing.ViewerHeader).
 const viewerHeader = "X-Maktaba-Viewer"
 
+// viewerSignInHeader and viewerCeilingHeader name, beside the viewer, the sign-in
+// the session is (the refresh-token family and the age limit its device gave:
+// /api/auth/me's sign_in and age_ceiling), so the streaming service's parental
+// verdict is held to the device's limit as well as the account's (Epic 57 stories
+// 57.04 and 57.10; streaming/internal/liveguard). Ones a client sent are dropped.
+const (
+	viewerSignInHeader  = "X-Maktaba-Viewer-Sign-In"
+	viewerCeilingHeader = "X-Maktaba-Viewer-Age-Ceiling"
+)
+
 // adminTokenHeader tells the streaming service the session is the admin token's: an
 // admin with no account, so no viewer to name (streaming/internal/liveguard
 // AdminTokenHeader). The streaming service believes it only on loopback: from this
@@ -158,6 +168,7 @@ type streamGate struct {
 	ok    map[string]time.Time // credential hash → accepted until
 	admin map[string]bool      // credential hash → an admin's session (while in ok)
 	user  map[string]string    // credential hash → the session's user id (while in ok)
+	sign  map[string]signIn    // credential hash → the session's sign-in (while in ok)
 	// chans is the channel verdicts: credential hash + channel id → verdict
 	chans map[string]channelVerdict
 }
@@ -172,7 +183,12 @@ type channelVerdict struct {
 type sessionInfo struct {
 	admin bool
 	user  string
+	signIn
 }
+
+// signIn is the sign-in a session is: its refresh-token family ("" when it has
+// none) and its device's age limit as /api/auth/me wrote it ("" when none).
+type signIn struct{ family, ceiling string }
 
 func newStreamGate(next http.Handler, apiOrigin *url.URL) *streamGate {
 	return &streamGate{
@@ -184,6 +200,7 @@ func newStreamGate(next http.Handler, apiOrigin *url.URL) *streamGate {
 		ok:      map[string]time.Time{},
 		admin:   map[string]bool{},
 		user:    map[string]string{},
+		sign:    map[string]signIn{},
 		chans:   map[string]channelVerdict{},
 		allow:   allowedStreamPath,
 	}
@@ -258,10 +275,18 @@ func (g *streamGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	out.Header.Del("Cookie")
 	out.Header.Del("Authorization")
 	out.Header.Del(viewerHeader)
+	out.Header.Del(viewerSignInHeader)
+	out.Header.Del(viewerCeilingHeader)
 	out.Header.Del(adminTokenHeader)
 	switch {
 	case who.user != "":
 		out.Header.Set(viewerHeader, who.user)
+		if who.family != "" {
+			out.Header.Set(viewerSignInHeader, who.family)
+		}
+		if who.ceiling != "" {
+			out.Header.Set(viewerCeilingHeader, who.ceiling)
+		}
 	case who.admin:
 		out.Header.Set(adminTokenHeader, "1")
 	}
@@ -369,6 +394,8 @@ func (g *streamGate) serveSigned(w http.ResponseWriter, r *http.Request, sig str
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	out := r.Clone(r.Context())
 	out.Header.Del(viewerHeader)
+	out.Header.Del(viewerSignInHeader)
+	out.Header.Del(viewerCeilingHeader)
 	out.Header.Del(adminTokenHeader)
 	g.next.ServeHTTP(w, out)
 }
@@ -380,7 +407,7 @@ func (g *streamGate) session(r *http.Request, key, cookie, authz string) (bool, 
 	now := g.now()
 	g.mu.Lock()
 	until, hit := g.ok[key]
-	who := sessionInfo{admin: g.admin[key], user: g.user[key]}
+	who := sessionInfo{admin: g.admin[key], user: g.user[key], signIn: g.sign[key]}
 	g.mu.Unlock()
 	if hit && now.Before(until) {
 		return true, who, nil
@@ -401,8 +428,10 @@ func (g *streamGate) session(r *http.Request, key, cookie, authz string) (bool, 
 		return false, sessionInfo{}, err
 	}
 	var me struct {
-		UserID  string `json:"user_id"`
-		IsAdmin bool   `json:"is_admin"`
+		UserID     string       `json:"user_id"`
+		IsAdmin    bool         `json:"is_admin"`
+		SignIn     string       `json:"sign_in"`
+		AgeCeiling *json.Number `json:"age_ceiling"`
 	}
 	if resp.StatusCode == http.StatusOK {
 		_ = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&me)
@@ -413,11 +442,15 @@ func (g *streamGate) session(r *http.Request, key, cookie, authz string) (bool, 
 		delete(g.ok, key)
 		delete(g.admin, key)
 		delete(g.user, key)
+		delete(g.sign, key)
 		g.forgetChannels(key)
 		g.mu.Unlock()
 		return false, sessionInfo{}, nil
 	}
-	who = sessionInfo{admin: me.IsAdmin, user: me.UserID}
+	who = sessionInfo{admin: me.IsAdmin, user: me.UserID, signIn: signIn{family: me.SignIn}}
+	if me.AgeCeiling != nil {
+		who.ceiling = me.AgeCeiling.String()
+	}
 	g.mu.Lock()
 	if len(g.ok) >= streamAuthCacheMax {
 		for k, t := range g.ok {
@@ -425,21 +458,27 @@ func (g *streamGate) session(r *http.Request, key, cookie, authz string) (bool, 
 				delete(g.ok, k)
 				delete(g.admin, k)
 				delete(g.user, k)
+				delete(g.sign, k)
 			}
 		}
 		if len(g.ok) >= streamAuthCacheMax {
 			g.ok = map[string]time.Time{}
 			g.admin = map[string]bool{}
 			g.user = map[string]string{}
+			g.sign = map[string]signIn{}
 			g.chans = map[string]channelVerdict{}
 		}
 	}
 	if g.user == nil {
 		g.user = map[string]string{}
 	}
+	if g.sign == nil {
+		g.sign = map[string]signIn{}
+	}
 	g.ok[key] = now.Add(streamAuthTTL)
 	g.admin[key] = me.IsAdmin
 	g.user[key] = me.UserID
+	g.sign[key] = who.signIn
 	g.mu.Unlock()
 	return true, who, nil
 }
@@ -505,6 +544,7 @@ func (g *streamGate) channel(r *http.Request, key, ch, cookie, authz string) (ch
 		delete(g.ok, key)
 		delete(g.admin, key)
 		delete(g.user, key)
+		delete(g.sign, key)
 		g.forgetChannels(key)
 		g.mu.Unlock()
 		return channelSignedOut, nil
