@@ -320,9 +320,20 @@ func TestSlot0224OnSQLite(t *testing.T) {
 	run(t, db, "0029_users.sqlite.sql", depUp)
 	// the one column of videos the table points at
 	run(t, db, "videos", []string{`CREATE TABLE videos (id TEXT PRIMARY KEY)`, `INSERT INTO videos (id) VALUES ('v1'), ('v2')`})
+	// the stage registry, with the columns the slot's seed names
+	run(t, db, "job_stages", []string{`CREATE TABLE job_stages (stage TEXT PRIMARY KEY, label TEXT NOT NULL,
+		subject_kinds TEXT NOT NULL, pool TEXT NOT NULL, lane TEXT NOT NULL, lane_order INTEGER NOT NULL,
+		version INTEGER NOT NULL, debounce_sec INTEGER NOT NULL, debounce_max_sec INTEGER NOT NULL,
+		max_attempts INTEGER NOT NULL, edges TEXT NOT NULL, may_request TEXT NOT NULL, entry_for TEXT NOT NULL,
+		legacy INTEGER NOT NULL, hidden INTEGER NOT NULL, external_write INTEGER NOT NULL,
+		write_mode TEXT NOT NULL, placement TEXT NOT NULL, enabled INTEGER NOT NULL, disabled_reason TEXT)`})
 	up, down := gooseStatements(t, "0224_content_signals.sqlite.sql")
 	run(t, db, "up", up)
 	run(t, db, "up twice", up)
+	var stages int
+	if err := db.QueryRow(`SELECT count(*) FROM job_stages WHERE stage = 'content_screen' AND placement = 'home'`).Scan(&stages); err != nil || stages != 1 {
+		t.Fatalf("the stage's row: %d (%v), want 1", stages, err)
+	}
 	run(t, db, "rows", []string{
 		`INSERT INTO video_content_signals (video_id, tier, confidence, categories, model, input_hash)
 			VALUES ('v1', 16, 0.9, '{"coarse_language":{"level":2,"evidence":[12.5]}}', 'm', 'h')`,

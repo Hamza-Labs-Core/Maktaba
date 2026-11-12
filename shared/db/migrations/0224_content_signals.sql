@@ -207,6 +207,19 @@ END;
 $$;
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+-- the content_screen stage (Epic 57, story 57.17): video and library subjects, the cpu
+-- pool, speech lane 10, on the home only; its edges are the pipeline's to write (its graph
+-- sync). The Down leaves the row, as every stage seed does: the queue's rows name it.
+INSERT INTO job_stages
+    (stage, label, subject_kinds, pool, lane, lane_order, version, debounce_sec,
+     debounce_max_sec, max_attempts, edges, may_request, entry_for, legacy, hidden,
+     external_write, write_mode, placement, enabled, disabled_reason)
+VALUES
+    ('content_screen', 'Content screen', ARRAY['video', 'library']::text[], 'cpu', 'speech', 10, 1, 0, 0, 3, '[]'::jsonb, '{}'::text[], '{}'::text[], false, false, false, 'auto', 'home', true, NULL)
+ON CONFLICT (stage) DO NOTHING;
+-- +goose StatementEnd
+
 -- +goose Down
 
 -- +goose StatementBegin
