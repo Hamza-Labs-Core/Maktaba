@@ -24,6 +24,7 @@ import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.ErrorKind
 import com.hamzalabs.maktaba.core.api.Failure
 import com.hamzalabs.maktaba.core.api.ProgressAnswer
+import com.hamzalabs.maktaba.core.api.TimeReason
 import com.hamzalabs.maktaba.core.api.TimeRefusal
 import com.hamzalabs.maktaba.core.api.timeRefusal
 import com.hamzalabs.maktaba.core.api.Rendition
@@ -86,7 +87,8 @@ class Playback(
     private val scope: CoroutineScope,
     /** Outlives the screen: a stopped video's last position and its session's close still go out. */
     private val background: CoroutineScope,
-    private val signedOut: () -> Unit,
+    /** The app's sign-out, for a sign-in the home no longer takes (the screens over the player tell it too). */
+    val signedOut: () -> Unit,
     /** The player's last touches: a test gives a clock and renderers that run on the JVM. */
     private val build: (ExoPlayer.Builder) -> ExoPlayer.Builder = { it },
     /** The player the controls drive, around this device's: Cast's (a test gives a fake receiver). */
@@ -167,6 +169,9 @@ class Playback(
     private var running: Job? = null
     /** One open at a time: the 10-second watch's reopen and a quality change never overlap. */
     private val opening = Mutex()
+    /** The reopen after a lapsed lease (`no_heartbeat`), and when the last one took. */
+    private var lapseReopen: Job? = null
+    private var lapseReopenedAt = 0L
     private val streamHttp by lazy { client.streamHttp() }
 
     /** Plays [v] from [startSec] (its resume point, or 0 for the start). */
@@ -200,6 +205,9 @@ class Playback(
     fun stop() {
         running?.cancel()
         running = null
+        lapseReopen?.cancel()
+        lapseReopen = null
+        lapseReopenedAt = 0L
         val s = session
         if (s != null) {
             val at = control?.currentPosition?.div(1000)?.toInt() ?: 0
@@ -443,7 +451,7 @@ class Playback(
         if (session != s) return
         when (answer) {
             ProgressAnswer.Ok -> cannotCheck = false
-            is ProgressAnswer.TimeOver -> stopForTime(answer.refusal, atMs)
+            is ProgressAnswer.TimeOver -> refusedForTime(answer.refusal, atMs)
             ProgressAnswer.Ended -> if (!completed && !ended) {
                 Log.i("Maktaba", "playback: the home ended the stream")
                 session = null
@@ -454,6 +462,34 @@ class Playback(
             }
             is ProgressAnswer.CannotCheck -> cannotCheck = true
             is ProgressAnswer.Failed -> {}
+        }
+    }
+
+    /**
+     * The home refused the stream that plays, for time. `no_heartbeat` is not the time being
+     * over: the stream sent no progress for a minute (a long pause) and its lease lapsed. It is
+     * opened again once, where it is; the home's answer to that open says whether there is time
+     * ([open] stops for it when there is not). A lapse again right after such a reopen stops.
+     * Called for a progress post's answer and for the stream itself refused (the player's error).
+     */
+    internal fun refusedForTime(refusal: TimeRefusal, atMs: Long) {
+        val s = session
+        val sinceReopen = System.currentTimeMillis() - lapseReopenedAt
+        if (refusal.reason != TimeReason.NO_HEARTBEAT || s == null || sinceReopen < LAPSE_REOPEN_ONCE_MS) {
+            stopForTime(refusal, atMs)
+            return
+        }
+        if (lapseReopen?.isActive == true) return
+        Log.i("Maktaba", "playback: the stream's lease lapsed; opening it again")
+        val wasPlaying = control?.playWhenReady == true
+        lapseReopen = scope.launch(Dispatchers.Main.immediate) {
+            opening.withLock {
+                // stopped, or already replaced, while this waited its turn
+                if (session != s) return@withLock
+                open(fromMs = atMs.coerceAtLeast(0))
+                if (session != null && session != s) lapseReopenedAt = System.currentTimeMillis()
+            }
+            if (!wasPlaying) control?.playWhenReady = false
         }
     }
 
@@ -488,8 +524,9 @@ class Playback(
             val failed = p.playerError
             // the streaming service refused the stream itself because the time is over
             failed?.let(::playbackTimeRefusal)?.let {
-                stopForTime(it, p.currentPosition)
-                return
+                refusedForTime(it, p.currentPosition)
+                if (control == null) return
+                continue
             }
             if (failed != null && System.currentTimeMillis() - openedAt < 30_000) {
                 releasePlayers()
@@ -505,6 +542,9 @@ class Playback(
         }
     }
 }
+
+/** A lease that lapses again this soon after it was reopened for a lapse stops the video. */
+const val LAPSE_REOPEN_ONCE_MS = 30_000L
 
 /** Why and where a video stopped for time: the home's refusal and the position it stopped at. */
 data class TimeUp(val refusal: TimeRefusal, val positionMs: Long = 0)

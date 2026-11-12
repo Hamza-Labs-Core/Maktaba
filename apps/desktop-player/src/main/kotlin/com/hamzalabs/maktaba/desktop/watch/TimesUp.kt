@@ -53,9 +53,9 @@ import kotlinx.coroutines.launch
  * Asking for more time from the time's-up screen (stories 57.06, 57.15): a request a parent
  * answers from their own Player or the web, and a parent's PIN typed here when someone set one.
  */
-class MoreTime(client: ApiClient) {
-    val ask = ParentAsk(client, SubjectKind.TIME)
-    val pin = PinUnlock(client, SubjectKind.TIME, "")
+class MoreTime(client: ApiClient, signedOut: () -> Unit = {}) {
+    val ask = ParentAsk(client, SubjectKind.TIME, signedOut = signedOut)
+    val pin = PinUnlock(client, SubjectKind.TIME, "", signedOut)
 }
 
 /**

@@ -110,6 +110,7 @@ fun HomeScreen(nav: PlayerNavigator) {
             // no channel row while Live TV is off on the home (story 51.11): nothing is asked
             liveNow = { if (home.capabilities.value.isOn(Feature.LIVE_TV)) live.now() else null },
             signedOut = home.session::signedOut,
+            keepOnDisk = { !home.parental.keepsNothing },
         )
     }
     LaunchedEffect(state) { state.open() }

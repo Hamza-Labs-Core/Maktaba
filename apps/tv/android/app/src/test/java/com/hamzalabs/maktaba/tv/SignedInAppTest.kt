@@ -152,6 +152,94 @@ class SignedInAppTest {
         compose.onNodeWithTag("feature-off-${Feature.LIVE_TV}").assertExists()
     }
 
+    /**
+     * Epic 57 story 57.05: a guardian changed the sign-in's limit while the TV showed another
+     * app. Back in the app, the limit's version has moved: Home reads again (what it showed was
+     * read under the limit before) and the queue's window and the pictures go.
+     */
+    @Test
+    fun aChangedParentalLimitReadsHomeAgainAndForgetsTheQueue() {
+        var version = 1
+        val inner = server.dispatcher
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse =
+                if (request.url.encodedPath == "/api/me/parental") {
+                    paths += request.url.encodedPath
+                    json(200, """{"restricted":true,"max_tier":13,"allow_only":false,"version":$version}""")
+                } else {
+                    inner.dispatch(request)
+                }
+        }
+        fun homeReads() = synchronized(paths) { paths.count { it == "/api/home" } }
+        fun limitReads() = synchronized(paths) { paths.count { it == "/api/me/parental" } }
+        signedIn()
+        compose.waitUntil(5_000) { compose.waitForIdle(); limitReads() >= 1 && homeReads() >= 1 }
+        compose.waitForIdle()
+        // the same limit when the TV comes back: nothing reads again
+        val settled = homeReads()
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.STARTED)
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+        compose.waitUntil(5_000) { compose.waitForIdle(); limitReads() >= 2 }
+        compose.waitForIdle()
+        assertEquals("an unchanged limit reloads nothing", settled, homeReads())
+        // the guardian lowers it; the TV comes back to the app
+        version = 2
+        val asked = limitReads()
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.STARTED)
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+        compose.waitUntil(5_000) { compose.waitForIdle(); limitReads() > asked && homeReads() > settled }
+    }
+
+    @Test
+    fun droppingWhatIsKeptForgetsTheQueuesWindow() {
+        val queue = com.hamzalabs.maktaba.core.queue.PlayQueueModel({ _, _, _ -> 200 to "{}" }, "tv-test")
+        queue.resume(com.hamzalabs.maktaba.core.queue.QueueDoc("q1", com.hamzalabs.maktaba.core.queue.QueueSource("library", "l1")))
+        queue.staleSeen = true
+        com.hamzalabs.maktaba.tv.ui.dropKeptForLimit(queue)
+        assertEquals(null, queue.doc)
+        assertFalse(queue.staleSeen)
+    }
+
+    /** Story 57.15: the player carries the video's library, and asks for the time with it. */
+    @Test
+    fun thePlayerOfAQueuedVideoCarriesItsLibrary() {
+        val item = com.hamzalabs.maktaba.core.queue.QueueItem(pos = 0, id = "v1", title = "The Message", libraryId = "l1")
+        val place = com.hamzalabs.maktaba.tv.ui.playerPlace(item, startMs = 42_000)
+        assertEquals("l1", place.libraryId)
+        assertEquals(42_000L, place.startMs)
+        assertTrue(place.queued)
+        assertEquals("no library named: the account's own rules", null, com.hamzalabs.maktaba.tv.ui.playerPlace(item.copy(libraryId = ""), 0).libraryId)
+    }
+
+    @Test
+    fun thePlayerAsksForTheTimeOfTheVideosLibrary() {
+        val timeAsks: MutableList<String?> = Collections.synchronizedList(mutableListOf())
+        val inner = server.dispatcher
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when (request.url.encodedPath) {
+                "/api/me/parental" -> json(200, """{"restricted":true,"max_tier":13,"allow_only":false,"version":1}""")
+                "/api/me/parental/time" -> {
+                    timeAsks += request.url.queryParameter("library_id")
+                    json(200, """{"allowed":true,"limited":true,"remaining_seconds":1800}""")
+                }
+                else -> inner.dispatch(request)
+            }
+        }
+        val app = ApplicationProvider.getApplicationContext<MaktabaTVApp>()
+        val client = ApiClient(server.url("/"), Tokens(token, "r1"))
+        val parental = com.hamzalabs.maktaba.core.parental.ParentalState(client)
+        kotlinx.coroutines.runBlocking { parental.refresh() }
+        compose.setContent {
+            MaktabaTvTheme {
+                com.hamzalabs.maktaba.tv.ui.screens.PlayerScreen(
+                    app, client, "v1", "The Message", 0, onBack = {}, signedOut = {}, parental = parental, libraryId = "l1",
+                )
+            }
+        }
+        compose.waitUntil(5_000) { compose.waitForIdle(); timeAsks.isNotEmpty() }
+        assertEquals("a rule on this library alone counts", "l1", timeAsks.first())
+    }
+
     @Test
     fun theTabListFollowsTheRule() {
         val viewer = Capabilities(off = setOf(Feature.LIVE_TV))

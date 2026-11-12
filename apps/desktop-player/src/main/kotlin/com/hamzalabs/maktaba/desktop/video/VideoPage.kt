@@ -89,7 +89,7 @@ fun VideoContent(state: VideoPageState, home: DesktopHome, features: Capabilitie
         }
     }
     val v = d!!
-    val request = { start: Int? -> PlayRequest(v.id, v.displayTitle, v.durationSec, startSec = start) }
+    val request = { start: Int? -> PlayRequest(v.id, v.displayTitle, v.durationSec, startSec = start, libraryId = v.libraryId.ifEmpty { null }) }
     BoxWithConstraints(Modifier.fillMaxSize().testTag("video-page")) {
         val wide = maxWidth >= WIDE
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {

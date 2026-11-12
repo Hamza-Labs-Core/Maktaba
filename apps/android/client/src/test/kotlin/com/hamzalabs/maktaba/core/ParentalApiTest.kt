@@ -309,6 +309,29 @@ class ParentalApiTest {
     }
 
     @Test
+    fun aRevokedSignInAtThePinIsToldToTheAppAndNeverThrown() = runBlocking {
+        // the child's sign-in was revoked while the PIN panel was open: 401, and the refresh too
+        routes["POST /api/me/parental/unlock"] = { json(401, "{}") }
+        routes["POST /api/auth/refresh"] = { json(401, "{}") }
+        var signedOut = 0
+        val flow = PinUnlock(client(), SubjectKind.VIDEO, "v1", signedOut = { signedOut++ })
+        flow.submit("g1", "123456") // thrown here, it would crash the screen's scope
+        assertEquals(PinState.Failed, flow.state.value)
+        assertEquals("the app signs out", 1, signedOut)
+    }
+
+    @Test
+    fun aRevokedSignInWhenAskingIsToldToTheAppToo() = runBlocking {
+        routes["POST /api/me/parental/requests"] = { json(401, "{}") }
+        routes["POST /api/auth/refresh"] = { json(401, "{}") }
+        var signedOut = 0
+        val asking = com.hamzalabs.maktaba.core.parental.ParentAsk(client(), SubjectKind.TIME, signedOut = { signedOut++ })
+        asking.ask(30)
+        assertEquals(AskState.Failed, asking.state.value)
+        assertEquals("not swallowed as Try again: the app signs out", 1, signedOut)
+    }
+
+    @Test
     fun onlySixDigitsAreAPin() {
         assertTrue(isParentPin("012345"))
         listOf("", "12345", "1234567", "12345a", "١٢٣٤٥٦").forEach { assertFalse(it, isParentPin(it)) }
@@ -372,6 +395,111 @@ class ParentalApiTest {
     }
 
     // ---- the state the screens read ----
+
+    @Test
+    fun aFailedLiveStreamIsAskedForAgainOncePerFailure() {
+        var now = 1_000_000L
+        val reopen = com.hamzalabs.maktaba.core.api.GatedReopen { now }
+        assertTrue("the first failure asks the home again", reopen.allowed())
+        now += 12_000
+        assertFalse("failing again right after: the error shows", reopen.allowed())
+        now += 20_000
+        assertFalse(reopen.allowed())
+        // it played for an hour and then stopped: the programme may have changed
+        now += 3_600_000
+        assertTrue(reopen.allowed())
+        now += 5_000
+        assertFalse(reopen.allowed())
+        // the person's own Try again starts over
+        reopen.reset()
+        assertTrue(reopen.allowed())
+    }
+
+    private class Remembered(var mark: com.hamzalabs.maktaba.core.parental.KeptLimit.Mark? = null) : com.hamzalabs.maktaba.core.parental.KeptLimit {
+        override fun read() = mark
+        override fun write(mark: com.hamzalabs.maktaba.core.parental.KeptLimit.Mark) {
+            this.mark = mark
+        }
+    }
+
+    private fun limit(version: Int, tier: Int = 13) = """{"restricted":true,"max_tier":$tier,"allow_only":false,"version":$version}"""
+
+    @Test
+    fun aChangedLimitDropsWhatWasKeptAndMovesTheEpoch() = runBlocking {
+        var body = limit(3)
+        routes["GET /api/me/parental"] = { json(200, body) }
+        val state = ParentalState(client(), Remembered())
+        val order = mutableListOf<String>()
+        state.onChange = { order += "dropped at epoch ${state.epoch.value}" }
+        state.refresh()
+        assertEquals("the first answer of a limited sign-in: what was kept before is not trusted", 1, state.epoch.value)
+        state.refresh()
+        state.refresh()
+        assertEquals("the same limit: nothing is dropped", 1, state.epoch.value)
+        // a guardian tightened it: the version moves
+        body = limit(4, tier = 9)
+        state.refresh()
+        assertEquals(2, state.epoch.value)
+        assertEquals("the kept things go before the screens read again", listOf("dropped at epoch 0", "dropped at epoch 1"), order)
+        // the same version with another tier in force (the device's limit) is a change too
+        body = """{"restricted":true,"max_tier":9,"allow_only":false,"device_limit":0,"version":4}"""
+        state.refresh()
+        assertEquals(3, state.epoch.value)
+        // a home that does not answer changes nothing
+        routes["GET /api/me/parental"] = { json(500, "{}") }
+        state.refresh()
+        assertEquals(3, state.epoch.value)
+        assertEquals(9, state.mine.value.maxTier)
+    }
+
+    @Test
+    fun aLimitChangedWhileTheAppWasClosedIsSeenAtTheFirstAnswer() = runBlocking {
+        val dir = java.nio.file.Files.createTempDirectory("kept-limit").toFile()
+        try {
+            val kept = com.hamzalabs.maktaba.core.parental.KeptLimit.InFile.of(dir, server.url("/"), "u1")
+            routes["GET /api/me/parental"] = { json(200, limit(3)) }
+            ParentalState(client(), kept).refresh()
+            assertTrue(kept.read()!!.limited)
+
+            // the next launch, the same limit: nothing kept on the device shows until the home
+            // answers, and its answer drops nothing
+            var dropped = 0
+            val same = ParentalState(client(), kept).also { it.onChange = { dropped++ } }
+            assertTrue("limited when last asked: nothing kept shows yet", same.keepsNothing)
+            same.refresh()
+            assertEquals(0, dropped)
+            assertEquals(0, same.epoch.value)
+
+            // the launch after a guardian changed it
+            routes["GET /api/me/parental"] = { json(200, limit(4, tier = 9)) }
+            val changed = ParentalState(client(), kept).also { it.onChange = { dropped++ } }
+            changed.refresh()
+            assertEquals(1, dropped)
+            assertEquals(1, changed.epoch.value)
+
+            // the limit taken away while closed: what was kept under it goes once, then it may keep again
+            routes["GET /api/me/parental"] = { json(200, """{"restricted":false}""") }
+            val lifted = ParentalState(client(), kept).also { it.onChange = { dropped++ } }
+            assertTrue(lifted.keepsNothing)
+            lifted.refresh()
+            assertEquals(2, dropped)
+            assertFalse(lifted.keepsNothing)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun anAccountNeverLimitedDropsNothing() = runBlocking {
+        routes["GET /api/me/parental"] = { json(200, """{"restricted":false}""") }
+        var dropped = 0
+        val state = ParentalState(client(), Remembered()).also { it.onChange = { dropped++ } }
+        assertFalse(state.keepsNothing)
+        state.refresh()
+        state.refresh()
+        assertEquals(0, dropped)
+        assertEquals(0, state.epoch.value)
+    }
 
     @Test
     fun theTimeIsAskedOnlyForARestrictedAccount() = runBlocking {

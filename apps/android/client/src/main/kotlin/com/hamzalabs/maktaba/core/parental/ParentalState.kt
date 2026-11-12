@@ -27,22 +27,62 @@ import kotlinx.coroutines.flow.asStateFlow
  *
  * Until the home answers, and when it does not, nobody is restricted here: an app never hides
  * or refuses on its own, because the home does both whatever the app shows.
+ *
+ * When the limit changes (its `version`, the tier in force, the device's limit: story 57.05)
+ * what the app kept for the account was read under another limit: [onChange] drops it (kept
+ * Home rows, page states, the queue window, pictures) and [epoch] moves, so the screens read
+ * again. [kept] remembers the last limit on the device, so a change made while the app was
+ * closed is seen at the first answer of the next launch.
  */
-class ParentalState(private val client: ApiClient) {
+class ParentalState(private val client: ApiClient, private val kept: KeptLimit? = null) {
     private val _mine = MutableStateFlow(MyParental.None)
     val mine: StateFlow<MyParental> = _mine.asStateFlow()
+
+    private val _epoch = MutableStateFlow(0)
+
+    /** Moves each time the limit changed: what was loaded under the limit before is read again. */
+    val epoch: StateFlow<Int> = _epoch.asStateFlow()
+
+    /** Drops what the app kept for the account; runs before [epoch] moves. */
+    var onChange: (suspend () -> Unit)? = null
+
+    /** The home answered in this launch (a home too old to have the route counts). */
+    private var answered = false
+
+    /**
+     * Whether nothing kept on the device may show yet: the sign-in is under a limit, or was when
+     * the home last said and has not answered in this launch (the limit may have tightened).
+     */
+    val keepsNothing: Boolean
+        get() = _mine.value.limited || (!answered && kept?.read()?.limited == true)
 
     private val _time = MutableStateFlow<MyTime?>(null)
     val time: StateFlow<MyTime?> = _time.asStateFlow()
 
     /** Reads the limit again (at sign-in, and when the app comes back to the front). */
     suspend fun refresh() {
-        try {
-            _mine.value = client.myParental()
+        val next = try {
+            client.myParental()
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
             // no answer: what is known stays
+            null
+        }
+        if (next != null) {
+            val now = KeptLimit.Mark(next.signature(), next.limited)
+            // against this launch's last answer, or the one before the app was closed
+            val before = if (answered) KeptLimit.Mark(_mine.value.signature(), _mine.value.limited) else kept?.read()
+            answered = true
+            _mine.value = next
+            if (before != now) {
+                kept?.write(now)
+                // never asked on this device and no limit now: nothing was kept under one
+                if (before != null || next.limited) {
+                    onChange?.invoke()
+                    _epoch.value++
+                }
+            }
         }
         if (!_mine.value.restricted) _time.value = null
     }
@@ -121,9 +161,15 @@ sealed interface PinState {
 /**
  * The parent PIN flow of one screen: who can type one ([holders]; empty hides Enter parent PIN),
  * and the home's answer to what was typed. The PIN is sent and forgotten: nothing on the device
- * can check one.
+ * can check one. A sign-in the home no longer takes is told to [signedOut] (the app's own
+ * sign-out) and never thrown: the screens call [submit] from a scope with nobody to catch it.
  */
-class PinUnlock(private val client: ApiClient, val subjectKind: String, val subjectId: String) {
+class PinUnlock(
+    private val client: ApiClient,
+    val subjectKind: String,
+    val subjectId: String,
+    private val signedOut: () -> Unit = {},
+) {
     private val _holders = MutableStateFlow<List<PinHolder>>(emptyList())
     val holders: StateFlow<List<PinHolder>> = _holders.asStateFlow()
 
@@ -153,8 +199,10 @@ class PinUnlock(private val client: ApiClient, val subjectKind: String, val subj
             }
         } catch (e: CancellationException) {
             throw e
-        } catch (e: ApiException.SignedOut) {
-            throw e
+        } catch (_: ApiException.SignedOut) {
+            _state.value = PinState.Failed
+            signedOut()
+            return
         } catch (_: Exception) {
             PinState.Failed
         }
@@ -168,8 +216,14 @@ class PinUnlock(private val client: ApiClient, val subjectKind: String, val subj
 /**
  * Asking a parent from one screen: for an item ([subjectKind], [subjectId]) or, with
  * [SubjectKind.TIME], for minutes chosen at [ask]. One request at a time; the home keeps it.
+ * A sign-in the home no longer takes is told to [signedOut], as [PinUnlock] does.
  */
-class ParentAsk(private val client: ApiClient, val subjectKind: String, val subjectId: String = "") {
+class ParentAsk(
+    private val client: ApiClient,
+    val subjectKind: String,
+    val subjectId: String = "",
+    private val signedOut: () -> Unit = {},
+) {
     private val _state = MutableStateFlow<AskState>(AskState.Idle)
     val state: StateFlow<AskState> = _state.asStateFlow()
 
@@ -182,8 +236,50 @@ class ParentAsk(private val client: ApiClient, val subjectKind: String, val subj
         } catch (e: CancellationException) {
             _state.value = AskState.Idle
             throw e
-        } catch (e: ApiException.SignedOut) {
-            AskState.Failed
+        } catch (_: ApiException.SignedOut) {
+            _state.value = AskState.Failed
+            signedOut()
+            return
+        }
+    }
+}
+
+/** What tells one limit from another: any change of it means the home shows the account other things. */
+private fun MyParental.signature(): String = "$restricted|${maxTier ?: ""}|$allowOnly|${deviceLimit ?: ""}|$version"
+
+/**
+ * The sign-in's last limit as this device remembers it between launches ([ParentalState]): what
+ * it was (to see a change made while the app was closed) and whether it was a limit at all.
+ */
+interface KeptLimit {
+    data class Mark(val signature: String, val limited: Boolean)
+
+    fun read(): Mark?
+    fun write(mark: Mark)
+
+    /** In a small file, one per home and person; a file that cannot be read is no mark. */
+    class InFile(private val file: java.io.File) : KeptLimit {
+        override fun read(): Mark? = runCatching {
+            val lines = file.readLines()
+            Mark(lines[1], lines[0] == "1")
+        }.getOrNull()
+
+        override fun write(mark: Mark) {
+            runCatching {
+                file.parentFile?.mkdirs()
+                file.writeText((if (mark.limited) "1" else "0") + "\n" + mark.signature)
+            }
+        }
+
+        companion object {
+            const val FOLDER = "parental"
+
+            /** The mark for [userId] on [home] under [dir]: the file is named by a hash, as the kept Home rows are. */
+            fun of(dir: java.io.File, home: okhttp3.HttpUrl, userId: String): InFile {
+                val digest = java.security.MessageDigest.getInstance("SHA-256").digest("$home|$userId".toByteArray())
+                val name = digest.take(16).joinToString("") { Integer.toHexString((it.toInt() and 0xff) or 0x100).substring(1) }
+                return InFile(java.io.File(java.io.File(dir, FOLDER), "$name.limit"))
+            }
         }
     }
 }

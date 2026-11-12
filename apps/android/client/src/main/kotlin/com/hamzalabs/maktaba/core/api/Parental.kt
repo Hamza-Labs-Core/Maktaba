@@ -402,3 +402,33 @@ fun channelAskAgainMs(at: Instant?, allowed: Boolean, nowMs: Long): Long? = when
     allowed -> null
     else -> CHANNEL_ASK_AGAIN_MS
 }
+
+/**
+ * A stream that fails again within this long of its gated re-open shows the error. Longer than
+ * any player's warm-up retries take (the TV's: six tries, each a failed load and a wait).
+ */
+const val CHANNEL_REOPEN_ONCE_MS = 5 * 60_000L
+
+/**
+ * A limited account's live stream that stopped is asked for again through the home's gate (the
+ * programme may have changed), but once per failure: when the home says it plays and the stream
+ * fails again within [CHANNEL_REOPEN_ONCE_MS], the player shows its error, as it does for an
+ * account with no limit, and does not ask the home round and round.
+ */
+class GatedReopen(private val nowMs: () -> Long = System::currentTimeMillis) {
+    private var last: Long? = null
+
+    /** Whether a stream that just failed may be asked for again; a yes is remembered. */
+    fun allowed(): Boolean {
+        val now = nowMs()
+        val was = last
+        if (was != null && now - was < CHANNEL_REOPEN_ONCE_MS) return false
+        last = now
+        return true
+    }
+
+    /** A person chose the channel (or Try again): the next failure may ask again. */
+    fun reset() {
+        last = null
+    }
+}

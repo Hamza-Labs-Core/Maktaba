@@ -155,7 +155,7 @@ fun WatchScreen(
                 TimesUpScreen(
                     timeUp.refusal,
                     timeUp.positionMs,
-                    help = remember(client, timeUp) { ParentHelp(client, SubjectKind.TIME) },
+                    help = remember(client, timeUp) { ParentHelp(client, SubjectKind.TIME, signedOut = { playback.stop(); playback.signedOut() }) },
                     onCheck = playback::checkAgain,
                     modifier = Modifier.safeDrawingPadding().padding(top = 48.dp),
                     onBack = onClose,
@@ -167,7 +167,7 @@ fun WatchScreen(
                 BlockedPage(
                     mine ?: com.hamzalabs.maktaba.core.api.MyParental.None,
                     // only an account under a limit has a parent to ask
-                    help = remember(client, id) { if (mine?.limited == true && id != null) ParentHelp(client, SubjectKind.VIDEO, id) else null },
+                    help = remember(client, id) { if (mine?.limited == true && id != null) ParentHelp(client, SubjectKind.VIDEO, id) { playback.stop(); playback.signedOut() } else null },
                     onUnlocked = playback::checkAgain,
                     modifier = Modifier.safeDrawingPadding().padding(top = 48.dp),
                     stopped = true,

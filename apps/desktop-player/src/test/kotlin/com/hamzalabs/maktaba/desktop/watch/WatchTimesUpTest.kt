@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
@@ -79,6 +80,43 @@ class WatchTimesUpTest {
                 assertEquals(0, onAllNodes(hasTestTag("parental-pin-panel")).fetchSemanticsNodes().size)
                 onNodeWithTag("parental-time-check").assertExists()
             }
+        } finally {
+            playback.close()
+            scope.cancel()
+        }
+    }
+
+    /** Story 57.15: a rule may be on one library only, so the time is asked for with the video's library. */
+    @Test
+    fun theTimeIsAskedForWithTheVideosLibrary() = TestHome().use { fake ->
+        fake.answer("GET /api/me/parental", """{"restricted":true,"max_tier":13,"allow_only":false,"version":1}""")
+        fake.answer("GET /api/me/parental/time", """{"allowed":true,"limited":true,"remaining_seconds":1800}""")
+        fake.answer("GET /api/videos/A", """{"id":"A","library_id":"l1","filename":"a.mkv","title":"A","state":"ready"}""")
+        // no stream opens here (the video's surface is Swing's, which a test window has none of)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
+        val playback = Playback(fake.client, scope, scope, signedOut = {}, players = noVideo)
+        val home = fake.home()
+        try {
+            kotlinx.coroutines.runBlocking { home.parental.refresh() }
+            runComposeUiTest {
+                setContent {
+                    InPlayer(home) { Watch(playback, Capabilities.AllOn, "http://home", fullScreen = false, onFullScreen = {}, onClose = {}, parental = home.parental) }
+                }
+                // a page that does not know the library (a search hit): the Player asks the home
+                runOnIdle { playback.play(PlayRequest("A", "A", startSec = 0)) }
+                waitUntil(timeoutMillis = 10_000) {
+                    fake.asked("GET /api/me/parental/time").any { it.url.queryParameter("library_id") == "l1" }
+                }
+            }
+            // and a page that knows it says so: nothing is looked up
+            val before = fake.asked("GET /api/videos/A").size
+            scope.launch { playback.play(PlayRequest("A", "A", startSec = 5, libraryId = "l9")) }
+            val end = System.currentTimeMillis() + 10_000
+            while (playback.libraryId != "l9") {
+                check(System.currentTimeMillis() < end) { "the request's library was not taken" }
+                Thread.sleep(20)
+            }
+            assertEquals(before, fake.asked("GET /api/videos/A").size)
         } finally {
             playback.close()
             scope.cancel()

@@ -2,6 +2,8 @@ package com.hamzalabs.maktaba.player.shell
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.Capabilities
@@ -27,6 +29,10 @@ class PlayerHome(
     val themes: ThemeStore,
     val onPlaying: (Boolean) -> Unit = {},
     val capabilities: StateFlow<Capabilities> = session.capabilities,
+    /** Where the sign-in's last parental limit is remembered between launches (null: nowhere). */
+    limitKept: com.hamzalabs.maktaba.core.parental.KeptLimit? = null,
+    /** Drops what the device keeps outside this object (Home's rows on disk, pictures). */
+    private val dropKept: suspend () -> Unit = {},
 ) {
     /** The home's web address (under its base path): the admin's Components link goes there. */
     val webUrl: String get() = client.home.toString()
@@ -35,16 +41,39 @@ class PlayerHome(
      * What this sign-in is under parental controls (Epic 57): its limit, and for a restricted
      * account the time the home says is left. The home enforces both; the screens only say so.
      */
-    val parental: ParentalState by lazy { ParentalState(client) }
+    val parental: ParentalState by lazy { ParentalState(client, limitKept).also { it.onChange = ::limitChanged } }
 
     private val kept = mutableMapOf<String, Any>()
+
+    /** Moves when the kept states were dropped: a screen that reads [keep] then makes its state anew. */
+    private var keptEpoch by androidx.compose.runtime.mutableIntStateOf(0)
+
+    /**
+     * The sign-in's parental limit changed (story 57.05): every page's kept state, Home's rows
+     * on disk, the queue's window and the pictures were read under another limit and go; the
+     * screens then read again. What is playing is the player's own, and the home ends it itself.
+     */
+    private suspend fun limitChanged() {
+        kept.keys.removeAll { !it.startsWith(KEEP_ALWAYS) }
+        com.hamzalabs.maktaba.player.libraries.PlayerQueues.of(client).forget()
+        dropKept()
+        keptEpoch++
+    }
 
     /**
      * A screen's state kept for as long as this home is signed in, under [key]: a section's
      * screen leaves composition when another section is shown, and finds its state again here.
      */
     @Suppress("UNCHECKED_CAST")
-    fun <T : Any> keep(key: String, create: () -> T): T = kept.getOrPut(key, create) as T
+    fun <T : Any> keep(key: String, create: () -> T): T {
+        keptEpoch // read: the screen composes again when the kept states were dropped
+        return kept.getOrPut(key, create) as T
+    }
+
+    private companion object {
+        /** Kept whatever the limit: the scope a stopped video's last calls go out in. */
+        const val KEEP_ALWAYS = "watch."
+    }
 }
 
 /** The signed-in home, provided by [MainActivity][com.hamzalabs.maktaba.player.MainActivity] (or a test's fake home). */

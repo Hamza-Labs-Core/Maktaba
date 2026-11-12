@@ -301,7 +301,7 @@ fun VideoScreen(id: String, nav: PlayerNavigator) {
                 // a hidden video as a missing one; asking for a missing one offers nothing more.
                 page.notAvailable && mine.limited -> com.hamzalabs.maktaba.core.ui.BlockedPage(
                     mine,
-                    help = remember(client, id) { com.hamzalabs.maktaba.core.ui.ParentHelp(client, com.hamzalabs.maktaba.core.api.SubjectKind.VIDEO, id) },
+                    help = remember(client, id) { com.hamzalabs.maktaba.core.ui.ParentHelp(client, com.hamzalabs.maktaba.core.api.SubjectKind.VIDEO, id) { home.session.signedOut() } },
                     onUnlocked = { scope.launch { page.load() } },
                     onBack = if (nav.canGoBack) ({ nav.back() }) else null,
                 )

@@ -198,11 +198,12 @@ fun HomeTimeLine(time: MyTime?, modifier: Modifier = Modifier) {
 
 /**
  * What a blocked or time's-up screen offers: asking a parent ([ask]) and, when someone set a
- * PIN, typing it here ([pin]). Made per screen for the thing it is about.
+ * PIN, typing it here ([pin]). Made per screen for the thing it is about. [signedOut] is the
+ * app's own sign-out, for a sign-in the home stopped taking while the screen was open.
  */
-class ParentHelp(client: ApiClient, val subjectKind: String, subjectId: String = "") {
-    val ask = ParentAsk(client, subjectKind, subjectId)
-    val pin = PinUnlock(client, subjectKind, subjectId)
+class ParentHelp(client: ApiClient, val subjectKind: String, subjectId: String = "", signedOut: () -> Unit = {}) {
+    val ask = ParentAsk(client, subjectKind, subjectId, signedOut)
+    val pin = PinUnlock(client, subjectKind, subjectId, signedOut)
     val forTime: Boolean get() = subjectKind == SubjectKind.TIME
 }
 

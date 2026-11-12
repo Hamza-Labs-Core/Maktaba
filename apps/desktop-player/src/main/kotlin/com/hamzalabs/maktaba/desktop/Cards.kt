@@ -72,6 +72,12 @@ class Posters(private val client: ApiClient?, private val max: Int = 300) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ImageBitmap?>) = size > max
     }
 
+    /** Forgets every poster (the sign-in's parental limit changed: some may now be hidden). */
+    fun clear() = synchronized(cache) { cache.clear() }
+
+    /** How many posters are kept. */
+    val kept: Int get() = synchronized(cache) { cache.size }
+
     suspend fun get(video: String): ImageBitmap? {
         val c = client ?: return null
         synchronized(cache) { if (cache.containsKey(video)) return cache[video] }

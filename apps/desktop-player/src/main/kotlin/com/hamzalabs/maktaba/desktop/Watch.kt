@@ -90,7 +90,9 @@ fun Watch(
     val restricted = mine?.restricted == true
     val over = playback.timeUp != null
     // the home's answer about the time, asked again while the video plays (never counted here)
-    LaunchedEffect(parental, restricted, over) { if (parental != null && restricted && !over) parental.followTime() }
+    // with the video's library: a rule may be on one library only
+    val library = playback.libraryId
+    LaunchedEffect(parental, restricted, over, library) { if (parental != null && restricted && !over) parental.followTime(library) }
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
@@ -134,7 +136,7 @@ fun Watch(
                 // the help is this refusal's own: a PIN typed or a request sent for an earlier one
                 // says nothing about this one (kept across them, "unlocked" asked the home for ever)
                 timeUp != null -> androidx.compose.runtime.key(playback.refusals) {
-                    val more = remember { com.hamzalabs.maktaba.desktop.watch.MoreTime(playback.client) }
+                    val more = remember { com.hamzalabs.maktaba.desktop.watch.MoreTime(playback.client) { playback.stop(); playback.signedOut() } }
                     TimesUp(timeUp, onCheck = { playback.checkAgain() }, more = more)
                 }
                 // the home ended the stream: the video is no longer this account's

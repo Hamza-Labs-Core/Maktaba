@@ -61,6 +61,9 @@ import kotlinx.coroutines.withContext
 /** Posters already decoded, by home and video. */
 private val posters = LruCache<String, ImageBitmap>(120)
 
+/** Forgets every decoded poster (the sign-in's parental limit changed: some may now be hidden). */
+fun forgetPosters() = posters.evictAll()
+
 /** A picture the home serves behind sign-in (a video's poster): loaded with the token. */
 @Composable
 fun Poster(client: ApiClient, video: String, modifier: Modifier = Modifier) {

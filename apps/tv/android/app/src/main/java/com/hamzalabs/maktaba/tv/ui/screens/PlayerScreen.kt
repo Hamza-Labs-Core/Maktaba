@@ -195,7 +195,7 @@ fun PlayerScreen(
             timeUp != null -> TvTimesUp(
                 timeUp.refusal,
                 timeUp.positionMs,
-                help = remember(client, timeUp) { com.hamzalabs.maktaba.core.ui.ParentHelp(client, com.hamzalabs.maktaba.core.api.SubjectKind.TIME) },
+                help = remember(client, timeUp) { com.hamzalabs.maktaba.core.ui.ParentHelp(client, com.hamzalabs.maktaba.core.api.SubjectKind.TIME, signedOut = signedOut) },
                 onCheck = playback::checkAgain,
                 onBack = onBack,
             )
@@ -203,7 +203,7 @@ fun PlayerScreen(
             playback.endedByHome -> TvBlocked(
                 mine ?: com.hamzalabs.maktaba.core.api.MyParental.None,
                 help = remember(client, video) {
-                    if (mine?.limited == true) com.hamzalabs.maktaba.core.ui.ParentHelp(client, com.hamzalabs.maktaba.core.api.SubjectKind.VIDEO, video) else null
+                    if (mine?.limited == true) com.hamzalabs.maktaba.core.ui.ParentHelp(client, com.hamzalabs.maktaba.core.api.SubjectKind.VIDEO, video, signedOut) else null
                 },
                 onUnlocked = playback::checkAgain,
                 stopped = true,

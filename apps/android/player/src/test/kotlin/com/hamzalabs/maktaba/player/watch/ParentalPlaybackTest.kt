@@ -3,9 +3,13 @@
 package com.hamzalabs.maktaba.player.watch
 
 import android.content.Context
+import android.net.Uri
 import androidx.annotation.OptIn
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.test.utils.robolectric.ShadowMediaCodecConfig
 import androidx.test.core.app.ApplicationProvider
@@ -15,6 +19,7 @@ import com.hamzalabs.maktaba.core.api.TimeReason
 import com.hamzalabs.maktaba.core.api.Video
 import com.hamzalabs.maktaba.player.Playback
 import com.hamzalabs.maktaba.player.harness.FakeHome
+import com.hamzalabs.maktaba.player.playbackTimeRefusal
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,9 +39,10 @@ import java.time.Instant
 
 /**
  * Epic 57 story 57.15 (T03, the phone root): the player when the home refuses for time. On a
- * session open, a renewal or a progress post that answers 403 `parental-time` the video stops,
- * the refusal is kept for the time's-up screen, and nothing asks the home again by itself; a
- * 404 on a progress post is the stream's end; a 503 is "cannot check right now".
+ * session open, a renewal, a progress post or the stream itself answering 403 `parental-time`
+ * the video stops, the refusal is kept for the time's-up screen, and nothing asks the home again
+ * by itself; reason `no_heartbeat` (the lease lapsed in a long pause) reopens the stream once
+ * first; a 404 on a progress post is the stream's end; a 503 is "cannot check right now".
  */
 @RunWith(AndroidJUnit4::class)
 class ParentalPlaybackTest {
@@ -102,7 +108,6 @@ class ParentalPlaybackTest {
         // a minute passes: the home is not asked again by itself
         idleFor(60_000)
         assertEquals(1, streams.opens().size)
-        // and the same video asked for again by the screen's own recomposition is not a retry
         assertNotNull(playback.timeUp)
     }
 
@@ -130,15 +135,105 @@ class ParentalPlaybackTest {
     }
 
     @Test
-    fun aRefusalWithNoNextTimeStillStops() {
+    fun aLapsedLeaseOnAProgressPostReopensTheStreamOnceWhereItIs() {
+        playback.play(v1, startSec = 1)
+        val p = playing()
+        runUntil { p.currentPosition > 1_200 }
+        // a long pause: the stream's lease lapsed. That is not the time being over
+        home.answer("/api/stream/sessions/s1/progress") { timeOver(TimeReason.NO_HEARTBEAT, next = null) }
+        p.pause()
+        runUntil { streams.opens().size == 2 && "s1" in streams.closed() }
+        settle()
+        assertNull("no time's-up screen: the home gave the stream again", playback.timeUp)
+        assertNull(playback.problem)
+        assertNotNull(playback.player)
+        assertTrue("it opens where it was", streams.opens()[1].int("start_sec")!! >= 1)
+        assertFalse("it was paused, and still is", playback.control!!.playWhenReady)
+        assertEquals("once", 2, streams.opens().size)
+    }
+
+    @Test
+    fun aLapsedLeaseWhoseReopenIsRefusedShowsTimesUp() {
         playback.play(v1, startSec = 1)
         val p = playing()
         runUntil { p.currentPosition > 1_200 }
         home.answer("/api/stream/sessions/s1/progress") { timeOver(TimeReason.NO_HEARTBEAT, next = null) }
+        // the time ran out meanwhile: the home refuses the reopen
+        home.answer("/api/stream/sessions") { timeOver(TimeReason.LIMIT_REACHED) }
         p.pause()
+        runUntil { playback.timeUp != null }
+        assertEquals(TimeReason.LIMIT_REACHED, playback.timeUp!!.refusal.reason)
+        assertEquals(Instant.parse("2026-11-12T04:00:00Z"), playback.timeUp!!.refusal.nextAllowedAt)
+        assertNull(playback.player)
+        settle()
+        assertEquals("the first open and the one reopen", 2, streams.opens().size)
+    }
+
+    @Test
+    fun aLeaseThatLapsesAgainRightAfterItsReopenStops() {
+        playback.play(v1, startSec = 1)
+        val p = playing()
+        runUntil { p.currentPosition > 1_200 }
+        home.answer("/api/stream/sessions/s1/progress") { timeOver(TimeReason.NO_HEARTBEAT, next = null) }
+        home.answer("/api/stream/sessions/s2/progress") { timeOver(TimeReason.NO_HEARTBEAT, next = null) }
+        p.pause()
+        runUntil { streams.opens().size == 2 && playback.control?.playbackState == Player.STATE_READY }
+        // the reopened stream is refused the same way at once: no loop of opens
+        playback.control!!.play()
         runUntil { playback.timeUp != null }
         assertEquals(TimeReason.NO_HEARTBEAT, playback.timeUp!!.refusal.reason)
         assertNull(playback.timeUp!!.refusal.nextAllowedAt)
+        settle()
+        assertEquals(2, streams.opens().size)
+    }
+
+    /** The player's failure when the streaming service answers a segment with 403 `parental-time`. */
+    private fun streamRefused(reason: String): PlaybackException {
+        val body = """{"type":"https://maktaba.tv/problems/parental-time","status":403,"code":"parental_time","reason":"$reason"}"""
+        val http = HttpDataSource.InvalidResponseCodeException(
+            403, null, null, emptyMap(), DataSpec(Uri.parse("http://home.test/stream/s1/seg0.ts")), body.toByteArray(),
+        )
+        return PlaybackException("refused", http, PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS)
+    }
+
+    @Test
+    fun theStreamItselfRefusedForTimeIsRead() {
+        assertEquals(TimeReason.LIMIT_REACHED, playbackTimeRefusal(streamRefused(TimeReason.LIMIT_REACHED))!!.reason)
+        assertEquals(TimeReason.NO_HEARTBEAT, playbackTimeRefusal(streamRefused(TimeReason.NO_HEARTBEAT))!!.reason)
+        assertNull(playbackTimeRefusal(streamRefused(TimeReason.NO_HEARTBEAT))!!.nextAllowedAt)
+        // any other failure of the player is not a time refusal
+        assertNull(playbackTimeRefusal(PlaybackException("x", java.io.IOException("y"), PlaybackException.ERROR_CODE_IO_UNSPECIFIED)))
+    }
+
+    @Test
+    fun aStreamTheServiceRefusesForTimeStopsWithTimesUp() {
+        playback.play(v1, startSec = 1)
+        val p = playing()
+        // what the ten-second watch does with the player's failure: the account's time is over
+        playback.refusedForTime(playbackTimeRefusal(streamRefused(TimeReason.LIMIT_REACHED))!!, p.currentPosition)
+        assertEquals(TimeReason.LIMIT_REACHED, playback.timeUp!!.refusal.reason)
+        assertNull("the time's-up screen, not the error screen", playback.problem)
+        assertNull(playback.player)
+        settle()
+        assertEquals(1, streams.opens().size)
+    }
+
+    @Test
+    fun aPausedStreamWhoseLeaseLapsedIsOpenedAgainWhenTheServiceRefusesIt() {
+        playback.play(v1, startSec = 1)
+        val p = playing()
+        runUntil { p.currentPosition > 1_200 }
+        p.pause()
+        runUntil { streams.progress().isNotEmpty() }
+        // paused for over a minute, then scrubbed: the segment answers 403 no_heartbeat
+        playback.refusedForTime(playbackTimeRefusal(streamRefused(TimeReason.NO_HEARTBEAT))!!, p.currentPosition)
+        runUntil { streams.opens().size == 2 && "s1" in streams.closed() }
+        settle()
+        assertNull("not the time's-up screen", playback.timeUp)
+        assertNull(playback.problem)
+        assertNotNull(playback.player)
+        assertFalse("still paused", playback.control!!.playWhenReady)
+        assertEquals("opened again once", 2, streams.opens().size)
     }
 
     @Test

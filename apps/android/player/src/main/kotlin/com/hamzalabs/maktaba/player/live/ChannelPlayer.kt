@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ChannelNow
+import com.hamzalabs.maktaba.core.api.GatedReopen
 import com.hamzalabs.maktaba.core.api.channelAskAgainMs
 import com.hamzalabs.maktaba.core.api.channelNow
 import com.hamzalabs.maktaba.core.api.programmeRefusal
@@ -101,8 +102,16 @@ class ChannelPlayer(
 
     private var job: Job? = null
 
+    /** One gated re-open per failure of a limited account's stream. */
+    private val reopen = GatedReopen(nowMs)
+
     /** Plays [id]: the channel before it stops (its remote session ends). */
     fun open(id: String) {
+        reopen.reset()
+        tune(id)
+    }
+
+    private fun tune(id: String) {
         job?.cancel()
         recheck?.cancel()
         channelId = id
@@ -168,7 +177,7 @@ class ChannelPlayer(
             delay(wait)
             if (channelId != id) return@launch
             if (!allowed) {
-                open(id)
+                tune(id)
                 return@launch
             }
             val now = try {
@@ -200,9 +209,10 @@ class ChannelPlayer(
                     if (channelId == s.channelId && stream == s) {
                         start(s, s.url.newBuilder().setQueryParameter("retry", "${attempt + 1}").build(), http, attempt + 1)
                     }
-                } else if (gate != null && limited()) {
-                    // a limited account's stream that stopped: the programme may have changed
-                    open(s.channelId)
+                } else if (gate != null && limited() && s is LiveStream.Lan && reopen.allowed()) {
+                    // a limited account's stream that stopped: the programme may have changed.
+                    // Once: a stream the home says plays and that fails again shows its error
+                    tune(s.channelId)
                 } else {
                     problem = e
                     stream = null

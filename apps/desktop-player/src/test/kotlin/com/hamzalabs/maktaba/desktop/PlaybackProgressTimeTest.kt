@@ -122,6 +122,53 @@ class PlaybackProgressTimeTest {
         assertNotNull("the request stays for Check again", onMain { playback.request })
     }
 
+    private val lapsed = """{"type":"https://maktaba.tv/problems/parental-time","title":"watching time is over","status":403,""" +
+        """"code":"parental_time","reason":"no_heartbeat"}"""
+
+    @Test
+    fun aLapsedLeaseReopensTheStreamOnceWhereItIs() {
+        // a long pause: the stream's lease lapsed. That is not the time being over
+        home.answer("POST /api/stream/sessions/s1/progress", lapsed, 403)
+        home.answer("POST /api/stream/sessions/s2/progress", """{"position_sec":754}""")
+        playingAt(754_000)
+        until("opened again") { opens.get() == 2 && home.asked("DELETE /api/stream/sessions/s1").isNotEmpty() }
+        assertNull("no time's-up screen: the home gave the stream again", onMain { playback.timeUp })
+        assertNotNull(onMain { playback.player })
+        assertTrue("where it was", home.asked("POST /api/stream/sessions").last().body!!.utf8().contains("754"))
+        Thread.sleep(1_500)
+        assertEquals("once", 2, opens.get())
+    }
+
+    @Test
+    fun aLapsedLeaseWhoseReopenIsRefusedShowsTimesUp() {
+        home.answer("POST /api/stream/sessions/s1/progress", lapsed, 403)
+        // the time ran out meanwhile: the home refuses the reopen
+        home.answer("POST /api/stream/sessions") {
+            if (opens.incrementAndGet() == 1) TestHome.json("""{"session_id":"s1","mode":"direct","direct_url":"/stream/s1.mp4"}""") else TestHome.json(timeOver, 403)
+        }
+        playingAt(754_000)
+        until("the time's-up state") { playback.timeUp != null }
+        assertEquals("limit_reached", onMain { playback.timeUp }!!.reason)
+        assertNull(onMain { playback.player })
+        Thread.sleep(1_500)
+        assertEquals("the first open and the one reopen", 2, opens.get())
+    }
+
+    @Test
+    fun aLeaseThatLapsesAgainRightAfterItsReopenStops() {
+        home.answer("POST /api/stream/sessions/s1/progress", lapsed, 403)
+        home.answer("POST /api/stream/sessions/s2/progress", lapsed, 403)
+        playingAt(754_000)
+        until("opened again") { opens.get() == 2 && playback.player != null && home.asked("DELETE /api/stream/sessions/s1").isNotEmpty() }
+        val e = events.get()!!
+        onMain { e.playing(false) }
+        onMain { e.playing(true) }
+        until("the time's-up state") { playback.timeUp != null }
+        assertEquals("no_heartbeat", onMain { playback.timeUp }!!.reason)
+        Thread.sleep(1_500)
+        assertEquals("no loop of opens", 2, opens.get())
+    }
+
     @Test
     fun checkAgainAfterARefusedPostOpensWhereItStopped() {
         home.answer("POST /api/stream/sessions/s1/progress", timeOver, 403)

@@ -11,9 +11,11 @@ import com.hamzalabs.maktaba.core.api.Capabilities
 import com.hamzalabs.maktaba.core.api.Chapter
 import com.hamzalabs.maktaba.core.api.Feature
 import com.hamzalabs.maktaba.core.api.ProgressAnswer
+import com.hamzalabs.maktaba.core.api.TimeReason
 import com.hamzalabs.maktaba.core.api.Rendition as Rung
 import com.hamzalabs.maktaba.core.api.chapters
 import com.hamzalabs.maktaba.core.api.myVideo
+import com.hamzalabs.maktaba.core.api.videoDetail
 import com.hamzalabs.maktaba.core.playback.PlaybackValues
 import com.hamzalabs.maktaba.core.playback.QualityOption
 import com.hamzalabs.maktaba.core.playback.TrackChoice
@@ -46,6 +48,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
+/** A lease that lapses again this soon after it was reopened for a lapse stops the video. */
+const val LAPSE_REOPEN_ONCE_MS = 30_000L
+
 /** What this player can play: the streaming service's profile for JavaFX (H.264, AAC; MP4 or HLS). */
 const val STREAM_PROFILE = "desktop-player"
 
@@ -59,6 +64,8 @@ data class PlayRequest(
     val durationSec: Double? = null,
     val startSec: Int? = null,
     val then: List<PlayRequest> = emptyList(),
+    /** The video's library when the page that plays it knows it (null: the Player asks the home). */
+    val libraryId: String? = null,
 )
 
 /** Where a video resumes (story 55.08): the saved position, unless it was finished or is over 95% in, then 0. */
@@ -153,7 +160,8 @@ class Playback(
     private val scope: CoroutineScope,
     /** Outlives the screen: a stopped video's last position and its session's close still go out. */
     private val background: CoroutineScope,
-    private val signedOut: () -> Unit,
+    /** The app's sign-out, for a sign-in the home no longer takes (the time's-up screen tells it too). */
+    val signedOut: () -> Unit,
     /** The playback settings now (Profile's Playback, story 55.09). */
     private val settings: () -> PlaybackValues = { PlaybackValues() },
     /** What the home has on now (chapters are read only when they are on). */
@@ -193,6 +201,13 @@ class Playback(
 
     /** The home could not check the account's time at the last progress post (503); the next one asks again. */
     var cannotCheck by mutableStateOf(false)
+        private set
+
+    /**
+     * The playing video's library (null until known): a restricted account's time is asked for
+     * with it, as a rule may be on one library only (story 57.15).
+     */
+    var libraryId by mutableStateOf<String?>(null)
         private set
     var playing by mutableStateOf(false)
         private set
@@ -254,6 +269,9 @@ class Playback(
     @Volatile private var failed: String? = null
     @Volatile private var cues: List<Cue> = emptyList()
     private var running: Job? = null
+    /** The reopen after a lapsed lease (`no_heartbeat`), and when the last one took. */
+    private var lapseReopen: Job? = null
+    private var lapseReopenedAt = 0L
     /** The running video's scope: its changes are its children, so another video or Close stops them. */
     private var video: CoroutineScope? = null
     /** Moves on with each [stop]: work begun for an earlier video sees it and drops what it made. */
@@ -274,6 +292,8 @@ class Playback(
         running?.cancel()
         running = null
         video = null
+        lapseReopen = null
+        lapseReopenedAt = 0L
         val s = session
         if (s != null) {
             val at = (positionMs / 1000).toInt()
@@ -289,6 +309,7 @@ class Playback(
         timeUp = null
         endedByHome = false
         cannotCheck = false
+        libraryId = null
         note = null
         request = null
         playing = false
@@ -388,6 +409,8 @@ class Playback(
         video = this
         val start = r.startSec ?: resumeAt(r)
         quality = chosenQuality ?: settings().qualityWifi.let { s -> if (s.maxBitrateKbps == null) QualityOption.Auto else QualityOption(s.height, s.maxBitrateKbps) }
+        libraryId = r.libraryId
+        if (r.libraryId == null) launch { libraryId = runCatching { client.videoDetail(r.videoId).libraryId.ifEmpty { null } }.getOrNull() }
         launch { findNext(r) }
         if (features().isOn(Feature.CHAPTERS)) launch { chapters = runCatching { client.chapters(r.videoId) }.getOrDefault(emptyList()) }
         open(fromMs = start * 1000L, kbps = quality.maxBitrateKbps)
@@ -686,6 +709,7 @@ class Playback(
         when (answer) {
             ProgressAnswer.Ok -> cannotCheck = false
             is ProgressAnswer.TimeOver -> {
+                if (lapsed(s, answer.refusal.reason, atMs)) return
                 halt()
                 background.launch { client.closeStream(s) }
                 timeIsUp(TimeUp(answer.refusal.reason, answer.refusal.nextAllowedAt, atMs))
@@ -697,6 +721,25 @@ class Playback(
             is ProgressAnswer.CannotCheck -> cannotCheck = true
             is ProgressAnswer.Failed -> {}
         }
+    }
+
+    /**
+     * `no_heartbeat` is not the time being over: session [s] sent no progress for a minute (a
+     * long pause) and its lease lapsed. It is opened again once, at [atMs]; the home's answer to
+     * that open says whether there is time ([open] shows time's up when there is not). A lapse
+     * again right after such a reopen stops. False: this refusal stops the video.
+     */
+    private fun lapsed(s: String, reason: String, atMs: Long): Boolean {
+        if (reason != TimeReason.NO_HEARTBEAT || System.currentTimeMillis() - lapseReopenedAt < LAPSE_REOPEN_ONCE_MS) return false
+        val v = video ?: return false
+        if (lapseReopen?.isActive == true) return true
+        val wasPlaying = playing
+        lapseReopen = v.launch {
+            open(fromMs = atMs)
+            if (session != null && session != s) lapseReopenedAt = System.currentTimeMillis()
+            if (!wasPlaying) player?.pause()
+        }
+        return true
     }
 
     /** Nothing plays on: the player goes and the session is let go (the request stays for the screen). */
