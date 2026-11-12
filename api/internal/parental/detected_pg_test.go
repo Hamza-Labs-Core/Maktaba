@@ -42,6 +42,7 @@ func (h *pgHome) recompute(video string) {
 
 // T03 on the database: a signal counts at or above the line, and only to tighten.
 func TestRecomputeDetectedTier(t *testing.T) {
+	t.Parallel()
 	h := newPGHome(t)
 	lib := h.library("detected")
 	v := h.video(lib)
@@ -117,6 +118,7 @@ func TestRecomputeDetectedTier(t *testing.T) {
 // A signal that cannot change a tier queues nothing; a change of the line asks for
 // every video once.
 func TestDetectedSignalQueuesOnlyWhatMatters(t *testing.T) {
+	t.Parallel()
 	h := newPGHome(t)
 	lib := h.library("queue")
 	v, w := h.video(lib), h.video(lib)
@@ -169,6 +171,7 @@ func TestDetectedSignalQueuesOnlyWhatMatters(t *testing.T) {
 // T06: the stage's role writes its own table and cannot write a video's tier, put a
 // recompute job in by hand, or call the trigger functions.
 func TestContentScreenRoleCannotWriteTiers(t *testing.T) {
+	t.Parallel()
 	h := newPGHome(t)
 	lib := h.library("role")
 	v := h.video(lib)

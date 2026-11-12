@@ -24,6 +24,7 @@ func fieldOf(out map[string]any) string {
 }
 
 func TestAddRuleUntilDayEnd(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.riyadh()
 	base := "/api/users/" + uChild + "/parental/rules"
@@ -82,6 +83,7 @@ func TestAddRuleUntilDayEnd(t *testing.T) {
 }
 
 func TestApproveUntilDayEnd(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	e.riyadh()

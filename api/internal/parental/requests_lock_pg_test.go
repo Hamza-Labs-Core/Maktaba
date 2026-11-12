@@ -16,6 +16,7 @@ import (
 // once. Taken the other way round the two wait on each other and the database
 // rolls one back.
 func TestApproveAndUnlockLockInOneOrder(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	ctx := context.Background()
 	e.restrict(uChild)

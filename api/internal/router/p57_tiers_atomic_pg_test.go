@@ -14,6 +14,7 @@ import (
 // videos.age_tier is refused). Before the fix the admin's 18 was stored with no job,
 // and no trigger watches age_tier_admin, so the video kept its looser tier for good.
 func TestP57VideoTierIsQueuedWithTheChange(t *testing.T) {
+	t.Parallel()
 	e := setupTiers(t)
 	lib := uuid.NewString()
 	e.exec(`INSERT INTO libraries (id, name, roots, age_tier) VALUES ($1, 'atomic', '{/media/atomic}', 9)`, lib)

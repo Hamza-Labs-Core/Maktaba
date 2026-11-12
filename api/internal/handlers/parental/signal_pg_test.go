@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync/atomic"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -74,12 +75,12 @@ func setupSignal(t *testing.T) *sigEnv {
 	return e
 }
 
-var famSeq int
+// famSeq numbers the sign-ins the package's tests make (they run side by side).
+var famSeq atomic.Int64
 
 func (e *env) family(user string) string {
 	e.t.Helper()
-	famSeq++
-	fam := fmt.Sprintf("00000000-0000-4000-8000-0000572f%04d", famSeq)
+	fam := fmt.Sprintf("00000000-0000-4000-8000-0000572f%04d", famSeq.Add(1))
 	e.exec(`INSERT INTO refresh_tokens (id, user_id, hash, family_id, expires_at)
 	        VALUES (gen_random_uuid(), $1, $2, $3, now() + interval '30 days')`, user, "h-"+fam, fam)
 	return fam
@@ -94,6 +95,7 @@ type obj = map[string]any
 // Every signal route, as every caller. The columns are who: no one, a viewer, the
 // child, the child's guardian, another child's guardian, an admin.
 func TestSignalRoles(t *testing.T) {
+	t.Parallel()
 	e := setupSignal(t)
 	pg13 := obj{"movie_ceiling": 300}
 
@@ -155,6 +157,7 @@ func TestSignalRoles(t *testing.T) {
 
 // T06 over HTTP, and the edges of the two routes.
 func TestSignalRoutes(t *testing.T) {
+	t.Parallel()
 	e := setupSignal(t)
 	fam := e.fam["child"]
 

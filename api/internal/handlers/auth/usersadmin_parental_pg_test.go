@@ -31,6 +31,7 @@ func newParentalUsers(t *testing.T) *parentalUsers {
 	t.Helper()
 	db, _ := clustertest.ScratchDB(t)
 	store := users.New(db)
+	store.Params = lightHash() // what a hash costs is not what these tests check
 	admin, err := store.Create(context.Background(), users.CreateInput{Username: "pu-admin", Password: parentalTestPassword, IsAdmin: true})
 	if err != nil {
 		t.Fatalf("seed admin: %v", err)

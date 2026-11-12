@@ -14,10 +14,12 @@ import (
 	"log/slog"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lib/pq"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/argon2id"
 	parentalh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/parental"
@@ -47,8 +49,6 @@ func (n recorder) Notify(_ context.Context, kind string, p notify.Payload) error
 	return nil
 }
 
-var askOf = map[*env]*parentalh.AskHandler{}
-
 // mountAsk mounts the ask, PIN and activity routes beside 57.02's, on the env's
 // clock, with a recording notifier, one right password and no least answer time.
 func (e *env) mountAsk(r chi.Router, store *parental.Store) {
@@ -74,43 +74,61 @@ func (e *env) mountAsk(r chi.Router, store *parental.Store) {
 		Now:       now,
 	}
 	h.Mount(r)
-	askOf[e] = h
-	e.t.Cleanup(func() { delete(askOf, e) })
+	e.ask = h
 }
+
+const videoSQL = `INSERT INTO videos (id, library_id, path, filename, content_hash, size_bytes, mtime, state, title, duration_sec, updated_at, created_at, age_tier)
+		VALUES ($1::uuid, $2, '/media/' || $1::text || '.mp4', $1::text || '.mp4', encode(sha256(convert_to($1::text, 'UTF8')), 'hex'), 1000, now(), 'ready', $3, 100, now(), now(), $4)
+		ON CONFLICT (id) DO NOTHING`
 
 func (e *env) video(id, lib, title string, tier any) {
 	e.t.Helper()
-	e.exec(`INSERT INTO videos (id, library_id, path, filename, content_hash, size_bytes, mtime, state, title, duration_sec, updated_at, created_at, age_tier)
-		VALUES ($1::uuid, $2, '/media/' || $1::text || '.mp4', $1::text || '.mp4', encode(sha256(convert_to($1::text, 'UTF8')), 'hex'), 1000, now(), 'ready', $3, 100, now(), now(), $4)
-		ON CONFLICT (id) DO NOTHING`, id, lib, title, tier)
+	e.exec(videoSQL, id, lib, title, tier)
 }
 
-var pinHash string
+// pinHash is thePIN's light hash, made once for the package's tests (they run side by
+// side, each on its own database).
+var pinHash = sync.OnceValues(func() (string, error) {
+	// a light hash: these tests try the PIN some hundreds of times, and what a
+	// try costs is not what they check (TestSetPIN keeps the real hash, and
+	// TestUnlockTiming the least time an answer takes)
+	light := argon2id.DefaultParams()
+	light.Memory, light.Time = 64, 1
+	return argon2id.Hash(thePIN, light)
+})
 
 // askReset is reset plus the two videos, no PINs but the guardian's and the
-// admin's, and nothing asked.
+// admin's, and nothing asked. It goes as one message, as reset does.
 func (e *env) askReset() {
 	e.t.Helper()
-	e.reset()
-	e.notices = nil
-	e.video(vidOpen, libOpen, "Open Sixteen", 16)
-	e.video(vidOpen2, libOpen, "Open Unrated", nil)
-	e.video(vidClosed, libClosed, "Closed One", 16)
-	e.exec(`DELETE FROM parental_pins`)
-	if pinHash == "" {
-		// a light hash: these tests try the PIN some hundreds of times, and what a
-		// try costs is not what they check (TestSetPIN keeps the real hash, and
-		// TestUnlockTiming the least time an answer takes)
-		light := argon2id.DefaultParams()
-		light.Memory, light.Time = 64, 1
-		h, err := argon2id.Hash(thePIN, light)
-		if err != nil {
-			e.t.Fatalf("hash the pin: %v", err)
-		}
-		pinHash = h
+	q, err := askResetSQL()
+	if err != nil {
+		e.t.Fatalf("hash the pin: %v", err)
 	}
-	e.exec(`INSERT INTO parental_pins (guardian_id, pin_hash) VALUES ($1, $3), ($2, $3)`, uGuardian, uAdmin, pinHash)
+	e.notices = nil
+	e.exec(q)
 }
+
+// askResetSQL is askReset's statements, in order: reset's, the videos (video's
+// statement with the values written in) and the two PINs.
+var askResetSQL = sync.OnceValues(func() (string, error) {
+	h, err := pinHash()
+	if err != nil {
+		return "", err
+	}
+	video := func(id, lib, title, tier string) string {
+		return strings.NewReplacer("$1", pq.QuoteLiteral(id), "$2", pq.QuoteLiteral(lib), "$3", pq.QuoteLiteral(title), "$4", tier).Replace(videoSQL)
+	}
+	return strings.Join([]string{
+		resetSQL,
+		video(vidOpen, libOpen, "Open Sixteen", "16"),
+		video(vidOpen2, libOpen, "Open Unrated", "NULL"),
+		video(vidClosed, libClosed, "Closed One", "16"),
+		`DELETE FROM parental_pins`,
+		`INSERT INTO parental_pins (guardian_id, pin_hash) VALUES (` + pq.QuoteLiteral(uGuardian) + `, ` + pq.QuoteLiteral(h) + `), (` +
+			pq.QuoteLiteral(uAdmin) + `, ` + pq.QuoteLiteral(h) + `)`,
+	}, ";\n"), nil
+})
 
 func (e *env) raw(as, method, path string, body any) *httptest.ResponseRecorder {
 	e.t.Helper()
@@ -146,6 +164,7 @@ func unlock(guardian, pin, id string) map[string]any {
 // 57.06 T06 and 57.08 T04: every new route, as every caller, and a refusal
 // changes nothing.
 func TestAskRoles(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	routes := []struct {
 		name, method, path string
@@ -216,6 +235,7 @@ func TestAskRoles(t *testing.T) {
 
 // 57.06 T01: a request, approved with an expiry, allows the subject until then.
 func TestAskApproveWithExpiry(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	e.clock = time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
@@ -298,6 +318,7 @@ func ptr(n int) *int { return &n }
 // 57.06 T02: the same thing asked twice is one row; the 21st waiting request is
 // refused; a subject that is missing or in a library the child cannot open is 404.
 func TestAskDuplicateAndLimit(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	first := e.want(201, "child", "POST", "/api/me/parental/requests", ask("video", vidOpen))["request"].(map[string]any)
@@ -338,6 +359,7 @@ func TestAskDuplicateAndLimit(t *testing.T) {
 // A request expires after seven days, or when what it asks for is deleted; one
 // the child can now see anyway closes as approved.
 func TestRequestsClose(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	ctx := context.Background()
@@ -403,6 +425,7 @@ func TestRequestsClose(t *testing.T) {
 // 57.06 T03: a right PIN allows the subject until 04:00 home time, writes the
 // event and closes the waiting request for it.
 func TestUnlockRightPIN(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	e.exec(`INSERT INTO app_settings (key, value) VALUES ('home.timezone', '"Asia/Riyadh"')
@@ -453,6 +476,7 @@ func TestUnlockRightPIN(t *testing.T) {
 // long each time, up to 24 hours); ten in an hour from one child close PIN entry
 // for that account; twenty from one address close it for that address.
 func TestUnlockWrongPINs(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	e.clock = time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)
@@ -466,7 +490,8 @@ func TestUnlockWrongPINs(t *testing.T) {
 	// the same answer for a wrong PIN, a guardian of another child, a guardian with
 	// no PIN, a user who is no guardian and a user who does not exist
 	e.exec(`DELETE FROM parental_pins WHERE guardian_id = $1`, uAdmin)
-	e.exec(`INSERT INTO parental_pins (guardian_id, pin_hash) VALUES ($1, $2)`, uOtherG, pinHash)
+	light, _ := pinHash() // askReset made it
+	e.exec(`INSERT INTO parental_pins (guardian_id, pin_hash) VALUES ($1, $2)`, uOtherG, light)
 	for i, g := range []string{uGuardian, uOtherG, uAdmin, uViewer, "00000000-0000-4000-8000-0000572000ee", "nobody"} {
 		pin := "000000"
 		if g == uOtherG {
@@ -621,9 +646,10 @@ func TestUnlockWrongPINs(t *testing.T) {
 // 57.06 T05: a right PIN, a wrong one and a refused try all take at least 250 ms
 // and the refusals have one shape.
 func TestUnlockTiming(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
-	askOf[e].MinAnswer = 0 // the real least time
+	e.ask.MinAnswer = 0 // the real least time
 	shape := func(body []byte) string {
 		var out map[string]any
 		_ = json.Unmarshal(body, &out)
@@ -665,6 +691,7 @@ func TestUnlockTiming(t *testing.T) {
 // 57.06 T07: a new request tells each guardian once; the notice has no title, no
 // name and no id of what was asked for.
 func TestAskNotice(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	e.exec(`INSERT INTO parental_guardians (child_id, guardian_id) VALUES ($1, $2)`, uChild, uViewer)
@@ -701,13 +728,14 @@ func TestAskNotice(t *testing.T) {
 	}
 	// no notifier: the request is still made
 	e.askReset()
-	askOf[e].Notify = nil
+	e.ask.Notify = nil
 	e.want(201, "child", "POST", "/api/me/parental/requests", ask("video", vidOpen))
 }
 
 // Setting a PIN: six digits, the password typed again, and wrong passwords are
 // limited.
 func TestSetPIN(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	e.exec(`DELETE FROM parental_pins`)
@@ -761,6 +789,7 @@ func (e *env) play(user, video string, seconds int, percent float64) {
 // 57.08 T01 and T05: a play of 60 seconds (or 20 percent) is one watched event, a
 // shorter one none, and an account that is not restricted gets nothing.
 func TestActivityWatched(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	ctx := context.Background()
@@ -842,6 +871,7 @@ func TestActivityWatched(t *testing.T) {
 // 57.08 T02: three blocked hits on one thing in one day are one event; the day
 // ends at 04:00 home time.
 func TestActivityBlockedOncePerDay(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	ctx := context.Background()
@@ -877,6 +907,7 @@ func TestActivityBlockedOncePerDay(t *testing.T) {
 // 57.08 T03: the daily pass deletes events older than 90 days; the list never
 // shows one; pages are 50, newest first.
 func TestActivityRetentionAndPages(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	ctx := context.Background()

@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/argon2id"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/jwt"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	authmw "github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/middleware"
@@ -91,6 +92,7 @@ func (in *signIn) do(want int, method, path string, body any) map[string]any {
 }
 
 func TestDeviceSignalRidesTheAccessToken(t *testing.T) {
+	t.Parallel()
 	db, _ := clustertest.ScratchDB(t)
 	set := keys.NewSet(time.Hour)
 	k, err := keys.Generate(keys.MinBits)
@@ -99,14 +101,21 @@ func TestDeviceSignalRidesTheAccessToken(t *testing.T) {
 	}
 	set.Replace(k)
 	r := chi.NewRouter()
-	if router.MountP9(r, router.P9Deps{DB: db, Keys: set}) == nil {
+	ah := router.MountP9(r, router.P9Deps{DB: db, Keys: set})
+	if ah == nil {
 		t.Fatal("MountP9 mounted nothing")
 	}
+	// light hashes: the sign-ins and refreshes here hash a password or a refresh
+	// secret some twenty times, and what a hash costs is not what this test checks
+	light := argon2id.DefaultParams()
+	light.Memory, light.Time = 64, 1
+	ah.Users.Params, ah.RefreshTokens.Params = light, light
 	router.MountParental(context.Background(), r, db, runner.New(runner.Options{}), "", nil)
 	home := &signalHome{t: t, keys: set, h: authmw.JWTBearer(set, "api")(r)}
 
 	ctx := context.Background()
 	us := users.New(db)
+	us.Params = light
 	mk := func(name string, admin bool) string {
 		u, err := us.Create(ctx, users.CreateInput{Username: name, Password: "correct horse battery", IsAdmin: admin})
 		if err != nil {

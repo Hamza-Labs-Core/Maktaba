@@ -81,6 +81,7 @@ func (e *env) restrict(id string) *parental.Policy {
 // T01: a policy on an admin, admin on a restricted account, and a restricted
 // guardian are each refused, by the store and by the database under it.
 func TestRestrictedIsNeverAdminOrGuardian(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	ctx := context.Background()
 	in := parental.PolicyInput{MaxTier: parental.Tier9, Unrated: parental.UnratedHide}
@@ -131,6 +132,7 @@ func TestRestrictedIsNeverAdminOrGuardian(t *testing.T) {
 }
 
 func TestPolicyVersions(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	ctx := context.Background()
 	p := e.restrict(uChild)
@@ -166,6 +168,7 @@ func TestPolicyVersions(t *testing.T) {
 }
 
 func TestGuardiansChildrenAndAccess(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	ctx := context.Background()
 	e.restrict(uChild)
@@ -239,6 +242,7 @@ func TestGuardiansChildrenAndAccess(t *testing.T) {
 
 // T04 (store side): rules, and an allow on a library the child cannot open.
 func TestRules(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	ctx := context.Background()
 	e.restrict(uChild)
@@ -311,6 +315,7 @@ func TestRules(t *testing.T) {
 // T07: each change writes exactly one audit row, with ids and tiers and no title
 // or name.
 func TestAuditRows(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	ctx := context.Background()
 	rows := func() int { return e.count(`SELECT count(*) FROM audit_log WHERE action LIKE 'parental.%'`) }
@@ -408,6 +413,7 @@ func TestAuditRows(t *testing.T) {
 // drops its copy at once, and another process (a second cache on the same
 // database) hears the notification.
 func TestCacheSeesAChangeOnTheNextRead(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -493,6 +499,7 @@ func TestCacheSeesAChangeOnTheNextRead(t *testing.T) {
 
 // Without a listener nothing is cached: every read is the database's.
 func TestCacheWithoutAListenerReadsEveryTime(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	ctx := context.Background()
 	e.restrict(uChild)
@@ -508,6 +515,7 @@ func TestCacheWithoutAListenerReadsEveryTime(t *testing.T) {
 
 // T06 (store side): who may approve a device as whom.
 func TestApproveAs(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	ctx := context.Background()
 	e.restrict(uChild)

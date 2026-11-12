@@ -36,6 +36,7 @@ func (e *env) enabled() bool {
 // T02: while parental controls are off a device's signal is recorded, mints no `ac`,
 // limits no request, and the admins are told once; turned on, what was recorded holds.
 func TestSignalWhileOffIsRecordedNotApplied(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.off()
 	ctx := context.Background()
@@ -117,6 +118,7 @@ func TestSignalWhileOffIsRecordedNotApplied(t *testing.T) {
 // T03: the first restricted account turns parental controls on; off is refused while
 // an account is restricted; each change of the switch is one audit row.
 func TestFirstRestrictedAccountTurnsItOn(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.off()
 	ctx := context.Background()
@@ -190,6 +192,7 @@ func TestFirstRestrictedAccountTurnsItOn(t *testing.T) {
 
 // T04 against the database: a library that is mostly lectures starts at All ages.
 func TestLibrarySuggestions(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	video := func(lib, typ string, n int) {
 		for i := 0; i < n; i++ {

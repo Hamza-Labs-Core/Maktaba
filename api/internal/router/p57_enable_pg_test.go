@@ -43,6 +43,7 @@ func updated(t *testing.T) *p57Home {
 }
 
 func TestP57ExistingHome(t *testing.T) {
+	t.Parallel()
 	h := updated(t)
 
 	// T01: every account sees what it saw: the 16+ and the unrated video are listed for
@@ -139,6 +140,7 @@ func ptr(n int) *int { return &n }
 
 // The `parental` block of GET /api/capabilities for each caller, and its ETag.
 func TestP57CapabilitiesParental(t *testing.T) {
+	t.Parallel()
 	h := setupHome(t)
 	for who, want := range map[string]map[string]any{
 		"viewer":         {"enabled": true, "restricted": false, "tier_limit": nil, "can_manage": false},
@@ -197,6 +199,7 @@ func TestP57CapabilitiesParental(t *testing.T) {
 // allowed episode left out its 16+ sibling, and a stream for a video in a library a rule
 // blocks answers as for a video that is not there.
 func TestP57RehearsalFindings(t *testing.T) {
+	t.Parallel()
 	h := setupHome(t)
 	code, card := h.get("child", "/api/videos/"+pfKid+"/context")
 	if code != http.StatusOK || strings.Contains(card, pfTeen) || strings.Contains(card, pfTeenName) {

@@ -14,6 +14,7 @@ import (
 )
 
 func TestLiveGuardPostgres(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	seedFilter(e)
 	gate := parental.NewGate()

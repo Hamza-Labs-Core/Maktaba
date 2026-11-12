@@ -47,7 +47,7 @@ func (e *env) mountTime(r chi.Router, store *parental.Store) {
 	e.keeper = parental.NewTimeKeeper(cache, e.push)
 	(&parentalh.Handler{Store: store, Cache: cache, Time: e.keeper}).MountTime(r)
 	// an approved request for more time tells the same keeper (requests_time_pg_test.go)
-	if ask := askOf[e]; ask != nil {
+	if ask := e.ask; ask != nil {
 		ask.Time = e.keeper
 	}
 }
@@ -72,6 +72,7 @@ func (e *env) riyadh() *time.Location {
 
 // T06: every time route, as every caller.
 func TestTimeRoles(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.riyadh()
 	base := "/api/parental/users/" + uChild
@@ -129,6 +130,7 @@ func TestTimeRoles(t *testing.T) {
 // The rules as the routes keep them: a PUT replaces them all, a bad rule is 422
 // and changes nothing, and streaming is told of a change at once.
 func TestTimeRulesRoute(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.riyadh()
 	path := "/api/parental/users/" + uChild + "/time-rules"
@@ -171,6 +173,7 @@ func TestTimeRulesRoute(t *testing.T) {
 // T05 through the route: a grant opens today for its minutes and no other day; the
 // child's own countdown shows it; asking the countdown renews no stream's lease.
 func TestTimeGrantRoute(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	loc := e.riyadh()
 	base := "/api/parental/users/" + uChild

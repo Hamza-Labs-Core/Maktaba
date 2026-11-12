@@ -33,6 +33,7 @@ func (e *env) waitingTime() {
 }
 
 func TestAskTimeRoles(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	e.riyadh()
@@ -100,6 +101,7 @@ func TestAskTimeRoles(t *testing.T) {
 // the guardian's own number), tells the time keeper, and shows in the list and
 // the activity.
 func TestAskTimeAndApprove(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	e.riyadh() // Tuesday 10 November 2026, 17:00 in Riyadh (14:00 UTC)
@@ -255,6 +257,7 @@ func TestAskTimeAndApprove(t *testing.T) {
 
 // Denying gives nothing.
 func TestAskTimeDenied(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	e.riyadh()
@@ -281,6 +284,7 @@ func TestAskTimeDenied(t *testing.T) {
 // listed as expired, approving it gives nothing, the loop closes it, and the child
 // can ask again for the new day.
 func TestAskTimeExpiresAtDayEnd(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	loc := e.riyadh()
@@ -348,6 +352,7 @@ func TestAskTimeExpiresAtDayEnd(t *testing.T) {
 // A right PIN is a time grant for the minutes typed, no rule, and it answers the
 // waiting request for time; a wrong PIN or bad minutes give nothing.
 func TestUnlockTime(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	e.riyadh()

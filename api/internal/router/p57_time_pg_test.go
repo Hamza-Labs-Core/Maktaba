@@ -300,6 +300,7 @@ func TestPGTimeLimitRefusesStreams(t *testing.T) {
 // cannot be told, and a signer that cannot say whether the time is kept all refuse
 // a restricted account's stream; nobody else is touched.
 func TestPGTimeWiringFailsClosed(t *testing.T) {
+	t.Parallel()
 	db := seedTime(t)
 	unavailable := func(what string, code int, body map[string]any) {
 		t.Helper()

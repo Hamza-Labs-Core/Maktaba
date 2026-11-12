@@ -130,6 +130,7 @@ func (e *tiersEnv) want(video string, tier int, source string) {
 // T08 and the acceptance criteria, through the router: each route as no one, a viewer, a
 // viewer's API token and the admin; what the admin's change stores; what the videos become.
 func TestP57TiersPG(t *testing.T) {
+	t.Parallel()
 	e := setupTiers(t)
 	lib, other := uuid.NewString(), uuid.NewString()
 	e.exec(`INSERT INTO libraries (id, name, roots) VALUES ($1, 'tiers', '{/media/tiers}'), ($2, 'other', '{/media/other}')`, lib, other)

@@ -103,6 +103,7 @@ func (h *pgHome) want(video string, tier int, source string) {
 // T04: a library of 3,000 videos is worked in three batches of 1,000, and working
 // the job again changes nothing.
 func TestRecomputeLibraryInBatches(t *testing.T) {
+	t.Parallel()
 	h := newPGHome(t)
 	lib := h.library("batches")
 	h.videos(lib, 3000)
@@ -169,6 +170,7 @@ func TestRecomputeLibraryInBatches(t *testing.T) {
 // it appears and gives way as it goes, and the stages' changes reach the queue
 // through the triggers alone.
 func TestRecomputeFollowsEverySource(t *testing.T) {
+	t.Parallel()
 	h := newPGHome(t)
 	lib := h.library("chain")
 	v := h.video(lib)
@@ -332,6 +334,7 @@ func TestRecomputeFollowsEverySource(t *testing.T) {
 // A new video in a library with a default, and a video moved to another library,
 // are rated without anybody asking; a YouTube source's tier reaches its downloads.
 func TestRecomputeNewAndMovedVideos(t *testing.T) {
+	t.Parallel()
 	h := newPGHome(t)
 	kids, grown := h.library("kids"), h.library("grown")
 	h.exec(`UPDATE libraries SET age_tier = 0 WHERE id = $1`, kids)
@@ -356,6 +359,7 @@ func TestRecomputeNewAndMovedVideos(t *testing.T) {
 // The job the migration puts in becomes one job for each library, and a job
 // nothing can work is dropped instead of holding the queue.
 func TestRecomputeAllAndInvalidJobs(t *testing.T) {
+	t.Parallel()
 	h := newPGHome(t)
 	a, b := h.library("one"), h.library("two")
 	va, vb := h.video(a), h.video(b)
@@ -380,6 +384,7 @@ func TestRecomputeAllAndInvalidJobs(t *testing.T) {
 // collection the video is in is 18 from admin_container; a plugin's G against
 // Plex's R stays 18.
 func TestRecomputeAcceptance(t *testing.T) {
+	t.Parallel()
 	h := newPGHome(t)
 	lib := h.library("accept")
 	v, w := h.video(lib), h.video(lib)
@@ -400,6 +405,7 @@ func TestRecomputeAcceptance(t *testing.T) {
 // every right a stage has on the tables still cannot put a job in by hand, while
 // its writes still reach the queue through the triggers.
 func TestEnqueueFunctionIsTheOwnersAlone(t *testing.T) {
+	t.Parallel()
 	h := newPGHome(t)
 	lib := h.library("roles")
 	v := h.video(lib)
@@ -448,6 +454,7 @@ func TestEnqueueFunctionIsTheOwnersAlone(t *testing.T) {
 // it left, whatever that video's stored source says: a tier nothing gives any more
 // never stays behind.
 func TestRemovedSourceLinksQueueTheOldVideo(t *testing.T) {
+	t.Parallel()
 	h := newPGHome(t)
 	lib := h.library("links")
 	a, b := h.video(lib), h.video(lib)

@@ -40,6 +40,7 @@ func keysOf(m map[string]any) string {
 
 // Every caller: only a restricted account reads the list, exactly as only it asks.
 func TestOwnRequestsRoles(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	e.exec(`INSERT INTO parental_requests (id, child_id, subject_kind, subject_id) VALUES ($1, $2, 'video', $3)`, reqID, uChild, vidOpen)
@@ -69,6 +70,7 @@ func TestOwnRequestsRoles(t *testing.T) {
 // The child reads its own requests and no one else's; a second child's are never
 // listed, and the second child reads only its own.
 func TestOwnRequestsAreTheCallersOnly(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	const other = "00000000-0000-4000-8000-0000572000c1"
@@ -100,6 +102,7 @@ func TestOwnRequestsAreTheCallersOnly(t *testing.T) {
 // Each status as the child reads it, and what a row says: ids and times only, no
 // title, no child, no one who answered.
 func TestOwnRequestsStatusesAndShape(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	loc := e.riyadh() // 17:00 on 10 November 2026, Riyadh
@@ -182,6 +185,7 @@ func TestOwnRequestsStatusesAndShape(t *testing.T) {
 // A request whose subject the child can no longer reach, or that is gone, is still
 // listed, by its id only.
 func TestOwnRequestsKeepAnUnreachableSubject(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	id := e.want(201, "child", "POST", ownPath, ask("video", vidOpen))["request"].(map[string]any)["id"].(string)
@@ -205,6 +209,7 @@ func TestOwnRequestsKeepAnUnreachableSubject(t *testing.T) {
 
 // The bounds: seven days back, fifty at most, newest first.
 func TestOwnRequestsBounds(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	e.askReset()
 	e.clock = time.Date(2026, 11, 11, 12, 0, 0, 0, time.UTC)

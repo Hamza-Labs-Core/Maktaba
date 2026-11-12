@@ -17,6 +17,7 @@ import (
 // library the child was once refused in would otherwise refuse the account's new
 // stream URLs until streaming restarts.
 func TestLiftClearsWhatStreamingHolds(t *testing.T) {
+	t.Parallel()
 	e := setupTime(t)
 	ctx := context.Background()
 	e.rules(limit(everyDay, 60, ""))
@@ -51,6 +52,7 @@ func TestLiftClearsWhatStreamingHolds(t *testing.T) {
 // Removing every time rule drops the end streaming holds for the account in every
 // library, also one no session is playing in.
 func TestNoRulesLeftClearsEveryEnd(t *testing.T) {
+	t.Parallel()
 	e := setupTime(t)
 	ctx := context.Background()
 	e.rules(limit(everyDay, 60, ""))
@@ -75,6 +77,7 @@ func TestNoRulesLeftClearsEveryEnd(t *testing.T) {
 // Making an account restricted tells streaming it is kept, so a stream URL signed
 // before that (it names no session) is refused.
 func TestRestrictingTellsStreaming(t *testing.T) {
+	t.Parallel()
 	e := setupTime(t)
 	ctx := context.Background()
 	e.restrict(uViewer)
@@ -89,6 +92,7 @@ func TestRestrictingTellsStreaming(t *testing.T) {
 // A progress post that finds no mark (the API restarted) counts one heartbeat at
 // most, never the whole session since it opened: that was counted already.
 func TestRebuiltMarkCountsOneHeartbeatAtMost(t *testing.T) {
+	t.Parallel()
 	e := setupTime(t)
 	e.rules(limit(everyDay, 600, ""))
 	v := e.video(libOpen)
@@ -116,6 +120,7 @@ func TestRebuiltMarkCountsOneHeartbeatAtMost(t *testing.T) {
 
 // A progress post after the session closed is not counted again and gives no lease.
 func TestClosedSessionGetsNoMarkAndNoLease(t *testing.T) {
+	t.Parallel()
 	e := setupTime(t)
 	ctx := context.Background()
 	e.rules(limit(everyDay, 600, ""))
@@ -151,6 +156,7 @@ func TestClosedSessionGetsNoMarkAndNoLease(t *testing.T) {
 // Calls for one session run together (two progress posts, and another session's
 // call that settles the account): under -race this reads no mark outside the lock.
 func TestConcurrentCallsForOneSession(t *testing.T) {
+	t.Parallel()
 	e := setupTime(t)
 	ctx := context.Background()
 	e.rules(limit(everyDay, 600, ""))

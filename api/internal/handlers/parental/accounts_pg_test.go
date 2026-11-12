@@ -11,10 +11,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lib/pq"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
@@ -50,6 +52,8 @@ type env struct {
 	// story 57.14 (time_pg_test.go): what streaming was told
 	push   *timePush
 	keeper *parental.TimeKeeper
+	// the ask, PIN and activity routes' handler (requests_pg_test.go)
+	ask *parentalh.AskHandler
 }
 
 func setup(t *testing.T) *env {
@@ -119,12 +123,21 @@ func (e *env) count(q string, args ...any) int {
 // the other guardian.
 func (e *env) reset() {
 	e.t.Helper()
-	e.exec(`DELETE FROM parental_policies`)
-	e.exec(`UPDATE users SET is_admin = false WHERE id NOT IN ($1)`, uAdmin)
-	e.exec(`INSERT INTO parental_policies (user_id, max_tier, version) VALUES ($1, 9, 1), ($2, 13, 1)`, uChild, uChild2)
-	e.exec(`INSERT INTO parental_guardians (child_id, guardian_id) VALUES ($1,$2), ($3,$4)`, uChild, uGuardian, uChild2, uOtherG)
-	e.exec(`INSERT INTO parental_rules (id, user_id, effect, subject_kind, subject_id) VALUES ($1,$2,'block','video','v-blocked')`, ruleID, uChild)
+	e.exec(resetSQL)
 }
+
+// resetSQL is reset's statements, in order, as one message (the role tests reset
+// before every call, and a round trip each was most of their time); the fixtures'
+// ids are written in, a message of several statements taking no parameters.
+var resetSQL = strings.NewReplacer(
+	"$child2", pq.QuoteLiteral(uChild2), "$child", pq.QuoteLiteral(uChild), "$guardian", pq.QuoteLiteral(uGuardian),
+	"$other", pq.QuoteLiteral(uOtherG), "$admin", pq.QuoteLiteral(uAdmin), "$rule", pq.QuoteLiteral(ruleID),
+).Replace(`
+	DELETE FROM parental_policies;
+	UPDATE users SET is_admin = false WHERE id NOT IN ($admin);
+	INSERT INTO parental_policies (user_id, max_tier, version) VALUES ($child, 9, 1), ($child2, 13, 1);
+	INSERT INTO parental_guardians (child_id, guardian_id) VALUES ($child, $guardian), ($child2, $other);
+	INSERT INTO parental_rules (id, user_id, effect, subject_kind, subject_id) VALUES ($rule, $child, 'block', 'video', 'v-blocked')`)
 
 func (e *env) do(as, method, path string, body any) (int, map[string]any) {
 	e.t.Helper()
@@ -164,6 +177,7 @@ func (e *env) want(status int, as, method, path string, body any) map[string]any
 // T02: every route, as every caller. The columns are who: no one, a viewer, the
 // child, the child's guardian, another child's guardian, an admin.
 func TestRoles(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	base := "/api/users/" + uChild + "/parental"
 	routes := []struct {
@@ -220,6 +234,7 @@ func TestRoles(t *testing.T) {
 }
 
 func TestChildrenAndOwnLimit(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	ids := func(as string) []string {
 		t.Helper()
@@ -266,6 +281,7 @@ func TestChildrenAndOwnLimit(t *testing.T) {
 }
 
 func TestPolicyLifecycle(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	base := "/api/users/" + uViewer + "/parental"
 	// not restricted yet: nothing to read
@@ -348,6 +364,7 @@ func TestPolicyLifecycle(t *testing.T) {
 
 // T04: rules, and an allow on a library the child cannot open.
 func TestRuleRoutes(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	base := "/api/users/" + uChild + "/parental/rules"
 	out := e.want(422, "guardian", "POST", base, map[string]any{"effect": "allow", "subject_kind": "library", "subject_id": libClosed})
@@ -394,6 +411,7 @@ func TestRuleRoutes(t *testing.T) {
 // A guardian signed in through a cloud link that may only play reads their
 // child's policy and changes nothing.
 func TestCloudPlayGuardianReadsOnly(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	base := "/api/users/" + uChild + "/parental"
 	e.want(200, "guardian-cloud-play", "GET", base, nil)
@@ -421,6 +439,7 @@ func TestCloudPlayGuardianReadsOnly(t *testing.T) {
 
 // The admin token (no user row) can manage; its changes are audited with no actor.
 func TestAdminTokenManages(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	base := "/api/users/" + uChild + "/parental"
 	e.want(200, "admin-token", "PUT", base, map[string]any{"max_tier": 13, "version": 1})

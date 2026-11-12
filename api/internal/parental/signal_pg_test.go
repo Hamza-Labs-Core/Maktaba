@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,13 +17,13 @@ import (
 
 func np(n int) *int { return &n }
 
-var familySeq int
+// familySeq numbers the sign-ins the package's tests make (they run side by side).
+var familySeq atomic.Int64
 
 // family gives user a live sign-in (a refresh-token family) and returns its id.
 func (e *env) family(user string) string {
 	e.t.Helper()
-	familySeq++
-	fam := fmt.Sprintf("00000000-0000-4000-8000-0000574f%04d", familySeq)
+	fam := fmt.Sprintf("00000000-0000-4000-8000-0000574f%04d", familySeq.Add(1))
 	e.exec(`INSERT INTO refresh_tokens (id, user_id, hash, family_id, expires_at)
 	        VALUES (gen_random_uuid(), $1, $2, $3, now() + interval '30 days')`, user, "h-"+fam, fam)
 	return fam
@@ -59,6 +60,7 @@ func same(a *int, want int, has bool) bool {
 // T04: the strictest of the three is stored, with what the device said, and is
 // what a refresh puts in `ac`.
 func TestSignalStoresTheStrictestOfThree(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	fam := e.family(uViewer)
 	st := e.record(uViewer, fam, parental.SignalInput{
@@ -107,6 +109,7 @@ func TestSignalStoresTheStrictestOfThree(t *testing.T) {
 // waits and changes nothing; a clear applies what waited; a clear with nothing
 // waiting removes the signal; a fresh sign-in starts with none.
 func TestSignalRatchet(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	ctx := context.Background()
 	e.restrict(uChild) // 9+
@@ -195,6 +198,7 @@ func TestSignalRatchet(t *testing.T) {
 // A signal is only ever stored on a live sign-in of the account that sent it, and
 // the signals of ended sign-ins are swept.
 func TestSignalNeedsALiveSignIn(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	ctx := context.Background()
 	mine, theirs := e.family(uViewer), e.family(uChild)
@@ -237,6 +241,7 @@ func TestSignalNeedsALiveSignIn(t *testing.T) {
 // its sign-in's signal; another sign-in of the same account is not; an account
 // with no policy is held to the signal alone.
 func TestEffectiveIsTheStricterOfPolicyAndSignal(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	ctx := context.Background()
 	e.restrict(uChild) // 9+
@@ -330,6 +335,7 @@ func TestEffectiveIsTheStricterOfPolicyAndSignal(t *testing.T) {
 // A signal written or cleared by another process is seen on the next request: the
 // listening cache drops the account's signals on the notification.
 func TestCacheDropsASignalOnChange(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -15,6 +15,7 @@ const tmKeptAdmin = "00000000-0000-4000-8000-0000005714f3"
 // once through the production router: restricted, a stream URL signed before it is
 // refused there; lifted, nothing stale refuses the account's new URLs.
 func TestPGTimeKeptReachesStreaming(t *testing.T) {
+	t.Parallel()
 	db := seedTime(t)
 	if _, err := db.Exec(`INSERT INTO users (id, username, pw_hash, is_admin) VALUES ($1,'tm-admin','x',true)`, tmKeptAdmin); err != nil {
 		t.Fatal(err)

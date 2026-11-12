@@ -37,6 +37,7 @@ func (c *testClock) add(d time.Duration) {
 // with a device limit, and one never read are refused. A change that was heard, and time,
 // end the answer.
 func TestCacheWhenThePolicyCannotBeRead(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	ctx := context.Background()
 	e.restrict(uChild)
@@ -140,6 +141,7 @@ func TestCacheWhenThePolicyCannotBeRead(t *testing.T) {
 
 // The read is bounded: a database that does not answer does not hold the request.
 func TestCacheReadIsBounded(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	db, err := sql.Open("postgres", e.dsn)
 	if err != nil {
@@ -163,6 +165,7 @@ func TestCacheReadIsBounded(t *testing.T) {
 // Finding 9: no entry is trusted for longer than its maximum age, even when no change
 // was heard.
 func TestCacheEntriesHaveAMaximumAge(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	ctx := context.Background()
 	e.restrict(uChild)
@@ -206,6 +209,7 @@ func TestCacheEntriesHaveAMaximumAge(t *testing.T) {
 // Finding 6: a rule's uuid is stored in its canonical form whatever the client sent, and a
 // rule stored before that (in capitals) still names its subject.
 func TestRuleSubjectIDsAreCanonical(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	ctx := context.Background()
 	e.restrict(uChild)
@@ -255,6 +259,7 @@ func TestRuleSubjectIDsAreCanonical(t *testing.T) {
 // The note that lets an unrestricted sign-in through is never written for a state a heard
 // change has passed: the account is restricted between the read and the note.
 func TestCacheNoteDoesNotOutliveAChangeHeardDuringTheRead(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	ctx := context.Background()
 	db, err := sql.Open("postgres", e.dsn)
@@ -285,6 +290,7 @@ func TestCacheNoteDoesNotOutliveAChangeHeardDuringTheRead(t *testing.T) {
 // Nor is the note renewed by an answer from a kept entry: it ages from the database read
 // it came from.
 func TestCacheNoteIsNotRenewedFromAKeptEntry(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	ctx := context.Background()
 	db, err := sql.Open("postgres", e.dsn)

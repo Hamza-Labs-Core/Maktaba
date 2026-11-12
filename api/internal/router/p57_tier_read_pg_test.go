@@ -40,6 +40,7 @@ func tierIn(t *testing.T, body, list, id, field string) (bool, any) {
 }
 
 func TestP57TierReadBack(t *testing.T) {
+	t.Parallel()
 	e := setupFilter(t)
 	e.exec(`INSERT INTO youtube_sources (id, library_id, kind, url, external_id) VALUES ($1, $2, 'channel', 'https://example.test/tr', 'UCtr')`, trSource, pfLibA)
 
