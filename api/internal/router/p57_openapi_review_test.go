@@ -108,7 +108,7 @@ func TestOpenAPITierSourcesAreTheOnesTheAPIAnswers(t *testing.T) {
 	doc := openAPIJSON(t)
 	seen := 0
 	walkSchemas(doc["paths"], "/paths", "source", func(at string, s map[string]any) {
-		if _, ok := s["enum"]; !ok || !(strings.Contains(at, "age-tier") || strings.Contains(at, "parental~1review") || strings.Contains(at, "/parental/review")) {
+		if _, ok := s["enum"]; !ok || (!strings.Contains(at, "age-tier") && !strings.Contains(at, "parental~1review") && !strings.Contains(at, "/parental/review")) {
 			return
 		}
 		seen++
@@ -166,7 +166,7 @@ func TestOpenAPIArabicUsesOneTermForOneThing(t *testing.T) {
 		t.Fatal(err)
 	}
 	caller := regexp.MustCompile(`(?i)\bcaller`)
-	clear := regexp.MustCompile(`(?i)\bclear`)
+	clears := regexp.MustCompile(`(?i)\bclear`)
 	authorise := regexp.MustCompile(`[إأ]جاز|يجيز|تجيز`)
 	tierAsRating := regexp.MustCompile(`التصنيف العمري|تصنيف عمري|التصنيفات العمرية|تصنيفها العمري|تصنيفًا عمري`)
 	callers := 0
@@ -177,7 +177,7 @@ func TestOpenAPIArabicUsesOneTermForOneThing(t *testing.T) {
 		if caller.MatchString(s.En) && strings.Contains(s.Ar, "المتصل") {
 			callers++
 		}
-		if clear.MatchString(s.En) && authorise.MatchString(s.Ar) {
+		if clears.MatchString(s.En) && authorise.MatchString(s.Ar) {
 			t.Errorf("%s: to clear is rendered as to authorise: %s", key, s.Ar)
 		}
 		if tierAsRating.MatchString(s.Ar) {

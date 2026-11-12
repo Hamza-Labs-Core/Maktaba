@@ -146,6 +146,72 @@ class TvParentalTimeTest {
     }
 
     @Test
+    fun aLapsedLeaseReopensTheStreamOnceWhereItIs() {
+        val pb = playback()
+        pb.start()
+        runUntil { pb.player != null }
+        // a long pause: the stream's lease lapsed. That is not the time being over
+        progress = { if (opens() == 1) timeOver(TimeReason.NO_HEARTBEAT, next = null) else MockResponse.Builder().code(200).body("{}").build() }
+        pb.player!!.seekTo(30_000)
+        pb.player!!.playWhenReady = false
+        runUntil { opens() == 2 }
+        idleFor(1_000)
+        assertNull("no time's-up screen: the home gave the stream again", pb.timeUp)
+        assertNull(pb.problem)
+        assertNotNull(pb.player)
+        assertFalse("it was paused, and still is", pb.player!!.playWhenReady)
+        idleFor(60_000)
+        assertEquals("once", 2, opens())
+    }
+
+    @Test
+    fun aLapsedLeaseWhoseReopenIsRefusedShowsTimesUp() {
+        val pb = playback()
+        pb.start()
+        runUntil { pb.player != null }
+        progress = { timeOver(TimeReason.NO_HEARTBEAT, next = null) }
+        // the time ran out meanwhile: the home refuses the reopen
+        open = { timeOver(TimeReason.LIMIT_REACHED) }
+        pb.player!!.seekTo(30_000)
+        pb.player!!.playWhenReady = false
+        runUntil { pb.timeUp != null }
+        assertEquals(TimeReason.LIMIT_REACHED, pb.timeUp!!.refusal.reason)
+        assertEquals(30_000L, pb.timeUp!!.positionMs)
+        assertNull(pb.player)
+        idleFor(60_000)
+        assertEquals("the first open and the one reopen", 2, opens())
+    }
+
+    @Test
+    fun aLeaseThatLapsesAgainRightAfterItsReopenStops() {
+        val pb = playback()
+        pb.start()
+        runUntil { pb.player != null }
+        progress = { timeOver(TimeReason.NO_HEARTBEAT, next = null) }
+        pb.player!!.seekTo(30_000)
+        pb.player!!.playWhenReady = false
+        runUntil { opens() == 2 }
+        // the reopened stream's own post (it is paused again) is refused the same way: no loop of opens
+        runUntil { pb.timeUp != null }
+        assertEquals(TimeReason.NO_HEARTBEAT, pb.timeUp!!.refusal.reason)
+        idleFor(60_000)
+        assertEquals(2, opens())
+    }
+
+    @Test
+    fun theStreamItselfRefusedForNoHeartbeatIsRead() {
+        // the streaming service answered a segment with 403 parental-time, reason no_heartbeat
+        val body = """{"type":"https://maktaba.tv/problems/parental-time","status":403,"code":"parental_time","reason":"no_heartbeat"}"""
+        val http = androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException(
+            403, null, null, emptyMap(), androidx.media3.datasource.DataSpec(android.net.Uri.parse("http://home/stream/s1/seg0.ts")), body.toByteArray(),
+        )
+        val e = androidx.media3.common.PlaybackException("refused", http, androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS)
+        assertEquals(TimeReason.NO_HEARTBEAT, com.hamzalabs.maktaba.tv.playback.tvPlaybackTimeRefusal(e)!!.reason)
+        val other = androidx.media3.common.PlaybackException("x", java.io.IOException("y"), androidx.media3.common.PlaybackException.ERROR_CODE_IO_UNSPECIFIED)
+        assertNull(com.hamzalabs.maktaba.tv.playback.tvPlaybackTimeRefusal(other))
+    }
+
+    @Test
     fun checkAgainAsksForTheSameVideoWhereItStopped() {
         open = { timeOver(TimeReason.LIMIT_REACHED, next = null) }
         val pb = playback(startMs = 12_000)
@@ -199,8 +265,58 @@ class TvParentalTimeTest {
         runUntil { pb.problem != null }
         assertEquals(ErrorKind.Busy, pb.problem!!.kind)
         assertEquals(5L, pb.problem!!.retryAfterSec)
+        assertTrue("an older home's bare 503 to a restricted account: can't check the time, as before", pb.problem!!.cannotCheckTime(restricted = true))
         idleFor(30_000)
         assertEquals(1, opens())
+    }
+
+    @Test
+    fun aRateLimitOnOpenIsNotCannotCheckTheTimeAndTheHomesOwnCodeIs() {
+        open = { MockResponse.Builder().code(429).setHeader("Retry-After", "30").setHeader("Content-Type", "application/problem+json").body("""{"type":"https://maktaba.tv/problems/rate-limited","title":"Too many","status":429,"code":"rate_limited"}""").build() }
+        val limited = playback()
+        limited.start()
+        runUntil { limited.problem != null }
+        assertEquals(ErrorKind.Busy, limited.problem!!.kind)
+        assertFalse("a rate limit keeps its own words, for a restricted account too", limited.problem!!.cannotCheckTime(restricted = true))
+        limited.stop()
+
+        open = { MockResponse.Builder().code(503).setHeader("Retry-After", "5").setHeader("Content-Type", "application/problem+json").body("""{"type":"https://maktaba.tv/problems/unavailable","title":"service unavailable","status":503,"code":"parental_time_unknown"}""").build() }
+        val unknown = playback()
+        unknown.start()
+        runUntil { unknown.problem != null }
+        assertTrue(unknown.problem!!.cannotCheckTime(restricted = true))
+    }
+
+    @Test
+    fun anOpenThatAnswersAfterTheTimeRanOutPlaysNothingUnderTheTimesUpScreen() {
+        val pb = playback()
+        pb.start()
+        runUntil { pb.player != null }
+        // the lease lapsed: the stream is opened again, and the home is slow to answer
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val asked = java.util.concurrent.CountDownLatch(1)
+        open = {
+            asked.countDown()
+            gate.await(30, java.util.concurrent.TimeUnit.SECONDS)
+            MockResponse.Builder().code(201).setHeader("Content-Type", "application/json")
+                .body("""{"session_id":"s2","mode":"direct","direct_url":"/stream/s2/v1.mp4?sig=x","expires_at":"2099-01-01T00:00:00Z"}""").build()
+        }
+        progress = { timeOver(TimeReason.NO_HEARTBEAT, next = null) }
+        pb.player!!.seekTo(30_000)
+        pb.player!!.playWhenReady = false
+        runUntil { asked.count == 0L }
+        // meanwhile another progress post says the time is over
+        progress = { timeOver(TimeReason.LIMIT_REACHED) }
+        pb.player!!.playWhenReady = true
+        runUntil { pb.timeUp != null }
+        assertEquals(TimeReason.LIMIT_REACHED, pb.timeUp!!.refusal.reason)
+        // the open succeeds after all: nothing starts playing behind the screen
+        gate.countDown()
+        runUntil { "DELETE /api/stream/sessions/s2" in seen }
+        idleFor(1_000)
+        assertNull("no player under the time's-up screen", pb.player)
+        assertNotNull(pb.timeUp)
+        assertNull(pb.problem)
     }
 
     @Test

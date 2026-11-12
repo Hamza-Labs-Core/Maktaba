@@ -45,6 +45,11 @@ class HomeState(
     /** `GET /api/channels/now`, or null when there is no Live TV for this person. */
     private val liveNow: suspend () -> NowAnswer?,
     private val signedOut: () -> Unit,
+    /**
+     * Whether Home's answer may be kept on the device and shown from it (Epic 57 story 57.05):
+     * not for a sign-in under a parental limit, whose limit may tighten while the app is closed.
+     */
+    private val keepOnDisk: () -> Boolean = { true },
 ) {
     var rails by mutableStateOf<HomeRails?>(null)
         private set
@@ -84,7 +89,7 @@ class HomeState(
     suspend fun open() {
         if (!restored) {
             restored = true
-            if (rails == null) {
+            if (rails == null && keepOnDisk()) {
                 withContext(Dispatchers.IO) { cache?.read() }?.let { kept ->
                     rails = kept.rails
                     recs = kept.recs
@@ -202,6 +207,7 @@ class HomeState(
     private suspend fun save() {
         val r = rails ?: return
         val kept = CachedHome(r, recs, known.toMap())
-        withContext(Dispatchers.IO) { cache?.write(kept) }
+        val keep = keepOnDisk()
+        withContext(Dispatchers.IO) { if (keep) cache?.write(kept) else cache?.clear() }
     }
 }

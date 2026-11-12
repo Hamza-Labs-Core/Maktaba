@@ -79,9 +79,10 @@ fun VideoScreen(
     if (mine?.limited == true && failed?.kind == com.hamzalabs.maktaba.core.api.ErrorKind.NotFound) {
         TvBlocked(
             mine,
-            help = remember(id) { com.hamzalabs.maktaba.core.ui.ParentHelp(api.client, com.hamzalabs.maktaba.core.api.SubjectKind.VIDEO, id) },
+            help = remember(id) { com.hamzalabs.maktaba.core.ui.ParentHelp(api.client, com.hamzalabs.maktaba.core.api.SubjectKind.VIDEO, id, signedOut) },
             onUnlocked = retry,
             onBack = onBack,
+            onReturn = retry,
         )
         return
     }

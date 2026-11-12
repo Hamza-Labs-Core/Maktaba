@@ -126,9 +126,8 @@ fun WatchScreen(
     val timeUp = playback.timeUp
     val library = playback.video?.libraryId
     // the home's answer about the time, asked again while the video plays (never counted here)
-    LaunchedEffect(parental, restricted, library, timeUp == null) {
-        if (parental != null && restricted && timeUp == null) parental.followTime(library)
-    }
+    // and only while the app is in front: the sound may go on with the screen off, the poll does not
+    com.hamzalabs.maktaba.core.ui.FollowTimeWhileShown(parental, on = restricted && timeUp == null, libraryId = library)
     // where the video is drawn, in the window: the picture-in-picture window grows out of it
     var videoRect by remember { mutableStateOf<android.graphics.Rect?>(null) }
     val inPip = if (fullScreen) {
@@ -155,7 +154,7 @@ fun WatchScreen(
                 TimesUpScreen(
                     timeUp.refusal,
                     timeUp.positionMs,
-                    help = remember(client, timeUp) { ParentHelp(client, SubjectKind.TIME) },
+                    help = remember(client, timeUp) { ParentHelp(client, SubjectKind.TIME, signedOut = { playback.stop(); playback.signedOut() }) },
                     onCheck = playback::checkAgain,
                     modifier = Modifier.safeDrawingPadding().padding(top = 48.dp),
                     onBack = onClose,
@@ -167,7 +166,7 @@ fun WatchScreen(
                 BlockedPage(
                     mine ?: com.hamzalabs.maktaba.core.api.MyParental.None,
                     // only an account under a limit has a parent to ask
-                    help = remember(client, id) { if (mine?.limited == true && id != null) ParentHelp(client, SubjectKind.VIDEO, id) else null },
+                    help = remember(client, id) { if (mine?.limited == true && id != null) ParentHelp(client, SubjectKind.VIDEO, id) { playback.stop(); playback.signedOut() } else null },
                     onUnlocked = playback::checkAgain,
                     modifier = Modifier.safeDrawingPadding().padding(top = 48.dp),
                     stopped = true,
@@ -259,8 +258,9 @@ fun WatchScreen(
                     onSignIn = { playback.stop(); onSignIn() },
                     onChooseHome = { playback.stop(); onChooseHome() },
                     onBack = onClose,
-                    // a restricted account's 503: the home could not read its time (never free time on an error)
-                    sentence = if (restricted && problem.kind == ErrorKind.Busy) stringResource(CoreR.string.parental_time_cannot_check) else null,
+                    // the home could not read the account's time (never free time on an error); a
+                    // rate limit or another outage keeps its own words
+                    sentence = if (problem.cannotCheckTime(restricted)) stringResource(CoreR.string.parental_time_cannot_check) else null,
                 )
             }
             else -> Column(

@@ -48,13 +48,19 @@ func writeTimeOver(w http.ResponseWriter, r *http.Request, reason string, next *
 	httperror.Write(w, r, e)
 }
 
+// CodeTimeUnknown is the code of the 503 a stream, a progress post or a watch gets
+// when its account's time could not be read or counted. It tells that 503 from any
+// other (a busy transcoder, a part that is off), so an app says "can't check your
+// watching time" only for this one.
+const CodeTimeUnknown = "parental_time_unknown"
+
 // writeTimeUnknown refuses a stream whose account's time could not be read or
-// counted: never free time on an error.
+// counted: never free time on an error. 503 with Retry-After and CodeTimeUnknown.
 func writeTimeUnknown(w http.ResponseWriter, r *http.Request, what string, err error) {
 	w.Header().Set("Retry-After", "5")
 	mlog.From(r.Context()).Warn("stream refused: the account's playback time is not known",
 		"at", what, "err", err.Error(), "event", "parental_time_unknown")
-	httperror.Write(w, r, httperror.Unavailable(5).Wrap(err))
+	httperror.Write(w, r, httperror.Unavailable(5).With("code", CodeTimeUnknown).Wrap(err))
 }
 
 // timeAdmit reports whether p may start or renew a stream in libraryID now; when

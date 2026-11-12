@@ -136,6 +136,43 @@ class ChannelGateTest {
     }
 
     @Test
+    fun aStreamThatKeepsFailingIsAskedForOnceMoreAndThenShowsItsError() = runTest {
+        // the encoder is down while the home still answers that the channel plays
+        val engine = FakeLiveEngine(fetch = false)
+        val broken = IllegalStateException("the stream does not start")
+        engine.failWith = broken
+        val asked = mutableListOf<String>()
+        val p = player(engine, asked) { ChannelNow.Playing(signed("c1"), until = null) }
+        p.open("c1")
+        // long enough for every warm-up retry of both opens, and far more
+        advanceTimeBy(10 * 60_000)
+        runCurrent()
+        assertEquals("the home's gate: once to open, once more after the failure", 2, asked.size)
+        assertEquals("the error shows, as for an account with no limit", broken, p.problem)
+        assertNull(p.stream)
+        assertEquals("each open's start and its warm-up retries, then nothing", 2 * (ChannelPlayer.RETRIES + 1), engine.played.size)
+    }
+
+    @Test
+    fun tryAgainAfterTheErrorAsksTheHomeAgain() = runTest {
+        val engine = FakeLiveEngine(fetch = false)
+        engine.failWith = IllegalStateException("the stream does not start")
+        val asked = mutableListOf<String>()
+        val p = player(engine, asked) { ChannelNow.Playing(signed("c1"), until = null) }
+        p.open("c1")
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertNotNull(p.problem)
+        // the stream is back: the person's Try again plays it
+        engine.failWith = null
+        p.retry()
+        runCurrent()
+        assertNull(p.problem)
+        assertEquals(3, asked.size)
+        assertNotNull(p.stream)
+    }
+
+    @Test
     fun changingChannelLeavesTheSlate() = runTest {
         val engine = FakeLiveEngine(fetch = false)
         val asked = mutableListOf<String>()

@@ -365,6 +365,8 @@
     <string name="parental_ask_pending">Waiting for a parent</string>
     <string name="parental_ask_too_many">You have too many requests waiting.</string>
     <string name="parental_ask_failed">The request didn\'t go out. Try again.</string>
+    <string name="parental_ask_denied">A parent said no to this request.</string>
+    <string name="parental_ask_again">Ask again</string>
     <string name="parental_pin_choose">Who is entering the PIN?</string>
     <string name="parental_pin_enter">Enter the 6-digit parent PIN</string>
     <string name="parental_pin_field">Parent PIN</string>

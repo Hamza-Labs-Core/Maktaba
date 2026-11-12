@@ -108,7 +108,13 @@ class TvParentalScreensTest {
     }
 
     private fun press(tag: String) = compose.onNodeWithTag(tag, useUnmergedTree = true).performSemanticsAction(SemanticsActions.OnClick)
-    private fun sent(path: String) = bodies.filter { it.first == path }.map { it.second }
+    /** The bodies sent to [path] (a read has none). */
+    private fun sent(path: String) = bodies.filter { it.first == path && it.second.isNotEmpty() }.map { it.second }
+    private fun ownReads() = bodies.count { it.first == "/api/me/parental/requests" && it.second.isEmpty() }
+
+    private fun own(status: String, kind: String = "video", subject: String = "v9") = json(
+        """{"requests":[{"id":"r1","subject_kind":"$kind","subject_id":"$subject","status":"$status","created_at":"2026-11-11T19:00:00Z","expires_at":"2099-01-01T00:00:00Z"}]}""",
+    )
 
     @Test
     fun theTimesUpScreenSaysWhyWhenAndWhereItStopped() {
@@ -189,6 +195,95 @@ class TvParentalScreensTest {
         until("the buttons go") { "parental-ask" !in shown() && "parental-pin" !in shown() }
         assertEquals(listOf("""{"subject_kind":"video","subject_id":"v9"}"""), sent("/api/me/parental/requests"))
         assertFalse(shown().toString(), shown().any { "v9" in it })
+    }
+
+    @Test
+    fun aRequestAlreadyWaitingIsFollowedAndAParentsYesOpensTheItem() {
+        var status = "pending"
+        routes["/api/me/parental/requests"] = { own(status) }
+        var opened = 0
+        show { TvBlocked(MyParental(restricted = true, maxTier = 9), remember { ParentHelp(client(), SubjectKind.VIDEO, "v9") }, onUnlocked = { opened++ }, onBack = {}) }
+        until("the request waits") { "parental-ask-state" in shown() && "parental-ask" !in shown() }
+        val read = ownReads()
+        compose.mainClock.advanceTimeBy(15_000)
+        until("read again after 15 s") { ownReads() > read }
+        assertEquals(0, opened)
+        // the parent approves from their own phone
+        status = "approved"
+        compose.mainClock.advanceTimeBy(15_000)
+        until("opened") { opened == 1 }
+        compose.mainClock.advanceTimeBy(60_000)
+        compose.waitForIdle()
+        assertEquals("once", 1, opened)
+    }
+
+    @Test
+    fun aDenialIsSaidWithAskAgainAndAnEndedRequestOffersAskingAgain() {
+        var status = "denied"
+        routes["/api/me/parental/requests"] = { own(status, kind = "time", subject = "30") }
+        show { TvTimesUp(TimeRefusal(TimeReason.LIMIT_REACHED), 0, remember { ParentHelp(client(), SubjectKind.TIME) }, onCheck = {}) }
+        until("the denial, Ask again and the PIN") { "A parent said no to this request." in shown() && "Ask again" in shown() && "parental-pin" in shown() }
+        // the TV comes back to the app after the request ended
+        status = "expired"
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+        until("asking is offered as at first") { "Ask for more time" in shown() && "parental-ask-state" !in shown() }
+    }
+
+    @Test
+    fun theBlockedPageReadsAgainWhenTheTvComesBackToTheApp() {
+        // a parent approves from their own phone while the TV shows another app (story 57.06)
+        var returned = 0
+        show { TvBlocked(MyParental(restricted = true, maxTier = 9), help = null, onUnlocked = {}, onBack = {}, onReturn = { returned++ }) }
+        assertEquals("not when it first shows", 0, returned)
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.STARTED)
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+        compose.waitForIdle()
+        assertEquals(1, returned)
+    }
+
+    @Test
+    fun aLockCountsDownOnScreenAndThenThePinCanBeTypedAgain() {
+        routes["/api/me/parental/unlock"] = {
+            MockResponse.Builder().code(429).setHeader("Content-Type", "application/problem+json").setHeader("Retry-After", "125")
+                .body("""{"type":"https://maktaba.tv/problems/parental-pin-locked","title":"locked","status":429,"code":"pin_locked"}""").build()
+        }
+        show { TvBlocked(MyParental(restricted = true, maxTier = 9), remember { ParentHelp(client(), SubjectKind.VIDEO, "v9") }, onUnlocked = {}, onBack = {}) }
+        until("someone has a PIN") { "parental-pin" in shown() }
+        press("parental-pin")
+        until("the PIN panel") { "parental-pin-field" in shown() }
+        compose.onNode(androidx.compose.ui.test.hasSetTextAction()).performTextInput("000000")
+        compose.waitForIdle()
+        press("parental-pin-submit")
+        until("locked") { "Too many tries. Try again in 2 minutes." in shown() }
+        compose.mainClock.advanceTimeBy(10_000)
+        until("the minutes go down") { "Too many tries. Try again in 1 minute." in shown() }
+        compose.mainClock.advanceTimeBy(120_000)
+        until("the lock clears by itself") { "parental-pin-state" !in shown() }
+    }
+
+    @Test
+    fun theTimeIsNotAskedWhileTheTvShowsAnotherApp() {
+        routes["/api/me/parental"] = { json("""{"restricted":true,"max_tier":9,"allow_only":false,"version":1}""") }
+        routes["/api/me/parental/time"] = { json("""{"allowed":true,"limited":true,"remaining_seconds":3000}""") }
+        val parental = com.hamzalabs.maktaba.core.parental.ParentalState(client())
+        kotlinx.coroutines.runBlocking { parental.refresh() }
+        fun asks() = bodies.count { it.first == "/api/me/parental/time" }
+        show { com.hamzalabs.maktaba.tv.ui.screens.TvHomeTime(parental) }
+        until("asked while Home shows") { asks() == 1 && "50 minutes left today" in shown() }
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
+        compose.mainClock.advanceTimeBy(120_000)
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMinutes(2))
+        compose.waitForIdle()
+        assertEquals("no poll in standby", 1, asks())
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+        until("asked again in front") { asks() == 2 }
+    }
+
+    @Test
+    fun aWarningNamesTheTimeReallyLeft() {
+        show { TvTimeOverlay(MyTime(allowed = true, limited = true, remainingSeconds = 125), cannotCheck = false) }
+        compose.onNodeWithTag("parental-time-warning").assertTextEquals("Watching ends in 2 minutes.")
     }
 
     @Test

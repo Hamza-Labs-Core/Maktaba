@@ -159,6 +159,29 @@ private fun Throwable.statusCause(): ApiException.Status? {
     return null
 }
 
+/** How surely a 503 is the home saying it cannot read the account's watching time ([timeUnknown]). */
+enum class TimeUnknown {
+    /** The home said so: 503 with `code: parental_time_unknown`. */
+    Yes,
+
+    /** A 503 that names nothing: a home older than the code sends this for it (and for other outages). */
+    OlderHome,
+    No,
+}
+
+/**
+ * Whether an answer is the home's "the watching time cannot be read" (Epic 57 story 57.14): a
+ * 503 with `code: parental_time_unknown`. A home from before that code sent the plain 503
+ * `unavailable` with no code; any 503 with another code or reason (a busy transcoder, the
+ * relay) and every other status is something else.
+ */
+fun timeUnknown(status: Int, problem: Problem?): TimeUnknown = when {
+    status != 503 -> TimeUnknown.No
+    problem?.code == "parental_time_unknown" -> TimeUnknown.Yes
+    problem == null || (problem.code.isEmpty() && problem.error.isEmpty() && (problem.slug.isEmpty() || problem.slug == "unavailable")) -> TimeUnknown.OlderHome
+    else -> TimeUnknown.No
+}
+
 /** What the home said to a progress post ([ApiClient.reportProgress]). */
 sealed interface ProgressAnswer {
     /** Taken: the stream goes on. */
@@ -170,7 +193,7 @@ sealed interface ProgressAnswer {
     /** 403 `parental-time`: the account's time is over. Playback stops; nothing asks again by itself. */
     data class TimeOver(val refusal: TimeRefusal) : ProgressAnswer
 
-    /** 503: the home cannot check the account's time right now; ask again after [retryAfterSec]. */
+    /** 503 `parental_time_unknown`: the home cannot check the account's time right now; ask again after [retryAfterSec]. */
     data class CannotCheck(val retryAfterSec: Long?) : ProgressAnswer
 
     /** Anything else (the network, a busy home): the stream plays on and the next post says more. */
@@ -183,7 +206,8 @@ sealed interface ProgressAnswer {
             return when {
                 over != null -> TimeOver(over)
                 status?.code == 404 -> Ended
-                status?.code == 503 -> CannotCheck(status.retryAfterSec)
+                // only the home's "cannot read the time" (or an older home's bare 503), not every outage
+                status != null && timeUnknown(status.code, status.problem) != TimeUnknown.No -> CannotCheck(status.retryAfterSec)
                 else -> Failed(e)
             }
         }
@@ -211,7 +235,35 @@ data class ParentalRequest(
     val minutes: Int? = null,
     val status: String = "pending",
     @SerialName("expires_at") val expiresAt: String? = null,
-)
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("decided_at") val decidedAt: String? = null,
+) {
+    /** Whether this is the request for [kind] and [id]; every request for time is the one for time. */
+    fun isFor(kind: String, id: String): Boolean = subjectKind == kind && (kind == SubjectKind.TIME || subjectId == id)
+
+    companion object {
+        const val PENDING = "pending"
+        const val APPROVED = "approved"
+        const val DENIED = "denied"
+
+        /** Anything else, a status this app does not know included, is an ended request. */
+        const val EXPIRED = "expired"
+    }
+}
+
+@Serializable
+private data class OwnRequests(val requests: List<ParentalRequest> = emptyList())
+
+/**
+ * The caller's own requests of the last 7 days, newest first (`GET /api/me/parental/requests`):
+ * no titles, no guardian. Null from a home too old to have the route (404, 405) and for an
+ * account that is not restricted (403 `not_restricted`): there is nothing to follow there.
+ */
+suspend fun ApiClient.myRequests(): List<ParentalRequest>? = try {
+    get<OwnRequests>("/api/me/parental/requests").requests
+} catch (e: ApiException.Status) {
+    if (e.code == 404 || e.code == 405 || (e.code == 403 && e.problem?.code == "not_restricted")) null else throw e
+}
 
 @Serializable
 private data class RequestEnvelope(val request: ParentalRequest = ParentalRequest())
@@ -395,10 +447,42 @@ const val CHANNEL_ASK_AGAIN_MS = 60_000L
 /**
  * How long to wait before asking about a channel again: a second after [at] (the time the home
  * named), never sooner than [CHANNEL_ASK_MIN_MS]; with no time, [CHANNEL_ASK_AGAIN_MS] while it
- * is refused and never (null) while it plays.
+ * is refused and never (null) while it plays. [nowMs] is the home's clock
+ * ([ApiClient.homeNowMs]): against a device clock that runs fast the home would be asked
+ * every five seconds until its time came, and against a slow one the slate would stay too long.
  */
 fun channelAskAgainMs(at: Instant?, allowed: Boolean, nowMs: Long): Long? = when {
     at != null -> (at.toEpochMilli() - nowMs + 1_000).coerceAtLeast(CHANNEL_ASK_MIN_MS)
     allowed -> null
     else -> CHANNEL_ASK_AGAIN_MS
+}
+
+/**
+ * A stream that fails again within this long of its gated re-open shows the error. Longer than
+ * any player's warm-up retries take (the TV's: six tries, each a failed load and a wait).
+ */
+const val CHANNEL_REOPEN_ONCE_MS = 5 * 60_000L
+
+/**
+ * A limited account's live stream that stopped is asked for again through the home's gate (the
+ * programme may have changed), but once per failure: when the home says it plays and the stream
+ * fails again within [CHANNEL_REOPEN_ONCE_MS], the player shows its error, as it does for an
+ * account with no limit, and does not ask the home round and round.
+ */
+class GatedReopen(private val nowMs: () -> Long = System::currentTimeMillis) {
+    private var last: Long? = null
+
+    /** Whether a stream that just failed may be asked for again; a yes is remembered. */
+    fun allowed(): Boolean {
+        val now = nowMs()
+        val was = last
+        if (was != null && now - was < CHANNEL_REOPEN_ONCE_MS) return false
+        last = now
+        return true
+    }
+
+    /** A person chose the channel (or Try again): the next failure may ask again. */
+    fun reset() {
+        last = null
+    }
 }

@@ -51,6 +51,19 @@ class TimeViewTest {
     }
 
     @Test
+    fun aWarningNamesTheTimeLeftNotTheLineCrossed() {
+        // crossed between two polls: the line's own words
+        assertEquals(300L, TimeView.warningSeconds(300, left(300)))
+        assertEquals(300L, TimeView.warningSeconds(300, left(290)))
+        assertEquals(60L, TimeView.warningSeconds(60, left(52)))
+        // a video opened with two minutes left is under the five-minute line: it says two minutes
+        assertEquals(120L, TimeView.warningSeconds(300, left(120)))
+        // and with thirty seconds left, not "1 minute"
+        assertEquals(30L, TimeView.warningSeconds(60, left(30)))
+        assertEquals("no countdown named: the line", 300L, TimeView.warningSeconds(300, null))
+    }
+
+    @Test
     fun aPlayerOpenedInsideTheLastMinuteWarnsOfTheMinute() {
         assertEquals(60L, TimeWarnings().crossed(left(30)))
     }

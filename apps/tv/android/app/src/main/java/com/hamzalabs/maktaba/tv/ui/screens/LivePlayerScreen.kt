@@ -67,6 +67,7 @@ import com.hamzalabs.maktaba.core.api.Failure
 import com.hamzalabs.maktaba.core.api.LiveApi
 import com.hamzalabs.maktaba.core.api.LiveFailure
 import com.hamzalabs.maktaba.core.api.ChannelNow
+import com.hamzalabs.maktaba.core.api.GatedReopen
 import com.hamzalabs.maktaba.core.api.LiveSource
 import com.hamzalabs.maktaba.core.api.channelAskAgainMs
 import com.hamzalabs.maktaba.core.api.channelNow
@@ -160,10 +161,15 @@ class LivePlayback(
     })
     private val http = client.streamHttp().newBuilder().addInterceptor(source.interceptor).build()
     private var job: Job? = null
-    private var retries = 0
+    private val failures = LiveFailures(limited)
 
     /** Tunes [id]: the channel before it stops (its remote session ends on the home). */
     fun tune(id: String) {
+        failures.chosen()
+        open(id)
+    }
+
+    private fun open(id: String) {
         job?.cancel()
         recheck?.cancel()
         channelId = id
@@ -189,7 +195,7 @@ class LivePlayback(
                     }
                 }
                 val p = player ?: newPlayer().also { player = it }
-                retries = 0
+                failures.started()
                 p.setMediaItem(MediaItem.Builder().setUri(url.toString()).setMimeType(MimeTypes.APPLICATION_M3U8).build())
                 p.prepare()
                 p.playWhenReady = true
@@ -226,12 +232,13 @@ class LivePlayback(
     /** Asks the home about [id] again when it said the answer may change. */
     private fun askAgain(id: String, at: Instant?, allowed: Boolean) {
         recheck?.cancel()
-        val wait = channelAskAgainMs(at, allowed, System.currentTimeMillis()) ?: return
+        // the home's instant against the home's clock, not the TV's
+        val wait = channelAskAgainMs(at, allowed, api.homeNowMs()) ?: return
         recheck = scope.launch {
             delay(wait)
             if (channelId != id) return@launch
             if (!allowed) {
-                tune(id)
+                open(id)
                 return@launch
             }
             val now = try {
@@ -284,26 +291,58 @@ class LivePlayback(
             .also { p ->
                 p.addListener(object : Player.Listener {
                     override fun onPlayerError(error: PlaybackException) {
-                        if (retries < WARM_UP_RETRIES) {
-                            retries++
-                            scope.launch {
-                                delay(WARM_UP_DELAY_MS)
+                        when (failures.next(gated = !relay && channelId != null)) {
+                            LiveFailures.Step.WarmUp -> scope.launch {
+                                delay(LiveFailures.WARM_UP_DELAY_MS)
                                 if (player === p) p.prepare()
                             }
-                        } else if (limited() && !relay && channelId != null) {
                             // a limited account's stream that stopped: the programme may have changed
-                            retries = 0
-                            channelId?.let(::tune)
-                        } else {
-                            AppLog.failure("tv live player", error)
-                            failure = tvPlaybackFailure(error)
+                            LiveFailures.Step.AskHome -> channelId?.let(::open)
+                            LiveFailures.Step.ShowError -> {
+                                AppLog.failure("tv live player", error)
+                                failure = tvPlaybackFailure(error)
+                            }
                         }
                     }
                 })
             }
     }
 
-    private companion object {
+}
+
+/**
+ * What each failure of a live stream leads to. A channel just asked for may answer with an error
+ * while its encoder warms up, so a failure is tried again [WARM_UP_RETRIES] times. After that a
+ * sign-in under a parental limit asks the home's gate again (the programme may have changed),
+ * once per failure: when the home says it plays and the stream fails through its warm-up again,
+ * the error shows, as it does for an account with no limit (never round and round on a black
+ * screen).
+ */
+class LiveFailures(private val limited: () -> Boolean, nowMs: () -> Long = System::currentTimeMillis) {
+    enum class Step { WarmUp, AskHome, ShowError }
+
+    private var retries = 0
+    private val reopen = GatedReopen(nowMs)
+
+    /** A person chose the channel (or Try again). */
+    fun chosen() = reopen.reset()
+
+    /** A stream was given to the player: its warm-up starts over. */
+    fun started() {
+        retries = 0
+    }
+
+    /** The player failed; [gated]: the stream is one the home's gate gave (at home, a channel shown). */
+    fun next(gated: Boolean): Step = when {
+        retries < WARM_UP_RETRIES -> {
+            retries++
+            Step.WarmUp
+        }
+        gated && limited() && reopen.allowed() -> Step.AskHome
+        else -> Step.ShowError
+    }
+
+    companion object {
         const val WARM_UP_RETRIES = 6
         const val WARM_UP_DELAY_MS = 2_000L
     }

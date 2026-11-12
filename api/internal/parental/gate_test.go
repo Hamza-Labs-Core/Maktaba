@@ -328,7 +328,7 @@ func TestGateReadsNoPolicyForAnOpenRoute(t *testing.T) {
 	r := chi.NewRouter()
 	r.Use(g.Middleware(r))
 	reached := 0
-	h := func(w http.ResponseWriter, req *http.Request) {
+	h := func(w http.ResponseWriter, _ *http.Request) {
 		reached++
 		w.WriteHeader(http.StatusNoContent)
 	}

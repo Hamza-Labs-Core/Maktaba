@@ -128,9 +128,7 @@ fun PlayerScreen(
     val time = parental?.time?.collectAsState()?.value
     val restricted = mine?.restricted == true
     val timeUp = playback.timeUp
-    LaunchedEffect(parental, restricted, libraryId, timeUp == null) {
-        if (parental != null && restricted && timeUp == null) parental.followTime(libraryId)
-    }
+    com.hamzalabs.maktaba.core.ui.FollowTimeWhileShown(parental, on = restricted && timeUp == null, libraryId = libraryId)
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         val player = playback.player
@@ -195,7 +193,7 @@ fun PlayerScreen(
             timeUp != null -> TvTimesUp(
                 timeUp.refusal,
                 timeUp.positionMs,
-                help = remember(client, timeUp) { com.hamzalabs.maktaba.core.ui.ParentHelp(client, com.hamzalabs.maktaba.core.api.SubjectKind.TIME) },
+                help = remember(client, timeUp) { com.hamzalabs.maktaba.core.ui.ParentHelp(client, com.hamzalabs.maktaba.core.api.SubjectKind.TIME, signedOut = signedOut) },
                 onCheck = playback::checkAgain,
                 onBack = onBack,
             )
@@ -203,20 +201,11 @@ fun PlayerScreen(
             playback.endedByHome -> TvBlocked(
                 mine ?: com.hamzalabs.maktaba.core.api.MyParental.None,
                 help = remember(client, video) {
-                    if (mine?.limited == true) com.hamzalabs.maktaba.core.ui.ParentHelp(client, com.hamzalabs.maktaba.core.api.SubjectKind.VIDEO, video) else null
+                    if (mine?.limited == true) com.hamzalabs.maktaba.core.ui.ParentHelp(client, com.hamzalabs.maktaba.core.api.SubjectKind.VIDEO, video, signedOut) else null
                 },
                 onUnlocked = playback::checkAgain,
                 stopped = true,
                 onBack = onBack,
-            )
-            problem != null && restricted && problem.kind == com.hamzalabs.maktaba.core.api.ErrorKind.Busy -> TvErrorState(
-                problem,
-                title = stringResource(CoreR.string.error_playback_title),
-                video = true,
-                onRetry = playback::retry,
-                onBack = onBack,
-                // a restricted account's 503: the home could not read its time (never free time on an error)
-                sentence = stringResource(CoreR.string.parental_time_cannot_check),
             )
             problem != null -> TvErrorState(
                 problem,
@@ -226,6 +215,9 @@ fun PlayerScreen(
                 onSignIn = signedOut,
                 onChooseHome = { app.session.switchHome() },
                 onBack = onBack,
+                // the home could not read the account's time (never free time on an error); a rate
+                // limit or another outage keeps its own words, and every action it had
+                sentence = if (problem.cannotCheckTime(restricted)) stringResource(CoreR.string.parental_time_cannot_check) else null,
             )
             playback.opening || playback.waiting != null -> Column(
                 Modifier.fillMaxSize().padding(48.dp),

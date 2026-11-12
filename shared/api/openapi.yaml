@@ -1841,7 +1841,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '503':
-          description: '`transcode_busy`: every transcode this home runs at once is taken; ask again after `Retry-After`. Also when a restricted account''s watching time cannot be read, or the streaming service cannot be told of it: the stream is refused, never let through uncounted; ask again after `Retry-After`.'
+          description: '`transcode_busy`: every transcode this home runs at once is taken; ask again after `Retry-After`. Also when a restricted account''s watching time cannot be read, or the streaming service cannot be told of it: the stream is refused, never let through uncounted; ask again after `Retry-After`. For the watching time, the problem''s `code` is `parental_time_unknown`.'
           headers:
             Retry-After:
               $ref: '#/components/headers/Retry-After'
@@ -1957,7 +1957,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '503':
-          description: 'A restricted account''s watching time could not be counted: the progress is refused, never taken uncounted; ask again after `Retry-After`.'
+          description: 'A restricted account''s watching time could not be counted: the progress is refused, never taken uncounted; ask again after `Retry-After`. The problem''s `code` is `parental_time_unknown`, which tells this answer from any other 503.'
           headers:
             Retry-After:
               $ref: '#/components/headers/Retry-After'
@@ -2105,7 +2105,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
         '503':
-          description: 'A restricted account''s watching time could not be read: the watch is refused, never let through on an error; ask again after `Retry-After`.'
+          description: 'A restricted account''s watching time could not be read: the watch is refused, never let through on an error; ask again after `Retry-After`. The problem''s `code` is `parental_time_unknown`, which tells this answer from any other 503.'
           headers:
             Retry-After:
               $ref: '#/components/headers/Retry-After'
@@ -2191,7 +2191,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
         '503':
-          description: 'A restricted account''s watching time could not be read: the watch is refused, never let through on an error; ask again after `Retry-After`.'
+          description: 'A restricted account''s watching time could not be read: the watch is refused, never let through on an error; ask again after `Retry-After`. The problem''s `code` is `parental_time_unknown`, which tells this answer from any other 503.'
           headers:
             Retry-After:
               $ref: '#/components/headers/Retry-After'

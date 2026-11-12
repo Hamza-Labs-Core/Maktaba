@@ -53,9 +53,12 @@ import kotlinx.coroutines.launch
  * Asking for more time from the time's-up screen (stories 57.06, 57.15): a request a parent
  * answers from their own Player or the web, and a parent's PIN typed here when someone set one.
  */
-class MoreTime(client: ApiClient) {
-    val ask = ParentAsk(client, SubjectKind.TIME)
-    val pin = PinUnlock(client, SubjectKind.TIME, "")
+class MoreTime(client: ApiClient, signedOut: () -> Unit = {}, subjectKind: String = SubjectKind.TIME, subjectId: String = "") {
+    val ask = ParentAsk(client, subjectKind, subjectId, signedOut)
+    val pin = PinUnlock(client, subjectKind, subjectId, signedOut)
+
+    /** For more time (minutes are chosen), not for an item the home does not show the account. */
+    val forTime: Boolean = subjectKind == SubjectKind.TIME
 }
 
 /**
@@ -78,14 +81,17 @@ fun TimesUp(up: TimeUp, onCheck: () -> Unit, more: MoreTime? = null) {
         up.nextAllowedAt?.let { Text(t["parental.time.next", ParentalTime.next(it, t.lang)], color = Color.White) }
         if (up.positionMs >= 1000) Text(t["parental.time.saved", ParentalTime.clock(up.positionMs)], color = Color.White)
         Text(t["parental.time.askParent"], color = Color.White)
-        if (more != null) MoreTimeButtons(more, onUnlocked = onCheck)
+        if (more != null) ParentHelpButtons(more, onUnlocked = onCheck)
         Button(onClick = onCheck, modifier = Modifier.testTag("parental-time-check")) { Text(t["parental.time.check"]) }
     }
 }
 
-/** Ask for more time (15, 30 or 60 minutes), and Enter parent PIN when someone has one. */
+/**
+ * Ask for more time (15, 30 or 60 minutes) or, on the blocked page, Ask a parent; and Enter
+ * parent PIN when someone has one. [color] is the words' colour (white over the player).
+ */
 @Composable
-private fun MoreTimeButtons(more: MoreTime, onUnlocked: () -> Unit) {
+fun ParentHelpButtons(more: MoreTime, onUnlocked: () -> Unit, color: Color = Color.White) {
     val t = LocalTexts.current
     val scope = rememberCoroutineScope()
     val asked by more.ask.state.collectAsState()
@@ -98,20 +104,41 @@ private fun MoreTimeButtons(more: MoreTime, onUnlocked: () -> Unit) {
     var minutes by remember { mutableStateOf(MORE_TIME_MINUTES[1]) }
     LaunchedEffect(more) { more.pin.load() }
     LaunchedEffect(holders) { if (holders.size == 1) who = holders.single().id }
-    LaunchedEffect(pinState) { if (pinState == PinState.Unlocked) onUnlocked() }
+    // once per unlock: the state is put back, so showing this screen again never asks by itself
+    LaunchedEffect(pinState) {
+        if (pinState == PinState.Unlocked) {
+            more.pin.again()
+            onUnlocked()
+        }
+    }
+    // a lock counts down on screen and clears by itself (story 57.06)
+    LaunchedEffect(more, pinState is PinState.Locked) { more.pin.waitOutLock() }
+    // the request this screen is about, as the home has it: followed while it waits and the
+    // window is in front; a parent's yes opens what was asked for, once
+    val inFront = androidx.compose.ui.platform.LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(more, asked is AskState.Waiting, inFront) { if (inFront) more.ask.follow() }
+    LaunchedEffect(asked) {
+        if (asked is AskState.Approved) {
+            more.ask.done()
+            onUnlocked()
+        }
+    }
     // the home knows nothing to ask for: nothing more is offered
     if (asked == AskState.NothingToAsk || pinState == PinState.NothingToUnlock) return
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         if (asked !is AskState.Waiting) {
-            OutlinedButton(onClick = { choosing = !choosing }, enabled = asked != AskState.Sending, modifier = Modifier.testTag("parental-ask")) {
-                Text(t["parental.time.askMore"])
+            OutlinedButton(
+                onClick = { if (more.forTime) choosing = !choosing else scope.launch { more.ask.ask() } },
+                enabled = asked != AskState.Sending, modifier = Modifier.testTag("parental-ask"),
+            ) {
+                Text(t[if (asked is AskState.Denied) "parental.ask.again" else if (more.forTime) "parental.time.askMore" else "parental.blocked.ask"])
             }
         }
         if (holders.isNotEmpty()) {
             OutlinedButton(onClick = { more.pin.again(); pinOpen = !pinOpen }, modifier = Modifier.testTag("parental-pin")) { Text(t["parental.blocked.pin"]) }
         }
     }
-    if (choosing && asked !is AskState.Waiting) {
+    if (choosing && more.forTime && asked !is AskState.Waiting) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             MORE_TIME_MINUTES.forEach { m ->
                 OutlinedButton(onClick = { choosing = false; scope.launch { more.ask.ask(m) } }, modifier = Modifier.testTag("parental-ask-$m")) {
@@ -124,12 +151,13 @@ private fun MoreTimeButtons(more: MoreTime, onUnlocked: () -> Unit) {
         is AskState.Waiting -> t["parental.ask.pending"] + "\n" + t["parental.ask.sent"]
         AskState.TooMany -> t["parental.ask.tooMany"]
         AskState.Failed -> t["parental.ask.failed"]
+        is AskState.Denied -> t["parental.ask.denied"]
         else -> null
     }
-    if (askLine != null) Text(askLine, color = Color.White, modifier = Modifier.testTag("parental-ask-state"))
+    if (askLine != null) Text(askLine, color = color, modifier = Modifier.testTag("parental-ask-state"))
     if (pinOpen && holders.isNotEmpty()) {
         Column(Modifier.testTag("parental-pin-panel"), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(t[if (who == null) "parental.pin.choose" else "parental.pin.enter"], color = Color.White)
+            Text(t[if (who == null) "parental.pin.choose" else "parental.pin.enter"], color = color)
             if (holders.size > 1) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     holders.forEach { h ->
@@ -138,7 +166,7 @@ private fun MoreTimeButtons(more: MoreTime, onUnlocked: () -> Unit) {
                 }
             }
             if (who != null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (more.forTime) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     MORE_TIME_MINUTES.forEach { m ->
                         FilterChip(selected = minutes == m, onClick = { minutes = m }, label = { Text(ParentalTime.words(m * 60L, t)) }, modifier = Modifier.testTag("parental-pin-minutes-$m"))
                     }
@@ -163,7 +191,7 @@ private fun MoreTimeButtons(more: MoreTime, onUnlocked: () -> Unit) {
                         val id = who ?: return@Button
                         val typed = pin
                         pin = ""
-                        scope.launch { more.pin.submit(id, typed, minutes) }
+                        scope.launch { more.pin.submit(id, typed, if (more.forTime) minutes else null) }
                     },
                     enabled = isParentPin(pin) && pinState != PinState.Checking && pinState !is PinState.Locked,
                     modifier = Modifier.testTag("parental-pin-submit"),
@@ -176,7 +204,7 @@ private fun MoreTimeButtons(more: MoreTime, onUnlocked: () -> Unit) {
                 PinState.Failed -> t["parental.pin.failed"]
                 else -> null
             }
-            if (line != null) Text(line, color = Color.White, modifier = Modifier.testTag("parental-pin-state").semantics { liveRegion = LiveRegionMode.Polite })
+            if (line != null) Text(line, color = color, modifier = Modifier.testTag("parental-pin-state").semantics { liveRegion = LiveRegionMode.Polite })
         }
     }
 }
@@ -193,9 +221,11 @@ fun TimeNotes(time: MyTime?, cannotCheck: Boolean) {
     var warned by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(time) {
         val line = warnings.crossed(time) ?: return@LaunchedEffect
-        warned = line
+        // the time really left, not the line crossed (a video opened with two minutes left)
+        val seconds = TimeView.warningSeconds(line, time)
+        warned = seconds
         delay(TimeView.WARNING_SHOWN_MS)
-        if (warned == line) warned = null
+        if (warned == seconds) warned = null
     }
     warned?.let {
         Text(
@@ -216,5 +246,87 @@ fun TimeNotes(time: MyTime?, cannotCheck: Boolean) {
             t["parental.time.cannotCheck"], color = Color.White, style = MaterialTheme.typography.labelLarge,
             modifier = Modifier.padding(horizontal = 8.dp).testTag("parental-cannot-check"),
         )
+    }
+}
+
+/**
+ * Home's line for a restricted account (story 57.15): the time the home says is left today
+ * whenever a rule covers now, or that the time is over and when watching opens again. Nothing
+ * for an account with no time rule now. The home is asked only while Home shows.
+ */
+@Composable
+fun HomeTime(parental: com.hamzalabs.maktaba.core.parental.ParentalState, modifier: Modifier = Modifier) {
+    val mine by parental.mine.collectAsState()
+    val time by parental.time.collectAsState()
+    LaunchedEffect(parental, mine.restricted) { if (mine.restricted) parental.followTime() }
+    if (!mine.restricted) return
+    HomeTimeLine(time, modifier)
+}
+
+@Composable
+fun HomeTimeLine(time: MyTime?, modifier: Modifier = Modifier) {
+    val t = LocalTexts.current
+    val over = TimeView.refusal(time)
+    val left = TimeView.left(time)
+    if (over == null && left == null) return
+    Column(modifier.padding(horizontal = 16.dp).testTag("parental-home-time").semantics { liveRegion = LiveRegionMode.Polite }) {
+        if (over != null) {
+            Text(t[ParentalTime.titleKey(over.reason)], style = MaterialTheme.typography.titleMedium, modifier = Modifier.testTag("parental-home-over"))
+            over.nextAllowedAt?.let {
+                Text(t["parental.time.next", ParentalTime.next(it, t.lang)], style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else if (left != null) {
+            Text(t["parental.time.left", ParentalTime.words(left, t)], style = MaterialTheme.typography.titleMedium, modifier = Modifier.testTag("parental-home-left"))
+        }
+    }
+}
+
+/** "Your account is limited to 9+.": the limit in force, or null when the sign-in has none to name. */
+fun limitLine(mine: com.hamzalabs.maktaba.core.api.MyParental, t: com.hamzalabs.maktaba.desktop.Texts): String? {
+    val tier = mine.maxTier ?: mine.deviceLimit ?: return null
+    val words = when {
+        tier == com.hamzalabs.maktaba.core.api.MyParental.NOTHING_ALLOWED -> t["parental.tier.none"]
+        tier <= 0 -> t["parental.tier.all"]
+        else -> t["parental.tier.plus", tier]
+    }
+    // the device's limit is named when it is the one in force on an unrestricted account
+    val device = !mine.restricted && mine.deviceLimit != null
+    return t[if (device) "parental.blocked.device" else "parental.blocked.account", words]
+}
+
+/**
+ * "This isn't available" (story 57.05): what a sign-in under a limit sees for something the home
+ * does not show it. It never names what was asked for (the home sends nothing about it: a hidden
+ * video answers as a missing one). [help] offers Ask a parent and Enter parent PIN; once the
+ * home says there is nothing to ask for, both go. [onReturn] runs each time the window comes back
+ * to the front while this shows: a parent may have approved from their own device meanwhile, and
+ * the page then reads again (story 57.06).
+ */
+@Composable
+fun BlockedPage(
+    mine: com.hamzalabs.maktaba.core.api.MyParental,
+    help: MoreTime?,
+    onUnlocked: () -> Unit,
+    modifier: Modifier = Modifier,
+    onReturn: (() -> Unit)? = null,
+) {
+    val t = LocalTexts.current
+    val focused = androidx.compose.ui.platform.LocalWindowInfo.current.isWindowFocused
+    var wasAway by remember { mutableStateOf(false) }
+    LaunchedEffect(focused) {
+        if (!focused) wasAway = true
+        else if (wasAway) {
+            wasAway = false
+            onReturn?.invoke()
+        }
+    }
+    Column(
+        modifier.padding(24.dp).testTag("parental-blocked"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(t["parental.blocked.title"], style = MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag("parental-blocked-title").semantics { heading() })
+        limitLine(mine, t)?.let { Text(it, modifier = Modifier.testTag("parental-blocked-reason")) }
+        if (help != null) ParentHelpButtons(help, onUnlocked, color = MaterialTheme.colorScheme.onSurface)
     }
 }

@@ -29,6 +29,9 @@ import kotlinx.coroutines.withContext
 /** Posters already decoded, by home and video (a TV row scrolls back and forth a lot). */
 private val posters = LruCache<String, ImageBitmap>(160)
 
+/** Forgets every decoded poster (the sign-in's parental limit changed: some may now be hidden). */
+fun forgetPosters() = posters.evictAll()
+
 /**
  * A video's picture. The home serves it only to a signed-in caller, so it is fetched with the
  * token through the core's client ([ApiClient.poster]), not by URL. Until it arrives (or when

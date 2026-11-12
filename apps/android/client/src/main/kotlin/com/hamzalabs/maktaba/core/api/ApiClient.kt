@@ -68,7 +68,7 @@ suspend fun OkHttpClient.exchange(r: Request): HttpAnswer = suspendCancellableCo
 
         override fun onResponse(call: Call, response: Response) {
             val read = runCatching {
-                response.use { HttpAnswer(it.code, it.body.bytes(), retryAfterSeconds(it.header("Retry-After"))) }
+                response.use { HttpAnswer(it.code, it.body.bytes(), retryAfterSeconds(it.header("Retry-After")), it.headers.getDate("Date")?.time) }
             }
             read.onSuccess { cont.resume(it) }
             read.onFailure { cont.resumeWithException(ApiException.Transport(it.message ?: it.toString())) }
@@ -77,7 +77,7 @@ suspend fun OkHttpClient.exchange(r: Request): HttpAnswer = suspendCancellableCo
 }
 
 /** An answer: its status, its body and, on a 429 or 503, `Retry-After` in seconds. */
-class HttpAnswer(val code: Int, val body: ByteArray, val retryAfterSec: Long? = null) {
+class HttpAnswer(val code: Int, val body: ByteArray, val retryAfterSec: Long? = null, /** The answer's `Date` header. */ val dateMs: Long? = null) {
     operator fun component1() = code
     operator fun component2() = body
 }
@@ -548,8 +548,20 @@ class ApiClient(
             throw e
         }
         if (!HomeReconnect.isReconnecting(answer)) CloudStatusRules.noteRequestFailed(home, answer.code)
+        // the home's clock, by its answer's own Date (to the second)
+        answer.dateMs?.let { homeAheadMs = it - now() }
         return answer
     }
+
+    /** How far the home's clock is ahead of this device's, by its last answer's `Date` (0 before any). */
+    @Volatile private var homeAheadMs = 0L
+
+    /**
+     * The time now by the home's clock: this device's, moved by what the home's last answer
+     * said. An instant the home names (when a channel may be asked for again, when a request
+     * ends) is compared with this, never with the device's own clock, which a child can set.
+     */
+    fun homeNowMs(): Long = now() + homeAheadMs
 
     /**
      * An OkHttp client for the player: this home's `/stream/` requests carry the token. Its own

@@ -311,6 +311,8 @@ private fun SignedIn(
             actions = actions,
             onPlay = playback::play,
             onSignedOut = session::signedOut,
+            // Epic 57 story 57.05: the limit as last known, so a change made while the Player was closed is seen
+            limitKept = com.hamzalabs.maktaba.core.parental.KeptLimit.InFile.of(AppDirs.config, p.client.home, p.user.id),
         )
     }
     // what the home has on: asked at sign-in, then every five minutes while the window is open

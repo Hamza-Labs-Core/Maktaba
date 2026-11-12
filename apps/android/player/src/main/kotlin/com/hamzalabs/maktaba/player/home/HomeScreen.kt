@@ -110,6 +110,7 @@ fun HomeScreen(nav: PlayerNavigator) {
             // no channel row while Live TV is off on the home (story 51.11): nothing is asked
             liveNow = { if (home.capabilities.value.isOn(Feature.LIVE_TV)) live.now() else null },
             signedOut = home.session::signedOut,
+            keepOnDisk = { !home.parental.keepsNothing },
         )
     }
     LaunchedEffect(state) { state.open() }
@@ -472,7 +473,7 @@ private fun EmptyHome(admin: Boolean, onSwitchHome: () -> Unit, onSignOut: () ->
 fun HomeTime(parental: com.hamzalabs.maktaba.core.parental.ParentalState, modifier: Modifier = Modifier) {
     val mine by parental.mine.collectAsState()
     val time by parental.time.collectAsState()
-    LaunchedEffect(parental, mine.restricted) { if (mine.restricted) parental.followTime() }
+    com.hamzalabs.maktaba.core.ui.FollowTimeWhileShown(parental, on = mine.restricted)
     if (!mine.restricted) return
     com.hamzalabs.maktaba.core.ui.HomeTimeLine(time, modifier)
 }

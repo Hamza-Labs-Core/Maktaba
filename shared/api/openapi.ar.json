@@ -782,8 +782,8 @@
       "ar": "انتهى وقت المشاهدة للحساب (الرقابة الأبوية): نوع المشكلة `https://maktaba.tv/problems/parental-time`، وقيمة `code` هي `parental_time`، وقيمة `reason` هي `outside_slot` أو `limit_reached`، أو `no_heartbeat` إذا لم تكن الجلسة من الجلسات التي يعدّها البيت لهذا الحساب، و`next_allowed_at` هو الوقت الذي تسمح فيه القواعد بالمشاهدة مرة أخرى (يغيب إذا لم تسمح بها في أي لحظة خلال الأيام الثمانية القادمة، ومع `no_heartbeat`). لا يُحفظ الموضع وينتهي البث خلال 60 ثانية."
     },
     "/paths/~1stream~1sessions~1{id}~1progress/post/responses/503/description": {
-      "en": "A restricted account's watching time could not be counted: the progress is refused, never taken uncounted; ask again after `Retry-After`.",
-      "ar": "تعذّر عدّ وقت المشاهدة لحساب مقيَّد: يُرفض التقدّم ولا يُقبل دون عدّ؛ أعد الطلب بعد `Retry-After`."
+      "en": "A restricted account's watching time could not be counted: the progress is refused, never taken uncounted; ask again after `Retry-After`. The problem's `code` is `parental_time_unknown`, which tells this answer from any other 503.",
+      "ar": "تعذّر عدّ وقت المشاهدة لحساب مقيَّد: يُرفض التقدّم ولا يُقبل دون عدّ؛ أعد الطلب بعد `Retry-After`. ورمز المشكلة `code` هو `parental_time_unknown`، وبه يُميَّز هذا الرد عن أي 503 آخر."
     },
     "/paths/~1stream~1capabilities/get/summary": {
       "en": "Streaming server capabilities",
@@ -830,8 +830,8 @@
       "ar": "لا يوجد فيديو كهذا يستطيع المتصل الوصول إليه. فيديو في مكتبة لا يستطيع المتصل فتحها يُجاب عنه كما يُجاب عن فيديو غير موجود."
     },
     "/paths/~1watch~1start/post/responses/503/description": {
-      "en": "A restricted account's watching time could not be read: the watch is refused, never let through on an error; ask again after `Retry-After`.",
-      "ar": "تعذّرت قراءة وقت المشاهدة لحساب مقيَّد: تُرفض المشاهدة ولا تُمرَّر عند الخطأ؛ أعد الطلب بعد `Retry-After`."
+      "en": "A restricted account's watching time could not be read: the watch is refused, never let through on an error; ask again after `Retry-After`. The problem's `code` is `parental_time_unknown`, which tells this answer from any other 503.",
+      "ar": "تعذّرت قراءة وقت المشاهدة لحساب مقيَّد: تُرفض المشاهدة ولا تُمرَّر عند الخطأ؛ أعد الطلب بعد `Retry-After`. ورمز المشكلة `code` هو `parental_time_unknown`، وبه يُميَّز هذا الرد عن أي 503 آخر."
     },
     "/paths/~1watch~1heartbeat/post/summary": {
       "en": "Keep a watch going",
@@ -862,8 +862,8 @@
       "ar": "جلسة المشاهدة مغلقة."
     },
     "/paths/~1watch~1heartbeat/post/responses/503/description": {
-      "en": "A restricted account's watching time could not be read: the watch is refused, never let through on an error; ask again after `Retry-After`.",
-      "ar": "تعذّرت قراءة وقت المشاهدة لحساب مقيَّد: تُرفض المشاهدة ولا تُمرَّر عند الخطأ؛ أعد الطلب بعد `Retry-After`."
+      "en": "A restricted account's watching time could not be read: the watch is refused, never let through on an error; ask again after `Retry-After`. The problem's `code` is `parental_time_unknown`, which tells this answer from any other 503.",
+      "ar": "تعذّرت قراءة وقت المشاهدة لحساب مقيَّد: تُرفض المشاهدة ولا تُمرَّر عند الخطأ؛ أعد الطلب بعد `Retry-After`. ورمز المشكلة `code` هو `parental_time_unknown`، وبه يُميَّز هذا الرد عن أي 503 آخر."
     },
     "/paths/~1settings/get/summary": {
       "en": "Read effective settings",
@@ -3010,8 +3010,8 @@
       "ar": "`library_read_only`: المكتبة للقراءة فقط بالنسبة إلى مكتبة، وهذا الطلب يغيّر ملفاتها."
     },
     "/paths/~1stream~1sessions/post/responses/503/description": {
-      "en": "`transcode_busy`: every transcode this home runs at once is taken; ask again after `Retry-After`. Also when a restricted account's watching time cannot be read, or the streaming service cannot be told of it: the stream is refused, never let through uncounted; ask again after `Retry-After`.",
-      "ar": "`transcode_busy`: كل عمليات التحويل التي يشغّلها هذا الجهاز الرئيسي في آن واحد مشغولة؛ أعد الطلب بعد `Retry-After`. وكذلك إذا تعذّرت قراءة وقت المشاهدة لحساب مقيَّد، أو تعذّر إبلاغ خدمة البث به: يُرفض البث ولا يُمرَّر دون عدّ؛ أعد الطلب بعد `Retry-After`."
+      "en": "`transcode_busy`: every transcode this home runs at once is taken; ask again after `Retry-After`. Also when a restricted account's watching time cannot be read, or the streaming service cannot be told of it: the stream is refused, never let through uncounted; ask again after `Retry-After`. For the watching time, the problem's `code` is `parental_time_unknown`.",
+      "ar": "`transcode_busy`: كل عمليات التحويل التي يشغّلها هذا الجهاز الرئيسي في آن واحد مشغولة؛ أعد الطلب بعد `Retry-After`. وكذلك إذا تعذّرت قراءة وقت المشاهدة لحساب مقيَّد، أو تعذّر إبلاغ خدمة البث به: يُرفض البث ولا يُمرَّر دون عدّ؛ أعد الطلب بعد `Retry-After`. وفي حالة وقت المشاهدة يكون رمز المشكلة `code` هو `parental_time_unknown`."
     },
     "/paths/~1server~1settings/get/summary": {
       "en": "Read server.toml's settings",

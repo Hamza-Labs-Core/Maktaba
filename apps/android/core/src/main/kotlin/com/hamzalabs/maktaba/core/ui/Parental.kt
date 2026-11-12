@@ -56,6 +56,7 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.R
+import androidx.lifecycle.repeatOnLifecycle
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.MORE_TIME_MINUTES
 import com.hamzalabs.maktaba.core.api.MyParental
@@ -66,6 +67,7 @@ import com.hamzalabs.maktaba.core.api.TimeRefusal
 import com.hamzalabs.maktaba.core.api.isParentPin
 import com.hamzalabs.maktaba.core.parental.AskState
 import com.hamzalabs.maktaba.core.parental.ParentAsk
+import com.hamzalabs.maktaba.core.parental.ParentalState
 import com.hamzalabs.maktaba.core.parental.PinState
 import com.hamzalabs.maktaba.core.parental.PinUnlock
 import com.hamzalabs.maktaba.core.parental.TimeView
@@ -150,12 +152,14 @@ fun TimeWarning(time: MyTime?, modifier: Modifier = Modifier) {
     var shown by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(time) {
         val line = warnings.crossed(time) ?: return@LaunchedEffect
-        shown = line
+        // the time really left, not the line crossed (a video opened with two minutes left)
+        val seconds = TimeView.warningSeconds(line, time)
+        shown = seconds
         delay(TimeView.WARNING_SHOWN_MS)
-        if (shown == line) shown = null
+        if (shown == seconds) shown = null
     }
-    val line = shown ?: return
-    val words = LocalContext.current.resources.timeWords(line)
+    val seconds = shown ?: return
+    val words = LocalContext.current.resources.timeWords(seconds)
     Surface(
         color = MaterialTheme.colorScheme.inverseSurface,
         contentColor = MaterialTheme.colorScheme.inverseOnSurface,
@@ -198,11 +202,12 @@ fun HomeTimeLine(time: MyTime?, modifier: Modifier = Modifier) {
 
 /**
  * What a blocked or time's-up screen offers: asking a parent ([ask]) and, when someone set a
- * PIN, typing it here ([pin]). Made per screen for the thing it is about.
+ * PIN, typing it here ([pin]). Made per screen for the thing it is about. [signedOut] is the
+ * app's own sign-out, for a sign-in the home stopped taking while the screen was open.
  */
-class ParentHelp(client: ApiClient, val subjectKind: String, subjectId: String = "") {
-    val ask = ParentAsk(client, subjectKind, subjectId)
-    val pin = PinUnlock(client, subjectKind, subjectId)
+class ParentHelp(client: ApiClient, val subjectKind: String, subjectId: String = "", signedOut: () -> Unit = {}) {
+    val ask = ParentAsk(client, subjectKind, subjectId, signedOut)
+    val pin = PinUnlock(client, subjectKind, subjectId, signedOut)
     val forTime: Boolean get() = subjectKind == SubjectKind.TIME
 }
 
@@ -210,7 +215,8 @@ class ParentHelp(client: ApiClient, val subjectKind: String, subjectId: String =
 @Composable
 fun AskLine(state: AskState, modifier: Modifier = Modifier) {
     val text = when (state) {
-        AskState.Idle, AskState.Sending, AskState.NothingToAsk -> return
+        AskState.Idle, AskState.Sending, AskState.NothingToAsk, is AskState.Approved -> return
+        is AskState.Denied -> stringResource(R.string.parental_ask_denied)
         is AskState.Waiting -> stringResource(R.string.parental_ask_pending) + "\n" + stringResource(R.string.parental_ask_sent)
         AskState.TooMany -> stringResource(R.string.parental_ask_too_many)
         AskState.Failed -> stringResource(R.string.parental_ask_failed)
@@ -238,6 +244,20 @@ fun ParentHelpButtons(help: ParentHelp, onUnlocked: () -> Unit, modifier: Modifi
     var choosing by rememberSaveable { mutableStateOf(false) }
     var pinOpen by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(help) { help.pin.load() }
+    // the request this screen is about, as the home has it: followed while it waits and the app
+    // is in front; a parent's yes opens what was asked for, once
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(help, asked is AskState.Waiting, owner) {
+        owner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) { help.ask.follow() }
+    }
+    LaunchedEffect(asked) {
+        if (asked is AskState.Approved) {
+            help.ask.done()
+            onUnlocked()
+        }
+    }
+    // a lock counts down on screen and clears by itself (story 57.06)
+    LaunchedEffect(help, pinState is PinState.Locked) { help.pin.waitOutLock() }
     val nothing = asked == AskState.NothingToAsk || pinState == PinState.NothingToUnlock
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (!nothing) {
@@ -250,7 +270,17 @@ fun ParentHelpButtons(help: ParentHelp, onUnlocked: () -> Unit, modifier: Modifi
                         onClick = { if (help.forTime) choosing = !choosing else scope.launch { help.ask.ask() } },
                         enabled = asked != AskState.Sending,
                         modifier = Modifier.heightIn(min = 48.dp).testTag("parental-ask"),
-                    ) { Text(stringResource(if (help.forTime) R.string.parental_time_ask_more else R.string.parental_blocked_ask)) }
+                    ) {
+                        Text(
+                            stringResource(
+                                when {
+                                    asked is AskState.Denied -> R.string.parental_ask_again
+                                    help.forTime -> R.string.parental_time_ask_more
+                                    else -> R.string.parental_blocked_ask
+                                },
+                            ),
+                        )
+                    }
                 }
                 if (holders.isNotEmpty()) {
                     OutlinedButton(
@@ -444,12 +474,42 @@ fun TimesUpScreen(
     }
 }
 
+// ---------- the time poll ----------
+
+/**
+ * Follows the account's time while this shows and the app is in front: the home is asked now,
+ * then every 30 s (sooner near the end), and not at all while the app is in the background or
+ * the TV in standby ([on] false, or [parental] null: nothing is asked).
+ */
+@Composable
+fun FollowTimeWhileShown(parental: ParentalState?, on: Boolean, libraryId: String? = null) {
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(parental, on, libraryId, owner) {
+        if (parental == null || !on) return@LaunchedEffect
+        owner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) { parental.followTime(libraryId) }
+    }
+}
+
 // ---------- the blocked page ----------
+
+/** Runs [action] each time the app comes back to the front while this is shown (not when it first shows). */
+@Composable
+fun OnReturnToFront(action: (() -> Unit)?) {
+    if (action == null) return
+    val run by androidx.compose.runtime.rememberUpdatedState(action)
+    val shownOnce = remember { booleanArrayOf(false) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        if (shownOnce[0]) run() else shownOnce[0] = true
+        onPauseOrDispose { }
+    }
+}
 
 /**
  * "This isn't available": what a limited sign-in sees for something the home does not show it.
  * It never names what was asked for (the home sends nothing about it). [stopped]: a video that
  * was playing when the home ended it. [help] null offers nothing (an account with no limit).
+ * [onReturn] runs each time the app comes back to the front while this shows: a parent may have
+ * approved from their own device meanwhile, and the page then reads again (story 57.06).
  */
 @Composable
 fun BlockedPage(
@@ -459,7 +519,9 @@ fun BlockedPage(
     modifier: Modifier = Modifier,
     stopped: Boolean = false,
     onBack: (() -> Unit)? = null,
+    onReturn: (() -> Unit)? = null,
 ) {
+    OnReturnToFront(onReturn)
     val res = LocalContext.current.resources
     val lock = stringResource(R.string.parental_blocked_a11y)
     Column(

@@ -23,11 +23,16 @@ type TimeReader interface {
 	Time(ctx context.Context, p *principal.Principal, libraryID string) (parental.TimeState, error)
 }
 
+// CodeTimeUnknown is the code of the 503 a watch gets when its account's time
+// could not be read (the same as a stream session's, handlers/streaming): it tells
+// that 503 from any other.
+const CodeTimeUnknown = "parental_time_unknown"
+
 // writeTimeUnknown refuses a watch whose account's time could not be read: 503,
-// with Retry-After, never free time on an error.
+// with Retry-After and CodeTimeUnknown, never free time on an error.
 func writeTimeUnknown(w http.ResponseWriter, r *http.Request, err error) {
 	w.Header().Set("Retry-After", "5")
-	httperror.Write(w, r, httperror.Unavailable(5).Wrap(err))
+	httperror.Write(w, r, httperror.Unavailable(5).With("code", CodeTimeUnknown).Wrap(err))
 }
 
 // timeOK reports whether p may watch in libraryID now; when not, the answer is

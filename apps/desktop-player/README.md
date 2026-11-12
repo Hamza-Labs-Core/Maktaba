@@ -97,6 +97,12 @@ cd apps/desktop-player
   Check again; nothing asks again by itself. A 404 on a progress post ends the video; a 503 is
   "can't check your watching time right now". Live TV asks `POST /api/channels/{id}/play` for a
   limited sign-in and shows "Not available right now" for a programme above the limit.
+  Home says a restricted account's time today (the time left, or that it is over and when
+  watching opens again). A video the home does not show a limited sign-in is the blocked page,
+  "This isn't available" (no title or picture: the home sends none), with Ask a parent and Enter
+  parent PIN. Reason `no_heartbeat` (the stream's lease lapsed in a long pause) reopens the
+  stream once and is time's up only if that is refused. When the limit changes, every page's
+  kept state and the posters go and the pages read again.
 - **Finding a home:** JmDNS on every interface (`_maktaba._tcp`, `role=home` only, one row per
   home), saved homes, an address or a `maktaba://connect` link (typed, pasted, or the first
   command-line argument, which is always confirmed first). Tokens stay bound to the exact
