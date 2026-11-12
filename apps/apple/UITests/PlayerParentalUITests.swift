@@ -111,6 +111,34 @@ final class PlayerParentalUITests: PlayerUITestCase {
         XCTAssertFalse(element("blocked.title").exists)
     }
 
+    /// A child watches a video opened from Libraries; the limit's version moves for something
+    /// unrelated (a parent added a rule). The Libraries section is not built again around
+    /// the video: it stays open: no stream is closed, the player is not dismissed. Held in the
+    /// background meanwhile (57.09), that section's player paused too and did not start
+    /// again by itself.
+    func testAVideoPlayingFromLibrariesStaysOpenWhenTheLimitChanges() {
+        home.parental(Self.child)
+        launchSignedIn(sections: ["libraries"], open: "video/v1")
+        XCTAssertTrue(element("screen.videoDetail").waitForExistence(timeout: 20), "the video's page in Libraries")
+        app.buttons["Play"].firstMatch.tap()
+        XCTAssertTrue(element("player.surface").waitForExistence(timeout: 30), "the player")
+        waitUntil("the stream opened", timeout: 30) { self.count("POST", "/api/stream/sessions") >= 1 }
+        waitUntil("it plays", timeout: 30) { (self.element("player.surface").value as? String ?? "").contains("playing=true") }
+        let asked = count("GET", "/api/me/parental")
+        home.stub("GET", "/api/me/parental", body: #"{"restricted":true,"max_tier":9,"unrated":"hide","version":5}"#)
+        XCUIDevice.shared.press(.home)
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        app.activate()
+        waitUntil("the limit was read again", timeout: 20) { self.count("GET", "/api/me/parental") > asked }
+        // long enough for the section to be built again, were it still keyed on the limit
+        RunLoop.current.run(until: Date().addingTimeInterval(4))
+        XCTAssertTrue(element("player.surface").exists, "the video is still open")
+        XCTAssertEqual(count("DELETE", "/api/stream/sessions/ss-1"), 0, "its stream was not closed")
+        XCTAssertEqual(count("POST", "/api/stream/sessions"), 1, "nor opened again")
+        let state = element("player.surface").value as? String ?? ""
+        XCTAssertTrue(state.contains("playing=false"), "paused in the background under a limit, and not started again: \(state)")
+    }
+
     // MARK: 57.06
 
     /// T09 (and T08's other half): Enter parent PIN, a wrong PIN, then the right one opens

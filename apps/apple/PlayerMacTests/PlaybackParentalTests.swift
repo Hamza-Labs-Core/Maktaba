@@ -42,6 +42,53 @@ import MaktabaKit
         p.stop()
     }
 
+    /// 57.09 in a player no screen speaks for (the Libraries section's): the playback hears
+    /// the app leave the front itself, sends the position and, under a limit, pauses in the
+    /// background. A screen saying the same change again changes nothing.
+    @Test func thePlaybackHearsTheAppLeaveTheFrontByItself() async {
+        let center = NotificationCenter()
+        let notes = Playback.SceneNotes(inactive: .init("test.inactive"), background: .init("test.background"),
+                                        active: .init("test.active"))
+        let home = URL(string: "http://127.0.0.1:9")!
+        let p = Playback(client: APIClient(home: home, tokens: TokenStore(app: "test.mac.parental", home: home)),
+                         center: center, scene: notes)
+        p.limited = { true }
+        await p.load(AVPlayerItem(url: URL(string: "http://127.0.0.1:9/stream/none.m3u8")!), at: 0, playing: true)
+        #expect(p.isPlaying)
+        center.post(name: notes.inactive!, object: nil)
+        #expect(p.isPlaying, "inactive: it plays on")
+        center.post(name: notes.background!, object: nil)
+        #expect(!p.isPlaying && p.player?.rate == 0, "held in the background under a limit: paused, with no screen's help")
+        center.post(name: notes.active!, object: nil)
+        #expect(!p.isPlaying, "nothing resumes until a tap")
+        p.togglePause(from: "test")
+        #expect(p.isPlaying)
+        // the watch screen says what the notification already said: once is enough
+        center.post(name: notes.background!, object: nil)
+        p.togglePause(from: "test")
+        #expect(p.isPlaying, "played again by a tap while still held")
+        p.sceneChanged(active: false, background: true)
+        #expect(p.isPlaying, "the same change said twice does not pause what the person started")
+        p.stop()
+        // stopped: it no longer listens
+        center.post(name: notes.active!, object: nil)
+        center.post(name: notes.background!, object: nil)
+        #expect(p.player == nil)
+    }
+
+    /// With no limit the notifications change nothing that plays (story 48.24).
+    @Test func anUnlimitedSignInHearsTheBackgroundAndPlaysOn() async {
+        let center = NotificationCenter()
+        let notes = Playback.SceneNotes(inactive: nil, background: .init("test.background"), active: nil)
+        let home = URL(string: "http://127.0.0.1:9")!
+        let p = Playback(client: APIClient(home: home, tokens: TokenStore(app: "test.mac.parental", home: home)),
+                         center: center, scene: notes)
+        await p.load(AVPlayerItem(url: URL(string: "http://127.0.0.1:9/stream/none.m3u8")!), at: 0, playing: true)
+        center.post(name: notes.background!, object: nil)
+        #expect(p.isPlaying && (p.player?.rate ?? 0) > 0)
+        p.stop()
+    }
+
     /// A heartbeat refused for another session, or for no parental reason, changes nothing;
     /// stopping clears a parental stop.
     @Test func aRefusalThatIsNotThisStreamsChangesNothing() async {
