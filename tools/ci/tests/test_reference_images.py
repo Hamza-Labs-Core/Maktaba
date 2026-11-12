@@ -140,3 +140,14 @@ def test_the_workflow_reads_fresh_and_runs_on_edited() -> None:
     for kind in ("opened", "edited", "synchronize", "reopened"):
         assert kind in text
     assert "python3 tools/ci/reference_images.py" in text
+
+
+def test_the_workflow_never_cancels_a_run() -> None:
+    """A push and a body edit seconds apart start two runs on one head; a concurrency group that
+    cancels one leaves a CANCELLED check, which a fail-closed merge reads as not green."""
+    import yaml
+
+    wf = yaml.safe_load(
+        (Path(__file__).resolve().parents[3] / ".github/workflows/reference-images.yml").read_text()
+    )
+    assert "concurrency" not in wf

@@ -17,9 +17,10 @@ permissions:
   contents: read
   pull-requests: read
 
-concurrency:
-  group: reference-images-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+# No concurrency group: a push and a body edit seconds apart start two runs on the same head, and
+# a group cancelled one of them, leaving a CANCELLED check beside the green one; a fail-closed
+# merge reads that as not green (#1207, #1208). Each run reads the body and the files fresh and
+# takes seconds, so both finish, and both answer the same.
 
 jobs:
   reference-images:
