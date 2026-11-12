@@ -57,6 +57,7 @@ var phRows = []phRow{
 	{method: http.MethodGet, pattern: "/api/me/parental", path: "/api/me/parental", want: [8]int{401, 200, 200, 200, 200, 200, 200, 200}},
 	{method: http.MethodGet, pattern: "/api/me/parental-pin", path: "/api/me/parental-pin", want: [8]int{401, 403, 403, 200, 200, 200, 200, 403}},
 	{method: http.MethodGet, pattern: "/api/me/parental/guardians", path: "/api/me/parental/guardians", want: [8]int{401, 403, 200, 403, 403, 403, 403, 200}},
+	{method: http.MethodGet, pattern: "/api/me/parental/requests", path: "/api/me/parental/requests", want: [8]int{401, 403, 200, 403, 403, 403, 403, 200}},
 	{method: http.MethodGet, pattern: "/api/me/parental/time", path: "/api/me/parental/time", want: [8]int{401, 200, 200, 200, 200, 200, 200, 200}},
 	{method: http.MethodGet, pattern: "/api/parental/children", path: "/api/parental/children", want: [8]int{401, 200, 200, 200, 200, 200, 200, 200}},
 	{method: http.MethodGet, pattern: "/api/parental/library-suggestions", path: "/api/parental/library-suggestions", want: [8]int{401, 403, 403, 403, 403, 200, 200, 403}},

@@ -1210,6 +1210,7 @@
         "epic-57-parental-controls",
         "ep-get-me-parental",
         "ep-post-me-parental-requests",
+        "ep-get-me-parental-requests",
         "ep-get-me-parental-guardians",
         "ep-post-me-parental-unlock",
         "ep-get-me-parental-pin",
@@ -1225,6 +1226,7 @@
       "api_endpoints": [
         "GET /me/parental",
         "POST /me/parental/requests",
+        "GET /me/parental/requests",
         "GET /me/parental/guardians",
         "POST /me/parental/unlock",
         "GET /me/parental-pin",

@@ -316,6 +316,70 @@ func (s *Store) Requests(ctx context.Context, guardianID string, all bool, statu
 	return out, nil
 }
 
+// OwnRequestsWindow is how far back a child's own list of requests goes, and
+// MaxOwnRequests how many it holds at most.
+const (
+	OwnRequestsWindow = 7 * 24 * time.Hour
+	MaxOwnRequests    = 50
+)
+
+// OwnRequest is a request as the child who made it reads it back: what it asked
+// for, by the id it sent, and what became of it. It carries no title and no one
+// who answered: the child learns nothing about a hidden item beyond the id it
+// already had, and not which guardian said yes or no.
+type OwnRequest struct {
+	ID          string `json:"id"`
+	SubjectKind string `json:"subject_kind"`
+	SubjectID   string `json:"subject_id"`
+	// Minutes is the minutes a `time` request asked for; absent for every other kind.
+	Minutes   int        `json:"minutes,omitempty"`
+	Status    string     `json:"status"`
+	CreatedAt time.Time  `json:"created_at"`
+	ExpiresAt time.Time  `json:"expires_at"`
+	DecidedAt *time.Time `json:"decided_at,omitempty"`
+}
+
+// OwnRequests lists the requests childID made in the last OwnRequestsWindow,
+// newest first, MaxOwnRequests at most, whatever their status. Only the child's
+// own rows are read: the query names no other account. A `time` request still
+// waiting after its home day ended is listed as expired (the activity loop closes
+// it within a minute; the list does not wait for it). No subject is looked up, so
+// a request whose subject was deleted, moved or hidden since is listed all the
+// same, by id only.
+func (s *Store) OwnRequests(ctx context.Context, childID string) ([]OwnRequest, error) {
+	out := []OwnRequest{}
+	if !isUUID(childID) {
+		return out, nil
+	}
+	now := s.now().UTC()
+	loc, err := homeLocation(ctx, s.DB, now)
+	if err != nil {
+		return nil, err
+	}
+	day := DayStart(now, loc)
+	rows, err := s.DB.QueryContext(ctx,
+		`SELECT `+requestCols+` FROM parental_requests
+		  WHERE child_id = $1 AND created_at > $2
+		  ORDER BY created_at DESC, id DESC LIMIT $3`, childID, now.Add(-OwnRequestsWindow), MaxOwnRequests)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		r, err := scanRequest(rows)
+		if err != nil {
+			return nil, err
+		}
+		r.fit(loc)
+		if r.Status == RequestPending && r.SubjectKind == RequestTime && r.CreatedAt.Before(day) {
+			r.Status = RequestExpired
+		}
+		out = append(out, OwnRequest{ID: r.ID, SubjectKind: r.SubjectKind, SubjectID: r.SubjectID, Minutes: r.Minutes,
+			Status: r.Status, CreatedAt: r.CreatedAt, ExpiresAt: r.ExpiresAt, DecidedAt: r.DecidedAt})
+	}
+	return out, rows.Err()
+}
+
 // RequestChild returns the child a request belongs to, or ErrRequestNotFound.
 func (s *Store) RequestChild(ctx context.Context, id string) (string, error) {
 	if !isUUID(id) {

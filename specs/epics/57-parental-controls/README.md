@@ -326,6 +326,7 @@ existence is not shown. A route only an admin may use answers 403 to everyone el
 | `POST /api/me/parental/requests` `{subject_kind, subject_id}`; for more time, `subject_kind` is `time` and `subject_id` is the minutes as text (`"30"`, 1 to 480) | a restricted user | 57.06, 57.14 |
 | `GET /api/parental/requests?status=pending`, `POST /api/parental/requests/{id}/approve` `{expires_at?, minutes?}` → `{request, rule}` or, for `time`, `{request, grant}` (`minutes` only for `time`: left out, the minutes asked for); `POST …/deny` | admin, guardian of that child | 57.06, 57.14 |
 | `GET /api/me/parental-pin` → `{set}`, `PUT /api/me/parental-pin` `{pin, password}` | admin, guardian | 57.06 |
+| `GET /api/me/parental/requests` (the caller's own requests of the last 7 days, newest first, 50 at most: ids, status and times only; no title, no guardian) | a restricted user | 57.06 |
 | `GET /api/me/parental/guardians` (who can type a PIN for the caller) | a restricted user | 57.06 |
 | `POST /api/me/parental/unlock` `{guardian_id, pin, subject_kind, subject_id}` → `{rule}`, or `{grant}` for kind `time` | a restricted user (the PIN is the guardian's) | 57.06, 57.14 |
 | `GET /api/users/{id}/parental/activity?cursor=` | admin, guardian of that user | 57.08 |

@@ -247,8 +247,13 @@ func buildSurfaces() SurfaceTable {
 	exact(Open, all, "the device's age signal only ever tightens the caller's own limit (57.04)",
 		"/api/me/age-signal",
 	)
-	exact(Open, all, "Ask a parent and the PIN: the child asks, the guardian answers; each checks its caller itself and names no content the asker was not already refused (57.06)",
+	exact(Open, mPost, "Ask a parent: the child asks; the handler lets only a restricted account through and names no content the asker was not already refused (57.06)",
 		"/api/me/parental/requests",
+	)
+	exact(Open, mGet, "what became of the caller's own requests: the handler lets only a restricted account through and reads only its rows, by the ids it sent itself, with no title and no guardian (57.06)",
+		"/api/me/parental/requests",
+	)
+	exact(Open, all, "Ask a parent and the PIN: the child asks, the guardian answers; each checks its caller itself and names no content the asker was not already refused (57.06)",
 		"/api/me/parental/guardians",
 		"/api/me/parental/unlock",
 		"/api/me/parental-pin",

@@ -32,8 +32,16 @@ device.
   subject, with an expiry if chosen (Today, This week, Always), and answers `{request, rule}`.
   For a `time` request the body takes an optional `minutes` (1 to 480; left out, the minutes
   asked for) and no `expires_at`, and the answer is `{request, grant}`. `deny` closes it.
-- The child's Player polls `GET /api/me/parental` on foreground, and through the websocket's
-  `parental` event when connected. On approval the blocked page turns into the video page.
+- The child reads what became of its requests with `GET /api/me/parental/requests`: its own
+  requests of the last 7 days, newest first, at most 50, each `{id, subject_kind, subject_id,
+  minutes?, status, created_at, expires_at, decided_at?}`. No title and no guardian: the child
+  learns nothing about a hidden item beyond the id it asked for. A request whose subject the
+  child can no longer reach is still listed, by id. Same caller rule as asking.
+- While a request is pending the child's app reads that list every 15 seconds while it is in
+  front (the web: while the tab is visible; it stops when nothing is pending and after 30
+  minutes with no change, and Check again stays). On approval the blocked page turns into the
+  video page, or, for time, the time is read once and playback resumes. On a denial it shows
+  `parental.ask.denied` with Ask again and the PIN. On expiry it shows the ask buttons again.
 - **Notifications** (off by default, README §6.9): a guardian who turns them on gets a push
   through the notification hub (`api/internal/notify`), the device registry and Maktaba Cloud's
   push fanout, with only "A request is
@@ -93,6 +101,8 @@ digits. Wrong and locked answers do not say which guardian's PIN was close.
 | T07 | Go unit | notifications on/off | request | push payload has no title or name; none when off |
 | T08 | Player UI test (iPhone sim, en) | blocked → Ask → approve via `MockHome` | wait | video page |
 | T09 | Player UI test (iPad sim, ar) | PIN wrong ×5 | enter | locked message, mirrored keypad order kept left-to-right |
+| T10 | Go + Postgres | two children's requests; each status; 8-day-old and 60 rows | `GET /api/me/parental/requests` | own only; the four statuses; 7 days and 50, newest first; ids only |
+| T11 | Web unit | a pending request, then approved, denied, expired | poll | resume or reload; denied text with Ask again; ask buttons; polling stops when hidden, when nothing is pending and after 30 minutes |
 
 ## Strings
 
