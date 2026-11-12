@@ -283,19 +283,16 @@ as 60.05 says. One clash for 60.05 to settle in the install package: the guide's
   under reduce.
 - Print hides the nav, menu, copy buttons and the language hint.
 
-## Open for the lead
+## Decided at part A's review (2026-11-11)
 
-- **The renamed font.** The OFL reserves "Plex", so the subsets are named "Maktaba Text".
-  Serving IBM's unmodified complete files (72 KB a weight) would keep the name at about twice
-  the bytes.
-- **Address in Arabic.** The voice guide addresses households in the plural («بيتكم»،
-  «يمكنكم») and names buttons with the verbal noun («نسخ»). The app's catalog uses the
-  singular imperative («حاول»، «تأكد»), and 60.06's strings table is singular («ما الذي
-  يمكنك فعله») with the Latin name («Maktaba»); the mockups follow the voice guide, and those
-  strings would change with it.
-- **The name in Arabic.** Epic 59's Arabic guides write «Maktaba» in Latin; the voice guide and
-  the catalog write «مكتبة». The install mockup shows the guide as it is; 60.05's Phase 3 step
-  moves it.
+- **The font's name: "Maktaba Text".** The OFL reserves "Plex", so the subsets keep the
+  renamed family. Serving IBM's unmodified complete files would keep the name at about twice the
+  bytes (72 KB a weight) for no gain a visitor sees.
+- **Address in Arabic: the household plural** («بيتكم»، «يمكنكم»), buttons named with the
+  verbal noun («نسخ»). 60.06's strings follow it (#1180); the registry's own Arabic texts move to
+  it next.
+- **The name in Arabic: «مكتبة»** (Q3). Epic 59's Arabic guides, which write the name in Latin,
+  move to it.
 
 ## Review
 
@@ -303,7 +300,7 @@ The lead reviews every image at every width in both languages (`review-sheet.htm
 the outcome here: approved at a commit, or the changes asked for. No Phase 1 page story opens
 its pull request before part A is approved.
 
-| Part                  | Date | Reviewer | Commit | Outcome | Changes asked |
-| --------------------- | ---- | -------- | ------ | ------- | ------------- |
-| A, the shell          |      |          |        |         |               |
-| B, the full direction |      |          |        |         |               |
+| Part                  | Date       | Reviewer                           | Commit                                           | Outcome                                              | Changes asked                                    |
+| --------------------- | ---------- | ---------------------------------- | ------------------------------------------------ | ---------------------------------------------------- | ------------------------------------------------ |
+| A, the shell          | 2026-11-11 | the owner, after the lead's review | fb0cb05a3 (renders); 8c88225b7 (formatting only) | approved: the look, the voice guide and the wordmark | none; the font name stays "Maktaba Text" (below) |
+| B, the full direction |            |                                    |                                                  |                                                      |                                                  |

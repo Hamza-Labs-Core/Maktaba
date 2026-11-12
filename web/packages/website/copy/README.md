@@ -8,14 +8,14 @@
 ## Approvals
 
 The lead reviews every text for the voice. The Arabic, and part B's tagline, are approved by the
-owner or a native reader the owner names (Epic 60 Q1, Q2). Each approval is recorded here with
+owner, who reads every Arabic page (Epic 60 Q1, Q2). Each approval is recorded here with
 its date and the commit it approves.
 
-| What                                                    | Language | Approved by | Date | Commit | Notes |
-| ------------------------------------------------------- | -------- | ----------- | ---- | ------ | ----- |
-| The voice guide (`voice.md`)                            | English  |             |      |        |       |
-| The voice guide (`voice.md`)                            | Arabic   |             |      |        |       |
-| The part A mockups' copy (`../design/mockups/make.mjs`) | English  |             |      |        |       |
-| The part A mockups' copy (`../design/mockups/make.mjs`) | Arabic   |             |      |        |       |
-| The tagline (part B)                                    | English  |             |      |        |       |
-| The tagline (part B)                                    | Arabic   |             |      |        |       |
+| What                                                    | Language | Approved by | Date       | Commit    | Notes                          |
+| ------------------------------------------------------- | -------- | ----------- | ---------- | --------- | ------------------------------ |
+| The voice guide (`voice.md`)                            | English  | the owner   | 2026-11-11 | fb0cb05a3 |                                |
+| The voice guide (`voice.md`)                            | Arabic   | the owner   | 2026-11-11 | fb0cb05a3 | the household plural («بيتكم») |
+| The part A mockups' copy (`../design/mockups/make.mjs`) | English  | the owner   | 2026-11-11 | fb0cb05a3 |                                |
+| The part A mockups' copy (`../design/mockups/make.mjs`) | Arabic   | the owner   | 2026-11-11 | fb0cb05a3 |                                |
+| The tagline (part B)                                    | English  |             |            |           |                                |
+| The tagline (part B)                                    | Arabic   |             |            |           |                                |
