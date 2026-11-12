@@ -275,7 +275,7 @@ struct ActivityView: View {
                                         .foregroundStyle(Color.mktMuted)
                                 }
                             } icon: {
-                                Image(systemName: ActivityModel.symbol(event.kind))
+                                Image(systemName: ActivityModel.symbol(event.kind)).accessibilityHidden(true)
                             }
                             .accessibilityElement(children: .combine)
                             .accessibilityIdentifier("activity.event.\(event.id)")

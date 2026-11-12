@@ -27,23 +27,24 @@ struct ParentalProfileSection: View {
         if limit.limited || hasRange || store.canManage {
             Section {
                 if limit.restricted {
-                    Label { Text(verbatim: ParentalWords.text("parental.profile.managed")) } icon: { Image(systemName: "person.2.badge.gearshape") }
+                    IconLine(ParentalWords.text("parental.profile.managed"), systemImage: "person.2.badge.gearshape")
                         .accessibilityIdentifier("profile.parental.managed")
                     if let tier = limit.maxTier {
                         LabeledContent {
                             Text(verbatim: AgeTier.label(tier))
                         } label: {
-                            Label { Text(verbatim: ParentalWords.text("parental.profile.limit")) } icon: { Image(systemName: "lock") }
+                            Label { Text(verbatim: ParentalWords.text("parental.profile.limit")) } icon: { Image(systemName: "lock").accessibilityHidden(true) }
                         }
+                        .accessibilityElement(children: .combine)
                         .accessibilityIdentifier("profile.parental.limit")
                     }
                 }
                 if let device = limit.deviceLimit {
-                    Label { Text(verbatim: ParentalWords.text("ageSignal.limit.device", AgeTier.label(device))) } icon: { Image(systemName: "iphone") }
+                    IconLine(ParentalWords.text("ageSignal.limit.device", AgeTier.label(device)), systemImage: "iphone")
                         .accessibilityIdentifier("profile.parental.device")
                 }
                 if limit.devicePending || signal.answer?.pendingLooser == true {
-                    Label { Text(verbatim: ParentalWords.text("ageSignal.limit.pending")) } icon: { Image(systemName: "hourglass") }
+                    IconLine(ParentalWords.text("ageSignal.limit.pending"), systemImage: "hourglass")
                         .accessibilityIdentifier("profile.parental.pending")
                 }
                 if hasRange {
@@ -51,7 +52,7 @@ struct ParentalProfileSection: View {
                         LabeledContent {
                             Text(verbatim: signal.rangeText())
                         } label: {
-                            Label { Text(verbatim: ParentalWords.text("ageSignal.profile.title")) } icon: { Image(systemName: "person.text.rectangle") }
+                            Label { Text(verbatim: ParentalWords.text("ageSignal.profile.title")) } icon: { Image(systemName: "person.text.rectangle").accessibilityHidden(true) }
                         }
                         Text(verbatim: ParentalWords.text("ageSignal.profile.detail"))
                             .font(.footnote)

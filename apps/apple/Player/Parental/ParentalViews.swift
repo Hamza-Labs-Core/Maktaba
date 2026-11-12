@@ -522,7 +522,7 @@ struct TimeLeftBar: View {
     }
 
     private func label(_ text: String, strong: Bool) -> some View {
-        Label { Text(verbatim: text) } icon: { Image(systemName: "hourglass") }
+        IconLine(text, systemImage: "hourglass")
             .font(.maktabaBody(15, weight: strong ? .semibold : .medium, relativeTo: .subheadline))
             .foregroundStyle(overVideo ? Color.white : Color.mktText)
             .padding(.horizontal, MaktabaTokens.Spacing.s4)

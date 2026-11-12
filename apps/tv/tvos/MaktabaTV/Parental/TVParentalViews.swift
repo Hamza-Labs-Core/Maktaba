@@ -588,7 +588,7 @@ struct TVTimeLeft: View {
     }
 
     private func label(_ text: String, strong: Bool) -> some View {
-        Label { Text(verbatim: text) } icon: { Image(systemName: "hourglass") }
+        IconLine(text, systemImage: "hourglass")
             .font(Theme.body(28, weight: strong ? .semibold : .medium))
             .foregroundStyle(overVideo ? Color.white : Theme.text)
             .padding(.horizontal, 32)

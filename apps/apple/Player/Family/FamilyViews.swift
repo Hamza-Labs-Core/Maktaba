@@ -46,7 +46,7 @@ struct FamilyReadOnlyNote: View {
     var body: some View {
         if readOnly {
             Section {
-                Label { Text(verbatim: word("family.readOnlyCloud")) } icon: { Image(systemName: "lock") }
+                IconLine(word("family.readOnlyCloud"), systemImage: "lock")
                     .foregroundStyle(Color.mktMuted)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("family.readOnly")
@@ -519,7 +519,7 @@ struct ChildView: View {
                 Section {
                     ForEach(account.guardians) { guardian in
                         HStack {
-                            Label { Text(verbatim: guardian.username) } icon: { Image(systemName: "person.badge.shield.checkmark") }
+                            Label { Text(verbatim: guardian.username) } icon: { Image(systemName: "person.badge.shield.checkmark").accessibilityHidden(true) }
                             Spacer()
                             // naming and removing guardians is an admin's (the home refuses a guardian)
                             if account.isAdmin {
@@ -536,19 +536,14 @@ struct ChildView: View {
                     if account.isAdmin, !candidates.isEmpty {
                         // a sheet with the accounts, not a menu in the row: the page is still
                         // reading its rules and time when this shows, and each answer drew
-                        // the row again and closed a menu that had just opened
+                        // the row again and closed a menu that had just opened. The sheet
+                        // hangs on the page, not on this row, so a row drawn again keeps it
                         Button { addingGuardian = true } label: {
                             Label { Text(verbatim: word("family.guardians.add")) } icon: { Image(systemName: "plus") }
                                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                         }
                         .accessibilityIdentifier("child.guardian.add")
                         .familyChange()
-                        .sheet(isPresented: $addingGuardian) {
-                            GuardianPicker(candidates: candidates) { person in
-                                addingGuardian = false
-                                if let person { Task { await model.addGuardian(person) } }
-                            }
-                        }
                     }
                 } header: {
                     Text(verbatim: word("family.child.guardians")).accessibilityAddTraits(.isHeader)
@@ -570,6 +565,12 @@ struct ChildView: View {
         .task { await model.load() }
         .refreshable { await model.load() }
         .familyNotice(Binding { model.notice } set: { model.notice = $0 })
+        .sheet(isPresented: $addingGuardian) {
+            GuardianPicker(candidates: model.guardianCandidates(accounts, restricted: restricted)) { person in
+                addingGuardian = false
+                if let person { Task { await model.addGuardian(person) } }
+            }
+        }
         .confirmationDialog(Text(verbatim: word("family.child.lift.confirm", child.username)), isPresented: $confirmLift, titleVisibility: .visible) {
             Button(role: .destructive) {
                 Task { await model.lift() }
@@ -653,7 +654,7 @@ struct RulesView: View {
                             }
                         }
                     } icon: {
-                        Image(systemName: Self.symbol(rule.subjectKind))
+                        Image(systemName: Self.symbol(rule.subjectKind)).accessibilityHidden(true)
                     }
                     Spacer()
                     Button { Task { await model.remove(rule) } } label: { Text(verbatim: word("family.rules.remove")) }
