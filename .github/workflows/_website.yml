@@ -354,6 +354,33 @@ jobs:
           pkill -f "wrangler dev --var CANONICAL_REDIRECTS:off" || true
           exit $rc
 
+      # A reference that does not exist yet is written by the run (playwright.config.ts,
+      # updateSnapshots "missing") in this runner's image, uploaded for the pull request to
+      # commit, and fails the job: a page never passes without its committed references.
+      - name: References this run had to write
+        id: new-references
+        if: always()
+        working-directory: .
+        run: |
+          new=$(git status --porcelain --untracked-files=all -- web/packages/website/e2e/__screenshots__ | awk '$1 == "??" {print $2}')
+          if [ -z "$new" ]; then echo "every reference exists"; exit 0; fi
+          mkdir -p new-references
+          for f in $new; do
+            cp "$f" new-references/
+            echo "::error file=$f::no committed reference: this run wrote it in CI's image (artifact website-new-references-${{ matrix.shard }}); look at it, commit it and list it under Reference images:"
+          done
+          echo "written=true" >> "$GITHUB_OUTPUT"
+          exit 1
+
+      - name: Upload the references this run wrote
+        if: always() && steps.new-references.outputs.written == 'true'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: website-new-references-${{ matrix.shard }}
+          path: new-references/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload the report
         if: always()
         uses: actions/upload-artifact@v7.0.1
