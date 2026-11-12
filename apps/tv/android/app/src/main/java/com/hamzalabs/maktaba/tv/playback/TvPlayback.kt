@@ -35,6 +35,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -105,9 +107,13 @@ class TvPlayback(
     private var openedAt = 0L
     private var ended = false
     private var running: Job? = null
-    /** How many sessions were opened; the reopen after a lapsed lease (`no_heartbeat`), and when the last one took. */
+    /** How many sessions were opened. */
     private var opens = 0
+    /** One open at a time: the 10-second watch's reopen and a lapse's reopen never overlap. Each video has its own ([stop] starts anew), so the next one never waits for an open of the one before. */
+    private var oneOpen = Mutex()
+    /** The reopen after a lapsed lease (`no_heartbeat`); the session the last one gave, and when. */
     private var lapseReopen: Job? = null
+    private var lapseReopened: String? = null
     private var lapseReopenedAt = 0L
     private val streamHttp by lazy { client.streamHttp() }
 
@@ -125,6 +131,8 @@ class TvPlayback(
         running = null
         lapseReopen?.cancel()
         lapseReopen = null
+        lapseReopened = null
+        oneOpen = Mutex()
         lapseReopenedAt = 0L
         val p = player
         val s = session
@@ -173,7 +181,7 @@ class TvPlayback(
      */
     private suspend fun openWhenFree(fromMs: Long) {
         while (true) {
-            open(fromMs)
+            oneOpen.withLock { open(fromMs) }
             val w = waiting ?: return
             delay(busyRetryMs(w.retryAfterSec))
         }
@@ -278,7 +286,7 @@ class TvPlayback(
         if (session != s) return
         when (answer) {
             ProgressAnswer.Ok -> cannotCheck = false
-            is ProgressAnswer.TimeOver -> refusedForTime(answer.refusal, atMs)
+            is ProgressAnswer.TimeOver -> refusedForTime(s, answer.refusal, atMs)
             ProgressAnswer.Ended -> if (!completed && !ended) {
                 Log.i("MaktabaTV", "playback: the home ended the stream")
                 session = null
@@ -296,23 +304,39 @@ class TvPlayback(
      * The home refused the stream that plays, for time. `no_heartbeat` is not the time being
      * over: the stream sent no progress for a minute (a long pause) and its lease lapsed. It is
      * opened again once, where it is; the home's answer to that open says whether there is time
-     * ([open] stops for it when there is not). A lapse again right after such a reopen stops.
+     * ([open] stops for it when there is not). While that open is on its way it answers every
+     * further lapse (the pause's post and the watch's can both be refused). The stream such a
+     * reopen gave lapsing again right after it stops. [of] is the session the refusal is about.
      * The same as the phone Player's.
      */
-    private fun refusedForTime(refusal: TimeRefusal, atMs: Long) {
+    private fun refusedForTime(of: String, refusal: TimeRefusal, atMs: Long) {
+        // a refusal of a session since closed or replaced says nothing about what plays now
         val s = session
-        val sinceReopen = nowMs() - lapseReopenedAt
-        if (refusal.reason != TimeReason.NO_HEARTBEAT || s == null || sinceReopen < LAPSE_REOPEN_ONCE_MS) {
+        if (s == null || of != s) return
+        if (refusal.reason != TimeReason.NO_HEARTBEAT) {
             stopForTime(refusal, atMs)
             return
         }
+        // the stream is being opened again for a lapse already: that open answers this one too
         if (lapseReopen?.isActive == true) return
+        if (s == lapseReopened && nowMs() - lapseReopenedAt < LAPSE_REOPEN_ONCE_MS) {
+            stopForTime(refusal, atMs)
+            return
+        }
         Log.i("MaktabaTV", "playback: the stream's lease lapsed; opening it again")
         val wasPlaying = player?.playWhenReady == true
+        val before = opens
         lapseReopen = scope.launch(Dispatchers.Main.immediate) {
-            val before = opens
-            open(fromMs = atMs.coerceAtLeast(0))
-            if (opens != before) lapseReopenedAt = nowMs()
+            oneOpen.withLock {
+                // stopped, or already replaced (a renewal was on its way), while this waited its turn
+                if (session != s || opens != before) return@withLock
+                open(fromMs = atMs.coerceAtLeast(0))
+                val now = session
+                if (now != null && opens != before) {
+                    lapseReopened = now
+                    lapseReopenedAt = nowMs()
+                }
+            }
             if (!wasPlaying) player?.playWhenReady = false
         }
     }
@@ -350,12 +374,14 @@ class TvPlayback(
             val failed = p.playerError
             // the streaming service refused the stream itself because the time is over
             failed?.let(::tvPlaybackTimeRefusal)?.let {
-                refusedForTime(it, at)
+                refusedForTime(s, it, at)
                 if (player == null) return
                 continue
             }
             // the stream is being opened again after a lapsed lease: that open is the only one
             if (lapseReopen?.isActive == true) continue
+            // replaced while that post was out: the next tick looks at the stream that plays now
+            if (session != s) continue
             if (failed != null && nowMs() - openedAt < 30_000) {
                 p.release()
                 player = null

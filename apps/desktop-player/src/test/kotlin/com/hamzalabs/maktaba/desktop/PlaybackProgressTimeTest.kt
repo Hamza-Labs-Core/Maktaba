@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.desktop
 
+import com.hamzalabs.maktaba.core.playback.QualityOption
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -8,6 +9,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
@@ -123,6 +126,125 @@ class PlaybackProgressTimeTest {
         assertTrue("where it was", home.asked("POST /api/stream/sessions").last().body!!.utf8().contains("754"))
         main.pass(60_000)
         assertEquals("once", 2, opens.get())
+    }
+
+    /** Every open after the first is answered only once the latch opens ([opens] counts them as asked). */
+    private fun slowReopens(): CountDownLatch {
+        val gate = CountDownLatch(1)
+        home.answer("POST /api/stream/sessions") {
+            val n = opens.incrementAndGet()
+            if (n > 1) gate.await(STALL_MS, TimeUnit.MILLISECONDS)
+            TestHome.json("""{"session_id":"s$n","mode":"direct","direct_url":"/stream/s$n.mp4"}""")
+        }
+        return gate
+    }
+
+    private fun resume() {
+        val e = events.get()!!
+        onMain { e.playing(false) }
+        onMain { e.playing(true) }
+    }
+
+    /**
+     * A resume's post and the next ones are all refused for one lapse: the reopen on its way
+     * answers them all, and a refusal of the session before it, read after the new one plays,
+     * says nothing about the new one.
+     */
+    @Test
+    fun lapsesHeardWhileTheStreamIsOpenedAgainAndOnesOfTheSessionBeforeOpenNothingMore() {
+        // s1's lease lapsed: every post of it is refused. Its third post is answered late
+        val late = CountDownLatch(1)
+        val ofS1 = AtomicInteger()
+        home.answer("POST /api/stream/sessions/s1/progress") {
+            if (ofS1.incrementAndGet() == 3) late.await(STALL_MS, TimeUnit.MILLISECONDS)
+            TestHome.json(lapsed, 403)
+        }
+        home.answer("POST /api/stream/sessions/s2/progress", """{"position_sec":754}""")
+        val reopen = slowReopens()
+        playingAt(754_000)
+        until("the reopen is asked for") { opens.get() == 2 }
+        // resumed while the reopen is on its way: that post of s1 is refused too, and read
+        resume()
+        until("the second post") { posts() == 2 }
+        main.settle(held = 1)
+        assertEquals("the reopen on its way answers it", 2, opens.get())
+        assertNull(onMain { playback.timeUp })
+        // this post of s1 is answered only after s2 plays
+        resume()
+        until("the third post") { posts() == 3 }
+        reopen.countDown()
+        until("opened again") { home.asked("DELETE /api/stream/sessions/s1").isNotEmpty() && playback.player != null }
+        main.settle(held = 1)
+        late.countDown()
+        main.settle()
+        assertEquals("opened again once", 2, opens.get())
+        assertNull("no time's-up screen: a refusal of s1 says nothing about s2", onMain { playback.timeUp })
+        assertNotNull(onMain { playback.player })
+        main.pass(60_000)
+        assertEquals(2, opens.get())
+        assertNull(onMain { playback.timeUp })
+        assertTrue("the new session's own posts went out", home.asked("POST /api/stream/sessions/s2/progress").isNotEmpty())
+    }
+
+    /**
+     * The lapse stopped the stream itself too (the player failed), and the watch ticks while
+     * the stream is being opened again: that open is the one open. The watch opened it a second
+     * time for the failure, which left a session nobody closed.
+     */
+    @Test
+    fun aFailedPlayerWhileTheStreamIsOpenedAgainForALapseOpensNothingMore() {
+        playingAt(754_000)
+        until("the first post") { posts() == 1 }
+        // past the half minute after opening, in which a failed player shows why instead
+        main.pass(30_000)
+        home.answer("POST /api/stream/sessions/s1/progress", lapsed, 403)
+        home.answer("POST /api/stream/sessions/s2/progress", """{"position_sec":754}""")
+        val reopen = slowReopens()
+        resume()
+        until("the reopen is asked for") { opens.get() == 2 }
+        // the streaming service refused the stream itself as well: the player failed
+        val e = events.get()!!
+        onMain { e.failed("The stream was refused.") }
+        val posted = posts()
+        main.advance(10_000)
+        until("the watch's post is answered") { posts() == posted + 1 && home.running == 1 }
+        onMain { }
+        assertEquals("only the reopen is on its way", 1, home.running)
+        assertEquals(2, opens.get())
+        reopen.countDown()
+        until("opened again") { home.asked("DELETE /api/stream/sessions/s1").isNotEmpty() && playback.player != null }
+        main.settle()
+        assertEquals("the lapse's reopen was the one open", 2, opens.get())
+        assertNull(onMain { playback.timeUp })
+        assertNull(onMain { playback.problem })
+        main.pass(60_000)
+        assertEquals(2, opens.get())
+        assertTrue("no session is left open behind it", home.asked("DELETE /api/stream/sessions/s2").isEmpty())
+    }
+
+    /**
+     * "Lapsed again right after its reopen" is about the session that reopen gave. A session
+     * opened since (another quality) that lapses is opened again like any other.
+     */
+    @Test
+    fun aLapseOfASessionOpenedSinceTheReopenIsOpenedAgain() {
+        home.answer("POST /api/stream/sessions/s1/progress", lapsed, 403)
+        home.answer("POST /api/stream/sessions/s2/progress", """{"position_sec":754}""")
+        home.answer("POST /api/stream/sessions/s4/progress", """{"position_sec":754}""")
+        playingAt(754_000)
+        until("opened again") { opens.get() == 2 && playback.player != null && home.asked("DELETE /api/stream/sessions/s1").isNotEmpty() }
+        main.settle()
+        // another quality: s3 replaces s2, the session the reopen gave
+        home.answer("POST /api/stream/sessions/s3/progress", lapsed, 403)
+        onMain { playback.chooseQuality(QualityOption(720, 3_000)) }
+        until("the quality's session") { opens.get() == 3 && home.asked("DELETE /api/stream/sessions/s2").isNotEmpty() }
+        main.settle()
+        resume()
+        until("s3 opened again") { opens.get() == 4 && home.asked("DELETE /api/stream/sessions/s3").isNotEmpty() }
+        main.settle()
+        assertNull("not the time's-up screen: s3 was not the reopened session", onMain { playback.timeUp })
+        assertNotNull(onMain { playback.player })
+        assertEquals(4, opens.get())
     }
 
     @Test

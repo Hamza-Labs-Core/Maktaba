@@ -273,6 +273,103 @@ class ParentalPlaybackTest {
         assertEquals("opened again once", 2, streams.opens().size)
     }
 
+    private fun session(n: Int, expires: String = "2099-01-01T00:00:00Z") = FakeHome.json(
+        """{"session_id":"s$n","mode":"transcode","manifest_url":"/stream/s$n/master.m3u8?sig=x","expires_at":"$expires","ladder":[]}""",
+        code = 201,
+    )
+
+    /**
+     * The pause's post, the watch's and the stream itself can all be refused for one lapse: the
+     * reopen on its way answers them all, and a refusal of the session before it, read after the
+     * new one plays, says nothing about the new one.
+     */
+    @Test
+    fun lapsesHeardWhileTheStreamIsOpenedAgainAndOnesOfTheSessionBeforeOpenNothingMore() {
+        playback.play(v1, startSec = 1)
+        val p = playing()
+        p.playedPast(1_200)
+        home.answer("/api/stream/sessions/s1/progress") { timeOver(TimeReason.NO_HEARTBEAT, next = null) }
+        // the home is slow to answer the reopen
+        val slow = home.hold("/api/stream/sessions") { session(2) }
+        p.pause()
+        runUntil { slow.wasAsked }
+        val lapse = playbackTimeRefusal(streamRefused(TimeReason.NO_HEARTBEAT))!!
+        // the stream itself is refused too, and another post of s1, while that open is out
+        playback.refusedForTime(lapse, p.currentPosition, of = "s1")
+        playback.refusedForTime(lapse, p.currentPosition, of = "s1")
+        assertNull("the reopen on its way answers them", playback.timeUp)
+        assertEquals(2, streams.opens().size)
+        slow.release()
+        runUntil { "s1" in streams.closed() }
+        settle()
+        assertEquals(2, streams.opens().size)
+        // a post of s1 answered only now: s2 plays, and this says nothing about it
+        playback.refusedForTime(lapse, p.currentPosition, of = "s1")
+        playback.refusedForTime(playbackTimeRefusal(streamRefused(TimeReason.LIMIT_REACHED))!!, p.currentPosition, of = "s1")
+        assertNull("a refusal of the session before is not the new one's", playback.timeUp)
+        assertNotNull(playback.player)
+        aMinutePasses()
+        assertEquals("opened again once", 2, streams.opens().size)
+        assertNull(playback.timeUp)
+        assertNull(playback.problem)
+        assertNotNull(playback.player)
+        assertFalse("it was paused, and still is", playback.control!!.playWhenReady)
+    }
+
+    /**
+     * The signed URL's renewal falls due while the stream is being opened again for a lapse:
+     * that open is the one open. Two opens, one after the other, restarted the video under the
+     * viewer.
+     */
+    @Test
+    fun aRenewalDueWhileTheStreamIsOpenedAgainForALapseOpensNothingMore() {
+        // the signed URL ends in 65 seconds: the watch would renew it at its first tick
+        val soon = Instant.ofEpochMilli(looperTime() + 65_000).toString()
+        home.answer("/api/stream/sessions") { session(1, expires = soon) }
+        playback.play(v1, startSec = 1)
+        val p = playing()
+        p.playedPast(1_200)
+        home.answer("/api/stream/sessions/s1/progress") { timeOver(TimeReason.NO_HEARTBEAT, next = null) }
+        val slow = home.hold("/api/stream/sessions") { session(2) }
+        p.pause()
+        runUntil { slow.wasAsked }
+        // the watch ticks while that open is out
+        idleFor(10_000)
+        slow.release()
+        runUntil { "s1" in streams.closed() }
+        aMinutePasses()
+        assertEquals("the lapse's reopen was the one open", 2, streams.opens().size)
+        assertNull(playback.timeUp)
+        assertNull(playback.problem)
+        assertNotNull(playback.player)
+        assertEquals("nothing but the session before was closed", listOf("s1"), streams.closed())
+    }
+
+    /**
+     * "Lapsed again right after its reopen" is about the session that reopen gave. A session
+     * opened since (another quality) that lapses is opened again like any other.
+     */
+    @Test
+    fun aLapseOfASessionOpenedSinceTheReopenIsOpenedAgain() {
+        playback.play(v1, startSec = 1)
+        val p = playing()
+        p.playedPast(1_200)
+        home.answer("/api/stream/sessions/s1/progress") { timeOver(TimeReason.NO_HEARTBEAT, next = null) }
+        p.pause()
+        runUntil { streams.opens().size == 2 && "s1" in streams.closed() }
+        settle()
+        // another quality: s3 replaces s2, the session the reopen gave
+        playback.setQuality(1_500)
+        runUntil { streams.opens().size == 3 && "s2" in streams.closed() }
+        settle()
+        playback.refusedForTime(playbackTimeRefusal(streamRefused(TimeReason.NO_HEARTBEAT))!!, p.currentPosition)
+        runUntil { streams.opens().size == 4 && "s3" in streams.closed() }
+        aMinutePasses()
+        assertNull("not the time's-up screen: s3 was not the reopened session", playback.timeUp)
+        assertNotNull(playback.player)
+        assertEquals(4, streams.opens().size)
+    }
+
     @Test
     fun checkAgainOpensTheSameVideoWhereItStopped() {
         home.answer("/api/stream/sessions") { timeOver(TimeReason.LIMIT_REACHED) }

@@ -33,6 +33,8 @@ import org.robolectric.Shadows.shadowOf
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.LockSupport
 
@@ -42,6 +44,12 @@ import java.util.concurrent.locks.LockSupport
  * the refusal for the time's-up screen, and nothing asks the home again by itself; a 404 on a
  * progress post is the stream's end; a 503 is "cannot check right now". Against a MockWebServer
  * home; the main looper's clock is moved by hand.
+ *
+ * The fake home's stream never answers while a test runs ([streamHeld]): the player waits for
+ * it and neither plays nor fails by itself. An answer that is no video made the player fail on
+ * its own thread a moment later, at no moment of the test's clock: when that landed past 30
+ * seconds of it, the 10-second watch opened the stream again for the failure, and a test
+ * counting the opens failed.
  */
 @RunWith(AndroidJUnit4::class)
 class TvParentalTimeTest {
@@ -51,11 +59,17 @@ class TvParentalTimeTest {
     private lateinit var server: MockWebServer
     private val seen = CopyOnWriteArrayList<String>()
     @Volatile private var open: () -> MockResponse = { opened() }
-    @Volatile private var progress: () -> MockResponse = { MockResponse.Builder().code(200).body("{}").build() }
+    /** The answer to a progress post, by its path (`/api/stream/sessions/s1/progress`). */
+    @Volatile private var progress: (String) -> MockResponse = { taken() }
+    /** Opens when the test ends: until then the stream's own file is not answered. */
+    private val streamHeld = CountDownLatch(1)
     private var playback: TvPlayback? = null
 
-    private fun opened() = MockResponse.Builder().code(201).setHeader("Content-Type", "application/json")
-        .body("""{"session_id":"s1","mode":"direct","direct_url":"/stream/s1/v1.mp4?sig=x","expires_at":"2099-01-01T00:00:00Z"}""").build()
+    private fun taken() = MockResponse.Builder().code(200).body("{}").build()
+
+    /** Session [n] opened; its signed URL good until [expires]. */
+    private fun opened(n: Int = 1, expires: String = "2099-01-01T00:00:00Z") = MockResponse.Builder().code(201).setHeader("Content-Type", "application/json")
+        .body("""{"session_id":"s$n","mode":"direct","direct_url":"/stream/s$n/v1.mp4?sig=x","expires_at":"$expires"}""").build()
 
     private fun timeOver(reason: String, next: String? = "2026-11-12T04:00:00Z") = MockResponse.Builder().code(403)
         .setHeader("Content-Type", "application/problem+json")
@@ -73,7 +87,11 @@ class TvParentalTimeTest {
                 seen += "${request.method} $p"
                 return when {
                     p == "/api/stream/sessions" && request.method == "POST" -> open()
-                    p.endsWith("/progress") -> progress()
+                    p.endsWith("/progress") -> progress(p)
+                    p.startsWith("/stream/") -> {
+                        streamHeld.await(STALL_MS, TimeUnit.MILLISECONDS)
+                        MockResponse.Builder().code(204).build()
+                    }
                     else -> MockResponse.Builder().code(204).build()
                 }
             }
@@ -84,6 +102,7 @@ class TvParentalTimeTest {
     @After
     fun stop() {
         playback?.stop()
+        streamHeld.countDown()
         scope.cancel()
         background.cancel()
         server.close()
@@ -124,10 +143,14 @@ class TvParentalTimeTest {
      * looper has run what those left it. OkHttp counts a call as running until its callback
      * returns, and the client resumes its caller inside that callback, so a call or coroutine
      * that ends has already queued its next step on the main looper.
+     *
+     * [held] calls are ones the test holds on the home (an open it answers later), and
+     * [heldPosts] of them progress posts, each with its background work still alive: everything
+     * but those has landed.
      */
-    private fun settle() {
-        fun quiet() = calls.runningCallsCount() == 0 && calls.queuedCallsCount() == 0 &&
-            background.coroutineContext[Job]!!.children.none()
+    private fun settle(held: Int = 0, heldPosts: Int = 0) {
+        fun quiet() = calls.runningCallsCount() == held && calls.queuedCallsCount() == 0 &&
+            background.coroutineContext[Job]!!.children.count() == heldPosts
         val until = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(STALL_MS)
         while (true) {
             val asked = seen.size
@@ -195,7 +218,7 @@ class TvParentalTimeTest {
         pb.start()
         runUntil { pb.player != null }
         // a long pause: the stream's lease lapsed. That is not the time being over
-        progress = { if (opens() == 1) timeOver(TimeReason.NO_HEARTBEAT, next = null) else MockResponse.Builder().code(200).body("{}").build() }
+        progress = { if (opens() == 1) timeOver(TimeReason.NO_HEARTBEAT, next = null) else taken() }
         pb.player!!.seekTo(30_000)
         pb.player!!.playWhenReady = false
         runUntil { opens() == 2 }
@@ -206,6 +229,115 @@ class TvParentalTimeTest {
         assertFalse("it was paused, and still is", pb.player!!.playWhenReady)
         idleFor(60_000)
         assertEquals("once", 2, opens())
+    }
+
+    /** An open the home answers (with session [n]) only once [release]d. */
+    private inner class SlowOpen(private val n: Int) {
+        private val asked = CountDownLatch(1)
+        private val gate = CountDownLatch(1)
+        val wasAsked: Boolean get() = asked.count == 0L
+
+        init {
+            open = {
+                asked.countDown()
+                gate.await(STALL_MS, TimeUnit.MILLISECONDS)
+                opened(n)
+            }
+        }
+
+        fun release() = gate.countDown()
+    }
+
+    /**
+     * The pause's post and the next ones are all refused for the lapse: the reopen on its way
+     * answers them all, and a refusal of the session before it, read after the new one plays,
+     * says nothing about the new one.
+     */
+    @Test
+    fun lapsesHeardWhileTheStreamIsOpenedAgainAndOnesOfTheSessionBeforeOpenNothingMore() {
+        val pb = playback()
+        pb.start()
+        runUntil { pb.player != null }
+        // s1's lease lapsed: every post of it is refused. Its third post is answered late
+        val late = CountDownLatch(1)
+        val ofS1 = AtomicInteger()
+        progress = { path ->
+            if ("/s1/" in path) {
+                if (ofS1.incrementAndGet() == 3) late.await(STALL_MS, TimeUnit.MILLISECONDS)
+                timeOver(TimeReason.NO_HEARTBEAT, next = null)
+            } else {
+                taken()
+            }
+        }
+        val reopen = SlowOpen(2)
+        pb.player!!.seekTo(30_000)
+        pb.player!!.playWhenReady = false
+        runUntil { reopen.wasAsked }
+        // resumed while the reopen is on its way: that post of s1 is refused too, and read
+        pb.player!!.playWhenReady = true
+        runUntil { posts() == 2 }
+        settle(held = 1)
+        assertEquals("the reopen on its way answers it", 2, opens())
+        assertNull(pb.timeUp)
+        // paused again: this post of s1 is answered only after s2 plays
+        pb.player!!.playWhenReady = false
+        runUntil { posts() == 3 }
+        settle(held = 2, heldPosts = 1)
+        reopen.release()
+        runUntil { "DELETE /api/stream/sessions/s1" in seen }
+        settle(held = 1, heldPosts = 1)
+        assertNotNull(pb.player)
+        late.countDown()
+        settle()
+        assertEquals("opened again once", 2, opens())
+        assertNull("no time's-up screen: a refusal of s1 says nothing about s2", pb.timeUp)
+        assertNull(pb.problem)
+        assertNotNull(pb.player)
+        assertFalse("it was paused, and still is", pb.player!!.playWhenReady)
+        assertTrue("the new session's own post went out", "POST /api/stream/sessions/s2/progress" in seen)
+        idleFor(60_000)
+        assertEquals(2, opens())
+        assertNull(pb.timeUp)
+    }
+
+    /**
+     * The 10-second watch is renewing the stream (its signed URL ends) when a post of it is
+     * refused for a lapsed lease: the renewal on its way is the one open. Two opens together
+     * left a session nobody closed and restarted the video under the viewer.
+     */
+    @Test
+    fun aLapseHeardWhileTheStreamIsBeingRenewedOpensNothingMore() {
+        // the signed URL ends in 65 seconds: the watch renews it at its first tick
+        val soon = Instant.ofEpochMilli(looperTime() + 65_000).toString()
+        open = { opened(1, expires = soon) }
+        val pb = playback()
+        pb.start()
+        runUntil { pb.player != null }
+        pb.player!!.seekTo(30_000)
+        settle()
+        progress = { path -> if ("/s1/" in path) timeOver(TimeReason.NO_HEARTBEAT, next = null) else taken() }
+        val renewal = SlowOpen(2)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(10_000))
+        runUntil { renewal.wasAsked }
+        // paused meanwhile: the post is refused for the lapse, and read while the renewal is out
+        pb.player!!.playWhenReady = false
+        runUntil { posts() == 1 }
+        runUntil { background.coroutineContext[Job]!!.children.none() }
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("only the renewal is on its way", 1, calls.runningCallsCount())
+        assertEquals(2, opens())
+        renewal.release()
+        runUntil { "DELETE /api/stream/sessions/s1" in seen }
+        settle()
+        assertEquals("the renewal was the one open", 2, opens())
+        assertNull(pb.timeUp)
+        assertNull(pb.problem)
+        assertNotNull(pb.player)
+        assertFalse("it was paused, and still is", pb.player!!.playWhenReady)
+        assertFalse("no session is left open behind it", "DELETE /api/stream/sessions/s2" in seen)
+        idleFor(60_000)
+        assertEquals(2, opens())
+        assertNull(pb.timeUp)
     }
 
     @Test
@@ -296,7 +428,7 @@ class TvParentalTimeTest {
         runUntil { pb.cannotCheck }
         assertNotNull("the video is still there", pb.player)
         assertNull(pb.timeUp)
-        progress = { MockResponse.Builder().code(200).body("{}").build() }
+        progress = { taken() }
         pb.player!!.playWhenReady = true
         runUntil { !pb.cannotCheck }
     }

@@ -66,7 +66,10 @@ class TestHome : AutoCloseable {
      * this and then `waitForIdle()` first: the wait has then begun, and the clock moves it. A
      * clock moved while the answer before it is still on its way moves nothing.
      */
-    val idle: Boolean get() = calls.runningCallsCount() == 0 && calls.queuedCallsCount() == 0
+    val idle: Boolean get() = running == 0
+
+    /** How many calls to this home are queued or running (one a test holds on the home counts until it is let go). */
+    val running: Int get() = calls.runningCallsCount() + calls.queuedCallsCount()
 
     /** Answers [route] ("GET /api/home") with [body]. */
     fun answer(route: String, body: String, code: Int = 200) {
