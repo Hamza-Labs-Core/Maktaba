@@ -180,7 +180,7 @@ func TestStreamGateNodeRefusesChannelSignedURL(t *testing.T) {
 // trusts from its own gate.
 func TestHomeStreamProxyDropsGateHeaders(t *testing.T) {
 	var got http.Header
-	home := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	home := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		got = r.Header.Clone()
 	}))
 	t.Cleanup(home.Close)

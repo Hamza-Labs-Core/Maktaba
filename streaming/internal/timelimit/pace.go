@@ -227,7 +227,7 @@ func (w *pacedWriter) pass(status int) {
 		return
 	}
 	w.typed = true
-	h := w.ResponseWriter.Header()
+	h := w.Header()
 	if ct := httpx.PassHeaders(h, status); ct != "" {
 		h.Set("Content-Type", ct)
 	}
