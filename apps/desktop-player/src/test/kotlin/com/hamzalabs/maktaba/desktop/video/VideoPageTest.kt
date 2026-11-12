@@ -17,6 +17,7 @@ import com.hamzalabs.maktaba.core.api.Feature
 import com.hamzalabs.maktaba.desktop.InPlayer
 import com.hamzalabs.maktaba.desktop.Lang
 import com.hamzalabs.maktaba.desktop.TestHome
+import com.hamzalabs.maktaba.desktop.settle
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -62,8 +63,7 @@ class VideoPageTest {
             shown = false
             waitForIdle()
             gate.countDown()
-            Thread.sleep(500)
-            waitForIdle()
+            settle(f)
             assertTrue("the favorite stays", s.favorite)
             assertFalse(s.saveFailed)
         }

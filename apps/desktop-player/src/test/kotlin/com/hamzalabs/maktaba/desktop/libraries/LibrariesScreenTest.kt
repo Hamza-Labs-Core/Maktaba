@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.desktop.InPlayer
 import com.hamzalabs.maktaba.desktop.Lang
 import com.hamzalabs.maktaba.desktop.TestHome
+import com.hamzalabs.maktaba.desktop.settle
 import com.hamzalabs.maktaba.desktop.shell.Route
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -96,8 +97,7 @@ class LibrariesScreenTest {
             shown = false
             waitForIdle()
             gate.countDown()
-            Thread.sleep(500)
-            waitForIdle()
+            settle(fake)
             assertTrue("the pin stays", s.libraries.first { it.id == "a" }.pinned)
             assertEquals("the home's answer was taken", listOf("a", "b"), s.libraries.filter { it.pinned }.map { it.id })
             assertFalse(s.saveFailed)

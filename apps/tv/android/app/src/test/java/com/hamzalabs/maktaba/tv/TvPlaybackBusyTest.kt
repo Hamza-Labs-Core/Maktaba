@@ -98,13 +98,19 @@ class TvPlaybackBusyTest {
         server.close()
     }
 
+    /** The client's calls, counted ([settle]). */
+    private val calls = HomeCalls()
+
+    /** Lets everything on its way land ([settleLooper]): what the home was asked cannot still be moving. */
+    private fun settle() = settleLooper(calls, background, asked = { opens.get() })
+
     private fun playback(): TvPlayback {
-        val client = ApiClient(server.url("/"), Tokens(token, "r1"))
+        val client = ApiClient(server.url("/"), Tokens(token, "r1"), calls.http)
         return TvPlayback(context, client, "v1", 0, scope, background, signedOut = {}).also { playback = it }
     }
 
     /** Runs the main looper's due work (the home's answers land there) until [condition] holds. */
-    private fun runUntil(timeoutMs: Long = 10_000, condition: () -> Boolean) {
+    private fun runUntil(timeoutMs: Long = STALL_MS, condition: () -> Boolean) {
         val until = System.currentTimeMillis() + timeoutMs
         while (!condition()) {
             check(System.currentTimeMillis() < until) { "timed out waiting" }
@@ -128,9 +134,9 @@ class TvPlaybackBusyTest {
         assertEquals("asked once so far", 1, opens.get())
 
         // just short of the wait: not asked again yet
+        settle()
         idleFor(9_000)
-        Thread.sleep(200)
-        shadowOf(Looper.getMainLooper()).idle()
+        settle()
         assertEquals("not before the home's Retry-After", 1, opens.get())
 
         idleFor(1_000)
@@ -173,9 +179,9 @@ class TvPlaybackBusyTest {
         runUntil { pb.problem != null }
         assertEquals(ErrorKind.Busy, pb.problem!!.kind)
         assertNull("no waiting sentence for another 503", pb.waiting)
+        settle()
         idleFor(30_000)
-        Thread.sleep(200)
-        shadowOf(Looper.getMainLooper()).idle()
+        settle()
         assertEquals("it does not ask again by itself", 1, opens.get())
     }
 

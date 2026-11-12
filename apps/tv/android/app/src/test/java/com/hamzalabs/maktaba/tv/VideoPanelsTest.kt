@@ -80,13 +80,17 @@ class VideoPanelsTest {
             }
         }
         server.start()
+        compose.registerIdlingResource(calls.idling)
     }
 
     @After
     fun stop() = server.close()
 
+    /** The page's calls, counted ([HomeCalls]): once idle, what the home was asked cannot still be moving. */
+    private val calls = HomeCalls()
+
     private fun show(panels: Boolean) {
-        val api = TvApi(ApiClient(server.url("/"), Tokens(token, "r1")))
+        val api = TvApi(ApiClient(server.url("/"), Tokens(token, "r1"), calls.http), calls.http)
         compose.setContent {
             MaktabaTvTheme {
                 CompositionLocalProvider(LocalTvNav provides TvNav(play = { _, _, _ -> })) {
@@ -112,7 +116,8 @@ class VideoPanelsTest {
     @Test
     fun withPanelsOffThePageNeverAsks() {
         show(panels = false)
-        compose.waitUntil(5_000) { compose.waitForIdle(); shows("The Night Journey") }
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); shows("The Night Journey") }
+        compose.waitForIdle()
         assertFalse(paths.contains("/api/panels"))
         assertFalse(shows("1920s"))
     }
