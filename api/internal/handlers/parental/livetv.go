@@ -214,7 +214,7 @@ func (h *LiveHandler) Play(w http.ResponseWriter, r *http.Request) {
 		signed, exp, err = h.Signer.SignChannelURLForAdminToken(path+id+"/index.m3u8", id, 0)
 	default:
 		// no account and not an admin: no one to sign for
-		httperror.Write(w, r, httperror.Forbidden("no_account", "this sign-in has no account to play a channel for"))
+		httperror.Write(w, r, httperror.Forbidden(httperror.Type("no-account"), "this sign-in has no account to play a channel for").With("code", "no_account"))
 		return
 	}
 	if err != nil {

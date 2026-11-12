@@ -34,14 +34,14 @@ import (
 )
 
 // Problem types of these routes.
-const (
-	TypeNotRestricted   = "https://maktaba.tv/problems/not-restricted"
-	TypeTooManyRequests = "https://maktaba.tv/problems/parental-too-many-requests"
-	TypeRequestDecided  = "https://maktaba.tv/problems/parental-request-decided"
-	TypeRequestExpired  = "https://maktaba.tv/problems/parental-request-expired"
-	TypePINWrong        = "https://maktaba.tv/problems/parental-pin-wrong"
-	TypePINLocked       = "https://maktaba.tv/problems/parental-pin-locked"
-	TypePasswordWrong   = "https://maktaba.tv/problems/password-wrong"
+var (
+	TypeNotRestricted   = httperror.Type("not-restricted")
+	TypeTooManyRequests = httperror.Type("parental-too-many-requests")
+	TypeRequestDecided  = httperror.Type("parental-request-decided")
+	TypeRequestExpired  = httperror.Type("parental-request-expired")
+	TypePINWrong        = httperror.Type("parental-pin-wrong")
+	TypePINLocked       = httperror.Type("parental-pin-locked")
+	TypePasswordWrong   = httperror.Type("password-wrong")
 )
 
 // The notices guardians get. Neither carries a title or the child's name.

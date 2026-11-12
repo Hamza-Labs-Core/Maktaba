@@ -192,9 +192,15 @@ test("the index groups by area in AREAS' order, sorts by title, and leaves empty
     /<a href="\/problems\/a\/"><span class="t">Ant<\/span> <code class="slug">a<\/code><\/a>/
   );
   assert.match(html, /<script type="module" src="\/assets\/problems-filter-x\.js"><\/script>/);
-  // the Arabic count, in its plural form
+  // the Arabic count, in the plural form of the registry's size (few for 3 to 10 after the
+  // hundreds, many for 11 to 99: 307 رسائل, 288 رسالة)
   const ar = renderIndex(indexDoc(REG.problems, "ar"));
-  assert.match(ar, new RegExp(`>${REG.problems.length} رسالة</p>`));
+  const n = REG.problems.length;
+  const form = { few: "رسائل", many: "رسالة", other: "رسالة" }[
+    new Intl.PluralRules("ar").select(n)
+  ];
+  assert.ok(form, `the registry's size ${n} has a plural form this test does not name`);
+  assert.match(ar, new RegExp(`>${n} ${form}</p>`));
 });
 
 test("every slug of the registry has both pages, each with every section, and both indexes", () => {

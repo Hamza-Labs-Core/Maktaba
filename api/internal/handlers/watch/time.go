@@ -16,7 +16,7 @@ import (
 // adds nothing to the count and keeps no stream alive.
 
 // ProblemParentalTime is the 403 of an account whose watching time is over.
-const ProblemParentalTime = "https://maktaba.tv/problems/parental-time"
+var ProblemParentalTime = httperror.Type("parental-time")
 
 // TimeReader reads an account's time now (parental.TimeKeeper in production).
 type TimeReader interface {

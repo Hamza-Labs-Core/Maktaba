@@ -33,7 +33,7 @@ import (
 
 // TypeRestricted is the problem type of an action a restricted account may not
 // take (the same as handlers/parental's).
-const TypeRestricted = "https://maktaba.tv/problems/restricted"
+var TypeRestricted = httperror.Type("restricted")
 
 // RestrictedProblem is the 403 a Refuse route answers a restricted account.
 func RestrictedProblem() *httperror.Error {

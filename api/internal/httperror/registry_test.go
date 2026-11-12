@@ -333,7 +333,7 @@ var runtimeSiteCodes = map[string][]string{
 		"index_missing", "index_replayed", "index_wrong_version", "install_failed", "mixed_machines",
 		"not_restartable", "not_running", "not_switchable", "offline_unknown", "offline_verify_failed",
 		"offline_wrong_platform", "offline_wrong_version", "pack_missing", "pack_not_published",
-		"packs_disabled", "platform_unsupported", "plugin_install_route", "required_by",
+		"packs_disabled", "parental_unavailable", "platform_unsupported", "plugin_install_route", "required_by",
 		"stale_generation", "unknown_component", "unknown_machine", "unpack_refused", "verify_failed",
 	},
 	"plugins/admin": {

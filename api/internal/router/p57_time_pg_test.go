@@ -21,6 +21,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/streaming"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
@@ -31,9 +32,9 @@ const (
 	tmViewer = "00000000-0000-4000-8000-000000571402"
 	tmLib    = "00000000-0000-4000-8000-00000571a000"
 	tmVideo  = "00000000-0000-4000-8000-0000571a0001"
-
-	tmProblem = "https://maktaba.tv/problems/parental-time"
 )
+
+var tmProblem = httperror.Type("parental-time")
 
 // tmStreaming is a streaming service that keeps time limits: it records the
 // sessions it opened and the leases it was given.

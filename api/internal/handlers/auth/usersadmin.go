@@ -145,9 +145,9 @@ type createParental struct {
 
 // Problem types for the rules a restricted account lives under (the same ones
 // handlers/parental answers with).
-const (
-	TypeRestrictedAdmin    = "https://maktaba.tv/problems/restricted-admin"
-	TypeRestrictedGuardian = "https://maktaba.tv/problems/restricted-guardian"
+var (
+	TypeRestrictedAdmin    = httperror.Type("restricted-admin")
+	TypeRestrictedGuardian = httperror.Type("restricted-guardian")
 )
 
 func restrictedAdmin() *httperror.Error {

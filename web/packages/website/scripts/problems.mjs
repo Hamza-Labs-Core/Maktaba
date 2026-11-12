@@ -34,6 +34,7 @@ export const SLUG = /^[a-z0-9_-]+$/;
 export const AREAS = [
   ["accounts", "Signing in and accounts", "تسجيل الدخول والحسابات"],
   ["playback", "Watching", "المشاهدة"],
+  ["parental", "Parental controls", "الرقابة الأبوية"],
   ["browse", "Collections and play queues", "المجموعات وقوائم التشغيل"],
   ["search", "Search", "البحث"],
   ["libraries", "Libraries", "المكتبات"],

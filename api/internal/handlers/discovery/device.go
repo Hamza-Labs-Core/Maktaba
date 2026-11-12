@@ -400,7 +400,7 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 		}
 		switch id, err := h.ApproveAs(r.Context(), p, req.AsUser); {
 		case errors.Is(err, ErrApproveAsRestricted):
-			httperror.Write(w, r, httperror.Forbidden("https://maktaba.tv/problems/restricted",
+			httperror.Write(w, r, httperror.Forbidden(httperror.Type("restricted"),
 				"a restricted account can sign in only itself").With("code", "restricted"))
 			return
 		case errors.Is(err, ErrApproveAsNotFound):
