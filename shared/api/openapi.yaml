@@ -8210,7 +8210,7 @@ paths:
                           - unsupported_language
                           - model_failed
                           - null
-                          description: 'Why the screen did not check the video: it has no transcript, its language is not one the screen reads (Arabic and English), or the home's model failed on it (`model_failed`). Null when it did.'
+                          description: 'Why the screen did not check the video: it has no transcript, its language is not one the screen reads (Arabic and English), or the home''s model failed on it (`model_failed`). Null when it did.'
                         model:
                           type: string
                           description: The home's language model that gave the answer; empty when the video was not checked.

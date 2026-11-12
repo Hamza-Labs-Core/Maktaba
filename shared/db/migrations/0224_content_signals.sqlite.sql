@@ -28,23 +28,6 @@ CREATE TABLE IF NOT EXISTS video_content_signals (
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- a database that ran this slot before these columns were in it (SQLite is the tests'
--- database, made new each time: the wider not_checked check is in the table above)
-ALTER TABLE video_content_signals
-    ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0);
--- +goose StatementEnd
-
--- +goose StatementBegin
-ALTER TABLE video_content_signals
-    ADD COLUMN IF NOT EXISTS failed_hash TEXT NOT NULL DEFAULT '';
--- +goose StatementEnd
-
--- +goose StatementBegin
-ALTER TABLE video_content_signals
-    ADD COLUMN IF NOT EXISTS failed_runs INTEGER NOT NULL DEFAULT 0 CHECK (failed_runs >= 0);
--- +goose StatementEnd
-
--- +goose StatementBegin
 CREATE INDEX IF NOT EXISTS video_content_signals_review_idx
     ON video_content_signals (updated_at DESC, video_id)
     WHERE reviewed_at IS NULL;

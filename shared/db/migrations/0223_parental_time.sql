@@ -50,6 +50,20 @@ CREATE TABLE IF NOT EXISTS parental_time_rules (
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+-- An index build that was cut short (the app quit, the machine slept) leaves the index
+-- there but INVALID: never used, kept up on every write, and skipped by IF NOT EXISTS
+-- below. It is dropped so that the build runs again.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+                WHERE c.relname = 'parental_time_rules_user_idx' AND c.relnamespace = 'public'::regnamespace
+                  AND NOT i.indisvalid) THEN
+        DROP INDEX IF EXISTS parental_time_rules_user_idx;
+    END IF;
+END $$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 CREATE INDEX CONCURRENTLY IF NOT EXISTS parental_time_rules_user_idx ON parental_time_rules (user_id);
 -- +goose StatementEnd
 
@@ -76,6 +90,20 @@ CREATE TABLE IF NOT EXISTS parental_time_grants (
     granted_by    uuid         REFERENCES users(id) ON DELETE SET NULL,
     created_at    timestamptz  NOT NULL DEFAULT now()
 );
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- An index build that was cut short (the app quit, the machine slept) leaves the index
+-- there but INVALID: never used, kept up on every write, and skipped by IF NOT EXISTS
+-- below. It is dropped so that the build runs again.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+                WHERE c.relname = 'parental_time_grants_user_day_idx' AND c.relnamespace = 'public'::regnamespace
+                  AND NOT i.indisvalid) THEN
+        DROP INDEX IF EXISTS parental_time_grants_user_day_idx;
+    END IF;
+END $$;
 -- +goose StatementEnd
 
 -- +goose StatementBegin

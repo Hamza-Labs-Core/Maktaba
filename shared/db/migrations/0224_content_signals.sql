@@ -88,6 +88,20 @@ END $$;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+-- An index build that was cut short (the app quit, the machine slept) leaves the index
+-- there but INVALID: never used, kept up on every write, and skipped by IF NOT EXISTS
+-- below. It is dropped so that the build runs again.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+                WHERE c.relname = 'video_content_signals_review_idx' AND c.relnamespace = 'public'::regnamespace
+                  AND NOT i.indisvalid) THEN
+        DROP INDEX IF EXISTS video_content_signals_review_idx;
+    END IF;
+END $$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 -- the review list: what no admin has looked at yet, newest first. Built concurrently,
 -- so the slot runs outside a transaction; every statement here can run again.
 CREATE INDEX CONCURRENTLY IF NOT EXISTS video_content_signals_review_idx
@@ -277,9 +291,26 @@ DROP FUNCTION IF EXISTS content_detect_line_changed();
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- the table goes with its trigger, its index and the role's grants on it (the role
--- itself stays, with nothing granted: roles belong to the whole Postgres, not this database)
+-- the table goes with its trigger, its index and the role's grants on it
 DROP TABLE IF EXISTS video_content_signals;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- The role itself stays (roles belong to the whole Postgres, not this database), with
+-- nothing granted here: what the Up let it read (app_settings, libraries, transcripts,
+-- transcript_segments, video_topic_tags, videos) is taken back, and the schema with it.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_fp_content_screen') THEN
+        BEGIN
+            EXECUTE 'REVOKE ALL ON ALL TABLES IN SCHEMA public FROM maktaba_fp_content_screen';
+            EXECUTE 'REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM maktaba_fp_content_screen';
+            EXECUTE 'REVOKE ALL ON SCHEMA public FROM maktaba_fp_content_screen';
+        EXCEPTION WHEN insufficient_privilege THEN
+            RAISE NOTICE 'maktaba_fp_content_screen: not ours to revoke';
+        END;
+    END IF;
+END $$;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -291,12 +322,15 @@ DELETE FROM app_settings WHERE key = 'parental.detect_min_confidence';
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- No tier may stay that nothing gives any more: a detected tier is cleared, and the one
--- recompute of every video rates those videos again from what is left (a library default).
+-- A detected tier's source goes (the check below no longer knows it), and its tier
+-- stays until the one recompute of every video rates those videos again from what is
+-- left. Detection only ever tightened, so the tier that stays is never looser than what
+-- the recompute will write; clearing it first would show the video, meanwhile, to a
+-- child whose unrated content is treated as all ages.
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM videos WHERE age_tier_source = 'detected') THEN
-        UPDATE videos SET age_tier = NULL, age_tier_source = NULL WHERE age_tier_source = 'detected';
+        UPDATE videos SET age_tier_source = NULL WHERE age_tier_source = 'detected';
         INSERT INTO parental_recompute_jobs (kind) VALUES ('all');
     END IF;
 END $$;
