@@ -9,10 +9,11 @@ import (
 
 // Epic 57 story 57.14: what the API tells the streaming service of a restricted
 // account's playback time, and what it asks back. Must match
-// streaming/internal/grpcsrv/serve.go (SetTimeLimit, TimeServed).
+// streaming/internal/grpcsrv/serve.go (SetTimeLimit, TimeServed, SetTimeKept).
 const (
 	methodSetTimeLimit = "/" + streamingService + "/SetTimeLimit"
 	methodTimeServed   = "/" + streamingService + "/TimeServed"
+	methodSetTimeKept  = "/" + streamingService + "/SetTimeKept"
 	// timeLimitTimeout bounds one call: a stream waits on it, and a call that does
 	// not answer refuses the stream.
 	timeLimitTimeout = 3 * time.Second
@@ -38,6 +39,48 @@ type TimeLimits interface {
 	// TimeServed is when streaming last served that session to the account; known
 	// is false when it holds no lease for the session.
 	TimeServed(ctx context.Context, userID, sessionID string) (at time.Time, known bool, err error)
+	// ClearTimeLimits drops the end streaming holds for the account in every
+	// library (it has no time rule left); its leases stay.
+	ClearTimeLimits(ctx context.Context, userID string) error
+	// SetTimeKept tells streaming the account's time is kept from now on (a URL
+	// signed before that is refused), or no longer is (everything held for it goes).
+	SetTimeKept(ctx context.Context, userID string, kept bool) error
+}
+
+// confirmed reads the ok of an answer: one that does not say ok was not done (an
+// older streaming service answers an unknown method with a transport error, caught
+// by the caller; this is for anything in between).
+func confirmed(resp map[string]any, what string) error {
+	if ok, _ := resp["ok"].(bool); !ok {
+		return errors.New("streaming: " + what + " was not confirmed")
+	}
+	return nil
+}
+
+func (c *realClient) ClearTimeLimits(ctx context.Context, userID string) error {
+	if userID == "" {
+		return errors.New("streaming: ClearTimeLimits needs a user")
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeLimitTimeout)
+	defer cancel()
+	resp := map[string]any{}
+	if err := c.invoke(ctx, methodSetTimeLimit, map[string]any{"user_id": userID, "clear_all": true}, &resp); err != nil {
+		return err
+	}
+	return confirmed(resp, "the time limits' clearing")
+}
+
+func (c *realClient) SetTimeKept(ctx context.Context, userID string, kept bool) error {
+	if userID == "" {
+		return errors.New("streaming: SetTimeKept needs a user")
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeLimitTimeout)
+	defer cancel()
+	resp := map[string]any{}
+	if err := c.invoke(ctx, methodSetTimeKept, map[string]any{"user_id": userID, "kept": kept}, &resp); err != nil {
+		return err
+	}
+	return confirmed(resp, "whether the account's time is kept")
 }
 
 func (c *realClient) SetTimeLimit(ctx context.Context, userID, libraryID string, lim *TimeLimit) error {
@@ -64,13 +107,7 @@ func (c *realClient) SetTimeLimit(ctx context.Context, userID, libraryID string,
 	if err := c.invoke(ctx, methodSetTimeLimit, body, &resp); err != nil {
 		return err
 	}
-	// an answer that does not say ok is not a limit that was set (an older
-	// streaming service answers an unknown method with a transport error, caught
-	// above; this is for anything in between)
-	if ok, _ := resp["ok"].(bool); !ok {
-		return errors.New("streaming: the time limit was not confirmed")
-	}
-	return nil
+	return confirmed(resp, "the time limit")
 }
 
 func (c *realClient) TimeServed(ctx context.Context, userID, sessionID string) (time.Time, bool, error) {

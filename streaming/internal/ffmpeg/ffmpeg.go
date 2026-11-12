@@ -266,6 +266,10 @@ func (p EncodePlan) WithVAAPI(dev VAAPIDevice, sourceCodec, pixFmt string) Encod
 // at each multiple of it, so the rungs' segments start on the same frames.
 const segmentSeconds = 6
 
+// SegmentSeconds is the length of every HLS and DASH segment a transcode writes
+// (the last one may be shorter).
+const SegmentSeconds = segmentSeconds
+
 // Colour is what a source's first frame says of its colour, in ffprobe's names
 // (sourceColour): a PQ (HDR10, Dolby Vision's base layer) or HLG one is HDR.
 type Colour struct {

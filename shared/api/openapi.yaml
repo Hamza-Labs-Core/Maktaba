@@ -243,6 +243,13 @@ paths:
                     home_name:
                       type: string
                       description: The home's name for people (an admin renames it with PATCH /settings home.name; unset, the computer's name).
+                    sign_in:
+                      type: string
+                      format: uuid
+                      description: 'The sign-in this request came through: the family of its refresh token. Absent for a session with no refresh token (a browser session, an API token).'
+                    age_ceiling:
+                      type: integer
+                      description: 'The age limit this sign-in''s device gave (-1 nothing, 0, 9, 13, 16, 18). Absent when the device gave none.'
         '401':
           $ref: '#/components/responses/Unauthorized'
         default:
@@ -9366,7 +9373,7 @@ paths:
       tags:
       - Parental controls
       summary: Whether the caller may watch a channel now
-      description: 'Says whether the programme now on the channel is within the caller''s parental limit, and when that may change. A player asks before it starts and again at `until`, and shows its "not available right now" screen while `allowed` is false. An account with no limit always gets `allowed: true`.'
+      description: 'Says whether the programme now on the channel is within the caller''s parental limit, and when that may change. A player asks before it starts and again at `until`, and shows its "not available right now" screen while `allowed` is false. An account with no limit always gets `allowed: true`. Live TV counts toward the account''s time rules like any playback: while its watching time is over the answer is 403 `parental-time`.'
       responses:
         '200':
           description: The answer for now.
@@ -9396,12 +9403,20 @@ paths:
                     - 'null'
                     format: date-time
                     description: 'When the answer may change: the start of the next programme that flips it, in UTC. Null when nothing in the next 12 hours changes it. Ask again at this time.'
+        '403':
+          description: 'The account''s watching time is over for now: problem type `parental-time`, `code` is `parental_time`, `reason` is `outside_slot` or `limit_reached`, and `next_allowed_at` is when the rules allow playback again (absent when no moment in the next eight days does). The player shows its time''s-up screen.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           description: No such channel that the caller may see. A channel above a restricted account's limit, or blocked for it, answers the same as one that does not exist.
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          $ref: '#/components/responses/Unavailable'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -9422,7 +9437,7 @@ paths:
       tags:
       - Parental controls
       summary: Get a signed address to watch a channel
-      description: 'Answers the channel''s live stream address, signed for this caller. The home''s streaming service serves a channel only to a request that carries this signature, to the home''s web port for a signed-in account, or to an address allowed to use the tuner. For a signed address and for a signed-in account it asks, on every request and again when a programme starts, whether what plays now is within that viewer''s parental limit, and it refuses when it cannot get an answer. When the programme now on the channel is above the caller''s parental limit the answer is 403 with `code: restricted`, `reason: programme` and `retry_at`, and the player shows its "not available right now" screen until then. The stream itself stops for a restricted viewer when such a programme starts. A sign-in with no account, other than the admin token, gets 403 `no_account`. On another machine of the home a channel plays with a sign-in through that machine''s web port, not with this address.'
+      description: 'Answers the channel''s live stream address, signed for this caller. The home''s streaming service serves a channel only to a request that carries this signature, to the home''s web port for a signed-in account, or to an address allowed to use the tuner. For a signed address and for a signed-in account it asks, on every request and again when a programme starts, whether what plays now is within that viewer''s parental limit, and it refuses when it cannot get an answer. When the programme now on the channel is above the caller''s parental limit the answer is 403 with `code: restricted`, `reason: programme` and `retry_at`, and the player shows its "not available right now" screen until then. The stream itself stops for a restricted viewer when such a programme starts. A sign-in with no account, other than the admin token, gets 403 `no_account`. On another machine of the home a channel plays with a sign-in through that machine''s web port, not with this address. Live TV counts toward the account''s time rules like any playback, counted by the streaming service from what it serves: while the watching time is over the answer is 403 `parental-time` with `reason` and `next_allowed_at`, and a running stream stops within a minute. The address carries the sign-in it was made for, so the stream is held to that device''s age limit as well as the account''s.'
       responses:
         '200':
           description: The signed address.
@@ -9454,7 +9469,7 @@ paths:
                     format: date-time
                     description: 'When the answer may change: the start of the next programme that flips it, in UTC. Null when nothing in the next 12 hours changes it. Ask again at this time.'
         '403':
-          description: 'The programme now on the channel is above the caller''s limit: `code` is `restricted`, `reason` is `programme` and `retry_at` is when to ask again (absent when nothing in the next 12 hours changes it).'
+          description: 'The programme now on the channel is above the caller''s limit: `code` is `restricted`, `reason` is `programme` and `retry_at` is when to ask again (absent when nothing in the next 12 hours changes it). Or the account''s watching time is over: problem type `parental-time`, `code` is `parental_time`, with `reason` (`outside_slot` or `limit_reached`) and `next_allowed_at`.'
           content:
             application/problem+json:
               schema:
@@ -9479,7 +9494,7 @@ paths:
       tags:
       - Parental controls
       summary: The parental answer for a viewer and a channel (this machine's services)
-      description: For the streaming service on the home machine, which asks before it serves a live channel to a named viewer. It carries the machine's local token in `X-Maktaba-Local-Token`; no user sign-in opens it.
+      description: 'For the streaming service on the home machine, which asks before it serves a live channel to a named viewer. It carries the machine''s local token in `X-Maktaba-Local-Token`; no user sign-in opens it. It also says what it served the viewer of the channel since its last question (`served`), which the home counts toward the viewer''s time rules, and names the sign-in the stream''s credential carries (`family`, `ac`), so the answer is held to that device''s age limit as well.'
       security: []
       parameters:
       - name: channel
@@ -9496,6 +9511,27 @@ paths:
           type: string
           format: uuid
         description: The viewer's account id.
+      - name: family
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: 'The viewer''s sign-in: the refresh-token family the stream''s credential carries. The home reads the device limit it holds for that sign-in now.'
+      - name: ac
+        in: query
+        required: false
+        schema:
+          type: integer
+        description: 'The age limit the credential carries for the sign-in''s device. Used only when no `family` is given.'
+      - name: served
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 86400
+        description: 'Whole seconds of this channel served to the viewer since the last question; counted toward the viewer''s time rules before they are read.'
       responses:
         '200':
           description: The answer for now.
@@ -9508,6 +9544,7 @@ paths:
                 - channel_allowed
                 - allowed
                 - until
+                - time_allowed
                 properties:
                   restricted:
                     type: boolean
@@ -9524,6 +9561,23 @@ paths:
                     - 'null'
                     format: date-time
                     description: 'When the answer may change: the start of the next programme that flips it, in UTC. Null when nothing in the next 12 hours changes it. Ask again at this time.'
+                  time_allowed:
+                    type: boolean
+                    description: 'True when the viewer''s time rules allow playback now. When false the stream is refused with the `parental-time` problem, whatever the programme.'
+                  time_reason:
+                    type: string
+                    enum:
+                    - outside_slot
+                    - limit_reached
+                    description: 'Why the time rules refuse: `outside_slot` or `limit_reached`. Absent when they allow.'
+                  time_next_allowed_at:
+                    type: string
+                    format: date-time
+                    description: 'When the time rules next allow playback, in UTC. Absent when they allow now, or when no moment in the next eight days is allowed.'
+                  time_ends_at:
+                    type: string
+                    format: date-time
+                    description: 'When a stream running now must end by the time rules, in UTC. Absent when nothing ends it. Ask again at this time.'
         '400':
           description: Invalid request.
           content:
@@ -9536,6 +9590,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          $ref: '#/components/responses/Unavailable'
         '429':
           $ref: '#/components/responses/RateLimited'
         default:
@@ -9665,7 +9721,7 @@ paths:
                   - time
                 subject_id:
                   type: string
-                  description: 'The item''s id. For `time`: the minutes asked for, a whole number from 1 to 480 written as text (`"30"`).'
+                  description: 'The item''s id. For `time`: the minutes asked for, `"15"`, `"30"` or `"60"` as text; any other number is a 422. A guardian can give another number when approving.'
               required:
               - subject_kind
               - subject_id
@@ -9949,7 +10005,7 @@ paths:
                   - time
                 subject_id:
                   type: string
-                  description: 'The item''s id. For kind `time`: the minutes to give, 1 to 480, as text.'
+                  description: 'The item''s id. For kind `time`: the minutes to give, `"15"`, `"30"` or `"60"` as text; any other number is a 422.'
               required:
               - guardian_id
               - pin

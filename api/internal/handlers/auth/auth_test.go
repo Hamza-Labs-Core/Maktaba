@@ -283,3 +283,36 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+// Epic 57 (review finding 11): /api/auth/me names the sign-in the request came
+// through, for the web port's stream gate to pass to the streaming service; a
+// session with no sign-in says neither.
+func TestMe_NamesTheSignIn(t *testing.T) {
+	h := &Handler{}
+	ask := func(p *principal.Principal) map[string]any {
+		req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+		req = req.WithContext(principal.WithPrincipal(req.Context(), p))
+		rec := httptest.NewRecorder()
+		h.Me(rec, req)
+		var out map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || rec.Code != http.StatusOK {
+			t.Fatalf("%d %s (%v)", rec.Code, rec.Body.String(), err)
+		}
+		return out
+	}
+	nine, nothing := 9, -1
+	const family = "0f0f0f0f-1111-4222-8333-444444444444"
+	if got := ask(&principal.Principal{UserID: "u", RefreshFamily: family, AgeCeiling: &nine}); got["sign_in"] != family || got["age_ceiling"] != float64(9) {
+		t.Fatalf("a child's device: %v", got)
+	}
+	if got := ask(&principal.Principal{UserID: "u", RefreshFamily: family, AgeCeiling: &nothing}); got["age_ceiling"] != float64(-1) {
+		t.Fatalf("a ceiling of nothing: %v", got)
+	}
+	got := ask(&principal.Principal{UserID: "u"})
+	if _, has := got["sign_in"]; has {
+		t.Fatalf("a session with no sign-in: %v", got)
+	}
+	if _, has := got["age_ceiling"]; has {
+		t.Fatalf("a session with no ceiling: %v", got)
+	}
+}

@@ -8,7 +8,10 @@ package parental
 //	            daily limit, an optional library
 //	a home day  04:00 home time to 04:00 the next morning, named by the date it starts
 //	            on; a rule's days are home days, so a late evening is one day
-//	a slot      times of day in home time; an end before the start crosses midnight
+//	a slot      times of day in home time; an end before the start crosses midnight.
+//	            A slot belongs to the home day it starts on: the part of it that
+//	            runs past the next day line is open only when the rule covers both
+//	            days (the day it started on, and the day the moment is in)
 //	combining   every rule that covers the moment (and the library) must allow it
 //	a grant     minutes for one home day; they are used only while the rules alone
 //	            would refuse (the limit is reached or the slot is closed)
@@ -167,6 +170,14 @@ func (r *TimeRule) covers(libraryID string) bool {
 	return r.LibraryID == "" || (libraryID != "" && r.LibraryID == libraryID)
 }
 
+const daySeconds = 24 * 3600
+
+// sinceLine turns a time of day (seconds after midnight) into seconds after the
+// day line (04:00): 0 at the line, up to a day less one second just before it.
+func sinceLine(tod int) int {
+	return (tod - DayLineHour*3600 + daySeconds) % daySeconds
+}
+
 type timeBase struct {
 	covered bool          // a rule covers this moment
 	remain  time.Duration // until the rules refuse, never past the day line
@@ -180,8 +191,13 @@ func baseAt(rules []TimeRule, loc *time.Location, t time.Time, libraryID string,
 	start := DayStart(t, loc)
 	b := timeBase{remain: nextDayStart(start, loc).Sub(t)}
 	bit := 1 << uint(start.Weekday())
+	prevBit := 1 << uint((start.Weekday()+6)%7) // the home day before
 	l := t.In(loc)
-	tod := l.Hour()*3600 + l.Minute()*60 + l.Second()
+	off := sinceLine(l.Hour()*3600 + l.Minute()*60 + l.Second())
+	// fromLine is the moment sec seconds of wall clock after this home day's line.
+	fromLine := func(sec int) time.Time {
+		return time.Date(start.Year(), start.Month(), start.Day(), DayLineHour, 0, sec, 0, loc)
+	}
 	total := 0
 	for _, s := range used {
 		total += s
@@ -194,13 +210,19 @@ func baseAt(rules []TimeRule, loc *time.Location, t time.Time, libraryID string,
 		}
 		b.covered = true
 		if s, e, ok := r.slot(); ok {
-			s, e = s*60, e*60
+			// The slot as seconds after the day line: a slot belongs to the home day
+			// it starts on. One that runs past the next day line (22:00 to 06:00)
+			// has a tail on the following home day, and that tail is open only
+			// when the rule covered the day the slot started on.
+			so, eo := sinceLine(s*60), sinceLine(e*60)
 			var end time.Time
 			switch {
-			case s < e && tod >= s && tod < e, s > e && tod < e:
-				end = time.Date(l.Year(), l.Month(), l.Day(), 0, 0, e, 0, loc)
-			case s > e && tod >= s:
-				end = time.Date(l.Year(), l.Month(), l.Day()+1, 0, 0, e, 0, loc)
+			case so < eo && off >= so && off < eo:
+				end = fromLine(eo)
+			case so >= eo && off >= so:
+				end = fromLine(daySeconds + eo)
+			case so > eo && off < eo && r.Days&prevBit != 0:
+				end = fromLine(eo)
 			default:
 				outside = true
 			}

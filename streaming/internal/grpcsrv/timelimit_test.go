@@ -61,4 +61,36 @@ func TestServe_TimeLimit(t *testing.T) {
 	if _, refused := srv.TimeLimits.Check(user, []string{lib}, ""); refused != nil {
 		t.Fatalf("after the limit was cleared: %+v", refused)
 	}
+
+	// the account is made restricted: a URL that names no session is refused in a
+	// library nothing else is held for; lifted, everything held for it goes
+	other := uuid.NewString()
+	if out := invoke(t, conn, "SetTimeKept", map[string]any{"user_id": user}); out["error"] == nil {
+		t.Fatal("SetTimeKept without kept was accepted")
+	}
+	if out := invoke(t, conn, "SetTimeKept", map[string]any{"kept": true}); out["error"] == nil {
+		t.Fatal("SetTimeKept without a user was accepted")
+	}
+	if out := invoke(t, conn, "SetTimeKept", map[string]any{"user_id": user, "kept": true}); out["ok"] != true {
+		t.Fatalf("SetTimeKept: %v", out)
+	}
+	if _, refused := srv.TimeLimits.Check(user, []string{other}, ""); refused == nil {
+		t.Fatal("a kept account was served a URL that names no session")
+	}
+	invoke(t, conn, "SetTimeLimit", push) // a past end in lib
+	if out := invoke(t, conn, "SetTimeLimit", map[string]any{"user_id": user, "clear_all": true}); out["ok"] != true {
+		t.Fatalf("SetTimeLimit clear_all: %v", out)
+	}
+	if _, refused := srv.TimeLimits.Check(user, []string{lib}, ""); refused == nil || refused.Reason != timelimit.ReasonNoHeartbeat {
+		t.Fatalf("after clear_all the account is still kept, with no end: %+v", refused)
+	}
+	invoke(t, conn, "SetTimeLimit", push)
+	if out := invoke(t, conn, "SetTimeKept", map[string]any{"user_id": user, "kept": false}); out["ok"] != true {
+		t.Fatalf("SetTimeKept false: %v", out)
+	}
+	for _, l := range []string{lib, other} {
+		if _, refused := srv.TimeLimits.Check(user, []string{l}, ""); refused != nil {
+			t.Fatalf("after the lift: %+v", refused)
+		}
+	}
 }

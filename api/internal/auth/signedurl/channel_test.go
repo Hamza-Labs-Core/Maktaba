@@ -84,3 +84,41 @@ func TestSignChannelURLForAdminToken(t *testing.T) {
 		t.Fatal("a video path was signed")
 	}
 }
+
+// Review finding 11: a channel URL carries the sign-in it was signed for (its
+// family and its device's age limit), so the stream is held to them for its whole
+// life; a sign-in with neither carries neither.
+func TestSignChannelURLForSignIn(t *testing.T) {
+	m, set := newMinter(t)
+	low := strings.ToLower(chn)
+	const family = "0F0F0F0F-1111-4222-8333-444444444444"
+	nine := 9
+	signed, _, err := m.SignChannelURLForSignIn("/stream/channel/"+low+"/index.m3u8", chn, usr, family, &nine, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := claimsOf(t, set, signed, AudChannel)
+	if c.Usr != usr || c.Fam != strings.ToLower(family) || c.Ac == nil || *c.Ac != 9 {
+		t.Fatalf("claims %+v", c)
+	}
+	nothing := -1
+	signed, _, err = m.SignChannelURLForSignIn("/stream/channel/"+low+"/index.m3u8", chn, usr, "", &nothing, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := claimsOf(t, set, signed, AudChannel); c.Fam != "" || c.Ac == nil || *c.Ac != -1 {
+		t.Fatalf("a ceiling of nothing with no family: %+v", c)
+	}
+	signed, _, _ = m.SignChannelURL("/stream/channel/"+low+"/index.m3u8", chn, usr, 0)
+	if c := claimsOf(t, set, signed, AudChannel); c.Fam != "" || c.Ac != nil {
+		t.Fatalf("no sign-in: %+v", c)
+	}
+	if _, _, err := m.SignChannelURLForSignIn("/stream/channel/"+low+"/index.m3u8", chn, usr, "not-a-family", nil, 0); err == nil {
+		t.Fatal("a family that is no id was signed")
+	}
+	// the admin token's URL names no sign-in
+	signed, _, _ = m.SignChannelURLForAdminToken("/stream/channel/"+low+"/index.m3u8", chn, 0)
+	if c := claimsOf(t, set, signed, AudChannel); c.Fam != "" || c.Ac != nil {
+		t.Fatalf("the admin token: %+v", c)
+	}
+}

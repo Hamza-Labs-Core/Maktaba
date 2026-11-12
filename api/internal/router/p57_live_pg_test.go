@@ -372,7 +372,7 @@ func TestP57LiveTVPG(t *testing.T) {
 // handler asks before it tunes: by channel, and by the caller's own session.
 func TestP57LiveRemoteGatePG(t *testing.T) {
 	e := setupLive(t)
-	gate := parentalh.RemoteGate(e.db, parental.NewLiveTV(e.db, nil))
+	gate := parentalh.RemoteGate(e.db, parental.NewLiveTV(e.db, nil), nil)
 	ask := func(who, channel, session string) int {
 		req := httptest.NewRequest("POST", "/api/tv/remote/tune", nil).WithContext(context.Background())
 		var p *principal.Principal

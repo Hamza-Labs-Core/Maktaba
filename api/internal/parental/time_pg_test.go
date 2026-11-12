@@ -6,6 +6,7 @@ package parental_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -31,6 +32,9 @@ type fakePusher struct {
 	fail    error
 	served  map[string]time.Time // by stream session id
 	unknown bool                 // streaming holds no lease for the session
+	// clearedAll and keptSaid are the ClearTimeLimits and SetTimeKept calls
+	clearedAll []string
+	keptSaid   []string
 }
 
 // lease is the last lease streaming was given for a session, nil when none.
@@ -56,6 +60,26 @@ func (f *fakePusher) SetTimeLimit(_ context.Context, userID, libraryID string, l
 		return nil
 	}
 	f.got = append(f.got, pushed{userID, libraryID, lim.Reason, lim.EndAt, lim.NextAllowedAt, lim.LeaseUntil, false, lim.SessionID})
+	return nil
+}
+
+func (f *fakePusher) ClearTimeLimits(_ context.Context, userID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.fail != nil {
+		return f.fail
+	}
+	f.clearedAll = append(f.clearedAll, userID)
+	return nil
+}
+
+func (f *fakePusher) SetTimeKept(_ context.Context, userID string, kept bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.fail != nil {
+		return f.fail
+	}
+	f.keptSaid = append(f.keptSaid, fmt.Sprintf("%s=%t", userID, kept))
 	return nil
 }
 

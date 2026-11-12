@@ -177,6 +177,18 @@
       "en": "Authenticated user profile.",
       "ar": "الملف الشخصي للمستخدم الموثَّق."
     },
+    "/paths/~1auth~1me/get/responses/200/content/application~1json/schema/allOf/1/properties/home_name/description": {
+      "en": "The home's name for people (an admin renames it with PATCH /settings home.name; unset, the computer's name).",
+      "ar": "اسم المنزل كما يراه الناس (يغيّره المشرف عبر PATCH /settings home.name؛ وإن لم يُضبط فاسم الحاسوب)."
+    },
+    "/paths/~1auth~1me/get/responses/200/content/application~1json/schema/allOf/1/properties/sign_in/description": {
+      "en": "The sign-in this request came through: the family of its refresh token. Absent for a session with no refresh token (a browser session, an API token).",
+      "ar": "تسجيل الدخول الذي جاء منه هذا الطلب: معرّف عائلة رمز التحديث. يغيب في جلسة بلا رمز تحديث (جلسة متصفح أو رمز واجهة برمجية)."
+    },
+    "/paths/~1auth~1me/get/responses/200/content/application~1json/schema/allOf/1/properties/age_ceiling/description": {
+      "en": "The age limit this sign-in's device gave (-1 nothing, 0, 9, 13, 16, 18). Absent when the device gave none.",
+      "ar": "حدّ العمر الذي أعطاه جهاز تسجيل الدخول هذا (‎-1 لا شيء، 0، 9، 13، 16، 18). يغيب إن لم يعطِ الجهاز حدًّا."
+    },
     "/paths/~1libraries/get/summary": {
       "en": "List libraries",
       "ar": "سرد المكتبات"
@@ -1434,8 +1446,8 @@
       "ar": "بثّ أحداث (`text/event-stream`)"
     },
     "/paths/~1me~1parental~1requests/post/requestBody/content/application~1json/schema/properties/subject_id/description": {
-      "en": "The item's id. For `time`: the minutes asked for, a whole number from 1 to 480 written as text (`\"30\"`).",
-      "ar": "معرّف العنصر. وللنوع `time`: الدقائق المطلوبة، عدد صحيح من 1 إلى 480 مكتوب نصًّا (`\"30\"`)."
+      "en": "The item's id. For `time`: the minutes asked for, `\"15\"`, `\"30\"` or `\"60\"` as text; any other number is a 422. A guardian can give another number when approving.",
+      "ar": "معرّف العنصر. وللنوع `time`: الدقائق المطلوبة، `\"15\"` أو `\"30\"` أو `\"60\"` نصًّا؛ وأي عدد آخر يُرَدّ بـ422. ويستطيع وليّ الأمر منح عدد آخر عند الموافقة."
     },
     "/paths/~1me~1parental~1requests/post/responses/200/content/application~1json/schema/properties/request/properties/subject_id/description": {
       "en": "The item's id; for a request for time, the minutes asked for, as text.",
@@ -4442,8 +4454,8 @@
       "ar": "فُتح: قاعدة السماح ومتى تنتهي؛ وفي النوع `time` الوقت الممنوح."
     },
     "/paths/~1me~1parental~1unlock/post/requestBody/content/application~1json/schema/properties/subject_id/description": {
-      "en": "The item's id. For kind `time`: the minutes to give, 1 to 480, as text.",
-      "ar": "معرّف العنصر. وفي النوع `time`: الدقائق الممنوحة، من 1 إلى 480، نصًّا."
+      "en": "The item's id. For kind `time`: the minutes to give, `\"15\"`, `\"30\"` or `\"60\"` as text; any other number is a 422.",
+      "ar": "معرّف العنصر. وفي النوع `time`: الدقائق الممنوحة، `\"15\"` أو `\"30\"` أو `\"60\"` نصًّا؛ وأي عدد آخر يُرَدّ بـ422."
     },
     "/paths/~1me~1parental~1unlock/post/responses/200/content/application~1json/schema/properties/rule/description": {
       "en": "The allow rule added; absent for kind `time`.",
@@ -4990,8 +5002,8 @@
       "ar": "هل يجوز للمتصل مشاهدة القناة الآن"
     },
     "/paths/~1channels~1{id}~1access/get/description": {
-      "en": "Says whether the programme now on the channel is within the caller's parental limit, and when that may change. A player asks before it starts and again at `until`, and shows its \"not available right now\" screen while `allowed` is false. An account with no limit always gets `allowed: true`.",
-      "ar": "يبيّن هل البرنامج المعروض الآن على القناة ضمن حدّ الرقابة الأبوية للمتصل، ومتى قد يتغيّر ذلك. يسأل المشغّل قبل أن يبدأ ثم مرة أخرى عند `until`، ويعرض شاشة «غير متاح الآن» ما دامت `allowed` خاطئة. والحساب الذي لا حدّ له ينال دائمًا `allowed: true`."
+      "en": "Says whether the programme now on the channel is within the caller's parental limit, and when that may change. A player asks before it starts and again at `until`, and shows its \"not available right now\" screen while `allowed` is false. An account with no limit always gets `allowed: true`. Live TV counts toward the account's time rules like any playback: while its watching time is over the answer is 403 `parental-time`.",
+      "ar": "يبيّن هل البرنامج المعروض الآن على القناة ضمن حدّ الرقابة الأبوية للمتصل، ومتى قد يتغيّر ذلك. يسأل المشغّل قبل أن يبدأ ثم مرة أخرى عند `until`، ويعرض شاشة «غير متاح الآن» ما دامت `allowed` خاطئة. والحساب الذي لا حدّ له ينال دائمًا `allowed: true`. ويُحسب التلفاز المباشر ضمن قواعد وقت الحساب كأي تشغيل: ما دام وقت المشاهدة منتهيًا يكون الجواب 403 `parental-time`."
     },
     "/paths/~1channels~1{id}~1access/get/responses/200/description": {
       "en": "The answer for now.",
@@ -5013,6 +5025,10 @@
       "en": "When the answer may change: the start of the next programme that flips it, in UTC. Null when nothing in the next 12 hours changes it. Ask again at this time.",
       "ar": "متى قد يتغيّر الجواب: بداية البرنامج التالي الذي يقلبه، بالتوقيت العالمي. والقيمة null حين لا شيء يغيّره في الساعات الاثنتي عشرة القادمة. اسأل مجددًا في هذا الوقت."
     },
+    "/paths/~1channels~1{id}~1access/get/responses/403/description": {
+      "en": "The account's watching time is over for now: problem type `parental-time`, `code` is `parental_time`, `reason` is `outside_slot` or `limit_reached`, and `next_allowed_at` is when the rules allow playback again (absent when no moment in the next eight days does). The player shows its time's-up screen.",
+      "ar": "انتهى وقت المشاهدة للحساب الآن: نوع المشكلة `parental-time`، و`code` هو `parental_time`، و`reason` هو `outside_slot` أو `limit_reached`، و`next_allowed_at` هو موعد سماح القواعد بالتشغيل مجددًا (يغيب إن لم تسمح به في الأيام الثمانية القادمة). يعرض المشغّل شاشة انتهاء الوقت."
+    },
     "/paths/~1channels~1{id}~1access/get/responses/404/description": {
       "en": "No such channel that the caller may see. A channel above a restricted account's limit, or blocked for it, answers the same as one that does not exist.",
       "ar": "لا توجد قناة بهذا المعرّف يجوز للمتصل رؤيتها. والقناة التي تتجاوز حدّ حساب مقيَّد أو المحجوبة عنه تجيب كما تجيب قناة غير موجودة."
@@ -5026,8 +5042,8 @@
       "ar": "الحصول على عنوان موقَّع لمشاهدة قناة"
     },
     "/paths/~1channels~1{id}~1play/post/description": {
-      "en": "Answers the channel's live stream address, signed for this caller. The home's streaming service serves a channel only to a request that carries this signature, to the home's web port for a signed-in account, or to an address allowed to use the tuner. For a signed address and for a signed-in account it asks, on every request and again when a programme starts, whether what plays now is within that viewer's parental limit, and it refuses when it cannot get an answer. When the programme now on the channel is above the caller's parental limit the answer is 403 with `code: restricted`, `reason: programme` and `retry_at`, and the player shows its \"not available right now\" screen until then. The stream itself stops for a restricted viewer when such a programme starts. A sign-in with no account, other than the admin token, gets 403 `no_account`. On another machine of the home a channel plays with a sign-in through that machine's web port, not with this address.",
-      "ar": "يجيب بعنوان البث الحي للقناة موقّعًا لهذا المتصل. خدمة البث في المنزل لا تقدّم قناة إلا لطلب يحمل هذا التوقيع، أو لمنفذ الويب في المنزل عن حساب مسجَّل الدخول، أو لعنوان مسموح له باستخدام الموالف. وللعنوان الموقّع وللحساب المسجَّل الدخول تسأل، في كل طلب وعند بدء كل برنامج، هل ما يُعرض الآن ضمن حد الرقابة الأبوية لذلك المشاهد، وترفض إن لم تحصل على جواب. وإذا كان البرنامج المعروض الآن على القناة فوق حد الرقابة الأبوية للمتصل فالرد 403 مع `code: restricted` و`reason: programme` و`retry_at`، ويعرض المشغّل شاشة «غير متاح الآن» حتى ذلك الوقت. ويتوقف البث نفسه عن المشاهد المقيَّد عند بدء برنامج كهذا. وتسجيل الدخول الذي لا حساب له، غير رمز المشرف، يتلقى 403 `no_account`. وعلى جهاز آخر من أجهزة المنزل تُشغَّل القناة بتسجيل الدخول عبر منفذ الويب لذلك الجهاز، لا بهذا العنوان."
+      "en": "Answers the channel's live stream address, signed for this caller. The home's streaming service serves a channel only to a request that carries this signature, to the home's web port for a signed-in account, or to an address allowed to use the tuner. For a signed address and for a signed-in account it asks, on every request and again when a programme starts, whether what plays now is within that viewer's parental limit, and it refuses when it cannot get an answer. When the programme now on the channel is above the caller's parental limit the answer is 403 with `code: restricted`, `reason: programme` and `retry_at`, and the player shows its \"not available right now\" screen until then. The stream itself stops for a restricted viewer when such a programme starts. A sign-in with no account, other than the admin token, gets 403 `no_account`. On another machine of the home a channel plays with a sign-in through that machine's web port, not with this address. Live TV counts toward the account's time rules like any playback, counted by the streaming service from what it serves: while the watching time is over the answer is 403 `parental-time` with `reason` and `next_allowed_at`, and a running stream stops within a minute. The address carries the sign-in it was made for, so the stream is held to that device's age limit as well as the account's.",
+      "ar": "يجيب بعنوان البث الحي للقناة موقّعًا لهذا المتصل. خدمة البث في المنزل لا تقدّم قناة إلا لطلب يحمل هذا التوقيع، أو لمنفذ الويب في المنزل عن حساب مسجَّل الدخول، أو لعنوان مسموح له باستخدام الموالف. وللعنوان الموقّع وللحساب المسجَّل الدخول تسأل، في كل طلب وعند بدء كل برنامج، هل ما يُعرض الآن ضمن حد الرقابة الأبوية لذلك المشاهد، وترفض إن لم تحصل على جواب. وإذا كان البرنامج المعروض الآن على القناة فوق حد الرقابة الأبوية للمتصل فالرد 403 مع `code: restricted` و`reason: programme` و`retry_at`، ويعرض المشغّل شاشة «غير متاح الآن» حتى ذلك الوقت. ويتوقف البث نفسه عن المشاهد المقيَّد عند بدء برنامج كهذا. وتسجيل الدخول الذي لا حساب له، غير رمز المشرف، يتلقى 403 `no_account`. وعلى جهاز آخر من أجهزة المنزل تُشغَّل القناة بتسجيل الدخول عبر منفذ الويب لذلك الجهاز، لا بهذا العنوان. ويُحسب التلفاز المباشر ضمن قواعد وقت الحساب كأي تشغيل، وتحسبه خدمة البث ممّا تقدّمه: ما دام وقت المشاهدة منتهيًا يكون الجواب 403 `parental-time` مع `reason` و`next_allowed_at`، ويتوقف البث الجاري خلال دقيقة. ويحمل العنوان تسجيل الدخول الذي صُنع له، فيُقيَّد البث بحدّ عمر ذلك الجهاز كما يُقيَّد بحدّ الحساب."
     },
     "/paths/~1channels~1{id}~1play/post/responses/200/description": {
       "en": "The signed address.",
@@ -5050,8 +5066,8 @@
       "ar": "متى قد يتغيّر الجواب: بداية البرنامج التالي الذي يقلبه، بالتوقيت العالمي. والقيمة null حين لا شيء يغيّره في الساعات الاثنتي عشرة القادمة. اسأل مجددًا في هذا الوقت."
     },
     "/paths/~1channels~1{id}~1play/post/responses/403/description": {
-      "en": "The programme now on the channel is above the caller's limit: `code` is `restricted`, `reason` is `programme` and `retry_at` is when to ask again (absent when nothing in the next 12 hours changes it).",
-      "ar": "البرنامج المعروض الآن على القناة فوق حدّ المتصل: قيمة `code` هي `restricted` وقيمة `reason` هي `programme` و`retry_at` هو وقت السؤال مجددًا (يغيب حين لا شيء يغيّره في الساعات الاثنتي عشرة القادمة)."
+      "en": "The programme now on the channel is above the caller's limit: `code` is `restricted`, `reason` is `programme` and `retry_at` is when to ask again (absent when nothing in the next 12 hours changes it). Or the account's watching time is over: problem type `parental-time`, `code` is `parental_time`, with `reason` (`outside_slot` or `limit_reached`) and `next_allowed_at`.",
+      "ar": "البرنامج المعروض الآن على القناة فوق حدّ المتصل: قيمة `code` هي `restricted` وقيمة `reason` هي `programme` و`retry_at` هو وقت السؤال مجددًا (يغيب حين لا شيء يغيّره في الساعات الاثنتي عشرة القادمة). أو انتهى وقت المشاهدة للحساب: نوع المشكلة `parental-time` و`code` هو `parental_time`، مع `reason` (`outside_slot` أو `limit_reached`) و`next_allowed_at`."
     },
     "/paths/~1channels~1{id}~1play/post/responses/404/description": {
       "en": "No such channel that the caller may see. A channel above a restricted account's limit, or blocked for it, answers the same as one that does not exist.",
@@ -5062,8 +5078,8 @@
       "ar": "جواب الرقابة الأبوية لمشاهد وقناة (لخدمات هذا الجهاز)"
     },
     "/paths/~1tv~1parental~1verdict/get/description": {
-      "en": "For the streaming service on the home machine, which asks before it serves a live channel to a named viewer. It carries the machine's local token in `X-Maktaba-Local-Token`; no user sign-in opens it.",
-      "ar": "لخدمة البث على جهاز المنزل، التي تسأل قبل أن تقدّم قناة مباشرة لمشاهد مسمّى. تحمل الرمز المحلي للجهاز في `X-Maktaba-Local-Token`؛ ولا يفتحه تسجيل دخول أي مستخدم."
+      "en": "For the streaming service on the home machine, which asks before it serves a live channel to a named viewer. It carries the machine's local token in `X-Maktaba-Local-Token`; no user sign-in opens it. It also says what it served the viewer of the channel since its last question (`served`), which the home counts toward the viewer's time rules, and names the sign-in the stream's credential carries (`family`, `ac`), so the answer is held to that device's age limit as well.",
+      "ar": "لخدمة البث على جهاز المنزل، التي تسأل قبل أن تقدّم قناة مباشرة لمشاهد مسمّى. تحمل الرمز المحلي للجهاز في `X-Maktaba-Local-Token`؛ ولا يفتحه تسجيل دخول أي مستخدم. ويذكر أيضًا ما قدّمه للمشاهد من القناة منذ سؤاله الأخير (`served`)، فيحسبه المنزل ضمن قواعد وقت المشاهد، ويسمّي تسجيل الدخول الذي يحمله اعتماد البث (`family` و`ac`)، فيُقيَّد الجواب بحدّ عمر ذلك الجهاز أيضًا."
     },
     "/paths/~1tv~1parental~1verdict/get/parameters/0/description": {
       "en": "The channel's id.",
@@ -5072,6 +5088,18 @@
     "/paths/~1tv~1parental~1verdict/get/parameters/1/description": {
       "en": "The viewer's account id.",
       "ar": "معرّف حساب المشاهد."
+    },
+    "/paths/~1tv~1parental~1verdict/get/parameters/2/description": {
+      "en": "The viewer's sign-in: the refresh-token family the stream's credential carries. The home reads the device limit it holds for that sign-in now.",
+      "ar": "تسجيل دخول المشاهد: عائلة رمز التحديث التي يحملها اعتماد البث. يقرأ المنزل حدّ الجهاز المسجَّل لديه لذلك التسجيل الآن."
+    },
+    "/paths/~1tv~1parental~1verdict/get/parameters/3/description": {
+      "en": "The age limit the credential carries for the sign-in's device. Used only when no `family` is given.",
+      "ar": "حدّ العمر الذي يحمله الاعتماد لجهاز تسجيل الدخول. يُستخدم فقط إن لم تُذكر `family`."
+    },
+    "/paths/~1tv~1parental~1verdict/get/parameters/4/description": {
+      "en": "Whole seconds of this channel served to the viewer since the last question; counted toward the viewer's time rules before they are read.",
+      "ar": "الثواني الكاملة التي قُدّمت للمشاهد من هذه القناة منذ السؤال الأخير؛ تُحسب ضمن قواعد وقت المشاهد قبل قراءتها."
     },
     "/paths/~1tv~1parental~1verdict/get/responses/200/description": {
       "en": "The answer for now.",
@@ -5092,6 +5120,22 @@
     "/paths/~1tv~1parental~1verdict/get/responses/200/content/application~1json/schema/properties/until/description": {
       "en": "When the answer may change: the start of the next programme that flips it, in UTC. Null when nothing in the next 12 hours changes it. Ask again at this time.",
       "ar": "متى قد يتغيّر الجواب: بداية البرنامج التالي الذي يقلبه، بالتوقيت العالمي. والقيمة null حين لا شيء يغيّره في الساعات الاثنتي عشرة القادمة. اسأل مجددًا في هذا الوقت."
+    },
+    "/paths/~1tv~1parental~1verdict/get/responses/200/content/application~1json/schema/properties/time_allowed/description": {
+      "en": "True when the viewer's time rules allow playback now. When false the stream is refused with the `parental-time` problem, whatever the programme.",
+      "ar": "صحيح إن كانت قواعد وقت المشاهد تسمح بالتشغيل الآن. وإن كان خطأ يُرفض البث بمشكلة `parental-time` أيًّا كان البرنامج."
+    },
+    "/paths/~1tv~1parental~1verdict/get/responses/200/content/application~1json/schema/properties/time_reason/description": {
+      "en": "Why the time rules refuse: `outside_slot` or `limit_reached`. Absent when they allow.",
+      "ar": "سبب رفض قواعد الوقت: `outside_slot` أو `limit_reached`. يغيب إن سمحت."
+    },
+    "/paths/~1tv~1parental~1verdict/get/responses/200/content/application~1json/schema/properties/time_next_allowed_at/description": {
+      "en": "When the time rules next allow playback, in UTC. Absent when they allow now, or when no moment in the next eight days is allowed.",
+      "ar": "متى تسمح قواعد الوقت بالتشغيل مجددًا، بالتوقيت العالمي. يغيب إن سمحت الآن، أو إن لم تسمح في الأيام الثمانية القادمة."
+    },
+    "/paths/~1tv~1parental~1verdict/get/responses/200/content/application~1json/schema/properties/time_ends_at/description": {
+      "en": "When a stream running now must end by the time rules, in UTC. Absent when nothing ends it. Ask again at this time.",
+      "ar": "متى يجب أن ينتهي بثّ جارٍ الآن بحسب قواعد الوقت، بالتوقيت العالمي. يغيب إن لم ينهِه شيء. اسأل مجددًا في هذا الوقت."
     },
     "/paths/~1tv~1parental~1verdict/get/responses/400/description": {
       "en": "Invalid request.",

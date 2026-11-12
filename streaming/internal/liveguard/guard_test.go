@@ -34,15 +34,29 @@ var (
 type fakeVerdicts struct {
 	mu    sync.Mutex
 	calls int
+	asks  []Question
 	fn    func(user, channel uuid.UUID) (Verdict, error)
+	// byQuestion, when set, answers instead of fn
+	byQuestion func(Question) (Verdict, error)
 }
 
-func (f *fakeVerdicts) Verdict(_ context.Context, user, channel uuid.UUID) (Verdict, error) {
+func (f *fakeVerdicts) Verdict(_ context.Context, q Question) (Verdict, error) {
 	f.mu.Lock()
 	f.calls++
-	fn := f.fn
+	f.asks = append(f.asks, q)
+	fn, byQ := f.fn, f.byQuestion
 	f.mu.Unlock()
-	return fn(user, channel)
+	if byQ != nil {
+		return byQ(q)
+	}
+	return fn(q.User, q.Channel)
+}
+
+// questions returns the questions asked so far.
+func (f *fakeVerdicts) questions() []Question {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]Question(nil), f.asks...)
 }
 
 func (f *fakeVerdicts) set(fn func(user, channel uuid.UUID) (Verdict, error)) {
@@ -590,22 +604,27 @@ func TestAPIVerdicts(t *testing.T) {
 	ctx := context.Background()
 
 	setAnswer(func(w http.ResponseWriter) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"restricted": true, "channel_allowed": true, "allowed": false, "until": until})
+		_ = json.NewEncoder(w).Encode(map[string]any{"restricted": true, "channel_allowed": true, "allowed": false, "until": until,
+			"time_allowed": true})
 	})
-	v, err := a.Verdict(ctx, child, testChannel)
+	v, err := a.Verdict(ctx, Question{User: child, Channel: testChannel})
 	if err != nil || !v.Restricted || !v.ChannelAllowed || v.Allowed || v.Until == nil || !v.Until.Equal(until) {
 		t.Fatalf("verdict = %+v, %v", v, err)
 	}
 	for name, ans := range map[string]func(w http.ResponseWriter){
-		"a 403":               func(w http.ResponseWriter) { w.WriteHeader(403) },
-		"a 500":               func(w http.ResponseWriter) { w.WriteHeader(500) },
-		"not JSON":            func(w http.ResponseWriter) { _, _ = io.WriteString(w, "<html>") },
-		"an empty object":     func(w http.ResponseWriter) { _, _ = io.WriteString(w, "{}") },
-		"a field missing":     func(w http.ResponseWriter) { _, _ = io.WriteString(w, `{"restricted":false,"allowed":true}`) },
+		"a 403":           func(w http.ResponseWriter) { w.WriteHeader(403) },
+		"a 500":           func(w http.ResponseWriter) { w.WriteHeader(500) },
+		"not JSON":        func(w http.ResponseWriter) { _, _ = io.WriteString(w, "<html>") },
+		"an empty object": func(w http.ResponseWriter) { _, _ = io.WriteString(w, "{}") },
+		"a field missing": func(w http.ResponseWriter) { _, _ = io.WriteString(w, `{"restricted":false,"allowed":true}`) },
+		// an API that does not say whether the time rules allow the stream
+		"no word on the time": func(w http.ResponseWriter) {
+			_, _ = io.WriteString(w, `{"restricted":false,"channel_allowed":true,"allowed":true,"until":null}`)
+		},
 		"slower than allowed": func(_ http.ResponseWriter) { time.Sleep(400 * time.Millisecond) },
 	} {
 		setAnswer(ans)
-		if v, err := a.Verdict(ctx, child, testChannel); err == nil {
+		if v, err := a.Verdict(ctx, Question{User: child, Channel: testChannel}); err == nil {
 			t.Errorf("%s: verdict %+v with no error", name, v)
 		}
 	}
@@ -614,13 +633,13 @@ func TestAPIVerdicts(t *testing.T) {
 		t.Fatal(err)
 	}
 	setAnswer(func(w http.ResponseWriter) {
-		_, _ = io.WriteString(w, `{"restricted":false,"channel_allowed":true,"allowed":true}`)
+		_, _ = io.WriteString(w, `{"restricted":false,"channel_allowed":true,"allowed":true,"time_allowed":true}`)
 	})
-	if _, err := a.Verdict(ctx, child, testChannel); err == nil {
+	if _, err := a.Verdict(ctx, Question{User: child, Channel: testChannel}); err == nil {
 		t.Error("the wrong token got a verdict")
 	}
 	for _, bad := range []*APIVerdicts{nil, {}, {BaseURL: srv.URL}, {BaseURL: srv.URL, TokenFile: filepath.Join(t.TempDir(), "none")}} {
-		if _, err := bad.Verdict(ctx, child, testChannel); !errors.Is(err, ErrNoAPI) {
+		if _, err := bad.Verdict(ctx, Question{User: child, Channel: testChannel}); !errors.Is(err, ErrNoAPI) {
 			t.Errorf("%+v: err = %v, want ErrNoAPI", bad, err)
 		}
 	}

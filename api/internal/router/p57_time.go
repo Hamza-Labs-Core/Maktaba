@@ -43,6 +43,20 @@ func (t timePusher) SetTimeLimit(ctx context.Context, userID, libraryID string, 
 	})
 }
 
+func (t timePusher) ClearTimeLimits(ctx context.Context, userID string) error {
+	if t.limits == nil {
+		return errNoTimeLimits
+	}
+	return t.limits.ClearTimeLimits(ctx, userID)
+}
+
+func (t timePusher) SetTimeKept(ctx context.Context, userID string, kept bool) error {
+	if t.limits == nil {
+		return errNoTimeLimits
+	}
+	return t.limits.SetTimeKept(ctx, userID, kept)
+}
+
 func (t timePusher) TimeServed(ctx context.Context, userID, _ string, sessionID, _ string) (time.Time, bool, error) {
 	if t.limits == nil {
 		return time.Time{}, false, errNoTimeLimits
@@ -80,6 +94,8 @@ func (s refusingSigner) SignStreamURL(rawURL, sessionID, userID, libraryID strin
 // nothing for a kept account.
 func MountParentalTime(r chi.Router, cache *parental.Cache, client grpcstreaming.Client, signer streaming.URLSigner) (*parental.TimeKeeper, streaming.URLSigner) {
 	keeper := parental.NewTimeKeeper(cache, newTimePusher(client))
+	// making an account restricted, and lifting it, reach streaming at once
+	cache.Store().OnKeptChange = keeper.KeptChanged
 	(&parentalh.Handler{Store: cache.Store(), Cache: cache, Time: keeper}).MountTime(r)
 	if signer == nil {
 		return keeper, nil

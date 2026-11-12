@@ -44,6 +44,9 @@ type P27Deps struct {
 	// ChannelSigner signs the channel stream URLs of POST /api/channels/{id}/play
 	// (story 57.10); nil: that route answers 503.
 	ChannelSigner parentalh.ChannelSigner
+	// Time is the time keeper MountP6 made (story 57.14): live TV counts like any
+	// playback. Nil: no time rule is asked for a channel.
+	Time *parental.TimeKeeper
 }
 
 // MountP27 attaches the Epic 27 route handlers onto r. Safe to skip when
@@ -69,7 +72,11 @@ func MountP27(r chi.Router, d P27Deps) {
 	chh.Mount(guarded)
 	chh.MountSchedule(guarded) // Story 27.2 — schedule read + regenerate trigger
 	(&guide.Handler{DB: d.DB, StreamBase: d.PublicBaseURL, Live: live}).Mount(guarded)
-	(&parentalh.LiveHandler{DB: d.DB, Live: live, Signer: d.ChannelSigner}).Mount(r)
+	lh := &parentalh.LiveHandler{DB: d.DB, Live: live, Signer: d.ChannelSigner}
+	if d.Time != nil {
+		lh.Time = d.Time
+	}
+	lh.Mount(r)
 	tvh.Mount(r)
 	// Epic 32: streaming hosts and channels on air across the cluster (admin)
 	tvcluster.New(d.DB).Mount(r)
