@@ -267,6 +267,10 @@ func buildSurfaces() SurfaceTable {
 		"/api/parental/users/{id}/time-usage",
 		"/api/parental/users/{id}/time-grants",
 	)
+	exact(Refuse, all, "the review of detected tiers names videos by title and is for an admin or a guardian; the handler refuses a restricted account too (57.17)",
+		"/api/parental/review",
+		"/api/parental/review/{video_id}",
+	)
 	exact(Open, all, "what the home can do and which strings it has; no content",
 		"/api/capabilities",
 		"/api/entitlements",

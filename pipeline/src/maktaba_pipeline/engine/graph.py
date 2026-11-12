@@ -94,6 +94,8 @@ SECOND_LISTEN_VERSION = 1
 SUBTITLE_VERSION = 1
 #: word_check (Epic 52): stages/word_check.py; bumps re-check every transcript
 WORD_CHECK_VERSION = 1
+#: content_screen (Epic 57, story 57.17): stages/content_screen.py
+CONTENT_SCREEN_VERSION = 1
 #: transcript analysis (stages/chapter_infer.py, topic_assign.py, topic_recluster.py)
 CHAPTER_VERSION = 1
 CHAPTER_THUMBS_VERSION = 1
@@ -498,6 +500,22 @@ GRAPH: tuple[StageDef, ...] = (
         lane_order=4,
         version=WORD_CHECK_VERSION,
         max_attempts=3,
+    ),
+    # Epic 57 (story 57.17): the video's age tier worked out from its transcript on the
+    # home's own model (classify/content_screen.py), written to video_content_signals for
+    # the API's recompute. Home only: the transcript goes to the cluster's LLM door and
+    # nowhere else. On a library it plans the videos with no answer yet, and all of them
+    # again when the home's model changes, behind every other stage
+    StageDef(
+        name="content_screen",
+        label="Content screen",
+        subject_kinds=("video", "library"),
+        pool="cpu",
+        lane="speech",
+        lane_order=10,
+        version=CONTENT_SCREEN_VERSION,
+        max_attempts=3,
+        placement="home",
     ),
     # plan 03-10: the transcript's sentences as e5 vectors (search/semantic.py)
     # Epic 54: defined by tv.maktaba.semantic-search's manifest

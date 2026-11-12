@@ -139,6 +139,9 @@ RULES: Mapping[tuple[str, str], Rule] = {
     ("video_classification", "video_id"): Rule("keep"),
     ("video_entities", "video_id"): Rule("keep"),
     ("video_topic_tags", "video_id"): Rule("keep"),
+    # what the content screen read from the loser's transcript (slot 0224): the keeper is
+    # screened for itself, the stage's planner asks about it when a transcript reaches it
+    ("video_content_signals", "video_id"): Rule("keep"),
     ("video_repairs", "video_id"): Rule("keep"),
     ("integrity_checks", "video_id"): Rule("keep"),
     ("item_checks", "video_id"): Rule("keep"),

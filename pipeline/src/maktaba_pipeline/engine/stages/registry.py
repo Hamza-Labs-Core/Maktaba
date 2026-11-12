@@ -43,6 +43,7 @@ class StageImpl:
 CORE_MODULES: dict[str, str] = {
     "component_catchup": "maktaba_pipeline.engine.stages.component_catchup",
     "word_check": "maktaba_pipeline.engine.stages.word_check",
+    "content_screen": "maktaba_pipeline.engine.stages.content_screen",
     "youtube_collections": "maktaba_pipeline.engine.stages.youtube_collections",
     "youtube_tartube": "maktaba_pipeline.engine.stages.youtube_tartube",
     "display_title": "maktaba_pipeline.engine.stages.display_title",

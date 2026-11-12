@@ -65,6 +65,6 @@ pool         = "listen"
 lane         = "speech"
 lane_order   = 3
 storage      = "read"
-edges        = [{ to = "subtitle_gen", map = "same" }, { to = "index", map = "same" }, { to = "tag", map = "season_of" }, { to = "tag", map = "loose_library_of" }, { to = "word_check", map = "same" }]
+edges        = [{ to = "subtitle_gen", map = "same" }, { to = "index", map = "same" }, { to = "tag", map = "season_of" }, { to = "tag", map = "loose_library_of" }, { to = "word_check", map = "same" }, { to = "content_screen", map = "same" }]
 entry        = "maktaba_fp_transcription.stages.second_listen:IMPL"
 fingerprint  = { input = true, output = false }

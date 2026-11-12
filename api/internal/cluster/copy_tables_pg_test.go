@@ -90,6 +90,10 @@ var copyReviewed = []string{
 	// parental_pin_failures, parental_requests and parental_events are read and written
 	// by the home's API alone (as the analytics tables are), so cluster_copy_excluded()
 	// leaves all four out
+	// slot 0224 (story 57.17): what the home's model detected for each video (a tier,
+	// a confidence, categories and times, no secret); a promoted copy keeps the
+	// detected tiers and what an admin already reviewed
+	"video_content_signals",
 }
 
 // Every table of a migrated database is either reviewed as copied or left out.

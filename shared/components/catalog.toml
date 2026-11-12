@@ -323,6 +323,23 @@ drain     = { grace_s = 30, checkpoint = false }
 bundles   = ["full", "worker"]
 since     = "0.3.86"
 
+# Epic 57 story 57.17: each video's age tier worked out from its transcript on the home's
+# own model, for the parental controls. Home only: a transcript goes to the cluster's LLM
+# door and nowhere else. No model, no detected tiers
+[[component]]
+id        = "parental.detect"
+kind      = "stages"
+group     = "processing"
+title_key = "components.parental.detect.title"
+desc_key  = "components.parental.detect.desc"
+stages    = ["content_screen"]
+wants     = ["transcription", "classify", "llm"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+drain     = { grace_s = 30, checkpoint = false }
+bundles   = ["full"]
+since     = "0.3.130"
+
 [[component]]
 id        = "search.semantic"
 plugin    = "tv.maktaba.semantic-search"
