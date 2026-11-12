@@ -1,8 +1,9 @@
 # Story 57.12 — Turning it on in existing homes
 
 > Epic 57 · Phase 4 · Depends on: 57.01, 57.02, 57.04, 57.07 · Needed by: —
-> **Status:** the home's side and the web are built (checked against the code 2026-11-12); the iPhone notice is in
-> progress.
+> **Status:** built (checked against the code 2026-11-12): the home's side, the web, and on iPhone and
+> iPad the notice for admins (in Profile and at the top of Family, with Set up and Dismiss), the
+> on/off switch in Family and the suggested ratings in Rate libraries.
 
 ## Why
 
@@ -44,8 +45,9 @@ When a signal arrives while `parental.enabled` is false and the device's limit i
 see one notice (the notification centre, Epic 33; and a banner in the Player's Family row):
 "A device signed in to Maktaba says a child uses it. Set up parental controls." It links to
 Family > Rate libraries, then to Make an account restricted. Shown once per sign-in, never
-repeated after dismissal. As built, the notice is in the web's notification centre and on an
-admin's `/family` page (Set up, Dismiss); the banner in the iPhone Player is in progress.
+repeated after dismissal. As built, the notice is in the web's notification centre, on an
+admin's `/family` page and, in the Player on iPhone and iPad, in an admin's Profile and at the
+top of Family (Set up, Dismiss).
 
 ### 3. Rate libraries, pre-filled
 

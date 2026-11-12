@@ -1410,21 +1410,26 @@
       "title": "Apple TV, where it falls out",
       "epic": "57-parental-controls",
       "phase": 5,
-      "content": "# Story 57.11 — Apple TV, where it falls out\n\n> Epic 57 · Phase 3 · Depends on: 57.03, 57.04, 57.05, 57.10 · Needed by: —\n> **Status:** in progress (2026-11-12).\n\n## Why\n\nThis epic is for iPhone and iPad. Apple TV is included only where it costs little. Two things\ncome for free. First, the home's filter (57.03, 57.10) applies to any client, so a child's account\nsigned in on the Apple TV is already limited. Second, the TV app shares MaktabaKit, where the\nblocked page and the signal code live. Apple's APIs decide the rest: on tvOS 26 the Screen Time\nmovie and TV limit can be read (`ManagedSettin",
+      "content": "# Story 57.11 — Apple TV, where it falls out\n\n> Epic 57 · Phase 3 · Depends on: 57.03, 57.04, 57.05, 57.10 · Needed by: —\n> **Status:** built (checked against the code 2026-11-12), with more than this story first asked\n> for: the blocked page has Ask a parent and Enter parent PIN, the child's own requests are\n> followed, and time (story 57.15) and live TV's access check are on the Apple TV too. The table\n> below says each piece as built.\n\n## Why\n\nThis epic is for iPhone and iPad. Apple TV is included only where it costs little. Two things\ncome for free. First, the home's filter (57.03, 57.10) ",
       "tags": [
         "story",
         "57-parental-controls",
         "phase-5"
       ],
       "related": [
-        "epic-57-parental-controls"
+        "epic-57-parental-controls",
+        "ep-get-channels-id-access",
+        "ep-get-channels"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-11-apple-tv.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /channels/{id}/access",
+        "GET /channels"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "apple-tv"
@@ -1436,7 +1441,7 @@
       "title": "Turning it on in existing homes",
       "epic": "57-parental-controls",
       "phase": 5,
-      "content": "# Story 57.12 — Turning it on in existing homes\n\n> Epic 57 · Phase 4 · Depends on: 57.01, 57.02, 57.04, 57.07 · Needed by: —\n> **Status:** the home's side and the web are built (checked against the code 2026-11-12); the iPhone notice is in\n> progress.\n\n## Why\n\nEvery existing home has users, libraries and devices, and no ratings. If the update started\nenforcing device signals at once, a child's iPad on an adult's account would suddenly show nothing,\nbecause unrated content is hidden by default (README decision 7). If it never enforced them,\nparents would not know the feature exists. The update ",
+      "content": "# Story 57.12 — Turning it on in existing homes\n\n> Epic 57 · Phase 4 · Depends on: 57.01, 57.02, 57.04, 57.07 · Needed by: —\n> **Status:** built (checked against the code 2026-11-12): the home's side, the web, and on iPhone and\n> iPad the notice for admins (in Profile and at the top of Family, with Set up and Dismiss), the\n> on/off switch in Family and the suggested ratings in Rate libraries.\n\n## Why\n\nEvery existing home has users, libraries and devices, and no ratings. If the update started\nenforcing device signals at once, a child's iPad on an adult's account would suddenly show nothing,\nbec",
       "tags": [
         "story",
         "57-parental-controls",
@@ -1563,7 +1568,7 @@
       "title": "Time limits on every client",
       "epic": "57-parental-controls",
       "phase": 5,
-      "content": "# Story 57.15 — Time limits on every client\n\n> Epic 57 · Phase 3b · Depends on: 57.14 · Needed by: 57.13\n> **Status:** built (checked against the code 2026-11-12) on iPhone, iPad, the Android Player (phone and tablet),\n> Android TV, the web and the desktop Player. Apple TV is story 57.11, in progress.\n\n## Why\n\nThe home enforces time (57.14), so no client can skip it. But a client that does not know about\nit shows a broken player when the home says no. Every client has to show the child how much time\nis left and say plainly when it is over, in English and Arabic. And a home with no iPhone needs",
+      "content": "# Story 57.15 — Time limits on every client\n\n> Epic 57 · Phase 3b · Depends on: 57.14 · Needed by: 57.13\n> **Status:** built (checked against the code 2026-11-12) on iPhone, iPad, Apple TV, the Android Player (phone\n> and tablet), Android TV, the web and the desktop Player.\n\n## Why\n\nThe home enforces time (57.14), so no client can skip it. But a client that does not know about\nit shows a broken player when the home says no. Every client has to show the child how much time\nis left and say plainly when it is over, in English and Arabic. And a home with no iPhone needs\na place to set the rules.\n\n",
       "tags": [
         "story",
         "57-parental-controls",

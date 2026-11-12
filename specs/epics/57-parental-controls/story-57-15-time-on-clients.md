@@ -1,8 +1,8 @@
 # Story 57.15 — Time limits on every client
 
 > Epic 57 · Phase 3b · Depends on: 57.14 · Needed by: 57.13
-> **Status:** built (checked against the code 2026-11-12) on iPhone, iPad, the Android Player (phone and tablet),
-> Android TV, the web and the desktop Player. Apple TV is story 57.11, in progress.
+> **Status:** built (checked against the code 2026-11-12) on iPhone, iPad, Apple TV, the Android Player (phone
+> and tablet), Android TV, the web and the desktop Player.
 
 ## Why
 
