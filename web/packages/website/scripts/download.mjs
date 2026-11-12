@@ -592,12 +592,10 @@ export function styleFile() {
 export function downloadPages(data, ks, { resolves = () => false, styles, script, manifest }) {
   const { display } = shellAssets();
   const preload = (lang) =>
-    (lang === "ar"
-      ? ["maktaba-display-700-arabic", "maktaba-display-700-latin"]
-      : ["maktaba-display-700-latin"]
-    )
+    // shellAssets().display: the display face's files by script (the home page's too)
+    (lang === "ar" ? ["arabic", "latin"] : ["latin"])
       .map((f) => {
-        if (!display[f]) throw new Error(`design/fonts.css: no ${f}`);
+        if (!display[f]) throw new Error(`design/fonts.css: no display face for ${f}`);
         return `<link rel="preload" href="${display[f]}" as="font" type="font/woff2" crossorigin />`;
       })
       .join("\n  ");

@@ -130,8 +130,6 @@ export function shellAssets() {
     head: add("head", "js", fs.readFileSync(path.join(PKG, "src/shell-head.js"), "utf8")),
     js: add("shell", "js", fs.readFileSync(path.join(DESIGN, "shell.js"), "utf8")),
     mark: add("mark", "png", fs.readFileSync(path.join(PKG, "src/mark-64.png"))),
-    // part B's display face (Maktaba Display), by file name: its pages preload what they set
-    display: published,
   };
   return memo;
 }
