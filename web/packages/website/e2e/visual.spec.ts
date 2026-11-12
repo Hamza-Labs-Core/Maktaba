@@ -89,6 +89,14 @@ async function drawSaved(page: import("@playwright/test").Page, html: string): P
   expect(problem, "the built release's cards are the saved release's").toBe("");
 }
 
+/** The apps' screenshots (story 60.09, static/shots/) are masked, in the frame's own near-black:
+ * a reference holds the page (the frames, their sizes, the captions), not the pictures, which
+ * `npm run shots -- --from-run` renews at every release and scripts/shots.test.mjs checks. It
+ * also keeps each reference under 1 MB: the home page's, with its eight photographs, are 1.5 MB.
+ * The masked box is the picture's own, sized by its width and height before it loads. */
+export const SHOT_MASK = 'main picture:has(img[src^="/shots/"])';
+const SHOT_MASK_COLOR = "#06090F";
+
 /** A reference's file name: <page>-<width>-<lang>[-light].png */
 export const shotName = (p: SitePage, width: number, light = false) =>
   `${p.name}-${width}-${p.lang}${light ? "-light" : ""}.png`;
@@ -121,9 +129,12 @@ for (const p of visualPages()) {
         const en = p.lang === "ar" ? p.url.slice(3) : p.url;
         if (RELEASE_DATA[en]) await drawSaved(page, await RELEASE_DATA[en](p.lang));
         const firstScreen = FIRST_SCREEN[en];
+        // a page has its first-screen masks (Playwright's default colour) or its screenshots'
+        const shots = !firstScreen && (await page.locator(SHOT_MASK).count()) > 0;
         await expect(page).toHaveScreenshot(shotName(p, s.width, s.light), {
           fullPage: !firstScreen,
-          mask: (firstScreen ?? []).map((sel) => page.locator(sel)),
+          mask: (firstScreen ?? (shots ? [SHOT_MASK] : [])).map((sel) => page.locator(sel)),
+          ...(shots ? { maskColor: SHOT_MASK_COLOR } : {}),
           animations: "disabled",
           caret: "hide",
         });
