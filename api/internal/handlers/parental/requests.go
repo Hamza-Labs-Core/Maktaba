@@ -292,6 +292,9 @@ type approveRequest struct {
 	// ExpiresAt, when set, is when the approval ends; left out, it does not end.
 	// Not for a `time` request (422).
 	ExpiresAt *time.Time `json:"expires_at"`
+	// Until, in place of ExpiresAt, names an end the home computes: `day_end`,
+	// the end of the home's day. Not for a `time` request (422).
+	Until string `json:"until"`
 	// Minutes, for a `time` request only (422 on any other), is how many minutes
 	// to give, 1 to 480; left out, the minutes asked for.
 	Minutes *int `json:"minutes"`
@@ -299,12 +302,16 @@ type approveRequest struct {
 
 // approveInvalid is the 422 of an approval whose body does not fit: err names the
 // field (parental.ErrInvalid: <field>).
-func approveInvalid(err error) *httperror.Error {
+func approveInvalid(err error, until bool) *httperror.Error {
 	field := strings.TrimPrefix(err.Error(), parentalpkg.ErrInvalid.Error()+": ")
 	msg := "is not valid"
 	switch field {
 	case "expires_at":
 		msg = "must be in the future, and left out for a request for more time"
+		if until {
+			// the end came from `until`: that is the field the caller sent
+			field, msg = "until", "must be left out for a request for more time"
+		}
 	case "minutes":
 		msg = "must be from 1 to 480, and only for a request for more time"
 	default:
@@ -335,10 +342,15 @@ func (h *AskHandler) Approve(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "minutes", Message: "must be from 1 to 480"}}))
 		return
 	}
-	out, err := h.Store.ApproveWith(r.Context(), p.UserID, id, parentalpkg.Approval{ExpiresAt: req.ExpiresAt, Minutes: req.Minutes})
+	expiresAt, bad := h.ending(r.Context(), req.ExpiresAt, req.Until)
+	if bad != nil {
+		httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{*bad}))
+		return
+	}
+	out, err := h.Store.ApproveWith(r.Context(), p.UserID, id, parentalpkg.Approval{ExpiresAt: expiresAt, Minutes: req.Minutes})
 	if err != nil {
 		if errors.Is(err, parentalpkg.ErrInvalid) {
-			httperror.Write(w, r, approveInvalid(err))
+			httperror.Write(w, r, approveInvalid(err, req.Until != ""))
 			return
 		}
 		h.failAsk(w, r, err)

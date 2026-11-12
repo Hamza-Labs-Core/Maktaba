@@ -4301,6 +4301,10 @@
       "en": "A block always wins over an allow. A rule with `expires_at` stops counting at that time. Allowing a library needs the account to have access to that library.",
       "ar": "الحجب يغلب السماح دائمًا. والقاعدة التي لها `expires_at` يتوقف أثرها عند ذلك الوقت. والسماح بمكتبة يتطلب أن يكون للحساب وصول إليها."
     },
+    "/paths/~1users~1{id}~1parental~1rules/post/requestBody/content/application~1json/schema/properties/until/description": {
+      "en": "In place of `expires_at`: `day_end` ends the rule when the home's day ends, the next 04:00 in the home's time zone. The home computes it, so it does not depend on the caller's clock. Giving both `until` and `expires_at` is refused (422).",
+      "ar": "بديل عن `expires_at`: القيمة `day_end` تُنهي القاعدة عند نهاية يوم البيت، أي عند الساعة 04:00 التالية بتوقيت البيت. يحسبها البيت نفسه، فلا تعتمد على ساعة الطالب. إعطاء `until` و`expires_at` معًا يُرفض (422)."
+    },
     "/paths/~1users~1{id}~1parental~1rules/post/responses/201/description": {
       "en": "The rule.",
       "ar": "القاعدة."
@@ -4520,6 +4524,10 @@
     "/paths/~1parental~1requests~1{id}~1approve/post/requestBody/content/application~1json/schema/properties/expires_at/description": {
       "en": "When the allow rule ends; absent: it does not end. Must be in the future. Not for a request for time (422).",
       "ar": "متى تنتهي قاعدة السماح؛ إن غاب: لا تنتهي. يجب أن يكون في المستقبل. لا يُقبل في طلب الوقت (422)."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/requestBody/content/application~1json/schema/properties/until/description": {
+      "en": "In place of `expires_at`: `day_end` ends the allow rule when the home's day ends, the next 04:00 in the home's time zone. The home computes it, so it does not depend on the caller's clock. Giving both `until` and `expires_at` is refused (422). Not for a request for time (422).",
+      "ar": "بديل عن `expires_at`: القيمة `day_end` تُنهي قاعدة السماح عند نهاية يوم البيت، أي عند الساعة 04:00 التالية بتوقيت البيت. يحسبها البيت نفسه، فلا تعتمد على ساعة الطالب. إعطاء `until` و`expires_at` معًا يُرفض (422). لا يُقبل في طلب الوقت (422)."
     },
     "/paths/~1parental~1requests~1{id}~1approve/post/responses/200/description": {
       "en": "Approved: the request, and the allow rule or, for a request for time, the grant.",
