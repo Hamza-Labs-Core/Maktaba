@@ -355,6 +355,11 @@ final class MockHome: @unchecked Sendable {
             return file("videos-page2").map { Answer(status: 200, body: $0) }
         }
         guard let route = routes.first(where: { $0.method == method && Self.matches($0.path, path) }) else { return nil }
+        // under the demo, only what plays and what a TV or a queue keeps: nothing the fixtures
+        // say about their own videos (a transcript, a search) shows on a demo screen
+        if demo != nil, !Self.demoFallbacks.contains("\(route.method) \(route.path)") {
+            return Answer(status: 404, body: Data(#"{"title":"not in the demo library","status":404}"#.utf8))
+        }
         guard let name = route.file else { return Answer(status: route.status, body: Data()) }
         return file((name as NSString).deletingPathExtension).map { Answer(status: route.status, body: $0) }
     }
@@ -445,6 +450,15 @@ final class MockHome: @unchecked Sendable {
               let name = json["home_name"] as? String else { return "Maktaba" }
         return name
     }
+
+    /// The fixture routes the demo library still answers from `Fixtures/` (it has none of its
+    /// own): the stream session, the signed-in devices, the TV remote, the play queue's current.
+    static let demoFallbacks: Set<String> = [
+        "POST /api/stream/sessions", "GET /api/me/sessions", "GET /api/tv/info", "POST /api/tv/remote/tune",
+        "POST /api/tv/remote/sessions/{id}/heartbeat", "DELETE /api/tv/remote/sessions/{id}",
+        "GET /api/me/play-queues/current", "DELETE /api/search/recent",
+        "DELETE /api/recommendations/items/{video_id}", "DELETE /api/recommendations/rows/{reason_kind}",
+    ]
 
     /// The test stream, its progress reports and its closing.
     private func stream(_ method: String, _ path: String) -> Answer? {

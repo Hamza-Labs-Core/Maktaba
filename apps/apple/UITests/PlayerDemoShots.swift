@@ -36,25 +36,25 @@ final class PlayerDemoShots: PlayerUITestCase {
     }
 
     /// Sintel playing with the Arabic subtitles on (in both languages: the Arabic line is what
-    /// the page shows off), its controls up.
+    /// the page shows off), in landscape, the controls gone so the line reads clear of them.
     func testPlayer() throws {
+        defer { XCUIDevice.shared.orientation = .portrait }
         for language in ["en", "ar"] {
             try demo(language)
             // the stream as long as the film (the demo's `duration_sec`), at 7:00
             if let seconds = home.demoVideo("v-sintel")?["duration_sec"] as? Int { home.streamSeconds = seconds / 2 * 2 }
-            launchSignedIn(language, section: "home", open: "watch/v-sintel@420",
+            XCUIDevice.shared.orientation = .landscapeLeft
+            launchSignedIn(language, section: "home", open: "watch/v-sintel@420", controlsStay: false,
                            extra: ["-playback.subtitles_on", "YES", "-playback.subtitle_language", "ar"])
             let surface = element("player.surface")
             XCTAssertTrue(surface.waitForExistence(timeout: 30), "the player")
             XCTAssertTrue(waitUntil(timeout: 30) { self.state["playing"] == "true" && self.state["subtitle"] == "ar" },
                           "playing with the Arabic subtitles: \(state)")
-            if !app.buttons["player.playPause"].exists {
-                surface.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
-            }
-            XCTAssertTrue(app.buttons["player.playPause"].waitForExistence(timeout: 5), "the controls")
             // a frame of the picture and the cue drawn: the position moves past where it opened
             let start = Int(state["position"] ?? "") ?? 0
             XCTAssertTrue(waitUntil(timeout: 15) { (Int(self.state["position"] ?? "") ?? 0) >= start + 2 }, "it plays on: \(state)")
+            // the controls hide 4 s after the last touch (`WatchView.hideAfter`)
+            XCTAssertTrue(app.buttons["player.playPause"].waitForNonExistence(timeout: 15), "the controls gone")
             demoShot("player")
         }
     }

@@ -322,7 +322,7 @@ jobs:
           only=()
           if [ "$shard" = shots ]; then
             # the product screenshots: a status bar at noon, full, on Wi-Fi
-            xcrun simctl status_bar "$UDID" override --time 2026-06-15T12:00:00+00:00 --dataNetwork wifi --wifiMode active \
+            xcrun simctl status_bar "$UDID" override --time 2026-06-15T12:00:00.000Z --dataNetwork wifi --wifiMode active \
               --wifiBars 3 --cellularMode notSupported --batteryState charged --batteryLevel 100 \
               || echo "::warning::the status bar override failed: the shots keep the simulator's own"
             only=(-only-testing "$target/PlayerDemoShots")
@@ -623,7 +623,7 @@ jobs:
           set -euo pipefail
           # and the Remote's product screenshot (RemoteDemoShotsUITests, story 60.09), at noon on a
           # full status bar; only that for shots_only
-          xcrun simctl status_bar "$UDID" override --time 2026-06-15T12:00:00+00:00 --dataNetwork wifi --wifiMode active \
+          xcrun simctl status_bar "$UDID" override --time 2026-06-15T12:00:00.000Z --dataNetwork wifi --wifiMode active \
             --wifiBars 3 --cellularMode notSupported --batteryState charged --batteryLevel 100 \
             || echo "::warning::the status bar override failed: the shots keep the simulator's own"
           only=(-only-testing "Maktaba Remote UITests/RemoteDemoShotsUITests")
