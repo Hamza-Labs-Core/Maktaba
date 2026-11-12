@@ -247,6 +247,11 @@ export function footer(lang, page, variant = "a") {
 <p class="visually-hidden" id="announce" aria-live="polite"></p>`;
 }
 
+// A 404 answers the address that was asked for, which is no page: it carries no canonical or
+// hreflang alternates (they would name a dead address, and the link check rightly refuses one),
+// and asks not to be indexed.
+const NOT_FOUND_HEAD = '<meta name="robots" content="noindex" />';
+
 export const PATHS = {
   front: "/",
   legal: "/legal/privacy/",
@@ -306,10 +311,10 @@ ${
     <meta name="color-scheme" content="dark light" />
     <title>${title}</title>
     <meta name="description" content="${description}" />
-    <link rel="canonical" href="${lang === "en" ? en : ar}" />
+    ${key === "lost" ? NOT_FOUND_HEAD : `<link rel="canonical" href="${lang === "en" ? en : ar}" />
     <link rel="alternate" hreflang="en" href="${en}" />
     <link rel="alternate" hreflang="ar" href="${ar}" />
-    <link rel="alternate" hreflang="x-default" href="${en}" />${
+    <link rel="alternate" hreflang="x-default" href="${en}" />`}${
       social
         ? `
     <meta property="og:type" content="website" />
