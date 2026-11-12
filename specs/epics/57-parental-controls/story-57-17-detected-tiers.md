@@ -1,6 +1,8 @@
 # Story 57.17 — Tiers detected from transcripts
 
 > Epic 57 · Phase 2b · Depends on: 57.01 · Needed by: 57.12, 57.13
+> **Status:** built (checked against the code 2026-11-12): the stage, the recompute, the review routes, and the review
+> page on the web.
 
 ## Why
 
@@ -25,10 +27,12 @@ classification (`videos.content_type`, topics and tags). It writes one row in
   as evidence;
 - `model` and `input_hash`, so a changed transcript or model reruns it and nothing else does.
 
-It runs on the home's own model through `pipeline/src/maktaba_pipeline/llm`. The transcript
-never leaves the home (README Q11). A home with no model gets no detected tiers. Arabic and
-English are both in the test set; a transcript in another language is scored only if the model
-supports it, else null.
+`content_screen` is a core stage: it runs inside the pipeline, after the transcript's second
+listen, on the home only. It is not a plugin. It asks the home's own model through
+`pipeline/src/maktaba_pipeline/llm`: the model of the `tagcheck` setting, the one the home's
+other checks ask. The transcript never leaves the home (README Q11). A home with no model gets
+no row and no detected tiers. Arabic and English are the languages it reads; a transcript in
+another language, and a video with no transcript, get a row that says it was not checked.
 
 ### 2. How it feeds the tier
 
@@ -38,16 +42,26 @@ supports it, else null.
   lower one.
 - An admin's tier on the video or its container always wins (steps 1 and 2).
 - Below the line the video stays unrated and goes on the **review list**.
-- The stage writes only `video_content_signals`, under its own plugin role. The API's
-  `parental_recompute` job writes `videos.age_tier` (README §2.4).
+- The stage writes only `video_content_signals`, under its own Postgres role
+  (`maktaba_fp_content_screen`). The API's `parental_recompute` job writes `videos.age_tier`
+  (README §2.4).
+- Once an admin has answered a video on the review list, its signal rates nothing.
 
 ### 3. Review
 
-`GET /api/parental/review` (admin; a guardian sees items from libraries their children can
-read) lists videos with a low-confidence signal, or a detected tier an admin has not confirmed,
-with the categories and the evidence times. An admin confirms, changes or clears the tier; that
-is an admin tier (step 1) and marks the signal reviewed. A video with no transcript is listed
-as not checked.
+`GET /api/parental/review` (admin: every library; a guardian: the libraries their children can
+read; anyone else 403) lists what an admin has not decided yet, with the categories and the
+evidence times. Each item has a `state`, and `?state=` filters by it:
+
+| State | Meaning |
+|---|---|
+| `low_confidence` | a signal under the confidence line: it rates nothing |
+| `unconfirmed` | a detected tier at or above the line that no admin has answered |
+| `not_checked` | no transcript, or a language the stage does not read |
+
+Only an admin answers: `POST /api/parental/review/{video_id}` `{tier | null}` confirms, changes
+or clears the tier. That is an admin tier (step 1) and marks the signal reviewed. A guardian
+reads the list and cannot answer it.
 
 ### 4. What it is not
 

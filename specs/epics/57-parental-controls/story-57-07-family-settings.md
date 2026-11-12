@@ -1,14 +1,15 @@
 # Story 57.07 — Family settings for guardians in the Player
 
 > Epic 57 · Phase 3 · Depends on: 57.02, 57.05, 57.06 · Needed by: 57.08, 57.12
+> **Status:** built (checked against the code 2026-11-12) on iPhone and iPad, and on the web under `/family`.
 
 ## Why
 
-Parents look after children from their own phone. On the web this epic adds only the time
-rules editor (57.15; README §4), and the Remote app is for admins running the home, while a guardian may be
-a viewer. So the Player on iPhone and iPad gets a Family section, shown only to admins and
-guardians (`parental.can_manage` from capabilities). The home still enforces every rule; the
-section only calls the routes of 57.02 and 57.06.
+Parents look after children from their own phone. The Remote app is for admins running the
+home, while a guardian may be a viewer. So the Player on iPhone and iPad gets a Family section,
+shown only to admins and guardians (`parental.can_manage` from capabilities). As built, the web
+has the same settings under `/family` (§5), so a home with no iPhone can run parental controls.
+The home still enforces every rule; both only call the routes of 57.02 and 57.06.
 
 ## Description
 
@@ -41,6 +42,21 @@ with its default tier picker (All ages, 9+, 13+, 16+, 18+, Not rated) and its un
 
 Every screen mirrored; lists of names sorted with Arabic collation when the app is in Arabic;
 tier pickers in ascending age order in both languages.
+
+### 5. On the web
+
+The web app has the same settings for admins and guardians, in English and Arabic:
+
+| Page | Contents |
+|---|---|
+| `/family` | the children; for an admin, making an account restricted, the notice and the switch of 57.12 |
+| `/family/{id}` | a child: the limit, the unrated rule, only allowed items, Allowed and Blocked, Devices (signals; approve a looser one), guardians and Lift restriction (admin) |
+| `/family/{id}/activity` | activity (57.08) |
+| `/family/{id}/time` | time rules, today's use, more time (57.14, 57.15) |
+| `/family/requests` | the requests that wait: approve or deny |
+| `/family/pin` | the parent PIN |
+
+Android (phone, tablet, TV) and the desktop Player have no guardian screens.
 
 ## Acceptance criteria
 

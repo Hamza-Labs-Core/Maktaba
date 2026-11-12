@@ -1,6 +1,8 @@
 # Story 57.15 — Time limits on every client
 
 > Epic 57 · Phase 3b · Depends on: 57.14 · Needed by: 57.13
+> **Status:** built (checked against the code 2026-11-12) on iPhone, iPad, the Android Player (phone and tablet),
+> Android TV, the web and the desktop Player. Apple TV is story 57.11, in progress.
 
 ## Why
 
@@ -19,23 +21,27 @@ TV), the web and the desktop Player:
 - **Time left**, from `GET /api/me/parental/time`, on Home and in the player controls once 15
   minutes or less remain;
 - **a warning** 5 minutes and 1 minute before the end;
-- **a time's-up screen** when the home answers `parental-time`: the reason, when watching opens
-  again, and the saved position. Playback stops; the client does not retry;
+- **a time's-up screen** when the home answers `parental-time` on opening a session, opening it
+  again, or a progress post: the reason, when watching opens again, and the saved position.
+  Playback stops; the client does not retry by itself. A progress post that answers 404 means
+  the stream has ended (the video was hidden): the client stops the same way;
+- progress is posted while playing, at least every 60 seconds (the Apple Player posts every 10
+  seconds, and at once on play, pause and leaving the front): it is the stream's heartbeat
+  (57.14);
 - the client never keeps its own count. It shows what the home says.
 
 ### 2. Asking for more
 
-- Apple Player: the time's-up screen has **Ask for more time** (15, 30, 60 minutes) and **Enter
-  parent PIN**, through 57.06.
-- Android, web and desktop: the screen says to ask a parent, who approves from their own Player
-  or the web. Their own request button comes with the later epic for those clients.
+- Every client: the time's-up screen has **Ask for more time** (15, 30, 60 minutes) and, when
+  someone has a PIN set, **Enter parent PIN**, through 57.06. A parent approves from their own
+  iPhone or iPad Player, or on the web.
 
 ### 3. Setting the rules
 
 - Apple Player: Family > the child > **Time** (with 57.07): rules by day, slot, daily limit and
   library; today's usage; a button to give more time.
-- Web: Settings > Users > the user > **Time**, for an admin or a guardian, with the same fields.
-  This is the one web admin page in this epic.
+- Web: `/family/{id}/time` (Family > the child > **Time**), for an admin or a guardian, with the
+  same fields. Android and the desktop Player have no rules editor.
 
 ### 4. Strings
 

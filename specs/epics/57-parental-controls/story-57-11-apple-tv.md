@@ -1,6 +1,7 @@
 # Story 57.11 — Apple TV, where it falls out
 
 > Epic 57 · Phase 3 · Depends on: 57.03, 57.04, 57.05, 57.10 · Needed by: —
+> **Status:** in progress (2026-11-12).
 
 ## Why
 

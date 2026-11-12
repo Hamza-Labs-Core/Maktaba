@@ -1,6 +1,8 @@
 # Story 57.02 — Restricted accounts and guardians
 
 > Epic 57 · Phase 1 · Depends on: — · Needed by: 57.03, 57.04, 57.06, 57.07, 57.08, 57.12, 57.13
+> **Status:** built (checked against the code 2026-11-12). The role table of §2 is held by
+> `api/internal/router/p57_roles_pg_test.go` (57.13).
 
 ## Why
 
@@ -57,7 +59,7 @@ guardian (or an admin), and the child must be restricted. A restricted user may 
 only for themselves, which gives a restricted sign-in, so a child cannot use the code flow to
 bring an adult's account onto a device. The child's password still works as for any user.
 
-### 5. Migration (slot 0221, planned; see README §6.5)
+### 5. Migration (slot 0221; see README §6.5)
 
 The policy, guardian and rule tables; `session_age_signals` lands in the same slot for 57.04.
 

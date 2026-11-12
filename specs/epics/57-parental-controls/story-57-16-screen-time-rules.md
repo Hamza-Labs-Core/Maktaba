@@ -1,6 +1,8 @@
 # Story 57.16 — The home's time rules through Screen Time
 
 > Epic 57 · Phase 3b · Depends on: 57.14, 57.09 · Needed by: —
+> **Status:** not built (2026-11-12). It needs Apple to grant the Family Controls entitlement
+> (`com.apple.developer.family-controls`). The home's time rules (57.14, 57.15) hold without it.
 
 ## Why
 

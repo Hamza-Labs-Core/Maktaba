@@ -1,10 +1,15 @@
 # Epic 57: Parental controls: the home's rules on every device, with Apple's Screen Time
 
-> **Status:** spec (2026-11-08; direction widened 2026-11-10, see §1). **Platforms:** the Apple
-> Player on iPhone and iPad, and the home's API, pipeline and streaming service. The home's time
-> rules also reach Android, the web and the desktop Player (57.15). Apple TV only where it falls
-> out (story 57.11). The full restricted UI on Android, the web, the desktop Player and the Mac
-> Player is a later epic (§4). **Builds on:**
+> **Status:** mostly built (checked against the code 2026-11-12; spec 2026-11-08, direction
+> widened 2026-11-10, see §1). **Built:** 57.01–57.10, 57.13–57.15, 57.17, and the home's and
+> the web's side of 57.12. **In progress:** 57.11 (Apple TV) and the iPhone notice of 57.12.
+> **Not built:** 57.16 (it needs the Family Controls entitlement). What differs from the text
+> below, and what is still open, is in §14. **Platforms:** the home's API, pipeline and
+> streaming service; the web (family settings under `/family`, and the child's side); the Apple
+> Player on iPhone and iPad (both sides); the Android Player (phone and tablet), Android TV and
+> the desktop Player (the child's side only: time, Ask a parent, the parent PIN, the blocked
+> page, live TV). Apple TV only where it falls out (story 57.11). Guardian screens on Android
+> and the desktop Player, and the Mac Player, are a later epic (§4). **Builds on:**
 > [Epic 10](../10-auth-security/README.md) (sessions, signed URLs),
 > [Epic 25](../25-cloud-relay/README.md) and [Epic 50](../50-cloud-no-downtime/README.md) (the
 > relay and linked sign-ins), [Epic 26](../26-content-intelligence/README.md) (classification,
@@ -136,11 +141,12 @@ Checked again at 4ab79c132 (2026-11-10). Nothing in this epic is built yet. Thes
 
 ## 4. Non-goals
 
-- **The full restricted UI on Android (phone, tablet, TV), the web, the desktop Player and the
-  Mac Player.** Ask a parent and the Family screen on those clients are a later epic. The home's
-  filter and the home's time rules apply to every client from the first build, and each client
-  shows the time state (57.15). The web also gets the time rules editor, so a home with no
-  iPhone can set them.
+- **Guardian screens on Android (phone, tablet, TV) and the desktop Player, and anything on
+  the Mac Player.** Those are a later epic. As built, the web has the whole of family settings
+  under `/family` (57.07), so a home with no iPhone can run parental controls, and Android,
+  Android TV and the desktop Player have the child's side: the time state, Ask a parent, the
+  parent PIN, the blocked page and live TV's slate (57.05, 57.06, 57.10, 57.15). The home's
+  filter and time rules apply to every client either way.
 - **No app-leave PIN.** A child can leave the app; the home's rules follow the account.
 - **No profiles inside one account** (Plex Home's switch-user grid). A child has their own
   Maktaba account, as Apple's Family Sharing gives a child their own Apple Account.
@@ -274,30 +280,37 @@ registry, so a new route cannot skip the filter (57.03, 57.13). The row cache ke
 items with their tier and filters on read, so its per-library key stays correct.
 
 Streaming: a stream session is made only after `Allowed`. A restricted sign-in's signed URLs last
-at most 15 minutes and are renewed by the Player's `StreamProxy`, which re-checks the filter on
-each renewal, so a block applies to a video already playing within 15 minutes. Live channel
-streams gain signed URLs. HDHomeRun routes answer only the Plex servers they were added for
-(57.10).
+at most 15 minutes. There is no separate renewal route: a client that needs fresh URLs opens a
+session again (`POST /api/stream/sessions`), which checks the filter and the time rules again. The
+progress post (`POST /api/stream/sessions/{id}/progress`) is the stream's heartbeat and checks
+the video again too: once the video is hidden it answers the 404 of a missing session, the
+session's lease is not renewed and the streaming service ends the stream. Live channel
+streams gain signed URLs. HDHomeRun routes answer only this machine, the Plex server set up in
+Maktaba and the addresses an admin lists (57.10).
 
 ### 6.5 Data model and migrations
 
-Slots **0220 to 0224 are planned** (0219 was the last one taken on `main` at 4ab79c132). Per `shared/db/migrations/MANIFEST.md` a slot is taken
-when its migration merges: if `main` has moved past one when a story lands, the story takes the
-next free integer and updates this table. Each has a `.sqlite.sql` twin.
+Slots **0220 to 0225**, as built (0219 was the last one taken on `main` at 4ab79c132). Each
+has a `.sqlite.sql` twin. The files in `shared/db/migrations/` are the record of each slot's
+contents; the table below is the plan they were built from, with what changed noted.
 
 | Slot | Story | File | Contents |
 |---|---|---|---|
 | 0220 | 57.01 | `0220_age_tiers.sql` | `videos` ADD `age_tier smallint null` check in (0, 9, 13, 16, 18), `age_tier_source text null` check `admin_video`/`admin_container`/`plex`/`guide`/`youtube`/`plugin`/`library_default`, `age_tier_admin smallint null`; index `(library_id, age_tier)`; `age_tier smallint null` on `libraries` (the default), `series`, `collections`, `channels`, `youtube_sources`; `youtube_videos` ADD `age_limit smallint null`; `channel_programs` ADD `age_tier smallint null` |
 | 0221 | 57.02, 57.04 | `0221_parental_policies.sql` | `parental_policies` (user_id pk fk cascade, max_tier smallint, unrated text check `hide`/`tier_0`…`tier_18`, allow_only bool, version int, updated_by, updated_at); `parental_guardians` (child_id, guardian_id, pk both, check child ≠ guardian); `parental_rules` (id, user_id, effect `allow`/`block`, subject_kind `library`/`collection`/`series`/`channel`/`youtube_source`/`plugin`/`video`, subject_id text, expires_at null, created_by); `session_age_signals` (refresh_family_id pk, user_id, lower smallint null, upper smallint null, declaration text null, movie_ceiling int null, tv_ceiling int null, region text null, tier_limit smallint null, pending_looser jsonb null, observed_at); `app_settings` keys `parental.enabled`, `parental.unrated_on_signal`; check: a user with a policy is not `is_admin` |
 | 0222 | 57.06, 57.08 | `0222_parental_requests.sql` | `parental_requests` (id, child_id, subject_kind, subject_id, status `pending`/`approved`/`denied`/`expired`, decided_by, decided_at, created_at); `parental_pins` (guardian_id pk, pin_hash argon2id, failed int, locked_until, updated_at); `parental_events` (id, child_id, kind `watched`/`blocked`/`asked`/`approved`/`denied`/`pin_locked`/`signal`, subject_kind, subject_id, at); retention index `(at)`; `parental_pins` joins `cluster_copy_excluded()` (starting from its newest definition on `main`) |
-| 0223 | 57.14 | `0223_parental_time.sql` | `parental_time_rules` (id, user_id fk cascade, library_id null, days smallint bitmask, slot_start time null, slot_end time null, daily_minutes int null, created_by, updated_at); `parental_time_usage` (user_id, day date, library_id null, seconds int, pk all three); `parental_time_grants` (id, user_id, day, minutes, granted_by, created_at); `parental_requests.subject_kind` gains `time` |
-| 0224 | 57.17 | `0224_content_signals.sql` | `video_content_signals` (video_id pk fk cascade, tier smallint null, confidence real, categories jsonb, model text, input_hash text, reviewed_by null, reviewed_at null, updated_at); `videos.age_tier_source` check gains `detected` |
+| 0223 | 57.14 | `0223_parental_time.sql` | `parental_time_rules` (id, user_id fk cascade, library_id null, days smallint bitmask, slot_start time null, slot_end time null, daily_minutes int null, created_by, updated_at); `parental_time_usage` (user_id, day date, library_id null, seconds int, pk all three); `parental_time_grants` (id, user_id, day, minutes, granted_by, created_at); `parental_requests.subject_kind` gains `time` (the minutes asked for are the text of `subject_id`, 1 to 480) |
+| 0224 | 57.17 | `0224_content_signals.sql` | `video_content_signals` (video_id pk fk cascade, tier smallint null, confidence real, categories jsonb, model text, input_hash text, reviewed_by null, reviewed_at null, updated_at); `videos.age_tier_source` check gains `detected`; the `content_screen` stage row and its Postgres role `maktaba_fp_content_screen` |
+| 0225 | 57.12 | `0225_parental_enabled.sql` | data only: `app_settings` `parental.enabled` goes to `false` where no account is restricted and no library has a default tier |
 
 ### 6.6 API
 
-All under the signed-in user. Every role rule is enforced by the API, with a role test that tries
-each route as no one, a viewer, a restricted child, the child's guardian, another guardian, an
-admin, and a restricted child signed in through the cloud (57.13).
+All under the signed-in user. Every role rule is enforced by the API, with a role table that tries
+each route as no one, a viewer, a restricted child, the child's guardian, another child's
+guardian, an admin, the admin token, and a restricted child signed in through the cloud (57.13).
+Another child's guardian gets 404, never 403, on every route of a child that a guardian may use
+(the policy, the rules, the activity, the time rules, a request, a signal), so a child's
+existence is not shown. A route only an admin may use answers 403 to everyone else. `shared/api/openapi.yaml` describes every route below, in English and Arabic.
 
 | Method and path | Who | Story |
 |---|---|---|
@@ -307,23 +320,32 @@ admin, and a restricted child signed in through the cloud (57.13).
 | `GET /api/users/{id}/parental` (policy, guardians, the sign-ins' signals); `PUT` `{max_tier, unrated, allow_only, version}`; `DELETE` lifts it | admin; guardian of that user (cannot lift: admin only) | 57.02 |
 | `POST /api/users/{id}/parental/guardians` `{guardian_id}`, `DELETE …/{gid}` | admin | 57.02 |
 | `GET/POST/DELETE /api/users/{id}/parental/rules` | admin, guardian of that user | 57.02 |
-| `POST /api/me/age-signal` `{age_range?, movie_ceiling?, tv_ceiling?, region}` → `{tier_limit, refresh: true}` | any signed-in user (their own sign-in) | 57.04 |
+| `POST /api/me/age-signal` `{age_range?, movie_ceiling?, tv_ceiling?, region}` → `{tier_limit, pending_looser, refresh, enabled}`; `refresh` and `enabled` are false while parental controls are off (57.12); 409 `no_sign_in` for a credential that is no app sign-in | any signed-in user (their own sign-in) | 57.04 |
 | `POST /api/users/{id}/parental/signals/{family}/clear` | admin, guardian | 57.04 |
 | `GET /api/me/parental` → the caller's effective limit (no lists, for the UI) | any signed-in user | 57.05 |
-| `POST /api/me/parental/requests` `{subject_kind, subject_id}` | a restricted user | 57.06 |
-| `GET /api/parental/requests?status=pending`, `POST /api/parental/requests/{id}/{approve,deny}` `{expires_at?}` | admin, guardian of that child | 57.06 |
-| `PUT /api/me/parental-pin` `{pin, password}` | admin, guardian | 57.06 |
-| `POST /api/me/parental/unlock` `{guardian_id, pin, subject_kind, subject_id}` | a restricted user (the PIN is the guardian's) | 57.06 |
+| `POST /api/me/parental/requests` `{subject_kind, subject_id}`; for more time, `subject_kind` is `time` and `subject_id` is the minutes as text (`"30"`, 1 to 480) | a restricted user | 57.06, 57.14 |
+| `GET /api/parental/requests?status=pending`, `POST /api/parental/requests/{id}/approve` `{expires_at?, minutes?}` → `{request, rule}` or, for `time`, `{request, grant}` (`minutes` only for `time`: left out, the minutes asked for); `POST …/deny` | admin, guardian of that child | 57.06, 57.14 |
+| `GET /api/me/parental-pin` → `{set}`, `PUT /api/me/parental-pin` `{pin, password}` | admin, guardian | 57.06 |
+| `GET /api/me/parental/guardians` (who can type a PIN for the caller) | a restricted user | 57.06 |
+| `POST /api/me/parental/unlock` `{guardian_id, pin, subject_kind, subject_id}` → `{rule}`, or `{grant}` for kind `time` | a restricted user (the PIN is the guardian's) | 57.06, 57.14 |
 | `GET /api/users/{id}/parental/activity?cursor=` | admin, guardian of that user | 57.08 |
 | `POST /api/pairing/approve` gains `as_user` (a child this guardian manages) | admin, guardian | 57.02 |
-| `GET /api/capabilities` gains `parental: {restricted, tier_limit, can_manage}` | any signed-in user | 57.05 |
+| `GET /api/capabilities` gains `parental: {enabled, restricted, tier_limit, can_manage}`; 503 `parental_unavailable` with `Retry-After` when the limits cannot be read | any signed-in user | 57.05, 57.12 |
+| `GET|PUT /api/parental/settings` `{enabled}` (off is 409 `restrictions_exist` while an account is restricted), `POST /api/parental/settings/notice/dismiss`, `GET /api/parental/library-suggestions` | admin | 57.12 |
+| `GET /api/channels/{id}/access` → `{restricted, allowed, until}`, `POST /api/channels/{id}/play` → the channel's signed stream URL (403 `restricted`, `reason: programme`, `retry_at` while the programme on air is above the limit) | any signed-in user | 57.10 |
+| `GET|PUT /api/tv/hdhr/allowed` `{addresses}` (the addresses allowed to use the tuner) | admin | 57.10 |
 | `GET/PUT /api/parental/users/{id}/time-rules`, `GET …/time-usage?from&to`, `POST …/time-grants` `{minutes}` | admin, guardian of that user | 57.14 |
 | `GET /api/me/parental/time` → `{remaining_seconds, slot_ends_at, next_allowed_at}` | any signed-in user | 57.14 |
 | `GET /api/parental/review`, `POST /api/parental/review/{video_id}` `{tier \| null}` | admin (confirm, change, clear); a guardian reads items from libraries their children can read | 57.17 |
 
-When time is up, stream creation, URL minting and renewal answer 403 with problem type
-`parental-time` (`reason`, `next_allowed_at`). This is the one parental answer that is not a 404:
-the child is meant to know (57.14).
+When time is up, opening or re-opening a stream session, the progress post and starting a watch
+answer 403 with problem type `parental-time` (`code: parental_time`; `reason` one of
+`outside_slot`, `limit_reached`, `no_heartbeat`; `next_allowed_at` when the rules allow
+watching again). When the time cannot be read the answer is 503 with `Retry-After`, never free
+time. This is the one parental answer that is not a 404: the child is meant to know (57.14).
+Every stream URL carries a signed `tk` claim (`1`: the account's time is kept; `0`: it is not),
+and a kept account's also carries `tls`, the stream session whose lease it needs; the streaming
+service refuses a URL that says neither.
 
 A restricted user is refused, with 403 `restricted`: personal access tokens, YouTube search and
 import (`/api/search/youtube`, `import-youtube`), the XMLTV and M3U exports, plugin admin, and
@@ -346,6 +368,10 @@ Child page: Age limit [13+ ▾] · Unrated [Hide ▾] · Only allowed items [ ] 
 Allowed (list) · Blocked (list) · Devices (signals; Clear) · Activity ›
 ```
 
+- **On the web** the same family settings are under `/family`: the children, a child's page
+  (`/family/{id}`: limit, unrated rule, lists, devices, guardians), its activity and time rules,
+  the requests (`/family/requests`) and the parent PIN (`/family/pin`). An admin's `/family` also
+  has the switch of 57.12, and the review list of 57.17 is at `/parental/review`.
 - A restricted child's Profile shows "Managed by <guardian>" and the limit. The Profile has no
   sign-out lock: switching accounts needs the other account's password, and a child's device
   limits any account signed in on it (§6.2).
@@ -408,8 +434,8 @@ never beats a person's tier. The transcript does not leave the home. Story 57.17
 | A6 | Websocket events naming other videos | events for restricted users are filtered or dropped | 57.03 T07 |
 | A7 | GraphQL | replays REST handlers; covered by the registry walk | 57.13 T03 |
 | A8 | Through the cloud relay or a cloud sign-in | same handlers; restriction survives `ApplyCloudScope` | 57.13 T04 |
-| A9 | Reuse a stream URL after a block | restricted URLs ≤ 15 min, re-checked on renewal | 57.03 T08 |
-| A10 | Unsigned live channel streams, HDHomeRun on the LAN | signed channel URLs; HDHomeRun answers only its Plex servers | 57.10 T03, T04 |
+| A9 | Reuse a stream URL after a block | restricted URLs ≤ 15 min; opening the session again re-checks, and the progress post answers 404 once the video is hidden, so the lease runs out | 57.03 T08 |
+| A10 | Unsigned live channel streams, HDHomeRun on the LAN | signed channel URLs; HDHomeRun answers only this machine, the Plex server and the listed addresses | 57.10 T03, T04 |
 | A11 | A channel with no library | needs a tier; unrated hides for restricted users | 57.10 T02 |
 | A12 | A modified app sends an adult signal, or none | signals only tighten; the account policy holds regardless | 57.04 T05 |
 | A13 | Turn the age sharing off, then back on looser | ratchet on the sign-in; looser waits for a guardian | 57.04 T06 |
@@ -424,7 +450,7 @@ never beats a person's tier. The transcript does not leave the home. Story 57.17
 | A22 | Delete and reinstall the app to drop the signal | the sign-in's ratchet is on the home; a new sign-in needs the account password, and the new sign-in sends a fresh signal | 57.04 T07 |
 
 | A23 | Reach the daily limit on one device, pick up another | the home counts per account, across every client | 57.14 T02, T03 |
-| A24 | Keep a stream running past the slot's end | the session gets an end time; segments stop within 60 seconds, and URL renewal is refused | 57.14 T04 |
+| A24 | Keep a stream running past the slot's end | the session gets an end time and a 60-second lease; segments stop within 60 seconds, and opening the session again is refused | 57.14 T04 |
 | A25 | A modified client that hides the time's-up screen | the home refuses the stream; the client has nothing to play | 57.14 T03 |
 | A26 | Sign in with another, unrestricted account | needs that account's password; a guardian's device approval signs in as the child (A16) | 57.02 T06 |
 | A27 | Content whose transcript reads clean but whose picture is not | residual: detection does not see the picture (§4). An admin's tier and the review list cover it; Help says so | 57.17 |
@@ -442,25 +468,27 @@ never beats a person's tier. The transcript does not leave the home. Story 57.17
 
 ## 9. Stories
 
-| # | Story | Platforms |
-|---|---|---|
-| 57.01 | [Age tiers on the home's content](story-57-01-age-tiers.md) | API, pipeline |
-| 57.02 | [Restricted accounts and guardians](story-57-02-restricted-accounts.md) | API |
-| 57.03 | [One content filter on every surface](story-57-03-server-filter.md) | API, streaming |
-| 57.04 | [The device's signal: Declared Age Range and the Screen Time rating limit](story-57-04-device-signal.md) | iOS, API |
-| 57.05 | [The restricted Player on iPhone and iPad](story-57-05-restricted-player.md) | iOS |
-| 57.06 | [Ask a parent, and the parent PIN](story-57-06-ask-a-parent.md) | API, iOS |
-| 57.07 | [Family settings for guardians in the Player](story-57-07-family-settings.md) | iOS |
-| 57.08 | [Activity for guardians](story-57-08-activity.md) | API, iOS |
-| 57.09 | [Screen Time, Family Sharing and the App Store](story-57-09-screen-time.md) | iOS, Help |
-| 57.10 | [Live TV under parental controls](story-57-10-live-tv.md) | API, streaming, pipeline |
-| 57.11 | [Apple TV, where it falls out](story-57-11-apple-tv.md) | tvOS |
-| 57.12 | [Turning it on in existing homes](story-57-12-existing-homes.md) | API, iOS |
-| 57.13 | [OpenAPI, role tests and the bypass rehearsal](story-57-13-openapi-roles-rehearsal.md) | API, CI |
-| 57.14 | [Time limits and time slots, kept by the home](story-57-14-time-rules.md) | API, streaming |
-| 57.15 | [Time limits on every client](story-57-15-time-on-clients.md) | iOS, tvOS, Android, web, desktop |
-| 57.16 | [The home's time rules through Screen Time](story-57-16-screen-time-rules.md) | iOS |
-| 57.17 | [Tiers detected from transcripts](story-57-17-detected-tiers.md) | pipeline, API |
+Status as checked against the code on 2026-11-12.
+
+| # | Story | Platforms | Status |
+|---|---|---|---|
+| 57.01 | [Age tiers on the home's content](story-57-01-age-tiers.md) | API, pipeline, web | built |
+| 57.02 | [Restricted accounts and guardians](story-57-02-restricted-accounts.md) | API | built |
+| 57.03 | [One content filter on every surface](story-57-03-server-filter.md) | API, streaming | built; one bound open (§14) |
+| 57.04 | [The device's signal: Declared Age Range and the Screen Time rating limit](story-57-04-device-signal.md) | iOS, API | built; the capability and the device check are open (§14) |
+| 57.05 | [The restricted Player on iPhone and iPad](story-57-05-restricted-player.md) | iOS; the child's side also on the web, Android, Android TV, desktop | built |
+| 57.06 | [Ask a parent, and the parent PIN](story-57-06-ask-a-parent.md) | API, iOS, web, Android, Android TV, desktop | built |
+| 57.07 | [Family settings for guardians in the Player](story-57-07-family-settings.md) | iOS, web | built |
+| 57.08 | [Activity for guardians](story-57-08-activity.md) | API, iOS, web | built |
+| 57.09 | [Screen Time, Family Sharing and the App Store](story-57-09-screen-time.md) | iOS, Help | built; the Downtime check on a real device is open (§14) |
+| 57.10 | [Live TV under parental controls](story-57-10-live-tv.md) | API, streaming, pipeline, every client | built |
+| 57.11 | [Apple TV, where it falls out](story-57-11-apple-tv.md) | tvOS | in progress |
+| 57.12 | [Turning it on in existing homes](story-57-12-existing-homes.md) | API, web, iOS | the home and the web built; the iPhone notice in progress |
+| 57.13 | [OpenAPI, role tests and the bypass rehearsal](story-57-13-openapi-roles-rehearsal.md) | API, CI | built |
+| 57.14 | [Time limits and time slots, kept by the home](story-57-14-time-rules.md) | API, streaming | built |
+| 57.15 | [Time limits on every client](story-57-15-time-on-clients.md) | iOS, tvOS, Android, web, desktop | built, but Apple TV (57.11, in progress) |
+| 57.16 | [The home's time rules through Screen Time](story-57-16-screen-time-rules.md) | iOS | not built |
+| 57.17 | [Tiers detected from transcripts](story-57-17-detected-tiers.md) | pipeline, API, web | built |
 
 ## 10. Test and rehearsal plan
 
@@ -473,8 +501,8 @@ only related jobs). Nothing runs against the live home.
 | Tier resolution | Go unit + Postgres (`internal/testport`) | the precedence of §6.1, recompute on each input change |
 | Filter | Go Postgres tests per handler | each surface with a blocked, an allowed and an unrated fixture |
 | Surface registry | Go router walk (57.13) | every mounted content route is registered and probed |
-| Bypass rehearsal | new `parental-bypass` Go test target in the `api` job, Postgres and SQLite | the A1–A18 attempts of §7 against a seeded home, as a restricted child, directly and through the relay agent's loopback path |
-| Roles | Go role tables (57.13) | seven principals × every route of §6.6 |
+| Bypass rehearsal | `api/internal/router/p57_bypass_pg_test.go`, build tag `parental_bypass`, CI job `parental-bypass` of `_integration.yml`, Postgres only | every probe of the surface registry and the surfaces a GET cannot ask, against a seeded home, as a restricted child, through the cloud, through the relay agent's loopback path and as an unrestricted account whose device said 9+ |
+| Roles | one Go role table, `api/internal/router/p57_roles_pg_test.go` (57.13) | eight callers × every Epic 57 route |
 | Streaming | `streaming` Go tests | channel URLs signed; HDHomeRun address allowlist; restricted TTL |
 | Player | MaktabaKit XCTest | signal mapping, ratchet handling, blocked states, PIN entry lockout display, request flow against `MockHome` |
 | Player UI | `_apple-apps.yml` Player UI shards on throwaway iPhone and iPad simulators, English and Arabic | restricted child, guardian Family screens, Ask a parent; the age signal comes from a test double (`AgeSignalSource`), since the simulator cannot be a Family Sharing child |
@@ -503,8 +531,8 @@ only related jobs). Nothing runs against the live home.
   the time watching opens again. A 30 minute grant lets playback go on.
 - A library of unrated lectures gets detected tiers after the pipeline runs. The clear ones show
   for a 9+ child; the unsure ones stay hidden and are on the review list.
-- A viewer, the child, or another guardian cannot change the child's policy or time rules (403,
-  role tests).
+- A viewer or the child cannot change the child's policy or time rules (403), and another
+  child's guardian gets 404 (the role table).
 - Every new string exists in English and Arabic, and each screen is checked mirrored.
 
 ## 12. Decisions (2026-11-08)
@@ -562,3 +590,53 @@ None blocks the epic. Each has a default the stories use.
 | Q11 | May the transcript leave the home to be rated? | no; detection runs on the home's own model, and a home with no model gets no detected tiers |
 | Q7 | How long to keep a child's activity | 90 days |
 | Q8 | May a guardian who is not an admin lift a restriction entirely? | no; only an admin can delete a policy, a guardian can loosen it to 18+ |
+
+## 14. As built (checked against the code 2026-11-12)
+
+What the build does differently from the sections above. The sections above are corrected
+where a sentence was wrong; this list is the summary.
+
+- **Family settings are on the web too.** `/family` has everything the iPhone Player's Family
+  section has: making an account restricted, guardians, the limit and the rules, requests,
+  activity, device signals, the parent PIN, time rules. A home with no iPhone can run parental
+  controls. Android (phone, tablet, TV) and the desktop Player have the child's side and no
+  guardian screens.
+- **A request for more time** is `subject_kind: "time"` with the minutes as the text of
+  `subject_id` (1 to 480). Approve takes an optional `minutes` and answers `{request, grant}`.
+  The PIN unlock takes kind `time` and answers `{grant}`.
+- **Another child's guardian gets 404**, not 403, on the routes of a child that a guardian may
+  use. A route only an admin may use (naming a guardian, the home's settings) answers 403.
+- **No stream renewal route.** Opening the session again renews it. The progress post is the
+  heartbeat: it counts the time, renews the session's 60-second lease, and checks the video
+  again (404 once it is hidden). A refused stream answers 403 `parental-time` with `reason`
+  (`outside_slot`, `limit_reached`, `no_heartbeat`) and `next_allowed_at`, or 503 with
+  `Retry-After` when the time cannot be read. Every stream URL carries `tk`, and a kept
+  account's carries `tls`.
+- **Live TV (57.10).** A player asks `GET /api/channels/{id}/access` and plays through
+  `POST /api/channels/{id}/play`. There is no slate video made per viewer: the refusal is a 403
+  with `retry_at`, and each client draws its own slate. A channel's signed URL plays at the home
+  only; a second machine's gate does not take it. A tuner address (`/api/tv/hdhr/allowed`)
+  names no viewer, so it carries no per-viewer limit.
+- **Detection (57.17).** `content_screen` is a core stage that runs inside the pipeline, not a
+  plugin. It asks the model of the `tagcheck` setting. The review list has three states
+  (`low_confidence`, `unconfirmed`, `not_checked`), and only an admin answers an item.
+- **Existing homes (57.12).** Parental controls are off in a home with no restricted account
+  and no library default tier (slot 0225), turn on with the first of either, and an admin can
+  switch them (`GET|PUT /api/parental/settings`). `GET /api/capabilities` has the block
+  `parental: {enabled, restricted, tier_limit, can_manage}`.
+- **The proofs (57.13)** live in `api/internal/router/`: the role table
+  (`p57_roles_pg_test.go`) and the bypass rehearsal (`p57_bypass_pg_test.go`, build tag
+  `parental_bypass`, CI job `parental-bypass`). The rehearsal runs on Postgres only.
+- **The filter (57.03)** also covers search, the live feeds, tags, a library's numbers and
+  plugin panels. The Home row cache is not used for a restricted account.
+
+Open items:
+
+| # | Open | Where |
+|---|---|---|
+| O1 | A restricted account's Home measured over the 60 ms p95 bound of 57.03 T12. The benchmark reports the figure and does not assert it | `api/internal/router/p57_filter_bench_test.go` |
+| O2 | The Declared Age Range capability is not on the App IDs, and the targets carry no entitlement for it. Until then the system answers "not available" and no age range is sent | `docs/testflight.md` |
+| O3 | The 57.04 device check on a real child device (do the Screen Time rating limits read as the parent set them) | `docs/testflight.md` |
+| O4 | The 57.09 Downtime check on a real child device | `docs/testflight.md` |
+| O5 | 57.16 is not built: it needs Apple to grant the Family Controls entitlement | story 57.16 |
+| O6 | 57.11 (Apple TV) and the iPhone notice of 57.12 are in progress | their stories |
