@@ -406,6 +406,24 @@ func (s *Store) decide(ctx context.Context, actorID, id string, approve bool, a 
 	// (the transaction commits) and the caller is then told.
 	expired := false
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		// The child's policy row is locked before the request's, the order Unlock
+		// and Ask take them in (a PIN unlock locks the policy and then closes the
+		// waiting requests). Taken the other way round, a guardian approving while
+		// another types the PIN for the same item is a deadlock, and the database
+		// rolls one of them back. The child id is read without a lock first; a
+		// request's child never changes.
+		var child string
+		err := tx.QueryRowContext(ctx, `SELECT child_id::text FROM parental_requests WHERE id = $1`, id).Scan(&child)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrRequestNotFound
+		}
+		if err != nil {
+			return err
+		}
+		// a child with no policy left has no row to lock, and no Unlock to meet
+		if _, err := tx.ExecContext(ctx, `SELECT 1 FROM parental_policies WHERE user_id = $1 FOR UPDATE`, child); err != nil {
+			return err
+		}
 		req, err := scanRequest(tx.QueryRowContext(ctx,
 			`SELECT `+requestCols+` FROM parental_requests WHERE id = $1 FOR UPDATE`, id))
 		if errors.Is(err, sql.ErrNoRows) {
