@@ -358,8 +358,12 @@ export function Player({ routes = DESK_ROUTES }: { routes?: LiveRoutes } = {}) {
   sw.current = player;
   const { state } = player;
 
-  // what is on screen, or about to be: the channel the home is asked about
-  const gateChannel = state.target ?? state.current ?? channel;
+  // The channel the home is asked about: what is on screen, or about to be. The
+  // address's own channel comes first while the home has not cleared it: the
+  // address changed under an open player (Back, a link), and nothing tunes it
+  // until the home has answered for it.
+  const awaitsClearing = limited && channel != null && cleared !== channel.id;
+  const gateChannel = awaitsClearing ? channel : (state.target ?? state.current ?? channel);
   const access = useChannelAccess(limited ? (gateChannel?.id ?? null) : null);
   const judged = limited && access.channelId !== null && access.channelId === gateChannel?.id;
   const programmeBlocked = judged && !access.allowed;
