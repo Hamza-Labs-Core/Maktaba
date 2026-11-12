@@ -608,15 +608,15 @@ All nine are decided (2026-11-11). The stories follow these decisions.
 
 | # | Question | Decided |
 |---|---|---|
-| Q1 | The tagline and the site's voice | 60.02 part B proposes several taglines in English and Arabic, each with one line on what it says; the owner chooses one. No direction is set in advance |
+| Q1 | The tagline and the site's voice | the voice guide approved 2026-11-11; the tagline chosen 2026-11-12 from five proposals per language: "Your own library, on every screen at home." / «مكتبتكم، على كل شاشة في البيت.» |
 | Q2 | Who signs off the Arabic copy? | written natively by us in Modern Standard Arabic, in the same voice; the owner reads every Arabic page and approves it before Phase 2 is done. No other reader |
-| Q3 | The wordmark: the app icon alone, or a wordmark in Latin and «مكتبة»? | the app icon with the name in both scripts, "Maktaba" and «مكتبة»; 60.01 shows it in the mockups for the owner's approval |
+| Q3 | The wordmark: the app icon alone, or a wordmark in Latin and «مكتبة»? | the app icon with the name in both scripts, "Maktaba" and «مكتبة»; approved in the part A (2026-11-11) and part B (2026-11-12) mockups |
 | Q4 | Any analytics on the site? | none; Cloudflare's aggregate zone counts only (§6.7) |
 | Q5 | Show the phone and TV apps on `/download/` while they are only in TestFlight and Play's internal track? | no; they appear only once a public store listing or a public TestFlight or Play testing link exists |
 | Q6 | The name on the legal pages | Hamza Labs, the controller `CurrentPolicy` already names |
 | Q7 | Who reviews the terms and the copyright page's legal text? | we draft them from Epic 50's research, marked as not legal advice; a lawyer the owner chooses reviews them before 50.24's public channels go live |
 | Q8 | A pricing page before Epic 50 decides the plans? | no page and no link until Epic 50 decides the plans (60.13) |
-| Q9 | The display typeface | 60.01 chooses from open-licensed faces, Amiri first; the owner reviews it in the part B mockups |
+| Q9 | The display typeface | Amiri Bold, subset and renamed "Maktaba Display" (OFL); approved with part B's mockups on 2026-11-12 |
 
 ### Owner actions (the epic cannot do these)
 
@@ -626,6 +626,6 @@ All nine are decided (2026-11-11). The stories follow these decisions.
 | A2 | No separate website token (decided 2026-11-11): the shared `CLOUDFLARE_API_TOKEN` deploys maktaba.tv. It needs the website's row of `deploy/cloudflare/README.md` (on `maktaba.tv`: Workers Routes Edit and Zone Read; Workers Scripts Edit on the account; no DNS Edit, since Cloudflare creates the custom domains' records itself, as it does for maktaba.dev). The deploy's read-only token check names any missing permission on each run; add it to the existing token. Set the repository variable `WEBSITE_LIVE` to `true` only when the site should go live | Phase 1 |
 | A3 | Mail for `privacy@maktaba.tv` (already in `CurrentPolicy`) and `copyright@maktaba.tv` (the designated agent's address), for example through Cloudflare Email Routing | Phase 1 |
 | A4 | Register the designated agent with the US Copyright Office (50.24 lists it) | before 50.24's public channels |
-| A5 | Approve the tagline, the voice, the wordmark and the Arabic copy (Q1–Q3) | Phase 2 |
+| A5 | Approve the tagline, the voice, the wordmark and the Arabic copy (Q1–Q3). **Done:** the voice (2026-11-11), the wordmark and the tagline (2026-11-12). **Open:** the owner's read of the Arabic copy (Q2) | Phase 2 |
 | A6 | Public store listings, or public TestFlight and Play testing links, for the apps the download page should show | when wanted |
 | A7 | Set `vars.MAKTABA_PACKAGES_URL` and `vars.HOMEBREW_TAP_REPO` and their secrets (`packages.yml`), so apt, dnf and Homebrew can be offered | when wanted |

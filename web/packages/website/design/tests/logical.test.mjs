@@ -38,7 +38,7 @@ export function findings(file, text) {
 }
 
 function files() {
-  const out = ["shell.css", "fonts.css", "site-tokens.css"].map((f) => join(design, f));
+  const out = ["shell.css", "site.css", "fonts.css", "site-tokens.css"].map((f) => join(design, f));
   for (const f of readdirSync(join(design, "mockups"))) {
     if (f.endsWith(".html") || f.endsWith(".css")) out.push(join(design, "mockups", f));
   }

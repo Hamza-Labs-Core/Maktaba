@@ -76,12 +76,30 @@ export function shellAssets() {
     files.push({ file, content });
     fonts[f] = `/${file}`;
   }
+  // the text face's files are hashed above (pages preload them); any other face fonts.css
+  // names (part B's display face, Maktaba Display) is published, hashed, as it is met
+  const published = {};
   const fontsCss = fs
     .readFileSync(path.join(DESIGN, "fonts.css"), "utf8")
-    .replace(/url\("\.\.\/static\/fonts\/maktaba-text-([a-z0-9-]+)\.woff2"\)/g, (m, f) => {
-      if (!fonts[f]) throw new Error(`design/fonts.css: no font ${f}`);
-      return `url("${fonts[f]}")`;
-    });
+    .replace(
+      /url\("\.\.\/static\/fonts\/maktaba-(text|display)-([a-z0-9-]+)\.woff2"\)/g,
+      (m, face, f) => {
+        if (face === "text") {
+          if (!fonts[f]) throw new Error(`design/fonts.css: no font ${f}`);
+          return `url("${fonts[f]}")`;
+        }
+        const name = `maktaba-${face}-${f}`;
+        const source = path.join(PKG, `static/fonts/${name}.woff2`);
+        if (!fs.existsSync(source)) throw new Error(`design/fonts.css: no font ${name}`);
+        if (!published[name]) {
+          const content = fs.readFileSync(source);
+          const file = hashed(name, "woff2", content);
+          files.push({ file, content });
+          published[name] = `/${file}`;
+        }
+        return `url("${published[name]}")`;
+      }
+    );
   if (/url\("?\.\.\//.test(fontsCss))
     throw new Error("design/fonts.css: a URL the build does not publish");
   const css = [

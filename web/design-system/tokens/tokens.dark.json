@@ -26,18 +26,21 @@
       "hero": { "value": "#0E1624" },
       "section": { "value": "#0F1725" },
       "shot": { "value": "#131D2E" },
-      "code": { "value": "#131D2E" }
+      "code": { "value": "#131D2E" },
+      "frame": { "value": "#06090F" }
     },
     "line": {
       "rule": { "value": "#22304A" },
-      "control": { "value": "#6B7A94" }
+      "control": { "value": "#6B7A94" },
+      "frame": { "value": "#2A3650" }
     },
     "accent": {
       "cta": { "value": "{color.brand.500}" },
       "cta-hover": { "value": "{color.brand.300}" },
       "cta-fg": { "value": "#1A1408" },
       "focus": { "value": "{color.brand.400}" },
-      "mark": { "value": "{color.brand.500}" }
+      "mark": { "value": "{color.brand.500}" },
+      "glow": { "value": "rgba(227, 178, 82, 0.14)" }
     }
   }
 }
