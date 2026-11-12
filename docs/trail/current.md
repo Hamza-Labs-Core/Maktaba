@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.134
-up_to_commit: ca22c1b88
-built_from: v0.3.133
+tag: v0.3.135
+up_to_commit: 9ece66e23
+built_from: v0.3.134
 ---
 
-# Trail snapshot: v0.3.134
+# Trail snapshot: v0.3.135
 
 ## Keep doing
 
@@ -624,6 +624,7 @@ built_from: v0.3.133
 - NAS after #1164: a restart rebuilds the pipeline venv in place under running workers (transient `ModuleNotFoundError`, runner exit 75); setup downloads `large-v3-turbo` on a Light NAS where speech is off; the terminal setup keeps no log its errors point to; NAS UIs, GPUs, VA-API, mDNS beside the NAS's responder, Unraid's shfs refusal and discovery need real hardware. (#1164)
 
 - Problem registry wording: it still calls the home's admin «المسؤول» where the voice guide prefers «من يدير الجهاز الرئيسي», and the app labels it quotes are singular in the web catalog; both belong to the app catalog's pass. (#1185)
+
 ## Missing events
 
 | PR | Merged | Title |
@@ -642,6 +643,8 @@ built_from: v0.3.133
 | #1183 | 2026-11-11 | ci(website): the shared Cloudflare token deploys maktaba.tv; WEBSITE_LIVE stays the only switch |
 | #1184 | 2026-11-11 | docs(epic60): owner action A1 is done (the server image is public) |
 | #1188 | 2026-11-11 | ci(website): measure again a run Lighthouse could not finish; never a low score |
+| #1190 | 2026-11-11 | ci: install the pipeline without torch's CUDA tree, and keep its wheels cached |
+| #1191 | 2026-11-11 | fix(stt): ml runners let idle models go and keep MLX's cache capped |
 
 ## Index
 
