@@ -21,19 +21,19 @@ Worker, which:
 
 ## What is on the site
 
-| Path                            | What                                           | From                                                 |
-| ------------------------------- | ---------------------------------------------- | ---------------------------------------------------- |
-| `/`, `/ar/`                     | the home page (60.10)                          | `scripts/home.mjs`, `copy/home.*.md`, `static/shots` |
-| `/install/`, `/ar/install/`     | the install chooser (60.05)                    | `src/pages/install/index.html` (+ `ar/`)             |
-| `/install/…`, `/ar/install/…`   | Epic 59's install guides                       | `web/packages/install` (`pnpm -C web build:install`) |
-| `/legal/…`, `/ar/legal/…`       | privacy, terms, copyright (60.07)              | `copy/legal/`, `scripts/legal.mjs`                   |
-| `/problems/…`, `/ar/problems/…` | a page per problem type, and the index (60.06) | `shared/api/problems.json`, `scripts/problems.mjs`   |
+| Path                            | What                                              | From                                                                  |
+| ------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------- |
+| `/`, `/ar/`                     | the home page (60.10)                             | `scripts/home.mjs`, `copy/home.*.md`, `static/shots`                  |
+| `/install/`, `/ar/install/`     | the install chooser (60.05)                       | `src/pages/install/index.html` (+ `ar/`)                              |
+| `/install/…`, `/ar/install/…`   | Epic 59's install guides                          | `web/packages/install` (`pnpm -C web build:install`)                  |
+| `/legal/…`, `/ar/legal/…`       | privacy, terms, copyright (60.07)                 | `copy/legal/`, `scripts/legal.mjs`                                    |
+| `/problems/…`, `/ar/problems/…` | a page per problem type, and the index (60.06)    | `shared/api/problems.json`, `scripts/problems.mjs`                    |
 | `/download/`, `/ar/download/`   | every device's file of the latest release (60.11) | the GitHub Releases API, `src/downloads.json`, `scripts/download.mjs` |
-| `/404.html`, `/ar/404.html`     | the 404 page                                   | `src/pages/404.html`, `src/pages/ar/404.html`        |
-| `/schema/log-line.json`         | the log schema, at its `$id`                   | `shared/log/schema/line.schema.json`                 |
-| `/.well-known/security.txt`     | the disclosure policy, both `Canonical`s       | `api/internal/security/disclosure.go`                |
-| `/robots.txt`                   | every page may be crawled                      | `scripts/build.mjs`                                  |
-| `/shots/…`                      | the apps' product screenshots (60.09)          | `scripts/shots.mjs`, `shots-manifest.json`           |
+| `/404.html`, `/ar/404.html`     | the 404 page                                      | `src/pages/404.html`, `src/pages/ar/404.html`                         |
+| `/schema/log-line.json`         | the log schema, at its `$id`                      | `shared/log/schema/line.schema.json`                                  |
+| `/.well-known/security.txt`     | the disclosure policy, both `Canonical`s          | `api/internal/security/disclosure.go`                                 |
+| `/robots.txt`                   | every page may be crawled                         | `scripts/build.mjs`                                                   |
+| `/shots/…`                      | the apps' product screenshots (60.09)             | `scripts/shots.mjs`, `shots-manifest.json`                            |
 
 A page source in `src/pages/` is the page's `<main>` content after a leading comment
 (`title:`, `description:`, optionally `meta:`, and `main:`, a class for `<main>`).
