@@ -220,12 +220,13 @@
   .hero {
     padding-block: var(--spacing-16) var(--spacing-20);
   }
+  /* the text column a little wider than 5:7 (433 px at 1280), and the column, not 16ch, sets
+     the headline's measure: the tagline took four lines in CI's Linux render, where the display
+     face runs a few pixels wider than on a Mac (three in the mockup) */
   .hero .grid {
-    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    grid-template-columns: minmax(0, 5.5fr) minmax(0, 6.5fr);
     gap: var(--spacing-12);
   }
-  /* the hero's column sets the measure from here: 16ch cut the tagline into four lines where the
-     display face's fallback or Linux's metrics run a little wider (three in the mockup) */
   .hero .display-1 {
     max-inline-size: none;
   }
