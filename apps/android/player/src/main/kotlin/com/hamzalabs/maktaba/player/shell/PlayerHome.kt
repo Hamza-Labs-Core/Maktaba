@@ -6,9 +6,11 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.Capabilities
 import com.hamzalabs.maktaba.core.api.User
+import com.hamzalabs.maktaba.core.parental.ParentalState
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.ui.ThemeStore
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 
 /**
  * What every signed-in screen of the Player reads: the session (sign out, choose another home),
@@ -29,6 +31,12 @@ class PlayerHome(
     /** The home's web address (under its base path): the admin's Components link goes there. */
     val webUrl: String get() = client.home.toString()
 
+    /**
+     * What this sign-in is under parental controls (Epic 57): its limit, and for a restricted
+     * account the time the home says is left. The home enforces both; the screens only say so.
+     */
+    val parental: ParentalState by lazy { ParentalState(client) }
+
     private val kept = mutableMapOf<String, Any>()
 
     /**
@@ -45,3 +53,17 @@ val LocalPlayerHome = staticCompositionLocalOf<PlayerHome> { error("no PlayerHom
 /** What the signed-in home has on now; screens recompose when it changes. */
 @Composable
 fun PlayerHome.features(): Capabilities = capabilities.collectAsState().value
+
+/**
+ * Reads the sign-in's parental limit now and each time the app comes back to the front (Epic
+ * 57): a guardian may have changed it meanwhile. The home enforces it either way.
+ */
+@Composable
+fun FollowParental(home: PlayerHome) {
+    androidx.lifecycle.compose.LifecycleResumeEffect(home) {
+        val job = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main.immediate).let { scope ->
+            scope.launch { home.parental.refresh() }
+        }
+        onPauseOrDispose { job.cancel() }
+    }
+}

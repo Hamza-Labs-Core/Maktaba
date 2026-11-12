@@ -23,6 +23,9 @@ import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.ErrorKind
 import com.hamzalabs.maktaba.core.api.Failure
+import com.hamzalabs.maktaba.core.api.ProgressAnswer
+import com.hamzalabs.maktaba.core.api.TimeRefusal
+import com.hamzalabs.maktaba.core.api.timeRefusal
 import com.hamzalabs.maktaba.core.api.Rendition
 import com.hamzalabs.maktaba.core.api.busyRetryMs
 import com.hamzalabs.maktaba.core.api.errorDetails
@@ -64,6 +67,12 @@ import kotlinx.coroutines.withContext
  * when the player fails, or at another quality (FR-35); and closes the session when stopped.
  * The audio and subtitle choice is kept for the next video (FR-34), and a stream with sound
  * always plays with an audio track selected (FR-39a).
+ *
+ * Epic 57 (stories 57.14, 57.15): the progress post is also the stream's heartbeat for an
+ * account with time rules, so it goes out every 10 s while playing and at once on resume, and
+ * its answer is read: when the home says the account's time is over (on opening, renewing or a
+ * progress post) the video stops and [timeUp] says why; when it says the stream is gone,
+ * [endedByHome]. Neither is asked about again until the person does ([checkAgain]).
  *
  * The player is handed to the system (48.33: [NowPlaying], the media session's service), so the
  * sound goes on with the screen off and the notification and lock screen drive it (FR-39); and
@@ -111,6 +120,21 @@ class Playback(
      */
     var waiting by mutableStateOf<Failure?>(null)
         private set
+    /**
+     * The home said this account's watching time is over (403 `parental-time`): the video has
+     * stopped where [TimeUp.positionMs] says, and the home is not asked again until [checkAgain].
+     */
+    var timeUp by mutableStateOf<TimeUp?>(null)
+        private set
+    /**
+     * The home ended the stream while it played (a progress post answered 404: the session is
+     * gone, or the video is no longer this account's). The video has stopped; nothing asks again.
+     */
+    var endedByHome by mutableStateOf(false)
+        private set
+    /** The home could not check the account's time at the last progress post (503); the next one asks again. */
+    var cannotCheck by mutableStateOf(false)
+        private set
     /** The stream's tracks, as the player last read them (the picker lists them). */
     var tracks by mutableStateOf(Tracks.EMPTY)
         private set
@@ -147,7 +171,7 @@ class Playback(
 
     /** Plays [v] from [startSec] (its resume point, or 0 for the start). */
     fun play(v: Video, startSec: Int = 0) {
-        if (v.id == video?.id && problem == null) return
+        if (v.id == video?.id && problem == null && timeUp == null && !endedByHome) return
         stop()
         video = v
         startedAtSec = startSec.coerceAtLeast(0)
@@ -158,6 +182,17 @@ class Playback(
     fun retry() {
         val v = video ?: return
         val from = startedAtSec
+        stop()
+        play(v, from)
+    }
+
+    /**
+     * The person's own tap on the time's-up screen (or after a parent gave more time): the same
+     * video again, from where it stopped. The home answers as it does any open.
+     */
+    fun checkAgain() {
+        val v = video ?: return
+        val from = ((timeUp?.positionMs ?: (startedAtSec * 1000L)) / 1000).toInt()
         stop()
         play(v, from)
     }
@@ -178,6 +213,9 @@ class Playback(
         session = null
         problem = null
         waiting = null
+        timeUp = null
+        endedByHome = false
+        cannotCheck = false
         video = null
         tracks = Tracks.EMPTY
         isPlaying = false
@@ -304,6 +342,12 @@ class Playback(
             stop()
             signedOut()
         } catch (e: Exception) {
+            val over = e.timeRefusal()
+            if (over != null) {
+                // the account's time is over: nothing plays on, not the stream before either
+                stopForTime(over, fromMs)
+                return
+            }
             if (old != null && control?.playerError == null) return
             Log.w("Maktaba", "playback: ${e.errorDetails()}", e)
             releasePlayers()
@@ -365,8 +409,9 @@ class Playback(
             }
 
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-                // paused: "continue watching" resumes here (FR-32)
-                if (!playWhenReady && p.playbackState != Player.STATE_ENDED) report(p, completed = false)
+                // paused: "continue watching" resumes here (FR-32). Resumed: the home hears of it at
+                // once, as a time-limited account's stream is served only while it does (57.14)
+                if (p.playbackState != Player.STATE_ENDED) report(p, completed = false)
             }
 
             override fun onPlaybackStateChanged(state: Int) {
@@ -385,7 +430,45 @@ class Playback(
         val s = session ?: return
         val at = (p.currentPosition / 1000).toInt()
         if (at <= 0 && !completed) return
-        background.launch { client.reportProgress(s, at, completed) }
+        // sent from the scope that outlives the screen; its answer is read where the player lives
+        background.launch {
+            val answer = client.reportProgress(s, at, completed)
+            withContext(Dispatchers.Main) { heard(s, answer, at * 1000L, completed) }
+        }
+    }
+
+    /** What the home said to a progress post of session [s] at [atMs]. */
+    private fun heard(s: String, answer: ProgressAnswer, atMs: Long, completed: Boolean) {
+        // a post of a session since closed or replaced says nothing about what plays now
+        if (session != s) return
+        when (answer) {
+            ProgressAnswer.Ok -> cannotCheck = false
+            is ProgressAnswer.TimeOver -> stopForTime(answer.refusal, atMs)
+            ProgressAnswer.Ended -> if (!completed && !ended) {
+                Log.i("Maktaba", "playback: the home ended the stream")
+                session = null
+                releasePlayers()
+                isPlaying = false
+                waiting = null
+                endedByHome = true
+            }
+            is ProgressAnswer.CannotCheck -> cannotCheck = true
+            is ProgressAnswer.Failed -> {}
+        }
+    }
+
+    /** Stops for [refusal] at [atMs]: the stream is closed and nothing asks the home again by itself. */
+    private fun stopForTime(refusal: TimeRefusal, atMs: Long) {
+        Log.i("Maktaba", "playback: the account's time is over (${refusal.reason})")
+        val s = session
+        session = null
+        if (s != null) background.launch { client.closeStream(s) }
+        releasePlayers()
+        isPlaying = false
+        waiting = null
+        problem = null
+        cannotCheck = false
+        timeUp = TimeUp(refusal, atMs.coerceAtLeast(0))
     }
 
     /**
@@ -403,6 +486,11 @@ class Playback(
             if (p.playbackState == Player.STATE_ENDED) continue
             if (p.isPlaying) report(p, completed = false)
             val failed = p.playerError
+            // the streaming service refused the stream itself because the time is over
+            failed?.let(::playbackTimeRefusal)?.let {
+                stopForTime(it, p.currentPosition)
+                return
+            }
             if (failed != null && System.currentTimeMillis() - openedAt < 30_000) {
                 releasePlayers()
                 Log.w("Maktaba", "player: ${failed.errorCodeName}", failed)
@@ -417,3 +505,6 @@ class Playback(
         }
     }
 }
+
+/** Why and where a video stopped for time: the home's refusal and the position it stopped at. */
+data class TimeUp(val refusal: TimeRefusal, val positionMs: Long = 0)

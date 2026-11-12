@@ -84,4 +84,31 @@ class ParentalTimeTest {
         assertEquals("تحقّق مجددًا", ar["parental.time.check"])
         for (k in listOf("parental.time.next", "parental.time.saved")) assertTrue(k, ar[k, "X"].contains("X"))
     }
+
+    @Test
+    fun aLengthOfTimeInWordsInBothLanguages() {
+        val en = Texts(Lang.En)
+        val ar = Texts(Lang.Ar)
+        assertEquals("less than a minute", ParentalTime.words(59, en))
+        assertEquals("1 minute", ParentalTime.words(60, en))
+        assertEquals("14 minutes", ParentalTime.words(899, en))
+        assertEquals("1 hour", ParentalTime.words(3600, en))
+        assertEquals("1 hour and 5 minutes", ParentalTime.words(3900, en))
+        assertEquals("أقل من دقيقة", ParentalTime.words(10, ar))
+        assertEquals("دقيقة واحدة", ParentalTime.words(60, ar))
+        assertEquals("دقيقتان", ParentalTime.words(120, ar))
+        assertEquals("5 دقائق", ParentalTime.words(300, ar))
+        assertEquals("15 دقيقة", ParentalTime.words(900, ar))
+        assertEquals("ساعة واحدة و30 دقيقة", ParentalTime.words(5400, ar))
+        assertEquals("12 minutes left today", en["parental.time.left", ParentalTime.words(720, en)])
+        assertEquals("Watching ends in 5 minutes.", en["parental.time.warning", ParentalTime.words(300, en)])
+        assertEquals("تنتهي المشاهدة بعد دقيقة واحدة.", ar["parental.time.warning", ParentalTime.words(60, ar)])
+    }
+
+    @Test
+    fun arabicPluralFormsFollowTheNumber() {
+        assertEquals(listOf("zero", "one", "two", "few", "few", "many", "many", "other", "other", "few"),
+            listOf(0, 1, 2, 3, 10, 11, 99, 100, 102, 103).map { ParentalTime.plural(Lang.Ar, it) })
+        assertEquals(listOf("other", "one", "other"), listOf(0, 1, 2).map { ParentalTime.plural(Lang.En, it) })
+    }
 }

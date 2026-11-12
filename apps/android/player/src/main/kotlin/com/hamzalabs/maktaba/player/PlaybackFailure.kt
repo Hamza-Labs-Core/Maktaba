@@ -9,6 +9,8 @@ import com.hamzalabs.maktaba.core.api.BODY_KEPT
 import com.hamzalabs.maktaba.core.api.ErrorKind
 import com.hamzalabs.maktaba.core.api.Failure
 import com.hamzalabs.maktaba.core.api.Problem
+import com.hamzalabs.maktaba.core.api.TimeRefusal
+import com.hamzalabs.maktaba.core.api.timeRefusal
 import com.hamzalabs.maktaba.core.api.details
 import com.hamzalabs.maktaba.core.api.errorKind
 import com.hamzalabs.maktaba.core.api.retryAfterSeconds
@@ -37,4 +39,22 @@ fun playbackFailure(e: PlaybackException): Failure {
         else -> ErrorKind.Server
     }
     return Failure(kind, listOfNotNull(e.errorCodeName, e.message).joinToString(": "))
+}
+
+/**
+ * The time refusal in a player failure (Epic 57 story 57.14): the streaming service answered a
+ * playlist or segment with 403 `parental-time`, or the client's own call was refused so.
+ */
+@OptIn(UnstableApi::class)
+fun playbackTimeRefusal(e: PlaybackException): TimeRefusal? {
+    var c: Throwable? = e
+    while (c != null) {
+        if (c is HttpDataSource.InvalidResponseCodeException) {
+            return timeRefusal(c.responseCode, Problem.parse(String(c.responseBody).take(BODY_KEPT)))
+        }
+        if (c is ApiException) return c.timeRefusal()
+        if (c.cause === c) break
+        c = c.cause
+    }
+    return null
 }

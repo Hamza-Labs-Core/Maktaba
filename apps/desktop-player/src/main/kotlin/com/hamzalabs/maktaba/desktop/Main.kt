@@ -316,6 +316,8 @@ private fun SignedIn(
     // what the home has on: asked at sign-in, then every five minutes while the window is open
     // (a desktop window has no background state); a failed answer keeps the last good one
     LaunchedEffect(p.client) { session.followCapabilities() }
+    // the sign-in's parental limit (Epic 57), read at sign-in and each time a video is opened or closed
+    LaunchedEffect(home, playback.request == null) { home.parental.refresh() }
     DisposableEffect(playback) { onDispose { playback.close() } }
     CompositionLocalProvider(LocalDesktopHome provides home) {
         if (playback.request != null) {
@@ -326,6 +328,7 @@ private fun SignedIn(
                     if (fullScreen) onFullScreen(false)
                 },
                 posters = home.posters,
+                parental = home.parental,
             )
         } else {
             Shell(home)

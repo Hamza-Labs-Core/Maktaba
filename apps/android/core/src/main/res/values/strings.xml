@@ -339,4 +339,54 @@
     <string name="report_status_looking">Looking into it</string>
     <string name="report_status_fixed">Fixed</string>
     <string name="report_status_closed">Closed</string>
+    <!-- parental controls (Epic 57): the time the home says is left, the time's-up screen,
+         asking a parent, the parent PIN, what is not available (stories 57.05, 57.06, 57.10, 57.15) -->
+    <string name="parental_time_left">%1$s left today</string>
+    <string name="parental_time_up_title">Time\'s up for today</string>
+    <string name="parental_time_outside_title">Not watching time yet</string>
+    <string name="parental_time_next">You can watch again at %1$s</string>
+    <string name="parental_time_ask_more">Ask for more time</string>
+    <string name="parental_time_ask_parent">Ask a parent for more time</string>
+    <string name="parental_time_under_minute">less than a minute</string>
+    <plurals name="parental_time_minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
+    <plurals name="parental_time_hours">
+        <item quantity="one">%d hour</item>
+        <item quantity="other">%d hours</item>
+    </plurals>
+    <string name="parental_time_hours_minutes">%1$s and %2$s</string>
+    <string name="parental_time_warning">Watching ends in %1$s.</string>
+    <string name="parental_time_saved">Your place in this video is saved at %1$s.</string>
+    <string name="parental_time_check">Check again</string>
+    <string name="parental_time_cannot_check">Your home can\'t check your watching time right now. Try again in a moment.</string>
+    <string name="parental_ask_sent">Request sent. You\'ll see it here when a parent answers.</string>
+    <string name="parental_ask_pending">Waiting for a parent</string>
+    <string name="parental_ask_too_many">You have too many requests waiting.</string>
+    <string name="parental_ask_failed">The request didn\'t go out. Try again.</string>
+    <string name="parental_pin_choose">Who is entering the PIN?</string>
+    <string name="parental_pin_enter">Enter the 6-digit parent PIN</string>
+    <string name="parental_pin_field">Parent PIN</string>
+    <string name="parental_pin_unlock">Unlock</string>
+    <string name="parental_pin_minutes">How much more time?</string>
+    <string name="parental_pin_wrong">That PIN isn\'t right.</string>
+    <string name="parental_pin_locked">Too many tries. Try again in %1$s.</string>
+    <string name="parental_pin_locked_later">Too many tries. Try again later.</string>
+    <string name="parental_pin_unlocked">Unlocked for today.</string>
+    <string name="parental_pin_failed">Your home didn\'t answer. Try again.</string>
+    <string name="parental_blocked_title">This isn\'t available</string>
+    <string name="parental_blocked_account">Your account is limited to %1$s.</string>
+    <string name="parental_blocked_device">This device is limited to %1$s.</string>
+    <string name="parental_blocked_ask">Ask a parent</string>
+    <string name="parental_blocked_pin">Enter parent PIN</string>
+    <string name="parental_blocked_a11y">Not available</string>
+    <string name="parental_player_stopped">This video is no longer available on this account.</string>
+    <string name="parental_profile_limit">Content limit</string>
+    <string name="parental_tier_all">All ages</string>
+    <string name="parental_tier_plus">%1$d+</string>
+    <string name="parental_tier_none">Nothing unless allowed</string>
+    <string name="live_parental_not_available">Not available</string>
+    <string name="live_parental_slate">Not available right now. This channel comes back when the next programme starts.</string>
+    <string name="live_parental_back">Back at %1$s</string>
 </resources>

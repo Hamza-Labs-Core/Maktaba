@@ -114,9 +114,15 @@ fun SignedInApp(
     capabilities: StateFlow<Capabilities> = app.session.capabilities,
 ) {
     val api = remember(client) { TvApi(client) }
+    // Epic 57: the sign-in's parental limit, read at sign-in and whenever the TV comes back to the app
+    val parental = remember(client) { com.hamzalabs.maktaba.core.parental.ParentalState(client) }
     // Epic 56: one server play queue behind every Play and Shuffle
     val queue = remember(client) { PlayQueueModel(ApiQueueTransport(client), "tv-${android.os.Build.MODEL ?: "android"}") }
     val scope = rememberCoroutineScope()
+    androidx.lifecycle.compose.LifecycleResumeEffect(parental) {
+        val job = scope.launch { parental.refresh() }
+        onPauseOrDispose { job.cancel() }
+    }
     var notice by remember(client) { mutableStateOf<String?>(null) }
     var menu by remember(client) { mutableStateOf<Pair<String, String?>?>(null) }
     val queueEmpty = stringResource(R.string.queue_empty)
@@ -210,6 +216,8 @@ fun SignedInApp(
             when (val top = stack.last()) {
                 Place.Tabs -> Box(Modifier.fillMaxSize()) {
                     if (tab == TvTab.Home) LibraryBackdrop()
+                    // a restricted account's time today, on Home (story 57.15)
+                    if (tab == TvTab.Home) com.hamzalabs.maktaba.tv.ui.screens.TvHomeTime(parental, Modifier.align(Alignment.BottomEnd).padding(32.dp))
                     Column(Modifier.fillMaxSize()) {
                         TopBar(
                             tabs = tabs,
@@ -253,13 +261,15 @@ fun SignedInApp(
                     onBack = ::back,
                     onSeries = { open(Place.Series(it)) },
                     panels = features.panels,
+                    parental = parental,
                 )
                 is Place.Player -> PlayerScreen(
                     app, client, top.id, top.title, top.startMs, onBack = ::back, signedOut = signedOut,
                     queue = if (top.queued) queue else null,
                     onQueueItem = { playItem(it, replace = true) },
+                    parental = parental,
                 )
-                is Place.LivePlayer -> LivePlayerScreen(app, api, top.channelId, onBack = ::back, signedOut = signedOut)
+                is Place.LivePlayer -> LivePlayerScreen(app, api, top.channelId, onBack = ::back, signedOut = signedOut, parental = parental)
             }
             menu?.let { (video, series) ->
                 CardMenu(api, video, series, onClose = { menu = null }, onDone = { notice = it }, queue = queue)

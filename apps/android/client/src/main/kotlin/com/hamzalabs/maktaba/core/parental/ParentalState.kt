@@ -164,3 +164,26 @@ class PinUnlock(private val client: ApiClient, val subjectKind: String, val subj
         _state.value = PinState.Entering
     }
 }
+
+/**
+ * Asking a parent from one screen: for an item ([subjectKind], [subjectId]) or, with
+ * [SubjectKind.TIME], for minutes chosen at [ask]. One request at a time; the home keeps it.
+ */
+class ParentAsk(private val client: ApiClient, val subjectKind: String, val subjectId: String = "") {
+    private val _state = MutableStateFlow<AskState>(AskState.Idle)
+    val state: StateFlow<AskState> = _state.asStateFlow()
+
+    suspend fun ask(minutes: Int? = null) {
+        if (_state.value == AskState.Sending) return
+        _state.value = AskState.Sending
+        val id = if (subjectKind == SubjectKind.TIME) (minutes ?: 30).toString() else subjectId
+        _state.value = try {
+            client.ask(subjectKind, id)
+        } catch (e: CancellationException) {
+            _state.value = AskState.Idle
+            throw e
+        } catch (e: ApiException.SignedOut) {
+            AskState.Failed
+        }
+    }
+}
