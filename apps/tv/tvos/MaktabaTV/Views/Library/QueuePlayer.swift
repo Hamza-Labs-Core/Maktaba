@@ -153,6 +153,9 @@ struct QueuePlayerScreen: View {
                 .environment(\.colorScheme, .dark)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("player.error")
+            } else if let p = queue.playback, p.checkingTime != nil {
+                // the home cannot read the account's watching time yet: a calm line, asked again
+                TVStarting(playback: p)
             } else {
                 ProgressView().tint(.white)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

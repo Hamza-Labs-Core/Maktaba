@@ -25,6 +25,8 @@ struct ChannelScreen: View {
     /// The channel was started (an account with no limit starts it once; a change of
     /// channel after that is the playback's own).
     @State private var begun = false
+    /// Moved when the time's-up screen says there is time again: the home is asked afresh.
+    @State private var again = 0
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
 
@@ -95,7 +97,7 @@ struct ChannelScreen: View {
         // changes: a channel opened in the first moments after sign-in came before the
         // home's answer about the limit, started as if there were none and showed no slate
         .task(id: Watching(channel: playback.channelID, known: context.session.parental.answered,
-                           limited: context.session.parental.current.limited)) {
+                           limited: context.session.parental.current.limited, again: again)) {
             await watchAccess(playback.channelID)
         }
         .onChange(of: model.channels.map(\.id), initial: true) { _, _ in playback.update(channels: model.channels) }
@@ -148,14 +150,27 @@ struct ChannelScreen: View {
                 wait = access.askAgain()
             } catch {
                 if Log.isCancellation(error) { return }
-                // the home did not say (a hidden channel answers 404): the channel is asked
-                // for as before, and the player says what the home answers
-                if !started, !slated {
-                    started = true
-                    begun = true
-                    playback.start()
+                if let up = TimeUp(error) {
+                    // 57.14: the account's time is over (403 `parental-time`): time's up, not
+                    // the slate; asked again when that screen says there is time
+                    slated = false
+                    await playback.stopForTime(up)
+                    return
                 }
-                wait = 30
+                if let after = HomeFailure(error).kind.timeUnknownRetrySeconds {
+                    // the home cannot read the account's time yet: nothing starts, nothing
+                    // is said to be over; asked again as its Retry-After says
+                    wait = TimeInterval(after)
+                } else {
+                    // the home did not say (a hidden channel answers 404): the channel is
+                    // asked for as before, and the player says what the home answers
+                    if !started, !slated {
+                        started = true
+                        begun = true
+                        playback.start()
+                    }
+                    wait = 30
+                }
             }
             do { try await Task.sleep(for: .seconds(wait)) } catch { return }
         }
@@ -166,6 +181,7 @@ struct ChannelScreen: View {
         let channel: String
         let known: Bool
         let limited: Bool
+        let again: Int
     }
 
     private func digit(_ s: String) {
@@ -202,6 +218,10 @@ struct ChannelScreen: View {
                 .accessibilityIdentifier("live.player.error")
         case .held:
             EmptyView()
+        case let .timeUp(up):
+            // 57.14: the account's watching time is over; the channel comes back by itself
+            // when the home says there is time again (a parent gave some, the slot opened)
+            TimeUpView(context: context, up: up, back: { dismiss() }) { again += 1 }
         case .ended:
             VStack(spacing: MaktabaTokens.Spacing.s3) {
                 Image(systemName: "stop.circle").font(.system(size: 48)).foregroundStyle(Color.brass)

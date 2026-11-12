@@ -37,8 +37,9 @@ struct TVBlockedPage: View {
     @State private var page: BlockedPage
     @State private var enteringPIN = false
     @FocusState private var focus: Field?
+    @Environment(\.scenePhase) private var scenePhase
 
-    private enum Field: Hashable { case ask, pin, back }
+    private enum Field: Hashable { case ask, check, pin, back }
 
     init(client: APIClient, session: AppSession, subject: ParentalSubject, stoppedLine: String? = nil,
          back: @escaping () -> Void, opened: @escaping () -> Void = {}) {
@@ -70,34 +71,7 @@ struct TVBlockedPage: View {
                     .multilineTextAlignment(.center)
                     .accessibilityIdentifier("blocked.reason")
             }
-            VStack(spacing: 24) {
-                if page.canAsk {
-                    Button {
-                        Task { await page.askParent() }
-                    } label: {
-                        Text(verbatim: ParentalWords.text(page.ask == .pending ? "parental.ask.pending" : "parental.blocked.ask"))
-                            .frame(minWidth: 520)
-                    }
-                    .disabled(page.ask == .sending || page.ask == .pending || page.ask == .tooMany)
-                    .focused($focus, equals: .ask)
-                    .accessibilityIdentifier("blocked.ask")
-                }
-                if page.canEnterPIN {
-                    Button { enteringPIN = true } label: {
-                        Text(verbatim: ParentalWords.text("parental.blocked.pin")).frame(minWidth: 520)
-                    }
-                    .focused($focus, equals: .pin)
-                    .accessibilityIdentifier("blocked.pin")
-                }
-                Button(action: back) {
-                    Text(verbatim: ParentalWords.text("parental.blocked.back")).frame(minWidth: 520)
-                }
-                .focused($focus, equals: .back)
-                .accessibilityIdentifier("blocked.back")
-            }
-            .buttonStyle(.gold)
-            .padding(.top, 12)
-            .focusSection()
+            buttons
             if let line = page.askLine() {
                 Text(verbatim: line)
                     .font(Theme.body(28))
@@ -122,12 +96,27 @@ struct TVBlockedPage: View {
         .accessibilityIdentifier("screen.blocked")
         .defaultFocus($focus, page.canAsk ? .ask : .back)
         .task { await page.load() }
-        // a request waits: the home is asked every 30 s whether the limit changed (a parent
-        // answered); the page behind is built again when it did (`parentalFresh`)
-        .task(id: page.ask == .pending) {
-            guard page.ask == .pending else { return }
-            // the button went quiet: Back takes the focus
-            focus = page.canEnterPIN ? .pin : .back
+        // what became of the request for this: the home's list of the child's own requests,
+        // read while the app is in front and a request waits (`RequestFollow`)
+        .task(id: Following(front: scenePhase == .active, waiting: page.waiting)) {
+            guard scenePhase == .active, page.canAsk else { return }
+            await page.follow.follow()
+        }
+        .onChange(of: page.waiting) { _, waiting in
+            // the ask button went quiet (Check again takes the focus) or came back (a no:
+            // Ask again; the request expired: Ask a parent)
+            if waiting {
+                focus = page.follow.unsupported ? (page.canEnterPIN ? .pin : .back) : .check
+            } else if page.canPressAsk {
+                focus = .ask
+            }
+        }
+        // a parent said yes while this page watched: the limit is read and the item opens
+        .onChange(of: page.follow.approvals) { _, _ in reopen() }
+        // a home from before that list: asked every 30 s whether the limit changed (a parent
+        // answered), as before; the page behind is built again when it did (`parentalFresh`)
+        .task(id: page.waiting && page.follow.unsupported) {
+            guard page.waiting, page.follow.unsupported else { return }
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(30)) } catch { return }
                 await session.parental.refresh()
@@ -136,12 +125,66 @@ struct TVBlockedPage: View {
         .fullScreenCover(isPresented: $enteringPIN) {
             TVPinScreen(client: client, subject: page.subject, people: page.unlockers) {
                 enteringPIN = false
-                Task {
-                    await session.parental.refresh()
-                    opened()
-                }
+                reopen()
             }
         }
+    }
+
+    /// What the following of a request depends on: the app in front, a request waiting.
+    private struct Following: Equatable {
+        let front: Bool
+        let waiting: Bool
+    }
+
+    /// A parent opened it (a PIN, an approval): the limit is read again and the screen
+    /// behind loads the item.
+    private func reopen() {
+        Task {
+            await session.parental.refresh()
+            opened()
+        }
+    }
+
+    /// Ask a parent (Ask again after a no), Check again while a request waits, Enter parent
+    /// PIN, Back.
+    private var buttons: some View {
+        VStack(spacing: 24) {
+            if page.canAsk {
+                Button {
+                    Task { await page.askParent() }
+                } label: {
+                    Text(verbatim: ParentalWords.text(page.askKey("parental.blocked.ask"))).frame(minWidth: 520)
+                }
+                .disabled(!page.canPressAsk)
+                .focused($focus, equals: .ask)
+                .accessibilityIdentifier("blocked.ask")
+            }
+            if page.waiting, !page.follow.unsupported {
+                Button {
+                    Task { await page.follow.check() }
+                } label: {
+                    Text(verbatim: ParentalWords.text("parental.ask.check")).frame(minWidth: 520)
+                }
+                .disabled(page.follow.checking)
+                .focused($focus, equals: .check)
+                .accessibilityIdentifier("blocked.check")
+            }
+            if page.canEnterPIN {
+                Button { enteringPIN = true } label: {
+                    Text(verbatim: ParentalWords.text("parental.blocked.pin")).frame(minWidth: 520)
+                }
+                .focused($focus, equals: .pin)
+                .accessibilityIdentifier("blocked.pin")
+            }
+            Button(action: back) {
+                Text(verbatim: ParentalWords.text("parental.blocked.back")).frame(minWidth: 520)
+            }
+            .focused($focus, equals: .back)
+            .accessibilityIdentifier("blocked.back")
+        }
+        .buttonStyle(.gold)
+        .padding(.top, 12)
+        .focusSection()
     }
 }
 
@@ -374,8 +417,9 @@ struct TVTimeUpView: View {
     @State private var asked: BlockedPage?
     @State private var enteringPIN = false
     @FocusState private var focus: Field?
+    @Environment(\.scenePhase) private var scenePhase
 
-    private enum Field: Hashable { case minutes(Int), ask, pin, back }
+    private enum Field: Hashable { case minutes(Int), ask, check, pin, back }
 
     var body: some View {
         VStack(spacing: 24) {
@@ -407,51 +451,7 @@ struct TVTimeUpView: View {
                 .foregroundStyle(Theme.muted)
                 .multilineTextAlignment(.center)
                 .accessibilityIdentifier("timeUp.ask")
-            if let page, page.canAsk {
-                // how much to ask for: the one chosen is marked, and is what Ask and the PIN give
-                HStack(spacing: 24) {
-                    ForEach(ParentalSubject.timeChoices, id: \.self) { m in
-                        Button { minutes = m } label: {
-                            Label {
-                                Text(verbatim: ParentalWords.length(seconds: m * 60))
-                            } icon: {
-                                Image(systemName: m == minutes ? "checkmark.circle.fill" : "circle")
-                            }
-                        }
-                        .focused($focus, equals: .minutes(m))
-                        .accessibilityAddTraits(m == minutes ? .isSelected : [])
-                        .accessibilityIdentifier("timeUp.minutes.\(m)")
-                    }
-                }
-                .focusSection()
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("timeUp.minutes")
-                Button {
-                    let ask = page.asking(.time(minutes: minutes))
-                    asked = ask
-                    Task { await ask.askParent() }
-                } label: {
-                    Text(verbatim: ParentalWords.text(asked?.ask == .pending ? "parental.ask.pending" : "parental.time.askMore"))
-                        .frame(minWidth: 520)
-                }
-                .disabled(asked?.ask == .sending || asked?.ask == .pending || asked?.ask == .tooMany)
-                .focused($focus, equals: .ask)
-                .accessibilityIdentifier("timeUp.askMore")
-                if page.canEnterPIN {
-                    Button { enteringPIN = true } label: {
-                        Text(verbatim: ParentalWords.text("parental.blocked.pin")).frame(minWidth: 520)
-                    }
-                    .focused($focus, equals: .pin)
-                    .accessibilityIdentifier("timeUp.pin")
-                }
-                if let line = asked?.askLine() {
-                    Text(verbatim: line)
-                        .font(Theme.body(26))
-                        .foregroundStyle(Theme.text)
-                        .multilineTextAlignment(.center)
-                        .accessibilityIdentifier("timeUp.askLine")
-                }
-            }
+            if let page, page.canAsk { asking(page) }
             Button(action: back) {
                 Text(verbatim: ParentalWords.text("parental.blocked.back")).frame(minWidth: 520)
             }
@@ -474,7 +474,32 @@ struct TVTimeUpView: View {
         }
         .onChange(of: asked?.ask) { _, ask in
             // the button went quiet: Back takes the focus
-            if ask == .pending || ask == .tooMany { focus = .back }
+            if ask == .tooMany { focus = .back }
+        }
+        // what became of the request for more time: the home's list of the child's own
+        // requests, read while the app is in front and a request waits (`RequestFollow`)
+        .task(id: Following(front: scenePhase == .active, ready: page != nil, waiting: page?.waiting ?? false)) {
+            guard scenePhase == .active, let page, page.canAsk else { return }
+            await page.follow.follow()
+        }
+        .onChange(of: page?.waiting ?? false) { _, waiting in
+            // the ask button went quiet (Check again takes the focus) or came back (a no:
+            // Ask again; the request expired)
+            guard let page else { return }
+            if waiting {
+                focus = page.follow.unsupported ? .back : .check
+            } else if page.canPressAsk {
+                focus = .ask
+            }
+        }
+        // a parent said yes while this screen watched: the home's time is read once, and the
+        // video goes on when it says there is time
+        .onChange(of: page?.follow.approvals ?? 0) { _, _ in
+            Task {
+                guard let t = await PlayingTime(source: client, library: library).ask(), t.allowed else { return }
+                await session.parental.refreshTime()
+                allowed()
+            }
         }
         .fullScreenCover(isPresented: $enteringPIN) {
             TVPinScreen(client: client, subject: .time(minutes: minutes), people: page?.unlockers ?? []) {
@@ -492,6 +517,71 @@ struct TVTimeUpView: View {
             guard await PlayingTime(source: client, library: library).waitUntilAllowed() else { return }
             await session.parental.refreshTime()
             allowed()
+        }
+    }
+
+    /// What the following of a request depends on: the app in front, the page read, a
+    /// request waiting.
+    private struct Following: Equatable {
+        let front: Bool
+        let ready: Bool
+        let waiting: Bool
+    }
+
+    /// Ask for more time: how much (the one chosen is marked, and is what Ask and the PIN
+    /// give), the button (Ask again after a no), Check again while the request waits, Enter
+    /// parent PIN, and what became of the request.
+    @ViewBuilder private func asking(_ page: BlockedPage) -> some View {
+        HStack(spacing: 24) {
+            ForEach(ParentalSubject.timeChoices, id: \.self) { m in
+                Button { minutes = m } label: {
+                    Label {
+                        Text(verbatim: ParentalWords.length(seconds: m * 60))
+                    } icon: {
+                        Image(systemName: m == minutes ? "checkmark.circle.fill" : "circle")
+                    }
+                }
+                .focused($focus, equals: .minutes(m))
+                .accessibilityAddTraits(m == minutes ? .isSelected : [])
+                .accessibilityIdentifier("timeUp.minutes.\(m)")
+            }
+        }
+        .focusSection()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("timeUp.minutes")
+        Button {
+            let ask = page.asking(.time(minutes: minutes))
+            asked = ask
+            Task { await ask.askParent() }
+        } label: {
+            Text(verbatim: ParentalWords.text(page.askKey("parental.time.askMore"))).frame(minWidth: 520)
+        }
+        .disabled(!(asked ?? page).canPressAsk)
+        .focused($focus, equals: .ask)
+        .accessibilityIdentifier("timeUp.askMore")
+        if page.waiting, !page.follow.unsupported {
+            Button {
+                Task { await page.follow.check() }
+            } label: {
+                Text(verbatim: ParentalWords.text("parental.ask.check")).frame(minWidth: 520)
+            }
+            .disabled(page.follow.checking)
+            .focused($focus, equals: .check)
+            .accessibilityIdentifier("timeUp.check")
+        }
+        if page.canEnterPIN {
+            Button { enteringPIN = true } label: {
+                Text(verbatim: ParentalWords.text("parental.blocked.pin")).frame(minWidth: 520)
+            }
+            .focused($focus, equals: .pin)
+            .accessibilityIdentifier("timeUp.pin")
+        }
+        if let line = (asked ?? page).askLine() {
+            Text(verbatim: line)
+                .font(Theme.body(26))
+                .foregroundStyle(Theme.text)
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier("timeUp.askLine")
         }
     }
 

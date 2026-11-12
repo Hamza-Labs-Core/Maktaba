@@ -331,6 +331,13 @@ public struct TimeUp: Equatable, Sendable {
         self.nextAllowedAt = nextAllowedAt
     }
 
+    /// From a refusal of anything the home gates by time (a stream, a watch, a channel's
+    /// access or play): 403 `parental-time`. Nil for any other answer.
+    public init?(_ error: Error) {
+        guard case let .time(reason, next)? = ParentalRefusal(error) else { return nil }
+        self.init(reason: reason, nextAllowedAt: next)
+    }
+
     /// From the home's time answer, when it says not allowed.
     public init?(_ state: ParentalTime) {
         guard !state.allowed else { return nil }
@@ -407,23 +414,40 @@ public final class BlockedPage {
     public let subject: ParentalSubject
     public let limit: ParentalLimit
     private let client: APIClient
+    /// What became of the request for this (the home's list of the child's own requests).
+    public let follow: RequestFollow
 
     public private(set) var ask = Ask.idle
     /// The people with a parent PIN (empty: Enter parent PIN is not offered).
     public fileprivate(set) var unlockers: [ParentalPerson] = []
 
-    public init(client: APIClient, subject: ParentalSubject, limit: ParentalLimit) {
+    public init(client: APIClient, subject: ParentalSubject, limit: ParentalLimit, follow: RequestFollow? = nil) {
         self.client = client
         self.subject = subject
         self.limit = limit
+        self.follow = follow ?? RequestFollow(source: client, match: .init(subject))
     }
 
     public var canAsk: Bool { limit.restricted }
     public var canEnterPIN: Bool { limit.restricted && !unlockers.isEmpty }
 
-    /// Another thing to ask for from the same page (the time's-up screen's minutes).
+    /// A request for this waits for a parent (just made, or made before: the home's list says).
+    public var waiting: Bool { follow.outcome == .pending }
+    /// A parent said no: said, with Ask again and the PIN.
+    public var denied: Bool { follow.outcome == .denied }
+    /// The ask button takes a press: not while a request goes out or waits, nor with 20 waiting.
+    public var canPressAsk: Bool { canAsk && !waiting && ask != .sending && ask != .tooMany }
+
+    /// The ask button's words: waiting, Ask again after a no, else `first` (the screen's own:
+    /// "Ask a parent", "Ask for more time").
+    public func askKey(_ first: String) -> String {
+        waiting ? "parental.ask.pending" : denied ? "parental.ask.again" : first
+    }
+
+    /// Another thing to ask for from the same page (the time's-up screen's minutes); what
+    /// became of it is followed as this page's is.
     public func asking(_ subject: ParentalSubject) -> BlockedPage {
-        let page = BlockedPage(client: client, subject: subject, limit: limit)
+        let page = BlockedPage(client: client, subject: subject, limit: limit, follow: follow)
         page.unlockers = unlockers
         return page
     }
@@ -439,7 +463,7 @@ public final class BlockedPage {
         guard canAsk, ask != .sending else { return }
         ask = .sending
         do {
-            _ = try await client.askParent(subject)
+            follow.asked(try await client.askParent(subject))
             ask = .pending
         } catch {
             if Log.isCancellation(error) {
@@ -452,12 +476,13 @@ public final class BlockedPage {
 
     /// The line under the buttons for the ask's state.
     public func askLine(_ locale: Locale = AppLanguage.locale) -> String? {
+        if waiting { return ParentalWords.text("parental.ask.sent", locale) }
         switch ask {
-        case .idle, .sending: nil
-        case .pending: ParentalWords.text("parental.ask.sent", locale)
-        case .tooMany: ParentalWords.text("parental.ask.tooMany", locale)
-        case .failed: ParentalWords.text("parental.ask.failed", locale)
+        case .tooMany: return ParentalWords.text("parental.ask.tooMany", locale)
+        case .failed: return ParentalWords.text("parental.ask.failed", locale)
+        case .idle, .sending, .pending: break
         }
+        return denied ? ParentalWords.text("parental.ask.denied", locale) : nil
     }
 }
 

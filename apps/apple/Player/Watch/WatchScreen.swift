@@ -14,6 +14,9 @@ struct WatchScreen: View {
     @State private var failure: HomeFailure?
     /// The home refused the video itself for the account's time (403 `parental-time`).
     @State private var timeStop: TimeUp?
+    /// The home cannot read the account's watching time right now (503
+    /// `parental_time_unknown`): a calm line while the video is asked for again, no error.
+    @State private var checkingTime: HomeFailure?
     @Environment(\.scenePhase) private var scenePhase
     /// The home's status as the shell's strip read it (Epic 53 story 53.06)
     @Environment(\.homeStatus) private var homeStatus
@@ -80,8 +83,23 @@ struct WatchScreen: View {
         } else if let failure {
             failed(failure)
         } else {
-            ProgressView().tint(.white)
+            starting
         }
+    }
+
+    /// Before the video is known: a spinner, with the home's calm line while it cannot read
+    /// the account's watching time yet.
+    private var starting: some View {
+        VStack(spacing: 16) {
+            ProgressView().tint(.white)
+            if let checkingTime {
+                Text(verbatim: checkingTime.message(video: true))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("player.waiting")
+            }
+        }
+        .padding(32)
     }
 
     @ViewBuilder private func player(_ playback: Playback) -> some View {
@@ -139,12 +157,21 @@ struct WatchScreen: View {
             p.limited = { parental.current.limited }
             Log.ui.info("watch: \(playback == nil ? "opens" : "loads again", privacy: .public) \(videoID, privacy: .public)")
             playback = p
+            checkingTime = nil
             p.play(video, from: at)
         } catch is CancellationError {
             return
         } catch {
-            if case let .time(reason, next)? = ParentalRefusal(error) { timeStop = TimeUp(reason: reason, nextAllowedAt: next) }
-            failure = HomeFailure(error)
+            let f = HomeFailure(error)
+            if let after = f.kind.timeUnknownRetrySeconds {
+                // not an error and not time's up: asked again as the home's Retry-After says
+                checkingTime = f
+                do { try await Task.sleep(for: .seconds(after)) } catch { return }
+                await load()
+                return
+            }
+            timeStop = TimeUp(error)
+            failure = f
         }
     }
 }

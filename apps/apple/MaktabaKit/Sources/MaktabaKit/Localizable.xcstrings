@@ -11793,6 +11793,40 @@
           }
         }
       }
+    },
+    "parental.ask.again" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ask again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اطلب مجددًا"
+          }
+        }
+      }
+    },
+    "parental.ask.check" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحقّق مجددًا"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

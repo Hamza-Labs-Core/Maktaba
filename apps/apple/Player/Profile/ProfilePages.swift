@@ -52,6 +52,33 @@ private struct HistoryRow: View {
     }
 
     var body: some View {
+        if entry.available {
+            row
+        } else {
+            notAvailable
+        }
+    }
+
+    /// Epic 57 story 57.03: a video watched before that a parental limit hides now. The home
+    /// sends nothing that names it: the row says only that it is not available and when it
+    /// was watched; no title, no poster, no link, nothing to remove.
+    private var notAvailable: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            IconLine(ParentalWords.text("live.parental.notAvailable"), systemImage: "lock.fill")
+                .font(.maktabaBody(16, weight: .medium, relativeTo: .body))
+                .foregroundStyle(Color.mktMuted)
+            if !detail.isEmpty {
+                Text(verbatim: detail)
+                    .font(.footnote)
+                    .foregroundStyle(Color.mktMuted)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("history.notAvailable.\(entry.key)")
+    }
+
+    private var row: some View {
         HStack(spacing: MaktabaTokens.Spacing.s3) {
             NavigationLink(value: PlayerRoute.video(id: entry.videoID)) {
                 VStack(alignment: .leading, spacing: 6) {

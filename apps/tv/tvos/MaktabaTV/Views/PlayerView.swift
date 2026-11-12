@@ -23,6 +23,10 @@ final class TVPlayback {
     /// The home stopped this video for a parental reason: the screen shows the time's-up
     /// screen or the blocked page, and no stream is asked for again from here.
     private(set) var parentalStop: ParentalStop?
+    /// The home cannot read the account's watching time right now (503
+    /// `parental_time_unknown`, story 57.14): no error screen and no time's-up screen, a calm
+    /// line while the stream is asked for again as the home's `Retry-After` says.
+    private(set) var checkingTime: HomeFailure?
     /// Whether this sign-in is under a parental limit (the session's store): a "not found"
     /// then may be a block.
     @ObservationIgnored var limited: () -> Bool = { false }
@@ -57,6 +61,7 @@ final class TVPlayback {
     func start(at start: Double) {
         failure = nil
         parentalStop = nil
+        checkingTime = nil
         running?.cancel()
         running = Task { await run(from: start) }
     }
@@ -135,6 +140,7 @@ final class TVPlayback {
             try Task.checkCancellation()
             player = p
             failure = nil
+            checkingTime = nil
             p.play()
         } catch is CancellationError {
             return
@@ -145,8 +151,19 @@ final class TVPlayback {
             case let .timeUp(up): stopped(.time(up, position: start))
             case .blocked: stopped(.blocked(midPlay: player != nil))
             case .other, .reopen:
+                let f = HomeFailure(error)
+                if let after = f.kind.timeUnknownRetrySeconds {
+                    // what plays plays on (a renewal: the watch asks again); with nothing
+                    // playing, the line shows while the stream is asked for again
+                    if player != nil { return }
+                    checkingTime = f
+                    do { try await Task.sleep(for: .seconds(after)) } catch { return }
+                    await open(from: start)
+                    return
+                }
                 player = nil
-                failure = HomeFailure(error)
+                checkingTime = nil
+                failure = f
             }
         }
     }
@@ -269,17 +286,34 @@ struct PlayerScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityIdentifier("player.error")
             } else {
-                VStack(spacing: 24) {
-                    ProgressView().tint(.white)
-                    Text("Starting \(playback.video.displayTitle)…").foregroundStyle(.white.opacity(0.8))
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                TVStarting(playback: playback)
             }
         }
         .ignoresSafeArea()
         .onReceive(NotificationCenter.default.publisher(for: AVPlayerItem.didPlayToEndTimeNotification)) { note in
             if (note.object as? AVPlayerItem) === playback.player?.currentItem { dismiss() }
         }
+    }
+}
+
+/// Before the picture: a spinner and the video's title, or the home's calm line while it
+/// cannot read the account's watching time yet (57.14: asked again by itself).
+struct TVStarting: View {
+    let playback: TVPlayback
+
+    var body: some View {
+        VStack(spacing: 24) {
+            ProgressView().tint(.white)
+            if let checking = playback.checkingTime {
+                Text(verbatim: checking.message(video: true))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("player.waiting")
+            } else {
+                Text("Starting \(playback.video.displayTitle)…").foregroundStyle(.white.opacity(0.8))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

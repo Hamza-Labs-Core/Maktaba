@@ -111,6 +111,57 @@ final class PlayerParentalUITests: PlayerUITestCase {
         XCTAssertFalse(element("blocked.title").exists)
     }
 
+    /// The child's own requests (`GET /api/me/parental/requests`): while a request waits the
+    /// page offers Check again; a parent's no is said with Ask again; a parent's yes, seen
+    /// while the page watched, opens the video without a restart.
+    func testAParentsNoIsSaidWithAskAgainAndAParentsYesOpensTheVideo() throws {
+        childWithHiddenVideo()
+        let request = { (id: String, status: String) in
+            #"{"id":"\#(id)","subject_kind":"video","subject_id":"v2","status":"\#(status)","created_at":"{{now-60}}","expires_at":"{{now+604800}}"}"#
+        }
+        let made = { (id: String) in
+            #"{"request":{"id":"\#(id)","child_id":"u1","subject_kind":"video","subject_id":"v2","status":"pending","created_at":"{{now}}","expires_at":"{{now+604800}}"}}"#
+        }
+        home.stub("GET", "/api/me/parental/requests", body: #"{"requests":[]}"#)
+        home.stub("POST", "/api/me/parental/requests", status: 201, body: made("r1"))
+        launchSignedIn(sections: ["home"], open: "video/v2")
+        XCTAssertTrue(element("blocked.title").waitForExistence(timeout: 20), "the blocked page")
+        waitUntil("the child's own requests were read") { self.count("GET", "/api/me/parental/requests") >= 1 }
+        XCTAssertEqual(element("blocked.ask").label, "Ask a parent")
+        XCTAssertFalse(element("blocked.check").exists, "nothing waits: nothing to check")
+
+        element("blocked.ask").tap()
+        XCTAssertTrue(element("blocked.check").waitForExistence(timeout: 10), "a request waits: Check again")
+        XCTAssertEqual(element("blocked.check").label, "Check again")
+        XCTAssertGreaterThanOrEqual(element("blocked.check").frame.height, 44, "at least 44 pt tall")
+        XCTAssertEqual(element("blocked.ask").label, "Waiting for a parent")
+        XCTAssertFalse(element("blocked.ask").isEnabled, "asked once: the button waits")
+
+        // the parent says no on their own phone
+        home.stub("GET", "/api/me/parental/requests", body: #"{"requests":[\#(request("r1", "denied"))]}"#)
+        element("blocked.check").tap()
+        waitUntil("the no is said") { self.element("blocked.askLine").label == "A parent said no." }
+        XCTAssertEqual(element("blocked.ask").label, "Ask again")
+        XCTAssertTrue(element("blocked.ask").isEnabled)
+        XCTAssertFalse(element("blocked.check").exists, "nothing waits any more")
+        XCTAssertTrue(element("blocked.title").exists, "still the blocked page")
+        shot("parental-blocked-denied")
+
+        // asked again; this time the parent says yes: the home gives the video and the limit moved
+        home.stub("POST", "/api/me/parental/requests", status: 201, body: made("r2"))
+        element("blocked.ask").tap()
+        XCTAssertTrue(element("blocked.check").waitForExistence(timeout: 10), "the second request waits")
+        XCTAssertEqual(count("POST", "/api/me/parental/requests"), 2)
+        home.stub("GET", "/api/videos/v2", body: try XCTUnwrap(home.fixture(named: "video-v2")))
+        home.stub("GET", "/api/me/videos/v2", body: try XCTUnwrap(home.fixture(named: "me-video-v2")))
+        home.stub("GET", "/api/me/parental", body: #"{"restricted":true,"max_tier":9,"unrated":"hide","version":5}"#)
+        home.stub("GET", "/api/me/parental/requests",
+                  body: #"{"requests":[\#(request("r2", "approved")),\#(request("r1", "denied"))]}"#)
+        element("blocked.check").tap()
+        XCTAssertTrue(app.buttons["video.favorite"].waitForExistence(timeout: 20), "the video's page, without a restart")
+        XCTAssertFalse(element("blocked.title").exists)
+    }
+
     /// A child watches a video opened from Libraries; the limit's version moves for something
     /// unrelated (a parent added a rule). The Libraries section is not built again around
     /// the video: it stays open: no stream is closed, the player is not dismissed. Held in the

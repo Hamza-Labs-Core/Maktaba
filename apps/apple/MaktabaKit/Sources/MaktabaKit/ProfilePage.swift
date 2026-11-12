@@ -80,7 +80,8 @@ public final class ProfileModel {
 
     /// Takes `entry` off the list at once; puts it back if the home refuses.
     public func forget(_ entry: HistoryEntry) async {
-        guard let before = history.value, let at = before.firstIndex(where: { $0.id == entry.id }) else { return }
+        // a row that is not available names no video: there is nothing to tell the home
+        guard entry.available, let before = history.value, let at = before.firstIndex(where: { $0.id == entry.id }) else { return }
         history = .ready(before.filter { $0.id != entry.id })
         let done = await historyOrder.saving {
             await self.quietly({ try await self.client.forgetHistory(video: entry.videoID) }) != nil

@@ -519,7 +519,10 @@ final class HeldWaits: @unchecked Sendable {
                         #"{"grant":{"id":"g1","user_id":"c1","day":"2026-11-11","minutes":30,"used_seconds":0,"granted_by":"g1","created_at":"2026-11-11T10:00:00Z"}}"#)
         let client = ParentalStub.client()
         #expect(ParentalSubject.time(minutes: 30) == ParentalSubject(kind: "time", id: "30"))
-        #expect(ParentalSubject.time(minutes: 9000).id == "480" && ParentalSubject.time(minutes: 0).id == "1")
+        // a child's device sends only 15, 30 or 60 minutes: the home refuses anything else
+        #expect(ParentalSubject.time(minutes: 9000).id == "60" && ParentalSubject.time(minutes: 0).id == "15")
+        #expect(ParentalSubject.time(minutes: 20).id == "30" && ParentalSubject.time(minutes: 45).id == "60")
+        #expect(ParentalSubject.timeChoices.map { ParentalSubject.time(minutes: $0).id } == ["15", "30", "60"])
         let page = BlockedPage(client: client, subject: .time(minutes: 15), limit: ParentalLimit(restricted: true, maxTier: 9))
         let ask = page.asking(.time(minutes: 30))
         await ask.askParent()

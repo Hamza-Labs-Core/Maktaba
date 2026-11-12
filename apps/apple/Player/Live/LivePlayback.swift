@@ -26,6 +26,10 @@ final class LivePlayback {
         case failed(HomeFailure)
         /// The home ended the remote session.
         case ended
+        /// Epic 57 story 57.14: the account's watching time is over (403 `parental-time`
+        /// from the channel's access, play or stream): nothing plays and the time's-up
+        /// screen shows, not the programme slate.
+        case timeUp(TimeUp)
         /// Nothing plays: the programme on now is above the account's parental limit, and
         /// the screen shows its slate (story 57.10).
         case held
@@ -173,6 +177,13 @@ final class LivePlayback {
         phase = .held
     }
 
+    /// The home said the account's watching time is over: the channel stops as for the
+    /// slate, and the screen shows time's up.
+    func stopForTime(_ up: TimeUp) async {
+        await hold()
+        phase = .timeUp(up)
+    }
+
     /// Stops playing and ends a remote session; returns once the home was told.
     func close() async {
         running?.cancel()
@@ -221,7 +232,7 @@ final class LivePlayback {
             guard !Task.isCancelled else { return }
             player.replaceCurrentItem(with: nil)
             Log.failure("play live channel", error)
-            phase = .failed(HomeFailure(error))
+            phase = TimeUp(error).map(Phase.timeUp) ?? .failed(HomeFailure(error))
         }
     }
 
