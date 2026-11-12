@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "tools/ci/pipeline-deps.sh"
 LOCK = ROOT / "pipeline/uv.lock"
 WORKFLOWS = ROOT / ".github/workflows"
+PYPI = "https://pypi.org/simple"
 
 # torch's dependencies that are small and pure Python: CI keeps them
 TORCH_PLAIN_DEPS = {"filelock", "fsspec", "jinja2", "networkx", "setuptools", "sympy",
@@ -54,7 +55,7 @@ def left_out(sync: list[str]) -> set[str]:
 
 def pypi_torch() -> dict[str, object]:
     for pkg in tomllib.loads(LOCK.read_text())["package"]:
-        if pkg["name"] == "torch" and "pypi.org" in pkg["source"].get("registry", ""):
+        if pkg["name"] == "torch" and pkg["source"].get("registry") == PYPI:
             return dict(pkg)
     raise AssertionError("uv.lock: no PyPI torch")
 

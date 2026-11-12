@@ -30,7 +30,7 @@ uv sync --frozen --all-extras $args
 if [ "${1:-}" = "--cpu-torch" ]; then
 	# PyPI's torch entry (the lock's other one is the Windows cuda group's, +cu130)
 	version=$(awk '/^\[\[package\]\]/ { t = 0; v = "" } /^name = "torch"$/ { t = 1 }
-		t && /^version = / { v = $3 } t && /^source = .*pypi\.org/ { gsub(/"/, "", v); print v; exit }' uv.lock)
+		t && /^version = / { v = $3 } t && /^source = \{ registry = "https:\/\/pypi\.org\/simple" \}$/ { gsub(/"/, "", v); print v; exit }' uv.lock)
 	[ -n "$version" ] || { echo "::error::no PyPI torch in uv.lock" >&2; exit 1; }
 	echo "==> torch $version, CPU build"
 	uv pip install --no-deps "torch==$version" --index-url https://download.pytorch.org/whl/cpu
