@@ -88,6 +88,10 @@ class ParentalPagesTest {
             onNodeWithText("This isn't available").assertExists()
             onNodeWithText("Your account is limited to 9+.").assertExists()
             assertEquals("not the page of a missing video", 0, onAllNodes(hasTestTag("not-available")).fetchSemanticsNodes().size)
+            // the PIN button joins the row once the home has said who holds one, and moves Ask a
+            // parent aside: a click sent before that can land beside the button it was aimed at
+            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-pin")).fetchSemanticsNodes().isNotEmpty() }
+            waitForIdle()
             // Ask a parent names the video, not minutes
             onNodeWithText("Ask a parent").performClick()
             waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-ask-state")).fetchSemanticsNodes().isNotEmpty() }
