@@ -21,6 +21,7 @@ import com.hamzalabs.maktaba.core.api.Video
 import com.hamzalabs.maktaba.core.api.busyRetryMs
 import com.hamzalabs.maktaba.player.Playback
 import com.hamzalabs.maktaba.player.harness.FakeHome
+import com.hamzalabs.maktaba.player.harness.NoStall
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -43,6 +44,7 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class PlaybackTest {
+    @get:Rule(order = NoStall.FIRST) val noStall = NoStall()
     @get:Rule val home = FakeHome()
     @get:Rule val codecs: ShadowMediaCodecConfig = ShadowMediaCodecConfig.withAllDefaultSupportedCodecs()
 
@@ -56,7 +58,10 @@ class PlaybackTest {
     fun setUp() {
         streams = FakeStreams(home)
         streams.install()
-        playback = Playback(context, home.home.client, scope, background, signedOut = {}, build = testPlayer(context))
+        playback = Playback(
+            context, home.home.client, scope, background, signedOut = {},
+            build = testPlayer(context), nowMs = looperTime,
+        )
     }
 
     @After
@@ -132,6 +137,8 @@ class PlaybackTest {
         assertEquals(1, streams.opens().size)
         idleFor(10_000)
         runUntil { streams.opens().size == 2 }
+        // the second refusal has been read and its 10 seconds begun: only then does the clock move them
+        settle(home, background)
         assertNotNull("still waiting", playback.waiting)
         assertNull(playback.problem)
         idleFor(10_000)
@@ -145,7 +152,9 @@ class PlaybackTest {
     fun reportsProgressEveryTenSecondsWhilePlaying() {
         playback.play(v1)
         val p = playing()
-        runUntil { p.currentPosition > 500 }
+        // past its first second: a position under one second is not worth a post
+        runUntil { p.currentPosition > 1_200 }
+        settle(home, background)
         val before = streams.progress().size
         // the stream ends in 4 s: keep it playing by seeking back as the watch's clock moves
         p.repeatMode = Player.REPEAT_MODE_ONE

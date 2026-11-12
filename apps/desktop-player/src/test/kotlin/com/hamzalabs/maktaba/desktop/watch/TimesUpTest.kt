@@ -11,6 +11,7 @@ import androidx.compose.ui.test.runComposeUiTest
 import com.hamzalabs.maktaba.core.api.MyTime
 import com.hamzalabs.maktaba.desktop.InPlayer
 import com.hamzalabs.maktaba.desktop.Lang
+import com.hamzalabs.maktaba.desktop.STALL_MS
 import com.hamzalabs.maktaba.desktop.TestHome
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -58,7 +59,7 @@ class TimesUpTest {
             onNodeWithText("15 minutes").assertExists()
             onNodeWithText("1 hour").assertExists()
             onNodeWithTag("parental-ask-30").performClick()
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-ask-state")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-ask-state")).fetchSemanticsNodes().isNotEmpty() }
             assertEquals("""{"subject_kind":"time","subject_id":"30"}""", fake.asked("POST /api/me/parental/requests").single().body!!.utf8())
             assertEquals("asked: the button goes while it waits", 0, onAllNodes(hasTestTag("parental-ask")).fetchSemanticsNodes().size)
         }
@@ -71,7 +72,7 @@ class TimesUpTest {
             setContent { InPlayer(fake.home()) { TimesUp(up, onCheck = {}, more = MoreTime(fake.client)) } }
             onNodeWithTag("parental-ask").performClick()
             onNodeWithTag("parental-ask-15").performClick()
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-ask")).fetchSemanticsNodes().isEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-ask")).fetchSemanticsNodes().isEmpty() }
             onNodeWithTag("parental-time-check").assertExists()
         }
     }
@@ -83,12 +84,12 @@ class TimesUpTest {
         var checked = 0
         runComposeUiTest {
             setContent { InPlayer(fake.home()) { TimesUp(up, onCheck = { checked++ }, more = MoreTime(fake.client)) } }
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-pin")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-pin")).fetchSemanticsNodes().isNotEmpty() }
             onNodeWithTag("parental-pin").performClick()
             onNodeWithTag("parental-pin-minutes-15").performClick()
             onNodeWithTag("parental-pin-field").performTextInput("123456")
             onNodeWithTag("parental-pin-submit").performClick()
-            waitUntil(timeoutMillis = 10_000) { checked == 1 }
+            waitUntil(timeoutMillis = STALL_MS) { checked == 1 }
             assertEquals(
                 """{"guardian_id":"g1","pin":"123456","subject_kind":"time","subject_id":"15"}""",
                 fake.asked("POST /api/me/parental/unlock").single().body!!.utf8(),
@@ -102,11 +103,11 @@ class TimesUpTest {
         fake.answer("POST /api/me/parental/unlock", """{"title":"no","status":403,"code":"pin_wrong"}""", 403)
         runComposeUiTest {
             setContent { InPlayer(fake.home()) { TimesUp(up, onCheck = {}, more = MoreTime(fake.client)) } }
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-pin")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-pin")).fetchSemanticsNodes().isNotEmpty() }
             onNodeWithTag("parental-pin").performClick()
             onNodeWithTag("parental-pin-field").performTextInput("000000")
             onNodeWithTag("parental-pin-submit").performClick()
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-pin-state")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-pin-state")).fetchSemanticsNodes().isNotEmpty() }
             onNodeWithText("That PIN isn't right.").assertExists()
         }
     }
@@ -123,23 +124,23 @@ class TimesUpTest {
             // each move of the clock waits for the home's answers first (TestHome.idle): the
             // screen is then in its 15-second wait, which the clock ends
             fun settle() {
-                waitUntil(timeoutMillis = 10_000) { fake.idle }
+                waitUntil(timeoutMillis = STALL_MS) { fake.idle }
                 waitForIdle()
             }
             setContent { InPlayer(fake.home()) { TimesUp(up, onCheck = { checked++ }, more = MoreTime(fake.client)) } }
             // asked earlier: the home says it still waits, and nothing is asked for again
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-ask-state")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-ask-state")).fetchSemanticsNodes().isNotEmpty() }
             assertEquals(0, onAllNodes(hasTestTag("parental-ask")).fetchSemanticsNodes().size)
             settle()
             val read = fake.asked("GET /api/me/parental/requests").size
             mainClock.advanceTimeBy(15_000)
-            waitUntil(timeoutMillis = 10_000) { fake.asked("GET /api/me/parental/requests").size > read }
+            waitUntil(timeoutMillis = STALL_MS) { fake.asked("GET /api/me/parental/requests").size > read }
             settle()
             assertEquals(0, checked)
             // the parent approves from their own device
             status.set("approved")
             mainClock.advanceTimeBy(15_000)
-            waitUntil(timeoutMillis = 10_000) { checked == 1 }
+            waitUntil(timeoutMillis = STALL_MS) { checked == 1 }
             mainClock.advanceTimeBy(60_000)
             waitForIdle()
             assertEquals("once", 1, checked)
@@ -153,14 +154,14 @@ class TimesUpTest {
         fake.answer("GET /api/me/parental/requests", own("denied"))
         runComposeUiTest {
             setContent { InPlayer(fake.home()) { TimesUp(up, onCheck = {}, more = MoreTime(fake.client)) } }
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-ask-state")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-ask-state")).fetchSemanticsNodes().isNotEmpty() }
             onNodeWithText("A parent said no to this request.").assertExists()
             onNodeWithText("Ask again").assertExists()
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-pin")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-pin")).fetchSemanticsNodes().isNotEmpty() }
         }
         runComposeUiTest {
             setContent { InPlayer(fake.home(), Lang.Ar) { TimesUp(up, onCheck = {}, more = MoreTime(fake.client)) } }
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-ask-state")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-ask-state")).fetchSemanticsNodes().isNotEmpty() }
             onNodeWithText("رفض أحد الوالدين هذا الطلب.").assertExists()
             onNodeWithText("اطلب مجددًا").assertExists()
         }
@@ -171,7 +172,7 @@ class TimesUpTest {
         fake.answer("GET /api/me/parental/requests", own("expired"))
         runComposeUiTest {
             setContent { InPlayer(fake.home()) { TimesUp(up, onCheck = {}, more = MoreTime(fake.client)) } }
-            waitUntil(timeoutMillis = 10_000) { fake.asked("GET /api/me/parental/requests").isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { fake.asked("GET /api/me/parental/requests").isNotEmpty() }
             waitForIdle()
             onNodeWithText("Ask for more time").assertExists()
             assertEquals(0, onAllNodes(hasTestTag("parental-ask-state")).fetchSemanticsNodes().size)
@@ -187,14 +188,14 @@ class TimesUpTest {
         }
         runComposeUiTest {
             setContent { InPlayer(fake.home()) { TimesUp(up, onCheck = {}, more = MoreTime(fake.client)) } }
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-pin")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-pin")).fetchSemanticsNodes().isNotEmpty() }
             onNodeWithTag("parental-pin").performClick()
             onNodeWithTag("parental-pin-field").performTextInput("000000")
             onNodeWithTag("parental-pin-submit").performClick()
-            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-pin-state")).fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-pin-state")).fetchSemanticsNodes().isNotEmpty() }
             onNodeWithText("Too many tries. Try again in 1 minute.").assertExists()
             // the home's two seconds pass: the lock is gone from the screen, and a PIN can be sent again
-            waitUntil(timeoutMillis = 20_000) { onAllNodes(hasTestTag("parental-pin-state")).fetchSemanticsNodes().isEmpty() }
+            waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-pin-state")).fetchSemanticsNodes().isEmpty() }
             onNodeWithTag("parental-pin-field").performTextInput("111111")
             onNodeWithTag("parental-pin-submit").assertIsEnabled()
         }

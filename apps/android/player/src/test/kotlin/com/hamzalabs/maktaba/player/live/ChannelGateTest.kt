@@ -7,6 +7,7 @@ import com.hamzalabs.maktaba.core.api.RemoteTuned
 import com.hamzalabs.maktaba.core.api.RemoteTv
 import com.hamzalabs.maktaba.core.api.TvInfo
 import com.hamzalabs.maktaba.core.api.TvRemote
+import com.hamzalabs.maktaba.player.harness.NoStall
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -19,6 +20,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import java.time.Instant
 
@@ -29,6 +31,8 @@ import java.time.Instant
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChannelGateTest {
+    @get:Rule(order = NoStall.FIRST) val noStall = NoStall()
+
     private object AtHome : RemoteTv {
         override suspend fun info() = TvInfo(remote = TvRemote(available = true, viaRelay = false))
         override suspend fun tune(channelId: String, device: String): RemoteTuned = error("at home nothing is tuned")

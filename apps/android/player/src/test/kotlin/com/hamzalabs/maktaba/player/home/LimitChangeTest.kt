@@ -14,6 +14,7 @@ import com.hamzalabs.maktaba.core.queue.QueueSource
 import com.hamzalabs.maktaba.core.ui.ThemeStore
 import com.hamzalabs.maktaba.player.dropKeptFor
 import com.hamzalabs.maktaba.player.harness.FakeHome
+import com.hamzalabs.maktaba.player.harness.NoStall
 import com.hamzalabs.maktaba.player.libraries.PlayerQueues
 import com.hamzalabs.maktaba.player.shell.PlayerHome
 import kotlinx.coroutines.runBlocking
@@ -36,6 +37,7 @@ import java.io.File
  */
 @RunWith(AndroidJUnit4::class)
 class LimitChangeTest {
+    @get:Rule(order = NoStall.FIRST) val noStall = NoStall()
     @get:Rule val home = FakeHome()
     private val context: Context = ApplicationProvider.getApplicationContext()
 

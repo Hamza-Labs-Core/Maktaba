@@ -168,6 +168,8 @@ class Playback(
     private val features: () -> Capabilities = { Capabilities.AllOn },
     private val players: Players = FxPlayers,
     private val proxyFor: (ApiClient) -> StreamProxy = ::StreamProxy,
+    /** The time now, in milliseconds: when the stream was opened and when to renew it (a test gives its own clock). */
+    private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
     var request by mutableStateOf<PlayRequest?>(null)
         private set
@@ -566,7 +568,7 @@ class Playback(
             ended = false
             failed = null
             note = null
-            openedAt = System.currentTimeMillis()
+            openedAt = nowMs()
             renewAt = (s.expiresMillis ?: Long.MAX_VALUE).let { if (it == Long.MAX_VALUE) it else it - 60_000 }
             if (old != null && old != s.sessionId) background.launch { client.closeStream(old) }
         } catch (e: CancellationException) {
@@ -675,13 +677,13 @@ class Playback(
                 if (player == null) return
             }
             val why = failed
-            if (why != null && System.currentTimeMillis() - openedAt < 30_000) {
+            if (why != null && nowMs() - openedAt < 30_000) {
                 release(player)
                 player = null
                 problem = why
                 return
             }
-            if (why != null || System.currentTimeMillis() >= renewAt) {
+            if (why != null || nowMs() >= renewAt) {
                 // a renewal keeps the track and quality in force (the proxy keeps the audio)
                 val wasPlaying = playing || why != null
                 open(fromMs = at)
@@ -730,13 +732,13 @@ class Playback(
      * again right after such a reopen stops. False: this refusal stops the video.
      */
     private fun lapsed(s: String, reason: String, atMs: Long): Boolean {
-        if (reason != TimeReason.NO_HEARTBEAT || System.currentTimeMillis() - lapseReopenedAt < LAPSE_REOPEN_ONCE_MS) return false
+        if (reason != TimeReason.NO_HEARTBEAT || nowMs() - lapseReopenedAt < LAPSE_REOPEN_ONCE_MS) return false
         val v = video ?: return false
         if (lapseReopen?.isActive == true) return true
         val wasPlaying = playing
         lapseReopen = v.launch {
             open(fromMs = atMs)
-            if (session != null && session != s) lapseReopenedAt = System.currentTimeMillis()
+            if (session != null && session != s) lapseReopenedAt = nowMs()
             if (!wasPlaying) player?.pause()
         }
         return true

@@ -1,10 +1,5 @@
 package com.hamzalabs.maktaba.desktop
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -13,7 +8,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
-import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
@@ -25,9 +19,7 @@ import java.util.concurrent.atomic.AtomicReference
  */
 class PlaybackProgressTimeTest {
     private val home = TestHome()
-    private val main = Executors.newSingleThreadExecutor { r -> Thread(r, "test-main").apply { isDaemon = true } }.asCoroutineDispatcher()
-    private val scope = CoroutineScope(SupervisorJob() + main)
-    private val background = CoroutineScope(SupervisorJob() + main)
+    private val main = TestMain(home)
     private val opens = AtomicInteger()
     private val events = AtomicReference<VideoEvents?>()
     private val disposed = AtomicInteger()
@@ -44,7 +36,7 @@ class PlaybackProgressTimeTest {
             }
         }
     }
-    private val playback = Playback(home.client, scope, background, signedOut = {}, players = players)
+    private val playback = Playback(home.client, main.scope, main.background, signedOut = {}, players = players, nowMs = main.nowMs)
 
     private val timeOver = """{"type":"https://maktaba.tv/problems/parental-time","title":"watching time is over","status":403,""" +
         """"code":"parental_time","reason":"limit_reached","next_allowed_at":"2026-11-12T04:00:00Z"}"""
@@ -59,20 +51,14 @@ class PlaybackProgressTimeTest {
 
     @After
     fun tearDown() {
-        runBlocking(main) { playback.close() }
-        home.close()
+        main.run { playback.close() }
         main.close()
+        home.close()
     }
 
-    private fun <T> onMain(block: () -> T): T = runBlocking { withContext(main) { block() } }
+    private fun <T> onMain(block: () -> T): T = main.run(block)
 
-    private fun until(what: String, ms: Long = 10_000, ok: () -> Boolean) {
-        val end = System.currentTimeMillis() + ms
-        while (!onMain(ok)) {
-            if (System.currentTimeMillis() > end) throw AssertionError("never: $what; the home was asked ${home.seen.map { it.method + " " + it.url.encodedPath }}")
-            Thread.sleep(20)
-        }
-    }
+    private fun until(what: String, ok: () -> Boolean) = main.until(what, ok)
 
     private fun posts() = home.asked("POST /api/stream/sessions/s1/progress").size
 
@@ -116,7 +102,7 @@ class PlaybackProgressTimeTest {
         until("the session is closed") { home.asked("DELETE /api/stream/sessions/s1").isNotEmpty() }
         // the Player neither reopens nor posts again
         val posted = posts()
-        Thread.sleep(1_500)
+        main.pass(60_000)
         assertEquals(1, opens.get())
         assertEquals(posted, posts())
         assertNotNull("the request stays for Check again", onMain { playback.request })
@@ -135,7 +121,7 @@ class PlaybackProgressTimeTest {
         assertNull("no time's-up screen: the home gave the stream again", onMain { playback.timeUp })
         assertNotNull(onMain { playback.player })
         assertTrue("where it was", home.asked("POST /api/stream/sessions").last().body!!.utf8().contains("754"))
-        Thread.sleep(1_500)
+        main.pass(60_000)
         assertEquals("once", 2, opens.get())
     }
 
@@ -150,7 +136,7 @@ class PlaybackProgressTimeTest {
         until("the time's-up state") { playback.timeUp != null }
         assertEquals("limit_reached", onMain { playback.timeUp }!!.reason)
         assertNull(onMain { playback.player })
-        Thread.sleep(1_500)
+        main.pass(60_000)
         assertEquals("the first open and the one reopen", 2, opens.get())
     }
 
@@ -165,7 +151,7 @@ class PlaybackProgressTimeTest {
         onMain { e.playing(true) }
         until("the time's-up state") { playback.timeUp != null }
         assertEquals("no_heartbeat", onMain { playback.timeUp }!!.reason)
-        Thread.sleep(1_500)
+        main.pass(60_000)
         assertEquals("no loop of opens", 2, opens.get())
     }
 
@@ -187,7 +173,7 @@ class PlaybackProgressTimeTest {
         until("ended by the home") { playback.endedByHome }
         assertNull(onMain { playback.player })
         assertNull(onMain { playback.timeUp })
-        Thread.sleep(1_200)
+        main.pass(60_000)
         assertEquals("not opened again", 1, opens.get())
     }
 

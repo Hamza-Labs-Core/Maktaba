@@ -99,14 +99,14 @@ class SignedInAppTest {
     @Test
     fun withEverythingOnAChannelShowsTheLiveTvTab() {
         signedIn()
-        compose.waitUntil(5_000) { compose.waitForIdle(); shows("Live TV") }
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); shows("Live TV") }
     }
 
     @Test
     fun aViewerHasNoLiveTvTabWhileItIsOff() {
         features.value = Capabilities(off = setOf(Feature.LIVE_TV))
         signedIn()
-        compose.waitUntil(5_000) { compose.waitForIdle(); shows("Home") }
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); shows("Home") }
         compose.waitForIdle()
         assertFalse("no Live TV tab", shows("Live TV"))
         assertFalse("nothing asks for channels while Live TV is off", "/api/channels/now" in paths)
@@ -116,10 +116,10 @@ class SignedInAppTest {
     fun anAdminKeepsTheTabAndReadsWhy() {
         features.value = Capabilities(off = setOf(Feature.LIVE_TV), admin = true)
         signedIn()
-        compose.waitUntil(5_000) { compose.waitForIdle(); shows("Live TV") }
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); shows("Live TV") }
         // a TV tab is chosen when it takes focus (the D-pad)
         compose.onNodeWithText("Live TV").performSemanticsAction(SemanticsActions.RequestFocus)
-        compose.waitUntil(5_000) { compose.waitForIdle(); shows("Live TV is off on this home.") }
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); shows("Live TV is off on this home.") }
         compose.onNodeWithTag("feature-turn-on").assertExists()
         assertTrue(shows("Turn it on in Components"))
     }
@@ -129,9 +129,9 @@ class SignedInAppTest {
     fun theAdminsButtonOpensComponents() {
         features.value = Capabilities(off = setOf(Feature.LIVE_TV), admin = true)
         signedIn()
-        compose.waitUntil(5_000) { compose.waitForIdle(); shows("Live TV") }
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); shows("Live TV") }
         compose.onNodeWithText("Live TV").performSemanticsAction(SemanticsActions.RequestFocus)
-        compose.waitUntil(5_000) { compose.waitForIdle(); shows("Turn it on in Components") }
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); shows("Turn it on in Components") }
         compose.onNodeWithTag("feature-turn-on").performSemanticsAction(SemanticsActions.OnClick)
         val started = requireNotNull(shadowOf(ApplicationProvider.getApplicationContext<Application>()).nextStartedActivity)
         assertEquals(Intent.ACTION_VIEW, started.action)
@@ -145,9 +145,9 @@ class SignedInAppTest {
     fun theAdminsLineInArabic() {
         features.value = Capabilities(off = setOf(Feature.LIVE_TV), admin = true)
         signedIn()
-        compose.waitUntil(5_000) { compose.waitForIdle(); shows("البث المباشر") }
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); shows("البث المباشر") }
         compose.onNodeWithText("البث المباشر").performSemanticsAction(SemanticsActions.RequestFocus)
-        compose.waitUntil(5_000) { compose.waitForIdle(); shows("البث المباشر متوقف على الجهاز الرئيسي.") }
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); shows("البث المباشر متوقف على الجهاز الرئيسي.") }
         assertTrue(shows("شغّل من صفحة المكوّنات"))
         compose.onNodeWithTag("feature-off-${Feature.LIVE_TV}").assertExists()
     }
@@ -173,13 +173,13 @@ class SignedInAppTest {
         fun homeReads() = synchronized(paths) { paths.count { it == "/api/home" } }
         fun limitReads() = synchronized(paths) { paths.count { it == "/api/me/parental" } }
         signedIn()
-        compose.waitUntil(5_000) { compose.waitForIdle(); limitReads() >= 1 && homeReads() >= 1 }
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); limitReads() >= 1 && homeReads() >= 1 }
         compose.waitForIdle()
         // the same limit when the TV comes back: nothing reads again
         val settled = homeReads()
         compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.STARTED)
         compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
-        compose.waitUntil(5_000) { compose.waitForIdle(); limitReads() >= 2 }
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); limitReads() >= 2 }
         compose.waitForIdle()
         assertEquals("an unchanged limit reloads nothing", settled, homeReads())
         // the guardian lowers it; the TV comes back to the app
@@ -187,7 +187,7 @@ class SignedInAppTest {
         val asked = limitReads()
         compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.STARTED)
         compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
-        compose.waitUntil(5_000) { compose.waitForIdle(); limitReads() > asked && homeReads() > settled }
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); limitReads() > asked && homeReads() > settled }
     }
 
     @Test
@@ -236,7 +236,7 @@ class SignedInAppTest {
                 )
             }
         }
-        compose.waitUntil(5_000) { compose.waitForIdle(); timeAsks.isNotEmpty() }
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); timeAsks.isNotEmpty() }
         assertEquals("a rule on this library alone counts", "l1", timeAsks.first())
     }
 
