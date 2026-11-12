@@ -122,7 +122,7 @@ class TvParentalScreensTest {
         }
 
     private fun until(what: String, check: () -> Boolean) {
-        runCatching { compose.waitUntil(10_000) { compose.waitForIdle(); check() } }
+        runCatching { compose.waitUntil(STALL_MS) { compose.waitForIdle(); check() } }
         assertTrue("$what; asked ${bodies.map { it.first }}; showing ${shown()}", check())
     }
 

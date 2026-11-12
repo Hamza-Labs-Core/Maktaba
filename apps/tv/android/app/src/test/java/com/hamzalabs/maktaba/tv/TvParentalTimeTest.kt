@@ -2,6 +2,7 @@ package com.hamzalabs.maktaba.tv
 
 import android.content.Context
 import android.os.Looper
+import android.os.SystemClock
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.core.MemoryTokens
@@ -12,6 +13,7 @@ import com.hamzalabs.maktaba.core.jwt
 import com.hamzalabs.maktaba.tv.playback.TvPlayback
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import mockwebserver3.Dispatcher
@@ -31,6 +33,8 @@ import org.robolectric.Shadows.shadowOf
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.LockSupport
 
 /**
  * Epic 57 story 57.15 (T03, the TV root): the TV's player when the home refuses for time. A
@@ -85,24 +89,64 @@ class TvParentalTimeTest {
         server.close()
     }
 
+    /** The client's calls, on a dispatcher of their own so they can be counted ([settle]). */
+    private val calls = okhttp3.Dispatcher()
+
+    /** The playback's own time: the main looper's clock (which only [idleFor] moves) from a fixed date. */
+    private val looperTime: () -> Long = { 1_794_000_000_000L + SystemClock.uptimeMillis() }
+
     private fun playback(startMs: Long = 0): TvPlayback {
-        val client = ApiClient(server.url("/"), MemoryTokens(jwt(System.currentTimeMillis() / 1000 + 86_400), "r1"))
-        return TvPlayback(context, client, "v1", startMs, scope, background, signedOut = {}).also { playback = it }
+        val client = ApiClient(
+            server.url("/"), MemoryTokens(jwt(System.currentTimeMillis() / 1000 + 86_400), "r1"),
+            ApiClient.defaultHttp.newBuilder().dispatcher(calls).build(),
+        )
+        return TvPlayback(context, client, "v1", startMs, scope, background, signedOut = {}, nowMs = looperTime).also { playback = it }
     }
 
-    private fun runUntil(timeoutMs: Long = 10_000, condition: () -> Boolean) {
-        val until = System.currentTimeMillis() + timeoutMs
-        while (!condition()) {
-            check(System.currentTimeMillis() < until) { "timed out waiting; the home was asked $seen" }
+    /**
+     * Runs the main looper's due work until [condition] holds. It waits for the state, not for
+     * a length of time: [timeoutMs] is only the net under a stall.
+     */
+    private fun runUntil(timeoutMs: Long = STALL_MS, condition: () -> Boolean) {
+        val until = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+        while (true) {
             shadowOf(Looper.getMainLooper()).idle()
-            Thread.sleep(10)
+            if (condition()) return
+            check(System.nanoTime() < until) { "still waiting after $timeoutMs ms; the home was asked $seen" }
+            // nothing due: the answer is still on another thread, which is given the processor
+            LockSupport.parkNanos(500_000)
         }
     }
 
+    /**
+     * Lets everything on its way land: returns once no call to the home is queued or running,
+     * no background work of the playback is alive, the home was asked nothing new, and the main
+     * looper has run what those left it. OkHttp counts a call as running until its callback
+     * returns, and the client resumes its caller inside that callback, so a call or coroutine
+     * that ends has already queued its next step on the main looper.
+     */
+    private fun settle() {
+        fun quiet() = calls.runningCallsCount() == 0 && calls.queuedCallsCount() == 0 &&
+            background.coroutineContext[Job]!!.children.none()
+        val until = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(STALL_MS)
+        while (true) {
+            val asked = seen.size
+            val before = quiet()
+            shadowOf(Looper.getMainLooper()).idle()
+            if (before && quiet() && asked == seen.size) return
+            check(System.nanoTime() < until) { "the home's answers never settled; it was asked $seen" }
+            LockSupport.parkNanos(500_000)
+        }
+    }
+
+    /**
+     * Moves the main looper's clock on, once what was on its way has landed (a clock moved while
+     * an answer is still out moves nothing), and lets what that sent be answered.
+     */
     private fun idleFor(ms: Long) {
+        settle()
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ms))
-        Thread.sleep(200)
-        shadowOf(Looper.getMainLooper()).idle()
+        settle()
     }
 
     private fun opens() = seen.count { it == "POST /api/stream/sessions" }
@@ -297,7 +341,7 @@ class TvParentalTimeTest {
         val asked = java.util.concurrent.CountDownLatch(1)
         open = {
             asked.countDown()
-            gate.await(30, java.util.concurrent.TimeUnit.SECONDS)
+            gate.await(60, java.util.concurrent.TimeUnit.SECONDS)
             MockResponse.Builder().code(201).setHeader("Content-Type", "application/json")
                 .body("""{"session_id":"s2","mode":"direct","direct_url":"/stream/s2/v1.mp4?sig=x","expires_at":"2099-01-01T00:00:00Z"}""").build()
         }

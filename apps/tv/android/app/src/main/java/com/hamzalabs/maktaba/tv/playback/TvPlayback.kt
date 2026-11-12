@@ -70,6 +70,8 @@ class TvPlayback(
     /** Outlives the screen: the last position and the session's close still go out. */
     private val background: CoroutineScope,
     private val signedOut: () -> Unit,
+    /** The time now, in milliseconds: when the stream was opened and when to renew it (a test gives its own clock). */
+    private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
     var player by mutableStateOf<ExoPlayer?>(null)
         private set
@@ -209,7 +211,7 @@ class TvPlayback(
             opens++
             waiting = null
             ended = false
-            openedAt = System.currentTimeMillis()
+            openedAt = nowMs()
             renewAt = s.expiresMillis?.let { it - 60_000 } ?: Long.MAX_VALUE
             if (old != null && old != s.sessionId) background.launch { client.closeStream(old) }
         } catch (e: CancellationException) {
@@ -299,7 +301,7 @@ class TvPlayback(
      */
     private fun refusedForTime(refusal: TimeRefusal, atMs: Long) {
         val s = session
-        val sinceReopen = System.currentTimeMillis() - lapseReopenedAt
+        val sinceReopen = nowMs() - lapseReopenedAt
         if (refusal.reason != TimeReason.NO_HEARTBEAT || s == null || sinceReopen < LAPSE_REOPEN_ONCE_MS) {
             stopForTime(refusal, atMs)
             return
@@ -310,7 +312,7 @@ class TvPlayback(
         lapseReopen = scope.launch(Dispatchers.Main.immediate) {
             val before = opens
             open(fromMs = atMs.coerceAtLeast(0))
-            if (opens != before) lapseReopenedAt = System.currentTimeMillis()
+            if (opens != before) lapseReopenedAt = nowMs()
             if (!wasPlaying) player?.playWhenReady = false
         }
     }
@@ -354,14 +356,14 @@ class TvPlayback(
             }
             // the stream is being opened again after a lapsed lease: that open is the only one
             if (lapseReopen?.isActive == true) continue
-            if (failed != null && System.currentTimeMillis() - openedAt < 30_000) {
+            if (failed != null && nowMs() - openedAt < 30_000) {
                 p.release()
                 player = null
                 Log.w("MaktabaTV", "player: ${failed.errorCodeName}", failed)
                 problem = tvPlaybackFailure(failed)
                 return
             }
-            if (failed != null || System.currentTimeMillis() >= renewAt) {
+            if (failed != null || nowMs() >= renewAt) {
                 val wasPlaying = p.playWhenReady
                 openWhenFree(fromMs = at)
                 if (!wasPlaying) player?.playWhenReady = false
