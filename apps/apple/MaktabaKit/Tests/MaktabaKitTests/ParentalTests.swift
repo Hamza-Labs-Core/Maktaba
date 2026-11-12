@@ -1239,6 +1239,12 @@ final class HeldWaits: @unchecked Sendable {
         #expect(put?.count == 1 && put?.first?["days"] as? Int == 65 && put?.first?["daily_minutes"] as? Int == 120)
         #expect(put?.first?["id"] == nil && put?.first?["slot_start"] == nil, "a new rule has no id and no empty slot")
         #expect(m.timeRules.map(\.id) == ["t9"])
+
+        // a rule the home would refuse (neither hours nor a limit) is never sent
+        let empty = ParentalTimeRule(days: 65)
+        #expect(await m.saveTimeRules([weekend, empty]) == false)
+        #expect(ParentalStub.seen("PUT /api/parental/users/c2/time-rules").count == 1, "nothing more was sent")
+        #expect(m.timeRules.map(\.id) == ["t9"], "and the rules stay as the home has them")
     }
 
     @MainActor @Test func settingAPINNeedsSixDigitsAndTheRightPassword() async {
@@ -1679,6 +1685,43 @@ final class Clock: @unchecked Sendable {
         #expect(PlaybackVerdict.progress(gone, limited: true) == .blocked, "the video was hidden while it played: the stream has ended")
         #expect(PlaybackVerdict.progress(time, limited: true) == .timeUp(up))
         #expect(PlaybackVerdict.progress(APIError.transport("down")) == .other)
+    }
+
+    /// What the editor's Save goes by, as the home's own check (`TimeRule.validate`).
+    @Test func aTimeRuleCanBeSavedOnlyWithADayAndHoursOrALimit() {
+        #expect(ParentalTimeRule(dailyMinutes: 60).canBeSaved, "a daily limit alone")
+        #expect(ParentalTimeRule(slotStart: "07:00", slotEnd: "20:00").canBeSaved, "watching hours alone")
+        #expect(ParentalTimeRule.suggested.canBeSaved, "both")
+        #expect(ParentalTimeRule(slotStart: "22:00", slotEnd: "06:00").canBeSaved, "hours past midnight")
+        #expect(ParentalTimeRule(dailyMinutes: 0).canBeSaved, "no watching at all is a limit")
+        #expect(ParentalTimeRule(dailyMinutes: 1440).canBeSaved)
+
+        #expect(!ParentalTimeRule().canBeSaved, "neither hours nor a limit")
+        #expect(!ParentalTimeRule(days: 0, dailyMinutes: 60).canBeSaved, "no day")
+        #expect(!ParentalTimeRule(days: 128, dailyMinutes: 60).canBeSaved, "a day that is not one")
+        #expect(!ParentalTimeRule(slotStart: "07:00", slotEnd: "07:00").canBeSaved, "hours that start and end together")
+        #expect(!ParentalTimeRule(slotStart: "07:00", slotEnd: "07:00", dailyMinutes: 60).canBeSaved, "even with a limit")
+        #expect(!ParentalTimeRule(slotStart: "07:00", dailyMinutes: 60).canBeSaved, "a start with no end")
+        #expect(!ParentalTimeRule(slotStart: "24:00", slotEnd: "07:00").canBeSaved, "not a time of day")
+        #expect(!ParentalTimeRule(slotStart: "7:00", slotEnd: "20:00").canBeSaved)
+        #expect(!ParentalTimeRule(slotStart: "+7:00", slotEnd: "20:00").canBeSaved)
+        #expect(!ParentalTimeRule(dailyMinutes: 1441).canBeSaved)
+        #expect(!ParentalTimeRule(dailyMinutes: -15).canBeSaved)
+    }
+
+    /// The editor's form: its two switches decide what the rule carries.
+    @Test func theEditorsFormIsARuleOnlyWithHoursOrALimitOn() {
+        var rule = ParentalTimeRule(id: "t1", libraryID: "lib", days: 127 & ~(1 << 5), slotStart: "07:00", slotEnd: "20:00", dailyMinutes: 60)
+        let neither = rule.with(slot: nil, dailyMinutes: nil)
+        #expect(!neither.canBeSaved && neither.slotStart == nil && neither.slotEnd == nil && neither.dailyMinutes == nil)
+        #expect(neither.id == "t1" && neither.libraryID == "lib" && neither.days == 95, "the rest of the rule is kept")
+        let limit = rule.with(slot: nil, dailyMinutes: 75)
+        #expect(limit.canBeSaved && limit.dailyMinutes == 75 && limit.slotStart == nil)
+        let hours = rule.with(slot: ("08:00", "19:30"), dailyMinutes: nil)
+        #expect(hours.canBeSaved && hours.slotStart == "08:00" && hours.slotEnd == "19:30" && hours.dailyMinutes == nil)
+        #expect(!rule.with(slot: ("08:00", "08:00"), dailyMinutes: 75).canBeSaved, "hours of no length")
+        for day in 0 ..< 7 { rule.set(day: day, false) }
+        #expect(!rule.with(slot: nil, dailyMinutes: 75).canBeSaved, "every day switched off")
     }
 
     @Test func aTimeRuleReadsInOneLine() {

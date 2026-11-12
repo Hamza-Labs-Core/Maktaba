@@ -822,6 +822,38 @@ public struct ParentalTimeRule: Codable, Hashable, Sendable, Identifiable {
     /// The first choice the editor offers (README Q10): one hour a day, 07:00 to 20:00.
     public static let suggested = ParentalTimeRule(days: everyDay, slotStart: "07:00", slotEnd: "20:00", dailyMinutes: 60)
 
+    /// Whether the home takes this rule (`TimeRule.validate` in `api/internal/parental/time.go`
+    /// answers 422 otherwise): at least one day, watching hours or a daily limit (or both),
+    /// hours given as a start and an end that differ, a limit of at most a day.
+    public var canBeSaved: Bool {
+        guard days >= 1, days <= Self.everyDay else { return false }
+        guard (slotStart == nil) == (slotEnd == nil) else { return false }
+        if let slotStart, let slotEnd {
+            guard let s = Self.minuteOfDay(slotStart), let e = Self.minuteOfDay(slotEnd), s != e else { return false }
+        }
+        if let dailyMinutes, !(0...1440).contains(dailyMinutes) { return false }
+        return slotStart != nil || dailyMinutes != nil
+    }
+
+    /// The rule the editor's form describes: the watching hours and the daily limit as its
+    /// switches have them (nil: off).
+    public func with(slot: (start: String, end: String)?, dailyMinutes: Int?) -> ParentalTimeRule {
+        var out = self
+        out.slotStart = slot?.start
+        out.slotEnd = slot?.end
+        out.dailyMinutes = dailyMinutes
+        return out
+    }
+
+    /// "HH:MM" as minutes after midnight (nil: not a time of day).
+    static func minuteOfDay(_ clock: String) -> Int? {
+        let p = clock.split(separator: ":", omittingEmptySubsequences: false)
+        guard p.count == 2, p.allSatisfy({ $0.count == 2 && $0.allSatisfy { ("0"..."9").contains($0) } }),
+              let h = Int(p[0]), let m = Int(p[1]),
+              (0..<24).contains(h), (0..<60).contains(m) else { return nil }
+        return h * 60 + m
+    }
+
     public func covers(day bit: Int) -> Bool { days & (1 << bit) != 0 }
 
     public mutating func set(day bit: Int, _ on: Bool) {

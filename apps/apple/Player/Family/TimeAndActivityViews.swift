@@ -122,63 +122,21 @@ private struct TimeRuleEditor: View {
         _minutes = State(initialValue: rule.dailyMinutes ?? 60)
     }
 
-    private var valid: Bool {
-        rule.days > 0 && (hasSlot || hasLimit) && (!hasSlot || TimeRuleWords.clock(from) != TimeRuleWords.clock(to))
+    /// The rule as the form has it now; `canBeSaved` (MaktabaKit) says whether the home takes it.
+    private var draft: ParentalTimeRule {
+        rule.with(slot: hasSlot ? (TimeRuleWords.clock(from), TimeRuleWords.clock(to)) : nil,
+                  dailyMinutes: hasLimit ? minutes : nil)
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    ForEach(TimeRuleWords.days(), id: \.bit) { day in
-                        Toggle(isOn: Binding { rule.covers(day: day.bit) } set: { rule.set(day: day.bit, $0) }) {
-                            Text(verbatim: day.name)
-                        }
-                        .accessibilityIdentifier("rule.day.\(day.bit)")
-                    }
-                } header: {
-                    Text(verbatim: word("parental.time.days"))
-                }
-                Section {
-                    Toggle(isOn: $hasSlot) { Text(verbatim: word("parental.time.slot")) }
-                        .accessibilityIdentifier("rule.slot")
-                    if hasSlot {
-                        DatePicker(selection: $from, displayedComponents: .hourAndMinute) { Text(verbatim: word("parental.time.from")) }
-                        DatePicker(selection: $to, displayedComponents: .hourAndMinute) { Text(verbatim: word("parental.time.to")) }
-                    }
-                }
-                Section {
-                    Toggle(isOn: $hasLimit) { Text(verbatim: word("parental.time.daily")) }
-                        .accessibilityIdentifier("rule.limit")
-                    if hasLimit {
-                        Stepper(value: $minutes, in: 15...1440, step: 15) {
-                            Text(verbatim: ParentalWords.length(seconds: minutes * 60))
-                        }
-                        .accessibilityIdentifier("rule.minutes")
-                    }
-                }
-                Section {
-                    Picker(selection: $rule.libraryID) {
-                        Text(verbatim: word("parental.time.allLibraries")).tag(String?.none)
-                        ForEach(libraries.sorted { $0.value < $1.value }, id: \.key) { id, name in
-                            Text(verbatim: name).tag(String?.some(id))
-                        }
-                    } label: {
-                        Text(verbatim: word("parental.time.library"))
-                    }
-                } footer: {
-                    if !valid { Text(verbatim: word("parental.time.invalid")) }
-                }
-                if !isNew {
-                    Section {
-                        Button(role: .destructive) {
-                            Task { if await save(nil) { dismiss() } }
-                        } label: {
-                            Text(verbatim: word("family.rules.remove")).frame(maxWidth: .infinity, minHeight: 44)
-                        }
-                        .accessibilityIdentifier("rule.remove")
-                    }
-                }
+                days
+                slot
+                limit
+                library
+                saveRow
+                if !isNew { remove }
             }
             .maktabaSurface()
             .navigationTitle(Text(verbatim: word("parental.time.rules")))
@@ -186,25 +144,97 @@ private struct TimeRuleEditor: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button { dismiss() } label: { Text(verbatim: word("parental.pin.cancel")) }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button {
-                        Task {
-                            saving = true
-                            defer { saving = false }
-                            var out = rule
-                            out.slotStart = hasSlot ? TimeRuleWords.clock(from) : nil
-                            out.slotEnd = hasSlot ? TimeRuleWords.clock(to) : nil
-                            out.dailyMinutes = hasLimit ? minutes : nil
-                            if await save(out) { dismiss() }
-                        }
-                    } label: {
-                        Text(verbatim: word("family.pin.save"))
-                    }
-                    .disabled(!valid || saving)
-                    .accessibilityIdentifier("rule.save")
-                }
             }
         }
+    }
+
+    private var days: some View {
+        Section {
+            ForEach(TimeRuleWords.days(), id: \.bit) { day in
+                Toggle(isOn: Binding { rule.covers(day: day.bit) } set: { rule.set(day: day.bit, $0) }) {
+                    Text(verbatim: day.name)
+                }
+                .accessibilityIdentifier("rule.day.\(day.bit)")
+            }
+        } header: {
+            Text(verbatim: word("parental.time.days"))
+        }
+    }
+
+    private var slot: some View {
+        Section {
+            Toggle(isOn: $hasSlot) { Text(verbatim: word("parental.time.slot")) }
+                .accessibilityIdentifier("rule.slot")
+            if hasSlot {
+                DatePicker(selection: $from, displayedComponents: .hourAndMinute) { Text(verbatim: word("parental.time.from")) }
+                DatePicker(selection: $to, displayedComponents: .hourAndMinute) { Text(verbatim: word("parental.time.to")) }
+            }
+        }
+    }
+
+    private var limit: some View {
+        Section {
+            Toggle(isOn: $hasLimit) { Text(verbatim: word("parental.time.daily")) }
+                .accessibilityIdentifier("rule.limit")
+            if hasLimit {
+                Stepper(value: $minutes, in: 15...1440, step: 15) {
+                    Text(verbatim: ParentalWords.length(seconds: minutes * 60))
+                }
+                .accessibilityIdentifier("rule.minutes")
+            }
+        }
+    }
+
+    private var library: some View {
+        Section {
+            Picker(selection: $rule.libraryID) {
+                Text(verbatim: word("parental.time.allLibraries")).tag(String?.none)
+                ForEach(libraries.sorted { $0.value < $1.value }, id: \.key) { id, name in
+                    Text(verbatim: name).tag(String?.some(id))
+                }
+            } label: {
+                Text(verbatim: word("parental.time.library"))
+            }
+        }
+    }
+
+    private var remove: some View {
+        Section {
+            Button(role: .destructive) {
+                Task { if await save(nil) { dismiss() } }
+            } label: {
+                Text(verbatim: word("family.rules.remove")).frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .accessibilityIdentifier("rule.remove")
+        }
+    }
+
+    /// Save, a row of the form's own with why it is off when the form is not a rule (as the
+    /// PIN's form has it). Not a toolbar item: a disabled toolbar button is not read as one
+    /// by every iOS, and what the form says about Save must be what assistive tools hear.
+    private var saveRow: some View {
+        Section {
+            Button {
+                Task { await saveDraft() }
+            } label: {
+                Text(verbatim: word("family.pin.save")).frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .disabled(!draft.canBeSaved || saving)
+            .accessibilityIdentifier("rule.save")
+        } footer: {
+            if !draft.canBeSaved {
+                Text(verbatim: word("parental.time.invalid")).accessibilityIdentifier("rule.invalid")
+            }
+        }
+    }
+
+    /// Sends the form's rule; never one the home would refuse, whatever the button's state.
+    private func saveDraft() async {
+        let out = draft
+        guard out.canBeSaved, !saving else { return }
+        saving = true
+        defer { saving = false }
+        if await save(out) { dismiss() }
     }
 }
 

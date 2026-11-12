@@ -350,6 +350,8 @@ public final class ChildModel {
 
     /// Replaces the account's time rules.
     public func saveTimeRules(_ rules: [ParentalTimeRule]) async -> Bool {
+        // a rule the home would refuse is never sent, whatever the form's button did
+        guard rules.allSatisfy(\.canBeSaved) else { return false }
         do {
             let saved = try await client.setTimeRules(child.id, rules)
             timeRules = saved.rules
