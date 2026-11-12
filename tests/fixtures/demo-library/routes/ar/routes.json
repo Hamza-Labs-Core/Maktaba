@@ -111,6 +111,12 @@
   "method": "GET",
   "path": "/api/videos/v-sintel/poster",
   "status": 200,
+  "art": "sintel-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-sintel/portrait",
+  "status": 200,
   "art": "sintel-poster.jpg"
  },
  {
@@ -146,6 +152,12 @@
  {
   "method": "GET",
   "path": "/api/videos/v-big-buck-bunny/poster",
+  "status": 200,
+  "art": "big-buck-bunny-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-big-buck-bunny/portrait",
   "status": 200,
   "art": "big-buck-bunny-poster.jpg"
  },
@@ -183,6 +195,12 @@
   "method": "GET",
   "path": "/api/videos/v-spring/poster",
   "status": 200,
+  "art": "spring-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-spring/portrait",
+  "status": 200,
   "art": "spring-poster.jpg"
  },
  {
@@ -218,6 +236,12 @@
  {
   "method": "GET",
   "path": "/api/videos/v-tears-of-steel/poster",
+  "status": 200,
+  "art": "tears-of-steel-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-tears-of-steel/portrait",
   "status": 200,
   "art": "tears-of-steel-poster.jpg"
  },
@@ -255,6 +279,12 @@
   "method": "GET",
   "path": "/api/videos/v-cosmos-laundromat/poster",
   "status": 200,
+  "art": "cosmos-laundromat-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-cosmos-laundromat/portrait",
+  "status": 200,
   "art": "cosmos-laundromat-poster.jpg"
  },
  {
@@ -290,6 +320,12 @@
  {
   "method": "GET",
   "path": "/api/videos/v-elephants-dream/poster",
+  "status": 200,
+  "art": "elephants-dream-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-elephants-dream/portrait",
   "status": 200,
   "art": "elephants-dream-poster.jpg"
  },
@@ -327,6 +363,12 @@
   "method": "GET",
   "path": "/api/videos/v-gran-dillama/poster",
   "status": 200,
+  "art": "gran-dillama-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-gran-dillama/portrait",
+  "status": 200,
   "art": "gran-dillama-poster.jpg"
  },
  {
@@ -362,6 +404,12 @@
  {
   "method": "GET",
   "path": "/api/videos/v-llamigos/poster",
+  "status": 200,
+  "art": "llamigos-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-llamigos/portrait",
   "status": 200,
   "art": "llamigos-poster.jpg"
  },
@@ -399,6 +447,12 @@
   "method": "GET",
   "path": "/api/videos/v-coffee-run/poster",
   "status": 200,
+  "art": "coffee-run-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-coffee-run/portrait",
+  "status": 200,
   "art": "coffee-run-poster.jpg"
  },
  {
@@ -434,6 +488,12 @@
  {
   "method": "GET",
   "path": "/api/videos/v-sprite-fright/poster",
+  "status": 200,
+  "art": "sprite-fright-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-sprite-fright/portrait",
   "status": 200,
   "art": "sprite-fright-poster.jpg"
  },

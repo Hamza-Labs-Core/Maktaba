@@ -268,7 +268,9 @@ export function buildRoutes(lang, lib = loadLibrary()) {
       playlists: [],
       ...(s ? { series: { id: s.id, name: L(s.name) } } : {}),
     });
-    art(`/api/videos/${v.id}/poster`, `${v.art}-poster.jpg`);
+    // a video's poster is a frame of it, as a home extracts one (16:9); a series' is portrait
+    art(`/api/videos/${v.id}/poster`, `${v.art}-backdrop.jpg`);
+    art(`/api/videos/${v.id}/portrait`, `${v.art}-poster.jpg`);
     art(`/api/videos/${v.id}/backdrop`, `${v.art}-backdrop.jpg`);
     art(`/api/videos/${v.id}/art`, `${v.art}-backdrop.jpg`);
     art(`/api/videos/${v.id}/thumbnail`, `${v.art}-backdrop.jpg`);
