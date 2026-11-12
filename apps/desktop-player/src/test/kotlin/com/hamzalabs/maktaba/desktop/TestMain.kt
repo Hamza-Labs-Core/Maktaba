@@ -54,9 +54,11 @@ class TestMain(private val home: TestHome) {
      * no background work is alive, the home was asked nothing new, and what those queued has
      * run. (OkHttp counts a call as running until its callback returns, and the client resumes
      * its caller inside that callback: a call that ends has already queued its next step.)
+     * [held] calls are ones the test holds on the home (an open it answers later): everything
+     * but those has landed.
      */
-    fun settle() {
-        fun quiet() = home.idle && background.coroutineContext[Job]!!.children.none()
+    fun settle(held: Int = 0) {
+        fun quiet() = home.running == held && background.coroutineContext[Job]!!.children.none()
         val end = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(STALL_MS)
         while (true) {
             val asked = home.seen.size
@@ -80,6 +82,12 @@ class TestMain(private val home: TestHome) {
             time.advanceTimeBy(1_000)
             settle()
         }
+    }
+
+    /** Moves the clock [ms] on and runs what is due, without waiting for the home (a call is held there). */
+    fun advance(ms: Long) {
+        time.advanceTimeBy(ms)
+        time.runCurrent()
     }
 
     fun close() {

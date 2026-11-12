@@ -171,8 +171,9 @@ class Playback(
     private var running: Job? = null
     /** One open at a time: the 10-second watch's reopen and a quality change never overlap. */
     private val opening = Mutex()
-    /** The reopen after a lapsed lease (`no_heartbeat`), and when the last one took. */
+    /** The reopen after a lapsed lease (`no_heartbeat`); the session the last one gave, and when. */
     private var lapseReopen: Job? = null
+    private var lapseReopened: String? = null
     private var lapseReopenedAt = 0L
     private val streamHttp by lazy { client.streamHttp() }
 
@@ -209,6 +210,7 @@ class Playback(
         running = null
         lapseReopen?.cancel()
         lapseReopen = null
+        lapseReopened = null
         lapseReopenedAt = 0L
         val s = session
         if (s != null) {
@@ -469,7 +471,7 @@ class Playback(
         if (session != s) return
         when (answer) {
             ProgressAnswer.Ok -> cannotCheck = false
-            is ProgressAnswer.TimeOver -> refusedForTime(answer.refusal, atMs)
+            is ProgressAnswer.TimeOver -> refusedForTime(answer.refusal, atMs, of = s)
             ProgressAnswer.Ended -> if (!completed && !ended) {
                 Log.i("Maktaba", "playback: the home ended the stream")
                 session = null
@@ -487,25 +489,38 @@ class Playback(
      * The home refused the stream that plays, for time. `no_heartbeat` is not the time being
      * over: the stream sent no progress for a minute (a long pause) and its lease lapsed. It is
      * opened again once, where it is; the home's answer to that open says whether there is time
-     * ([open] stops for it when there is not). A lapse again right after such a reopen stops.
-     * Called for a progress post's answer and for the stream itself refused (the player's error).
+     * ([open] stops for it when there is not). While that open is on its way it answers every
+     * further lapse (the pause's post and the watch's can both be refused). The stream such a
+     * reopen gave lapsing again right after it stops.
+     * Called for a progress post's answer and for the stream itself refused (the player's error);
+     * [of] is the session the refusal is about.
      */
-    internal fun refusedForTime(refusal: TimeRefusal, atMs: Long) {
+    internal fun refusedForTime(refusal: TimeRefusal, atMs: Long, of: String? = session) {
+        // a refusal of a session since closed or replaced says nothing about what plays now
         val s = session
-        val sinceReopen = nowMs() - lapseReopenedAt
-        if (refusal.reason != TimeReason.NO_HEARTBEAT || s == null || sinceReopen < LAPSE_REOPEN_ONCE_MS) {
+        if (s == null || of != s) return
+        if (refusal.reason != TimeReason.NO_HEARTBEAT) {
             stopForTime(refusal, atMs)
             return
         }
+        // the stream is being opened again for a lapse already: that open answers this one too
         if (lapseReopen?.isActive == true) return
+        if (s == lapseReopened && nowMs() - lapseReopenedAt < LAPSE_REOPEN_ONCE_MS) {
+            stopForTime(refusal, atMs)
+            return
+        }
         Log.i("Maktaba", "playback: the stream's lease lapsed; opening it again")
         val wasPlaying = control?.playWhenReady == true
         lapseReopen = scope.launch(Dispatchers.Main.immediate) {
             opening.withLock {
-                // stopped, or already replaced, while this waited its turn
+                // stopped, or already replaced (a renewal was on its way), while this waited its turn
                 if (session != s) return@withLock
                 open(fromMs = atMs.coerceAtLeast(0))
-                if (session != null && session != s) lapseReopenedAt = nowMs()
+                val now = session
+                if (now != null && now != s) {
+                    lapseReopened = now
+                    lapseReopenedAt = nowMs()
+                }
             }
             if (!wasPlaying) control?.playWhenReady = false
         }
@@ -535,17 +550,19 @@ class Playback(
             delay(10_000)
             // the receiver's position while casting
             val p = control ?: return
-            session ?: return
+            val s = session ?: return
             // the end was said once, when it came
             if (p.playbackState == Player.STATE_ENDED) continue
             if (p.isPlaying) report(p, completed = false)
             val failed = p.playerError
             // the streaming service refused the stream itself because the time is over
             failed?.let(::playbackTimeRefusal)?.let {
-                refusedForTime(it, p.currentPosition)
+                refusedForTime(it, p.currentPosition, of = s)
                 if (control == null) return
                 continue
             }
+            // the stream is being opened again after a lapsed lease: that open is the only one
+            if (lapseReopen?.isActive == true) continue
             if (failed != null && nowMs() - openedAt < 30_000) {
                 releasePlayers()
                 Log.w("Maktaba", "player: ${failed.errorCodeName}", failed)

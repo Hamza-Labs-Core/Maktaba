@@ -45,6 +45,8 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -271,8 +273,11 @@ class Playback(
     @Volatile private var failed: String? = null
     @Volatile private var cues: List<Cue> = emptyList()
     private var running: Job? = null
-    /** The reopen after a lapsed lease (`no_heartbeat`), and when the last one took. */
+    /** One open at a time: the watch's reopen, a quality or audio change and a lapse's reopen never overlap. Each video has its own ([stop] starts anew), so the next one never waits for an open of the one before. */
+    private var opening = Mutex()
+    /** The reopen after a lapsed lease (`no_heartbeat`); the session the last one gave, and when. */
     private var lapseReopen: Job? = null
+    private var lapseReopened: String? = null
     private var lapseReopenedAt = 0L
     /** The running video's scope: its changes are its children, so another video or Close stops them. */
     private var video: CoroutineScope? = null
@@ -295,6 +300,8 @@ class Playback(
         running = null
         video = null
         lapseReopen = null
+        lapseReopened = null
+        opening = Mutex()
         lapseReopenedAt = 0L
         val s = session
         if (s != null) {
@@ -528,8 +535,11 @@ class Playback(
     /**
      * Opens (or reopens) the stream at [fromMs]. The session in use is closed only once the
      * new one plays; a reopen that fails leaves the old stream playing, with a [note] of why.
+     * One at a time: an open asked for while another is on its way waits for it.
      */
-    private suspend fun open(fromMs: Long, kbps: Int? = quality.maxBitrateKbps) {
+    private suspend fun open(fromMs: Long, kbps: Int? = quality.maxBitrateKbps) = opening.withLock { openNow(fromMs, kbps) }
+
+    private suspend fun openNow(fromMs: Long, kbps: Int? = quality.maxBitrateKbps) {
         val r = request ?: return
         val g = generation
         /** The video this open is for was closed or replaced (or its job is). */
@@ -676,6 +686,10 @@ class Playback(
                 heard(s, client.reportProgress(s, (at / 1000).toInt()), at)
                 if (player == null) return
             }
+            // the stream is being opened again after a lapsed lease: that open is the only one
+            if (lapseReopen?.isActive == true) continue
+            // replaced while that post was out: the next tick looks at the stream that plays now
+            if (session != s) continue
             val why = failed
             if (why != null && nowMs() - openedAt < 30_000) {
                 release(player)
@@ -728,17 +742,29 @@ class Playback(
     /**
      * `no_heartbeat` is not the time being over: session [s] sent no progress for a minute (a
      * long pause) and its lease lapsed. It is opened again once, at [atMs]; the home's answer to
-     * that open says whether there is time ([open] shows time's up when there is not). A lapse
-     * again right after such a reopen stops. False: this refusal stops the video.
+     * that open says whether there is time ([open] shows time's up when there is not). While
+     * that open is on its way it answers every further lapse (a resume's post and the watch's
+     * can both be refused). The stream such a reopen gave lapsing again right after it stops.
+     * False: this refusal stops the video.
      */
     private fun lapsed(s: String, reason: String, atMs: Long): Boolean {
-        if (reason != TimeReason.NO_HEARTBEAT || nowMs() - lapseReopenedAt < LAPSE_REOPEN_ONCE_MS) return false
-        val v = video ?: return false
+        if (reason != TimeReason.NO_HEARTBEAT) return false
+        // the stream is being opened again for a lapse already: that open answers this one too
         if (lapseReopen?.isActive == true) return true
+        if (s == lapseReopened && nowMs() - lapseReopenedAt < LAPSE_REOPEN_ONCE_MS) return false
+        val v = video ?: return false
         val wasPlaying = playing
         lapseReopen = v.launch {
-            open(fromMs = atMs)
-            if (session != null && session != s) lapseReopenedAt = nowMs()
+            opening.withLock {
+                // stopped, or already replaced (a renewal was on its way), while this waited its turn
+                if (session != s) return@withLock
+                openNow(fromMs = atMs)
+                val now = session
+                if (now != null && now != s) {
+                    lapseReopened = now
+                    lapseReopenedAt = nowMs()
+                }
+            }
             if (!wasPlaying) player?.pause()
         }
         return true
