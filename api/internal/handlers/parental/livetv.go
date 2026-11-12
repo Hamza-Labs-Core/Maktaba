@@ -177,8 +177,13 @@ type LivePlay struct {
 // withNow adds the home's clock to a refusal that carries a time to come back at
 // (retry_at, next_allowed_at): the client waits that time minus now.
 func withNow(e *httperror.Error, now time.Time) *httperror.Error {
-	return e.With("now", now.UTC().Format(time.RFC3339))
+	return e.With("now", homeNow(now).Format(time.RFC3339))
 }
+
+// homeNow is the clock an answer carries: UTC, in whole seconds like the times it is
+// measured against. Cutting the fraction only ever makes a client's wait longer,
+// never shorter than the home's own.
+func homeNow(now time.Time) time.Time { return now.UTC().Truncate(time.Second) }
 
 // channelFor loads the channel the caller asked for and judges it: the library
 // rule first, then the parental one. Every refusal for a channel the caller may
@@ -255,7 +260,7 @@ func (h *LiveHandler) Access(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	common.WriteJSON(w, r, http.StatusOK, LiveAccess{ChannelID: id, Restricted: v.Restricted, Allowed: v.Allowed, Until: utc(v.Until), Now: now.UTC()})
+	common.WriteJSON(w, r, http.StatusOK, LiveAccess{ChannelID: id, Restricted: v.Restricted, Allowed: v.Allowed, Until: utc(v.Until), Now: homeNow(now)})
 }
 
 // Play implements POST /api/channels/{id}/play: the channel's signed stream URL. A
@@ -299,7 +304,7 @@ func (h *LiveHandler) Play(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	common.WriteJSON(w, r, http.StatusOK, LivePlay{ChannelID: id, URL: signed, ExpiresAt: exp, Until: utc(v.Until), Now: now.UTC()})
+	common.WriteJSON(w, r, http.StatusOK, LivePlay{ChannelID: id, URL: signed, ExpiresAt: exp, Until: utc(v.Until), Now: homeNow(now)})
 }
 
 // LiveVerdictBody answers GET /api/tv/parental/verdict.
