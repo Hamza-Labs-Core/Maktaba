@@ -221,25 +221,28 @@ type pacedWriter struct {
 	typed bool
 }
 
-// pass prepares the headers of the body passed on with status, once.
-func (w *pacedWriter) pass(status int) {
-	if w.typed {
-		return
-	}
-	w.typed = true
-	h := w.Header()
-	if ct := httpx.PassHeaders(h, status); ct != "" {
-		h.Set("Content-Type", ct)
-	}
-}
-
+// The headers of the body passed on are prepared once, in each method that can send
+// them and in that method's own body, as the other writers of this package do: the
+// type is set where the write is.
 func (w *pacedWriter) WriteHeader(status int) {
-	w.pass(status)
-	w.ResponseWriter.WriteHeader(status)
+	rw := w.ResponseWriter
+	if !w.typed {
+		w.typed = true
+		if ct := httpx.PassHeaders(rw.Header(), status); ct != "" {
+			rw.Header().Set("Content-Type", ct)
+		}
+	}
+	rw.WriteHeader(status)
 }
 
 func (w *pacedWriter) Write(b []byte) (int, error) {
-	w.pass(http.StatusOK)
+	rw := w.ResponseWriter
+	if !w.typed {
+		w.typed = true
+		if ct := httpx.PassHeaders(rw.Header(), http.StatusOK); ct != "" {
+			rw.Header().Set("Content-Type", ct)
+		}
+	}
 	media := time.Duration(float64(len(b)) / w.rate * float64(time.Second))
 	wait, ok := w.g.reserve(w.key, media, "")
 	if !ok {
@@ -248,14 +251,20 @@ func (w *pacedWriter) Write(b []byte) (int, error) {
 	if err := w.g.sleep(w.ctx, wait); err != nil {
 		return 0, err
 	}
-	return w.ResponseWriter.Write(b)
+	return rw.Write(b)
 }
 
 // Flush and Unwrap keep the wrapped writer's streaming behaviour. A flush before any
 // write sends the headers, so they are prepared first.
 func (w *pacedWriter) Flush() {
-	w.pass(http.StatusOK)
-	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+	rw := w.ResponseWriter
+	if !w.typed {
+		w.typed = true
+		if ct := httpx.PassHeaders(rw.Header(), http.StatusOK); ct != "" {
+			rw.Header().Set("Content-Type", ct)
+		}
+	}
+	if f, ok := rw.(http.Flusher); ok {
 		f.Flush()
 	}
 }
