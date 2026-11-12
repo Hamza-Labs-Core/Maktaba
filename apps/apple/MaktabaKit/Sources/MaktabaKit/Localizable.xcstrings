@@ -11760,23 +11760,6 @@
         }
       }
     },
-    "family.makeRestricted.limit" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Content limit for %@"
-          }
-        },
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "حدّ المحتوى لـ %@"
-          }
-        }
-      }
-    },
     "family.guardians.add" : {
       "extractionState" : "manual",
       "localizations" : {

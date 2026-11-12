@@ -196,18 +196,16 @@ private struct RestrictAccountSheet: View {
             List {
                 Section {
                     ForEach(model.restrictable(me: me)) { person in
+                        // choosing the limit sends it (a menu's items carry their identifiers
+                        // only when they are its direct children)
                         Menu {
-                            Section {
-                                ForEach(AgeTier.limits, id: \.self) { tier in
-                                    Button {
-                                        Task { if await model.restrict(person, maxTier: tier) { done() } }
-                                    } label: {
-                                        Text(verbatim: AgeTier.label(tier))
-                                    }
-                                    .accessibilityIdentifier("restrict.tier.\(tier)")
+                            ForEach(AgeTier.limits, id: \.self) { tier in
+                                Button {
+                                    Task { if await model.restrict(person, maxTier: tier) { done() } }
+                                } label: {
+                                    Text(verbatim: AgeTier.label(tier))
                                 }
-                            } header: {
-                                Text(verbatim: word("family.makeRestricted.limit", person.username))
+                                .accessibilityIdentifier("restrict.tier.\(tier)")
                             }
                         } label: {
                             Label { Text(verbatim: person.username).foregroundStyle(Color.mktText) } icon: { Image(systemName: "person.crop.circle") }
@@ -215,8 +213,8 @@ private struct RestrictAccountSheet: View {
                         }
                         .accessibilityIdentifier("restrict.account.\(person.id)")
                     }
-                } footer: {
-                    Text(verbatim: word("family.child.unrated")) + Text(verbatim: ": ") + Text(verbatim: word("family.child.unrated.hide"))
+                } header: {
+                    Text(verbatim: word("family.child.limit")).accessibilityAddTraits(.isHeader)
                 }
             }
             .maktabaSurface()
