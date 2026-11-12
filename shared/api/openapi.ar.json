@@ -3842,8 +3842,8 @@
       "ar": "حتى ثلاثة مواضع في الفيديو، بالثواني، سُمع فيها."
     },
     "/paths/~1parental~1review/get/responses/200/content/application~1json/schema/properties/items/items/properties/not_checked/description": {
-      "en": "Why the screen did not check the video: it has no transcript, or its language is not one the screen reads (Arabic and English). Null when it did.",
-      "ar": "سبب عدم فحص الفيديو: لا نص له، أو لغته ليست مما يقرؤه الفحص (العربية والإنجليزية). null إن فُحص."
+      "en": "Why the screen did not check the video: it has no transcript, its language is not one the screen reads (Arabic and English), or the home's model failed on it (`model_failed`). Null when it did.",
+      "ar": "سبب عدم فحص الفيديو: لا نص له، أو لغته ليست مما يقرؤه الفحص (العربية والإنجليزية)، أو أخفق نموذج المنزل في قراءته (`model_failed`). null إن فُحص."
     },
     "/paths/~1parental~1review/get/responses/200/content/application~1json/schema/properties/items/items/properties/model/description": {
       "en": "The home's language model that gave the answer; empty when the video was not checked.",

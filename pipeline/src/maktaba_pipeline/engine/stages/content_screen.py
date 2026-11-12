@@ -17,9 +17,10 @@ the first run is such a change), one that got a transcript another way, and one 
 last run could not read an answer (tried again up to ``MAX_ATTEMPTS`` times). Each is
 enqueued at :data:`BACKFILL_PRIORITY`, the lowest of any stage, so a change of the home's
 model asks about every video again behind all other work, and each video keeps its
-earlier tier until its new row lands. Music and recitation are left out, a video whose
-last job failed for good on this model is left alone until the model or the video
-changes, and nothing is planned while no model can be reached.
+earlier tier until its new row lands. Music and recitation are left out, a video the
+model failed on three runs in a row is left alone until the model or the video changes
+(the row's ``failed_hash``, compared for equality: no error text is read), and nothing
+is planned while no model can be reached.
 """
 
 from __future__ import annotations
@@ -74,12 +75,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     try:
         out = await screen.screen_video(db, job.subject.id, ask=ASK)
     except LLMError as exc:
-        # the model's name leads the error: the planner leaves a video alone whose last
-        # job failed for good on the model the home still has (_failed_on)
-        model = await screen.model_name(db)
-        raise StageFailure(
-            "llm", f"{_on(model or '')}{type(exc).__name__}: {exc}"[:300], retryable=True
-        ) from exc
+        raise StageFailure("llm", f"{type(exc).__name__}: {exc}"[:300], retryable=True) from exc
     if out.state == "no_model":
         _NO_MODEL_AT[:] = [time.monotonic()]
     elif out.state == "written":
@@ -94,17 +90,6 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
 def _nothing(detail: str) -> StageResult:
     summary = {"content_screen": "no_model", **({"detail": detail} if detail else {})}
     return StageResult(output_hash=canonical_hash("no model"), outcome="unchanged", summary=summary)
-
-
-def _on(model: str) -> str:
-    """How a failed job's error names the model it failed on."""
-    return f"[{model}] "
-
-
-def _failed_on(job: Any, model: str) -> bool:
-    """Whether the video's newest job failed for good on this model: asking the same
-    model about the same video again would fail the same way, three tries every plan."""
-    return bool(job is not None and job["state"] == "failed" and _on(model) in str(job["error"]))
 
 
 _LIVE = ("pending", "claimed", "running", "paused", "resuming")
@@ -144,7 +129,7 @@ async def plan_library(db: Any, library_id: Any) -> StageResult:
             str(r["video_id"]): r
             for r in await db.fetch(
                 "SELECT s.video_id, s.not_checked, s.model, s.input_hash, s.attempts,"
-                " s.reviewed_at FROM video_content_signals s"
+                " s.reviewed_at, s.failed_hash, s.failed_runs FROM video_content_signals s"
                 f" WHERE s.video_id IN ({_PAGE})",
                 *page,
             )
@@ -167,18 +152,17 @@ async def plan_library(db: Any, library_id: Any) -> StageResult:
             *page,
         ):
             transcripts.setdefault(str(r["video_id"]), r)
-        # each video's newest job of this stage, and whether one is still to run
-        jobs: dict[str, Any] = {}
-        live: set[str] = set()
-        for r in await db.fetch(
-            "SELECT j.subject_id, j.state, j.error FROM processing_jobs j"
-            " WHERE j.stage = 'content_screen' AND j.subject_kind = 'video'"
-            f"   AND j.subject_id IN ({_PAGE}) ORDER BY j.id",
-            *page,
-        ):
-            jobs[str(r["subject_id"])] = r
-            if r["state"] in _LIVE:
-                live.add(str(r["subject_id"]))
+        # the videos with a job of this stage still to run
+        live = {
+            str(r["subject_id"])
+            for r in await db.fetch(
+                "SELECT j.subject_id, j.state FROM processing_jobs j"
+                " WHERE j.stage = 'content_screen' AND j.subject_kind = 'video'"
+                f"   AND j.subject_id IN ({_PAGE})",
+                *page,
+            )
+            if r["state"] in _LIVE
+        }
         for v in videos:
             vid = str(v["id"])
             if vid in live:
@@ -196,7 +180,7 @@ async def plan_library(db: Any, library_id: Any) -> StageResult:
                 model=model,
             )
             row = rows.get(vid)
-            if screen.settled(row, want) or _failed_on(jobs.get(vid), model):
+            if screen.settled(row, want):
                 continue
             asked_by_another = (
                 row is not None and row["not_checked"] is None and row["model"] != model

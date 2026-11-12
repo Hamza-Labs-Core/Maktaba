@@ -13,10 +13,13 @@ CREATE TABLE IF NOT EXISTS video_content_signals (
     confidence  REAL    NOT NULL DEFAULT 0 CHECK (confidence >= 0 AND confidence <= 1),
     categories  TEXT    NOT NULL DEFAULT '{}',
     not_checked TEXT    CHECK (not_checked IS NULL
-                               OR not_checked IN ('no_transcript', 'unsupported_language')),
+                               OR not_checked IN ('no_transcript', 'unsupported_language',
+                                                  'model_failed')),
     model       TEXT    NOT NULL DEFAULT '',
     input_hash  TEXT    NOT NULL DEFAULT '',
     attempts    INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    failed_hash TEXT    NOT NULL DEFAULT '',
+    failed_runs INTEGER NOT NULL DEFAULT 0 CHECK (failed_runs >= 0),
     reviewed_by TEXT    REFERENCES users(id) ON DELETE SET NULL,
     reviewed_at TEXT,
     updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -25,9 +28,20 @@ CREATE TABLE IF NOT EXISTS video_content_signals (
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- a database that ran this slot before the column was in it
+-- a database that ran this slot before these columns were in it (SQLite is the tests'
+-- database, made new each time: the wider not_checked check is in the table above)
 ALTER TABLE video_content_signals
     ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE video_content_signals
+    ADD COLUMN IF NOT EXISTS failed_hash TEXT NOT NULL DEFAULT '';
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE video_content_signals
+    ADD COLUMN IF NOT EXISTS failed_runs INTEGER NOT NULL DEFAULT 0 CHECK (failed_runs >= 0);
 -- +goose StatementEnd
 
 -- +goose StatementBegin

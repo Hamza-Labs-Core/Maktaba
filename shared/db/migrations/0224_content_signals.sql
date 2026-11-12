@@ -12,13 +12,18 @@
 --     categories   {"violence": {"level": 0..3, "evidence": [seconds, up to three]}, ...}
 --                  for violence, sexual_content, coarse_language, drugs_alcohol,
 --                  frightening_scenes and mature_themes.
---     not_checked  why there is no answer: no_transcript or unsupported_language; NULL
---                  when the model was asked.
+--     not_checked  why there is no answer: no_transcript, unsupported_language, or
+--                  model_failed (the home's model failed on the video and it has no
+--                  earlier answer); NULL when the model was asked and answered.
 --     model, input_hash  what was asked and of what: the same pair is never asked twice.
 --     attempts     how many runs on this input ended with an answer that could not be
 --                  read (0: the last run read every answer). The stage tries such a row
 --                  again, three times at most; until then, and after, it is on the review
 --                  list with confidence 0.
+--     failed_hash, failed_runs  the input the model last failed on (an error, not an
+--                  answer) and how many runs in a row did: after three the stage's
+--                  planner leaves the video alone until the input or the model changes
+--                  (both are in the hash). An earlier answer in the row stands meanwhile.
 --     reviewed_by, reviewed_at  an admin confirmed, changed or cleared the tier; a reviewed
 --                  signal no longer rates the video (the admin's tier does), until the
 --                  stage writes a new answer for a changed input.
@@ -45,10 +50,13 @@ CREATE TABLE IF NOT EXISTS video_content_signals (
     confidence  real        NOT NULL DEFAULT 0 CHECK (confidence >= 0 AND confidence <= 1),
     categories  jsonb       NOT NULL DEFAULT '{}'::jsonb,
     not_checked text        CHECK (not_checked IS NULL
-                                   OR not_checked IN ('no_transcript', 'unsupported_language')),
+                                   OR not_checked IN ('no_transcript', 'unsupported_language',
+                                                      'model_failed')),
     model       text        NOT NULL DEFAULT '',
     input_hash  text        NOT NULL DEFAULT '',
     attempts    smallint    NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    failed_hash text        NOT NULL DEFAULT '',
+    failed_runs smallint    NOT NULL DEFAULT 0 CHECK (failed_runs >= 0),
     reviewed_by uuid        REFERENCES users(id) ON DELETE SET NULL,
     reviewed_at timestamptz,
     updated_at  timestamptz NOT NULL DEFAULT now(),
@@ -57,9 +65,26 @@ CREATE TABLE IF NOT EXISTS video_content_signals (
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- a home that ran this slot before the column was in it
+-- a home that ran this slot before these columns and the third not_checked value were in it
 ALTER TABLE video_content_signals
-    ADD COLUMN IF NOT EXISTS attempts smallint NOT NULL DEFAULT 0 CHECK (attempts >= 0);
+    ADD COLUMN IF NOT EXISTS attempts smallint NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    ADD COLUMN IF NOT EXISTS failed_hash text NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS failed_runs smallint NOT NULL DEFAULT 0 CHECK (failed_runs >= 0);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint
+                WHERE conrelid = 'video_content_signals'::regclass
+                  AND conname = 'video_content_signals_not_checked_check'
+                  AND pg_get_constraintdef(oid) NOT LIKE '%model_failed%') THEN
+        ALTER TABLE video_content_signals DROP CONSTRAINT video_content_signals_not_checked_check;
+        ALTER TABLE video_content_signals ADD CONSTRAINT video_content_signals_not_checked_check
+            CHECK (not_checked IS NULL
+                   OR not_checked IN ('no_transcript', 'unsupported_language', 'model_failed'));
+    END IF;
+END $$;
 -- +goose StatementEnd
 
 -- +goose StatementBegin

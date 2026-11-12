@@ -42,7 +42,7 @@ from typing import Any
 
 from ..engine.hashing import canonical_hash
 from ..engine.sql import dumps, is_pg, loads, now, to_ts, uid
-from ..llm import ClusterUnavailable, NoModel, cluster_llm
+from ..llm import ClusterUnavailable, LLMError, NoModel, cluster_llm
 
 __all__ = [
     "CATEGORIES",
@@ -125,6 +125,9 @@ DESCRIPTION_CHARS = 600
 
 NOT_CHECKED_NO_TRANSCRIPT = "no_transcript"
 NOT_CHECKED_LANGUAGE = "unsupported_language"
+#: the home's model failed on the video (an error, not an answer) and the video has no
+#: earlier answer: the review list shows it as not checked
+NOT_CHECKED_MODEL_FAILED = "model_failed"
 
 #: ``(model, messages) -> the model's text``. The default is the cluster door.
 Asker = Callable[[str, Sequence[Mapping[str, Any]]], Awaitable[str]]
@@ -513,8 +516,8 @@ async def _segments(db: Any, transcript_id: Any) -> list[tuple[float, float, str
 
 async def _row(db: Any, video_id: Any) -> Any:
     return await db.fetchrow(
-        "SELECT tier, confidence, not_checked, model, input_hash, attempts, reviewed_at"
-        " FROM video_content_signals WHERE video_id = $1",
+        "SELECT tier, confidence, not_checked, model, input_hash, attempts, reviewed_at,"
+        " failed_hash, failed_runs FROM video_content_signals WHERE video_id = $1",
         uid(video_id),
     )
 
@@ -582,6 +585,8 @@ async def _write(
             " confidence = EXCLUDED.confidence, categories = EXCLUDED.categories,"
             " not_checked = EXCLUDED.not_checked, model = EXCLUDED.model,"
             " input_hash = EXCLUDED.input_hash, attempts = EXCLUDED.attempts,"
+            # an answer ends any run of failures
+            " failed_hash = '', failed_runs = 0,"
             " reviewed_by = NULL, reviewed_at = NULL, updated_at = EXCLUDED.updated_at",
             uid(video_id),
             tier,
@@ -591,6 +596,48 @@ async def _write(
             model,
             input_hash,
             int(attempts),
+            to_ts(db, now()),
+        )
+
+
+async def _note_failure(db: Any, video_id: Any, have: Any, want: Expected, model: str) -> None:
+    """The model failed on the video (an error, not an answer). The row keeps which input
+    it failed on and how many runs in a row did, in columns of their own: nothing here
+    is read from an error's text, which may quote the model or the transcript.
+
+    A video with an earlier answer keeps it untouched (the earlier tier stands until a
+    new one lands). A video with none, or with a row that only says why it was not
+    checked, gets a row that says the model failed, so the review list shows it."""
+    runs = 1
+    if have is not None and have["failed_hash"] == want.input_hash:
+        runs = int(have["failed_runs"] or 0) + 1
+    async with _AsStage(db):
+        if have is not None and have["not_checked"] is None:
+            await db.execute(
+                "UPDATE video_content_signals SET failed_hash = $2, failed_runs = $3"
+                " WHERE video_id = $1",
+                uid(video_id),
+                want.input_hash,
+                runs,
+            )
+            return
+        await db.execute(
+            "INSERT INTO video_content_signals (video_id, tier, confidence, categories,"
+            " not_checked, model, input_hash, attempts, failed_hash, failed_runs,"
+            " reviewed_by, reviewed_at, updated_at)"
+            " VALUES ($1, NULL, 0, $2, $3, $4, $5, 0, $6, $7, NULL, NULL, $8)"
+            " ON CONFLICT (video_id) DO UPDATE SET tier = NULL, confidence = 0,"
+            " categories = EXCLUDED.categories, not_checked = EXCLUDED.not_checked,"
+            " model = EXCLUDED.model, input_hash = EXCLUDED.input_hash, attempts = 0,"
+            " failed_hash = EXCLUDED.failed_hash, failed_runs = EXCLUDED.failed_runs,"
+            " reviewed_by = NULL, reviewed_at = NULL, updated_at = EXCLUDED.updated_at",
+            uid(video_id),
+            dumps({}),
+            NOT_CHECKED_MODEL_FAILED,
+            model,
+            canonical_hash({"not_checked": NOT_CHECKED_MODEL_FAILED, "of": want.input_hash}),
+            want.input_hash,
+            runs,
             to_ts(db, now()),
         )
 
@@ -674,12 +721,26 @@ def settled(row: Any, want: Expected) -> bool:
 
     A row for the same input whose last run could not read an answer is not settled
     until it was tried :data:`MAX_ATTEMPTS` times; an admin's review of it settles it at
-    once (a new try would wipe the review)."""
+    once (a new try would wipe the review).
+
+    A video the model failed on :data:`MAX_ATTEMPTS` runs in a row is settled too, while
+    its input is the very one it failed on: the row's ``failed_hash`` equals the hash
+    of what would be asked now, and that hash holds the model's name, the transcript and
+    what the model is told. Only that equality decides it. Another model, a new
+    transcript or a new title is another hash, and the video is asked about again."""
     if want.state == "no_model":
         return True
     if want.state == "skip":
         return row is None
-    if row is None or row["input_hash"] != want.input_hash:
+    if row is None:
+        return False
+    if (
+        want.state == "ask"
+        and row["failed_hash"] == want.input_hash
+        and int(row["failed_runs"] or 0) >= MAX_ATTEMPTS
+    ):
+        return True
+    if row["input_hash"] != want.input_hash:
         return False
     if want.state == "not_checked":
         return bool(row["not_checked"] == want.why)
@@ -694,7 +755,8 @@ async def screen_video(db: Any, video_id: Any, *, ask: Asker | None = None) -> O
     asks the home's model through the cluster door.
 
     Raises :class:`maktaba_pipeline.llm.LLMError` when the model was reachable and failed
-    (the job is tried again); a home with no model is not an error."""
+    (the job is tried again, and the row notes the failure: :func:`_note_failure`); a
+    home with no model is not an error."""
     video = await _video(db, video_id)
     if video is None:
         return Outcome("skipped", "no such video")
@@ -742,6 +804,9 @@ async def screen_video(db: Any, video_id: Any, *, ask: Asker | None = None) -> O
         except (NoModel, ClusterUnavailable) as exc:
             # no machine of this home has the model: nothing is written, nothing fails
             return Outcome("no_model", str(exc)[:200])
+        except LLMError:
+            await _note_failure(db, video_id, have, want, model)
+            raise
         answers.append(parse_answer(text, window))
     unusable = sum(1 for a in answers if a is None)
     result = combine(answers, left_out=left_out)

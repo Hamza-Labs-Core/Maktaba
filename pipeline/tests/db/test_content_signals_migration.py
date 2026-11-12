@@ -42,8 +42,8 @@ def test_0224_sqlite_up_down() -> None:
     assert _has(conn, "table", TABLE) and _has(conn, "index", INDEX)
     cols = {r[1] for r in conn.execute(f"PRAGMA table_info({TABLE})")}
     assert cols == {"video_id", "tier", "confidence", "categories", "not_checked", "model",
-                    "input_hash", "attempts", "reviewed_by", "reviewed_at",
-                    "updated_at"}  # fmt: skip
+                    "input_hash", "attempts", "failed_hash", "failed_runs", "reviewed_by",
+                    "reviewed_at", "updated_at"}  # fmt: skip
 
     lib = "11111111-1111-1111-1111-111111111111"
     vid = "22222222-2222-2222-2222-222222222222"

@@ -605,7 +605,15 @@ async def test_a_model_that_fails_fails_the_job_and_keeps_the_row(db: Database) 
         str(vid),
     )
     assert job["state"] != "done" and "runtime crashed" in str(job["error"])
-    assert await _row(db, vid) == before
+    # the earlier answer stands; the row only notes which input the model failed on
+    after = await _row(db, vid)
+    assert before is not None and after is not None
+    noted = {"failed_hash", "failed_runs"}
+    assert {k: v for k, v in after.items() if k not in noted} == {
+        k: v for k, v in before.items() if k not in noted
+    }
+    assert (before["failed_hash"], before["failed_runs"]) == ("", 0)
+    assert after["failed_hash"] not in ("", after["input_hash"]) and after["failed_runs"] == 1
 
 
 # --- a change of model ------------------------------------------------------------------------
@@ -776,12 +784,29 @@ async def test_classification_or_a_new_title_after_the_first_run_is_planned(
     assert (await stage.plan_library(db, lib)).outcome == "unchanged"
 
 
+async def _fail_for_good(db: Database, rt: Any, lib: Any, vid: Any) -> None:
+    """Plan and run the video's job until the engine gives it up (three tries)."""
+    for _ in range(screen.MAX_ATTEMPTS):
+        if (await stage.plan_library(db, lib)).outcome == "unchanged":
+            break
+        for _try in range(4):
+            await drain_core(db, rt, only={"content_screen"})
+            await db.execute(
+                "UPDATE processing_jobs SET not_before = NULL WHERE stage = 'content_screen'"
+                " AND state = 'pending' AND subject_id = $1",
+                str(vid),
+            )
+    row = await _row(db, vid)
+    assert row is not None and row["failed_runs"] >= screen.MAX_ATTEMPTS
+
+
 @pytest.mark.asyncio
-async def test_a_job_that_failed_for_good_is_not_planned_again_on_the_same_model(
+async def test_a_video_the_model_keeps_failing_on_is_not_planned_again_on_the_same_model(
     db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Review finding 12: a transcript the model always chokes on was enqueued again
-    every half hour, three tries each time, for ever."""
+    every half hour, three tries each time, for ever. And it is not left undetected in
+    silence: the review list has it as not checked."""
     rt = await _engine(db)
 
     async def reachable(model: str) -> bool:
@@ -791,28 +816,22 @@ async def test_a_job_that_failed_for_good_is_not_planned_again_on_the_same_model
     fake = FakeModel({"CHOKES": RuntimeFailed("the runtime crashed")}, default=answer(0, 0.9))
     stage.ASK = fake
     vid, lib = await _video(db, "A film")
-    await _transcript(db, vid, ["CHOKES the model."])
-    assert (await stage.plan_library(db, lib)).summary["new"] == 1
-    await drain_core(db, rt, only={"content_screen"})
-    job = await db.fetchrow(
-        "SELECT id, state, error FROM processing_jobs WHERE stage = 'content_screen'"
-        " AND subject_id = $1 ORDER BY id DESC LIMIT 1",
-        str(vid),
-    )
-    if job["state"] != "failed":  # the engine's back-off still holds it: end it as it would
-        await db.execute("UPDATE processing_jobs SET state = 'failed' WHERE id = $1", job["id"])
-    assert f"[{MODEL}]" in str(job["error"]) and "runtime crashed" in str(job["error"])
+    tid = await _transcript(db, vid, ["CHOKES the model."])
+    await _fail_for_good(db, rt, lib, vid)
     asked = len(fake.calls)
-    assert await _row(db, vid) is None
+    row = await _row(db, vid)
+    assert row is not None and row["not_checked"] == "model_failed" and row["tier"] is None
+    assert (row["model"], row["confidence"], row["reviewed_at"]) == (MODEL, 0, None)
 
-    # no row, and yet nothing is planned: the same model would fail the same way
+    # the same input and model: nothing is planned, nothing is asked
     assert (await stage.plan_library(db, lib)).outcome == "unchanged"
     assert not await db.fetchval(
         "SELECT count(*) FROM processing_jobs WHERE stage = 'content_screen' AND state = 'pending'"
     )
+    assert (await _screen(db, rt, vid))["content_screen"] == "unchanged"
     assert len(fake.calls) == asked
 
-    # another model may read it: planned once more
+    # another model may read it: planned once more, and this time it answers
     await set_rules(db, "tagcheck", {"enabled": True, "model": "home-model-b"})
     fake.script.clear()
     plan = await stage.plan_library(db, lib)
@@ -820,6 +839,97 @@ async def test_a_job_that_failed_for_good_is_not_planned_again_on_the_same_model
     await drain_core(db, rt, only={"content_screen"})
     row = await _row(db, vid)
     assert row is not None and (row["tier"], row["model"]) == (0, "home-model-b")
+    assert (row["not_checked"], row["failed_hash"], row["failed_runs"]) == (None, "", 0)
+
+    # and a corrected transcript is a new input for the model that failed
+    await set_rules(db, "tagcheck", {"enabled": True, "model": MODEL})
+    fake.script["CHOKES"] = RuntimeFailed("the runtime crashed")
+    await _fail_for_good(db, rt, lib, vid)
+    row = await _row(db, vid)
+    # the other model's answer stands meanwhile
+    assert row is not None and (row["tier"], row["model"]) == (0, "home-model-b")
+    assert (await stage.plan_library(db, lib)).outcome == "unchanged"
+    await db.execute("UPDATE transcript_segments SET text = 'Fixed.' WHERE transcript_id = $1", tid)
+    await db.execute("UPDATE transcripts SET revision = 9 WHERE id = $1", tid)
+    assert (await stage.plan_library(db, lib)).summary["model_changed"] == 1
+
+
+@pytest.mark.asyncio
+async def test_only_the_rows_own_columns_decide_that_a_video_is_left_alone(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Security review, finding 25: whether a video "already failed for good on this
+    model" was read from the failed job's error text, which quotes the model and can
+    quote the transcript. Text there could name the model and stop a video from ever
+    being detected; a model whose name starts another's matched too. Now only the row's
+    failed_hash and failed_runs decide, compared for equality."""
+    rt = await _engine(db)
+
+    async def reachable(model: str) -> bool:
+        return True
+
+    monkeypatch.setattr(screen, "model_reachable", reachable)
+    marker = f"[{MODEL}] "
+    lib = await make_library(db)
+    quoted = await make_video(db, lib, title="Quotes the marker")
+    other = await make_video(db, lib, title="Another model's failure")
+    prefix = await make_video(db, lib, title="A model whose name starts this one's")
+    untouched = await make_video(db, lib, title="Never run")
+    texts = {
+        # the error quotes input that holds this model's marker, at its start and inside
+        quoted: f"{marker}RuntimeFailed: the model said: {marker}RuntimeFailed: stop",
+        # a failure on another model, and on one whose name is a prefix of this one's
+        other: "[home-model-b] RuntimeFailed: the runtime crashed",
+        prefix: f"[{MODEL[:-2]}] RuntimeFailed: crashed; also {marker}",
+    }
+    for vid, text in texts.items():
+        await _transcript(db, vid, [f"Words of {vid}."])
+        got = await enqueue_job(db, subject_kind="video", subject_id=vid, stage="content_screen")
+        await db.execute(
+            "UPDATE processing_jobs SET state = 'failed', attempts = 3, error = $2,"
+            " finished_at = $3 WHERE id = $1",
+            got.job_id, json.dumps({"kind": "llm", "message": text, "retryable": True}),
+            to_ts(db, now()),
+        )  # fmt: skip
+    await _transcript(db, untouched, ["Words."])
+    # no error text, however it reads, keeps a video from being planned
+    plan = await stage.plan_library(db, lib)
+    assert plan.summary == {"model": MODEL, "new": 4, "model_changed": 0}
+
+    # the genuine case: the row says this very input failed three runs in a row
+    stage.ASK = FakeModel({}, default=answer(9, 0.9))
+    await drain_core(db, rt, only={"content_screen"})
+    want_hash = (await _row(db, quoted) or {})["input_hash"]
+    assert want_hash
+    # an input change makes every row stale, so each video would be planned ...
+    for vid in (other, prefix, untouched):
+        await db.execute("UPDATE transcripts SET revision = 5 WHERE video_id = $1", str(vid))
+    # ... and "quoted" holds an older answer, and this very input failed often enough
+    await db.execute(
+        "UPDATE video_content_signals SET input_hash = 'an older answer', failed_hash = $2,"
+        " failed_runs = $3 WHERE video_id = $1",
+        str(quoted), want_hash, screen.MAX_ATTEMPTS,
+    )  # fmt: skip
+    # another video's hash, a prefix of the hash, and no hash at all are not this input
+    for vid, failed_hash in ((other, want_hash), (prefix, want_hash[:-1]), (untouched, "")):
+        await db.execute(
+            "UPDATE video_content_signals SET failed_hash = $2, failed_runs = $3"
+            " WHERE video_id = $1",
+            str(vid), failed_hash, screen.MAX_ATTEMPTS,
+        )  # fmt: skip
+    await db.execute("DELETE FROM processing_jobs WHERE stage = 'content_screen'")
+    plan = await stage.plan_library(db, lib)
+    assert plan.summary == {"model": MODEL, "new": 3, "model_changed": 0}
+    pending = await db.fetch(
+        "SELECT subject_id FROM processing_jobs WHERE stage = 'content_screen'"
+    )
+    assert {str(j["subject_id"]) for j in pending} == {str(other), str(prefix), str(untouched)}
+    # one run short of the bound is not yet "for good"
+    await db.execute(
+        "UPDATE video_content_signals SET failed_runs = $2 WHERE video_id = $1",
+        str(quoted), screen.MAX_ATTEMPTS - 1,
+    )  # fmt: skip
+    assert (await stage.plan_library(db, lib)).summary["new"] == 1
 
 
 @pytest.mark.asyncio
