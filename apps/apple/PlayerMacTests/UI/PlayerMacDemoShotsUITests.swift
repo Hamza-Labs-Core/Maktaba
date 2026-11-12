@@ -36,16 +36,13 @@ final class PlayerMacDemoShotsUITests: XCTestCase {
             try launchSignedIn(language, section: "home", open: "watch/v-sintel@420",
                                extra: ["-playback.subtitles_on", "YES", "-playback.subtitle_language", "ar"])
             XCTAssertTrue(element("player.window").waitForExistence(timeout: 30), "the player; the home saw \(home?.seen ?? [])")
-            let surface = element("player.surface")
-            if surface.waitForExistence(timeout: 5) {
-                XCTAssertTrue(wait(30) { self.state(surface)["playing"] == "true" && self.state(surface)["subtitle"] == "ar" },
-                              "playing with the Arabic subtitles: \(state(surface))")
-                let start = Int(state(surface)["position"] ?? "") ?? 0
-                XCTAssertTrue(wait(15) { (Int(self.state(surface)["position"] ?? "") ?? 0) >= start + 2 }, "it plays on")
-            } else {
-                // no state to read: the picture's segments asked for, and more after them
-                XCTAssertTrue(wait(30) { (self.home?.seen ?? []).filter { $0.hasSuffix(".ts") }.count >= 3 }, "it plays")
-            }
+            // what plays, from what the player asked the home (XCUITest on macOS reads no value
+            // off the picture): the Arabic subtitles' cues, and the picture's segments going on
+            XCTAssertTrue(wait(30) { self.seen.contains { $0.hasPrefix("GET /stream/") && $0.hasSuffix("/subs-ar.vtt") } },
+                          "the Arabic subtitles; the home saw \(seen)")
+            let segments = { self.seen.filter { $0.hasPrefix("GET /stream/") && $0.hasSuffix(".ts") }.count }
+            let before = segments()
+            XCTAssertTrue(wait(20) { segments() >= before + 2 }, "it plays on; the home saw \(seen)")
             // the controls up: the pointer over the picture
             app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
             _ = wait(1) { false }
@@ -91,14 +88,7 @@ final class PlayerMacDemoShotsUITests: XCTestCase {
 
     private func element(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }
 
-    private func state(_ surface: XCUIElement) -> [String: String] {
-        var out: [String: String] = [:]
-        for pair in (surface.value as? String ?? "").split(separator: ";") {
-            let kv = pair.split(separator: "=", maxSplits: 1).map(String.init)
-            if kv.count == 2 { out[kv[0]] = kv[1] }
-        }
-        return out
-    }
+    private var seen: [String] { home?.seen ?? [] }
 
     /// At least `count` pictures asked for, then 2 s with no request: every picture drawn.
     private func waitForArt(atLeast count: Int) {

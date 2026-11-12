@@ -491,8 +491,14 @@ final class MockHome: @unchecked Sendable {
         fixtures.url(forResource: name, withExtension: ext).flatMap { try? Data(contentsOf: $0) }
     }
 
+    /// A fixture as served. Under the demo the fixtures answer only what the demo has not (a
+    /// stream session and the like, never shown): their times are the real clock's, so a
+    /// session's `expires_at` is not already past for the app under the demo's pinned noon.
     private func file(_ name: String) -> Data? {
-        fixture(named: name).map { Data($0.utf8) }
+        guard demo != nil else { return fixture(named: name).map { Data($0.utf8) } }
+        return fixtures.url(forResource: name, withExtension: "json")
+            .flatMap { try? Data(contentsOf: $0) }
+            .map { Data(Self.fillTimes(String(decoding: $0, as: UTF8.self), now: Date()).utf8) }
     }
 
     /// `/api/videos/{id}/chapters` matches `/api/videos/v1/chapters`.

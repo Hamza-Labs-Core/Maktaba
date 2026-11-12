@@ -322,8 +322,9 @@ jobs:
           only=()
           if [ "$shard" = shots ]; then
             # the product screenshots: a status bar at noon, full, on Wi-Fi
-            xcrun simctl status_bar "$UDID" override --time 12:00 --dataNetwork wifi --wifiMode active --wifiBars 3 \
-              --cellularMode notSupported --batteryState charged --batteryLevel 100
+            xcrun simctl status_bar "$UDID" override --time 2026-06-15T12:00:00+00:00 --dataNetwork wifi --wifiMode active \
+              --wifiBars 3 --cellularMode notSupported --batteryState charged --batteryLevel 100 \
+              || echo "::warning::the status bar override failed: the shots keep the simulator's own"
             only=(-only-testing "$target/PlayerDemoShots")
           else
             # this shard's tests: longest first, to the shard with the least time so far
@@ -622,8 +623,9 @@ jobs:
           set -euo pipefail
           # and the Remote's product screenshot (RemoteDemoShotsUITests, story 60.09), at noon on a
           # full status bar; only that for shots_only
-          xcrun simctl status_bar "$UDID" override --time 12:00 --dataNetwork wifi --wifiMode active --wifiBars 3 \
-            --cellularMode notSupported --batteryState charged --batteryLevel 100
+          xcrun simctl status_bar "$UDID" override --time 2026-06-15T12:00:00+00:00 --dataNetwork wifi --wifiMode active \
+            --wifiBars 3 --cellularMode notSupported --batteryState charged --batteryLevel 100 \
+            || echo "::warning::the status bar override failed: the shots keep the simulator's own"
           only=(-only-testing "Maktaba Remote UITests/RemoteDemoShotsUITests")
           if [ "$SHOTS_ONLY" != true ]; then only+=(-only-testing "Maktaba Remote UITests/RemoteDiagnosticsUITests"); fi
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Remote" \
