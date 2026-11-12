@@ -681,7 +681,11 @@ class PlayerUITestCase: XCTestCase {
 
     /// Swipes up until `e` is on screen and can be tapped (a few swipes at most).
     func scrollUntil(_ e: XCUIElement) {
-        for _ in 0 ..< 8 where !(e.exists && e.isHittable) { app.swipeUp(velocity: .slow) }
+        // stops at the first look that finds it (each look is a query of the whole screen)
+        for _ in 0 ..< 8 {
+            if e.exists && e.isHittable { return }
+            app.swipeUp(velocity: .slow)
+        }
     }
 }
 

@@ -13,9 +13,24 @@ final class PlayerParentalUITests: PlayerUITestCase {
     private static let huda = #"{"guardians":[{"id":"g1","username":"Huda"}]}"#
 
     private func waitUntil(_ what: String, timeout: TimeInterval = 15, _ condition: () -> Bool) {
+        XCTAssertTrue(met(timeout, condition), what)
+    }
+
+    /// Whether `condition` came true within `timeout`. It is asked once more only while it
+    /// is false: each ask of an element is a query of the whole screen.
+    private func met(_ timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
         let end = Date().addingTimeInterval(timeout)
-        while !condition(), Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
-        XCTAssertTrue(condition(), what)
+        var yes = condition()
+        while !yes, Date() < end {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+            yes = condition()
+        }
+        return yes
+    }
+
+    /// `waitForExistence` that looks at once (XCTest's own first look comes a second in).
+    private func shows(_ e: XCUIElement, within timeout: TimeInterval = 10) -> Bool {
+        met(timeout) { e.exists }
     }
 
     private func body(_ method: String, _ path: String) -> [String: Any]? {
@@ -720,7 +735,8 @@ final class PlayerParentalUITests: PlayerUITestCase {
 
     /// 57.15: a guardian's Time screen for a child. With no rules it says so and shows what
     /// was watched today; Add a rule opens the editor, which will not save a rule with
-    /// neither watching hours nor a daily limit; a rule with a limit and without one day is
+    /// neither watching hours nor a daily limit (what makes a rule one the home takes is
+    /// MaktabaKit's `ParentalTimeRule.canBeSaved`, with its own tests); a rule with a limit and without one day is
     /// sent as the whole list; the rule the home answers shows in one line; Remove in its
     /// editor sends the list without it.
     func testAGuardianAddsAndRemovesATimeRule() {
@@ -728,35 +744,44 @@ final class PlayerParentalUITests: PlayerUITestCase {
         home.stub("PUT", "/api/parental/users/c2/time-rules",
                   body: #"{"rules":[{"id":"t1","days":95,"daily_minutes":75}],"time_zone":"Asia/Riyadh"}"#)
         launchSignedIn(sections: ["profile"], section: "profile")
-        XCTAssertTrue(element("profile.family").waitForExistence(timeout: 20), "Family")
+        XCTAssertTrue(shows(element("profile.family"), within: 20), "Family")
         element("profile.family").tap()
-        XCTAssertTrue(element("family.child.c2").waitForExistence(timeout: 10), "the child")
+        XCTAssertTrue(shows(element("family.child.c2"), within: 10), "the child")
         element("family.child.c2").tap()
         let time = element("child.time")
-        XCTAssertTrue(time.waitForExistence(timeout: 10), "Time, on the child's page")
+        XCTAssertTrue(shows(time, within: 10), "Time, on the child's page")
         scrollUntil(time)
         time.tap()
-        XCTAssertTrue(element("time.none").waitForExistence(timeout: 10), "no rules yet")
+        XCTAssertTrue(shows(element("time.none"), within: 10), "no rules yet")
         XCTAssertEqual(element("time.none").label, "No time rules. Watching is not limited by time.")
         XCTAssertEqual(element("time.today").label, "Watched today: 25 min")
         XCTAssertTrue(app.staticTexts["Times are in the home's time zone (Asia/Riyadh)."].exists, "whose clock the rules follow")
 
         element("time.add").tap()
-        let save = element("rule.save")
-        XCTAssertTrue(save.waitForExistence(timeout: 10), "the editor")
-        XCTAssertTrue(save.isEnabled, "a new rule starts with a daily limit: it can be saved")
+        XCTAssertTrue(shows(app.switches["rule.limit"].firstMatch, within: 10), "the editor")
         // every day but Friday (bit 5; the days are the form's first rows)
         flip("rule.day.5")
-        // neither watching hours nor a daily limit: not a rule, and Save is off
-        flip("rule.limit")
-        waitUntil("Save is off without hours or a limit") { !save.isEnabled }
-        flip("rule.limit")
-        waitUntil("Save is on again") { save.isEnabled }
         // one step up from an hour: 1 hr 15 min a day
         let stepper = app.steppers["rule.minutes"].firstMatch
-        XCTAssertTrue(stepper.waitForExistence(timeout: 5), "the daily limit's stepper")
+        XCTAssertTrue(shows(stepper, within: 5), "the daily limit's stepper")
         let up = stepper.buttons["Increment"].firstMatch
         (up.exists ? up : stepper.buttons.element(boundBy: 1)).tap()
+        // Save is a row of the form's own, under the library
+        let save = app.buttons["rule.save"].firstMatch
+        let invalid = element("rule.invalid")
+        scrollUntil(save)
+        XCTAssertTrue(save.isEnabled, "a new rule starts with a daily limit: it can be saved")
+        XCTAssertFalse(invalid.exists, "nothing to say about a rule that can be saved")
+        // neither watching hours nor a daily limit: not a rule. Save is off, says why, and
+        // a tap on it sends nothing
+        flip("rule.limit")
+        waitUntil("Save is off without hours or a limit") { !save.isEnabled }
+        XCTAssertEqual(invalid.label, "A rule needs watching hours or a daily limit, and at least one day.")
+        XCTAssertGreaterThanOrEqual(save.frame.height, 44, "Save is at least 44 pt tall")
+        save.tap()
+        flip("rule.limit")
+        waitUntil("Save is on again") { save.isEnabled && !invalid.exists }
+        XCTAssertEqual(count("PUT", "/api/parental/users/c2/time-rules"), 0, "the tap on Save while it was off sent nothing")
         shot("parental-time-rule-editor")
         save.tap()
         waitUntil("the rules sent") { self.count("PUT", "/api/parental/users/c2/time-rules") == 1 }
@@ -770,32 +795,43 @@ final class PlayerParentalUITests: PlayerUITestCase {
 
         // the rule as the home answered it, in one line
         let rule = element("time.rule.t1")
-        XCTAssertTrue(rule.waitForExistence(timeout: 10), "the rule the home answered")
-        XCTAssertTrue(rule.label.contains("1 hr") && rule.label.contains("15 min"), rule.label)
-        XCTAssertFalse(rule.label.contains("Every day"), "not every day: \(rule.label)")
+        XCTAssertTrue(shows(rule, within: 10), "the rule the home answered")
+        let line = rule.label
+        XCTAssertTrue(line.contains("1 hr") && line.contains("15 min"), line)
+        XCTAssertFalse(line.contains("Every day"), "not every day: \(line)")
         XCTAssertFalse(element("time.none").exists)
         shot("parental-time-rules")
 
         // its editor has Remove: the list goes without it
         home.stub("PUT", "/api/parental/users/c2/time-rules", body: #"{"rules":[],"time_zone":"Asia/Riyadh"}"#)
         rule.tap()
-        XCTAssertTrue(save.waitForExistence(timeout: 10), "the rule's editor")
         // Remove is the form's last row, below the fold (a row off screen is not in the tree)
         let remove = element("rule.remove")
         scrollUntil(remove)
-        XCTAssertTrue(remove.waitForExistence(timeout: 10), "Remove, in an existing rule's editor")
+        XCTAssertTrue(shows(remove, within: 10), "Remove, in an existing rule's editor")
         remove.tap()
         waitUntil("the list sent without the rule") { self.count("PUT", "/api/parental/users/c2/time-rules") == 2 }
         XCTAssertEqual((body("PUT", "/api/parental/users/c2/time-rules")?["rules"] as? [Any])?.count, 0)
-        XCTAssertTrue(element("time.none").waitForExistence(timeout: 10), "no rules again")
+        XCTAssertTrue(shows(element("time.none"), within: 10), "no rules again")
     }
 
-    /// Flips the switch `id` (a row's toggle holds the switch itself inside it).
+    /// Flips the switch `id` and waits until it says so (a row's toggle holds the switch
+    /// itself inside it). A tap that changed nothing (it can land on the row's label) is
+    /// followed by one on the row's trailing edge, where the switch is drawn.
     private func flip(_ id: String) {
         let row = app.switches[id].firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 10), "the switch \(id)")
+        XCTAssertTrue(shows(row, within: 10), "the switch \(id)")
         let inner = row.switches.firstMatch
-        (inner.exists ? inner : row).tap()
+        let control = inner.exists ? inner : row
+        let before = control.value as? String
+        XCTAssertNotNil(before, "the switch \(id) says whether it is on")
+        func changed() -> Bool { (control.value as? String) != before }
+        control.tap()
+        if !met(2, changed) {
+            let rightToLeft = language == "ar"
+            row.coordinate(withNormalizedOffset: CGVector(dx: rightToLeft ? 0.08 : 0.92, dy: 0.5)).tap()
+        }
+        waitUntil("the switch \(id) changed from \(before ?? "nothing")", timeout: 5, changed)
     }
 
     /// A play-only sign-in through Maktaba Cloud (`cloud_scope: play` in who-am-I): Family
