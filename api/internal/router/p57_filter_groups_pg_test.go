@@ -8,8 +8,11 @@ package router_test
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -142,5 +145,32 @@ func TestP57FilterRecommendationsNotKept(t *testing.T) {
 	e.gate.Cache().Invalidate("")
 	if code, body := e.get("child", "/api/recommendations"); code != http.StatusOK || strings.Contains(body, pfTeen) {
 		t.Errorf("child back at 9+: %d %s", code, body)
+	}
+}
+
+// A hidden object answers as a missing one whatever headers the request carries: an
+// Upgrade header once made the gate answer with its stand-in id, which told the two apart.
+func TestP57FilterByIDIgnoresUpgrade(t *testing.T) {
+	e := setupFilter(t)
+	ask := func(path string) (int, string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("X-Test-As", "child")
+		req.Header.Set("Upgrade", "x")
+		req.Header.Set("Connection", "Upgrade")
+		rec := httptest.NewRecorder()
+		e.h.ServeHTTP(rec, req)
+		return rec.Code, pfRequestID.ReplaceAllString(rec.Body.String(), `"requestId":"R"`)
+	}
+	for _, c := range []struct{ path, hidden string }{
+		{"/api/videos/{id}", pfTeen}, {"/api/videos/{id}/chapters", pfTeen}, {"/api/series/{id}", pfSeries16},
+		{"/api/collections/{id}", pfCol16}, {"/api/me/history/{id}", pfUnrated},
+	} {
+		missing := uuid.NewString()
+		hc, hb := ask(strings.Replace(c.path, "{id}", c.hidden, 1))
+		mc, mb := ask(strings.Replace(c.path, "{id}", missing, 1))
+		if hc != mc || strings.ReplaceAll(hb, c.hidden, "ID") != strings.ReplaceAll(mb, missing, "ID") {
+			t.Errorf("GET %s with an Upgrade header: a hidden id answers\n  %d %s\na missing id answers\n  %d %s", c.path, hc, hb, mc, mb)
+		}
 	}
 }

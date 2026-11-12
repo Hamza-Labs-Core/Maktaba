@@ -155,12 +155,12 @@ func (g *Gate) Middleware(routes chi.Routes) func(http.Handler) http.Handler {
 					next.ServeHTTP(w, reroute(r, noRoute))
 					return
 				}
-				if r.Header.Get("Upgrade") != "" {
-					next.ServeHTTP(w, reroute(r, hidden))
-					return
-				}
 				// the handler answers for the stand-in id; the answer goes out
-				// naming the id that was asked, as a missing one's would
+				// naming the id that was asked, as a missing one's would. Every
+				// request takes this path whatever headers it carries (an Upgrade
+				// header once skipped it, and the stand-in id in the answer told a
+				// hidden object from a missing one); a live feed is an event
+				// stream, which the writer passes through.
 				ew := &echoWriter{ResponseWriter: w, from: stand, to: id}
 				next.ServeHTTP(ew, reroute(r, hidden))
 				ew.flush()
