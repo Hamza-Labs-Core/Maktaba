@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -165,6 +166,9 @@ type ActivityItem struct {
 	Guardian *Guardian `json:"guardian,omitempty"`
 	// Device is the device name of a signal event.
 	Device string `json:"device,omitempty"`
+	// Minutes is the minutes of a time event: asked for (asked, approved, denied of
+	// a request for more time), given (time_granted) or watched that day (time_up).
+	Minutes *int `json:"minutes,omitempty"`
 }
 
 // ActivityPage is a page of a child's activity, newest first.
@@ -260,6 +264,11 @@ func (s *Store) Activity(ctx context.Context, childID, kind, cursor string) (*Ac
 		switch {
 		case r.subjectKind == EventSubjectDevice:
 			r.item.Device = r.subject
+		case r.subjectKind == RequestTime || r.subjectKind == EventSubjectMinutes:
+			// a time event has no subject to load, only a number of minutes
+			if n, err := strconv.Atoi(r.subject); err == nil && n >= 0 {
+				r.item.Minutes = &n
+			}
 		case ValidSubjectKind(r.subjectKind):
 			key := Subject{Kind: r.subjectKind, ID: r.subject}
 			info, ok := seen[key]

@@ -310,7 +310,7 @@ func TestAskDuplicateAndLimit(t *testing.T) {
 	} {
 		e.want(404, "child", "POST", "/api/me/parental/requests", body)
 	}
-	e.want(422, "child", "POST", "/api/me/parental/requests", ask("time", "30"))
+	e.want(422, "child", "POST", "/api/me/parental/requests", ask("minutes", "30"))
 	e.want(422, "child", "POST", "/api/me/parental/requests", ask("video", ""))
 	e.want(201, "child", "POST", "/api/me/parental/requests", ask("library", libOpen))
 

@@ -40,7 +40,12 @@ func (p *timePush) TimeServed(context.Context, string, string, string, string) (
 func (e *env) mountTime(r chi.Router, store *parental.Store) {
 	e.push = &timePush{}
 	cache := parental.NewCache(store)
-	(&parentalh.Handler{Store: store, Cache: cache, Time: parental.NewTimeKeeper(cache, e.push)}).MountTime(r)
+	e.keeper = parental.NewTimeKeeper(cache, e.push)
+	(&parentalh.Handler{Store: store, Cache: cache, Time: e.keeper}).MountTime(r)
+	// an approved request for more time tells the same keeper (requests_time_pg_test.go)
+	if ask := askOf[e]; ask != nil {
+		ask.Time = e.keeper
+	}
 }
 
 // timeWho is the role table's callers: no one, a viewer, the restricted child, the

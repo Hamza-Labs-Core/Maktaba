@@ -3,12 +3,17 @@ package parental
 // Ask a parent (Epic 57 story 57.06): a restricted account asks for one thing its
 // policy hides, and a guardian approves (an allow rule, added through the same
 // code as a rule a guardian adds by hand) or denies. A request holds ids only.
+//
+// A request of kind `time` (story 57.14) asks for more minutes today instead: it
+// has no subject (its subject_id is the minutes asked for), it waits only until
+// the home day ends, and approving it is a time grant, not a rule.
 
 import (
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -41,10 +46,25 @@ var (
 	ErrSubjectNotFound = errors.New("parental: subject not found")
 )
 
-// ValidRequestKind reports whether a child may ask for a subject of kind k. Today
-// that is every kind a rule can name; the time rules (story 57.14) add `time`,
-// which has no subject and is approved as a time grant, not a rule.
-func ValidRequestKind(k string) bool { return ValidSubjectKind(k) }
+// RequestTime is the kind of a request for more time today (story 57.14). It is
+// not a subject kind: no rule can name it.
+const RequestTime = "time"
+
+// ValidRequestKind reports whether a child may ask for a subject of kind k: every
+// kind a rule can name, and `time`, which has no subject and is approved as a
+// time grant, not a rule.
+func ValidRequestKind(k string) bool { return k == RequestTime || ValidSubjectKind(k) }
+
+// RequestMinutes reads the subject_id of a `time` request: the minutes asked for,
+// a whole number from 1 to MaxGrantMinutes written plainly ("30", not "+30" or
+// "030").
+func RequestMinutes(id string) (int, bool) {
+	n, err := strconv.Atoi(id)
+	if err != nil || n < 1 || n > MaxGrantMinutes || strconv.Itoa(n) != id {
+		return 0, false
+	}
+	return n, true
+}
 
 // ValidRequestStatus reports whether st is a status a request may have.
 func ValidRequestStatus(st string) bool {
@@ -57,16 +77,32 @@ func ValidRequestStatus(st string) bool {
 
 // Request is one thing a child asked for.
 type Request struct {
-	ID          string     `json:"id"`
-	ChildID     string     `json:"child_id"`
-	SubjectKind string     `json:"subject_kind"`
-	SubjectID   string     `json:"subject_id"`
-	Status      string     `json:"status"`
-	DecidedBy   string     `json:"decided_by,omitempty"`
-	DecidedAt   *time.Time `json:"decided_at,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	// ExpiresAt is when a waiting request expires.
+	ID          string `json:"id"`
+	ChildID     string `json:"child_id"`
+	SubjectKind string `json:"subject_kind"`
+	SubjectID   string `json:"subject_id"`
+	// Minutes is the minutes a `time` request asks for (its subject_id as a
+	// number); absent for every other kind.
+	Minutes   int        `json:"minutes,omitempty"`
+	Status    string     `json:"status"`
+	DecidedBy string     `json:"decided_by,omitempty"`
+	DecidedAt *time.Time `json:"decided_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	// ExpiresAt is when a waiting request expires: seven days after it was asked,
+	// or, for a `time` request, the end of the home day it was asked on.
 	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// fit sets what only a `time` request has: its minutes, and an expiry at the end
+// of the home day (04:00 in loc) it was asked on.
+func (r *Request) fit(loc *time.Location) {
+	if r.SubjectKind != RequestTime {
+		return
+	}
+	r.Minutes, _ = RequestMinutes(r.SubjectID)
+	if end := DayEnd(r.CreatedAt, loc); end.Before(r.ExpiresAt) {
+		r.ExpiresAt = end.UTC()
+	}
 }
 
 const requestCols = `id, child_id, subject_kind, subject_id, status, COALESCE(decided_by::text, ''), decided_at, created_at`
@@ -92,11 +128,20 @@ func scanRequest(row interface{ Scan(...any) error }) (*Request, error) {
 // missing. Asking again for the same thing while a request waits returns that
 // request (created false). ErrNotRestricted when the account has no policy,
 // ErrInvalid for a bad kind or id, ErrSubjectNotFound, ErrTooManyRequests.
+//
+// A `time` request (id: the minutes, 1 to MaxGrantMinutes) has no subject to look
+// up. A child has one waiting at most: asking again, for any number of minutes,
+// returns the waiting one.
 func (s *Store) Ask(ctx context.Context, childID string, all bool, libraries []string, kind, id string) (req *Request, created bool, err error) {
 	if !ValidRequestKind(kind) {
 		return nil, false, fmt.Errorf("%w: subject_kind", ErrInvalid)
 	}
-	if (RuleInput{Effect: EffectAllow, SubjectKind: kind, SubjectID: id}).validate() != nil {
+	forTime := kind == RequestTime
+	if forTime {
+		if _, ok := RequestMinutes(id); !ok {
+			return nil, false, fmt.Errorf("%w: subject_id", ErrInvalid)
+		}
+	} else if (RuleInput{Effect: EffectAllow, SubjectKind: kind, SubjectID: id}).validate() != nil {
 		return nil, false, fmt.Errorf("%w: subject_id", ErrInvalid)
 	}
 	err = s.inTx(ctx, func(tx *sql.Tx) error {
@@ -104,25 +149,47 @@ func (s *Store) Ask(ctx context.Context, childID string, all bool, libraries []s
 		if _, err := policyOf(ctx, tx, childID, true); err != nil {
 			return err
 		}
-		info, err := subjectOf(ctx, tx, kind, id)
-		if err != nil {
-			return err
-		}
-		if info.Removed || info.For(all, libraries).Hidden {
-			return ErrSubjectNotFound
-		}
 		now := s.now().UTC()
+		var loc *time.Location
+		if forTime {
+			if loc, err = homeLocation(ctx, tx, now); err != nil {
+				return err
+			}
+		} else {
+			info, err := subjectOf(ctx, tx, kind, id)
+			if err != nil {
+				return err
+			}
+			if info.Removed || info.For(all, libraries).Hidden {
+				return ErrSubjectNotFound
+			}
+		}
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE parental_requests SET status = 'expired', decided_at = $2
 			  WHERE child_id = $1 AND status = 'pending' AND created_at <= $3`,
 			childID, now, now.Add(-RequestTTL)); err != nil {
 			return err
 		}
-		req, err = scanRequest(tx.QueryRowContext(ctx,
-			`SELECT `+requestCols+` FROM parental_requests
-			  WHERE child_id = $1 AND subject_kind = $2 AND subject_id = $3 AND status = 'pending'`,
-			childID, kind, id))
+		if forTime {
+			// yesterday's request for more time is over with its day
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE parental_requests SET status = 'expired', decided_at = $2
+				  WHERE child_id = $1 AND status = 'pending' AND subject_kind = 'time' AND created_at < $3`,
+				childID, now, DayStart(now, loc)); err != nil {
+				return err
+			}
+			req, err = scanRequest(tx.QueryRowContext(ctx,
+				`SELECT `+requestCols+` FROM parental_requests
+				  WHERE child_id = $1 AND subject_kind = 'time' AND status = 'pending'
+				  ORDER BY created_at, id LIMIT 1`, childID))
+		} else {
+			req, err = scanRequest(tx.QueryRowContext(ctx,
+				`SELECT `+requestCols+` FROM parental_requests
+				  WHERE child_id = $1 AND subject_kind = $2 AND subject_id = $3 AND status = 'pending'`,
+				childID, kind, id))
+		}
 		if err == nil {
+			req.fit(loc)
 			return nil
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
@@ -142,6 +209,7 @@ func (s *Store) Ask(ctx context.Context, childID string, all bool, libraries []s
 		if err != nil {
 			return err
 		}
+		req.fit(loc)
 		created = true
 		return recordEvent(ctx, tx, Event{ChildID: childID, Kind: EventAsked, SubjectKind: kind, SubjectID: id, At: now}, "")
 	})
@@ -166,7 +234,9 @@ type ChildRef struct {
 
 // Requests lists the requests of status (RequestPending when "") of the children
 // guardianID looks after, or of every child when all is set (an admin), oldest
-// first. A waiting request past its seven days is listed as expired, not pending.
+// first. A waiting request past its seven days, and a `time` request whose home
+// day has ended, is listed as expired, not pending. A `time` request has no
+// subject to load: its Subject carries the kind and the minutes only.
 func (s *Store) Requests(ctx context.Context, guardianID string, all bool, status string) ([]RequestItem, error) {
 	if status == "" {
 		status = RequestPending
@@ -175,18 +245,25 @@ func (s *Store) Requests(ctx context.Context, guardianID string, all bool, statu
 		return nil, fmt.Errorf("%w: status", ErrInvalid)
 	}
 	out := []RequestItem{}
-	cutoff := s.now().UTC().Add(-RequestTTL)
+	now := s.now().UTC()
+	cutoff := now.Add(-RequestTTL)
+	loc, err := homeLocation(ctx, s.DB, now)
+	if err != nil {
+		return nil, err
+	}
+	day := DayStart(now, loc)
 	q := `SELECT r.id, r.child_id, r.subject_kind, r.subject_id, r.status, COALESCE(r.decided_by::text, ''),
 	             r.decided_at, r.created_at, u.username
 	        FROM parental_requests r JOIN users u ON u.id = r.child_id WHERE `
 	var args []any
 	switch status {
 	case RequestPending:
-		args = append(args, cutoff)
-		q += `r.status = 'pending' AND r.created_at > $1`
+		args = append(args, cutoff, day)
+		q += `r.status = 'pending' AND r.created_at > $1 AND (r.subject_kind <> 'time' OR r.created_at >= $2)`
 	case RequestExpired:
-		args = append(args, cutoff)
-		q += `(r.status = 'expired' OR (r.status = 'pending' AND r.created_at <= $1))`
+		args = append(args, cutoff, day)
+		q += `(r.status = 'expired' OR (r.status = 'pending'
+		         AND (r.created_at <= $1 OR (r.subject_kind = 'time' AND r.created_at < $2))))`
 	default:
 		args = append(args, status)
 		q += `r.status = $1`
@@ -218,6 +295,7 @@ func (s *Store) Requests(ctx context.Context, guardianID string, all bool, statu
 			it.DecidedAt = &t
 		}
 		it.ExpiresAt = it.CreatedAt.Add(RequestTTL)
+		it.fit(loc)
 		it.Status = status
 		it.Child.ID = it.ChildID
 		out = append(out, it)
@@ -227,6 +305,10 @@ func (s *Store) Requests(ctx context.Context, guardianID string, all bool, statu
 		return nil, err
 	}
 	for i := range out {
+		if out[i].SubjectKind == RequestTime {
+			out[i].Subject = SubjectInfo{Kind: RequestTime, ID: out[i].SubjectID}
+			continue
+		}
 		if out[i].Subject, err = subjectOf(ctx, s.DB, out[i].SubjectKind, out[i].SubjectID); err != nil {
 			return nil, err
 		}
@@ -252,6 +334,17 @@ type Decision struct {
 	Request *Request
 	// Rule is the allow rule an approval added.
 	Rule *Rule
+	// Grant is the time an approved `time` request gave.
+	Grant *TimeGrant
+}
+
+// Approval is how a request is approved.
+type Approval struct {
+	// ExpiresAt, when set, is when the allow rule ends. Not for a `time` request.
+	ExpiresAt *time.Time
+	// Minutes, when set, is how many minutes a `time` request is given (1 to
+	// MaxGrantMinutes) instead of the minutes asked for. Only for a `time` request.
+	Minutes *int
 }
 
 // Approve approves a waiting request: the subject is allowed for the child, until
@@ -261,21 +354,34 @@ type Decision struct {
 // too long or its subject is gone: it is closed as expired, and nothing is
 // allowed), ErrInvalid (an expiry in the past), ErrNoLibraryAccess.
 func (s *Store) Approve(ctx context.Context, actorID, id string, expiresAt *time.Time) (*Decision, error) {
-	return s.decide(ctx, actorID, id, true, expiresAt)
+	return s.decide(ctx, actorID, id, true, Approval{ExpiresAt: expiresAt})
+}
+
+// ApproveWith is Approve with everything an approval can say. A `time` request
+// gives the child a.Minutes (or the minutes asked for) more for the current home
+// day, in the transaction that closes the request, and the decision carries the
+// grant; the caller then tells the time keeper (TimeKeeper.Refresh). ErrInvalid
+// names the field: `expires_at` on a `time` request, `minutes` on any other or out
+// of range.
+func (s *Store) ApproveWith(ctx context.Context, actorID, id string, a Approval) (*Decision, error) {
+	return s.decide(ctx, actorID, id, true, a)
 }
 
 // Deny denies a waiting request. Errors as Approve.
 func (s *Store) Deny(ctx context.Context, actorID, id string) (*Decision, error) {
-	return s.decide(ctx, actorID, id, false, nil)
+	return s.decide(ctx, actorID, id, false, Approval{})
 }
 
-func (s *Store) decide(ctx context.Context, actorID, id string, approve bool, expiresAt *time.Time) (*Decision, error) {
+func (s *Store) decide(ctx context.Context, actorID, id string, approve bool, a Approval) (*Decision, error) {
 	if !isUUID(id) {
 		return nil, ErrRequestNotFound
 	}
 	now := s.now().UTC()
-	if approve && expiresAt != nil && !expiresAt.After(now) {
+	if approve && a.ExpiresAt != nil && !a.ExpiresAt.After(now) {
 		return nil, fmt.Errorf("%w: expires_at", ErrInvalid)
+	}
+	if approve && a.Minutes != nil && (*a.Minutes < 1 || *a.Minutes > MaxGrantMinutes) {
+		return nil, fmt.Errorf("%w: minutes", ErrInvalid)
 	}
 	out := &Decision{}
 	// expired is set when the request is closed as expired: that change is kept
@@ -297,12 +403,29 @@ func (s *Store) decide(ctx context.Context, actorID, id string, approve bool, ex
 		default:
 			return ErrRequestDecided
 		}
+		forTime := req.SubjectKind == RequestTime
+		var loc *time.Location
+		if forTime {
+			if loc, err = homeLocation(ctx, tx, now); err != nil {
+				return err
+			}
+			req.fit(loc)
+		}
+		if approve {
+			// what the approval says must fit the kind, whatever state the request is in
+			if forTime && a.ExpiresAt != nil {
+				return fmt.Errorf("%w: expires_at", ErrInvalid)
+			}
+			if !forTime && a.Minutes != nil {
+				return fmt.Errorf("%w: minutes", ErrInvalid)
+			}
+		}
 		status, kind := RequestDenied, EventDenied
 		if approve {
 			status, kind = RequestApproved, EventApproved
 		}
 		gone := !req.ExpiresAt.After(now)
-		if !gone && approve {
+		if !gone && approve && !forTime {
 			info, err := subjectOf(ctx, tx, req.SubjectKind, req.SubjectID)
 			if err != nil {
 				return err
@@ -316,12 +439,23 @@ func (s *Store) decide(ctx context.Context, actorID, id string, approve bool, ex
 			return err
 		}
 		if approve {
-			// One case per kind of request. Every kind today is a subject a rule can
-			// name; `time` (story 57.14) is the case to add here: a time grant, no rule.
+			// One case per kind of request: more time is a grant, anything else is
+			// a subject a rule can name.
 			switch req.SubjectKind {
+			case RequestTime:
+				minutes := req.Minutes
+				if a.Minutes != nil {
+					minutes = *a.Minutes
+				}
+				if minutes < 1 || minutes > MaxGrantMinutes {
+					return fmt.Errorf("%w: minutes", ErrInvalid)
+				}
+				if out.Grant, err = grantTimeTx(ctx, tx, now, actorID, req.ChildID, minutes); err != nil {
+					return err
+				}
 			default:
 				out.Rule, err = s.addRuleTx(ctx, tx, actorID, req.ChildID, RuleInput{Effect: EffectAllow,
-					SubjectKind: req.SubjectKind, SubjectID: req.SubjectID, ExpiresAt: expiresAt})
+					SubjectKind: req.SubjectKind, SubjectID: req.SubjectID, ExpiresAt: a.ExpiresAt})
 				if err != nil {
 					return err
 				}
@@ -332,6 +466,9 @@ func (s *Store) decide(ctx context.Context, actorID, id string, approve bool, ex
 			 RETURNING `+requestCols, id, status, nullUUID(actorID), now))
 		if err != nil {
 			return err
+		}
+		if forTime {
+			out.Request.fit(loc)
 		}
 		return recordEvent(ctx, tx, Event{ChildID: req.ChildID, Kind: kind, SubjectKind: req.SubjectKind,
 			SubjectID: req.SubjectID, ActorID: actorID, At: now}, "")
@@ -345,7 +482,8 @@ func (s *Store) decide(ctx context.Context, actorID, id string, approve bool, ex
 	return out, nil
 }
 
-// requestGone are the waiting requests whose subject was deleted, by kind.
+// requestGone are the waiting requests whose subject was deleted, by kind. A
+// `time` request has no subject, so it is not here: it ends by age only.
 var requestGone = map[string]string{
 	SubjectVideo:         `SELECT 1 FROM videos x WHERE x.id::text = r.subject_id`,
 	SubjectSeries:        `SELECT 1 FROM series x WHERE x.id::text = r.subject_id`,
@@ -357,7 +495,8 @@ var requestGone = map[string]string{
 }
 
 // CloseRequests closes the waiting requests no one needs to answer: the ones
-// older than seven days and the ones whose subject was deleted become expired;
+// older than seven days, the ones whose subject was deleted and the requests for
+// more time whose home day has ended become expired;
 // a video the child can now see anyway (the limit was raised, or the video was
 // rated lower) becomes approved, with no rule and no guardian named. The activity
 // loop runs it every minute. It returns how many it closed.
@@ -386,6 +525,19 @@ func (s *Store) CloseRequests(ctx context.Context) (int64, error) {
 		n, _ := res.RowsAffected()
 		closed += n
 	}
+	// more time is for the day it was asked on: at the day line the request is over
+	loc, err := homeLocation(ctx, s.DB, now)
+	if err != nil {
+		return closed, err
+	}
+	res, err = s.DB.ExecContext(ctx,
+		`UPDATE parental_requests SET status = 'expired', decided_at = $1
+		  WHERE status = 'pending' AND subject_kind = 'time' AND created_at < $2`, now, DayStart(now, loc))
+	if err != nil {
+		return closed, err
+	}
+	n, _ = res.RowsAffected()
+	closed += n
 
 	rows, err := s.DB.QueryContext(ctx,
 		`SELECT r.id, r.child_id, v.age_tier

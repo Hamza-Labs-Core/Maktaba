@@ -628,28 +628,40 @@ func (s *Store) GrantTime(ctx context.Context, guardianID, childID string, minut
 	var g *TimeGrant
 	now := s.now()
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
-		if _, err := policyOf(ctx, tx, childID, true); err != nil {
-			return err
-		}
-		loc, err := homeLocation(ctx, tx, now)
-		if err != nil {
-			return err
-		}
-		g, err = scanGrant(tx.QueryRowContext(ctx, `INSERT INTO parental_time_grants (user_id, day, minutes, granted_by, created_at)
-			VALUES ($1, $2::date, $3, $4, $5) RETURNING `+grantCols,
-			childID, DayKey(now, loc), minutes, nullUUID(guardianID), now))
-		if err != nil {
-			return err
-		}
-		if err := audit(ctx, tx, AuditTimeGranted, guardianID, childID, nil,
-			map[string]any{"day": g.Day, "minutes": minutes}); err != nil {
-			return err
-		}
-		// the child's activity (story 57.08): who gave how many minutes
-		return recordEvent(ctx, tx, Event{ChildID: childID, Kind: EventTimeGranted, SubjectKind: EventSubjectMinutes,
-			SubjectID: strconv.Itoa(minutes), ActorID: guardianID, At: now}, "")
+		var err error
+		g, err = grantTimeTx(ctx, tx, now, guardianID, childID, minutes)
+		return err
 	})
 	if err != nil {
+		return nil, err
+	}
+	return g, nil
+}
+
+// grantTimeTx is GrantTime inside the caller's transaction (an approved `time`
+// request gives its minutes in the transaction that closes the request). It locks
+// the policy row. minutes is already checked.
+func grantTimeTx(ctx context.Context, tx *sql.Tx, now time.Time, guardianID, childID string, minutes int) (*TimeGrant, error) {
+	if _, err := policyOf(ctx, tx, childID, true); err != nil {
+		return nil, err
+	}
+	loc, err := homeLocation(ctx, tx, now)
+	if err != nil {
+		return nil, err
+	}
+	g, err := scanGrant(tx.QueryRowContext(ctx, `INSERT INTO parental_time_grants (user_id, day, minutes, granted_by, created_at)
+		VALUES ($1, $2::date, $3, $4, $5) RETURNING `+grantCols,
+		childID, DayKey(now, loc), minutes, nullUUID(guardianID), now))
+	if err != nil {
+		return nil, err
+	}
+	if err := audit(ctx, tx, AuditTimeGranted, guardianID, childID, nil,
+		map[string]any{"day": g.Day, "minutes": minutes}); err != nil {
+		return nil, err
+	}
+	// the child's activity (story 57.08): who gave how many minutes
+	if err := recordEvent(ctx, tx, Event{ChildID: childID, Kind: EventTimeGranted, SubjectKind: EventSubjectMinutes,
+		SubjectID: strconv.Itoa(minutes), ActorID: guardianID, At: now}, ""); err != nil {
 		return nil, err
 	}
 	return g, nil

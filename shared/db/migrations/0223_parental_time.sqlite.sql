@@ -5,6 +5,10 @@
 -- rules, the seconds it watched each home day in each library, and the extra time a
 -- guardian gave. Times of day are 'HH:MM:SS' text and days are 'YYYY-MM-DD' text.
 --
+-- Slot 0222's parental_requests gains the request kind 'time'. SQLite cannot change a
+-- CHECK, so the table is built again with the new one and its rows and two indexes are
+-- carried over (nothing refers to parental_requests).
+--
 CREATE TABLE IF NOT EXISTS parental_time_rules (
     id             TEXT     PRIMARY KEY,
     user_id        TEXT     NOT NULL REFERENCES parental_policies(user_id) ON DELETE CASCADE,
@@ -50,7 +54,96 @@ CREATE TABLE IF NOT EXISTS parental_time_grants (
 CREATE INDEX IF NOT EXISTS parental_time_grants_user_day_idx ON parental_time_grants (user_id, day);
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+DROP TABLE IF EXISTS parental_requests_0223;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE TABLE IF NOT EXISTS parental_requests_0223 (
+    id            TEXT  PRIMARY KEY,
+    child_id      TEXT  NOT NULL REFERENCES parental_policies(user_id) ON DELETE CASCADE,
+    subject_kind  TEXT  NOT NULL
+        CHECK (subject_kind IN ('library', 'collection', 'series', 'channel', 'youtube_source', 'plugin', 'video', 'time')),
+    subject_id    TEXT  NOT NULL CHECK (subject_id <> ''),
+    status        TEXT  NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'approved', 'denied', 'expired')),
+    decided_by    TEXT  REFERENCES users(id) ON DELETE SET NULL,
+    decided_at    TEXT,
+    created_at    TEXT  NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+INSERT INTO parental_requests_0223 (id, child_id, subject_kind, subject_id, status, decided_by, decided_at, created_at)
+SELECT id, child_id, subject_kind, subject_id, status, decided_by, decided_at, created_at
+  FROM parental_requests;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DROP TABLE IF EXISTS parental_requests;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE parental_requests_0223 RENAME TO parental_requests;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE UNIQUE INDEX IF NOT EXISTS parental_requests_one_pending
+    ON parental_requests (child_id, subject_kind, subject_id) WHERE status = 'pending';
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE INDEX IF NOT EXISTS parental_requests_by_status_idx
+    ON parental_requests (status, created_at);
+-- +goose StatementEnd
+
 -- +goose Down
+-- The requests for more time go (slot 0222's check allows none), and the table is built
+-- again with slot 0222's check.
+-- +goose StatementBegin
+DROP TABLE IF EXISTS parental_requests_0223;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE TABLE IF NOT EXISTS parental_requests_0223 (
+    id            TEXT  PRIMARY KEY,
+    child_id      TEXT  NOT NULL REFERENCES parental_policies(user_id) ON DELETE CASCADE,
+    subject_kind  TEXT  NOT NULL
+        CHECK (subject_kind IN ('library', 'collection', 'series', 'channel', 'youtube_source', 'plugin', 'video')),
+    subject_id    TEXT  NOT NULL CHECK (subject_id <> ''),
+    status        TEXT  NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'approved', 'denied', 'expired')),
+    decided_by    TEXT  REFERENCES users(id) ON DELETE SET NULL,
+    decided_at    TEXT,
+    created_at    TEXT  NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+INSERT INTO parental_requests_0223 (id, child_id, subject_kind, subject_id, status, decided_by, decided_at, created_at)
+SELECT id, child_id, subject_kind, subject_id, status, decided_by, decided_at, created_at
+  FROM parental_requests
+ WHERE subject_kind <> 'time';
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DROP TABLE IF EXISTS parental_requests;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE parental_requests_0223 RENAME TO parental_requests;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE UNIQUE INDEX IF NOT EXISTS parental_requests_one_pending
+    ON parental_requests (child_id, subject_kind, subject_id) WHERE status = 'pending';
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE INDEX IF NOT EXISTS parental_requests_by_status_idx
+    ON parental_requests (status, created_at);
+-- +goose StatementEnd
+
 -- +goose StatementBegin
 DROP TABLE IF EXISTS parental_time_grants;
 -- +goose StatementEnd
