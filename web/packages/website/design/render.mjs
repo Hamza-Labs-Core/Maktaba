@@ -144,6 +144,35 @@ async function render() {
               )
             );
           });
+          // and every picture drawn before the shot: a frame left black is a failed render
+          const unloaded = await page
+            .waitForFunction(
+              () => [...document.images].every((i) => i.complete && i.naturalWidth > 0),
+              null,
+              { timeout: 15000 }
+            )
+            .then(
+              () => [],
+              () =>
+                page.evaluate(() =>
+                  [...document.images]
+                    .filter((i) => !(i.complete && i.naturalWidth > 0))
+                    .map((i) => i.getAttribute("src"))
+                )
+            );
+          if (unloaded.length)
+            problems.push(`${name}.${lang}: pictures not drawn: ${unloaded.join(", ")}`);
+          // decoded and painted: scroll each picture into view once, then back to the top
+          // (a full-page shot of a tall page otherwise left late pictures black)
+          await page.evaluate(async () => {
+            await Promise.all([...document.images].map((i) => i.decode().catch(() => {})));
+            for (const i of document.images) {
+              i.scrollIntoView({ block: "center" });
+              await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+            }
+            window.scrollTo(0, 0);
+            await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+          });
           const fonts = await page.evaluate(() =>
             [...document.fonts].filter((f) => f.status === "loaded").map((f) => f.family)
           );
