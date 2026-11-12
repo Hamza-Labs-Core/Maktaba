@@ -104,9 +104,10 @@ describe("the built site (dist/)", () => {
     expect(fs.existsSync(path.join(DIST, "index.html")), "run `npm run build` first").toBe(true);
   });
 
-  it("the front door's headline is the chosen tagline (Q1, 2026-11-12), in both languages", () => {
-    expect(read("index.html")).toContain("<h1>Your own library, on every screen at home.</h1>");
-    expect(read("ar/index.html")).toContain("<h1>مكتبتكم، على كل شاشة في البيت.</h1>");
+  it("the home page's headline is the chosen tagline (Q1, 2026-11-12), in both languages", () => {
+    const h1 = (rel: string) => read(rel).match(/<h1[^>]*>([^<]*)<\/h1>/)?.[1];
+    expect(h1("index.html")).toBe("Your own library, on every screen at home.");
+    expect(h1("ar/index.html")).toBe("مكتبتكم، على كل شاشة في البيت.");
   });
 
   it("T05: serves the log schema at its $id, byte for byte", () => {
