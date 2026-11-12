@@ -124,11 +124,28 @@ export function shellAssets() {
   return memo;
 }
 
-/** What the shell puts in every <head>: the fonts its language preloads, the stylesheet, the
- * head script (before the first paint) and the shell script (deferred). */
+/** The shell's last element (the footer's live region), which the first paint waits for. */
+export const LAST_ID = "announce";
+
+/**
+ * The first paint waits for the whole document: `<link rel="expect" blocking="render">` names
+ * the shell's last element (LAST_ID), and the browser draws nothing until it has parsed it. The
+ * parser hands the page over in pieces (it yields when a piece takes long, or when the rest has
+ * not arrived), and a paint between two pieces drew a header with no language switch yet: the
+ * nav sat where the switch belongs and slid over when the switch was parsed (a layout shift of
+ * 0.0007 to 0.0016 at 1280 px, on a different page each time: e2e/cls.spec.ts on #1187 and
+ * #1204). A document that ends without the element is drawn when its parsing ends, and a
+ * browser that does not know `expect` draws as before.
+ */
+export const RENDER_WHOLE = `<link rel="expect" href="#${LAST_ID}" blocking="render" />`;
+
+/** What the shell puts in every <head>: the wait for the whole document (RENDER_WHOLE), the
+ * fonts its language preloads, the stylesheet, the head script (before the first paint) and the
+ * shell script (deferred). */
 export function shellHead(lang, indent = "  ") {
   const a = shellAssets();
   return [
+    RENDER_WHOLE,
     ...PRELOAD[lang].map(
       (f) => `<link rel="preload" href="${a.fonts[f]}" as="font" type="font/woff2" crossorigin />`
     ),
@@ -380,7 +397,7 @@ export function footer(lang, sitePath) {
     <a href="${switchHref(lang, sitePath)}" hreflang="${o.lang}" lang="${o.lang}" dir="${o.dir}">${esc(t.readIn)}</a>
   </div></div>
 </footer>
-<p class="visually-hidden" id="announce" aria-live="polite"></p>`;
+<p class="visually-hidden" id="${LAST_ID}" aria-live="polite"></p>`;
 }
 
 // ---- the parts pages build with (design/README.md, "Components") -----------------------------
