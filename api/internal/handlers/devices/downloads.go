@@ -32,6 +32,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 // allowedQualities is the closed quality vocabulary for a downloaded
@@ -143,7 +144,7 @@ func (h *Handler) SetDownloaded(w http.ResponseWriter, r *http.Request) {
 	// The video must exist and sit in a library the caller can read; a
 	// hidden one is not found, like an unknown one.
 	var libraryID string
-	if err := h.DB.QueryRowContext(r.Context(), `SELECT library_id FROM videos WHERE id = $1`, vid).Scan(&libraryID); err != nil {
+	if err := h.DB.QueryRowContext(r.Context(), `SELECT library_id FROM videos WHERE id = $1`+parental.Where(r.Context(), "videos"), vid).Scan(&libraryID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httperror.Write(w, r, httperror.NotFound("video "+vid))
 			return

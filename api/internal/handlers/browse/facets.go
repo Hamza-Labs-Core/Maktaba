@@ -118,7 +118,7 @@ func (h *Handler) languageFacets(ctx context.Context, s scope, lib string) ([]La
 	var args []any
 	cond := libFilter(s, lib, &args)
 	rows, err := h.DB.QueryContext(ctx, `SELECT v.detected_language, COUNT(*) AS n FROM videos v
-		WHERE `+and(visible, cond, "v.detected_language IS NOT NULL", "v.detected_language <> ''")+`
+		WHERE `+and(shown(ctx), cond, "v.detected_language IS NOT NULL", "v.detected_language <> ''")+`
 		GROUP BY v.detected_language ORDER BY n DESC, v.detected_language`, args...)
 	if err != nil {
 		return nil, err
@@ -141,7 +141,7 @@ func (h *Handler) tagFacets(ctx context.Context, s scope, lib string) ([]TagFace
 	args = append(args, maxFacet)
 	rows, err := h.DB.QueryContext(ctx, `SELECT t.id, t.name, COUNT(*) FROM video_tags vt
 		JOIN tags t ON t.id = vt.tag_id JOIN videos v ON v.id = vt.video_id
-		WHERE `+and(visible, cond)+`
+		WHERE `+and(shown(ctx), cond)+`
 		GROUP BY t.id, t.name ORDER BY t.name, t.id LIMIT `+pidx(len(args)), args...)
 	if err != nil {
 		return nil, err
@@ -166,7 +166,7 @@ func (h *Handler) speakerFacets(ctx context.Context, s scope, lib string) ([]Spe
 	args = append(args, maxFacet)
 	rows, err := h.DB.QueryContext(ctx, `SELECT sp.name, COUNT(DISTINCT sp.video_id) FROM speakers sp
 		JOIN videos v ON v.id = sp.video_id
-		WHERE `+and(visible, cond, "sp.name <> ''", "sp.name <> COALESCE(sp.cluster_label, '')")+`
+		WHERE `+and(shown(ctx), cond, "sp.name <> ''", "sp.name <> COALESCE(sp.cluster_label, '')")+`
 		GROUP BY sp.name ORDER BY sp.name LIMIT `+pidx(len(args)), args...)
 	if err != nil {
 		return nil, err
@@ -190,7 +190,7 @@ func (h *Handler) letterFacets(ctx context.Context, s scope, lib string) ([]Lett
 	var args []any
 	cond := libFilter(s, lib, &args)
 	rows, err := h.DB.QueryContext(ctx, `SELECT substr(COALESCE(v.title, ''), 1, 1) AS l, COUNT(*) FROM videos v
-		WHERE `+and(visible, cond)+` GROUP BY l ORDER BY l`, args...)
+		WHERE `+and(shown(ctx), cond)+` GROUP BY l ORDER BY l`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -276,7 +276,7 @@ func (h *Handler) bandFacets(ctx context.Context, s scope, lib string) (duration
 	}
 	err = h.DB.QueryRowContext(ctx, `SELECT `+strings.Join(cols, ", ")+` FROM videos v
 		LEFT JOIN media_info mi ON mi.video_id = v.id
-		WHERE `+and(visible, cond), args...).Scan(dest...)
+		WHERE `+and(shown(ctx), cond), args...).Scan(dest...)
 	if err != nil {
 		return nil, nil, nil, err
 	}

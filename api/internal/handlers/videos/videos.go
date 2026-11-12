@@ -43,6 +43,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libaccess"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 )
 
@@ -479,6 +480,11 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		// User has no libraries — return empty.
 		common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": []Video{}, "next": nil})
 		return
+	}
+	// Epic 57 story 57.03: a restricted account's list, its letters, its groups and
+	// its play counts are all of the videos it may see
+	if e := parental.From(r.Context()); e.Limits() {
+		conds = append(conds, parental.Predicate(e, "videos"))
 	}
 
 	if letter != "" {
@@ -1028,7 +1034,7 @@ func fillDisplay(v *Video, auto, manual, src sql.NullString) {
 
 // loadVideo reads the row by id; sql.ErrNoRows surfaces unchanged.
 func (h *Handler) loadVideo(ctx context.Context, id string) (Video, error) {
-	row := h.DB.QueryRowContext(ctx, `SELECT `+videoColumns+` FROM videos WHERE id = $1`, id)
+	row := h.DB.QueryRowContext(ctx, `SELECT `+videoColumns+` FROM videos WHERE id = $1`+parental.Where(ctx, "videos"), id)
 	return scanVideoRow(row)
 }
 

@@ -35,6 +35,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 const (
@@ -274,7 +275,7 @@ func (h *Handler) recentlyAdded(ctx context.Context, s scope, lib string, n int)
 	var args []any
 	libCond := libFilter(s, lib, &args)
 	args = append(args, n)
-	return h.cards(ctx, `SELECT `+cardColumns+` FROM videos v WHERE `+and(visible, libCond)+`
+	return h.cards(ctx, `SELECT `+cardColumns+` FROM videos v WHERE `+and(shown(ctx), libCond)+`
 		ORDER BY v.created_at DESC, v.mtime DESC, v.id DESC LIMIT `+pidx(len(args)), args)
 }
 
@@ -293,13 +294,13 @@ func (h *Handler) recentPerLibrary(ctx context.Context, libs []string, n int) (m
 		q = `SELECT id, title, filename, library_id, duration_sec, state, created_at, published_at FROM (
 			SELECT ` + cardColumns + `, ROW_NUMBER() OVER (PARTITION BY v.library_id
 				ORDER BY v.created_at DESC, v.mtime DESC, v.id DESC) AS rn
-			FROM videos v WHERE v.library_id IN (` + in + `) AND ` + visible + `) x
+			FROM videos v WHERE v.library_id IN (` + in + `) AND ` + shown(ctx) + `) x
 			WHERE rn <= ` + pidx(len(args)) + ` ORDER BY library_id, rn`
 	} else {
 		// A LATERAL top-n per library reads only the first rows of each
 		// library from videos_library_created_idx.
 		q = `SELECT ` + cardColumns + ` FROM libraries l CROSS JOIN LATERAL (
-			SELECT * FROM videos v WHERE v.library_id = l.id AND ` + visible + `
+			SELECT * FROM videos v WHERE v.library_id = l.id AND ` + shown(ctx) + `
 			ORDER BY v.created_at DESC, v.mtime DESC, v.id DESC LIMIT ` + pidx(len(args)) + `) v
 			WHERE l.id IN (` + in + `) ORDER BY l.id, v.created_at DESC, v.mtime DESC, v.id DESC`
 	}
@@ -317,7 +318,8 @@ func (h *Handler) recentPerLibrary(ctx context.Context, libs []string, n int) (m
 // libs (already checked against the caller's scope): from Rows when set.
 // The cards are shared: read them, never change them.
 func (h *Handler) libraryRows(ctx context.Context, libs []string, n int) (map[string][]Card, error) {
-	if h.Rows == nil || len(libs) == 0 {
+	// a restricted account's row is its own: the shared cache holds unfiltered rows
+	if h.Rows == nil || len(libs) == 0 || parental.From(ctx).Limits() {
 		return h.recentPerLibrary(ctx, libs, n)
 	}
 	return h.Rows.rows(ctx, libs, n, h.recentPerLibrary)
@@ -337,7 +339,7 @@ func (h *Handler) continueWatching(ctx context.Context, uid string, s scope, lib
 		FROM playback_state ps JOIN videos v ON v.id = ps.video_id
 		WHERE ps.user_id = $1 AND NOT ps.completed AND ps.position_sec > 30
 		  AND (v.duration_sec IS NULL OR v.duration_sec <= 0 OR ps.position_sec < 0.95 * v.duration_sec)
-		  AND `+and(visible, libCond)+`
+		  AND `+and(shown(ctx), libCond)+`
 		ORDER BY ps.updated_at DESC, v.id DESC LIMIT `+pidx(len(args)), args...)
 	if err != nil {
 		return nil, err
@@ -375,7 +377,7 @@ func (h *Handler) recentlyWatched(ctx context.Context, uid string, s scope, lib 
 		      ) t GROUP BY video_id) w
 		JOIN videos v ON v.id = w.video_id
 		LEFT JOIN playback_state ps ON ps.user_id = $1 AND ps.video_id = v.id
-		WHERE `+and(visible, libCond)+`
+		WHERE `+and(shown(ctx), libCond)+`
 		ORDER BY w.last_at DESC, v.id DESC LIMIT `+pidx(len(args)), args...)
 	if err != nil {
 		return nil, err
@@ -454,3 +456,7 @@ func internal(w http.ResponseWriter, r *http.Request, what string, err error) {
 func writeJSON(w http.ResponseWriter, r *http.Request, v any) {
 	common.WriteJSON(w, r, http.StatusOK, v)
 }
+
+// shown is visible narrowed by the request's parental limit (Epic 57 story 57.03):
+// every row, count and facet of this package reads videos through it.
+func shown(ctx context.Context) string { return visible + parental.Where(ctx, "v") }

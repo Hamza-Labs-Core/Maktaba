@@ -27,6 +27,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 // SmartFilter is the parsed shape of the “smart_query“ JSON. We
@@ -150,10 +151,15 @@ func (h *Handler) LiveItemsFor(
 	if none {
 		return []CollectionItem{}, 0, nil
 	}
-	if frag != "" {
+	// the parental limit (Epic 57 story 57.03) narrows the ranked rows too
+	plimit := parental.Where(ctx, "v")
+	if frag != "" || plimit != "" {
+		if frag == "" {
+			frag = "TRUE"
+		}
 		// the scope wraps the ranked query so ROW_NUMBER positions stay
 		// the smart query's own
-		q = "SELECT id, rn FROM (SELECT ranked.*, v.library_id FROM (" + q + ") AS ranked(id, rn) JOIN videos v ON v.id = ranked.id) AS scoped WHERE " + frag + " ORDER BY rn"
+		q = "SELECT id, rn FROM (SELECT ranked.*, v.library_id FROM (" + q + ") AS ranked(id, rn) JOIN videos v ON v.id = ranked.id WHERE TRUE" + plimit + ") AS scoped WHERE " + frag + " ORDER BY rn"
 		args = append(args, fargs...)
 	}
 	rows, err := h.DB.QueryContext(ctx, q, args...)

@@ -23,6 +23,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 // MaxMarkIDs caps the videos one mark request names.
@@ -68,7 +69,7 @@ func (h *Handler) checkVisible(ctx context.Context, s scope, ids []string) (*htt
 	}
 	var args []any
 	in := inList(ids, &args)
-	rows, err := h.DB.QueryContext(ctx, `SELECT id, library_id FROM videos WHERE id IN (`+in+`) AND deleted_at IS NULL`, args...)
+	rows, err := h.DB.QueryContext(ctx, `SELECT id, library_id FROM videos WHERE id IN (`+in+`) AND deleted_at IS NULL`+parental.Where(ctx, "videos"), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +319,7 @@ func (h *Handler) favoriteCards(ctx context.Context, uid string, s scope, n int)
 	return h.playbackCards(ctx, `SELECT `+cardColumns+`, ps.position_sec, ps.completed
 		FROM user_favorites f JOIN videos v ON v.id = f.video_id
 		LEFT JOIN playback_state ps ON ps.user_id = $1 AND ps.video_id = v.id
-		WHERE f.user_id = $1 AND `+and(visible, libCond)+`
+		WHERE f.user_id = $1 AND `+and(shown(ctx), libCond)+`
 		ORDER BY v.created_at DESC, v.id DESC LIMIT `+pidx(len(args)), args)
 }
 

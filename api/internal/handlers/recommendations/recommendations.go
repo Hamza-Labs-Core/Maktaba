@@ -37,6 +37,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 )
 
@@ -283,7 +284,7 @@ func (h *Handler) continueRail(r *http.Request, p *principal.Principal, limit in
 		  AND v.duration_sec IS NOT NULL
 		  AND v.duration_sec > 0
 		  AND ps.position_sec / v.duration_sec BETWEEN 0.05 AND 0.95
-		  AND ps.completed = FALSE`+scope+`
+		  AND ps.completed = FALSE`+scope+parental.Where(r.Context(), "v")+`
 		ORDER BY ps.updated_at DESC, ps.video_id ASC LIMIT $2
 	`, args...)
 	if err != nil {
@@ -334,7 +335,7 @@ func (h *Handler) forYouRail(r *http.Request, p *principal.Principal, limit int)
 	rows, err := h.DB.QueryContext(r.Context(), `
 		SELECT ur.video_id, ur.score FROM user_recs ur
 		JOIN videos v ON v.id = ur.video_id
-		WHERE ur.user_id = $1`+scope+`
+		WHERE ur.user_id = $1`+scope+parental.Where(r.Context(), "v")+`
 		ORDER BY ur.score DESC, v.created_at DESC, ur.video_id ASC LIMIT $2
 	`, args...)
 	if err != nil {
@@ -400,7 +401,7 @@ func (h *Handler) libraryRail(r *http.Request, p *principal.Principal, limit int
 		SELECT v.id FROM videos v
 		WHERE v.state = 'ready' AND NOT EXISTS (
 		  SELECT 1 FROM playback_state ps WHERE ps.user_id = $1 AND ps.video_id = v.id
-		)`+scope+`
+		)`+scope+parental.Where(r.Context(), "v")+`
 		ORDER BY v.created_at DESC, v.id DESC LIMIT $`+strconv.Itoa(len(args)), args...)
 	if err != nil {
 		return rail

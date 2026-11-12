@@ -37,6 +37,14 @@ func MountParental(r chi.Router, db *sql.DB, loops *runner.Runner, busCtx contex
 			cache.Listen(ctx, busDSN, resettle, slog.Default())
 		})))
 	}
+	// Each single item the filter refuses a restricted account (story 57.03) is
+	// one `blocked` event in the child's activity (story 57.08); the store keeps
+	// one per subject per day. The write outlives a request the client dropped.
+	parental.SetBlockedHook(func(ctx context.Context, e *parental.Effective, s parental.Subject) {
+		if err := cache.Store().RecordBlocked(context.WithoutCancel(ctx), e.UserID, s.Kind, s.ID); err != nil {
+			slog.Default().Error("parental: record blocked event", "err", err)
+		}
+	})
 	// A looser signal that waits for a guardian is shown in the child's activity
 	// (story 57.08). The devices table keeps no name, so the event carries the
 	// sign-in's platform, or "device" when the sign-in has no registered device.
