@@ -196,14 +196,19 @@
       ],
       "related": [
         "epic-29-analytics",
-        "plan-29.01-watch-session-tracking"
+        "plan-29.01-watch-session-tracking",
+        "ep-post-watch-start",
+        "ep-post-watch-heartbeat"
       ],
       "files": {
         "story": "specs/epics/29-analytics/story-29-01-watch-session-tracking.md",
         "plan": "specs/epics/29-analytics/plan-29-01-watch-session-tracking.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "POST /watch/start",
+        "POST /watch/heartbeat"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "watch-session-tracking"
@@ -299,6 +304,7 @@
       "related": [
         "epic-29-analytics",
         "plan-29.04-user-activity-feed",
+        "ep-post-watch-start",
         "ep-get-settings",
         "ep-put-settings",
         "ep-get-activity"
@@ -309,6 +315,7 @@
         "mockups": []
       },
       "api_endpoints": [
+        "POST /watch/start",
         "GET /settings",
         "PUT /settings",
         "GET /activity"

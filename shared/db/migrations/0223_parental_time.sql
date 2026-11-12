@@ -22,6 +22,13 @@
 -- rules, usage and grants with it. The lookups use the keys' indexes and the two below
 -- (new, empty tables). Additive: an older release never reads the tables.
 --
+-- Slot 0222's parental_requests gains the request kind `time` (a child asks a guardian for
+-- more minutes today): its subject_id is the minutes asked for, as text, 1 to 480 (the API
+-- checks the number), and approving it writes a parental_time_grants row, not a rule. The
+-- check parental_requests_subject_kind_valid is replaced NOT VALID and then validated, so
+-- the table is not read under the exclusive lock. An older release never writes `time`.
+-- Every statement is harmless twice.
+--
 CREATE TABLE IF NOT EXISTS parental_time_rules (
     id             uuid         PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id        uuid         NOT NULL REFERENCES parental_policies(user_id) ON DELETE CASCADE,
@@ -75,7 +82,38 @@ CREATE TABLE IF NOT EXISTS parental_time_grants (
 CREATE INDEX CONCURRENTLY IF NOT EXISTS parental_time_grants_user_day_idx ON parental_time_grants (user_id, day);
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                    WHERE conname = 'parental_requests_subject_kind_valid'
+                      AND conrelid = 'parental_requests'::regclass
+                      AND pg_get_constraintdef(oid) LIKE '%''time''%') THEN
+        ALTER TABLE parental_requests DROP CONSTRAINT IF EXISTS parental_requests_subject_kind_valid;
+        ALTER TABLE parental_requests ADD CONSTRAINT parental_requests_subject_kind_valid
+            CHECK (subject_kind IN ('library', 'collection', 'series', 'channel', 'youtube_source', 'plugin',
+                'video', 'time')) NOT VALID;
+    END IF;
+END $$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE parental_requests VALIDATE CONSTRAINT parental_requests_subject_kind_valid;
+-- +goose StatementEnd
+
 -- +goose Down
+-- +goose StatementBegin
+-- The requests for more time go first (waiting or answered: slot 0222's check allows none
+-- of them), then the check is slot 0222's again. One statement, so it is whole or not done.
+DO $$
+BEGIN
+    DELETE FROM parental_requests WHERE subject_kind = 'time';
+    ALTER TABLE parental_requests DROP CONSTRAINT IF EXISTS parental_requests_subject_kind_valid;
+    ALTER TABLE parental_requests ADD CONSTRAINT parental_requests_subject_kind_valid
+        CHECK (subject_kind IN ('library', 'collection', 'series', 'channel', 'youtube_source', 'plugin', 'video'));
+END $$;
+-- +goose StatementEnd
+
 -- +goose StatementBegin
 DROP TABLE IF EXISTS parental_time_grants;
 -- +goose StatementEnd

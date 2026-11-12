@@ -8,6 +8,9 @@ package parental
 //	set a parent PIN                              admin, anyone's guardian (their own PIN)
 //	read a child's activity                       admin, that child's guardian
 //
+// A request of kind `time` (story 57.14) asks for more minutes today; approving it
+// gives the time and tells the time keeper, so a stream that was refused plays.
+//
 // A guardian of another child gets 404 for a request or an account that is not
 // theirs, as for a missing one.
 
@@ -17,6 +20,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -152,6 +156,8 @@ type requestResponse struct {
 	Request *parentalpkg.Request `json:"request"`
 	// Rule is the allow rule an approval added.
 	Rule *parentalpkg.Rule `json:"rule,omitempty"`
+	// Grant is the time an approved `time` request gave.
+	Grant *parentalpkg.TimeGrant `json:"grant,omitempty"`
 }
 
 // Ask implements POST /api/me/parental/requests: 201 for a new request, 200 with
@@ -168,8 +174,15 @@ func (h *AskHandler) Ask(w http.ResponseWriter, r *http.Request) {
 	}
 	if !parentalpkg.ValidRequestKind(req.SubjectKind) {
 		httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "subject_kind",
-			Message: "must be one of video, series, collection, library, channel, youtube_source, plugin"}}))
+			Message: "must be one of video, series, collection, library, channel, youtube_source, plugin, time"}}))
 		return
+	}
+	if req.SubjectKind == parentalpkg.RequestTime {
+		if _, ok := parentalpkg.RequestMinutes(req.SubjectID); !ok {
+			httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "subject_id",
+				Message: "for time, the minutes asked for: a whole number from 1 to 480"}}))
+			return
+		}
 	}
 	out, created, err := h.Store.Ask(r.Context(), p.UserID, p.AccessAllLibraries, p.Libraries, req.SubjectKind, req.SubjectID)
 	if err != nil {
@@ -277,7 +290,27 @@ func (h *AskHandler) decider(w http.ResponseWriter, r *http.Request, id string) 
 
 type approveRequest struct {
 	// ExpiresAt, when set, is when the approval ends; left out, it does not end.
+	// Not for a `time` request (422).
 	ExpiresAt *time.Time `json:"expires_at"`
+	// Minutes, for a `time` request only (422 on any other), is how many minutes
+	// to give, 1 to 480; left out, the minutes asked for.
+	Minutes *int `json:"minutes"`
+}
+
+// approveInvalid is the 422 of an approval whose body does not fit: err names the
+// field (parental.ErrInvalid: <field>).
+func approveInvalid(err error) *httperror.Error {
+	field := strings.TrimPrefix(err.Error(), parentalpkg.ErrInvalid.Error()+": ")
+	msg := "is not valid"
+	switch field {
+	case "expires_at":
+		msg = "must be in the future, and left out for a request for more time"
+	case "minutes":
+		msg = "must be from 1 to 480, and only for a request for more time"
+	default:
+		field = "request"
+	}
+	return httperror.Unprocessable([]httperror.FieldError{{Field: field, Message: msg}})
 }
 
 // Approve implements POST /api/parental/requests/{id}/approve.
@@ -298,13 +331,25 @@ func (h *AskHandler) Approve(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "expires_at", Message: "must be in the future"}}))
 		return
 	}
-	out, err := h.Store.Approve(r.Context(), p.UserID, id, req.ExpiresAt)
+	if req.Minutes != nil && (*req.Minutes < 1 || *req.Minutes > parentalpkg.MaxGrantMinutes) {
+		httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "minutes", Message: "must be from 1 to 480"}}))
+		return
+	}
+	out, err := h.Store.ApproveWith(r.Context(), p.UserID, id, parentalpkg.Approval{ExpiresAt: req.ExpiresAt, Minutes: req.Minutes})
 	if err != nil {
+		if errors.Is(err, parentalpkg.ErrInvalid) {
+			httperror.Write(w, r, approveInvalid(err))
+			return
+		}
 		h.failAsk(w, r, err)
 		return
 	}
 	h.changed(out.Request.ChildID)
-	common.WriteJSON(w, r, http.StatusOK, requestResponse{Request: out.Request, Rule: out.Rule})
+	if out.Grant != nil {
+		// the grant is committed: a stream running (or refused) now learns of it at once
+		h.refreshed(r, out.Request.ChildID)
+	}
+	common.WriteJSON(w, r, http.StatusOK, requestResponse{Request: out.Request, Rule: out.Rule, Grant: out.Grant})
 }
 
 // Deny implements POST /api/parental/requests/{id}/deny.

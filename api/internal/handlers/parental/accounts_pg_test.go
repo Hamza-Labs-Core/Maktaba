@@ -48,7 +48,8 @@ type env struct {
 	notices []notice
 	remote  string
 	// story 57.14 (time_pg_test.go): what streaming was told
-	push *timePush
+	push   *timePush
+	keeper *parental.TimeKeeper
 }
 
 func setup(t *testing.T) *env {

@@ -30,7 +30,11 @@ import (
 type P57RequestsDeps struct {
 	DB *sql.DB
 	// Cache is the restricted accounts' cache (nil: the routes read the database).
-	Cache    *parental.Cache
+	Cache *parental.Cache
+	// Time is the time keeper (story 57.14): told when an approved request for
+	// more time gave a grant, so a running stream picks it up at once (nil: the
+	// stream learns of it at its next heartbeat).
+	Time     *parental.TimeKeeper
 	Notifier notify.Notifier
 	Loops    *runner.Runner
 	Logger   *slog.Logger
@@ -48,7 +52,7 @@ func MountP57Requests(r chi.Router, d P57RequestsDeps) {
 	}
 	accounts := users.New(d.DB)
 	h := &parentalh.AskHandler{
-		Handler: parentalh.Handler{Store: store, Cache: d.Cache},
+		Handler: parentalh.Handler{Store: store, Cache: d.Cache, Time: d.Time},
 		Notify:  d.Notifier,
 		Logger:  d.Logger,
 		VerifyPassword: func(ctx context.Context, id, pw string) error {

@@ -110,12 +110,26 @@ func TestKinds(t *testing.T) {
 	if ValidEventKind("") || ValidEventKind("nonsense") {
 		t.Error("an unknown event kind is valid")
 	}
-	for _, k := range []string{"library", "collection", "series", "channel", "youtube_source", "plugin", "video"} {
+	for _, k := range []string{"library", "collection", "series", "channel", "youtube_source", "plugin", "video", "time"} {
 		if !ValidRequestKind(k) {
 			t.Errorf("request kind %q is not valid", k)
 		}
 	}
-	if ValidRequestKind("time") || ValidRequestKind("") {
-		t.Error("a request kind this slot does not hold is valid")
+	if ValidRequestKind("minutes") || ValidRequestKind("") {
+		t.Error("an unknown request kind is valid")
+	}
+	// more time is asked for, never named by a rule
+	if ValidSubjectKind(RequestTime) {
+		t.Error("a rule can name `time`")
+	}
+	for id, want := range map[string]int{"1": 1, "30": 30, "480": 480} {
+		if n, ok := RequestMinutes(id); !ok || n != want {
+			t.Errorf("RequestMinutes(%q) = %d, %v", id, n, ok)
+		}
+	}
+	for _, id := range []string{"", "0", "481", "-1", "030", "+30", "3.5", "abc", " 30", "30 "} {
+		if _, ok := RequestMinutes(id); ok {
+			t.Errorf("RequestMinutes(%q) is valid", id)
+		}
 	}
 }

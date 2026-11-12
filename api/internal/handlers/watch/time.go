@@ -23,6 +23,13 @@ type TimeReader interface {
 	Time(ctx context.Context, p *principal.Principal, libraryID string) (parental.TimeState, error)
 }
 
+// writeTimeUnknown refuses a watch whose account's time could not be read: 503,
+// with Retry-After, never free time on an error.
+func writeTimeUnknown(w http.ResponseWriter, r *http.Request, err error) {
+	w.Header().Set("Retry-After", "5")
+	httperror.Write(w, r, httperror.Unavailable(5).Wrap(err))
+}
+
 // timeOK reports whether p may watch in libraryID now; when not, the answer is
 // written. A time that cannot be read refuses.
 func (h *Handler) timeOK(w http.ResponseWriter, r *http.Request, p *principal.Principal, libraryID string) bool {
@@ -31,7 +38,7 @@ func (h *Handler) timeOK(w http.ResponseWriter, r *http.Request, p *principal.Pr
 	}
 	st, err := h.Time.Time(r.Context(), p, libraryID)
 	if err != nil {
-		httperror.Write(w, r, httperror.Unavailable(5).Wrap(err))
+		writeTimeUnknown(w, r, err)
 		return false
 	}
 	if st.Allowed {

@@ -1799,7 +1799,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Session'
         '403':
-          description: User cannot access this video.
+          description: 'User cannot access this video. Or the account''s watching time is over (Parental controls): the problem type is `https://maktaba.tv/problems/parental-time`, `code` is `parental_time`, `reason` is `outside_slot` or `limit_reached`, and `next_allowed_at` is when the rules allow watching again (absent when no moment in the next eight days does). No session is opened.'
           content:
             application/problem+json:
               schema:
@@ -1807,7 +1807,10 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '503':
-          description: '`transcode_busy`: every transcode this home runs at once is taken; ask again after `Retry-After`.'
+          description: '`transcode_busy`: every transcode this home runs at once is taken; ask again after `Retry-After`. Also when a restricted account''s watching time cannot be read, or the streaming service cannot be told of it: the stream is refused, never let through uncounted; ask again after `Retry-After`.'
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/Retry-After'
           content:
             application/problem+json:
               schema:
@@ -1884,7 +1887,7 @@ paths:
       summary: Heartbeat session progress
       description: 'Server-side debounced (1 Hz). Mirrors the position into `playback_state`.
 
-        Excluded from rate limits.
+        Excluded from rate limits. For a restricted account this is the stream''s heartbeat: it counts the watching time and keeps the stream running, so send it at least every 60 seconds.
 
         '
       requestBody:
@@ -1911,8 +1914,23 @@ paths:
                 properties:
                   accepted:
                     type: boolean
+        '403':
+          description: 'The account''s watching time is over (Parental controls): the problem type is `https://maktaba.tv/problems/parental-time`, `code` is `parental_time`, `reason` is `outside_slot`, `limit_reached`, or `no_heartbeat` when the session is not one the home is counting for this account, and `next_allowed_at` is when the rules allow watching again (absent when no moment in the next eight days does, and with `no_heartbeat`). The position is not saved and the stream ends within 60 seconds.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '404':
           $ref: '#/components/responses/NotFound'
+        '503':
+          description: 'A restricted account''s watching time could not be counted: the progress is refused, never taken uncounted; ask again after `Retry-After`.'
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/Retry-After'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         default:
           $ref: '#/components/responses/InternalError'
         '429':
@@ -1942,6 +1960,173 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
       operationId: getStreamCapabilities
+  /watch/start:
+    post:
+      tags:
+      - Watch progress
+      summary: Start a watch
+      description: 'Opens a watch session for the caller''s history and statistics. When the caller has paused tracking nothing is opened and `tracking` is false. For any signed-in user. It counts no watching time and keeps no stream running: the stream session''s progress posts do that.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - video_id
+              properties:
+                video_id:
+                  type: string
+                  format: uuid
+                device_type:
+                  type: string
+                  description: 'What kind of device plays, for the statistics; absent: what the app''s `X-Maktaba-Client` header says.'
+                platform:
+                  type: string
+                quality:
+                  type: string
+      responses:
+        '201':
+          description: The watch session was opened.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    format: uuid
+                  tracking:
+                    type: boolean
+        '200':
+          description: 'Tracking is paused for the caller: nothing was opened and `tracking` is false.'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tracking:
+                    type: boolean
+        '400':
+          description: '`video_id` is not an id.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: 'The account''s watching time is over (Parental controls): the problem type is `https://maktaba.tv/problems/parental-time`, `code` is `parental_time`, `reason` is `outside_slot` or `limit_reached`, and `next_allowed_at` is when the rules allow watching again (absent when no moment in the next eight days does).'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No such video that the caller can reach. A video in a library the caller cannot open answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: 'A restricted account''s watching time could not be read: the watch is refused, never let through on an error; ask again after `Retry-After`.'
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/Retry-After'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: startWatch
+  /watch/heartbeat:
+    post:
+      tags:
+      - Watch progress
+      summary: Keep a watch going
+      description: Adds the time since the last heartbeat to an active watch session of the caller and records how far the video has played. A session that was closed is not opened again. For any signed-in user. It counts no watching time against a restricted account's time rules and keeps no stream running.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - session_id
+              properties:
+                session_id:
+                  type: string
+                  format: uuid
+                position_sec:
+                  type: number
+                  minimum: 0
+      responses:
+        '200':
+          description: The watch session as it is now.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    format: uuid
+                  video_id:
+                    type: string
+                    format: uuid
+                  state:
+                    type: string
+                    enum:
+                    - active
+                    - completed
+                    - stopped
+                    - interrupted
+                  duration_sec:
+                    type: integer
+                  percent_complete:
+                    type: number
+        '400':
+          description: '`session_id` is not an id.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: 'The account''s watching time is over (Parental controls): the problem type is `https://maktaba.tv/problems/parental-time`, `code` is `parental_time`, `reason` is `outside_slot` or `limit_reached`, and `next_allowed_at` is when the rules allow watching again (absent when no moment in the next eight days does).'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No such watch session of the caller, or its video is now hidden from the account.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: The watch session is closed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: 'A restricted account''s watching time could not be read: the watch is refused, never let through on an error; ask again after `Retry-After`.'
+          headers:
+            Retry-After:
+              $ref: '#/components/headers/Retry-After'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: heartbeatWatch
   /settings:
     get:
       tags:
@@ -8845,7 +9030,7 @@ paths:
                           - collection
                           - series
                           - channel
-                          - youtube_channel
+                          - youtube_source
                           - plugin
                           - video
                         subject_id:
@@ -8903,7 +9088,7 @@ paths:
                   - collection
                   - series
                   - channel
-                  - youtube_channel
+                  - youtube_source
                   - plugin
                   - video
                 subject_id:
@@ -8941,7 +9126,7 @@ paths:
                     - collection
                     - series
                     - channel
-                    - youtube_channel
+                    - youtube_source
                     - plugin
                     - video
                   subject_id:
@@ -9311,7 +9496,7 @@ paths:
       tags:
       - Parental controls
       summary: Ask a parent to open something
-      description: For a restricted account only. Asks its guardians to allow one item it can reach but its limit hides. Asking again for the same item while the first request waits answers that request. A request waits seven days, and at most 20 wait at once. Each guardian gets one notice, which names neither the child nor the item.
+      description: For a restricted account only. Asks its guardians to allow one item it can reach but its limit hides, or, with `subject_kind` `time`, for more watching time today. Asking again for the same item while the first request waits answers that request; an account has one request for time waiting at most, and asking again, for any number of minutes, answers it. A request waits seven days, a request for time only until its home day ends (04:00 home time), and at most 20 wait at once. Each guardian gets one notice, which names neither the child nor the item.
       requestBody:
         required: true
         content:
@@ -9329,14 +9514,16 @@ paths:
                   - youtube_source
                   - plugin
                   - video
+                  - time
                 subject_id:
                   type: string
+                  description: 'The item''s id. For `time`: the minutes asked for, a whole number from 1 to 480 written as text (`"30"`).'
               required:
               - subject_kind
               - subject_id
       responses:
         '200':
-          description: A request for this item was already waiting; it is returned.
+          description: A request for this item, or for time, was already waiting; it is returned.
           content:
             application/json:
               schema:
@@ -9361,8 +9548,13 @@ paths:
                         - youtube_source
                         - plugin
                         - video
+                        - time
                       subject_id:
                         type: string
+                        description: The item's id; for a request for time, the minutes asked for, as text.
+                      minutes:
+                        type: integer
+                        description: The minutes a request for time asks for; absent for any other kind.
                       status:
                         type: string
                         enum:
@@ -9382,7 +9574,7 @@ paths:
                       expires_at:
                         type: string
                         format: date-time
-                        description: 'When a request still waiting stops waiting: seven days after it was made.'
+                        description: 'When a request still waiting stops waiting: seven days after it was made, or, for a request for time, the end of the home day it was made on (04:00 home time).'
         '201':
           description: The request was made.
           content:
@@ -9409,8 +9601,13 @@ paths:
                         - youtube_source
                         - plugin
                         - video
+                        - time
                       subject_id:
                         type: string
+                        description: The item's id; for a request for time, the minutes asked for, as text.
+                      minutes:
+                        type: integer
+                        description: The minutes a request for time asks for; absent for any other kind.
                       status:
                         type: string
                         enum:
@@ -9430,7 +9627,7 @@ paths:
                       expires_at:
                         type: string
                         format: date-time
-                        description: 'When a request still waiting stops waiting: seven days after it was made.'
+                        description: 'When a request still waiting stops waiting: seven days after it was made, or, for a request for time, the end of the home day it was made on (04:00 home time).'
         '403':
           description: 'Not a restricted account: `code` is `not_restricted`.'
           content:
@@ -9675,7 +9872,7 @@ paths:
       tags:
       - Parental controls
       summary: The requests of the children the caller looks after
-      description: 'For guardians and admins: a guardian sees the requests of their own children, an admin every request. Newest first. An item in a library the caller cannot open comes with its kind and id only.'
+      description: 'For guardians and admins: a guardian sees the requests of their own children, an admin every request. Newest first. An item in a library the caller cannot open comes with its kind and id only. A request for time has no item: its `subject` carries the kind `time` and the minutes asked for as its `id`.'
       parameters:
       - in: query
         name: status
@@ -9717,8 +9914,13 @@ paths:
                           - youtube_source
                           - plugin
                           - video
+                          - time
                         subject_id:
                           type: string
+                          description: The item's id; for a request for time, the minutes asked for, as text.
+                        minutes:
+                          type: integer
+                          description: The minutes a request for time asks for; absent for any other kind.
                         status:
                           type: string
                           enum:
@@ -9738,7 +9940,7 @@ paths:
                         expires_at:
                           type: string
                           format: date-time
-                          description: 'When a request still waiting stops waiting: seven days after it was made.'
+                          description: 'When a request still waiting stops waiting: seven days after it was made, or, for a request for time, the end of the home day it was made on (04:00 home time).'
                         child:
                           type: object
                           properties:
@@ -9791,7 +9993,7 @@ paths:
       tags:
       - Parental controls
       summary: Approve a request
-      description: For a guardian of the child who asked, and for admins. Adds an allow rule for the item, the same way a rule added by hand is, ending at `expires_at` when given.
+      description: 'For a guardian of the child who asked, and for admins. Adds an allow rule for the item, the same way a rule added by hand is, ending at `expires_at` when given. A request for time adds no rule: it gives the child minutes for the current home day, the same way `POST /parental/users/{id}/time-grants` does, the minutes asked for or `minutes` when given, and a stream that was refused because the time was over is allowed again at once.'
       parameters:
       - in: path
         name: id
@@ -9809,10 +10011,15 @@ paths:
                 expires_at:
                   type: string
                   format: date-time
-                  description: 'When the allow rule ends; absent: it does not end. Must be in the future.'
+                  description: 'When the allow rule ends; absent: it does not end. Must be in the future. Not for a request for time (422).'
+                minutes:
+                  type: integer
+                  minimum: 1
+                  maximum: 480
+                  description: 'For a request for time only (422 on any other): how many minutes to give, from 1 to 480; absent: the minutes asked for.'
       responses:
         '200':
-          description: 'Approved: the request and the allow rule.'
+          description: 'Approved: the request, and the allow rule or, for a request for time, the grant.'
           content:
             application/json:
               schema:
@@ -9837,8 +10044,13 @@ paths:
                         - youtube_source
                         - plugin
                         - video
+                        - time
                       subject_id:
                         type: string
+                        description: The item's id; for a request for time, the minutes asked for, as text.
+                      minutes:
+                        type: integer
+                        description: The minutes a request for time asks for; absent for any other kind.
                       status:
                         type: string
                         enum:
@@ -9858,7 +10070,7 @@ paths:
                       expires_at:
                         type: string
                         format: date-time
-                        description: 'When a request still waiting stops waiting: seven days after it was made.'
+                        description: 'When a request still waiting stops waiting: seven days after it was made, or, for a request for time, the end of the home day it was made on (04:00 home time).'
                   rule:
                     type: object
                     properties:
@@ -9894,6 +10106,32 @@ paths:
                       created_at:
                         type: string
                         format: date-time
+                    description: The allow rule added; absent for a request for time.
+                  grant:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      user_id:
+                        type: string
+                        format: uuid
+                      day:
+                        type: string
+                        format: date
+                        description: The home day the minutes are for. A home day ends at 04:00 home time.
+                      minutes:
+                        type: integer
+                      used_seconds:
+                        type: integer
+                        description: How much of the grant has been watched.
+                      granted_by:
+                        type: string
+                        format: uuid
+                      created_at:
+                        type: string
+                        format: date-time
+                    description: The time given, for a request for time; absent for any other kind.
         '403':
           description: 'Not this caller''s to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.'
           content:
@@ -9967,8 +10205,13 @@ paths:
                         - youtube_source
                         - plugin
                         - video
+                        - time
                       subject_id:
                         type: string
+                        description: The item's id; for a request for time, the minutes asked for, as text.
+                      minutes:
+                        type: integer
+                        description: The minutes a request for time asks for; absent for any other kind.
                       status:
                         type: string
                         enum:
@@ -9988,7 +10231,7 @@ paths:
                       expires_at:
                         type: string
                         format: date-time
-                        description: 'When a request still waiting stops waiting: seven days after it was made.'
+                        description: 'When a request still waiting stops waiting: seven days after it was made, or, for a request for time, the end of the home day it was made on (04:00 home time).'
         '403':
           description: 'Not this caller''s to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.'
           content:
@@ -10114,10 +10357,13 @@ paths:
                               format: uuid
                             username:
                               type: string
-                          description: The guardian an `approved`, `denied` or `pin_locked` event names.
+                          description: The guardian an `approved`, `denied`, `pin_locked` or `time_granted` event names.
                         device:
                           type: string
                           description: The device's name, for a `signal` event.
+                        minutes:
+                          type: integer
+                          description: 'The minutes of a time event: asked for (`asked`, `approved` and `denied` of a request for time), given (`time_granted`) or watched that day (`time_up`). A time event has no `subject`.'
                   next_cursor:
                     type: string
                     description: Present when there is another page.

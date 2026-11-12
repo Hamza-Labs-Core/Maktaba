@@ -341,8 +341,6 @@ POST /api/videos/{id}/transcript/words
 POST /api/videos/{video_id}/downloaded
 POST /api/vocabulary
 POST /api/vocabulary/import
-POST /api/watch/heartbeat
-POST /api/watch/start
 POST /api/watch/stop
 PUT /api/admin/library-acl
 PUT /api/admin/logs/retention

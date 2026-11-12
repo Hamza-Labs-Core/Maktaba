@@ -173,7 +173,7 @@ func (h *Handler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	if h.Time != nil { // story 57.14: time limits and slots
 		libraryID, _, err := h.repo().videoLibrary(r.Context(), a.videoID)
 		if err != nil {
-			httperror.Write(w, r, httperror.Unavailable(5).Wrap(err))
+			writeTimeUnknown(w, r, err)
 			return
 		}
 		if !h.timeOK(w, r, p, libraryID) {

@@ -112,9 +112,9 @@ func TestSlot0222Constraints(t *testing.T) {
 	must(`INSERT INTO parental_requests (child_id, subject_kind, subject_id) VALUES ($1, 'video', 'v1')`, child)
 	refused("a second pending request", "parental_requests_one_pending",
 		`INSERT INTO parental_requests (child_id, subject_kind, subject_id) VALUES ($1, 'video', 'v1')`, child)
-	// story 57.14 adds `time` in slot 0223; until then the kinds are a rule's
+	// the kinds are a rule's (slot 0223 adds `time`: its own test looks at that)
 	refused("an unknown kind", "parental_requests_subject_kind_valid",
-		`INSERT INTO parental_requests (child_id, subject_kind, subject_id) VALUES ($1, 'time', '30')`, child)
+		`INSERT INTO parental_requests (child_id, subject_kind, subject_id) VALUES ($1, 'page', 'p1')`, child)
 	refused("an unknown status", "parental_requests_status_valid",
 		`INSERT INTO parental_requests (child_id, subject_kind, subject_id, status) VALUES ($1, 'video', 'v2', 'open')`, child)
 	must(`UPDATE parental_requests SET status = 'denied' WHERE child_id = $1`, child)
