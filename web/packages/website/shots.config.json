@@ -15,6 +15,18 @@
       },
       "widths": [720, 1080, 1440]
     },
+    "webphone": {
+      "artifact": "product-shots-web",
+      "job": "product shots (web)",
+      "screens": ["home"],
+      "crop": {
+        "top": 0,
+        "right": 0,
+        "bottom": 0,
+        "left": 0
+      },
+      "widths": [240, 360, 480]
+    },
     "iphone": {
       "artifact": ["product-shots-iphone", "product-shots-iphone-remote"],
       "job": ["Player UI tests (iphone", "Remote UI tests"],

@@ -6,7 +6,8 @@
 //
 //   node scripts/capture-web.mjs [--out DIR] [--only home,film]
 //
-// Writes DIR/web-<screen>-<lang>.png (default DIR: shots-capture/web, gitignored) and
+// Writes DIR/web-<screen>-<lang>.png (and DIR/webphone-home-<lang>.png, the home at a phone's
+// width) (default DIR: shots-capture/web, gitignored) and
 // DIR/web-capture.log: Vite's output, each page's console errors, and every /api request the
 // table could not answer. CI runs it in _website.yml and uploads DIR as `product-shots-web`.
 // Needs `pnpm -C web install` (Vite) and this package's `npm ci` (Playwright and Chromium).
@@ -38,6 +39,15 @@ export const SCREENS = [
     ready: "mark",
   },
   { name: "guide", path: "/guide", ready: null },
+  // the same home on a phone's width (393 × 852, the size of a current iPhone's screen), for the
+  // home page's phone frame: the web app in a phone's browser, the screen its caption names
+  {
+    name: "home",
+    app: "webphone",
+    path: "/",
+    ready: "img",
+    viewport: { width: 393, height: 852 },
+  },
 ];
 
 const arg = (name, fallback) => {
@@ -186,30 +196,42 @@ export async function capture({ out, only, log }) {
         (route) => route.abort()
       );
       for (const screen of SCREENS) {
-        if (only && !only.includes(screen.name)) continue;
+        const id = `${screen.app ?? "web"}-${screen.name}`;
+        if (only && !only.includes(screen.name) && !only.includes(id)) continue;
         const page = await context.newPage();
+        if (screen.viewport) await page.setViewportSize(screen.viewport);
         await page.clock.setFixedTime(new Date(lib.clock));
         page.on(
           "console",
           (m) =>
-            m.type() === "error" &&
-            appendFileSync(log, `[${lang} ${screen.name}] console: ${m.text()}\n`)
+            m.type() === "error" && appendFileSync(log, `[${lang} ${id}] console: ${m.text()}\n`)
         );
         page.on("pageerror", (e) =>
-          appendFileSync(log, `[${lang} ${screen.name}] page error: ${e.message}\n`)
+          appendFileSync(log, `[${lang} ${id}] page error: ${e.message}\n`)
         );
         const path = typeof screen.path === "function" ? screen.path(lib, lang) : screen.path;
         await page.goto(base + path, { waitUntil: "networkidle" });
         if (screen.ready) await page.waitForSelector(screen.ready, { timeout: 20_000 });
         // every image decoded, the fonts in, nothing moving
-        await page.evaluate(async () => {
+        // a lazy image below the fold never loads by itself (on a phone's width most do not), so
+        // each loads now; one that has not loaded in 15 s fails the capture rather than wait
+        const late = await page.evaluate(async () => {
           await document.fonts.ready;
-          await Promise.all(
-            [...document.images].map((i) =>
-              i.complete ? null : new Promise((r) => (i.onload = i.onerror = r))
-            )
+          for (const i of document.images) i.loading = "eager";
+          const waits = [...document.images].map((i) =>
+            i.complete
+              ? null
+              : new Promise((r) => {
+                  i.onload = i.onerror = r;
+                })
           );
+          const timeout = new Promise((r) => setTimeout(() => r("timeout"), 15_000));
+          return (await Promise.race([Promise.all(waits), timeout])) === "timeout"
+            ? [...document.images].filter((i) => !i.complete).map((i) => i.src)
+            : [];
         });
+        if (late.length)
+          throw new Error(`${id} (${lang}): images never loaded: ${late.slice(0, 5).join(", ")}`);
         await page.addStyleTag({
           content:
             "*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}",
@@ -220,7 +242,7 @@ export async function capture({ out, only, log }) {
         );
         if (lang === "ar" && dir !== "rtl")
           throw new Error(`${screen.name} (ar) is not right to left: dir=${dir}`);
-        const file = join(out, `web-${screen.name}-${lang}.png`);
+        const file = join(out, `${id}-${lang}.png`);
         await page.screenshot({ path: file });
         written.push(file);
         await page.close();
