@@ -106,6 +106,42 @@ describe("Activity", () => {
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 
+  it("a quiet re-read of the first page keeps the pages already loaded", async () => {
+    const h: FamilyHome = {
+      activity: (q) =>
+        q.get("cursor") === "next-1"
+          ? { events: [{ id: "e9", kind: "denied", at: "2026-11-10T10:00:00Z" }] }
+          : { events: first.slice(0, 2), next_cursor: "next-1" },
+    };
+    // the page was open before: its kept answer shows at once, and is read again
+    const before = open(h);
+    await screen.findByTestId("family-activity");
+    before.unmount();
+    let land: () => void = () => {};
+    get.mockImplementation((url: string) =>
+      url === `/api/users/${CHILD}/parental/activity`
+        ? new Promise((resolve) => {
+            land = () => resolve({ events: first.slice(0, 2), next_cursor: "next-1" });
+          })
+        : familyGet(h)(url)
+    );
+    renderPage(
+      <ParentalFixture value={{ children: [{ id: CHILD, username: "sara", maxTier: 9 }] }}>
+        <ActivityPage />
+      </ParentalFixture>,
+      { path: `/family/${CHILD}/activity`, route: "/family/:userId/activity", user: guardian }
+    );
+    await screen.findByTestId("family-activity");
+    await userEvent.click(screen.getByRole("button", { name: "Load more" }));
+    const rows = () => within(screen.getByTestId("family-activity")).getAllByRole("row");
+    await waitFor(() => expect(rows()).toHaveLength(4));
+    // the re-read lands after the second page did
+    land();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(rows()).toHaveLength(4);
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+  });
+
   it("filters by kind, asking the home", async () => {
     open({
       activity: (q) => ({

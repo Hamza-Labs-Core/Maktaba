@@ -28,7 +28,14 @@ import { familyError } from "./words";
 
 const EFFECTS: RuleEffect[] = ["allow", "block"];
 
-export function ChildRules({ userId }: { userId: string }) {
+export function ChildRules({
+  userId,
+  onChanged,
+}: {
+  userId: string;
+  /** a rule was added or removed (the home moves the policy's version on with it) */
+  onChanged?: () => void;
+}) {
   const { t, formatDate } = useI18n();
   const { data, err, loading, reload, setData } = usePageData<Rule[]>(
     `parental:rules:${userId}`,
@@ -56,6 +63,7 @@ export function ChildRules({ userId }: { userId: string }) {
       // the same rule again only changes when it ends: it keeps its id
       setData((prev) => [...(prev ?? []).filter((r) => r.id !== made.id), made]);
       setPicked(null);
+      onChanged?.();
     } catch (e) {
       setError(familyError(e, t));
     } finally {
@@ -69,6 +77,7 @@ export function ChildRules({ userId }: { userId: string }) {
     try {
       await removeRule(userId, rule.id);
       setData((prev) => (prev ?? []).filter((r) => r.id !== rule.id));
+      onChanged?.();
     } catch (e) {
       setError(familyError(e, t));
     } finally {

@@ -160,6 +160,149 @@ describe("the limit", () => {
   });
 });
 
+// The home moves the policy's version on with every rule and guardian change. The
+// page reads the account again after one, so the next save of the limit carries the
+// version the home has now, and what is being chosen in the form stays.
+describe("the limit after a rule or a guardian changed", () => {
+  const versioned = (version: number, over: Record<string, unknown> = {}) =>
+    policyAnswer({
+      policy: { user_id: CHILD, max_tier: 9, unrated: "hide", allow_only: false, version },
+      ...over,
+    });
+  const policyReads = () =>
+    get.mock.calls.filter((c) => c[0] === `/api/users/${CHILD}/parental`).length;
+
+  it("saves with the version the home has after a rule was added, keeping the choice", async () => {
+    const h: FamilyHome = { policy: versioned(3), libraries: [{ id: "lib-2", name: "Films" }] };
+    open(h);
+    const form = await screen.findByTestId("family-policy");
+    // chosen before the rule is added: the read that follows must not undo it
+    await userEvent.selectOptions(within(form).getByLabelText(/Content limit/), "13");
+    const box = screen.getByTestId("family-rules");
+    const item = await within(box).findByLabelText("Item");
+    await waitFor(() => expect(item).toBeEnabled());
+    await userEvent.selectOptions(item, "lib-2");
+    post.mockResolvedValue({
+      id: "r9",
+      effect: "allow",
+      subject_kind: "library",
+      subject_id: "lib-2",
+    });
+    const before = policyReads();
+    h.policy = versioned(4);
+    await userEvent.click(within(box).getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(policyReads()).toBeGreaterThan(before));
+    await waitFor(() => expect(within(box).getByRole("button", { name: "Add" })).toBeDisabled());
+    expect(within(form).getByLabelText(/Content limit/)).toHaveValue("13");
+
+    put.mockResolvedValue(
+      policyAnswer({
+        policy: { user_id: CHILD, max_tier: 13, unrated: "hide", allow_only: false, version: 5 },
+      })
+    );
+    await userEvent.click(within(form).getByRole("button", { name: "Save" }));
+    expect(put).toHaveBeenCalledWith(`/api/users/${CHILD}/parental`, {
+      max_tier: 13,
+      unrated: "hide",
+      allow_only: false,
+      version: 4,
+    });
+    expect(await screen.findByText("Limit saved.")).toBeVisible();
+    expect(screen.queryByText("Someone else changed this. Showing the latest.")).toBeNull();
+  });
+
+  it("saves with the version the home has after a rule was removed", async () => {
+    const h: FamilyHome = {
+      policy: versioned(3),
+      rules: [
+        { id: "r1", effect: "allow", subject_kind: "library", subject_id: "lib-1", created_at: "x" },
+      ],
+      libraries: [{ id: "lib-1", name: "Cartoons" }],
+    };
+    open(h);
+    const form = await screen.findByTestId("family-policy");
+    const allowed = await screen.findByTestId("family-rules-allow");
+    await within(allowed).findByText("Cartoons", { selector: "bdi" });
+    del.mockResolvedValue(undefined);
+    const before = policyReads();
+    h.policy = versioned(4);
+    await userEvent.click(within(allowed).getByRole("button", { name: /Remove/ }));
+    await waitFor(() => expect(policyReads()).toBeGreaterThan(before));
+    await userEvent.selectOptions(within(form).getByLabelText(/Content limit/), "16");
+    put.mockResolvedValue(versioned(5));
+    await waitFor(async () => {
+      put.mockClear();
+      await userEvent.click(within(form).getByRole("button", { name: "Save" }));
+      expect(put).toHaveBeenCalledWith(
+        `/api/users/${CHILD}/parental`,
+        expect.objectContaining({ max_tier: 16, version: 4 })
+      );
+    });
+  });
+
+  it("saves with the version the home has after a guardian was named", async () => {
+    const h: FamilyHome = {
+      policy: versioned(3),
+      accounts: [
+        { id: CHILD, username: "sara" },
+        { id: "g2", username: "dad" },
+      ],
+    };
+    open(h);
+    const form = await screen.findByTestId("family-policy");
+    await userEvent.selectOptions(within(form).getByLabelText(/Content limit/), "13");
+    const box = await screen.findByTestId("family-guardians");
+    await userEvent.selectOptions(within(box).getByLabelText("Name a guardian"), "g2");
+    post.mockResolvedValue({ guardians: [{ id: "g2", username: "dad" }] });
+    const before = policyReads();
+    h.policy = versioned(4, { guardians: [{ id: "g2", username: "dad" }] });
+    await userEvent.click(within(box).getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(policyReads()).toBeGreaterThan(before));
+    expect(await within(box).findByText("dad", { selector: "bdi" })).toBeInTheDocument();
+    // the choice made before the guardian was named is still there
+    expect(within(form).getByLabelText(/Content limit/)).toHaveValue("13");
+    put.mockResolvedValue(versioned(5));
+    await waitFor(async () => {
+      put.mockClear();
+      await userEvent.click(within(form).getByRole("button", { name: "Save" }));
+      expect(put).toHaveBeenCalledWith(
+        `/api/users/${CHILD}/parental`,
+        expect.objectContaining({ max_tier: 13, version: 4 })
+      );
+    });
+  });
+
+  it("a quiet re-read that says the same limit keeps what is being chosen", async () => {
+    // the page was open before: its kept answer shows at once, and is read again
+    const h: FamilyHome = { policy: versioned(3) };
+    const first = open(h);
+    await screen.findByTestId("family-policy");
+    first.unmount();
+    let land: (v: unknown) => void = () => {};
+    get.mockImplementation((url: string) =>
+      url === `/api/users/${CHILD}/parental`
+        ? new Promise((resolve) => {
+            land = resolve;
+          })
+        : familyGet(h)(url)
+    );
+    renderPage(
+      <ParentalFixture value={{ children: [{ id: CHILD, username: "sara", maxTier: 9 }] }}>
+        <ChildPage />
+      </ParentalFixture>,
+      { path: `/family/${CHILD}`, route: "/family/:userId", user: adminUser }
+    );
+    const form = await screen.findByTestId("family-policy");
+    await userEvent.selectOptions(within(form).getByLabelText(/Content limit/), "16");
+    // the re-read lands while the form is being changed
+    land(versioned(3));
+    await waitFor(() => expect(screen.getByTestId("family-policy")).toBeInTheDocument());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(within(form).getByLabelText(/Content limit/)).toHaveValue("16");
+    expect(within(form).getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+});
+
 describe("what only an admin gets", () => {
   it("a guardian sees who the guardians are, and no way to name one or lift", async () => {
     open(
@@ -179,14 +322,15 @@ describe("what only an admin gets", () => {
   });
 
   it("an admin names a guardian and removes one", async () => {
-    open({
+    const h: FamilyHome = {
       policy: policyAnswer({ guardians: [{ id: "g1", username: "mum" }] }),
       accounts: [
         { id: CHILD, username: "sara" },
         { id: "g1", username: "mum" },
         { id: "g2", username: "dad" },
       ],
-    });
+    };
+    open(h);
     const box = await screen.findByTestId("family-guardians");
     const select = within(box).getByLabelText("Name a guardian");
     // not the child, not someone who is a guardian already
@@ -202,12 +346,24 @@ describe("what only an admin gets", () => {
       ],
     });
     await userEvent.selectOptions(select, "g2");
+    // the home's own answer from here on (the page reads the account again)
+    h.policy = policyAnswer({
+      policy: { user_id: CHILD, max_tier: 9, unrated: "hide", allow_only: false, version: 4 },
+      guardians: [
+        { id: "g2", username: "dad" },
+        { id: "g1", username: "mum" },
+      ],
+    });
     await userEvent.click(within(box).getByRole("button", { name: "Add" }));
     expect(post).toHaveBeenCalledWith(`/api/users/${CHILD}/parental/guardians`, {
       guardian_id: "g2",
     });
     expect(await within(box).findByText("dad", { selector: "bdi" })).toBeInTheDocument();
     del.mockResolvedValue(undefined);
+    h.policy = policyAnswer({
+      policy: { user_id: CHILD, max_tier: 9, unrated: "hide", allow_only: false, version: 5 },
+      guardians: [{ id: "g2", username: "dad" }],
+    });
     await userEvent.click(within(box).getByRole("button", { name: /Remove mum/ }));
     expect(del).toHaveBeenCalledWith(`/api/users/${CHILD}/parental/guardians/g1`);
     await waitFor(() => expect(within(box).queryByText("mum", { selector: "bdi" })).toBeNull());

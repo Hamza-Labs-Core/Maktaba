@@ -66,11 +66,19 @@ export function ActivityPage() {
   const [cursor, setCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreFailed, setMoreFailed] = useState(false);
+  // The later pages hang off the first one. A fresh read of the first page that says
+  // the same (the quiet re-read on coming back to the page) keeps the pages already
+  // loaded; a first page that changed starts them over.
+  const firstPage = data
+    ? JSON.stringify([userId, kind, data.events.map((e) => e.id), data.nextCursor])
+    : null;
+  const firstCursor = data?.nextCursor ?? null;
   useEffect(() => {
     setMore([]);
-    setCursor(data?.nextCursor ?? null);
+    setCursor(firstCursor);
     setMoreFailed(false);
-  }, [data]);
+    // `firstPage` names the first page (its cursor too): the object is new on every read
+  }, [firstPage]);
 
   async function loadMore() {
     if (!cursor) return;
