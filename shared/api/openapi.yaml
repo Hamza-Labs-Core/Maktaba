@@ -9239,6 +9239,11 @@ paths:
                 expires_at:
                   type: string
                   format: date-time
+                until:
+                  type: string
+                  enum:
+                  - day_end
+                  description: 'In place of `expires_at`: `day_end` ends the rule when the home''s day ends, the next 04:00 in the home''s time zone. The home computes it, so it does not depend on the caller''s clock. Giving both `until` and `expires_at` is refused (422).'
               required:
               - effect
               - subject_kind
@@ -10183,6 +10188,11 @@ paths:
                   type: string
                   format: date-time
                   description: 'When the allow rule ends; absent: it does not end. Must be in the future. Not for a request for time (422).'
+                until:
+                  type: string
+                  enum:
+                  - day_end
+                  description: 'In place of `expires_at`: `day_end` ends the allow rule when the home''s day ends, the next 04:00 in the home''s time zone. The home computes it, so it does not depend on the caller''s clock. Giving both `until` and `expires_at` is refused (422). Not for a request for time (422).'
                 minutes:
                   type: integer
                   minimum: 1

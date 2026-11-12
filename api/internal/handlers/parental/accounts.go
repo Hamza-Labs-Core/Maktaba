@@ -13,6 +13,7 @@
 package parental
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -445,6 +446,28 @@ type ruleRequest struct {
 	SubjectKind string     `json:"subject_kind"`
 	SubjectID   string     `json:"subject_id"`
 	ExpiresAt   *time.Time `json:"expires_at"`
+	// Until, in place of ExpiresAt, names an end the home computes: `day_end`.
+	Until string `json:"until"`
+}
+
+// UntilDayEnd is the `until` value that ends a rule or an approval when the
+// home's day ends: the next 04:00 in the home's time zone, the end a PIN unlock
+// has. The home computes it, so every client agrees whatever its own clock says.
+const UntilDayEnd = "day_end"
+
+// ending is when a rule or an approval ends: expiresAt as given, or the instant
+// `until` names. The two are mutually exclusive; the error names the field at fault.
+func (h *Handler) ending(ctx context.Context, expiresAt *time.Time, until string) (*time.Time, *httperror.FieldError) {
+	switch {
+	case until == "":
+		return expiresAt, nil
+	case until != UntilDayEnd:
+		return nil, &httperror.FieldError{Field: "until", Message: "must be day_end"}
+	case expiresAt != nil:
+		return nil, &httperror.FieldError{Field: "until", Message: "give expires_at or until, not both"}
+	}
+	end := parentalpkg.DayEnd(h.Store.Clock(), h.Store.HomeLocation(ctx)).UTC()
+	return &end, nil
 }
 
 // AddRule implements POST /api/users/{id}/parental/rules.
@@ -473,12 +496,16 @@ func (h *Handler) AddRule(w http.ResponseWriter, r *http.Request) {
 	if req.ExpiresAt != nil && !req.ExpiresAt.After(time.Now()) {
 		errs = append(errs, httperror.FieldError{Field: "expires_at", Message: "must be in the future"})
 	}
+	expiresAt, bad := h.ending(r.Context(), req.ExpiresAt, req.Until)
+	if bad != nil {
+		errs = append(errs, *bad)
+	}
 	if len(errs) > 0 {
 		httperror.Write(w, r, httperror.Unprocessable(errs))
 		return
 	}
 	rule, err := h.Store.AddRule(r.Context(), p.UserID, id, parentalpkg.RuleInput{
-		Effect: req.Effect, SubjectKind: req.SubjectKind, SubjectID: req.SubjectID, ExpiresAt: req.ExpiresAt,
+		Effect: req.Effect, SubjectKind: req.SubjectKind, SubjectID: req.SubjectID, ExpiresAt: expiresAt,
 	})
 	if err != nil {
 		if errors.Is(err, parentalpkg.ErrInvalid) {

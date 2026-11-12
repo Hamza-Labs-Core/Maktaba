@@ -199,6 +199,104 @@ describe("useMyTime", () => {
   });
 });
 
+// The poll reads the status only; it is no use while nobody looks, or after the
+// home has said no (nothing changes until the instant the home named, or a parent
+// gives more time and the viewer taps).
+describe("useMyTime when asking is no use", () => {
+  const see = (state: "visible" | "hidden") => {
+    Object.defineProperty(document, "visibilityState", { value: state, configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  };
+  afterEach(() => {
+    // back to the document's own
+    Reflect.deleteProperty(document, "visibilityState");
+  });
+
+  it("does not ask while the tab is hidden, and asks what came due when it shows again", async () => {
+    vi.useFakeTimers();
+    get.mockResolvedValue({ allowed: true, limited: true, remaining_seconds: 3000 });
+    renderHook(() => useMyTime(true));
+    await act(async () => {});
+    expect(get).toHaveBeenCalledTimes(1);
+    act(() => see("hidden"));
+    await act(async () => vi.advanceTimersByTime(10 * TIME_POLL_MS));
+    expect(get).toHaveBeenCalledTimes(1);
+    // shown again: one question, then the usual pace
+    await act(async () => see("visible"));
+    expect(get).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTime(TIME_POLL_MS + 100));
+    expect(get).toHaveBeenCalledTimes(3);
+  });
+
+  it("showing the tab again asks nothing when no question came due", async () => {
+    vi.useFakeTimers();
+    get.mockResolvedValue({ allowed: true, limited: true, remaining_seconds: 3000 });
+    renderHook(() => useMyTime(true));
+    await act(async () => {});
+    act(() => see("hidden"));
+    await act(async () => vi.advanceTimersByTime(1000));
+    await act(async () => see("visible"));
+    expect(get).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTime(TIME_POLL_MS));
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it("after a refusal with no next time, asks only at the viewer's tap", async () => {
+    vi.useFakeTimers();
+    get.mockResolvedValue({ allowed: false, limited: true, reason: "limit_reached" });
+    const { result } = renderHook(() => useMyTime(true));
+    await act(async () => {});
+    expect(result.current.time?.allowed).toBe(false);
+    await act(async () => vi.advanceTimersByTime(20 * TIME_POLL_MS));
+    expect(get).toHaveBeenCalledTimes(1);
+    // a parent gave more time; the viewer taps Check again
+    get.mockResolvedValue({ allowed: true, limited: true, remaining_seconds: 900 });
+    await act(async () => result.current.ask());
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(result.current.time?.allowed).toBe(true);
+    // allowed again: the usual pace is back
+    await act(async () => vi.advanceTimersByTime(TIME_POLL_MS + 100));
+    expect(get).toHaveBeenCalledTimes(3);
+  });
+
+  it("after a refusal waits for the instant the home named", async () => {
+    vi.useFakeTimers();
+    const next = new Date(Date.now() + 20 * 60_000).toISOString();
+    get.mockResolvedValue({
+      allowed: false,
+      limited: true,
+      reason: "outside_slot",
+      next_allowed_at: next,
+    });
+    const { result } = renderHook(() => useMyTime(true));
+    await act(async () => {});
+    await act(async () => vi.advanceTimersByTime(19 * 60_000));
+    expect(get).toHaveBeenCalledTimes(1);
+    get.mockResolvedValue({ allowed: true, limited: true, remaining_seconds: 3600 });
+    await act(async () => vi.advanceTimersByTime(62_000));
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(result.current.time?.allowed).toBe(true);
+  });
+
+  it("the home's instant passing while the tab is hidden is asked about when it shows", async () => {
+    vi.useFakeTimers();
+    const next = new Date(Date.now() + 60_000).toISOString();
+    get.mockResolvedValue({
+      allowed: false,
+      limited: true,
+      reason: "outside_slot",
+      next_allowed_at: next,
+    });
+    renderHook(() => useMyTime(true));
+    await act(async () => {});
+    act(() => see("hidden"));
+    await act(async () => vi.advanceTimersByTime(5 * 60_000));
+    expect(get).toHaveBeenCalledTimes(1);
+    await act(async () => see("visible"));
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("useChannelAccess", () => {
   it("asks nothing with no channel", async () => {
     const { result } = renderHook(() => useChannelAccess(null));

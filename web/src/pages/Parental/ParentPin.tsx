@@ -75,7 +75,9 @@ export function ParentPinPage() {
             description={t("family.pin.rule")}
             type="password"
             inputMode="numeric"
-            autoComplete="off"
+            // a one-time code: the browser neither offers to save the PIN nor takes
+            // it for this account's new password
+            autoComplete="one-time-code"
             maxLength={6}
             dir="ltr"
             value={pin}
@@ -85,7 +87,7 @@ export function ParentPinPage() {
             label={t("family.pin.again")}
             type="password"
             inputMode="numeric"
-            autoComplete="off"
+            autoComplete="one-time-code"
             maxLength={6}
             dir="ltr"
             value={again}

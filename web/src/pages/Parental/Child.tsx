@@ -165,7 +165,9 @@ export function ChildPage() {
         onStale={reload}
       />
 
-      <ChildRules userId={userId} />
+      {/* a rule added or removed moves the policy's version on: read it again, or
+          the next save of the limit is refused as stale */}
+      <ChildRules userId={userId} onChanged={reload} />
 
       <Devices userId={userId} signals={policy.signals} onChanged={reload} />
 
@@ -174,7 +176,11 @@ export function ChildPage() {
           userId={userId}
           guardians={policy.guardians}
           accounts={data.accounts}
-          onChanged={(guardians) => setPolicy({ ...policy, guardians })}
+          onChanged={(guardians) => {
+            setPolicy({ ...policy, guardians });
+            // the home moved the policy's version on with the guardians
+            reload();
+          }}
         />
       )}
       {!isAdmin && policy.guardians.length > 0 && (
@@ -216,12 +222,22 @@ function PolicyForm({
   const [allowOnly, setAllowOnly] = useState(policy?.allowOnly ?? false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The form follows the saved limit when the saved limit itself changes. A fresh
+  // read that says the same (the quiet re-read on coming back to the page, the read
+  // after a rule or a guardian changed) keeps what is being chosen; only its
+  // version moves on, which `save` sends.
+  const [savedTier, savedUnrated, savedAllowOnly] = [
+    policy?.maxTier,
+    policy?.unrated,
+    policy?.allowOnly,
+  ];
   useEffect(() => {
-    if (!policy) return;
-    setMaxTier(policy.maxTier);
-    setUnrated(policy.unrated);
-    setAllowOnly(policy.allowOnly);
-  }, [policy]);
+    if (savedTier === undefined || savedUnrated === undefined || savedAllowOnly === undefined)
+      return;
+    setMaxTier(savedTier);
+    setUnrated(savedUnrated);
+    setAllowOnly(savedAllowOnly);
+  }, [savedTier, savedUnrated, savedAllowOnly]);
 
   const dirty =
     !policy ||

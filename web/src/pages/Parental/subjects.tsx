@@ -21,7 +21,7 @@ import { useI18n } from "../../lib/i18n";
 import { fetchLibrarySummary } from "../../lib/browse";
 import { fetchCollections } from "../../lib/collections";
 import { videoTitle } from "../../lib/videoTitle";
-import { SUBJECT_KINDS, type SubjectKind } from "../../lib/familyApi";
+import { SUBJECT_KINDS, type Ending, type SubjectKind } from "../../lib/familyApi";
 
 export interface Option {
   id: string;
@@ -288,15 +288,15 @@ export function useSubjectNames(
 export const EXPIRY_CHOICES = ["always", "today", "week"] as const;
 export type ExpiryChoice = (typeof EXPIRY_CHOICES)[number];
 
-/** The instant a choice ends at: today's end on this device, seven days on; null: never. */
-export function expiryOf(choice: ExpiryChoice, now = new Date()): string | null {
-  if (choice === "always") return null;
-  if (choice === "today") {
-    const end = new Date(now);
-    end.setHours(23, 59, 59, 0);
-    return end.toISOString();
-  }
-  return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+/**
+ * When a choice ends. "Today" is the home's day, which ends at its own day line
+ * (04:00 home time): the home computes it, never this device's clock. "This week"
+ * is seven days on; "Always" does not end.
+ */
+export function expiryOf(choice: ExpiryChoice, now = new Date()): Ending {
+  if (choice === "always") return {};
+  if (choice === "today") return { until: "day_end" };
+  return { expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString() };
 }
 
 export function ExpirySelect({

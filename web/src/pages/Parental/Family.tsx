@@ -70,7 +70,7 @@ export function Family() {
                   data-testid="family-requests-count"
                   aria-label={t("family.requests.waiting", { count: n(pendingRequests) })}
                 >
-                  {pendingRequests > 99 ? "99+" : n(pendingRequests)}
+                  {pendingRequests > 99 ? `${n(99)}+` : n(pendingRequests)}
                 </span>
               )}
             </Link>

@@ -160,6 +160,51 @@ describe("the time rules editor (Users > the user > Time)", () => {
     });
   });
 
+  it("a quiet re-read that says the same rules keeps what is being edited", async () => {
+    const saved = [{ id: "r1", days: 127, daily_minutes: 60 }];
+    home({ rules: saved });
+    // the page was open before: its kept answer shows at once, and is read again
+    const first = open();
+    await screen.findByTestId("parental-rule");
+    first.unmount();
+    let land: (v: unknown) => void = () => {};
+    const answers = get.getMockImplementation()!;
+    get.mockImplementation((path: string) =>
+      path.endsWith("/time-rules")
+        ? new Promise((resolve) => {
+            land = resolve;
+          })
+        : answers(path)
+    );
+    open();
+    const r = await screen.findByTestId("parental-rule");
+    const minutes = within(r).getByLabelText("Minutes a day");
+    await userEvent.clear(minutes);
+    await userEvent.type(minutes, "45");
+    // the re-read lands while the rule is being edited
+    land({ rules: saved, time_zone: "Asia/Riyadh" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(within(screen.getByTestId("parental-rule")).getByLabelText("Minutes a day")).toHaveValue(
+      45
+    );
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+
+  it("a re-read that brings other rules shows them", async () => {
+    home({ rules: [{ id: "r1", days: 127, daily_minutes: 60 }] });
+    const first = open();
+    await screen.findByTestId("parental-rule");
+    first.unmount();
+    // someone else changed the rules meanwhile
+    home({ rules: [{ id: "r1", days: 127, daily_minutes: 90 }] });
+    open();
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId("parental-rule")).getByLabelText("Minutes a day")
+      ).toHaveValue(90)
+    );
+  });
+
   it("will not save a rule with no day, and says why", async () => {
     home({ rules: [{ id: "r1", days: 1, daily_minutes: 60 }] });
     open();

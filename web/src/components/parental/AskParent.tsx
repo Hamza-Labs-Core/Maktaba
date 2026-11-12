@@ -12,8 +12,9 @@
 //   POST /api/me/parental/unlock     {guardian_id, pin, subject_kind, subject_id}
 //
 // The home has no route that reads a child's own requests back, so "waiting" is what
-// this browser remembers having asked (for the tab's life); "Check again" asks the
-// home for the thing itself, which opens once a parent has said yes.
+// this tab remembers having asked, for that account and until the request expires or
+// is answered (lib/parentalAsked); "Check again" asks the home for the thing itself,
+// which opens once a parent has said yes.
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Modal } from "@ds/components/Modal/Modal";
@@ -21,8 +22,10 @@ import { Select } from "@ds/components/Select/Select";
 import { Input } from "@ds/components/Input/Input";
 import { useToast } from "@ds/components/Toast/Toast";
 import { ApiError } from "../../lib/api";
+import { useOptionalAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
 import { useMyParental } from "../../lib/parental";
+import { ASKED_TIME, forgetAsked, noteAsked, useAsked } from "../../lib/parentalAsked";
 import { tierKey } from "../../lib/parentalApi";
 import {
   ASK_MINUTES,
@@ -38,32 +41,6 @@ import {
 } from "../../lib/familyApi";
 import { timeWords } from "./TimeState";
 import "../../styles/parental.css";
-
-const ASKED_KEY = "mkt:parental:asked";
-
-function readAsked(): string[] {
-  try {
-    const v: unknown = JSON.parse(sessionStorage.getItem(ASKED_KEY) ?? "[]");
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-/** Whether this tab asked for `what` ("video:<id>", "time:<day>"). */
-export function wasAsked(what: string): boolean {
-  return readAsked().includes(what);
-}
-
-export function noteAsked(what: string): void {
-  try {
-    sessionStorage.setItem(ASKED_KEY, JSON.stringify([...new Set([...readAsked(), what])]));
-  } catch {
-    /* ignored: the page still shows it for as long as it is open */
-  }
-}
-
-const today = () => new Date().toDateString();
 
 /** The words for a refused ask or unlock. */
 function refusalWords(e: unknown, words: ReturnType<typeof useI18n>): string {
@@ -109,7 +86,12 @@ export interface PinUnlockProps {
   onUnlocked: () => void;
 }
 
-/** A guardian picks their name and types their six digits. Nothing is kept here. */
+/**
+ * A guardian picks their name and types their six digits. Nothing is kept here:
+ * the digits leave the page's memory when the home answers (yes or no) and when
+ * the dialog closes, and the browser is told they are a one-time code, not a
+ * password to offer to save on the child's device.
+ */
 export function PinUnlock({ open, onClose, guardians, kind, id, onUnlocked }: PinUnlockProps) {
   const words = useI18n();
   const { t, locale } = words;
@@ -120,11 +102,16 @@ export function PinUnlock({ open, onClose, guardians, kind, id, onUnlocked }: Pi
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    if (!open) return;
+    // closed (Cancel, Escape, unlocked) or opened again: no digits stay
     setPin("");
+    if (!open) return;
     setError(null);
     setGuardian((g) => (guardians.some((x) => x.id === g) ? g : (guardians[0]?.id ?? "")));
   }, [open, guardians]);
+  const close = () => {
+    setPin("");
+    onClose();
+  };
 
   const sorted = [...guardians].sort((a, b) => a.username.localeCompare(b.username, locale));
 
@@ -142,6 +129,8 @@ export function PinUnlock({ open, onClose, guardians, kind, id, onUnlocked }: Pi
             ? t("parental.pin.moreTime", { time: timeWords(got.minutes * 60, words) })
             : t("parental.pin.unlocked"),
       });
+      // at once: the dialog's owner may stay on screen until the home is read again
+      setPin("");
       onClose();
       onUnlocked();
     } catch (err) {
@@ -153,7 +142,7 @@ export function PinUnlock({ open, onClose, guardians, kind, id, onUnlocked }: Pi
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={t("parental.blocked.pin")}>
+    <Modal open={open} onClose={close} title={t("parental.blocked.pin")}>
       <form className="mkt-form" onSubmit={(e) => void submit(e)} data-testid="parental-pin-form">
         <Select
           label={t("parental.pin.choose")}
@@ -183,7 +172,8 @@ export function PinUnlock({ open, onClose, guardians, kind, id, onUnlocked }: Pi
           label={t("parental.pin.enter")}
           type="password"
           inputMode="numeric"
-          autoComplete="off"
+          // a one-time code, so the child's browser does not offer to save it
+          autoComplete="one-time-code"
           pattern="[0-9]{6}"
           maxLength={6}
           // digits read left to right in Arabic too
@@ -200,7 +190,7 @@ export function PinUnlock({ open, onClose, guardians, kind, id, onUnlocked }: Pi
           <Button type="submit" disabled={!validPin(pin) || !guardian || busy} loading={busy}>
             {t("parental.pin.unlock")}
           </Button>
-          <Button type="button" variant="secondary" onClick={onClose}>
+          <Button type="button" variant="secondary" onClick={close}>
             {t("common.cancel")}
           </Button>
         </div>
@@ -229,8 +219,10 @@ export function Blocked({ kind, id, onCheck, action }: BlockedProps) {
   const words = useI18n();
   const { t } = words;
   const { restricted, maxTier, deviceLimit } = useMyParental();
+  const userId = useOptionalAuth()?.user?.id ?? null;
   const what = `${kind}:${id}`;
-  const [asked, setAsked] = useState(() => wasAsked(what));
+  // this account's own request for this thing, while it waits
+  const asked = useAsked(userId, what);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pinOpen, setPinOpen] = useState(false);
@@ -241,9 +233,8 @@ export function Blocked({ kind, id, onCheck, action }: BlockedProps) {
     setBusy(true);
     setError(null);
     try {
-      await askFor(kind, id);
-      noteAsked(what);
-      setAsked(true);
+      const request = await askFor(kind, id);
+      noteAsked(userId, what, request.expiresAt);
     } catch (e) {
       setError(refusalWords(e, words));
     } finally {
@@ -298,7 +289,11 @@ export function Blocked({ kind, id, onCheck, action }: BlockedProps) {
           guardians={unlockers}
           kind={kind}
           id={id}
-          onUnlocked={onCheck}
+          onUnlocked={() => {
+            // answered: nothing waits for this thing any more
+            forgetAsked(userId, what);
+            onCheck();
+          }}
         />
       )}
     </div>
@@ -319,8 +314,10 @@ export function AskTime({ onCheck }: { onCheck?: () => void }) {
   const words = useI18n();
   const { t } = words;
   const { restricted } = useMyParental();
-  const what = `time:${today()}`;
-  const [asked, setAsked] = useState(() => wasAsked(what));
+  const userId = useOptionalAuth()?.user?.id ?? null;
+  // waits until the home's day ends, a parent's PIN, or the home allowing watching
+  // again (lib/parental drops it then): the next time's-up screen asks afresh
+  const asked = useAsked(userId, ASKED_TIME);
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pinOpen, setPinOpen] = useState(false);
@@ -331,9 +328,8 @@ export function AskTime({ onCheck }: { onCheck?: () => void }) {
     setBusy(minutes);
     setError(null);
     try {
-      await askForTime(minutes);
-      noteAsked(what);
-      setAsked(true);
+      const request = await askForTime(minutes);
+      noteAsked(userId, ASKED_TIME, request.expiresAt);
     } catch (e) {
       setError(refusalWords(e, words));
     } finally {
@@ -383,7 +379,10 @@ export function AskTime({ onCheck }: { onCheck?: () => void }) {
             guardians={unlockers}
             kind="time"
             id=""
-            onUnlocked={() => onCheck?.()}
+            onUnlocked={() => {
+              forgetAsked(userId, ASKED_TIME);
+              onCheck?.();
+            }}
           />
         </>
       )}

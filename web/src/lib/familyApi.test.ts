@@ -176,6 +176,19 @@ describe("rules", () => {
       subject_id: "l1",
       expires_at: "2026-11-12T20:59:59.000Z",
     });
+    // until the home's day ends: the home computes the instant
+    await addRule("c1", {
+      effect: "allow",
+      subjectKind: "library",
+      subjectId: "l1",
+      until: "day_end",
+    });
+    expect(post).toHaveBeenLastCalledWith("/api/users/c1/parental/rules", {
+      effect: "allow",
+      subject_kind: "library",
+      subject_id: "l1",
+      until: "day_end",
+    });
     await removeRule("c1", "r9");
     expect(del).toHaveBeenCalledWith("/api/users/c1/parental/rules/r9");
   });
@@ -232,6 +245,10 @@ describe("requests", () => {
     await approveRequest("q1", { expiresAt: "2026-11-12T20:59:59.000Z" });
     expect(post).toHaveBeenLastCalledWith("/api/parental/requests/q1/approve", {
       expires_at: "2026-11-12T20:59:59.000Z",
+    });
+    await approveRequest("q1", { until: "day_end" });
+    expect(post).toHaveBeenLastCalledWith("/api/parental/requests/q1/approve", {
+      until: "day_end",
     });
     await approveRequest("q2", { minutes: 45 });
     expect(post).toHaveBeenLastCalledWith("/api/parental/requests/q2/approve", { minutes: 45 });

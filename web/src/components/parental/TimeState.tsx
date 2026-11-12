@@ -2,7 +2,8 @@
 //
 //   TimeLeft     "12 minutes left today", once 15 minutes or fewer remain (the
 //                player) or whenever a rule covers now (Home, `always`).
-//   TimeWarning  a notice five minutes and one minute before the end.
+//   TimeWarning  a notice five minutes and one minute before the end, saying the
+//                time that is left.
 //   TimesUp      the screen when the home refuses with `parental-time`: why, when
 //                watching opens again, the saved place. Playback has stopped and
 //                nothing asks again by itself; "Check again" is the viewer's tap.
@@ -77,10 +78,15 @@ export function TimeLeft({ time, always = false }: { time: MyTime | null; always
 /** How long a warning stays on screen. */
 export const WARNING_MS = 10_000;
 
-/** The five-minute and one-minute warnings, each shown once as the answer crosses its line. */
+/**
+ * The five-minute and one-minute warnings, each shown once as the answer crosses
+ * its line. The words say the time the home said is left, not the line: a video
+ * opened with two and a half minutes left is not told it has five.
+ */
 export function TimeWarning({ time }: { time: MyTime | null }) {
   const words = useI18n();
   const [warned, setWarned] = useState<number | null>(null);
+  // the seconds left when the warning came up; null: no warning on screen
   const [shown, setShown] = useState<number | null>(null);
 
   useEffect(() => {
@@ -88,7 +94,8 @@ export function TimeWarning({ time }: { time: MyTime | null }) {
     if (line === warned) return;
     // a tighter line than the last one warned of is a new warning; a looser one
     // (more time came: a grant, a new day) only lets the lines count again
-    if (line !== null && (warned === null || line < warned)) setShown(line);
+    if (line !== null && (warned === null || line < warned))
+      setShown(time?.remainingSeconds ?? line);
     setWarned(line);
   }, [time, warned]);
 
