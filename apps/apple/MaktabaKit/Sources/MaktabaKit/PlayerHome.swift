@@ -235,6 +235,12 @@ public actor HomeCache {
         return HomeCache(file: caches.appending(path: folder).appending(path: "\(name).json"))
     }
 
+    /// Forgets the kept shelves (Epic 57: the account's limit changed, so what was kept may
+    /// hold something the home now hides).
+    public func clear() {
+        try? FileManager.default.removeItem(at: file)
+    }
+
     public func read() -> CachedHome? {
         guard let data = try? Data(contentsOf: file) else { return nil }
         return try? JSONDecoder().decode(CachedHome.self, from: data)

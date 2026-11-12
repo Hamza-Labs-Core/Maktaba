@@ -182,6 +182,13 @@ public final class AppSession {
     /// What the signed-in home says is on (story 51.11): every feature on until it answers,
     /// asked again on every sign-in, here and at another home.
     public let capabilities: CapabilitiesStore
+    /// The signed-in account's parental limit and watching time (Epic 57), asked only by an
+    /// app that shows them (`parental: true`: the Player).
+    public let parental = ParentalStore()
+    /// The device's age signal for this sign-in (story 57.04); sends nothing until the app
+    /// gives it a source (`ageSignal.use`).
+    public let ageSignal = AgeSignalSender()
+    private let usesParental: Bool
 
     public var signedIn: Bool {
         if case .signedIn = phase { true } else { false }
@@ -211,8 +218,9 @@ public final class AppSession {
 
     public init(app: String, defaults: UserDefaults = .standard, probe: HomeProbe = HomeProbe(), asksHomes: Bool = true,
                 homeSession: URLSession = PinnedTrust.session, cloudSession: URLSession? = nil, clock: ConnectClock = .system,
-                discovery: (any HomeDiscovering)? = nil, capabilities: CapabilitiesStore? = nil) {
+                discovery: (any HomeDiscovering)? = nil, capabilities: CapabilitiesStore? = nil, parental: Bool = false) {
         self.app = app
+        usesParental = parental
         self.capabilities = capabilities ?? CapabilitiesStore()
         self.discovery = discovery ?? BonjourDiscovery.forThisApp()
         self.clock = clock
@@ -252,6 +260,7 @@ public final class AppSession {
         defaults.set(home.url, forKey: "home")
         // another home's answer is not this one's
         capabilities.reset()
+        parentalReset(forget: false)
         let tokens = TokenStore(app: app, home: home.url)
         client = APIClient(home: home.url, tokens: tokens, session: homeSession)
         phase = .signingIn
@@ -522,6 +531,7 @@ public final class AppSession {
         restoring = false
         phase = .choosingHome
         capabilities.reset()
+        parentalReset(forget: false)
         defaults.removeObject(forKey: "home")
     }
 
@@ -561,6 +571,7 @@ public final class AppSession {
         publish(nil)
         phase = .signingIn
         capabilities.reset()
+        parentalReset(forget: true)
     }
 
     /// A screen saw `APIError.signedOut`: back to signing in (through the cloud at once when
@@ -571,6 +582,7 @@ public final class AppSession {
         publish(nil)
         phase = .signingIn
         capabilities.reset()
+        parentalReset(forget: true)
         Task { await signInQuietlyThroughCloud() }
     }
 
@@ -777,7 +789,29 @@ public final class AppSession {
         if let client {
             capabilities.use(client)
             capabilities.start()
+            if usesParental {
+                parental.use(client, isAdmin: me.user.isAdmin, key: ParentalStore.key(home: client.home, user: me.user.id))
+                parental.start()
+                // what the device says about its user's age, then the limit it made
+                ageSignal.onApplied = { [weak self] in await self?.parental.refresh() }
+                ageSignal.signedIn(client: client, user: me.user.id)
+                Task { await ageSignal.sync() }
+            }
         }
+    }
+
+    /// The parental state goes with the sign-in. `forget`: the sign-in itself ended, so the
+    /// next one asks the device's age range afresh.
+    private func parentalReset(forget: Bool) {
+        parental.reset()
+        ageSignal.signedOut(forget: forget)
+    }
+
+    /// The app came to the front: the limit and the device's rating limits are read again.
+    public func parentalForeground() async {
+        guard usesParental, signedIn else { return }
+        await parental.refresh()
+        await ageSignal.sync()
     }
 
     /// The current home's name, as the home says it (nil: it did not say, so the name
