@@ -311,6 +311,7 @@ var pfVideoByID = []string{
 // T02, T03, T11: every by-id read of a hidden video, series and collection answers as a missing
 // one, for the child on a bearer token, a cookie and an API token alike.
 func TestP57FilterByID(t *testing.T) {
+	t.Parallel()
 	e := setupFilter(t)
 	for _, who := range []string{"child", "child-cookie", "child-token", "child-all"} {
 		for _, id := range []string{pfTeen, pfUnrated} {
@@ -426,6 +427,7 @@ var pfLists = []string{
 // account warmed is not the child's. Search itself and the live rows (T07) are in
 // p57_gaps_pg_test.go.
 func TestP57FilterLists(t *testing.T) {
+	t.Parallel()
 	e := setupFilter(t)
 	// the child watched and liked the teen video before it was restricted
 	e.exec(`INSERT INTO playback_state (user_id, video_id, position_sec, completed, updated_at) VALUES ($1,$2,10,false,now())`, pfChild, pfTeen)
@@ -618,6 +620,7 @@ func TestP57FilterQueueAndStream(t *testing.T) {
 // T09 and README 6.6: what a restricted account may not do at all answers 403 `restricted`,
 // whatever its token; everyone else gets the route's own answer.
 func TestP57FilterRefusals(t *testing.T) {
+	t.Parallel()
 	e := setupFilter(t)
 	routes := []struct{ method, path, body string }{
 		{http.MethodPost, "/api/me/tokens", `{"name":"t"}`},
@@ -682,6 +685,7 @@ func TestP57FilterRefusals(t *testing.T) {
 // A policy that cannot be read shows nothing: every content route refuses the signed-in
 // caller, restricted or not, and no one is let in as unrestricted.
 func TestP57FilterFailsClosed(t *testing.T) {
+	t.Parallel()
 	e := setupFilter(t)
 	if code, _ := e.get("child", "/api/videos/"+pfKid); code != http.StatusOK {
 		t.Fatalf("before: %d", code)

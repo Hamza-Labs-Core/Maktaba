@@ -76,6 +76,7 @@ type pfGroupPage struct {
 }
 
 func TestP57FilterAutoCollection(t *testing.T) {
+	t.Parallel()
 	e := setupFilter(t)
 	e.groups()
 	page := func(who, kind, gid string) (int, string, pfGroupPage) {
@@ -145,6 +146,7 @@ func TestP57FilterAutoCollection(t *testing.T) {
 // one limit (a device's signal holds one sign-in only) and a limit can be tightened at any
 // moment, so an answer kept for one request is never given to a request with a limit.
 func TestP57FilterRecommendationsNotKept(t *testing.T) {
+	t.Parallel()
 	e := setupFilter(t)
 	for _, u := range []string{pfViewer, pfChild} {
 		e.exec(`INSERT INTO playback_state (user_id, video_id, position_sec, completed, updated_at) VALUES ($1,$2,10,false,now()), ($1,$3,10,false,now())`, u, pfTeen, pfKid)
@@ -178,6 +180,7 @@ func TestP57FilterRecommendationsNotKept(t *testing.T) {
 // A hidden object answers as a missing one whatever headers the request carries: an
 // Upgrade header once made the gate answer with its stand-in id, which told the two apart.
 func TestP57FilterByIDIgnoresUpgrade(t *testing.T) {
+	t.Parallel()
 	e := setupFilter(t)
 	ask := func(path string) (int, string) {
 		t.Helper()
@@ -206,6 +209,7 @@ func TestP57FilterByIDIgnoresUpgrade(t *testing.T) {
 // nothing the account may see is not listed and answers as missing, by id and as a play
 // queue's source; one that lists something is shown, with only that.
 func TestP57FilterSmartCollections(t *testing.T) {
+	t.Parallel()
 	e := setupFilter(t)
 	e.smart()
 	late := []string{pfSmartLate, pfSmartLateOld}
@@ -291,6 +295,7 @@ func TestP57FilterSmartCollections(t *testing.T) {
 // Finding 8: a play queue's source that is hidden answers exactly as one that is not
 // there, whatever kind it is and whyever it is hidden.
 func TestP57FilterQueueSourceHiddenIsMissing(t *testing.T) {
+	t.Parallel()
 	e := setupFilter(t)
 	e.groups()
 	e.smart()

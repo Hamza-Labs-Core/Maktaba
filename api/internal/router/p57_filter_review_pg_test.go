@@ -21,6 +21,7 @@ import (
 // restriction, is refused the admin's routes, is not shown the other children, and reads
 // only the libraries it was given.
 func TestP57StaleAdminTokenOnARestrictedAccount(t *testing.T) {
+	t.Parallel()
 	h := setupHome(t)
 	// the child was given library A only
 	h.exec(`DELETE FROM library_acl WHERE user_id = $1 AND library_id = $2`, pfChild, pfLibB)
@@ -103,6 +104,7 @@ func TestP57StaleAdminTokenOnARestrictedAccount(t *testing.T) {
 // a restricted account, a sign-in its device limits and an account never read are refused.
 // Nothing above a limit is shown to anyone.
 func TestP57FilterWhenThePolicyCannotBeRead(t *testing.T) {
+	t.Parallel()
 	e := setupFilter(t)
 	policies, err := sql.Open("postgres", e.dsn)
 	if err != nil {

@@ -165,6 +165,7 @@ func (e *reviewEnv) want(video string, tier int, source string) {
 
 // T04: the review list and the admin's answer, as every caller.
 func TestP57ReviewPG(t *testing.T) {
+	t.Parallel()
 	e := setupReview(t)
 	low := e.video(rvLibKids, "low")          // a signal under the line
 	sure := e.video(rvLibKids, "sure")        // a detected tier nobody confirmed

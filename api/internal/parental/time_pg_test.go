@@ -183,6 +183,7 @@ func (e *timeEnv) post(d time.Duration, session, video string) {
 // streaming serves it nothing) adds none; one call never adds more than the
 // heartbeat interval.
 func TestUsageCountsEverySessionAndNoPause(t *testing.T) {
+	t.Parallel()
 	e := setupTime(t)
 	ctx := context.Background()
 	e.rules(limit(everyDay, 60, ""))
@@ -260,6 +261,7 @@ func TestUsageCountsEverySessionAndNoPause(t *testing.T) {
 // new one skipped), and a session id the home did not open for the account neither
 // makes a mark nor counts for anyone.
 func TestFullMarksStillCount(t *testing.T) {
+	t.Parallel()
 	e := setupTime(t)
 	ctx := context.Background()
 	e.rules(limit(everyDay, 60, ""))
@@ -311,6 +313,7 @@ func TestFullMarksStillCount(t *testing.T) {
 // counted call renews the lease; and when the count cannot be written the lease is
 // not renewed and the seconds stay owed.
 func TestTimeCountsWithoutTheClient(t *testing.T) {
+	t.Parallel()
 	e := setupTime(t)
 	ctx := context.Background()
 	e.rules(limit(everyDay, 60, ""))
@@ -386,6 +389,7 @@ func TestTimeCountsWithoutTheClient(t *testing.T) {
 // still serves is kept; and a session let go is served again only through a counted
 // call.
 func TestNoSessionServedWithoutItsMark(t *testing.T) {
+	t.Parallel()
 	e := setupTime(t)
 	ctx := context.Background()
 	e.rules(limit(everyDay, 600, ""))
@@ -486,6 +490,7 @@ func TestNoSessionServedWithoutItsMark(t *testing.T) {
 // The first acceptance case: 60 minutes watched in one session closes a new stream
 // anywhere, and the stream still running is told to end now.
 func TestLimitReachedClosesEveryDevice(t *testing.T) {
+	t.Parallel()
 	e := setupTime(t)
 	ctx := context.Background()
 	e.rules(limit(everyDay, 60, ""))
@@ -518,6 +523,7 @@ func TestLimitReachedClosesEveryDevice(t *testing.T) {
 // T05: a grant after the limit allows the granted minutes that day and no more,
 // and opens a closed slot until it runs out.
 func TestGrantAllowsTheGrantedMinutes(t *testing.T) {
+	t.Parallel()
 	e := setupTime(t)
 	ctx := context.Background()
 	e.rules(limit(everyDay, 1, ""))
@@ -595,6 +601,7 @@ func TestGrantAllowsTheGrantedMinutes(t *testing.T) {
 // A library rule narrows the account's: that library stops at its own limit and
 // the others go on.
 func TestLibraryRuleNarrows(t *testing.T) {
+	t.Parallel()
 	e := setupTime(t)
 	ctx := context.Background()
 	e.rules(limit(everyDay, 120, ""), limit(everyDay, 30, libOpen))
@@ -612,6 +619,7 @@ func TestLibraryRuleNarrows(t *testing.T) {
 }
 
 func TestTimeRulesAreKeptAndChecked(t *testing.T) {
+	t.Parallel()
 	e := setupTime(t)
 	ctx := context.Background()
 	mins := 45
@@ -686,6 +694,7 @@ func TestTimeRulesAreKeptAndChecked(t *testing.T) {
 // An admin and an unrestricted account are allowed with no time query; a failure
 // to read, or to tell streaming, refuses.
 func TestTimeFailsClosed(t *testing.T) {
+	t.Parallel()
 	e := setupTime(t)
 	ctx := context.Background()
 	e.rules(limit(everyDay, 60, ""))
@@ -717,6 +726,7 @@ func TestTimeFailsClosed(t *testing.T) {
 // The home's zone: read from app_settings; a change keeps the current day and
 // applies from the next day line.
 func TestHomeTimezone(t *testing.T) {
+	t.Parallel()
 	e := setupTime(t)
 	ctx := context.Background()
 	loc, err := e.store.HomeZone(ctx)
@@ -754,6 +764,7 @@ func TestHomeTimezone(t *testing.T) {
 }
 
 func TestTimeUsageRange(t *testing.T) {
+	t.Parallel()
 	e := setupTime(t)
 	ctx := context.Background()
 	e.rules(limit(everyDay, 60, ""))

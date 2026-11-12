@@ -136,6 +136,7 @@ func fPolicies() map[string]*parental.Effective {
 }
 
 func TestFilterSQLMatchesPermits(t *testing.T) {
+	t.Parallel()
 	e := setup(t)
 	vs := seedFilter(e)
 	ctx := context.Background()

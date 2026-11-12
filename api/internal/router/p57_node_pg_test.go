@@ -77,6 +77,7 @@ func nodeFilter(t *testing.T) (*pfEnv, *gatedConn) {
 }
 
 func TestP57NodeFiltersFromItsCopyWithTheHomeDown(t *testing.T) {
+	t.Parallel()
 	e, copySrv := nodeFilter(t)
 	lists := []string{"/api/videos?library_id=" + pfLibA, "/api/libraries", "/api/collections?library_id=" + pfLibA}
 

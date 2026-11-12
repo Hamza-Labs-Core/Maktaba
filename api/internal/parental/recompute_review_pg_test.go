@@ -20,6 +20,7 @@ import (
 // Finding 4: a recompute holds the video's row from its read to its commit, so a second
 // recompute of the same video cannot read in between and write an older answer later.
 func TestRecomputeLocksTheVideoItReads(t *testing.T) {
+	t.Parallel()
 	h := newPGHome(t)
 	lib := h.library("lock")
 	h.libraryTier(lib, 9)
@@ -67,6 +68,7 @@ func TestRecomputeLocksTheVideoItReads(t *testing.T) {
 // Finding 15: a job whose batch fails every time goes behind the others, is worked
 // alone, and is never dropped.
 func TestRecomputeFailingJobDoesNotHoldTheQueue(t *testing.T) {
+	t.Parallel()
 	h := newPGHome(t)
 	lib := h.library("poison")
 	bad, good, later := h.video(lib), h.video(lib), h.video(lib)
@@ -123,6 +125,7 @@ func TestRecomputeFailingJobDoesNotHoldTheQueue(t *testing.T) {
 // Finding 15: an admin's change is not worked after a long backfill but between its
 // batches.
 func TestRecomputeWorksNewJobsBetweenABackfillsBatches(t *testing.T) {
+	t.Parallel()
 	h := newPGHome(t)
 	lib, small := h.library("backfill"), h.library("small")
 	h.videos(lib, 2500)
@@ -161,6 +164,7 @@ func TestRecomputeWorksNewJobsBetweenABackfillsBatches(t *testing.T) {
 // Finding 19: an enrichment refresh that writes every YouTube match back as it was
 // queues nothing; a change to what picks the match still does.
 func TestYouTubeMatchWrittenBackUnchangedQueuesNothing(t *testing.T) {
+	t.Parallel()
 	h := newPGHome(t)
 	lib := h.library("yt")
 	v, w := h.video(lib), h.video(lib)
@@ -202,6 +206,7 @@ func TestYouTubeMatchWrittenBackUnchangedQueuesNothing(t *testing.T) {
 // Finding 16: the checks slot 0220 puts on videos are added NOT VALID and validated in
 // a statement of their own, so the table is never read under the exclusive lock.
 func TestSlot0220ChecksOnVideosAreValidatedApart(t *testing.T) {
+	t.Parallel()
 	raw, err := os.ReadFile(filepath.Join(migrationsDir(t), "0220_age_tiers.sql"))
 	if err != nil {
 		t.Fatal(err)

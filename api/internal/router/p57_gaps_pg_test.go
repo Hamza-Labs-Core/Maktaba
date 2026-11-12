@@ -78,6 +78,7 @@ func (e *pfEnv) search(who, body string) (pfSearch, string) {
 // T04: search, its pages, its passages and recent searches show a restricted child only what
 // it may see, with totals to match; everyone else finds everything.
 func TestP57GapSearch(t *testing.T) {
+	t.Parallel()
 	e := setupFilter(t)
 	e.transcripts()
 	for _, who := range pfChildren {
@@ -254,6 +255,7 @@ func (e *pfEnv) publish(channel, typ string, payload map[string]any) {
 // limit as it is when the event comes; a feed whose library is blocked ends; an unreadable
 // policy ends it too.
 func TestP57GapLiveFeeds(t *testing.T) {
+	t.Parallel()
 	e := setupFilter(t)
 	const home = ws.HomeChannel
 	libChan := "library:" + pfLibA
@@ -370,6 +372,7 @@ func TestP57GapLiveFeeds(t *testing.T) {
 
 // Tags and a library's numbers are counted over what the child may see.
 func TestP57GapTagsAndStats(t *testing.T) {
+	t.Parallel()
 	e := setupFilter(t)
 	e.exec(`INSERT INTO tags (id, name, name_norm) VALUES
 		('00000000-0000-4000-8000-0000573e0001','kid-tag','kid-tag'),
@@ -450,6 +453,7 @@ func TestP57GapTagsAndStats(t *testing.T) {
 // Curating collections and series is an admin's. A restricted child is refused as any other
 // account is, and a hidden collection or series answers as a missing one before that.
 func TestP57GapCurating(t *testing.T) {
+	t.Parallel()
 	e := setupFilter(t)
 	writes := []struct{ method, path, body, kind string }{
 		{http.MethodPatch, "/api/collections/{id}", `{"name":"x"}`, "collection"},
@@ -533,6 +537,7 @@ func TestP57GapCurating(t *testing.T) {
 // T08: a video blocked while it plays takes no more progress, so its stream's lease is not
 // renewed: the answer is a missing session's.
 func TestP57GapProgressAfterBlock(t *testing.T) {
+	t.Parallel()
 	e := setupFilter(t)
 	e.exec(`UPDATE parental_policies SET max_tier = 18, version = version + 1 WHERE user_id = $1`, pfChild)
 	e.gate.Cache().Invalidate("")

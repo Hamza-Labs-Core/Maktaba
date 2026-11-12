@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -39,20 +40,27 @@ func ScratchDB(t testing.TB) (*sql.DB, string) {
 	if base == "" {
 		t.Skip("MAKTABA_TEST_PG_URL unset: skipping the real-Postgres cluster test")
 	}
-	admin, err := sql.Open("postgres", base)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = admin.Close() })
-	tmpl := template(t, admin, base)
+	srv := serverFor(t, base)
+	admin := srv.admin
 	name := "t1_cluster_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
 	// a copy of the migrated template: one goose run per set of migrations, not
 	// one per test (every slot again took ~2 s a test and kept the integration
 	// tier near its budget)
 	var cerr error
+	rebuilt := false
 	for i := 0; i < 300; i++ {
-		_, cerr = admin.Exec(`CREATE DATABASE ` + pq.QuoteIdentifier(name) + ` TEMPLATE ` + pq.QuoteIdentifier(tmpl))
-		if cerr == nil || !strings.Contains(cerr.Error(), "being accessed by other users") {
+		_, cerr = admin.Exec(`CREATE DATABASE ` + pq.QuoteIdentifier(name) + ` TEMPLATE ` + pq.QuoteIdentifier(srv.template(t)) + srv.strategy)
+		if cerr == nil {
+			break
+		}
+		if !rebuilt && strings.Contains(cerr.Error(), "does not exist") {
+			// the template this process remembered is gone (a run on other
+			// migrations dropped it): make it again, once
+			srv.forget()
+			rebuilt = true
+			continue
+		}
+		if !strings.Contains(cerr.Error(), "being accessed by other users") {
 			break
 		}
 		time.Sleep(100 * time.Millisecond) // another process is copying it right now
@@ -73,6 +81,85 @@ func ScratchDB(t testing.TB) (*sql.DB, string) {
 		}
 	})
 	return db, dsn
+}
+
+// server is what a test process keeps of one Postgres server (base): the handle
+// that creates and drops the scratch databases, the migrated template once it is
+// known to be there, and how a copy of it is made. A package's tests make some
+// tens to hundreds of scratch databases, and each one opening its own handle,
+// hashing the migrations and asking for the template again was a good part of
+// what a scratch database cost.
+type server struct {
+	base  string
+	admin *sql.DB
+	// strategy is the CREATE DATABASE clause that picks how the template is
+	// copied ("" leaves it to the server)
+	strategy string
+
+	mu   sync.Mutex
+	tmpl string
+}
+
+var (
+	serversMu sync.Mutex
+	servers   = map[string]*server{}
+)
+
+// serverFor returns the process's server for base, opening it the first time.
+// Its handle stays open for the life of the test process.
+func serverFor(t testing.TB, base string) *server {
+	t.Helper()
+	serversMu.Lock()
+	defer serversMu.Unlock()
+	if s := servers[base]; s != nil {
+		return s
+	}
+	admin, err := sql.Open("postgres", base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &server{base: base, admin: admin, strategy: copyStrategy(admin)}
+	servers[base] = s
+	return s
+}
+
+// copyStrategy picks how a scratch database is copied from the template. A server
+// that does not wait for the disk (fsync off: CI's test Postgres, which nothing
+// outlives) copies the template's files, which there takes about half the time of
+// the default (Postgres 15 and later write the copy through the log block by
+// block); measured with four copies at a time on two cores, a create and its drop
+// took 83 ms against 155 ms. With fsync on the file copy's two checkpoints cost
+// more than they save, so the server's default stays. The database made is the
+// same either way.
+func copyStrategy(admin *sql.DB) string {
+	var fsync string
+	var version int
+	if err := admin.QueryRow(`SELECT current_setting('fsync'), current_setting('server_version_num')::int`).Scan(&fsync, &version); err != nil {
+		return ""
+	}
+	if fsync == "off" && version >= 150000 {
+		return ` STRATEGY file_copy`
+	}
+	return ""
+}
+
+// template returns the migrated template's name, finding or making it the first
+// time in this process.
+func (s *server) template(t testing.TB) string {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.tmpl == "" {
+		s.tmpl = template(t, s.admin, s.base)
+	}
+	return s.tmpl
+}
+
+// forget drops what the process remembered of the template.
+func (s *server) forget() {
+	s.mu.Lock()
+	s.tmpl = ""
+	s.mu.Unlock()
 }
 
 func dsnFor(t testing.TB, base, name string) string {

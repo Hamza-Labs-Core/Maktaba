@@ -13,10 +13,12 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/lib/pq"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/signedurl"
@@ -100,26 +102,36 @@ func setupHome(t testing.TB) *p57Home {
 
 // reset puts back what a role row may have changed: the two children at their limits with
 // their guardians, the child's one rule, its one pending request, parental controls on.
+// The statements go as one message (the role table resets before every one of its
+// some hundreds of calls, and a round trip each was most of its time).
 func (h *p57Home) reset() {
 	h.t.Helper()
-	h.exec(`INSERT INTO parental_policies (user_id, max_tier, version) VALUES ($1, 9, 1), ($2, 9, 1)
-		ON CONFLICT (user_id) DO UPDATE SET max_tier = 9, unrated = 'hide', allow_only = false, version = 1`, pfChild, pfChild2)
-	h.exec(`DELETE FROM parental_guardians WHERE NOT ((child_id = $1 AND guardian_id = $2) OR (child_id = $3 AND guardian_id = $4))`,
-		pfChild, pfGuardian, pfChild2, pfOtherG)
-	h.exec(`INSERT INTO parental_guardians (child_id, guardian_id) VALUES ($1,$2), ($3,$4) ON CONFLICT DO NOTHING`, pfChild, pfGuardian, pfChild2, pfOtherG)
-	h.exec(`DELETE FROM parental_rules WHERE id <> $1`, phRule)
-	h.exec(`INSERT INTO parental_rules (id, user_id, effect, subject_kind, subject_id) VALUES ($1, $2, 'block', 'video', $3) ON CONFLICT DO NOTHING`,
-		phRule, pfChild, pfUnrated)
-	h.exec(`DELETE FROM parental_requests WHERE id <> $1`, phRequest)
-	h.exec(`INSERT INTO parental_requests (id, child_id, subject_kind, subject_id) VALUES ($1, $2, 'video', $3)
-		ON CONFLICT (id) DO UPDATE SET status = 'pending', decided_by = NULL, decided_at = NULL`, phRequest, pfChild, pfTeen)
-	h.exec(`INSERT INTO session_age_signals (refresh_family_id, user_id, upper, tier_limit, observed_at) VALUES ($1, $2, 12, 9, now())
-		ON CONFLICT (refresh_family_id) DO UPDATE SET tier_limit = 9, pending_looser = NULL`, phFamily, pfChild)
-	h.exec(`DELETE FROM parental_time_rules`)
-	h.exec(`UPDATE app_settings SET value = 'true' WHERE key = 'parental.enabled'`)
-	h.exec(`UPDATE users SET is_admin = (id = $1)`, pfAdmin)
+	h.exec(phResetSQL)
 	h.cache.Invalidate("")
 }
+
+// phResetSQL is reset's statements, in order, with the fixtures' ids written in (a
+// message of several statements takes no parameters).
+var phResetSQL = strings.NewReplacer(
+	"$child2", pq.QuoteLiteral(pfChild2), "$child", pq.QuoteLiteral(pfChild),
+	"$guardian", pq.QuoteLiteral(pfGuardian), "$other", pq.QuoteLiteral(pfOtherG), "$admin", pq.QuoteLiteral(pfAdmin),
+	"$rule", pq.QuoteLiteral(phRule), "$request", pq.QuoteLiteral(phRequest), "$family", pq.QuoteLiteral(phFamily),
+	"$unrated", pq.QuoteLiteral(pfUnrated), "$teen", pq.QuoteLiteral(pfTeen),
+).Replace(`
+	INSERT INTO parental_policies (user_id, max_tier, version) VALUES ($child, 9, 1), ($child2, 9, 1)
+		ON CONFLICT (user_id) DO UPDATE SET max_tier = 9, unrated = 'hide', allow_only = false, version = 1;
+	DELETE FROM parental_guardians WHERE NOT ((child_id = $child AND guardian_id = $guardian) OR (child_id = $child2 AND guardian_id = $other));
+	INSERT INTO parental_guardians (child_id, guardian_id) VALUES ($child, $guardian), ($child2, $other) ON CONFLICT DO NOTHING;
+	DELETE FROM parental_rules WHERE id <> $rule;
+	INSERT INTO parental_rules (id, user_id, effect, subject_kind, subject_id) VALUES ($rule, $child, 'block', 'video', $unrated) ON CONFLICT DO NOTHING;
+	DELETE FROM parental_requests WHERE id <> $request;
+	INSERT INTO parental_requests (id, child_id, subject_kind, subject_id) VALUES ($request, $child, 'video', $teen)
+		ON CONFLICT (id) DO UPDATE SET status = 'pending', decided_by = NULL, decided_at = NULL;
+	INSERT INTO session_age_signals (refresh_family_id, user_id, upper, tier_limit, observed_at) VALUES ($family, $child, 12, 9, now())
+		ON CONFLICT (refresh_family_id) DO UPDATE SET tier_limit = 9, pending_looser = NULL;
+	DELETE FROM parental_time_rules;
+	UPDATE app_settings SET value = 'true' WHERE key = 'parental.enabled';
+	UPDATE users SET is_admin = (id = $admin)`)
 
 // rawWith is raw with one more header.
 func (h *p57Home) rawWith(who, method, path, header, value string) *httptest.ResponseRecorder {

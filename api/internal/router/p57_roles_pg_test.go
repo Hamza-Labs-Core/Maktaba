@@ -99,6 +99,7 @@ var phRows = []phRow{
 }
 
 func TestP57RoleTable(t *testing.T) {
+	t.Parallel()
 	h := setupHome(t)
 	for _, row := range phRows {
 		if row.elsewhere != "" {
