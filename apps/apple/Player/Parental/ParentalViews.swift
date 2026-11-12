@@ -10,14 +10,17 @@ import UIKit
 // keys), so these views draw text verbatim.
 
 /// What the Player drops when the account's limit changes: the shelves kept on the device,
-/// the pictures in memory and the play queue it holds, so nothing hidden lingers.
+/// the pictures in memory and on disk (the posters of what the limit now hides were among
+/// them) and the play queue it holds, so nothing hidden lingers. The pictures go on a
+/// loosening too: the store does not say which way the limit moved, and they are fetched
+/// again as they show.
 @MainActor
 enum ParentalCaches {
     static func drop(home: URL, user: String) {
         PlayerQueues.forget(home)
         let kept = HomeCache.of(home: home, user: user)
         Task {
-            await ImageCache.shared.clearMemory()
+            await ImageCache.shared.clear()
             await kept?.clear()
         }
     }
@@ -201,6 +204,10 @@ struct PinSheet: View {
 
     @State private var entry: PinEntry?
     @Environment(\.dismiss) private var dismiss
+    /// A key's size, growing with the text size (Dynamic Type up to AX5): as wide as this
+    /// at most (three share the pad's width), at least this tall.
+    @ScaledMetric(relativeTo: .title) private var keyWidth: CGFloat = 72
+    @ScaledMetric(relativeTo: .title) private var keyHeight: CGFloat = 56
 
     var body: some View {
         NavigationStack {
@@ -268,7 +275,7 @@ struct PinSheet: View {
                 }
                 .environment(\.layoutDirection, .leftToRight)
                 .accessibilityElement()
-                .accessibilityLabel(Text(verbatim: ParentalWords.text("parental.pin.digits", entry.digits.count)))
+                .accessibilityLabel(Text(verbatim: entry.progressLabel()))
                 .accessibilityIdentifier("pin.dots")
                 Group {
                     if entry.state == .checking {
@@ -325,12 +332,13 @@ struct PinSheet: View {
                 }
             }
             HStack(spacing: MaktabaTokens.Spacing.s3) {
-                Color.clear.frame(width: 72, height: 56)
+                Color.clear.frame(maxWidth: keyWidth, minHeight: keyHeight, maxHeight: keyHeight)
                 key(0, entry)
                 Button { entry.delete() } label: {
                     Image(systemName: "delete.backward")
                         .font(.title2)
-                        .frame(width: 72, height: 56)
+                        .frame(maxWidth: keyWidth, minHeight: keyHeight)
+                        .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.mktText)
@@ -345,9 +353,14 @@ struct PinSheet: View {
     private func key(_ d: Int, _ entry: PinEntry) -> some View {
         Button { entry.press(d) } label: {
             // Western digits on the keys, as the phone's pad shows them in Arabic too
+            // the key grows with the text size; where three no longer fit the width at their
+            // full size they share it, and the digit shrinks to stay inside its key
             Text(verbatim: String(d))
                 .font(.system(.title, design: .rounded).weight(.medium))
-                .frame(width: 72, height: 56)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .padding(.horizontal, MaktabaTokens.Spacing.s1)
+                .frame(maxWidth: keyWidth, minHeight: keyHeight)
                 .background(Color.mktRaised, in: .rect(cornerRadius: MaktabaTokens.Radius.lg))
         }
         .buttonStyle(.plain)

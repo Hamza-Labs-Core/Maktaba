@@ -444,22 +444,49 @@ public final class ActivityModel {
         await read(cursor: nil)
     }
 
+    /// The next page (More). One at a time: a second tap while a page is read does nothing,
+    /// so no page is added twice.
     public func more() async {
-        guard let next else { return }
+        guard let next, !readingMore else { return }
+        readingMore = true
+        defer { readingMore = false }
         await read(cursor: next)
     }
 
+    /// A page is being read for More (its button waits).
+    public private(set) var readingMore = false
+
+    /// How many pages one read goes through looking for a row the filter shows.
+    nonisolated static let pagesPerRead = 10
+
+    /// Reads from `cursor` (nil: the newest page). The home is asked for one kind where the
+    /// filter is one kind; Requests are three kinds picked here from pages of every kind,
+    /// so a page may hold none of them: the reading goes on, page after page (at most
+    /// `pagesPerRead`), until a row the filter shows was read or the home has no more, so
+    /// "nothing yet" is never said above rows not yet read. A row the list already has is
+    /// not added again.
     private func read(cursor: String?) async {
         let asked = filter
+        var cursor = cursor
+        var rows = cursor == nil ? [] : (events.value ?? [])
+        var loaded = cursor != nil
         do {
-            let page = try await client.parentalActivity(child.id, kind: asked.kind, cursor: cursor)
-            guard asked == filter else { return }
-            let before = cursor == nil ? [] : (events.value ?? [])
-            events = .ready(before + page.events)
-            next = page.nextCursor
+            for _ in 0..<Self.pagesPerRead {
+                let page = try await client.parentalActivity(child.id, kind: asked.kind, cursor: cursor)
+                guard asked == filter else { return }
+                let known = Set(rows.map(\.id))
+                let new = page.events.filter { !known.contains($0.id) }
+                rows += new
+                events = .ready(rows)
+                next = page.nextCursor
+                loaded = true
+                guard let more = page.nextCursor, !new.contains(where: asked.shows) else { return }
+                cursor = more
+            }
         } catch {
             guard !Log.isCancellation(error), asked == filter else { return }
-            if cursor == nil { events = .failed(HomeFailure(error)) }
+            // pages already read stay; only a first page that failed is the screen's failure
+            if !loaded { events = .failed(HomeFailure(error)) }
         }
     }
 

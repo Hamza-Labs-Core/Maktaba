@@ -50,6 +50,12 @@ public final class ParentalStore {
     @ObservationIgnored private var isAdmin = false
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var timer: Task<Void, Never>?
+    /// The read under way, if any: one at a time (the 5-minute timer, the app coming to the
+    /// front, a blocked page's poll and the age signal's answer can all ask at once), so an
+    /// older answer never lands after a newer one.
+    @ObservationIgnored private var reading: Task<Void, Never>?
+    /// Someone asked while a read was under way: one more read follows it.
+    @ObservationIgnored private var askedMeanwhile = false
     /// The home has no parental routes (404): nothing more is asked of it.
     @ObservationIgnored private var unsupported = false
     @ObservationIgnored private var timeUnsupported = false
@@ -103,6 +109,9 @@ public final class ParentalStore {
         kept = nil
         isAdmin = false
         generation += 1
+        // a read under way is the last sign-in's: its answer is dropped (`generation`)
+        reading = nil
+        askedMeanwhile = false
         unsupported = false
         timeUnsupported = false
         if current != .none { current = .none }
@@ -125,8 +134,31 @@ public final class ParentalStore {
         }
     }
 
-    /// Asks the home once: the limit, whether the caller looks after anyone, the time.
+    /// Asks the home: the limit, whether the caller looks after anyone, the time. One read
+    /// at a time: a call made while one is under way waits for it and for one more read
+    /// after it (the home is asked again, since what the caller knows may be newer than that
+    /// read's question), so every caller returns with an answer asked for after its call,
+    /// and answers are applied in the order they were asked for.
     public func refresh() async {
+        if let reading {
+            askedMeanwhile = true
+            await reading.value
+            return
+        }
+        let mine = generation
+        let task = Task { [weak self] in
+            repeat {
+                self?.askedMeanwhile = false
+                await self?.read()
+            } while self?.askedMeanwhile == true && self?.generation == mine
+            if self?.generation == mine { self?.reading = nil }
+        }
+        reading = task
+        await task.value
+    }
+
+    /// Asks the home once.
+    private func read() async {
         guard let source, !unsupported else {
             if !answered, source != nil { answered = true }
             return
@@ -559,6 +591,13 @@ public final class PinEntry {
     }
 
     public var complete: Bool { digits.count == Self.length }
+
+    /// What VoiceOver reads for the dots ("3 of 6 digits entered"): both numbers in the
+    /// language's own digits (a literal 6 beside a formatted count read as two scripts in
+    /// Arabic).
+    public func progressLabel(_ locale: Locale = AppLanguage.locale) -> String {
+        ParentalWords.text("parental.pin.digits", locale, digits.count, Self.length)
+    }
 
     /// Sends the six digits; a wrong PIN clears them.
     public func submit() async {

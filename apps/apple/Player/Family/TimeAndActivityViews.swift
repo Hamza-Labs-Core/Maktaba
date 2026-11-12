@@ -288,6 +288,7 @@ struct ActivityView: View {
                     Button { Task { await model.more() } } label: {
                         Text(verbatim: word("activity.more")).frame(maxWidth: .infinity, minHeight: 44)
                     }
+                    .disabled(model.readingMore)
                     .accessibilityIdentifier("activity.more")
                 }
             }

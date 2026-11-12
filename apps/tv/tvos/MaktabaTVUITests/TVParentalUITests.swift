@@ -125,6 +125,33 @@ final class TVParentalUITests: XCTestCase {
             .waitForExistence(timeout: 20), "its Play or Resume")
     }
 
+    /// The home's streaming refuses the programme itself (403 `restricted`, reason
+    /// `programme`) although the access answer said it may be watched (it came just before
+    /// the programme changed, or this TV's clock is off): the slate, not an error, and the
+    /// channel is not asked for again at once.
+    func testAChannelWhoseStreamTheHomeRefusesForItsProgrammeShowsTheSlate() throws {
+        home.parental(Self.child)
+        home.stub("GET", "/api/channels/ch-1/access", body: #"{"channel_id":"ch-1","restricted":true,"allowed":true,"until":null}"#)
+        home.stub("GET", "/stream/channel/ch-1/index.m3u8", status: 403,
+                  body: #"{"type":"https://maktaba.tv/problems/parental-restricted","title":"forbidden","status":403,"detail":"not available right now","code":"restricted","reason":"programme","retry_at":"{{now+1800}}"}"#)
+        signIn("en")
+        openTab("Live TV")
+        let first = app.buttons["live.channel.ch-1"]
+        XCTAssertTrue(first.waitForExistence(timeout: 20), "the Now grid; the home saw \(home.seen.suffix(8))")
+        moveFocus(to: first, with: .down)
+        remote.press(.select)
+        let slate = element("live.slate")
+        XCTAssertTrue(slate.waitForExistence(timeout: 30), "the slate; the home saw \(home.seen.suffix(8))")
+        XCTAssertTrue(slate.label.contains("Not available right now. This channel comes back when the next programme starts."), slate.label)
+        XCTAssertTrue(home.seen.contains("GET /stream/channel/ch-1/index.m3u8"), "the channel was asked for, and refused")
+        XCTAssertFalse(element("live.player.error").exists, "not an error")
+        let asked = home.seen.filter { $0 == "GET /stream/channel/ch-1/index.m3u8" }.count
+        sleep(8)
+        XCTAssertEqual(home.seen.filter { $0 == "GET /stream/channel/ch-1/index.m3u8" }.count, asked, "not asked for again at once")
+        XCTAssertTrue(slate.exists)
+        shot("tv-parental-live-slate-refused")
+    }
+
     /// T03: the same in Arabic, then Live TV: a programme above the limit reads "Not
     /// available" with nothing of its title, the grid runs right to left, and a channel whose
     /// programme now is above the limit shows the slate and does not play.

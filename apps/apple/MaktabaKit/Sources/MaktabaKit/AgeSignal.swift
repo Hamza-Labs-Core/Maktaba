@@ -87,9 +87,13 @@ public struct AgeSignalReading: Equatable, Sendable, Codable {
 /// Sends the device's signal for the current sign-in, kept by the session
 /// (`AppSession.ageSignal`).
 ///
-/// - The age range is asked for once per sign-in (signing out forgets it), and again only
-///   from Profile > Age range. The answer is kept on this device (the band and how it was
-///   declared, never a birth date) so the next launch sends the same thing without asking.
+/// - The age range is asked for once per sign-in and launch, and again only from Profile >
+///   Age range. The answer (the band and how it was declared, never a birth date) is kept in
+///   memory only (story 57.04): nothing about an age is written to this device, so none
+///   sits in a preferences file or a backup. The next launch asks Apple again, which
+///   answers from what the person already chose, without its sheet. "Not available" is not
+///   an answer: it is asked for again at the next sync (the app coming to the front), since
+///   the first sync of a launch can run before there is a window to ask from.
 /// - The rating limits are read at sign-in and each time the app comes to the front
 ///   (watching them change needs Family Controls, which this app does not ask for).
 /// - It posts only when what it would send differs from what it last sent for this sign-in,
@@ -110,10 +114,12 @@ public final class AgeSignalSender {
 
     @ObservationIgnored private var source: (any AgeSignalSource)?
     @ObservationIgnored private var client: APIClient?
-    @ObservationIgnored private var key: String?
     @ObservationIgnored private var lastSent: AgeSignalReading?
     @ObservationIgnored private var sending = false
     @ObservationIgnored private var again = false
+    /// Profile > Age range asked while a sync was under way: the pass that follows asks Apple.
+    @ObservationIgnored private var askOnNextPass = false
+    /// Only to remove what an earlier build kept here (`legacyKey`).
     @ObservationIgnored private let defaults: UserDefaults
     /// Called after the home took a statement and the token was refreshed.
     @ObservationIgnored public var onApplied: (@MainActor () async -> Void)?
@@ -127,26 +133,34 @@ public final class AgeSignalSender {
         self.source = source
     }
 
+    /// Where a build before this one kept the age range for `user` at `home`. Nothing is
+    /// written there now; a sign-in removes what was.
+    public nonisolated static func legacyKey(home: URL, user: String) -> String {
+        "ageSignal.range.\(home.absoluteString)#\(user)"
+    }
+
     /// A sign-in began or was restored: `user` at `client.home`.
     public func signedIn(client: APIClient, user: String) {
         self.client = client
-        key = "ageSignal.range.\(client.home.absoluteString)#\(user)"
+        defaults.removeObject(forKey: Self.legacyKey(home: client.home, user: user))
         answer = nil
         lastSent = nil
         lastReading = nil
         supported = true
-        range = key.flatMap { defaults.data(forKey: $0) }.flatMap { try? JSONDecoder().decode(AgeRangeAnswer.self, from: $0) }
+        range = nil
+        askOnNextPass = false
     }
 
-    /// Signed out: the next sign-in asks afresh (`forget`), or only another home is in use.
+    /// Signed out, or another home is in use: what was read goes with the sign-in (it was
+    /// only ever in memory). `forget` says the sign-in itself ended; either way the next
+    /// one asks afresh.
     public func signedOut(forget: Bool) {
-        if forget, let key { defaults.removeObject(forKey: key) }
         client = nil
-        key = nil
         answer = nil
         range = nil
         lastSent = nil
         lastReading = nil
+        askOnNextPass = false
     }
 
     /// Reads the device and sends what changed. `askAgain`: ask Apple for the age range even
@@ -154,7 +168,10 @@ public final class AgeSignalSender {
     public func sync(askAgain: Bool = false) async {
         guard let source, let client, supported else { return }
         if sending {
+            // the pass under way read the device before this call: one more follows it, and
+            // it asks Apple if this call was to
             again = true
+            if askAgain { askOnNextPass = true }
             return
         }
         sending = true
@@ -162,14 +179,17 @@ public final class AgeSignalSender {
         var ask = askAgain
         repeat {
             again = false
+            if askOnNextPass {
+                askOnNextPass = false
+                ask = true
+            }
             if range == nil || ask {
                 ask = false
                 let got = await source.requestAgeRange()
                 guard self.client === client else { return }
                 // "not available" is not an answer: nothing was asked, so nothing is kept
-                // and an earlier answer stays
-                if got != .notAvailable || range == nil { range = got }
-                if got != .notAvailable, let key, let data = try? JSONEncoder().encode(got) { defaults.set(data, forKey: key) }
+                // (an earlier answer stays) and the next sync asks again
+                if got != .notAvailable { range = got }
             }
             let ceilings = source.ratingCeilings()
             let reading = AgeSignalReading(range: range, movieCeiling: ceilings.movie, tvCeiling: ceilings.tv, region: source.region)

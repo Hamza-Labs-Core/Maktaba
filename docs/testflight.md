@@ -148,6 +148,61 @@ in this release:
   (`GET /api/libraries/manage` carries `age_tier` only). `family.rateLibraries.unrated` stays
   in the catalog unused.
 
+## CI's simulators when the runners get Xcode 27
+
+`.github/workflows/_apple-apps.yml` makes a throwaway simulator for each UI-test job from the
+**newest runtime** the runner's Xcode has and a device type picked by name. On the `macos-26`
+runners (Xcode 26) the jobs make their simulators. On a Mac with **Xcode 27.1** (build
+27A9275, found 2026-11-12) the same picks are refused, because the newest runtimes there do
+not take those device types. The workflow's pick is unchanged for now; it needs a fallback **before CI moves
+to Xcode 27**.
+
+What each job picks:
+
+- **Apple TV** (`tv-ui-tests`): the newest tvOS runtime, and the lexically last identifier
+  among the device types whose name starts with "Apple TV 4K". That is
+  `com.apple.CoreSimulator.SimDeviceType.Apple-TV-4K-4K`, the first-generation Apple TV 4K
+  (`…-4K-4K` sorts after `…-4K-3rd-generation-4K`), not the newest one (the step's comment
+  calls it the newest).
+- **The Players and the Remote** (`player-ui-tests`, `remote-ui-tests`): the newest iOS
+  runtime, with the highest-numbered "iPhone N" (iPhone 17) or the highest "iPad Pro 11-inch
+  (MN)" (M5).
+
+What Xcode 27.1 answers:
+
+```
+$ xcrun simctl create probe com.apple.CoreSimulator.SimDeviceType.Apple-TV-4K-4K com.apple.CoreSimulator.SimRuntime.tvOS-27-0
+An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError, code=403):
+Incompatible device
+Unable to create a device for device type: Apple TV 4K (com.apple.CoreSimulator.SimDeviceType.Apple-TV-4K-4K), runtime: tvOS 27.0 (27.0 - 24J360) - com.apple.CoreSimulator.SimRuntime.tvOS-27-0
+
+$ xcrun simctl create probe com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-27-1
+An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError, code=403):
+Incompatible device
+Unable to create a device for device type: iPhone 17 (com.apple.CoreSimulator.SimDeviceType.iPhone-17), runtime: iOS 27.1 (27.1 - 24A94425) - com.apple.CoreSimulator.SimRuntime.iOS-27-1
+```
+
+Both exit 147 and create nothing. The iPad pick fails the same way
+(`iPad-Pro-11-inch-M5-12GB` with `iOS-27-1`: "Incompatible device").
+
+What that Mac accepts, and where the UI tests ran:
+
+| Job | Device type | Runtime |
+| --- | --- | --- |
+| Apple TV | `Apple-TV-4K-3rd-generation-4K` (Apple TV 4K (3rd generation)) | `tvOS-27-0` (tvOS 27.0) |
+| iPhone | `iPhone-17` (iPhone 17) | `iOS-27-0` (iOS 27.0) |
+| iPad | `iPad-Pro-11-inch-M5-12GB` (iPad Pro 11-inch (M5)) | `iOS-27-0` (iOS 27.0) |
+
+So the first-generation Apple TV 4K has no tvOS 27, and iOS 27.1 (the runtime of the iPhone
+Duo) does not take the iPhone 17 or the iPad Pro (M5).
+
+The fallback the pick needs: try the pairs in order and keep the first that `simctl create`
+accepts (it exits non-zero and creates nothing when it refuses, so trying costs nothing).
+For Apple TV, the "Apple TV 4K" device types newest generation first; for iPhone and iPad,
+the same device type with each runtime from the newest down. A job that finds no pair should
+fail with the list it tried. The tests do not depend on which pair it is: they need a 4K
+Apple TV, a plain iPhone, an 11-inch iPad.
+
 ## Crash symbols (owner)
 
 One step turns symbol uploads on at both ends: add a repository secret **`MAKTABA_SYMBOLS_TOKEN`**

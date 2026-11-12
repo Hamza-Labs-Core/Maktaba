@@ -1027,9 +1027,23 @@ public struct ChannelAccess: Decodable, Equatable, Sendable {
 
     /// How long to wait before asking again: until `until` (at least 5 s, at most 5 minutes,
     /// so a guardian's change shows without the programme changing).
+    ///
+    /// `until` is the home's time and `now` this device's: the answer carries no clock of
+    /// the home's to measure against, so a device clock that is off waits too little (never
+    /// under 5 s) or too long (never over 5 minutes). What the device shows meanwhile is
+    /// still the home's: its streaming refuses the programme itself, and a player shows the
+    /// slate on that refusal (`programmeRefused`) without waiting for this question.
     public func askAgain(after now: Date = .now) -> TimeInterval {
         guard let until else { return 300 }
         return min(300, max(5, until.timeIntervalSince(now) + 1))
+    }
+
+    /// The home refused the channel because the programme on now is above the limit (403
+    /// `restricted`, reason `programme`, from the channel's play or its stream): the slate,
+    /// not an error.
+    public static func programmeRefused(_ error: Error) -> Bool {
+        if case .programme? = ParentalRefusal(error) { return true }
+        return false
     }
 }
 

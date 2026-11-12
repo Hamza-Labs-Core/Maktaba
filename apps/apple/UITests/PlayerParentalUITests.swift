@@ -190,6 +190,31 @@ final class PlayerParentalUITests: PlayerUITestCase {
         XCTAssertTrue(state.contains("playing=false"), "paused in the background under a limit, and not started again: \(state)")
     }
 
+    /// T05: a parent hides the video while it plays. The home answers the stream's next
+    /// progress post as a missing session's (404): the video stops on the blocked page, with
+    /// no title of what it was, and no stream is asked for again.
+    func testAVideoHiddenWhileItPlaysStopsOnTheBlockedPage() {
+        home.parental(Self.child)
+        launchSignedIn(sections: ["home"], open: "watch/v1@30")
+        XCTAssertTrue(element("screen.watch").waitForExistence(timeout: 20), "the player")
+        waitUntil("the stream opened", timeout: 30) { self.count("POST", "/api/stream/sessions") >= 1 }
+        waitUntil("it plays", timeout: 30) { (self.element("player.surface").value as? String ?? "").contains("playing=true") }
+        home.stub("POST", "/api/stream/sessions/ss-1/progress", status: 404, body: Self.notFound)
+        XCTAssertTrue(element("blocked.title").waitForExistence(timeout: 40), "the blocked page, mid-video")
+        XCTAssertEqual(element("blocked.title").label, "This isn't available")
+        XCTAssertEqual(element("blocked.reason").label, "This video is no longer available on this account.")
+        XCTAssertFalse(element("player.surface").exists, "the picture is gone")
+        XCTAssertFalse(element("player.error").exists, "not an error")
+        XCTAssertTrue(element("blocked.ask").exists, "Ask a parent")
+        shot("parental-blocked-mid-video")
+        let opened = count("POST", "/api/stream/sessions")
+        RunLoop.current.run(until: Date().addingTimeInterval(12))
+        XCTAssertEqual(count("POST", "/api/stream/sessions"), opened, "not tried again")
+        XCTAssertTrue(element("blocked.title").exists)
+        element("blocked.back").tap()
+        XCTAssertTrue(element("screen.home").waitForExistence(timeout: 10), "Back leaves the player")
+    }
+
     // MARK: 57.06
 
     /// T09 (and T08's other half): Enter parent PIN, a wrong PIN, then the right one opens
@@ -222,6 +247,60 @@ final class PlayerParentalUITests: PlayerUITestCase {
         home.stub("GET", "/api/me/parental", body: #"{"restricted":true,"max_tier":9,"unrated":"hide","version":5}"#)
         for d in [6, 5, 4, 3, 2, 1] { element("pin.key.\(d)").tap() }
         waitUntil("the video's page after the PIN", timeout: 20) { !self.element("blocked.title").exists && self.app.buttons["video.favorite"].exists }
+    }
+
+    /// T09: too many wrong PINs and the home closes PIN entry (429 `pin_locked`): the pad
+    /// says so in Arabic with the time left, its keys take nothing, and when the lock ends
+    /// they open again by themselves, the sheet never closed. The keys keep their order
+    /// left to right, and grow with the text size without leaving their rows.
+    func testALockedPINPadSaysSoAndOpensAgainWhenTheLockEnds() throws {
+        childWithHiddenVideo(pinHolders: Self.huda)
+        home.stub("POST", "/api/me/parental/unlock", status: 429,
+                  body: #"{"type":"https://maktaba.tv/problems/parental-pin-locked","status":429,"code":"pin_locked","retry_after":12}"#,
+                  headers: ["Retry-After": "12"])
+        launchSignedIn("ar", sections: ["home"], open: "video/v2")
+        XCTAssertTrue(element("blocked.pin").waitForExistence(timeout: 20), "Enter parent PIN")
+        element("blocked.pin").tap()
+        XCTAssertTrue(element("pin.pad").waitForExistence(timeout: 10), "the pad")
+
+        // Dynamic Type: the keys grow with the text, three to a row inside the window
+        let small = element("pin.key.1").frame
+        setTextSize(.ax3)
+        let large = element("pin.key.1").frame
+        XCTAssertGreaterThan(large.height, small.height, "a key is taller at AX3: \(small) then \(large)")
+        let window = app.windows.firstMatch.frame
+        XCTAssertLessThan(element("pin.key.1").frame.minX, element("pin.key.2").frame.minX, "1 2 3 left to right")
+        XCTAssertLessThan(element("pin.key.2").frame.minX, element("pin.key.3").frame.minX)
+        XCTAssertGreaterThanOrEqual(element("pin.key.1").frame.minX, window.minX, "the row stays inside the window")
+        XCTAssertLessThanOrEqual(element("pin.key.3").frame.maxX, window.maxX, "the row stays inside the window")
+        XCTAssertLessThanOrEqual(element("pin.key.2").frame.maxX, element("pin.key.3").frame.minX, "keys do not overlap")
+        XCTAssertEqual(element("pin.key.1").frame.minY, element("pin.key.3").frame.minY, accuracy: 1, "one row")
+        XCTAssertLessThanOrEqual(element("pin.key.1").frame.maxY, element("pin.key.4").frame.minY, "a row does not run into the next")
+        shot("parental-pin-ax3")
+        setTextSize(.standard)
+
+        for d in [1, 2, 3, 4, 5, 6] { element("pin.key.\(d)").tap() }
+        XCTAssertTrue(element("pin.line").waitForExistence(timeout: 10), "the lock's line")
+        XCTAssertTrue(element("pin.line").label.hasPrefix("محاولات كثيرة. أعد المحاولة بعد"), element("pin.line").label)
+        XCTAssertEqual(count("POST", "/api/me/parental/unlock"), 1)
+        waitUntil("the keys are closed") { !self.element("pin.key.1").isEnabled }
+        XCTAssertLessThan(element("pin.key.1").frame.minX, element("pin.key.2").frame.minX, "still 1 2 3 left to right")
+        shot("parental-pin-locked")
+        element("pin.key.1").tap()
+        XCTAssertEqual(count("POST", "/api/me/parental/unlock"), 1, "a closed pad sends nothing")
+
+        // the lock ends: the keys open again with the sheet still up, and the right PIN opens the video
+        home.stub("POST", "/api/me/parental/unlock",
+                  body: #"{"rule":{"id":"ru1","user_id":"u1","effect":"allow","subject_kind":"video","subject_id":"v2","expires_at":"2026-11-12T04:00:00Z","created_at":"2026-11-11T10:00:00Z"}}"#)
+        home.stub("GET", "/api/videos/v2", body: try XCTUnwrap(home.fixture(named: "video-v2")))
+        home.stub("GET", "/api/me/videos/v2", body: try XCTUnwrap(home.fixture(named: "me-video-v2")))
+        home.stub("GET", "/api/me/parental", body: #"{"restricted":true,"max_tier":9,"unrated":"hide","version":5}"#)
+        waitUntil("the keys open again when the lock ends", timeout: 30) { self.element("pin.key.1").isEnabled }
+        XCTAssertTrue(element("pin.pad").exists, "the sheet was not closed")
+        XCTAssertFalse(element("pin.line").exists && element("pin.line").label.hasPrefix("محاولات كثيرة"), "the lock's line is gone")
+        for d in [6, 5, 4, 3, 2, 1] { element("pin.key.\(d)").tap() }
+        waitUntil("the video's page after the PIN", timeout: 20) { !self.element("blocked.title").exists && self.app.buttons["video.favorite"].exists }
+        XCTAssertEqual(count("POST", "/api/me/parental/unlock"), 2)
     }
 
     // MARK: 57.04
@@ -267,9 +346,18 @@ final class PlayerParentalUITests: PlayerUITestCase {
         XCTAssertTrue(line.waitForExistence(timeout: 5) || about.label.contains("movie"), "the diagnostics line")
         let text = line.exists ? line.label : about.label
         XCTAssertTrue(text.contains("movie") && text.contains("tv") && text.contains("region"), text)
-        // no age range without the capability: nothing about an age is sent
-        if let sent = body("POST", "/api/me/age-signal") {
-            XCTAssertNil(sent["age_range"], "no capability, no age range: \(sent)")
+        // no age range without the capability: none was read (the line says what was), and
+        // nothing about an age was sent, in any post
+        XCTAssertTrue(text.contains("age --- - · movie "), "no age range is read without the capability: \(text)")
+        let posts = home.requests.filter { $0.method == "POST" && $0.path == "/api/me/age-signal" }
+            .map { ((try? JSONSerialization.jsonObject(with: $0.body)) as? [String: Any]) ?? [:] }
+        for sent in posts { XCTAssertNil(sent["age_range"], "no capability, no age range: \(sent)") }
+        // the home was told exactly when the device said something: a Screen Time limit read
+        // is posted (as a ceiling, never as an age), and with none read nothing is
+        let readALimit = !(text.contains("movie - ·") && text.contains("tv - ·"))
+        XCTAssertEqual(!posts.isEmpty, readALimit, "posted \(posts) for: \(text)")
+        for sent in posts {
+            XCTAssertTrue(sent["movie_ceiling"] != nil || sent["tv_ceiling"] != nil, "a post says a limit: \(sent)")
         }
         XCTAssertFalse(element("profile.parental.ageRange").exists, "no Age range row where Apple offers none")
         let a = XCTAttachment(string: text)
@@ -574,6 +662,142 @@ final class PlayerParentalUITests: PlayerUITestCase {
         waitUntil("the notice goes from Profile") { !self.element("family.notice.title").exists }
     }
 
+    /// 57.07 T04: an admin's Rate libraries in Arabic, right to left: each library with the
+    /// tier the home has stored, a tier picked from the row's menu sent as the library's
+    /// default, and Not rated sent as none.
+    func testAnAdminRatesLibrariesInArabic() {
+        home.parental(#"{"restricted":false}"#)
+        home.stub("GET", "/api/admin/library-acl", body: #"{"users":[{"id":"u1","username":"tester"}],"libraries":[],"grants":[]}"#)
+        home.stub("GET", "/api/parental/settings", body: Self.settings(enabled: true, notice: false))
+        home.stub("GET", "/api/parental/library-suggestions",
+                  body: #"{"libraries":[{"library_id":"lib-docs","name":"Documentaries","tier":13,"suggested_tier":null,"classified":20,"lectures":2},{"library_id":"lib-lectures","name":"Lectures","tier":null,"suggested_tier":null,"classified":4,"lectures":1}]}"#)
+        home.stub("PUT", "/api/libraries/lib-docs/age-tier", status: 204)
+        home.stub("PUT", "/api/libraries/lib-lectures/age-tier", status: 204)
+        launchSignedIn("ar", sections: ["profile"], section: "profile")
+        let family = element("profile.family")
+        scrollUntil(family)
+        XCTAssertTrue(family.waitForExistence(timeout: 20), "Family, for an admin")
+        family.tap()
+        let rate = element("family.rateLibraries")
+        XCTAssertTrue(rate.waitForExistence(timeout: 15), "Rate libraries, an admin's")
+        scrollUntil(rate)
+        XCTAssertTrue(rate.label.contains("تصنيف المكتبات"), rate.label)
+        rate.tap()
+        XCTAssertTrue(element("screen.rateLibraries").waitForExistence(timeout: 10), "Rate libraries")
+        XCTAssertTrue(app.navigationBars["تصنيف المكتبات"].waitForExistence(timeout: 5), "its title in Arabic")
+        let docs = element("family.rate.lib-docs"), lectures = element("family.rate.lib-lectures")
+        XCTAssertTrue(docs.waitForExistence(timeout: 15), "the libraries")
+        waitUntil("the stored tier shows") { docs.label.contains("13") || docs.label.contains("١٣") }
+        XCTAssertFalse(docs.label.contains("المقترح"), "a stored tier is not a suggestion: \(docs.label)")
+        waitUntil("a library with no tier says so") { lectures.label.contains("غير مصنَّف") }
+        XCTAssertGreaterThanOrEqual(docs.frame.height, 44, "a row is at least 44 pt tall")
+        // right to left: the back button is at the right edge
+        let window = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(app.navigationBars.buttons.firstMatch.frame.midX, window.midX, "mirrored: Back sits at the right")
+        shot("parental-rate-libraries")
+
+        // a tier from the row's menu is sent as the library's default
+        lectures.tap()
+        let allAges = app.buttons["لكل الأعمار"].firstMatch
+        XCTAssertTrue(allAges.waitForExistence(timeout: 5), "the tiers, in Arabic")
+        XCTAssertTrue(app.buttons["غير مصنَّف"].firstMatch.exists, "and Not rated")
+        allAges.tap()
+        waitUntil("the tier sent") { self.count("PUT", "/api/libraries/lib-lectures/age-tier") == 1 }
+        XCTAssertEqual(body("PUT", "/api/libraries/lib-lectures/age-tier")?["tier"] as? Int, 0, "All ages")
+        waitUntil("the row says the new tier") { lectures.label.contains("لكل الأعمار") }
+
+        // Not rated is sent as no tier
+        docs.tap()
+        let none = app.buttons["غير مصنَّف"].firstMatch
+        XCTAssertTrue(none.waitForExistence(timeout: 5), "Not rated")
+        none.tap()
+        waitUntil("no tier sent") { self.count("PUT", "/api/libraries/lib-docs/age-tier") == 1 }
+        let sent = body("PUT", "/api/libraries/lib-docs/age-tier")
+        XCTAssertTrue(sent?["tier"] is NSNull, "none: \(String(describing: sent))")
+        waitUntil("the row says not rated") { docs.label.contains("غير مصنَّف") }
+        XCTAssertEqual(count("PUT", "/api/libraries/lib-lectures/age-tier"), 1, "the other library was left alone")
+    }
+
+    /// 57.15: a guardian's Time screen for a child. With no rules it says so and shows what
+    /// was watched today; Add a rule opens the editor, which will not save a rule with
+    /// neither watching hours nor a daily limit; a rule with a limit and without one day is
+    /// sent as the whole list; the rule the home answers shows in one line; Remove in its
+    /// editor sends the list without it.
+    func testAGuardianAddsAndRemovesATimeRule() {
+        guardian()
+        home.stub("PUT", "/api/parental/users/c2/time-rules",
+                  body: #"{"rules":[{"id":"t1","days":95,"daily_minutes":75}],"time_zone":"Asia/Riyadh"}"#)
+        launchSignedIn(sections: ["profile"], section: "profile")
+        XCTAssertTrue(element("profile.family").waitForExistence(timeout: 20), "Family")
+        element("profile.family").tap()
+        XCTAssertTrue(element("family.child.c2").waitForExistence(timeout: 10), "the child")
+        element("family.child.c2").tap()
+        let time = element("child.time")
+        XCTAssertTrue(time.waitForExistence(timeout: 10), "Time, on the child's page")
+        scrollUntil(time)
+        time.tap()
+        XCTAssertTrue(element("time.none").waitForExistence(timeout: 10), "no rules yet")
+        XCTAssertEqual(element("time.none").label, "No time rules. Watching is not limited by time.")
+        XCTAssertEqual(element("time.today").label, "Watched today: 25 min")
+        XCTAssertTrue(app.staticTexts["Times are in the home's time zone (Asia/Riyadh)."].exists, "whose clock the rules follow")
+
+        element("time.add").tap()
+        let save = element("rule.save")
+        XCTAssertTrue(save.waitForExistence(timeout: 10), "the editor")
+        XCTAssertTrue(save.isEnabled, "a new rule starts with a daily limit: it can be saved")
+        // every day but Friday (bit 5; the days are the form's first rows)
+        flip("rule.day.5")
+        // neither watching hours nor a daily limit: not a rule, and Save is off
+        flip("rule.limit")
+        waitUntil("Save is off without hours or a limit") { !save.isEnabled }
+        flip("rule.limit")
+        waitUntil("Save is on again") { save.isEnabled }
+        // one step up from an hour: 1 hr 15 min a day
+        let stepper = app.steppers["rule.minutes"].firstMatch
+        XCTAssertTrue(stepper.waitForExistence(timeout: 5), "the daily limit's stepper")
+        let up = stepper.buttons["Increment"].firstMatch
+        (up.exists ? up : stepper.buttons.element(boundBy: 1)).tap()
+        shot("parental-time-rule-editor")
+        save.tap()
+        waitUntil("the rules sent") { self.count("PUT", "/api/parental/users/c2/time-rules") == 1 }
+        let rules = body("PUT", "/api/parental/users/c2/time-rules")?["rules"] as? [[String: Any]]
+        XCTAssertEqual(rules?.count, 1, "the whole list: \(String(describing: rules))")
+        XCTAssertEqual(rules?.first?["daily_minutes"] as? Int, 75)
+        XCTAssertEqual(rules?.first?["days"] as? Int, 127 & ~(1 << 5), "every day but Friday")
+        XCTAssertNil(rules?.first?["slot_start"], "no watching hours were set")
+        XCTAssertNil(rules?.first?["library_id"], "every library")
+        XCTAssertNil(rules?.first?["id"], "the list replaces the rules: no id is sent")
+
+        // the rule as the home answered it, in one line
+        let rule = element("time.rule.t1")
+        XCTAssertTrue(rule.waitForExistence(timeout: 10), "the rule the home answered")
+        XCTAssertTrue(rule.label.contains("1 hr") && rule.label.contains("15 min"), rule.label)
+        XCTAssertFalse(rule.label.contains("Every day"), "not every day: \(rule.label)")
+        XCTAssertFalse(element("time.none").exists)
+        shot("parental-time-rules")
+
+        // its editor has Remove: the list goes without it
+        home.stub("PUT", "/api/parental/users/c2/time-rules", body: #"{"rules":[],"time_zone":"Asia/Riyadh"}"#)
+        rule.tap()
+        XCTAssertTrue(save.waitForExistence(timeout: 10), "the rule's editor")
+        // Remove is the form's last row, below the fold (a row off screen is not in the tree)
+        let remove = element("rule.remove")
+        scrollUntil(remove)
+        XCTAssertTrue(remove.waitForExistence(timeout: 10), "Remove, in an existing rule's editor")
+        remove.tap()
+        waitUntil("the list sent without the rule") { self.count("PUT", "/api/parental/users/c2/time-rules") == 2 }
+        XCTAssertEqual((body("PUT", "/api/parental/users/c2/time-rules")?["rules"] as? [Any])?.count, 0)
+        XCTAssertTrue(element("time.none").waitForExistence(timeout: 10), "no rules again")
+    }
+
+    /// Flips the switch `id` (a row's toggle holds the switch itself inside it).
+    private func flip(_ id: String) {
+        let row = app.switches[id].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "the switch \(id)")
+        let inner = row.switches.firstMatch
+        (inner.exists ? inner : row).tap()
+    }
+
     /// A play-only sign-in through Maktaba Cloud (`cloud_scope: play` in who-am-I): Family
     /// says up front that nothing can be changed here, and its controls are disabled, before
     /// the home has refused anything.
@@ -633,6 +857,30 @@ final class PlayerParentalUITests: PlayerUITestCase {
         XCTAssertTrue(element("screen.home").waitForExistence(timeout: 10), "Back leaves the player")
     }
 
+    /// The stream sent no progress for a minute (a long pause; the home answers the next post
+    /// `parental-time` with `no_heartbeat`): that is not time's up. The stream is opened
+    /// again, once, and the video plays on.
+    func testAMissedHeartbeatOpensTheStreamAgainAndPlaysOn() {
+        home.parental(Self.child, time: #"{"allowed":true,"limited":true,"remaining_seconds":3600,"slot_ends_at":null,"next_allowed_at":null,"now":"{{now}}"}"#)
+        launchSignedIn(sections: ["home"], open: "watch/v1@30")
+        XCTAssertTrue(element("screen.watch").waitForExistence(timeout: 20), "the player")
+        waitUntil("the stream opened", timeout: 30) { self.count("POST", "/api/stream/sessions") == 1 }
+        waitUntil("it plays", timeout: 30) { (self.element("player.surface").value as? String ?? "").contains("playing=true") }
+        home.stub("POST", "/api/stream/sessions/ss-1/progress", status: 403,
+                  body: #"{"type":"https://maktaba.tv/problems/parental-time","title":"forbidden","status":403,"code":"parental_time","reason":"no_heartbeat"}"#)
+        waitUntil("the stream is opened again", timeout: 40) { self.count("POST", "/api/stream/sessions") == 2 }
+        // the new stream's posts are taken
+        home.stub("POST", "/api/stream/sessions/ss-1/progress", status: 204)
+        XCTAssertFalse(element("timeUp.title").exists, "a missed heartbeat is not time's up")
+        waitUntil("it plays on", timeout: 30) {
+            self.element("player.surface").exists && (self.element("player.surface").value as? String ?? "").contains("playing=true")
+        }
+        RunLoop.current.run(until: Date().addingTimeInterval(12))
+        XCTAssertEqual(count("POST", "/api/stream/sessions"), 2, "opened again once")
+        XCTAssertFalse(element("timeUp.title").exists)
+        XCTAssertFalse(element("player.error").exists)
+    }
+
     /// T02 in Arabic, at the start: the home refuses the stream itself.
     func testTimeUpAtTheStartInArabic() {
         home.parental(Self.child, time: #"{"allowed":false,"limited":true,"reason":"outside_slot","remaining_seconds":0,"slot_ends_at":null,"next_allowed_at":"{{now+3600}}","now":"{{now}}"}"#)
@@ -677,6 +925,26 @@ final class PlayerParentalUITests: PlayerUITestCase {
                        "Not available right now. This channel comes back when the next programme starts.")
         XCTAssertFalse(home.seen.contains("POST /api/tv/remote/tune"), "nothing was tuned")
         shot("parental-live-slate")
+    }
+
+    /// The home's streaming refuses the programme itself (403 `restricted`, reason
+    /// `programme`) although the access answer said it may be watched (it came just before
+    /// the programme changed, or this device's clock is off): the slate at once, not an error.
+    func testAChannelWhoseStreamTheHomeRefusesForItsProgrammeShowsTheSlate() {
+        home.parental(Self.child)
+        home.stub("GET", "/api/channels/ch-1/access", body: #"{"channel_id":"ch-1","restricted":true,"allowed":true,"until":null}"#)
+        home.stub("GET", "/stream/channel/ch-1/index.m3u8", status: 403,
+                  body: #"{"type":"https://maktaba.tv/problems/parental-restricted","title":"forbidden","status":403,"detail":"not available right now","code":"restricted","reason":"programme","retry_at":"{{now+1800}}"}"#)
+        launchSignedIn(sections: ["home", "live"], open: "channel/ch-1")
+        XCTAssertTrue(element("live.slate").waitForExistence(timeout: 40), "the slate; the home saw \(home.seen.suffix(8))")
+        XCTAssertEqual(element("live.slate.text").label,
+                       "Not available right now. This channel comes back when the next programme starts.")
+        XCTAssertTrue(home.seen.contains("GET /stream/channel/ch-1/index.m3u8"), "the channel was asked for, and refused")
+        XCTAssertFalse(element("live.player.error").exists, "not an error")
+        let asked = count("GET", "/stream/channel/ch-1/index.m3u8")
+        RunLoop.current.run(until: Date().addingTimeInterval(8))
+        XCTAssertEqual(count("GET", "/stream/channel/ch-1/index.m3u8"), asked, "not asked for again at once")
+        XCTAssertTrue(element("live.slate").exists)
     }
 
     /// The same when the channel opens before the home said the account has a limit (the

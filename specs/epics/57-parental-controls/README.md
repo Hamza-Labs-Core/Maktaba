@@ -1,8 +1,7 @@
 # Epic 57: Parental controls: the home's rules on every device, with Apple's Screen Time
 
-> **Status:** mostly built (checked against the code 2026-11-12; spec 2026-11-08, direction
-> widened 2026-11-10, see §1). **Built:** 57.01–57.10, 57.13–57.15, 57.17, and the home's and
-> the web's side of 57.12. **In progress:** 57.11 (Apple TV) and the iPhone notice of 57.12.
+> **Status:** built but one story (checked against the code 2026-11-12; spec 2026-11-08, direction
+> widened 2026-11-10, see §1). **Built:** 57.01–57.15 and 57.17.
 > **Not built:** 57.16 (it needs the Family Controls entitlement). What differs from the text
 > below, and what is still open, is in §14. **Platforms:** the home's API, pipeline and
 > streaming service; the web (family settings under `/family`, and the child's side); the Apple
@@ -483,11 +482,11 @@ Status as checked against the code on 2026-11-12.
 | 57.08 | [Activity for guardians](story-57-08-activity.md) | API, iOS, web | built |
 | 57.09 | [Screen Time, Family Sharing and the App Store](story-57-09-screen-time.md) | iOS, Help | built; the Downtime check on a real device is open (§14) |
 | 57.10 | [Live TV under parental controls](story-57-10-live-tv.md) | API, streaming, pipeline, every client | built |
-| 57.11 | [Apple TV, where it falls out](story-57-11-apple-tv.md) | tvOS | in progress |
-| 57.12 | [Turning it on in existing homes](story-57-12-existing-homes.md) | API, web, iOS | the home and the web built; the iPhone notice in progress |
+| 57.11 | [Apple TV, where it falls out](story-57-11-apple-tv.md) | tvOS | built: the blocked page with Ask a parent and the parent PIN, the child's own requests followed, Settings' managed line, the Screen Time limits signal; live TV's access check, slate and masked programmes |
+| 57.12 | [Turning it on in existing homes](story-57-12-existing-homes.md) | API, web, iOS | built: the home, the web, and on iPhone and iPad the admin's notice (Profile and Family), the on/off switch and the suggested library ratings |
 | 57.13 | [OpenAPI, role tests and the bypass rehearsal](story-57-13-openapi-roles-rehearsal.md) | API, CI | built |
 | 57.14 | [Time limits and time slots, kept by the home](story-57-14-time-rules.md) | API, streaming | built |
-| 57.15 | [Time limits on every client](story-57-15-time-on-clients.md) | iOS, tvOS, Android, web, desktop | built, but Apple TV (57.11, in progress) |
+| 57.15 | [Time limits on every client](story-57-15-time-on-clients.md) | iOS, tvOS, Android, web, desktop | built, Apple TV included (the time left, the warnings, the time's-up screen with Ask for more time and the PIN) |
 | 57.16 | [The home's time rules through Screen Time](story-57-16-screen-time-rules.md) | iOS | not built |
 | 57.17 | [Tiers detected from transcripts](story-57-17-detected-tiers.md) | pipeline, API, web | built |
 
@@ -640,4 +639,3 @@ Open items:
 | O3 | The 57.04 device check on a real child device (do the Screen Time rating limits read as the parent set them) | `docs/testflight.md` |
 | O4 | The 57.09 Downtime check on a real child device | `docs/testflight.md` |
 | O5 | 57.16 is not built: it needs Apple to grant the Family Controls entitlement | story 57.16 |
-| O6 | 57.11 (Apple TV) and the iPhone notice of 57.12 are in progress | their stories |

@@ -164,6 +164,10 @@ final class LivePlayback {
         stallObserver = nil
     }
 
+    /// How long the slate stays before the home is asked again, after it refused the
+    /// programme itself.
+    static let afterRefusal: Duration = .seconds(30)
+
     private func retune(settle: Bool) {
         guard let id = channel?.id else { return }
         tunes += 1
@@ -270,6 +274,14 @@ final class LivePlayback {
             guard !Task.isCancelled else { return false }
             replaceItem(nil)
             Log.failure("play live channel", error)
+            if ChannelAccess.programmeRefused(error) {
+                // 57.10: the home refused the programme itself (the access answer came
+                // before the programme changed, or this TV's clock is off): the slate, and
+                // the home is asked again in half a minute (never at once: it just said no)
+                phase = .slated
+                do { try await Task.sleep(for: Self.afterRefusal) } catch { return false }
+                return true
+            }
             phase = TimeUp(error).map(Phase.timeUp) ?? .failed(HomeFailure.live(error))
             return false
         }
@@ -334,6 +346,22 @@ final class LivePlayback {
                 continue
             }
             guard player.currentItem?.status == .failed else { continue }
+            if recheck != nil, reopened == 0 {
+                // under a limit a stream that stops may be the home ending a programme now
+                // above it (this TV's clock said to ask later): the home is asked now
+                let now = await blockedNow(channel)
+                guard !Task.isCancelled, phase == .playing else { return false }
+                if let up = now.timeUp {
+                    timeIsUp(up)
+                    return false
+                }
+                if now.blocked {
+                    replaceItem(nil)
+                    phase = .slated
+                    return true
+                }
+                recheck = now.again
+            }
             if reopened >= 2 {
                 phase = .failed(player.currentItem?.error.map(HomeFailure.init)
                     ?? HomeFailure(kind: .server, detail: String(localized: "The channel stopped playing.")))

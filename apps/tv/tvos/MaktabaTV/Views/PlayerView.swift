@@ -51,6 +51,10 @@ final class TVPlayback {
     private var proxy: StreamProxy?
     /// Where the stream last opened: Try again starts there.
     private var lastStart: Double = 0
+    /// The place the home holds for this video: the position of the last progress post it
+    /// took, else where the stream was opened. The home stores nothing from a post it
+    /// refuses, so after a stop for time this is what "saved at" may say.
+    private(set) var savedPosition: Double?
 
     init(client: APIClient, video: Video) {
         self.client = client
@@ -169,9 +173,10 @@ final class TVPlayback {
     }
 
     /// Stops for a parental reason: the stream is closed and nothing plays until
-    /// `resumeAfterStop` (the home has the position from the heartbeats).
+    /// `resumeAfterStop` (the home has the position from the heartbeats it took).
     private func stopped(_ stop: ParentalStop) {
         Log.ui.info("playback: stopped by the home for a parental reason")
+        if savedPosition == nil { savedPosition = lastStart }
         player?.pause()
         if let session {
             Task { [client] in await client.closeStream(session) }
@@ -220,6 +225,7 @@ final class TVPlayback {
             if at.isFinite, at > 0 || limited() {
                 do {
                     try await client.postProgress(session: session, positionSec: Int(max(0, at)))
+                    if self.session == session { savedPosition = max(0, at) }
                 } catch {
                     if Log.isCancellation(error) { return }
                     if await refused(error, at: at) { return }
