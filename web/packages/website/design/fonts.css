@@ -6,10 +6,13 @@
  * (about 83 KB). Self-hosted; no third-party request. See ../static/fonts/README.md.
  *
  * The fallback faces are Arial scaled to Plex's average Latin width and vertical
- * metrics. The faces are preloaded and `font-display: optional`: a face that arrives in the
- * first moments (as a preloaded one does) is drawn from the first paint, and one that arrives
- * later is not swapped in, so nothing moves (CLS 0) even where Arial is missing (Linux) and the
- * fallback is another face.
+ * metrics; where Arial is missing (Linux), Liberation Sans, which has Arial's metrics glyph
+ * for glyph, takes the same scale. The faces are preloaded and `font-display: optional`: a face
+ * that arrives in the first moments (as a preloaded one does) is drawn from the first paint,
+ * and one that arrives later is not swapped in. A face that arrives inside the short block
+ * period still replaces the fallback's layout, so the fallback must measure like the face: on
+ * Linux without Liberation Sans, the Latin "English" in the Arabic header changed width when
+ * Plex arrived and slid the nav beside it (#1187's CI, 2026-11-12).
  */
 
 @font-face {
@@ -55,7 +58,7 @@
 @font-face {
   font-family: "Maktaba Text Fallback";
   font-weight: 400;
-  src: local("Arial"), local("ArialMT");
+  src: local("Arial"), local("ArialMT"), local("Liberation Sans"), local("LiberationSans");
   size-adjust: 101.6%;
   ascent-override: 106.8%;
   descent-override: 40.85%;
@@ -66,7 +69,8 @@
 @font-face {
   font-family: "Maktaba Text Fallback";
   font-weight: 600;
-  src: local("Arial Bold"), local("Arial-BoldMT");
+  src: local("Arial Bold"), local("Arial-BoldMT"), local("Liberation Sans Bold"),
+    local("LiberationSans-Bold");
   size-adjust: 97.15%;
   ascent-override: 111.7%;
   descent-override: 42.7%;
@@ -107,7 +111,8 @@
 @font-face {
   font-family: "Maktaba Display Fallback";
   font-weight: 700;
-  src: local("Times New Roman Bold"), local("TimesNewRomanPS-BoldMT");
+  src: local("Times New Roman Bold"), local("TimesNewRomanPS-BoldMT"),
+    local("Liberation Serif Bold"), local("LiberationSerif-Bold");
   size-adjust: 99.5%;
   ascent-override: 113%;
   descent-override: 63.7%;

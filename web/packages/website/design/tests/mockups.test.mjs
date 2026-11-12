@@ -246,3 +246,25 @@ test("the help topic mockup uses the app's own text", () => {
   const html = readFileSync(join(design, "mockups", "help-topic.en.html"), "utf8");
   assert.ok(prose(html).replace(/\s+/g, " ").includes(first.replace(/[`*]/g, "")), first);
 });
+
+// A preloaded face that arrives inside font-display's block period replaces the fallback's
+// layout, so the fallback must measure like the face wherever the site is drawn: Arial (macOS,
+// Windows) and, where Arial is missing, its metric twin Liberation Sans (Linux, CI's image).
+// Without it, the Arabic header's Latin "English" changed width as Plex arrived and slid the nav
+// (#1187's CI, 2026-11-12).
+test("each fallback face names a metric twin present on Linux as well as Arial", () => {
+  const css = readFileSync(join(design, "fonts.css"), "utf8");
+  const faces = [...css.matchAll(/@font-face\s*{([^}]*)}/g)].map((m) => m[1]);
+  const fallbacks = faces.filter((f) => /font-family:\s*"Maktaba (Text|Display) Fallback"/.test(f));
+  assert.equal(fallbacks.length, 3, "two text weights and the display face");
+  for (const f of fallbacks) {
+    const src = f.match(/src:([^;]*);/)[1];
+    if (/Text Fallback/.test(f)) {
+      assert.match(src, /local\("Arial( Bold)?"\)/);
+      assert.match(src, /local\("Liberation Sans( Bold)?"\)/);
+    } else {
+      assert.match(src, /local\("Times New Roman Bold"\)/);
+      assert.match(src, /local\("Liberation Serif Bold"\)/);
+    }
+  }
+});
