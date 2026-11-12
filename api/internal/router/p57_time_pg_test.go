@@ -288,10 +288,19 @@ func TestPGTimeWiringFailsClosed(t *testing.T) {
 			t.Fatalf("%s: %d %v, want 503 and no URL", what, code, body)
 		}
 	}
+	// the time could not be read or counted: its own code, so an app tells it from a
+	// busy transcoder, a part that is off or a signer that is down
+	timeUnknown := func(what string, code int, body map[string]any) {
+		t.Helper()
+		unavailable(what, code, body)
+		if body["code"] != "parental_time_unknown" {
+			t.Fatalf("%s: code %v, want parental_time_unknown", what, body["code"])
+		}
+	}
 	// streaming without the time calls (an older build, or a stub)
 	e := setupTimeRouter(t, db, acStreaming{}, &tmSigner{})
 	code, body := open(e, "child")
-	unavailable("streaming keeps no time limits", code, body)
+	timeUnknown("streaming keeps no time limits", code, body)
 	if code, v := open(e, "viewer"); code != http.StatusCreated {
 		t.Fatalf("the viewer: %d %v", code, v)
 	}
@@ -299,12 +308,15 @@ func TestPGTimeWiringFailsClosed(t *testing.T) {
 	svc := &tmStreaming{leases: map[string]time.Time{}, fail: errors.New("streaming is down")}
 	e = setupTimeRouter(t, db, svc, &tmSigner{})
 	code, body = open(e, "child")
-	unavailable("streaming cannot be told", code, body)
+	timeUnknown("streaming cannot be told", code, body)
 	// a signer that cannot carry the claims signs nothing for a kept account
 	svc = &tmStreaming{leases: map[string]time.Time{}}
 	e = setupTimeRouter(t, db, svc, tmPlainSigner{})
 	code, body = open(e, "child")
 	unavailable("a signer that cannot be told", code, body)
+	if body["code"] == "parental_time_unknown" {
+		t.Fatalf("a signer that is down is not the time being unknown: %v", body)
+	}
 	code, v := open(e, "viewer")
 	if url, _ := v["direct_url"].(string); code != http.StatusCreated || !strings.HasSuffix(url, "?plain") {
 		t.Fatalf("the viewer through a plain signer: %d %v", code, v)

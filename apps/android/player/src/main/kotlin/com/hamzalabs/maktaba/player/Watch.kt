@@ -258,8 +258,9 @@ fun WatchScreen(
                     onSignIn = { playback.stop(); onSignIn() },
                     onChooseHome = { playback.stop(); onChooseHome() },
                     onBack = onClose,
-                    // a restricted account's 503: the home could not read its time (never free time on an error)
-                    sentence = if (restricted && problem.kind == ErrorKind.Busy) stringResource(CoreR.string.parental_time_cannot_check) else null,
+                    // the home could not read the account's time (never free time on an error); a
+                    // rate limit or another outage keeps its own words
+                    sentence = if (problem.cannotCheckTime(restricted)) stringResource(CoreR.string.parental_time_cannot_check) else null,
                 )
             }
             else -> Column(

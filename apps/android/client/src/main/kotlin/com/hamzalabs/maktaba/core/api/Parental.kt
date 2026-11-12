@@ -159,6 +159,29 @@ private fun Throwable.statusCause(): ApiException.Status? {
     return null
 }
 
+/** How surely a 503 is the home saying it cannot read the account's watching time ([timeUnknown]). */
+enum class TimeUnknown {
+    /** The home said so: 503 with `code: parental_time_unknown`. */
+    Yes,
+
+    /** A 503 that names nothing: a home older than the code sends this for it (and for other outages). */
+    OlderHome,
+    No,
+}
+
+/**
+ * Whether an answer is the home's "the watching time cannot be read" (Epic 57 story 57.14): a
+ * 503 with `code: parental_time_unknown`. A home from before that code sent the plain 503
+ * `unavailable` with no code; any 503 with another code or reason (a busy transcoder, the
+ * relay) and every other status is something else.
+ */
+fun timeUnknown(status: Int, problem: Problem?): TimeUnknown = when {
+    status != 503 -> TimeUnknown.No
+    problem?.code == "parental_time_unknown" -> TimeUnknown.Yes
+    problem == null || (problem.code.isEmpty() && problem.error.isEmpty() && (problem.slug.isEmpty() || problem.slug == "unavailable")) -> TimeUnknown.OlderHome
+    else -> TimeUnknown.No
+}
+
 /** What the home said to a progress post ([ApiClient.reportProgress]). */
 sealed interface ProgressAnswer {
     /** Taken: the stream goes on. */
@@ -170,7 +193,7 @@ sealed interface ProgressAnswer {
     /** 403 `parental-time`: the account's time is over. Playback stops; nothing asks again by itself. */
     data class TimeOver(val refusal: TimeRefusal) : ProgressAnswer
 
-    /** 503: the home cannot check the account's time right now; ask again after [retryAfterSec]. */
+    /** 503 `parental_time_unknown`: the home cannot check the account's time right now; ask again after [retryAfterSec]. */
     data class CannotCheck(val retryAfterSec: Long?) : ProgressAnswer
 
     /** Anything else (the network, a busy home): the stream plays on and the next post says more. */
@@ -183,7 +206,8 @@ sealed interface ProgressAnswer {
             return when {
                 over != null -> TimeOver(over)
                 status?.code == 404 -> Ended
-                status?.code == 503 -> CannotCheck(status.retryAfterSec)
+                // only the home's "cannot read the time" (or an older home's bare 503), not every outage
+                status != null && timeUnknown(status.code, status.problem) != TimeUnknown.No -> CannotCheck(status.retryAfterSec)
                 else -> Failed(e)
             }
         }

@@ -178,8 +178,8 @@ fun ChannelScreen(id: String) {
             Column(Modifier.weight(1f)) {
                 entry?.let { e ->
                     Text(t["live.channel", e.channel.number, e.channel.name], color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
-                    Text(e.current?.let { if (it.restricted) t["live.parental.notAvailable"] else it.title } ?: t["live.nothingOn"], color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    e.next?.let { n -> Text(t["live.next", n.startMs?.let { clockOf(it) } ?: "", n.title], color = Color.LightGray, style = MaterialTheme.typography.bodySmall, maxLines = 1) }
+                    Text(e.current?.let { programmeTitle(it, t) } ?: t["live.nothingOn"], color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("channel-current"))
+                    e.next?.let { n -> Text(nextLine(n, t), color = Color.LightGray, style = MaterialTheme.typography.bodySmall, maxLines = 1, modifier = Modifier.testTag("channel-next")) }
                 }
             }
             IconButton(onClick = { playback.previous(live.lineup) }, modifier = Modifier.testTag("channel-previous")) { Icon(Icons.Filled.KeyboardArrowUp, t["live.previousChannel"], tint = Color.White) }
@@ -231,3 +231,14 @@ private fun Stopped(sentence: String, retry: (() -> Unit)?, close: () -> Unit) {
         }
     }
 }
+
+/**
+ * A programme's title as the channel's bar shows it: "Not available" for one above the account's
+ * limit (the home sends its time only, story 57.10).
+ */
+internal fun programmeTitle(p: com.hamzalabs.maktaba.core.api.Programme, t: com.hamzalabs.maktaba.desktop.Texts): String =
+    if (p.restricted) t["live.parental.notAvailable"] else p.title
+
+/** "Next 20:00 The News", with the next programme's title masked as the current one's is. */
+internal fun nextLine(n: com.hamzalabs.maktaba.core.api.Programme, t: com.hamzalabs.maktaba.desktop.Texts): String =
+    t["live.next", n.startMs?.let { clockOf(it) } ?: "", programmeTitle(n, t)]

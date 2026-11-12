@@ -186,11 +186,37 @@ class ParentalApiTest {
         routes[path] = { json(404, problem(404, "not-found", "not_found")) }
         assertEquals("a missing session is the stream's end", ProgressAnswer.Ended, client().reportProgress("s1", 14))
 
-        routes[path] = { json(503, problem(503, "unavailable", "unavailable"), retryAfter = "5") }
+        // the home cannot read the time: its own code (57.14), and an older home's 503 with none
+        routes[path] = { json(503, problem(503, "unavailable", "parental_time_unknown"), retryAfter = "5") }
         assertEquals(ProgressAnswer.CannotCheck(5), client().reportProgress("s1", 15))
+        routes[path] = { json(503, """{"type":"https://maktaba.tv/problems/unavailable","title":"service unavailable","status":503,"retry_after_sec":5}""", retryAfter = "5") }
+        assertEquals(ProgressAnswer.CannotCheck(5), client().reportProgress("s1", 15))
+        // any other 503 or a rate limit says nothing about the time: the stream plays on
+        routes[path] = { json(503, problem(503, "transcode-busy", "transcode_busy"), retryAfter = "10") }
+        assertTrue(client().reportProgress("s1", 15) is ProgressAnswer.Failed)
+        routes[path] = { json(429, problem(429, "rate-limited", "rate_limited"), retryAfter = "30") }
+        assertTrue(client().reportProgress("s1", 15) is ProgressAnswer.Failed)
 
         routes[path] = { json(500, "boom") }
         assertTrue(client().reportProgress("s1", 16) is ProgressAnswer.Failed)
+    }
+
+    @Test
+    fun onlyTheHomesOwnCodeOrAnOlderHomesBare503IsCannotCheckTheTime() {
+        fun failure(status: Int, body: String) = com.hamzalabs.maktaba.core.api.Failure.of(ApiException.Status(status, body, 5))
+        val coded = failure(503, problem(503, "unavailable", "parental_time_unknown"))
+        assertEquals(ErrorKind.Busy, coded.kind)
+        assertTrue("the home said so: for any account", coded.cannotCheckTime(restricted = false))
+        val bare = failure(503, """{"type":"https://maktaba.tv/problems/unavailable","title":"service unavailable","status":503}""")
+        assertTrue("an older home's 503, to a restricted account: as before", bare.cannotCheckTime(restricted = true))
+        assertFalse("but not to an account with no limit", bare.cannotCheckTime(restricted = false))
+        assertTrue("a 503 that is no problem JSON", failure(503, "upstream down").cannotCheckTime(restricted = true))
+        // a rate limit and other outages keep their own words, for a restricted account too
+        assertFalse(failure(429, problem(429, "rate-limited", "rate_limited")).cannotCheckTime(restricted = true))
+        assertFalse(failure(503, problem(503, "signing-unavailable", "")).cannotCheckTime(restricted = true))
+        assertFalse(failure(503, problem(503, "transcode-busy", "transcode_busy")).cannotCheckTime(restricted = true))
+        assertFalse(failure(503, """{"error":"home_busy"}""").cannotCheckTime(restricted = true))
+        assertFalse(failure(500, "boom").cannotCheckTime(restricted = true))
     }
 
     @Test

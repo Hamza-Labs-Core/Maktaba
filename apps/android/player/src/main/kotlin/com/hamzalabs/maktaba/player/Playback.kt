@@ -231,13 +231,21 @@ class Playback(
         ladder = emptyList()
     }
 
-    /** Lets go of both players, and the system's controls of them. */
-    private fun releasePlayers() {
+    /**
+     * Lets go of both players, and the system's controls of them. [stopReceiver]: the home
+     * stopped the video (its time is over, or it is no longer the account's), so a Cast receiver
+     * is told to stop too; let go of only, it could play the signed URL on until the streaming
+     * service cuts it.
+     */
+    private fun releasePlayers(stopReceiver: Boolean = false) {
         val c = control
         val p = player
         if (c != null) {
             if (system) NowPlaying.detach(c)
-            if (c !== p) c.release()
+            if (c !== p) {
+                if (stopReceiver) c.stop()
+                c.release()
+            }
         }
         p?.release()
         control = null
@@ -315,8 +323,12 @@ class Playback(
             }
             try {
                 currentCoroutineContext().ensureActive()
+                // the video stopped for time, or the home ended it, while this open was on its
+                // way: nothing starts under that screen (the session is closed below)
+                if (stoppedByHome()) throw CancellationException("The video stopped while it was being opened.")
                 val url = s.playbackUrl(client.home) ?: throw IllegalStateException("The home gave no address to play.")
                 client.waitUntilPlayable(url)
+                if (stoppedByHome()) throw CancellationException("The video stopped while it was being opened.")
                 val item = MediaItem.Builder()
                     .setUri(url.toString())
                     .apply { if (s.isHls) setMimeType(MimeTypes.APPLICATION_M3U8) }
@@ -345,7 +357,8 @@ class Playback(
             renewAt = (s.expiresMillis ?: Long.MAX_VALUE).let { if (it == Long.MAX_VALUE) it else it - 60_000 }
             if (old != null && old != s.sessionId) background.launch { client.closeStream(old) }
         } catch (e: CancellationException) {
-            throw e
+            // stopped by the home meanwhile: this open ends quietly, its caller goes on
+            if (!stoppedByHome()) throw e
         } catch (e: ApiException.SignedOut) {
             stop()
             signedOut()
@@ -368,6 +381,9 @@ class Playback(
             }
         }
     }
+
+    /** The time's-up screen or "ended by the home" shows: nothing may start playing under it. */
+    private fun stoppedByHome(): Boolean = timeUp != null || endedByHome
 
     private fun newPlayer(): ExoPlayer {
         val data = OkHttpDataSource.Factory(streamHttp)
@@ -455,7 +471,7 @@ class Playback(
             ProgressAnswer.Ended -> if (!completed && !ended) {
                 Log.i("Maktaba", "playback: the home ended the stream")
                 session = null
-                releasePlayers()
+                releasePlayers(stopReceiver = true)
                 isPlaying = false
                 waiting = null
                 endedByHome = true
@@ -499,7 +515,7 @@ class Playback(
         val s = session
         session = null
         if (s != null) background.launch { client.closeStream(s) }
-        releasePlayers()
+        releasePlayers(stopReceiver = true)
         isPlaying = false
         waiting = null
         problem = null

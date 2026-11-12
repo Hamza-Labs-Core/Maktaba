@@ -295,8 +295,60 @@ class ParentalPlaybackTest {
         runUntil { playback.problem != null }
         assertEquals(ErrorKind.Busy, playback.problem!!.kind)
         assertEquals(5L, playback.problem!!.retryAfterSec)
+        assertTrue("an older home's bare 503 to a restricted account: can't check the time, as before", playback.problem!!.cannotCheckTime(restricted = true))
         idleFor(30_000)
         assertEquals("only the person's Try again asks", 1, streams.opens().size)
+    }
+
+    @Test
+    fun aRateLimitOnOpenIsNotCannotCheckTheTime() {
+        home.answer("/api/stream/sessions") {
+            MockResponse.Builder().code(429).setHeader("Retry-After", "30").setHeader("Content-Type", "application/problem+json")
+                .body("""{"type":"https://maktaba.tv/problems/rate-limited","title":"Too many","status":429,"code":"rate_limited"}""").build()
+        }
+        playback.play(v1)
+        runUntil { playback.problem != null }
+        assertEquals(ErrorKind.Busy, playback.problem!!.kind)
+        assertFalse("a rate limit keeps its own words, for a restricted account too", playback.problem!!.cannotCheckTime(restricted = true))
+    }
+
+    @Test
+    fun theHomesOwnCodeOnOpenIsCannotCheckTheTime() {
+        home.answer("/api/stream/sessions") {
+            MockResponse.Builder().code(503).setHeader("Retry-After", "5").setHeader("Content-Type", "application/problem+json")
+                .body("""{"type":"https://maktaba.tv/problems/unavailable","title":"service unavailable","status":503,"code":"parental_time_unknown"}""").build()
+        }
+        playback.play(v1)
+        runUntil { playback.problem != null }
+        assertTrue(playback.problem!!.cannotCheckTime(restricted = true))
+        assertEquals(5L, playback.problem!!.retryAfterSec)
+    }
+
+    @Test
+    fun anOpenThatAnswersAfterTheTimeRanOutPlaysNothingUnderTheTimesUpScreen() {
+        playback.play(v1, startSec = 1)
+        val p = playing()
+        runUntil { p.currentPosition > 1_200 }
+        // a quality change reopens the stream; the home is slow to answer it
+        val slow = home.hold("/api/stream/sessions") {
+            FakeHome.json("""{"session_id":"s2","mode":"transcode","manifest_url":"/stream/s2/master.m3u8?sig=x","expires_at":"2099-01-01T00:00:00Z","ladder":[]}""", code = 201)
+        }
+        playback.setQuality(1_500)
+        runUntil { slow.wasAsked }
+        // meanwhile a progress post says the time is over
+        home.answer("/api/stream/sessions/s1/progress") { timeOver(TimeReason.LIMIT_REACHED) }
+        p.pause()
+        runUntil { playback.timeUp != null }
+        assertNull(playback.player)
+        // the open succeeds after all (a grant just landed): nothing starts playing behind the screen
+        slow.release()
+        runUntil { "s2" in streams.closed() }
+        settle()
+        assertNull("no player under the time's-up screen", playback.player)
+        assertNull(playback.control)
+        assertFalse(playback.isPlaying)
+        assertNotNull(playback.timeUp)
+        assertNull(playback.problem)
     }
 
     @Test

@@ -131,11 +131,25 @@ fun Throwable.errorKind(): ErrorKind {
  * A failure as a screen keeps it: its [kind] (what a person reads) and the home's own words for
  * the Details disclosure and the log ([details]: never the main message).
  */
-data class Failure(val kind: ErrorKind, val details: String? = null, val retryAfterSec: Long? = null) {
+data class Failure(
+    val kind: ErrorKind,
+    val details: String? = null,
+    val retryAfterSec: Long? = null,
+    /** Whether, and how surely, this is the home saying it cannot read the account's watching time. */
+    val timeUnknown: TimeUnknown = TimeUnknown.No,
+) {
+    /**
+     * Whether the screen says "your home can't check your watching time": the home's own code
+     * for it, or, from a home older than that code, a bare 503 to a [restricted] account. A
+     * rate limit (429) or any other outage keeps its own words.
+     */
+    fun cannotCheckTime(restricted: Boolean): Boolean =
+        timeUnknown == TimeUnknown.Yes || (restricted && timeUnknown == TimeUnknown.OlderHome)
+
     companion object {
         fun of(e: Throwable): Failure {
             val status = e.findCause<ApiException.Status>()
-            return Failure(e.errorKind(), e.errorDetails(), status?.retryAfterSec)
+            return Failure(e.errorKind(), e.errorDetails(), status?.retryAfterSec, status?.let { timeUnknown(it.code, it.problem) } ?: TimeUnknown.No)
         }
     }
 }

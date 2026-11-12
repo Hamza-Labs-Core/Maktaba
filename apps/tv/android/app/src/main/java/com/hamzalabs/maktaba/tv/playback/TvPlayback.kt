@@ -185,9 +185,13 @@ class TvPlayback(
             val s = withContext(NonCancellable) { client.openStream(video, (fromMs / 1000).toInt()) }
             try {
                 currentCoroutineContext().ensureActive()
+                // the video stopped for time, or the home ended it, while this open was on its
+                // way: nothing starts under that screen (the session is closed below)
+                if (stoppedByHome()) throw CancellationException("The video stopped while it was being opened.")
                 val url = s.playbackUrl(client.home) ?: throw IllegalStateException("The home gave no address to play.")
                 client.waitUntilPlayable(url, timeoutMs = 60_000)
                 currentCoroutineContext().ensureActive()
+                if (stoppedByHome()) throw CancellationException("The video stopped while it was being opened.")
                 val item = MediaItem.Builder()
                     .setUri(url.toString())
                     .apply { if (s.isHls) setMimeType(MimeTypes.APPLICATION_M3U8) }
@@ -209,7 +213,8 @@ class TvPlayback(
             renewAt = s.expiresMillis?.let { it - 60_000 } ?: Long.MAX_VALUE
             if (old != null && old != s.sessionId) background.launch { client.closeStream(old) }
         } catch (e: CancellationException) {
-            throw e
+            // stopped by the home meanwhile: this open ends quietly, its caller goes on
+            if (!stoppedByHome()) throw e
         } catch (e: ApiException.SignedOut) {
             stop()
             signedOut()
@@ -235,6 +240,9 @@ class TvPlayback(
             opening = false
         }
     }
+
+    /** The time's-up screen or "ended by the home" shows: nothing may start playing under it. */
+    private fun stoppedByHome(): Boolean = timeUp != null || endedByHome
 
     private fun newPlayer(): ExoPlayer {
         val data = OkHttpDataSource.Factory(streamHttp)

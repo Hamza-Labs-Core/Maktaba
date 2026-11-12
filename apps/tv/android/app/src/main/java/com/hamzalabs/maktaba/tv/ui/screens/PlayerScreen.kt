@@ -207,15 +207,6 @@ fun PlayerScreen(
                 stopped = true,
                 onBack = onBack,
             )
-            problem != null && restricted && problem.kind == com.hamzalabs.maktaba.core.api.ErrorKind.Busy -> TvErrorState(
-                problem,
-                title = stringResource(CoreR.string.error_playback_title),
-                video = true,
-                onRetry = playback::retry,
-                onBack = onBack,
-                // a restricted account's 503: the home could not read its time (never free time on an error)
-                sentence = stringResource(CoreR.string.parental_time_cannot_check),
-            )
             problem != null -> TvErrorState(
                 problem,
                 title = stringResource(CoreR.string.error_playback_title),
@@ -224,6 +215,9 @@ fun PlayerScreen(
                 onSignIn = signedOut,
                 onChooseHome = { app.session.switchHome() },
                 onBack = onBack,
+                // the home could not read the account's time (never free time on an error); a rate
+                // limit or another outage keeps its own words, and every action it had
+                sentence = if (problem.cannotCheckTime(restricted)) stringResource(CoreR.string.parental_time_cannot_check) else null,
             )
             playback.opening || playback.waiting != null -> Column(
                 Modifier.fillMaxSize().padding(48.dp),

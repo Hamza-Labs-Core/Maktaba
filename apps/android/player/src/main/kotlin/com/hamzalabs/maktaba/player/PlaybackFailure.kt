@@ -11,6 +11,7 @@ import com.hamzalabs.maktaba.core.api.Failure
 import com.hamzalabs.maktaba.core.api.Problem
 import com.hamzalabs.maktaba.core.api.TimeRefusal
 import com.hamzalabs.maktaba.core.api.timeRefusal
+import com.hamzalabs.maktaba.core.api.timeUnknown
 import com.hamzalabs.maktaba.core.api.details
 import com.hamzalabs.maktaba.core.api.errorKind
 import com.hamzalabs.maktaba.core.api.retryAfterSeconds
@@ -27,7 +28,8 @@ fun playbackFailure(e: PlaybackException): Failure {
         if (c is HttpDataSource.InvalidResponseCodeException) {
             val body = String(c.responseBody).take(BODY_KEPT)
             val retryAfter = c.headerFields.entries.firstOrNull { it.key.equals("Retry-After", ignoreCase = true) }?.value?.firstOrNull()
-            return Failure(errorKind(c.responseCode, Problem.parse(body)), details(c.responseCode, body), retryAfterSeconds(retryAfter))
+            val problem = Problem.parse(body)
+            return Failure(errorKind(c.responseCode, problem), details(c.responseCode, body), retryAfterSeconds(retryAfter), timeUnknown(c.responseCode, problem))
         }
         if (c is ApiException) return Failure.of(c)
         if (c.cause === c) break

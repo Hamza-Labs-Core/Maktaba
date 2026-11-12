@@ -60,6 +60,10 @@ func TestTimeOKAnswers(t *testing.T) {
 			if rec.Header().Get("Retry-After") != "5" {
 				t.Errorf("%s: Retry-After = %q, want 5", c.name, rec.Header().Get("Retry-After"))
 			}
+			// its own code: an app tells it from any other 503
+			if CodeTimeUnknown != "parental_time_unknown" || body["code"] != CodeTimeUnknown {
+				t.Errorf("%s: code = %v, want parental_time_unknown", c.name, body["code"])
+			}
 		}
 	}
 }
