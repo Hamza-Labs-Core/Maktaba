@@ -156,6 +156,9 @@ type LiveAccess struct {
 	Allowed bool `json:"allowed"`
 	// Until is when Allowed next changes; null when the schedule read holds no change.
 	Until *time.Time `json:"until"`
+	// Now is the home's clock for this answer: a client waits Until minus Now on
+	// its own monotonic clock, so a device clock that is wrong changes nothing.
+	Now time.Time `json:"now"`
 }
 
 // LivePlay answers POST /api/channels/{id}/play.
@@ -167,21 +170,32 @@ type LivePlay struct {
 	// Until is when a restricted account's stream next stops (the start of a
 	// programme above its limit); null when the schedule read holds none.
 	Until *time.Time `json:"until"`
+	// Now is the home's clock for this answer (see LiveAccess.Now).
+	Now time.Time `json:"now"`
+}
+
+// withNow adds the home's clock to a refusal that carries a time to come back at
+// (retry_at, next_allowed_at): the client waits that time minus now.
+func withNow(e *httperror.Error, now time.Time) *httperror.Error {
+	return e.With("now", now.UTC().Format(time.RFC3339))
 }
 
 // channelFor loads the channel the caller asked for and judges it: the library
 // rule first, then the parental one. Every refusal for a channel the caller may
 // not see is the 404 of an unknown id.
-func (h *LiveHandler) channelFor(w http.ResponseWriter, r *http.Request) (*principal.Principal, string, parental.LiveVerdict, bool) {
+//
+// The time it returns is the home's clock the verdict was judged at: the answer's
+// `now`.
+func (h *LiveHandler) channelFor(w http.ResponseWriter, r *http.Request) (*principal.Principal, string, parental.LiveVerdict, time.Time, bool) {
 	p := principal.FromContext(r.Context())
 	if p == nil {
 		httperror.Write(w, r, httperror.Forbidden("", "auth required"))
-		return nil, "", parental.LiveVerdict{}, false
+		return nil, "", parental.LiveVerdict{}, time.Time{}, false
 	}
 	id := strings.ToLower(chi.URLParam(r, "id"))
-	notFound := func() (*principal.Principal, string, parental.LiveVerdict, bool) {
+	notFound := func() (*principal.Principal, string, parental.LiveVerdict, time.Time, bool) {
 		httperror.Write(w, r, httperror.NotFound("channel "+id))
-		return nil, "", parental.LiveVerdict{}, false
+		return nil, "", parental.LiveVerdict{}, time.Time{}, false
 	}
 	if _, err := uuid.Parse(id); err != nil {
 		return notFound()
@@ -194,7 +208,7 @@ func (h *LiveHandler) channelFor(w http.ResponseWriter, r *http.Request) (*princ
 	}
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("load channel").Wrap(err))
-		return nil, "", parental.LiveVerdict{}, false
+		return nil, "", parental.LiveVerdict{}, time.Time{}, false
 	}
 	if !p.IsAdmin && !p.AccessAllLibraries && lib.Valid && !p.HasLibrary(lib.String) {
 		return notFound()
@@ -202,12 +216,12 @@ func (h *LiveHandler) channelFor(w http.ResponseWriter, r *http.Request) (*princ
 	v, err := h.Live.View(r.Context(), p)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("load parental policy").Wrap(err))
-		return nil, "", parental.LiveVerdict{}, false
+		return nil, "", parental.LiveVerdict{}, time.Time{}, false
 	}
 	verdict, err := v.Verdict(r.Context(), id)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("load parental policy").Wrap(err))
-		return nil, "", parental.LiveVerdict{}, false
+		return nil, "", parental.LiveVerdict{}, time.Time{}, false
 	}
 	if !verdict.Channel {
 		return notFound()
@@ -220,26 +234,28 @@ func (h *LiveHandler) channelFor(w http.ResponseWriter, r *http.Request) (*princ
 		if err != nil {
 			w.Header().Set("Retry-After", "5")
 			httperror.Write(w, r, TimeUnknown(err))
-			return nil, "", parental.LiveVerdict{}, false
+			return nil, "", parental.LiveVerdict{}, time.Time{}, false
 		}
 		if !st.Allowed {
-			httperror.Write(w, r, TimeOver(st))
-			return nil, "", parental.LiveVerdict{}, false
+			httperror.Write(w, r, withNow(TimeOver(st), v.Now))
+			return nil, "", parental.LiveVerdict{}, time.Time{}, false
 		}
 	}
-	return p, id, verdict, true
+	return p, id, verdict, v.Now, true
 }
 
 // Access implements GET /api/channels/{id}/access: whether the caller may watch the
 // channel now, and when that next changes (a player shows its slate from it). A
-// restricted account whose watching time is over gets 403 parental-time.
+// restricted account whose watching time is over gets 403 parental-time. Every
+// answer with a time to wait for (until, retry_at, next_allowed_at) carries `now`,
+// the home's clock: the wait is that time minus now, whatever the device's clock.
 func (h *LiveHandler) Access(w http.ResponseWriter, r *http.Request) {
-	_, id, v, ok := h.channelFor(w, r)
+	_, id, v, now, ok := h.channelFor(w, r)
 	if !ok {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	common.WriteJSON(w, r, http.StatusOK, LiveAccess{ChannelID: id, Restricted: v.Restricted, Allowed: v.Allowed, Until: utc(v.Until)})
+	common.WriteJSON(w, r, http.StatusOK, LiveAccess{ChannelID: id, Restricted: v.Restricted, Allowed: v.Allowed, Until: utc(v.Until), Now: now.UTC()})
 }
 
 // Play implements POST /api/channels/{id}/play: the channel's signed stream URL. A
@@ -248,12 +264,12 @@ func (h *LiveHandler) Access(w http.ResponseWriter, r *http.Request) {
 // parental-time (reason, next_allowed_at). The URL carries the sign-in's family and
 // its device's age limit, so the stream is held to them for as long as it lives.
 func (h *LiveHandler) Play(w http.ResponseWriter, r *http.Request) {
-	p, id, v, ok := h.channelFor(w, r)
+	p, id, v, now, ok := h.channelFor(w, r)
 	if !ok {
 		return
 	}
 	if !v.Allowed {
-		httperror.Write(w, r, ProgrammeRestricted(v.Until))
+		httperror.Write(w, r, withNow(ProgrammeRestricted(v.Until), now))
 		return
 	}
 	if h.Signer == nil {
@@ -283,7 +299,7 @@ func (h *LiveHandler) Play(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	common.WriteJSON(w, r, http.StatusOK, LivePlay{ChannelID: id, URL: signed, ExpiresAt: exp, Until: utc(v.Until)})
+	common.WriteJSON(w, r, http.StatusOK, LivePlay{ChannelID: id, URL: signed, ExpiresAt: exp, Until: utc(v.Until), Now: now.UTC()})
 }
 
 // LiveVerdictBody answers GET /api/tv/parental/verdict.
