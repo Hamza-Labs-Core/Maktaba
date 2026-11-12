@@ -378,7 +378,12 @@ func runServe() error {
 	capabilities := components.NewCapabilities(components.CapabilitiesOptions{Logger: logger,
 		AllOn: components.CapabilitiesGateOff() || runner.ReconcileOff()})
 
+	// Epic 57 story 57.03: the content filter's gate. It refuses every signed-in user
+	// until MountP6 gives it the policy cache (fail closed).
+	parentalGate := parental.NewGate()
+
 	r := router.New(router.Deps{
+		Parental:           parentalGate,
 		Capabilities:       capabilities,
 		License:            licRef,
 		Usage:              usageCounter,
@@ -590,13 +595,15 @@ func runServe() error {
 			// the surfaces that filter by them
 			parentalHandles := &router.ParentalHandles{}
 			router.MountP6(r, router.P6Deps{
-				EventHub:     eventHub,
-				OnParental:   func(c *parental.Cache) { parentalHandles.Cache = c },
-				OnBus:        func(b *eventbus.Bus) { eventBus = b },
-				Capabilities: capabilities,
-				Loops:        loops,
-				Settings:     runtimeSettings,
-				Secrets:      homeSecrets,
+				EventHub:       eventHub,
+				OnParental:     func(c *parental.Cache) { parentalHandles.Cache = c },
+				OnParentalTime: func(k *parental.TimeKeeper) { parentalHandles.Time = k },
+				ParentalGate:   parentalGate,
+				OnBus:          func(b *eventbus.Bus) { eventBus = b },
+				Capabilities:   capabilities,
+				Loops:          loops,
+				Settings:       runtimeSettings,
+				Secrets:        homeSecrets,
 				OnQueues: func(q *queues.Handler) {
 					_, remoteCtl, mountRemote = router.WireP32Remote(q, router.P32RemoteDeps{
 						DB: appDB, Secrets: homeSecrets, Logger: logger, Notifier: notifyHub, Loops: loops,
@@ -746,7 +753,7 @@ func runServe() error {
 			// stats + export (29.3/29.5/29.6). The session reaper is a
 			// boot goroutine (interrupted-session reap every minute +
 			// daily retention purge), mirroring runPairingSweep.
-			router.MountP29(r, router.P29Deps{DB: appDB, Driver: "postgres", License: licRef, Secrets: homeSecrets})
+			router.MountP29(r, router.P29Deps{DB: appDB, Driver: "postgres", License: licRef, Secrets: homeSecrets, Time: parentalHandles.Time})
 			// Epic 51 story 51.08: the components' admin routes (desired state, holds,
 			// preview and apply), the same service the `components` CLI uses
 			// and the capabilities every user reads, pushed on /ws/home (story 51.09)
@@ -781,6 +788,10 @@ func runServe() error {
 			if recompute := parentalHandles.Recompute; recompute != nil {
 				loops.Declare("parental_recompute", runner.Func(func(ctx context.Context) { _ = recompute.Run(ctx) }))
 			}
+			// Epic 57 stories 57.06 and 57.08: ask a parent, the parent PIN, a child's
+			// activity, and the loop that writes watched events and keeps 90 days
+			router.MountP57Requests(r, router.P57RequestsDeps{DB: appDB, Cache: parentalHandles.Cache,
+				Notifier: notifyHub, Loops: loops, Logger: logger})
 			usageCounter.Attach(appDB)
 			loops.Declare("usage_counter", runner.Func(func(ctx context.Context) { usageCounter.Run(ctx, usage.DefaultFlushEvery) }))
 			logger.Info("p29: watch-analytics handlers mounted + reaper started",

@@ -695,7 +695,7 @@ func TestTimeFailsClosed(t *testing.T) {
 func TestHomeTimezone(t *testing.T) {
 	e := setupTime(t)
 	ctx := context.Background()
-	loc, err := e.store.HomeLocation(ctx)
+	loc, err := e.store.HomeZone(ctx)
 	if err != nil || loc.String() != "Asia/Riyadh" {
 		t.Fatalf("HomeLocation = %v (%v)", loc, err)
 	}
@@ -708,7 +708,7 @@ func TestHomeTimezone(t *testing.T) {
 	if err := e.store.SetHomeTimezone(ctx, uAdmin, "Asia/Tokyo"); err != nil {
 		t.Fatal(err)
 	}
-	if loc, _ := e.store.HomeLocation(ctx); loc.String() != "Asia/Riyadh" {
+	if loc, _ := e.store.HomeZone(ctx); loc.String() != "Asia/Riyadh" {
 		t.Fatalf("the zone changed in the middle of the day: %v", loc)
 	}
 	e.rules(limit(everyDay, 60, ""))
@@ -719,12 +719,12 @@ func TestHomeTimezone(t *testing.T) {
 		t.Fatalf("the current day's count: %d", n)
 	}
 	e.clock = at(t, e.loc, "2026-11-11 04:00:00") // the old zone's day line
-	if loc, _ := e.store.HomeLocation(ctx); loc.String() != "Asia/Tokyo" {
+	if loc, _ := e.store.HomeZone(ctx); loc.String() != "Asia/Tokyo" {
 		t.Fatalf("after the day line: %v", loc)
 	}
 	// an unknown stored value falls back to the server's zone rather than failing
 	e.exec(`UPDATE app_settings SET value = '"Mars/Olympus"' WHERE key = 'home.timezone'`)
-	if loc, err := e.store.HomeLocation(ctx); err != nil || loc != time.Local {
+	if loc, err := e.store.HomeZone(ctx); err != nil || loc != time.Local {
 		t.Fatalf("an unknown zone: %v (%v)", loc, err)
 	}
 }

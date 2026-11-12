@@ -22,12 +22,11 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 )
 
 const (
-	// DayLineHour is the home hour a day ends and the next begins.
-	DayLineHour = 4
 	// HeartbeatCap is the most one progress post adds to the count.
 	HeartbeatCap = 60 * time.Second
 
@@ -355,9 +354,10 @@ func homeLocation(ctx context.Context, q queryer, now time.Time) (*time.Location
 	return zoneAt(raw, now), nil
 }
 
-// HomeLocation is the home's time zone now: app_settings home.timezone, else the
-// server's zone.
-func (s *Store) HomeLocation(ctx context.Context) (*time.Location, error) {
+// HomeZone is the home's time zone now: app_settings home.timezone, else the
+// server's zone. Unlike HomeLocation it says when the setting could not be read, so
+// the time rules refuse instead of counting in the wrong zone.
+func (s *Store) HomeZone(ctx context.Context) (*time.Location, error) {
 	return homeLocation(ctx, s.DB, s.now())
 }
 
@@ -641,8 +641,13 @@ func (s *Store) GrantTime(ctx context.Context, guardianID, childID string, minut
 		if err != nil {
 			return err
 		}
-		return audit(ctx, tx, AuditTimeGranted, guardianID, childID, nil,
-			map[string]any{"day": g.Day, "minutes": minutes})
+		if err := audit(ctx, tx, AuditTimeGranted, guardianID, childID, nil,
+			map[string]any{"day": g.Day, "minutes": minutes}); err != nil {
+			return err
+		}
+		// the child's activity (story 57.08): who gave how many minutes
+		return recordEvent(ctx, tx, Event{ChildID: childID, Kind: EventTimeGranted, SubjectKind: EventSubjectMinutes,
+			SubjectID: strconv.Itoa(minutes), ActorID: guardianID, At: now}, "")
 	})
 	if err != nil {
 		return nil, err
@@ -792,4 +797,27 @@ func (s *Store) AddUsage(ctx context.Context, userID, libraryID string, seconds 
 		}
 		return nil
 	})
+}
+
+// EventSubjectMinutes is the subject kind of a time event (time_up, time_granted):
+// its subject id is a number of minutes.
+const EventSubjectMinutes = "minutes"
+
+// RecordTimeUp notes in the child's activity that the time rules stopped playback:
+// one event per home day and reason, with the minutes watched that day. The stream
+// is refused whether or not the note is written.
+func (s *Store) RecordTimeUp(ctx context.Context, userID, reason string) error {
+	now := s.now()
+	loc, err := homeLocation(ctx, s.DB, now)
+	if err != nil {
+		return err
+	}
+	day := DayKey(now, loc)
+	var minutes int
+	if err := s.DB.QueryRowContext(ctx, `SELECT COALESCE(sum(seconds), 0)::int / 60 FROM parental_time_usage
+		WHERE user_id = $1 AND day = $2::date`, userID, day).Scan(&minutes); err != nil {
+		return err
+	}
+	return recordEvent(ctx, s.DB, Event{ChildID: userID, Kind: EventTimeUp, SubjectKind: EventSubjectMinutes,
+		SubjectID: strconv.Itoa(minutes), At: now}, day+"|"+reason)
 }

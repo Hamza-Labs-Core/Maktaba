@@ -96,6 +96,11 @@ type Handler struct {
 	Audit         *securityaudit.Writer
 	AccessTTL     time.Duration
 
+	// AgeCeiling gives the `ac` claim of an access token minted on refresh: the
+	// age-tier limit the sign-in's device gave (Epic 57 story 57.04), nil for
+	// none. An error refuses the refresh. Nil ⇒ no claim.
+	AgeCeiling func(ctx context.Context, userID, family string) (*int, error)
+
 	// DB backs the self-service surface (web-pages-batch2): the
 	// open-registration settings read in Register. Nil ⇒ Register treats
 	// registration as closed (safe default).
@@ -324,17 +329,22 @@ func (h *Handler) respondNative(w http.ResponseWriter, r *http.Request, u *users
 		httperror.Write(w, r, httperror.Internal("resolve library acl").Wrap(err))
 		return
 	}
-	access, err := jwt.Sign(h.Keys, accessClaims(u, libs, now, accessTTL))
-	if err != nil {
-		httperror.Write(w, r, httperror.Internal("sign access token").Wrap(err))
-		return
-	}
+	// the refresh token first: the access token names its family (`fam`), the
+	// sign-in a device's age signal is kept under (Epic 57 story 57.04)
 	rt, err := h.RefreshTokens.Issue(r.Context(), refresh.IssueInput{
 		UserID:     u.ID,
 		ClientMeta: map[string]any{"ip": remoteIP(r), "ua": r.UserAgent()},
 	})
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("issue refresh token").Wrap(err))
+		return
+	}
+	claims := accessClaims(u, libs, now, accessTTL)
+	claims.Fam = rt.FamilyID
+	access, err := jwt.Sign(h.Keys, claims)
+	if err != nil {
+		_ = h.RefreshTokens.RevokeFamily(r.Context(), rt.FamilyID)
+		httperror.Write(w, r, httperror.Internal("sign access token").Wrap(err))
 		return
 	}
 	resp := nativeLoginResponse{
@@ -476,6 +486,15 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("resolve library acl").Wrap(err))
 		return
+	}
+	// the sign-in and its device's age limit ride in the token (`fam`, `ac`): a
+	// limit that cannot be read mints no token (Epic 57 story 57.04)
+	claims.Fam = next.FamilyID
+	if h.AgeCeiling != nil {
+		if claims.Ac, err = h.AgeCeiling(r.Context(), u.ID, next.FamilyID); err != nil {
+			httperror.Write(w, r, httperror.Internal("load the device's age limit").Wrap(err))
+			return
+		}
 	}
 	access, err := jwt.Sign(h.Keys, claims)
 	if err != nil {

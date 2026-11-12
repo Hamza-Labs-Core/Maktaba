@@ -1,3 +1,4 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 -- +goose StatementBegin
 --
@@ -42,7 +43,7 @@ CREATE TABLE IF NOT EXISTS parental_time_rules (
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-CREATE INDEX IF NOT EXISTS parental_time_rules_user_idx ON parental_time_rules (user_id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS parental_time_rules_user_idx ON parental_time_rules (user_id);
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -71,7 +72,7 @@ CREATE TABLE IF NOT EXISTS parental_time_grants (
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-CREATE INDEX IF NOT EXISTS parental_time_grants_user_day_idx ON parental_time_grants (user_id, day);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS parental_time_grants_user_day_idx ON parental_time_grants (user_id, day);
 -- +goose StatementEnd
 
 -- +goose Down

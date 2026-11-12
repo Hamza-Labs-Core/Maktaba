@@ -3689,6 +3689,106 @@
       "en": "Only what a rule allows is open, whatever its tier.",
       "ar": "لا يُفتح إلا ما تسمح به قاعدة، أيًّا كانت فئته."
     },
+    "/paths/~1me~1parental/get/responses/200/content/application~1json/schema/properties/device_limit/description": {
+      "en": "The limit this sign-in's device set, when it set one: `max_tier` is then the stricter of it and the account's own limit, and it is present even when `restricted` is `false`.",
+      "ar": "الحدّ الذي وضعه جهاز تسجيل الدخول هذا إن وضع حدًّا: يكون `max_tier` عندئذ الأشدّ منه ومن حدّ الحساب نفسه، ويحضر حتى إن كان `restricted` يساوي `false`."
+    },
+    "/paths/~1me~1parental/get/responses/200/content/application~1json/schema/properties/device_pending/description": {
+      "en": "The device has since said something looser, which waits for an admin or a guardian.",
+      "ar": "قال الجهاز بعد ذلك قولًا أخفّ ينتظر مشرفًا أو وليًّا."
+    },
+    "/paths/~1me~1age-signal/post/summary": {
+      "en": "Send what the device says about its user's age",
+      "ar": "إرسال ما يقوله الجهاز عن عمر مستخدمه"
+    },
+    "/paths/~1me~1age-signal/post/description": {
+      "en": "An app tells the home what its device said: the age range the guardian shared and the device's film and TV rating limits. The home turns each into an age tier (rounding down), keeps the strictest, and holds this sign-in to it, on top of the account's own limit and even when the account has none. It only tightens: a first statement or a stricter one applies at once; a looser one is kept and waits until an admin or a guardian of the account clears it. A statement with no value limits nothing and, after a limit, counts as looser. The limit belongs to the sign-in (the refresh token's family) that sent it, so the caller must hold an access token an app got by signing in. After a 200, refresh the access token: the next one carries the limit in its `ac` claim. The home applies the limit from this call on, whatever the token says.",
+      "ar": "يخبر التطبيق المنزل بما قاله جهازه: الفئة العمرية التي شاركها الوليّ، وحدَّي تصنيف الأفلام والتلفزيون في الجهاز. يحوّل المنزل كلًّا منها إلى فئة عمرية (بالتقريب إلى الأدنى)، ويأخذ الأشدّ، ويُلزم به تسجيل الدخول هذا، فوق حدّ الحساب نفسه وحتى إن لم يكن للحساب حدّ. وهو لا يزيد إلا تشديدًا: أول قول أو قول أشدّ يُطبَّق فورًا؛ والقول الأخفّ يُحفظ وينتظر حتى يجيزه مشرف أو وليّ للحساب. والقول الخالي من أي قيمة لا يقيّد شيئًا، ويُعدّ بعد وجود حدّ قولًا أخفّ. الحدّ يخصّ تسجيل الدخول (عائلة رمز التجديد) الذي أرسله، فلا بد أن يحمل الطالب رمز وصول حصل عليه تطبيق بتسجيل الدخول. بعد 200 جدِّد رمز الوصول: الرمز التالي يحمل الحدّ في المطالبة `ac`. ويطبّق المنزل الحدّ من هذا الطلب فصاعدًا أيًّا كان ما يقوله الرمز."
+    },
+    "/paths/~1me~1age-signal/post/requestBody/content/application~1json/schema/properties/age_range/description": {
+      "en": "The age range the person or their guardian shared (Apple's Declared Age Range). Leave it out when nothing was shared. An `upper` of 9 or less limits to tier `0`, 13 or less to `9`, 18 or less to `13`; no `upper`, or one above 18, limits nothing.",
+      "ar": "الفئة العمرية التي شاركها الشخص أو وليّه (Declared Age Range من Apple). تُترك إن لم يُشارَك شيء. `upper` بقيمة 9 أو أقل يحدّ بالفئة `0`، و13 أو أقل بالفئة `9`، و18 أو أقل بالفئة `13`؛ وغياب `upper` أو زيادته على 18 لا يحدّ شيئًا."
+    },
+    "/paths/~1me~1age-signal/post/requestBody/content/application~1json/schema/properties/age_range/properties/lower/description": {
+      "en": "The youngest age of the range.",
+      "ar": "أصغر عمر في الفئة."
+    },
+    "/paths/~1me~1age-signal/post/requestBody/content/application~1json/schema/properties/age_range/properties/upper/description": {
+      "en": "The oldest age of the range; absent for an adult range.",
+      "ar": "أكبر عمر في الفئة؛ يغيب في فئة البالغين."
+    },
+    "/paths/~1me~1age-signal/post/requestBody/content/application~1json/schema/properties/age_range/properties/declaration/description": {
+      "en": "How the range was declared, as the device names it in snake case: for example `self_declared` or `guardian_declared`. Kept for the guardian to read; it changes no limit.",
+      "ar": "كيف أُعلنت الفئة، كما يسمّيها الجهاز بصيغة snake case: مثل `self_declared` أو `guardian_declared`. تُحفظ ليقرأها الوليّ؛ ولا تغيّر أي حدّ."
+    },
+    "/paths/~1me~1age-signal/post/requestBody/content/application~1json/schema/properties/movie_ceiling/description": {
+      "en": "The device's highest allowed film rating on Apple's 0 to 1000 scale (`ManagedSettingsStore.effectiveMaximumMovieRating`): `0` nothing, `100` G, `200` PG, `300` PG-13, `400` R, `500` NC-17, `1000` no limit. A value between two steps counts as the step below it.",
+      "ar": "أعلى تصنيف أفلام يسمح به الجهاز على مقياس Apple من 0 إلى 1000 (`ManagedSettingsStore.effectiveMaximumMovieRating`): `0` لا شيء، `100` G، `200` PG، `300` PG-13، `400` R، `500` NC-17، `1000` بلا حدّ. القيمة الواقعة بين درجتين تُعدّ الدرجة الأدنى."
+    },
+    "/paths/~1me~1age-signal/post/requestBody/content/application~1json/schema/properties/tv_ceiling/description": {
+      "en": "The device's highest allowed TV rating on Apple's 0 to 1000 scale (`effectiveMaximumTVShowRating`): `0` nothing, `100` TV-Y, `200` TV-Y7, `300` TV-G, `400` TV-PG, `500` TV-14, `600` TV-MA, `1000` no limit. A value between two steps counts as the step below it.",
+      "ar": "أعلى تصنيف تلفزيوني يسمح به الجهاز على مقياس Apple من 0 إلى 1000 (`effectiveMaximumTVShowRating`): `0` لا شيء، `100` TV-Y، `200` TV-Y7، `300` TV-G، `400` TV-PG، `500` TV-14، `600` TV-MA، `1000` بلا حدّ. القيمة الواقعة بين درجتين تُعدّ الدرجة الأدنى."
+    },
+    "/paths/~1me~1age-signal/post/requestBody/content/application~1json/schema/properties/region/description": {
+      "en": "The device's region: two letters (ISO 3166-1, any case) or three digits (UN M.49). Kept with the signal. The United States steps are used for every region today.",
+      "ar": "منطقة الجهاز: حرفان (ISO 3166-1 بأي حالة أحرف) أو ثلاثة أرقام (UN M.49). تُحفظ مع الإشارة. وتُستعمل درجات الولايات المتحدة لكل المناطق حاليًّا."
+    },
+    "/paths/~1me~1age-signal/post/responses/200/description": {
+      "en": "Recorded. `tier_limit` is the limit in force, which is the earlier one when what was sent is looser.",
+      "ar": "سُجِّلت. `tier_limit` هو الحدّ النافذ، وهو الحدّ السابق إن كان المُرسَل أخفّ."
+    },
+    "/paths/~1me~1age-signal/post/responses/200/content/application~1json/schema/properties/tier_limit/description": {
+      "en": "The device limit now in force on this sign-in: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier; `null` when the device limits nothing.",
+      "ar": "حدّ الجهاز النافذ الآن على تسجيل الدخول هذا: `0` لكل الأعمار، `9`، `13`، `16`، `18`؛ `-1` لا شيء مما له فئة؛ و`null` حين لا يحدّ الجهاز شيئًا."
+    },
+    "/paths/~1me~1age-signal/post/responses/200/content/application~1json/schema/properties/pending_looser/description": {
+      "en": "What was sent is looser than the limit in force: it is kept and waits for an admin or a guardian to clear it.",
+      "ar": "المُرسَل أخفّ من الحدّ النافذ: يُحفظ وينتظر أن يجيزه مشرف أو وليّ."
+    },
+    "/paths/~1me~1age-signal/post/responses/200/content/application~1json/schema/properties/refresh/description": {
+      "en": "Always `true`: refresh the access token now so the next one carries the limit.",
+      "ar": "دائمًا `true`: جدِّد رمز الوصول الآن ليحمل الرمز التالي الحدّ."
+    },
+    "/paths/~1me~1age-signal/post/responses/409/description": {
+      "en": "The credential names no app sign-in (`code`: `no_sign_in`): a web session, an API token, or an access token minted before this release. An app refreshes its access token and sends the signal again.",
+      "ar": "بيانات الاعتماد لا تسمّي تسجيل دخول لتطبيق (`code`: `no_sign_in`): جلسة ويب، أو رمز API، أو رمز وصول صدر قبل هذا الإصدار. يجدّد التطبيق رمز الوصول ويرسل الإشارة من جديد."
+    },
+    "/paths/~1me~1age-signal/post/responses/422/description": {
+      "en": "A value is out of range: an age outside 0 to 150, `lower` above `upper`, a ceiling outside 0 to 1000, a `declaration` that is not snake case, or a `region` that is neither two letters nor three digits.",
+      "ar": "قيمة خارج المدى: عمر خارج 0 إلى 150، أو `lower` أكبر من `upper`، أو حدّ تصنيف خارج 0 إلى 1000، أو `declaration` ليست بصيغة snake case، أو `region` ليست حرفين ولا ثلاثة أرقام."
+    },
+    "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/summary": {
+      "en": "Clear a sign-in's device signal",
+      "ar": "إجازة إشارة جهاز لتسجيل دخول"
+    },
+    "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/description": {
+      "en": "For admins and the account's guardians. When a looser statement is waiting on the sign-in, it is applied and becomes the device limit. When none is waiting, the signal is removed and the sign-in is held to the account's own limit alone until its device speaks again. `family` is the `refresh_family_id` of a signal listed by `GET /users/{id}/parental`. An admin can clear a signal of any account, restricted or not. A sign-in that is itself limited by its device clears nothing, whoever it belongs to. The sign-in's access token keeps the earlier limit until its next refresh.",
+      "ar": "للمشرفين ولأولياء الحساب. حين ينتظر قولٌ أخفّ على تسجيل الدخول يُطبَّق ويصير حدّ الجهاز. وحين لا ينتظر شيء تُزال الإشارة ويُلزَم تسجيل الدخول بحدّ الحساب وحده حتى يتكلم جهازه من جديد. `family` هو `refresh_family_id` لإشارة يسردها `GET /users/{id}/parental`. ويجيز المشرف إشارة أي حساب، مقيَّدًا كان أو غير مقيَّد. وتسجيل الدخول المحدود هو نفسه بجهازه لا يجيز شيئًا أيًّا كان صاحبه. ويحتفظ رمز وصول تسجيل الدخول بالحدّ السابق حتى تجديده التالي."
+    },
+    "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/parameters/1/description": {
+      "en": "The `refresh_family_id` of the signal.",
+      "ar": "`refresh_family_id` الخاص بالإشارة."
+    },
+    "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/responses/200/description": {
+      "en": "Cleared.",
+      "ar": "أُجيزت."
+    },
+    "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/responses/200/content/application~1json/schema/properties/tier_limit/description": {
+      "en": "The device limit now in force on that sign-in; `null` when there is none.",
+      "ar": "حدّ الجهاز النافذ الآن على تسجيل الدخول ذاك؛ و`null` حين لا حدّ."
+    },
+    "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/responses/200/content/application~1json/schema/properties/removed/description": {
+      "en": "Nothing looser was waiting, so the signal was removed.",
+      "ar": "لم يكن قولٌ أخفّ ينتظر، فأُزيلت الإشارة."
+    },
+    "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/responses/403/description": {
+      "en": "Not this caller's to clear: `code` is `restricted` for a restricted account, `admin_only` for anyone else who is neither an admin nor a guardian of the account, `device_limited` when the caller's own sign-in is limited by its device. A play-only sign-in through Maktaba Cloud is refused too.",
+      "ar": "ليس لهذا الطالب أن يجيزها: `code` هو `restricted` للحساب المقيَّد، و`admin_only` لمن ليس مشرفًا ولا وليًّا للحساب، و`device_limited` حين يكون تسجيل دخول الطالب نفسه محدودًا بجهازه. ويُرفض كذلك تسجيل الدخول للتشغيل فقط عبر Maktaba Cloud."
+    },
+    "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/responses/404/description": {
+      "en": "No signal for this sign-in on an account the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا إشارة لتسجيل الدخول هذا على حساب يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
+    },
     "/paths/~1users~1{id}~1parental/get/summary": {
       "en": "A restricted account's limit",
       "ar": "حدّ حساب مقيَّد"
@@ -3913,6 +4013,282 @@
       "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
       "ar": "لا حساب مقيَّد بهذا المعرّف يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
     },
+    "/paths/~1me~1parental~1requests/post/summary": {
+      "en": "Ask a parent to open something",
+      "ar": "طلب فتح شيء من أحد الوالدين"
+    },
+    "/paths/~1me~1parental~1requests/post/description": {
+      "en": "For a restricted account only. Asks its guardians to allow one item it can reach but its limit hides. Asking again for the same item while the first request waits answers that request. A request waits seven days, and at most 20 wait at once. Each guardian gets one notice, which names neither the child nor the item.",
+      "ar": "للحساب المقيَّد فقط. يطلب من أولياء أمره السماح بعنصر يستطيع الوصول إليه لكن حدّه يحجبه. تكرار الطلب للعنصر نفسه والطلب الأول ما زال منتظرًا يعيد الطلب نفسه. ينتظر الطلب سبعة أيام، ولا ينتظر أكثر من 20 طلبًا في وقت واحد. يصل كل وليّ أمر إشعار واحد لا يذكر اسم الطفل ولا العنصر."
+    },
+    "/paths/~1me~1parental~1requests/post/responses/200/description": {
+      "en": "A request for this item was already waiting; it is returned.",
+      "ar": "كان هناك طلب منتظر لهذا العنصر؛ يُعاد كما هو."
+    },
+    "/paths/~1me~1parental~1requests/post/responses/200/content/application~1json/schema/properties/request/properties/expires_at/description": {
+      "en": "When a request still waiting stops waiting: seven days after it was made.",
+      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه."
+    },
+    "/paths/~1me~1parental~1requests/post/responses/201/description": {
+      "en": "The request was made.",
+      "ar": "أُنشئ الطلب."
+    },
+    "/paths/~1me~1parental~1requests/post/responses/201/content/application~1json/schema/properties/request/properties/expires_at/description": {
+      "en": "When a request still waiting stops waiting: seven days after it was made.",
+      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه."
+    },
+    "/paths/~1me~1parental~1requests/post/responses/403/description": {
+      "en": "Not a restricted account: `code` is `not_restricted`.",
+      "ar": "الحساب غير مقيَّد: قيمة `code` هي `not_restricted`."
+    },
+    "/paths/~1me~1parental~1requests/post/responses/404/description": {
+      "en": "No such item that the account can reach. An item in a library the account cannot open answers the same as one that does not exist.",
+      "ar": "لا يوجد عنصر كهذا يستطيع الحساب الوصول إليه. عنصر في مكتبة لا يستطيع الحساب فتحها يُجاب عنه كما يُجاب عن عنصر غير موجود."
+    },
+    "/paths/~1me~1parental~1requests/post/responses/429/description": {
+      "en": "20 requests are already waiting (`code` is `too_many_requests`), or the caller is rate limited.",
+      "ar": "هناك 20 طلبًا منتظرًا بالفعل (قيمة `code` هي `too_many_requests`)، أو تجاوز المتصل حدّ المعدّل."
+    },
+    "/paths/~1me~1parental~1guardians/get/summary": {
+      "en": "Who can unlock with a parent PIN",
+      "ar": "من يستطيع الفتح برمز الوالدين"
+    },
+    "/paths/~1me~1parental~1guardians/get/description": {
+      "en": "For a restricted account only. The account's guardians, and the admins, who have set a parent PIN: the people a device offers on its PIN screen.",
+      "ar": "للحساب المقيَّد فقط. أولياء أمر الحساب والمديرون الذين عيّنوا رمز الوالدين: من يعرضهم الجهاز على شاشة إدخال الرمز."
+    },
+    "/paths/~1me~1parental~1guardians/get/responses/200/description": {
+      "en": "The people with a PIN, by name.",
+      "ar": "أصحاب الرموز، مرتبين بالاسم."
+    },
+    "/paths/~1me~1parental~1guardians/get/responses/403/description": {
+      "en": "Not a restricted account: `code` is `not_restricted`.",
+      "ar": "الحساب غير مقيَّد: قيمة `code` هي `not_restricted`."
+    },
+    "/paths/~1me~1parental~1unlock/post/summary": {
+      "en": "Open something with a parent PIN",
+      "ar": "فتح شيء برمز الوالدين"
+    },
+    "/paths/~1me~1parental~1unlock/post/description": {
+      "en": "For a restricted account only: a guardian types their PIN on the child's device. A right PIN allows the item until 04:00 home time and answers a waiting request for it. A wrong PIN, a person who is not a guardian of the account and a person with no PIN all get the same answer, and every answer takes at least 250 ms. Five wrong PINs lock that guardian's PIN for 15 minutes, then twice as long each time, up to 24 hours; ten wrong PINs in an hour from one account, or twenty from one address, close PIN entry for an hour.",
+      "ar": "للحساب المقيَّد فقط: يكتب وليّ الأمر رمزه على جهاز الطفل. الرمز الصحيح يسمح بالعنصر حتى الساعة 04:00 بتوقيت المنزل ويجيب عن الطلب المنتظر له. الرمز الخاطئ، والشخص الذي ليس وليّ أمر للحساب، والشخص الذي لا رمز له، كلها تتلقى الرد نفسه، وكل رد يستغرق 250 مللي ثانية على الأقل. خمسة رموز خاطئة تقفل رمز ذلك الوليّ 15 دقيقة، ثم ضعف المدة في كل مرة حتى 24 ساعة؛ وعشرة رموز خاطئة في ساعة من حساب واحد، أو عشرون من عنوان واحد، تغلق إدخال الرمز ساعة."
+    },
+    "/paths/~1me~1parental~1unlock/post/requestBody/content/application~1json/schema/properties/guardian_id/description": {
+      "en": "Whose PIN this is: one of the people `GET /me/parental/guardians` lists.",
+      "ar": "صاحب هذا الرمز: أحد من تسردهم `GET /me/parental/guardians`."
+    },
+    "/paths/~1me~1parental~1unlock/post/responses/200/description": {
+      "en": "Opened: the allow rule, with when it ends.",
+      "ar": "فُتح: قاعدة السماح، مع وقت انتهائها."
+    },
+    "/paths/~1me~1parental~1unlock/post/responses/403/description": {
+      "en": "`code` is `pin_wrong` (nothing was opened), or `not_restricted` when the caller is not a restricted account.",
+      "ar": "قيمة `code` هي `pin_wrong` (لم يُفتح شيء)، أو `not_restricted` إذا لم يكن المتصل حسابًا مقيَّدًا."
+    },
+    "/paths/~1me~1parental~1unlock/post/responses/404/description": {
+      "en": "No such item that the account can reach; the PIN was not looked at.",
+      "ar": "لا يوجد عنصر كهذا يستطيع الحساب الوصول إليه؛ لم يُنظر في الرمز."
+    },
+    "/paths/~1me~1parental~1unlock/post/responses/429/description": {
+      "en": "PIN entry is locked: `code` is `pin_locked`, and `retry_after` and the `Retry-After` header give the seconds left. The right PIN is refused too while a lock is on.",
+      "ar": "إدخال الرمز مقفل: قيمة `code` هي `pin_locked`، ويعطي `retry_after` وترويسة `Retry-After` الثواني المتبقية. يُرفض الرمز الصحيح أيضًا ما دام القفل قائمًا."
+    },
+    "/paths/~1me~1parental-pin/get/summary": {
+      "en": "Whether the caller has a parent PIN",
+      "ar": "هل للمتصل رمز والدين"
+    },
+    "/paths/~1me~1parental-pin/get/description": {
+      "en": "For admins and for guardians of a restricted account. The PIN itself is never returned.",
+      "ar": "للمديرين ولأولياء أمر حساب مقيَّد. لا يُعاد الرمز نفسه أبدًا."
+    },
+    "/paths/~1me~1parental-pin/get/responses/200/description": {
+      "en": "Whether a PIN is set.",
+      "ar": "هل عُيّن رمز."
+    },
+    "/paths/~1me~1parental-pin/get/responses/403/description": {
+      "en": "Not this caller's to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.",
+      "ar": "ليس لهذا المتصل أن يرى أو يغيّر: قيمة `code` هي `restricted` للحساب المقيَّد. ويُرفض كذلك تسجيل الدخول عبر سحابة مكتبة المقتصر على التشغيل."
+    },
+    "/paths/~1me~1parental-pin/put/summary": {
+      "en": "Set the caller's parent PIN",
+      "ar": "تعيين رمز الوالدين للمتصل"
+    },
+    "/paths/~1me~1parental-pin/put/description": {
+      "en": "For admins and for guardians of a restricted account. The PIN is six digits and is kept only as an argon2id hash. The caller's password is typed again. A new PIN clears any lock on the old one.",
+      "ar": "للمديرين ولأولياء أمر حساب مقيَّد. الرمز ستة أرقام ولا يُحفظ إلا كتجزئة argon2id. يكتب المتصل كلمة مروره مرة أخرى. الرمز الجديد يزيل أي قفل على القديم."
+    },
+    "/paths/~1me~1parental-pin/put/responses/204/description": {
+      "en": "The PIN is set.",
+      "ar": "عُيّن الرمز."
+    },
+    "/paths/~1me~1parental-pin/put/responses/403/description": {
+      "en": "`code` is `password_wrong` when the password is wrong; `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.",
+      "ar": "قيمة `code` هي `password_wrong` إذا كانت كلمة المرور خاطئة؛ و`restricted` للحساب المقيَّد. ويُرفض كذلك تسجيل الدخول عبر سحابة مكتبة المقتصر على التشغيل."
+    },
+    "/paths/~1me~1parental-pin/put/responses/429/description": {
+      "en": "Ten wrong passwords in an hour: `code` is `too_many_tries`, with `retry_after` and the `Retry-After` header. Or the caller is rate limited.",
+      "ar": "عشر كلمات مرور خاطئة في ساعة: قيمة `code` هي `too_many_tries`، مع `retry_after` وترويسة `Retry-After`. أو تجاوز المتصل حدّ المعدّل."
+    },
+    "/paths/~1parental~1requests/get/summary": {
+      "en": "The requests of the children the caller looks after",
+      "ar": "طلبات الأطفال الذين يرعاهم المتصل"
+    },
+    "/paths/~1parental~1requests/get/description": {
+      "en": "For guardians and admins: a guardian sees the requests of their own children, an admin every request. Newest first. An item in a library the caller cannot open comes with its kind and id only.",
+      "ar": "لأولياء الأمور والمديرين: يرى وليّ الأمر طلبات أطفاله، ويرى المدير كل الطلبات. الأحدث أولًا. العنصر الذي في مكتبة لا يستطيع المتصل فتحها يأتي بنوعه ومعرّفه فقط."
+    },
+    "/paths/~1parental~1requests/get/parameters/0/description": {
+      "en": "Only requests with this status; absent: all.",
+      "ar": "الطلبات بهذه الحالة فقط؛ إن غاب: الكل."
+    },
+    "/paths/~1parental~1requests/get/responses/200/description": {
+      "en": "The requests.",
+      "ar": "الطلبات."
+    },
+    "/paths/~1parental~1requests/get/responses/200/content/application~1json/schema/properties/requests/items/properties/expires_at/description": {
+      "en": "When a request still waiting stops waiting: seven days after it was made.",
+      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه."
+    },
+    "/paths/~1parental~1requests/get/responses/200/content/application~1json/schema/properties/requests/items/properties/subject/properties/tier/description": {
+      "en": "The age tier of a video, when it has one.",
+      "ar": "الفئة العمرية للفيديو، إن وُجدت."
+    },
+    "/paths/~1parental~1requests/get/responses/200/content/application~1json/schema/properties/requests/items/properties/subject/properties/removed/description": {
+      "en": "True when the item was deleted since.",
+      "ar": "صحيح إذا حُذف العنصر بعد ذلك."
+    },
+    "/paths/~1parental~1requests/get/responses/200/content/application~1json/schema/properties/requests/items/properties/subject/properties/hidden/description": {
+      "en": "True when the caller cannot open the item's library: only its kind and id are given.",
+      "ar": "صحيح إذا لم يكن للمتصل وصول إلى مكتبة العنصر: يُعطى نوعه ومعرّفه فقط."
+    },
+    "/paths/~1parental~1requests/get/responses/400/description": {
+      "en": "`status` is not a status.",
+      "ar": "قيمة `status` ليست حالة معروفة."
+    },
+    "/paths/~1parental~1requests/get/responses/403/description": {
+      "en": "Not this caller's to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.",
+      "ar": "ليس لهذا المتصل أن يرى أو يغيّر: قيمة `code` هي `restricted` للحساب المقيَّد. ويُرفض كذلك تسجيل الدخول عبر سحابة مكتبة المقتصر على التشغيل."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/summary": {
+      "en": "Approve a request",
+      "ar": "الموافقة على طلب"
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/description": {
+      "en": "For a guardian of the child who asked, and for admins. Adds an allow rule for the item, the same way a rule added by hand is, ending at `expires_at` when given.",
+      "ar": "لوليّ أمر الطفل صاحب الطلب وللمديرين. تضيف قاعدة سماح للعنصر، كما تُضاف القاعدة يدويًا، تنتهي عند `expires_at` إن أُعطي."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/requestBody/content/application~1json/schema/properties/expires_at/description": {
+      "en": "When the allow rule ends; absent: it does not end. Must be in the future.",
+      "ar": "متى تنتهي قاعدة السماح؛ إن غاب: لا تنتهي. يجب أن يكون في المستقبل."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/responses/200/description": {
+      "en": "Approved: the request and the allow rule.",
+      "ar": "تمت الموافقة: الطلب وقاعدة السماح."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/responses/200/content/application~1json/schema/properties/request/properties/expires_at/description": {
+      "en": "When a request still waiting stops waiting: seven days after it was made.",
+      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/responses/403/description": {
+      "en": "Not this caller's to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.",
+      "ar": "ليس لهذا المتصل أن يرى أو يغيّر: قيمة `code` هي `restricted` للحساب المقيَّد. ويُرفض كذلك تسجيل الدخول عبر سحابة مكتبة المقتصر على التشغيل."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/responses/404/description": {
+      "en": "No such request that the caller may answer. A request of a child the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا يوجد طلب بهذا المعرّف يحق للمتصل الرد عليه. طلب طفل لا يرعاه المتصل يُجاب عنه كما يُجاب عن طلب غير موجود."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/responses/409/description": {
+      "en": "Already answered: `code` is `request_decided`.",
+      "ar": "سبق الرد عليه: قيمة `code` هي `request_decided`."
+    },
+    "/paths/~1parental~1requests~1{id}~1approve/post/responses/410/description": {
+      "en": "The request expired, or what it asked for is no longer there: `code` is `request_expired`.",
+      "ar": "انتهت مدة الطلب، أو لم يعد ما طُلب موجودًا: قيمة `code` هي `request_expired`."
+    },
+    "/paths/~1parental~1requests~1{id}~1deny/post/summary": {
+      "en": "Deny a request",
+      "ar": "رفض طلب"
+    },
+    "/paths/~1parental~1requests~1{id}~1deny/post/description": {
+      "en": "For a guardian of the child who asked, and for admins. No rule is added.",
+      "ar": "لوليّ أمر الطفل صاحب الطلب وللمديرين. لا تُضاف أي قاعدة."
+    },
+    "/paths/~1parental~1requests~1{id}~1deny/post/responses/200/description": {
+      "en": "Denied: the request.",
+      "ar": "رُفض: الطلب."
+    },
+    "/paths/~1parental~1requests~1{id}~1deny/post/responses/200/content/application~1json/schema/properties/request/properties/expires_at/description": {
+      "en": "When a request still waiting stops waiting: seven days after it was made.",
+      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه."
+    },
+    "/paths/~1parental~1requests~1{id}~1deny/post/responses/403/description": {
+      "en": "Not this caller's to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.",
+      "ar": "ليس لهذا المتصل أن يرى أو يغيّر: قيمة `code` هي `restricted` للحساب المقيَّد. ويُرفض كذلك تسجيل الدخول عبر سحابة مكتبة المقتصر على التشغيل."
+    },
+    "/paths/~1parental~1requests~1{id}~1deny/post/responses/404/description": {
+      "en": "No such request that the caller may answer. A request of a child the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا يوجد طلب بهذا المعرّف يحق للمتصل الرد عليه. طلب طفل لا يرعاه المتصل يُجاب عنه كما يُجاب عن طلب غير موجود."
+    },
+    "/paths/~1parental~1requests~1{id}~1deny/post/responses/409/description": {
+      "en": "Already answered: `code` is `request_decided`.",
+      "ar": "سبق الرد عليه: قيمة `code` هي `request_decided`."
+    },
+    "/paths/~1parental~1requests~1{id}~1deny/post/responses/410/description": {
+      "en": "The request expired, or what it asked for is no longer there: `code` is `request_expired`.",
+      "ar": "انتهت مدة الطلب، أو لم يعد ما طُلب موجودًا: قيمة `code` هي `request_expired`."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/summary": {
+      "en": "A restricted account's activity",
+      "ar": "نشاط حساب مقيَّد"
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/description": {
+      "en": "For the account's guardians and admins. What the account watched (a play of 60 seconds or 20 percent), what was blocked (once per item per day), what it asked for and how it was answered, PIN locks and age signals from its devices. Newest first, 50 a page, kept 90 days. Events hold ids only; titles are read when the list is asked for.",
+      "ar": "لأولياء أمر الحساب وللمديرين. ما شاهده الحساب (تشغيل لمدة 60 ثانية أو 20 بالمئة)، وما حُجب عنه (مرة لكل عنصر في اليوم)، وما طلبه وكيف أُجيب، وأقفال الرمز وإشارات العمر من أجهزته. الأحدث أولًا، 50 في الصفحة، ويُحتفظ بها 90 يومًا. تحمل الأحداث المعرّفات فقط؛ وتُقرأ العناوين عند طلب القائمة."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/parameters/1/description": {
+      "en": "The `next_cursor` of the page before; absent: the first page.",
+      "ar": "قيمة `next_cursor` من الصفحة السابقة؛ إن غاب: الصفحة الأولى."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/parameters/2/description": {
+      "en": "Only events of this kind.",
+      "ar": "الأحداث من هذا النوع فقط."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/responses/200/description": {
+      "en": "A page of events.",
+      "ar": "صفحة من الأحداث."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/responses/200/content/application~1json/schema/properties/events/items/properties/subject/properties/tier/description": {
+      "en": "The age tier of a video, when it has one.",
+      "ar": "الفئة العمرية للفيديو، إن وُجدت."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/responses/200/content/application~1json/schema/properties/events/items/properties/subject/properties/removed/description": {
+      "en": "True when the item was deleted since.",
+      "ar": "صحيح إذا حُذف العنصر بعد ذلك."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/responses/200/content/application~1json/schema/properties/events/items/properties/subject/properties/hidden/description": {
+      "en": "True when the caller cannot open the item's library: only its kind and id are given.",
+      "ar": "صحيح إذا لم يكن للمتصل وصول إلى مكتبة العنصر: يُعطى نوعه ومعرّفه فقط."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/responses/200/content/application~1json/schema/properties/events/items/properties/guardian/description": {
+      "en": "The guardian an `approved`, `denied` or `pin_locked` event names.",
+      "ar": "وليّ الأمر الذي يذكره حدث `approved` أو `denied` أو `pin_locked`."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/responses/200/content/application~1json/schema/properties/events/items/properties/device/description": {
+      "en": "The device's name, for a `signal` event.",
+      "ar": "اسم الجهاز، لحدث `signal`."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/responses/200/content/application~1json/schema/properties/next_cursor/description": {
+      "en": "Present when there is another page.",
+      "ar": "موجود إذا كانت هناك صفحة أخرى."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/responses/400/description": {
+      "en": "`cursor` or `kind` is not valid.",
+      "ar": "قيمة `cursor` أو `kind` غير صالحة."
+    },
+    "/paths/~1users~1{id}~1parental~1activity/get/responses/404/description": {
+      "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا يوجد حساب مقيَّد بهذا المعرّف يحق للمتصل رؤيته. الحساب الذي لا يرعاه المتصل يُجاب عنه كما يُجاب عن حساب غير موجود."
+    },
     "/paths/~1pairing~1approve/post/summary": {
       "en": "Approve the code a device shows",
       "ar": "الموافقة على الرمز الذي يعرضه جهاز"
@@ -3976,6 +4352,250 @@
     "/paths/~1users/post/responses/409/description": {
       "en": "The username is taken; or a restricted account cannot be an admin (`code`: `restricted_admin`) or look after another account (`restricted_guardian`).",
       "ar": "اسم المستخدم مأخوذ؛ أو لا يمكن أن يكون الحساب المقيَّد مشرفًا (`code`: `restricted_admin`) ولا وليًّا لحساب آخر (`restricted_guardian`)."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/summary": {
+      "en": "A restricted account's time rules",
+      "ar": "قواعد الوقت لحساب مقيَّد"
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/description": {
+      "en": "When the account may watch and for how long each day. For the account's guardians and admins. When several rules cover a moment the strictest wins. An account with no rules has no time limit.",
+      "ar": "متى يُسمح للحساب بالمشاهدة وكم دقيقة في اليوم. لأولياء الحساب وللمشرفين. إذا شملت اللحظةَ أكثرُ من قاعدة فالأشدّ هي النافذة. الحساب الذي لا قواعد له لا حدّ لوقته."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/responses/200/description": {
+      "en": "The rules.",
+      "ar": "القواعد."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/responses/200/content/application~1json/schema/properties/rules/items/properties/library_id/description": {
+      "en": "The rule covers this library only; absent: the whole account.",
+      "ar": "القاعدة تخصّ هذه المكتبة وحدها؛ وإن غاب الحقل فهي للحساب كله."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/responses/200/content/application~1json/schema/properties/rules/items/properties/days/description": {
+      "en": "The home days the rule covers, as a bitmask: bit 0 is Sunday, bit 6 is Saturday. 127 is every day.",
+      "ar": "أيام البيت التي تشملها القاعدة، في قناع بتّات: البتّ 0 هو الأحد والبتّ 6 هو السبت. القيمة 127 تعني كل الأيام."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/responses/200/content/application~1json/schema/properties/rules/items/properties/slot_start/description": {
+      "en": "`HH:MM`, home time. With `slot_end`: watching is allowed only from the start to the end. An end before the start crosses midnight.",
+      "ar": "الصيغة `HH:MM` بتوقيت البيت. مع `slot_end`: لا يُسمح بالمشاهدة إلا من البداية إلى النهاية. النهاية التي تسبق البداية تعني أن الفترة تعبر منتصف الليل."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/responses/200/content/application~1json/schema/properties/rules/items/properties/slot_end/description": {
+      "en": "`HH:MM`, home time. Given with `slot_start` or not at all.",
+      "ar": "الصيغة `HH:MM` بتوقيت البيت. يُعطى مع `slot_start` أو لا يُعطى أبدًا."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/responses/200/content/application~1json/schema/properties/rules/items/properties/daily_minutes/description": {
+      "en": "The most watched on one home day; absent: no daily limit. A rule has a slot, a daily limit or both.",
+      "ar": "أقصى ما يُشاهَد في يوم واحد من أيام البيت؛ وإن غاب الحقل فلا حدّ يوميًّا. للقاعدة فترة أو حدّ يومي أو كلاهما."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/responses/200/content/application~1json/schema/properties/time_zone/description": {
+      "en": "The home's time zone (an IANA name). Slots and days are read in it; a device's clock is never used.",
+      "ar": "المنطقة الزمنية للبيت (اسم من أسماء IANA). تُقرأ الفترات والأيام بها؛ ولا تُستعمل ساعة الجهاز أبدًا."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/responses/403/description": {
+      "en": "Not this caller's to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud reads and does not change.",
+      "ar": "ليس لهذا المستخدم أن يرى هذا أو يغيّره: قيمة `code` هي `restricted` للحساب المقيَّد. الدخول عبر Maktaba Cloud المقصور على التشغيل يقرأ ولا يغيّر."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/responses/404/description": {
+      "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا يوجد حساب مقيَّد بهذا المعرّف يحقّ للمستخدم أن يراه. الحساب الذي لا يرعاه المستخدم جوابه كجواب حساب غير موجود."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/summary": {
+      "en": "Set a restricted account's time rules",
+      "ar": "ضبط قواعد الوقت لحساب مقيَّد"
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/description": {
+      "en": "Replaces every time rule of the account with the rules given; an empty list removes them all. For the account's guardians and admins. A stream running now ends, or goes on, by the new rules within 60 seconds.",
+      "ar": "يستبدل بكل قواعد الوقت للحساب القواعدَ المعطاة؛ والقائمة الفارغة تزيلها كلها. لأولياء الحساب وللمشرفين. البثّ الجاري الآن ينتهي أو يستمرّ بحسب القواعد الجديدة خلال 60 ثانية."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/requestBody/content/application~1json/schema/properties/rules/items/properties/library_id/description": {
+      "en": "The rule covers this library only; absent: the whole account.",
+      "ar": "القاعدة تخصّ هذه المكتبة وحدها؛ وإن غاب الحقل فهي للحساب كله."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/requestBody/content/application~1json/schema/properties/rules/items/properties/days/description": {
+      "en": "The home days the rule covers, as a bitmask: bit 0 is Sunday, bit 6 is Saturday. 127 is every day.",
+      "ar": "أيام البيت التي تشملها القاعدة، في قناع بتّات: البتّ 0 هو الأحد والبتّ 6 هو السبت. القيمة 127 تعني كل الأيام."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/requestBody/content/application~1json/schema/properties/rules/items/properties/slot_start/description": {
+      "en": "`HH:MM`, home time. With `slot_end`: watching is allowed only from the start to the end. An end before the start crosses midnight.",
+      "ar": "الصيغة `HH:MM` بتوقيت البيت. مع `slot_end`: لا يُسمح بالمشاهدة إلا من البداية إلى النهاية. النهاية التي تسبق البداية تعني أن الفترة تعبر منتصف الليل."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/requestBody/content/application~1json/schema/properties/rules/items/properties/slot_end/description": {
+      "en": "`HH:MM`, home time. Given with `slot_start` or not at all.",
+      "ar": "الصيغة `HH:MM` بتوقيت البيت. يُعطى مع `slot_start` أو لا يُعطى أبدًا."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/requestBody/content/application~1json/schema/properties/rules/items/properties/daily_minutes/description": {
+      "en": "The most watched on one home day; absent: no daily limit. A rule has a slot, a daily limit or both.",
+      "ar": "أقصى ما يُشاهَد في يوم واحد من أيام البيت؛ وإن غاب الحقل فلا حدّ يوميًّا. للقاعدة فترة أو حدّ يومي أو كلاهما."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/200/description": {
+      "en": "The rules as they are now.",
+      "ar": "القواعد كما هي الآن."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/200/content/application~1json/schema/properties/rules/items/properties/library_id/description": {
+      "en": "The rule covers this library only; absent: the whole account.",
+      "ar": "القاعدة تخصّ هذه المكتبة وحدها؛ وإن غاب الحقل فهي للحساب كله."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/200/content/application~1json/schema/properties/rules/items/properties/days/description": {
+      "en": "The home days the rule covers, as a bitmask: bit 0 is Sunday, bit 6 is Saturday. 127 is every day.",
+      "ar": "أيام البيت التي تشملها القاعدة، في قناع بتّات: البتّ 0 هو الأحد والبتّ 6 هو السبت. القيمة 127 تعني كل الأيام."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/200/content/application~1json/schema/properties/rules/items/properties/slot_start/description": {
+      "en": "`HH:MM`, home time. With `slot_end`: watching is allowed only from the start to the end. An end before the start crosses midnight.",
+      "ar": "الصيغة `HH:MM` بتوقيت البيت. مع `slot_end`: لا يُسمح بالمشاهدة إلا من البداية إلى النهاية. النهاية التي تسبق البداية تعني أن الفترة تعبر منتصف الليل."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/200/content/application~1json/schema/properties/rules/items/properties/slot_end/description": {
+      "en": "`HH:MM`, home time. Given with `slot_start` or not at all.",
+      "ar": "الصيغة `HH:MM` بتوقيت البيت. يُعطى مع `slot_start` أو لا يُعطى أبدًا."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/200/content/application~1json/schema/properties/rules/items/properties/daily_minutes/description": {
+      "en": "The most watched on one home day; absent: no daily limit. A rule has a slot, a daily limit or both.",
+      "ar": "أقصى ما يُشاهَد في يوم واحد من أيام البيت؛ وإن غاب الحقل فلا حدّ يوميًّا. للقاعدة فترة أو حدّ يومي أو كلاهما."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/200/content/application~1json/schema/properties/time_zone/description": {
+      "en": "The home's time zone (an IANA name). Slots and days are read in it; a device's clock is never used.",
+      "ar": "المنطقة الزمنية للبيت (اسم من أسماء IANA). تُقرأ الفترات والأيام بها؛ ولا تُستعمل ساعة الجهاز أبدًا."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/403/description": {
+      "en": "Not this caller's to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud reads and does not change.",
+      "ar": "ليس لهذا المستخدم أن يرى هذا أو يغيّره: قيمة `code` هي `restricted` للحساب المقيَّد. الدخول عبر Maktaba Cloud المقصور على التشغيل يقرأ ولا يغيّر."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/404/description": {
+      "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا يوجد حساب مقيَّد بهذا المعرّف يحقّ للمستخدم أن يراه. الحساب الذي لا يرعاه المستخدم جوابه كجواب حساب غير موجود."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/422/description": {
+      "en": "A rule is not valid: no day, half a slot, a slot that starts when it ends, neither a slot nor a daily limit, or a library that does not exist. Nothing is changed.",
+      "ar": "إحدى القواعد غير صالحة: بلا يوم، أو بنصف فترة، أو بفترة تبدأ حين تنتهي، أو بلا فترة ولا حدّ يومي، أو لمكتبة غير موجودة. لا يتغيّر شيء."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/summary": {
+      "en": "How long a restricted account watched",
+      "ar": "كم شاهد حساب مقيَّد"
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/description": {
+      "en": "The seconds the account watched on each home day, by library, and the extra time it was given. For the account's guardians and admins. The home counts the time itself from each stream's progress posts; a paused stream adds nothing.",
+      "ar": "الثواني التي شاهدها الحساب في كل يوم من أيام البيت، بحسب المكتبة، والوقت الإضافي الذي مُنح له. لأولياء الحساب وللمشرفين. البيت يعدّ الوقت بنفسه من رسائل التقدّم لكل بثّ؛ والبثّ المتوقّف مؤقتًا لا يضيف شيئًا."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/parameters/1/description": {
+      "en": "The first home day, `YYYY-MM-DD`. Without `from` and `to`: the last seven days.",
+      "ar": "أول يوم من أيام البيت، بالصيغة `YYYY-MM-DD`. من دون `from` و`to`: الأيام السبعة الأخيرة."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/parameters/2/description": {
+      "en": "The last home day, `YYYY-MM-DD`, included. At most 92 days from `from`.",
+      "ar": "آخر يوم من أيام البيت، بالصيغة `YYYY-MM-DD`، وهو داخل في المدى. 92 يومًا على الأكثر من `from`."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/responses/200/description": {
+      "en": "The count.",
+      "ar": "العدّ."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/responses/200/content/application~1json/schema/properties/today/description": {
+      "en": "The home day it is now.",
+      "ar": "يوم البيت الحالي."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/responses/200/content/application~1json/schema/properties/usage/items/properties/library_id/description": {
+      "en": "The library watched in. The all-zero id stands for playback with no library.",
+      "ar": "المكتبة التي جرت فيها المشاهدة. المعرّف المكوَّن من أصفار يدلّ على تشغيل بلا مكتبة."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/responses/200/content/application~1json/schema/properties/grants/items/properties/day/description": {
+      "en": "The home day the minutes are for. A home day ends at 04:00 home time.",
+      "ar": "يوم البيت الذي تخصّه الدقائق. ينتهي يوم البيت عند الساعة 04:00 بتوقيت البيت."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/responses/200/content/application~1json/schema/properties/grants/items/properties/used_seconds/description": {
+      "en": "How much of the grant has been watched.",
+      "ar": "ما شوهد من الوقت الممنوح."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/responses/403/description": {
+      "en": "Not this caller's to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud reads and does not change.",
+      "ar": "ليس لهذا المستخدم أن يرى هذا أو يغيّره: قيمة `code` هي `restricted` للحساب المقيَّد. الدخول عبر Maktaba Cloud المقصور على التشغيل يقرأ ولا يغيّر."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/responses/404/description": {
+      "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا يوجد حساب مقيَّد بهذا المعرّف يحقّ للمستخدم أن يراه. الحساب الذي لا يرعاه المستخدم جوابه كجواب حساب غير موجود."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/responses/422/description": {
+      "en": "`from` or `to` is not a day, or the range is longer than 92 days.",
+      "ar": "قيمة `from` أو `to` ليست يومًا، أو المدى أطول من 92 يومًا."
+    },
+    "/paths/~1parental~1users~1{id}~1time-grants/post/summary": {
+      "en": "Give a restricted account more time today",
+      "ar": "منح حساب مقيَّد وقتًا إضافيًّا اليوم"
+    },
+    "/paths/~1parental~1users~1{id}~1time-grants/post/description": {
+      "en": "Adds minutes to the current home day only; they are gone at 04:00 home time whether used or not. The minutes also open a closed slot until they run out. For the account's guardians and admins.",
+      "ar": "يضيف دقائق إلى يوم البيت الحالي وحده؛ وتزول عند الساعة 04:00 بتوقيت البيت سواء استُعملت أم لا. والدقائق تفتح كذلك فترة مغلقة إلى أن تنفد. لأولياء الحساب وللمشرفين."
+    },
+    "/paths/~1parental~1users~1{id}~1time-grants/post/requestBody/content/application~1json/schema/properties/minutes/description": {
+      "en": "How many minutes to add, from 1 to 480.",
+      "ar": "عدد الدقائق المضافة، من 1 إلى 480."
+    },
+    "/paths/~1parental~1users~1{id}~1time-grants/post/responses/201/description": {
+      "en": "The grant.",
+      "ar": "الوقت الممنوح."
+    },
+    "/paths/~1parental~1users~1{id}~1time-grants/post/responses/201/content/application~1json/schema/properties/day/description": {
+      "en": "The home day the minutes are for. A home day ends at 04:00 home time.",
+      "ar": "يوم البيت الذي تخصّه الدقائق. ينتهي يوم البيت عند الساعة 04:00 بتوقيت البيت."
+    },
+    "/paths/~1parental~1users~1{id}~1time-grants/post/responses/201/content/application~1json/schema/properties/used_seconds/description": {
+      "en": "How much of the grant has been watched.",
+      "ar": "ما شوهد من الوقت الممنوح."
+    },
+    "/paths/~1parental~1users~1{id}~1time-grants/post/responses/403/description": {
+      "en": "Not this caller's to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud reads and does not change.",
+      "ar": "ليس لهذا المستخدم أن يرى هذا أو يغيّره: قيمة `code` هي `restricted` للحساب المقيَّد. الدخول عبر Maktaba Cloud المقصور على التشغيل يقرأ ولا يغيّر."
+    },
+    "/paths/~1parental~1users~1{id}~1time-grants/post/responses/404/description": {
+      "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا يوجد حساب مقيَّد بهذا المعرّف يحقّ للمستخدم أن يراه. الحساب الذي لا يرعاه المستخدم جوابه كجواب حساب غير موجود."
+    },
+    "/paths/~1parental~1users~1{id}~1time-grants/post/responses/422/description": {
+      "en": "`minutes` is not from 1 to 480.",
+      "ar": "قيمة `minutes` ليست بين 1 و480."
+    },
+    "/paths/~1me~1parental~1time/get/summary": {
+      "en": "The caller's own watching time now",
+      "ar": "وقت المشاهدة للمستخدم نفسه الآن"
+    },
+    "/paths/~1me~1parental~1time/get/description": {
+      "en": "For the player's countdown: whether the caller may watch now, for how long, and when next. For any signed-in user; an account with no time rules is `allowed` and not `limited`. It only reads: asking it counts nothing and keeps no stream running. When the time is over, opening a stream session, posting its progress and starting a watch answer 403 with the problem type `https://maktaba.tv/problems/parental-time`, a `reason` (`outside_slot`, `limit_reached`, or `no_heartbeat` when the stream sent no progress for 60 seconds) and, when the rules allow watching again, `next_allowed_at`. The streaming service refuses the stream's segments within 60 seconds with the same `reason`.",
+      "ar": "للعدّ التنازلي في المشغّل: هل يُسمح للمستخدم بالمشاهدة الآن، وإلى متى، ومتى يُسمح بعد ذلك. لكل مستخدم مسجَّل الدخول؛ والحساب الذي لا قواعد وقت له قيمة `allowed` فيه صحيحة و`limited` خاطئة. هذا الطلب يقرأ فقط: لا يعدّ شيئًا ولا يُبقي بثًّا جاريًا. إذا انتهى الوقت فإن فتح جلسة بثّ وإرسال تقدّمها وبدء مشاهدة تُجاب كلها بالرمز 403 مع نوع المشكلة `https://maktaba.tv/problems/parental-time`، ومع `reason` (وهو `outside_slot` أو `limit_reached`، أو `no_heartbeat` إذا لم يرسل البثّ تقدّمًا طوال 60 ثانية)، ومع `next_allowed_at` إذا كانت القواعد تسمح بالمشاهدة مرة أخرى. وخدمة البثّ ترفض مقاطع البثّ خلال 60 ثانية بالسبب نفسه `reason`."
+    },
+    "/paths/~1me~1parental~1time/get/parameters/0/description": {
+      "en": "Also count the rules of this library; absent: the account's own rules.",
+      "ar": "تُحسب كذلك قواعد هذه المكتبة؛ وإن غاب الحقل فقواعد الحساب وحدها."
+    },
+    "/paths/~1me~1parental~1time/get/responses/200/description": {
+      "en": "The caller's time.",
+      "ar": "وقت المستخدم."
+    },
+    "/paths/~1me~1parental~1time/get/responses/200/content/application~1json/schema/properties/allowed/description": {
+      "en": "Watching may start or go on now.",
+      "ar": "يجوز أن تبدأ المشاهدة أو تستمرّ الآن."
+    },
+    "/paths/~1me~1parental~1time/get/responses/200/content/application~1json/schema/properties/limited/description": {
+      "en": "A time rule covers this moment, so `remaining_seconds` is a real countdown.",
+      "ar": "قاعدة وقت تشمل هذه اللحظة، فقيمة `remaining_seconds` عدّ تنازلي حقيقي."
+    },
+    "/paths/~1me~1parental~1time/get/responses/200/content/application~1json/schema/properties/reason/description": {
+      "en": "Why not, when not `allowed`.",
+      "ar": "سبب المنع، إذا لم تكن `allowed` صحيحة."
+    },
+    "/paths/~1me~1parental~1time/get/responses/200/content/application~1json/schema/properties/remaining_seconds/description": {
+      "en": "How long watching may go on from now; null when no rule limits the account now.",
+      "ar": "المدة التي يجوز أن تستمرّ فيها المشاهدة من الآن؛ والقيمة null إذا لم تكن قاعدة تحدّ الحساب الآن."
+    },
+    "/paths/~1me~1parental~1time/get/responses/200/content/application~1json/schema/properties/slot_ends_at/description": {
+      "en": "When the open slot closes; null when no slot covers now.",
+      "ar": "متى تُغلق الفترة المفتوحة؛ والقيمة null إذا لم تكن فترة تشمل هذه اللحظة."
+    },
+    "/paths/~1me~1parental~1time/get/responses/200/content/application~1json/schema/properties/next_allowed_at/description": {
+      "en": "When watching is next allowed; null when it is allowed now.",
+      "ar": "متى يُسمح بالمشاهدة بعد الآن؛ والقيمة null إذا كانت مسموحة الآن."
+    },
+    "/paths/~1me~1parental~1time/get/responses/200/content/application~1json/schema/properties/now/description": {
+      "en": "The home's clock for this answer. Count down from it, not from the device's clock.",
+      "ar": "ساعة البيت لهذا الجواب. يُعدّ تنازليًّا منها لا من ساعة الجهاز."
+    },
+    "/paths/~1me~1parental~1time/get/responses/422/description": {
+      "en": "`library_id` is not an id.",
+      "ar": "قيمة `library_id` ليست معرّفًا."
     }
   }
 }

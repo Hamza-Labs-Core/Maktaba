@@ -86,6 +86,10 @@ var copyReviewed = []string{
 	// watched each day and the extra time a guardian gave (ids, days, minutes, no
 	// secret); a promoted copy keeps the day's count, so a move gives no time back
 	"parental_time_grants", "parental_time_rules", "parental_time_usage",
+	// slot 0222 (stories 57.06, 57.08) adds none: parental_pins is a secret's hash, and
+	// parental_pin_failures, parental_requests and parental_events are read and written
+	// by the home's API alone (as the analytics tables are), so cluster_copy_excluded()
+	// leaves all four out
 }
 
 // Every table of a migrated database is either reviewed as copied or left out.

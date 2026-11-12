@@ -87,7 +87,7 @@ func (h *Handler) writeRules(w http.ResponseWriter, r *http.Request, rules []par
 	if rules == nil {
 		rules = []parentalpkg.TimeRule{}
 	}
-	loc, err := h.Store.HomeLocation(r.Context())
+	loc, err := h.Store.HomeZone(r.Context())
 	if err != nil {
 		h.fail(w, r, err)
 		return

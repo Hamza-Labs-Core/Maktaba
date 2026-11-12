@@ -41,6 +41,14 @@ type env struct {
 	t  *testing.T
 	db *sql.DB
 	h  http.Handler
+	// what the ask, PIN and activity tests (requests_pg_test.go) drive: the store,
+	// its clock (zero: the real time), the notices sent and the caller's address
+	store   *parental.Store
+	clock   time.Time
+	notices []notice
+	remote  string
+	// story 57.14 (time_pg_test.go): what streaming was told
+	push *timePush
 }
 
 func setup(t *testing.T) *env {
@@ -58,6 +66,8 @@ func setup(t *testing.T) *env {
 	store := parental.NewStore(db)
 	r := chi.NewRouter()
 	(&parentalh.Handler{Store: store, Cache: parental.NewCache(store)}).Mount(r)
+	e.mountAsk(r, store)
+	e.mountTime(r, store) // story 57.14 (time_pg_test.go)
 	e.h = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		var p *principal.Principal
 		switch req.Header.Get("X-Test-As") {
@@ -124,6 +134,9 @@ func (e *env) do(as, method, path string, body any) (int, map[string]any) {
 	req := httptest.NewRequest(method, path, rd)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Test-As", as)
+	if e.remote != "" {
+		req.RemoteAddr = e.remote
+	}
 	rec := httptest.NewRecorder()
 	e.h.ServeHTTP(rec, req)
 	var out map[string]any

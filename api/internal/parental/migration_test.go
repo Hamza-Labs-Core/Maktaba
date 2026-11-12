@@ -108,6 +108,10 @@ func TestSlot0221UpAndDownOnPostgres(t *testing.T) {
 	// slots go down newest first: 0223's tables hang off parental_policies
 	_, laterDown := gooseStatements(t, "0223_parental_time.sql")
 	run(t, db, "0223 down", laterDown)
+	// slot 0222's tables hang off parental_policies: a later slot goes down first, as
+	// goose takes them
+	_, down0222 := gooseStatements(t, "0222_parental_requests.sql")
+	run(t, db, "down 0222", down0222)
 	run(t, db, "down", down)
 	if tables() != 0 || leftovers() != 0 {
 		t.Fatalf("after down: %d tables and %d functions, triggers or settings left", tables(), leftovers())

@@ -12,6 +12,8 @@ import (
 	"database/sql"
 	"strings"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 // videoColumns is the column list scanVideoRow reads.
@@ -62,7 +64,7 @@ func uniq(ids []string) []string {
 func LoadVideos(ctx context.Context, db *sql.DB, ids []string) (map[string]Video, error) {
 	out := map[string]Video{}
 	err := forChunks(uniq(ids), 1, func(ph string, args []any) error {
-		rows, err := db.QueryContext(ctx, `SELECT `+videoColumns+` FROM videos WHERE id IN (`+ph+`)`, args...)
+		rows, err := db.QueryContext(ctx, `SELECT `+videoColumns+` FROM videos WHERE id IN (`+ph+`)`+parental.Where(ctx, "videos"), args...)
 		if err != nil {
 			return err
 		}

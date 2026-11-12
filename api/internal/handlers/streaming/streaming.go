@@ -394,6 +394,11 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	// the parental filter: a hidden video answers as a missing one
+	if !h.MayPlay(r.Context(), req.VideoID) {
+		httperror.Write(w, r, httperror.NotFound("video "+req.VideoID))
+		return
+	}
 	if !h.timeAdmit(w, r, p, libraryID) { // story 57.14: time limits and slots
 		return
 	}
@@ -485,7 +490,7 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 	// but no byte plays. The URL lives as long as the session can: the
 	// session TTL, or the video's length plus an hour when that is longer.
 	if h.Signer != nil {
-		ttl := h.urlTTL(r.Context(), duration)
+		ttl := signedTTL(r.Context(), h.urlTTL(r.Context(), duration))
 		for _, u := range []*string{&resp.ManifestURL, &resp.DirectURL} {
 			if *u == "" {
 				continue
@@ -613,6 +618,11 @@ func (h *Handler) GetSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !mayActOn(p, sess.UserID) {
+		httperror.Write(w, r, httperror.NotFound("session "+id))
+		return
+	}
+	// a session of a video since hidden from its account reads as gone
+	if !h.MayPlay(r.Context(), sess.VideoID) {
 		httperror.Write(w, r, httperror.NotFound("session "+id))
 		return
 	}

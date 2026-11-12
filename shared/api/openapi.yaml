@@ -7819,6 +7819,19 @@ paths:
                   allow_only:
                     type: boolean
                     description: Only what a rule allows is open, whatever its tier.
+                  device_limit:
+                    type: integer
+                    enum:
+                    - -1
+                    - 0
+                    - 9
+                    - 13
+                    - 16
+                    - 18
+                    description: 'The limit this sign-in''s device set, when it set one: `max_tier` is then the stricter of it and the account''s own limit, and it is present even when `restricted` is `false`.'
+                  device_pending:
+                    type: boolean
+                    description: The device has since said something looser, which waits for an admin or a guardian.
                   version:
                     type: integer
                 required:
@@ -7830,6 +7843,179 @@ paths:
         default:
           $ref: '#/components/responses/InternalError'
       operationId: getMyParental
+  /me/age-signal:
+    post:
+      tags:
+      - Parental controls
+      summary: Send what the device says about its user's age
+      description: 'An app tells the home what its device said: the age range the guardian shared and the device''s film and TV rating limits. The home turns each into an age tier (rounding down), keeps the strictest, and holds this sign-in to it, on top of the account''s own limit and even when the account has none. It only tightens: a first statement or a stricter one applies at once; a looser one is kept and waits until an admin or a guardian of the account clears it. A statement with no value limits nothing and, after a limit, counts as looser. The limit belongs to the sign-in (the refresh token''s family) that sent it, so the caller must hold an access token an app got by signing in. After a 200, refresh the access token: the next one carries the limit in its `ac` claim. The home applies the limit from this call on, whatever the token says.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                age_range:
+                  type: object
+                  description: The age range the person or their guardian shared (Apple's Declared Age Range). Leave it out when nothing was shared. An `upper` of 9 or less limits to tier `0`, 13 or less to `9`, 18 or less to `13`; no `upper`, or one above 18, limits nothing.
+                  properties:
+                    lower:
+                      type: integer
+                      minimum: 0
+                      maximum: 150
+                      description: The youngest age of the range.
+                    upper:
+                      type: integer
+                      minimum: 0
+                      maximum: 150
+                      description: The oldest age of the range; absent for an adult range.
+                    declaration:
+                      type: string
+                      pattern: ^[a-z][a-z0-9_]{0,39}$
+                      description: 'How the range was declared, as the device names it in snake case: for example `self_declared` or `guardian_declared`. Kept for the guardian to read; it changes no limit.'
+                movie_ceiling:
+                  type: integer
+                  minimum: 0
+                  maximum: 1000
+                  description: 'The device''s highest allowed film rating on Apple''s 0 to 1000 scale (`ManagedSettingsStore.effectiveMaximumMovieRating`): `0` nothing, `100` G, `200` PG, `300` PG-13, `400` R, `500` NC-17, `1000` no limit. A value between two steps counts as the step below it.'
+                tv_ceiling:
+                  type: integer
+                  minimum: 0
+                  maximum: 1000
+                  description: 'The device''s highest allowed TV rating on Apple''s 0 to 1000 scale (`effectiveMaximumTVShowRating`): `0` nothing, `100` TV-Y, `200` TV-Y7, `300` TV-G, `400` TV-PG, `500` TV-14, `600` TV-MA, `1000` no limit. A value between two steps counts as the step below it.'
+                region:
+                  type: string
+                  pattern: ^([A-Za-z]{2}|[0-9]{3})$
+                  description: 'The device''s region: two letters (ISO 3166-1, any case) or three digits (UN M.49). Kept with the signal. The United States steps are used for every region today.'
+              example:
+                age_range:
+                  lower: 13
+                  upper: 15
+                  declaration: guardian_declared
+                movie_ceiling: 400
+                tv_ceiling: 400
+                region: US
+      responses:
+        '200':
+          description: Recorded. `tier_limit` is the limit in force, which is the earlier one when what was sent is looser.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tier_limit:
+                    type: integer
+                    nullable: true
+                    enum:
+                    - -1
+                    - 0
+                    - 9
+                    - 13
+                    - 16
+                    - 18
+                    - null
+                    description: 'The device limit now in force on this sign-in: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier; `null` when the device limits nothing.'
+                  pending_looser:
+                    type: boolean
+                    description: 'What was sent is looser than the limit in force: it is kept and waits for an admin or a guardian to clear it.'
+                  refresh:
+                    type: boolean
+                    enum:
+                    - true
+                    description: 'Always `true`: refresh the access token now so the next one carries the limit.'
+                required:
+                - tier_limit
+                - pending_looser
+                - refresh
+                example:
+                  tier_limit: 9
+                  pending_looser: false
+                  refresh: true
+        '409':
+          description: 'The credential names no app sign-in (`code`: `no_sign_in`): a web session, an API token, or an access token minted before this release. An app refreshes its access token and sends the signal again.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: 'A value is out of range: an age outside 0 to 150, `lower` above `upper`, a ceiling outside 0 to 1000, a `declaration` that is not snake case, or a `region` that is neither two letters nor three digits.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: postMyAgeSignal
+  /users/{id}/parental/signals/{family}/clear:
+    post:
+      tags:
+      - Parental controls
+      summary: Clear a sign-in's device signal
+      description: For admins and the account's guardians. When a looser statement is waiting on the sign-in, it is applied and becomes the device limit. When none is waiting, the signal is removed and the sign-in is held to the account's own limit alone until its device speaks again. `family` is the `refresh_family_id` of a signal listed by `GET /users/{id}/parental`. An admin can clear a signal of any account, restricted or not. A sign-in that is itself limited by its device clears nothing, whoever it belongs to. The sign-in's access token keeps the earlier limit until its next refresh.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: path
+        name: family
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: The `refresh_family_id` of the signal.
+      responses:
+        '200':
+          description: Cleared.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tier_limit:
+                    type: integer
+                    nullable: true
+                    enum:
+                    - -1
+                    - 0
+                    - 9
+                    - 13
+                    - 16
+                    - 18
+                    - null
+                    description: The device limit now in force on that sign-in; `null` when there is none.
+                  removed:
+                    type: boolean
+                    description: Nothing looser was waiting, so the signal was removed.
+                required:
+                - tier_limit
+                - removed
+        '403':
+          description: 'Not this caller''s to clear: `code` is `restricted` for a restricted account, `admin_only` for anyone else who is neither an admin nor a guardian of the account, `device_limited` when the caller''s own sign-in is limited by its device. A play-only sign-in through Maktaba Cloud is refused too.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No signal for this sign-in on an account the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: clearParentalSignal
   /users/{id}/parental:
     get:
       tags:
@@ -8468,6 +8654,1300 @@ paths:
         default:
           $ref: '#/components/responses/InternalError'
       operationId: removeParentalRule
+  /me/parental/requests:
+    post:
+      tags:
+      - Parental controls
+      summary: Ask a parent to open something
+      description: For a restricted account only. Asks its guardians to allow one item it can reach but its limit hides. Asking again for the same item while the first request waits answers that request. A request waits seven days, and at most 20 wait at once. Each guardian gets one notice, which names neither the child nor the item.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                subject_kind:
+                  type: string
+                  enum:
+                  - library
+                  - collection
+                  - series
+                  - channel
+                  - youtube_source
+                  - plugin
+                  - video
+                subject_id:
+                  type: string
+              required:
+              - subject_kind
+              - subject_id
+      responses:
+        '200':
+          description: A request for this item was already waiting; it is returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      child_id:
+                        type: string
+                        format: uuid
+                      subject_kind:
+                        type: string
+                        enum:
+                        - library
+                        - collection
+                        - series
+                        - channel
+                        - youtube_source
+                        - plugin
+                        - video
+                      subject_id:
+                        type: string
+                      status:
+                        type: string
+                        enum:
+                        - pending
+                        - approved
+                        - denied
+                        - expired
+                      decided_by:
+                        type: string
+                        format: uuid
+                      decided_at:
+                        type: string
+                        format: date-time
+                      created_at:
+                        type: string
+                        format: date-time
+                      expires_at:
+                        type: string
+                        format: date-time
+                        description: 'When a request still waiting stops waiting: seven days after it was made.'
+        '201':
+          description: The request was made.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      child_id:
+                        type: string
+                        format: uuid
+                      subject_kind:
+                        type: string
+                        enum:
+                        - library
+                        - collection
+                        - series
+                        - channel
+                        - youtube_source
+                        - plugin
+                        - video
+                      subject_id:
+                        type: string
+                      status:
+                        type: string
+                        enum:
+                        - pending
+                        - approved
+                        - denied
+                        - expired
+                      decided_by:
+                        type: string
+                        format: uuid
+                      decided_at:
+                        type: string
+                        format: date-time
+                      created_at:
+                        type: string
+                        format: date-time
+                      expires_at:
+                        type: string
+                        format: date-time
+                        description: 'When a request still waiting stops waiting: seven days after it was made.'
+        '403':
+          description: 'Not a restricted account: `code` is `not_restricted`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No such item that the account can reach. An item in a library the account cannot open answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: 20 requests are already waiting (`code` is `too_many_requests`), or the caller is rate limited.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: askParent
+  /me/parental/guardians:
+    get:
+      tags:
+      - Parental controls
+      summary: Who can unlock with a parent PIN
+      description: 'For a restricted account only. The account''s guardians, and the admins, who have set a parent PIN: the people a device offers on its PIN screen.'
+      responses:
+        '200':
+          description: The people with a PIN, by name.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  guardians:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        username:
+                          type: string
+        '403':
+          description: 'Not a restricted account: `code` is `not_restricted`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: listParentalUnlockers
+  /me/parental/unlock:
+    post:
+      tags:
+      - Parental controls
+      summary: Open something with a parent PIN
+      description: 'For a restricted account only: a guardian types their PIN on the child''s device. A right PIN allows the item until 04:00 home time and answers a waiting request for it. A wrong PIN, a person who is not a guardian of the account and a person with no PIN all get the same answer, and every answer takes at least 250 ms. Five wrong PINs lock that guardian''s PIN for 15 minutes, then twice as long each time, up to 24 hours; ten wrong PINs in an hour from one account, or twenty from one address, close PIN entry for an hour.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                guardian_id:
+                  type: string
+                  format: uuid
+                  description: 'Whose PIN this is: one of the people `GET /me/parental/guardians` lists.'
+                pin:
+                  type: string
+                  pattern: ^[0-9]{6}$
+                subject_kind:
+                  type: string
+                  enum:
+                  - library
+                  - collection
+                  - series
+                  - channel
+                  - youtube_source
+                  - plugin
+                  - video
+                subject_id:
+                  type: string
+              required:
+              - guardian_id
+              - pin
+              - subject_kind
+              - subject_id
+      responses:
+        '200':
+          description: 'Opened: the allow rule, with when it ends.'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rule:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      user_id:
+                        type: string
+                        format: uuid
+                      effect:
+                        type: string
+                        enum:
+                        - allow
+                        - block
+                      subject_kind:
+                        type: string
+                        enum:
+                        - library
+                        - collection
+                        - series
+                        - channel
+                        - youtube_source
+                        - plugin
+                        - video
+                      subject_id:
+                        type: string
+                      expires_at:
+                        type: string
+                        format: date-time
+                      created_by:
+                        type: string
+                        format: uuid
+                      created_at:
+                        type: string
+                        format: date-time
+        '403':
+          description: '`code` is `pin_wrong` (nothing was opened), or `not_restricted` when the caller is not a restricted account.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No such item that the account can reach; the PIN was not looked at.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: 'PIN entry is locked: `code` is `pin_locked`, and `retry_after` and the `Retry-After` header give the seconds left. The right PIN is refused too while a lock is on.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: unlockWithParentPin
+  /me/parental-pin:
+    get:
+      tags:
+      - Parental controls
+      summary: Whether the caller has a parent PIN
+      description: For admins and for guardians of a restricted account. The PIN itself is never returned.
+      responses:
+        '200':
+          description: Whether a PIN is set.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  set:
+                    type: boolean
+        '403':
+          description: 'Not this caller''s to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: getParentalPin
+    put:
+      tags:
+      - Parental controls
+      summary: Set the caller's parent PIN
+      description: For admins and for guardians of a restricted account. The PIN is six digits and is kept only as an argon2id hash. The caller's password is typed again. A new PIN clears any lock on the old one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pin:
+                  type: string
+                  pattern: ^[0-9]{6}$
+                password:
+                  type: string
+                  format: password
+              required:
+              - pin
+              - password
+      responses:
+        '204':
+          description: The PIN is set.
+        '403':
+          description: '`code` is `password_wrong` when the password is wrong; `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: 'Ten wrong passwords in an hour: `code` is `too_many_tries`, with `retry_after` and the `Retry-After` header. Or the caller is rate limited.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: setParentalPin
+  /parental/requests:
+    get:
+      tags:
+      - Parental controls
+      summary: The requests of the children the caller looks after
+      description: 'For guardians and admins: a guardian sees the requests of their own children, an admin every request. Newest first. An item in a library the caller cannot open comes with its kind and id only.'
+      parameters:
+      - in: query
+        name: status
+        required: false
+        schema:
+          type: string
+          enum:
+          - pending
+          - approved
+          - denied
+          - expired
+        description: 'Only requests with this status; absent: all.'
+      responses:
+        '200':
+          description: The requests.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  requests:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        child_id:
+                          type: string
+                          format: uuid
+                        subject_kind:
+                          type: string
+                          enum:
+                          - library
+                          - collection
+                          - series
+                          - channel
+                          - youtube_source
+                          - plugin
+                          - video
+                        subject_id:
+                          type: string
+                        status:
+                          type: string
+                          enum:
+                          - pending
+                          - approved
+                          - denied
+                          - expired
+                        decided_by:
+                          type: string
+                          format: uuid
+                        decided_at:
+                          type: string
+                          format: date-time
+                        created_at:
+                          type: string
+                          format: date-time
+                        expires_at:
+                          type: string
+                          format: date-time
+                          description: 'When a request still waiting stops waiting: seven days after it was made.'
+                        child:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                              format: uuid
+                            username:
+                              type: string
+                        subject:
+                          type: object
+                          properties:
+                            kind:
+                              type: string
+                            id:
+                              type: string
+                            title:
+                              type: string
+                            poster_url:
+                              type: string
+                            tier:
+                              type: integer
+                              description: The age tier of a video, when it has one.
+                            removed:
+                              type: boolean
+                              description: True when the item was deleted since.
+                            hidden:
+                              type: boolean
+                              description: 'True when the caller cannot open the item''s library: only its kind and id are given.'
+        '400':
+          description: '`status` is not a status.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: 'Not this caller''s to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: listParentalRequests
+  /parental/requests/{id}/approve:
+    post:
+      tags:
+      - Parental controls
+      summary: Approve a request
+      description: For a guardian of the child who asked, and for admins. Adds an allow rule for the item, the same way a rule added by hand is, ending at `expires_at` when given.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                expires_at:
+                  type: string
+                  format: date-time
+                  description: 'When the allow rule ends; absent: it does not end. Must be in the future.'
+      responses:
+        '200':
+          description: 'Approved: the request and the allow rule.'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      child_id:
+                        type: string
+                        format: uuid
+                      subject_kind:
+                        type: string
+                        enum:
+                        - library
+                        - collection
+                        - series
+                        - channel
+                        - youtube_source
+                        - plugin
+                        - video
+                      subject_id:
+                        type: string
+                      status:
+                        type: string
+                        enum:
+                        - pending
+                        - approved
+                        - denied
+                        - expired
+                      decided_by:
+                        type: string
+                        format: uuid
+                      decided_at:
+                        type: string
+                        format: date-time
+                      created_at:
+                        type: string
+                        format: date-time
+                      expires_at:
+                        type: string
+                        format: date-time
+                        description: 'When a request still waiting stops waiting: seven days after it was made.'
+                  rule:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      user_id:
+                        type: string
+                        format: uuid
+                      effect:
+                        type: string
+                        enum:
+                        - allow
+                        - block
+                      subject_kind:
+                        type: string
+                        enum:
+                        - library
+                        - collection
+                        - series
+                        - channel
+                        - youtube_source
+                        - plugin
+                        - video
+                      subject_id:
+                        type: string
+                      expires_at:
+                        type: string
+                        format: date-time
+                      created_by:
+                        type: string
+                        format: uuid
+                      created_at:
+                        type: string
+                        format: date-time
+        '403':
+          description: 'Not this caller''s to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No such request that the caller may answer. A request of a child the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: 'Already answered: `code` is `request_decided`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: 'The request expired, or what it asked for is no longer there: `code` is `request_expired`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: approveParentalRequest
+  /parental/requests/{id}/deny:
+    post:
+      tags:
+      - Parental controls
+      summary: Deny a request
+      description: For a guardian of the child who asked, and for admins. No rule is added.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: 'Denied: the request.'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      child_id:
+                        type: string
+                        format: uuid
+                      subject_kind:
+                        type: string
+                        enum:
+                        - library
+                        - collection
+                        - series
+                        - channel
+                        - youtube_source
+                        - plugin
+                        - video
+                      subject_id:
+                        type: string
+                      status:
+                        type: string
+                        enum:
+                        - pending
+                        - approved
+                        - denied
+                        - expired
+                      decided_by:
+                        type: string
+                        format: uuid
+                      decided_at:
+                        type: string
+                        format: date-time
+                      created_at:
+                        type: string
+                        format: date-time
+                      expires_at:
+                        type: string
+                        format: date-time
+                        description: 'When a request still waiting stops waiting: seven days after it was made.'
+        '403':
+          description: 'Not this caller''s to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud is refused too.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No such request that the caller may answer. A request of a child the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: 'Already answered: `code` is `request_decided`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: 'The request expired, or what it asked for is no longer there: `code` is `request_expired`.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: denyParentalRequest
+  /users/{id}/parental/activity:
+    get:
+      tags:
+      - Parental controls
+      summary: A restricted account's activity
+      description: For the account's guardians and admins. What the account watched (a play of 60 seconds or 20 percent), what was blocked (once per item per day), what it asked for and how it was answered, PIN locks and age signals from its devices. Newest first, 50 a page, kept 90 days. Events hold ids only; titles are read when the list is asked for.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
+        description: 'The `next_cursor` of the page before; absent: the first page.'
+      - in: query
+        name: kind
+        required: false
+        schema:
+          type: string
+          enum:
+          - watched
+          - blocked
+          - asked
+          - approved
+          - denied
+          - pin_locked
+          - signal
+          - time_up
+          - time_granted
+        description: Only events of this kind.
+      responses:
+        '200':
+          description: A page of events.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        kind:
+                          type: string
+                          enum:
+                          - watched
+                          - blocked
+                          - asked
+                          - approved
+                          - denied
+                          - pin_locked
+                          - signal
+                          - time_up
+                          - time_granted
+                        at:
+                          type: string
+                          format: date-time
+                        subject:
+                          type: object
+                          properties:
+                            kind:
+                              type: string
+                            id:
+                              type: string
+                            title:
+                              type: string
+                            poster_url:
+                              type: string
+                            tier:
+                              type: integer
+                              description: The age tier of a video, when it has one.
+                            removed:
+                              type: boolean
+                              description: True when the item was deleted since.
+                            hidden:
+                              type: boolean
+                              description: 'True when the caller cannot open the item''s library: only its kind and id are given.'
+                        guardian:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                              format: uuid
+                            username:
+                              type: string
+                          description: The guardian an `approved`, `denied` or `pin_locked` event names.
+                        device:
+                          type: string
+                          description: The device's name, for a `signal` event.
+                  next_cursor:
+                    type: string
+                    description: Present when there is another page.
+        '400':
+          description: '`cursor` or `kind` is not valid.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: listParentalActivity
+  /parental/users/{id}/time-rules:
+    get:
+      tags:
+      - Parental controls
+      summary: A restricted account's time rules
+      description: When the account may watch and for how long each day. For the account's guardians and admins. When several rules cover a moment the strictest wins. An account with no rules has no time limit.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The rules.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rules:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        library_id:
+                          type: string
+                          format: uuid
+                          description: 'The rule covers this library only; absent: the whole account.'
+                        days:
+                          type: integer
+                          minimum: 1
+                          maximum: 127
+                          description: 'The home days the rule covers, as a bitmask: bit 0 is Sunday, bit 6 is Saturday. 127 is every day.'
+                        slot_start:
+                          type: string
+                          description: '`HH:MM`, home time. With `slot_end`: watching is allowed only from the start to the end. An end before the start crosses midnight.'
+                        slot_end:
+                          type: string
+                          description: '`HH:MM`, home time. Given with `slot_start` or not at all.'
+                        daily_minutes:
+                          type: integer
+                          minimum: 0
+                          maximum: 1440
+                          description: 'The most watched on one home day; absent: no daily limit. A rule has a slot, a daily limit or both.'
+                        updated_at:
+                          type: string
+                          format: date-time
+                      required:
+                      - days
+                  time_zone:
+                    type: string
+                    description: The home's time zone (an IANA name). Slots and days are read in it; a device's clock is never used.
+        '403':
+          description: 'Not this caller''s to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud reads and does not change.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: listParentalTimeRules
+    put:
+      tags:
+      - Parental controls
+      summary: Set a restricted account's time rules
+      description: Replaces every time rule of the account with the rules given; an empty list removes them all. For the account's guardians and admins. A stream running now ends, or goes on, by the new rules within 60 seconds.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rules:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      library_id:
+                        type: string
+                        format: uuid
+                        description: 'The rule covers this library only; absent: the whole account.'
+                      days:
+                        type: integer
+                        minimum: 1
+                        maximum: 127
+                        description: 'The home days the rule covers, as a bitmask: bit 0 is Sunday, bit 6 is Saturday. 127 is every day.'
+                      slot_start:
+                        type: string
+                        description: '`HH:MM`, home time. With `slot_end`: watching is allowed only from the start to the end. An end before the start crosses midnight.'
+                      slot_end:
+                        type: string
+                        description: '`HH:MM`, home time. Given with `slot_start` or not at all.'
+                      daily_minutes:
+                        type: integer
+                        minimum: 0
+                        maximum: 1440
+                        description: 'The most watched on one home day; absent: no daily limit. A rule has a slot, a daily limit or both.'
+                      updated_at:
+                        type: string
+                        format: date-time
+                    required:
+                    - days
+              required:
+              - rules
+      responses:
+        '200':
+          description: The rules as they are now.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rules:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        library_id:
+                          type: string
+                          format: uuid
+                          description: 'The rule covers this library only; absent: the whole account.'
+                        days:
+                          type: integer
+                          minimum: 1
+                          maximum: 127
+                          description: 'The home days the rule covers, as a bitmask: bit 0 is Sunday, bit 6 is Saturday. 127 is every day.'
+                        slot_start:
+                          type: string
+                          description: '`HH:MM`, home time. With `slot_end`: watching is allowed only from the start to the end. An end before the start crosses midnight.'
+                        slot_end:
+                          type: string
+                          description: '`HH:MM`, home time. Given with `slot_start` or not at all.'
+                        daily_minutes:
+                          type: integer
+                          minimum: 0
+                          maximum: 1440
+                          description: 'The most watched on one home day; absent: no daily limit. A rule has a slot, a daily limit or both.'
+                        updated_at:
+                          type: string
+                          format: date-time
+                      required:
+                      - days
+                  time_zone:
+                    type: string
+                    description: The home's time zone (an IANA name). Slots and days are read in it; a device's clock is never used.
+        '403':
+          description: 'Not this caller''s to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud reads and does not change.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: 'A rule is not valid: no day, half a slot, a slot that starts when it ends, neither a slot nor a daily limit, or a library that does not exist. Nothing is changed.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: setParentalTimeRules
+  /parental/users/{id}/time-usage:
+    get:
+      tags:
+      - Parental controls
+      summary: How long a restricted account watched
+      description: The seconds the account watched on each home day, by library, and the extra time it was given. For the account's guardians and admins. The home counts the time itself from each stream's progress posts; a paused stream adds nothing.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: from
+        required: false
+        schema:
+          type: string
+          format: date
+        description: 'The first home day, `YYYY-MM-DD`. Without `from` and `to`: the last seven days.'
+      - in: query
+        name: to
+        required: false
+        schema:
+          type: string
+          format: date
+        description: The last home day, `YYYY-MM-DD`, included. At most 92 days from `from`.
+      responses:
+        '200':
+          description: The count.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  from:
+                    type: string
+                    format: date
+                  to:
+                    type: string
+                    format: date
+                  time_zone:
+                    type: string
+                  today:
+                    type: string
+                    format: date
+                    description: The home day it is now.
+                  usage:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        day:
+                          type: string
+                          format: date
+                        library_id:
+                          type: string
+                          format: uuid
+                          description: The library watched in. The all-zero id stands for playback with no library.
+                        seconds:
+                          type: integer
+                  grants:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        user_id:
+                          type: string
+                          format: uuid
+                        day:
+                          type: string
+                          format: date
+                          description: The home day the minutes are for. A home day ends at 04:00 home time.
+                        minutes:
+                          type: integer
+                        used_seconds:
+                          type: integer
+                          description: How much of the grant has been watched.
+                        granted_by:
+                          type: string
+                          format: uuid
+                        created_at:
+                          type: string
+                          format: date-time
+        '403':
+          description: 'Not this caller''s to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud reads and does not change.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: '`from` or `to` is not a day, or the range is longer than 92 days.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: getParentalTimeUsage
+  /parental/users/{id}/time-grants:
+    post:
+      tags:
+      - Parental controls
+      summary: Give a restricted account more time today
+      description: Adds minutes to the current home day only; they are gone at 04:00 home time whether used or not. The minutes also open a closed slot until they run out. For the account's guardians and admins.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                minutes:
+                  type: integer
+                  minimum: 1
+                  maximum: 480
+                  description: How many minutes to add, from 1 to 480.
+              required:
+              - minutes
+      responses:
+        '201':
+          description: The grant.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  user_id:
+                    type: string
+                    format: uuid
+                  day:
+                    type: string
+                    format: date
+                    description: The home day the minutes are for. A home day ends at 04:00 home time.
+                  minutes:
+                    type: integer
+                  used_seconds:
+                    type: integer
+                    description: How much of the grant has been watched.
+                  granted_by:
+                    type: string
+                    format: uuid
+                  created_at:
+                    type: string
+                    format: date-time
+        '403':
+          description: 'Not this caller''s to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud reads and does not change.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: '`minutes` is not from 1 to 480.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: grantParentalTime
+  /me/parental/time:
+    get:
+      tags:
+      - Parental controls
+      summary: The caller's own watching time now
+      description: 'For the player''s countdown: whether the caller may watch now, for how long, and when next. For any signed-in user; an account with no time rules is `allowed` and not `limited`. It only reads: asking it counts nothing and keeps no stream running. When the time is over, opening a stream session, posting its progress and starting a watch answer 403 with the problem type `https://maktaba.tv/problems/parental-time`, a `reason` (`outside_slot`, `limit_reached`, or `no_heartbeat` when the stream sent no progress for 60 seconds) and, when the rules allow watching again, `next_allowed_at`. The streaming service refuses the stream''s segments within 60 seconds with the same `reason`.'
+      parameters:
+      - in: query
+        name: library_id
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: 'Also count the rules of this library; absent: the account''s own rules.'
+      responses:
+        '200':
+          description: The caller's time.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allowed:
+                    type: boolean
+                    description: Watching may start or go on now.
+                  limited:
+                    type: boolean
+                    description: A time rule covers this moment, so `remaining_seconds` is a real countdown.
+                  reason:
+                    type: string
+                    enum:
+                    - outside_slot
+                    - limit_reached
+                    description: Why not, when not `allowed`.
+                  remaining_seconds:
+                    type:
+                    - integer
+                    - 'null'
+                    description: How long watching may go on from now; null when no rule limits the account now.
+                  slot_ends_at:
+                    type:
+                    - string
+                    - 'null'
+                    format: date-time
+                    description: When the open slot closes; null when no slot covers now.
+                  next_allowed_at:
+                    type:
+                    - string
+                    - 'null'
+                    format: date-time
+                    description: When watching is next allowed; null when it is allowed now.
+                  now:
+                    type: string
+                    format: date-time
+                    description: The home's clock for this answer. Count down from it, not from the device's clock.
+        '422':
+          description: '`library_id` is not an id.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: getMyParentalTime
   /pairing/approve:
     post:
       tags:

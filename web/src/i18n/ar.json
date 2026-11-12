@@ -7618,6 +7618,8 @@
   "notify.plugins.revoked": "سحب متجر الإضافات {plugin}؛ وأُوقفت",
   "notify.plugins.revocation_warn": "يحذّر متجر الإضافات من {plugin}",
   "notify.plugins.revocation_lifted": "رفع متجر الإضافات سحبه لـ{plugin}؛ ويمكنك تشغيلها مرة أخرى",
+  "notify.parental.request": "يوجد طلب بانتظارك",
+  "notify.parental.pin_locked": "محاولات خاطئة كثيرة لإدخال رمز وليّ الأمر",
   "plugins.error.plugin_delisted": "لم يعد المتجر يعرض هذا الإصدار.",
   "plugins.error.store_list_stale": "ينتظر التثبيت من المتجر حتى تكون لدى هذا الجهاز الرئيسي قائمة جديدة بالإضافات المسحوبة.",
   "plugins.error.plugin_not_in_catalog": "هذه الإضافة ليست في فهرس المتجر بعد.",

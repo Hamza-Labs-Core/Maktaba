@@ -443,7 +443,11 @@ func (k *TimeKeeper) Beat(ctx context.Context, userID, sessionID string) (TimeSt
 	if err := k.settle(ctx, userID, sessionID); err != nil {
 		return TimeState{}, err
 	}
-	return k.lease(ctx, *m, sessionID, leaseRenew)
+	st, err := k.lease(ctx, *m, sessionID, leaseRenew)
+	if err == nil && !st.Allowed {
+		_ = k.store.RecordTimeUp(ctx, userID, st.Reason) // the activity note; the stream ends either way
+	}
+	return st, err
 }
 
 // Closed counts a stream session up to its close, ends its lease and drops its

@@ -30,6 +30,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 )
 
@@ -213,7 +214,8 @@ func (h *Handler) fillGrouped(ctx context.Context, p *principal.Principal, uid s
 				ps.completed, ps.position_sec
 			FROM series_episodes se JOIN videos v ON v.id = se.video_id
 			LEFT JOIN playback_state ps ON ps.video_id = v.id AND ps.user_id = $1
-			WHERE se.series_id IN (`+strings.Join(ph, ",")+`) AND v.deleted_at IS NULL AND v.state NOT IN ('missing', 'superseded')`, args...)
+			WHERE se.series_id IN (`+strings.Join(ph, ",")+`) AND v.deleted_at IS NULL AND v.state NOT IN ('missing', 'superseded')`+
+			parental.Where(ctx, "v"), args...)
 		if err != nil {
 			return nil, err
 		}
@@ -368,6 +370,7 @@ func (h *Handler) modeCollections(ctx context.Context, p *principal.Principal, l
 		}
 		scope = " AND v.library_id IN (" + strings.Join(ph, ",") + ")"
 	}
+	scope += parental.Where(ctx, "v")
 	rows, err := h.DB.QueryContext(ctx, `SELECT CAST(c.id AS TEXT), COALESCE(c.name_override, c.name), COALESCE(c.source_kind, ''), CAST(v.id AS TEXT)
 		FROM collections c JOIN collection_items ci ON ci.collection_id = c.id JOIN videos v ON v.id = ci.video_id
 		WHERE c.library_id = $1 AND `+modeCollectionCond+` AND v.deleted_at IS NULL AND v.state NOT IN ('missing', 'superseded')`+scope+`

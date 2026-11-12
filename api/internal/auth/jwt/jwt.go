@@ -48,6 +48,14 @@ type Claims struct {
 	// "1" kept (Tls names the session), "0" not kept. Streaming refuses a stream
 	// URL with neither Tls nor Tk "0", so it never has to infer it.
 	Tk string `json:"tk,omitempty"`
+	// Fam is the sign-in the token belongs to: the family id of the refresh
+	// token it was minted beside (Epic 57 story 57.04). Empty for a token
+	// with no refresh token.
+	Fam string `json:"fam,omitempty"`
+	// Ac is the age-tier limit the sign-in's device gave (-1 nothing, 0, 9,
+	// 13, 16, 18); absent when the device gave none. The home holds the
+	// request to it as well as to the account's policy.
+	Ac *int `json:"ac,omitempty"`
 }
 
 // Errors exported by Verify.
