@@ -5108,6 +5108,22 @@
     "/paths/~1tv~1hdhr~1allowed/put/responses/403/description": {
       "en": "Admin only.",
       "ar": "للمشرفين وحدهم."
+    },
+    "/components/schemas/Library/properties/age_tier/description": {
+      "en": "The library's default age tier (Epic 57), set with `PUT /api/libraries/{id}/age-tier`: a tier, or null when none is set. Only an administrator's answer has this field; it is absent for everyone else.",
+      "ar": "التصنيف العمري الافتراضي للمكتبة (الملحمة 57)، يُضبط عبر `PUT /api/libraries/{id}/age-tier`: تصنيف، أو null إذا لم يُضبط. لا يظهر هذا الحقل إلا في إجابة المشرف، ويغيب عند غيره."
+    },
+    "/components/schemas/VideoDetail/allOf/1/properties/age_tier_admin/description": {
+      "en": "The age tier an administrator set on this video itself (Epic 57), with `PUT /api/videos/{id}/age-tier`: a tier, or null when the administrator set none. It is not what the video resolves to from its other sources. Only an administrator's answer has this field; it is absent for everyone else.",
+      "ar": "التصنيف العمري الذي ضبطه مشرف على هذا المقطع نفسه (الملحمة 57) عبر `PUT /api/videos/{id}/age-tier`: تصنيف، أو null إذا لم يضبط المشرف شيئًا. وليس هو ما يؤول إليه المقطع من مصادره الأخرى. لا يظهر هذا الحقل إلا في إجابة المشرف، ويغيب عند غيره."
+    },
+    "/components/schemas/Collection/properties/age_tier/description": {
+      "en": "The age tier an administrator set on the collection (Epic 57), with `PUT /api/collections/{id}/age-tier`: a tier, or null when none is set. Only an administrator's answer to `GET /api/collections/{id}` has this field; it is absent for everyone else.",
+      "ar": "التصنيف العمري الذي ضبطه مشرف على المجموعة (الملحمة 57) عبر `PUT /api/collections/{id}/age-tier`: تصنيف، أو null إذا لم يُضبط. لا يظهر هذا الحقل إلا في إجابة المشرف على `GET /api/collections/{id}`، ويغيب عند غيره."
+    },
+    "/paths/~1series~1{id}/get/description": {
+      "en": "The series header. An administrator's answer also has `age_tier`: the age tier set with `PUT /api/series/{id}/age-tier` (Epic 57), or null when none is set. The field is absent for everyone else.",
+      "ar": "ترويسة السلسلة. وتحمل إجابة المشرف أيضًا `age_tier`: التصنيف العمري المضبوط عبر `PUT /api/series/{id}/age-tier` (الملحمة 57)، أو null إذا لم يُضبط. ويغيب الحقل عند غيره."
     }
   }
 }

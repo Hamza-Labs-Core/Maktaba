@@ -121,6 +121,12 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if p.IsAdmin && h.staging(r.Context()) {
 		items = h.listWithDraft(r.Context(), items)
 	}
+	// the rating control's current value, for an admin alone (nil for anyone else)
+	if tiers := parental.AdminTiers(r.Context(), h.DB, p, parental.TierOnChannel, ""); tiers != nil {
+		for i := range items {
+			items[i].AgeTier = tiers[items[i].ID]
+		}
+	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items})
 }
 
@@ -253,6 +259,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 		h.attachDraftOverrides(r.Context(), &c)
 		attachBuilderInfo(&c, h.planStatuses(r.Context()), h.guideUntil(r.Context()))
+		c.AgeTier = parental.AdminTierOf(r.Context(), h.DB, p, parental.TierOnChannel, c.ID)
 		common.WriteJSON(w, r, http.StatusOK, c)
 		return
 	}
@@ -287,6 +294,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	h.attachOverrides(r.Context(), &c)
 	attachBuilderInfo(&c, h.planStatuses(r.Context()), h.guideUntil(r.Context()))
 	redactPaths(p, &c)
+	c.AgeTier = parental.AdminTierOf(r.Context(), h.DB, p, parental.TierOnChannel, c.ID)
 	common.WriteJSON(w, r, http.StatusOK, c)
 }
 
