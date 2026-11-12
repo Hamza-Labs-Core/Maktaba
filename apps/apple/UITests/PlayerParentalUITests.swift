@@ -787,20 +787,20 @@ final class PlayerParentalUITests: PlayerUITestCase {
         XCTAssertTrue(app.staticTexts["Times are in the home's time zone (Asia/Riyadh)."].exists, "whose clock the rules follow")
 
         element("time.add").tap()
-        // the editor: its daily limit row, whatever type of element carries the identifier
-        // (an identifier on the form itself would replace its rows' own on iOS 27)
-        XCTAssertTrue(shows(element("rule.limit"), within: 10), "the editor")
-        XCTAssertTrue(control("rule.limit", .switch).exists, "the daily limit's switch")
+        // the editor: its first row (Sunday). The form is lazy, and on an iPad's sheet the
+        // daily limit is below the fold: a row further down is in the tree only once it is
+        // scrolled to (`bring`), which is what failed on CI's iPad
+        XCTAssertTrue(shows(element("rule.day.0"), within: 10), "the editor")
+        XCTAssertTrue(bring("rule.limit", .switch).exists, "the daily limit's switch")
         // every day but Friday (bit 5; the days are the form's first rows)
         flip("rule.day.5")
         // one step up from an hour: 1 hr 15 min a day
-        let stepper = control("rule.minutes", .stepper, within: 5)
+        let stepper = bring("rule.minutes", .stepper)
         XCTAssertTrue(stepper.exists, "the daily limit's stepper")
         let up = stepper.buttons["Increment"].firstMatch
         (up.exists ? up : stepper.buttons.element(boundBy: 1)).tap()
         // Save is a row of the form's own, under the library
-        scrollUntil(element("rule.save"))
-        let save = control("rule.save", .button)
+        let save = bring("rule.save", .button)
         let invalid = element("rule.invalid")
         XCTAssertTrue(save.isEnabled, "a new rule starts with a daily limit: it can be saved")
         XCTAssertFalse(invalid.exists, "nothing to say about a rule that can be saved")
@@ -850,8 +850,34 @@ final class PlayerParentalUITests: PlayerUITestCase {
     /// Flips the switch `id` and waits until it says so (a row's toggle holds the switch
     /// itself inside it). A tap that changed nothing (it can land on the row's label) is
     /// followed by one on the row's trailing edge, where the switch is drawn.
+    /// The control of `type` that `id` names, scrolled onto the screen. The editor's form is
+    /// lazy: a row that is off screen (the daily limit and Save on an iPad's sheet) is in the
+    /// tree only as an empty element of type Other carrying the identifier, or not at all, so
+    /// the control is looked for by its type and the form is moved in short drags (a full
+    /// swipe down at the top would pull the sheet away) down the form, then back up.
+    @discardableResult
+    private func bring(_ id: String, _ type: XCUIElement.ElementType) -> XCUIElement {
+        let wanted = app.descendants(matching: type)[id].firstMatch
+        let window = app.windows.firstMatch
+        func drag(from: CGFloat, to: CGFloat) {
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: from))
+                .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: to)))
+        }
+        if met(2, { wanted.exists && wanted.isHittable }) { return wanted }
+        for _ in 0 ..< 5 {
+            drag(from: 0.62, to: 0.38)
+            if wanted.exists && wanted.isHittable { return wanted }
+        }
+        for _ in 0 ..< 10 {
+            drag(from: 0.38, to: 0.62)
+            if wanted.exists && wanted.isHittable { return wanted }
+        }
+        // not found by its type: whatever shape the identifier has (the assertion names it)
+        return control(id, type, within: 2)
+    }
+
     private func flip(_ id: String) {
-        let row = control(id, .switch)
+        let row = bring(id, .switch)
         XCTAssertTrue(row.exists, "the switch \(id)")
         let inner = row.switches.firstMatch
         let control = inner.exists ? inner : row
