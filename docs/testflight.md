@@ -95,6 +95,39 @@ App records can't be created through the API, so the first upload fails until th
 
 Then run the workflow by hand, or push the next tag.
 
+## Age rating and parental controls (owner, Epic 57)
+
+With the release that carries Epic 57 (parental controls), in App Store Connect for **Maktaba
+Player** and **Maktaba Player for iPad** (the two apps that read Apple's signals), by hand:
+
+- [ ] **Keep the current age rating.** An age-rating change counts as a significant change
+      under the Texas law's tools (`AppStore.ageRatingCode`, PermissionKit's
+      `SignificantAppUpdateTopic`), so the rating must not change with this release.
+- [ ] In the age-rating questionnaire's **In-App Controls**, answer **Parental Controls: Yes**
+      and **Age Assurance: Yes** (the Player reads Declared Age Range).
+- [ ] **Declared Age Range capability.** The Player asks Apple for the age range only once the
+      App IDs `com.hamzalabs.maktaba.player` and `com.hamzalabs.maktaba.player.tablet` have the
+      **Declared Age Range** capability (Certificates, Identifiers & Profiles → Identifiers; no
+      approval form) and the targets carry `com.apple.developer.declared-age-range` in an
+      entitlements file (`apps/apple/project.yml`). Until then the system answers "not
+      available", nothing is asked or sent, and the app builds and runs the same.
+- [ ] **Family Controls is not used** in this release. Story 57.16 (the home's time rules
+      through Screen Time) needs `com.apple.developer.family-controls`, which Apple approves
+      per app and per extension; the owner files that request.
+- [ ] **The device check of story 57.04** before the release tag: on a real iPad of a child in
+      a test Family Sharing group, set Content & Privacy Restrictions → TV Shows to TV-PG
+      (Ratings For: United States), open the Player's **Profile**, tap **About** five times and
+      read the line that appears (`movie`, `tv`, `region`, `limit`). Write the values in the
+      release's notes and append a dated line to
+      `specs/epics/57-parental-controls/research.md`. If the values stay 1000, the account's
+      limit and the age range are what limit Maktaba, as Help says.
+- [ ] **Screen Time check** on the same device (story 57.09 T04): set Downtime to start in a
+      minute, watch a video, and see that the shield comes up, the position is saved and
+      Resume works after downtime.
+- [ ] The Player sells nothing, so Ask to Buy covers only installing the free app. If the app
+      ever sells anything, it must handle StoreKit's `Product.PurchaseResult.pending` and
+      approvals arriving on `Transaction.updates`.
+
 ## Crash symbols (owner)
 
 One step turns symbol uploads on at both ends: add a repository secret **`MAKTABA_SYMBOLS_TOKEN`**
