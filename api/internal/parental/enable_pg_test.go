@@ -5,7 +5,11 @@ package parental_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
@@ -282,4 +286,69 @@ func TestSlot0225UpAndDownOnPostgres(t *testing.T) {
 			t.Fatalf("with a library default tier: %s, want true", got)
 		}
 	})
+}
+
+// Slot 0225's SQLite twin: the same rule, on the desktop build's database.
+func TestSlot0225OnSQLite(t *testing.T) {
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(t.TempDir(), "p.db")+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	db.SetMaxOpenConns(1)
+	for _, dep := range []string{"0029_users.sqlite.sql", "0042_app_settings.sqlite.sql", "0221_parental_policies.sqlite.sql"} {
+		depUp, _ := gooseStatements(t, dep)
+		run(t, db, dep, depUp)
+	}
+	// the one column of libraries the slot reads (slot 0220 adds it to the real table)
+	run(t, db, "libraries", []string{`CREATE TABLE libraries (id TEXT PRIMARY KEY, age_tier INTEGER)`, `INSERT INTO libraries (id) VALUES ('l1')`})
+	up, down := gooseStatements(t, "0225_parental_enabled.sqlite.sql")
+	state := func() string {
+		t.Helper()
+		var v string
+		if err := db.QueryRow(`SELECT value FROM app_settings WHERE key = 'parental.enabled'`).Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	if state() != "true" {
+		t.Fatalf("slot 0221's seed = %s", state())
+	}
+	run(t, db, "up", up)
+	run(t, db, "up again", up)
+	if state() != "false" {
+		t.Fatalf("after up with nothing set up: %s, want false", state())
+	}
+	run(t, db, "down", down)
+	if state() != "true" {
+		t.Fatalf("after down: %s, want true", state())
+	}
+	run(t, db, "a library default tier", []string{`UPDATE libraries SET age_tier = 0`})
+	run(t, db, "up", up)
+	if state() != "true" {
+		t.Fatalf("with a library default tier: %s, want true", state())
+	}
+	run(t, db, "a restricted account instead", []string{`UPDATE libraries SET age_tier = NULL`,
+		`INSERT INTO users (id, username, pw_hash, is_admin) VALUES ('c', 's-child', 'x', 0)`,
+		`INSERT INTO parental_policies (user_id, max_tier) VALUES ('c', 9)`})
+	run(t, db, "up", up)
+	if state() != "true" {
+		t.Fatalf("with a restricted account: %s, want true", state())
+	}
+}
+
+// The manifest lists slot 0225 with both of its files.
+func TestManifestListsSlot0225(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(migrationsDir(t), "MANIFEST.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "| `0225` | `0225_parental_enabled.sql` |") {
+		t.Fatal("MANIFEST.md has no row for slot 0225")
+	}
+	for _, f := range []string{"0225_parental_enabled.sql", "0225_parental_enabled.sqlite.sql"} {
+		if _, err := os.Stat(filepath.Join(migrationsDir(t), f)); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
