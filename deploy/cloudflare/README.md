@@ -56,7 +56,7 @@ proxied `A` records. The nodes must already run Caddy's aop sites (`ORIGIN_MODE=
 | `ci.yml`, job `cloudflare` (`_cloudflare.yml`) | The tools' tests; `zone.mjs check`; `tunnel.mjs check` | — |
 | `cloudflare-zone.yml` | — | The same checks, then the token check, the zone's plan and apply, the Tunnel's plan and apply (each read back), and a smoke check of the edge |
 | `cloud-web-deploy.yml` | — | For each of `maktaba-cloud-web` (`web/packages/cloud-web`) and `maktaba-admin-web` (`web/packages/admin-web`), once its `wrangler.toml` exists: build, test, token check, `wrangler deploy`, smoke check. By hand with `rollback: true`: `wrangler rollback` |
-| `website-deploy.yml` | — (`ci.yml`'s `website` job builds and smokes the site) | maktaba.tv (`maktaba-website`, `web/packages/website`, Epic 60): build and test, token check, record the live version, `versions upload` and a smoke of its preview URL, `versions deploy` at 100%, `triggers deploy` (the custom domains), live smoke, and on failure a rollback to the recorded version. By hand with `rollback: true`: back to the `version` input, or the deployment before the current one. Goes live only with its own token and `vars.WEBSITE_LIVE` (below) |
+| `website-deploy.yml` | — (`ci.yml`'s `website` job builds and smokes the site) | maktaba.tv (`maktaba-website`, `web/packages/website`, Epic 60): build and test, token check, record the live version, `versions upload` and a smoke of its preview URL, `versions deploy` at 100%, `triggers deploy` (the custom domains), live smoke, and on failure a rollback to the recorded version. By hand with `rollback: true`: back to the `version` input, or the deployment before the current one. The token check runs on every push once a token is set; anything else runs only with `vars.WEBSITE_LIVE` (below) |
 | `cloudflare-ips.yml` | — | Weekly: Cloudflare's ranges, and a pull request when they change |
 
 Every deploy job:
@@ -65,14 +65,16 @@ Every deploy job:
 - runs one at a time per workflow, never cancelled in progress;
 - skips with a notice naming the missing secret when `CLOUDFLARE_API_TOKEN` or
   `CLOUDFLARE_ACCOUNT_ID` is empty, so `main` stays green before they are set (the website's
-  deploy: when its own token, the account or `vars.WEBSITE_LIVE` is missing);
+  deploy: when the token, the account or `vars.WEBSITE_LIVE` is missing; its read-only token
+  check still runs once a token and the account are set);
 - masks the account id, and never prints a token.
 
 ## The token
 
 One org secret, `CLOUDFLARE_API_TOKEN`, holds the union of the rows below. It is limited to this
 account and the two zones. A piece may have its own token instead:
-`CLOUDFLARE_API_TOKEN_ZONE`, `CLOUDFLARE_API_TOKEN_TUNNEL` or `CLOUDFLARE_API_TOKEN_WORKERS`.
+`CLOUDFLARE_API_TOKEN_ZONE`, `CLOUDFLARE_API_TOKEN_TUNNEL`, `CLOUDFLARE_API_TOKEN_WORKERS` or
+`CLOUDFLARE_API_TOKEN_WEBSITE`.
 Each workflow uses its piece's own token when it is set, and the shared one otherwise.
 
 | Piece | Account permissions | Zone permissions |
@@ -83,16 +85,22 @@ Each workflow uses its piece's own token when it is set, and the shared one othe
 | Tunnel ingress and DNS records | Cloudflare Tunnel: Edit | `maktaba.tv`: DNS: Edit |
 | Per-hostname AOP certificate (50.31's fallback only) | — | `maktaba.tv`: SSL and Certificates: Edit |
 | Broadcast edge (50.21, later) | Workers Scripts: Edit, Workers R2 Storage: Edit | `maktaba.tv`: Workers Routes: Edit, DNS: Edit |
-| The website, maktaba.tv (Epic 60), its own token only: `CLOUDFLARE_API_TOKEN_WEBSITE` | Workers Scripts: Edit | `maktaba.tv`: Workers Routes: Edit, Zone: Read, **DNS: Edit** |
+| The website, maktaba.tv (Epic 60): the shared token, or `CLOUDFLARE_API_TOKEN_WEBSITE` when set | Workers Scripts: Edit | `maktaba.tv`: Workers Routes: Edit, Zone: Read, **DNS: Edit** |
 
-**The website's token and its go-live switch.** `website-deploy.yml` reads only
-`CLOUDFLARE_API_TOKEN_WEBSITE`, never the shared token: the shared token already deploys
-maktaba.dev, and a deploy keyed on it would publish maktaba.tv on the first push to `main`. It
-goes live only when that secret, `CLOUDFLARE_ACCOUNT_ID` and the repository variable
-`WEBSITE_LIVE` (`true`) are all set; otherwise its job prints a notice naming what is missing
-and passes (`tools/ci/tests/test_website_deploy.py`). Setting `WEBSITE_LIVE` to anything else
-stops further deploys; the live version stays until a rollback or the next deploy. Its token
-check runs the `workers` and `dns` pieces.
+**The website's token and its go-live switch.** `website-deploy.yml` uses
+`CLOUDFLARE_API_TOKEN_WEBSITE` when that secret is set, and otherwise the shared
+`CLOUDFLARE_API_TOKEN`, like the other workflows. Because the shared token already exists, the
+repository variable `WEBSITE_LIVE` is the only go-live switch and the safeguard against
+publishing maktaba.tv by accident: nothing is uploaded, promoted, attached or rolled back unless
+it is `true` (`tools/ci/tests/test_website_deploy.py` keeps every write behind it). Without it the
+job prints a notice naming what is missing and passes. Setting `WEBSITE_LIVE` to anything else
+stops further deploys; the live version stays until a rollback or the next deploy.
+
+The token check (the `workers` and `dns` pieces) runs on every deploy run once a token and
+`CLOUDFLARE_ACCOUNT_ID` are set, live or not. It only reads (verify, the zone, the token's policy
+or one read call per permission), so a missing permission is named before go-live: in an error
+annotation and the run's summary. While the site is not live that does not fail the run; once it
+is live it stops the deploy before any write.
 
 The Worker `maktaba-website` owns two names, as custom domains: **`maktaba.tv`** and
 **`www.maktaba.tv`**. Wrangler writes their DNS records and certificates when `triggers deploy`
@@ -125,7 +133,9 @@ These steps are on Epic 50's go-live list (README §15.7).
    the ranges change, and the next run tries again.
 3. Optionally, add required reviewers to the `production` environment, so each Cloudflare deploy
    waits for a person.
-4. For maktaba.tv (Epic 60 owner action A2): make the website's token (the row above) and set
-   it as the secret `CLOUDFLARE_API_TOKEN_WEBSITE`, then, when the site should go live, set the
+4. For maktaba.tv (Epic 60 owner action A2): the shared `CLOUDFLARE_API_TOKEN` is its token, so
+   it needs the website's row above (on `maktaba.tv`: Workers Routes Edit, Zone Read and DNS
+   Edit; Workers Scripts Edit on the account). The deploy's token check names any permission it
+   lacks on each run; add those to the existing token. When the site should go live, set the
    repository variable `WEBSITE_LIVE` to `true` (Settings → Secrets and variables → Actions →
    Variables). The next push that changes the site, or a run by hand, deploys it.
