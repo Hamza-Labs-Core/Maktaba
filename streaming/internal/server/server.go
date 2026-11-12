@@ -122,6 +122,8 @@ func New(deps Deps) http.Handler {
 		Now:      deps.Now,
 		// a transcode's first playlist is a second or two away when the player asks
 		FirstWrite: 15 * time.Second,
+		// story 57.14: sessions of one video share one pace
+		PaceVideo: func(ctx context.Context) (string, error) { return videoIDForSession(ctx, deps.Sessions) },
 	}
 	sessLib := auth.LibraryGuard(libResolverForSession(deps.Probe, deps.Sessions))
 	r.Route("/stream/{session_id}", func(sub chi.Router) {

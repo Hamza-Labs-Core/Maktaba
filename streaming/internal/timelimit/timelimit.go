@@ -14,6 +14,7 @@
 package timelimit
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -78,11 +79,15 @@ type Registry struct {
 	// that ended longest ago goes: its session is served nothing until the API
 	// gives it a new one.
 	LeasesKept int
+	// Sleep waits d or until ctx ends (nil: a timer). Pacing waits through it, so a
+	// test paces on its own clock.
+	Sleep func(ctx context.Context, d time.Duration) error
 
 	mu     sync.Mutex
-	ends   map[string]end    // user + "|" + library
-	leases map[string]*lease // user + "|" + session
-	kept   map[string]bool   // accounts the API said are kept, whatever library
+	ends   map[string]end     // user + "|" + library
+	leases map[string]*lease  // user + "|" + session
+	kept   map[string]bool    // accounts the API said are kept, whatever library
+	pace   map[string]*bucket // user + "|" + video (pace.go)
 }
 
 // New is an empty registry.
@@ -294,6 +299,11 @@ func Guard(g *Registry) func(http.Handler) http.Handler {
 			if refused != nil {
 				refuse(w, refused)
 				return
+			}
+			if claims.Tls != "" {
+				// an account whose time is kept: its media is paced to playback rate
+				// (pace.go), so the seconds its lease runs are the seconds it watches
+				r = r.WithContext(context.WithValue(r.Context(), pacerKey{}, &Pacer{g: g, user: claims.Usr}))
 			}
 			if deadline.IsZero() {
 				next.ServeHTTP(w, r)

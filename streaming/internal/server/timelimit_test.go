@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -35,6 +36,10 @@ type timeFixture struct {
 	step             time.Duration // the clock moves on by this with every reading
 	user, lib, video string
 	sess             string
+	// pb and row are the video's probe: a test may change the row and Set it again
+	// before the first request
+	pb  *probe.FakeBackend
+	row *probe.Row
 }
 
 func newTimeFixture(t *testing.T) *timeFixture {
@@ -62,6 +67,7 @@ func newTimeFixture(t *testing.T) *timeFixture {
 		t.Fatal(err)
 	}
 	f.lib, f.video, f.sess = libID.String(), row.VideoID.String(), sess.ID.String()
+	f.pb, f.row = pb, row
 	f.reg = timelimit.New()
 	f.reg.Now = func() time.Time {
 		f.mu.Lock()
@@ -311,5 +317,156 @@ func TestALongResponseStopsWhenTheLeaseEnds(t *testing.T) {
 	}
 	if at, _ := f.reg.Served(f.user, f.sess); at.IsZero() || at.After(f.now()) {
 		t.Fatalf("served time %v", at)
+	}
+}
+
+// Review finding 4: a kept account cannot pull a whole file inside one lease. Direct
+// play is paced to the file's byte rate with a read-ahead, on the registry's clock:
+// under a 60 s lease the client gets the read-ahead and the 60 s that played, and
+// the response ends with the lease. An account whose time is not kept is never paced.
+func TestDirectPlayIsPacedForAKeptAccount(t *testing.T) {
+	f := newTimeFixture(t)
+	f.row.BitrateKbps = 100 // 12 500 bytes a second: the 4 MiB file is 335 s of media
+	f.pb.Set(f.row)
+	const rate = 12500
+	var slept time.Duration
+	f.reg.Sleep = func(_ context.Context, d time.Duration) error {
+		f.pass(d)
+		f.mu.Lock()
+		slept += d
+		f.mu.Unlock()
+		return nil
+	}
+	f.limit(f.now().Add(2*time.Hour), nil, f.sess, time.Minute)
+	tok := mintToken(t, f.priv, auth.Claims{Aud: "streaming-direct", Sub: f.video, Usr: f.user, Lib: []string{f.lib}, Tk: "1", Tls: f.sess})
+	rec := httptest.NewRecorder()
+	New(f.deps).ServeHTTP(rec, httptest.NewRequest("GET", "/stream/direct/"+f.video+"?sig="+tok, nil))
+	got := rec.Body.Len()
+	least := int(timelimit.ReadAhead/time.Second) * rate
+	most := int((timelimit.ReadAhead+time.Minute+3*time.Second)/time.Second) * rate
+	if got < least || got > most {
+		t.Fatalf("%d bytes under a 60 s lease, want between %d (the read-ahead) and %d (the read-ahead and the 60 s played)", got, least, most)
+	}
+	if slept < 55*time.Second || slept > 65*time.Second {
+		t.Fatalf("the response waited %s in all, want the lease's 60 s", slept)
+	}
+	// the next request of the same video, on a new lease, starts with no read-ahead:
+	// what was served ahead has to play out first
+	f.limit(f.now().Add(2*time.Hour), nil, f.sess, time.Minute)
+	before := slept
+	rec = httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/stream/direct/"+f.video+"?sig="+tok, nil)
+	req.Header.Set("Range", "bytes=0-124999") // ten seconds of media
+	New(f.deps).ServeHTTP(rec, req)
+	if rec.Code != 206 || rec.Body.Len() != 125000 {
+		t.Fatalf("a range after the read-ahead was spent: %d, %d bytes", rec.Code, rec.Body.Len())
+	}
+	if d := slept - before; d < 8*time.Second || d > 12*time.Second {
+		t.Fatalf("ten seconds of media took %s with the read-ahead spent, want about 10 s", d)
+	}
+
+	// an account whose time is not kept gets the file as fast as it asks
+	before = slept
+	free := mintToken(t, f.priv, auth.Claims{Aud: "streaming-direct", Sub: f.video, Usr: uuid.NewString(), Lib: []string{f.lib}, Tk: "0"})
+	rec = httptest.NewRecorder()
+	New(f.deps).ServeHTTP(rec, httptest.NewRequest("GET", "/stream/direct/"+f.video+"?sig="+free, nil))
+	if rec.Body.Len() != 4<<20 || slept != before {
+		t.Fatalf("an account with no limit: %d bytes, %s waited", rec.Body.Len(), slept-before)
+	}
+}
+
+// The same for a transcode's segments, by their length: past the read-ahead a
+// segment waits until what was served before has played, the same segment again (or
+// its audio, or another rendition of it) costs nothing, and a client asking far
+// faster than it plays is refused.
+func TestSegmentsArePacedForAKeptAccount(t *testing.T) {
+	f := newTimeFixture(t)
+	dir := f.deps.Layout.HLSDir(f.sess)
+	for i := 0; i < 40; i++ {
+		for _, stream := range []string{"0", "1"} {
+			name := "chunk-stream" + stream + "-" + fmt.Sprintf("%05d", i) + ".m4s"
+			if err := os.WriteFile(filepath.Join(dir, name), []byte("CHUNK"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	var slept time.Duration
+	advance := true
+	f.reg.Sleep = func(_ context.Context, d time.Duration) error {
+		if advance {
+			f.pass(d)
+		}
+		slept += d
+		return nil
+	}
+	get := func(usr, tls, name string) int {
+		c := auth.Claims{Aud: "streaming", Sub: f.sess, Usr: usr, Lib: []string{f.lib}, Tk: "0"}
+		if tls != "" {
+			c.Tk, c.Tls = "1", tls
+		}
+		rec := httptest.NewRecorder()
+		New(f.deps).ServeHTTP(rec, httptest.NewRequest("GET", "/stream/"+f.sess+"/"+name+"?sig="+mintToken(t, f.priv, c), nil))
+		return rec.Code
+	}
+	seg := func(stream string, i int) string { return fmt.Sprintf("chunk-stream%s-%05d.m4s", stream, i) }
+	lease := func() { f.limit(f.now().Add(4*time.Hour), nil, f.sess, time.Minute) }
+
+	// while the account's time is not kept (nothing is held for it, and its URL
+	// says so) it is never paced, however much it asks for
+	for i := 0; i < 40; i++ {
+		if code := get(f.user, "", seg("0", i)); code != 200 {
+			t.Fatalf("an account with no limit, segment %d: %d", i, code)
+		}
+	}
+	if slept != 0 {
+		t.Fatalf("an account with no limit waited %s", slept)
+	}
+
+	// the read-ahead: 120 s of media, twenty 6 s segments, video and audio, at once
+	lease()
+	for i := 0; i < 20; i++ {
+		for _, stream := range []string{"0", "1"} {
+			if code := get(f.user, f.sess, seg(stream, i)); code != 200 {
+				t.Fatalf("segment %d of stream %s inside the read-ahead: %d", i, stream, code)
+			}
+		}
+	}
+	if slept != 0 {
+		t.Fatalf("the read-ahead waited %s", slept)
+	}
+	// from there on a segment comes when the one before has played
+	for i := 20; i < 30; i++ {
+		lease()
+		if code := get(f.user, f.sess, seg("0", i)); code != 200 {
+			t.Fatalf("segment %d past the read-ahead: %d", i, code)
+		}
+	}
+	if slept < 50*time.Second || slept > 60*time.Second {
+		t.Fatalf("ten segments past the read-ahead waited %s, want about a minute", slept)
+	}
+	// a segment already served costs nothing more
+	before := slept
+	lease()
+	for _, name := range []string{seg("0", 5), seg("1", 29), "init-stream0.m4s"} {
+		get(f.user, f.sess, name)
+	}
+	if slept != before {
+		t.Fatalf("segments already paid for waited %s", slept-before)
+	}
+	// a client that asks for far more than plays (its waits do not pass: it asks in
+	// parallel) is refused, not queued without end
+	advance = false
+	lease()
+	refused := false
+	for i := 30; i < 40; i++ {
+		if code := get(f.user, f.sess, seg("0", i)); code == 429 {
+			refused = true
+			break
+		} else if code != 200 {
+			t.Fatalf("segment %d: %d", i, code)
+		}
+	}
+	if !refused {
+		t.Fatal("ten segments asked for at once past the read-ahead were all served")
 	}
 }
