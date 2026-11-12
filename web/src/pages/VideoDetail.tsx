@@ -26,6 +26,7 @@ import { videoTitle } from "../lib/videoTitle";
 import { subscribe } from "../lib/ws";
 import { useI18n } from "../lib/i18n";
 import { AgeTierControl } from "../components/parental/AgeTierControl";
+import { BlockedOr } from "../components/parental/AskParent";
 import { LoadError } from "../components/LoadError";
 import { MediaContextCard } from "../components/MediaContextCard";
 import { EnrichmentPanel } from "../components/EnrichmentPanel";
@@ -184,11 +185,26 @@ export function VideoDetail() {
     // Only a 404 / 403 means "not found" (a 403 does not say the video exists);
     // anything else is a failure to retry.
     if (err instanceof ApiError && (err.status === 404 || err.status === 403)) {
-      return (
+      const missing = (
         <ErrorState
           kind="not_found"
           title={t("video.notFound")}
           description={t("error.kind.notFound")}
+          action={
+            <Link to="/library" className="mkt-btn mkt-btn--secondary">
+              {t("nav.library")}
+            </Link>
+          }
+        />
+      );
+      // Epic 57: for a limited sign-in a 404 may be the limit: ask a parent
+      if (err.status !== 404 || !videoId) return missing;
+      return (
+        <BlockedOr
+          kind="video"
+          id={videoId}
+          onCheck={reload}
+          fallback={missing}
           action={
             <Link to="/library" className="mkt-btn mkt-btn--secondary">
               {t("nav.library")}

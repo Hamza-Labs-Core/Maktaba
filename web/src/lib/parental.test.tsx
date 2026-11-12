@@ -34,6 +34,10 @@ function Probe() {
         t: p.maxTier,
         c: p.children.map((c) => c.username),
       })}
+      <span data-testid="waiting">{p.pendingRequests}</span>
+      <button type="button" onClick={p.refresh}>
+        refresh
+      </button>
     </p>
   );
 }
@@ -48,7 +52,8 @@ function mount(user: User | null) {
   );
 }
 
-const probe = () => JSON.parse(screen.getByTestId("probe").textContent ?? "{}") as unknown;
+const probe = () =>
+  JSON.parse(screen.getByTestId("probe").firstChild?.textContent ?? "{}") as unknown;
 
 beforeEach(() => {
   get.mockReset();
@@ -90,6 +95,35 @@ describe("ParentalProvider", () => {
     );
     mount(memberUser);
     await waitFor(() => expect(probe()).toEqual({ a: true, r: false, t: null, c: ["sara"] }));
+  });
+
+  it("a guardian: how many requests wait, read again on refresh", async () => {
+    let waiting = [{ id: "q1" }, { id: "q2" }];
+    get.mockImplementation((path: string) =>
+      Promise.resolve(
+        path === "/api/me/parental"
+          ? { restricted: false }
+          : path === "/api/parental/children"
+            ? { children: [{ id: "u1", username: "sara", max_tier: 13 }] }
+            : { requests: waiting }
+      )
+    );
+    mount(memberUser);
+    await waitFor(() => expect(screen.getByTestId("waiting")).toHaveTextContent("2"));
+    expect(get).toHaveBeenCalledWith("/api/parental/requests?status=pending");
+    waiting = [{ id: "q2" }];
+    act(() => screen.getByRole("button", { name: "refresh" }).click());
+    await waitFor(() => expect(screen.getByTestId("waiting")).toHaveTextContent("1"));
+  });
+
+  it("someone who looks after no one is not asked for requests (the home would refuse)", async () => {
+    get.mockImplementation((path: string) =>
+      Promise.resolve(path === "/api/me/parental" ? { restricted: false } : { children: [] })
+    );
+    mount(memberUser);
+    await waitFor(() => expect(probe()).toMatchObject({ a: true }));
+    expect(get.mock.calls.map((c) => c[0])).toEqual(["/api/me/parental", "/api/parental/children"]);
+    expect(screen.getByTestId("waiting")).toHaveTextContent("0");
   });
 
   it("a home that does not answer leaves nobody restricted", async () => {

@@ -24,9 +24,10 @@ import { HeadingPlaceholder, Loading } from "../../components/Placeholders";
 import { usePageData } from "../../lib/usePageData";
 import { VIDEO_ANSWERS, forgetAnswers } from "../../lib/pageCache";
 import { useToast } from "@ds/components/Toast/Toast";
-import { api } from "../../lib/api";
+import { api, ApiError } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
+import { BlockedOr } from "../../components/parental/AskParent";
 import { AgeTierControl } from "../../components/parental/AgeTierControl";
 import { TitleRow } from "../../help/HelpLink";
 import { seriesPictureUrl } from "./SeriesBrowser";
@@ -199,7 +200,13 @@ export function SeriesDetail() {
   }
 
   if (err != null) {
-    return <LoadError error={err} onRetry={reload} backTo="/series" backLabel={t("nav.series")} />;
+    const failed = (
+      <LoadError error={err} onRetry={reload} backTo="/series" backLabel={t("nav.series")} />
+    );
+    // Epic 57: for a limited sign-in a 404 may be the limit: ask a parent
+    if (err instanceof ApiError && err.status === 404 && id)
+      return <BlockedOr kind="series" id={id} onCheck={reload} fallback={failed} />;
+    return failed;
   }
   if (!data || !id) {
     return (

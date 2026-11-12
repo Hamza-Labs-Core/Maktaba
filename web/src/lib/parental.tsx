@@ -8,6 +8,9 @@
 //   - `children`: the restricted accounts this person looks after
 //     (GET /api/parental/children; an admin: all of them). Not asked for a
 //     restricted account, which looks after no one.
+//   - `pendingRequests`: how many requests wait for this person's answer
+//     (GET /api/parental/requests), asked only for someone who looks after a
+//     restricted account. `refresh` reads everything again (after an answer).
 //   - `time`: GET /api/me/parental/time, asked only for a restricted account
 //     (only they have time rules) and only while a page shows it (useMyTime). The
 //     web keeps no count of its own: every number shown is the home's last answer.
@@ -16,6 +19,7 @@
 // never hides a page because the home did not answer (the home still refuses).
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -32,6 +36,7 @@ import {
   type Child,
   type MyTime,
 } from "./parentalApi";
+import { fetchRequests } from "./familyApi";
 
 export interface MyParental {
   /** false until the home has answered once */
@@ -39,14 +44,26 @@ export interface MyParental {
   restricted: boolean;
   /** the tier limit of this sign-in (account or device); null: none */
   maxTier: number | null;
+  /** the limit this sign-in's device gave, when it gave one */
+  deviceLimit: number | null;
+  /** the device said something looser, which waits for a guardian or an admin */
+  devicePending: boolean;
   children: Child[];
+  /** the requests that wait for this person's answer */
+  pendingRequests: number;
+  /** asks the home again now */
+  refresh: () => void;
 }
 
 export const NOT_RESTRICTED: MyParental = Object.freeze({
   answered: false,
   restricted: false,
   maxTier: null,
+  deviceLimit: null,
+  devicePending: false,
   children: [],
+  pendingRequests: 0,
+  refresh: () => {},
 });
 
 const ParentalContext = createContext<MyParental>(NOT_RESTRICTED);
@@ -58,6 +75,8 @@ const FOREGROUND_MIN_GAP_MS = 60_000;
 export function ParentalProvider({ children }: { children: ReactNode }) {
   const userId = useOptionalAuth()?.user?.id ?? null;
   const [state, setState] = useState<MyParental>(NOT_RESTRICTED);
+  const loadRef = useRef<() => void>(() => {});
+  const refresh = useCallback(() => loadRef.current(), []);
 
   useEffect(() => {
     setState(NOT_RESTRICTED);
@@ -70,13 +89,28 @@ export function ParentalProvider({ children }: { children: ReactNode }) {
         .then(async (mine) => {
           // a restricted account looks after no one (the home answers an empty list)
           const kids = mine.restricted ? [] : await fetchChildren().catch(() => [] as Child[]);
-          if (alive) setState({ answered: true, ...mine, children: kids });
+          // only someone who looks after an account has requests to answer
+          const waiting =
+            kids.length > 0
+              ? await fetchRequests()
+                  .then((r) => r.length)
+                  .catch(() => 0)
+              : 0;
+          if (alive)
+            setState({
+              answered: true,
+              ...mine,
+              children: kids,
+              pendingRequests: waiting,
+              refresh,
+            });
         })
         .catch(() => {
           // an older home, or no answer: keep what is known
         });
     };
     load();
+    loadRef.current = load;
     const foreground = () => {
       if (document.visibilityState === "hidden") return;
       if (Date.now() - last >= FOREGROUND_MIN_GAP_MS) load();
@@ -85,10 +119,11 @@ export function ParentalProvider({ children }: { children: ReactNode }) {
     document.addEventListener("visibilitychange", foreground);
     return () => {
       alive = false;
+      loadRef.current = () => {};
       window.removeEventListener("focus", foreground);
       document.removeEventListener("visibilitychange", foreground);
     };
-  }, [userId]);
+  }, [userId, refresh]);
 
   return <ParentalContext.Provider value={state}>{children}</ParentalContext.Provider>;
 }

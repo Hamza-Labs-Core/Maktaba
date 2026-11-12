@@ -55,7 +55,7 @@ The same dialog shows the person's **Linked accounts**: the Maktaba Cloud accoun
 
 ### Time limits {#time-limits}
 
-A **restricted account** is a child's account: an administrator, or a guardian the administrator names, limits what it may watch. [Time limits](/family) lists the restricted accounts you look after: an administrator sees all of them, a guardian sees their own children. Open one to set its **Time** rules. Anyone else finds the list empty, and Maktaba refuses them the rules.
+A **restricted account** is a child's account: an administrator, or a guardian the administrator names, limits what it may watch. [Family](/family) lists the restricted accounts you look after: an administrator sees all of them, a guardian sees their own children. Open one, then **Time**, to set its rules. Anyone else finds the list empty, and Maktaba refuses them the rules.
 
 - **Days**: the days of the week the rule covers.
 - **Watching hours**: watching is allowed only between the two times. An end before the start runs past midnight.
@@ -68,7 +68,71 @@ Every rule that covers a moment must allow it, so a second rule can only narrow 
 
 When the time is over, the child's player stops and says when watching opens again. After you give more time, the child taps **Check again**.
 
-A restricted account is made in the Maktaba app on iPhone or iPad, under **Profile**, then **Family**.
+A restricted account is made on the [Family](#family) page, or in the Maktaba app on iPhone or iPad under **Profile**, then **Family**.
+
+### Family {#family}
+
+[Family](/family) is where parental controls are set on the web. Nothing here needs a phone: a home with only a computer, a TV or an Android device sets everything on this page. Your home enforces every limit itself, on every device, so an app that hides nothing still gets nothing it should not.
+
+- **Requests**: what the accounts you look after asked for, with a count when some wait.
+- **Parent PIN**: your own six digits, typed on a child's screen.
+- **Restricted accounts**: each account you look after. Open one to set its limit.
+- **Make an account restricted** (administrators only): choose the account, then its limit.
+
+An administrator can do everything. A **guardian** is a person the administrator names for one account: they set that account's limit, lists and time, and answer its requests, and they see no other account. Anyone else finds the page empty, and Maktaba refuses them every route behind it.
+
+An administrator cannot be restricted, and a restricted account cannot be a guardian.
+
+### A restricted account's limit {#family-account}
+
+Open an account from [Family](/family).
+
+- **Content limit**: the highest age rating the account may watch: **All ages**, **9+**, **13+**, **16+**, **18+**, or **Nothing unless allowed**.
+- **Unrated content**: what to do with a video that has no rating. **Hide** is the safe choice; or treat unrated videos as one of the ratings.
+- **Only allowed items**: the account sees only what is in its **Allowed** list.
+
+Click **Save**. The change holds on the account's next request, on every device. If someone else changed the limit while you had the page open, Maktaba keeps theirs, shows it, and says **Someone else changed this. Showing the latest.**
+
+**Guardians** (administrators only): choose a person under **Name a guardian** and click **Add**; **Remove** takes them off. Administrators always look after every account and are not listed.
+
+**Lift restriction** (administrators only) makes the account ordinary again. It asks first, because it removes for good: the limit and the Allowed and Blocked lists, every request, the activity history, the time rules with the time watched and extra time given, and the account's guardians.
+
+### Allowed and blocked {#family-rules}
+
+On an account's page, **Allowed and blocked** holds the exceptions to its limit:
+
+- An **allowed** item is open even above the limit.
+- A **blocked** item is hidden even below it. When something is both, blocking wins.
+
+To add one, choose **Allow** or **Block**, the **Kind** (a library, a collection, a series, a TV channel, a YouTube source, a plugin or one video), then the item. A collection or a YouTube source is chosen inside its library; a video is found by typing its title. **For how long** is **Always**, **Today** or **This week**; a rule that has ended stays in the list, marked **Ended**, until you remove it.
+
+You choose from what you can see yourself. A rule never opens a library the account has no access to: give it access first, under [Library access](/help/library-access).
+
+### Devices {#family-devices}
+
+The Maktaba app on a phone or tablet can tell your home how old its user is, from the device's own settings. Your home only lets that tighten the limit on that one sign-in, never loosen the account's.
+
+**Devices**, on an account's page, lists each sign-in that said something: its limit and the age range it gave. When a device later says something looser (a birthday, a changed setting), nothing changes by itself: it shows **Asks for a looser limit** and waits. **Approve** applies it. **Remove** takes a device's statement away, and that sign-in follows the account's limit alone until the device speaks again.
+
+### Requests {#family-requests}
+
+A restricted account can ask for one thing its limit hides, or for more time today. [Requests](/family/requests) lists what waits, oldest first, with who asked and when.
+
+- For one thing, choose how long to **Allow** it (**Today**, **This week** or **Always**) and click **Approve**. That adds it to the account's Allowed list.
+- For more time, choose the **Time to give** (what was asked, or another amount) and click **Approve**. The minutes count for today only.
+- **Deny** closes the request.
+
+A request for one thing waits seven days; a request for time waits until the day ends. The count beside **Family** shows how many wait.
+
+### Activity {#family-activity}
+
+**Activity**, on an account's page, shows what the account watched, what was refused, what it asked for and how each request was answered, when its time ran out and when more was given, and when PIN entry was locked. Newest first; **Show** filters by kind; **Load more** reads older entries. Your home keeps activity for 90 days. Something in a library you cannot open shows without its title.
+
+### Parent PIN {#parent-pin}
+
+[Parent PIN](/family/pin) sets six digits of your own. On the child's screen, **Enter parent PIN** asks who you are and for your PIN, then opens that one thing until the day ends, or gives more time. It never changes the limit and never signs you in.
+
+To set or change it, type the PIN twice and your account password. Your home keeps the PIN, not the device, and never shows it again. After 5 wrong tries a PIN is locked for 15 minutes, and longer each time after that; the lock shows in the account's Activity.
 
 ### Ratings the home detected {#detected-ratings}
 

@@ -110,8 +110,8 @@ const SECONDARY = [
 
 // Epic 57 (parental controls). A restricted account gets no link to what the home
 // refuses it (403 `restricted`: it mints no personal access token). A guardian who
-// is not an admin gets the way to their children's time rules here; an admin has it
-// in the Manage group. The home decides both; this only spares a dead link.
+// is not an admin gets the way to Family (their children's limits, requests, time)
+// here; an admin has it in the Manage group, with the count of waiting requests. The home decides both; this only spares a dead link.
 const RESTRICTED_HIDDEN: ReadonlySet<string> = new Set(["/account/tokens"]);
 const FAMILY = { to: "/family", key: "nav.family", icon: "◴" };
 
@@ -143,7 +143,7 @@ const ADMIN = [
   { to: "/admin/libraries", key: "nav.admin.libraries", icon: "▣" },
   { to: "/queue/libraries", key: "nav.libraryDashboard", icon: "▧" },
   { to: "/admin/users", key: "nav.admin.users", icon: "◉" },
-  // Epic 57 story 57.15: Users > the user > Time (a restricted account's time rules)
+  // Epic 57: family settings (restricted accounts, their rules, requests and time)
   FAMILY,
   { to: "/admin/library-acl", key: "nav.admin.libraryAcl", icon: "▦" },
   // Epic 57 story 57.17: the age ratings the home detected, for an admin to confirm
@@ -210,7 +210,19 @@ export function AppShell() {
   const hasUpdate = SERVER_PAGES && updateAvailable(updateStatus);
   const badged = (to: string) => hasUpdate && BADGED.has(to);
   const manage = SERVER_PAGES && !!user?.is_admin;
-  const secondary = secondaryNav(useMyParental(), manage);
+  const parental = useMyParental();
+  const secondary = secondaryNav(parental, manage);
+  // Epic 57: how many requests wait for this person's answer (the Family entry's count)
+  const familyCount = (to: string) =>
+    to === FAMILY.to && parental.pendingRequests > 0 ? (
+      <span
+        className="mkt-nav-count"
+        data-testid="family-count"
+        aria-label={t("family.requests.waiting", { count: parental.pendingRequests })}
+      >
+        {parental.pendingRequests > 99 ? "99+" : parental.pendingRequests}
+      </span>
+    ) : null;
   const healthDown = useSystemStatus(manage) === "down";
   // Epic 53 story 53.11: how many error groups are new (the Errors entry's count)
   const newErrors = useNewErrors(manage);
@@ -366,6 +378,7 @@ export function AppShell() {
                 {item.icon}
               </span>
               <span className="mkt-nav-link__label">{t(item.key)}</span>
+              {familyCount(item.to)}
             </NavLink>
           ))}
           {manage && (
@@ -399,6 +412,7 @@ export function AppShell() {
                     {healthDown && item.to === HEALTH_PATH && <HealthDot />}
                   </span>
                   <span className="mkt-nav-link__label">{t(item.key)}</span>
+                  {familyCount(item.to)}
                   {item.to === ERRORS_PATH && newErrors > 0 && (
                     <span
                       className="mkt-nav-count"
@@ -481,7 +495,8 @@ export function MoreMenu() {
   const updateStatus = useUpdateStatus();
   const hasUpdate = SERVER_PAGES && updateAvailable(updateStatus);
   const manage = SERVER_PAGES && !!user?.is_admin;
-  const secondary = secondaryNav(useMyParental(), manage);
+  const parental = useMyParental();
+  const secondary = secondaryNav(parental, manage);
   const healthDown = useSystemStatus(manage) === "down";
   const groups: Array<{
     title?: string;
@@ -525,6 +540,16 @@ export function MoreMenu() {
                     {healthDown && item.to === HEALTH_PATH && <HealthDot />}
                   </span>
                   {t(item.key)}
+                  {item.to === FAMILY.to && parental.pendingRequests > 0 && (
+                    <span
+                      className="mkt-nav-count"
+                      aria-label={t("family.requests.waiting", {
+                        count: parental.pendingRequests,
+                      })}
+                    >
+                      {parental.pendingRequests > 99 ? "99+" : parental.pendingRequests}
+                    </span>
+                  )}
                 </NavLink>
               </li>
             ))}

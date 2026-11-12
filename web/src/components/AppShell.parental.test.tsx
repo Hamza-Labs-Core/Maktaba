@@ -2,7 +2,7 @@
 // restricted account a personal access token (403 restricted), so its pages carry no
 // link to that page; a guardian who is not an admin gets the way to the time rules.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("../lib/api", async () => {
@@ -55,7 +55,7 @@ describe("secondaryNav", () => {
     expect(list).toEqual(expect.arrayContaining(["/account", "/account/history", "/help"]));
   });
 
-  it("a guardian who is not an admin gets Time limits, before Help", () => {
+  it("a guardian who is not an admin gets Family, before Help", () => {
     const list = hrefs({ restricted: false, children: [child] }, false);
     expect(list.slice(-2)).toEqual(["/family", "/help"]);
   });
@@ -75,21 +75,27 @@ describe("the More page", () => {
     expect(screen.getByRole("link", { name: en["nav.history"] })).toBeInTheDocument();
   });
 
-  it("a guardian sees Time limits; a viewer does not", () => {
+  it("a guardian sees Family; a viewer does not", () => {
     const { unmount } = more({ children: [child] });
-    expect(screen.getByRole("link", { name: "Time limits" })).toHaveAttribute("href", "/family");
+    expect(screen.getByRole("link", { name: "Family" })).toHaveAttribute("href", "/family");
     unmount();
     more({});
-    expect(screen.queryByRole("link", { name: "Time limits" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Family" })).toBeNull();
   });
 
-  it("an admin sees Time limits and Detected ratings among the admin pages", () => {
+  it("an admin sees Family and Detected ratings among the admin pages", () => {
     more({}, adminUser);
-    expect(screen.getByRole("link", { name: "Time limits" })).toHaveAttribute("href", "/family");
+    expect(screen.getByRole("link", { name: "Family" })).toHaveAttribute("href", "/family");
     expect(screen.getByRole("link", { name: "Detected ratings" })).toHaveAttribute(
       "href",
       "/parental/review"
     );
+  });
+
+  it("shows how many requests wait, beside Family", () => {
+    more({ children: [child], pendingRequests: 4 });
+    const link = screen.getByRole("link", { name: /Family/ });
+    expect(within(link).getByLabelText("Requests waiting: 4")).toHaveTextContent("4");
   });
 
   it("names them in Arabic", () => {

@@ -190,7 +190,7 @@ function UsersInner() {
         {restrictedAccounts.length > 0 ? (
           <ChildrenTime accounts={restrictedAccounts} />
         ) : (
-          <p className="mkt-muted">{t("parental.family.empty.desc")}</p>
+          <p className="mkt-muted">{t("family.users.none")}</p>
         )}
       </section>
 

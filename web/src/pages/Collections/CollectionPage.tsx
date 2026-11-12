@@ -24,6 +24,7 @@ import { ApiError } from "../../lib/api";
 import { videoTitle } from "../../lib/videoTitle";
 import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
+import { BlockedOr } from "../../components/parental/AskParent";
 import { AgeTierControl } from "../../components/parental/AgeTierControl";
 import type { VideoCard } from "../../lib/browse";
 import { fetchFacets } from "../../lib/me";
@@ -112,17 +113,25 @@ function CollectionOf({ id }: { id: string }) {
     });
 
   if (notFound) {
+    const missing = (
+      <ErrorState
+        kind="not_found"
+        title={t("collections.notFound")}
+        action={
+          <Link className="mkt-btn mkt-btn--primary" to="/library">
+            {t("libraryPage.backToLibraries")}
+          </Link>
+        }
+      />
+    );
     return (
       <section className="mkt-page mkt-collection">
-        <ErrorState
-          kind="not_found"
-          title={t("collections.notFound")}
-          action={
-            <Link className="mkt-btn mkt-btn--primary" to="/library">
-              {t("libraryPage.backToLibraries")}
-            </Link>
-          }
-        />
+        {/* Epic 57: for a limited sign-in a 404 may be the limit: ask a parent */}
+        {loadErr instanceof ApiError && loadErr.status === 404 && id ? (
+          <BlockedOr kind="collection" id={id} onCheck={reload} fallback={missing} />
+        ) : (
+          missing
+        )}
       </section>
     );
   }

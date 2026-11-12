@@ -18,7 +18,6 @@ import type { TimeRule } from "../../lib/parentalApi";
 import { renderPage, memberUser, adminUser } from "../../test/pageHarness";
 import type { User } from "../../lib/auth";
 import { TimeRulesPage, ruleProblem } from "./TimeRules";
-import { FamilyTime } from "./FamilyTime";
 
 const CHILD = "11111111-2222-3333-4444-555555555555";
 const guardian: User = { id: "u-guardian", username: "mum", is_admin: false };
@@ -279,36 +278,5 @@ describe("the time rules editor (Users > the user > Time)", () => {
     expect(within(r).getByText("الحد اليومي")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("الوقت");
     expect(screen.getByRole("button", { name: "حفظ" })).toBeInTheDocument();
-  });
-});
-
-describe("the list of restricted accounts", () => {
-  function list(user: User = guardian) {
-    return renderPage(<FamilyTime />, { path: "/family", user });
-  }
-
-  it("lists the accounts the home says this person looks after, each with its Time link", async () => {
-    home({
-      children: [
-        { id: "u2", username: "omar", max_tier: 0 },
-        { id: CHILD, username: "sara", max_tier: 13 },
-      ],
-    });
-    list();
-    const links = await screen.findAllByRole("link", { name: /Time/ });
-    expect(links.map((a) => a.getAttribute("href"))).toEqual([
-      "/family/u2/time",
-      `/family/${CHILD}/time`,
-    ]);
-    expect(links[0]).toHaveTextContent("omar");
-    expect(links[0]).toHaveTextContent("All ages");
-    expect(links[1]).toHaveTextContent("13+");
-  });
-
-  it("someone who looks after no one sees an empty list", async () => {
-    home({ children: [] });
-    list(memberUser);
-    expect(await screen.findByText("No restricted accounts")).toBeInTheDocument();
-    expect(screen.queryByTestId("parental-children")).toBeNull();
   });
 });

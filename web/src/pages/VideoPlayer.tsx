@@ -64,6 +64,7 @@ import { formatDuration } from "../components/VideoViews";
 import { useMyParental, useMyTime } from "../lib/parental";
 import { timeRefusal, type TimeRefusal } from "../lib/parentalApi";
 import { TimeLeft, TimesUp, TimeWarning } from "../components/parental/TimeState";
+import { BlockedOr } from "../components/parental/AskParent";
 
 interface OpenSessionResponse {
   session_id: string;
@@ -764,6 +765,17 @@ export function VideoPlayer({
         {backButton}
         <p>{t("stream.wait_transcode")}</p>
       </div>
+    );
+  // Epic 57: for a limited sign-in a 404 may be the limit: ask a parent
+  if (err && err.error.kind === "notFound" && videoId)
+    return (
+      <BlockedOr
+        kind="video"
+        id={videoId}
+        onCheck={() => setReload((x) => x + 1)}
+        action={backButton}
+        fallback={failedView(err)}
+      />
     );
   if (err) return failedView(err);
   if (!session)
