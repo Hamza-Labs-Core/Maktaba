@@ -304,10 +304,10 @@ The lead reviews every image at every width in both languages (`review-sheet.htm
 the outcome here: approved at a commit, or the changes asked for. No Phase 1 page story opens
 its pull request before part A is approved.
 
-| Part                  | Date       | Reviewer                           | Commit                                           | Outcome                                              | Changes asked                                    |
-| --------------------- | ---------- | ---------------------------------- | ------------------------------------------------ | ---------------------------------------------------- | ------------------------------------------------ |
-| A, the shell          | 2026-11-11 | the owner, after the lead's review | fb0cb05a3 (renders); 8c88225b7 (formatting only) | approved: the look, the voice guide and the wordmark | none; the font name stays "Maktaba Text" (below) |
-| B, the full direction | (pending)  | the owner, after the lead's review | (this pull request's head)                       |                                                      |                                                  |
+| Part                  | Date       | Reviewer                           | Commit                                           | Outcome                                                                                      | Changes asked                                                                       |
+| --------------------- | ---------- | ---------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| A, the shell          | 2026-11-11 | the owner, after the lead's review | fb0cb05a3 (renders); 8c88225b7 (formatting only) | approved: the look, the voice guide and the wordmark                                         | none; the font name stays "Maktaba Text" (below)                                    |
+| B, the full direction | 2026-11-12 | the owner, after the lead's review | 59efc591c (renders)                              | approved: the direction, the wordmark (Q3), the display face Amiri as "Maktaba Display" (Q9) | the tagline: proposal 1 (Q1); the Arabic copy still waits for the owner's read (Q2) |
 
 # Part B: the direction
 
@@ -458,16 +458,15 @@ are dark stand-ins), and a dark bezel reads as a device on a light page.
 
 Each at 360, 768 and 1280 px, English and Arabic, dark; home and download in light at 1280 too.
 
-| Mockup                                    | Path                      | What it shows                                                                                      |
-| ----------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------- |
-| `home`                                    | `/`                       | the hero (tagline 1), the shelf of screens, six features, Arabic and English, privacy, three steps |
-| `home-tagline-2` … `5`                    | `/`                       | the hero only, with each other tagline, at 1280                                                    |
-| `download`                                | `/download/`              | the visitor's platform first, then every system; other formats and verify in disclosures           |
-| `install-p3`                              | `/install/synology/`      | the Synology guide as the site's install page (Phase 3): facts, checklist, steps with a screen     |
-| `help`, `help-topic`                      | `/help/`, `/help/search/` | the app's own help catalog and topic text, with the same filter as the problem index               |
-| `legal-p3`, `problem-p3`, `problems-p3`   | as in part A              | part A's pages in the part B shell (display `h1`, both-script footer)                              |
-| `wordmark`, `foundations`, `components-b` | sheets                    | the lockups; type, colour and budget; the components below                                         |
-| `social-home-1` … `5`, `social-download`  | the `og:image`s           | 1200 × 630 cards; `render.mjs` fails a title over three lines                                      |
+| Mockup                                    | Path                      | What it shows                                                                                               |
+| ----------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `home`                                    | `/`                       | the hero (the chosen tagline), the shelf of screens, six features, Arabic and English, privacy, three steps |
+| `download`                                | `/download/`              | the visitor's platform first, then every system; other formats and verify in disclosures                    |
+| `install-p3`                              | `/install/synology/`      | the Synology guide as the site's install page (Phase 3): facts, checklist, steps with a screen              |
+| `help`, `help-topic`                      | `/help/`, `/help/search/` | the app's own help catalog and topic text, with the same filter as the problem index                        |
+| `legal-p3`, `problem-p3`, `problems-p3`   | as in part A              | part A's pages in the part B shell (display `h1`, both-script footer)                                       |
+| `wordmark`, `foundations`, `components-b` | sheets                    | the lockups; type, colour and budget; the components below                                                  |
+| `social-home`, `social-download`          | the `og:image`s           | 1200 × 630 cards; `render.mjs` fails a title over three lines                                               |
 
 Hidden on purpose: no card or link names the iPhone, iPad, Apple TV, Android or Android TV
 apps, or a server package, while none is publicly installable (Q5, A7). The help index leaves
@@ -513,6 +512,6 @@ Anatomy, states, sizes, RTL, and accessible name and role. All use logical prope
 
 `../copy/home.*.md`, `../copy/download.*.md` and `../copy/front-door.*.md` (the Phase 1
 front door's lines, rewritten in the voice), each pair with the same keys; the mockups read
-them directly, so the renders show the text under review. Five tagline proposals per
-language are in `home.*.md` (`tagline.N` and its one-liner `tagline.N.says`), each written in
-its own language; the review sheet sets them side by side. Every claim is true of v0.3.131.
+them directly, so the renders show the text under review. The tagline is in
+`home.*.md` (`tagline` and its one-liner `tagline.says`): proposal 1 of the five each language
+had, chosen on 2026-11-12 (Q1); `../copy/README.md` keeps the others as the record. Every claim is true of v0.3.131.

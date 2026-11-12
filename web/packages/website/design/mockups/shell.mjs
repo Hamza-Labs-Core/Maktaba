@@ -18,6 +18,15 @@ export const GITHUB = "https://github.com/Hamza-Labs-Core/Maktaba";
 // One style: 24-unit grid, drawn at 20 px, 1.75 stroke, round caps and joins, currentColor.
 // `dir-icon` marks the ones that mean a direction: they mirror on an Arabic page.
 
+/** Text for a double-quoted attribute: the quotes (and a stray < or >) as entities; an
+ * entity already in the text (&amp;, &rsquo;) stays as written. */
+export const attr = (s) =>
+  String(s)
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
 export const svg = (body, cls = "") =>
   `<svg${cls ? ` class="${cls}"` : ""} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${body}</svg>`;
 export const I = {
@@ -316,7 +325,7 @@ ${
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
     <title>${title}</title>
-    <meta name="description" content="${description}" />
+    <meta name="description" content="${attr(description)}" />
     ${key === "lost" ? NOT_FOUND_HEAD : `<link rel="canonical" href="${lang === "en" ? en : ar}" />
     <link rel="alternate" hreflang="en" href="${en}" />
     <link rel="alternate" hreflang="ar" href="${ar}" />
@@ -325,10 +334,10 @@ ${
         ? `
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="${lang === "ar" ? "مكتبة" : "Maktaba"}" />
-    <meta property="og:title" content="${social}" />
-    <meta property="og:description" content="${description}" />
+    <meta property="og:title" content="${attr(social)}" />
+    <meta property="og:description" content="${attr(description)}" />
     <meta property="og:locale" content="${lang === "ar" ? "ar_AR" : "en_US"}" />
-    <meta property="og:image" content="png/social-${key === "home" ? "home-1" : key}.${lang}.1200.dark.png" />
+    <meta property="og:image" content="png/social-${key}.${lang}.1200.dark.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />`

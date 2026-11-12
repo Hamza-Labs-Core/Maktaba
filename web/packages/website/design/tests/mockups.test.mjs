@@ -5,8 +5,8 @@
 //     them, inside 150 KB per page per language;
 //   - the mockups' English copy has none of the voice guide's "Not" words, and each Arabic
 //     page (other than Epic 59's guide, checked by its own build) is under 20% Latin;
-//   - each copy file has its other language with the same keys (60.02 T03), five taglines
-//     each with its one-liner, and no app named that is not publicly installable (Q5).
+//   - each copy file has its other language with the same keys (60.02 T03), the chosen
+//     tagline (Q1) on the hero and its card, and no app named that is not publicly installable (Q5).
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -16,7 +16,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { checkPngs, expectedPngs, shotsOf } from "../render.mjs";
 import { LANGS, MOCKUPS } from "../mockups/make.mjs";
-import { readCopy, TAGLINES } from "../mockups/part-b.mjs";
+import { readCopy } from "../mockups/part-b.mjs";
 import { pngChunks } from "../png.mjs";
 
 const design = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -43,8 +43,8 @@ test("one PNG per mockup, width, language and scheme; each under 1 MB; no metada
   const per = Object.keys(MOCKUPS).reduce((n, name) => n + shotsOf(name).length, 0);
   assert.equal(expectedPngs().length, per * LANGS.length);
   // part A: 9 mockups at three widths, three of them in light too; part B: 9 pages at three
-  // widths, home and download in light at 1280, 4 tagline heroes and 6 social cards
-  assert.equal(per, 9 * 3 + 3 * 3 + 9 * 3 + 2 + 4 + 6);
+  // widths, home and download in light at 1280, and 2 social cards (home and download)
+  assert.equal(per, 9 * 3 + 3 * 3 + 9 * 3 + 2 + 2);
   assert.deepEqual(await checkPngs(), []);
 });
 
@@ -175,15 +175,27 @@ test("each copy file has its other language, with the same keys (60.02 T03)", ()
   }
 });
 
-test("five tagline proposals per language, each with its one-liner, each on its social card", () => {
+// Q1, decided 2026-11-12: proposal 1 in each language. Only the chosen tagline is in the copy,
+// and it is the home hero's headline and the home social card's title.
+const CHOSEN = {
+  en: "Your own library, on every screen at home.",
+  ar: "مكتبتكم، على كل شاشة في البيت.",
+};
+
+test("the chosen tagline, in both languages, on the home hero and its social card", () => {
   for (const lang of LANGS) {
     const c = readCopy("home", lang);
-    for (const n of TAGLINES) {
-      assert.ok(c[`tagline.${n}`], `${lang} tagline.${n}`);
-      assert.ok(c[`tagline.${n}.says`], `${lang} tagline.${n}.says`);
-      const card = readFileSync(join(design, "mockups", `social-home-${n}.${lang}.html`), "utf8");
-      assert.ok(card.includes(c[`tagline.${n}`]), `social-home-${n}.${lang}`);
-    }
+    assert.equal(c.tagline.trim(), CHOSEN[lang], `${lang} tagline`);
+    assert.ok(c["tagline.says"], `${lang} tagline.says`);
+    assert.deepEqual(
+      Object.keys(c).filter((k) => /^tagline\.\d/.test(k)),
+      [],
+      `${lang}: no other proposal is left in the copy`
+    );
+    const home = readFileSync(join(design, "mockups", `home.${lang}.html`), "utf8");
+    assert.ok(home.includes(`id="hero-title">${CHOSEN[lang]}</h1>`), `home.${lang} hero`);
+    const card = readFileSync(join(design, "mockups", `social-home.${lang}.html`), "utf8");
+    assert.ok(card.includes(CHOSEN[lang]), `social-home.${lang}`);
   }
 });
 

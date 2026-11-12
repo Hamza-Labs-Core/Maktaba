@@ -21,45 +21,13 @@ Maktaba keeps your films, series and recordings on a computer or a NAS in your h
 
 Your own library, on every screen at home
 
-## tagline.1
+## tagline
 
 Your own library, on every screen at home.
 
-## tagline.1.says
+## tagline.says
 
 Ownership and reach: the films are yours, and every screen in the house plays them.
-
-## tagline.2
-
-Everything your family watches, kept at home.
-
-## tagline.2.says
-
-Privacy and warmth: the household's whole collection lives in the house, not on someone else's computers.
-
-## tagline.3
-
-A quiet home for your films and series.
-
-## tagline.3.says
-
-Calm and order: a collection scattered over folders and drives gets one tidy place.
-
-## tagline.4
-
-Your library speaks Arabic and English.
-
-## tagline.4.says
-
-Two languages as equals: every screen reads naturally in either.
-
-## tagline.5
-
-Find the moment a word is said.
-
-## tagline.5.says
-
-What sets it apart: search reaches inside the films, to what is spoken, not only to their titles.
 
 ## hero.lead
 

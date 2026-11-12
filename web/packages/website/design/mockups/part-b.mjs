@@ -1,5 +1,5 @@
-// Part B's mockups (story 60.01 part B, with 60.02 part B's copy): the home page and its
-// tagline alternates, the download page, the install page as Phase 3 lays it out, the help
+// Part B's mockups (story 60.01 part B, with 60.02 part B's copy): the home page with the
+// chosen tagline, the download page, the install page as Phase 3 lays it out, the help
 // index and a help topic, the wordmark, foundations and component sheets, and the social
 // cards. The home and download text is read from ../../copy/<page>.<lang>.md, so the
 // renders show the copy under review; the help text from the app's own topics and catalog
@@ -15,6 +15,7 @@ import { loadTokens, resolvedThemes } from "../../../../design-system/build/buil
 import { contrast, composite, parseColor } from "../../../../design-system/build/colors.mjs";
 import {
   ARCH,
+  attr,
   I,
   RELEASES,
   SPRITE,
@@ -61,7 +62,16 @@ const inline = (s) =>
   esc(s)
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-const plain = (s) => s.replace(/<[^>]+>/g, "");
+// the text of an inline() string: its tags dropped until none is left, any < still in it as an
+// entity (the string is our own copy, but this is what an attribute may carry)
+const plain = (s) => {
+  let out = s;
+  for (let prev = ""; prev !== out; ) {
+    prev = out;
+    out = out.replace(/<[^<>]*>/g, "");
+  }
+  return out.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+};
 
 // ------------------------------------------------------------------ icons (part B)
 // The shell's style: 24-unit grid, 1.75 stroke, round caps and joins, currentColor.
@@ -142,7 +152,7 @@ const DEVICE_BAR = {
 function device(kind, shot, { lang, shotLang = lang, alt, name, caption, eager = false, width }) {
   const [stem, w, h] = shot;
   const src = `${SHOTS}/${stem}-${shotLang}.webp`;
-  const img = `<img src="${src}" width="${w}" height="${h}" alt="${alt}" lang="${shotLang}" data-nomirror${eager ? ' fetchpriority="high"' : ' loading="lazy" decoding="async"'} />`;
+  const img = `<img src="${src}" width="${w}" height="${h}" alt="${attr(alt)}" lang="${shotLang}" data-nomirror${eager ? ' fetchpriority="high"' : ' loading="lazy" decoding="async"'} />`;
   const bar = DEVICE_BAR[kind] ? DEVICE_BAR[kind](lang) : "";
   const stand = kind === "tv" ? '<span class="stand"></span>' : "";
   const cap =
@@ -199,11 +209,11 @@ sha256sum --ignore-missing -c checksums.txt`;
 
 const HOME_PATH = { home: "/", download: "/download/" };
 
-function heroSection(lang, c, tagline) {
+function heroSection(lang, c) {
   return `<section class="hero" aria-labelledby="hero-title">
     <div class="frame grid">
       <div>
-        <h1 class="display-1" id="hero-title">${c[`tagline.${tagline}`]}</h1>
+        <h1 class="display-1" id="hero-title">${c.tagline}</h1>
         <p class="lead">${c["hero.lead"]}</p>
         <div class="actions">
           <a class="button" href="${local(lang, "/download/#mac")}">${P.download}${c["hero.download"]}</a>
@@ -219,7 +229,7 @@ function heroSection(lang, c, tagline) {
   </section>`;
 }
 
-function home(lang, { tagline = 1, heroOnly = false } = {}) {
+function home(lang, { heroOnly = false } = {}) {
   const c = readCopy("home", lang);
   const other = lang === "ar" ? "en" : "ar";
   const screens = [
@@ -239,10 +249,10 @@ function home(lang, { tagline = 1, heroOnly = false } = {}) {
   ];
   const body = heroOnly
     ? `<main id="main">
-  ${heroSection(lang, c, tagline)}
+  ${heroSection(lang, c)}
 </main>`
     : `<main id="main">
-  ${heroSection(lang, c, tagline)}
+  ${heroSection(lang, c)}
   <section class="band shot" id="how" aria-labelledby="screens-title">
     <div class="frame">
       <div class="section-head center">
@@ -451,7 +461,7 @@ function download(lang) {
       <p class="platform-note">${P.laptop}${c.note}</p>
     </div>
   </section>
-  <section class="band" aria-label="${plain(c.h1)}">
+  <section class="band" aria-label="${attr(plain(c.h1))}">
     <div class="frame">
       <ul class="cards">
       ${cards.join("\n      ")}
@@ -1256,14 +1266,9 @@ const SOCIAL_SUB = {
 
 // ------------------------------------------------------------------ the list
 
-const TAGLINES = [1, 2, 3, 4, 5];
-
 /** name → (lang) => html. Render settings for each are in RENDER below. */
 export const PART_B = {
   home: (lang) => home(lang),
-  ...Object.fromEntries(
-    TAGLINES.slice(1).map((n) => [`home-tagline-${n}`, (lang) => home(lang, { tagline: n, heroOnly: true })])
-  ),
   download,
   "install-p3": installPage,
   help,
@@ -1271,12 +1276,9 @@ export const PART_B = {
   wordmark: wordmarkSheet,
   foundations,
   "components-b": componentsB,
-  ...Object.fromEntries(
-    TAGLINES.map((n) => [
-      `social-home-${n}`,
-      (lang) => social(lang, { title: readCopy("home", lang)[`tagline.${n}`], sub: SOCIAL_SUB.home[lang] }),
-    ])
-  ),
+  // the tagline chosen on 2026-11-12 (Q1): proposal 1
+  "social-home": (lang) =>
+    social(lang, { title: readCopy("home", lang).tagline, sub: SOCIAL_SUB.home[lang] }),
   "social-download": (lang) =>
     social(lang, { title: readCopy("download", lang)["social.title"], sub: SOCIAL_SUB.download[lang] }),
 };
@@ -1285,13 +1287,12 @@ export const PART_B = {
 export const RENDER_B = {
   home: { light: [1280] },
   download: { light: [1280] },
-  ...Object.fromEntries(TAGLINES.slice(1).map((n) => [`home-tagline-${n}`, { widths: [1280], full: false, height: 800 }])),
   ...Object.fromEntries(
-    [...TAGLINES.map((n) => `social-home-${n}`), "social-download"].map((k) => [
+    ["social-home", "social-download"].map((k) => [
       k,
       { widths: [1200], full: false, height: 630, social: true },
     ])
   ),
 };
 
-export { HOME_PATH, TAGLINES };
+export { HOME_PATH };

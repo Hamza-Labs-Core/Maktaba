@@ -1,7 +1,7 @@
 // Renders the mockups to PNG (story 60.01 T01): each mockup at the widths make.mjs's
 // renderOf() gives it (360, 768 and 1280 px by default), English and Arabic, dark, and light
-// where stated. Full-page PNGs under mockups/png/, each under 1 MB; the tagline alternates
-// are one 1280 × 800 viewport, the social cards 1200 × 630. Each page is also loaded at 320 px
+// where stated. Full-page PNGs under mockups/png/, each under 1 MB; the social cards are
+// 1200 × 630. Each page is also loaded at 320 px
 // and fails the run if it scrolls sideways (WCAG 1.4.10 reflow); a social card fails when
 // its title overflows its three lines.
 //

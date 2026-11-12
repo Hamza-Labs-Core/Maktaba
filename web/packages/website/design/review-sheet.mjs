@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LANGS, MOCKUPS } from "./mockups/make.mjs";
-import { readCopy, TAGLINES } from "./mockups/part-b.mjs";
+import { readCopy } from "./mockups/part-b.mjs";
 import { shotsOf } from "./render.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -32,11 +32,7 @@ Object.assign(TITLES, {
   "legal-p3": ["Legal page, part B", "The legal page in the part B shell, with the display face"],
   "problem-p3": ["Problem page, part B", "One message in the part B shell"],
   "problems-p3": ["Problem index, part B", "The message index in the part B shell"],
-  home: ["Home", "Tagline 1 on the hero, then every section, from copy/home.*.md"],
-  "home-tagline-2": ["Home hero, tagline 2", "The hero only, 1280 px"],
-  "home-tagline-3": ["Home hero, tagline 3", "The hero only, 1280 px"],
-  "home-tagline-4": ["Home hero, tagline 4", "The hero only, 1280 px"],
-  "home-tagline-5": ["Home hero, tagline 5", "The hero only, 1280 px"],
+  home: ["Home", "The chosen tagline on the hero, then every section, from copy/home.*.md"],
   download: ["Download", "From copy/download.*.md, with v0.3.131's real files, sizes and digest"],
   "install-p3": ["Install guide, Phase 3", "The Synology guide as the site's install page"],
   help: ["Help index", "The help topics from the app's own catalog"],
@@ -50,35 +46,23 @@ Object.assign(TITLES, {
     "Component sheet, part B",
     "Download card, disclosures, frames, feature block, states",
   ],
-  "social-home-1": ["Social card, tagline 1", "1200 × 630"],
-  "social-home-2": ["Social card, tagline 2", "1200 × 630"],
-  "social-home-3": ["Social card, tagline 3", "1200 × 630"],
-  "social-home-4": ["Social card, tagline 4", "1200 × 630"],
-  "social-home-5": ["Social card, tagline 5", "1200 × 630"],
+  "social-home": ["Social card, home page", "1200 × 630, the chosen tagline"],
   "social-download": ["Social card, download page", "1200 × 630"],
 });
 const PART_A = Object.keys(TITLES).slice(0, 7);
 const LANG = { en: "English", ar: "Arabic" };
-// English glosses of the Arabic proposals, for review only; the Arabic is written natively.
-const GLOSS = {
-  1: "Your library, on every screen at home.",
-  2: "What you love to watch, kept in your home.",
-  3: "The home's films and series, in one quiet place.",
-  4: "A library that speaks your language. (Maktaba means library.)",
-  5: "Search by the word, find the moment.",
-};
+// An English gloss of the Arabic tagline, for review only; the Arabic is written natively.
+const GLOSS = "Your library, on every screen at home.";
 
 function taglines() {
-  const rows = TAGLINES.map((n) => {
-    const cell = (lang) =>
-      `<td lang="${lang}" dir="${lang === "ar" ? "rtl" : "ltr"}"><strong>${readCopy("home", lang)[`tagline.${n}`]}</strong><br /><span class="says">${readCopy("home", lang)[`tagline.${n}.says`]}</span></td>`;
-    return `          <tr><th scope="row">${n}</th>${cell("en")}${cell("ar")}<td class="says">${GLOSS[n]}</td></tr>`;
-  }).join("\n");
+  const cell = (lang) =>
+    `<td lang="${lang}" dir="${lang === "ar" ? "rtl" : "ltr"}"><strong>${readCopy("home", lang).tagline}</strong><br /><span class="says">${readCopy("home", lang)["tagline.says"]}</span></td>`;
+  const rows = `          <tr>${cell("en")}${cell("ar")}<td class="says">${GLOSS}</td></tr>`;
   return `    <section id="taglines">
-      <h2>Tagline proposals</h2>
-      <p class="sub">Five per language, each written in its own language, with its one-liner. Each fits the social card in three lines or fewer (render.mjs fails otherwise). The hero renders and the social cards below show each one in place.</p>
+      <h2>The tagline</h2>
+      <p class="sub">Chosen on 2026-11-12 (Q1), from five proposals per language (copy/README.md lists the others). It fits the social card in three lines or fewer (render.mjs fails otherwise); the home hero and the social card show it in place.</p>
       <div class="table"><table>
-        <thead><tr><th scope="col">#</th><th scope="col">English</th><th scope="col">Arabic</th><th scope="col">Gloss of the Arabic</th></tr></thead>
+        <thead><tr><th scope="col">English</th><th scope="col">Arabic</th><th scope="col">Gloss of the Arabic</th></tr></thead>
         <tbody>
 ${rows}
         </tbody>
@@ -183,7 +167,7 @@ ${partB.map(section).join("\n")}`;
       <p class="note"><strong>Screenshots are stand-ins.</strong> Every app screenshot in part B is a devportal Apps screenshot on test data (<code>web/packages/devportal/static/assets/apps/</code>), not a household's library and not drawn. Story 60.09 replaces them with shots of the demo library.</p>
       <p class="note"><strong>Hidden on purpose.</strong> The download page and home show no iPhone, iPad, Apple TV, Android or Android TV app and no server-package card: none is publicly installable yet (Q5, A7). The TV is shown through big screen in the desktop apps and the TV's browser; phones and tablets through the browser.</p>
       <nav aria-label="Mockups"><ul>
-        <li><a href="#taglines">Tagline proposals</a></li>
+        <li><a href="#taglines">The tagline</a></li>
 ${Object.keys(MOCKUPS)
   .map((name) => `        <li><a href="#${name}">${TITLES[name][0]}</a></li>`)
   .join("\n")}
