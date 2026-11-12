@@ -26,6 +26,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/collections"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 // Source kinds.
@@ -296,7 +297,69 @@ func validateRef(ref *SourceRef) *httperror.Error {
 
 // resolve turns a source into one ready to read for the caller of ctx: 404 for
 // one they cannot read (the source's own route answers).
+//
+// For an account the parental filter limits (Epic 57 story 57.03) a source that
+// is hidden answers exactly as one that is not there. The sources are read by
+// calling their routes' handlers, which the gate's check of the object in a path
+// does not see, and the routes' own answers differ (a series whose episodes are
+// all hidden is "empty", a group in a blocked library names the library). So the
+// source is checked here first, a series, season, collection or video source
+// with nothing the account may see is missing, and every "not found" for such an
+// account is the same one.
 func (h *Handler) resolve(ctx context.Context, ref SourceRef, shuffle bool, seed int64) (resolved, *httperror.Error, error) {
+	if !parental.From(ctx).Limits() {
+		return h.resolveSource(ctx, ref, shuffle, seed)
+	}
+	missing := httperror.NotFound(ref.Kind + " " + ref.ID)
+	if !h.sourceAllowed(ctx, ref) {
+		return resolved{}, missing, nil
+	}
+	res, e, err := h.resolveSource(ctx, ref, shuffle, seed)
+	if err != nil {
+		return resolved{}, nil, err
+	}
+	if e != nil {
+		if e.Status == http.StatusNotFound {
+			e = missing
+		}
+		return resolved{}, e, nil
+	}
+	if list, ok := res.src.(listSource); ok && len(list.ids) == 0 && ref.Kind != KindPlaylist {
+		return resolved{}, missing, nil
+	}
+	return res, nil, nil
+}
+
+// sourceAllowed is the filter's check of the object a source names (false also
+// when the check fails). A season is checked as its series; a topic or clip
+// group has no rule of its own and its page answers for it; a playlist is the
+// caller's own.
+func (h *Handler) sourceAllowed(ctx context.Context, ref SourceRef) bool {
+	switch ref.Kind {
+	case KindLibrary:
+		return parental.Check(ctx, h.DB, parental.SubjectLibrary, ref.ID)
+	case KindSeries:
+		return parental.Check(ctx, h.DB, parental.SubjectSeries, ref.ID)
+	case KindSeason:
+		var seriesID string
+		err := h.DB.QueryRowContext(ctx, `SELECT CAST(series_id AS TEXT) FROM series_seasons WHERE id = $1`, ref.ID).Scan(&seriesID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return true // not there: the read below says so
+		}
+		return err == nil && parental.Check(ctx, h.DB, parental.SubjectSeries, seriesID)
+	case KindCollection:
+		if strings.Contains(ref.ID, ":") {
+			return true
+		}
+		return parental.Check(ctx, h.DB, parental.SubjectCollection, ref.ID)
+	case KindVideo:
+		return parental.Check(ctx, h.DB, parental.SubjectVideo, ref.ID)
+	}
+	return true
+}
+
+// resolveSource is resolve before the parental filter's part.
+func (h *Handler) resolveSource(ctx context.Context, ref SourceRef, shuffle bool, seed int64) (resolved, *httperror.Error, error) {
 	switch ref.Kind {
 	case KindLibrary:
 		// the library's own visibility is the list's: a library the caller
