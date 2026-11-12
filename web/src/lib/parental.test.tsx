@@ -16,6 +16,7 @@ import {
   ParentalProvider,
   TIME_POLL_MS,
   TIME_POLL_NEAR_MS,
+  accessWaitMs,
   showsTimeLeft,
   useChannelAccess,
   useMyParental,
@@ -297,6 +298,51 @@ describe("useMyTime when asking is no use", () => {
   });
 });
 
+describe("accessWaitMs", () => {
+  const until = "2026-11-11T20:10:00Z";
+  const home = "2026-11-11T20:00:00Z";
+  const at = (iso: string) => Date.parse(iso);
+
+  it("is until minus the home's now, with a device clock that is right, fast or slow", () => {
+    for (const device of [
+      home,
+      "2026-11-11T20:30:00Z",
+      "2026-11-10T20:00:00Z",
+      "2031-01-01T00:00:00Z",
+    ])
+      expect(accessWaitMs({ allowed: false, until, now: home }, at(device))).toBe(601_000);
+    // the home's time with a fraction of a second
+    expect(accessWaitMs({ allowed: true, until, now: "2026-11-11T20:09:30.250Z" }, at(home))).toBe(
+      30_750
+    );
+  });
+
+  it("never waits less than the least wait, by the home's clock too", () => {
+    expect(accessWaitMs({ allowed: false, until, now: "2026-11-11T20:10:30Z" }, at(home))).toBe(
+      ACCESS_MIN_MS
+    );
+  });
+
+  it("uses the device's clock when the home sent no now, or one that is no time", () => {
+    for (const now of [null, "soon"]) {
+      expect(accessWaitMs({ allowed: false, until, now }, at("2026-11-11T20:08:00Z"))).toBe(
+        121_000
+      );
+      expect(accessWaitMs({ allowed: false, until, now }, at("2026-11-11T20:30:00Z"))).toBe(
+        ACCESS_MIN_MS
+      );
+    }
+  });
+
+  it("with no until asks about a refusal every minute, and never about what plays", () => {
+    expect(accessWaitMs({ allowed: false, until: null, now: home }, at(home))).toBe(
+      ACCESS_RETRY_MS
+    );
+    expect(accessWaitMs({ allowed: true, until: null, now: home }, at(home))).toBeNull();
+    expect(accessWaitMs({ allowed: true, until: "later", now: home }, at(home))).toBeNull();
+  });
+});
+
 describe("useChannelAccess", () => {
   it("asks nothing with no channel", async () => {
     const { result } = renderHook(() => useChannelAccess(null));
@@ -336,6 +382,37 @@ describe("useChannelAccess", () => {
     expect(get).toHaveBeenCalledTimes(2);
     await act(async () => vi.advanceTimersByTime(ACCESS_RETRY_MS + 100));
     expect(get).toHaveBeenCalledTimes(3);
+  });
+
+  it("waits until minus the home's now, whatever this device's clock says", async () => {
+    vi.useFakeTimers();
+    // the device's clock is a day fast: by it the programme ended long ago
+    vi.setSystemTime(new Date("2026-11-12T20:00:00Z"));
+    get.mockResolvedValue({
+      restricted: true,
+      allowed: false,
+      until: "2026-11-11T20:10:00Z",
+      now: "2026-11-11T20:00:00Z",
+    });
+    renderHook(() => useChannelAccess("c1"));
+    await act(async () => {});
+    // not asked every five seconds until the device's clock agrees
+    await act(async () => vi.advanceTimersByTime(10 * 60_000 - 1000));
+    expect(get).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTime(2100));
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it("an older home sends no now: the device's clock, as before", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-11T20:08:00Z"));
+    get.mockResolvedValue({ restricted: true, allowed: false, until: "2026-11-11T20:10:00Z" });
+    renderHook(() => useChannelAccess("c1"));
+    await act(async () => {});
+    await act(async () => vi.advanceTimersByTime(2 * 60_000 - 100));
+    expect(get).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTime(1200));
+    expect(get).toHaveBeenCalledTimes(2);
   });
 
   it("a failed call answers allowed, and another channel starts with no answer", async () => {

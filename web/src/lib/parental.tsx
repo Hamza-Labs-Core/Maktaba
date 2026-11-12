@@ -36,6 +36,7 @@ import {
   fetchChildren,
   fetchMyLimit,
   fetchMyTime,
+  type ChannelAccess,
   type Child,
   type MyTime,
 } from "./parentalApi";
@@ -285,6 +286,27 @@ export const ACCESS_MIN_MS = 5_000;
 export const ACCESS_RETRY_MS = 60_000;
 
 /**
+ * How long to wait before asking the home about a channel again, from the moment
+ * its answer came: a second past `until`, never sooner than ACCESS_MIN_MS; with no
+ * `until`, ACCESS_RETRY_MS while it is refused and never (null) while it plays.
+ *
+ * `until` is the home's time. With the home's `now` beside it the wait is `until`
+ * minus `now`, both the home's, and the timer counts it: this device's clock
+ * (`deviceNowMs`) is not read and may be wrong. A home older than `now` sends none,
+ * and the wait is measured against the device's clock as before.
+ */
+export function accessWaitMs(
+  a: Pick<ChannelAccess, "allowed" | "until" | "now">,
+  deviceNowMs: number
+): number | null {
+  const at = a.until ? Date.parse(a.until) : NaN;
+  if (!Number.isFinite(at)) return a.allowed ? null : ACCESS_RETRY_MS;
+  const home = a.now ? Date.parse(a.now) : NaN;
+  const from = Number.isFinite(home) ? home : deviceNowMs;
+  return Math.max(ACCESS_MIN_MS, at - from + 1000);
+}
+
+/**
  * GET /api/channels/{id}/access for `channelId` (null: nothing is asked), asked
  * again when the home said the answer may change. A failed call answers "allowed":
  * the web never blocks on its own, and the home refuses the stream itself.
@@ -301,12 +323,7 @@ export function useChannelAccess(channelId: string | null): ChannelGate {
         .then((a) => {
           if (!alive) return;
           setGate({ channelId, allowed: a.allowed, until: a.until });
-          const at = a.until ? Date.parse(a.until) : NaN;
-          const wait = Number.isFinite(at)
-            ? Math.max(ACCESS_MIN_MS, at - Date.now() + 1000)
-            : a.allowed
-              ? null
-              : ACCESS_RETRY_MS;
+          const wait = accessWaitMs(a, Date.now());
           // setTimeout holds at most about 24 days; a programme ends sooner
           if (wait !== null) timer = window.setTimeout(ask, Math.min(wait, 0x7fffffff));
         })

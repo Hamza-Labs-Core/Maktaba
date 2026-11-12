@@ -406,6 +406,8 @@ export interface ChannelAccess {
   allowed: boolean;
   /** when the answer may change (the programme's end) */
   until: string | null;
+  /** the home's time for this answer; null from a home older than the field */
+  now: string | null;
 }
 
 export async function fetchChannelAccess(channelId: string): Promise<ChannelAccess> {
@@ -414,6 +416,7 @@ export async function fetchChannelAccess(channelId: string): Promise<ChannelAcce
     restricted: r.restricted === true,
     allowed: r.allowed !== false,
     until: strOrNull(r.until),
+    now: strOrNull(r.now),
   };
 }
 

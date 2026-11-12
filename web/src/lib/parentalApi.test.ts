@@ -264,12 +264,21 @@ describe("live TV", () => {
       allowed: false,
       until: "2026-11-11T20:00:00Z",
     });
+    // a home older than `now` sends none
     expect(await fetchChannelAccess("c1")).toEqual({
       restricted: true,
       allowed: false,
       until: "2026-11-11T20:00:00Z",
+      now: null,
     });
     expect(get).toHaveBeenCalledWith("/api/channels/c1/access");
+    get.mockResolvedValue({
+      restricted: true,
+      allowed: false,
+      until: "2026-11-11T20:00:00Z",
+      now: "2026-11-11T19:58:00Z",
+    });
+    expect((await fetchChannelAccess("c1")).now).toBe("2026-11-11T19:58:00Z");
   });
 
   it("stores the tuner's allowed addresses", async () => {
