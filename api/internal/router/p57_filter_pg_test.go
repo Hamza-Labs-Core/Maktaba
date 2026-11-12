@@ -328,6 +328,24 @@ func TestP57FilterByID(t *testing.T) {
 		if code, body := e.get(who, "/api/videos/"+strings.ReplaceAll(pfTeen, "-", "")); code == http.StatusOK || strings.Contains(body, pfTeenName) {
 			t.Errorf("%s: the hidden video without hyphens answers %d", who, code)
 		}
+		// text that is no id is never written back as it was asked, in a page (what a
+		// browser's navigation gets) or in JSON, in the body or in a header
+		for _, accept := range []string{"text/html", "application/json"} {
+			// sent raw, as no browser sends it: an encoded one comes back encoded
+			req := httptest.NewRequest(http.MethodGet, "/api/videos/<script>alert(1)<!--", nil)
+			req.Header.Set("X-Test-As", who)
+			req.Header.Set("Accept", accept)
+			if accept == "text/html" {
+				req.Header.Set("Sec-Fetch-Dest", "document")
+			}
+			rec := httptest.NewRecorder()
+			e.h.ServeHTTP(rec, req)
+			var hb bytes.Buffer
+			_ = rec.Header().Write(&hb)
+			if rec.Code < 400 || strings.Contains(rec.Body.String(), "<script>") || strings.Contains(hb.String(), "<script>") {
+				t.Errorf("%s: a script asked for as an id (%s) answers %d %s %s", who, accept, rec.Code, hb.String(), rec.Body.String())
+			}
+		}
 		// what the limit allows is there
 		for _, p := range []string{"/api/videos/" + pfKid, "/api/series/" + pfSeries, "/api/series/" + pfSeries + "/episodes",
 			"/api/collections/" + pfCol, "/api/collections/" + pfCol + "/items", "/api/videos/" + pfKidB} {

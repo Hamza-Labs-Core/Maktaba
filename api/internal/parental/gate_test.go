@@ -7,6 +7,7 @@ package parental
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -37,35 +38,47 @@ func TestSwapParam(t *testing.T) {
 	}
 }
 
-// A hidden object's answer names the id that was asked, in the body and the
-// headers, with a length that fits.
+const (
+	echoStand = "5b0e6d0c-7f3a-4a51-9d0e-2f6c1a7b8c9d"
+	echoAsked = "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D"
+	echoLower = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+	echoBare  = "0a1b2c3d4e5f4a6b8c7d9e0f1a2b3c4d"
+)
+
+// A hidden object's answer names the id that was asked, in the spelling it was
+// asked in, in the body and the headers, with a length that fits.
 func TestEchoWriter(t *testing.T) {
 	rec := httptest.NewRecorder()
-	ew := &echoWriter{ResponseWriter: rec, from: "stand-in-id", to: "asked"}
-	ew.Header().Set("Content-Type", "application/problem+json")
-	ew.Header().Set("Location", "/api/videos/stand-in-id")
+	ew := &echoWriter{ResponseWriter: rec, from: echoStand, to: echoAsked}
+	ew.Header().Set("Content-Type", "application/problem+json; charset=utf-8")
+	ew.Header().Set("Location", "/api/videos/"+echoStand)
 	ew.Header().Set("Content-Length", "33")
 	ew.WriteHeader(http.StatusNotFound)
 	ew.WriteHeader(http.StatusOK) // a second status is ignored
-	_, _ = ew.Write([]byte(`{"detail":"video stand-in-id"}`))
+	_, _ = ew.Write([]byte(`{"detail":"video ` + echoStand + `"}`))
 	if rec.Body.Len() != 0 {
 		t.Fatal("the answer went out before flush")
 	}
 	ew.flush()
-	if rec.Code != http.StatusNotFound || rec.Body.String() != `{"detail":"video asked"}` {
+	want := `{"detail":"video ` + echoAsked + `"}`
+	if rec.Code != http.StatusNotFound || rec.Body.String() != want {
 		t.Errorf("answer = %d %s", rec.Code, rec.Body.String())
 	}
-	if rec.Header().Get("Location") != "/api/videos/asked" || rec.Header().Get("Content-Length") != "24" {
+	if rec.Header().Get("Location") != "/api/videos/"+echoAsked || rec.Header().Get("Content-Length") != strconv.Itoa(len(want)) {
 		t.Errorf("headers = %v", rec.Header())
 	}
-	if strings.Contains(rec.Body.String()+rec.Header().Get("Location"), "stand-in-id") {
+	// nothing else changes: the type stays the handler's, and no header is added
+	if rec.Header().Get("Content-Type") != "application/problem+json; charset=utf-8" || len(rec.Header()) != 3 {
+		t.Errorf("headers = %v", rec.Header())
+	}
+	if strings.Contains(rec.Body.String()+rec.Header().Get("Location"), echoStand) {
 		t.Error("the stand-in id reached the caller")
 	}
 
 	// nothing written: 200 with no body
 	rec = httptest.NewRecorder()
-	(&echoWriter{ResponseWriter: rec, from: "a", to: "b"}).flush()
-	if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+	(&echoWriter{ResponseWriter: rec, from: echoStand, to: echoAsked}).flush()
+	if rec.Code != http.StatusOK || rec.Body.Len() != 0 || len(rec.Header()) != 0 {
 		t.Errorf("an empty answer = %d %q", rec.Code, rec.Body.String())
 	}
 }
@@ -196,7 +209,7 @@ func TestSurfaceLookup(t *testing.T) {
 // An event stream is not held back to be rewritten: its frames go out as they are written.
 func TestEchoWriterPassesAnEventStream(t *testing.T) {
 	rec := httptest.NewRecorder()
-	ew := &echoWriter{ResponseWriter: rec, from: "stand-in", to: "asked"}
+	ew := &echoWriter{ResponseWriter: rec, from: echoStand, to: echoAsked}
 	ew.Header().Set("Content-Type", "text/event-stream")
 	ew.WriteHeader(http.StatusOK)
 	if _, err := ew.Write([]byte("data: one\n\n")); err != nil {
@@ -209,5 +222,64 @@ func TestEchoWriterPassesAnEventStream(t *testing.T) {
 	ew.flush()
 	if rec.Body.String() != "data: one\n\n" {
 		t.Fatalf("after the end: %q", rec.Body.String())
+	}
+}
+
+// What the request asked for is never written into an answer unless it is a UUID:
+// text that is none (a script, a header break) is answered as the nil UUID, in the
+// body and in every header, whatever the answer's type (the API answers a browser's
+// navigation with a page).
+func TestEchoWriterNeverEchoesWhatIsNoUUID(t *testing.T) {
+	for _, ctype := range []string{"application/problem+json", "text/html; charset=utf-8", "text/plain", ""} {
+		for _, asked := range []string{
+			`<script>alert(1)</script>`, `"><img src=x onerror=alert(1)>`, "x\r\nSet-Cookie: a=b", "", "abc",
+			echoLower + "<script>", "{" + echoLower + "}x", "<" + echoLower + ">", `"` + echoLower + `'`,
+			" " + echoLower, echoLower + "\n", "urn:uuid:" + echoLower + "&",
+		} {
+			rec := httptest.NewRecorder()
+			ew := &echoWriter{ResponseWriter: rec, from: echoStand, to: asked}
+			if ctype != "" {
+				ew.Header().Set("Content-Type", ctype)
+			}
+			ew.Header().Set("Location", "/api/videos/"+echoStand)
+			ew.WriteHeader(http.StatusNotFound)
+			_, _ = ew.Write([]byte(`<p>/api/videos/` + echoStand + `</p>`))
+			ew.flush()
+			if rec.Body.String() != `<p>/api/videos/`+nilID+`</p>` || rec.Header().Get("Location") != "/api/videos/"+nilID {
+				t.Errorf("%q, asked %q: answer %s, Location %q", ctype, asked, rec.Body.String(), rec.Header().Get("Location"))
+			}
+			if got := rec.Header().Get("Content-Type"); got != ctype {
+				t.Errorf("%q, asked %q: the type became %q", ctype, asked, got)
+			}
+		}
+	}
+}
+
+// Every spelling of a UUID is put back as it was asked: a hidden object asked for in
+// another spelling answers as a missing one asked for in that spelling.
+func TestEchoWriterKeepsTheSpellingAsked(t *testing.T) {
+	for _, asked := range []string{echoLower, echoAsked, echoBare, strings.ToUpper(echoBare), "{" + echoLower + "}", "urn:uuid:" + echoLower, "URN:UUID:" + echoAsked} {
+		rec := httptest.NewRecorder()
+		ew := &echoWriter{ResponseWriter: rec, from: echoStand, to: asked}
+		_, _ = ew.Write([]byte("video " + echoStand))
+		ew.flush()
+		if rec.Body.String() != "video "+asked {
+			t.Errorf("asked %q: answer %q", asked, rec.Body.String())
+		}
+	}
+}
+
+// An event stream goes out under the type its handler gave it.
+func TestEchoWriterEventStreamType(t *testing.T) {
+	rec := httptest.NewRecorder()
+	ew := &echoWriter{ResponseWriter: rec, from: echoStand, to: `<script>`}
+	ew.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	_, _ = ew.Write([]byte(": hello\n\n"))
+	_, _ = ew.Write([]byte(": again\n\n"))
+	if h := rec.Header(); h.Get("Content-Type") != "text/event-stream; charset=utf-8" || len(h) != 1 {
+		t.Fatalf("headers %v", h)
+	}
+	if rec.Body.String() != ": hello\n\n: again\n\n" {
+		t.Fatalf("body %q", rec.Body.String())
 	}
 }

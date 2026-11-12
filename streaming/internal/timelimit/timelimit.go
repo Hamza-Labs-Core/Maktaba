@@ -265,6 +265,21 @@ type writer struct {
 	deadline time.Time
 	asked    time.Time
 	ended    bool
+	// typed: the headers were prepared for a body that is passed on
+	typed bool
+}
+
+// WriteHeader sends the status with nosniff, and the body's type never a page's
+// (httpx.PassHeaders).
+func (w *writer) WriteHeader(status int) {
+	rw := w.ResponseWriter
+	if !w.typed {
+		w.typed = true
+		if ct := httpx.PassHeaders(rw.Header(), status); ct != "" {
+			rw.Header().Set("Content-Type", ct)
+		}
+	}
+	rw.WriteHeader(status)
 }
 
 func (w *writer) Write(p []byte) (int, error) {
@@ -282,7 +297,14 @@ func (w *writer) Write(p []byte) (int, error) {
 		}
 		w.deadline, w.asked = deadline, now
 	}
-	return w.ResponseWriter.Write(p)
+	rw := w.ResponseWriter
+	if !w.typed {
+		w.typed = true
+		if ct := httpx.PassHeaders(rw.Header(), http.StatusOK); ct != "" {
+			rw.Header().Set("Content-Type", ct)
+		}
+	}
+	return rw.Write(p)
 }
 
 // Flush and Unwrap keep the wrapped writer's streaming behaviour.
