@@ -5,18 +5,14 @@
 -- off where nothing is set up (no restricted account, no library default tier). See
 -- the Postgres file for why. app_settings.value is JSON text here.
 --
-UPDATE app_settings
-   SET value = 'false', updated_at = datetime('now')
- WHERE key = 'parental.enabled'
-   AND NOT EXISTS (SELECT 1 FROM parental_policies)
-   AND NOT EXISTS (SELECT 1 FROM libraries WHERE age_tier IS NOT NULL);
+INSERT OR IGNORE INTO app_settings (key, value)
+SELECT 'parental.enabled',
+       CASE WHEN EXISTS (SELECT 1 FROM parental_policies)
+                 OR EXISTS (SELECT 1 FROM libraries WHERE age_tier IS NOT NULL)
+            THEN 'true' ELSE 'false' END;
 -- +goose StatementEnd
 
 -- +goose Down
 -- +goose StatementBegin
-UPDATE app_settings SET value = 'true', updated_at = datetime('now') WHERE key = 'parental.enabled';
--- +goose StatementEnd
-
--- +goose StatementBegin
-DELETE FROM app_settings WHERE key = 'parental.notice_dismissed_at';
+DELETE FROM app_settings WHERE key IN ('parental.enabled', 'parental.notice_dismissed_at');
 -- +goose StatementEnd
