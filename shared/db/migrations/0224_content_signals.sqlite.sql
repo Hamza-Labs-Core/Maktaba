@@ -16,11 +16,18 @@ CREATE TABLE IF NOT EXISTS video_content_signals (
                                OR not_checked IN ('no_transcript', 'unsupported_language')),
     model       TEXT    NOT NULL DEFAULT '',
     input_hash  TEXT    NOT NULL DEFAULT '',
+    attempts    INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
     reviewed_by TEXT    REFERENCES users(id) ON DELETE SET NULL,
     reviewed_at TEXT,
     updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     CHECK (not_checked IS NULL OR tier IS NULL)
 );
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- a database that ran this slot before the column was in it
+ALTER TABLE video_content_signals
+    ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0);
 -- +goose StatementEnd
 
 -- +goose StatementBegin

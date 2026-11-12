@@ -15,6 +15,10 @@
 --     not_checked  why there is no answer: no_transcript or unsupported_language; NULL
 --                  when the model was asked.
 --     model, input_hash  what was asked and of what: the same pair is never asked twice.
+--     attempts     how many runs on this input ended with an answer that could not be
+--                  read (0: the last run read every answer). The stage tries such a row
+--                  again, three times at most; until then, and after, it is on the review
+--                  list with confidence 0.
 --     reviewed_by, reviewed_at  an admin confirmed, changed or cleared the tier; a reviewed
 --                  signal no longer rates the video (the admin's tier does), until the
 --                  stage writes a new answer for a changed input.
@@ -44,11 +48,18 @@ CREATE TABLE IF NOT EXISTS video_content_signals (
                                    OR not_checked IN ('no_transcript', 'unsupported_language')),
     model       text        NOT NULL DEFAULT '',
     input_hash  text        NOT NULL DEFAULT '',
+    attempts    smallint    NOT NULL DEFAULT 0 CHECK (attempts >= 0),
     reviewed_by uuid        REFERENCES users(id) ON DELETE SET NULL,
     reviewed_at timestamptz,
     updated_at  timestamptz NOT NULL DEFAULT now(),
     CHECK (not_checked IS NULL OR tier IS NULL)
 );
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- a home that ran this slot before the column was in it
+ALTER TABLE video_content_signals
+    ADD COLUMN IF NOT EXISTS attempts smallint NOT NULL DEFAULT 0 CHECK (attempts >= 0);
 -- +goose StatementEnd
 
 -- +goose StatementBegin

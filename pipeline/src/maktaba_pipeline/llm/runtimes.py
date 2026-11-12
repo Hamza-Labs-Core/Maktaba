@@ -12,12 +12,14 @@ re-checks every 30 s and sends ``llm.models`` when something changed.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import os
 import time
 from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import urlsplit
 
 from . import http
 
@@ -73,6 +75,22 @@ class Runtime:
             if _same_model(m.name, name):
                 return m
         return None
+
+    @property
+    def on_this_machine(self) -> bool:
+        """Whether the runtime's address is this machine itself: ``localhost`` or a
+        loopback address written as a number. A name is never looked up (what it
+        answers can change), so any other host, a LAN address included, is not."""
+        try:
+            host = (urlsplit(self.base_url).hostname or "").lower()
+        except ValueError:
+            return False
+        if host == "localhost" or host.endswith(".localhost"):
+            return True
+        try:
+            return ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            return False
 
 
 def _same_model(have: str, want: str) -> bool:
@@ -187,9 +205,14 @@ class LLMRuntimes:
             if time.monotonic() - self.checked_at >= max_age:
                 await self.refresh()
 
-    def find(self, model: str) -> Runtime | None:
-        """The runtime to run ``model`` on: one that has it loaded, else any that has it."""
-        having = [r for r in self.runtimes if r.model(model) is not None]
+    def find(self, model: str, *, home_only: bool = False) -> Runtime | None:
+        """The runtime to run ``model`` on: one that has it loaded, else any that has it.
+        ``home_only`` leaves out every runtime that is not on this machine itself."""
+        having = [
+            r
+            for r in self.runtimes
+            if r.model(model) is not None and (r.on_this_machine or not home_only)
+        ]
         for r in having:
             m = r.model(model)
             if m is not None and m.loaded:

@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .errors import LLMError, NoCapacity, NoModel
-from .executor import Execution, execute
+from .executor import HOME_ONLY, Execution, execute
 from .runtimes import LLMRuntimes
 
 __all__ = ["LocalLLM"]
@@ -32,8 +32,8 @@ class LocalLLM:
         self.runtimes = runtimes or LLMRuntimes()
         self.record = record
 
-    def has(self, model: str) -> bool:
-        return self.runtimes.find(model) is not None
+    def has(self, model: str, *, home_only: bool = False) -> bool:
+        return self.runtimes.find(model, home_only=home_only) is not None
 
     async def run(
         self,
@@ -49,10 +49,16 @@ class LocalLLM:
     ) -> AsyncIterator[dict[str, Any]]:
         """Yield the answer's chunks. ``wait=False`` fails at once with
         :class:`NoCapacity` when the runtime is at ``max_parallel`` (the hub then routes
-        elsewhere); pipeline code on this machine waits its turn."""
-        rt = self.runtimes.find(model)
+        elsewhere); pipeline code on this machine waits its turn.
+
+        A body marked :data:`HOME_ONLY` (the door's ``home_only``) runs only on a runtime
+        that is this machine itself: what it carries is never posted to another host,
+        whatever address this machine was given for a runtime."""
+        home_only = bool(body.get(HOME_ONLY))
+        rt = self.runtimes.find(model, home_only=home_only)
         if rt is None:
-            raise NoModel(f"no runtime on this machine has {model}")
+            where = "on this machine itself" if home_only else "on this machine"
+            raise NoModel(f"no runtime {where} has {model}")
         info = rt.model(model)
         local_name = info.name if info is not None else model  # "llama3" -> "llama3:latest"
         if wait:
