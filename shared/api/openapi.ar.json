@@ -778,8 +778,8 @@
       "ar": "مقبول."
     },
     "/paths/~1stream~1sessions~1{id}~1progress/post/responses/403/description": {
-      "en": "The account's watching time is over (Parental controls): the problem type is `https://maktaba.tv/problems/parental-time`, `code` is `parental_time`, `reason` is `outside_slot`, `limit_reached`, or `no_heartbeat` when the session is not one the home is counting for this account, and `next_allowed_at` is when the rules allow watching again (absent when no moment in the next eight days does, and with `no_heartbeat`). The position is not saved and the stream ends within 60 seconds.",
-      "ar": "انتهى وقت المشاهدة للحساب (الرقابة الأبوية): نوع المشكلة `https://maktaba.tv/problems/parental-time`، وقيمة `code` هي `parental_time`، وقيمة `reason` هي `outside_slot` أو `limit_reached`، أو `no_heartbeat` إذا لم تكن الجلسة من الجلسات التي يعدّها البيت لهذا الحساب، و`next_allowed_at` هو الوقت الذي تسمح فيه القواعد بالمشاهدة مرة أخرى (يغيب إذا لم تسمح بها في أي لحظة خلال الأيام الثمانية القادمة، ومع `no_heartbeat`). لا يُحفظ الموضع وينتهي البث خلال 60 ثانية."
+      "en": "The account's watching time is over (Parental controls): the problem type is `https://maktaba.tv/problems/parental-time`, `code` is `parental_time`, `reason` is `outside_slot`, `limit_reached`, or `no_heartbeat` when the session is not one the home is counting for this account, and `next_allowed_at` is when the rules allow watching again (absent when no moment in the next eight days does, and with `no_heartbeat`). With `outside_slot` and `limit_reached` the position the post carries is stored first, as an accepted post's is, when the session is the caller's own and still open: the resume point is where the viewer stopped. Storing it counts no time and keeps no stream running. With `no_heartbeat` nothing is stored. The stream ends within 60 seconds.",
+      "ar": "انتهى وقت المشاهدة للحساب (الرقابة الأبوية): نوع المشكلة `https://maktaba.tv/problems/parental-time`، وقيمة `code` هي `parental_time`، وقيمة `reason` هي `outside_slot` أو `limit_reached`، أو `no_heartbeat` إذا لم تكن الجلسة من الجلسات التي يعدّها البيت لهذا الحساب، و`next_allowed_at` هو الوقت الذي تسمح فيه القواعد بالمشاهدة مرة أخرى (يغيب إذا لم تسمح بها في أي لحظة خلال الأيام الثمانية القادمة، ومع `no_heartbeat`). ومع `outside_slot` و`limit_reached` يُحفظ أولًا الموضع الذي يحمله الطلب، كما يُحفظ موضع الطلب المقبول، إذا كانت الجلسة جلسة المتصل نفسه وما زالت مفتوحة: فنقطة المتابعة هي حيث توقف المشاهد. وحفظه لا يعدّ وقتًا ولا يُبقي بثًّا جاريًا. ومع `no_heartbeat` لا يُحفظ شيء. وينتهي البث خلال 60 ثانية."
     },
     "/paths/~1stream~1sessions~1{id}~1progress/post/responses/503/description": {
       "en": "A restricted account's watching time could not be counted: the progress is refused, never taken uncounted; ask again after `Retry-After`. The problem's `code` is `parental_time_unknown`, which tells this answer from any other 503.",
@@ -5074,8 +5074,8 @@
       "ar": "هل يجوز للمتصل مشاهدة القناة الآن"
     },
     "/paths/~1channels~1{id}~1access/get/description": {
-      "en": "Says whether the programme now on the channel is within the caller's parental limit, and when that may change. A player asks before it starts and again at `until`, and shows its \"not available right now\" screen while `allowed` is false. An account with no limit always gets `allowed: true`. Live TV counts toward the account's time rules like any playback: while its watching time is over the answer is 403 `parental-time`.",
-      "ar": "يبيّن هل البرنامج المعروض الآن على القناة ضمن حدّ الرقابة الأبوية للمتصل، ومتى قد يتغيّر ذلك. يسأل المشغّل قبل أن يبدأ ثم مرة أخرى عند `until`، ويعرض شاشة «غير متاح الآن» ما دامت `allowed` خاطئة. والحساب الذي لا حدّ له ينال دائمًا `allowed: true`. ويُحسب التلفاز المباشر ضمن قواعد وقت الحساب كأي تشغيل: ما دام وقت المشاهدة منتهيًا يكون الجواب 403 `parental-time`."
+      "en": "Says whether the programme now on the channel is within the caller's parental limit, and when that may change. A player asks before it starts and again at `until`, and shows its \"not available right now\" screen while `allowed` is false. An account with no limit always gets `allowed: true`. Live TV counts toward the account's time rules like any playback: while its watching time is over the answer is 403 `parental-time`. Every answer with a time to wait for carries `now`, the home's time for that answer: wait `until` minus `now` on the device's own monotonic clock.",
+      "ar": "يبيّن هل البرنامج المعروض الآن على القناة ضمن حدّ الرقابة الأبوية للمتصل، ومتى قد يتغيّر ذلك. يسأل المشغّل قبل أن يبدأ ثم مرة أخرى عند `until`، ويعرض شاشة «غير متاح الآن» ما دامت `allowed` خاطئة. والحساب الذي لا حدّ له ينال دائمًا `allowed: true`. ويُحسب التلفاز المباشر ضمن قواعد وقت الحساب كأي تشغيل: ما دام وقت المشاهدة منتهيًا يكون الجواب 403 `parental-time`. وكل جواب فيه وقت يُنتظر يحمل `now`، وقت المنزل لذلك الجواب: انتظر `until` ناقص `now` على الساعة الرتيبة للجهاز."
     },
     "/paths/~1channels~1{id}~1access/get/responses/200/description": {
       "en": "The answer for now.",
@@ -5097,9 +5097,13 @@
       "en": "When the answer may change: the start of the next programme that flips it, in UTC. Null when nothing in the next 12 hours changes it. Ask again at this time.",
       "ar": "متى قد يتغيّر الجواب: بداية البرنامج التالي الذي يقلبه، بالتوقيت العالمي. والقيمة null حين لا شيء يغيّره في الساعات الاثنتي عشرة القادمة. اسأل مجددًا في هذا الوقت."
     },
+    "/paths/~1channels~1{id}~1access/get/responses/200/content/application~1json/schema/properties/now/description": {
+      "en": "The home's time for this answer, in UTC. Wait `until` minus `now` on the device's own monotonic clock, and do not compare `until` with the device's clock, which may be wrong. A home older than this field does not send it.",
+      "ar": "وقت المنزل لهذا الجواب، بالتوقيت العالمي. انتظر `until` ناقص `now` على الساعة الرتيبة للجهاز، ولا تقارن `until` بساعة الجهاز، فقد تكون خاطئة. والمنزل الأقدم من هذا الحقل لا يرسله."
+    },
     "/paths/~1channels~1{id}~1access/get/responses/403/description": {
-      "en": "The account's watching time is over for now: problem type `parental-time`, `code` is `parental_time`, `reason` is `outside_slot` or `limit_reached`, and `next_allowed_at` is when the rules allow playback again (absent when no moment in the next eight days does). The player shows its time's-up screen.",
-      "ar": "انتهى وقت المشاهدة للحساب الآن: نوع المشكلة `parental-time`، و`code` هو `parental_time`، و`reason` هو `outside_slot` أو `limit_reached`، و`next_allowed_at` هو موعد سماح القواعد بالتشغيل مجددًا (يغيب إن لم تسمح به في الأيام الثمانية القادمة). يعرض المشغّل شاشة انتهاء الوقت."
+      "en": "The account's watching time is over for now: problem type `parental-time`, `code` is `parental_time`, `reason` is `outside_slot` or `limit_reached`, and `next_allowed_at` is when the rules allow playback again (absent when no moment in the next eight days does). The player shows its time's-up screen. The problem carries `now`, the home's time for the answer: wait `next_allowed_at` minus `now`.",
+      "ar": "انتهى وقت المشاهدة للحساب الآن: نوع المشكلة `parental-time`، و`code` هو `parental_time`، و`reason` هو `outside_slot` أو `limit_reached`، و`next_allowed_at` هو موعد سماح القواعد بالتشغيل مجددًا (يغيب إن لم تسمح به في الأيام الثمانية القادمة). يعرض المشغّل شاشة انتهاء الوقت. وتحمل المشكلة `now`، وقت المنزل لهذا الجواب: انتظر `next_allowed_at` ناقص `now`."
     },
     "/paths/~1channels~1{id}~1access/get/responses/404/description": {
       "en": "No such channel that the caller may see. A channel above a restricted account's limit, or blocked for it, answers the same as one that does not exist.",
@@ -5137,9 +5141,13 @@
       "en": "When the answer may change: the start of the next programme that flips it, in UTC. Null when nothing in the next 12 hours changes it. Ask again at this time.",
       "ar": "متى قد يتغيّر الجواب: بداية البرنامج التالي الذي يقلبه، بالتوقيت العالمي. والقيمة null حين لا شيء يغيّره في الساعات الاثنتي عشرة القادمة. اسأل مجددًا في هذا الوقت."
     },
+    "/paths/~1channels~1{id}~1play/post/responses/200/content/application~1json/schema/properties/now/description": {
+      "en": "The home's time for this answer, in UTC. Wait `until` minus `now` on the device's own monotonic clock, and do not compare `until` with the device's clock, which may be wrong. A home older than this field does not send it.",
+      "ar": "وقت المنزل لهذا الجواب، بالتوقيت العالمي. انتظر `until` ناقص `now` على الساعة الرتيبة للجهاز، ولا تقارن `until` بساعة الجهاز، فقد تكون خاطئة. والمنزل الأقدم من هذا الحقل لا يرسله."
+    },
     "/paths/~1channels~1{id}~1play/post/responses/403/description": {
-      "en": "The programme now on the channel is above the caller's limit: `code` is `restricted`, `reason` is `programme` and `retry_at` is when to ask again (absent when nothing in the next 12 hours changes it). Or the account's watching time is over: problem type `parental-time`, `code` is `parental_time`, with `reason` (`outside_slot` or `limit_reached`) and `next_allowed_at`.",
-      "ar": "البرنامج المعروض الآن على القناة فوق حدّ المتصل: قيمة `code` هي `restricted` وقيمة `reason` هي `programme` و`retry_at` هو وقت السؤال مجددًا (يغيب حين لا شيء يغيّره في الساعات الاثنتي عشرة القادمة). أو انتهى وقت المشاهدة للحساب: نوع المشكلة `parental-time` و`code` هو `parental_time`، مع `reason` (`outside_slot` أو `limit_reached`) و`next_allowed_at`."
+      "en": "The programme now on the channel is above the caller's limit: `code` is `restricted`, `reason` is `programme` and `retry_at` is when to ask again (absent when nothing in the next 12 hours changes it). Or the account's watching time is over: problem type `parental-time`, `code` is `parental_time`, with `reason` (`outside_slot` or `limit_reached`) and `next_allowed_at`. Both carry `now`, the home's time for the answer: wait `retry_at` or `next_allowed_at` minus `now`.",
+      "ar": "البرنامج المعروض الآن على القناة فوق حدّ المتصل: قيمة `code` هي `restricted` وقيمة `reason` هي `programme` و`retry_at` هو وقت السؤال مجددًا (يغيب حين لا شيء يغيّره في الساعات الاثنتي عشرة القادمة). أو انتهى وقت المشاهدة للحساب: نوع المشكلة `parental-time` و`code` هو `parental_time`، مع `reason` (`outside_slot` أو `limit_reached`) و`next_allowed_at`. وكلاهما يحمل `now`، وقت المنزل لهذا الجواب: انتظر `retry_at` أو `next_allowed_at` ناقص `now`."
     },
     "/paths/~1channels~1{id}~1play/post/responses/404/description": {
       "en": "No such channel that the caller may see. A channel above a restricted account's limit, or blocked for it, answers the same as one that does not exist.",
