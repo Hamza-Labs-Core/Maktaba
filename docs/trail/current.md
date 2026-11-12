@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.133
-up_to_commit: c6ddab096
-built_from: v0.3.132
+tag: v0.3.134
+up_to_commit: ca22c1b88
+built_from: v0.3.133
 ---
 
-# Trail snapshot: v0.3.133
+# Trail snapshot: v0.3.134
 
 ## Keep doing
 
@@ -80,7 +80,7 @@ built_from: v0.3.132
 - Turn a "should never happen" rule into a test-time error and run the whole suite under it. (#662)
 - NAS shapes (`nas.yml`, `tests/nas/cells.json`): imitate a NAS shape in a container before any device is bought, and keep every cell's logs, pass or fail. A cell job whose cell is still pending passes, so read each cell's `report.json` (artifact `nas-cell-<cell>-<arch>`) to see that it ran; checks waiting for a fix carry `needs` and turn on in the pull request after the fix merges, by adding it to `landed`. Read a sibling story's merged code before writing the assertion that targets it. A fix's pull request may leave out its own `landed` entry; the next harness pull request adds it. A `CLEAN` merge state does not mean the cells ran against the main a pull request lands on: when a sibling story merges while a NAS pull request waits, merge main in and run the cells again. A story that changes when work runs (quiet hours, tiers) runs nas-shapes and ships its harness change in the same pull request. When the product's behaviour is the decided one, fix the harness, then prove the behaviour in a cell of its own (`quiet-hours-hold`). (#1091, #1100, #1103, #1104)
 - Run a wave's full pipeline suite on a freshly initialised Postgres cluster (`initdb -E UTF8`; SQL_ASCII fails the Unicode tests) before opening its PR: roles are cluster-wide, so a reused cluster hides order bugs, and CI's `unit` job runs only the affected tests. (#847, #902)
-- When a layout bug is found by reading code, add the reference test that would have caught it; read each reference image for the part, and the language, it should guard before committing it, and compare pixels, not bytes. Name a new test after the file it guards (`affected-tests` maps `SeriesScreen.swift` to `SeriesScreenTests.swift`). (#893, #910)
+- When a layout bug is found by reading code, add the reference test that would have caught it; read each reference image for the part, and the language, it should guard before committing it, and compare pixels, not bytes. Name a new test after the file it guards (`affected-tests` maps `SeriesScreen.swift` to `SeriesScreenTests.swift`). Check a `Reference images:` list with `python3 tools/ci/reference_images.py --body F --files F` before pushing the PR body. (#893, #910, #1185)
 - Verify each new test fails without its fix (origin/main's sources on a WIP commit); a security alert is fixed only once a test fails on main for it. Latch tests that hold a read's answer reproduce read/write races every time. A test of running without an optional dependency hides that dependency itself; `uv sync --all-extras` locally finds the ones that do not. Pair every "is refused" or "does not build" test with a positive control that passes once the missing thing is added (a refusal test called a function that does not exist; another's import sat in a reactor's never-called `main`). Check a timing test by putting the old behaviour back. A test double answers the real API's shape for every return value, even unread ones (the sqlite shim's `batch()` was not D1's). (#679, #613, #667, #734, #811, #848, #851, #886)
 - Jobs run only when their code changes; run the same check on every PR that the release tag runs. (#528, #519)
 - Tests get a server's ports from the server once open; tests bind 127.0.0.1. (#571, #451, #127)
@@ -263,7 +263,7 @@ built_from: v0.3.132
 - Piping into `head` or `grep -q` in `tools/` scripts (`test_no_head_pipes.py` refuses it; use `sed -n` or `case`). (#1162)
 - Merging a branch cut before a new repo-wide check without merging main and re-running the check. (#1169)
 - Re-running a job cancelled at its own time limit, or blaming the step it stopped in, before comparing its total time with the limit (a near-limit job dies in whichever step runs last). (#1176, #1177)
-- Listing reference images with brace globs in a pull request body: `reference-images.yml` reads one path per line; its re-runs share one concurrency group, so re-run them one at a time. (#1180)
+- Listing reference images with brace globs or other shorthand in a pull request body: the check needs a `Reference images:` line and one full path per item; its re-runs share one concurrency group, so re-run them one at a time. (#1180, #1185)
 - Rendering a full-site visual update on emulated amd64 (Apple Silicon) at the default worker count: shots time out; `--workers=2` renders clean. (#1175)
 
 ## What we learned
@@ -449,7 +449,7 @@ built_from: v0.3.132
 - Lazy grids anchor on the first visible key, so out-of-order answers open a page scrolled. A BackHandler always composed keeps its old order. (#529, #523)
 - A read that started before a write must not overwrite it on screen: one `ReadOrder` per platform. (#613, #616, #624)
 - SwiftUI: an identifier on a wrapping Section replaces its children's; a `LazyHStack` in a horizontal scroll can stay 0 pt; not every `INFOPLIST_KEY_*` is generated (check the built Info.plist); a `.task` on a view that draws nothing never starts, so put it on a container that always exists. On Android and Apple alike an empty lazy-list or grid item still takes the list's spacing: add the item only with content, on every platform at once. (#541, #569, #579, #787, d20261107-paid-plugins-merge-problems)
-- The Arabic catalogs call the product «مكتبة», never "Maktaba"; Settings' tab test (SAC-12) lists every tab, so a new tab updates it. (#1089)
+- The Arabic catalogs call the product «مكتبة», never "Maktaba"; Settings' tab test (SAC-12) lists every tab, so a new tab updates it. Where a bare «مكتبة» could read as "a library", the problem registry says «برنامج مكتبة» (masculine agreement) and sends help requests to «فريق مكتبة»; its Arabic addresses the household in the plural, but quoted app labels stay verbatim (singular) to match `web/src/i18n/ar.json`. (#1089, #1185)
 - Apple localization: `LocalizedStringKey` lookups with values need `String(format: localized(key), args)` and positional `%1$@` in both languages; a line's values belong in its close signature so a new value reopens a closed strip. Edit `.xcstrings` and the wiki's Arabic JSON in place, inserting entries as text: a JSON round trip that re-sorts rewrites hundreds of lines (Python's sort is not Xcode's, and MaktabaKit's catalog is not fully sorted). (#752, #732, #742, #824)
 - Android unit tests use OkHttp 5's `mockwebserver3` (`MockResponse.Builder()`, `server.close()`); local gradle needs `JAVA_HOME` (Homebrew openjdk@17) and `ANDROID_HOME=~/Library/Android/sdk`. The `client` module is plain JVM (`:client:test`), `core` and `player` are Android (`testDebugUnitTest`); `home.features()` in the Player is composable, so read it in the screen body and key the effect on it. A Kotlin backticked test name cannot contain a period. (#752, #742)
 - XCUITest does not close the app after a test; settings leak between tests; the `.textClipped` audit relays at 12 text sizes; the simulator can drop taps. On a loaded runner one look at the app's tree can take 4 s, so `waitUntil` takes at least three looks as well as its seconds; a long-press waits for Home to go quiet (`waitUntilHomeIsQuiet`); a looped test's failing variant is the one whose screenshot is missing. A mock's delay is no hold when the client has its own timeout (`ImageCache` gives a fetch 15 s): make the app never ask. (#539, #582, #580, #626, #661, #803)
@@ -490,7 +490,7 @@ built_from: v0.3.132
 - A SwiftUI `Label` with `.accessibilityIdentifier` can expose the SF Symbol's spoken name as the element's label: use `Text` when a UI test reads the words. (#970)
 - `merge-main.sh` stops on `Localizable.xcstrings` conflicts: merge them as JSON keeping main's case-insensitive key order; Python's `sorted()` reorders the whole file. (#959)
 - Robolectric drives a file picker with `LocalActivityResultRegistryOwner` and a fake `ActivityResultRegistry`; `registerOutputStreamSupplier` captures what the app writes. (#959)
-- The Arabic store keeps only a story's opening excerpt (about 600 characters), so editing deep in a story needs no new Arabic; `generate_wiki.py --check` confirms it. The devportal tests need `npm run build`, which needs `npm ci` in `web/wiki-app`. (#954, #960)
+- The Arabic store keeps only a story's opening excerpt (about 600 characters), so editing deep in a story needs no new Arabic; `generate_wiki.py --check` confirms it. The store doesn't carry a story's strings tables either (60.06's Arabic cells changed with no store change). The devportal tests need `npm run build`, which needs `npm ci` in `web/wiki-app`. (#954, #960, #1185)
 - Windows AppContainer: a process may neither create a named pipe nor open `nul`, so any runner code that opens `os.devnull` hits the refusal too. `winproc` starts tools with `Popen`, anonymous pipes and a Job Object each; close a Job Object handle under the same lock as its terminate, clearing the handle first, or a reused handle value can end another tool. `Popen` closes the child's thread handle, so a tool cannot start suspended and join its job first. (#976, #977)
 - Windows refusals must propagate: `os.path.exists`, `isfile`, `isdir` and `lexists` are `nt._path_*` and answer False on any error, with no `os.stat` and no audit event, so each is wrapped; `glob` and `os.walk` swallow `OSError`, so a stage that lists a share folder uses `os.listdir`; a helper or a catch that turns an `OSError` into an exit code or a failure hides the refusal from the fallback. (#976, #988, #990)
 - Windows share broker: a capability-free AppContainer reaches no SMB share, and the network capabilities open the whole LAN. The launcher opens each file, refuses reparse points and duplicates a read-only handle into the runner, which keeps confinement at no throughput cost. Compare share paths by ASCII case only: Go's Unicode folding and Windows' upcase table disagree. ffmpeg seeks a handle passed as `fd:`; `pipe:` does not seek. (#968, #974)
@@ -546,7 +546,7 @@ built_from: v0.3.132
 
 **maktaba.tv (Epic 60)**
 - The zone is active with no DNS records at all; hundreds of repo links point at it (most at `/problems/`). The server image `ghcr.io/hamza-labs-core/maktaba-server` is private while the repository is public, and every install guide pulls it. (#1158)
-- Problem types now have a registry: `shared/api/problems.json` holds 288 entries in English and Arabic, most from the codes runtime call sites relay (plugins/admin alone, 114, mostly from the store and the supervisor), so the story's estimate of 120 literals was repo-wide. `httperror.Write` checks every type: under test an unregistered or empty type is written to `MAKTABA_UNREGISTERED_PROBLEMS` and fails the unit job; production logs `problem_type_unregistered` and sends the status's generic type. `literal_test.go` keeps literal slugs out of `api/` and `cloud/`. Swapping a literal for the same constant needs a `No-Test-Change` trailer, not new tests. Local golangci-lint is v1 and CI's v2: trust CI's lint on `api/`. (#1158, #1162)
+- Problem types now have a registry: `shared/api/problems.json` holds 288 entries in English and Arabic, most from the codes runtime call sites relay (plugins/admin alone, 114, mostly from the store and the supervisor), so the story's estimate of 120 literals was repo-wide. `httperror.Write` checks every type: under test an unregistered or empty type is written to `MAKTABA_UNREGISTERED_PROBLEMS` and fails the unit job; production logs `problem_type_unregistered` and sends the status's generic type. `literal_test.go` keeps literal slugs out of `api/` and `cloud/`. Swapping a literal for the same constant needs a `No-Test-Change` trailer, not new tests. Local golangci-lint is v1 and CI's v2: trust CI's lint on `api/`. Playwright's `--update-snapshots=changed` keeps a reference whose new pixels fall within the 0.1% tolerance, so a text change can leave the old text: delete that page's references for the language and render again. (#1158, #1162, #1185)
 - Wrangler: `versions upload`/`versions deploy` never apply routes or custom domains (`wrangler triggers deploy` does), and a bare `wrangler rollback` can return to a version that never went live; record the live version and roll back to it. `versions upload` cannot create a Worker, so a first deploy bootstraps it with `wrangler deploy` on the config less its routes (`workers_dev = false`), and `triggers deploy` attaches the domains after the preview smoke; `preview_urls = true` with `workers_dev = false` holds. Read the upload's version and preview URL from `WRANGLER_OUTPUT_FILE_PATH`, and sort `deployments list --json` by `created_on`. (#1158, #1161)
 - `release.json`'s `assets` lists only the server archives and `checksums.txt` has no desktop installers; the Releases API gives every asset's size and sha256 `digest`. `_pr-body-check.yml` reads the body from the event payload and `ci.yml` does not trigger on `edited`; `ci-paths.yml` has no negation. (#1158)
 - `lint / maktaba.tv links` (`web/packages/website/scripts/links.mjs`) checks every maktaba.tv link in tracked files, problem links against `shared/api/problems.json` and the rest against `dist-manifest.json`; dead links wait in `links-baseline.json` with their fixing story, and the check fails on a new dead link and on a baseline entry now live or gone, so the baseline only shrinks. Write maktaba.tv in prose without a path. `tools/release/image-public.sh` pulls the server image with no login, as a leaf job of `release.yml` and daily in `image-public.yml`. (#1160)
@@ -623,6 +623,7 @@ built_from: v0.3.132
 - `lint / repo` has 20 minutes; if its routing tests near that, split or speed them up rather than raising it again. (#1177)
 - NAS after #1164: a restart rebuilds the pipeline venv in place under running workers (transient `ModuleNotFoundError`, runner exit 75); setup downloads `large-v3-turbo` on a Light NAS where speech is off; the terminal setup keeps no log its errors point to; NAS UIs, GPUs, VA-API, mDNS beside the NAS's responder, Unraid's shfs refusal and discovery need real hardware. (#1164)
 
+- Problem registry wording: it still calls the home's admin «المسؤول» where the voice guide prefers «من يدير الجهاز الرئيسي», and the app labels it quotes are singular in the web catalog; both belong to the app catalog's pass. (#1185)
 ## Missing events
 
 | PR | Merged | Title |
@@ -637,8 +638,10 @@ built_from: v0.3.132
 | #1128 | 2026-11-10 | docs(spec): Epic 57 checked again against main |
 | #1130 | 2026-11-10 | spec(epic57): time rules on every device, and tiers detected from transcripts |
 | #1139 | 2026-11-10 | spec(epic57): Q9 answered, detection covers what a video is |
+| #1163 | 2026-11-11 | Epic 60: maktaba.tv design shell and voice guide (60.01 A, 60.02 A) |
+| #1183 | 2026-11-11 | ci(website): the shared Cloudflare token deploys maktaba.tv; WEBSITE_LIVE stays the only switch |
 | #1184 | 2026-11-11 | docs(epic60): owner action A1 is done (the server image is public) |
-| #1185 | 2026-11-11 | problems: Arabic texts address the household in the plural (60.06) |
+| #1188 | 2026-11-11 | ci(website): measure again a run Lighthouse could not finish; never a low score |
 
 ## Index
 
@@ -1256,4 +1259,5 @@ built_from: v0.3.132
 | 1176-epic60-owner-decisions | 2026-11-11 | pr | Epic 60: the owner questions Q1–Q9 recorded as decided |
 | 1177-lint-repo-timeout | 2026-11-11 | pr | CI: lint / repo gets 20 minutes |
 | 1180-website-problem-pages | 2026-11-11 | pr | website: the problem pages and index, and an empty link baseline (Epic 60 story 60.06) |
+| 1185-problems-arabic-plural | 2026-11-11 | pr | problems: Arabic texts address the household in the plural (60.06) |
 
