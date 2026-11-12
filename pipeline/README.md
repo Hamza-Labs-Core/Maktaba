@@ -5,7 +5,8 @@ search, queue.
 
 ## Running the tests
 
-The whole suite, as CI runs it (CI installs every extra: `uv sync --frozen --all-extras`):
+The whole suite, with every extra (CI installs them through `tools/ci/pipeline-deps.sh`:
+every extra but torch's CUDA build and its nvidia-* wheels on Linux, which no test runs):
 
 ```sh
 cd pipeline
