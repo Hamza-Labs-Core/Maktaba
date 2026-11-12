@@ -211,7 +211,7 @@ func MountP6(r chi.Router, d P6Deps) {
 	}
 	browseHandler.Mount(r)
 	// Epic 57 story 57.02: restricted accounts, guardians and rules.
-	parentalCache := MountParental(r, d.DB, d.Loops, d.BusCtx, d.BusDSN, d.BusResettle)
+	parentalCache := MountParental(d.BusCtx, r, d.DB, d.Loops, d.BusDSN, d.BusResettle)
 	if d.ParentalGate != nil {
 		d.ParentalGate.SetCache(parentalCache)
 		// story 57.03: every live connection (the /ws feeds, the GraphQL

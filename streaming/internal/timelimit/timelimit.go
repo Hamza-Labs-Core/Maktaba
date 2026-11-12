@@ -220,11 +220,11 @@ func Guard(g *Registry) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			if claims.Tls == "" && claims.Tk != NotKept {
+			if claims.TLS == "" && claims.Tk != NotKept {
 				refuse(w, &Refusal{Reason: ReasonNoHeartbeat})
 				return
 			}
-			deadline, refused := g.Check(claims.Usr, claims.Lib, claims.Tls)
+			deadline, refused := g.Check(claims.Usr, claims.Lib, claims.TLS)
 			if refused != nil {
 				refuse(w, refused)
 				return
@@ -272,7 +272,7 @@ func (w *writer) Write(p []byte) (int, error) {
 		return 0, ErrEnded
 	}
 	if now := w.g.now(); !now.Before(w.deadline) || now.Sub(w.asked) >= time.Second {
-		deadline, refused := w.g.Check(w.claims.Usr, w.claims.Lib, w.claims.Tls)
+		deadline, refused := w.g.Check(w.claims.Usr, w.claims.Lib, w.claims.TLS)
 		if refused != nil {
 			w.ended = true
 			return 0, ErrEnded

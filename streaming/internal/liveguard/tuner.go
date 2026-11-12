@@ -62,7 +62,6 @@ func (t *Tuner) Allowed(ctx context.Context, addr netip.Addr) bool {
 		ps, err := t.Load(ctx)
 		if err != nil {
 			// never the list as it was: an address removed since would stay allowed
-			ps = nil
 			if t.Logger != nil && !errors.Is(err, context.Canceled) {
 				t.Logger.Warn("tv: the tuner's allowed addresses could not be read; only this machine is allowed",
 					"err", err.Error(), "event", "tv_tuner_allowed_failed")

@@ -119,12 +119,12 @@ func (e *Effective) tierTerm(alias string) string {
 	if e.AllowOnly || e.MaxTier < TierAll {
 		return "FALSE"
 	}
-	max := strconv.Itoa(e.MaxTier)
+	limit := strconv.Itoa(e.MaxTier)
 	col := alias + ".age_tier"
 	if as, ok := unratedTiers[e.Unrated]; ok && as <= e.MaxTier {
-		return "(" + col + " IS NULL OR " + col + " <= " + max + ")"
+		return "(" + col + " IS NULL OR " + col + " <= " + limit + ")"
 	}
-	return "(" + col + " IS NOT NULL AND " + col + " <= " + max + ")"
+	return "(" + col + " IS NOT NULL AND " + col + " <= " + limit + ")"
 }
 
 // PredicateAt is the filter as a boolean expression over a videos row named alias,

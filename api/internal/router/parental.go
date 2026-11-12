@@ -35,7 +35,7 @@ type ParentalHandles struct {
 // notification, so a tightened limit holds on the next request on every process;
 // without it every request reads the database. It returns the cache the other
 // surfaces filter with.
-func MountParental(r chi.Router, db *sql.DB, loops *runner.Runner, busCtx context.Context, busDSN string, resettle func(context.Context) string) *parental.Cache {
+func MountParental(busCtx context.Context, r chi.Router, db *sql.DB, loops *runner.Runner, busDSN string, resettle func(context.Context) string) *parental.Cache {
 	cache := parental.NewCache(parental.NewStore(db))
 	if busCtx != nil && busDSN != "" {
 		loops.Declare("parental_cache_listen", runner.Bound(busCtx, runner.Func(func(ctx context.Context) {

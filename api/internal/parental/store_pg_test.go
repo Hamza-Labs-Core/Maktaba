@@ -547,7 +547,7 @@ func TestApproveAs(t *testing.T) {
 			}
 			continue
 		}
-		if !errors.Is(err, c.want) && !(errors.Is(c.want, parental.ErrNotRestricted) && errors.Is(err, parental.ErrUserNotFound)) {
+		if !errors.Is(err, c.want) && (!errors.Is(c.want, parental.ErrNotRestricted) || !errors.Is(err, parental.ErrUserNotFound)) {
 			t.Errorf("%s: %v, want %v", c.name, err, c.want)
 		}
 		if id != "" {

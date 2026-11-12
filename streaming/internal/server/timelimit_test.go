@@ -99,7 +99,7 @@ func (f *timeFixture) limit(end time.Time, next *time.Time, session string, leas
 // segment asks for the session's segment with a URL that names leaseOf as the
 // session whose lease it needs ("": the URL of an account that was not restricted).
 func (f *timeFixture) segment(deps Deps, leaseOf string) (int, map[string]any) {
-	tok := mintToken(f.t, f.priv, auth.Claims{Aud: "streaming", Sub: f.sess, Usr: f.user, Lib: []string{f.lib}, Tls: leaseOf})
+	tok := mintToken(f.t, f.priv, auth.Claims{Aud: "streaming", Sub: f.sess, Usr: f.user, Lib: []string{f.lib}, TLS: leaseOf})
 	rec := httptest.NewRecorder()
 	New(deps).ServeHTTP(rec, httptest.NewRequest("GET", "/stream/"+f.sess+"/chunk-0-1.m4s?sig="+tok, nil))
 	body := map[string]any{}
@@ -281,7 +281,7 @@ func TestAnEmptyRegistryDoesNotMeanUnlimited(t *testing.T) {
 			if code, reason := get(deps, auth.Claims{Aud: aud.aud, Sub: aud.sub, Tk: "none"}); code != 403 || reason != timelimit.ReasonNoHeartbeat {
 				t.Errorf("%s, %s: a URL that does not say whether the time is kept: %d %q", name, aud.aud, code, reason)
 			}
-			if code, reason := get(deps, auth.Claims{Aud: aud.aud, Sub: aud.sub, Tk: "1", Tls: f.sess}); code != 403 || reason != timelimit.ReasonNoHeartbeat {
+			if code, reason := get(deps, auth.Claims{Aud: aud.aud, Sub: aud.sub, Tk: "1", TLS: f.sess}); code != 403 || reason != timelimit.ReasonNoHeartbeat {
 				t.Errorf("%s, %s: a kept account's URL before any lease: %d %q", name, aud.aud, code, reason)
 			}
 			if code, _ := get(deps, auth.Claims{Aud: aud.aud, Sub: aud.sub, Tk: "0"}); code != 200 && code != 206 {
@@ -291,7 +291,7 @@ func TestAnEmptyRegistryDoesNotMeanUnlimited(t *testing.T) {
 	}
 	// the API gives the lease: the kept account's URL is served
 	f.limit(f.now().Add(time.Hour), nil, f.sess, time.Minute)
-	if code, _ := get(f.deps, auth.Claims{Aud: "streaming", Sub: f.sess, Tk: "1", Tls: f.sess}); code != 200 {
+	if code, _ := get(f.deps, auth.Claims{Aud: "streaming", Sub: f.sess, Tk: "1", TLS: f.sess}); code != 200 {
 		t.Errorf("under a lease: %d", code)
 	}
 }
@@ -301,7 +301,7 @@ func TestAnEmptyRegistryDoesNotMeanUnlimited(t *testing.T) {
 func TestALongResponseStopsWhenTheLeaseEnds(t *testing.T) {
 	f := newTimeFixture(t)
 	f.limit(f.now().Add(2*time.Hour), nil, f.sess, time.Minute)
-	tok := mintToken(t, f.priv, auth.Claims{Aud: "streaming-direct", Sub: f.video, Usr: f.user, Lib: []string{f.lib}, Tls: f.sess})
+	tok := mintToken(t, f.priv, auth.Claims{Aud: "streaming-direct", Sub: f.video, Usr: f.user, Lib: []string{f.lib}, TLS: f.sess})
 	f.step = 5 * time.Second // every look at the clock while writing is 5 s later
 	rec := httptest.NewRecorder()
 	New(f.deps).ServeHTTP(rec, httptest.NewRequest("GET", "/stream/direct/"+f.video+"?sig="+tok, nil))

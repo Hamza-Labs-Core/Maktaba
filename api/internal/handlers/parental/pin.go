@@ -171,11 +171,11 @@ type unlockResponse struct {
 // settle waits until an unlock has taken MinAnswer since start, so a right PIN, a
 // wrong one and a refusal take the same time to answer.
 func (h *AskHandler) settle(ctx context.Context, start time.Time) {
-	min := h.MinAnswer
-	if min == 0 {
-		min = DefaultMinAnswer
+	least := h.MinAnswer
+	if least == 0 {
+		least = DefaultMinAnswer
 	}
-	left := min - time.Since(start)
+	left := least - time.Since(start)
 	if left <= 0 {
 		return
 	}
