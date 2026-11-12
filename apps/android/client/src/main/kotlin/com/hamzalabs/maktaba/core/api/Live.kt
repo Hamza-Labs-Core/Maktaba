@@ -77,6 +77,11 @@ data class Programme(
     @SerialName("strip_ref") val stripRef: String? = null,
     @SerialName("is_live") val isLive: Boolean = false,
     val progress: Double = 0.0,
+    /**
+     * Above the account's parental limit (Epic 57 story 57.10): the home sends its time only,
+     * and the guide shows it as "Not available".
+     */
+    val restricted: Boolean = false,
 ) {
     val startMs: Long? get() = epochMs(start)
     val stopMs: Long? get() = epochMs(stop)
