@@ -261,6 +261,12 @@ func buildSurfaces() SurfaceTable {
 		"/api/parental/requests/{id}/approve",
 		"/api/parental/requests/{id}/deny",
 	)
+	exact(Open, all, "the time rules: the account's own countdown, and routes that check admin or guardian themselves; no content (57.14)",
+		"/api/me/parental/time",
+		"/api/parental/users/{id}/time-rules",
+		"/api/parental/users/{id}/time-usage",
+		"/api/parental/users/{id}/time-grants",
+	)
 	exact(Open, all, "what the home can do and which strings it has; no content",
 		"/api/capabilities",
 		"/api/entitlements",

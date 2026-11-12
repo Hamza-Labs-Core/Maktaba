@@ -22,6 +22,8 @@ import (
 type ParentalHandles struct {
 	Cache     *parental.Cache
 	Recompute *parental.Recomputer
+	// Time is the time keeper (story 57.14).
+	Time *parental.TimeKeeper
 }
 
 // MountParental mounts Epic 57 story 57.02's routes: restricted accounts, their

@@ -9488,6 +9488,466 @@ paths:
         default:
           $ref: '#/components/responses/InternalError'
       operationId: listParentalActivity
+  /parental/users/{id}/time-rules:
+    get:
+      tags:
+      - Parental controls
+      summary: A restricted account's time rules
+      description: When the account may watch and for how long each day. For the account's guardians and admins. When several rules cover a moment the strictest wins. An account with no rules has no time limit.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The rules.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rules:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        library_id:
+                          type: string
+                          format: uuid
+                          description: 'The rule covers this library only; absent: the whole account.'
+                        days:
+                          type: integer
+                          minimum: 1
+                          maximum: 127
+                          description: 'The home days the rule covers, as a bitmask: bit 0 is Sunday, bit 6 is Saturday. 127 is every day.'
+                        slot_start:
+                          type: string
+                          description: '`HH:MM`, home time. With `slot_end`: watching is allowed only from the start to the end. An end before the start crosses midnight.'
+                        slot_end:
+                          type: string
+                          description: '`HH:MM`, home time. Given with `slot_start` or not at all.'
+                        daily_minutes:
+                          type: integer
+                          minimum: 0
+                          maximum: 1440
+                          description: 'The most watched on one home day; absent: no daily limit. A rule has a slot, a daily limit or both.'
+                        updated_at:
+                          type: string
+                          format: date-time
+                      required:
+                      - days
+                  time_zone:
+                    type: string
+                    description: The home's time zone (an IANA name). Slots and days are read in it; a device's clock is never used.
+        '403':
+          description: 'Not this caller''s to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud reads and does not change.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: listParentalTimeRules
+    put:
+      tags:
+      - Parental controls
+      summary: Set a restricted account's time rules
+      description: Replaces every time rule of the account with the rules given; an empty list removes them all. For the account's guardians and admins. A stream running now ends, or goes on, by the new rules within 60 seconds.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rules:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      library_id:
+                        type: string
+                        format: uuid
+                        description: 'The rule covers this library only; absent: the whole account.'
+                      days:
+                        type: integer
+                        minimum: 1
+                        maximum: 127
+                        description: 'The home days the rule covers, as a bitmask: bit 0 is Sunday, bit 6 is Saturday. 127 is every day.'
+                      slot_start:
+                        type: string
+                        description: '`HH:MM`, home time. With `slot_end`: watching is allowed only from the start to the end. An end before the start crosses midnight.'
+                      slot_end:
+                        type: string
+                        description: '`HH:MM`, home time. Given with `slot_start` or not at all.'
+                      daily_minutes:
+                        type: integer
+                        minimum: 0
+                        maximum: 1440
+                        description: 'The most watched on one home day; absent: no daily limit. A rule has a slot, a daily limit or both.'
+                      updated_at:
+                        type: string
+                        format: date-time
+                    required:
+                    - days
+              required:
+              - rules
+      responses:
+        '200':
+          description: The rules as they are now.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rules:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        library_id:
+                          type: string
+                          format: uuid
+                          description: 'The rule covers this library only; absent: the whole account.'
+                        days:
+                          type: integer
+                          minimum: 1
+                          maximum: 127
+                          description: 'The home days the rule covers, as a bitmask: bit 0 is Sunday, bit 6 is Saturday. 127 is every day.'
+                        slot_start:
+                          type: string
+                          description: '`HH:MM`, home time. With `slot_end`: watching is allowed only from the start to the end. An end before the start crosses midnight.'
+                        slot_end:
+                          type: string
+                          description: '`HH:MM`, home time. Given with `slot_start` or not at all.'
+                        daily_minutes:
+                          type: integer
+                          minimum: 0
+                          maximum: 1440
+                          description: 'The most watched on one home day; absent: no daily limit. A rule has a slot, a daily limit or both.'
+                        updated_at:
+                          type: string
+                          format: date-time
+                      required:
+                      - days
+                  time_zone:
+                    type: string
+                    description: The home's time zone (an IANA name). Slots and days are read in it; a device's clock is never used.
+        '403':
+          description: 'Not this caller''s to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud reads and does not change.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: 'A rule is not valid: no day, half a slot, a slot that starts when it ends, neither a slot nor a daily limit, or a library that does not exist. Nothing is changed.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: setParentalTimeRules
+  /parental/users/{id}/time-usage:
+    get:
+      tags:
+      - Parental controls
+      summary: How long a restricted account watched
+      description: The seconds the account watched on each home day, by library, and the extra time it was given. For the account's guardians and admins. The home counts the time itself from each stream's progress posts; a paused stream adds nothing.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: from
+        required: false
+        schema:
+          type: string
+          format: date
+        description: 'The first home day, `YYYY-MM-DD`. Without `from` and `to`: the last seven days.'
+      - in: query
+        name: to
+        required: false
+        schema:
+          type: string
+          format: date
+        description: The last home day, `YYYY-MM-DD`, included. At most 92 days from `from`.
+      responses:
+        '200':
+          description: The count.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  from:
+                    type: string
+                    format: date
+                  to:
+                    type: string
+                    format: date
+                  time_zone:
+                    type: string
+                  today:
+                    type: string
+                    format: date
+                    description: The home day it is now.
+                  usage:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        day:
+                          type: string
+                          format: date
+                        library_id:
+                          type: string
+                          format: uuid
+                          description: The library watched in. The all-zero id stands for playback with no library.
+                        seconds:
+                          type: integer
+                  grants:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        user_id:
+                          type: string
+                          format: uuid
+                        day:
+                          type: string
+                          format: date
+                          description: The home day the minutes are for. A home day ends at 04:00 home time.
+                        minutes:
+                          type: integer
+                        used_seconds:
+                          type: integer
+                          description: How much of the grant has been watched.
+                        granted_by:
+                          type: string
+                          format: uuid
+                        created_at:
+                          type: string
+                          format: date-time
+        '403':
+          description: 'Not this caller''s to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud reads and does not change.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: '`from` or `to` is not a day, or the range is longer than 92 days.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: getParentalTimeUsage
+  /parental/users/{id}/time-grants:
+    post:
+      tags:
+      - Parental controls
+      summary: Give a restricted account more time today
+      description: Adds minutes to the current home day only; they are gone at 04:00 home time whether used or not. The minutes also open a closed slot until they run out. For the account's guardians and admins.
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                minutes:
+                  type: integer
+                  minimum: 1
+                  maximum: 480
+                  description: How many minutes to add, from 1 to 480.
+              required:
+              - minutes
+      responses:
+        '201':
+          description: The grant.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  user_id:
+                    type: string
+                    format: uuid
+                  day:
+                    type: string
+                    format: date
+                    description: The home day the minutes are for. A home day ends at 04:00 home time.
+                  minutes:
+                    type: integer
+                  used_seconds:
+                    type: integer
+                    description: How much of the grant has been watched.
+                  granted_by:
+                    type: string
+                    format: uuid
+                  created_at:
+                    type: string
+                    format: date-time
+        '403':
+          description: 'Not this caller''s to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud reads and does not change.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: '`minutes` is not from 1 to 480.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: grantParentalTime
+  /me/parental/time:
+    get:
+      tags:
+      - Parental controls
+      summary: The caller's own watching time now
+      description: 'For the player''s countdown: whether the caller may watch now, for how long, and when next. For any signed-in user; an account with no time rules is `allowed` and not `limited`. It only reads: asking it counts nothing and keeps no stream running. When the time is over, opening a stream session, posting its progress and starting a watch answer 403 with the problem type `https://maktaba.tv/problems/parental-time`, a `reason` (`outside_slot`, `limit_reached`, or `no_heartbeat` when the stream sent no progress for 60 seconds) and, when the rules allow watching again, `next_allowed_at`. The streaming service refuses the stream''s segments within 60 seconds with the same `reason`.'
+      parameters:
+      - in: query
+        name: library_id
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: 'Also count the rules of this library; absent: the account''s own rules.'
+      responses:
+        '200':
+          description: The caller's time.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allowed:
+                    type: boolean
+                    description: Watching may start or go on now.
+                  limited:
+                    type: boolean
+                    description: A time rule covers this moment, so `remaining_seconds` is a real countdown.
+                  reason:
+                    type: string
+                    enum:
+                    - outside_slot
+                    - limit_reached
+                    description: Why not, when not `allowed`.
+                  remaining_seconds:
+                    type:
+                    - integer
+                    - 'null'
+                    description: How long watching may go on from now; null when no rule limits the account now.
+                  slot_ends_at:
+                    type:
+                    - string
+                    - 'null'
+                    format: date-time
+                    description: When the open slot closes; null when no slot covers now.
+                  next_allowed_at:
+                    type:
+                    - string
+                    - 'null'
+                    format: date-time
+                    description: When watching is next allowed; null when it is allowed now.
+                  now:
+                    type: string
+                    format: date-time
+                    description: The home's clock for this answer. Count down from it, not from the device's clock.
+        '422':
+          description: '`library_id` is not an id.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        default:
+          $ref: '#/components/responses/InternalError'
+      operationId: getMyParentalTime
   /pairing/approve:
     post:
       tags:

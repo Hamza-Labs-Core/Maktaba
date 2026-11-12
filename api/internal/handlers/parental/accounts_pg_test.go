@@ -47,6 +47,8 @@ type env struct {
 	clock   time.Time
 	notices []notice
 	remote  string
+	// story 57.14 (time_pg_test.go): what streaming was told
+	push *timePush
 }
 
 func setup(t *testing.T) *env {
@@ -65,6 +67,7 @@ func setup(t *testing.T) *env {
 	r := chi.NewRouter()
 	(&parentalh.Handler{Store: store, Cache: parental.NewCache(store)}).Mount(r)
 	e.mountAsk(r, store)
+	e.mountTime(r, store) // story 57.14 (time_pg_test.go)
 	e.h = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		var p *principal.Principal
 		switch req.Header.Get("X-Test-As") {

@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 227,
+    "endpoint": 232,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -10541,6 +10541,122 @@
         "path": "/users/{id}/parental/activity",
         "tag": "Parental controls",
         "operationId": "listParentalActivity"
+      }
+    },
+    {
+      "id": "ep-get-parental-users-id-time-rules",
+      "type": "endpoint",
+      "title": "GET /parental/users/{id}/time-rules",
+      "content": "A restricted account's time rules",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/users/{id}/time-rules",
+        "tag": "Parental controls",
+        "operationId": "listParentalTimeRules"
+      }
+    },
+    {
+      "id": "ep-put-parental-users-id-time-rules",
+      "type": "endpoint",
+      "title": "PUT /parental/users/{id}/time-rules",
+      "content": "Set a restricted account's time rules",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/parental/users/{id}/time-rules",
+        "tag": "Parental controls",
+        "operationId": "setParentalTimeRules"
+      }
+    },
+    {
+      "id": "ep-get-parental-users-id-time-usage",
+      "type": "endpoint",
+      "title": "GET /parental/users/{id}/time-usage",
+      "content": "How long a restricted account watched",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/users/{id}/time-usage",
+        "tag": "Parental controls",
+        "operationId": "getParentalTimeUsage"
+      }
+    },
+    {
+      "id": "ep-post-parental-users-id-time-grants",
+      "type": "endpoint",
+      "title": "POST /parental/users/{id}/time-grants",
+      "content": "Give a restricted account more time today",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/parental/users/{id}/time-grants",
+        "tag": "Parental controls",
+        "operationId": "grantParentalTime"
+      }
+    },
+    {
+      "id": "ep-get-me-parental-time",
+      "type": "endpoint",
+      "title": "GET /me/parental/time",
+      "content": "The caller's own watching time now",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.14",
+        "story-57.15"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/parental/time",
+        "tag": "Parental controls",
+        "operationId": "getMyParentalTime"
       }
     },
     {

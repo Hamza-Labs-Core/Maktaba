@@ -1,0 +1,89 @@
+-- +goose NO TRANSACTION
+-- +goose Up
+-- +goose StatementBegin
+--
+-- Slot 0223 - time limits and time slots for restricted accounts (Epic 57, story 57.14).
+--
+--   parental_time_rules   one rule of a restricted account: days (a bitmask, bit 0 Sunday
+--                         to bit 6 Saturday, of the home days it covers), an optional time
+--                         slot (slot_start to slot_end in home time; slot_end before
+--                         slot_start crosses midnight), an optional daily limit in minutes,
+--                         and an optional library (the rule then covers only that library).
+--                         A rule has a slot, a limit or both.
+--   parental_time_usage   the seconds an account watched on one home day (the day ends at
+--                         04:00 home time) in one library. The all-zero library id stands
+--                         for playback with no library, so the three columns are the key.
+--                         library_id has no foreign key: the day's count stays when a
+--                         library is deleted.
+--   parental_time_grants  more time a guardian gave for one home day: minutes, and
+--                         used_seconds, the part already watched.
+--
+-- Every row hangs off parental_policies, so lifting a restriction removes the account's
+-- rules, usage and grants with it. The lookups use the keys' indexes and the two below
+-- (new, empty tables). Additive: an older release never reads the tables.
+--
+CREATE TABLE IF NOT EXISTS parental_time_rules (
+    id             uuid         PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id        uuid         NOT NULL REFERENCES parental_policies(user_id) ON DELETE CASCADE,
+    library_id     uuid         REFERENCES libraries(id) ON DELETE CASCADE,
+    days           smallint     NOT NULL
+        CONSTRAINT parental_time_rules_days_valid CHECK (days BETWEEN 1 AND 127),
+    slot_start     time,
+    slot_end       time,
+    daily_minutes  integer
+        CONSTRAINT parental_time_rules_daily_minutes_valid
+        CHECK (daily_minutes IS NULL OR daily_minutes BETWEEN 0 AND 1440),
+    created_by     uuid         REFERENCES users(id) ON DELETE SET NULL,
+    updated_at     timestamptz  NOT NULL DEFAULT now(),
+    CONSTRAINT parental_time_rules_slot_whole
+        CHECK ((slot_start IS NULL) = (slot_end IS NULL) AND (slot_start IS NULL OR slot_start <> slot_end)),
+    CONSTRAINT parental_time_rules_not_empty
+        CHECK (slot_start IS NOT NULL OR daily_minutes IS NOT NULL)
+);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE INDEX CONCURRENTLY IF NOT EXISTS parental_time_rules_user_idx ON parental_time_rules (user_id);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE TABLE IF NOT EXISTS parental_time_usage (
+    user_id     uuid     NOT NULL REFERENCES parental_policies(user_id) ON DELETE CASCADE,
+    day         date     NOT NULL,
+    library_id  uuid     NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+    seconds     integer  NOT NULL DEFAULT 0
+        CONSTRAINT parental_time_usage_seconds_valid CHECK (seconds >= 0),
+    PRIMARY KEY (user_id, day, library_id)
+);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE TABLE IF NOT EXISTS parental_time_grants (
+    id            uuid         PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id       uuid         NOT NULL REFERENCES parental_policies(user_id) ON DELETE CASCADE,
+    day           date         NOT NULL,
+    minutes       integer      NOT NULL
+        CONSTRAINT parental_time_grants_minutes_valid CHECK (minutes BETWEEN 1 AND 1440),
+    used_seconds  integer      NOT NULL DEFAULT 0
+        CONSTRAINT parental_time_grants_used_valid CHECK (used_seconds >= 0 AND used_seconds <= minutes * 60),
+    granted_by    uuid         REFERENCES users(id) ON DELETE SET NULL,
+    created_at    timestamptz  NOT NULL DEFAULT now()
+);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE INDEX CONCURRENTLY IF NOT EXISTS parental_time_grants_user_day_idx ON parental_time_grants (user_id, day);
+-- +goose StatementEnd
+
+-- +goose Down
+-- +goose StatementBegin
+DROP TABLE IF EXISTS parental_time_grants;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DROP TABLE IF EXISTS parental_time_usage;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DROP TABLE IF EXISTS parental_time_rules;
+-- +goose StatementEnd

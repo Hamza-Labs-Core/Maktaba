@@ -1738,6 +1738,11 @@
       "related": [
         "epic-57-parental-controls",
         "ep-get-me-parental",
+        "ep-get-parental-users-id-time-rules",
+        "ep-put-parental-users-id-time-rules",
+        "ep-get-parental-users-id-time-usage",
+        "ep-post-parental-users-id-time-grants",
+        "ep-get-me-parental-time",
         "ep-post-users"
       ],
       "files": {
@@ -1747,6 +1752,11 @@
       },
       "api_endpoints": [
         "GET /me/parental",
+        "GET /parental/users/{id}/time-rules",
+        "PUT /parental/users/{id}/time-rules",
+        "GET /parental/users/{id}/time-usage",
+        "POST /parental/users/{id}/time-grants",
+        "GET /me/parental/time",
         "POST /users"
       ],
       "db_tables": [],
@@ -1775,7 +1785,8 @@
       ],
       "related": [
         "epic-57-parental-controls",
-        "ep-get-me-parental"
+        "ep-get-me-parental",
+        "ep-get-me-parental-time"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-15-time-on-clients.md",
@@ -1783,7 +1794,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /me/parental"
+        "GET /me/parental",
+        "GET /me/parental/time"
       ],
       "db_tables": [],
       "metadata": {

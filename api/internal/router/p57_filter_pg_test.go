@@ -63,6 +63,11 @@ func (s *pfSigner) SignStreamURL(rawURL, _, _, _ string, ttl time.Duration) (str
 	return rawURL + "?sig=x", time.Now().Add(ttl), nil
 }
 
+// KeepTime: the signer can be told whether an account's time is kept, as
+// signedurl.Minter can (story 57.14); one that cannot signs nothing for a
+// restricted account.
+func (s *pfSigner) KeepTime(func(string) (bool, error)) {}
+
 type pfEnv struct {
 	t      *testing.T
 	db     *sql.DB
@@ -108,7 +113,9 @@ func setupFilter(t *testing.T) *pfEnv {
 	e.exec(`INSERT INTO parental_guardians (child_id, guardian_id) VALUES ($1,$2), ($3,$4)`, pfChild, pfGuardian, pfChild2, pfOtherG)
 
 	r := router.New(router.Deps{IdempotencyStore: idempotency.NewMemoryStore(), Parental: e.gate})
-	router.MountP6(r, router.P6Deps{DB: db, StreamingClient: acStreaming{}, URLSigner: e.signer, ParentalGate: e.gate})
+	// a streaming service that keeps time limits (story 57.14): without one a
+	// restricted account's stream is refused
+	router.MountP6(r, router.P6Deps{DB: db, StreamingClient: &tmStreaming{leases: map[string]time.Time{}}, URLSigner: e.signer, ParentalGate: e.gate})
 	if e.gate.Cache() == nil {
 		t.Fatal("MountP6 gave the gate no cache")
 	}

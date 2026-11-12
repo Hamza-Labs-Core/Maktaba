@@ -595,14 +595,15 @@ func runServe() error {
 			// the surfaces that filter by them
 			parentalHandles := &router.ParentalHandles{}
 			router.MountP6(r, router.P6Deps{
-				EventHub:     eventHub,
-				OnParental:   func(c *parental.Cache) { parentalHandles.Cache = c },
-				ParentalGate: parentalGate,
-				OnBus:        func(b *eventbus.Bus) { eventBus = b },
-				Capabilities: capabilities,
-				Loops:        loops,
-				Settings:     runtimeSettings,
-				Secrets:      homeSecrets,
+				EventHub:       eventHub,
+				OnParental:     func(c *parental.Cache) { parentalHandles.Cache = c },
+				OnParentalTime: func(k *parental.TimeKeeper) { parentalHandles.Time = k },
+				ParentalGate:   parentalGate,
+				OnBus:          func(b *eventbus.Bus) { eventBus = b },
+				Capabilities:   capabilities,
+				Loops:          loops,
+				Settings:       runtimeSettings,
+				Secrets:        homeSecrets,
 				OnQueues: func(q *queues.Handler) {
 					_, remoteCtl, mountRemote = router.WireP32Remote(q, router.P32RemoteDeps{
 						DB: appDB, Secrets: homeSecrets, Logger: logger, Notifier: notifyHub, Loops: loops,
@@ -752,7 +753,7 @@ func runServe() error {
 			// stats + export (29.3/29.5/29.6). The session reaper is a
 			// boot goroutine (interrupted-session reap every minute +
 			// daily retention purge), mirroring runPairingSweep.
-			router.MountP29(r, router.P29Deps{DB: appDB, Driver: "postgres", License: licRef, Secrets: homeSecrets})
+			router.MountP29(r, router.P29Deps{DB: appDB, Driver: "postgres", License: licRef, Secrets: homeSecrets, Time: parentalHandles.Time})
 			// Epic 51 story 51.08: the components' admin routes (desired state, holds,
 			// preview and apply), the same service the `components` CLI uses
 			// and the capabilities every user reads, pushed on /ws/home (story 51.09)

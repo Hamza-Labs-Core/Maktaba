@@ -13,13 +13,10 @@ const DayLineHour = 4
 // name), or the server's zone when it is unset or unknown. A device's clock is
 // never read.
 func (s *Store) HomeLocation(ctx context.Context) *time.Location {
-	var name string
-	if err := s.DB.QueryRowContext(ctx,
-		`SELECT COALESCE(value #>> '{}', '') FROM app_settings WHERE key = 'home.timezone'`).Scan(&name); err != nil || name == "" {
-		return time.Local
-	}
-	loc, err := time.LoadLocation(name)
-	if err != nil {
+	// one reader of the setting (time.go): a zone changed mid-day holds from the
+	// next day line
+	loc, err := homeLocation(ctx, s.DB, s.now())
+	if err != nil || loc == nil {
 		return time.Local
 	}
 	return loc

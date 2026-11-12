@@ -33,6 +33,10 @@ type Handler struct {
 
 	// NowFunc is the injectable clock (tests).
 	NowFunc func() time.Time
+
+	// Time, when set, refuses a watch while its account's time is over (Epic 57
+	// story 57.14).
+	Time TimeReader
 }
 
 func (h *Handler) now() time.Time {
@@ -104,6 +108,9 @@ func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.NotFound("video "+req.VideoID))
 		return
 	}
+	if !h.timeOK(w, r, p, libraryID) { // story 57.14: time limits and slots
+		return
+	}
 
 	// the app from X-Maktaba-Client (Epic 44); the device and platform the
 	// body names, else the header's
@@ -162,6 +169,16 @@ func (h *Handler) Heartbeat(w http.ResponseWriter, r *http.Request) {
 	if a.state != StateActive {
 		httperror.Write(w, r, httperror.Conflict("", "session is not active"))
 		return
+	}
+	if h.Time != nil { // story 57.14: time limits and slots
+		libraryID, _, err := h.repo().videoLibrary(r.Context(), a.videoID)
+		if err != nil {
+			httperror.Write(w, r, httperror.Unavailable(5).Wrap(err))
+			return
+		}
+		if !h.timeOK(w, r, p, libraryID) {
+			return
+		}
 	}
 
 	now := h.now()

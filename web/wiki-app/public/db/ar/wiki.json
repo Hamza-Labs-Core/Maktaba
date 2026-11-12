@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 227,
+    "endpoint": 232,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -12958,6 +12958,152 @@
         "lang": "ar",
         "source": {
           "content": "a944c781c1007b0b"
+        }
+      }
+    },
+    {
+      "id": "ep-get-parental-users-id-time-rules",
+      "type": "endpoint",
+      "title": "GET /parental/users/{id}/time-rules",
+      "content": "قواعد الوقت لحساب مقيَّد",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/users/{id}/time-rules",
+        "tag": "Parental controls",
+        "operationId": "listParentalTimeRules"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "faf3b6da3094bfff"
+        }
+      }
+    },
+    {
+      "id": "ep-put-parental-users-id-time-rules",
+      "type": "endpoint",
+      "title": "PUT /parental/users/{id}/time-rules",
+      "content": "ضبط قواعد الوقت لحساب مقيَّد",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/parental/users/{id}/time-rules",
+        "tag": "Parental controls",
+        "operationId": "setParentalTimeRules"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "682c02b0434264f1"
+        }
+      }
+    },
+    {
+      "id": "ep-get-parental-users-id-time-usage",
+      "type": "endpoint",
+      "title": "GET /parental/users/{id}/time-usage",
+      "content": "كم شاهد حساب مقيَّد",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/users/{id}/time-usage",
+        "tag": "Parental controls",
+        "operationId": "getParentalTimeUsage"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "0e1c78e714323a61"
+        }
+      }
+    },
+    {
+      "id": "ep-post-parental-users-id-time-grants",
+      "type": "endpoint",
+      "title": "POST /parental/users/{id}/time-grants",
+      "content": "منح حساب مقيَّد وقتًا إضافيًّا اليوم",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/parental/users/{id}/time-grants",
+        "tag": "Parental controls",
+        "operationId": "grantParentalTime"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "e374dc294f915da3"
+        }
+      }
+    },
+    {
+      "id": "ep-get-me-parental-time",
+      "type": "endpoint",
+      "title": "GET /me/parental/time",
+      "content": "وقت المشاهدة للمستخدم نفسه الآن",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.14",
+        "story-57.15"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/parental/time",
+        "tag": "Parental controls",
+        "operationId": "getMyParentalTime"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "6cf2fdb2daec6f53"
         }
       }
     },

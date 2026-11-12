@@ -120,6 +120,9 @@ type P6Deps struct {
 	// OnParental, when set, is called with the restricted accounts' cache (Epic 57
 	// story 57.02) so main.go keeps it for the surfaces that filter with it.
 	OnParental func(*parental.Cache)
+	// OnParentalTime, when set, is called with the time keeper (story 57.14), for
+	// the surfaces mounted elsewhere that refuse while an account's time is over.
+	OnParentalTime func(*parental.TimeKeeper)
 	// ParentalGate, when set, is the router's gate (Deps.Parental, story 57.03): it
 	// gets the cache as soon as it exists.
 	ParentalGate *parental.Gate
@@ -214,6 +217,13 @@ func MountP6(r chi.Router, d P6Deps) {
 	if d.OnParental != nil {
 		d.OnParental(parentalCache)
 	}
+	// Story 57.14: time limits. From here on d.URLSigner marks every stream URL
+	// with whether its account's time is kept.
+	var timeKeeper *parental.TimeKeeper
+	timeKeeper, d.URLSigner = MountParentalTime(r, parentalCache, d.StreamingClient, d.URLSigner)
+	if d.OnParentalTime != nil {
+		d.OnParentalTime(timeKeeper)
+	}
 
 	// Video patch, delete, process and reprocess write audit rows; process and
 	// reprocess queue real pipeline jobs (PostgresJobs: processing_jobs_enqueue).
@@ -271,6 +281,7 @@ func MountP6(r chi.Router, d P6Deps) {
 		Signer:   d.URLSigner,
 		Settings: runtimeSettings,
 		Offline:  d.StreamOffline,
+		Time:     timeKeeper,
 	}
 	streamHandler.Mount(r)
 

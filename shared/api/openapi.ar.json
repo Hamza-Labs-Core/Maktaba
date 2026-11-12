@@ -4352,6 +4352,250 @@
     "/paths/~1users/post/responses/409/description": {
       "en": "The username is taken; or a restricted account cannot be an admin (`code`: `restricted_admin`) or look after another account (`restricted_guardian`).",
       "ar": "اسم المستخدم مأخوذ؛ أو لا يمكن أن يكون الحساب المقيَّد مشرفًا (`code`: `restricted_admin`) ولا وليًّا لحساب آخر (`restricted_guardian`)."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/summary": {
+      "en": "A restricted account's time rules",
+      "ar": "قواعد الوقت لحساب مقيَّد"
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/description": {
+      "en": "When the account may watch and for how long each day. For the account's guardians and admins. When several rules cover a moment the strictest wins. An account with no rules has no time limit.",
+      "ar": "متى يُسمح للحساب بالمشاهدة وكم دقيقة في اليوم. لأولياء الحساب وللمشرفين. إذا شملت اللحظةَ أكثرُ من قاعدة فالأشدّ هي النافذة. الحساب الذي لا قواعد له لا حدّ لوقته."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/responses/200/description": {
+      "en": "The rules.",
+      "ar": "القواعد."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/responses/200/content/application~1json/schema/properties/rules/items/properties/library_id/description": {
+      "en": "The rule covers this library only; absent: the whole account.",
+      "ar": "القاعدة تخصّ هذه المكتبة وحدها؛ وإن غاب الحقل فهي للحساب كله."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/responses/200/content/application~1json/schema/properties/rules/items/properties/days/description": {
+      "en": "The home days the rule covers, as a bitmask: bit 0 is Sunday, bit 6 is Saturday. 127 is every day.",
+      "ar": "أيام البيت التي تشملها القاعدة، في قناع بتّات: البتّ 0 هو الأحد والبتّ 6 هو السبت. القيمة 127 تعني كل الأيام."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/responses/200/content/application~1json/schema/properties/rules/items/properties/slot_start/description": {
+      "en": "`HH:MM`, home time. With `slot_end`: watching is allowed only from the start to the end. An end before the start crosses midnight.",
+      "ar": "الصيغة `HH:MM` بتوقيت البيت. مع `slot_end`: لا يُسمح بالمشاهدة إلا من البداية إلى النهاية. النهاية التي تسبق البداية تعني أن الفترة تعبر منتصف الليل."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/responses/200/content/application~1json/schema/properties/rules/items/properties/slot_end/description": {
+      "en": "`HH:MM`, home time. Given with `slot_start` or not at all.",
+      "ar": "الصيغة `HH:MM` بتوقيت البيت. يُعطى مع `slot_start` أو لا يُعطى أبدًا."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/responses/200/content/application~1json/schema/properties/rules/items/properties/daily_minutes/description": {
+      "en": "The most watched on one home day; absent: no daily limit. A rule has a slot, a daily limit or both.",
+      "ar": "أقصى ما يُشاهَد في يوم واحد من أيام البيت؛ وإن غاب الحقل فلا حدّ يوميًّا. للقاعدة فترة أو حدّ يومي أو كلاهما."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/responses/200/content/application~1json/schema/properties/time_zone/description": {
+      "en": "The home's time zone (an IANA name). Slots and days are read in it; a device's clock is never used.",
+      "ar": "المنطقة الزمنية للبيت (اسم من أسماء IANA). تُقرأ الفترات والأيام بها؛ ولا تُستعمل ساعة الجهاز أبدًا."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/responses/403/description": {
+      "en": "Not this caller's to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud reads and does not change.",
+      "ar": "ليس لهذا المستخدم أن يرى هذا أو يغيّره: قيمة `code` هي `restricted` للحساب المقيَّد. الدخول عبر Maktaba Cloud المقصور على التشغيل يقرأ ولا يغيّر."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/get/responses/404/description": {
+      "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا يوجد حساب مقيَّد بهذا المعرّف يحقّ للمستخدم أن يراه. الحساب الذي لا يرعاه المستخدم جوابه كجواب حساب غير موجود."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/summary": {
+      "en": "Set a restricted account's time rules",
+      "ar": "ضبط قواعد الوقت لحساب مقيَّد"
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/description": {
+      "en": "Replaces every time rule of the account with the rules given; an empty list removes them all. For the account's guardians and admins. A stream running now ends, or goes on, by the new rules within 60 seconds.",
+      "ar": "يستبدل بكل قواعد الوقت للحساب القواعدَ المعطاة؛ والقائمة الفارغة تزيلها كلها. لأولياء الحساب وللمشرفين. البثّ الجاري الآن ينتهي أو يستمرّ بحسب القواعد الجديدة خلال 60 ثانية."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/requestBody/content/application~1json/schema/properties/rules/items/properties/library_id/description": {
+      "en": "The rule covers this library only; absent: the whole account.",
+      "ar": "القاعدة تخصّ هذه المكتبة وحدها؛ وإن غاب الحقل فهي للحساب كله."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/requestBody/content/application~1json/schema/properties/rules/items/properties/days/description": {
+      "en": "The home days the rule covers, as a bitmask: bit 0 is Sunday, bit 6 is Saturday. 127 is every day.",
+      "ar": "أيام البيت التي تشملها القاعدة، في قناع بتّات: البتّ 0 هو الأحد والبتّ 6 هو السبت. القيمة 127 تعني كل الأيام."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/requestBody/content/application~1json/schema/properties/rules/items/properties/slot_start/description": {
+      "en": "`HH:MM`, home time. With `slot_end`: watching is allowed only from the start to the end. An end before the start crosses midnight.",
+      "ar": "الصيغة `HH:MM` بتوقيت البيت. مع `slot_end`: لا يُسمح بالمشاهدة إلا من البداية إلى النهاية. النهاية التي تسبق البداية تعني أن الفترة تعبر منتصف الليل."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/requestBody/content/application~1json/schema/properties/rules/items/properties/slot_end/description": {
+      "en": "`HH:MM`, home time. Given with `slot_start` or not at all.",
+      "ar": "الصيغة `HH:MM` بتوقيت البيت. يُعطى مع `slot_start` أو لا يُعطى أبدًا."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/requestBody/content/application~1json/schema/properties/rules/items/properties/daily_minutes/description": {
+      "en": "The most watched on one home day; absent: no daily limit. A rule has a slot, a daily limit or both.",
+      "ar": "أقصى ما يُشاهَد في يوم واحد من أيام البيت؛ وإن غاب الحقل فلا حدّ يوميًّا. للقاعدة فترة أو حدّ يومي أو كلاهما."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/200/description": {
+      "en": "The rules as they are now.",
+      "ar": "القواعد كما هي الآن."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/200/content/application~1json/schema/properties/rules/items/properties/library_id/description": {
+      "en": "The rule covers this library only; absent: the whole account.",
+      "ar": "القاعدة تخصّ هذه المكتبة وحدها؛ وإن غاب الحقل فهي للحساب كله."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/200/content/application~1json/schema/properties/rules/items/properties/days/description": {
+      "en": "The home days the rule covers, as a bitmask: bit 0 is Sunday, bit 6 is Saturday. 127 is every day.",
+      "ar": "أيام البيت التي تشملها القاعدة، في قناع بتّات: البتّ 0 هو الأحد والبتّ 6 هو السبت. القيمة 127 تعني كل الأيام."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/200/content/application~1json/schema/properties/rules/items/properties/slot_start/description": {
+      "en": "`HH:MM`, home time. With `slot_end`: watching is allowed only from the start to the end. An end before the start crosses midnight.",
+      "ar": "الصيغة `HH:MM` بتوقيت البيت. مع `slot_end`: لا يُسمح بالمشاهدة إلا من البداية إلى النهاية. النهاية التي تسبق البداية تعني أن الفترة تعبر منتصف الليل."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/200/content/application~1json/schema/properties/rules/items/properties/slot_end/description": {
+      "en": "`HH:MM`, home time. Given with `slot_start` or not at all.",
+      "ar": "الصيغة `HH:MM` بتوقيت البيت. يُعطى مع `slot_start` أو لا يُعطى أبدًا."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/200/content/application~1json/schema/properties/rules/items/properties/daily_minutes/description": {
+      "en": "The most watched on one home day; absent: no daily limit. A rule has a slot, a daily limit or both.",
+      "ar": "أقصى ما يُشاهَد في يوم واحد من أيام البيت؛ وإن غاب الحقل فلا حدّ يوميًّا. للقاعدة فترة أو حدّ يومي أو كلاهما."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/200/content/application~1json/schema/properties/time_zone/description": {
+      "en": "The home's time zone (an IANA name). Slots and days are read in it; a device's clock is never used.",
+      "ar": "المنطقة الزمنية للبيت (اسم من أسماء IANA). تُقرأ الفترات والأيام بها؛ ولا تُستعمل ساعة الجهاز أبدًا."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/403/description": {
+      "en": "Not this caller's to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud reads and does not change.",
+      "ar": "ليس لهذا المستخدم أن يرى هذا أو يغيّره: قيمة `code` هي `restricted` للحساب المقيَّد. الدخول عبر Maktaba Cloud المقصور على التشغيل يقرأ ولا يغيّر."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/404/description": {
+      "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا يوجد حساب مقيَّد بهذا المعرّف يحقّ للمستخدم أن يراه. الحساب الذي لا يرعاه المستخدم جوابه كجواب حساب غير موجود."
+    },
+    "/paths/~1parental~1users~1{id}~1time-rules/put/responses/422/description": {
+      "en": "A rule is not valid: no day, half a slot, a slot that starts when it ends, neither a slot nor a daily limit, or a library that does not exist. Nothing is changed.",
+      "ar": "إحدى القواعد غير صالحة: بلا يوم، أو بنصف فترة، أو بفترة تبدأ حين تنتهي، أو بلا فترة ولا حدّ يومي، أو لمكتبة غير موجودة. لا يتغيّر شيء."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/summary": {
+      "en": "How long a restricted account watched",
+      "ar": "كم شاهد حساب مقيَّد"
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/description": {
+      "en": "The seconds the account watched on each home day, by library, and the extra time it was given. For the account's guardians and admins. The home counts the time itself from each stream's progress posts; a paused stream adds nothing.",
+      "ar": "الثواني التي شاهدها الحساب في كل يوم من أيام البيت، بحسب المكتبة، والوقت الإضافي الذي مُنح له. لأولياء الحساب وللمشرفين. البيت يعدّ الوقت بنفسه من رسائل التقدّم لكل بثّ؛ والبثّ المتوقّف مؤقتًا لا يضيف شيئًا."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/parameters/1/description": {
+      "en": "The first home day, `YYYY-MM-DD`. Without `from` and `to`: the last seven days.",
+      "ar": "أول يوم من أيام البيت، بالصيغة `YYYY-MM-DD`. من دون `from` و`to`: الأيام السبعة الأخيرة."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/parameters/2/description": {
+      "en": "The last home day, `YYYY-MM-DD`, included. At most 92 days from `from`.",
+      "ar": "آخر يوم من أيام البيت، بالصيغة `YYYY-MM-DD`، وهو داخل في المدى. 92 يومًا على الأكثر من `from`."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/responses/200/description": {
+      "en": "The count.",
+      "ar": "العدّ."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/responses/200/content/application~1json/schema/properties/today/description": {
+      "en": "The home day it is now.",
+      "ar": "يوم البيت الحالي."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/responses/200/content/application~1json/schema/properties/usage/items/properties/library_id/description": {
+      "en": "The library watched in. The all-zero id stands for playback with no library.",
+      "ar": "المكتبة التي جرت فيها المشاهدة. المعرّف المكوَّن من أصفار يدلّ على تشغيل بلا مكتبة."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/responses/200/content/application~1json/schema/properties/grants/items/properties/day/description": {
+      "en": "The home day the minutes are for. A home day ends at 04:00 home time.",
+      "ar": "يوم البيت الذي تخصّه الدقائق. ينتهي يوم البيت عند الساعة 04:00 بتوقيت البيت."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/responses/200/content/application~1json/schema/properties/grants/items/properties/used_seconds/description": {
+      "en": "How much of the grant has been watched.",
+      "ar": "ما شوهد من الوقت الممنوح."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/responses/403/description": {
+      "en": "Not this caller's to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud reads and does not change.",
+      "ar": "ليس لهذا المستخدم أن يرى هذا أو يغيّره: قيمة `code` هي `restricted` للحساب المقيَّد. الدخول عبر Maktaba Cloud المقصور على التشغيل يقرأ ولا يغيّر."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/responses/404/description": {
+      "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا يوجد حساب مقيَّد بهذا المعرّف يحقّ للمستخدم أن يراه. الحساب الذي لا يرعاه المستخدم جوابه كجواب حساب غير موجود."
+    },
+    "/paths/~1parental~1users~1{id}~1time-usage/get/responses/422/description": {
+      "en": "`from` or `to` is not a day, or the range is longer than 92 days.",
+      "ar": "قيمة `from` أو `to` ليست يومًا، أو المدى أطول من 92 يومًا."
+    },
+    "/paths/~1parental~1users~1{id}~1time-grants/post/summary": {
+      "en": "Give a restricted account more time today",
+      "ar": "منح حساب مقيَّد وقتًا إضافيًّا اليوم"
+    },
+    "/paths/~1parental~1users~1{id}~1time-grants/post/description": {
+      "en": "Adds minutes to the current home day only; they are gone at 04:00 home time whether used or not. The minutes also open a closed slot until they run out. For the account's guardians and admins.",
+      "ar": "يضيف دقائق إلى يوم البيت الحالي وحده؛ وتزول عند الساعة 04:00 بتوقيت البيت سواء استُعملت أم لا. والدقائق تفتح كذلك فترة مغلقة إلى أن تنفد. لأولياء الحساب وللمشرفين."
+    },
+    "/paths/~1parental~1users~1{id}~1time-grants/post/requestBody/content/application~1json/schema/properties/minutes/description": {
+      "en": "How many minutes to add, from 1 to 480.",
+      "ar": "عدد الدقائق المضافة، من 1 إلى 480."
+    },
+    "/paths/~1parental~1users~1{id}~1time-grants/post/responses/201/description": {
+      "en": "The grant.",
+      "ar": "الوقت الممنوح."
+    },
+    "/paths/~1parental~1users~1{id}~1time-grants/post/responses/201/content/application~1json/schema/properties/day/description": {
+      "en": "The home day the minutes are for. A home day ends at 04:00 home time.",
+      "ar": "يوم البيت الذي تخصّه الدقائق. ينتهي يوم البيت عند الساعة 04:00 بتوقيت البيت."
+    },
+    "/paths/~1parental~1users~1{id}~1time-grants/post/responses/201/content/application~1json/schema/properties/used_seconds/description": {
+      "en": "How much of the grant has been watched.",
+      "ar": "ما شوهد من الوقت الممنوح."
+    },
+    "/paths/~1parental~1users~1{id}~1time-grants/post/responses/403/description": {
+      "en": "Not this caller's to see or change: `code` is `restricted` for a restricted account. A play-only sign-in through Maktaba Cloud reads and does not change.",
+      "ar": "ليس لهذا المستخدم أن يرى هذا أو يغيّره: قيمة `code` هي `restricted` للحساب المقيَّد. الدخول عبر Maktaba Cloud المقصور على التشغيل يقرأ ولا يغيّر."
+    },
+    "/paths/~1parental~1users~1{id}~1time-grants/post/responses/404/description": {
+      "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
+      "ar": "لا يوجد حساب مقيَّد بهذا المعرّف يحقّ للمستخدم أن يراه. الحساب الذي لا يرعاه المستخدم جوابه كجواب حساب غير موجود."
+    },
+    "/paths/~1parental~1users~1{id}~1time-grants/post/responses/422/description": {
+      "en": "`minutes` is not from 1 to 480.",
+      "ar": "قيمة `minutes` ليست بين 1 و480."
+    },
+    "/paths/~1me~1parental~1time/get/summary": {
+      "en": "The caller's own watching time now",
+      "ar": "وقت المشاهدة للمستخدم نفسه الآن"
+    },
+    "/paths/~1me~1parental~1time/get/description": {
+      "en": "For the player's countdown: whether the caller may watch now, for how long, and when next. For any signed-in user; an account with no time rules is `allowed` and not `limited`. It only reads: asking it counts nothing and keeps no stream running. When the time is over, opening a stream session, posting its progress and starting a watch answer 403 with the problem type `https://maktaba.tv/problems/parental-time`, a `reason` (`outside_slot`, `limit_reached`, or `no_heartbeat` when the stream sent no progress for 60 seconds) and, when the rules allow watching again, `next_allowed_at`. The streaming service refuses the stream's segments within 60 seconds with the same `reason`.",
+      "ar": "للعدّ التنازلي في المشغّل: هل يُسمح للمستخدم بالمشاهدة الآن، وإلى متى، ومتى يُسمح بعد ذلك. لكل مستخدم مسجَّل الدخول؛ والحساب الذي لا قواعد وقت له قيمة `allowed` فيه صحيحة و`limited` خاطئة. هذا الطلب يقرأ فقط: لا يعدّ شيئًا ولا يُبقي بثًّا جاريًا. إذا انتهى الوقت فإن فتح جلسة بثّ وإرسال تقدّمها وبدء مشاهدة تُجاب كلها بالرمز 403 مع نوع المشكلة `https://maktaba.tv/problems/parental-time`، ومع `reason` (وهو `outside_slot` أو `limit_reached`، أو `no_heartbeat` إذا لم يرسل البثّ تقدّمًا طوال 60 ثانية)، ومع `next_allowed_at` إذا كانت القواعد تسمح بالمشاهدة مرة أخرى. وخدمة البثّ ترفض مقاطع البثّ خلال 60 ثانية بالسبب نفسه `reason`."
+    },
+    "/paths/~1me~1parental~1time/get/parameters/0/description": {
+      "en": "Also count the rules of this library; absent: the account's own rules.",
+      "ar": "تُحسب كذلك قواعد هذه المكتبة؛ وإن غاب الحقل فقواعد الحساب وحدها."
+    },
+    "/paths/~1me~1parental~1time/get/responses/200/description": {
+      "en": "The caller's time.",
+      "ar": "وقت المستخدم."
+    },
+    "/paths/~1me~1parental~1time/get/responses/200/content/application~1json/schema/properties/allowed/description": {
+      "en": "Watching may start or go on now.",
+      "ar": "يجوز أن تبدأ المشاهدة أو تستمرّ الآن."
+    },
+    "/paths/~1me~1parental~1time/get/responses/200/content/application~1json/schema/properties/limited/description": {
+      "en": "A time rule covers this moment, so `remaining_seconds` is a real countdown.",
+      "ar": "قاعدة وقت تشمل هذه اللحظة، فقيمة `remaining_seconds` عدّ تنازلي حقيقي."
+    },
+    "/paths/~1me~1parental~1time/get/responses/200/content/application~1json/schema/properties/reason/description": {
+      "en": "Why not, when not `allowed`.",
+      "ar": "سبب المنع، إذا لم تكن `allowed` صحيحة."
+    },
+    "/paths/~1me~1parental~1time/get/responses/200/content/application~1json/schema/properties/remaining_seconds/description": {
+      "en": "How long watching may go on from now; null when no rule limits the account now.",
+      "ar": "المدة التي يجوز أن تستمرّ فيها المشاهدة من الآن؛ والقيمة null إذا لم تكن قاعدة تحدّ الحساب الآن."
+    },
+    "/paths/~1me~1parental~1time/get/responses/200/content/application~1json/schema/properties/slot_ends_at/description": {
+      "en": "When the open slot closes; null when no slot covers now.",
+      "ar": "متى تُغلق الفترة المفتوحة؛ والقيمة null إذا لم تكن فترة تشمل هذه اللحظة."
+    },
+    "/paths/~1me~1parental~1time/get/responses/200/content/application~1json/schema/properties/next_allowed_at/description": {
+      "en": "When watching is next allowed; null when it is allowed now.",
+      "ar": "متى يُسمح بالمشاهدة بعد الآن؛ والقيمة null إذا كانت مسموحة الآن."
+    },
+    "/paths/~1me~1parental~1time/get/responses/200/content/application~1json/schema/properties/now/description": {
+      "en": "The home's clock for this answer. Count down from it, not from the device's clock.",
+      "ar": "ساعة البيت لهذا الجواب. يُعدّ تنازليًّا منها لا من ساعة الجهاز."
+    },
+    "/paths/~1me~1parental~1time/get/responses/422/description": {
+      "en": "`library_id` is not an id.",
+      "ar": "قيمة `library_id` ليست معرّفًا."
     }
   }
 }

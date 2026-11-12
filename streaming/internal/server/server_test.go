@@ -26,6 +26,15 @@ func mintToken(t *testing.T, priv *rsa.PrivateKey, claims auth.Claims) string {
 	if claims.Exp == 0 {
 		claims.Exp = time.Now().Add(time.Hour).Unix()
 	}
+	// as the API signs: every stream URL says whether the account's time is kept
+	switch {
+	case claims.Tk == "none":
+		claims.Tk = ""
+	case claims.Tk == "" && claims.Tls != "":
+		claims.Tk = "1"
+	case claims.Tk == "":
+		claims.Tk = "0"
+	}
 	tok, err := auth.Sign(&claims, priv, "k1")
 	if err != nil {
 		t.Fatal(err)

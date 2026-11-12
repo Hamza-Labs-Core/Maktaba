@@ -147,7 +147,7 @@ func TestVODSignedPlaybackThroughSharedStore(t *testing.T) {
 		}
 		return tok
 	}
-	good := sign(auth.Claims{Aud: "streaming", Sub: resp.SessionID, Usr: usr.String(), Lib: []string{lib.String()}})
+	good := sign(auth.Claims{Aud: "streaming", Tk: "0", Sub: resp.SessionID, Usr: usr.String(), Lib: []string{lib.String()}})
 
 	code, master := get(t, public, resp.ManifestPath+"?sig="+good)
 	if code != 200 {

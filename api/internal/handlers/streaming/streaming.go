@@ -165,7 +165,10 @@ type Handler struct {
 	// or unset: SessionTTL, else 30 min).
 	Settings *runtimecfg.Reader
 	// Offline: a full node playing on with the home's database down (nil: the home).
-	Offline      Offline
+	Offline Offline
+	// Time keeps a restricted account's playback time (Epic 57 story 57.14; see
+	// time.go). Nil: no time is kept.
+	Time         TimeGate
 	NowFunc      func() time.Time
 	CapCache     *capCache
 	debounce     *sessionDebouncer
@@ -396,6 +399,9 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.NotFound("video "+req.VideoID))
 		return
 	}
+	if !h.timeAdmit(w, r, p, libraryID) { // story 57.14: time limits and slots
+		return
+	}
 
 	// Epic 50 story 50.19 §3: a session opened through the relay on a capped plan fits the
 	// cap (video and audio, 10 % headroom): the streaming service transcodes a file above it.
@@ -473,6 +479,10 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 			ExpiresAt:   h.now().Add(h.ttl(r.Context())),
 			ManifestURL: "/stream/" + sid + "/manifest.m3u8",
 		}
+	}
+
+	if !h.timeOpened(w, r, p.UserID, libraryID, req.VideoID, resp.SessionID) { // story 57.14: the session's lease
+		return
 	}
 
 	// Sign the stream URLs (Story 10.8): the streaming service refuses an
@@ -662,6 +672,7 @@ func (h *Handler) CloseSession(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.NotFound("session "+id))
 		return
 	}
+	h.timeClosed(r.Context(), id) // story 57.14: counted up to the close
 	if h.Service != nil {
 		// best-effort: the streaming service reaps an idle session anyway
 		if err := h.Service.Close(r.Context(), id); err != nil {
@@ -786,6 +797,9 @@ func (h *Handler) PostProgress(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Maktaba-Warning", warned)
 		}
 		common.WriteJSON(w, r, http.StatusOK, map[string]any{"debounced": true})
+		return
+	}
+	if !h.timeBeat(w, r, ownerID, sessionID) { // story 57.14: the stream's heartbeat
 		return
 	}
 
