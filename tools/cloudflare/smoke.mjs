@@ -41,19 +41,21 @@ export const TARGETS = {
 // languages) are here.
 const WEBSITE = "maktaba.tv";
 const SITE = '<meta name="maktaba-site" content="maktaba-website" />';
+// the home page (story 60.10), at / and /ar/
+const HOME = 'data-page="home"';
 const WEBSITE_PAGES = [
   {
     host: WEBSITE,
     path: "/",
     status: 200,
-    marker: ['<html lang="en" dir="ltr">', 'id="lang-switch" class="lang-switch" href="/ar/"', SITE],
+    marker: ['<html lang="en" dir="ltr">', 'id="lang-switch" class="lang-switch" href="/ar/"', HOME, SITE],
     headers: {
       // HSTS without includeSubDomains: the relay's names are DNS-only (README §6.2)
       "strict-transport-security": /^max-age=\d+$/,
       "content-security-policy": /default-src 'self'.*frame-ancestors 'none'/,
     },
   },
-  { host: WEBSITE, path: "/ar/", status: 200, marker: ['<html lang="ar" dir="rtl">', SITE] },
+  { host: WEBSITE, path: "/ar/", status: 200, marker: ['<html lang="ar" dir="rtl">', HOME, SITE] },
   { host: WEBSITE, path: "/install/docker/", status: 200, marker: '<main id="app">' },
   { host: WEBSITE, path: "/install/", status: 200, marker: ['href="/install/nas/"', SITE] },
   { host: WEBSITE, path: "/legal/privacy/", status: 200, marker: ['data-legal="privacy"', 'data-policy="CurrentPolicy"', SITE] },
