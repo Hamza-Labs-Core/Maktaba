@@ -335,6 +335,8 @@ jobs:
           PIDFILE: logs/worker-quality.pid
         run: |
           mkdir -p logs
+          # the moment before the run: a reference newer than this was written by the run
+          touch "$RUNNER_TEMP/references-before"
           timeout 1500 npx wrangler dev --var CANONICAL_REDIRECTS:off --ip 127.0.0.1 --port 8787 \
             --log-level info > "$LOG" 2>&1 &
           echo $! > "$PIDFILE"
@@ -362,7 +364,11 @@ jobs:
         if: always()
         working-directory: .
         run: |
-          new=$(git status --porcelain --untracked-files=all -- web/packages/website/e2e/__screenshots__ | awk '$1 == "??" {print $2}')
+          # by file time, not git: the job runs in a container whose checkout git may refuse to
+          # read (its ownership), which would print nothing and pass. No marker, no pass.
+          marker="$RUNNER_TEMP/references-before"
+          if [ ! -f "$marker" ]; then echo "::error::the run left no marker; the references cannot be checked"; exit 1; fi
+          new=$(find web/packages/website/e2e/__screenshots__ -type f -name '*.png' -newer "$marker")
           if [ -z "$new" ]; then echo "every reference exists"; exit 0; fi
           mkdir -p new-references
           for f in $new; do
