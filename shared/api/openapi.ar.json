@@ -4373,6 +4373,42 @@
       "en": "20 requests are already waiting (`code` is `too_many_requests`), or the caller is rate limited.",
       "ar": "هناك 20 طلبًا منتظرًا بالفعل (قيمة `code` هي `too_many_requests`)، أو تجاوز المتصل حدّ المعدّل."
     },
+    "/paths/~1me~1parental~1requests/get/summary": {
+      "en": "List the caller's own requests",
+      "ar": "سرد طلبات المتصل نفسه"
+    },
+    "/paths/~1me~1parental~1requests/get/description": {
+      "en": "For a restricted account only, as asking is. Lists what became of the requests the caller made in the last seven days, newest first, 50 at most, so its app can show that a parent said yes or no. The list is the caller's own and names what was asked for by id only: no title, and not who answered. A request whose item was since deleted, or moved where the account cannot reach it, is still listed by its id. When the same item was asked for more than once, the first entry for it is the latest.",
+      "ar": "للحساب المقيَّد فقط، كما هو الطلب نفسه. يسرد ما آلت إليه الطلبات التي قدّمها المتصل في آخر سبعة أيام، الأحدث أولًا، وبحد أقصى 50 طلبًا، ليُظهر تطبيقه أن أحد الوالدين وافق أو رفض. القائمة خاصة بالمتصل وتذكر ما طُلب بمعرّفه فقط: بلا عنوان، وبلا ذكر مَن أجاب. الطلب الذي حُذف عنصره بعد ذلك، أو نُقل إلى حيث لا يصل إليه الحساب، يبقى مسرودًا بمعرّفه. وإذا طُلب العنصر نفسه أكثر من مرة فأول مُدخل له هو الأحدث."
+    },
+    "/paths/~1me~1parental~1requests/get/responses/200/description": {
+      "en": "The caller's requests, newest first.",
+      "ar": "طلبات المتصل، الأحدث أولًا."
+    },
+    "/paths/~1me~1parental~1requests/get/responses/200/content/application~1json/schema/properties/requests/items/properties/subject_id/description": {
+      "en": "The item's id, as the caller sent it; for a request for time, the minutes asked for, as text.",
+      "ar": "معرّف العنصر كما أرسله المتصل؛ وفي طلب الوقت، الدقائق المطلوبة نصًّا."
+    },
+    "/paths/~1me~1parental~1requests/get/responses/200/content/application~1json/schema/properties/requests/items/properties/minutes/description": {
+      "en": "The minutes a request for time asked for; absent for any other kind.",
+      "ar": "الدقائق التي طلبها طلب الوقت؛ غائبة في أي نوع آخر."
+    },
+    "/paths/~1me~1parental~1requests/get/responses/200/content/application~1json/schema/properties/requests/items/properties/status/description": {
+      "en": "`pending` while it waits; `approved` or `denied` once a guardian answered (or `approved` when the limit was raised above the item); `expired` when it waited too long, its item was deleted, or, for a request for time, its home day ended.",
+      "ar": "`pending` ما دام ينتظر؛ `approved` أو `denied` بعد أن يجيب وليّ الأمر (أو `approved` إذا رُفع الحد فوق العنصر)؛ `expired` إذا طال انتظاره، أو حُذف عنصره، أو انتهى يوم المنزل في طلب الوقت."
+    },
+    "/paths/~1me~1parental~1requests/get/responses/200/content/application~1json/schema/properties/requests/items/properties/expires_at/description": {
+      "en": "When a request still waiting stops waiting: seven days after it was made, or, for a request for time, the end of the home day it was made on (04:00 home time).",
+      "ar": "متى يتوقف الطلب المنتظر عن الانتظار: بعد سبعة أيام من إنشائه، أو، لطلب الوقت، عند نهاية يوم البيت الذي أُنشئ فيه (الساعة 04:00 بتوقيت البيت)."
+    },
+    "/paths/~1me~1parental~1requests/get/responses/200/content/application~1json/schema/properties/requests/items/properties/decided_at/description": {
+      "en": "When it was answered or closed; absent while it waits.",
+      "ar": "وقت الإجابة عنه أو إغلاقه؛ غائب ما دام ينتظر."
+    },
+    "/paths/~1me~1parental~1requests/get/responses/403/description": {
+      "en": "Not a restricted account: `code` is `not_restricted`.",
+      "ar": "الحساب غير مقيَّد: قيمة `code` هي `not_restricted`."
+    },
     "/paths/~1me~1parental~1guardians/get/summary": {
       "en": "Who can unlock with a parent PIN",
       "ar": "من يستطيع الفتح برمز الوالدين"

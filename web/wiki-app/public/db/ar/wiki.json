@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 248,
+    "endpoint": 249,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -13074,6 +13074,35 @@
         "lang": "ar",
         "source": {
           "content": "c8db7229bc407a39"
+        }
+      }
+    },
+    {
+      "id": "ep-get-me-parental-requests",
+      "type": "endpoint",
+      "title": "GET /me/parental/requests",
+      "content": "سرد طلبات المتصل نفسه",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.6"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/parental/requests",
+        "tag": "Parental controls",
+        "operationId": "listOwnParentalRequests"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "ca668a52514e8dc5"
         }
       }
     },

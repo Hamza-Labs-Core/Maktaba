@@ -2,6 +2,7 @@
 // child's activity for its guardians.
 //
 //	POST /api/me/parental/requests                    home, a restricted account
+//	GET  /api/me/parental/requests                    home, a restricted account (its own requests)
 //	GET  /api/me/parental/guardians                   home, a restricted account
 //	POST /api/me/parental/unlock                      home, a restricted account
 //	GET  /api/me/parental-pin                         home, admin or a guardian

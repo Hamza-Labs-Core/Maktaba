@@ -124,6 +124,7 @@
 | `POST /api/me/age-signal` | أي دخول من تطبيق | إشارة العمر من الجهاز (انظر أدناه) |
 | `POST /api/users/{id}/parental/signals/{family}/clear` | المسؤول والولي | تطبيق إشارة أوسع تنتظر |
 | `POST /api/me/parental/requests` | المقيَّد | اطلب من أحد الوالدين (انظر أدناه) |
+| `GET /api/me/parental/requests` | المقيَّد | ما آلت إليه طلباته هو (انظر أدناه) |
 | `GET /api/parental/requests`, `POST …/{id}/approve`, `POST …/{id}/deny` | المسؤول والولي | الإجابة عن طلب |
 | `GET /api/me/parental/guardians` | المقيَّد | من له رمز يكتبه |
 | `POST /api/me/parental/unlock` | المقيَّد | رمز الولي على جهاز الطفل |
@@ -179,6 +180,20 @@ POST /api/me/parental/requests
 ويوافق الولي بـ `POST /api/parental/requests/{id}/approve`. والجسم اختياري: `expires_at` ينهي
 الموافقة على عنصر؛ و`minutes` (من 1 إلى 480) لطلب `time` وحده، وقيمته إن تُرك هي الدقائق
 المطلوبة. والجواب `{request, rule}` للعنصر و`{request, grant}` للوقت.
+
+**ما آل إليه الطلب.** يجيب `GET /api/me/parental/requests` بطلبات المتصل نفسه في آخر سبعة
+أيام، الأحدث أولًا، وبحد أقصى 50:
+
+```json
+{ "requests": [ { "id": "…", "subject_kind": "video", "subject_id": "…", "status": "denied",
+                  "created_at": "…", "expires_at": "…", "decided_at": "…" } ] }
+```
+
+قيمة `status` هي `pending` أو `approved` أو `denied` أو `expired`؛ ولطلب `time` أيضًا `minutes`.
+ولا عنوان فيه ولا وليّ. وأول مُدخل لموضوعٍ ما هو أحدث طلب له. ما دام الطلب `pending` فاقرأ
+القائمة كل 15 ثانية والتطبيق في الواجهة، وتوقف حين لا يبقى طلب منتظر. عند `approved` افتح
+العنصر (أو، للنوع `time`، اقرأ `GET /api/me/parental/time` مرة واحدة ثم استأنف). عند `denied`
+قل ذلك واعرض الطلب من جديد. وعند `expired` أظهر أزرار الطلب من جديد.
 
 ويأخذ `POST /api/me/parental/unlock` الجسم `{guardian_id, pin, subject_kind, subject_id}` على
 جهاز الطفل. والرمز الصحيح جوابه `{rule}` (يُسمح بالعنصر حتى نهاية اليوم، الساعة 04:00 بتوقيت

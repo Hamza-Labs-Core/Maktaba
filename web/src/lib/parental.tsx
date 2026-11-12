@@ -15,7 +15,8 @@
 //     (only they have time rules) and only while a page shows it (useMyTime). The
 //     web keeps no count of its own: every number shown is the home's last answer.
 //     It is not asked while the tab is hidden, nor again after a refusal until the
-//     instant the home named or the viewer's tap.
+//     instant the home named, the viewer's tap, or a parent's yes to a request for
+//     more time (lib/parentalRequests follows the request and asks then).
 //
 // Outside the provider, and until the home answers, nobody is restricted: the web
 // never hides a page because the home did not answer (the home still refuses).

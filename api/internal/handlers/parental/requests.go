@@ -4,6 +4,7 @@ package parental
 // role rule is decided here, on the server:
 //
 //	ask, list who can unlock, unlock with a PIN   a restricted account, for itself
+//	read back what became of its own requests     a restricted account, its own only
 //	list, approve, deny requests                  admin, that child's guardian
 //	set a parent PIN                              admin, anyone's guardian (their own PIN)
 //	read a child's activity                       admin, that child's guardian
@@ -76,6 +77,7 @@ const DefaultMinAnswer = 250 * time.Millisecond
 // Mount attaches the routes.
 func (h *AskHandler) Mount(r chi.Router) {
 	r.Post("/api/me/parental/requests", h.Ask)
+	r.Get("/api/me/parental/requests", h.Mine)
 	r.Get("/api/me/parental/guardians", h.Unlockers)
 	r.Post("/api/me/parental/unlock", h.Unlock)
 	r.Get("/api/me/parental-pin", h.PIN)
@@ -195,6 +197,27 @@ func (h *AskHandler) Ask(w http.ResponseWriter, r *http.Request) {
 		h.tell(r.Context(), p.UserID, NoticeRequest, "notify.parental.request", "info", "request:"+out.ID, nil)
 	}
 	common.WriteJSON(w, r, status, requestResponse{Request: out})
+}
+
+type ownRequestsResponse struct {
+	Requests []parentalpkg.OwnRequest `json:"requests"`
+}
+
+// Mine implements GET /api/me/parental/requests: what became of the requests the
+// caller made in the last seven days, newest first, 50 at most. For a restricted
+// account only, as asking is; the list is the caller's own, by id: no title, and
+// not who answered.
+func (h *AskHandler) Mine(w http.ResponseWriter, r *http.Request) {
+	p := h.child(w, r)
+	if p == nil {
+		return
+	}
+	list, err := h.Store.OwnRequests(r.Context(), p.UserID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, ownRequestsResponse{Requests: list})
 }
 
 // tell sends one notice to each of childID's guardians, or to the admins when it

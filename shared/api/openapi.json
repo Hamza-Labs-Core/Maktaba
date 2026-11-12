@@ -15207,6 +15207,113 @@
           }
         },
         "operationId": "askParent"
+      },
+      "get": {
+        "tags": [
+          "Parental controls"
+        ],
+        "summary": "List the caller's own requests",
+        "description": "For a restricted account only, as asking is. Lists what became of the requests the caller made in the last seven days, newest first, 50 at most, so its app can show that a parent said yes or no. The list is the caller's own and names what was asked for by id only: no title, and not who answered. A request whose item was since deleted, or moved where the account cannot reach it, is still listed by its id. When the same item was asked for more than once, the first entry for it is the latest.",
+        "responses": {
+          "200": {
+            "description": "The caller's requests, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "requests": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "subject_kind": {
+                            "type": "string",
+                            "enum": [
+                              "library",
+                              "collection",
+                              "series",
+                              "channel",
+                              "youtube_source",
+                              "plugin",
+                              "video",
+                              "time"
+                            ]
+                          },
+                          "subject_id": {
+                            "type": "string",
+                            "description": "The item's id, as the caller sent it; for a request for time, the minutes asked for, as text."
+                          },
+                          "minutes": {
+                            "type": "integer",
+                            "description": "The minutes a request for time asked for; absent for any other kind."
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "approved",
+                              "denied",
+                              "expired"
+                            ],
+                            "description": "`pending` while it waits; `approved` or `denied` once a guardian answered (or `approved` when the limit was raised above the item); `expired` when it waited too long, its item was deleted, or, for a request for time, its home day ended."
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "expires_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "When a request still waiting stops waiting: seven days after it was made, or, for a request for time, the end of the home day it was made on (04:00 home time)."
+                          },
+                          "decided_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "When it was answered or closed; absent while it waits."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "subject_kind",
+                          "subject_id",
+                          "status",
+                          "created_at",
+                          "expires_at"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "requests"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a restricted account: `code` is `not_restricted`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listOwnParentalRequests"
       }
     },
     "/me/parental/guardians": {

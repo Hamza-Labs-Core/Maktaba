@@ -129,6 +129,7 @@ type of its status. So match on `code`, which is always sent as listed, with `re
 | `POST /api/me/age-signal` | any app sign-in | the device's age signal (below) |
 | `POST /api/users/{id}/parental/signals/{family}/clear` | admin, guardian | apply a looser signal that waits |
 | `POST /api/me/parental/requests` | restricted | ask a parent (below) |
+| `GET /api/me/parental/requests` | restricted | what became of its own requests (below) |
 | `GET /api/parental/requests`, `POST …/{id}/approve`, `POST …/{id}/deny` | admin, guardian | answer a request |
 | `GET /api/me/parental/guardians` | restricted | who has a PIN to type |
 | `POST /api/me/parental/unlock` | restricted | a guardian's PIN on the child's device |
@@ -186,6 +187,21 @@ A guardian approves with `POST /api/parental/requests/{id}/approve`. The body is
 `expires_at` ends the approval of an item; `minutes` (1 to 480) is for a `time` request only
 and defaults to the minutes asked for. The answer is `{request, rule}` for an item and
 `{request, grant}` for time.
+
+**What became of a request.** `GET /api/me/parental/requests` answers the caller's own requests
+of the last seven days, newest first, 50 at most:
+
+```json
+{ "requests": [ { "id": "…", "subject_kind": "video", "subject_id": "…", "status": "denied",
+                  "created_at": "…", "expires_at": "…", "decided_at": "…" } ] }
+```
+
+`status` is `pending`, `approved`, `denied` or `expired`; a `time` request also has `minutes`.
+There is no title and no guardian in it. The first entry for a subject is its latest request.
+While a request is `pending`, read the list every 15 seconds while the app is in front, and
+stop when nothing is pending. On `approved`, open the item (or, for `time`, read
+`GET /api/me/parental/time` once and resume). On `denied`, say so and offer to ask again. On
+`expired`, show the ask buttons again.
 
 `POST /api/me/parental/unlock` takes `{guardian_id, pin, subject_kind, subject_id}` on the
 child's device. A right PIN answers `{rule}` (the item is allowed until the day ends, 04:00

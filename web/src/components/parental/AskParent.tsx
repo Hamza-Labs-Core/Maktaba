@@ -8,13 +8,16 @@
 //   PinUnlock   a guardian types their PIN on this screen.
 //
 //   POST /api/me/parental/requests   {subject_kind, subject_id}; `time`: the minutes as the id
+//   GET  /api/me/parental/requests   what became of the account's own requests
 //   GET  /api/me/parental/guardians  who can type a PIN (none: the PIN way is not offered)
 //   POST /api/me/parental/unlock     {guardian_id, pin, subject_kind, subject_id}
 //
-// The home has no route that reads a child's own requests back, so "waiting" is what
-// this tab remembers having asked, for that account and until the request expires or
-// is answered (lib/parentalAsked); "Check again" asks the home for the thing itself,
-// which opens once a parent has said yes.
+// What the page says about a request is the home's word (lib/parentalRequests): while
+// it waits the home is asked again by itself; a yes opens the thing (or resumes
+// watching) without a tap; a no is said, with Ask again and the PIN; an expired
+// request brings the ask buttons back. What this tab remembers having asked
+// (lib/parentalAsked) is only what shows until the home has answered. "Check again"
+// asks the home now, for the request and for the thing itself.
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Modal } from "@ds/components/Modal/Modal";
@@ -25,7 +28,8 @@ import { ApiError } from "../../lib/api";
 import { useOptionalAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
 import { useMyParental } from "../../lib/parental";
-import { ASKED_TIME, forgetAsked, noteAsked, useAsked } from "../../lib/parentalAsked";
+import { ASKED_TIME, forgetAsked } from "../../lib/parentalAsked";
+import { useMyRequest } from "../../lib/parentalRequests";
 import { tierKey } from "../../lib/parentalApi";
 import {
   ASK_MINUTES,
@@ -221,8 +225,11 @@ export function Blocked({ kind, id, onCheck, action }: BlockedProps) {
   const { restricted, maxTier, deviceLimit } = useMyParental();
   const userId = useOptionalAuth()?.user?.id ?? null;
   const what = `${kind}:${id}`;
-  // this account's own request for this thing, while it waits
-  const asked = useAsked(userId, what);
+  // what became of this account's own request for this thing; a yes opens it
+  const request = useMyRequest(userId, what, restricted, onCheck);
+  const asked = request.state === "pending";
+  const approved = request.state === "approved";
+  const denied = request.state === "denied";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pinOpen, setPinOpen] = useState(false);
@@ -233,8 +240,7 @@ export function Blocked({ kind, id, onCheck, action }: BlockedProps) {
     setBusy(true);
     setError(null);
     try {
-      const request = await askFor(kind, id);
-      noteAsked(userId, what, request.expiresAt);
+      request.sent(await askFor(kind, id));
     } catch (e) {
       setError(refusalWords(e, words));
     } finally {
@@ -259,19 +265,35 @@ export function Blocked({ kind, id, onCheck, action }: BlockedProps) {
           {t("parental.ask.sent")}
         </p>
       )}
+      {approved && (
+        <p role="status" data-testid="parental-ask-approved">
+          {t("parental.ask.approved")}
+        </p>
+      )}
+      {denied && (
+        <p role="status" data-testid="parental-ask-denied">
+          {t("parental.ask.denied")}
+        </p>
+      )}
       {error && (
         <p className="mkt-alert" role="alert">
           {error}
         </p>
       )}
       <div className="mkt-parental-timesup__actions">
-        {restricted && !asked && (
+        {restricted && !asked && !approved && (
           <Button onClick={() => void ask()} disabled={busy} loading={busy}>
-            {t("parental.blocked.ask")}
+            {t(denied ? "parental.ask.again" : "parental.blocked.ask")}
           </Button>
         )}
-        {asked && (
-          <Button variant="secondary" onClick={onCheck}>
+        {(asked || approved) && (
+          <Button
+            variant="secondary"
+            onClick={() => {
+              request.recheck();
+              onCheck();
+            }}
+          >
             {t("parental.time.check")}
           </Button>
         )}
@@ -290,8 +312,9 @@ export function Blocked({ kind, id, onCheck, action }: BlockedProps) {
           kind={kind}
           id={id}
           onUnlocked={() => {
-            // answered: nothing waits for this thing any more
+            // opened: this tab waits for nothing; the home says what its request is now
             forgetAsked(userId, what);
+            request.recheck();
             onCheck();
           }}
         />
@@ -315,9 +338,12 @@ export function AskTime({ onCheck }: { onCheck?: () => void }) {
   const { t } = words;
   const { restricted } = useMyParental();
   const userId = useOptionalAuth()?.user?.id ?? null;
-  // waits until the home's day ends, a parent's PIN, or the home allowing watching
-  // again (lib/parental drops it then): the next time's-up screen asks afresh
-  const asked = useAsked(userId, ASKED_TIME);
+  // what became of the request for more time: it waits until a parent answers, a
+  // parent's PIN, or the home's day end; a yes asks the home for the time again
+  const request = useMyRequest(userId, ASKED_TIME, restricted, onCheck);
+  const asked = request.state === "pending";
+  const approved = request.state === "approved";
+  const denied = request.state === "denied";
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pinOpen, setPinOpen] = useState(false);
@@ -328,8 +354,7 @@ export function AskTime({ onCheck }: { onCheck?: () => void }) {
     setBusy(minutes);
     setError(null);
     try {
-      const request = await askForTime(minutes);
-      noteAsked(userId, ASKED_TIME, request.expiresAt);
+      request.sent(await askForTime(minutes));
     } catch (e) {
       setError(refusalWords(e, words));
     } finally {
@@ -339,17 +364,26 @@ export function AskTime({ onCheck }: { onCheck?: () => void }) {
 
   return (
     <div className="mkt-parental-asktime" data-testid="parental-ask-time">
+      {denied && (
+        <p role="status" data-testid="parental-ask-denied">
+          {t("parental.ask.denied")}
+        </p>
+      )}
       {asked ? (
         <p role="status" data-testid="parental-ask-waiting">
           {t("parental.ask.sentTime")}
+        </p>
+      ) : approved ? (
+        <p role="status" data-testid="parental-ask-approved">
+          {t("parental.ask.approved")}
         </p>
       ) : (
         <div
           className="mkt-parental-timesup__actions"
           role="group"
-          aria-label={t("parental.time.askMore")}
+          aria-label={t(denied ? "parental.ask.again" : "parental.time.askMore")}
         >
-          <span>{t("parental.time.askMore")}</span>
+          <span>{t(denied ? "parental.ask.again" : "parental.time.askMore")}</span>
           {ASK_MINUTES.map((m) => (
             <Button
               key={m}
@@ -381,6 +415,7 @@ export function AskTime({ onCheck }: { onCheck?: () => void }) {
             id=""
             onUnlocked={() => {
               forgetAsked(userId, ASKED_TIME);
+              request.recheck();
               onCheck?.();
             }}
           />

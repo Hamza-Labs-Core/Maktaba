@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 248,
+    "endpoint": 249,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -10638,6 +10638,29 @@
         "path": "/me/parental/requests",
         "tag": "Parental controls",
         "operationId": "askParent"
+      }
+    },
+    {
+      "id": "ep-get-me-parental-requests",
+      "type": "endpoint",
+      "title": "GET /me/parental/requests",
+      "content": "List the caller's own requests",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.6"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/parental/requests",
+        "tag": "Parental controls",
+        "operationId": "listOwnParentalRequests"
       }
     },
     {
