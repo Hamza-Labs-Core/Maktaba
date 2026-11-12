@@ -10,9 +10,6 @@ name: Product shots
 
 on:
   workflow_dispatch:
-  # TEMPORARY (removed before merge): runs for the branch that builds these shots
-  push:
-    branches: [feat/website-60-09-apple]
 
 permissions:
   contents: read
