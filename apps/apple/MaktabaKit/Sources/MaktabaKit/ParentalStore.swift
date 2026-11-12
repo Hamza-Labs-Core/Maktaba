@@ -136,8 +136,10 @@ public final class ParentalStore {
             let limit = try await source.myParental()
             guard mine == generation else { return }
             guard let limit else {
+                // a home from before Epic 57: no limit, no Family, nothing more asked
                 unsupported = true
                 apply(.none)
+                if canManage { canManage = false }
                 answered = true
                 return
             }
@@ -271,6 +273,36 @@ public struct TimeUp: Equatable, Sendable {
         style.locale = locale
         style.timeZone = calendar.timeZone
         return ParentalWords.text("parental.time.next", locale, next.formatted(style))
+    }
+}
+
+/// What a player does with the home's answer to a stream it asked for, or to a progress
+/// post (the stream's heartbeat), for a parental reason. One place, so iPhone, iPad and
+/// Apple TV decide alike; a player never tries again after `timeUp` or `blocked`.
+public enum PlaybackVerdict: Equatable, Sendable {
+    /// Not a parental answer: the player's own handling.
+    case other
+    /// 403 `parental-time`: stop, show the time's-up screen.
+    case timeUp(TimeUp)
+    /// 404 under a parental limit: the home no longer gives the video; stop, show the
+    /// blocked page (the home does not tell a hidden video from a missing one).
+    case blocked
+    /// 403 `parental-time` with `no_heartbeat` on a progress post: the stream sent no
+    /// progress for a minute (a long pause, the app held in the background). Open the stream
+    /// again once; the home then says whether there is time.
+    case reopen
+
+    /// For a stream open or renewal that failed.
+    public static func open(_ error: Error, limited: Bool) -> PlaybackVerdict {
+        if case let .time(reason, next)? = ParentalRefusal(error) { return .timeUp(TimeUp(reason: reason, nextAllowedAt: next)) }
+        if limited, HomeFailure(error).kind == .notFound { return .blocked }
+        return .other
+    }
+
+    /// For a progress post the home refused.
+    public static func progress(_ error: Error) -> PlaybackVerdict {
+        guard case let .time(reason, next)? = ParentalRefusal(error) else { return .other }
+        return reason == "no_heartbeat" ? .reopen : .timeUp(TimeUp(reason: reason, nextAllowedAt: next))
     }
 }
 

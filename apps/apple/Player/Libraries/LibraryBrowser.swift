@@ -29,7 +29,11 @@ struct LibraryBrowser: View {
         self.user = user
         self.client = client
         _playing = playing
-        _playback = State(initialValue: Playback(client: client))
+        let playback = Playback(client: client)
+        // Epic 57: under a parental limit a video the home stops giving is the blocked page
+        let parental = session.parental
+        playback.limited = { parental.current.limited }
+        _playback = State(initialValue: playback)
         _model = State(initialValue: LibrariesModel(client: client, signedOut: { session.signedOut() }))
         // a Debug build's `-maktaba-open library/lib-docs` (the UI tests): opened at launch
         let start = ShellLaunch.section()

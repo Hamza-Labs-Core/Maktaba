@@ -86,6 +86,13 @@ struct PlayerShell: View {
             }
         }
         .onChange(of: context.session.capabilities.answered) { settleLaunch() }
+        // Epic 57 story 57.05: when the account's limit changes, what the Player kept for it
+        // goes (the shelves on the device, the pictures in memory, the queue), and the
+        // screens read the home again (`parentalEpoch` below)
+        .task {
+            let home = context.client.home, user = context.user.id
+            context.session.parental.onChange = { ParentalCaches.drop(home: home, user: user) }
+        }
         .onChange(of: sections) { settleLaunch() }
         .onChange(of: link, initial: true) { _, route in
             guard let route else { return }
@@ -216,11 +223,18 @@ struct PlayerShell: View {
 
     /// A section's first screen.
     @ViewBuilder private func root(_ section: PlayerSection) -> some View {
+        // each first screen but Profile is built again when the parental limit changes
+        // (`ParentalStore.epoch`): it reads the home afresh, so nothing hidden stays on it
+        let epoch = context.session.parental.epoch
         switch section {
-        case .home: HomeScreen(context: context)
-        case .libraries: LibraryBrowser(session: context.session, user: context.user, client: context.client, playing: $playing)
-        case .liveTV: LiveTVScreen(context: context)
-        case .search: SearchScreen(context: context)
+        case .home:
+            HomeScreen(context: context).id(epoch)
+                // the time left today, or that it is over (57.15)
+                .parentalTime(context.session.parental)
+        case .libraries:
+            LibraryBrowser(session: context.session, user: context.user, client: context.client, playing: $playing).id(epoch)
+        case .liveTV: LiveTVScreen(context: context).id(epoch)
+        case .search: SearchScreen(context: context).id(epoch)
         case .profile: ProfileScreen(context: context)
         }
     }
@@ -240,13 +254,17 @@ struct PlayerDestination: View {
     let route: PlayerRoute
 
     var body: some View {
+        // a page is built again when the parental limit changes (57.05): a page of something
+        // now hidden becomes the blocked page, and a blocked page whose item a parent just
+        // allowed becomes the item's page. What plays keeps playing: the home stops it.
+        let epoch = context.session.parental.epoch
         switch route {
-        case let .video(id): VideoScreen(context: context, id: id)
-        case let .series(id): SeriesScreen(context: context, id: id)
-        case let .library(id): LibraryScreen(context: context, id: id)
+        case let .video(id): VideoScreen(context: context, id: id).id(epoch)
+        case let .series(id): SeriesScreen(context: context, id: id).id(epoch)
+        case let .library(id): LibraryScreen(context: context, id: id).id(epoch)
         case let .channel(id): ChannelScreen(context: context, id: id)
         case let .watch(id, at): WatchScreen(context: context, videoID: id, at: at)
-        case let .search(q): SearchScreen(context: context, query: q)
+        case let .search(q): SearchScreen(context: context, query: q).id(epoch)
         }
     }
 }

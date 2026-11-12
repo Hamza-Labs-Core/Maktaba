@@ -218,6 +218,45 @@ final class FakeParentalSource: ParentalSource, @unchecked Sendable {
         await s.refresh()
         #expect(s.answered && s.current == .none && !s.canManage)
         #expect(source.limitAsked == 1)
+        // an admin of such a home has no Family either: the home has none of its routes
+        let admin = store(source, admin: true)
+        await admin.refresh()
+        #expect(!admin.canManage)
+    }
+
+    /// A limit that came while the app was closed: the device remembers the sign-in was not
+    /// limited, so the first answer drops what was kept from before (the shelves on disk).
+    @MainActor @Test func aLimitThatCameWhileTheAppWasClosedDropsWhatWasKept() async {
+        let defaults = UserDefaults(suiteName: "parental-\(UUID().uuidString)")!
+        let home = URL(string: "http://parental.test")!
+        let key = ParentalStore.key(home: home, user: "u1")
+        #expect(!ParentalStore.wasLimited(home: home, user: "u1", defaults: defaults))
+
+        let source = FakeParentalSource()
+        source.set(ParentalFixtures.unrestricted)
+        let first = ParentalStore(defaults: defaults)
+        first.use(source, isAdmin: false, key: key)
+        var cleared = 0
+        first.onChange = { cleared += 1 }
+        await first.refresh()
+        #expect(cleared == 0 && first.epoch == 0)
+        #expect(!ParentalStore.wasLimited(home: home, user: "u1", defaults: defaults))
+
+        // the next launch: a guardian restricted the account meanwhile
+        source.set(ParentalFixtures.child)
+        let second = ParentalStore(defaults: defaults)
+        second.use(source, isAdmin: false, key: key)
+        second.onChange = { cleared += 1 }
+        await second.refresh()
+        #expect(second.current.restricted && second.epoch == 1 && cleared == 1)
+        #expect(ParentalStore.wasLimited(home: home, user: "u1", defaults: defaults), "kept for the launch after")
+
+        // and the launch after that: limited before, limited now, nothing to drop
+        let third = ParentalStore(defaults: defaults)
+        third.use(source, isAdmin: false, key: key)
+        third.onChange = { cleared += 1 }
+        await third.refresh()
+        #expect(third.epoch == 0 && cleared == 1)
     }
 
     @MainActor @Test func aHomeThatDoesNotAnswerKeepsTheLastLimit() async {
@@ -899,6 +938,27 @@ final class Clock: @unchecked Sendable {
         #expect(ParentalRefusal(APIError.transport("down")) == nil)
         // a 403 with the parental-time type and no code is still the time refusal
         #expect(refusal(403, #"{"type":"https://maktaba.tv/problems/parental-time","reason":"outside_slot"}"#) == .time(reason: "outside_slot", nextAllowedAt: nil))
+    }
+
+    /// 57.05 T05 and 57.15 T02, the player's decisions: a refused renewal under a limit is the
+    /// blocked page, time over is the time's-up screen, and neither is tried again.
+    @Test func thePlayersVerdictOnARefusedStreamOrHeartbeat() {
+        let time = APIError.status(403, ParentalFixtures.timeOver)
+        let gone = APIError.status(404, ParentalFixtures.notFound)
+        let up = TimeUp(reason: "limit_reached", nextAllowedAt: homeTime("2026-11-12T04:00:00Z"))
+        #expect(PlaybackVerdict.open(time, limited: true) == .timeUp(up))
+        #expect(PlaybackVerdict.open(time, limited: false) == .timeUp(up), "the home's answer, whatever the app knows")
+        #expect(PlaybackVerdict.open(gone, limited: true) == .blocked)
+        #expect(PlaybackVerdict.open(gone, limited: false) == .other, "no limit: a missing video is a missing video")
+        #expect(PlaybackVerdict.open(APIError.transport("down"), limited: true) == .other)
+        #expect(PlaybackVerdict.open(APIError.status(503, #"{"code":"transcode_busy"}"#), limited: true) == .other)
+        // a playlist not written yet is waited for, not a block
+        #expect(PlaybackVerdict.open(APIError.notReady(#"{"type":"https://maktaba.tv/problems/manifest-not-found"}"#), limited: true) == .other)
+
+        #expect(PlaybackVerdict.progress(time) == .timeUp(up))
+        #expect(PlaybackVerdict.progress(APIError.status(403, #"{"code":"parental_time","reason":"no_heartbeat"}"#)) == .reopen)
+        #expect(PlaybackVerdict.progress(gone) == .other, "a progress post that fails otherwise is left to the next one")
+        #expect(PlaybackVerdict.progress(APIError.transport("down")) == .other)
     }
 
     @Test func aTimeRuleReadsInOneLine() {
