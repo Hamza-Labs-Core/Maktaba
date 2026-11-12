@@ -228,12 +228,23 @@ export async function fetchRules(userId: string): Promise<Rule[]> {
     .filter((x): x is Rule => x !== null);
 }
 
-export interface RuleInput {
+/**
+ * When a rule or an approval ends: at an instant (ISO 8601), or when the home's day
+ * ends (`until`: the home computes it, so this device's clock and time zone do not
+ * matter); neither: it does not end. The home refuses both together.
+ */
+export interface Ending {
+  expiresAt?: string | null;
+  until?: "day_end";
+}
+
+const endingBody = (e: Ending) =>
+  e.until ? { until: e.until } : e.expiresAt ? { expires_at: e.expiresAt } : {};
+
+export interface RuleInput extends Ending {
   effect: RuleEffect;
   subjectKind: SubjectKind;
   subjectId: string;
-  /** an instant (ISO 8601); null: the rule does not end */
-  expiresAt: string | null;
 }
 
 export async function addRule(userId: string, input: RuleInput): Promise<Rule> {
@@ -242,7 +253,7 @@ export async function addRule(userId: string, input: RuleInput): Promise<Rule> {
       effect: input.effect,
       subject_kind: input.subjectKind,
       subject_id: input.subjectId,
-      ...(input.expiresAt ? { expires_at: input.expiresAt } : {}),
+      ...endingBody(input),
     })
   );
   if (!made) throw new Error("malformed rule");
@@ -346,9 +357,8 @@ export async function fetchRequests(status: RequestStatus = "pending"): Promise<
     .filter((x) => x.id !== "");
 }
 
-export interface Approval {
-  /** when the approval ends (content only); left out: it does not end */
-  expiresAt?: string;
+export interface Approval extends Ending {
+  // the end is for content only; left out: the approval does not end
   /** the minutes to give (a `time` request only); left out: the minutes asked for */
   minutes?: number;
 }
@@ -356,7 +366,7 @@ export interface Approval {
 export async function approveRequest(id: string, approval: Approval = {}): Promise<AskRequest> {
   const r = obj(
     await api.post<unknown>(`/api/parental/requests/${enc(id)}/approve`, {
-      ...(approval.expiresAt ? { expires_at: approval.expiresAt } : {}),
+      ...endingBody(approval),
       ...(approval.minutes !== undefined ? { minutes: approval.minutes } : {}),
     })
   );

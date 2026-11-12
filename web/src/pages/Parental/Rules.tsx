@@ -51,7 +51,7 @@ export function ChildRules({ userId }: { userId: string }) {
         effect,
         subjectKind: picked.kind,
         subjectId: picked.id,
-        expiresAt: expiryOf(expiry),
+        ...expiryOf(expiry),
       });
       // the same rule again only changes when it ends: it keeps its id
       setData((prev) => [...(prev ?? []).filter((r) => r.id !== made.id), made]);

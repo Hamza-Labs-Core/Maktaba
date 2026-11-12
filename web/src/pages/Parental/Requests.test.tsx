@@ -78,17 +78,14 @@ describe("Requests", () => {
     expect(rows[1]).toHaveTextContent("More time today: 45 minutes");
   });
 
-  it("approves one thing for today by default: an expiry before tomorrow", async () => {
+  it("approves one thing for today by default: until the home's day ends, not this device's midnight", async () => {
     open({ requests: [content] });
     const row = await screen.findByTestId("family-request");
     expect(within(row).getByLabelText("Allow")).toHaveValue("today");
     post.mockResolvedValue({ request: { ...content, status: "approved" } });
     await userEvent.click(within(row).getByRole("button", { name: "Approve" }));
-    const [path, body] = post.mock.calls[0] as [string, { expires_at: string }];
-    expect(path).toBe("/api/parental/requests/q1/approve");
-    const end = Date.parse(body.expires_at);
-    expect(end).toBeGreaterThan(Date.now());
-    expect(end - Date.now()).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
+    // the home computes the end (its 04:00 day line): no instant from this clock is sent
+    expect(post).toHaveBeenCalledWith("/api/parental/requests/q1/approve", { until: "day_end" });
     await waitFor(() => expect(screen.queryByTestId("family-request")).toBeNull());
     // the count beside Family is read again
     expect(refresh).toHaveBeenCalled();

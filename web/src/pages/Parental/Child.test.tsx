@@ -22,7 +22,7 @@ import { forgetAnswers } from "../../lib/pageCache";
 import { renderPage, memberUser, adminUser } from "../../test/pageHarness";
 import type { User } from "../../lib/auth";
 import { ChildPage } from "./Child";
-import { expiryOf, forgetSubjectNames } from "./subjects";
+import { forgetSubjectNames } from "./subjects";
 import { tierKey } from "../../lib/parentalApi";
 import ar from "../../i18n/ar.json";
 import { CHILD, familyGet, policyAnswer, problem, type FamilyHome } from "./familyHome";
@@ -352,13 +352,16 @@ describe("allowed and blocked", () => {
       effect: "block",
       subject_kind: "library",
       subject_id: "lib-2",
-      expires_at: expiryOf("today"),
+      expires_at: "2099-06-16T01:00:00Z",
     });
     await userEvent.click(within(box).getByRole("button", { name: "Add" }));
-    const [path, body] = post.mock.calls[0] as [string, Record<string, string>];
-    expect(path).toBe(`/api/users/${CHILD}/parental/rules`);
-    expect(body).toMatchObject({ effect: "block", subject_kind: "library", subject_id: "lib-2" });
-    expect(Date.parse(body.expires_at)).toBeGreaterThan(Date.now());
+    // "today" is the home's day: the home computes its end, this device sends no instant
+    expect(post).toHaveBeenCalledWith(`/api/users/${CHILD}/parental/rules`, {
+      effect: "block",
+      subject_kind: "library",
+      subject_id: "lib-2",
+      until: "day_end",
+    });
     expect(
       await within(screen.getByTestId("family-rules-block")).findByText("Films", {
         selector: "bdi",

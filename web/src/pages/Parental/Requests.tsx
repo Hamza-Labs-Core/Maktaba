@@ -110,8 +110,7 @@ function RequestRow({
           message: t("parental.time.granted", { time: timeWords(minutes * 60, words) }),
         });
       } else {
-        const expiresAt = expiryOf(expiry);
-        await approveRequest(item.id, expiresAt ? { expiresAt } : {});
+        await approveRequest(item.id, expiryOf(expiry));
         toast.show({ tone: "success", message: t("family.requests.approved") });
       }
       onAnswered();
