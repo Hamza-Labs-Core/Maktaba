@@ -38,6 +38,7 @@ struct TimeRulesView: View {
                             .frame(minHeight: 44)
                     }
                     .accessibilityIdentifier("time.give")
+                    .familyChange()
                 }
             }
             Section {
@@ -48,6 +49,7 @@ struct TimeRulesView: View {
                         Text(verbatim: word("parental.time.suggest")).frame(minHeight: 44)
                     }
                     .accessibilityIdentifier("time.suggest")
+                    .familyChange()
                 }
                 ForEach(model.timeRules) { rule in
                     Button { editing = rule } label: {
@@ -63,12 +65,14 @@ struct TimeRulesView: View {
                         }
                     }
                     .accessibilityIdentifier("time.rule.\(rule.id)")
+                    .familyChange()
                 }
                 Button { editing = ParentalTimeRule(dailyMinutes: 60) } label: {
                     Label { Text(verbatim: word("parental.time.addRule")) } icon: { Image(systemName: "plus") }
                         .frame(minHeight: 44)
                 }
                 .accessibilityIdentifier("time.add")
+                .familyChange()
             } footer: {
                 if let zone = model.timeZone { Text(verbatim: word("parental.time.zone", zone)) }
             }

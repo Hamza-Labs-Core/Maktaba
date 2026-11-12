@@ -37,7 +37,7 @@ struct SearchView: View {
                 LazyVGrid(columns: columns, spacing: 64) {
                     ForEach(results) { v in
                         NavigationLink {
-                            VideoPage(id: v.id)
+                            VideoPage(id: v.id).parentalFresh()
                         } label: {
                             VideoCard(id: v.id, title: v.displayTitle)
                         }

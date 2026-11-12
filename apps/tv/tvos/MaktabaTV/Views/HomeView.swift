@@ -24,6 +24,10 @@ struct HomeView: View {
                         .readingPanel(padding: 28)
                         .padding(.top, 160)
 
+                    // Epic 57 story 57.15: the time left today in its last 15 minutes, or
+                    // that it is over, for an account the home keeps time for
+                    if let session { TVTimeLeft(store: session.parental) }
+
                     Group {
                         if loading && shelves.isEmpty {
                             ProgressView().frame(maxWidth: .infinity).padding(.vertical, 60)
@@ -127,7 +131,7 @@ struct HomeShelfView: View {
             LazyHStack(alignment: .top, spacing: 48) {
                 ForEach(cards) { card in
                     NavigationLink {
-                        VideoPage(id: card.videoID)
+                        VideoPage(id: card.videoID).parentalFresh()
                     } label: {
                         VideoCard(id: card.videoID, title: card.title, progress: card.progress)
                     }

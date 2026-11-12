@@ -15,8 +15,22 @@ struct SeriesView: View {
     @State private var name = ""
     @State private var eps: SeriesEpisodes?
     @State private var season: Int?
+    /// Epic 57: the home does not give this series under the account's parental limit.
+    @State private var blocked = false
+    @Environment(\.appSession) private var session
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        if blocked, let client, let session {
+            TVBlockedPage(client: client, session: session, subject: ParentalSubject(kind: "series", id: id), back: { dismiss() }) {
+                Task { await load() }
+            }
+        } else {
+            page
+        }
+    }
+
+    private var page: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 32) {
                 Text(name.isEmpty ? String(localized: "Untitled series") : name).font(Theme.heading(56)).foregroundStyle(Theme.text)
@@ -32,7 +46,7 @@ struct SeriesView: View {
                     if eps.seasons.count > 1 {
                         HStack(spacing: 20) {
                             ForEach(eps.seasons) { s in
-                                NavigationLink { SeasonView(seriesID: id, number: s.season) } label: {
+                                NavigationLink { SeasonView(seriesID: id, number: s.season).parentalFresh() } label: {
                                     Text((s.season == season ? "● " : "") + seasonTitle(s))
                                 }
                                 .buttonStyle(.gold)
@@ -59,9 +73,17 @@ struct SeriesView: View {
 
     private func load() async {
         guard let client else { return }
-        if let s = try? await client.episodes(series: id) {
+        do {
+            let s = try await client.episodes(series: id)
+            blocked = false
             eps = s
             season = season ?? s.nextEpisode?.season ?? s.seasons.first?.season
+        } catch {
+            // a hidden series answers as a missing one: under a limit, the blocked page
+            if session?.parental.current.limited == true, !Log.isCancellation(error), HomeFailure(error).kind == .notFound {
+                blocked = true
+                return
+            }
         }
         if let h = try? await client.series(id) { name = h.name }
     }
@@ -73,7 +95,7 @@ struct EpisodeRow: View {
         ScrollView(.horizontal) {
             LazyHStack(spacing: 48) {
                 ForEach(episodes) { e in
-                    NavigationLink { VideoPage(id: e.videoID) } label: {
+                    NavigationLink { VideoPage(id: e.videoID).parentalFresh() } label: {
                         VideoCard(id: e.videoID, title: [e.episode.map(String.init), e.title].compactMap { $0 }.joined(separator: ". "),
                                   progress: e.progress)
                     }

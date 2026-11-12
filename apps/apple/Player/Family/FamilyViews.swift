@@ -20,10 +20,46 @@ extension View {
     }
 }
 
+extension EnvironmentValues {
+    /// A play-only sign-in through Maktaba Cloud (`AppSession.playOnly`): the home refuses
+    /// its every change, so the Family screens show everything and change nothing.
+    @Entry var familyReadOnly = false
+}
+
+/// A control that changes something on the home: disabled for a play-only sign-in.
+private struct FamilyChange: ViewModifier {
+    @Environment(\.familyReadOnly) private var readOnly
+
+    func body(content: Content) -> some View {
+        content.disabled(readOnly)
+    }
+}
+
+extension View {
+    func familyChange() -> some View { modifier(FamilyChange()) }
+}
+
+/// Why nothing can be changed here, said before anything is tried (a play-only sign-in).
+struct FamilyReadOnlyNote: View {
+    @Environment(\.familyReadOnly) private var readOnly
+
+    var body: some View {
+        if readOnly {
+            Section {
+                Label { Text(verbatim: word("family.readOnlyCloud")) } icon: { Image(systemName: "lock") }
+                    .foregroundStyle(Color.mktMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("family.readOnly")
+            }
+        }
+    }
+}
+
 /// Family: the children, the requests waiting, the parent PIN; for an admin, Rate libraries.
 struct FamilyView: View {
     let context: PlayerContext
     @State private var model: FamilyModel
+    @State private var restricting = false
     @Environment(\.dismiss) private var dismiss
 
     init(context: PlayerContext) {
@@ -34,6 +70,7 @@ struct FamilyView: View {
     var body: some View {
         NavigationStack {
             List {
+                FamilyReadOnlyNote()
                 Section {
                     switch model.children {
                     case .loading:
@@ -65,6 +102,16 @@ struct FamilyView: View {
                             }
                             .accessibilityIdentifier("family.child.\(child.id)")
                         }
+                    }
+                    // an admin makes an account restricted: one of the home's accounts
+                    // (`GET /api/admin/library-acl`), and its limit
+                    if model.isAdmin, !model.restrictable(me: context.user.id).isEmpty {
+                        Button { restricting = true } label: {
+                            Label { Text(verbatim: word("family.makeRestricted")) } icon: { Image(systemName: "person.badge.plus") }
+                                .frame(minHeight: 44)
+                        }
+                        .accessibilityIdentifier("family.makeRestricted")
+                        .familyChange()
                     }
                 } header: {
                     header("family.children")
@@ -111,7 +158,11 @@ struct FamilyView: View {
             .maktabaSurface()
             .navigationTitle(Text(verbatim: word("family.title")))
             .navigationDestination(for: ParentalPerson.self) { child in
-                ChildView(context: context, child: child) { Task { await model.load() } }
+                ChildView(context: context, child: child, accounts: model.accounts,
+                          restricted: Set((model.children.value ?? []).map(\.id))) { Task { await model.load() } }
+            }
+            .sheet(isPresented: $restricting) {
+                RestrictAccountSheet(model: model, me: context.user.id) { restricting = false }
             }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -124,10 +175,59 @@ struct FamilyView: View {
             .familyNotice($model.notice)
             .accessibilityIdentifier("screen.family")
         }
+        // a play-only sign-in through Maktaba Cloud changes nothing: said and disabled up front
+        .environment(\.familyReadOnly, context.session.playOnly)
     }
 
     private func header(_ key: String) -> some View {
         Text(verbatim: word(key)).accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// Make an account restricted (admins): the home's accounts that are not restricted yet;
+/// choosing one's limit sends it. The home refuses an admin's account, and the sheet says so.
+private struct RestrictAccountSheet: View {
+    let model: FamilyModel
+    let me: String
+    let done: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(model.restrictable(me: me)) { person in
+                        // choosing the limit sends it (a menu's items carry their identifiers
+                        // only when they are its direct children)
+                        Menu {
+                            ForEach(AgeTier.limits, id: \.self) { tier in
+                                Button {
+                                    Task { if await model.restrict(person, maxTier: tier) { done() } }
+                                } label: {
+                                    Text(verbatim: AgeTier.label(tier))
+                                }
+                                .accessibilityIdentifier("restrict.tier.\(tier)")
+                            }
+                        } label: {
+                            Label { Text(verbatim: person.username).foregroundStyle(Color.mktText) } icon: { Image(systemName: "person.crop.circle") }
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        }
+                        .accessibilityIdentifier("restrict.account.\(person.id)")
+                    }
+                } header: {
+                    Text(verbatim: word("family.child.limit")).accessibilityAddTraits(.isHeader)
+                }
+            }
+            .maktabaSurface()
+            .navigationTitle(Text(verbatim: word("family.makeRestricted")))
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(action: done) { Text(verbatim: word("parental.pin.cancel")) }
+                        .accessibilityIdentifier("restrict.cancel")
+                }
+            }
+            .familyNotice(Binding { model.notice } set: { model.notice = $0 })
+            .accessibilityIdentifier("screen.restrict")
+        }
     }
 }
 
@@ -172,11 +272,13 @@ private struct RequestRow: View {
                 .tint(Color.brass)
                 .foregroundStyle(MaktabaTokens.Colors.accentFg.color)
                 .accessibilityIdentifier("family.request.approve.\(item.id)")
+                .familyChange()
                 Button { Task { await model.deny(item) } } label: {
                     Text(verbatim: word("family.deny")).frame(minWidth: 88, minHeight: 44)
                 }
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("family.request.deny.\(item.id)")
+                .familyChange()
             }
         }
         .padding(.vertical, MaktabaTokens.Spacing.s1)
@@ -196,6 +298,7 @@ struct PinView: View {
 
     var body: some View {
         Form {
+            FamilyReadOnlyNote()
             Section {
                 SecureField(text: $pin) { Text(verbatim: word("family.pin.new")) }
                     #if os(iOS)
@@ -205,11 +308,13 @@ struct PinView: View {
                     // the digits read left to right in Arabic too
                     .environment(\.layoutDirection, .leftToRight)
                     .accessibilityIdentifier("family.pin.new")
+                    .familyChange()
                 SecureField(text: $password) { Text(verbatim: word("family.pin.password")) }
                     #if os(iOS)
                     .textContentType(.password)
                     #endif
                     .accessibilityIdentifier("family.pin.password")
+                    .familyChange()
             } footer: {
                 if invalid {
                     Text(verbatim: word("parental.pin.enter")).foregroundStyle(MaktabaTokens.Colors.error.color)
@@ -227,6 +332,7 @@ struct PinView: View {
                 }
                 .disabled(saving || pin.isEmpty || password.isEmpty)
                 .accessibilityIdentifier("family.pin.save")
+                .familyChange()
             }
         }
         .maktabaSurface()
@@ -262,7 +368,9 @@ struct RateLibrariesView: View {
             Section {
                 switch libraries {
                 case .loading: ProgressView().frame(maxWidth: .infinity)
-                case let .failed(failure): Text(verbatim: failure.message(video: false)).foregroundStyle(Color.mktMuted)
+                case let .failed(failure):
+                    Text(verbatim: failure.message(video: false)).foregroundStyle(Color.mktMuted)
+                        .accessibilityIdentifier("rateLibraries.failed")
                 case let .ready(list):
                     ForEach(list) { library in
                         Menu {
@@ -296,6 +404,10 @@ struct RateLibrariesView: View {
             } catch {
                 if !Log.isCancellation(error) { libraries = .failed(HomeFailure(error)) }
             }
+            // the tiers the home has stored, where it says them (a newer home, to an admin)
+            if let stored = try? await client.libraryAgeTiers() {
+                for (id, tier) in stored where chosen[id] == nil { chosen[id] = tier }
+            }
         }
     }
 
@@ -314,6 +426,10 @@ struct RateLibrariesView: View {
 struct ChildView: View {
     let context: PlayerContext
     let child: ParentalPerson
+    /// The home's accounts (an admin's list; empty for a guardian) and which are restricted:
+    /// who can be named a guardian.
+    var accounts: [ParentalPerson] = []
+    var restricted: Set<String> = []
     /// The limit changed: the Family list reads again.
     let changed: () -> Void
 
@@ -321,9 +437,12 @@ struct ChildView: View {
     @State private var confirmLift = false
     @Environment(\.dismiss) private var dismiss
 
-    init(context: PlayerContext, child: ParentalPerson, changed: @escaping () -> Void) {
+    init(context: PlayerContext, child: ParentalPerson, accounts: [ParentalPerson] = [], restricted: Set<String> = [],
+         changed: @escaping () -> Void) {
         self.context = context
         self.child = child
+        self.accounts = accounts
+        self.restricted = restricted
         self.changed = changed
         _model = State(initialValue: ChildModel(client: context.client, child: child))
     }
@@ -336,7 +455,8 @@ struct ChildView: View {
             case let .failed(failure):
                 Text(verbatim: failure.message(video: false)).foregroundStyle(Color.mktMuted)
             case let .ready(account):
-                limit(account.policy)
+                FamilyReadOnlyNote()
+                limit(account.policy).familyChange()
                 Section {
                     link("family.child.allowed", "checkmark.circle", count: model.rules("allow").count) { RulesView(context: context, model: model, effect: "allow") }
                         .accessibilityIdentifier("child.allowed")
@@ -359,9 +479,25 @@ struct ChildView: View {
                                 Button { Task { await model.removeGuardian(guardian) } } label: { Text(verbatim: word("family.rules.remove")) }
                                     .buttonStyle(.borderless)
                                     .accessibilityIdentifier("child.guardian.remove.\(guardian.id)")
+                                    .familyChange()
                             }
                         }
                         .frame(minHeight: 44)
+                    }
+                    // naming a guardian is an admin's: one of the home's other accounts
+                    let candidates = model.guardianCandidates(accounts, restricted: restricted)
+                    if account.isAdmin, !candidates.isEmpty {
+                        Menu {
+                            ForEach(candidates) { person in
+                                Button { Task { await model.addGuardian(person) } } label: { Text(verbatim: person.username) }
+                                    .accessibilityIdentifier("child.guardian.add.\(person.id)")
+                            }
+                        } label: {
+                            Label { Text(verbatim: word("family.guardians.add")) } icon: { Image(systemName: "plus") }
+                                .frame(minHeight: 44)
+                        }
+                        .accessibilityIdentifier("child.guardian.add")
+                        .familyChange()
                     }
                 } header: {
                     Text(verbatim: word("family.child.guardians")).accessibilityAddTraits(.isHeader)
@@ -373,6 +509,7 @@ struct ChildView: View {
                         }
                         .foregroundStyle(Color.red)
                         .accessibilityIdentifier("child.lift")
+                        .familyChange()
                     }
                 }
             }
@@ -437,7 +574,8 @@ struct ChildView: View {
 }
 
 /// Allowed or Blocked: the rules, each with what it names and when it ends; Add picks a
-/// library, a series, a channel or a video from what the guardian's own account sees.
+/// library, a collection, a series, a channel, a YouTube source, a plugin or a video from
+/// what the guardian's own account sees (`RuleChoices`, MaktabaKit).
 struct RulesView: View {
     let context: PlayerContext
     let model: ChildModel
@@ -470,6 +608,7 @@ struct RulesView: View {
                     Button { Task { await model.remove(rule) } } label: { Text(verbatim: word("family.rules.remove")) }
                         .buttonStyle(.borderless)
                         .accessibilityIdentifier("rules.remove.\(rule.id)")
+                        .familyChange()
                 }
                 .frame(minHeight: 44)
                 .accessibilityIdentifier("rules.rule.\(rule.id)")
@@ -480,7 +619,7 @@ struct RulesView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    ForEach(["library", "series", "channel", "video"], id: \.self) { kind in
+                    ForEach(RuleChoices.kinds, id: \.self) { kind in
                         Button { adding = kind } label: {
                             Label { Text(verbatim: word("family.subject.\(kind)")) } icon: { Image(systemName: Self.symbol(kind)) }
                         }
@@ -490,6 +629,7 @@ struct RulesView: View {
                     Label { Text(verbatim: word("family.rules.add")) } icon: { Image(systemName: "plus") }
                 }
                 .accessibilityIdentifier("rules.add")
+                .familyChange()
             }
         }
         .sheet(item: Binding { adding.map(PickedKind.init) } set: { adding = $0?.kind }) { picked in
@@ -525,21 +665,18 @@ private struct SubjectPicker: View {
     let kind: String
     let picked: (ParentalSubject) -> Void
 
-    @State private var rows: Load<[Row]> = .loading
+    @State private var rows: Load<[RuleChoice]> = .loading
     @State private var query = ""
     @Environment(\.dismiss) private var dismiss
-
-    struct Row: Identifiable, Hashable {
-        let id: String
-        let title: String
-    }
 
     var body: some View {
         NavigationStack {
             List {
                 switch rows {
                 case .loading: ProgressView().frame(maxWidth: .infinity)
-                case let .failed(failure): Text(verbatim: failure.message(video: false)).foregroundStyle(Color.mktMuted)
+                case let .failed(failure):
+                    Text(verbatim: failure.message(video: false)).foregroundStyle(Color.mktMuted)
+                        .accessibilityIdentifier("picker.failed")
                 case let .ready(list):
                     if list.isEmpty { Text(verbatim: word("family.rules.none")).foregroundStyle(Color.mktMuted) }
                     ForEach(list) { row in
@@ -565,24 +702,11 @@ private struct SubjectPicker: View {
 
     private func load() async {
         do {
-            let found: [Row]
-            switch kind {
-            case "library":
-                found = try await client.librarySummaries().map { Row(id: $0.id, title: $0.name) }
-            case "series":
-                found = try await client.seriesList().map { Row(id: $0.id, title: $0.name) }
-            case "channel":
-                found = try await client.channelsNow().channels.map { Row(id: $0.channel.id, title: $0.channel.name) }
-            default:
-                let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard q.count >= 2 else {
-                    rows = .ready([])
-                    return
-                }
+            // a video is searched for as it is typed; the other kinds are listed whole
+            if kind == "video", query.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 {
                 try await Task.sleep(for: .milliseconds(350))
-                found = try await client.search(q).titles.map { Row(id: $0.videoID, title: $0.title) }
             }
-            rows = .ready(found.sorted { $0.title.compare($1.title, options: [.caseInsensitive], locale: AppLanguage.locale) == .orderedAscending })
+            rows = .ready(try await RuleChoices.load(client, kind: kind, query: query))
         } catch {
             if !Log.isCancellation(error) { rows = .failed(HomeFailure(error)) }
         }
@@ -626,12 +750,14 @@ struct DevicesView: View {
                             .tint(Color.brass)
                             .foregroundStyle(MaktabaTokens.Colors.accentFg.color)
                             .accessibilityIdentifier("devices.approve.\(signal.id)")
+                            .familyChange()
                         }
                     } else {
                         Button { Task { await model.clear(signal) } } label: {
                             Text(verbatim: word("family.device.remove")).frame(minHeight: 44)
                         }
                         .accessibilityIdentifier("devices.remove.\(signal.id)")
+                        .familyChange()
                     }
                 } header: {
                     // a sign-in has no name on the home: the first characters of its id tell two apart

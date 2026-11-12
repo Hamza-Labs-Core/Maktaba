@@ -829,6 +829,157 @@ final class FakeParentalSource: ParentalSource, @unchecked Sendable {
         #expect(ParentalStub.seen("GET /api/users/c2/parental/activity").last?.query == "kind=blocked")
         #expect(m.events.value?.isEmpty == true)
     }
+
+    // MARK: what a rule may name, a play-only sign-in
+
+    /// 57.07: a collection, a YouTube source and a plugin can be picked for a rule, each from
+    /// what the guardian's own account sees, by name in the app's language's order.
+    @MainActor @Test func aRuleMayNameACollectionAYouTubeSourceOrAPlugin() async throws {
+        ParentalStub.reset()
+        ParentalStub.on("GET /api/libraries/summary", 200,
+                        #"{"items":[{"id":"l1","name":"Lectures","videos":3},{"id":"l2","name":"Docs","videos":1}]}"#)
+        ParentalStub.on("GET /api/libraries/l1/collections", 200,
+                        #"{"items":[{"kind":"curated","id":"c1","name":"Seerah"},{"kind":"topic","id":"t1","name":"A topic"},{"kind":"youtube","id":"c2","name":"Fiqh"}]}"#)
+        ParentalStub.on("GET /api/libraries/l2/collections", 200, #"{"items":[{"kind":"clip","id":"k1","name":"Clips"}]}"#)
+        ParentalStub.on("GET /api/libraries/l1/youtube/sources", 200,
+                        #"{"items":[{"id":"y1","library_id":"l1","kind":"channel","url":"https://youtube.example/@seerah","folder":"Seerah channel"},{"id":"y2","library_id":"l1","kind":"playlist","url":"https://youtube.example/playlist?list=PL1","folder":null}]}"#)
+        ParentalStub.on("GET /api/libraries/l2/youtube/sources", 200, #"{"items":[]}"#)
+        ParentalStub.on("GET /api/plugins", 200,
+                        #"{"plugins":[{"id":"com.example.intro","names":{"name":{"en":"Intro skipper","ar":"متخطي المقدمة"}}},{"id":"com.example.bare","names":{"name":{}}}],"policy":{},"built_in":[]}"#)
+        let client = ParentalStub.client()
+
+        let collections = try await RuleChoices.load(client, kind: "collection", en)
+        #expect(collections.map(\.id) == ["c2", "c1"], "the home's collections only, by title; topic and clip groups are not rules' subjects")
+        #expect(collections.map(\.title) == ["Lectures · Fiqh", "Lectures · Seerah"])
+
+        let sources = try await RuleChoices.load(client, kind: "youtube_source", en)
+        #expect(sources.map(\.id) == ["y2", "y1"])
+        #expect(sources.map(\.title) == ["Lectures · https://youtube.example/playlist?list=PL1", "Lectures · Seerah channel"],
+                "a source by its folder, else its address")
+
+        let plugins = try await RuleChoices.load(client, kind: "plugin", ar)
+        #expect(plugins.first { $0.id == "com.example.intro" }?.title == "متخطي المقدمة", "a plugin by its name in the app's language")
+        #expect(plugins.first { $0.id == "com.example.bare" }?.title == "com.example.bare", "one with no name by its id")
+        #expect(try await RuleChoices.load(client, kind: "plugin", en).map(\.title) == ["com.example.bare", "Intro skipper"])
+
+        #expect(try await RuleChoices.load(client, kind: "video", query: "a", en).isEmpty, "a video is searched for from two characters")
+        #expect(RuleChoices.kinds == ParentalSubject.kinds, "every kind a rule may name can be added")
+
+        // the rule goes to the home with the kind and the id picked
+        ParentalStub.on("GET /api/users/c2/parental", 200, #"{"policy":{"user_id":"c2","max_tier":9,"unrated":"hide","version":3},"access":"admin","guardians":[],"signals":[]}"#)
+        ParentalStub.on("GET /api/users/c2/parental/rules", 200, #"{"rules":[]}"#)
+        ParentalStub.on("POST /api/users/c2/parental/rules", 201,
+                        #"{"id":"ru9","user_id":"c2","effect":"block","subject_kind":"plugin","subject_id":"com.example.intro","created_at":"2026-11-11T10:00:00Z"}"#)
+        let m = ChildModel(client: client, child: ParentalPerson(id: "c2", username: "Sara"))
+        await m.load()
+        await m.addRule("block", ParentalSubject(kind: "plugin", id: plugins[0].id))
+        let sent = ParentalStub.seen("POST /api/users/c2/parental/rules").first?.json
+        #expect(sent?["effect"] as? String == "block" && sent?["subject_kind"] as? String == "plugin")
+        #expect(m.rules("block").map(\.subjectID) == ["com.example.intro"])
+        #expect(m.title(of: m.rules("block")[0], en) == "Plugin")
+    }
+
+    /// The plugins are an admin's to list: a guardian who is not one gets the home's
+    /// refusal, which the picker shows.
+    @MainActor @Test func aGuardianWhoIsNotAnAdminCannotListPlugins() async {
+        ParentalStub.reset()
+        ParentalStub.on("GET /api/plugins", 403, #"{"status":403,"code":"admin_only"}"#)
+        await #expect(throws: APIError.self) { _ = try await RuleChoices.load(ParentalStub.client(), kind: "plugin", en) }
+    }
+
+    /// 57.07: an admin makes one of the home's accounts restricted and names a guardian,
+    /// from the accounts the home lists to admins (`GET /api/admin/library-acl`).
+    @MainActor @Test func anAdminMakesAnAccountRestrictedAndNamesAGuardian() async {
+        ParentalStub.reset()
+        ParentalStub.on("GET /api/parental/children", 200, #"{"children":[{"id":"c2","username":"Sara","user_id":"c2","max_tier":9,"unrated":"hide","version":3}]}"#)
+        ParentalStub.on("GET /api/parental/requests", 200, #"{"requests":[]}"#)
+        ParentalStub.on("GET /api/me/parental-pin", 200, #"{"set":false}"#)
+        ParentalStub.on("GET /api/admin/library-acl", 200,
+                        #"{"users":[{"id":"u1","username":"admin"},{"id":"c2","username":"Sara"},{"id":"u3","username":"Omar"},{"id":"u4","username":"huda"}],"libraries":[],"grants":[]}"#)
+        let family = FamilyModel(client: ParentalStub.client(), isAdmin: true)
+        await family.load()
+        #expect(family.accounts.map(\.username) == ["admin", "huda", "Omar", "Sara"], "by name")
+        #expect(family.restrictable(me: "u1").map(\.id) == ["u4", "u3"], "not the admin, not one restricted already")
+
+        ParentalStub.on("PUT /api/users/u3/parental", 200, #"{"policy":{"user_id":"u3","max_tier":13,"unrated":"hide","version":1},"access":"admin","guardians":[],"signals":[]}"#)
+        #expect(await family.restrict(family.accounts[2], maxTier: 13))
+        let put = ParentalStub.seen("PUT /api/users/u3/parental").first?.json
+        #expect(put?["max_tier"] as? Int == 13 && put?["unrated"] as? String == "hide" && put?["version"] as? Int == 0, "a new limit: version 0")
+
+        // an admin's account cannot be restricted: the home says so, and so does the screen
+        ParentalStub.on("PUT /api/users/u4/parental", 409, #"{"status":409,"code":"restricted_admin"}"#)
+        #expect(await family.restrict(family.accounts[1], maxTier: 9) == false)
+        #expect(family.notice == .adminAccount)
+        #expect(FamilyNotice.adminAccount.line(en) == "An admin cannot be restricted." && FamilyNotice.adminAccount.line(ar) == "لا يمكن تقييد حساب مشرف.")
+
+        // a guardian for Sara: not Sara, not who looks after her already, not another restricted account
+        ParentalStub.on("GET /api/users/c2/parental", 200, #"{"policy":{"user_id":"c2","max_tier":9,"unrated":"hide","version":3},"access":"admin","guardians":[{"id":"u4","username":"huda"}],"signals":[]}"#)
+        ParentalStub.on("GET /api/users/c2/parental/rules", 200, #"{"rules":[]}"#)
+        let child = ChildModel(client: ParentalStub.client(), child: ParentalPerson(id: "c2", username: "Sara"))
+        await child.load()
+        #expect(child.guardianCandidates(family.accounts, restricted: ["c2", "u3"]).map(\.id) == ["u1"])
+        // the answers in turn: the first is taken, the second refused
+        ParentalStub.on("POST /api/users/c2/parental/guardians", 201, #"{"guardian_id":"u1"}"#)
+        ParentalStub.on("POST /api/users/c2/parental/guardians", 409, #"{"status":409,"code":"restricted_guardian"}"#)
+        await child.addGuardian(ParentalPerson(id: "u1", username: "admin"))
+        #expect(ParentalStub.seen("POST /api/users/c2/parental/guardians").first?.json["guardian_id"] as? String == "u1")
+        #expect(child.notice == nil)
+        await child.addGuardian(ParentalPerson(id: "u3", username: "Omar"))
+        #expect(child.notice == .restrictedGuardian)
+        #expect(FamilyNotice.restrictedGuardian.line(ar) == "لا يمكن لحساب مقيَّد رعاية حساب آخر.")
+    }
+
+    /// A guardian who is not an admin is not listed the home's accounts, and is never asked.
+    @MainActor @Test func aGuardianIsNotListedTheHomesAccounts() async {
+        ParentalStub.reset()
+        ParentalStub.on("GET /api/parental/children", 200, #"{"children":[]}"#)
+        ParentalStub.on("GET /api/parental/requests", 200, #"{"requests":[]}"#)
+        ParentalStub.on("GET /api/me/parental-pin", 200, #"{"set":false}"#)
+        let family = FamilyModel(client: ParentalStub.client(), isAdmin: false)
+        await family.load()
+        #expect(family.accounts.isEmpty && ParentalStub.seen("GET /api/admin/library-acl").isEmpty)
+    }
+
+    /// Rate libraries shows the tier the home has stored where it says it: a tier, none
+    /// (null), or nothing known (a home from before the field).
+    @MainActor @Test func aLibrarysStoredTierIsReadWhereTheHomeSaysIt() async throws {
+        ParentalStub.reset()
+        ParentalStub.on("GET /api/libraries/manage", 200, #"{"items":[{"id":"l1","name":"A","age_tier":9},{"id":"l2","name":"B","age_tier":null},{"id":"l3","name":"C"}]}"#)
+        let tiers = try await ParentalStub.client().libraryAgeTiers()
+        #expect(tiers["l1"] == .some(9))
+        #expect(tiers.keys.contains("l2") && tiers["l2"] == .some(nil), "stored as not rated")
+        #expect(!tiers.keys.contains("l3"), "not said: not known")
+    }
+
+    /// A sign-in through Maktaba Cloud says its link scope in `GET /api/auth/me`: a play-only
+    /// one is known before anything is tried.
+    @Test func aPlayOnlySignInIsKnownFromWhoAmI() throws {
+        let play = try JSONDecoder().decode(Me.self, from: Data(#"{"id":"u1","username":"huda","is_admin":false,"cloud_scope":"play"}"#.utf8))
+        #expect(play.cloudScope == "play")
+        let home = try JSONDecoder().decode(Me.self, from: Data(#"{"id":"u1","username":"huda","is_admin":true}"#.utf8))
+        #expect(home.cloudScope == nil, "a sign-in on the home has no scope")
+    }
+
+    /// 57.11 T01: an Apple TV says its Screen Time limits and no age range (tvOS has no
+    /// Declared Age Range): `tv_ceiling: 400`, nothing about an age.
+    @MainActor @Test func anAppleTVSendsItsScreenTimeLimitsAndNoAgeRange() async {
+        ParentalStub.reset()
+        ParentalStub.on("POST /api/me/age-signal", 200, #"{"tier_limit":9,"pending_looser":false,"refresh":true}"#)
+        ParentalStub.on("POST /api/auth/refresh", 200, ParentalFixtures.tokens)
+        let tv = FixedAgeSignal(.notAvailable, movie: 1000, tv: 400)
+        let sender = AgeSignalSender(defaults: UserDefaults(suiteName: "tv.\(UUID().uuidString)")!)
+        sender.use(tv)
+        sender.signedIn(client: ParentalStub.client(), user: "u1")
+        await sender.sync()
+        let sent = ParentalStub.seen("POST /api/me/age-signal").first?.json
+        #expect(sent?["tv_ceiling"] as? Int == 400 && sent?["movie_ceiling"] as? Int == 1000)
+        #expect(sent?["age_range"] == nil, "no age range from a TV")
+        #expect(sender.answer?.tierLimit == 9, "the sign-in is limited to 9+")
+        #expect(ParentalStub.seen("POST /api/auth/refresh").count == 1, "then a token that carries the limit")
+        // the fixed double the TV's UI tests launch with says the same
+        let spec = FixedAgeSignal(spec: "none::1000:400")
+        #expect(spec?.answer == .notAvailable && spec?.tv == 400 && spec?.movie == 1000)
+    }
 }
 
 final class Clock: @unchecked Sendable {

@@ -25,7 +25,7 @@ struct LibraryView: View {
                     ForEach(libraries) { library in
                         NavigationLink {
                             // Epic 56: a library's five tabs
-                            LibraryTabsView(library: library.id, name: library.name)
+                            LibraryTabsView(library: library.id, name: library.name).parentalFresh()
                         } label: {
                             LibraryCard(library: library)
                         }
@@ -111,7 +111,7 @@ struct VideoGrid: View {
                 LazyVGrid(columns: columns, spacing: 64) {
                     ForEach(videos) { v in
                         NavigationLink {
-                            VideoPage(id: v.id)
+                            VideoPage(id: v.id).parentalFresh()
                         } label: {
                             VideoCard(id: v.id, title: v.displayTitle)
                         }

@@ -11742,6 +11742,57 @@
           }
         }
       }
+    },
+    "family.makeRestricted.admin" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An admin cannot be restricted."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يمكن تقييد حساب مشرف."
+          }
+        }
+      }
+    },
+    "family.guardians.add" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add a guardian"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إضافة ولي أمر"
+          }
+        }
+      }
+    },
+    "family.guardians.restricted" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A restricted account cannot look after another account."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يمكن لحساب مقيَّد رعاية حساب آخر."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

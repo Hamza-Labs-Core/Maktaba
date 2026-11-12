@@ -17,9 +17,13 @@ public struct User: Codable, Hashable, Sendable {
 public struct Me: Decodable, Sendable {
     public let user: User
     public let homeName: String?
+    /// The sign-in came through Maktaba Cloud with this link scope (`play`: watch only,
+    /// `manage`); nil for a sign-in on the home itself.
+    public let cloudScope: String?
 
     enum CodingKeys: String, CodingKey {
         case homeName = "home_name"
+        case cloudScope = "cloud_scope"
     }
 
     public init(from decoder: Decoder) throws {
@@ -28,6 +32,8 @@ public struct Me: Decodable, Sendable {
             .decodeIfPresent(String.self, forKey: .homeName)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         homeName = name?.isEmpty == false ? name : nil
+        let scope = try? decoder.container(keyedBy: CodingKeys.self).decodeIfPresent(String.self, forKey: .cloudScope)
+        cloudScope = scope?.isEmpty == false ? scope : nil
     }
 }
 

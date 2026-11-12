@@ -388,9 +388,10 @@ jobs:
 
   # The Mac Player (story 48.25): its menus read in-process, then driven from outside by
   # PlayerMacTests/UI against MockHome. A macOS UI-test runner must be signed, so the
-  # The Apple TV app's Live TV, Home and Libraries UI tests (TVLiveUITests) against the mock
-  # home, with the Siri remote, on a throwaway Apple TV simulator made and deleted here
-  # (MaktabaTVUITests.swift needs a real home and skips without one).
+  # The Apple TV app's Live TV, Home and Libraries UI tests (TVLiveUITests) and its parental
+  # controls' (TVParentalUITests, Epic 57) against the mock home, with the Siri remote, on a
+  # throwaway Apple TV simulator made and deleted here (MaktabaTVUITests.swift needs a real
+  # home and skips without one).
   tv-ui-tests:
     name: TV UI tests
     if: inputs.build
@@ -435,7 +436,9 @@ jobs:
           set -euo pipefail
           # and the product screenshots (TVDemoShotsUITests, story 60.09); only those for shots_only
           only=(-only-testing "Maktaba TV UITests/TVDemoShotsUITests")
-          if [ "$SHOTS_ONLY" != true ]; then only+=(-only-testing "Maktaba TV UITests/TVLiveUITests"); fi
+          if [ "$SHOTS_ONLY" != true ]; then
+            only+=(-only-testing "Maktaba TV UITests/TVLiveUITests" -only-testing "Maktaba TV UITests/TVParentalUITests")
+          fi
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba TV" \
             -destination "id=$UDID" -derivedDataPath "$DERIVED" -resultBundlePath "$RESULTS/tv.xcresult" \
             CODE_SIGNING_ALLOWED=NO "${only[@]}"

@@ -188,6 +188,12 @@ public final class AppSession {
     /// The device's age signal for this sign-in (story 57.04); sends nothing until the app
     /// gives it a source (`ageSignal.use`).
     public let ageSignal = AgeSignalSender()
+    /// The link scope of a sign-in through Maktaba Cloud, as the home said at sign-in
+    /// (`GET /api/auth/me`'s `cloud_scope`); nil for a sign-in on the home itself.
+    public private(set) var cloudScope: String?
+    /// A play-only sign-in through Maktaba Cloud: it watches, and the home refuses its every
+    /// change (403 `cloud_scope`), so a screen that changes things says so up front.
+    public var playOnly: Bool { signedIn && cloudScope == "play" }
     private let usesParental: Bool
 
     public var signedIn: Bool {
@@ -784,6 +790,7 @@ public final class AppSession {
         restoreProblem = nil
         publish(nil)
         named(me.homeName)
+        cloudScope = me.cloudScope
         phase = .signedIn(me.user)
         // what this home has on, asked at once and every 5 minutes (story 51.11)
         if let client {
