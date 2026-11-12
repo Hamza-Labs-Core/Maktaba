@@ -62,6 +62,19 @@ describe("Parent PIN", () => {
     expect(await screen.findByRole("button", { name: "Change PIN" })).toBeDisabled();
   });
 
+  it("the PIN is a one-time code to the browser: not saved, not taken for the account's password", async () => {
+    open({ pin: false });
+    await screen.findByRole("button", { name: "Set a PIN" });
+    for (const field of [screen.getByLabelText(/^PIN/), screen.getByLabelText("The PIN again")]) {
+      expect(field).toHaveAttribute("autocomplete", "one-time-code");
+      expect(field).toHaveAttribute("type", "password");
+    }
+    expect(screen.getByLabelText(/Your account password/)).toHaveAttribute(
+      "autocomplete",
+      "current-password"
+    );
+  });
+
   it("takes digits only, six of them, typed the same twice", async () => {
     open({ pin: false });
     await fill("12ab34", "1234", "pw");

@@ -3,6 +3,7 @@
 // poster or rating; asking sends the id the page already had; a guardian's PIN is
 // checked by the home alone.
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { useState } from "react";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -15,8 +16,10 @@ vi.mock("../../lib/api", async () => {
 import { ApiError } from "../../lib/api";
 import { ParentalFixture, type MyParental } from "../../lib/parental";
 import { renderPage, memberUser } from "../../test/pageHarness";
-import { AskTime, Blocked, BlockedOr } from "./AskParent";
-import { TimesUp } from "./TimeState";
+import type { User } from "../../lib/auth";
+import { ASKED_TIME, noteAsked, wasAsked } from "../../lib/parentalAsked";
+import { AskTime, Blocked, BlockedOr, PinUnlock } from "./AskParent";
+import { HomeTime, TimesUp } from "./TimeState";
 
 const problem = (status: number, extra: Record<string, unknown> = {}, retry?: number) =>
   new ApiError({ type: "about:blank", title: "refused", status, ...extra } as never, retry);
@@ -34,14 +37,25 @@ function home(unlockers: unknown[] = []) {
 function show(
   ui: React.ReactElement,
   value: Partial<MyParental> = child,
-  locale: "en" | "ar" = "en"
+  locale: "en" | "ar" = "en",
+  user: User = memberUser
 ) {
   localStorage.setItem("mkt:locale", locale);
   return renderPage(<ParentalFixture value={value}>{ui}</ParentalFixture>, {
     path: "/videos/v1",
-    user: memberUser,
+    user,
   });
 }
+
+/** A waiting request as the home answers it, expiring in `ms`. */
+const waiting = (ms = 7 * 24 * 3600_000, over: Record<string, unknown> = {}) => ({
+  request: {
+    id: "q1",
+    status: "pending",
+    expires_at: new Date(Date.now() + ms).toISOString(),
+    ...over,
+  },
+});
 
 const blocked = <Blocked kind="video" id="v1" onCheck={onCheck} />;
 
@@ -240,5 +254,192 @@ describe("the time's-up screen", () => {
     show(timesUp, child, "ar");
     const ask = screen.getByTestId("parental-ask-time");
     expect(within(ask).getByRole("group", { name: "اطلب وقتًا إضافيًا" })).toBeInTheDocument();
+  });
+});
+
+// What this tab remembers having asked: one account's, for as long as the request
+// waits, and gone once it is answered.
+describe("what was asked", () => {
+  const sister: User = { id: "u-sister", username: "noor", is_admin: false };
+  const guardians = [{ id: "g1", username: "mum" }];
+  const timesUp = <TimesUp reason="limit_reached" nextAllowedAt={null} onCheck={onCheck} />;
+
+  async function unlock() {
+    await userEvent.click(await screen.findByRole("button", { name: "Enter parent PIN" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.type(within(dialog).getByLabelText("Enter the 6-digit parent PIN"), "123456");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Unlock" }));
+  }
+
+  it("another account in the same tab does not inherit it", async () => {
+    post.mockResolvedValue(waiting());
+    const first = show(blocked);
+    await userEvent.click(screen.getByRole("button", { name: "Ask a parent" }));
+    await screen.findByTestId("parental-ask-waiting");
+    first.unmount();
+    // her sister signs in in the same tab and meets the same video
+    show(blocked, child, "en", sister);
+    expect(screen.queryByTestId("parental-ask-waiting")).toBeNull();
+    expect(screen.getByRole("button", { name: "Ask a parent" })).toBeInTheDocument();
+    expect(wasAsked(memberUser.id, "video:v1")).toBe(true);
+    expect(wasAsked(sister.id, "video:v1")).toBe(false);
+  });
+
+  it("follows the thing when the page changes to another one while it stays open", async () => {
+    post.mockResolvedValue(waiting());
+    function Page() {
+      const [id, setId] = useState("v1");
+      return (
+        <>
+          <button type="button" onClick={() => setId("v2")}>
+            next video
+          </button>
+          <Blocked kind="video" id={id} onCheck={onCheck} />
+        </>
+      );
+    }
+    show(<Page />);
+    await userEvent.click(screen.getByRole("button", { name: "Ask a parent" }));
+    await screen.findByTestId("parental-ask-waiting");
+    await userEvent.click(screen.getByRole("button", { name: "next video" }));
+    // v2 was never asked for
+    expect(screen.queryByTestId("parental-ask-waiting")).toBeNull();
+    expect(screen.getByRole("button", { name: "Ask a parent" })).toBeInTheDocument();
+  });
+
+  it("a request that expired can be asked again", async () => {
+    // asked a while ago; the home's seven days ran out a minute ago
+    noteAsked(memberUser.id, "video:v1", new Date(Date.now() - 60_000).toISOString());
+    show(blocked);
+    expect(screen.queryByTestId("parental-ask-waiting")).toBeNull();
+    post.mockResolvedValue(waiting());
+    await userEvent.click(screen.getByRole("button", { name: "Ask a parent" }));
+    expect(await screen.findByTestId("parental-ask-waiting")).toBeInTheDocument();
+  });
+
+  it("stops waiting at the request's expiry while the page is open", async () => {
+    post.mockResolvedValue(waiting(300));
+    show(blocked);
+    await userEvent.click(screen.getByRole("button", { name: "Ask a parent" }));
+    await screen.findByTestId("parental-ask-waiting");
+    // Check again after the expiry still finds it hidden: asking is offered again
+    expect(
+      await screen.findByRole("button", { name: "Ask a parent" }, { timeout: 2000 })
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("parental-ask-waiting")).toBeNull();
+  });
+
+  it("a parent's PIN answers the request for a thing: nothing waits after it", async () => {
+    home(guardians);
+    post.mockResolvedValue(waiting());
+    show(blocked);
+    await userEvent.click(screen.getByRole("button", { name: "Ask a parent" }));
+    await screen.findByTestId("parental-ask-waiting");
+    post.mockResolvedValue({ rule: { id: "r1", expires_at: "2099-01-01T01:00:00Z" } });
+    await unlock();
+    await waitFor(() => expect(onCheck).toHaveBeenCalled());
+    expect(wasAsked(memberUser.id, "video:v1")).toBe(false);
+  });
+
+  it("more time can be asked for again after the minutes that were given ran out", async () => {
+    // the home's answers about the time, in order: over, allowed (a parent said yes
+    // to 15 minutes), over again (they ran out)
+    let myTime: Record<string, unknown> = {
+      allowed: false,
+      limited: true,
+      reason: "limit_reached",
+      remaining_seconds: 0,
+    };
+    get.mockImplementation((path: string) =>
+      path.startsWith("/api/me/parental/time")
+        ? Promise.resolve(myTime)
+        : path === "/api/me/parental/guardians"
+          ? Promise.resolve({ guardians: [] })
+          : Promise.reject(problem(404))
+    );
+    post.mockResolvedValue(waiting(6 * 3600_000, { subject_kind: "time" }));
+    const first = show(<HomeTime />);
+    const ask = await screen.findByTestId("parental-ask-time");
+    await userEvent.click(within(ask).getByRole("button", { name: "15 minutes" }));
+    await screen.findByTestId("parental-ask-waiting");
+    expect(wasAsked(memberUser.id, ASKED_TIME)).toBe(true);
+
+    myTime = { allowed: true, limited: true, remaining_seconds: 900 };
+    await userEvent.click(screen.getByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(screen.queryByTestId("parental-times-up")).toBeNull());
+    expect(screen.getByTestId("parental-time-left")).toHaveTextContent("15 minutes left today");
+    first.unmount();
+
+    // the 15 minutes ran out: the time's-up screen offers the asks again
+    myTime = { allowed: false, limited: true, reason: "limit_reached", remaining_seconds: 0 };
+    show(<HomeTime />);
+    const again = await screen.findByTestId("parental-ask-time");
+    expect(within(again).queryByTestId("parental-ask-waiting")).toBeNull();
+    expect(within(again).getByRole("button", { name: "15 minutes" })).toBeInTheDocument();
+  });
+
+  it("a request for time still waits while the home says the time is over", async () => {
+    post.mockResolvedValue(waiting(6 * 3600_000, { subject_kind: "time" }));
+    const first = show(timesUp);
+    await userEvent.click(screen.getByRole("button", { name: "30 minutes" }));
+    await screen.findByTestId("parental-ask-waiting");
+    first.unmount();
+    show(timesUp);
+    expect(screen.getByTestId("parental-ask-waiting")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "30 minutes" })).toBeNull();
+  });
+
+  it("a parent's PIN for more time answers the request for time", async () => {
+    home(guardians);
+    post.mockResolvedValue(waiting(6 * 3600_000, { subject_kind: "time" }));
+    show(timesUp);
+    await userEvent.click(await screen.findByRole("button", { name: "30 minutes" }));
+    await screen.findByTestId("parental-ask-waiting");
+    post.mockResolvedValue({ grant: { id: "t1", minutes: 30 } });
+    await unlock();
+    await waitFor(() => expect(onCheck).toHaveBeenCalled());
+    expect(wasAsked(memberUser.id, ASKED_TIME)).toBe(false);
+    expect(screen.queryByTestId("parental-ask-waiting")).toBeNull();
+  });
+});
+
+// The digits are a parent's, typed on a child's screen: they stay nowhere.
+describe("the PIN's digits", () => {
+  const guardians = [{ id: "g1", username: "mum" }];
+  // the dialog's owner keeps it open here, as a page does until the home is read again
+  const dialog = (onUnlocked = vi.fn()) => (
+    <PinUnlock
+      open
+      onClose={() => {}}
+      guardians={guardians}
+      kind="video"
+      id="v1"
+      onUnlocked={onUnlocked}
+    />
+  );
+  const field = () => screen.getByLabelText("Enter the 6-digit parent PIN");
+
+  it("are gone from the page once the home has unlocked", async () => {
+    const onUnlocked = vi.fn();
+    show(dialog(onUnlocked));
+    await userEvent.type(field(), "123456");
+    post.mockResolvedValue({ rule: { id: "r1", expires_at: "2099-01-01T01:00:00Z" } });
+    await userEvent.click(screen.getByRole("button", { name: "Unlock" }));
+    await waitFor(() => expect(onUnlocked).toHaveBeenCalled());
+    expect(field()).toHaveValue("");
+  });
+
+  it("are gone on Cancel", async () => {
+    show(dialog());
+    await userEvent.type(field(), "1234");
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(field()).toHaveValue("");
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("are a one-time code to the browser, which then does not offer to save them", () => {
+    show(dialog());
+    expect(field()).toHaveAttribute("autocomplete", "one-time-code");
+    expect(field()).toHaveAttribute("type", "password");
   });
 });
