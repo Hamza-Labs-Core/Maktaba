@@ -9559,7 +9559,7 @@ paths:
                     maxItems: 64
                     items:
                       type: string
-                    description: IP addresses or CIDR ranges, for example `192.168.1.20` or `192.168.1.0/24`. The answer has them normalised, without repeats.
+                    description: IP addresses or CIDR ranges, for example `192.0.2.20` or `192.0.2.0/24`. The answer has them normalised, without repeats.
         '403':
           description: Admin only.
           content:
@@ -9595,7 +9595,7 @@ paths:
                   maxItems: 64
                   items:
                     type: string
-                  description: IP addresses or CIDR ranges, for example `192.168.1.20` or `192.168.1.0/24`. The answer has them normalised, without repeats.
+                  description: IP addresses or CIDR ranges, for example `192.0.2.20` or `192.0.2.0/24`. The answer has them normalised, without repeats.
       responses:
         '200':
           description: The addresses after the change.
@@ -9612,7 +9612,7 @@ paths:
                     maxItems: 64
                     items:
                       type: string
-                    description: IP addresses or CIDR ranges, for example `192.168.1.20` or `192.168.1.0/24`. The answer has them normalised, without repeats.
+                    description: IP addresses or CIDR ranges, for example `192.0.2.20` or `192.0.2.0/24`. The answer has them normalised, without repeats.
         '400':
           description: Invalid request.
           content:
