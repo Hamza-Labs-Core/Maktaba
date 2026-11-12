@@ -86,6 +86,17 @@ cd apps/desktop-player
   to the home's `/stream/` (the client's `StreamAuthInterceptor`: refreshed before it runs out,
   once more on a 401). Only that home's `/stream/` ever gets the token; a playlist naming the
   home's address is rewritten to the proxy's.
+- **Parental controls (Epic 57; the home enforces every rule):** for a restricted account the
+  watch screen shows the time the home says is left once 15 minutes or fewer remain and a
+  warning five minutes and one minute before the end (`GET /api/me/parental/time`; no count is
+  kept here). The progress post is the stream's heartbeat: every 10 s while playing and at once
+  when the video starts or resumes. A session open, a renewal or a progress post that answers
+  403 `parental-time` stops the video and shows the time's-up screen (`watch/TimesUp.kt`):
+  why, when watching opens again, the saved place, Ask for more time (15, 30 or 60 minutes,
+  `POST /api/me/parental/requests`), Enter parent PIN (`POST /api/me/parental/unlock`) and
+  Check again; nothing asks again by itself. A 404 on a progress post ends the video; a 503 is
+  "can't check your watching time right now". Live TV asks `POST /api/channels/{id}/play` for a
+  limited sign-in and shows "Not available right now" for a programme above the limit.
 - **Finding a home:** JmDNS on every interface (`_maktaba._tcp`, `role=home` only, one row per
   home), saved homes, an address or a `maktaba://connect` link (typed, pasted, or the first
   command-line argument, which is always confirmed first). Tokens stay bound to the exact

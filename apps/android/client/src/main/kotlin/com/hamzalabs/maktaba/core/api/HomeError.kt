@@ -55,6 +55,12 @@ data class Problem(
     val feature: String = "",
     /** The relay's answers name their reason in `error` (story 50.19). */
     val error: String = "",
+    /** Why, in a word (Epic 57: `outside_slot`, `limit_reached`, `no_heartbeat`; `programme`). */
+    val reason: String = "",
+    /** When watching opens again (a `parental-time` refusal), RFC 3339; empty when the home named none. */
+    val nextAllowedAt: String = "",
+    /** When to ask again (a `restricted` programme on live TV), RFC 3339; empty when the home named none. */
+    val retryAt: String = "",
 ) {
     /** The last part of [type] (`rendition-not-found`): the home's domain differs by install. */
     val slug: String get() = type.substringAfter("/problems/", "").trimEnd('/')
@@ -67,7 +73,8 @@ data class Problem(
             val o = runCatching { ApiClient.json.parseToJsonElement(text) as? JsonObject }.getOrNull() ?: return null
             fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull.orEmpty()
             val p = Problem(s("type"), s("title"), s("status").toDoubleOrNull()?.toInt() ?: 0, s("detail"), s("code"),
-                s("component"), s("feature"), s("error"))
+                s("component"), s("feature"), s("error"),
+                s("reason"), s("next_allowed_at"), s("retry_at"))
             return if (p.type.isEmpty() && p.title.isEmpty() && p.code.isEmpty() && p.error.isEmpty()) null else p
         }
     }

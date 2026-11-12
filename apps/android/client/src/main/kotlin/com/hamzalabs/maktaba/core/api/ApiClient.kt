@@ -290,12 +290,26 @@ class ApiClient(
         runCatching { send(request("DELETE", "/api/stream/sessions/$session")) }
     }
 
-    suspend fun reportProgress(session: String, positionSec: Int, completed: Boolean = false) {
+    /**
+     * Posts where the video is (`POST /api/stream/sessions/{id}/progress`): the resume point, and
+     * for an account with time rules the stream's heartbeat (Epic 57 story 57.14: at least every
+     * 60 seconds while it plays). It never throws: what the home answered is the [ProgressAnswer],
+     * so a player stops on a refusal ([ProgressAnswer.TimeOver], [ProgressAnswer.Ended]) and
+     * carries on over anything else.
+     */
+    suspend fun reportProgress(session: String, positionSec: Int, completed: Boolean = false): ProgressAnswer {
         val body = buildJsonObject {
             put("position_sec", positionSec)
             if (completed) put("completed", true)
         }
-        runCatching { send(request("POST", "/api/stream/sessions/$session/progress", body = body)) }
+        return try {
+            send(request("POST", "/api/stream/sessions/$session/progress", body = body))
+            ProgressAnswer.Ok
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            ProgressAnswer.of(e)
+        }
     }
 
     /** The video's picture, fetched with the Bearer token (the route needs one). */

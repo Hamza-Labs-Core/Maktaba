@@ -4,6 +4,7 @@ import com.hamzalabs.maktaba.core.api.PanelView
 import com.hamzalabs.maktaba.core.api.panels
 import com.hamzalabs.maktaba.core.ui.PluginPanels
 import kotlinx.coroutines.CancellationException
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -53,6 +54,8 @@ fun VideoScreen(
     onSeries: ((String) -> Unit)? = null,
     /** Story 54.20: the home serves plugin panels (capabilities `plugin_panels: on`). */
     panels: Boolean = false,
+    /** The sign-in's parental limit (Epic 57); null shows nothing of it. */
+    parental: com.hamzalabs.maktaba.core.parental.ParentalState? = null,
 ) {
     var pluginPanels by remember(id) { mutableStateOf<List<PanelView>>(emptyList()) }
     LaunchedEffect(id, panels) {
@@ -69,6 +72,19 @@ fun VideoScreen(
         }
     }
     val (state, retry) = rememberLoad(id, signedOut, where = "tv video") { api.video(id) to api.seriesOf(id) }
+    // a sign-in under a limit (story 57.05): a video the home does not show it is "This isn't
+    // available", with a parent to ask; the home answers a hidden video as a missing one
+    val mine = parental?.mine?.collectAsState()?.value
+    val failed = (state as? Load.Failed)?.failure
+    if (mine?.limited == true && failed?.kind == com.hamzalabs.maktaba.core.api.ErrorKind.NotFound) {
+        TvBlocked(
+            mine,
+            help = remember(id) { com.hamzalabs.maktaba.core.ui.ParentHelp(api.client, com.hamzalabs.maktaba.core.api.SubjectKind.VIDEO, id) },
+            onUnlocked = retry,
+            onBack = onBack,
+        )
+        return
+    }
     LoadState(state, retry, onBack) { (v, series) ->
         val focus = remember { FocusRequester() }
         LaunchedEffect(v.id) { runCatching { focus.requestFocus() } }

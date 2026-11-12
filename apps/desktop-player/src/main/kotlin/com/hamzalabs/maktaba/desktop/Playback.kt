@@ -10,6 +10,7 @@ import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.Capabilities
 import com.hamzalabs.maktaba.core.api.Chapter
 import com.hamzalabs.maktaba.core.api.Feature
+import com.hamzalabs.maktaba.core.api.ProgressAnswer
 import com.hamzalabs.maktaba.core.api.Rendition as Rung
 import com.hamzalabs.maktaba.core.api.chapters
 import com.hamzalabs.maktaba.core.api.myVideo
@@ -174,6 +175,16 @@ class Playback(
      */
     var timeUp by mutableStateOf<TimeUp?>(null)
         private set
+    /**
+     * The home ended the stream while it played (a progress post answered 404: the session is
+     * gone, or the video is no longer this account's). The video has stopped; nothing asks again.
+     */
+    var endedByHome by mutableStateOf(false)
+        private set
+
+    /** The home could not check the account's time at the last progress post (503); the next one asks again. */
+    var cannotCheck by mutableStateOf(false)
+        private set
     var playing by mutableStateOf(false)
         private set
     var positionMs by mutableLongStateOf(0L)
@@ -243,7 +254,7 @@ class Playback(
     private var audioTrack: Int? = null
 
     fun play(r: PlayRequest) {
-        if (r.videoId == request?.videoId && problem == null && timeUp == null && r.startSec == null) return
+        if (r.videoId == request?.videoId && problem == null && timeUp == null && !endedByHome && r.startSec == null) return
         stop()
         request = r
         running = scope.launch { run(r) }
@@ -267,6 +278,8 @@ class Playback(
         session = null
         problem = null
         timeUp = null
+        endedByHome = false
+        cannotCheck = false
         note = null
         request = null
         playing = false
@@ -565,7 +578,11 @@ class Playback(
         }
 
         override fun playing(on: Boolean) {
+            val was = playing
             playing = on
+            // resumed: the home hears of it at once, as a time-limited account's stream is
+            // served only while it does (story 57.14); the ten-second tick goes on from there
+            if (on && !was) scope.launch { beat() }
         }
 
         override fun failed(why: String) {
@@ -620,7 +637,11 @@ class Playback(
                 told = true
                 continue
             }
-            if (at > 0) client.reportProgress(s, (at / 1000).toInt())
+            // while it plays: the resume point, and a time-limited account's heartbeat
+            if (at > 0 && (playing || failed != null)) {
+                heard(s, client.reportProgress(s, (at / 1000).toInt()), at)
+                if (player == null) return
+            }
             val why = failed
             if (why != null && System.currentTimeMillis() - openedAt < 30_000) {
                 release(player)
@@ -635,6 +656,48 @@ class Playback(
                 if (!wasPlaying) player?.pause()
             }
         }
+    }
+
+    /** Posts where the video is now, and reads the home's answer. */
+    private suspend fun beat() {
+        val s = session ?: return
+        val at = positionMs
+        if (at <= 0 || ended) return
+        heard(s, client.reportProgress(s, (at / 1000).toInt()), at)
+    }
+
+    /**
+     * What the home said to a progress post of session [s] at [atMs] (Epic 57 stories 57.14,
+     * 57.15): time over stops the video with the time's-up screen; a missing session is the
+     * stream's end; "cannot check" is said and asked again with the next post.
+     */
+    private fun heard(s: String, answer: ProgressAnswer, atMs: Long) {
+        // a post of a session since closed or replaced says nothing about what plays now
+        if (session != s) return
+        when (answer) {
+            ProgressAnswer.Ok -> cannotCheck = false
+            is ProgressAnswer.TimeOver -> {
+                halt()
+                background.launch { client.closeStream(s) }
+                timeUp = TimeUp(answer.refusal.reason, answer.refusal.nextAllowedAt, atMs)
+            }
+            ProgressAnswer.Ended -> if (!ended) {
+                halt()
+                endedByHome = true
+            }
+            is ProgressAnswer.CannotCheck -> cannotCheck = true
+            is ProgressAnswer.Failed -> {}
+        }
+    }
+
+    /** Nothing plays on: the player goes and the session is let go (the request stays for the screen). */
+    private fun halt() {
+        session = null
+        release(player)
+        player = null
+        playing = false
+        cannotCheck = false
+        upNext.reset(null)
     }
 
     private fun release(p: Video?) {

@@ -122,6 +122,7 @@ fun WatchRouteScreen(videoId: String, startSec: Int?, nav: PlayerNavigator) {
             playback.play(v)
         },
         subtitleScale = settings.subtitleSize.scale,
+        parental = home.parental,
     )
 }
 

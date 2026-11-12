@@ -38,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -112,15 +113,19 @@ fun HomeScreen(nav: PlayerNavigator) {
         )
     }
     LaunchedEffect(state) { state.open() }
-    HomeContent(
-        state,
-        home.client,
-        nav,
-        admin = home.user.isAdmin,
-        onSwitchHome = home.session::switchHome,
-        onSignOut = home.session::signOut,
-        liveOn = home.features().isOn(Feature.LIVE_TV),
-    )
+    Box(Modifier.fillMaxSize()) {
+        HomeContent(
+            state,
+            home.client,
+            nav,
+            admin = home.user.isAdmin,
+            onSwitchHome = home.session::switchHome,
+            onSignOut = home.session::signOut,
+            liveOn = home.features().isOn(Feature.LIVE_TV),
+        )
+        // a restricted account's time, as the home says it (Epic 57 story 57.15)
+        HomeTime(home.parental, Modifier.align(Alignment.TopCenter).padding(WindowInsets.statusBars.asPaddingValues()).padding(top = 8.dp))
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -401,11 +406,12 @@ private fun HomeCardView(card: HomeCard, client: ApiClient, width: Dp, nav: Play
 @Composable
 private fun LiveRow(channels: List<NowEntry>, client: ApiClient, cardWidth: Dp, nav: PlayerNavigator) {
     val noContent = stringResource(R.string.home_no_content)
+    val notAvailable = stringResource(CoreR.string.live_parental_not_available)
     Rail(stringResource(R.string.home_row_live_now), Modifier.testTag("row-$KEY_LIVE")) {
         items(channels, key = { it.channel.id }) { e ->
             val current = e.current?.takeUnless { it.isFiller }
             PosterCard(
-                title = current?.title?.takeIf { it.isNotBlank() } ?: noContent,
+                title = if (current?.restricted == true) notAvailable else current?.title?.takeIf { it.isNotBlank() } ?: noContent,
                 posterUrl = (current?.poster ?: e.channel.logoUrl ?: e.channel.logo)?.let { homeUrl(client, it) },
                 onClick = { nav.open(Route.Channel(e.channel.id)) },
                 modifier = Modifier.testTag("channel-${e.channel.id}"),
@@ -455,4 +461,18 @@ private fun EmptyHome(admin: Boolean, onSwitchHome: () -> Unit, onSignOut: () ->
             }
         }
     }
+}
+
+/**
+ * Home's line for a restricted account (Epic 57 story 57.15): the time the home says is left
+ * today, or that the time is over and when watching opens again. Asked while Home shows, and
+ * only for a restricted account; nothing shows for anyone else.
+ */
+@Composable
+fun HomeTime(parental: com.hamzalabs.maktaba.core.parental.ParentalState, modifier: Modifier = Modifier) {
+    val mine by parental.mine.collectAsState()
+    val time by parental.time.collectAsState()
+    LaunchedEffect(parental, mine.restricted) { if (mine.restricted) parental.followTime() }
+    if (!mine.restricted) return
+    com.hamzalabs.maktaba.core.ui.HomeTimeLine(time, modifier)
 }

@@ -120,6 +120,8 @@ fun TvErrorState(
     onSignIn: (() -> Unit)? = null,
     onChooseHome: (() -> Unit)? = null,
     onBack: (() -> Unit)? = null,
+    /** Read instead of the kind's own sentence, when given. */
+    sentence: String? = null,
 ) {
     val actions = errorActions(failure.kind, onRetry != null, onSignIn != null, onChooseHome != null, onBack != null)
     val first = remember { FocusRequester() }
@@ -133,8 +135,9 @@ fun TvErrorState(
             Icon(failure.kind.icon, contentDescription = null, tint = MaktabaPalette.Gold, modifier = Modifier.size(56.dp))
             Text(title, style = MaterialTheme.typography.headlineSmall, color = MaktabaPalette.Text, textAlign = TextAlign.Center)
             Text(
-                stringResource(failure.kind.sentence(video)),
+                sentence ?: stringResource(failure.kind.sentence(video)),
                 style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.testTag("error-sentence"),
                 color = MaktabaPalette.Muted,
                 textAlign = TextAlign.Center,
             )

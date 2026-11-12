@@ -61,6 +61,8 @@ class MainActivity : ComponentActivity() {
                             val images = remember(client) { ImageCache.loader(applicationContext, client) }
                             // the sections (a bar, a rail or the collapsible rail, by the window and its fold), Live TV only with a channel (FR-5); hidden while a video plays full screen
                             CompositionLocalProvider(LocalPlayerHome provides home, LocalHomeImages provides images) {
+                                // the sign-in's parental limit, read at sign-in and whenever the app comes back (Epic 57)
+                                com.hamzalabs.maktaba.player.shell.FollowParental(home)
                                 // a TV waiting to sign in: a banner on top (not over a playing video), and a notification
                                 PendingSignInsHost(app.session, user, client, enabled = !playing) {
                                     // what is down on the home, on top (Epic 53 story 53.06; not over a playing video)

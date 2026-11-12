@@ -84,6 +84,12 @@ class DesktopHome(
      */
     fun change(block: suspend CoroutineScope.() -> Unit): Job = background.launch(Dispatchers.Main, block = block)
 
+    /**
+     * What this sign-in is under parental controls (Epic 57): its limit, and for a restricted
+     * account the time the home says is left. The home enforces both; the screens only say so.
+     */
+    val parental: com.hamzalabs.maktaba.core.parental.ParentalState by lazy { com.hamzalabs.maktaba.core.parental.ParentalState(client) }
+
     private val kept = mutableMapOf<String, Any>()
 
     /** A page's state kept for as long as this home is signed in, under [key]. */
