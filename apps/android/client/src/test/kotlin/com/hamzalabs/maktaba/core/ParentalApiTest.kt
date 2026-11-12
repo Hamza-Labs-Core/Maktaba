@@ -581,6 +581,73 @@ class ParentalApiTest {
         assertEquals(com.hamzalabs.maktaba.core.api.CHANNEL_ASK_MIN_MS, channelAskAgainMs(retryAt, allowed = false, nowMs = device))
     }
 
+    @Test
+    fun aChannelsWaitIsMeasuredFromTheAnswersOwnNowOnTheMonotonicClock() = runBlocking {
+        // the home says 20:00:00 in the answer itself. The device's wall clock is a day slow, and
+        // the Date header (a relay's, say) ten minutes fast: neither is read.
+        val homeNow = Instant.parse("2026-11-11T20:00:00Z")
+        val device = homeNow.minusSeconds(86_400).toEpochMilli()
+        val retryAt = homeNow.plusSeconds(300)
+        var mono = 5_000_000L
+        routes["POST /api/channels/c1/play"] = {
+            MockResponse.Builder().code(403).setHeader("Content-Type", "application/problem+json")
+                .setHeader("Date", "Wed, 11 Nov 2026 20:10:00 GMT")
+                .body(problem(403, "restricted", "restricted", ""","reason":"programme","retry_at":"$retryAt","now":"$homeNow"""")).build()
+        }
+        routes["POST /api/channels/c2/play"] = {
+            MockResponse.Builder().code(200).setHeader("Content-Type", "application/json")
+                .setHeader("Date", "Wed, 11 Nov 2026 20:10:00 GMT")
+                .body("""{"channel_id":"c2","url":"/stream/channel/c2/index.m3u8?sig=s","expires_at":"2026-11-11T21:00:00Z","until":"$retryAt","now":"$homeNow"}""").build()
+        }
+        routes["GET /api/channels/c2/access"] = {
+            json(200, """{"channel_id":"c2","restricted":true,"allowed":true,"until":"$retryAt","now":"$homeNow"}""")
+        }
+        val c = ApiClient(server.url("/"), MemoryTokens(token, "r"), now = { device }, monotonic = { mono })
+
+        val refused = c.channelNow("c1") as ChannelNow.NotNow
+        assertEquals(retryAt, refused.retryAt)
+        assertEquals(com.hamzalabs.maktaba.core.api.HomeClock(homeNow.toEpochMilli(), 5_000_000L), refused.clock)
+        // five minutes and a second, whatever the device's clock or the Date header says
+        assertEquals(301_000L, channelAskAgainMs(refused.retryAt, allowed = false, nowMs = c.homeNowMs(), clock = refused.clock, monoMs = mono))
+        assertEquals(301_000L, channelAskAgainMs(refused.retryAt, allowed = false, nowMs = device, clock = refused.clock, monoMs = mono))
+        // without the answer's own time the Date header would have been believed
+        assertEquals(com.hamzalabs.maktaba.core.api.CHANNEL_ASK_MIN_MS, channelAskAgainMs(refused.retryAt, allowed = false, nowMs = c.homeNowMs()))
+
+        // a playing channel: its stream took 40 s to start before the wait was set; those count
+        val playing = c.channelNow("c2") as ChannelNow.Playing
+        assertEquals(retryAt, playing.until)
+        mono += 40_000
+        assertEquals(261_000L, channelAskAgainMs(playing.until, allowed = true, nowMs = device, clock = playing.clock, monoMs = mono))
+        // the wall clock set forward an hour meanwhile changes nothing: it is not read
+        assertEquals(261_000L, channelAskAgainMs(playing.until, allowed = true, nowMs = device + 3_600_000, clock = playing.clock, monoMs = mono))
+        // past the time the home named: asked at once, but never sooner than the least wait
+        assertEquals(com.hamzalabs.maktaba.core.api.CHANNEL_ASK_MIN_MS, channelAskAgainMs(playing.until, allowed = true, nowMs = device, clock = playing.clock, monoMs = mono + 600_000))
+
+        assertEquals(com.hamzalabs.maktaba.core.api.HomeClock(homeNow.toEpochMilli(), mono), c.channelAccess("c2").clock)
+    }
+
+    @Test
+    fun anOlderHomeSendsNoNowAndTheWaitStaysAsItWas() = runBlocking {
+        val homeNow = Instant.parse("2026-11-11T20:00:00Z")
+        val device = homeNow.plusSeconds(600).toEpochMilli()
+        val until = homeNow.plusSeconds(120)
+        routes["POST /api/channels/c2/play"] = {
+            MockResponse.Builder().code(200).setHeader("Content-Type", "application/json")
+                .setHeader("Date", "Wed, 11 Nov 2026 20:00:00 GMT")
+                .body("""{"channel_id":"c2","url":"/stream/channel/c2/index.m3u8?sig=s","until":"$until"}""").build()
+        }
+        routes["GET /api/channels/c2/access"] = { json(200, """{"restricted":true,"allowed":true,"until":"$until","now":"soon"}""") }
+        val c = ApiClient(server.url("/"), MemoryTokens(token, "r"), now = { device }, monotonic = { 1L })
+        val playing = c.channelNow("c2") as ChannelNow.Playing
+        assertNull("no now: no reading of the home's clock", playing.clock)
+        // the home's clock by its Date header, as before
+        assertEquals(121_000L, channelAskAgainMs(playing.until, allowed = true, nowMs = c.homeNowMs(), clock = playing.clock, monoMs = 1L))
+        assertNull("a now that is not a time is none", c.channelAccess("c2").clock)
+        // a monotonic clock that seems to run backwards never lengthens the wait past the answer's
+        val clock = com.hamzalabs.maktaba.core.api.HomeClock(homeNow.toEpochMilli(), 1_000L)
+        assertEquals(homeNow.toEpochMilli(), clock.nowMs(500L))
+    }
+
     private val ownRequests = "GET /api/me/parental/requests"
 
     private fun own(vararg r: String) = json(200, """{"requests":[${r.joinToString(",")}]}""")

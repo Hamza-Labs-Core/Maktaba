@@ -2,11 +2,13 @@ package com.hamzalabs.maktaba.player.live
 
 import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.ChannelNow
+import com.hamzalabs.maktaba.core.api.HomeClock
 import com.hamzalabs.maktaba.core.api.RemoteBeat
 import com.hamzalabs.maktaba.core.api.RemoteTuned
 import com.hamzalabs.maktaba.core.api.RemoteTv
 import com.hamzalabs.maktaba.core.api.TvInfo
 import com.hamzalabs.maktaba.core.api.TvRemote
+import com.hamzalabs.maktaba.core.api.monotonicMs
 import com.hamzalabs.maktaba.player.harness.NoStall
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
@@ -44,7 +46,7 @@ class ChannelGateTest {
     private fun lan(id: String) = "http://home.test/stream/channel/$id/index.m3u8".toHttpUrl()
     private fun signed(id: String) = "http://home.test/stream/channel/$id/index.m3u8?sig=abc".toHttpUrl()
 
-    private fun TestScope.player(engine: FakeLiveEngine, asked: MutableList<String>, limited: Boolean = true, answer: (Int) -> ChannelNow) = ChannelPlayer(
+    private fun TestScope.player(engine: FakeLiveEngine, asked: MutableList<String>, limited: Boolean = true, clockAheadMs: Long = 0, answer: (Int) -> ChannelNow) = ChannelPlayer(
         remote = AtHome,
         lanUrl = ::lan,
         scope = backgroundScope,
@@ -59,7 +61,7 @@ class ChannelGateTest {
             asked += id
             answer(asked.size)
         },
-        nowMs = { t0.toEpochMilli() + testScheduler.currentTime },
+        nowMs = { t0.toEpochMilli() + clockAheadMs + testScheduler.currentTime },
     )
 
     @Test
@@ -86,6 +88,31 @@ class ChannelGateTest {
         assertNull(p.notNow)
         advanceTimeBy(3_600_000)
         assertEquals("nothing is due to change: not asked again", 1, asked.size)
+    }
+
+    /**
+     * The home's answer carries its own time: the wait is counted from it, and the clock the
+     * player was given (a day fast here: by it the home's time passed long ago) is not asked.
+     */
+    @Test
+    fun theWaitIsCountedFromTheHomesOwnTimeInTheAnswer() = runTest {
+        val back = t0.plusSeconds(600)
+        val engine = FakeLiveEngine(fetch = false)
+        val asked = mutableListOf<String>()
+        val p = player(engine, asked, clockAheadMs = 86_400_000) { n ->
+            val clock = HomeClock(t0.toEpochMilli(), monotonicMs())
+            if (n == 1) ChannelNow.NotNow(back, clock) else ChannelNow.Playing(signed("c1"), null, clock)
+        }
+        p.open("c1")
+        runCurrent()
+        assertEquals(NotNow(back), p.notNow)
+        advanceTimeBy(599_000)
+        runCurrent()
+        assertEquals("not every five seconds until the device's clock agrees", 1, asked.size)
+        advanceTimeBy(2_001)
+        runCurrent()
+        assertEquals(2, asked.size)
+        assertNull(p.notNow)
     }
 
     @Test

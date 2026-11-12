@@ -93,7 +93,12 @@ class ApiClient(
     private val now: () -> Long = System::currentTimeMillis,
     /** How a request waits between tries while the relay says the home is reconnecting. */
     private val pause: suspend (Long) -> Unit = { kotlinx.coroutines.delay(it) },
+    /** This device's monotonic clock, in milliseconds: what a wait is measured on ([HomeClock]). */
+    private val monotonic: () -> Long = ::monotonicMs,
 ) {
+    /** A reading of the home's clock from the time [at] an answer just carried (null: it carried none). */
+    internal fun homeClock(at: java.time.Instant?): HomeClock? = at?.let { HomeClock(it.toEpochMilli(), monotonic()) }
+
     private val refreshLock = Mutex()
 
     // ---------- sign-in ----------

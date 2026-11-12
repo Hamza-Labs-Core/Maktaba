@@ -138,15 +138,19 @@ fun Throwable.isRestricted(): Boolean = statusCause()?.let { it.code == 403 && i
 
 /**
  * Live TV's 403 `restricted` with reason `programme`: what plays now is above the limit.
- * [retryAt] is when to ask again (null: nothing in the next 12 hours changes it).
+ * [retryAt] is when to ask again (null: nothing in the next 12 hours changes it); [now] is the
+ * home's time for that answer (null: an older home, or the streaming service's own refusal).
  */
-data class ProgrammeRefusal(val retryAt: Instant? = null)
+data class ProgrammeRefusal(val retryAt: Instant? = null, val now: Instant? = null)
 
 fun Throwable.programmeRefusal(): ProgrammeRefusal? {
     val s = statusCause() ?: return null
     val p = s.problem ?: return null
     if (s.code != 403 || p.code != "restricted" || p.reason != "programme") return null
-    return ProgrammeRefusal(p.retryAt.takeIf { it.isNotEmpty() }?.let(::instantOrNull))
+    return ProgrammeRefusal(
+        p.retryAt.takeIf { it.isNotEmpty() }?.let(::instantOrNull),
+        p.now.takeIf { it.isNotEmpty() }?.let(::instantOrNull),
+    )
 }
 
 private fun Throwable.statusCause(): ApiException.Status? {
@@ -386,11 +390,27 @@ suspend fun ApiClient.moreTimeWithPin(guardianId: String, pin: String, minutes: 
 
 // ---------- live TV ----------
 
-/** `GET /api/channels/{id}/access`: may what the channel plays now be watched, and when that may change. */
-data class ChannelAccess(val restricted: Boolean = false, val allowed: Boolean = true, val until: Instant? = null)
+/** This device's monotonic clock, in milliseconds: it only counts up, whatever the wall clock is set to. */
+fun monotonicMs(): Long = System.nanoTime() / 1_000_000
 
-/** `POST /api/channels/{id}/play`: the channel's playlist with its signature, under this home. */
-data class ChannelPlay(val url: HttpUrl, val expiresAt: Instant? = null, val until: Instant? = null)
+/**
+ * A reading of the home's clock: an answer said the home's time was [homeMs] (its `now`) when
+ * this device's monotonic clock said [monoMs]. The home's time later is that plus what the
+ * monotonic clock counted since, so the device's wall clock, which a child can set, is never read.
+ */
+data class HomeClock(val homeMs: Long, val monoMs: Long) {
+    /** The home's time when the monotonic clock says [monoNow]. */
+    fun nowMs(monoNow: Long): Long = homeMs + (monoNow - monoMs).coerceAtLeast(0)
+}
+
+/**
+ * `GET /api/channels/{id}/access`: may what the channel plays now be watched, and when that may
+ * change. [clock] is the home's clock by the answer's `now` (null: an older home sent none).
+ */
+data class ChannelAccess(val restricted: Boolean = false, val allowed: Boolean = true, val until: Instant? = null, val clock: HomeClock? = null)
+
+/** `POST /api/channels/{id}/play`: the channel's playlist with its signature, under this home; [clock] as [ChannelAccess.clock]. */
+data class ChannelPlay(val url: HttpUrl, val expiresAt: Instant? = null, val until: Instant? = null, val clock: HomeClock? = null)
 
 private fun channelSegment(id: String) = java.net.URLEncoder.encode(id, Charsets.UTF_8.name()).replace("+", "%20")
 
@@ -401,6 +421,7 @@ suspend fun ApiClient.channelAccess(channelId: String): ChannelAccess {
         restricted = (o["restricted"] as? JsonPrimitive)?.booleanOrNull == true,
         allowed = (o["allowed"] as? JsonPrimitive)?.booleanOrNull != false,
         until = (o["until"] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull?.let(::instantOrNull),
+        clock = homeClock((o["now"] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull?.let(::instantOrNull)),
     )
 }
 
@@ -415,16 +436,22 @@ suspend fun ApiClient.playChannel(channelId: String): ChannelPlay {
     // relative to the home (under its base path), as a stream session's addresses are
     val under = basePath.isNotEmpty() && ref.startsWith("/") && !ref.startsWith("//") && !ref.startsWith("$basePath/")
     val url = home.resolve(if (under) basePath + ref else ref)?.takeIf(::isStream) ?: throw ApiException.Decoding("not this home's stream")
-    return ChannelPlay(url, s("expires_at")?.let(::instantOrNull), s("until")?.let(::instantOrNull))
+    return ChannelPlay(url, s("expires_at")?.let(::instantOrNull), s("until")?.let(::instantOrNull), homeClock(s("now")?.let(::instantOrNull)))
 }
 
 /** What a channel is to a limited account now ([channelNow]). */
 sealed interface ChannelNow {
-    /** It may be watched, at [url]; [until] is when a programme above the limit starts (null: none known). */
-    data class Playing(val url: HttpUrl, val until: Instant?) : ChannelNow
+    /**
+     * It may be watched, at [url]; [until] is when a programme above the limit starts (null: none
+     * known). [clock] is the home's clock by this answer (null: an older home sent no `now`).
+     */
+    data class Playing(val url: HttpUrl, val until: Instant?, val clock: HomeClock? = null) : ChannelNow
 
-    /** "Not available right now": the programme on air is above the limit until [retryAt] (null: not known). */
-    data class NotNow(val retryAt: Instant?) : ChannelNow
+    /**
+     * "Not available right now": the programme on air is above the limit until [retryAt] (null:
+     * not known). [clock] as [Playing.clock].
+     */
+    data class NotNow(val retryAt: Instant?, val clock: HomeClock? = null) : ChannelNow
 }
 
 /**
@@ -433,9 +460,9 @@ sealed interface ChannelNow {
  * (a hidden channel is the 404 of a missing one).
  */
 suspend fun ApiClient.channelNow(channelId: String): ChannelNow = try {
-    playChannel(channelId).let { ChannelNow.Playing(it.url, it.until) }
+    playChannel(channelId).let { ChannelNow.Playing(it.url, it.until, it.clock) }
 } catch (e: ApiException.Status) {
-    e.programmeRefusal()?.let { ChannelNow.NotNow(it.retryAt) } ?: throw e
+    e.programmeRefusal()?.let { ChannelNow.NotNow(it.retryAt, homeClock(it.now)) } ?: throw e
 }
 
 /** Never ask the home about a channel sooner than this after an answer. */
@@ -447,12 +474,17 @@ const val CHANNEL_ASK_AGAIN_MS = 60_000L
 /**
  * How long to wait before asking about a channel again: a second after [at] (the time the home
  * named), never sooner than [CHANNEL_ASK_MIN_MS]; with no time, [CHANNEL_ASK_AGAIN_MS] while it
- * is refused and never (null) while it plays. [nowMs] is the home's clock
- * ([ApiClient.homeNowMs]): against a device clock that runs fast the home would be asked
- * every five seconds until its time came, and against a slow one the slate would stay too long.
+ * is refused and never (null) while it plays.
+ *
+ * The wait is [at] minus the home's time now. With [clock] (the answer carried the home's `now`)
+ * that is the home's own reading moved on by this device's monotonic clock ([monoMs]): no wall
+ * clock is read, so one that is wrong, or set while the channel plays, changes nothing. An
+ * older home sends no `now`: then [nowMs] is used, the home's clock as [ApiClient.homeNowMs]
+ * has it by its last answer's `Date`. Against the device's own clock a fast one would ask the
+ * home every five seconds until its time came, and a slow one would keep the slate too long.
  */
-fun channelAskAgainMs(at: Instant?, allowed: Boolean, nowMs: Long): Long? = when {
-    at != null -> (at.toEpochMilli() - nowMs + 1_000).coerceAtLeast(CHANNEL_ASK_MIN_MS)
+fun channelAskAgainMs(at: Instant?, allowed: Boolean, nowMs: Long, clock: HomeClock? = null, monoMs: Long = monotonicMs()): Long? = when {
+    at != null -> (at.toEpochMilli() - (clock?.nowMs(monoMs) ?: nowMs) + 1_000).coerceAtLeast(CHANNEL_ASK_MIN_MS)
     allowed -> null
     else -> CHANNEL_ASK_AGAIN_MS
 }
