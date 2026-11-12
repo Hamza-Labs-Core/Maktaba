@@ -268,7 +268,7 @@ export function buildRoutes(lang, lib = loadLibrary()) {
       playlists: [],
       ...(s ? { series: { id: s.id, name: L(s.name) } } : {}),
     });
-    // a video's poster is a frame of it, as a home extracts one (16:9); a series' is portrait
+    // a poster is 16:9, a frame as a home extracts one; `portrait` is the 2:3 crop
     art(`/api/videos/${v.id}/poster`, `${v.art}-backdrop.jpg`);
     art(`/api/videos/${v.id}/portrait`, `${v.art}-poster.jpg`);
     art(`/api/videos/${v.id}/backdrop`, `${v.art}-backdrop.jpg`);
@@ -308,7 +308,8 @@ export function buildRoutes(lang, lib = loadLibrary()) {
       sort: "episode",
       next_episode: next ? episode(next) : null,
     });
-    art(`/api/series/${s.id}/poster`, `${s.poster}-poster.jpg`);
+    art(`/api/series/${s.id}/poster`, `${s.poster}-backdrop.jpg`);
+    art(`/api/series/${s.id}/portrait`, `${s.poster}-poster.jpg`);
     art(`/api/series/${s.id}/backdrop`, `${s.poster}-backdrop.jpg`);
   }
 
@@ -401,8 +402,8 @@ export function buildRoutes(lang, lib = loadLibrary()) {
     let at = GUIDE_START - (c.number * 7 * 60); // channels start off step, as a real guide does
     for (let i = 0; at < GUIDE_END; i++) {
       const v = byId.get(c.lineup[i % c.lineup.length]);
-      // a programme is the title plus the channel's short break, to the next 5 minutes
-      const len = Math.ceil((v.duration_sec + 60) / 300) * 300;
+      // a programme is the title and the channel's filler, to the next quarter hour
+      const len = Math.ceil((v.duration_sec + 60) / 900) * 900;
       const e = episodeOf(v);
       const s = series(v);
       blocks.push({

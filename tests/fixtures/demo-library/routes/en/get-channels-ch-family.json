@@ -27,10 +27,10 @@
  "created_at": "{{now-17280000}}",
  "updated_at": "{{now-864000}}",
  "now_playing": {
-  "title": "Big Buck Bunny",
-  "start_at": "{{now-60}}",
-  "end_at": "{{now+840}}",
-  "progress": 0.0667
+  "title": "Caminandes: Llamigos",
+  "start_at": "{{now-360}}",
+  "end_at": "{{now+540}}",
+  "progress": 0.4
  },
  "guide_until": "{{now+86400}}"
 }

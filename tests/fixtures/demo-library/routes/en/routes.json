@@ -549,6 +549,12 @@
   "method": "GET",
   "path": "/api/series/s-open-shorts/poster",
   "status": 200,
+  "art": "gran-dillama-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/series/s-open-shorts/portrait",
+  "status": 200,
   "art": "gran-dillama-poster.jpg"
  },
  {

@@ -27,10 +27,10 @@
  "created_at": "{{now-17280000}}",
  "updated_at": "{{now-864000}}",
  "now_playing": {
-  "title": "مغسلة الكون",
-  "start_at": "{{now-120}}",
-  "end_at": "{{now+780}}",
-  "progress": 0.1333
+  "title": "سينتل",
+  "start_at": "{{now-420}}",
+  "end_at": "{{now+1380}}",
+  "progress": 0.2333
  },
  "guide_until": "{{now+86400}}"
 }
