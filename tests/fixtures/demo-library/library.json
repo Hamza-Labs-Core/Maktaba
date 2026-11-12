@@ -14,6 +14,7 @@
     "is_admin": true
   },
   "clock": "2026-06-15T12:00:00Z",
+  "featured": "v-spring",
   "libraries": [
     {
       "id": "lib-films",

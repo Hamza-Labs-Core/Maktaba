@@ -6,3 +6,4 @@ playwright-report
 test-results
 lighthouse-out
 logs
+shots-capture/

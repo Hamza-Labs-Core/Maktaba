@@ -1,0 +1,685 @@
+{
+  "from": "../../../../../../../../../private/tmp/claude-501/-Users-mahmouddarwish--t3-worktrees-Maktaba-t3-d2d39aa3/80fe98bd-cb5b-4c88-b529-064a938d631e/scratchpad/in",
+  "images": {
+    "android-phone-film-ar": {
+      "app": "android-phone",
+      "screen": "film",
+      "lang": "ar",
+      "width": 480,
+      "height": 1041,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 520,
+          "webp": "/shots/android-phone-film-ar-240.webp",
+          "avif": "/shots/android-phone-film-ar-240.avif",
+          "webpBytes": 10666,
+          "avifBytes": 9692
+        },
+        {
+          "width": 360,
+          "height": 780,
+          "webp": "/shots/android-phone-film-ar-360.webp",
+          "avif": "/shots/android-phone-film-ar-360.avif",
+          "webpBytes": 18634,
+          "avifBytes": 16546
+        },
+        {
+          "width": 480,
+          "height": 1041,
+          "webp": "/shots/android-phone-film-ar-480.webp",
+          "avif": "/shots/android-phone-film-ar-480.avif",
+          "webpBytes": 27210,
+          "avifBytes": 23352
+        }
+      ]
+    },
+    "android-phone-film-en": {
+      "app": "android-phone",
+      "screen": "film",
+      "lang": "en",
+      "width": 480,
+      "height": 1041,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 520,
+          "webp": "/shots/android-phone-film-en-240.webp",
+          "avif": "/shots/android-phone-film-en-240.avif",
+          "webpBytes": 12376,
+          "avifBytes": 10596
+        },
+        {
+          "width": 360,
+          "height": 780,
+          "webp": "/shots/android-phone-film-en-360.webp",
+          "avif": "/shots/android-phone-film-en-360.avif",
+          "webpBytes": 21040,
+          "avifBytes": 17988
+        },
+        {
+          "width": 480,
+          "height": 1041,
+          "webp": "/shots/android-phone-film-en-480.webp",
+          "avif": "/shots/android-phone-film-en-480.avif",
+          "webpBytes": 31034,
+          "avifBytes": 26198
+        }
+      ]
+    },
+    "android-phone-home-ar": {
+      "app": "android-phone",
+      "screen": "home",
+      "lang": "ar",
+      "width": 480,
+      "height": 1041,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 520,
+          "webp": "/shots/android-phone-home-ar-240.webp",
+          "avif": "/shots/android-phone-home-ar-240.avif",
+          "webpBytes": 15712,
+          "avifBytes": 13531
+        },
+        {
+          "width": 360,
+          "height": 780,
+          "webp": "/shots/android-phone-home-ar-360.webp",
+          "avif": "/shots/android-phone-home-ar-360.avif",
+          "webpBytes": 27568,
+          "avifBytes": 24312
+        },
+        {
+          "width": 480,
+          "height": 1041,
+          "webp": "/shots/android-phone-home-ar-480.webp",
+          "avif": "/shots/android-phone-home-ar-480.avif",
+          "webpBytes": 39856,
+          "avifBytes": 34436
+        }
+      ]
+    },
+    "android-phone-home-en": {
+      "app": "android-phone",
+      "screen": "home",
+      "lang": "en",
+      "width": 480,
+      "height": 1041,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 240,
+          "height": 520,
+          "webp": "/shots/android-phone-home-en-240.webp",
+          "avif": "/shots/android-phone-home-en-240.avif",
+          "webpBytes": 16872,
+          "avifBytes": 14287
+        },
+        {
+          "width": 360,
+          "height": 780,
+          "webp": "/shots/android-phone-home-en-360.webp",
+          "avif": "/shots/android-phone-home-en-360.avif",
+          "webpBytes": 29888,
+          "avifBytes": 25428
+        },
+        {
+          "width": 480,
+          "height": 1041,
+          "webp": "/shots/android-phone-home-en-480.webp",
+          "avif": "/shots/android-phone-home-en-480.avif",
+          "webpBytes": 42048,
+          "avifBytes": 36244
+        }
+      ]
+    },
+    "androidtv-guide-ar": {
+      "app": "androidtv",
+      "screen": "guide",
+      "lang": "ar",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/androidtv-guide-ar-640.webp",
+          "avif": "/shots/androidtv-guide-ar-640.avif",
+          "webpBytes": 12854,
+          "avifBytes": 12590
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/androidtv-guide-ar-960.webp",
+          "avif": "/shots/androidtv-guide-ar-960.avif",
+          "webpBytes": 21756,
+          "avifBytes": 19904
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/androidtv-guide-ar-1280.webp",
+          "avif": "/shots/androidtv-guide-ar-1280.avif",
+          "webpBytes": 31204,
+          "avifBytes": 26273
+        }
+      ]
+    },
+    "androidtv-guide-en": {
+      "app": "androidtv",
+      "screen": "guide",
+      "lang": "en",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/androidtv-guide-en-640.webp",
+          "avif": "/shots/androidtv-guide-en-640.avif",
+          "webpBytes": 13464,
+          "avifBytes": 13008
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/androidtv-guide-en-960.webp",
+          "avif": "/shots/androidtv-guide-en-960.avif",
+          "webpBytes": 23720,
+          "avifBytes": 21120
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/androidtv-guide-en-1280.webp",
+          "avif": "/shots/androidtv-guide-en-1280.avif",
+          "webpBytes": 32266,
+          "avifBytes": 27091
+        }
+      ]
+    },
+    "androidtv-home-ar": {
+      "app": "androidtv",
+      "screen": "home",
+      "lang": "ar",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/androidtv-home-ar-640.webp",
+          "avif": "/shots/androidtv-home-ar-640.avif",
+          "webpBytes": 17492,
+          "avifBytes": 15076
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/androidtv-home-ar-960.webp",
+          "avif": "/shots/androidtv-home-ar-960.avif",
+          "webpBytes": 29290,
+          "avifBytes": 25510
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/androidtv-home-ar-1280.webp",
+          "avif": "/shots/androidtv-home-ar-1280.avif",
+          "webpBytes": 41668,
+          "avifBytes": 35460
+        }
+      ]
+    },
+    "androidtv-home-en": {
+      "app": "androidtv",
+      "screen": "home",
+      "lang": "en",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/androidtv-home-en-640.webp",
+          "avif": "/shots/androidtv-home-en-640.avif",
+          "webpBytes": 19536,
+          "avifBytes": 16427
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/androidtv-home-en-960.webp",
+          "avif": "/shots/androidtv-home-en-960.avif",
+          "webpBytes": 32640,
+          "avifBytes": 27651
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/androidtv-home-en-1280.webp",
+          "avif": "/shots/androidtv-home-en-1280.avif",
+          "webpBytes": 46558,
+          "avifBytes": 38622
+        }
+      ]
+    },
+    "androidtv-player-ar": {
+      "app": "androidtv",
+      "screen": "player",
+      "lang": "ar",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/androidtv-player-ar-640.webp",
+          "avif": "/shots/androidtv-player-ar-640.avif",
+          "webpBytes": 11106,
+          "avifBytes": 11138
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/androidtv-player-ar-960.webp",
+          "avif": "/shots/androidtv-player-ar-960.avif",
+          "webpBytes": 18288,
+          "avifBytes": 17472
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/androidtv-player-ar-1280.webp",
+          "avif": "/shots/androidtv-player-ar-1280.avif",
+          "webpBytes": 25758,
+          "avifBytes": 23167
+        }
+      ]
+    },
+    "androidtv-player-en": {
+      "app": "androidtv",
+      "screen": "player",
+      "lang": "en",
+      "width": 1280,
+      "height": 720,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 640,
+          "height": 360,
+          "webp": "/shots/androidtv-player-en-640.webp",
+          "avif": "/shots/androidtv-player-en-640.avif",
+          "webpBytes": 11188,
+          "avifBytes": 11233
+        },
+        {
+          "width": 960,
+          "height": 540,
+          "webp": "/shots/androidtv-player-en-960.webp",
+          "avif": "/shots/androidtv-player-en-960.avif",
+          "webpBytes": 18536,
+          "avifBytes": 17647
+        },
+        {
+          "width": 1280,
+          "height": 720,
+          "webp": "/shots/androidtv-player-en-1280.webp",
+          "avif": "/shots/androidtv-player-en-1280.avif",
+          "webpBytes": 25616,
+          "avifBytes": 23440
+        }
+      ]
+    },
+    "web-film-ar": {
+      "app": "web",
+      "screen": "film",
+      "lang": "ar",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-film-ar-720.webp",
+          "avif": "/shots/web-film-ar-720.avif",
+          "webpBytes": 27466,
+          "avifBytes": 25435
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-film-ar-1080.webp",
+          "avif": "/shots/web-film-ar-1080.avif",
+          "webpBytes": 47466,
+          "avifBytes": 42304
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-film-ar-1440.webp",
+          "avif": "/shots/web-film-ar-1440.avif",
+          "webpBytes": 66826,
+          "avifBytes": 58413
+        }
+      ]
+    },
+    "web-film-en": {
+      "app": "web",
+      "screen": "film",
+      "lang": "en",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-film-en-720.webp",
+          "avif": "/shots/web-film-en-720.avif",
+          "webpBytes": 28156,
+          "avifBytes": 25835
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-film-en-1080.webp",
+          "avif": "/shots/web-film-en-1080.avif",
+          "webpBytes": 48146,
+          "avifBytes": 43135
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-film-en-1440.webp",
+          "avif": "/shots/web-film-en-1440.avif",
+          "webpBytes": 68614,
+          "avifBytes": 59677
+        }
+      ]
+    },
+    "web-guide-ar": {
+      "app": "web",
+      "screen": "guide",
+      "lang": "ar",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-guide-ar-720.webp",
+          "avif": "/shots/web-guide-ar-720.avif",
+          "webpBytes": 19758,
+          "avifBytes": 18584
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-guide-ar-1080.webp",
+          "avif": "/shots/web-guide-ar-1080.avif",
+          "webpBytes": 35814,
+          "avifBytes": 33002
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-guide-ar-1440.webp",
+          "avif": "/shots/web-guide-ar-1440.avif",
+          "webpBytes": 51370,
+          "avifBytes": 45304
+        }
+      ]
+    },
+    "web-guide-en": {
+      "app": "web",
+      "screen": "guide",
+      "lang": "en",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-guide-en-720.webp",
+          "avif": "/shots/web-guide-en-720.avif",
+          "webpBytes": 21086,
+          "avifBytes": 19477
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-guide-en-1080.webp",
+          "avif": "/shots/web-guide-en-1080.avif",
+          "webpBytes": 38242,
+          "avifBytes": 34649
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-guide-en-1440.webp",
+          "avif": "/shots/web-guide-en-1440.avif",
+          "webpBytes": 56076,
+          "avifBytes": 48487
+        }
+      ]
+    },
+    "web-home-ar": {
+      "app": "web",
+      "screen": "home",
+      "lang": "ar",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-home-ar-720.webp",
+          "avif": "/shots/web-home-ar-720.avif",
+          "webpBytes": 38228,
+          "avifBytes": 32567
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-home-ar-1080.webp",
+          "avif": "/shots/web-home-ar-1080.avif",
+          "webpBytes": 67932,
+          "avifBytes": 58972
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-home-ar-1440.webp",
+          "avif": "/shots/web-home-ar-1440.avif",
+          "webpBytes": 99664,
+          "avifBytes": 83676
+        }
+      ]
+    },
+    "web-home-en": {
+      "app": "web",
+      "screen": "home",
+      "lang": "en",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-home-en-720.webp",
+          "avif": "/shots/web-home-en-720.avif",
+          "webpBytes": 40296,
+          "avifBytes": 33967
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-home-en-1080.webp",
+          "avif": "/shots/web-home-en-1080.avif",
+          "webpBytes": 72518,
+          "avifBytes": 62891
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-home-en-1440.webp",
+          "avif": "/shots/web-home-en-1440.avif",
+          "webpBytes": 106340,
+          "avifBytes": 89367
+        }
+      ]
+    },
+    "web-search-ar": {
+      "app": "web",
+      "screen": "search",
+      "lang": "ar",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-search-ar-720.webp",
+          "avif": "/shots/web-search-ar-720.avif",
+          "webpBytes": 24474,
+          "avifBytes": 22015
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-search-ar-1080.webp",
+          "avif": "/shots/web-search-ar-1080.avif",
+          "webpBytes": 43028,
+          "avifBytes": 38928
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-search-ar-1440.webp",
+          "avif": "/shots/web-search-ar-1440.avif",
+          "webpBytes": 61686,
+          "avifBytes": 53406
+        }
+      ]
+    },
+    "web-search-en": {
+      "app": "web",
+      "screen": "search",
+      "lang": "en",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-search-en-720.webp",
+          "avif": "/shots/web-search-en-720.avif",
+          "webpBytes": 25108,
+          "avifBytes": 22375
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-search-en-1080.webp",
+          "avif": "/shots/web-search-en-1080.avif",
+          "webpBytes": 44224,
+          "avifBytes": 39654
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-search-en-1440.webp",
+          "avif": "/shots/web-search-en-1440.avif",
+          "webpBytes": 64282,
+          "avifBytes": 55149
+        }
+      ]
+    },
+    "web-series-ar": {
+      "app": "web",
+      "screen": "series",
+      "lang": "ar",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-series-ar-720.webp",
+          "avif": "/shots/web-series-ar-720.avif",
+          "webpBytes": 27040,
+          "avifBytes": 23925
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-series-ar-1080.webp",
+          "avif": "/shots/web-series-ar-1080.avif",
+          "webpBytes": 49400,
+          "avifBytes": 42999
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-series-ar-1440.webp",
+          "avif": "/shots/web-series-ar-1440.avif",
+          "webpBytes": 73298,
+          "avifBytes": 61191
+        }
+      ]
+    },
+    "web-series-en": {
+      "app": "web",
+      "screen": "series",
+      "lang": "en",
+      "width": 1440,
+      "height": 900,
+      "quality": 82,
+      "sizes": [
+        {
+          "width": 720,
+          "height": 450,
+          "webp": "/shots/web-series-en-720.webp",
+          "avif": "/shots/web-series-en-720.avif",
+          "webpBytes": 28948,
+          "avifBytes": 25212
+        },
+        {
+          "width": 1080,
+          "height": 675,
+          "webp": "/shots/web-series-en-1080.webp",
+          "avif": "/shots/web-series-en-1080.avif",
+          "webpBytes": 53634,
+          "avifBytes": 45865
+        },
+        {
+          "width": 1440,
+          "height": 900,
+          "webp": "/shots/web-series-en-1440.webp",
+          "avif": "/shots/web-series-en-1440.avif",
+          "webpBytes": 79356,
+          "avifBytes": 67026
+        }
+      ]
+    }
+  }
+}

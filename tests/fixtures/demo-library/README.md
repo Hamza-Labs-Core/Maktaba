@@ -21,7 +21,7 @@ and anywhere else an app is shown: every app shows the same library, in English 
 
 ```sh
 node tests/fixtures/demo-library/routes.mjs            # after changing library.json
-node --test tests/fixtures/demo-library/                # the tests (CI: lint / demo library)
+node --test tests/fixtures/demo-library/demo-library.test.mjs                # the tests (CI: website / Tests (the demo library))
 ```
 
 Times in the answers are `{{now}}`, `{{now-N}}`, `{{now+N}}` (seconds), as in Apple's
@@ -32,8 +32,11 @@ taken on any day shows the same dates, guide and progress.
 
 - the web capture, `web/packages/website/scripts/capture-web.mjs` (`buildRoutes`, answered
   through Playwright's routing);
-- Apple's `MockHome` (`UITests/DemoShotsUITests.swift` and the tvOS and Mac shots) and
-  Android's `FakeHome` (the `Demo*ScreenshotTest`s), from `routes/<lang>/`.
+- Apple's `MockHome` (its demo mode, for the iPhone, iPad, Apple TV and Mac shots), from
+  `routes/<lang>/`;
+- Android: `DemoLibrary` in `:client`'s test fixtures reads `routes/<lang>/` for the phone's
+  `FakeHome` and the TV app's tests (`DemoScreenshotTest` in `apps/android/player` and
+  `apps/tv/android/app`), whose Roborazzi references are under `src/test/screenshots/demo/`.
 
 The routes are committed because neither the Xcode nor the Gradle test build runs Node; the
 test fails, naming each file, when they are out of step with `library.json`.

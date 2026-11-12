@@ -28,9 +28,9 @@
  "updated_at": "{{now-864000}}",
  "now_playing": {
   "title": "سينتل",
-  "start_at": "{{now-420}}",
-  "end_at": "{{now+1380}}",
-  "progress": 0.2333
+  "start_at": "{{now-900}}",
+  "end_at": "{{now+900}}",
+  "progress": 0.5
  },
  "guide_until": "{{now+86400}}"
 }

@@ -30,9 +30,9 @@
    "updated_at": "{{now-864000}}",
    "now_playing": {
     "title": "Sintel",
-    "start_at": "{{now-420}}",
-    "end_at": "{{now+1380}}",
-    "progress": 0.2333
+    "start_at": "{{now-900}}",
+    "end_at": "{{now+900}}",
+    "progress": 0.5
    },
    "guide_until": "{{now+86400}}"
   },
@@ -65,10 +65,10 @@
    "created_at": "{{now-17280000}}",
    "updated_at": "{{now-864000}}",
    "now_playing": {
-    "title": "Coffee Run",
-    "start_at": "{{now-840}}",
-    "end_at": "{{now+60}}",
-    "progress": 0.9333
+    "title": "Sprite Fright",
+    "start_at": "{{now}}",
+    "end_at": "{{now+900}}",
+    "progress": 0
    },
    "guide_until": "{{now+86400}}"
   },
@@ -101,10 +101,10 @@
    "created_at": "{{now-17280000}}",
    "updated_at": "{{now-864000}}",
    "now_playing": {
-    "title": "Caminandes: Llamigos",
-    "start_at": "{{now-360}}",
-    "end_at": "{{now+540}}",
-    "progress": 0.4
+    "title": "Caminandes: Gran Dillama",
+    "start_at": "{{now}}",
+    "end_at": "{{now+900}}",
+    "progress": 0
    },
    "guide_until": "{{now+86400}}"
   }

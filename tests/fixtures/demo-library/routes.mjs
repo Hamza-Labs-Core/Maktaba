@@ -13,7 +13,14 @@
 // every zone). An image route names its file under `art/` in `art` instead of `file`.
 // Node's standard library only.
 
-import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, existsSync } from "node:fs";
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  rmSync,
+  readdirSync,
+  existsSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,13 +33,20 @@ export function loadLibrary(root = ROOT) {
 
 const HOUR = 3600;
 const DAY = 86400;
-const t = (offset) => (offset === 0 ? "{{now}}" : offset > 0 ? `{{now+${offset}}}` : `{{now${offset}}}`);
+const t = (offset) =>
+  offset === 0
+    ? "{{now}}"
+    : offset > 0
+      ? `{{now+${offset}}}`
+      : `{{now${offset}}}`;
 
 /** `{{now…}}` in `text` as RFC 3339 times from `clock` (an ISO time). */
 export function fillTimes(text, clock) {
   const base = Date.parse(clock);
   return text.replace(/\{\{now([+-]\d+)?\}\}/g, (_, off) =>
-    new Date(base + Number(off ?? 0) * 1000).toISOString().replace(/\.000Z$/, "Z"),
+    new Date(base + Number(off ?? 0) * 1000)
+      .toISOString()
+      .replace(/\.000Z$/, "Z"),
   );
 }
 
@@ -44,14 +58,22 @@ export function buildRoutes(lang, lib = loadLibrary()) {
   const byId = new Map(videos.map((v) => [v.id, v]));
   const libName = (id) => L(libs.find((l) => l.id === id).name);
   const routes = [];
-  const add = (method, path, body, status = 200) => routes.push({ method, path, status, body });
-  const art = (path, file) => routes.push({ method: "GET", path, status: 200, art: file });
+  const add = (method, path, body, status = 200) =>
+    routes.push({ method, path, status, body });
+  const art = (path, file) =>
+    routes.push({ method: "GET", path, status: 200, art: file });
 
   const ext = (v) => (v.library_id === "lib-films" ? "mkv" : "mp4");
   const filename = (v) => `${v.art}.${ext(v)}`;
   const created = (v) => -v.added_days_ago * DAY;
-  const lastWatched = (v) => (v.watch ? -Math.round(v.watch.last_watched_hours_ago * HOUR) : null);
-  const position = (v) => (v.watch ? (v.watch.completed ? v.duration_sec : (v.watch.position_sec ?? 0)) : 0);
+  const lastWatched = (v) =>
+    v.watch ? -Math.round(v.watch.last_watched_hours_ago * HOUR) : null;
+  const position = (v) =>
+    v.watch
+      ? v.watch.completed
+        ? v.duration_sec
+        : (v.watch.position_sec ?? 0)
+      : 0;
   const series = (v) => lib.series.find((s) => s.id === v.series_id);
   const episodeOf = (v) => {
     const s = series(v);
@@ -92,7 +114,10 @@ export function buildRoutes(lang, lib = loadLibrary()) {
     detected_language: "en",
     duration_sec: v.duration_sec,
     size_bytes: v.duration_sec * 250000,
-    content_hash: v.id.replace(/[^a-z]/g, "").padEnd(64, "0").slice(0, 64),
+    content_hash: v.id
+      .replace(/[^a-z]/g, "")
+      .padEnd(64, "0")
+      .slice(0, 64),
     created_at: t(created(v)),
     updated_at: t(created(v) + 600),
     published_at: `${v.year}-06-01T00:00:00Z`,
@@ -111,34 +136,65 @@ export function buildRoutes(lang, lib = loadLibrary()) {
       : {}),
   });
 
-  const newest = [...videos].sort((a, b) => a.added_days_ago - b.added_days_ago);
-  const watched = videos.filter((v) => v.watch).sort((a, b) => a.watch.last_watched_hours_ago - b.watch.last_watched_hours_ago);
+  const newest = [...videos].sort(
+    (a, b) => a.added_days_ago - b.added_days_ago,
+  );
+  const watched = videos
+    .filter((v) => v.watch)
+    .sort(
+      (a, b) => a.watch.last_watched_hours_ago - b.watch.last_watched_hours_ago,
+    );
   const inProgress = watched.filter((v) => !v.watch.completed);
   const inLib = (id) => newest.filter((v) => v.library_id === id);
 
   // ---- the user, the home --------------------------------------------------------------
   const u = lib.user;
-  add("GET", "/api/me", { id: u.id, username: u.username, email: "", display_name: L(lib.household), is_admin: u.is_admin });
+  add("GET", "/api/me", {
+    id: u.id,
+    username: u.username,
+    email: "",
+    display_name: L(lib.household),
+    is_admin: u.is_admin,
+  });
   add("GET", "/api/auth/me", {
     user_id: u.id,
     is_admin: u.is_admin,
     libraries: [],
     id: u.id,
     username: u.username,
-    user: { id: u.id, username: u.username, is_admin: u.is_admin, must_change_password: false },
+    user: {
+      id: u.id,
+      username: u.username,
+      is_admin: u.is_admin,
+      must_change_password: false,
+    },
     home_name: L(lib.home),
   });
 
   // ---- home and recommendations --------------------------------------------------------
   const pinned = libs.slice(0, 1);
+  // the hero: a film the household picked (unpicked, a home features its newest series)
+  const featured = byId.get(lib.featured);
   add("GET", "/api/home", {
+    featured: featured
+      ? { kind: "video", video: row(featured), series: null, picked: true }
+      : null,
+    on_deck: [],
+    favorites: [],
+    collection_rows: [],
+    recently_added_grouped: newest.map((v) => ({
+      kind: "video",
+      video: row(v),
+    })),
     continue_watching: inProgress.map(progressRow),
     recently_added: newest.map((v) => row(v)),
     recently_watched: watched.map(progressRow),
     pinned: pinned.map((l) => ({
       library: { id: l.id, name: L(l.name) },
       recently_added: inLib(l.id).map((v) => row(v)),
-      continue_watching: inLib(l.id).filter((v) => v.watch && !v.watch.completed).map(progressRow),
+      continue_watching: inLib(l.id)
+        .filter((v) => v.watch && !v.watch.completed)
+        .map(progressRow),
     })),
   });
   const forYou = newest.filter((v) => !v.watch);
@@ -160,7 +216,10 @@ export function buildRoutes(lang, lib = loadLibrary()) {
         id: "for-you",
         title: lang === "ar" ? "مقترحة لكم" : "For You",
         reason_kind: "for_you",
-        items: forYou.map((v, i) => ({ video_id: v.id, score: Number((0.95 - i * 0.05).toFixed(2)) })),
+        items: forYou.map((v, i) => ({
+          video_id: v.id,
+          score: Number((0.95 - i * 0.05).toFixed(2)),
+        })),
       },
     ],
     generated_at: t(0),
@@ -194,7 +253,10 @@ export function buildRoutes(lang, lib = loadLibrary()) {
       };
     }),
   });
-  const pins = { library_ids: pinned.map((l) => l.id), items: pinned.map((l, i) => ({ id: l.id, name: L(l.name), position: i })) };
+  const pins = {
+    library_ids: pinned.map((l) => l.id),
+    items: pinned.map((l, i) => ({ id: l.id, name: L(l.name), position: i })),
+  };
   add("GET", "/api/me/pinned-libraries", pins);
   add("PUT", "/api/me/pinned-libraries", pins);
 
@@ -220,14 +282,24 @@ export function buildRoutes(lang, lib = loadLibrary()) {
     add("GET", `/api/libraries/${l.id}/hub`, {
       library: { id: l.id, name: L(l.name), videos: vs.length },
       rows: {
-        continue_watching: vs.filter((v) => v.watch && !v.watch.completed).map(progressRow),
+        continue_watching: vs
+          .filter((v) => v.watch && !v.watch.completed)
+          .map(progressRow),
         recently_added: vs.map((v) => row(v)),
         recently_watched: vs.filter((v) => v.watch).map(progressRow),
-        most_watched: vs.filter((v) => v.watch).map((v) => row(v, { plays: 3 })),
+        most_watched: vs
+          .filter((v) => v.watch)
+          .map((v) => row(v, { plays: 3 })),
         series: ss.map(seriesItem),
-        years: years.map((y) => ({ year: y, videos: vs.filter((v) => v.year === y).length })),
+        years: years.map((y) => ({
+          year: y,
+          videos: vs.filter((v) => v.year === y).length,
+        })),
         on_deck: [],
-        recently_added_grouped: vs.map((v) => ({ kind: "video", video: row(v) })),
+        recently_added_grouped: vs.map((v) => ({
+          kind: "video",
+          video: row(v),
+        })),
       },
     });
     add("GET", `/api/libraries/${l.id}/series`, {
@@ -238,12 +310,23 @@ export function buildRoutes(lang, lib = loadLibrary()) {
       next: null,
     });
   }
-  add("GET", "/api/libraries/{id}/collections", { items: [], counts: { all: 0, youtube: 0, plex: 0, curated: 0 }, total: 0, next: null });
+  add("GET", "/api/libraries/{id}/collections", {
+    items: [],
+    counts: { all: 0, youtube: 0, plex: 0, curated: 0 },
+    total: 0,
+    next: null,
+  });
   add("GET", "/api/libraries/{id}/categories", {
     speakers: [],
     topics: [],
     languages: [{ value: "en", label: "en", count: videos.length }],
-    years: [...new Set(videos.map((v) => v.year))].sort((a, b) => b - a).map((y) => ({ value: String(y), label: String(y), count: videos.filter((v) => v.year === y).length })),
+    years: [...new Set(videos.map((v) => v.year))]
+      .sort((a, b) => b - a)
+      .map((y) => ({
+        value: String(y),
+        label: String(y),
+        count: videos.filter((v) => v.year === y).length,
+      })),
   });
 
   // ---- videos --------------------------------------------------------------------------
@@ -254,7 +337,12 @@ export function buildRoutes(lang, lib = loadLibrary()) {
     speakers: [],
     letters: [],
     durations: [{ value: "short", videos: videos.length }],
-    added: [{ value: "week", videos: videos.filter((v) => v.added_days_ago <= 7).length }],
+    added: [
+      {
+        value: "week",
+        videos: videos.filter((v) => v.added_days_ago <= 7).length,
+      },
+    ],
     resolutions: [{ value: "hd", videos: videos.length }],
   });
   for (const v of videos) {
@@ -278,8 +366,22 @@ export function buildRoutes(lang, lib = loadLibrary()) {
   add("GET", "/api/videos/{id}/chapters", { items: [] });
   add("GET", "/api/videos/{id}/subtitles", {
     items: [
-      { id: "sub-en", lang: "en", label: "English", format: "vtt", source: "sidecar", default: lang === "en" },
-      { id: "sub-ar", lang: "ar", label: "العربية", format: "vtt", source: "sidecar", default: lang === "ar" },
+      {
+        id: "sub-en",
+        lang: "en",
+        label: "English",
+        format: "vtt",
+        source: "sidecar",
+        default: lang === "en",
+      },
+      {
+        id: "sub-ar",
+        lang: "ar",
+        label: "العربية",
+        format: "vtt",
+        source: "sidecar",
+        default: lang === "ar",
+      },
     ],
   });
 
@@ -297,13 +399,22 @@ export function buildRoutes(lang, lib = loadLibrary()) {
         title: L(v.title),
         thumbnail: `/api/videos/${v.id}/poster`,
         duration_sec: v.duration_sec,
-        progress_pct: v.watch ? (v.watch.completed ? 100 : Number(((100 * position(v)) / v.duration_sec).toFixed(2))) : 0,
+        progress_pct: v.watch
+          ? v.watch.completed
+            ? 100
+            : Number(((100 * position(v)) / v.duration_sec).toFixed(2))
+          : 0,
         watched: Boolean(v.watch?.completed),
       };
     };
-    const next = s.seasons.flatMap((x) => x.episodes).find((id) => !byId.get(id).watch?.completed);
+    const next = s.seasons
+      .flatMap((x) => x.episodes)
+      .find((id) => !byId.get(id).watch?.completed);
     add("GET", `/api/series/${s.id}/episodes`, {
-      seasons: s.seasons.map((x) => ({ season: x.season, episodes: x.episodes.map(episode) })),
+      seasons: s.seasons.map((x) => ({
+        season: x.season,
+        episodes: x.episodes.map(episode),
+      })),
       numbering: "season",
       sort: "episode",
       next_episode: next ? episode(next) : null,
@@ -337,16 +448,18 @@ export function buildRoutes(lang, lib = loadLibrary()) {
     snippet: p.text,
     score: Number((0.08 - i * 0.01).toFixed(3)),
   }));
-  const transcriptVideos = [...new Set(passages.map((p) => p.video_id))].map((id) => {
-    const mine = passages.filter((p) => p.video_id === id);
-    return {
-      ...hit(byId.get(id)),
-      best_score: mine[0].score,
-      matches: mine.length,
-      in_title: lib.search.titles.includes(id),
-      passages: mine.map(({ video_id, ...p }) => p),
-    };
-  });
+  const transcriptVideos = [...new Set(passages.map((p) => p.video_id))].map(
+    (id) => {
+      const mine = passages.filter((p) => p.video_id === id);
+      return {
+        ...hit(byId.get(id)),
+        best_score: mine[0].score,
+        matches: mine.length,
+        in_title: lib.search.titles.includes(id),
+        passages: mine.map(({ video_id, ...p }) => p),
+      };
+    },
+  );
   const search = {
     search_id: "sr-demo",
     expires_at: t(1800),
@@ -376,7 +489,9 @@ export function buildRoutes(lang, lib = loadLibrary()) {
     total: titleHits.length,
     items: titleHits,
   });
-  add("GET", "/api/search/suggest", { suggestions: [q, ...lib.search.titles.map((id) => L(byId.get(id).title))] });
+  add("GET", "/api/search/suggest", {
+    suggestions: [q, ...lib.search.titles.map((id) => L(byId.get(id).title))],
+  });
   add("GET", "/api/search/recent", {
     items: [
       {
@@ -396,10 +511,17 @@ export function buildRoutes(lang, lib = loadLibrary()) {
   // ---- live TV: each channel plays its lineup back to back, from 2 h before now ----------
   const GUIDE_START = -2 * HOUR;
   const GUIDE_END = 8 * HOUR;
-  const brief = (c) => ({ id: c.id, number: c.number, name: L(c.name), slug: c.id.replace(/^ch-/, ""), logo_url: null });
+  const brief = (c) => ({
+    id: c.id,
+    number: c.number,
+    name: L(c.name),
+    slug: c.id.replace(/^ch-/, ""),
+    logo_url: null,
+  });
   const blocksOf = (c) => {
     const blocks = [];
-    let at = GUIDE_START - (c.number * 7 * 60); // channels start off step, as a real guide does
+    // each channel a quarter hour further into its lineup, every slot on the quarter hour
+    let at = GUIDE_START - c.number * 900;
     for (let i = 0; at < GUIDE_END; i++) {
       const v = byId.get(c.lineup[i % c.lineup.length]);
       // a programme is the title and the channel's filler, to the next quarter hour
@@ -415,7 +537,9 @@ export function buildRoutes(lang, lib = loadLibrary()) {
         sub_title: L(v.title),
         desc: L(v.synopsis),
         poster: `/api/videos/${v.id}/poster`,
-        ...(s ? { series: L(s.name), season: e.season, episode: e.episode } : {}),
+        ...(s
+          ? { series: L(s.name), season: e.season, episode: e.episode }
+          : {}),
         on_air: L(v.title),
         strip_title: L(v.title),
         ...(s ? { strip_series: L(s.name) } : {}),
@@ -431,7 +555,9 @@ export function buildRoutes(lang, lib = loadLibrary()) {
     const bs = blocksOf(c);
     const i = bs.findIndex((b) => b._start <= 0 && b._stop > 0);
     const cur = bs[i];
-    const progress = Number((-cur._start / (cur._stop - cur._start)).toFixed(4));
+    const progress = Number(
+      (-cur._start / (cur._stop - cur._start)).toFixed(4),
+    );
     return { cur, next: bs[i + 1], progress };
   };
   const channel = (c) => {
@@ -440,7 +566,16 @@ export function buildRoutes(lang, lib = loadLibrary()) {
       ...brief(c),
       library_id: c.library_id,
       logo_path: "",
-      art: { watermark: { overridden: false, position: "top-right", width_pct: 12, margin_pct: 2 }, loading: { overridden: false }, strip: null },
+      art: {
+        watermark: {
+          overridden: false,
+          position: "top-right",
+          width_pct: 12,
+          margin_pct: 2,
+        },
+        loading: { overridden: false },
+        strip: null,
+      },
       category: "general",
       mode: "sequential",
       mode_config: {},
@@ -449,7 +584,12 @@ export function buildRoutes(lang, lib = loadLibrary()) {
       sort_order: c.number,
       created_at: t(-200 * DAY),
       updated_at: t(-10 * DAY),
-      now_playing: { title: cur.title, start_at: cur.start, end_at: cur.stop, progress },
+      now_playing: {
+        title: cur.title,
+        start_at: cur.start,
+        end_at: cur.stop,
+        progress,
+      },
       guide_until: t(DAY),
     };
   };
@@ -470,7 +610,10 @@ export function buildRoutes(lang, lib = loadLibrary()) {
     server_time: t(0),
     start: t(GUIDE_START),
     end: t(GUIDE_END),
-    channels: lib.channels.map((c) => ({ channel: brief(c), blocks: blocksOf(c).map(strip) })),
+    channels: lib.channels.map((c) => ({
+      channel: brief(c),
+      blocks: blocksOf(c).map(strip),
+    })),
   });
   for (const c of lib.channels) {
     add("GET", `/api/channels/${c.id}`, channel(c));
@@ -509,18 +652,26 @@ export function writeRoutes(dir, lang, lib = loadLibrary()) {
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
   const table = buildRoutes(lang, lib).map((r) => {
-    if (r.art) return { method: r.method, path: r.path, status: r.status, art: r.art };
-    const file =
-      `${r.method.toLowerCase()}${r.path.replace(/^\/api/, "").replace(/[{}]/g, "").replace(/\//g, "-")}.json`;
+    if (r.art)
+      return { method: r.method, path: r.path, status: r.status, art: r.art };
+    const file = `${r.method.toLowerCase()}${r.path
+      .replace(/^\/api/, "")
+      .replace(/[{}]/g, "")
+      .replace(/\//g, "-")}.json`;
     writeFileSync(join(dir, file), JSON.stringify(r.body, null, 1) + "\n");
     return { method: r.method, path: r.path, status: r.status, file };
   });
-  writeFileSync(join(dir, "routes.json"), JSON.stringify(table, null, 1) + "\n");
+  writeFileSync(
+    join(dir, "routes.json"),
+    JSON.stringify(table, null, 1) + "\n",
+  );
 }
 
 function snapshot(dir) {
   if (!existsSync(dir)) return new Map();
-  return new Map(readdirSync(dir).map((f) => [f, readFileSync(join(dir, f), "utf8")]));
+  return new Map(
+    readdirSync(dir).map((f) => [f, readFileSync(join(dir, f), "utf8")]),
+  );
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -534,14 +685,19 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       const want = snapshot(tmp);
       const have = snapshot(dir);
       rmSync(tmp, { recursive: true, force: true });
-      for (const [f, text] of want) if (have.get(f) !== text) stale.push(`routes/${lang}/${f}`);
-      for (const f of have.keys()) if (!want.has(f)) stale.push(`routes/${lang}/${f} (no longer generated)`);
+      for (const [f, text] of want)
+        if (have.get(f) !== text) stale.push(`routes/${lang}/${f}`);
+      for (const f of have.keys())
+        if (!want.has(f))
+          stale.push(`routes/${lang}/${f} (no longer generated)`);
     } else {
       writeRoutes(dir, lang);
     }
   }
   if (stale.length) {
-    console.error(`demo-library: routes/ is stale; run node tests/fixtures/demo-library/routes.mjs\n  ${stale.join("\n  ")}`);
+    console.error(
+      `demo-library: routes/ is stale; run node tests/fixtures/demo-library/routes.mjs\n  ${stale.join("\n  ")}`,
+    );
     process.exit(1);
   }
   if (!check) console.log("demo-library: wrote routes/en and routes/ar");
