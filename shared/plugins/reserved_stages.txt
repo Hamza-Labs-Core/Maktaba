@@ -10,6 +10,7 @@ check_tags
 clip_groups
 component_catchup
 content_hash
+content_screen
 convert_mp4
 dedup_apply
 dedup_scan

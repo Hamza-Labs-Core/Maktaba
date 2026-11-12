@@ -836,6 +836,56 @@
     },
     {
       "bundles": [
+        "full"
+      ],
+      "conflicts": [],
+      "desc_key": "components.parental.detect.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "processing",
+      "id": "parental.detect",
+      "in_payload": false,
+      "kind": "stages",
+      "licence": "",
+      "loops": [],
+      "on_demand": false,
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "plugin": "",
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.130",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "content_screen"
+      ],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.parental.detect.title",
+      "wants": [
+        "transcription",
+        "classify",
+        "llm"
+      ]
+    },
+    {
+      "bundles": [
         "full",
         "worker"
       ],
@@ -3508,6 +3558,7 @@
     "subtitles",
     "runtime.lang",
     "review.words",
+    "parental.detect",
     "model.embedder",
     "search.semantic",
     "classify",

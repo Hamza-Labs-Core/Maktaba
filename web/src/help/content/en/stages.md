@@ -161,6 +161,10 @@ Listens to the speech again with a second model, Cohere Transcribe Arabic, and c
 
 Finds the words of each transcript that may be wrong: words the language's dictionary does not know, words Whisper was unsure of, words the second listen heard differently, and words of a Quran verse that differ from the Quran text. It saves where each one is, with the reasons and suggested spellings, for a home admin to check in [Word review](/help/word-review). It never changes the transcript itself. It runs on any machine's CPU after **Second listen**, and again when a dictionary, the vocabulary or the library's word review settings change. Transcripts made before it are checked too, from their text alone, at the lowest priority and only while nothing waits to be transcribed ("waiting: transcription busy").
 
+### Content screen {#content-screen}
+
+Reads each video's transcript and works out an age rating from what is said in it: all ages, 9, 13, 16 or 18, with how sure it is and what it heard (violence, sexual content, coarse language, drugs and alcohol, frightening scenes, mature themes), each with up to three times in the video. The transcript never leaves the home: only the home's own language model is asked, on a machine of the home, and a home with no language model gets no detected ratings at all. A detected rating counts only when the model is sure enough, it can only make a video stricter than the library's rating, and a rating an admin gives always wins. An admin checks the unsure ones in the parental review list. Music and Quran recitation are skipped. A video with no transcript, or in a language other than Arabic or English, is marked not checked. It runs after **Second listen**, again when the transcript changes, and for every video again, at the lowest priority, when the home changes its language model; until then a video keeps the rating it had.
+
 ### Subtitle files {#subtitle-gen}
 
 Writes the transcript as subtitle files (.srt and .vtt) next to the video, so Plex, VLC and TVs pick them up. It never overwrites a subtitle file Maktaba did not write. It writes to your share, so it offers **Review first**. Runs after **Second listen**.
