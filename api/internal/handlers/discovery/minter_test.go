@@ -50,6 +50,7 @@ type fakeRefreshIssuer struct{}
 func (fakeRefreshIssuer) Issue(_ context.Context, in refresh.IssueInput) (*refresh.Token, error) {
 	return &refresh.Token{
 		Plaintext: "mkt_rt_v1.row." + in.UserID,
+		FamilyID:  "fam-" + in.UserID,
 		ExpiresAt: time.Now().Add(in.TTL),
 	}, nil
 }
@@ -92,6 +93,10 @@ func TestMintNonAdminCarriesLibraryACL(t *testing.T) {
 	}
 	if sgn.got.IsAdmin {
 		t.Fatal("non-admin minted with is_admin=true")
+	}
+	// Epic 57 story 57.04: the access token names the sign-in it was minted beside
+	if sgn.got.Fam != "fam-user-1" || sgn.got.Ac != nil {
+		t.Fatalf("fam = %q, ac = %v; want the refresh token's family and no age limit", sgn.got.Fam, sgn.got.Ac)
 	}
 }
 

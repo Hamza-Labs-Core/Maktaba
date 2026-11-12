@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/videotitle"
 )
 
@@ -193,7 +194,7 @@ func (r *repo) history(ctx context.Context, userID string, f historyFilter) ([]H
 		FROM watch_sessions ws
 		JOIN videos v ON v.id = ws.video_id
 		LEFT JOIN playback_state ps ON ps.user_id = ws.user_id AND ps.video_id = ws.video_id
-		WHERE ` + strings.Join(where, " AND ") + `
+		WHERE ` + strings.Join(where, " AND ") + parental.Where(ctx, "v") + `
 		GROUP BY v.id, v.title, v.duration_sec, ps.position_sec, ps.completed
 		ORDER BY MAX(ws.started_at) DESC
 		LIMIT ` + limitIdx + ` OFFSET ` + offsetIdx
@@ -297,7 +298,7 @@ func (r *repo) watchedActivity(ctx context.Context, userID string, n int) ([]Act
 		SELECT ws.video_id, ws.started_at, ws.percent_complete,
 		       COALESCE(`+videotitle.SQL("v.title", "v.filename")+`, '')
 		FROM watch_sessions ws LEFT JOIN videos v ON v.id = ws.video_id
-		WHERE ws.user_id = $1
+		WHERE ws.user_id = $1 AND (v.id IS NULL OR `+parental.Predicate(parental.From(ctx), "v")+`)
 		ORDER BY ws.started_at DESC LIMIT $2`, userID, n)
 	if err != nil {
 		return nil, err
@@ -359,7 +360,7 @@ func (r *repo) setPrefs(ctx context.Context, userID string, enabled bool, now ti
 // is false for an unknown id.
 func (r *repo) videoLibrary(ctx context.Context, videoID string) (libraryID string, found bool, err error) {
 	err = r.db.QueryRowContext(ctx,
-		`SELECT library_id FROM videos WHERE id = $1`, videoID).Scan(&libraryID)
+		`SELECT library_id FROM videos WHERE id = $1`+parental.Where(ctx, "videos"), videoID).Scan(&libraryID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}

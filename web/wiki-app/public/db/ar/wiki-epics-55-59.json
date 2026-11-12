@@ -1321,6 +1321,8 @@
       ],
       "related": [
         "epic-57-parental-controls",
+        "ep-post-me-age-signal",
+        "ep-post-users-id-parental-signals-family-clear",
         "ep-get-users-id-parental",
         "ep-put-users-id-parental",
         "ep-delete-users-id-parental",
@@ -1332,6 +1334,8 @@
         "mockups": []
       },
       "api_endpoints": [
+        "POST /me/age-signal",
+        "POST /users/{id}/parental/signals/{family}/clear",
         "GET /users/{id}/parental",
         "PUT /users/{id}/parental",
         "DELETE /users/{id}/parental",
@@ -1401,7 +1405,13 @@
       ],
       "related": [
         "epic-57-parental-controls",
-        "ep-get-me-parental"
+        "ep-get-me-parental",
+        "ep-post-me-parental-requests",
+        "ep-post-me-parental-unlock",
+        "ep-get-me-parental-pin",
+        "ep-put-me-parental-pin",
+        "ep-get-parental-requests",
+        "ep-post-parental-requests-id-approve"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-06-ask-a-parent.md",
@@ -1409,7 +1419,13 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /me/parental"
+        "GET /me/parental",
+        "POST /me/parental/requests",
+        "POST /me/parental/unlock",
+        "GET /me/parental-pin",
+        "PUT /me/parental-pin",
+        "GET /parental/requests",
+        "POST /parental/requests/{id}/approve"
       ],
       "db_tables": [],
       "metadata": {
@@ -1448,6 +1464,9 @@
         "ep-get-users-id-parental",
         "ep-put-users-id-parental",
         "ep-delete-users-id-parental",
+        "ep-get-me-parental-pin",
+        "ep-put-me-parental-pin",
+        "ep-get-parental-requests",
         "ep-post-users"
       ],
       "files": {
@@ -1467,6 +1486,9 @@
         "GET /users/{id}/parental",
         "PUT /users/{id}/parental",
         "DELETE /users/{id}/parental",
+        "GET /me/parental-pin",
+        "PUT /me/parental-pin",
+        "GET /parental/requests",
         "POST /users"
       ],
       "db_tables": [],
@@ -1499,6 +1521,7 @@
         "ep-get-users-id-parental",
         "ep-put-users-id-parental",
         "ep-delete-users-id-parental",
+        "ep-get-users-id-parental-activity",
         "ep-post-users"
       ],
       "files": {
@@ -1511,6 +1534,7 @@
         "GET /users/{id}/parental",
         "PUT /users/{id}/parental",
         "DELETE /users/{id}/parental",
+        "GET /users/{id}/parental/activity",
         "POST /users"
       ],
       "db_tables": [],

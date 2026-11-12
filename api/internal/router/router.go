@@ -25,6 +25,9 @@
 //     when no user is on ctx).
 //     ComponentOff — 409 component_off on a route whose component is off
 //     (Epic 51 story 51.09; from memory, no query).
+//     Parental gate — what a restricted account may reach (Epic 57 story
+//     57.03): the surface registry's class of the route, the object a path
+//     names checked, the account's limit in the context for the handlers.
 //  11. SingleWriteGuard
 //     — drops second WriteHeader/Write so a buggy handler
 //     that double-writes still produces a coherent
@@ -47,6 +50,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/usage"
@@ -115,6 +119,12 @@ type Deps struct {
 	// An approved node's forwarded client is believed from its signature alone
 	// (delegation.Accept attests it before this router), never from its address.
 	TrustedProxies []netip.Prefix
+
+	// Parental is the gate of Epic 57 story 57.03: every route passes it, and a
+	// restricted account reaches only what the surface registry allows, filtered.
+	// MountP6 gives it the policy cache (P6Deps.ParentalGate); until then it refuses
+	// every signed-in user. Nil leaves the gate off (bare-Deps unit tests).
+	Parental *parental.Gate
 }
 
 // New builds the API's chi.Mux with the canonical middleware stack and
@@ -172,6 +182,11 @@ func New(d Deps) chi.Router {
 
 	// Epic 51 story 51.09: a route whose component is off is 409 component_off
 	r.Use(ComponentOff(d.Capabilities))
+
+	// Epic 57 story 57.03: the content filter's gate, before any handler
+	if d.Parental != nil {
+		r.Use(d.Parental.Middleware(r))
+	}
 
 	r.Use(mw.SingleWriteGuard)
 	if d.IdempotencyStore != nil {

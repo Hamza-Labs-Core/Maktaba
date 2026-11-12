@@ -11,6 +11,8 @@ import (
 	"context"
 	"database/sql"
 	"sort"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 // onDeckSeries caps the series read for the row.
@@ -99,7 +101,7 @@ func (h *Handler) onDeck(ctx context.Context, uid string, s scope, lib string, n
 	in := inList(order, &args)
 	erows, err := h.DB.QueryContext(ctx, `SELECT se.series_id, COALESCE(s.name_override, s.name), s.numbering,
 			se.video_id, v.library_id, se.season, se.episode, se.absolute_number, se.season_override, se.episode_override,
-			CASE WHEN `+visible+` THEN 1 ELSE 0 END, ps.position_sec, ps.completed
+			CASE WHEN `+shown(ctx)+` THEN 1 ELSE 0 END, ps.position_sec, ps.completed
 		FROM series_episodes se JOIN series s ON s.id = se.series_id
 		JOIN videos v ON v.id = se.video_id
 		LEFT JOIN playback_state ps ON ps.user_id = $1 AND ps.video_id = se.video_id
@@ -167,7 +169,7 @@ func (h *Handler) onDeck(ctx context.Context, uid string, s scope, lib string, n
 	}
 	var cargs []any
 	cin := inList(ids, &cargs)
-	cards, err := h.cards(ctx, `SELECT `+cardColumns+` FROM videos v WHERE v.id IN (`+cin+`)`, cargs)
+	cards, err := h.cards(ctx, `SELECT `+cardColumns+` FROM videos v WHERE v.id IN (`+cin+`)`+parental.Where(ctx, "v"), cargs)
 	if err != nil {
 		return nil, err
 	}

@@ -378,7 +378,12 @@ func runServe() error {
 	capabilities := components.NewCapabilities(components.CapabilitiesOptions{Logger: logger,
 		AllOn: components.CapabilitiesGateOff() || runner.ReconcileOff()})
 
+	// Epic 57 story 57.03: the content filter's gate. It refuses every signed-in user
+	// until MountP6 gives it the policy cache (fail closed).
+	parentalGate := parental.NewGate()
+
 	r := router.New(router.Deps{
+		Parental:           parentalGate,
 		Capabilities:       capabilities,
 		License:            licRef,
 		Usage:              usageCounter,
@@ -593,6 +598,7 @@ func runServe() error {
 			router.MountP6(r, router.P6Deps{
 				EventHub:     eventHub,
 				OnParental:   func(c *parental.Cache) { parentalHandles.Cache = c },
+				ParentalGate: parentalGate,
 				OnBus:        func(b *eventbus.Bus) { eventBus = b },
 				Capabilities: capabilities,
 				Loops:        loops,
@@ -785,6 +791,10 @@ func runServe() error {
 			if recompute := parentalHandles.Recompute; recompute != nil {
 				loops.Declare("parental_recompute", runner.Func(func(ctx context.Context) { _ = recompute.Run(ctx) }))
 			}
+			// Epic 57 stories 57.06 and 57.08: ask a parent, the parent PIN, a child's
+			// activity, and the loop that writes watched events and keeps 90 days
+			router.MountP57Requests(r, router.P57RequestsDeps{DB: appDB, Cache: parentalHandles.Cache,
+				Notifier: notifyHub, Loops: loops, Logger: logger})
 			usageCounter.Attach(appDB)
 			loops.Declare("usage_counter", runner.Func(func(ctx context.Context) { usageCounter.Run(ctx, usage.DefaultFlushEvery) }))
 			logger.Info("p29: watch-analytics handlers mounted + reaper started",

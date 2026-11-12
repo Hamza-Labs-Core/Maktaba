@@ -88,7 +88,11 @@ func setupLive(t *testing.T) *liveEnv {
 	}
 	t.Setenv("MAKTABA_SUPERVISOR_TOKEN_FILE", tokenFile)
 
-	r := router.New(router.Deps{IdempotencyStore: idempotency.NewMemoryStore()})
+	// the real gate over the real registry (story 57.03): the live TV routes answer a
+	// restricted account only because the registry names them
+	gate := parental.NewGate()
+	gate.SetCache(parental.NewCache(parental.NewStore(db)))
+	r := router.New(router.Deps{IdempotencyStore: idempotency.NewMemoryStore(), Parental: gate})
 	router.MountP27(r, router.P27Deps{DB: db, DataDir: t.TempDir(), ChannelSigner: signedurl.FromKey(key)})
 	e.h = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if who := req.Header.Get("X-Test-As"); who != "" {
@@ -326,7 +330,9 @@ func TestP57LiveTVPG(t *testing.T) {
 	})
 
 	t.Run("the tuner's allowed addresses are the admin's", func(t *testing.T) {
-		admin := [6]int{noOne, 403, 403, 403, 403, 200}
+		// a restricted account gets the answer of a route that is not there (the
+		// registry closes the TV's admin routes to it)
+		admin := [6]int{noOne, 403, 404, 403, 403, 200}
 		e.codes("GET", "/api/tv/hdhr/allowed", "", admin)
 		e.codes("PUT", "/api/tv/hdhr/allowed", `{"addresses":["192.168.1.20"," 10.0.0.0/24 ","192.168.1.20"]}`, admin)
 		_, raw, _ := e.do("admin", "GET", "/api/tv/hdhr/allowed", "")

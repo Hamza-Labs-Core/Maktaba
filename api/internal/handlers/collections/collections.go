@@ -37,6 +37,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/libraries"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 // Collection is the over-the-wire shape.
@@ -189,6 +190,17 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("read collections").Wrap(err))
 		return
 	}
+	// a restricted account's list leaves out a blocked collection and one whose
+	// items are all hidden (Epic 57 story 57.03); a failed check hides it
+	if e := parental.From(r.Context()); e.Limits() {
+		kept := items[:0]
+		for _, c := range items {
+			if ok, err := parental.Allowed(r.Context(), h.DB, e, parental.SubjectCollection, c.ID); err == nil && ok {
+				kept = append(kept, c)
+			}
+		}
+		items = kept
+	}
 	if err := h.addCounts(r, p, items); err != nil {
 		httperror.Write(w, r, httperror.Internal("count collection items").Wrap(err))
 		return
@@ -220,7 +232,7 @@ func (h *Handler) addCounts(r *http.Request, p *principal.Principal, items []Col
 		args = append(args, id)
 		ph[i] = "$" + itoa(i+1)
 	}
-	cond := "ci.collection_id IN (" + strings.Join(ph, ",") + ") AND " + visibleVideo
+	cond := "ci.collection_id IN (" + strings.Join(ph, ",") + ") AND " + visibleVideo + parental.Where(r.Context(), "v")
 	frag, fargs, none := libraryScope(p, "v.library_id", len(args)+1)
 	if none {
 		return nil
@@ -668,7 +680,7 @@ func (h *Handler) GetItems(w http.ResponseWriter, r *http.Request) {
 		FROM collection_items ci
 		JOIN collections c ON c.id = ci.collection_id
 		JOIN videos v ON v.id = ci.video_id
-		WHERE ci.collection_id = $1 AND ` + visibleVideo
+		WHERE ci.collection_id = $1 AND ` + visibleVideo + parental.Where(r.Context(), "v")
 	args := []any{id}
 	frag, fargs, none := libraryScope(p, "v.library_id", len(args)+1)
 	if none {
