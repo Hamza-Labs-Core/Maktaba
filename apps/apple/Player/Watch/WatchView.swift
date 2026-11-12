@@ -41,7 +41,8 @@ struct WatchView: View {
                 // at 5 minutes and at 1, from the home's answer (asked every 30 s here)
                 if session.parental.current.restricted {
                     VStack {
-                        TimeLeftBar(store: session.parental, overVideo: true, polls: true)
+                        TimeLeftBar(store: session.parental, overVideo: true,
+                                    playing: .init(client: playback.client, library: playback.video?.libraryID))
                         Spacer()
                     }
                     .padding(.top, 56)
@@ -55,7 +56,9 @@ struct WatchView: View {
                                     stoppedLine: midPlay ? ParentalWords.text("parental.player.stopped") : nil,
                                     back: close) { playback.resumeAfterStop() }
                 case let .time(up, position):
-                    TimeUpView(context: context, up: up, position: position, back: close) { playback.resumeAfterStop() }
+                    TimeUpView(context: context, up: up, position: position, library: playback.video?.libraryID, back: close) {
+                        playback.resumeAfterStop()
+                    }
                 }
             } else {
                 Group {
