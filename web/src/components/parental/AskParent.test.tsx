@@ -2,9 +2,9 @@
 // the home hides something or its time is over. The blocked page shows no title,
 // poster or rating; asking sends the id the page already had; a guardian's PIN is
 // checked by the home alone.
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useState } from "react";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
@@ -26,13 +26,34 @@ const problem = (status: number, extra: Record<string, unknown> = {}, retry?: nu
 const child: Partial<MyParental> = { restricted: true, maxTier: 9 };
 const onCheck = vi.fn();
 
-function home(unlockers: unknown[] = []) {
+/**
+ * The home: who can type a PIN, and (when `requests` is given) the account's own
+ * requests, newest first. Without `requests` it is a home that has no such route.
+ */
+function home(unlockers: unknown[] = [], requests?: () => unknown[]) {
   get.mockImplementation((path: string) =>
     path === "/api/me/parental/guardians"
       ? Promise.resolve({ guardians: unlockers })
-      : Promise.reject(problem(404))
+      : path === "/api/me/parental/requests" && requests
+        ? Promise.resolve({ requests: requests() })
+        : Promise.reject(problem(404))
   );
 }
+
+/** One of the account's own requests as the home lists it. */
+const mine = (status: string, over: Record<string, unknown> = {}) => ({
+  id: "q1",
+  subject_kind: "video",
+  subject_id: "v1",
+  status,
+  created_at: new Date(Date.now() - 60_000).toISOString(),
+  expires_at: new Date(Date.now() + 6 * 3600_000).toISOString(),
+  ...over,
+});
+const mineTime = (status: string, over: Record<string, unknown> = {}) =>
+  mine(status, { id: "t1", subject_kind: "time", subject_id: "30", minutes: 30, ...over });
+/** The home is asked about a waiting request this often (lib/parentalRequests). */
+const POLL_MS = 15_000;
 
 function show(
   ui: React.ReactElement,
@@ -441,5 +462,278 @@ describe("the PIN's digits", () => {
     show(dialog());
     expect(field()).toHaveAttribute("autocomplete", "one-time-code");
     expect(field()).toHaveAttribute("type", "password");
+  });
+});
+
+// What became of a request is the home's word: a yes opens the thing or resumes
+// watching by itself, a no is said, an expired request brings the asks back.
+describe("what a parent answered", () => {
+  const sister: User = { id: "u-sister", username: "noor", is_admin: false };
+  const guardians = [{ id: "g1", username: "mum" }];
+  const timesUp = <TimesUp reason="limit_reached" nextAllowedAt={null} onCheck={onCheck} />;
+  const requestAsks = () =>
+    get.mock.calls.filter(([path]) => path === "/api/me/parental/requests").length;
+  const pass = (ms: number) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  afterEach(() => {
+    vi.useRealTimers();
+    Reflect.deleteProperty(document, "visibilityState");
+  });
+
+  it("a request made on another device waits here too, with no mark in this tab", async () => {
+    home([], () => [mine("pending")]);
+    show(blocked);
+    expect(await screen.findByTestId("parental-ask-waiting")).toHaveTextContent(
+      "Request sent. Waiting for a parent."
+    );
+    expect(screen.queryByRole("button", { name: "Ask a parent" })).toBeNull();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("a parent's yes opens the thing by itself, once", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let list = [mine("pending")];
+    home([], () => list);
+    show(blocked);
+    await screen.findByTestId("parental-ask-waiting");
+    await pass(POLL_MS);
+    expect(onCheck).not.toHaveBeenCalled();
+    list = [mine("approved", { decided_at: new Date().toISOString() })];
+    await pass(POLL_MS);
+    expect(onCheck).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("parental-ask-approved")).toHaveTextContent("A parent said yes.");
+    expect(screen.queryByTestId("parental-ask-waiting")).toBeNull();
+    // answered: the home is not asked again, and the thing is not opened twice
+    const asks = requestAsks();
+    await pass(10 * POLL_MS);
+    expect(requestAsks()).toBe(asks);
+    expect(onCheck).toHaveBeenCalledTimes(1);
+  });
+
+  it("a parent's no is said, with Ask again and the PIN", async () => {
+    let list = [mine("denied", { decided_at: new Date().toISOString() })];
+    home(guardians, () => list);
+    show(blocked);
+    expect(await screen.findByTestId("parental-ask-denied")).toHaveTextContent("A parent said no.");
+    expect(screen.queryByTestId("parental-ask-waiting")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Check again" })).toBeNull();
+    expect(await screen.findByRole("button", { name: "Enter parent PIN" })).toBeInTheDocument();
+    expect(onCheck).not.toHaveBeenCalled();
+    // asking again makes a new request, which waits
+    post.mockResolvedValue({ request: mine("pending", { id: "q2" }) });
+    list = [mine("pending", { id: "q2" }), ...list];
+    await userEvent.click(screen.getByRole("button", { name: "Ask again" }));
+    expect(post).toHaveBeenCalledWith("/api/me/parental/requests", {
+      subject_kind: "video",
+      subject_id: "v1",
+    });
+    expect(await screen.findByTestId("parental-ask-waiting")).toBeInTheDocument();
+    expect(screen.queryByTestId("parental-ask-denied")).toBeNull();
+  });
+
+  it("a no that comes while the page waits shows without a tap", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let list = [mine("pending")];
+    home([], () => list);
+    show(blocked);
+    await screen.findByTestId("parental-ask-waiting");
+    list = [mine("denied")];
+    await pass(POLL_MS);
+    expect(screen.getByTestId("parental-ask-denied")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ask again" })).toBeInTheDocument();
+    expect(onCheck).not.toHaveBeenCalled();
+  });
+
+  it("an expired request brings Ask a parent back", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let list = [mine("pending")];
+    home([], () => list);
+    show(blocked);
+    await screen.findByTestId("parental-ask-waiting");
+    list = [mine("expired")];
+    await pass(POLL_MS);
+    expect(screen.getByRole("button", { name: "Ask a parent" })).toBeInTheDocument();
+    expect(screen.queryByTestId("parental-ask-waiting")).toBeNull();
+    expect(screen.queryByTestId("parental-ask-denied")).toBeNull();
+    expect(onCheck).not.toHaveBeenCalled();
+  });
+
+  it("the home's word replaces what this tab remembered", async () => {
+    // the tab remembers asking; the home has since closed the request
+    noteAsked(memberUser.id, "video:v1", new Date(Date.now() + 3600_000).toISOString());
+    home([], () => [mine("expired")]);
+    show(blocked);
+    // first paint: the tab's mark
+    expect(screen.getByTestId("parental-ask-waiting")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Ask a parent" })).toBeInTheDocument();
+    expect(screen.queryByTestId("parental-ask-waiting")).toBeNull();
+    expect(wasAsked(memberUser.id, "video:v1")).toBe(false);
+  });
+
+  it("a yes from before is not acted on: the page does not reload itself for old news", async () => {
+    home([], () => [mine("approved")]);
+    show(blocked);
+    await waitFor(() => expect(requestAsks()).toBe(1));
+    expect(await screen.findByRole("button", { name: "Ask a parent" })).toBeInTheDocument();
+    expect(onCheck).not.toHaveBeenCalled();
+  });
+
+  it("stops asking while the tab is hidden, and after 30 minutes with no change", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    home([], () => [mine("pending")]);
+    show(blocked);
+    await screen.findByTestId("parental-ask-waiting");
+    const see = (state: "visible" | "hidden") => {
+      Object.defineProperty(document, "visibilityState", { value: state, configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    };
+    act(() => see("hidden"));
+    let asks = requestAsks();
+    await pass(10 * POLL_MS);
+    expect(requestAsks()).toBe(asks);
+    await act(async () => see("visible"));
+    expect(requestAsks()).toBe(asks + 1);
+    // nothing changes for half an hour: the asking ends, Check again stays
+    await pass(31 * 60_000);
+    asks = requestAsks();
+    await pass(10 * POLL_MS);
+    expect(requestAsks()).toBe(asks);
+    expect(screen.getByTestId("parental-ask-waiting")).toBeInTheDocument();
+    await act(async () => screen.getByRole("button", { name: "Check again" }).click());
+    expect(requestAsks()).toBe(asks + 1);
+    expect(onCheck).toHaveBeenCalledTimes(1);
+  });
+
+  it("another child signing in in the same tab sees her own state, not the first child's", async () => {
+    const lists: Record<string, unknown[]> = { [memberUser.id]: [mine("denied")], [sister.id]: [] };
+    let who = memberUser.id;
+    home([], () => lists[who]);
+    const first = show(blocked);
+    await screen.findByTestId("parental-ask-denied");
+    first.unmount();
+    who = sister.id;
+    show(blocked, child, "en", sister);
+    expect(screen.queryByTestId("parental-ask-denied")).toBeNull();
+    expect(await screen.findByRole("button", { name: "Ask a parent" })).toBeInTheDocument();
+    await waitFor(() => expect(requestAsks()).toBe(2));
+    expect(screen.queryByTestId("parental-ask-denied")).toBeNull();
+    expect(screen.queryByTestId("parental-ask-waiting")).toBeNull();
+  });
+
+  it("a no is said in Arabic", async () => {
+    home([], () => [mine("denied")]);
+    show(blocked, child, "ar");
+    expect(await screen.findByTestId("parental-ask-denied")).toHaveTextContent("رفض أحد الوالدين.");
+    expect(screen.getByRole("button", { name: "اطلب مجددًا" })).toBeInTheDocument();
+  });
+
+  it("a yes is said in Arabic", async () => {
+    noteAsked(memberUser.id, "video:v1", new Date(Date.now() + 3600_000).toISOString());
+    home([], () => [mine("approved")]);
+    show(blocked, child, "ar");
+    expect(await screen.findByTestId("parental-ask-approved")).toHaveTextContent(
+      "وافق أحد الوالدين."
+    );
+    expect(onCheck).toHaveBeenCalledTimes(1);
+  });
+
+  describe("for more time", () => {
+    it("a yes asks the home for the time once and watching resumes, with no tap", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      let myTime: Record<string, unknown> = {
+        allowed: false,
+        limited: true,
+        reason: "limit_reached",
+        remaining_seconds: 0,
+      };
+      let list = [mineTime("pending")];
+      get.mockImplementation((path: string) =>
+        path.startsWith("/api/me/parental/time")
+          ? Promise.resolve(myTime)
+          : path === "/api/me/parental/requests"
+            ? Promise.resolve({ requests: list })
+            : path === "/api/me/parental/guardians"
+              ? Promise.resolve({ guardians: [] })
+              : Promise.reject(problem(404))
+      );
+      const timeAsks = () =>
+        get.mock.calls.filter(([path]) => String(path).startsWith("/api/me/parental/time")).length;
+      show(<HomeTime />);
+      const ask = await screen.findByTestId("parental-ask-time");
+      expect(await within(ask).findByTestId("parental-ask-waiting")).toHaveTextContent(
+        "You asked for more time. Waiting for a parent."
+      );
+      // refused with no next time: the time itself is not asked about again
+      await pass(4 * POLL_MS);
+      expect(timeAsks()).toBe(1);
+      expect(screen.getByTestId("parental-times-up")).toBeInTheDocument();
+
+      // a parent says yes on their own phone
+      myTime = { allowed: true, limited: true, remaining_seconds: 1800 };
+      list = [mineTime("approved", { decided_at: new Date().toISOString() })];
+      await pass(POLL_MS);
+      await waitFor(() => expect(screen.queryByTestId("parental-times-up")).toBeNull());
+      expect(timeAsks()).toBe(2);
+      expect(wasAsked(memberUser.id, ASKED_TIME)).toBe(false);
+    });
+
+    it("a no is said, with the minutes to ask again and the PIN", async () => {
+      let list = [mineTime("denied", { decided_at: new Date().toISOString() })];
+      home(guardians, () => list);
+      show(timesUp);
+      const ask = screen.getByTestId("parental-ask-time");
+      expect(await within(ask).findByTestId("parental-ask-denied")).toHaveTextContent(
+        "A parent said no."
+      );
+      expect(within(ask).getByRole("group", { name: "Ask again" })).toBeInTheDocument();
+      expect(await within(ask).findByRole("button", { name: "Enter parent PIN" })).toBeVisible();
+      expect(onCheck).not.toHaveBeenCalled();
+      post.mockResolvedValue({ request: mineTime("pending", { id: "t2", subject_id: "15" }) });
+      list = [mineTime("pending", { id: "t2", subject_id: "15" }), ...list];
+      await userEvent.click(within(ask).getByRole("button", { name: "15 minutes" }));
+      expect(post).toHaveBeenCalledWith("/api/me/parental/requests", {
+        subject_kind: "time",
+        subject_id: "15",
+      });
+      expect(await within(ask).findByTestId("parental-ask-waiting")).toBeInTheDocument();
+      expect(within(ask).queryByTestId("parental-ask-denied")).toBeNull();
+    });
+
+    it("an expired request brings the minutes back", async () => {
+      noteAsked(memberUser.id, ASKED_TIME, new Date(Date.now() + 3600_000).toISOString());
+      home([], () => [mineTime("expired")]);
+      show(timesUp);
+      const ask = screen.getByTestId("parental-ask-time");
+      expect(
+        await within(ask).findByRole("group", { name: "Ask for more time" })
+      ).toBeInTheDocument();
+      expect(within(ask).getByRole("button", { name: "30 minutes" })).toBeInTheDocument();
+      expect(within(ask).queryByTestId("parental-ask-waiting")).toBeNull();
+      expect(within(ask).queryByTestId("parental-ask-denied")).toBeNull();
+    });
+
+    it("Check again asks what became of the request too", async () => {
+      let list = [mineTime("pending")];
+      home([], () => list);
+      show(timesUp);
+      const ask = screen.getByTestId("parental-ask-time");
+      await within(ask).findByTestId("parental-ask-waiting");
+      list = [mineTime("denied")];
+      await userEvent.click(screen.getByRole("button", { name: "Check again" }));
+      expect(onCheck).toHaveBeenCalledTimes(1);
+      expect(await within(ask).findByTestId("parental-ask-denied")).toBeInTheDocument();
+    });
+
+    it("a no is said in Arabic", async () => {
+      home([], () => [mineTime("denied")]);
+      show(timesUp, child, "ar");
+      const ask = screen.getByTestId("parental-ask-time");
+      expect(await within(ask).findByTestId("parental-ask-denied")).toHaveTextContent(
+        "رفض أحد الوالدين."
+      );
+      expect(within(ask).getByRole("group", { name: "اطلب مجددًا" })).toBeInTheDocument();
+    });
   });
 });

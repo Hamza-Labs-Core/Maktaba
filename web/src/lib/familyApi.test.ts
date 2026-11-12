@@ -29,6 +29,7 @@ import {
   fetchPolicy,
   fetchRequests,
   fetchRules,
+  fetchMyRequests,
   fetchUnlockers,
   liftRestriction,
   refusalCode,
@@ -324,6 +325,62 @@ describe("a restricted account", () => {
       subject_kind: "time",
       subject_id: "30",
     });
+  });
+
+  it("reads back the caller's own requests, newest first as the home sends them", async () => {
+    get.mockResolvedValue({
+      requests: [
+        {
+          id: "t1",
+          subject_kind: "time",
+          subject_id: "30",
+          minutes: 30,
+          status: "denied",
+          created_at: "2026-11-12T10:00:00Z",
+          expires_at: "2026-11-13T01:00:00Z",
+          decided_at: "2026-11-12T10:05:00Z",
+        },
+        { id: "q1", subject_kind: "video", subject_id: "v1", status: "pending" },
+        // a status this web does not know is not an answer
+        { id: "q0", subject_kind: "video", subject_id: "v0", status: "held" },
+        { subject_kind: "video" },
+      ],
+    });
+    expect(await fetchMyRequests()).toEqual([
+      {
+        id: "t1",
+        subjectKind: "time",
+        subjectId: "30",
+        minutes: 30,
+        status: "denied",
+        createdAt: "2026-11-12T10:00:00Z",
+        expiresAt: "2026-11-13T01:00:00Z",
+        decidedAt: "2026-11-12T10:05:00Z",
+      },
+      {
+        id: "q1",
+        subjectKind: "video",
+        subjectId: "v1",
+        minutes: 0,
+        status: "pending",
+        createdAt: "",
+        expiresAt: "",
+        decidedAt: null,
+      },
+      {
+        id: "q0",
+        subjectKind: "video",
+        subjectId: "v0",
+        minutes: 0,
+        status: "expired",
+        createdAt: "",
+        expiresAt: "",
+        decidedAt: null,
+      },
+    ]);
+    expect(get).toHaveBeenCalledWith("/api/me/parental/requests");
+    get.mockResolvedValue({});
+    expect(await fetchMyRequests()).toEqual([]);
   });
 
   it("lists who can type a PIN", async () => {

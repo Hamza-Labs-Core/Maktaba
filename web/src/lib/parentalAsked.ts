@@ -1,7 +1,9 @@
 // Epic 57 story 57.06 on the web: what this tab asked a parent for.
 //
-// The home has no route that reads a child's own requests back, so "waiting" is
-// what this tab remembers having asked. A mark is:
+// What became of a request is the home's to say (lib/parentalRequests reads
+// GET /api/me/parental/requests). This is only what the page shows before the home
+// has answered, and all that is known on a home without that route: what this tab
+// remembers having asked. Every answer of the home rewrites it. A mark is:
 //
 //   - one account's: it is kept under that account's id, so another child who
 //     signs in in the same tab starts with none;

@@ -12,6 +12,7 @@
 //   POST   /api/parental/requests/{id}/approve|deny       admin, that child's guardian
 //   GET|PUT /api/me/parental-pin                          admin, a guardian (their own PIN)
 //   POST   /api/me/parental/requests                      a restricted account
+//   GET    /api/me/parental/requests                      a restricted account: its own requests
 //   GET    /api/me/parental/guardians                     a restricted account
 //   POST   /api/me/parental/unlock                        a restricted account
 //   GET    /api/admin/library-acl                         admin: the home's accounts, to pick from
@@ -478,6 +479,50 @@ export const askFor = (kind: SubjectKind, id: string) => ask(kind, id);
 
 /** Asks the guardians for more minutes today. */
 export const askForTime = (minutes: number) => ask("time", String(minutes));
+
+/**
+ * A request as the child who made it reads it back: the ids it sent, what became
+ * of it and when. The home sends no title and no guardian.
+ */
+export interface MyRequest {
+  id: string;
+  /** a rule's kinds, or `time` (more minutes today) */
+  subjectKind: string;
+  subjectId: string;
+  /** the minutes a `time` request asked for; 0 otherwise */
+  minutes: number;
+  status: RequestStatus;
+  createdAt: string;
+  expiresAt: string;
+  /** when it was answered or closed; null while it waits */
+  decidedAt: string | null;
+}
+
+function toMyRequest(v: unknown): MyRequest {
+  const o = obj(v);
+  return {
+    id: str(o.id),
+    subjectKind: str(o.subject_kind),
+    subjectId: str(o.subject_id),
+    minutes: num(o.minutes),
+    // a status this web does not know is not an answer: nothing is shown for it
+    status: REQUEST_STATUSES.find((s) => s === o.status) ?? "expired",
+    createdAt: str(o.created_at),
+    expiresAt: str(o.expires_at),
+    decidedAt: strOrNull(o.decided_at),
+  };
+}
+
+/**
+ * The caller's own requests of the last seven days, newest first (50 at most).
+ * Only a restricted account may read them; anyone else is refused.
+ */
+export async function fetchMyRequests(): Promise<MyRequest[]> {
+  const r = obj(await api.get<unknown>("/api/me/parental/requests"));
+  return list(r.requests)
+    .map(toMyRequest)
+    .filter((q) => q.id !== "");
+}
 
 /** Who can type a PIN for the caller: their guardians and the admins with a PIN set. */
 export async function fetchUnlockers(): Promise<Person[]> {
