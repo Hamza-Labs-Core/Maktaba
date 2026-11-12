@@ -235,7 +235,7 @@ final class PlayerParentalUITests: PlayerUITestCase {
     private func guardian() {
         home.parental(#"{"restricted":false}"#, children: Self.children)
         home.stub("GET", "/api/parental/requests",
-                  body: #"{"requests":[{"id":"r1","child_id":"c2","subject_kind":"video","subject_id":"v2","status":"pending","created_at":"{{now-600}}","expires_at":"{{now+86400}}","child":{"id":"c2","username":"Sara"},"subject":{"kind":"video","id":"v2","title":"The long night","tier":16}}]}"#)
+                  body: #"{"requests":[{"id":"r1","child_id":"c2","subject_kind":"video","subject_id":"v2","status":"pending","created_at":"{{now-600}}","expires_at":"{{now+86400}}","child":{"id":"c2","username":"Sara"},"subject":{"kind":"video","id":"v2","title":"The long night","poster_url":"/api/videos/v2/poster","tier":16}}]}"#)
         home.stub("GET", "/api/users/c2/parental", body: Self.account)
         home.stub("GET", "/api/users/c2/parental/rules", body: #"{"rules":[]}"#)
         home.stub("GET", "/api/parental/users/c2/time-rules", body: #"{"rules":[],"time_zone":"Asia/Riyadh"}"#)
@@ -268,7 +268,9 @@ final class PlayerParentalUITests: PlayerUITestCase {
         XCTAssertTrue(element("family.request.approve.today").waitForExistence(timeout: 5), "Today, This week, Always")
         element("family.request.approve.today").tap()
         waitUntil("the approval sent") { self.count("POST", "/api/parental/requests/r1/approve") == 1 }
-        XCTAssertNotNil(body("POST", "/api/parental/requests/r1/approve")?["expires_at"] as? String, "Today ends at 04:00")
+        let approved = body("POST", "/api/parental/requests/r1/approve")
+        XCTAssertEqual(approved?["until"] as? String, "day_end", "Today ends when the home's day does: the home works it out")
+        XCTAssertNil(approved?["expires_at"], "no time from this device's clock")
         waitUntil("the request leaves the list") { !self.element("family.request.r1").exists }
 
         element("family.child.c2").tap()

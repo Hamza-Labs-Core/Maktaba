@@ -128,6 +128,26 @@ Player** and **Maktaba Player for iPad** (the two apps that read Apple's signals
       ever sells anything, it must handle StoreKit's `Product.PurchaseResult.pending` and
       approvals arriving on `Transaction.updates`.
 
+### Deviations from story 57.07 (Family on iPhone and iPad)
+
+Built as the story says: the children, Requests (with the poster of a video the guardian may
+see), the parent PIN, Make an account restricted and Add a guardian for an admin (the accounts
+come from `GET /api/admin/library-acl`), rules for a library, collection, series, channel,
+YouTube source, plugin or video, and Rate libraries with each library's stored tier. Not built
+in this release:
+
+- **Notifications.** The story's Notifications screen registers push categories
+  (`parental_request`, `parental_pin_locked`). The Apple apps have no push capability (no APNs
+  entitlement, no device registry), so there is no such screen; a guardian sees a waiting
+  request the next time Family is opened or refreshed. The `family.notifications*` strings
+  stay in the catalog unused.
+- **The iPad split view.** Family on iPad is the same pushed list as on iPhone, in a sheet;
+  the story's split view (children on the left, the child's page beside) is not built.
+- **The unrated count per library.** Rate libraries shows each library's default tier, not
+  how many of its videos have no rating: the home has no route that says that number
+  (`GET /api/libraries/manage` carries `age_tier` only). `family.rateLibraries.unrated` stays
+  in the catalog unused.
+
 ## Crash symbols (owner)
 
 One step turns symbol uploads on at both ends: add a repository secret **`MAKTABA_SYMBOLS_TOKEN`**
