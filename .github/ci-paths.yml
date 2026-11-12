@@ -444,14 +444,18 @@ compat_prev:
 # held to an age limit asks every surface of the API for what is above it, behind the
 # production router on a migrated Postgres: the API and what it mounts, the streaming
 # service (signed channel URLs, the restricted lifetime), the migrations and the rating
-# tables
+# tables. It compiles the API with everything api/go.mod replaces (the shared Go
+# libraries under shared/, and cmd) and reads the OpenAPI description (shared/api), so
+# it runs for those too, not for the API's own folder alone: a change to a shared
+# library that breaks the rehearsal's build is caught by that change.
 parental_bypass:
   - *ci
   - 'api/**'
   - 'streaming/**'
-  - 'shared/db/migrations/**'
-  - 'shared/parental/**'
+  - 'cmd/**'
+  - 'shared/**'
   - 'tools/ci/no-pg-skips.sh'
+  - 'tools/ci/parental-bypass-tests.txt'
   - '.github/workflows/_integration.yml'
 
 # Epic 51 (story 51.06): components-live, real sleepy workers switching components on

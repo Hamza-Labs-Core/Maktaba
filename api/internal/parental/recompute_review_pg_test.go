@@ -300,3 +300,37 @@ func TestAnInterruptedIndexBuildIsRebuilt(t *testing.T) {
 		}
 	}
 }
+
+// Slot 0224 edited in place (review findings 13 and 25): a home that ran the slot as it
+// first was gets the new columns and the third not_checked value when the slot runs again.
+func TestSlot0224RunAgainOnItsFirstForm(t *testing.T) {
+	h := newPGHome(t)
+	lib := h.library("first-form")
+	v := h.video(lib)
+	// the table as the slot first made it
+	h.exec(`ALTER TABLE video_content_signals DROP COLUMN attempts, DROP COLUMN failed_hash, DROP COLUMN failed_runs`)
+	h.exec(`ALTER TABLE video_content_signals DROP CONSTRAINT video_content_signals_not_checked_check`)
+	h.exec(`ALTER TABLE video_content_signals ADD CONSTRAINT video_content_signals_not_checked_check
+		CHECK (not_checked IS NULL OR not_checked IN ('no_transcript', 'unsupported_language'))`)
+	if _, err := h.db.Exec(`INSERT INTO video_content_signals (video_id, not_checked) VALUES ($1, 'model_failed')`, v); err == nil {
+		t.Fatal("the first form took model_failed: the test does not start where it means to")
+	}
+	up, _ := gooseStatements(t, "0224_content_signals.sql")
+	run(t, h.db, "0224 up again", up)
+	run(t, h.db, "0224 up a third time", up)
+	h.exec(`INSERT INTO video_content_signals (video_id, not_checked, model, failed_hash, failed_runs, attempts)
+		VALUES ($1, 'model_failed', 'm', 'h', 3, 0)`, v)
+	for what, q := range map[string]string{
+		"a tier beside model_failed": `UPDATE video_content_signals SET tier = 9 WHERE video_id = $1`,
+		"an unknown reason":          `UPDATE video_content_signals SET not_checked = 'later' WHERE video_id = $1`,
+		"a negative attempts":        `UPDATE video_content_signals SET attempts = -1 WHERE video_id = $1`,
+	} {
+		if _, err := h.db.Exec(q, v); err == nil {
+			t.Fatalf("%s was accepted", what)
+		}
+	}
+	// a video the model failed on rates nothing and queues nothing
+	if n := h.jobs(); n != 0 {
+		t.Fatalf("a not-checked signal queued %d recompute jobs", n)
+	}
+}

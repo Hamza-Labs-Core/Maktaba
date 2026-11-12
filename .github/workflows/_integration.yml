@@ -330,9 +330,13 @@ jobs:
           # the tests' own lines; the home's request log stays in the file
           grep -E '^(=== RUN|--- |\s+p57_|\s+parental_|PASS|FAIL|ok|panic)' "$out/rehearsal.log" | grep -v '^=== RUN' || true
           ../tools/ci/no-pg-skips.sh "$out/rehearsal.log"
-          for t in TestParentalBypass TestParentalBypassSeesWhatIsThere TestParentalBypassCatchesAMissingFilter TestP57RoleTable; do
+          # every test the rehearsal names must have run and passed: one that was
+          # renamed, deleted or skipped fails the job (the list is held to the code by
+          # TestParentalBypassListNamesEveryTest)
+          while IFS= read -r t; do
+            case "$t" in ''|'#'*) continue ;; esac
             grep -q -- "--- PASS: $t " "$out/rehearsal.log" || { echo "::error::$t did not pass"; rc=1; }
-          done
+          done < ../tools/ci/parental-bypass-tests.txt
           {
             echo "### Parental bypass rehearsal"
             echo
