@@ -37,12 +37,12 @@ final class PlayerMacDemoShotsUITests: XCTestCase {
                                extra: ["-playback.subtitles_on", "YES", "-playback.subtitle_language", "ar"])
             XCTAssertTrue(element("player.window").waitForExistence(timeout: 30), "the player; the home saw \(home?.seen ?? [])")
             // what plays, from what the player asked the home (XCUITest on macOS reads no value
-            // off the picture): the Arabic subtitles' cues, and the picture's segments going on
+            // off the picture): the Arabic subtitles' cues, then a progress report past 7:00 (one
+            // each 10 s while it plays; the segments are no measure: the playlist repeats two
+            // segments' addresses, which the player fetches once)
             XCTAssertTrue(wait(30) { self.seen.contains { $0.hasPrefix("GET /stream/") && $0.hasSuffix("/subs-ar.vtt") } },
                           "the Arabic subtitles; the home saw \(seen)")
-            let segments = { self.seen.filter { $0.hasPrefix("GET /stream/") && $0.hasSuffix(".ts") }.count }
-            let before = segments()
-            XCTAssertTrue(wait(20) { segments() >= before + 2 }, "it plays on; the home saw \(seen)")
+            XCTAssertTrue(wait(30) { self.reported().contains { $0 > 420 } }, "it plays on: reported \(reported())")
             // the controls up: the pointer over the picture
             app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
             _ = wait(1) { false }
@@ -89,6 +89,13 @@ final class PlayerMacDemoShotsUITests: XCTestCase {
     private func element(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }
 
     private var seen: [String] { home?.seen ?? [] }
+
+    /// The positions the player reported (`POST /api/stream/sessions/{id}/progress`), in order.
+    private func reported() -> [Int] {
+        (home?.requests ?? []).filter { $0.method == "POST" && $0.path.hasSuffix("/progress") }
+            .compactMap { try? JSONSerialization.jsonObject(with: $0.body) as? [String: Any] }
+            .compactMap { $0["position_sec"] as? Int }
+    }
 
     /// At least `count` pictures asked for, then 2 s with no request: every picture drawn.
     private func waitForArt(atLeast count: Int) {
