@@ -141,6 +141,10 @@ def test_settings_read_the_engine_s_own_knobs(
     monkeypatch.setattr(engine, "current", lambda: engine.MLX)
     s = stage.settings_from_env()
     assert (s.device, s.compute_type, s.gpu_limit_gb) == ("auto", "auto", 3.0)
+    # an idle model is let go after ten minutes unless the machine says otherwise (0: kept)
+    assert s.unload_idle_s == 600.0
+    monkeypatch.setenv("MAKTABA_STT_UNLOAD_IDLE_S", "0")
+    assert stage.settings_from_env().unload_idle_s == 0.0
 
 
 # --- can this worker transcribe? ---------------------------------------------------------
