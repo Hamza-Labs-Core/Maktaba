@@ -64,3 +64,15 @@
 .hero .stage {
   overflow: clip;
 }
+
+/* The narrowest phones (320 to 399 px): the header's lockup is wider than part A's mark, so its
+   gap tightens as part A's mark does, and with a reader's text spacing (1.4.12) the bar wraps
+   instead of scrolling sideways. When it fits, nothing moves. */
+@media (max-width: 399.98px) {
+  .site-header .wordmark {
+    gap: var(--spacing-2);
+  }
+  .site-header .bar {
+    flex-wrap: wrap;
+  }
+}
