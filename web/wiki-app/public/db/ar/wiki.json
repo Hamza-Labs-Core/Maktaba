@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 249,
+    "endpoint": 250,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -11519,6 +11519,36 @@
         "lang": "ar",
         "source": {
           "content": "b7d9926f665104ad"
+        }
+      }
+    },
+    {
+      "id": "ep-get-me-history",
+      "type": "endpoint",
+      "title": "GET /me/history",
+      "content": "سجلّ مشاهدة المستخدم",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-29.2",
+        "story-57.3"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/history",
+        "tag": "Browse",
+        "operationId": "getMyHistory"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "20a975b8d88373e7"
         }
       }
     },

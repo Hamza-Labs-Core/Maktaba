@@ -1282,7 +1282,8 @@
         "ep-post-stream-sessions",
         "ep-get-stream-sessions-id",
         "ep-delete-stream-sessions-id",
-        "ep-post-stream-sessions-id-progress"
+        "ep-post-stream-sessions-id-progress",
+        "ep-get-me-history"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-03-server-filter.md",
@@ -1296,7 +1297,8 @@
         "POST /stream/sessions",
         "GET /stream/sessions/{id}",
         "DELETE /stream/sessions/{id}",
-        "POST /stream/sessions/{id}/progress"
+        "POST /stream/sessions/{id}/progress",
+        "GET /me/history"
       ],
       "db_tables": [
         "collection_items",

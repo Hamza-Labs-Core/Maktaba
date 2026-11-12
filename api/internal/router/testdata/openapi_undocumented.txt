@@ -111,7 +111,6 @@ GET /api/me/activity
 GET /api/me/activity/settings
 GET /api/me/cloud-link
 GET /api/me/devices
-GET /api/me/history
 GET /api/me/history/{video_id}
 GET /api/me/sessions
 GET /api/me/tokens

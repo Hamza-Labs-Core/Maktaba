@@ -48,6 +48,22 @@ func From(ctx context.Context) *Effective {
 	return unrestricted
 }
 
+// SmartCheck reports whether a smart collection (a saved filter: it keeps no
+// items, its list is a query) lists at least one video for the caller of ctx under
+// the limit e. handlers/collections has the one that evaluates the query
+// (Handler.SmartShows); the gate puts it in every request's context.
+type SmartCheck func(ctx context.Context, e *Effective, collectionID string) (bool, error)
+
+type smartKey struct{}
+
+// WithSmartCheck is ctx carrying the smart collections' check.
+func WithSmartCheck(ctx context.Context, f SmartCheck) context.Context {
+	if f == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, smartKey{}, f)
+}
+
 // Limits reports whether e hides anything at all.
 func (e *Effective) Limits() bool { return e != nil && e.Restricted }
 
@@ -174,9 +190,10 @@ func AllowedVideo(ctx context.Context, q RowQueryer, e *Effective, id string) (b
 }
 
 // Allowed reports whether e may see one object: a video, a series (not blocked,
-// and at least one episode passes), a collection (not blocked; a hand-made one
-// needs an item that passes), a library (not blocked), a channel (its own tier
-// and the rules naming it). An id that names no row is allowed: there is nothing
+// and at least one episode passes), a collection (not blocked, and at least one
+// item passes: a hand-made one's stored items, a smart one's query as ctx's
+// SmartCheck evaluates it, and with no check in ctx a smart one is refused), a
+// library (not blocked), a channel (its own tier and the rules naming it). An id that names no row is allowed: there is nothing
 // to hide and the caller's own lookup answers it. An id that is not a uuid is
 // refused (Postgres reads spellings of a uuid this check would not recognise), and
 // so is every id on an error.
@@ -206,11 +223,31 @@ func Allowed(ctx context.Context, q RowQueryer, e *Effective, kind, id string) (
 		if e.names(EffectBlock, self, now) {
 			return false, nil
 		}
-		// a smart collection keeps no items: its list is the videos query, filtered
-		query = `SELECT NOT EXISTS (SELECT 1 FROM collections c WHERE c.id = $1)
-		             OR EXISTS (SELECT 1 FROM collections c WHERE c.id = $1 AND c.is_smart)
-		             OR EXISTS (SELECT 1 FROM collection_items ci JOIN videos v ON v.id = ci.video_id
-		                         WHERE ci.collection_id = $1 AND ` + PredicateAt(e, "v", now) + `)`
+		var smart, item bool
+		err := q.QueryRowContext(ctx, `SELECT c.is_smart, EXISTS (SELECT 1 FROM collection_items ci JOIN videos v ON v.id = ci.video_id
+		                         WHERE ci.collection_id = c.id AND `+PredicateAt(e, "v", now)+`)
+		                         FROM collections c WHERE c.id = $1`, cid).Scan(&smart, &item)
+		if err == sql.ErrNoRows {
+			return true, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if !smart {
+			return item, nil
+		}
+		// a smart collection keeps no items: its list is a query over videos. One
+		// that lists nothing this account may see is hidden like a hand-made one
+		// whose items are all hidden (its name and its query say what it holds).
+		check, _ := ctx.Value(smartKey{}).(SmartCheck)
+		if check == nil {
+			return false, nil
+		}
+		shows, err := check(With(ctx, e), e, cid)
+		if err != nil {
+			return false, err
+		}
+		return shows, nil
 	case SubjectLibrary:
 		return !e.names(EffectBlock, self, now), nil
 	case SubjectChannel:

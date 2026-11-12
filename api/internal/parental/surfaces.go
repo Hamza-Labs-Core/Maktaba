@@ -20,8 +20,12 @@ import (
 type Class int
 
 const (
-	// Open routes return no content (sign-in, the caller's own account, health),
-	// or guard themselves (the parental routes): the gate lets them through.
+	// Open routes return no library content and do not depend on the caller's
+	// limit or on the role the gate corrects: health, sign-in, the caller's own
+	// account, and the routes of a machine and of the cluster, which check an
+	// admin or a machine's identity themselves. The gate lets them through
+	// before it reads anything, so they answer when the policies cannot be read
+	// (the home's database down: DatabaseDown lists the ones that must).
 	Open Class = iota + 1
 	// Filtered routes return content and apply the filter themselves (SQL on
 	// their lists, Check on an id their body carries).
@@ -35,6 +39,13 @@ const (
 	// Closed routes return content the filter does not cover yet: a restricted
 	// account gets the answer of a route that does not exist.
 	Closed
+	// Guarded routes return no library content of their own, but their handler
+	// reads the request's limit or trusts the caller's role (the parental routes,
+	// the notices, a stream's progress): the gate reads the policy first, puts
+	// the limit in the context and, for an account with a policy of its own,
+	// takes the admin role off the principal. When the policy cannot be read the
+	// handler runs with a limit that shows nothing and with no admin role.
+	Guarded
 )
 
 func (c Class) String() string {
@@ -49,6 +60,8 @@ func (c Class) String() string {
 		return "refuse"
 	case Closed:
 		return "closed"
+	case Guarded:
+		return "guarded"
 	}
 	return "unknown"
 }
@@ -69,9 +82,11 @@ type Surface struct {
 	Owner string
 	// Reason says why the class is right.
 	Reason string
-	// Probe says how the bypass rehearsal (57.13) asks the route for a fixture:
-	// the request path with {video}, {series}, {collection}, {library} or
-	// {channel} for the fixture's id. Empty: the route takes no fixture.
+	// Probe says how the bypass rehearsal (57.13) asks a read for a fixture: the
+	// request path with {video}, {series}, {collection}, {library} or {channel}
+	// for the fixture's id. It is a hint only: the rehearsal walks every mounted
+	// Filtered and ByID route itself (api/internal/router/p57_bypass_pg_test.go)
+	// and fails on one it cannot reach with a real fixture, whatever Probe says.
 	Probe string
 }
 
@@ -208,7 +223,6 @@ func buildSurfaces() SurfaceTable {
 		"/api/auth/register",
 	)
 	exact(Open, all, "pairing a device to the caller's own account (57.02 guards as_user); no content",
-		"/api/pairing/approve",
 		"/api/pairing/device",
 		"/api/pairing/device/token",
 		"/api/pairing/device/{code}",
@@ -216,6 +230,9 @@ func buildSurfaces() SurfaceTable {
 		"/api/pairing/pending",
 		"/api/pairing/request",
 		"/api/pairing/status",
+	)
+	exact(Guarded, all, "approving a device as another user is an admin's or a guardian's (57.02): the handler reads the caller's role",
+		"/api/pairing/approve",
 	)
 	exact(Open, all, "the caller's own account, sign-ins and devices; no content",
 		"/api/me",
@@ -233,7 +250,7 @@ func buildSurfaces() SurfaceTable {
 	exact(Open, mGet, "the caller's own tokens, by name; no content", "/api/me/tokens")
 	exact(Open, mDelete, "revoking one's own token only tightens", "/api/me/tokens/{id}")
 	exact(Refuse, mPost, "a restricted account mints no personal access token (README 6.6)", "/api/me/tokens")
-	exact(Open, all, "Epic 57's own routes: each checks admin or guardian itself (57.01, 57.02)",
+	exact(Guarded, all, "Epic 57's own routes: each checks admin or guardian itself (57.01, 57.02)",
 		"/api/me/parental",
 		"/api/parental/children",
 		"/api/parental/ratings",
@@ -243,16 +260,16 @@ func buildSurfaces() SurfaceTable {
 		"/api/users/{id}/parental/rules",
 		"/api/users/{id}/parental/rules/{rid}",
 	)
-	exact(Open, all, "the device's age signal only ever tightens the caller's own limit (57.04)",
+	exact(Guarded, all, "the device's age signal only ever tightens the caller's own limit (57.04)",
 		"/api/me/age-signal",
 	)
-	exact(Open, mPost, "Ask a parent: the child asks; the handler lets only a restricted account through and names no content the asker was not already refused (57.06)",
+	exact(Guarded, mPost, "Ask a parent: the child asks; the handler lets only a restricted account through and names no content the asker was not already refused (57.06)",
 		"/api/me/parental/requests",
 	)
-	exact(Open, mGet, "what became of the caller's own requests: the handler lets only a restricted account through and reads only its rows, by the ids it sent itself, with no title and no guardian (57.06)",
+	exact(Guarded, mGet, "what became of the caller's own requests: the handler lets only a restricted account through and reads only its rows, by the ids it sent itself, with no title and no guardian (57.06)",
 		"/api/me/parental/requests",
 	)
-	exact(Open, all, "Ask a parent and the PIN: the child asks, the guardian answers; each checks its caller itself and names no content the asker was not already refused (57.06)",
+	exact(Guarded, all, "Ask a parent and the PIN: the child asks, the guardian answers; each checks its caller itself and names no content the asker was not already refused (57.06)",
 		"/api/me/parental/guardians",
 		"/api/me/parental/unlock",
 		"/api/me/parental-pin",
@@ -260,7 +277,7 @@ func buildSurfaces() SurfaceTable {
 		"/api/parental/requests/{id}/approve",
 		"/api/parental/requests/{id}/deny",
 	)
-	exact(Open, all, "the time rules: the account's own countdown, and routes that check admin or guardian themselves; no content (57.14)",
+	exact(Guarded, all, "the time rules: the account's own countdown, and routes that check admin or guardian themselves; no content (57.14)",
 		"/api/me/parental/time",
 		"/api/parental/users/{id}/time-rules",
 		"/api/parental/users/{id}/time-usage",
@@ -282,32 +299,32 @@ func buildSurfaces() SurfaceTable {
 		"/api/discovery/home",
 		"/api/stream/capabilities",
 	)
-	exact(Open, all, "the caller's own notices; none names a video",
+	exact(Guarded, all, "the caller's own notices; none names a video",
 		"/api/notifications",
 		"/api/notifications/read-all",
 		"/api/notifications/{id}/read",
 	)
 	exact(Open, mPost, "a client's own diagnostics, written not read", "/api/diagnostics/envelope")
-	exact(Open, all, "the caller's own search words; no result is in them",
+	exact(Guarded, all, "the caller's own search words; no result is in them",
 		"/api/search/recent/{sid}",
 		"/api/search/saved",
 		"/api/search/saved/{id}",
 		"/api/search/save",
 	)
-	exact(Open, mDelete, "clearing the caller's own recent searches", "/api/search/recent")
+	exact(Guarded, mDelete, "clearing the caller's own recent searches", "/api/search/recent")
 	exact(Open, all, "GraphQL answers through sub-requests to the REST routes, each of which passes this gate",
 		"/graphql",
 		"/graphql/schema",
 	)
-	exact(Open, all, "the caller's own stream session, by its unguessable id: progress, errors, close",
+	exact(Guarded, all, "the caller's own stream session, by its unguessable id: progress, errors, close",
 		"/api/stream/sessions/{id}/errors",
 		"/api/stream/sessions/{id}/progress",
 	)
-	exact(Open, mDelete, "closing one's own stream session", "/api/stream/sessions/{id}")
-	exact(Open, mPost, "ending or beating a watch the filter let start; a hidden video's beat is refused in the handler",
+	exact(Guarded, mDelete, "closing one's own stream session", "/api/stream/sessions/{id}")
+	exact(Guarded, mPost, "ending or beating a watch the filter let start; a hidden video's beat is refused in the handler",
 		"/api/watch/stop",
 	)
-	exact(Open, all, "the caller's own recommendation rows: refresh and dismiss a kind; no content returned",
+	exact(Guarded, all, "the caller's own recommendation rows: refresh and dismiss a kind; no content returned",
 		"/api/recommendations/refresh",
 		"/api/recommendations/rows/{reason_kind}",
 	)
@@ -428,6 +445,14 @@ func buildSurfaces() SurfaceTable {
 		"/api/tv/",
 	)
 
+	// ---- a machine's and the cluster's own routes: they answer with the home's database down ----
+	for _, d := range DatabaseDown {
+		if s, ok := t.Lookup(http.MethodGet, d.Pattern); ok && !s.Prefix {
+			continue // named above already (health, signing in)
+		}
+		exact(Open, all, d.Reason, d.Pattern)
+	}
+
 	// ---- the operator's surfaces: nothing here is for a restricted account ----
 	prefix(Refuse, "", "admin and operator routes; a restricted account is never an admin (57.02)",
 		"/admin/",
@@ -542,7 +567,7 @@ func buildSurfaces() SurfaceTable {
 	// restricted account is never an admin, 57.02). The gate still checks the
 	// object first, so a hidden collection or series answers as a missing one
 	// before the role check says anything about it.
-	exact(Open, mPost, "making a collection is an admin's: the handler refuses every other account before it reads anything",
+	exact(Guarded, mPost, "making a collection is an admin's: the handler refuses every other account before it reads anything",
 		"/api/collections",
 	)
 	byID(mWrite, SubjectCollection, "id", "a change to one collection: a hidden one is missing before the role check answers",
@@ -595,4 +620,77 @@ func buildSurfaces() SurfaceTable {
 		"/api/panels/image",
 	)
 	return t
+}
+
+// DownRoute is one route that must answer when the policies cannot be read.
+type DownRoute struct {
+	Pattern string
+	// Reason says why it must answer then, and what checks its caller instead of
+	// the gate.
+	Reason string
+}
+
+// DatabaseDown are the routes that must answer when the home's database cannot be
+// read: a machine's own routes, the cluster's (a switch of the home, an emergency,
+// a machine joining or reporting), updates and restores, and signing in. None
+// returns library content, and each checks an admin or a machine's identity
+// itself, so each is Open: the gate lets it through before it reads a policy. A
+// route here that is not Open fails TestDatabaseDownRoutesAreOpen, and a
+// machine-local route (router.Placement) or one that needs no sign-in
+// (middleware.DefaultPublicAllowlist) that is missing here fails its sibling.
+var DatabaseDown = []DownRoute{
+	{"/healthz", "this machine's health; no content, no caller to check"},
+	{"/.well-known/security.txt", "a static file"},
+	{"/api/.well-known/jwks.json", "the public keys access tokens are checked with; no content"},
+	{"/api/system/health", "this machine's health; no content"},
+	{"/api/system/version", "this machine's version; no content"},
+	{"/api/system/processes", "this machine's processes, for an admin while the home is away: the route requires an admin itself (RequireAdmin)"},
+	{"/api/system/sbom", "this machine's bill of materials: the handler refuses every caller but an admin"},
+	{"/api/cluster/self", "this machine's identity, its home and its address; no user and no library"},
+	{"/api/cluster/emergency", "a standby home taking over when its home, and so the database, is gone: the handler refuses every caller but an admin of this machine"},
+	{"/api/cluster/term-claim", "another standby home's claim on an emergency's term: sealed from its key, and this machine's supervisor refuses any other"},
+	{"/api/cluster/moved/{node}", "a switch's notice of the new home: sealed to the one machine that may open it"},
+	{"/api/cluster/kept-aside/report", "an old home's report after an emergency: sealed by its key, the handler refuses any other"},
+	{"/api/cluster/switchover", "the state and the start of a switch of the home, read while the database is fenced and moved: every handler refuses every caller but an admin"},
+	{"/api/cluster/switchover/standby", "as /api/cluster/switchover"},
+	{"/api/cluster/switchover/{id}/cancel", "as /api/cluster/switchover"},
+	{"/api/cluster/switchover/{id}/checklist", "as /api/cluster/switchover"},
+	{"/api/cluster/join", "a machine's request to join, before it holds any credential: rate-limited, and an admin approves it"},
+	{"/api/cluster/join/{node_id}", "the joining machine's poll, answered to its public key only"},
+	{"/api/cluster/agent", "every process's channel to the home: it authenticates in its protocol (pairing key or the home's agent key)"},
+	{"/api/cluster/link", "the cluster link: mutual TLS and tickets"},
+	{"/api/cluster/link/stream", "as /api/cluster/link"},
+	{"/api/cluster/link/pull", "the front door's pulls over loopback: the local token"},
+	{"/api/cluster/link/local/agent", "this machine's own processes on its cluster link, over loopback: the local token"},
+	{"/api/cluster/link/local/fetch", "as /api/cluster/link/local/agent"},
+	{"/api/cluster/ca.crt", "the cluster CA's public certificate"},
+	{"/api/cluster/delegate/introspect", "a node's question to the home about a sign-in: the handler refuses any request without a verified node signature"},
+	{"/api/cluster/delegate/signout", "as /api/cluster/delegate/introspect"},
+	{"/api/cluster/sso/start", "the removed cluster sign-in: 404 for everyone"},
+	{"/api/cluster/sso/callback", "as /api/cluster/sso/start"},
+	{"/api/cluster/sso/authorize", "as /api/cluster/sso/start"},
+	{"/api/cluster/sso/exchange", "as /api/cluster/sso/start"},
+	{"/internal/updates/tv-change", "this machine's update moving its TV to the new streaming binary: its own supervisor's token only"},
+	{"/internal/updates/tv-change/{run}", "as /internal/updates/tv-change"},
+	{"/internal/updates/tv-change/{run}/withdraw", "as /internal/updates/tv-change"},
+	{"/internal/updates/restored", "a restore the command line asked for, recorded while the database is being put back: the per-boot local token only"},
+	{"/internal/plugins/invocations", "this machine's own pipeline minting a plugin job's token: the per-boot local token only"},
+	{"/internal/plugins/invocations/{id}", "as /internal/plugins/invocations"},
+	{"/internal/plugins/breaker", "as /internal/plugins/invocations"},
+	{"/internal/plugins/outcome", "as /internal/plugins/invocations"},
+	{"/api/admin/system/update", "starting an update of this machine: the handler refuses every caller but an admin"},
+	{"/api/server/restart", "restarting this machine's services, which an admin does when the database is down: the handler refuses every caller but an admin"},
+	{"/api/server/backups", "the backups a restore reads: every handler refuses every caller but an admin"},
+	{"/api/server/backups/dumps/{name}", "as /api/server/backups"},
+	{"/api/auth/login", "signing in; no content"},
+	{"/api/auth/refresh", "renewing a sign-in; no content"},
+	{"/api/auth/logout", "signing out; no content"},
+	{"/api/auth/cloud", "signing in with a Maktaba Cloud assertion; no content"},
+	{"/api/auth/register", "registering, before any credential; no content"},
+	{"/api/pairing/device", "a TV asking for a sign-in code, before any credential; no content"},
+	{"/api/pairing/device/token", "the TV's poll for its approval; no content"},
+	{"/api/discovery/home", "the home's identity for the apps' home picker; no user and no library"},
+	{"/api/stream/capabilities", "what this machine's streaming can do; no content"},
+	{"/api/tv/parental/verdict", "the streaming service's question, answered to the local token only"},
+	{"/api/tv/remote/webhook", "the stream provider's webhook, checked by its own signature"},
 }

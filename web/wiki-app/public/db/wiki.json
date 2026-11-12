@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 249,
+    "endpoint": 250,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -9395,6 +9395,30 @@
         "path": "/me/favorites",
         "tag": "Browse",
         "operationId": "markFavorites"
+      }
+    },
+    {
+      "id": "ep-get-me-history",
+      "type": "endpoint",
+      "title": "GET /me/history",
+      "content": "The caller's watch history",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-29.2",
+        "story-57.3"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/history",
+        "tag": "Browse",
+        "operationId": "getMyHistory"
       }
     },
     {

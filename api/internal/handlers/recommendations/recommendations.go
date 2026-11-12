@@ -134,7 +134,12 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	key := p.UserID + ":" + surface
-	if cached, ok := h.cacheLookup(key); ok {
+	// A kept answer was built under the limit of the request that made it. The
+	// limit differs by sign-in (a device's signal) and changes when a guardian
+	// tightens it, so a request with a limit is always read fresh and never
+	// kept (Epic 57 story 57.03), as the home's row cache does.
+	limited := parental.From(r.Context()).Limits()
+	if cached, ok := h.cacheLookup(key); ok && !limited {
 		cached.CacheHit = true
 		common.WriteJSON(w, r, http.StatusOK, cached)
 		return
@@ -184,7 +189,9 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt:   now.Add(h.ttlFor(r.Context())),
 	}
 
-	h.cacheStore(key, resp)
+	if !limited {
+		h.cacheStore(key, resp)
+	}
 	common.WriteJSON(w, r, http.StatusOK, resp)
 }
 
@@ -234,9 +241,13 @@ func (h *Handler) DismissItem(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("recommendations store unavailable"))
 		return
 	}
+	// a video that is not there is dismissed like one that is: nothing is kept and
+	// the answer is the same (the insert once failed on the video's foreign key and
+	// answered 500, also for a video hidden from a restricted account, which the
+	// gate asks about under an id that names nothing)
 	if _, err := h.DB.ExecContext(r.Context(), `
 		INSERT INTO recommendation_dismissals (user_id, reason_kind, video_id)
-		VALUES ($1, '', $2)
+		SELECT $1, '', v.id FROM videos v WHERE CAST(v.id AS TEXT) = $2
 		ON CONFLICT DO NOTHING
 	`, p.UserID, videoID); err != nil {
 		httperror.Write(w, r, httperror.Internal("could not record dismissal").Wrap(err))

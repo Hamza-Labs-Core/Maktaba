@@ -686,6 +686,12 @@ func (s *Store) addRuleTx(ctx context.Context, tx *sql.Tx, actorID, userID strin
 	if err := in.validate(); err != nil {
 		return nil, err
 	}
+	// a uuid is kept in the one form every reader compares it in: a client that
+	// sent it in capitals (or with no hyphens) would otherwise store a rule that
+	// the lookups by id never match
+	if c, ok := CanonicalUUID(in.SubjectID); ok {
+		in.SubjectID = c
+	}
 	if _, err := policyOf(ctx, tx, userID, true); err != nil {
 		return nil, err
 	}
