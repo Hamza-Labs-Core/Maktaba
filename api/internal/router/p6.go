@@ -208,6 +208,10 @@ func MountP6(r chi.Router, d P6Deps) {
 	if d.OnParental != nil {
 		d.OnParental(parentalCache)
 	}
+	// Story 57.14: time limits. From here on d.URLSigner marks every stream URL
+	// with whether its account's time is kept.
+	var timeKeeper *parental.TimeKeeper
+	timeKeeper, d.URLSigner = MountParentalTime(r, parentalCache, d.StreamingClient, d.URLSigner)
 
 	// Video patch, delete, process and reprocess write audit rows; process and
 	// reprocess queue real pipeline jobs (PostgresJobs: processing_jobs_enqueue).
@@ -265,6 +269,7 @@ func MountP6(r chi.Router, d P6Deps) {
 		Signer:   d.URLSigner,
 		Settings: runtimeSettings,
 		Offline:  d.StreamOffline,
+		Time:     timeKeeper,
 	}
 	streamHandler.Mount(r)
 

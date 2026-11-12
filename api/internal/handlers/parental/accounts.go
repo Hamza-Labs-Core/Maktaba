@@ -41,6 +41,8 @@ const (
 type Handler struct {
 	Store *parentalpkg.Store
 	Cache *parentalpkg.Cache
+	// Time keeps playback time (story 57.14); needed only by MountTime's routes.
+	Time *parentalpkg.TimeKeeper
 }
 
 // Mount attaches the routes.
