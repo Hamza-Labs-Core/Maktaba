@@ -13,6 +13,7 @@
 package parental
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	parentalpkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
 
 // Problem types. Each answer also carries `code`, the short name the apps map to
@@ -331,6 +333,7 @@ func (h *Handler) Put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.changed(id)
+	h.keptChanged(r, id)
 	access := parentalpkg.AccessGuardian
 	if p.IsAdmin {
 		access = parentalpkg.AccessAdmin
@@ -346,6 +349,21 @@ func (h *Handler) changed(id string) {
 	}
 }
 
+// keptChanged tells the time keeper (story 57.14) that the account was made
+// restricted, changed, or had its restriction lifted, after the cached policy was
+// dropped: the streaming service then refuses the stream URLs signed before the
+// account became restricted, and drops what it held for one that no longer is.
+// The policy is already written, so a failure is logged and the answer stands.
+func (h *Handler) keptChanged(r *http.Request, id string) {
+	if h.Store == nil || h.Store.OnKeptChange == nil {
+		return
+	}
+	if err := h.Store.OnKeptChange(context.WithoutCancel(r.Context()), id); err != nil {
+		mlog.From(r.Context()).Warn("parental: the streaming service was not told that the account's time keeping changed",
+			"user_id", id, "err", err.Error(), "event", "parental_time_kept_push_failed")
+	}
+}
+
 // Lift implements DELETE /api/users/{id}/parental (admin).
 func (h *Handler) Lift(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
@@ -358,6 +376,7 @@ func (h *Handler) Lift(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.changed(id)
+	h.keptChanged(r, id)
 	common.WriteNoContent(w)
 }
 

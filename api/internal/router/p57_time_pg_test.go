@@ -9,6 +9,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -44,6 +45,7 @@ type tmStreaming struct {
 	leases map[string]time.Time // by stream session id
 	end    *time.Time           // the end streaming holds for the account, as last told
 	fail   error
+	kept   []string // the SetTimeKept calls, "user=true|false"
 }
 
 func (s *tmStreaming) OpenSession(ctx context.Context, req grpcstreaming.OpenSessionRequest) (grpcstreaming.OpenSessionResponse, error) {
@@ -65,6 +67,22 @@ func (s *tmStreaming) SetTimeLimit(_ context.Context, _, _ string, lim *grpcstre
 	if lim != nil && lim.SessionID != "" && lim.LeaseUntil != nil {
 		s.leases[lim.SessionID] = *lim.LeaseUntil
 	}
+	return nil
+}
+
+func (s *tmStreaming) ClearTimeLimits(context.Context, string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.fail
+}
+
+func (s *tmStreaming) SetTimeKept(_ context.Context, userID string, kept bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.fail != nil {
+		return s.fail
+	}
+	s.kept = append(s.kept, fmt.Sprintf("%s=%t", userID, kept))
 	return nil
 }
 

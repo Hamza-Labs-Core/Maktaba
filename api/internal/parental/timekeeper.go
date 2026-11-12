@@ -58,6 +58,14 @@ type TimePusher interface {
 	// direct play, of that video) to the account. known is false when streaming
 	// holds no lease for that session, so it cannot tell.
 	TimeServed(ctx context.Context, userID, libraryID, sessionID, videoID string) (last time.Time, known bool, err error)
+	// ClearTimeLimits drops the end streaming holds for the account in every
+	// library: it has no time rule left. Its leases stay.
+	ClearTimeLimits(ctx context.Context, userID string) error
+	// SetTimeKept tells streaming whether the account's time is kept from now on.
+	// Kept: a stream URL signed before that (it names no session) is refused in
+	// every library. Not kept: everything streaming holds for the account goes, so
+	// nothing stale refuses its new URLs.
+	SetTimeKept(ctx context.Context, userID string, kept bool) error
 }
 
 // sessionMark is one open stream session of a restricted account.
@@ -266,10 +274,7 @@ func (k *TimeKeeper) count(ctx context.Context, sessionID string, m *sessionMark
 // on streaming serves the session nothing until the API counts it again. If
 // streaming cannot be told, the mark stays.
 func (k *TimeKeeper) letGo(ctx context.Context, sessionID string, m *sessionMark) error {
-	k.mu.Lock()
-	snap := *m
-	k.mu.Unlock()
-	if _, err := k.lease(ctx, snap, sessionID, leaseEnd); err != nil {
+	if _, err := k.lease(ctx, k.snapshot(m), sessionID, leaseEnd); err != nil {
 		return err
 	}
 	k.mu.Lock()
@@ -302,7 +307,7 @@ func (k *TimeKeeper) settle(ctx context.Context, userID, except string) error {
 	var first error
 	for _, d := range list {
 		seconds, sure, err := k.count(ctx, d.id, d.m, now, false)
-		if err == nil && sure && seconds == 0 && now.Sub(d.m.seen) > markIdle {
+		if err == nil && sure && seconds == 0 && now.Sub(k.snapshot(d.m).seen) > markIdle {
 			err = k.letGo(ctx, d.id, d.m)
 		}
 		if err != nil && first == nil {
@@ -372,8 +377,16 @@ func (k *TimeKeeper) Opened(ctx context.Context, userID, libraryID, videoID, ses
 			return err
 		}
 	}
-	_, err = k.lease(ctx, *m, sessionID, leaseRenew)
+	_, err = k.lease(ctx, k.snapshot(m), sessionID, leaseRenew)
 	return err
+}
+
+// snapshot is the mark as it is now. count writes a mark's fields under k.mu, and
+// two calls for one session may run together, so every read is under it too.
+func (k *TimeKeeper) snapshot(m *sessionMark) sessionMark {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return *m
 }
 
 // Kept reports whether p's playback time is kept: p is a restricted account. Every
@@ -414,26 +427,44 @@ func (k *TimeKeeper) Beat(ctx context.Context, userID, sessionID string) (TimeSt
 	now := k.store.now()
 	k.mu.Lock()
 	m := k.marks[sessionID]
+	if m != nil && m.userID != userID { // the user id of a mark never changes
+		m = nil
+	}
 	k.mu.Unlock()
-	if m == nil || m.userID != userID {
+	if m == nil {
 		// No mark (the API restarted, or the mark was dropped): the session's own row
-		// says whose it is and since when it has run.
+		// says whose it is and whether it is still open.
 		var owner, video, lib string
 		var opened time.Time
+		var closed sql.NullTime
 		err := k.store.DB.QueryRowContext(ctx, `
-			SELECT s.user_id::text, s.video_id::text, COALESCE(v.library_id::text, ''), s.opened_at
+			SELECT s.user_id::text, s.video_id::text, COALESCE(v.library_id::text, ''), s.opened_at, s.closed_at
 			  FROM streaming_sessions s LEFT JOIN videos v ON v.id = s.video_id
-			 WHERE s.id::text = $1`, sessionID).Scan(&owner, &video, &lib, &opened)
+			 WHERE s.id::text = $1`, sessionID).Scan(&owner, &video, &lib, &opened, &closed)
 		if errors.Is(err, sql.ErrNoRows) || (err == nil && owner != userID) {
 			return TimeState{}, ErrUnknownSession
 		}
 		if err != nil {
 			return TimeState{}, err
 		}
-		if opened.After(now) {
-			opened = now
+		if closed.Valid {
+			// A progress post after the session closed (a player's last position):
+			// the close counted it, so it gets no mark, no count and no lease.
+			return k.store.TimeOf(ctx, userID, lib)
 		}
-		if m, _, err = k.mark(ctx, sessionID, sessionMark{userID: userID, libraryID: lib, videoID: video, at: opened, seen: now}); err != nil {
+		// opened_at never moves, and what the session played before the mark was
+		// lost was counted then (by the mark's own calls, or at the latest by the
+		// lease running out). So the new mark starts at most one heartbeat back:
+		// the time since the lost mark's last call can be no longer while the
+		// stream still plays.
+		at := opened
+		if floor := now.Add(-HeartbeatCap); at.Before(floor) {
+			at = floor
+		}
+		if at.After(now) {
+			at = now
+		}
+		if m, _, err = k.mark(ctx, sessionID, sessionMark{userID: userID, libraryID: lib, videoID: video, at: at, seen: at}); err != nil {
 			return TimeState{}, err
 		}
 	}
@@ -443,7 +474,7 @@ func (k *TimeKeeper) Beat(ctx context.Context, userID, sessionID string) (TimeSt
 	if err := k.settle(ctx, userID, sessionID); err != nil {
 		return TimeState{}, err
 	}
-	st, err := k.lease(ctx, *m, sessionID, leaseRenew)
+	st, err := k.lease(ctx, k.snapshot(m), sessionID, leaseRenew)
 	if err == nil && !st.Allowed {
 		_ = k.store.RecordTimeUp(ctx, userID, st.Reason) // the activity note; the stream ends either way
 	}
@@ -473,10 +504,30 @@ func (k *TimeKeeper) forget(sessionID string) {
 
 // Refresh tells streaming again when userID's playback must end, after the rules or
 // a grant changed: for the libraries named, and for every library a session of that
-// account is known to be playing in. It renews no lease.
+// account is known to be playing in. It renews no lease. An account that has no
+// time rule left has its end dropped in every library at once, and one that is no
+// longer kept (its restriction was lifted) has everything streaming holds dropped:
+// an end streaming still held for a library nobody is playing in would refuse it
+// there until streaming restarts.
 func (k *TimeKeeper) Refresh(ctx context.Context, userID string, libraryIDs ...string) error {
 	if k.Push == nil {
 		return nil
+	}
+	on, err := k.restricted(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if !on {
+		k.forgetUser(userID)
+		return k.Push.SetTimeKept(ctx, userID, false)
+	}
+	rules, err := timeRulesOf(ctx, k.store.DB, userID)
+	if err != nil {
+		return err
+	}
+	var first error
+	if len(rules) == 0 {
+		first = k.Push.ClearTimeLimits(ctx, userID)
 	}
 	libs := map[string]bool{}
 	for _, l := range libraryIDs {
@@ -489,27 +540,50 @@ func (k *TimeKeeper) Refresh(ctx context.Context, userID string, libraryIDs ...s
 		}
 	}
 	k.mu.Unlock()
-	if len(libs) == 0 {
-		return nil
-	}
-	on, err := k.restricted(ctx, userID)
-	if err != nil {
-		return err
-	}
-	var first error
 	for lib := range libs {
-		var err error
-		if !on {
-			err = k.Push.SetTimeLimit(ctx, userID, lib, nil)
-		} else {
-			var st TimeState
-			if st, err = k.store.TimeOf(ctx, userID, lib); err == nil {
-				err = k.push(ctx, userID, lib, st, leaseKeep, "", "")
-			}
+		st, err := k.store.TimeOf(ctx, userID, lib)
+		if err == nil {
+			err = k.push(ctx, userID, lib, st, leaseKeep, "", "")
 		}
 		if err != nil && first == nil {
 			first = err
 		}
 	}
 	return first
+}
+
+// KeptChanged tells streaming whether userID's time is kept, after the account was
+// made restricted, changed, or had its restriction lifted (the caller dropped the
+// cached policy first).
+//
+// Made restricted: streaming is told the account is kept, so a stream URL signed
+// before that, which names no session, is refused from here on and the stream it
+// plays must be opened again, counted. Lifted: everything streaming holds for the
+// account goes at once, and the keeper forgets its marks.
+func (k *TimeKeeper) KeptChanged(ctx context.Context, userID string) error {
+	if k.Push == nil {
+		return nil
+	}
+	on, err := k.restricted(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if !on {
+		return k.Refresh(ctx, userID)
+	}
+	if err := k.Push.SetTimeKept(ctx, userID, true); err != nil {
+		return err
+	}
+	return k.Refresh(ctx, userID)
+}
+
+// forgetUser drops every mark of userID: its time is no longer kept.
+func (k *TimeKeeper) forgetUser(userID string) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	for id, m := range k.marks {
+		if m.userID == userID {
+			delete(k.marks, id)
+		}
+	}
 }

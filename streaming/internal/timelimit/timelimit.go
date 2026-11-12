@@ -8,13 +8,16 @@
 // with a restart) nothing is served until the API gives one. A URL that names no
 // session is served only to an account nothing is held for here: the API signs
 // every URL of an account whose time it keeps with the claim, so one without it,
-// for an account that has an entry, is refused.
+// for an account that has an entry, is refused. The API also says when an account
+// becomes kept (SetKept), so a URL signed before that is refused in every library,
+// and when it stops being kept, so nothing stale refuses it afterwards.
 package timelimit
 
 import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -60,7 +63,13 @@ type end struct {
 	next   *time.Time
 }
 
-type lease struct{ until, served time.Time }
+// lease is one stream session's. free: the account's time stopped being kept
+// while the session ran (SetKept false), so it plays on with no counted call until
+// the account is kept again.
+type lease struct {
+	until, served time.Time
+	free          bool
+}
 
 // Registry holds the ends and leases. The zero value is not usable: New.
 type Registry struct {
@@ -73,11 +82,12 @@ type Registry struct {
 	mu     sync.Mutex
 	ends   map[string]end    // user + "|" + library
 	leases map[string]*lease // user + "|" + session
+	kept   map[string]bool   // accounts the API said are kept, whatever library
 }
 
 // New is an empty registry.
 func New() *Registry {
-	return &Registry{ends: map[string]end{}, leases: map[string]*lease{}}
+	return &Registry{ends: map[string]end{}, leases: map[string]*lease{}, kept: map[string]bool{}}
 }
 
 func (g *Registry) now() time.Time {
@@ -107,7 +117,63 @@ func (g *Registry) Set(userID, libraryID string, lim *Limit) {
 		l = &lease{}
 		g.leases[key] = l
 	}
-	l.until = *lim.LeaseUntil
+	l.until, l.free = *lim.LeaseUntil, false
+}
+
+// SetKept is the API's word that userID's playback time is kept from now on, or no
+// longer is.
+//
+// Kept (the account was made restricted): a URL signed before that, which names no
+// session (tk "0"), is refused from here on in every library, and a session left
+// free by an earlier lift is served nothing until a counted call renews its lease.
+//
+// Not kept (the restriction was lifted): everything held for the account goes, in
+// every library, so its new URLs (tk "0") are served; a session that was running
+// under a lease plays on, free, with no further call.
+func (g *Registry) SetKept(userID string, kept bool) {
+	now := g.now()
+	prefix := userID + "|"
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.kept == nil {
+		g.kept = map[string]bool{}
+	}
+	if kept {
+		g.kept[userID] = true
+		for k, l := range g.leases {
+			if l.free && strings.HasPrefix(k, prefix) {
+				l.free = false
+				if l.until.After(now) {
+					l.until = now
+				}
+			}
+		}
+		return
+	}
+	delete(g.kept, userID)
+	g.clearEnds(prefix)
+	for k, l := range g.leases {
+		if strings.HasPrefix(k, prefix) {
+			l.until, l.free = now.Add(leaseKeep), true
+		}
+	}
+}
+
+// ClearEnds drops the end held for userID in every library (the account has no
+// time rule left). Its leases stay: it is still kept, and still counted.
+func (g *Registry) ClearEnds(userID string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.clearEnds(userID + "|")
+}
+
+// clearEnds is called with the lock held.
+func (g *Registry) clearEnds(prefix string) {
+	for k := range g.ends {
+		if strings.HasPrefix(k, prefix) {
+			delete(g.ends, k)
+		}
+	}
 }
 
 // room makes place for one more lease. Called with the lock held.
@@ -145,7 +211,7 @@ func (g *Registry) Check(userID string, libraries []string, sessionID string) (d
 	now := g.now()
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	kept := false
+	kept := g.kept[userID]
 	for _, lib := range libraries {
 		e, ok := g.ends[userID+"|"+lib]
 		kept = kept || ok

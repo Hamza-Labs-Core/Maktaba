@@ -249,6 +249,10 @@ type Store struct {
 	// device said a child may be using it (a limit under 18) while parental controls
 	// are not turned on (story 57.12): the admins are told once per sign-in.
 	OnChildDevice func(ctx context.Context, userID, family string)
+	// OnKeptChange, when set (the time keeper's KeptChanged, story 57.14), is told
+	// after an account was made restricted, changed, or had its restriction lifted,
+	// so the streaming service learns at once whether its time is kept.
+	OnKeptChange func(ctx context.Context, userID string) error
 }
 
 // NewStore returns a Store over db.

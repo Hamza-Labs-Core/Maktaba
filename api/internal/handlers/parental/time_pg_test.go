@@ -33,6 +33,10 @@ func (p *timePush) SetTimeLimit(_ context.Context, _, _ string, lim *parental.Ti
 	return nil
 }
 
+func (p *timePush) ClearTimeLimits(context.Context, string) error { return nil }
+
+func (p *timePush) SetTimeKept(context.Context, string, bool) error { return nil }
+
 func (p *timePush) TimeServed(context.Context, string, string, string, string) (time.Time, bool, error) {
 	return time.Time{}, true, nil
 }
