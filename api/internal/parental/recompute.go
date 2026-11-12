@@ -90,7 +90,7 @@ func (r *Recomputer) Wake() {
 }
 
 // Run works the queue until ctx ends. One batch failing is logged and tried again
-// at the next poll; the job keeps its place.
+// at the next poll, behind the jobs that have not failed (see Step).
 func (r *Recomputer) Run(ctx context.Context) error {
 	t := time.NewTicker(pollEvery)
 	defer t.Stop()
@@ -107,31 +107,82 @@ func (r *Recomputer) Run(ctx context.Context) error {
 	}
 }
 
-// Drain works the queue until it is empty and returns how many steps it took.
+// Drain works the queue until it is empty and returns how many steps it took. A
+// job whose batch fails does not stop the others: they are worked first, and Drain
+// returns the first error once the only work left is a job that already failed on
+// its own in this call (it is tried again at the next call).
 func (r *Recomputer) Drain(ctx context.Context) (int, error) {
-	steps := 0
+	var (
+		steps    int
+		firstErr error
+		// the jobs that failed when worked alone (a batch of video jobs that fails is
+		// worked again one job at a time, so that only the one at fault fails)
+		failedAlone = map[int64]bool{}
+	)
 	for {
 		if err := ctx.Err(); err != nil {
 			return steps, err
 		}
-		worked, err := r.Step(ctx)
+		worked, jobs, err := r.step(ctx)
 		if err != nil {
-			return steps, err
+			if firstErr == nil {
+				firstErr = err
+			}
+			if len(jobs) == 0 { // nothing was claimed: the queue itself cannot be read
+				return steps, firstErr
+			}
+			if len(jobs) == 1 {
+				if failedAlone[jobs[0]] {
+					return steps, firstErr
+				}
+				failedAlone[jobs[0]] = true
+			}
+			continue
 		}
 		if !worked {
-			return steps, nil
+			return steps, firstErr
 		}
 		steps++
 	}
 }
 
-// Step works one batch of the oldest job nobody else holds: up to BatchSize videos
-// of a container's job, up to BatchSize single-video jobs, or the expansion of an
-// "all" job. It reports false when the queue had nothing to work.
+// Step works one batch of one job nobody else holds: up to BatchSize videos of a
+// container's job, up to BatchSize single-video jobs, or the expansion of an "all"
+// job. It reports false when the queue had nothing to work.
+//
+// The queue is worked by (attempts, batches, id). A job whose batch failed has its
+// attempts raised and so goes behind every job that has failed less: one job that
+// fails every time holds nothing up, and it is never dropped (a tier nothing gives
+// any more must not stay because its recompute was given up). A job that has done
+// fewer batches goes first, so single-video jobs and a newly set series or
+// collection are worked between the batches of a long backfill, not after it.
 func (r *Recomputer) Step(ctx context.Context) (bool, error) {
+	worked, _, err := r.step(ctx)
+	return worked, err
+}
+
+// step is Step; it also returns the jobs it had claimed when it failed, after
+// raising their attempts.
+func (r *Recomputer) step(ctx context.Context) (bool, []int64, error) {
+	worked, claimed, err := r.stepTx(ctx)
+	if err == nil || len(claimed) == 0 || ctx.Err() != nil {
+		// a cancelled context is the API stopping, not the job's failure
+		return worked, nil, err
+	}
+	if _, bumpErr := r.db.ExecContext(ctx,
+		`UPDATE parental_recompute_jobs SET attempts = attempts + 1 WHERE id = ANY($1::bigint[])`,
+		pq.Array(claimed)); bumpErr != nil {
+		r.logger.Error("parental recompute: a failed job's attempts cannot be raised",
+			"event", "parental.recompute_attempts_failed", "error", bumpErr.Error())
+	}
+	return false, claimed, err
+}
+
+// stepTx works one batch in one transaction and returns the jobs it claimed.
+func (r *Recomputer) stepTx(ctx context.Context) (bool, []int64, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return false, fmt.Errorf("parental: begin recompute: %w", err)
+		return false, nil, fmt.Errorf("parental: begin recompute: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -139,65 +190,74 @@ func (r *Recomputer) Step(ctx context.Context) (bool, error) {
 		id       int64
 		kind     string
 		subject  string
+		attempts int
 		cursorAt sql.NullTime
 		cursorID sql.NullString
 	)
 	err = tx.QueryRowContext(ctx, `
-		SELECT id, kind, subject, cursor_at, cursor_id
+		SELECT id, kind, subject, attempts, cursor_at, cursor_id
 		  FROM parental_recompute_jobs
-		 ORDER BY id
+		 ORDER BY attempts, batches, id
 		 LIMIT 1
-		   FOR UPDATE SKIP LOCKED`).Scan(&id, &kind, &subject, &cursorAt, &cursorID)
+		   FOR UPDATE SKIP LOCKED`).Scan(&id, &kind, &subject, &attempts, &cursorAt, &cursorID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
+		return false, nil, nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("parental: claim recompute job: %w", err)
+		return false, nil, fmt.Errorf("parental: claim recompute job: %w", err)
 	}
+	claimed := []int64{id}
 
 	switch k := Kind(kind); {
 	case k == KindAll:
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO parental_recompute_jobs (kind, subject)
 			SELECT 'library', id::text FROM libraries ORDER BY created_at, id`); err != nil {
-			return false, fmt.Errorf("parental: expand the recompute of every library: %w", err)
+			return false, claimed, fmt.Errorf("parental: expand the recompute of every library: %w", err)
 		}
 		if err := deleteJobs(ctx, tx, []int64{id}); err != nil {
-			return false, err
+			return false, claimed, err
 		}
 	case !validSubject(k, subject):
-		// A job nothing can work would hold the queue's head for ever.
+		// A job nothing can work would stay in the queue for ever.
 		r.logger.Warn("parental recompute job dropped", "event", "parental.recompute_job_invalid",
 			"kind", kind, "subject", subject)
 		if err := deleteJobs(ctx, tx, []int64{id}); err != nil {
-			return false, err
+			return false, claimed, err
 		}
 	case k == KindVideo:
-		if err := r.stepVideos(ctx, tx); err != nil {
-			return false, err
+		if claimed, err = r.stepVideos(ctx, tx, attempts); err != nil {
+			return false, claimed, err
 		}
 	default:
 		if err := r.stepScope(ctx, tx, id, k, subject, cursorAt, cursorID); err != nil {
-			return false, err
+			return false, claimed, err
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return false, fmt.Errorf("parental: commit recompute: %w", err)
+		return false, claimed, fmt.Errorf("parental: commit recompute: %w", err)
 	}
-	return true, nil
+	return true, nil, nil
 }
 
-// stepVideos works up to a batch of the waiting single-video jobs at once.
-func (r *Recomputer) stepVideos(ctx context.Context, tx *sql.Tx) error {
+// stepVideos works up to a batch of the waiting single-video jobs at once, and
+// returns the jobs it claimed. Jobs that failed before (attempts over 0) are worked
+// one at a time: they failed as a batch, and alone only the video that cannot be
+// rated fails again.
+func (r *Recomputer) stepVideos(ctx context.Context, tx *sql.Tx, attempts int) ([]int64, error) {
+	limit := r.batch
+	if attempts > 0 {
+		limit = 1
+	}
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id, subject
 		  FROM parental_recompute_jobs
-		 WHERE kind = 'video'
+		 WHERE kind = 'video' AND attempts = $2
 		 ORDER BY id
 		 LIMIT $1
-		   FOR UPDATE SKIP LOCKED`, r.batch)
+		   FOR UPDATE SKIP LOCKED`, limit, attempts)
 	if err != nil {
-		return fmt.Errorf("parental: claim video recompute jobs: %w", err)
+		return nil, fmt.Errorf("parental: claim video recompute jobs: %w", err)
 	}
 	var (
 		jobs []int64
@@ -211,7 +271,7 @@ func (r *Recomputer) stepVideos(ctx context.Context, tx *sql.Tx) error {
 		)
 		if err := rows.Scan(&id, &subject); err != nil {
 			_ = rows.Close()
-			return fmt.Errorf("parental: read video recompute jobs: %w", err)
+			return jobs, fmt.Errorf("parental: read video recompute jobs: %w", err)
 		}
 		jobs = append(jobs, id)
 		if validSubject(KindVideo, subject) && !seen[subject] {
@@ -220,12 +280,12 @@ func (r *Recomputer) stepVideos(ctx context.Context, tx *sql.Tx) error {
 		}
 	}
 	if err := closeRows(rows); err != nil {
-		return fmt.Errorf("parental: read video recompute jobs: %w", err)
+		return jobs, fmt.Errorf("parental: read video recompute jobs: %w", err)
 	}
 	if _, err := r.recompute(ctx, tx, ids); err != nil {
-		return err
+		return jobs, err
 	}
-	return deleteJobs(ctx, tx, jobs)
+	return jobs, deleteJobs(ctx, tx, jobs)
 }
 
 // scopeWhere is, for each kind that names many videos, the condition that picks
@@ -349,6 +409,12 @@ func (r *Recomputer) CountVideos(ctx context.Context, kind Kind, subject string)
 // through the partial index of slot 0220, whose condition is repeated here. The
 // detected tier ($2 is the confidence line) is left out under the line and once an
 // admin has reviewed it.
+//
+// Each video's row is locked (FOR NO KEY UPDATE, in id order so two batches never wait
+// on each other in a ring) from the read to the commit. Two recomputes of one video,
+// the loop's batch and an admin's own change, or two API processes, then run one
+// after the other: the later one reads what the earlier one's transaction saw
+// committed, so an older reading can never be written over a newer tier.
 const loadVideos = `
 SELECT v.id, v.age_tier, COALESCE(v.age_tier_source, ''), v.age_tier_admin,
        COALESCE(v.metadata->>'content_rating', ''), l.age_tier,
@@ -377,7 +443,9 @@ SELECT v.id, v.age_tier, COALESCE(v.age_tier_source, ''), v.age_tier_admin,
            AND cs.confidence >= $2::real)
   FROM videos v
   LEFT JOIN libraries l ON l.id = v.library_id
- WHERE v.id = ANY($1::uuid[])`
+ WHERE v.id = ANY($1::uuid[])
+ ORDER BY v.id
+   FOR NO KEY UPDATE OF v`
 
 // recompute resolves the given videos and writes the tiers that changed; it
 // returns how many did.

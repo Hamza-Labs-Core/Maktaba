@@ -40,7 +40,7 @@ from .errors import (
     RuntimeFailed,
     TooLarge,
 )
-from .executor import Execution, embeddings_of, text_of
+from .executor import HOME_ONLY, Execution, embeddings_of, text_of
 from .service import LocalLLM
 
 __all__ = [
@@ -141,10 +141,19 @@ class ClusterLLM:
         transport: Callable[[], RemoteTransport | None] = lambda: None,
         *,
         refresh_local: bool = True,
+        home_only: bool = False,
     ) -> None:
         self.local = local
         self.transport = transport
         self.refresh_local = refresh_local
+        #: what is asked never leaves the home: only a runtime that is this machine
+        #: itself, or the home's channel with the body marked so that the machine that
+        #: serves it holds to the same rule (:data:`HOME_ONLY`)
+        self.home_only = home_only
+
+    def has_local(self, model: str) -> bool:
+        """Whether a runtime this door may use on this machine has the model."""
+        return self.local.has(model, home_only=True) if self.home_only else self.local.has(model)
 
     def chat(
         self, model: str, messages: Sequence[Mapping[str, Any]], stream: bool = False, **opts: Any
@@ -167,10 +176,11 @@ class ClusterLLM:
         if self.refresh_local:
             with contextlib.suppress(Exception):  # failing detection: nothing local
                 await self.local.runtimes.ensure_fresh()
-        if self.local.has(call.model):
+        body = {**call.body, HOME_ONLY: True} if self.home_only else call.body
+        if self.has_local(call.model):
             call.via = "local"
             async for data in self.local.run(
-                call.op, call.model, call.body, stream=call.stream, wait=True, run=call.run
+                call.op, call.model, body, stream=call.stream, wait=True, run=call.run
             ):
                 yield data
             return
@@ -181,7 +191,7 @@ class ClusterLLM:
             )
         call.via = "cluster"
         async for data in t.llm_request(
-            call.op, call.model, call.body, stream=call.stream, run=call.run
+            call.op, call.model, body, stream=call.stream, run=call.run
         ):
             yield data
 
@@ -201,10 +211,11 @@ def detach() -> None:
     _TRANSPORT = None
 
 
-def cluster_llm() -> ClusterLLM:
-    """The door for pipeline code in this process."""
+def cluster_llm(*, home_only: bool = False) -> ClusterLLM:
+    """The door for pipeline code in this process. ``home_only``: what is asked is run
+    only on a runtime that is a machine of this home itself (see :class:`ClusterLLM`)."""
     global _LOCAL
     if _LOCAL is None:
         _LOCAL = LocalLLM()
     # the agent re-detects every 30 s; without it the door checks at most that often
-    return ClusterLLM(_LOCAL, lambda: _TRANSPORT, refresh_local=True)
+    return ClusterLLM(_LOCAL, lambda: _TRANSPORT, refresh_local=True, home_only=home_only)

@@ -3767,11 +3767,11 @@
     },
     "/paths/~1parental~1review/get/summary": {
       "en": "The detected age tiers waiting for an admin",
-      "ar": "التصنيفات العمرية المكتشفة التي تنتظر المشرف"
+      "ar": "الفئات العمرية المكتشفة التي تنتظر المشرف"
     },
     "/paths/~1parental~1review/get/description": {
       "en": "The videos whose age tier the content screen read from the transcript, on the home's own language model, and that no admin has answered: a tier the screen was not sure of (it rates nothing), a tier at or above the home's confidence line (it rates the video, and only ever more strictly than the library does), and a video the screen could not check. A video an admin rated is not listed. An admin sees every library; a guardian sees the libraries the accounts they look after can open. Newest first.",
-      "ar": "الفيديوهات التي قرأ فحص المحتوى تصنيفها العمري من النص، بنموذج اللغة الخاص بالمنزل، ولم يُجب عنها مشرف: تصنيف لم يكن الفحص واثقًا منه (لا يصنّف شيئًا)، وتصنيف عند حدّ الثقة في المنزل أو فوقه (يصنّف الفيديو، ولا يجعله إلا أشدّ تقييدًا من تصنيف المكتبة)، وفيديو لم يستطع الفحص قراءته. الفيديو الذي صنّفه مشرف لا يظهر. يرى المشرف كل المكتبات؛ ويرى وليّ الأمر المكتبات التي تفتحها الحسابات التي يرعاها. الأحدث أولًا."
+      "ar": "الفيديوهات التي قرأ فحص المحتوى فئتها العمرية من النص، بنموذج اللغة الخاص بالمنزل، ولم يُجب عنها مشرف: فئة لم يكن الفحص واثقًا منها (لا تصنّف شيئًا)، وفئة عند حدّ الثقة في المنزل أو فوقه (تصنّف الفيديو، ولا تجعله إلا أشدّ تقييدًا مما تجعله المكتبة)، وفيديو لم يستطع الفحص قراءته. الفيديو الذي صنّفه مشرف لا يظهر. يرى المشرف كل المكتبات؛ ويرى وليّ الأمر المكتبات التي تفتحها الحسابات التي يرعاها. الأحدث أولًا."
     },
     "/paths/~1parental~1review/get/parameters/0/description": {
       "en": "Only the videos in this state.",
@@ -3791,11 +3791,11 @@
     },
     "/paths/~1parental~1review/get/responses/200/content/application~1json/schema/properties/items/items/properties/state/description": {
       "en": "Why the video is in the list: `low_confidence`, the screen was not sure enough, so its tier rates nothing; `unconfirmed`, a detected tier at or above the line that no admin has answered; `not_checked`, the screen could not read the video.",
-      "ar": "سبب وجود الفيديو في القائمة: `low_confidence` لم يكن الفحص واثقًا بما يكفي فلا يصنّف تصنيفُه شيئًا؛ `unconfirmed` تصنيف مكتشف عند الحدّ أو فوقه لم يُجب عنه مشرف؛ `not_checked` لم يستطع الفحص قراءة الفيديو."
+      "ar": "سبب وجود الفيديو في القائمة: `low_confidence` لم يكن الفحص واثقًا بما يكفي فلا تصنّف فئتُه شيئًا؛ `unconfirmed` فئة مكتشفة عند الحدّ أو فوقه لم يُجب عنها مشرف؛ `not_checked` لم يستطع الفحص قراءة الفيديو."
     },
     "/paths/~1parental~1review/get/responses/200/content/application~1json/schema/properties/items/items/properties/detected_tier/description": {
       "en": "The tier the screen read from the transcript; null when it could not say or did not check.",
-      "ar": "التصنيف الذي قرأه الفحص من النص؛ null إن لم يستطع الحكم أو لم يفحص."
+      "ar": "الفئة التي قرأها الفحص من النص؛ null إن لم يستطع الحكم أو لم يفحص."
     },
     "/paths/~1parental~1review/get/responses/200/content/application~1json/schema/properties/items/items/properties/confidence/description": {
       "en": "How sure the screen is, from 0 to 1.",
@@ -3854,8 +3854,8 @@
       "ar": "حتى ثلاثة مواضع في الفيديو، بالثواني، سُمع فيها."
     },
     "/paths/~1parental~1review/get/responses/200/content/application~1json/schema/properties/items/items/properties/not_checked/description": {
-      "en": "Why the screen did not check the video: it has no transcript, or its language is not one the screen reads (Arabic and English). Null when it did.",
-      "ar": "سبب عدم فحص الفيديو: لا نص له، أو لغته ليست مما يقرؤه الفحص (العربية والإنجليزية). null إن فُحص."
+      "en": "Why the screen did not check the video: it has no transcript, its language is not one the screen reads (Arabic and English), or the home's model failed on it (`model_failed`). Null when it did.",
+      "ar": "سبب عدم فحص الفيديو: لا نص له، أو لغته ليست مما يقرؤه الفحص (العربية والإنجليزية)، أو أخفق نموذج المنزل في قراءته (`model_failed`). null إن فُحص."
     },
     "/paths/~1parental~1review/get/responses/200/content/application~1json/schema/properties/items/items/properties/model/description": {
       "en": "The home's language model that gave the answer; empty when the video was not checked.",
@@ -3863,11 +3863,11 @@
     },
     "/paths/~1parental~1review/get/responses/200/content/application~1json/schema/properties/items/items/properties/tier/description": {
       "en": "The video's effective tier now, from every source. Null is unrated.",
-      "ar": "التصنيف الساري للفيديو الآن، من كل المصادر. null يعني غير مصنَّف."
+      "ar": "الفئة السارية للفيديو الآن، من كل المصادر. null يعني غير مصنَّف."
     },
     "/paths/~1parental~1review/get/responses/200/content/application~1json/schema/properties/items/items/properties/source/description": {
       "en": "Where the effective tier comes from. Null when there is no tier.",
-      "ar": "مصدر التصنيف الساري. null إن لم يكن هناك تصنيف."
+      "ar": "مصدر الفئة السارية. null إن لم تكن هناك فئة."
     },
     "/paths/~1parental~1review/get/responses/200/content/application~1json/schema/properties/items/items/properties/updated_at/description": {
       "en": "When the screen last wrote its answer.",
@@ -3879,7 +3879,7 @@
     },
     "/paths/~1parental~1review/get/responses/200/content/application~1json/schema/properties/min_confidence/description": {
       "en": "The home's confidence line: a detected tier under it rates nothing. The setting `parental.detect_min_confidence`, 0.8 unless the home changed it.",
-      "ar": "حدّ الثقة في المنزل: التصنيف المكتشف دونه لا يصنّف شيئًا. هو الإعداد `parental.detect_min_confidence`، وقيمته 0.8 ما لم يغيّره المنزل."
+      "ar": "حدّ الثقة في المنزل: الفئة المكتشفة دونه لا تصنّف شيئًا. هو الإعداد `parental.detect_min_confidence`، وقيمته 0.8 ما لم يغيّره المنزل."
     },
     "/paths/~1parental~1review/get/responses/400/description": {
       "en": "Invalid `state`, `limit` or `offset`.",
@@ -3895,31 +3895,31 @@
     },
     "/paths/~1parental~1review~1{video_id}/post/summary": {
       "en": "Answer a detected age tier",
-      "ar": "الإجابة عن تصنيف عمري مكتشف"
+      "ar": "الإجابة عن فئة عمرية مكتشفة"
     },
     "/paths/~1parental~1review~1{video_id}/post/description": {
       "en": "The admin confirms the detected tier, gives another, or clears it with `null`. The tier is stored as the admin's own tier on the video, which wins over every other source, and the video leaves the review list: what the screen detected for it rates nothing from then on, until the screen reads a changed transcript.",
-      "ar": "يؤكّد المشرف التصنيف المكتشف، أو يعطي غيره، أو يمسحه بـ `null`. يُحفظ التصنيف على أنه تصنيف المشرف نفسه للفيديو، وهو يغلب كل مصدر آخر، ويخرج الفيديو من قائمة المراجعة: ما اكتشفه الفحص له لا يصنّف شيئًا بعد ذلك، إلى أن يقرأ الفحص نصًّا تغيّر."
+      "ar": "يؤكّد المشرف الفئة المكتشفة، أو يعطي غيرها، أو يمسحها بـ `null`. تُحفظ الفئة على أنها فئة المشرف نفسه للفيديو، وهي تغلب كل مصدر آخر، ويخرج الفيديو من قائمة المراجعة: ما اكتشفه الفحص له لا يصنّف شيئًا بعد ذلك، إلى أن يقرأ الفحص نصًّا تغيّر."
     },
     "/paths/~1parental~1review~1{video_id}/post/requestBody/description": {
       "en": "The admin's tier for the video.",
-      "ar": "تصنيف المشرف للفيديو."
+      "ar": "فئة المشرف للفيديو."
     },
     "/paths/~1parental~1review~1{video_id}/post/requestBody/content/application~1json/schema/properties/tier/description": {
       "en": "The video's tier, or null for no admin tier.",
-      "ar": "تصنيف الفيديو، أو null لعدم وجود تصنيف من المشرف."
+      "ar": "فئة الفيديو، أو null لعدم وجود فئة من المشرف."
     },
     "/paths/~1parental~1review~1{video_id}/post/responses/200/description": {
       "en": "The video's tier after the answer.",
-      "ar": "تصنيف الفيديو بعد الإجابة."
+      "ar": "فئة الفيديو بعد الإجابة."
     },
     "/paths/~1parental~1review~1{video_id}/post/responses/200/content/application~1json/schema/properties/tier/description": {
       "en": "The video's effective tier now. Null is unrated.",
-      "ar": "التصنيف الساري للفيديو الآن. null يعني غير مصنَّف."
+      "ar": "الفئة السارية للفيديو الآن. null يعني غير مصنَّف."
     },
     "/paths/~1parental~1review~1{video_id}/post/responses/200/content/application~1json/schema/properties/source/description": {
-      "en": "Where the effective tier comes from: `admin` when a tier was given; after `null`, whatever is left (the library's tier, for one). Null when there is no tier.",
-      "ar": "مصدر التصنيف الساري: `admin` إن أُعطي تصنيف؛ وبعد `null` ما بقي من المصادر (تصنيف المكتبة مثلًا). null إن لم يكن هناك تصنيف."
+      "en": "Where the effective tier comes from: `admin_video` when a tier was given; after `null`, whatever is left (the library's tier, for one). Null when there is no tier.",
+      "ar": "مصدر الفئة السارية: `admin_video` إن أُعطيت فئة؛ وبعد `null` ما بقي من المصادر (فئة المكتبة مثلًا). null إن لم تكن هناك فئة."
     },
     "/paths/~1parental~1review~1{video_id}/post/responses/200/content/application~1json/schema/properties/recompute_count/description": {
       "en": "Always 1: the video itself.",
@@ -3971,11 +3971,11 @@
     },
     "/paths/~1parental~1children/get/summary": {
       "en": "The restricted accounts the caller looks after",
-      "ar": "الحسابات المقيَّدة التي يتولاها الطالب"
+      "ar": "الحسابات المقيَّدة التي يتولاها المتصل"
     },
     "/paths/~1parental~1children/get/description": {
       "en": "Each restricted account the caller is a guardian of, with its limit; an admin sees every restricted account. Empty for anyone else.",
-      "ar": "كل حساب مقيَّد يكون الطالب وليًّا له، مع حدّه؛ والمشرف يرى كل الحسابات المقيَّدة. وتكون القائمة فارغة لغيرهما."
+      "ar": "كل حساب مقيَّد يكون المتصل وليًّا له، مع حدّه؛ والمشرف يرى كل الحسابات المقيَّدة. وتكون القائمة فارغة لغيرهما."
     },
     "/paths/~1parental~1children/get/responses/200/description": {
       "en": "The accounts.",
@@ -3986,8 +3986,8 @@
       "ar": "أعلى فئة عمرية يفتحها الحساب: `0` لكل الأعمار، ثم `9` و`13` و`16` و`18`؛ و`-1` لا شيء له فئة."
     },
     "/paths/~1parental~1children/get/responses/200/content/application~1json/schema/properties/children/items/allOf/1/properties/unrated/description": {
-      "en": "What happens to a video with no age tier: `hide`.",
-      "ar": "ما يحدث لفيديو بلا فئة عمرية: `hide` أي يُخفى."
+      "en": "What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier.",
+      "ar": "ما يحدث لفيديو بلا فئة عمرية: `hide` يخفيه؛ و`tier_0` و`tier_9` و`tier_13` و`tier_16` و`tier_18` تعامله كفيديو من تلك الفئة."
     },
     "/paths/~1parental~1children/get/responses/200/content/application~1json/schema/properties/children/items/allOf/1/properties/allow_only/description": {
       "en": "Only what a rule allows is open, whatever its tier.",
@@ -3999,7 +3999,7 @@
     },
     "/paths/~1me~1parental/get/summary": {
       "en": "The caller's own limit",
-      "ar": "حدّ الطالب نفسه"
+      "ar": "حدّ المتصل نفسه"
     },
     "/paths/~1me~1parental/get/description": {
       "en": "Whether the signed-in account is restricted and, when it is, its limit. An app reads it to show only what the account may open; the server enforces the limit whatever the app shows.",
@@ -4014,8 +4014,8 @@
       "ar": "أعلى فئة عمرية يفتحها الحساب: `0` لكل الأعمار، ثم `9` و`13` و`16` و`18`؛ و`-1` لا شيء له فئة."
     },
     "/paths/~1me~1parental/get/responses/200/content/application~1json/schema/properties/unrated/description": {
-      "en": "What happens to a video with no age tier: `hide`.",
-      "ar": "ما يحدث لفيديو بلا فئة عمرية: `hide` أي يُخفى."
+      "en": "What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier.",
+      "ar": "ما يحدث لفيديو بلا فئة عمرية: `hide` يخفيه؛ و`tier_0` و`tier_9` و`tier_13` و`tier_16` و`tier_18` تعامله كفيديو من تلك الفئة."
     },
     "/paths/~1me~1parental/get/responses/200/content/application~1json/schema/properties/allow_only/description": {
       "en": "Only what a rule allows is open, whatever its tier.",
@@ -4035,11 +4035,11 @@
     },
     "/paths/~1me~1age-signal/post/description": {
       "en": "An app tells the home what its device said: the age range the guardian shared and the device's film and TV rating limits. The home turns each into an age tier (rounding down), keeps the strictest, and holds this sign-in to it, on top of the account's own limit and even when the account has none. It only tightens: a first statement or a stricter one applies at once; a looser one is kept and waits until an admin or a guardian of the account clears it. A statement with no value limits nothing and, after a limit, counts as looser. The limit belongs to the sign-in (the refresh token's family) that sent it, so the caller must hold an access token an app got by signing in. After a 200, refresh the access token: the next one carries the limit in its `ac` claim. The home applies the limit from this call on, whatever the token says.",
-      "ar": "يخبر التطبيق المنزل بما قاله جهازه: الفئة العمرية التي شاركها الوليّ، وحدَّي تصنيف الأفلام والتلفزيون في الجهاز. يحوّل المنزل كلًّا منها إلى فئة عمرية (بالتقريب إلى الأدنى)، ويأخذ الأشدّ، ويُلزم به تسجيل الدخول هذا، فوق حدّ الحساب نفسه وحتى إن لم يكن للحساب حدّ. وهو لا يزيد إلا تشديدًا: أول قول أو قول أشدّ يُطبَّق فورًا؛ والقول الأخفّ يُحفظ وينتظر حتى يجيزه مشرف أو وليّ للحساب. والقول الخالي من أي قيمة لا يقيّد شيئًا، ويُعدّ بعد وجود حدّ قولًا أخفّ. الحدّ يخصّ تسجيل الدخول (عائلة رمز التجديد) الذي أرسله، فلا بد أن يحمل الطالب رمز وصول حصل عليه تطبيق بتسجيل الدخول. بعد 200 جدِّد رمز الوصول: الرمز التالي يحمل الحدّ في المطالبة `ac`. ويطبّق المنزل الحدّ من هذا الطلب فصاعدًا أيًّا كان ما يقوله الرمز."
+      "ar": "يخبر التطبيق المنزل بما قاله جهازه: النطاق العمري الذي شاركه الوليّ، وحدَّي تصنيف الأفلام والتلفزيون في الجهاز. يحوّل المنزل كلًّا منها إلى فئة عمرية (بالتقريب إلى الأدنى)، ويأخذ الأشدّ، ويُلزم به تسجيل الدخول هذا، فوق حدّ الحساب نفسه وحتى إن لم يكن للحساب حدّ. وهو لا يزيد إلا تشديدًا: أول قول أو قول أشدّ يُطبَّق فورًا؛ والقول الأخفّ يُحفظ وينتظر حتى يمسح مشرف أو وليّ للحساب الإشارة. والقول الخالي من أي قيمة لا يقيّد شيئًا، ويُعدّ بعد وجود حدّ قولًا أخفّ. الحدّ يخصّ تسجيل الدخول (عائلة رمز التجديد) الذي أرسله، فلا بد أن يحمل المتصل رمز وصول حصل عليه تطبيق بتسجيل الدخول. بعد 200 جدِّد رمز الوصول: الرمز التالي يحمل الحدّ في المطالبة `ac`. ويطبّق المنزل الحدّ من هذا الطلب فصاعدًا أيًّا كان ما يقوله الرمز."
     },
     "/paths/~1me~1age-signal/post/requestBody/content/application~1json/schema/properties/age_range/description": {
       "en": "The age range the person or their guardian shared (Apple's Declared Age Range). Leave it out when nothing was shared. An `upper` of 9 or less limits to tier `0`, 13 or less to `9`, 18 or less to `13`; no `upper`, or one above 18, limits nothing.",
-      "ar": "الفئة العمرية التي شاركها الشخص أو وليّه (Declared Age Range من Apple). تُترك إن لم يُشارَك شيء. `upper` بقيمة 9 أو أقل يحدّ بالفئة `0`، و13 أو أقل بالفئة `9`، و18 أو أقل بالفئة `13`؛ وغياب `upper` أو زيادته على 18 لا يحدّ شيئًا."
+      "ar": "النطاق العمري الذي شاركه الشخص أو وليّه (Declared Age Range من Apple). يُترك إن لم يُشارَك شيء. `upper` بقيمة 9 أو أقل يحدّ بالفئة `0`، و13 أو أقل بالفئة `9`، و18 أو أقل بالفئة `13`؛ وغياب `upper` أو زيادته على 18 لا يحدّ شيئًا."
     },
     "/paths/~1me~1age-signal/post/requestBody/content/application~1json/schema/properties/age_range/properties/lower/description": {
       "en": "The youngest age of the range.",
@@ -4075,7 +4075,7 @@
     },
     "/paths/~1me~1age-signal/post/responses/200/content/application~1json/schema/properties/pending_looser/description": {
       "en": "What was sent is looser than the limit in force: it is kept and waits for an admin or a guardian to clear it.",
-      "ar": "المُرسَل أخفّ من الحدّ النافذ: يُحفظ وينتظر أن يجيزه مشرف أو وليّ."
+      "ar": "المُرسَل أخفّ من الحدّ النافذ: يُحفظ وينتظر أن يمسح مشرف أو وليّ الإشارة."
     },
     "/paths/~1me~1age-signal/post/responses/200/content/application~1json/schema/properties/refresh/description": {
       "en": "Refresh the access token now so the next one carries the limit. False while parental controls are off: nothing changed for this sign-in.",
@@ -4091,11 +4091,11 @@
     },
     "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/summary": {
       "en": "Clear a sign-in's device signal",
-      "ar": "إجازة إشارة جهاز لتسجيل دخول"
+      "ar": "مسح إشارة جهاز لتسجيل دخول"
     },
     "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/description": {
       "en": "For admins and the account's guardians. When a looser statement is waiting on the sign-in, it is applied and becomes the device limit. When none is waiting, the signal is removed and the sign-in is held to the account's own limit alone until its device speaks again. `family` is the `refresh_family_id` of a signal listed by `GET /users/{id}/parental`. An admin can clear a signal of any account, restricted or not. A sign-in that is itself limited by its device clears nothing, whoever it belongs to. The sign-in's access token keeps the earlier limit until its next refresh.",
-      "ar": "للمشرفين ولأولياء الحساب. حين ينتظر قولٌ أخفّ على تسجيل الدخول يُطبَّق ويصير حدّ الجهاز. وحين لا ينتظر شيء تُزال الإشارة ويُلزَم تسجيل الدخول بحدّ الحساب وحده حتى يتكلم جهازه من جديد. `family` هو `refresh_family_id` لإشارة يسردها `GET /users/{id}/parental`. ويجيز المشرف إشارة أي حساب، مقيَّدًا كان أو غير مقيَّد. وتسجيل الدخول المحدود هو نفسه بجهازه لا يجيز شيئًا أيًّا كان صاحبه. ويحتفظ رمز وصول تسجيل الدخول بالحدّ السابق حتى تجديده التالي."
+      "ar": "للمشرفين ولأولياء الحساب. حين ينتظر قولٌ أخفّ على تسجيل الدخول يُطبَّق ويصير حدّ الجهاز. وحين لا ينتظر شيء تُزال الإشارة ويُلزَم تسجيل الدخول بحدّ الحساب وحده حتى يتكلم جهازه من جديد. `family` هو `refresh_family_id` لإشارة يسردها `GET /users/{id}/parental`. ويمسح المشرف إشارة أي حساب، مقيَّدًا كان أو غير مقيَّد. وتسجيل الدخول المحدود هو نفسه بجهازه لا يمسح شيئًا أيًّا كان صاحبه. ويحتفظ رمز وصول تسجيل الدخول بالحدّ السابق حتى تجديده التالي."
     },
     "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/parameters/1/description": {
       "en": "The `refresh_family_id` of the signal.",
@@ -4103,7 +4103,7 @@
     },
     "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/responses/200/description": {
       "en": "Cleared.",
-      "ar": "أُجيزت."
+      "ar": "مُسحت."
     },
     "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/responses/200/content/application~1json/schema/properties/tier_limit/description": {
       "en": "The device limit now in force on that sign-in; `null` when there is none.",
@@ -4115,11 +4115,11 @@
     },
     "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/responses/403/description": {
       "en": "Not this caller's to clear: `code` is `restricted` for a restricted account, `admin_only` for anyone else who is neither an admin nor a guardian of the account, `device_limited` when the caller's own sign-in is limited by its device. A play-only sign-in through Maktaba Cloud is refused too.",
-      "ar": "ليس لهذا الطالب أن يجيزها: `code` هو `restricted` للحساب المقيَّد، و`admin_only` لمن ليس مشرفًا ولا وليًّا للحساب، و`device_limited` حين يكون تسجيل دخول الطالب نفسه محدودًا بجهازه. ويُرفض كذلك تسجيل الدخول للتشغيل فقط عبر Maktaba Cloud."
+      "ar": "ليس لهذا المتصل أن يمسحها: `code` هو `restricted` للحساب المقيَّد، و`admin_only` لمن ليس مشرفًا ولا وليًّا للحساب، و`device_limited` حين يكون تسجيل دخول المتصل نفسه محدودًا بجهازه. ويُرفض كذلك تسجيل الدخول للتشغيل فقط عبر Maktaba Cloud."
     },
     "/paths/~1users~1{id}~1parental~1signals~1{family}~1clear/post/responses/404/description": {
       "en": "No signal for this sign-in on an account the caller may see. An account the caller does not look after answers the same as one that does not exist.",
-      "ar": "لا إشارة لتسجيل الدخول هذا على حساب يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
+      "ar": "لا إشارة لتسجيل الدخول هذا على حساب يراه المتصل. الحساب الذي لا يتولاه المتصل يُجاب عنه كما يُجاب عن حساب غير موجود."
     },
     "/paths/~1users~1{id}~1parental/get/summary": {
       "en": "A restricted account's limit",
@@ -4138,8 +4138,8 @@
       "ar": "أعلى فئة عمرية يفتحها الحساب: `0` لكل الأعمار، ثم `9` و`13` و`16` و`18`؛ و`-1` لا شيء له فئة."
     },
     "/paths/~1users~1{id}~1parental/get/responses/200/content/application~1json/schema/properties/policy/properties/unrated/description": {
-      "en": "What happens to a video with no age tier: `hide`.",
-      "ar": "ما يحدث لفيديو بلا فئة عمرية: `hide` أي يُخفى."
+      "en": "What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier.",
+      "ar": "ما يحدث لفيديو بلا فئة عمرية: `hide` يخفيه؛ و`tier_0` و`tier_9` و`tier_13` و`tier_16` و`tier_18` تعامله كفيديو من تلك الفئة."
     },
     "/paths/~1users~1{id}~1parental/get/responses/200/content/application~1json/schema/properties/policy/properties/allow_only/description": {
       "en": "Only what a rule allows is open, whatever its tier.",
@@ -4151,7 +4151,7 @@
     },
     "/paths/~1users~1{id}~1parental/get/responses/200/content/application~1json/schema/properties/access/description": {
       "en": "What the caller is to this account.",
-      "ar": "صفة الطالب تجاه هذا الحساب."
+      "ar": "صفة المتصل تجاه هذا الحساب."
     },
     "/paths/~1users~1{id}~1parental/get/responses/200/content/application~1json/schema/properties/signals/description": {
       "en": "What each signed-in device said about its user's age.",
@@ -4159,7 +4159,7 @@
     },
     "/paths/~1users~1{id}~1parental/get/responses/404/description": {
       "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
-      "ar": "لا حساب مقيَّد بهذا المعرّف يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
+      "ar": "لا حساب مقيَّد بهذا المعرّف يراه المتصل. الحساب الذي لا يتولاه المتصل يُجاب عنه كما يُجاب عن حساب غير موجود."
     },
     "/paths/~1users~1{id}~1parental/put/summary": {
       "en": "Set an account's limit",
@@ -4174,8 +4174,8 @@
       "ar": "أعلى فئة عمرية يفتحها الحساب: `0` لكل الأعمار، ثم `9` و`13` و`16` و`18`؛ و`-1` لا شيء له فئة."
     },
     "/paths/~1users~1{id}~1parental/put/requestBody/content/application~1json/schema/properties/unrated/description": {
-      "en": "What happens to a video with no age tier: `hide`.",
-      "ar": "ما يحدث لفيديو بلا فئة عمرية: `hide` أي يُخفى."
+      "en": "What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier.",
+      "ar": "ما يحدث لفيديو بلا فئة عمرية: `hide` يخفيه؛ و`tier_0` و`tier_9` و`tier_13` و`tier_16` و`tier_18` تعامله كفيديو من تلك الفئة."
     },
     "/paths/~1users~1{id}~1parental/put/requestBody/content/application~1json/schema/properties/allow_only/description": {
       "en": "Only what a rule allows is open, whatever its tier.",
@@ -4194,8 +4194,8 @@
       "ar": "أعلى فئة عمرية يفتحها الحساب: `0` لكل الأعمار، ثم `9` و`13` و`16` و`18`؛ و`-1` لا شيء له فئة."
     },
     "/paths/~1users~1{id}~1parental/put/responses/200/content/application~1json/schema/properties/policy/properties/unrated/description": {
-      "en": "What happens to a video with no age tier: `hide`.",
-      "ar": "ما يحدث لفيديو بلا فئة عمرية: `hide` أي يُخفى."
+      "en": "What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier.",
+      "ar": "ما يحدث لفيديو بلا فئة عمرية: `hide` يخفيه؛ و`tier_0` و`tier_9` و`tier_13` و`tier_16` و`tier_18` تعامله كفيديو من تلك الفئة."
     },
     "/paths/~1users~1{id}~1parental/put/responses/200/content/application~1json/schema/properties/policy/properties/allow_only/description": {
       "en": "Only what a rule allows is open, whatever its tier.",
@@ -4207,7 +4207,7 @@
     },
     "/paths/~1users~1{id}~1parental/put/responses/200/content/application~1json/schema/properties/access/description": {
       "en": "What the caller is to this account.",
-      "ar": "صفة الطالب تجاه هذا الحساب."
+      "ar": "صفة المتصل تجاه هذا الحساب."
     },
     "/paths/~1users~1{id}~1parental/put/responses/200/content/application~1json/schema/properties/signals/description": {
       "en": "What each signed-in device said about its user's age.",
@@ -4215,11 +4215,11 @@
     },
     "/paths/~1users~1{id}~1parental/put/responses/403/description": {
       "en": "Not this caller's to change: `code` is `restricted` for a restricted account, `admin_only` for anyone else who is neither an admin nor a guardian of the account. A play-only sign-in through Maktaba Cloud is refused too.",
-      "ar": "ليس لهذا الطالب أن يغيّره: `code` هو `restricted` للحساب المقيَّد، و`admin_only` لمن ليس مشرفًا ولا وليًّا للحساب. ويُرفض كذلك تسجيل الدخول عبر Maktaba Cloud للتشغيل فقط."
+      "ar": "ليس لهذا المتصل أن يغيّره: `code` هو `restricted` للحساب المقيَّد، و`admin_only` لمن ليس مشرفًا ولا وليًّا للحساب. ويُرفض كذلك تسجيل الدخول عبر Maktaba Cloud للتشغيل فقط."
     },
     "/paths/~1users~1{id}~1parental/put/responses/404/description": {
       "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
-      "ar": "لا حساب مقيَّد بهذا المعرّف يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
+      "ar": "لا حساب مقيَّد بهذا المعرّف يراه المتصل. الحساب الذي لا يتولاه المتصل يُجاب عنه كما يُجاب عن حساب غير موجود."
     },
     "/paths/~1users~1{id}~1parental/put/responses/409/description": {
       "en": "An admin account cannot be restricted (`code`: `restricted_admin`), or the limit changed since `version` was read (`stale`).",
@@ -4243,7 +4243,7 @@
     },
     "/paths/~1users~1{id}~1parental/delete/responses/404/description": {
       "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
-      "ar": "لا حساب مقيَّد بهذا المعرّف يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
+      "ar": "لا حساب مقيَّد بهذا المعرّف يراه المتصل. الحساب الذي لا يتولاه المتصل يُجاب عنه كما يُجاب عن حساب غير موجود."
     },
     "/paths/~1users~1{id}~1parental~1guardians/post/summary": {
       "en": "Name a guardian of a restricted account",
@@ -4263,7 +4263,7 @@
     },
     "/paths/~1users~1{id}~1parental~1guardians/post/responses/404/description": {
       "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
-      "ar": "لا حساب مقيَّد بهذا المعرّف يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
+      "ar": "لا حساب مقيَّد بهذا المعرّف يراه المتصل. الحساب الذي لا يتولاه المتصل يُجاب عنه كما يُجاب عن حساب غير موجود."
     },
     "/paths/~1users~1{id}~1parental~1guardians/post/responses/409/description": {
       "en": "A restricted account cannot look after another account (`code`: `restricted_guardian`), and no account is its own guardian.",
@@ -4287,7 +4287,7 @@
     },
     "/paths/~1users~1{id}~1parental~1guardians~1{guardian_id}/delete/responses/404/description": {
       "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
-      "ar": "لا حساب مقيَّد بهذا المعرّف يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
+      "ar": "لا حساب مقيَّد بهذا المعرّف يراه المتصل. الحساب الذي لا يتولاه المتصل يُجاب عنه كما يُجاب عن حساب غير موجود."
     },
     "/paths/~1users~1{id}~1parental~1rules/get/summary": {
       "en": "A restricted account's rules",
@@ -4303,7 +4303,7 @@
     },
     "/paths/~1users~1{id}~1parental~1rules/get/responses/404/description": {
       "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
-      "ar": "لا حساب مقيَّد بهذا المعرّف يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
+      "ar": "لا حساب مقيَّد بهذا المعرّف يراه المتصل. الحساب الذي لا يتولاه المتصل يُجاب عنه كما يُجاب عن حساب غير موجود."
     },
     "/paths/~1users~1{id}~1parental~1rules/post/summary": {
       "en": "Allow or block something for a restricted account",
@@ -4323,11 +4323,11 @@
     },
     "/paths/~1users~1{id}~1parental~1rules/post/responses/403/description": {
       "en": "Not this caller's to change: `code` is `restricted` for a restricted account, `admin_only` for anyone else who is neither an admin nor a guardian of the account. A play-only sign-in through Maktaba Cloud is refused too.",
-      "ar": "ليس لهذا الطالب أن يغيّره: `code` هو `restricted` للحساب المقيَّد، و`admin_only` لمن ليس مشرفًا ولا وليًّا للحساب. ويُرفض كذلك تسجيل الدخول عبر Maktaba Cloud للتشغيل فقط."
+      "ar": "ليس لهذا المتصل أن يغيّره: `code` هو `restricted` للحساب المقيَّد، و`admin_only` لمن ليس مشرفًا ولا وليًّا للحساب. ويُرفض كذلك تسجيل الدخول عبر Maktaba Cloud للتشغيل فقط."
     },
     "/paths/~1users~1{id}~1parental~1rules/post/responses/404/description": {
       "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
-      "ar": "لا حساب مقيَّد بهذا المعرّف يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
+      "ar": "لا حساب مقيَّد بهذا المعرّف يراه المتصل. الحساب الذي لا يتولاه المتصل يُجاب عنه كما يُجاب عن حساب غير موجود."
     },
     "/paths/~1users~1{id}~1parental~1rules/post/responses/422/description": {
       "en": "A field is not valid, or the account cannot open the library being allowed (`code`: `no_library_access`).",
@@ -4343,11 +4343,11 @@
     },
     "/paths/~1users~1{id}~1parental~1rules~1{rule_id}/delete/responses/403/description": {
       "en": "Not this caller's to change: `code` is `restricted` for a restricted account, `admin_only` for anyone else who is neither an admin nor a guardian of the account. A play-only sign-in through Maktaba Cloud is refused too.",
-      "ar": "ليس لهذا الطالب أن يغيّره: `code` هو `restricted` للحساب المقيَّد، و`admin_only` لمن ليس مشرفًا ولا وليًّا للحساب. ويُرفض كذلك تسجيل الدخول عبر Maktaba Cloud للتشغيل فقط."
+      "ar": "ليس لهذا المتصل أن يغيّره: `code` هو `restricted` للحساب المقيَّد، و`admin_only` لمن ليس مشرفًا ولا وليًّا للحساب. ويُرفض كذلك تسجيل الدخول عبر Maktaba Cloud للتشغيل فقط."
     },
     "/paths/~1users~1{id}~1parental~1rules~1{rule_id}/delete/responses/404/description": {
       "en": "No restricted account with this id that the caller may see. An account the caller does not look after answers the same as one that does not exist.",
-      "ar": "لا حساب مقيَّد بهذا المعرّف يراه الطالب. الحساب الذي لا يتولاه الطالب يُجاب عنه كما يُجاب عن حساب غير موجود."
+      "ar": "لا حساب مقيَّد بهذا المعرّف يراه المتصل. الحساب الذي لا يتولاه المتصل يُجاب عنه كما يُجاب عن حساب غير موجود."
     },
     "/paths/~1me~1parental~1requests/post/summary": {
       "en": "Ask a parent to open something",
@@ -4695,7 +4695,7 @@
     },
     "/paths/~1pairing~1approve/post/requestBody/content/application~1json/schema/properties/as_user/description": {
       "en": "The restricted account to sign the device in as; absent: the caller.",
-      "ar": "الحساب المقيَّد الذي يُسجَّل دخول الجهاز باسمه؛ وعند غيابه: الطالب نفسه."
+      "ar": "الحساب المقيَّد الذي يُسجَّل دخول الجهاز باسمه؛ وعند غيابه: المتصل نفسه."
     },
     "/paths/~1pairing~1approve/post/responses/200/description": {
       "en": "Approved; the device collects its tokens.",
@@ -4707,7 +4707,7 @@
     },
     "/paths/~1pairing~1approve/post/responses/404/description": {
       "en": "The code is unknown or expired, or `as_user` is not a restricted account the caller looks after.",
-      "ar": "الرمز غير معروف أو منتهٍ، أو `as_user` ليس حسابًا مقيَّدًا يتولاه الطالب."
+      "ar": "الرمز غير معروف أو منتهٍ، أو `as_user` ليس حسابًا مقيَّدًا يتولاه المتصل."
     },
     "/paths/~1pairing~1approve/post/responses/409/description": {
       "en": "The code is already approved.",
@@ -4726,8 +4726,8 @@
       "ar": "أعلى فئة عمرية يفتحها الحساب: `0` لكل الأعمار، ثم `9` و`13` و`16` و`18`؛ و`-1` لا شيء له فئة."
     },
     "/paths/~1users/post/requestBody/content/application~1json/schema/properties/parental/properties/unrated/description": {
-      "en": "What happens to a video with no age tier: `hide`.",
-      "ar": "ما يحدث لفيديو بلا فئة عمرية: `hide` أي يُخفى."
+      "en": "What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier.",
+      "ar": "ما يحدث لفيديو بلا فئة عمرية: `hide` يخفيه؛ و`tier_0` و`tier_9` و`tier_13` و`tier_16` و`tier_18` تعامله كفيديو من تلك الفئة."
     },
     "/paths/~1users/post/requestBody/content/application~1json/schema/properties/parental/properties/allow_only/description": {
       "en": "Only what a rule allows is open, whatever its tier.",
@@ -5199,19 +5199,19 @@
     },
     "/components/schemas/Library/properties/age_tier/description": {
       "en": "The library's default age tier (Epic 57), set with `PUT /api/libraries/{id}/age-tier`: a tier, or null when none is set. Only an administrator's answer has this field; it is absent for everyone else.",
-      "ar": "التصنيف العمري الافتراضي للمكتبة (الملحمة 57)، يُضبط عبر `PUT /api/libraries/{id}/age-tier`: تصنيف، أو null إذا لم يُضبط. لا يظهر هذا الحقل إلا في إجابة المشرف، ويغيب عند غيره."
+      "ar": "الفئة العمرية الافتراضية للمكتبة (الملحمة 57)، تُضبط عبر `PUT /api/libraries/{id}/age-tier`: فئة، أو null إذا لم تُضبط. لا يظهر هذا الحقل إلا في إجابة المشرف، ويغيب عند غيره."
     },
     "/components/schemas/VideoDetail/allOf/1/properties/age_tier_admin/description": {
       "en": "The age tier an administrator set on this video itself (Epic 57), with `PUT /api/videos/{id}/age-tier`: a tier, or null when the administrator set none. It is not what the video resolves to from its other sources. Only an administrator's answer has this field; it is absent for everyone else.",
-      "ar": "التصنيف العمري الذي ضبطه مشرف على هذا المقطع نفسه (الملحمة 57) عبر `PUT /api/videos/{id}/age-tier`: تصنيف، أو null إذا لم يضبط المشرف شيئًا. وليس هو ما يؤول إليه المقطع من مصادره الأخرى. لا يظهر هذا الحقل إلا في إجابة المشرف، ويغيب عند غيره."
+      "ar": "الفئة العمرية التي ضبطها مشرف على هذا المقطع نفسه (الملحمة 57) عبر `PUT /api/videos/{id}/age-tier`: فئة، أو null إذا لم يضبط المشرف شيئًا. وليست هي ما يؤول إليه المقطع من مصادره الأخرى. لا يظهر هذا الحقل إلا في إجابة المشرف، ويغيب عند غيره."
     },
     "/components/schemas/Collection/properties/age_tier/description": {
       "en": "The age tier an administrator set on the collection (Epic 57), with `PUT /api/collections/{id}/age-tier`: a tier, or null when none is set. Only an administrator's answer to `GET /api/collections/{id}` has this field; it is absent for everyone else.",
-      "ar": "التصنيف العمري الذي ضبطه مشرف على المجموعة (الملحمة 57) عبر `PUT /api/collections/{id}/age-tier`: تصنيف، أو null إذا لم يُضبط. لا يظهر هذا الحقل إلا في إجابة المشرف على `GET /api/collections/{id}`، ويغيب عند غيره."
+      "ar": "الفئة العمرية التي ضبطها مشرف على المجموعة (الملحمة 57) عبر `PUT /api/collections/{id}/age-tier`: فئة، أو null إذا لم تُضبط. لا يظهر هذا الحقل إلا في إجابة المشرف على `GET /api/collections/{id}`، ويغيب عند غيره."
     },
     "/paths/~1series~1{id}/get/description": {
       "en": "The series header. An administrator's answer also has `age_tier`: the age tier set with `PUT /api/series/{id}/age-tier` (Epic 57), or null when none is set. The field is absent for everyone else.",
-      "ar": "ترويسة السلسلة. وتحمل إجابة المشرف أيضًا `age_tier`: التصنيف العمري المضبوط عبر `PUT /api/series/{id}/age-tier` (الملحمة 57)، أو null إذا لم يُضبط. ويغيب الحقل عند غيره."
+      "ar": "ترويسة السلسلة. وتحمل إجابة المشرف أيضًا `age_tier`: الفئة العمرية المضبوطة عبر `PUT /api/series/{id}/age-tier` (الملحمة 57)، أو null إذا لم تُضبط. ويغيب الحقل عند غيره."
     },
     "/paths/~1libraries~1{id}~1stats/get/description": {
       "en": "For a restricted account (one under parental controls) the numbers count only the videos it may see, and a library a rule blocks answers 404.",
@@ -5319,11 +5319,11 @@
     },
     "/paths/~1parental~1library-suggestions/get/summary": {
       "en": "List the libraries with the tier Rate libraries starts with",
-      "ar": "عرض المكتبات مع التصنيف الذي تبدأ به شاشة تصنيف المكتبات"
+      "ar": "عرض المكتبات مع الفئة التي تبدأ بها شاشة تصنيف المكتبات"
     },
     "/paths/~1parental~1library-suggestions/get/description": {
       "en": "Every library with its default age tier and the one the form offers for a library that has none: All ages when at least nine in ten of its classified videos are lectures, otherwise none. Nothing is stored until an admin sets a tier with `PUT /libraries/{id}/age-tier`.",
-      "ar": "كل مكتبة مع تصنيفها العمري الافتراضي والتصنيف الذي يقترحه النموذج لمكتبة بلا تصنيف: «لكل الأعمار» حين تكون تسعة من كل عشرة على الأقل من فيديوهاتها المصنَّفة محاضرات، وإلا فلا اقتراح. لا يُحفظ شيء حتى يضبط المشرف تصنيفًا عبر `PUT /libraries/{id}/age-tier`."
+      "ar": "كل مكتبة مع فئتها العمرية الافتراضية والفئة التي يقترحها النموذج لمكتبة بلا فئة: «لكل الأعمار» حين تكون تسعة من كل عشرة على الأقل من فيديوهاتها المصنَّفة محاضرات، وإلا فلا اقتراح. لا يُحفظ شيء حتى يضبط المشرف فئة عبر `PUT /libraries/{id}/age-tier`."
     },
     "/paths/~1parental~1library-suggestions/get/responses/200/description": {
       "en": "The libraries, by name.",
@@ -5331,7 +5331,7 @@
     },
     "/paths/~1parental~1library-suggestions/get/responses/200/content/application~1json/schema/properties/libraries/items/properties/tier/description": {
       "en": "The default tier stored now, or null.",
-      "ar": "التصنيف الافتراضي المحفوظ الآن، أو null."
+      "ar": "الفئة الافتراضية المحفوظة الآن، أو null."
     },
     "/paths/~1parental~1library-suggestions/get/responses/200/content/application~1json/schema/properties/libraries/items/properties/suggested_tier/description": {
       "en": "What the form starts with: `0` (All ages) or null (Not rated).",
@@ -5363,7 +5363,7 @@
     },
     "/paths/~1channels/get/responses/200/content/application~1json/schema/properties/items/items/properties/age_tier/description": {
       "en": "The channel's age tier, set with `PUT /channels/{id}/age-tier`: a tier, or null when none is set. Only an administrator's answer has this field; it is absent for everyone else.",
-      "ar": "التصنيف العمري للقناة، ويُضبط عبر `PUT /channels/{id}/age-tier`: تصنيف، أو null حين لا يكون مضبوطًا. لا يظهر هذا الحقل إلا في إجابة المشرف، ويغيب عند غيره."
+      "ar": "الفئة العمرية للقناة، وتُضبط عبر `PUT /channels/{id}/age-tier`: فئة، أو null حين لا تكون مضبوطة. لا يظهر هذا الحقل إلا في إجابة المشرف، ويغيب عند غيره."
     },
     "/paths/~1libraries~1manage/get/summary": {
       "en": "List every library for the management page",
@@ -5371,7 +5371,7 @@
     },
     "/paths/~1libraries~1manage/get/description": {
       "en": "Each library with its folders, counts, last scan and what it follows on YouTube, and the folders two libraries share. Each library carries its default `age_tier`.",
-      "ar": "كل مكتبة مع مجلداتها وأعدادها وآخر فحص لها وما تتابعه على يوتيوب، والمجلدات التي تتشاركها مكتبتان. تحمل كل مكتبة تصنيفها الافتراضي `age_tier`."
+      "ar": "كل مكتبة مع مجلداتها وأعدادها وآخر فحص لها وما تتابعه على يوتيوب، والمجلدات التي تتشاركها مكتبتان. تحمل كل مكتبة فئتها العمرية الافتراضية `age_tier`."
     },
     "/paths/~1libraries~1manage/get/responses/200/description": {
       "en": "The libraries.",
@@ -5379,7 +5379,7 @@
     },
     "/paths/~1libraries~1manage/get/responses/200/content/application~1json/schema/properties/items/items/properties/age_tier/description": {
       "en": "The library's default age tier, set with `PUT /libraries/{id}/age-tier`: a tier, or null when none is set.",
-      "ar": "التصنيف العمري الافتراضي للمكتبة، ويُضبط عبر `PUT /libraries/{id}/age-tier`: تصنيف، أو null حين لا يكون مضبوطًا."
+      "ar": "الفئة العمرية الافتراضية للمكتبة، وتُضبط عبر `PUT /libraries/{id}/age-tier`: فئة، أو null حين لا تكون مضبوطة."
     },
     "/components/schemas/ParentalSettings/description": {
       "en": "Whether parental controls are on in this home, and what an admin is told while they are off.",
@@ -5387,7 +5387,7 @@
     },
     "/components/schemas/ParentalSettings/properties/enabled/description": {
       "en": "Parental controls are on. They start off in a home that has set nothing up, and turn on by themselves when an admin makes the first account restricted or gives the first library a default age tier. While they are off a device's age signal is recorded and limits nothing. A restricted account's own limit is applied whatever this says.",
-      "ar": "الرقابة الأبوية مفعَّلة. تبدأ متوقفة في منزل لم يضبط شيئًا، وتتفعَّل تلقائيًا حين يجعل المشرف أول حساب مقيَّدًا أو يعطي أول مكتبة تصنيفًا عمريًا افتراضيًا. ما دامت متوقفة تُسجَّل إشارة العمر التي يرسلها الجهاز ولا تقيِّد شيئًا. أما حدّ الحساب المقيَّد نفسه فيُطبَّق أيًّا كانت هذه القيمة."
+      "ar": "الرقابة الأبوية مفعَّلة. تبدأ متوقفة في منزل لم يضبط شيئًا، وتتفعَّل تلقائيًا حين يجعل المشرف أول حساب مقيَّدًا أو يعطي أول مكتبة فئة عمرية افتراضية. ما دامت متوقفة تُسجَّل إشارة العمر التي يرسلها الجهاز ولا تقيِّد شيئًا. أما حدّ الحساب المقيَّد نفسه فيُطبَّق أيًّا كانت هذه القيمة."
     },
     "/components/schemas/ParentalSettings/properties/restricted_accounts/description": {
       "en": "How many accounts are restricted.",
@@ -5419,7 +5419,7 @@
     },
     "/components/schemas/ParentalCapabilities/properties/tier_limit/description": {
       "en": "The age-tier limit this sign-in is held to, by the account's policy or by its device, whichever is stricter: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier; `null` when nothing limits it.",
-      "ar": "حدّ التصنيف العمري المطبَّق على تسجيل الدخول هذا، بحسب سياسة الحساب أو جهازه أيهما أشد: `0` لكل الأعمار، و`9` و`13` و`16` و`18`؛ و`-1` لا شيء مما له تصنيف؛ و`null` حين لا يقيِّده شيء."
+      "ar": "حدّ الفئة العمرية المطبَّق على تسجيل الدخول هذا، بحسب سياسة الحساب أو جهازه أيهما أشد: `0` لكل الأعمار، و`9` و`13` و`16` و`18`؛ و`-1` لا شيء مما له فئة؛ و`null` حين لا يقيِّده شيء."
     },
     "/components/schemas/ParentalCapabilities/properties/can_manage/description": {
       "en": "The caller is an admin, or the guardian of at least one restricted account: show the Family screens.",

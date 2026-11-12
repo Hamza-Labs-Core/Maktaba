@@ -53,8 +53,36 @@ CREATE TABLE IF NOT EXISTS parental_requests (
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+-- An index build that was cut short (the app quit, the machine slept) leaves the index
+-- there but INVALID: never used, kept up on every write, and skipped by IF NOT EXISTS
+-- below. It is dropped so that the build runs again.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+                WHERE c.relname = 'parental_requests_one_pending' AND c.relnamespace = 'public'::regnamespace
+                  AND NOT i.indisvalid) THEN
+        DROP INDEX IF EXISTS parental_requests_one_pending;
+    END IF;
+END $$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS parental_requests_one_pending
     ON parental_requests (child_id, subject_kind, subject_id) WHERE status = 'pending';
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- An index build that was cut short (the app quit, the machine slept) leaves the index
+-- there but INVALID: never used, kept up on every write, and skipped by IF NOT EXISTS
+-- below. It is dropped so that the build runs again.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+                WHERE c.relname = 'parental_requests_by_status_idx' AND c.relnamespace = 'public'::regnamespace
+                  AND NOT i.indisvalid) THEN
+        DROP INDEX IF EXISTS parental_requests_by_status_idx;
+    END IF;
+END $$;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -83,6 +111,20 @@ CREATE TABLE IF NOT EXISTS parental_pin_failures (
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+-- An index build that was cut short (the app quit, the machine slept) leaves the index
+-- there but INVALID: never used, kept up on every write, and skipped by IF NOT EXISTS
+-- below. It is dropped so that the build runs again.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+                WHERE c.relname = 'parental_pin_failures_child_idx' AND c.relnamespace = 'public'::regnamespace
+                  AND NOT i.indisvalid) THEN
+        DROP INDEX IF EXISTS parental_pin_failures_child_idx;
+    END IF;
+END $$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 CREATE INDEX CONCURRENTLY IF NOT EXISTS parental_pin_failures_child_idx
     ON parental_pin_failures (child_id, at);
 -- +goose StatementEnd
@@ -104,14 +146,56 @@ CREATE TABLE IF NOT EXISTS parental_events (
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+-- An index build that was cut short (the app quit, the machine slept) leaves the index
+-- there but INVALID: never used, kept up on every write, and skipped by IF NOT EXISTS
+-- below. It is dropped so that the build runs again.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+                WHERE c.relname = 'parental_events_at_idx' AND c.relnamespace = 'public'::regnamespace
+                  AND NOT i.indisvalid) THEN
+        DROP INDEX IF EXISTS parental_events_at_idx;
+    END IF;
+END $$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 -- the retention sweep's index
 CREATE INDEX CONCURRENTLY IF NOT EXISTS parental_events_at_idx ON parental_events (at);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- An index build that was cut short (the app quit, the machine slept) leaves the index
+-- there but INVALID: never used, kept up on every write, and skipped by IF NOT EXISTS
+-- below. It is dropped so that the build runs again.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+                WHERE c.relname = 'parental_events_child_idx' AND c.relnamespace = 'public'::regnamespace
+                  AND NOT i.indisvalid) THEN
+        DROP INDEX IF EXISTS parental_events_child_idx;
+    END IF;
+END $$;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
 -- a guardian's page: newest first
 CREATE INDEX CONCURRENTLY IF NOT EXISTS parental_events_child_idx
     ON parental_events (child_id, at DESC, id DESC);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- An index build that was cut short (the app quit, the machine slept) leaves the index
+-- there but INVALID: never used, kept up on every write, and skipped by IF NOT EXISTS
+-- below. It is dropped so that the build runs again.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+                WHERE c.relname = 'parental_events_once' AND c.relnamespace = 'public'::regnamespace
+                  AND NOT i.indisvalid) THEN
+        DROP INDEX IF EXISTS parental_events_once;
+    END IF;
+END $$;
 -- +goose StatementEnd
 
 -- +goose StatementBegin

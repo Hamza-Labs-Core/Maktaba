@@ -7449,7 +7449,7 @@ paths:
                     - string
                     - 'null'
                     enum:
-                    - admin
+                    - admin_video
                     - admin_container
                     - plex
                     - guide
@@ -7554,7 +7554,7 @@ paths:
                     - string
                     - 'null'
                     enum:
-                    - admin
+                    - admin_video
                     - admin_container
                     - plex
                     - guide
@@ -7659,7 +7659,7 @@ paths:
                     - string
                     - 'null'
                     enum:
-                    - admin
+                    - admin_video
                     - admin_container
                     - plex
                     - guide
@@ -7764,7 +7764,7 @@ paths:
                     - string
                     - 'null'
                     enum:
-                    - admin
+                    - admin_video
                     - admin_container
                     - plex
                     - guide
@@ -7869,7 +7869,7 @@ paths:
                     - string
                     - 'null'
                     enum:
-                    - admin
+                    - admin_video
                     - admin_container
                     - plex
                     - guide
@@ -7981,7 +7981,7 @@ paths:
                     - string
                     - 'null'
                     enum:
-                    - admin
+                    - admin_video
                     - admin_container
                     - plex
                     - guide
@@ -8215,8 +8215,9 @@ paths:
                           enum:
                           - no_transcript
                           - unsupported_language
+                          - model_failed
                           - null
-                          description: 'Why the screen did not check the video: it has no transcript, or its language is not one the screen reads (Arabic and English). Null when it did.'
+                          description: 'Why the screen did not check the video: it has no transcript, its language is not one the screen reads (Arabic and English), or the home''s model failed on it (`model_failed`). Null when it did.'
                         model:
                           type: string
                           description: The home's language model that gave the answer; empty when the video was not checked.
@@ -8237,7 +8238,7 @@ paths:
                           - string
                           - 'null'
                           enum:
-                          - admin
+                          - admin_video
                           - admin_container
                           - plex
                           - guide
@@ -8347,7 +8348,7 @@ paths:
                     - string
                     - 'null'
                     enum:
-                    - admin
+                    - admin_video
                     - admin_container
                     - plex
                     - guide
@@ -8356,7 +8357,7 @@ paths:
                     - detected
                     - library_default
                     - null
-                    description: 'Where the effective tier comes from: `admin` when a tier was given; after `null`, whatever is left (the library''s tier, for one). Null when there is no tier.'
+                    description: 'Where the effective tier comes from: `admin_video` when a tier was given; after `null`, whatever is left (the library''s tier, for one). Null when there is no tier.'
                   recompute_count:
                     type: integer
                     description: 'Always 1: the video itself.'
@@ -8463,7 +8464,12 @@ paths:
                             type: string
                             enum:
                             - hide
-                            description: 'What happens to a video with no age tier: `hide`.'
+                            - tier_0
+                            - tier_9
+                            - tier_13
+                            - tier_16
+                            - tier_18
+                            description: 'What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier.'
                           allow_only:
                             type: boolean
                             description: Only what a rule allows is open, whatever its tier.
@@ -8513,7 +8519,12 @@ paths:
                     type: string
                     enum:
                     - hide
-                    description: 'What happens to a video with no age tier: `hide`.'
+                    - tier_0
+                    - tier_9
+                    - tier_13
+                    - tier_16
+                    - tier_18
+                    description: 'What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier.'
                   allow_only:
                     type: boolean
                     description: Only what a rule allows is open, whatever its tier.
@@ -8603,8 +8614,9 @@ paths:
                 type: object
                 properties:
                   tier_limit:
-                    type: integer
-                    nullable: true
+                    type:
+                    - integer
+                    - 'null'
                     enum:
                     - -1
                     - 0
@@ -8681,8 +8693,9 @@ paths:
                 type: object
                 properties:
                   tier_limit:
-                    type: integer
-                    nullable: true
+                    type:
+                    - integer
+                    - 'null'
                     enum:
                     - -1
                     - 0
@@ -8758,7 +8771,12 @@ paths:
                         type: string
                         enum:
                         - hide
-                        description: 'What happens to a video with no age tier: `hide`.'
+                        - tier_0
+                        - tier_9
+                        - tier_13
+                        - tier_16
+                        - tier_18
+                        description: 'What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier.'
                       allow_only:
                         type: boolean
                         description: Only what a rule allows is open, whatever its tier.
@@ -8863,7 +8881,12 @@ paths:
                   type: string
                   enum:
                   - hide
-                  description: 'What happens to a video with no age tier: `hide`.'
+                  - tier_0
+                  - tier_9
+                  - tier_13
+                  - tier_16
+                  - tier_18
+                  description: 'What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier.'
                 allow_only:
                   type: boolean
                   description: Only what a rule allows is open, whatever its tier.
@@ -8900,7 +8923,12 @@ paths:
                         type: string
                         enum:
                         - hide
-                        description: 'What happens to a video with no age tier: `hide`.'
+                        - tier_0
+                        - tier_9
+                        - tier_13
+                        - tier_16
+                        - tier_18
+                        description: 'What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier.'
                       allow_only:
                         type: boolean
                         description: Only what a rule allows is open, whatever its tier.
@@ -11538,7 +11566,12 @@ paths:
                       type: string
                       enum:
                       - hide
-                      description: 'What happens to a video with no age tier: `hide`.'
+                      - tier_0
+                      - tier_9
+                      - tier_13
+                      - tier_16
+                      - tier_18
+                      description: 'What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier.'
                     allow_only:
                       type: boolean
                       description: Only what a rule allows is open, whatever its tier.

@@ -278,6 +278,10 @@ lint-go:  ## gofmt + go vet + golangci-lint over every Go module.
 		test -z "$$(gofmt -l $$mod)" || { gofmt -d $$mod; exit 1; }; \
 		echo "==> go vet $$mod"; \
 		(cd $$mod && go vet ./...); \
+		if [ "$$mod" = "api" ]; then \
+			echo "==> go vet $$mod, the parental bypass rehearsal (build tag parental_bypass)"; \
+			(cd $$mod && go vet -tags parental_bypass ./internal/router/); \
+		fi; \
 		echo "==> golangci-lint $$mod"; \
 		(cd $$mod && golangci-lint run ./...); \
 	done

@@ -1,0 +1,40 @@
+# The tests the parental bypass rehearsal must see pass (Epic 57, story 57.13): every test
+# of api/internal/router that the job's -run pattern names, one a line, sorted. The job
+# (.github/workflows/_integration.yml, parental-bypass) fails when one of them did not run
+# and pass; TestParentalBypassListNamesEveryTest fails when this list and the code differ.
+TestDeviceSignalRidesTheAccessToken
+TestEveryRouteHasParentalSurface
+TestP57CapabilitiesParental
+TestP57ExistingHome
+TestP57FilterByID
+TestP57FilterFailsClosed
+TestP57FilterLists
+TestP57FilterQueueAndStream
+TestP57FilterRecordsBlocked
+TestP57FilterRefusals
+TestP57GapCurating
+TestP57GapLiveFeeds
+TestP57GapProgressAfterBlock
+TestP57GapSearch
+TestP57GapTagsAndStats
+TestP57LiveRemoteGatePG
+TestP57LiveTVPG
+TestP57RehearsalFindings
+TestP57ReviewPG
+TestP57RoleTable
+TestP57RoleTableNamesEveryRoute
+TestP57RoleTableRules
+TestP57TierReadBack
+TestP57TierReadBackChannel
+TestP57TiersPG
+TestP57VideoTierIsQueuedWithTheChange
+TestPGTimeLimitRefusesStreams
+TestPGTimeRequestApprovedAllowsTheStream
+TestPGTimeWiringFailsClosed
+TestParentalBypass
+TestParentalBypassCatchesAMissingFilter
+TestParentalBypassListNamesEveryTest
+TestParentalBypassSeesWhatIsThere
+TestParentalSurfacesAreMounted
+TestParentalSurfacesAreSound
+TestParentalSurfacesEveryMethodNamed

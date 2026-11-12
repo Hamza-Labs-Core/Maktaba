@@ -25,6 +25,13 @@ One group at a time (``duplicate_groups`` + ``duplicate_members``, written by
 loser back to the state it had (``verify.prior_state``); a restored copy is a recorded
 copy again. The user data that moved stays with the keeper (the spec accepts it: a
 restore is for a file merged by mistake, and the keeper holds the union).
+
+**Parental controls (Epic 57).** What restricts the loser must restrict the keeper, or a
+merge would open a video to a child: the keeper takes the stricter of the two admin
+tiers, the rules, pending requests and activity that name the loser by its id (text
+columns with no foreign key, so :data:`RULES` never sees them) are repointed, a stricter
+detected tier of the loser stands in until the keeper is screened, and the keeper's tier
+is queued to be worked out again (:func:`_merge_parental`).
 """
 
 from __future__ import annotations
@@ -140,7 +147,8 @@ RULES: Mapping[tuple[str, str], Rule] = {
     ("video_entities", "video_id"): Rule("keep"),
     ("video_topic_tags", "video_id"): Rule("keep"),
     # what the content screen read from the loser's transcript (slot 0224): the keeper is
-    # screened for itself, the stage's planner asks about it when a transcript reaches it
+    # screened for itself, the stage's planner asks about it when a transcript reaches it.
+    # Until then a stricter detected tier of the loser stands in (_merge_parental).
     ("video_content_signals", "video_id"): Rule("keep"),
     ("video_repairs", "video_id"): Rule("keep"),
     ("integrity_checks", "video_id"): Rule("keep"),
@@ -338,6 +346,160 @@ async def _move_family(db: Any, c: _Ctx, family: str, col: str) -> None:
             await _move(db, c, t, col, rule)
 
 
+def _later(a: Any, b: Any) -> Any:
+    """The later of two expiry times, where None is "never"."""
+    return None if a is None or b is None else max(a, b)
+
+
+def _sooner(a: Any, b: Any) -> Any:
+    """The sooner of two expiry times, where None is "never"."""
+    if a is None or b is None:
+        return b if a is None else a
+    return min(a, b)
+
+
+async def _merge_parental(db: Any, c: _Ctx) -> None:
+    """Carry what restricts the loser to the keeper (Epic 57): nothing a merge does may
+    make a video easier to reach.
+
+    * ``videos.age_tier_admin``: the stricter of the two admin tiers.
+    * ``parental_rules`` of kind ``video``: repointed. Where the child already has the
+      same kind of rule on the keeper the two become one, and the tighter end wins: a
+      block lasts as long as the longer of the two, an allow only as long as the shorter.
+    * pending ``parental_requests`` of kind ``video``: repointed (one pending request a
+      child and subject: the keeper's own stays). Decided requests are history of what
+      was asked and stay as they are.
+    * ``parental_events`` of kind ``video``: repointed, so a guardian's activity page
+      still names a video that exists after the loser is purged.
+    * ``video_content_signals``: a detected tier of the loser that is stricter than what
+      the keeper has (no row, no tier, or a milder one that no admin reviewed) replaces
+      the keeper's row. The content screen's planner asks about the keeper again when
+      the row does not answer it.
+    * the keeper is queued in ``parental_recompute_jobs`` (Postgres: the API's recompute
+      is the one writer of ``videos.age_tier``).
+    """
+    cols = await _video_columns(db)
+    if "age_tier_admin" in cols:
+        mine = await db.fetchval("SELECT age_tier_admin FROM videos WHERE id = $1", c.keeper)
+        theirs = await db.fetchval("SELECT age_tier_admin FROM videos WHERE id = $1", c.loser)
+        if theirs is not None and (mine is None or int(theirs) > int(mine)):
+            await db.execute(
+                "UPDATE videos SET age_tier_admin = $2 WHERE id = $1", c.keeper, int(theirs)
+            )
+            c.count("videos.age_tier_admin", 1)
+    touched: set[str] = set()
+    if "parental_rules" in c.tables:
+        for r in await db.fetch(
+            "SELECT id, user_id, effect, expires_at FROM parental_rules"
+            " WHERE subject_kind = 'video' AND subject_id = $1",
+            c.loser,
+        ):
+            touched.add(str(r["user_id"]))
+            own = await db.fetchrow(
+                "SELECT id, expires_at FROM parental_rules WHERE subject_kind = 'video'"
+                " AND subject_id = $1 AND user_id = $2 AND effect = $3",
+                c.keeper,
+                r["user_id"],
+                r["effect"],
+            )
+            if own is None:
+                await db.execute(
+                    "UPDATE parental_rules SET subject_id = $1 WHERE id = $2", c.keeper, r["id"]
+                )
+            else:
+                pick = _later if r["effect"] == "block" else _sooner
+                await db.execute(
+                    "UPDATE parental_rules SET expires_at = $1 WHERE id = $2",
+                    pick(own["expires_at"], r["expires_at"]),
+                    own["id"],
+                )
+                await db.execute("DELETE FROM parental_rules WHERE id = $1", r["id"])
+            c.count("parental_rules", 1)
+    if "parental_requests" in c.tables:
+        n = await _n_subject(db, "parental_requests", c.loser, " AND status = 'pending'")
+        if n:
+            await db.execute(
+                "UPDATE parental_requests SET subject_id = $1 WHERE subject_kind = 'video'"
+                " AND subject_id = $2 AND status = 'pending' AND NOT EXISTS"
+                " (SELECT 1 FROM parental_requests k WHERE k.subject_kind = 'video'"
+                "   AND k.subject_id = $1 AND k.status = 'pending'"
+                "   AND k.child_id = parental_requests.child_id)",
+                c.keeper,
+                c.loser,
+            )
+            await db.execute(
+                "DELETE FROM parental_requests WHERE subject_kind = 'video'"
+                " AND subject_id = $1 AND status = 'pending'",
+                c.loser,
+            )
+            c.count("parental_requests", n)
+    if "parental_events" in c.tables:
+        n = await _n_subject(db, "parental_events", c.loser)
+        if n:
+            await db.execute(
+                "UPDATE parental_events SET subject_id = $1"
+                " WHERE subject_kind = 'video' AND subject_id = $2",
+                c.keeper,
+                c.loser,
+            )
+            c.count("parental_events", n)
+    if touched and "parental_policies" in c.tables:
+        # a rule changed under these accounts: a stale edit of theirs is refused (409)
+        for user in sorted(touched):
+            await db.execute(
+                "UPDATE parental_policies SET version = version + 1 WHERE user_id = $1", user
+            )
+    if "video_content_signals" in c.tables:
+        theirs = await db.fetchrow(
+            "SELECT tier FROM video_content_signals WHERE video_id = $1", c.loser
+        )
+        if theirs is not None and theirs["tier"] is not None:
+            own = await db.fetchrow(
+                "SELECT tier, reviewed_at FROM video_content_signals WHERE video_id = $1",
+                c.keeper,
+            )
+            stricter = own is None or (
+                own["reviewed_at"] is None
+                and (own["tier"] is None or int(theirs["tier"]) > int(own["tier"]))
+            )
+            if stricter:
+                await db.execute("DELETE FROM video_content_signals WHERE video_id = $1", c.keeper)
+                await db.execute(
+                    "UPDATE video_content_signals SET video_id = $1 WHERE video_id = $2",
+                    c.keeper,
+                    c.loser,
+                )
+                c.count("video_content_signals", 1)
+    if is_pg(db) and "parental_recompute_jobs" in c.tables:
+        # always: the keeper also took the loser's collections, series, YouTube match
+        # and guide programmes, and a tier nothing gives any more must never stay
+        await db.execute(
+            "INSERT INTO parental_recompute_jobs (kind, subject) VALUES ('video', $1)",
+            str(c.keeper),
+        )
+
+
+async def _n_subject(db: Any, table: str, vid: str, more: str = "") -> int:
+    return int(
+        await db.fetchval(
+            f"SELECT COUNT(*) FROM {table} WHERE subject_kind = 'video' AND subject_id = $1{more}",
+            str(vid),
+        )
+        or 0
+    )
+
+
+async def _video_columns(db: Any) -> set[str]:
+    if is_pg(db):
+        rows = await db.fetch(
+            "SELECT column_name AS c FROM information_schema.columns"
+            " WHERE table_schema = current_schema() AND table_name = 'videos'"
+        )
+    else:
+        rows = await db.fetch("SELECT name AS c FROM pragma_table_info('videos')")
+    return {str(r["c"]) for r in rows}
+
+
 async def merge_rows(db: Any, keeper: str, loser: str, *, keeper_library: str) -> dict[str, int]:
     """Move the loser's data to the keeper by :data:`RULES` and supersede the loser.
     Runs in the caller's transaction; returns the rows moved per table."""
@@ -363,6 +525,7 @@ async def merge_rows(db: Any, keeper: str, loser: str, *, keeper_library: str) -
             assert rule.family is not None
             families_done.add(rule.family)
             await _move_family(db, c, rule.family, col)
+    await _merge_parental(db, c)
     await db.execute(
         "UPDATE videos SET state = 'superseded', superseded_by = $2, updated_at = $3 WHERE id = $1",
         loser,

@@ -12460,7 +12460,7 @@
       "id": "ep-get-parental-review",
       "type": "endpoint",
       "title": "GET /parental/review",
-      "content": "التصنيفات العمرية المكتشفة التي تنتظر المشرف",
+      "content": "الفئات العمرية المكتشفة التي تنتظر المشرف",
       "tags": [
         "api",
         "Parental controls",
@@ -12489,7 +12489,7 @@
       "id": "ep-post-parental-review-video-id",
       "type": "endpoint",
       "title": "POST /parental/review/{video_id}",
-      "content": "الإجابة عن تصنيف عمري مكتشف",
+      "content": "الإجابة عن فئة عمرية مكتشفة",
       "tags": [
         "api",
         "Parental controls",
@@ -12547,7 +12547,7 @@
       "id": "ep-get-parental-children",
       "type": "endpoint",
       "title": "GET /parental/children",
-      "content": "الحسابات المقيَّدة التي يتولاها الطالب",
+      "content": "الحسابات المقيَّدة التي يتولاها المتصل",
       "tags": [
         "api",
         "Auth",
@@ -12577,7 +12577,7 @@
       "id": "ep-get-me-parental",
       "type": "endpoint",
       "title": "GET /me/parental",
-      "content": "حدّ الطالب نفسه",
+      "content": "حدّ المتصل نفسه",
       "tags": [
         "api",
         "Auth",
@@ -12641,7 +12641,7 @@
       "id": "ep-post-users-id-parental-signals-family-clear",
       "type": "endpoint",
       "title": "POST /users/{id}/parental/signals/{family}/clear",
-      "content": "إجازة إشارة جهاز لتسجيل دخول",
+      "content": "مسح إشارة جهاز لتسجيل دخول",
       "tags": [
         "api",
         "Parental controls",
@@ -13579,7 +13579,7 @@
       "id": "ep-get-parental-library-suggestions",
       "type": "endpoint",
       "title": "GET /parental/library-suggestions",
-      "content": "عرض المكتبات مع التصنيف الذي تبدأ به شاشة تصنيف المكتبات",
+      "content": "عرض المكتبات مع الفئة التي تبدأ بها شاشة تصنيف المكتبات",
       "tags": [
         "api",
         "Parental controls",

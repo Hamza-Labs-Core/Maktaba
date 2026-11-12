@@ -263,6 +263,7 @@ func TestSlot0224UpAndDownOnPostgres(t *testing.T) {
 		"a tier off the scale":       `INSERT INTO video_content_signals (video_id, tier) VALUES ($1, 12)`,
 		"a confidence over 1":        `INSERT INTO video_content_signals (video_id, tier, confidence) VALUES ($1, 9, 1.5)`,
 		"an unknown not_checked":     `INSERT INTO video_content_signals (video_id, not_checked) VALUES ($1, 'later')`,
+		"a negative count of runs":   `INSERT INTO video_content_signals (video_id, failed_runs) VALUES ($1, -1)`,
 		"a tier on a not-checked":    `INSERT INTO video_content_signals (video_id, tier, not_checked) VALUES ($1, 9, 'no_transcript')`,
 		"an unknown source on video": `UPDATE videos SET age_tier = 9, age_tier_source = 'guessed' WHERE id = $1`,
 	} {
@@ -270,8 +271,10 @@ func TestSlot0224UpAndDownOnPostgres(t *testing.T) {
 			t.Fatalf("%s was accepted", what)
 		}
 	}
-	// a detected tier and a library default, then down: no detected tier stays and
-	// the recompute is asked to rate the video from what is left
+	// a detected tier and a library default, then down: the detected source goes, the
+	// tier stays until the recompute, which is asked for, rates the video from what is
+	// left (review finding 18: clearing the tier first showed the video, meanwhile, to
+	// a child whose unrated content counts as all ages)
 	h.libraryTier(lib, 9)
 	h.want(kept, 9, "library_default")
 	h.signal(v, 16, 0.9)
@@ -287,8 +290,22 @@ func TestSlot0224UpAndDownOnPostgres(t *testing.T) {
 	if err := db.QueryRow(`SELECT count(*) FROM app_settings WHERE key = 'parental.detect_min_confidence'`).Scan(&settings); err != nil || settings != 0 {
 		t.Fatalf("after down: %d settings of the slot (%v)", settings, err)
 	}
-	h.want(v, -1, "")
+	h.want(v, 16, "")
 	h.want(kept, 9, "library_default")
+	// the role keeps nothing of what the Up granted it (review finding 18)
+	var role bool
+	if err := db.QueryRow(`SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_fp_content_screen')`).Scan(&role); err != nil {
+		t.Fatal(err)
+	}
+	if role {
+		var granted int
+		if err := db.QueryRow(`SELECT count(*) FROM information_schema.role_table_grants
+			WHERE grantee = 'maktaba_fp_content_screen' AND table_schema = 'public'`).Scan(&granted); err != nil || granted != 0 {
+			t.Fatalf("after down the stage's role still has %d table grants (%v)", granted, err)
+		}
+	} else {
+		t.Log("this Postgres has no maktaba_fp_content_screen role: its grants are not checked")
+	}
 	if _, err := db.Exec(`UPDATE videos SET age_tier = 9, age_tier_source = 'detected' WHERE id = $1`, v); err == nil {
 		t.Fatal("after down the source check still takes detected")
 	}

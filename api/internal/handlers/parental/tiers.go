@@ -98,7 +98,18 @@ func (h *TiersHandler) PutVideo(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	res, err := h.DB.ExecContext(r.Context(), `UPDATE videos SET age_tier_admin = $1 WHERE id = $2::uuid`, tier, id)
+	// The tier and the job that works it out are stored together: if the answer
+	// below cannot be given (the client went, the recompute failed), the job is still
+	// there and the loop rates the video. The admin's tier never sits beside an older,
+	// looser videos.age_tier with nothing left to rework it.
+	ctx := r.Context()
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("set the video's age tier").Wrap(err))
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.ExecContext(ctx, `UPDATE videos SET age_tier_admin = $1 WHERE id = $2::uuid`, tier, id)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("set the video's age tier").Wrap(err))
 		return
@@ -107,8 +118,18 @@ func (h *TiersHandler) PutVideo(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.NotFound("video "+id))
 		return
 	}
-	got, err := h.Recompute.RecomputeVideo(r.Context(), id)
+	if err := h.Recompute.Enqueue(ctx, tx, parental.KindVideo, id); err != nil {
+		httperror.Write(w, r, httperror.Internal("queue the recompute").Wrap(err))
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		httperror.Write(w, r, httperror.Internal("set the video's age tier").Wrap(err))
+		return
+	}
+	// rated now, for the answer; the queued job then finds nothing to change
+	got, err := h.Recompute.RecomputeVideo(ctx, id)
 	if err != nil {
+		h.Recompute.Wake()
 		httperror.Write(w, r, httperror.Internal("rate the video").Wrap(err))
 		return
 	}
