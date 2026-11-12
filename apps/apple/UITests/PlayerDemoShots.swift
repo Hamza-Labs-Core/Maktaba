@@ -36,7 +36,8 @@ final class PlayerDemoShots: PlayerUITestCase {
     }
 
     /// Sintel playing with the Arabic subtitles on (in both languages: the Arabic line is what
-    /// the page shows off), in landscape, the controls gone so the line reads clear of them.
+    /// the page shows off), the controls gone so the line reads clear of them; in landscape on
+    /// the iPhone.
     func testPlayer() throws {
         defer { XCUIDevice.shared.orientation = .portrait }
         for language in ["en", "ar"] {
@@ -50,8 +51,11 @@ final class PlayerDemoShots: PlayerUITestCase {
                            extra: ["-playback.subtitles_on", "YES", "-playback.subtitle_language", "ar"])
             let surface = element("player.surface")
             XCTAssertTrue(surface.waitForExistence(timeout: 30), "the player")
-            XCUIDevice.shared.orientation = .landscapeLeft
-            XCTAssertTrue(waitUntil(timeout: 10) { surface.frame.width > surface.frame.height }, "the player in landscape")
+            // on the iPhone (on the iPad its sidebar floats over a landscape player)
+            if !isPad {
+                XCUIDevice.shared.orientation = .landscapeLeft
+                XCTAssertTrue(waitUntil(timeout: 10) { surface.frame.width > surface.frame.height }, "the player in landscape")
+            }
             XCTAssertTrue(waitUntil(timeout: 30) { self.state["playing"] == "true" && self.state["subtitle"] == "ar" },
                           "playing with the Arabic subtitles: \(state)")
             // a frame of the picture and the cue drawn: the position moves past where it opened
@@ -98,7 +102,30 @@ final class PlayerDemoShots: PlayerUITestCase {
 
     /// The screen as an attachment named `shot-<device>-<screen>-<language>`, kept always.
     private func demoShot(_ screen: String) {
-        let a = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        let shot = XCUIScreen.main.screenshot()
+        guard XCUIDevice.shared.orientation == .landscapeLeft else { return attach(XCTAttachment(screenshot: shot), screen) }
+        // in landscape the screen's picture comes as the panel's (upright, the content's top at
+        // its right edge): turned a quarter to the left, as the screen is seen
+        let image = shot.image
+        guard image.size.width < image.size.height else {
+            // already as seen (the image carries its orientation): drawn as it is
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = image.scale
+            let png = UIGraphicsImageRenderer(size: image.size, format: format).pngData { _ in image.draw(at: .zero) }
+            return attach(XCTAttachment(data: png, uniformTypeIdentifier: "public.png"), screen)
+        }
+        let size = CGSize(width: image.size.height, height: image.size.width)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = image.scale
+        let upright = UIGraphicsImageRenderer(size: size, format: format).pngData { ctx in
+            ctx.cgContext.translateBy(x: 0, y: size.height)
+            ctx.cgContext.rotate(by: -.pi / 2)
+            image.draw(at: .zero)
+        }
+        attach(XCTAttachment(data: upright, uniformTypeIdentifier: "public.png"), screen)
+    }
+
+    private func attach(_ a: XCTAttachment, _ screen: String) {
         a.name = "shot-\(isPad ? "ipad" : "iphone")-\(screen)-\(language)"
         a.lifetime = .keepAlways
         add(a)
