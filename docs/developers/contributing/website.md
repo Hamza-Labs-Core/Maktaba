@@ -122,7 +122,9 @@ in. `npx playwright test e2e/a11y.spec.ts` runs one spec; `WEBSITE_BASE` points 
 
 The references live in `e2e/__screenshots__/` as `<page>-<width>-<lang>[-light].png`: every
 page at 360, 768 and 1280 px in both languages, dark, and each hand-made page in light at 1280.
-When a change to a page's look is meant:
+The apps' screenshots on a page (`static/shots/`) are masked in the frame's near-black
+(`SHOT_MASK` in `e2e/visual.spec.ts`): a reference holds the frames and the layout, so new
+screenshots at a release change no reference. When a change to a page's look is meant:
 
 1. `npm run build`, then `npm run e2e:update` (`pnpm -C web/packages/website e2e:update` from the
    repository root). It needs Docker: it renders the references in
