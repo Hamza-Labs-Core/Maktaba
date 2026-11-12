@@ -56,9 +56,9 @@ const (
 )
 
 // Error types of the queue's answers.
-const (
-	TypeStaleQueue  = "https://maktaba.tv/problems/stale_queue"
-	TypeEmptySource = "https://maktaba.tv/problems/empty_source"
+var (
+	TypeStaleQueue  = httperror.Type("stale_queue")
+	TypeEmptySource = httperror.Type("empty_source")
 )
 
 // Handler serves the play queue routes.

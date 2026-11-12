@@ -198,7 +198,7 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if hdr.Consent != ConsentCrashReports {
-		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.tv/problems/crash-reports-off",
+		httperror.Write(w, r, &httperror.Error{Type: httperror.Type("crash-reports-off"),
 			Title: "crash reports to this home are off on this device", Status: http.StatusForbidden,
 			Extras: map[string]any{"code": "crash_reports_off"}})
 		return

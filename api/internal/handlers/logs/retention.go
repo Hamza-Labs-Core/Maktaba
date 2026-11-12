@@ -37,7 +37,7 @@ func (h *Handler) proxyConfig(path, event string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sup := h.supervisor()
 		if sup == nil {
-			httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.tv/problems/no-supervisor",
+			httperror.Write(w, r, &httperror.Error{Type: httperror.Type("no-supervisor"),
 				Title: "these settings are the server's", Status: http.StatusConflict,
 				Detail: "this API runs without maktaba-server's supervisor, which keeps them",
 				Extras: map[string]any{"code": "no_supervisor"}})
@@ -58,7 +58,7 @@ func (h *Handler) proxyConfig(path, event string) http.HandlerFunc {
 		}
 		resp, err := sup.Do(r.Context(), r.Method, path, bytes.NewReader(body), ct)
 		if err != nil {
-			httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.tv/problems/supervisor-unreachable",
+			httperror.Write(w, r, &httperror.Error{Type: httperror.Type("supervisor-unreachable"),
 				Title: "the server's supervisor did not answer", Status: http.StatusBadGateway,
 				Extras: map[string]any{"code": "supervisor_unreachable"}})
 			return

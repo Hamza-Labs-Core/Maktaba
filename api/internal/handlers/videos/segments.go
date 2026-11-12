@@ -83,7 +83,7 @@ func (h *Handler) Segments(w http.ResponseWriter, r *http.Request) {
 	}
 	if from > to {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.tv/problems/invalid-time-window",
+			Type:   httperror.Type("invalid-time-window"),
 			Title:  "invalid time window",
 			Status: http.StatusBadRequest,
 			Detail: "from > to",

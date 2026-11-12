@@ -257,6 +257,26 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The NAS guides, followed step by step, now end with a working home.** The Docker,
+  Synology, TrueNAS, Unraid, QNAP and UGREEN guides were run on NAS-shaped containers, and five
+  faults on the way are gone:
+  - a container started before its setup (every guide's order) started the server at setup's
+    first answer; its own database then made setup stop and say "set up already" with no admin.
+    The container now waits until setup's database is there;
+  - the username setup offered, `admin`, is taken by Maktaba's own account, so setup failed at its
+    last step. Setup and the app's setup screen offer no name and refuse that one with the reason;
+  - in a container setup proposed the roomiest disk it saw for the data folder: a media mount
+    (read-only on TrueNAS, so every try failed). It now proposes the data volume and never offers
+    a read-only mount;
+  - on Unraid a fresh appdata folder belongs to root, so the container stopped at once; the guide
+    says to make it Maktaba's first, and the message gives the `chown` in Unraid's terminal;
+  - a home on a Docker bridge logged an unknown reason every few seconds and kept its components'
+    gates from refreshing.
+  The guides also say that setup needs the internet once, that libraries are added after setup
+  (Manage → Manage libraries), that a new library's first scan waits for the quiet hours, and
+  name the menus as the app does. The install page refuses a Docker volume for a user other than
+  1000, which cannot write it.
+
 - **A busy home no longer rate-limits its own plugin work.** Every program on the home's
   machine shared one rate-limit bucket on loopback (600 requests a minute), so on a large library
   the pipeline's plugin token mints and ends were refused with 429 and plugin jobs (scans,
@@ -769,6 +789,15 @@ build fails when the two differ.
   alerted.
 
 ### Added
+
+- **What an error means (story 60.06).** Every error the API sends now names a type from one
+  registry, `shared/api/problems.json`: 288 entries, each saying in English and Arabic what
+  happened, what you can do and whom to ask, ready for maktaba.tv's page per type. A browser
+  that opens an API error gets a **What this means** link to that page, in Arabic for an Arabic
+  browser. The API sends only registered types: in production an unknown one is logged and sent
+  as its status's general type, with the status kept; in the tests, and in the Android, Apple and
+  web apps' tests, an unregistered type or code fails the run. The word review's undo errors now
+  use hyphens in their type (`not-active`, as every other type), with the same `code`.
 
 - **A NAS as the home of several machines (story 59.13).** Computers join a NAS home as nodes
   and take transcription and conversions, opening the NAS's folders over SMB: the home works

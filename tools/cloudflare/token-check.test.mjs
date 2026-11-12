@@ -84,5 +84,30 @@ test("an expired token, a zone not in the account, an unknown piece", async () =
   } finally {
     await g.close();
   }
-  assert.throws(() => needed(["dns"]), /unknown piece dns/);
+  assert.throws(() => needed(["dnz"]), /unknown piece dnz/);
+});
+
+// Story 60.03: the website's custom domains write DNS records, so its deploy checks the dns piece.
+test("the dns piece needs DNS Write on the zone; a Workers-only token fails naming it", async () => {
+  assert.deepEqual([...needed(["workers", "dns"])], [
+    ["Workers Scripts Write", "account"],
+    ["Workers Routes Write", "zone"],
+    ["Zone Read", "zone"],
+    ["DNS Write", "zone"],
+  ]);
+  const f = await fakeServer(routes(policy.policies));
+  try {
+    const r = await check({ pieces: ["workers", "dns"], zoneName: "maktaba.tv", accountId: ACC, token: "t", base: f.url });
+    assert.deepEqual(r.missing, []);
+  } finally {
+    await f.close();
+  }
+  const noDns = policy.policies.map((p) => ({ ...p, permission_groups: p.permission_groups.filter((g) => g.name !== "DNS Write") }));
+  const g = await fakeServer(routes(noDns));
+  try {
+    const r = await check({ pieces: ["workers", "dns"], zoneName: "maktaba.tv", accountId: ACC, token: "t", base: g.url });
+    assert.deepEqual(r.missing, ["DNS Write"]);
+  } finally {
+    await g.close();
+  }
 });

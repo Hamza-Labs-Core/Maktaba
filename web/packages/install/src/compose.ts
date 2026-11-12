@@ -49,6 +49,7 @@ export type Problem =
   | "user"
   | "user-root"
   | "data"
+  | "data-volume-user"
   | "media"
   | "media-none"
   | "render-group"
@@ -100,6 +101,9 @@ export function problems(a: Answers): Problem[] {
   if (!u) p.push("user");
   else if (u[1] === "0") p.push("user-root");
   if (a.data.trim() && !PATH.test(a.data.trim())) p.push("data");
+  // A new Docker volume takes the image's folder, owned by uid 1000: any other user stops at
+  // once, unable to write it (found by following this page). Another user names its folder.
+  if (!a.data.trim() && u && u[1] !== "0" && u[1] !== "1000") p.push("data-volume-user");
   const media = a.media.filter((m) => m.path.trim());
   if (media.length === 0) p.push("media-none");
   if (media.some((m) => !PATH.test(m.path.trim()) || m.path.trim() === "/")) p.push("media");

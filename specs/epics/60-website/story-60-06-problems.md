@@ -154,16 +154,36 @@ page.
 
 ## Strings
 
+The page and index labels (`scripts/problems.mjs`, `T`). The Arabic addresses the reader in the
+plural, as 60.02's voice guide does, and names the product «مكتبة». The entries' own texts are the
+registry's.
+
 | Key | English | Arabic |
 |---|---|---|
+| `problem.crumbs` | Messages | الرسائل |
 | `problem.means` | What this means | ما معنى هذا |
-| `problem.do` | What you can do | ما الذي يمكنك فعله |
-| `problem.who.admin` | You'll see this if you run the home. | يظهر هذا لمن يدير الجهاز الرئيسي. |
-| `problem.who.person` | You may see this while using Maktaba. | قد يظهر لك هذا أثناء استخدام Maktaba. |
+| `problem.do` | What you can do | ما الذي يمكنكم فعله |
+| `problem.whoHelps` | Who can help | من يمكنه المساعدة |
+| `problem.who.anyone` | Anyone may see this, signed in or not. | قد تظهر هذه الرسالة لأي شخص، قبل تسجيل الدخول أو بعده. |
+| `problem.who.person` | You may see this while using Maktaba. | قد تظهر لكم هذه الرسالة أثناء استخدام مكتبة. |
+| `problem.who.admin` | You'll see this if you run the home. | تظهر لكم هذه الرسالة إن كنتم من يدير الجهاز الرئيسي. |
+| `problem.who.app` | An app that works with Maktaba gets this, and may show it to you. | تصل هذه الرسالة إلى التطبيقات التي تعمل مع مكتبة، وقد تعرضها عليكم. |
+| `problem.who.node` | Your home's machines send this to each other. | تتبادل أجهزة البيت هذه الرسالة فيما بينها. |
+| `problem.helps.person` (anyone, person) | If it keeps happening, ask the person who runs your home. If that's you, Troubleshooting goes through the common causes. | وإن تكرّر الأمر، فاسألوا من يدير الجهاز الرئيسي في بيتكم. وإن كنتم أنتم من يديره، فصفحة حل المشكلات تشرح أسبابه الشائعة. |
+| `problem.helps.admin` (admin, node) | If it keeps happening, Troubleshooting goes through the common causes. If it doesn't explain it, tell us on GitHub. | وإن تكرّر الأمر، فصفحة حل المشكلات تشرح أسبابه الشائعة. وإن لم تجدوا فيها الجواب، فأخبرونا على GitHub. |
+| `problem.helps.app` | If an app shows you this, ask the person who runs your home, or the app's maker. | وإن عرضها عليكم تطبيق، فاسألوا من يدير الجهاز الرئيسي في بيتكم، أو الجهة التي صنعت التطبيق. |
+| `problem.related` | Related pages | صفحات ذات صلة |
 | `problem.details` | Details for developers | تفاصيل للمطوّرين |
+| `problem.details.status` / `.type` / `.code` / `.codes` | Status / Type / Code / Codes | الحالة / النوع / الرمز / الرموز |
 | `problem.index.title` | Messages and what they mean | الرسائل ومعانيها |
-| `problem.index.filter` | Find a message | ابحث عن رسالة |
+| `problem.index.lead` | Every message Maktaba can show, grouped by where you meet it. Each page says what happened and what you can do. | كل رسالة قد يعرضها برنامج مكتبة، مجمّعةً بحسب المكان الذي تظهر فيه. وفي صفحة كل رسالة شرح لما حدث، ولما يمكنكم فعله. |
+| `problem.index.filter` | Find a message | البحث عن رسالة |
+| `problem.index.placeholder` | A word from the message, or its name | كلمة من الرسالة، أو اسمها |
+| `problem.index.count` | 1 message / {n} messages | رسالة واحدة / رسالتان / {n} رسائل / {n} رسالة (by Arabic's plural forms) |
+| `problem.index.noMatch` | No message matches. Try a shorter word. | لا رسالة تطابق ما كتبتم. جرّبوا كلمة أقصر. |
 | `error.page.whatThisMeans` (API page) | What this means | ما معنى هذا |
+
+The index's area headings are `AREAS` in `scripts/problems.mjs`, in both languages.
 
 ## Edge cases
 

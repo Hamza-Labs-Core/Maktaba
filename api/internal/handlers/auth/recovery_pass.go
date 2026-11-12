@@ -95,12 +95,12 @@ func ImportRecoveryActions(ctx context.Context, w *securityaudit.Writer, path st
 func (h *Handler) RecoveryPass(w http.ResponseWriter, r *http.Request) {
 	p := principal.FromContext(r.Context())
 	if p == nil {
-		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.tv/problems/unauthorized", Title: "unauthorized",
+		httperror.Write(w, r, &httperror.Error{Type: httperror.TypeUnauthorized, Title: "unauthorized",
 			Status: http.StatusUnauthorized, Detail: "authentication required"})
 		return
 	}
 	if !p.IsAdmin {
-		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.tv/problems/forbidden", Title: "forbidden",
+		httperror.Write(w, r, &httperror.Error{Type: httperror.TypeForbidden, Title: "forbidden",
 			Status: http.StatusForbidden, Detail: "only an admin of this home gets a recovery pass"})
 		return
 	}

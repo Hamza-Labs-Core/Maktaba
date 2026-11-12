@@ -6,6 +6,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
+    <meta name="maktaba-menu" content="none" />
     <title>تثبيت Maktaba على UGREEN أو ASUSTOR · Maktaba</title>
     <meta
       name="description"
@@ -16,6 +17,7 @@
     <link rel="stylesheet" href="/install/install.css" />
   </head>
   <body>
+    <a class="skip-link" href="#main">انتقلوا إلى المحتوى</a>
     <header>
       <h1>تثبيت Maktaba على UGREEN أو ASUSTOR</h1>
       <p class="lead">كلاهما يشغّل Maktaba من ملف compose واحد.</p>
@@ -24,7 +26,7 @@
         <a href="/install/ugreen/" hreflang="en" lang="en">English</a>
       </nav>
     </header>
-    <main class="guide">
+    <main id="main" class="guide">
       <p>
         لنظام <strong>UGOS Pro</strong> (طرازات DXP) مع تطبيق Docker، ولنظام
         <strong>ADM ‏4.2</strong> وما بعده مع Portainer من مركز التطبيقات. يستغرق التثبيت نحو 20
@@ -86,10 +88,18 @@
       </figure>
       <h2>5. شغّل الإعداد</h2>
       <p>شغّل عبر SSH:</p>
-      <pre><code>sudo docker exec -it maktaba /opt/maktaba/server/bin/maktaba-server container setup</code></pre>
+      <pre
+        tabindex="0"
+      ><code>sudo docker exec -it maktaba /opt/maktaba/server/bin/maktaba-server container setup</code></pre>
       <p>
-        أجب عن أسئلته (اسم المدير وكلمة مروره، ومكتباتك)، ويبدأ Maktaba بنفسه حين ينتهي. ثم افتح
-        <code>http://&lt;your NAS&gt;:8088</code>.
+        أجب عن أسئلته: اسمٌ لحساب المدير (غير <code>admin</code> الذي يحتفظ به Maktaba لنفسه)، وكلمة
+        مروره، والمجلدات التي فيها مقاطعك. ويحتاج الخادم إلى الإنترنت في هذه الخطوة: ينزّل الإعداد
+        أدوات التفريغ والبحث (نحو 2 GB) ونماذج الكلام. ويبدأ Maktaba بنفسه حين ينتهي. ثم افتح
+        <code>http://&lt;your NAS&gt;:8088</code>. وسجّل الدخول بعدها، وأضف مكتبة لكل مجلد:
+        <strong>«الإدارة ← إدارة المكتبات ← إضافة مكتبة»</strong> (<a
+          href="/ar/install/after-setup/#libraries"
+          >بعد الإعداد</a
+        >).
       </p>
       <h2>بعد الإعداد</h2>
       <p>

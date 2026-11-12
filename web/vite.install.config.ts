@@ -53,17 +53,40 @@ function arabicPages(): Plugin {
   };
 }
 
+/** The guides that render by script (the forms of /install/docker and /install/synology, the
+ * model table of /install/nas) hold the first paint until their script has run
+ * (blocking="render"), so what it renders never moves the page under the reader: maktaba.tv's
+ * layout-shift bar is 0 (story 60.04). Vite rewrites the entry tags and drops the attribute,
+ * so it is added to the built tags here. */
+function renderBlocking(): Plugin {
+  return {
+    name: "maktaba-install-render-blocking",
+    apply: "build",
+    transformIndexHtml: {
+      order: "post",
+      handler: (html) =>
+        html.replace(
+          /<script type="module" crossorigin /g,
+          '<script type="module" blocking="render" crossorigin '
+        ),
+    },
+  };
+}
+
 export default defineConfig({
   root: site,
   // the Synology guide's DSM screenshots (packages/install/public/install/synology, 59.09)
   publicDir: path.resolve(__dirname, "packages/install/public"),
   resolve: { alias: { "/src": path.resolve(__dirname, "packages/install/src") } },
   server: { port: 5176, fs: { allow: [path.resolve(__dirname, "..")] } },
-  plugins: [arabicPages()],
+  plugins: [arabicPages(), renderBlocking()],
   build: {
     target: "es2022",
     outDir,
     emptyOutDir: true,
+    // maktaba.tv copies dist-install/ to its root (web/packages/website/scripts/build.mjs): the
+    // guides' hashed files live under /install/assets/, apart from the site's own /assets/
+    assetsDir: "install/assets",
     rollupOptions: { input },
   },
 });

@@ -7,6 +7,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
+    <meta name="maktaba-menu" content="none" />
     <title>After setup on a NAS · Maktaba</title>
     <meta
       name="description"
@@ -17,6 +18,7 @@
     <link rel="stylesheet" href="/install/install.css" />
   </head>
   <body>
+    <a class="skip-link" href="#main">Skip to the content</a>
     <header>
       <h1>After setup on a NAS</h1>
       <p class="lead">Maktaba runs. This is what to look at next.</p>
@@ -25,10 +27,18 @@
         <a href="/ar/install/after-setup/" hreflang="ar" lang="ar">العربية</a>
       </nav>
     </header>
-    <main class="guide">
+    <main id="main" class="guide">
       <p>
-        <strong>Settings → This machine</strong> shows what Maktaba found: your NAS, the user it
-        runs as, its tier and memory, the video hardware, and the network.
+        <strong>Settings → This machine</strong> shows what Maktaba found: your NAS, its tier and
+        memory, the video hardware, and the network.
+      </p>
+      <h2 id="libraries">Your libraries</h2>
+      <p>
+        The folders you gave setup are the ones Maktaba offers you; the libraries themselves are
+        made in Maktaba. Sign in with the admin account, then
+        <strong>Manage → Manage libraries → Add library</strong>, once for each folder (films,
+        series, recordings). On a Light or Standard NAS a new library's first scan waits for the
+        quiet hours (below): <strong>Run now</strong> on the library's page starts it at once.
       </p>
       <h2 id="permissions">Permissions</h2>
       <p>
@@ -41,9 +51,10 @@
       </p>
       <h2 id="quiet-hours">Quiet hours</h2>
       <p>
-        On a Light or Standard NAS, heavy work (speech to text, thumbnails, conversions) waits for
-        the quiet hours, 01:00 to 06:00 by default, so the NAS stays quick for its own files during
-        the day. Change them in Settings → This machine. A waiting job shows when it will run, and
+        On a Light or Standard NAS, heavy work (a new library's first scan, speech to text,
+        thumbnails, conversions) waits for the quiet hours, 01:00 to 06:00 by default, so the NAS
+        stays quick for its own files during the day. Change them in Settings → This machine. A
+        waiting job shows when it will run, and
         <strong>Run now</strong> starts it at once.
       </p>
       <h2 id="speech">Speech to text</h2>
@@ -74,7 +85,7 @@
       </p>
       <h2 id="updates">Updates</h2>
       <p>
-        Maktaba updates itself inside its update window (Admin → Updates), each release checked
+        Maktaba updates itself inside its update window (Manage → Updates), each release checked
         before it is installed, and goes back by itself if a release cannot start. When your NAS's
         app catalog offers a newer image, applying it is safe too: the newer of the two runs, and an
         older image never replaces what Maktaba already runs.
@@ -82,7 +93,7 @@
       <h2 id="gpu-node">Adding a computer with a GPU</h2>
       <p>
         A NAS is a good home for the library, but a computer with a graphics card transcribes many
-        times faster. Install Maktaba on that computer and choose to join this home; then, in Admin
+        times faster. Install Maktaba on that computer and choose to join this home; then, in Manage
         → Machines, approve it under <strong>Asking to join</strong> with the code it shows. It
         takes the heavy work and reads your media from the NAS's shares. A Light NAS should stay the
         home or the storage, not join another home as a machine.

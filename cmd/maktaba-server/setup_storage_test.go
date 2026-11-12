@@ -46,6 +46,27 @@ func TestSetupStorageOffersTheRoomiestDisk(t *testing.T) {
 	}
 }
 
+// In the image the data folder is the volume at /var/lib/maktaba: the other disks a
+// container sees are the household's media mounts, and the roomiest (a TrueNAS media pool,
+// mounted read-only) was suggested, so accepting setup's default failed or put the
+// database inside a library (Epic 59, found by following the NAS guides).
+func TestSetupStorageInTheImageSuggestsTheDataVolume(t *testing.T) {
+	e := newSetupEnv(t)
+	fakeStorageDisks(t, e.dir, 900<<30, "ext4")
+	t.Setenv(config.EnvContainer, config.ContainerDocker)
+	code, _, last := runStep(t, "storage", map[string]any{"check_only": true})
+	if code != 0 {
+		t.Fatalf("exit %d: %v", code, last)
+	}
+	d := data(t, last)
+	if d["suggested"] != d["default"] || d["default"] == "" {
+		t.Errorf("suggested %v, default %v", d["suggested"], d["default"])
+	}
+	if disks, _ := d["disks"].([]any); len(disks) != 3 {
+		t.Errorf("the disks are still listed: %v", d["disks"])
+	}
+}
+
 // The chosen folder is written to server.toml before anything is made in the
 // state root, with its marker; what an earlier step saved goes with it.
 func TestSetupStorageWritesTheDataDir(t *testing.T) {

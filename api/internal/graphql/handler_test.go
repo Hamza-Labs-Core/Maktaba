@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
@@ -143,7 +145,7 @@ func TestPost_InvalidQuery_ValidationError(t *testing.T) {
 // A REST problem surfaces as a GraphQL error carrying the REST status
 // and a code; a nullable lookup answers a REST 404 with null.
 func TestRESTErrorsMapToGraphQLErrors(t *testing.T) {
-	rest := &fakeREST{status: http.StatusForbidden, body: `{"type":"https://maktaba.tv/problems/forbidden","title":"forbidden","status":403,"detail":"admin-only"}`}
+	rest := &fakeREST{status: http.StatusForbidden, body: `{"type":"` + httperror.TypeForbidden + `","title":"forbidden","status":403,"detail":"admin-only"}`}
 	h := newTestHandler(rest)
 	_, env := post(t, h, withUser(httptest.NewRequest(http.MethodPost, "/graphql",
 		gqlBody(`mutation { scanLibrary(id: "x") }`, nil)), "u1", false))

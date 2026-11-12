@@ -91,9 +91,24 @@ jobs:
         working-directory: pipeline
         run: uv sync --frozen --all-extras
 
+      # Story 60.06: httperror.Write records each problem type the registry lacks to this file
+      # (in a test binary, instead of panicking: the recoverer would turn a panic into a 500
+      # that a status-only test passes); the next step fails on any line of it.
       - name: Run unit tier (Go)
         if: inputs.go
+        env:
+          MAKTABA_UNREGISTERED_PROBLEMS: ${{ runner.temp }}/unregistered-problems.txt
         run: make test-unit-go
+
+      - name: Every problem type the API sent is registered
+        if: inputs.go
+        run: tools/ci/unregistered-problems.sh "$RUNNER_TEMP/unregistered-problems.txt"
+
+      # T12: the check fails, naming the slug, on a fixture handler (behind the recoverer)
+      # that sends an unregistered type, and passes its registered one
+      - name: The problem registry check catches an unregistered type (positive control)
+        if: inputs.go
+        run: tools/ci/unregistered-problems-control.sh
 
       - name: Run unit tier (pipeline)
         if: inputs.pipeline

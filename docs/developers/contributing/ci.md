@@ -113,6 +113,42 @@ Forked workflows have no access to repository secrets, so fork PRs skip the gate
 suites that need them. A bot comment explains this; a maintainer reviews the diff and
 reruns those gates from a branch in the main repository before merging.
 
+## maktaba.tv links and reference images
+
+**The link check** (`lint / maktaba.tv links`, every pull request, no path filter) reads every
+tracked file but the trail, the specs, the wiki databases and test files, and checks each
+maktaba.tv link the product prints, with or without `https://`:
+
+- a problem link (`/problems/<slug>`) must name a type in `shared/api/problems.json`;
+- every other link must name a page of the built site, as
+  `web/packages/website/dist-manifest.json` lists it (`/x`, `/x/` and `/x/index.html` are one
+  page), and a `#fragment` an `id` on that page.
+
+A dead link fails with its file, line and, for a typo, the nearest page. Run it locally with
+`node web/packages/website/scripts/links.mjs`; `--paths` prints what it leaves out. A link
+that is not a link (a comment documenting a parser) goes in `links-allow.json` with a reason,
+reviewed like code. The release notes template is checked too: its Go test renders it with
+every optional line on and requires each link to be a literal of the template.
+
+**The baseline** (`links-baseline.json`) lists the links that were dead when the check
+landed, because maktaba.tv served nothing yet, each with the story whose page makes it live.
+A dead link not in it fails; so does an entry whose link now opens a page or has left its
+file, so the baseline only shrinks: the pull request that ships a page removes its entries
+(`links.mjs --prune-baseline`). It is temporary and must be empty by the end of Epic 60's
+Phase 1.
+
+**Reference images** (`Reference images` workflow): a pull request that changes a file under
+`web/packages/website/e2e/__screenshots__/` or `web/packages/website/static/shots/` needs a
+`Reference images:` section in its body listing every changed file with one line on why
+(`- <path>: <why>`); the check names each unlisted file. It reads the body fresh, and runs
+when the body is edited, so fixing the body re-runs it. The reviewer opens every listed
+image, in both languages, before merging.
+
+**The public image:** after every release (`release.yml`'s `image-public` job) and daily
+(`image-public.yml`), `tools/release/image-public.sh` pulls the server image with no login on
+amd64 and arm64, and fails with `the server image is not pullable without signing in` when
+the package is private.
+
 ## Coverage map
 
 After CI on each push to `main`, `coverage-map.yml` measures which tests execute which

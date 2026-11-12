@@ -7,6 +7,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
+    <meta name="maktaba-menu" content="none" />
     <title>Install Maktaba on UGREEN or ASUSTOR · Maktaba</title>
     <meta
       name="description"
@@ -17,6 +18,7 @@
     <link rel="stylesheet" href="/install/install.css" />
   </head>
   <body>
+    <a class="skip-link" href="#main">Skip to the content</a>
     <header>
       <h1>Install Maktaba on UGREEN or ASUSTOR</h1>
       <p class="lead">Both run Maktaba from one compose file.</p>
@@ -25,7 +27,7 @@
         <a href="/ar/install/ugreen/" hreflang="ar" lang="ar">العربية</a>
       </nav>
     </header>
-    <main class="guide">
+    <main id="main" class="guide">
       <p>
         For <strong>UGOS Pro</strong> (the DXP models) with the Docker app, and
         <strong>ADM 4.2</strong> and newer with Portainer from App Central. About 20 minutes.
@@ -85,10 +87,19 @@
       </figure>
       <h2>5. Run the setup</h2>
       <p>Over SSH, run:</p>
-      <pre><code>sudo docker exec -it maktaba /opt/maktaba/server/bin/maktaba-server container setup</code></pre>
+      <pre
+        tabindex="0"
+      ><code>sudo docker exec -it maktaba /opt/maktaba/server/bin/maktaba-server container setup</code></pre>
       <p>
-        Answer its questions (the admin's name and password, your libraries). Maktaba starts by
-        itself when it finishes. Open <code>http://&lt;your NAS&gt;:8088</code>.
+        Answer its questions: a name for the admin account (not <code>admin</code>, which Maktaba
+        keeps for itself), its password, and the folders with your videos. The NAS needs the
+        internet for this step: setup downloads the transcription and search tools (about 2 GB) and
+        the speech models. Maktaba starts by itself when it finishes. Open
+        <code>http://&lt;your NAS&gt;:8088</code>. Sign in, then add a library for each folder:
+        <strong>Manage → Manage libraries → Add library</strong> (<a
+          href="/install/after-setup/#libraries"
+          >After setup</a
+        >).
       </p>
       <h2>After setup</h2>
       <p>

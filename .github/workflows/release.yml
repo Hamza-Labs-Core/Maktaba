@@ -1202,6 +1202,9 @@ jobs:
       contents: read
       packages: write
       id-token: write
+    outputs:
+      # the platforms pushed ("linux/amd64,linux/arm64"; "" when no image was): image-public
+      platforms: ${{ steps.ctx.outputs.platforms }}
     steps:
       - uses: actions/checkout@v6.0.2
 
@@ -1379,6 +1382,40 @@ jobs:
           name: digest-server
           path: digest-out/server
           retention-days: 7
+
+  # Epic 60 story 60.08: the server image is pullable the way a household pulls it, with no
+  # login (tools/release/image-public.sh: the anonymous token, then `docker pull --platform` of
+  # each platform pushed, the tag and :latest when this release moves it, three tries over two
+  # minutes). After the image is pushed and signed. A leaf job: nothing needs it, so a refused
+  # pull fails the run visibly (`::error::the server image is not pullable without signing in`)
+  # but holds back no asset, no publish and no job after it; postgres-cdn.yml, which runs only
+  # after a successful release, treats a run failed by this job alone as a success.
+  # image-public.yml runs the same check daily, for a visibility change between releases.
+  image-public:
+    name: image (server) pullable without signing in
+    needs: [guard, build-server-image]
+    if: >-
+      !cancelled() && needs.build-server-image.result == 'success' &&
+      needs.build-server-image.outputs.platforms != ''
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Anonymous pull of the tag (and :latest)
+        env:
+          IMAGE: ${{ env.REGISTRY }}/maktaba-server
+          TAG: ${{ github.ref_name }}
+          LATEST: ${{ needs.guard.outputs.latest }}
+          PLATFORMS_PUSHED: ${{ needs.build-server-image.outputs.platforms }}
+        run: |
+          set -euo pipefail
+          tags=("${TAG}")
+          if [ "${LATEST}" = true ]; then tags+=(latest); fi
+          export PLATFORMS="${PLATFORMS_PUSHED//,/ }"
+          bash tools/release/image-public.sh "${IMAGE}" "${tags[@]}"
 
   # The Linux payloads do not hold the release back: a leg that failed leaves its
   # architecture out (the notes say so), the rest is published; so does the server image,

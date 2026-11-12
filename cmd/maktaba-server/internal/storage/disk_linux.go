@@ -16,8 +16,12 @@ import (
 // within is config.Within.
 func within(p, root string) bool { return config.Within(p, root) }
 
-// mountEntry is one line of /proc/self/mounts.
-type mountEntry struct{ device, mount, fsType string }
+// mountEntry is one line of /proc/self/mounts; readOnly: mounted ro (a library mounted
+// read-only in a container, story 59.03).
+type mountEntry struct {
+	device, mount, fsType string
+	readOnly              bool
+}
 
 func readMounts() []mountEntry {
 	f, err := os.Open("/proc/self/mounts")
@@ -32,9 +36,23 @@ func readMounts() []mountEntry {
 		if len(fields) < 3 {
 			continue
 		}
-		out = append(out, mountEntry{device: fields[0], mount: unescapeMount(fields[1]), fsType: fields[2]})
+		e := mountEntry{device: fields[0], mount: unescapeMount(fields[1]), fsType: fields[2]}
+		if len(fields) > 3 {
+			e.readOnly = mountReadOnly(fields[3])
+		}
+		out = append(out, e)
 	}
 	return out
+}
+
+// mountReadOnly is whether a mount's options (the fourth field) say ro.
+func mountReadOnly(opts string) bool {
+	for _, o := range strings.Split(opts, ",") {
+		if o == "ro" {
+			return true
+		}
+	}
+	return false
 }
 
 // unescapeMount undoes /proc/mounts' octal escapes (\040 for a space).
@@ -69,11 +87,12 @@ func platformStatVolume(dir string) (volume, error) {
 }
 
 // platformListVolumes: the root file system and the disks mounted under /mnt,
-// /media, /run/media, /srv and /home (the places a disk is mounted for use).
+// /media, /run/media, /srv and /home (the places a disk is mounted for use); never a
+// read-only mount, where no database can be made.
 func platformListVolumes() ([]volume, error) {
 	var out []volume
 	for _, m := range readMounts() {
-		if !localFS[m.fsType] {
+		if !localFS[m.fsType] || m.readOnly {
 			continue
 		}
 		ok := m.mount == "/"

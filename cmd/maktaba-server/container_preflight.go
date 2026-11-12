@@ -67,6 +67,12 @@ var containerTexts = map[string][2]string{
 		"Edit the dataset's permissions and add an ACL entry for user {uid} with Modify, or use the Apps preset.",
 		"عدّل أذونات مجموعة البيانات وأضف إدخال ACL للمستخدم {uid} بصلاحية التعديل، أو استخدم الإعداد المسبق Apps.",
 	},
+	// on Unraid Docker makes a missing appdata folder as root, and Docker Safe New Perms
+	// skips appdata: the fix is a chown in Unraid's terminal (found by following the guide)
+	"container.write_unraid": {
+		"On Unraid: open the terminal (>_ at the top right), run `chown {uid}:{gid}` on the template's Data folder (for example `chown {uid}:{gid} /mnt/cache/appdata/maktaba`), then start Maktaba again.",
+		"على Unraid: افتح الطرفية (>_ أعلى اليمين) وشغّل `chown {uid}:{gid}` على مجلد Data في القالب (مثل `chown {uid}:{gid} /mnt/cache/appdata/maktaba`)، ثم شغّل Maktaba من جديد.",
+	},
 	// story 59.14: what a container not set up says once, in the NAS's own words (setupHint):
 	// TrueNAS's app Shell, DSM's Container Manager terminal, Unraid's Console; elsewhere the
 	// compose command. Printed before the web is up, so in both languages.
@@ -275,6 +281,8 @@ func (p preflight) writeCheck() error {
 		msg += "\n" + containerText("container.write_dsm", "{share}", share, "{folder}", folder, "{uid}", uid)
 	case mediaaccess.PlatformTrueNAS:
 		msg += "\n" + containerText("container.write_truenas", "{uid}", uid)
+	case mediaaccess.PlatformUnraid:
+		msg += "\n" + containerText("container.write_unraid", "{uid}", uid, "{gid}", gid)
 	}
 	return &refusal{msg + "\n(" + err.Error() + ")"}
 }

@@ -211,7 +211,7 @@ img.shot {
   padding: 0.75rem 1rem;
   overflow-x: auto;
   direction: ltr;
-  text-align: left;
+  text-align: start;
 }
 .guide code {
   overflow-wrap: anywhere;
@@ -243,4 +243,28 @@ img.shot {
 }
 header nav {
   margin-top: 0.25rem;
+}
+/* maktaba.tv's quality bar (story 60.04): the skip link, off screen until it has the
+   keyboard's focus, and a focus ring of 2 px in the accent, 3:1 or more in both themes */
+.skip-link {
+  position: absolute;
+  inset-inline-start: 1rem;
+  inset-block-start: 0;
+  transform: translateY(-120%);
+  padding: 0.5rem 1rem;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--border);
+}
+.skip-link:focus {
+  transform: none;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* a long path in a sentence (/opt/maktaba/server/bin/maktaba-server) breaks rather than
+   widen the page at 320 px (WCAG 1.4.10 and 1.4.12, story 60.04) */
+main {
+  overflow-wrap: break-word;
 }

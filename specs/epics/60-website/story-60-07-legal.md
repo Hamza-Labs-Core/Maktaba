@@ -143,7 +143,7 @@ links there too.
 
 | File | Change |
 |---|---|
-| `web/packages/website/src/pages/legal/{privacy,terms,copyright}.html` (+ `ar/`) | the pages |
+| `web/packages/website/copy/legal/{privacy,terms,copyright}.{en,ar}.md`, rendered by `renderLegal` in `scripts/legal.mjs` | the pages: their copy, and the one function that draws it |
 | `cloud/cmd/privacy-json/main.go` (new, tiny) | prints `CurrentPolicy()` as JSON for the build |
 | `web/packages/website/scripts/legal.mjs` | builds the privacy page from the two sources |
 | `web/packages/website/src/copyright-form.ts` | the forms (shown only when the endpoint is configured) |

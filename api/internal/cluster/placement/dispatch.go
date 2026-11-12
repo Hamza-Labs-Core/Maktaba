@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+
 	"github.com/go-chi/chi/v5"
 )
 
@@ -117,7 +119,7 @@ func WritePaused(w http.ResponseWriter, reason string) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.Header().Set("Retry-After", "30")
 	w.WriteHeader(http.StatusServiceUnavailable)
-	_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://maktaba.tv/problems/node-paused",
+	_ = json.NewEncoder(w).Encode(map[string]any{"type": httperror.Type("node-paused"),
 		"title": "this machine is waiting for its update", "status": http.StatusServiceUnavailable,
 		"code": "paused", "reason": reason})
 }

@@ -15,6 +15,15 @@ describe("the Synology guide's strings", () => {
     }
   });
 
+  // found by following the guide: This machine shows no "runs as" user, setup's folders are
+  // added as libraries in Manage, and admin is the sentinel account's name
+  it("finishes setup as the container does", () => {
+    expect(SYN.en["step5.body"]).not.toContain("runs as");
+    expect(SYN.en["step5.body"]).toContain("Manage → Manage libraries → Add library");
+    expect(SYN.ar["step5.body"]).toContain("الإدارة ← إدارة المكتبات ← إضافة مكتبة");
+    expect(SYN.en["step5.body"]).toContain("not admin");
+  });
+
   it("fills in placeholders and leaves unknown ones", () => {
     expect(st("en", "fits", { tier: "Light" })).toBe("Fits: Light");
     expect(st("en", "memory", { ram: 2 })).toBe("2, up to {max}");

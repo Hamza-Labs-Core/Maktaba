@@ -249,9 +249,11 @@ monthly (security.txt's `Expires`, as on maktaba.dev):
    - Lighthouse on every page in both languages (60.04).
 
    The deploy uses that job's `dist/` artifact.
-2. **Secrets.** Without `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` the job prints a notice
-   and passes, as devportal does. With them it runs `token-check.mjs --pieces workers,dns --zone
-   maktaba.tv` first.
+2. **Secrets and the go-live switch.** The job reads only the website's own token,
+   `CLOUDFLARE_API_TOKEN_WEBSITE`, never the shared token that deploys maktaba.dev. Without that
+   token, `CLOUDFLARE_ACCOUNT_ID` or the repository variable `WEBSITE_LIVE = true`, the job
+   prints a notice naming what is missing and passes, as devportal does. With all three it runs
+   `token-check.mjs --pieces workers,dns --zone maktaba.tv` first.
 3. **Record the live version.** `wrangler deployments status` gives the version now serving. It
    is the version a rollback returns to. A bare `wrangler rollback` would pick the version
    uploaded before the latest, which with upload-then-promote can be one that never passed.
@@ -600,26 +602,26 @@ or fail.
 
 ## 12. Questions only the owner can answer
 
-None blocks the epic. Each has a default the stories use.
+All nine are decided (2026-11-11). The stories follow these decisions.
 
-| # | Question | Default used |
+| # | Question | Decided |
 |---|---|---|
-| Q1 | The tagline and the site's voice | proposed by us in 60.02, in both languages; the owner approves before Phase 2 is done |
-| Q2 | Who signs off the Arabic copy? | written natively by us in Modern Standard Arabic, in the same voice; the owner, or a native reader the owner names, approves before Phase 2 is done |
-| Q3 | The wordmark: the app icon alone, or a wordmark in Latin and «مكتبة»? | 60.01 proposes a wordmark in both scripts beside the existing icon; the owner approves |
+| Q1 | The tagline and the site's voice | 60.02 part B proposes several taglines in English and Arabic, each with one line on what it says; the owner chooses one. No direction is set in advance |
+| Q2 | Who signs off the Arabic copy? | written natively by us in Modern Standard Arabic, in the same voice; the owner reads every Arabic page and approves it before Phase 2 is done. No other reader |
+| Q3 | The wordmark: the app icon alone, or a wordmark in Latin and «مكتبة»? | the app icon with the name in both scripts, "Maktaba" and «مكتبة»; 60.01 shows it in the mockups for the owner's approval |
 | Q4 | Any analytics on the site? | none; Cloudflare's aggregate zone counts only (§6.7) |
-| Q5 | Show the phone and TV apps on `/download/` while they are only in TestFlight and Play's internal track? | no; they appear when a public listing or a public TestFlight link exists |
+| Q5 | Show the phone and TV apps on `/download/` while they are only in TestFlight and Play's internal track? | no; they appear only once a public store listing or a public TestFlight or Play testing link exists |
 | Q6 | The name on the legal pages | Hamza Labs, the controller `CurrentPolicy` already names |
 | Q7 | Who reviews the terms and the copyright page's legal text? | we draft them from Epic 50's research, marked as not legal advice; a lawyer the owner chooses reviews them before 50.24's public channels go live |
-| Q8 | A pricing page before Epic 50 decides the plans? | no page and no link (60.13) |
-| Q9 | The display typeface | 60.01 chooses from open-licensed faces, Amiri first; the owner sees it in the part B review |
+| Q8 | A pricing page before Epic 50 decides the plans? | no page and no link until Epic 50 decides the plans (60.13) |
+| Q9 | The display typeface | 60.01 chooses from open-licensed faces, Amiri first; the owner reviews it in the part B mockups |
 
 ### Owner actions (the epic cannot do these)
 
 | # | Action | Needed by |
 |---|---|---|
 | A1 | **Make the `maktaba-server` package public** on GitHub (the package's settings → Change visibility → Public). Every install guide depends on it | Phase 1 |
-| A2 | Give the Cloudflare token the website uses `maktaba.tv`: Workers Routes Edit, Zone Read and **DNS Edit** (custom domains write their records), beside Workers Scripts Edit. Today's cloud web token has no DNS Edit on the zone (`deploy/cloudflare/README.md`) | Phase 1 |
+| A2 | Make the website's own Cloudflare token: on `maktaba.tv`, Workers Routes Edit, Zone Read and **DNS Edit** (custom domains write their records), beside Workers Scripts Edit. Today's cloud web token has no DNS Edit on the zone (`deploy/cloudflare/README.md`). Set it as the secret `CLOUDFLARE_API_TOKEN_WEBSITE`, and set the repository variable `WEBSITE_LIVE` to `true` when the site should go live | Phase 1 |
 | A3 | Mail for `privacy@maktaba.tv` (already in `CurrentPolicy`) and `copyright@maktaba.tv` (the designated agent's address), for example through Cloudflare Email Routing | Phase 1 |
 | A4 | Register the designated agent with the US Copyright Office (50.24 lists it) | before 50.24's public channels |
 | A5 | Approve the tagline, the voice, the wordmark and the Arabic copy (Q1–Q3) | Phase 2 |

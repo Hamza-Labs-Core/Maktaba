@@ -1,0 +1,32 @@
+{
+  "$comment": "The privacy page's cloud section (scripts/legal.mjs): the label of each field of privacy.CurrentPolicy(), and the Arabic of each of its values, keyed by the value as the relay says it. A value with no Arabic here, or an entry for a value the policy no longer has, fails the build.",
+  "labels": {
+    "controller": "المسؤول",
+    "contact": "التواصل",
+    "purpose": "الغاية",
+    "data_categories": "ما يحتفظ به",
+    "not_collected": "ما لا يحتفظ به أبدًا",
+    "lawful_basis": "الأساس القانوني",
+    "retention_days": "مدة الاحتفاظ",
+    "rights": "حقوقكم"
+  },
+  "text": {
+    "Hamza Labs": "Hamza Labs",
+    "Operate and secure the Maktaba cloud relay: capacity planning, abuse prevention, and aggregate service health.": "تشغيل مُرحِّل «مكتبة» السحابي وتأمينه: تخطيط سعته، ومنع إساءة استخدامه، ومتابعة سلامة الخدمة بأرقام إجمالية.",
+    "Aggregate connection counts (no server identity)": "أعداد إجمالية للاتصالات (من دون هوية الجهاز الرئيسي)",
+    "Aggregate bandwidth and request volume": "حجم إجمالي لاستهلاك الشبكة وعدد الطلبات",
+    "Country of request (derived at the edge, IP discarded)": "بلد الطلب (يُستنتج عند حافة الشبكة، ويُتلف عنوان IP)",
+    "Aggregate push-delivery outcomes": "نتائج إجمالية لإيصال الإشعارات",
+    "IP addresses": "عناوين IP",
+    "Server identifiers in analytics": "معرّفات الأجهزة الرئيسية في الإحصاءات",
+    "User identifiers in analytics": "معرّفات المستخدمين في الإحصاءات",
+    "Media titles, filenames, or content": "عناوين الأفلام والمسلسلات وأسماء الملفات ومحتواها",
+    "Request URLs or payloads": "عناوين الطلبات ومحتواها",
+    "Legitimate interest (Art. 6(1)(f)) in operating a reliable, abuse-resistant relay, balanced by collecting only anonymous aggregates.": "المصلحة المشروعة (المادة 6(1)(f) من اللائحة العامة لحماية البيانات) في تشغيل مُرحِّل موثوق يقاوم إساءة الاستخدام، مع الاقتصار على جمع أرقام إجمالية مجهولة الهوية.",
+    "Access": "الاطّلاع",
+    "Erasure": "المحو",
+    "Restriction": "تقييد المعالجة",
+    "Objection": "الاعتراض",
+    "Portability": "نقل البيانات"
+  }
+}

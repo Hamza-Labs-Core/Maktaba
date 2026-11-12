@@ -28,12 +28,13 @@ change to how a page looks is seen by a person before it merges.
   - the shortest;
   - one with a help link;
   - for help (from 60.12): the longest topic, the shortest, one with a table.
-- **A pull request that changes a generator or a template:** the full family it renders, one run
-  per URL.
+- **A pull request that changes a generator or a template:** the family it renders, one run per
+  URL: all of it up to 16 pages, and beyond that 16 pages spread evenly over it in both languages
+  (the problem pages are one template over every registry entry; the nightly measures them all).
 - **The deploy run:** the same set as pull requests. It refuses to run while the latest nightly
   sweep is red.
-- **The nightly sweep on main:** every page in both languages (about 360 URLs), one run per URL,
-  in eight shards, each with a 15-minute timeout and the whole within 60 minutes. A failure makes
+- **The nightly sweep on main:** every page in both languages (about 650 URLs), one run per URL,
+  in sixteen shards, each with a 15-minute timeout and the whole within 60 minutes. A failure makes
   the nightly red, names the pages, and blocks the next deploy until a fix lands. Main stays
   deployable by fixing forward or reverting the change that caused it.
 - **Kept:** the reports (HTML and JSON), uploaded as `website-lighthouse`, pass or fail.
