@@ -85,6 +85,8 @@ func LiveGuard(l *parental.LiveTV) func(http.Handler) http.Handler {
 // ChannelSigner signs a channel's stream URL for a user (signedurl.Minter).
 type ChannelSigner interface {
 	SignChannelURL(rawURL, channelID, userID string, ttl time.Duration) (string, time.Time, error)
+	// SignChannelURLForAdminToken signs for the admin token (no account).
+	SignChannelURLForAdminToken(rawURL, channelID string, ttl time.Duration) (string, time.Time, error)
 }
 
 // LiveHandler serves the live TV routes of the parental controls.
@@ -197,11 +199,24 @@ func (h *LiveHandler) Play(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Unavailable(5))
 		return
 	}
-	user := p.UserID
-	if user == "" {
-		user = "admin" // the admin token: no account, so no policy to ask about
+	var (
+		signed string
+		exp    time.Time
+		err    error
+	)
+	const path = "/stream/channel/"
+	switch {
+	case p.UserID != "":
+		signed, exp, err = h.Signer.SignChannelURL(path+id+"/index.m3u8", id, p.UserID, 0)
+	case p.IsAdmin:
+		// the admin token: no account, so no policy to ask about; the URL says so
+		// in a signed claim the streaming service checks
+		signed, exp, err = h.Signer.SignChannelURLForAdminToken(path+id+"/index.m3u8", id, 0)
+	default:
+		// no account and not an admin: no one to sign for
+		httperror.Write(w, r, httperror.Forbidden("no_account", "this sign-in has no account to play a channel for"))
+		return
 	}
-	signed, exp, err := h.Signer.SignChannelURL("/stream/channel/"+id+"/index.m3u8", id, user, 0)
 	if err != nil {
 		httperror.Write(w, r, httperror.Unavailable(5).Wrap(err))
 		return

@@ -8,6 +8,7 @@ package router_test
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -92,7 +93,7 @@ func setupLive(t *testing.T) *liveEnv {
 	e.h = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if who := req.Header.Get("X-Test-As"); who != "" {
 			req = req.WithContext(principal.WithPrincipal(req.Context(), &principal.Principal{
-				UserID: e.users[who], IsAdmin: who == "admin", AccessAllLibraries: true, Source: principal.SourceCookie}))
+				UserID: e.users[who], IsAdmin: who == "admin" || who == "admintoken", AccessAllLibraries: true, Source: principal.SourceCookie}))
 		}
 		r.ServeHTTP(w, req)
 	})
@@ -265,6 +266,41 @@ func TestP57LiveTVPG(t *testing.T) {
 		}
 	})
 
+	t.Run("who a channel URL is signed for", func(t *testing.T) {
+		claims := func(who string) (int, map[string]any) {
+			code, _, out := e.do(who, "POST", "/api/channels/"+e.ch9+"/play", "")
+			u, _ := out["url"].(string)
+			_, sig, _ := strings.Cut(u, "sig=")
+			parts := strings.Split(sig, ".")
+			if code != 200 || len(parts) != 3 {
+				return code, nil
+			}
+			raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+			if err != nil {
+				t.Fatal(err)
+			}
+			var c map[string]any
+			_ = json.Unmarshal(raw, &c)
+			return code, c
+		}
+		// an account: usr is the account, and no admin claim even for an admin (the
+		// streaming service asks the API about every account)
+		for _, who := range []string{"child", "admin"} {
+			_, c := claims(who)
+			if c["aud"] != "streaming-channel" || c["sub"] != e.ch9 || c["usr"] != e.users[who] || c["is_admin"] != nil {
+				t.Errorf("%s's channel URL claims = %v", who, c)
+			}
+		}
+		// the admin token (an admin with no account) says so in the signed claim
+		if _, c := claims("admintoken"); c["usr"] != "admin" || c["is_admin"] != true || c["sub"] != e.ch9 {
+			t.Errorf("the admin token's channel URL claims = %v", c)
+		}
+		// a sign-in with no account that is no admin gets no URL
+		if code, c := claims("noaccount"); code != 403 || c != nil {
+			t.Errorf("no account and no admin = %d %v, want 403", code, c)
+		}
+	})
+
 	t.Run("the streaming service's question takes the local token only", func(t *testing.T) {
 		q := parentalh.VerdictPath + "?channel=" + e.chNow + "&user=" + e.users["child"]
 		e.codes("GET", q, "", [6]int{403, 403, 403, 403, 403, 403})
@@ -329,7 +365,7 @@ func TestP57LiveRemoteGatePG(t *testing.T) {
 		req := httptest.NewRequest("POST", "/api/tv/remote/tune", nil).WithContext(context.Background())
 		var p *principal.Principal
 		if who != "" {
-			p = &principal.Principal{UserID: e.users[who], IsAdmin: who == "admin", AccessAllLibraries: true}
+			p = &principal.Principal{UserID: e.users[who], IsAdmin: who == "admin" || who == "admintoken", AccessAllLibraries: true}
 		}
 		if err := gate(req, p, channel, session); err != nil {
 			return err.Status
