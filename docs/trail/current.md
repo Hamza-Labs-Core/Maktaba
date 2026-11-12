@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.132
-up_to_commit: ea0087b53
-built_from: v0.3.131
+tag: v0.3.133
+up_to_commit: c6ddab096
+built_from: v0.3.132
 ---
 
-# Trail snapshot: v0.3.132
+# Trail snapshot: v0.3.133
 
 ## Keep doing
 
@@ -207,6 +207,8 @@ built_from: v0.3.131
 - Read each handler before writing its problem text: several generic types go out with odd statuses. (#1162)
 - When main turns red right after concurrent merges, fix it in one small data-only pull request, after checking no open pull request touches the same files. (#1169)
 - Read a pull request's head sha from `gh pr view` before reporting it, and a cancelled job's step timings before re-running it. (#1176, #1177)
+- Keep each website page kind's content apart from one render function (`renderLegal`, `renderProblem`, `renderIndex`), so the design swap stays a template and CSS change; build legal and policy text from the code that makes it true, with a hash or value-by-value check that fails naming the section. (#1175, #1180)
+- When a site family grows, estimate the gates' runtime (tests × pages, Lighthouse runs × 11.5 s) before pushing. (#1180)
 
 ## Stop doing
 
@@ -261,6 +263,8 @@ built_from: v0.3.131
 - Piping into `head` or `grep -q` in `tools/` scripts (`test_no_head_pipes.py` refuses it; use `sed -n` or `case`). (#1162)
 - Merging a branch cut before a new repo-wide check without merging main and re-running the check. (#1169)
 - Re-running a job cancelled at its own time limit, or blaming the step it stopped in, before comparing its total time with the limit (a near-limit job dies in whichever step runs last). (#1176, #1177)
+- Listing reference images with brace globs in a pull request body: `reference-images.yml` reads one path per line; its re-runs share one concurrency group, so re-run them one at a time. (#1180)
+- Rendering a full-site visual update on emulated amd64 (Apple Silicon) at the default worker count: shots time out; `--workers=2` renders clean. (#1175)
 
 ## What we learned
 
@@ -549,6 +553,8 @@ built_from: v0.3.131
 - The link check reads every tracked file, so a pull request that moves or adds maktaba.tv strings runs `links.mjs` before merging even if its CI passed: three merges in an hour (#1160, #1162, #1161) each green alone turned main red. `--write-manifest` writes JSON Prettier rejects: run `prettier --write` on `dist-manifest.json` after it. (#1169)
 - maktaba.tv's site (`web/packages/website`) is a Worker before static assets; its deploy reads only `CLOUDFLARE_API_TOKEN_WEBSITE` and goes live only with `vars.WEBSITE_LIVE == 'true'`, because the shared token already deploys maktaba.dev. `_website.yml` runs the build, tests, links and a Worker smoke, a Playwright and axe quality job (WCAG 2.2 AA, RTL, 70 visual references) and Lighthouse (mobile, median of 3, at least 95 in all four, CLS 0); the nightly sweep gates the deploy. (#1161, #1171)
 - Website CI gotchas: container jobs cannot write to `runner.temp` (a host path); resvg-js ignores `fontBuffers` (pass `fontFiles`, the bold Latin face under its own family); a lockfile written on macOS can lack Linux optional packages (regenerate it from scratch); visual references come from the amd64 Playwright image through Docker, never the Mac; spawn lhci asynchronously; restart `wrangler dev` after rebuilding `dist/`; Vite drops `blocking="render"`, so add it in a `transformIndexHtml` hook. (#1171)
+- Website build gotchas: a page loading Go output needs setup-go and `./.github/actions/go-mod-download` (`test_go_mod_download.py`); e2e page kinds and build.mjs's `PAGES` must agree (a hand-made family index is hand-made everywhere); `stripTypeScriptTypes` lets one `.ts` file be both renderer and page script; a static file named like `x-noscript.css` matches the content-hash pattern in `src/headers.ts` and gets cached a year; a filter revealed by script shifts layout (put the box in place, hide it with a `<noscript>` stylesheet); with `updateSnapshots: "none"` CI cannot hand back new references (use `scripts/e2e-update.sh`); a registry-built list's reference is its first screen with list and count masked; the affected-tests gate wants a test change per changed source file. (#1175, #1180)
+- The website quality job runs in four Playwright shards; a pull request changing a family over 16 pages measures 16 spread evenly plus the representatives; the nightly Lighthouse sweep has sixteen shards. Worker redirects live in `src/redirects.json`, read by `links.mjs`. (#1180)
 - Epic 60's questions Q1–Q9 are decided: one chosen tagline from several in both languages, a single approver for the Arabic, the app icon with the name in both scripts, Q4–Q9 as their defaults; the Arabic name on the site is «مكتبة». (#1176)
 
 ## Open
@@ -610,9 +616,10 @@ built_from: v0.3.131
 
 - NAS guides: device screenshots (dark, en+ar) for Unraid, QNAP and UGREEN beside TrueNAS's and Synology's; the menu names on an Arabic DSM/QTS to check on a device; the QNAP guide is untested on a device. (#1137)
 - Epic 60 (maktaba.tv): owner actions A1–A7 (README §12): A1, making the `maktaba-server` package public, blocks Phase 1; A2 is now the secret `CLOUDFLARE_API_TOKEN_WEBSITE` with DNS Edit on `maktaba.tv`, then `vars.WEBSITE_LIVE = true`. Design part A (pull request 1163) waits for approval of the look, the voice guide and the font name, and replaces `scripts/shell.mjs`, `static/assets/site.css` and the visual references; the menu tests run once the shell declares `maktaba-menu: phone`; `icon.svg` waits for a vector source of the mark; Epic 59's Arabic install guides move to «مكتبة». (#1158, #1161, #1171, #1176)
-- The `maktaba-server` package is still private: every guide's anonymous pull fails, and each release's `image-public` job and the daily `Image public` run stay red until it is public (owner action A1). The site build should write and check the link manifest (T07), and the links baseline must be empty by the end of Epic 60's Phase 1. (#1160, #1164)
-- `links-baseline.json` holds 9 entries (60.06's `/problems/` index and pages, 60.05's install guides); the site build could run `--write-manifest` and Prettier itself so the manifest cannot fall behind. (#1169, #1171)
-- Problem registry (60.06): the pages generator (`problems.mjs`) waits for the design; every `install` field is null until troubleshooting anchors exist; the streaming service sends `maktaba.invalid/problems/*` slugs outside the registry. Odd sends: `TypeForbidden` with 401, `TypeConflict` with 410, `invalid-credentials` for a refused cloud link (422), batch undo's 409 for a missing edit, `token-expired` never sent; the components handler's `fail` does not recognise `*pl.Problem`, so `plugin_revoked` may answer 500 through `/api/components` (traced, not run). (#1162)
+- The `maktaba-server` package is still private: every guide's anonymous pull fails, and each release's `image-public` job and the daily `Image public` run stay red until it is public (owner action A1). The site build should write and check the link manifest (T07). (#1160, #1164)
+- `links-baseline.json` is empty since the problem pages and the redirects file landed; the site build could still run `--write-manifest` and Prettier itself so the manifest cannot fall behind. (#1169, #1171, #1180)
+- Problem registry (60.06): its 578 pages (`problems.mjs`) render on the placeholder shell until the design (pull request 1163) swaps the render functions; 60.12 adds a `help-link` representative, its family before `problems` in `FAMILIES`; every `install` field is null until troubleshooting anchors exist; the streaming service sends `maktaba.invalid/problems/*` slugs outside the registry. Odd sends: `TypeForbidden` with 401, `TypeConflict` with 410, `invalid-credentials` for a refused cloud link (422), batch undo's 409 for a missing edit, `token-expired` never sent; the components handler's `fail` does not recognise `*pl.Problem`, so `plugin_revoked` may answer 500 through `/api/components` (traced, not run). (#1162, #1180)
+- Legal pages (60.07): the notice form goes live with Epic 50's `POST /v1/moderation/notices` (CORS for `https://maktaba.tv`, 202 with `notice_id`), which must also accept the no-JS urlencoded post or the plain-form path is dropped; owner actions A3 (mailboxes), A4 (designated agent, then the postal line) and Q7 (legal review before 50.24's public channels) wait; demo image credits wait for 60.09. (#1175)
 - `lint / repo` has 20 minutes; if its routing tests near that, split or speed them up rather than raising it again. (#1177)
 - NAS after #1164: a restart rebuilds the pipeline venv in place under running workers (transient `ModuleNotFoundError`, runner exit 75); setup downloads `large-v3-turbo` on a Light NAS where speech is off; the terminal setup keeps no log its errors point to; NAS UIs, GPUs, VA-API, mDNS beside the NAS's responder, Unraid's shfs refusal and discovery need real hardware. (#1164)
 
@@ -630,7 +637,8 @@ built_from: v0.3.131
 | #1128 | 2026-11-10 | docs(spec): Epic 57 checked again against main |
 | #1130 | 2026-11-10 | spec(epic57): time rules on every device, and tiers detected from transcripts |
 | #1139 | 2026-11-10 | spec(epic57): Q9 answered, detection covers what a video is |
-| #1175 | 2026-11-11 | Website: legal pages (data and logic), install chooser, guides without placeholder figures (60.07, 60.05) |
+| #1184 | 2026-11-11 | docs(epic60): owner action A1 is done (the server image is public) |
+| #1185 | 2026-11-11 | problems: Arabic texts address the household in the plural (60.06) |
 
 ## Index
 
@@ -1244,6 +1252,8 @@ built_from: v0.3.131
 | 1164-epic59-nas-guides-e2e | 2026-11-11 | pr | Epic 59: the NAS guides followed on Docker; setup's race, the reserved admin name, the data folder, Unraid's appdata |
 | 1169-links-after-registry | 2026-11-11 | pr | The maktaba.tv link check after the registry and the site |
 | 1171-website-quality-gates | 2026-11-11 | pr | website: the quality bar in CI (Epic 60 story 60.04) |
+| 1175-website-legal-install | 2026-11-11 | pr | website: legal pages (data and logic), the install chooser, guides without placeholder figures (Epic 60 stories 60.07, 60.05) |
 | 1176-epic60-owner-decisions | 2026-11-11 | pr | Epic 60: the owner questions Q1–Q9 recorded as decided |
 | 1177-lint-repo-timeout | 2026-11-11 | pr | CI: lint / repo gets 20 minutes |
+| 1180-website-problem-pages | 2026-11-11 | pr | website: the problem pages and index, and an empty link baseline (Epic 60 story 60.06) |
 
