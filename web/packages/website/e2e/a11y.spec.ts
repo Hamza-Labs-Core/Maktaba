@@ -37,7 +37,7 @@ export async function smallTargets(page: Page): Promise<string[]> {
     const out: string[] = [];
     els.forEach((el, i) => {
       const r = rects[i];
-      if (el.classList.contains("skip-link")) return;
+      if (el.classList.contains("skip")) return;
       if (r.width >= 24 && r.height >= 24) return;
       if (inSentence(el)) return;
       // the spacing exception: a 24 px circle on its centre meets no other target

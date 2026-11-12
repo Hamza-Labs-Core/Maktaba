@@ -46,7 +46,7 @@ const WEBSITE_PAGES = [
     host: WEBSITE,
     path: "/",
     status: 200,
-    marker: ['<html lang="en" dir="ltr">', 'id="lang-switch" class="lang" href="/ar/"', SITE],
+    marker: ['<html lang="en" dir="ltr">', 'id="lang-switch" class="lang-switch" href="/ar/"', SITE],
     headers: {
       // HSTS without includeSubDomains: the relay's names are DNS-only (README §6.2)
       "strict-transport-security": /^max-age=\d+$/,

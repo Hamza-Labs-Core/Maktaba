@@ -108,9 +108,18 @@ test("a page has every section: the way back, title, who, means, do, who helps, 
     const t = T[lang];
     const html = renderProblem(problemDoc(entry(), lang));
     const prefix = lang === "ar" ? "/ar" : "";
-    assert.match(html, new RegExp(`<a href="${prefix}/problems/">${t.crumbs}</a>`));
+    assert.match(
+      html,
+      new RegExp(
+        `<a href="${prefix}/problems/"><svg class="dir-icon" data-mirror [^>]*>.*?</svg>${t.crumbs}</a>`
+      )
+    );
     assert.match(html, /<h1>[^<]+<\/h1>/);
-    assert.ok(html.includes(`<p class="who">${t.who.admin}</p>`), lang);
+    assert.match(
+      html,
+      new RegExp(`<p class="who"><svg [^>]*aria-hidden="true"[^>]*>.*?</svg>${t.who.admin}</p>`),
+      lang
+    );
     for (const h of [t.means, t.do, t.whoHelps, t.details])
       assert.ok(html.includes(`>${h}</h2>`), h);
     assert.ok(html.includes(`<code>${BASE}seat-limit</code>`));

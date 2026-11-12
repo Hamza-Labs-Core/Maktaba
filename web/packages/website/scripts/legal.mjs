@@ -336,8 +336,10 @@ export function legalDoc(name, lang, { sources, notice = null, noticeScript = ""
   };
 }
 
-/** The legal layout (60.01 part A): the title, the date it last changed, the summary, the
- * table of contents, the sections. The one function the design replaces. */
+/** The legal layout (60.01 part A's legal mockup): a compact head with the title and the date it
+ * last changed; then, in the text layout, the table of contents (beside the article from 1024 px,
+ * sticky) and the article: the summary ("In short") and the sections. The one function the
+ * design replaces. */
 export function renderLegal(doc) {
   const t = T[doc.lang];
   const date = `<time datetime="${doc.updated}">${esc(formatDate(doc.updated, doc.lang))}</time>`;
@@ -352,24 +354,30 @@ ${s.html}
 </section>`
     )
     .join("\n\n");
-  return `<article class="legal" data-legal="${doc.name}">
+  return `<section class="page-head compact" data-legal="${doc.name}">
+<div class="frame">
 <h1>${esc(doc.title)}</h1>
-<p class="legal-updated">${t.updated.replace("{date}", date)}</p>
-
-<section class="legal-summary" aria-labelledby="summary">
-<h2 id="summary">${esc(t.summary)}</h2>
-${doc.summary}
+<p class="meta">${t.updated.replace("{date}", date)}</p>
+</div>
 </section>
-
-<nav class="legal-toc" aria-labelledby="toc">
+<div class="band">
+<div class="frame text-layout with-toc">
+<nav class="toc" aria-labelledby="toc">
 <h2 id="toc">${esc(t.toc)}</h2>
 <ol>
 ${toc}
 </ol>
 </nav>
+<article class="prose legal">
+<section class="summary" aria-labelledby="summary">
+<h2 id="summary">${esc(t.summary)}</h2>
+${doc.summary}
+</section>
 
 ${sections}
-</article>`;
+</article>
+</div>
+</div>`;
 }
 
 /** The checks across a page's two languages: the same sections, in the same order. */

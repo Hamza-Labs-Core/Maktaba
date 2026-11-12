@@ -4,9 +4,9 @@
 //
 // As the legal pages (legal.mjs) keep their copy apart from one function that draws it, the
 // registry becomes a structured document per page (problemDoc, indexDoc), and one function
-// renders each (renderProblem, renderIndex). The markup follows 60.01 part A's problem and
-// problem-index mockups (the same sections and headings, the "Details for developers" block),
-// so the design swaps the two functions and the stylesheet, not the data.
+// renders each (renderProblem, renderIndex), in 60.01 part A's problem and problem-index
+// layouts (the same sections and headings, the "Details for developers" block, the shell's
+// icons), inside the shell (shell.mjs).
 //
 // The build fails, naming the entry and the field, when an entry lacks any text in either
 // language, names an area or audience this file has no words for, or has a malformed slug or
@@ -19,7 +19,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { esc, GITHUB, HELP, inLang, page } from "./shell.mjs";
+import { esc, GITHUB, HELP, ICONS, inLang, page } from "./shell.mjs";
 
 export const REGISTRY = "shared/api/problems.json";
 export const BASE = "https://maktaba.tv/problems/";
@@ -285,9 +285,9 @@ export function renderProblem(doc, { known = new Set() } = {}) {
     : "";
   return `<section class="page-head compact" data-problem="${esc(doc.slug)}">
     <div class="frame">
-      <p class="crumbs"><a href="${inLang(doc.lang, "/problems/")}">${esc(t.crumbs)}</a></p>
+      <p class="crumbs"><a href="${inLang(doc.lang, "/problems/")}">${ICONS.back}${esc(t.crumbs)}</a></p>
       <h1>${esc(doc.title)}</h1>
-      <p class="who">${esc(doc.who)}</p>
+      <p class="who">${ICONS.person}${esc(doc.who)}</p>
     </div>
   </section>
   <div class="band">
@@ -344,7 +344,7 @@ export function renderIndex(doc, { script = "" } = {}) {
       <p class="lead">${esc(T[doc.lang].indexLead)}</p>
       <div class="filter" role="search">
         <label for="filter">${esc(t.filter)}</label>
-        <div class="field"><input id="filter" type="search" autocomplete="off" placeholder="${esc(t.placeholder)}" aria-describedby="count" /></div>
+        <div class="field">${ICONS.search}<input id="filter" type="search" autocomplete="off" placeholder="${esc(t.placeholder)}" aria-describedby="count" /></div>
         <p class="count" id="count" aria-live="polite" lang="${doc.lang}"${forms}>${esc((t.count[count] ?? t.count.other).replace("{n}", String(n)))}</p>
       </div>
     </div>

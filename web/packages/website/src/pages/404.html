@@ -1,11 +1,65 @@
 <!--
-title: This page isn't here · Maktaba
-description: The page you asked for is not on maktaba.tv.
+title: This page isn’t here · Maktaba
+description: This page isn’t on maktaba.tv.
 meta: <meta name="maktaba-page" content="404" />
+main: lost
 -->
-<h1>This page isn't here</h1>
-<p class="lead">The link may be old, or the address mistyped.</p>
-<ul>
-  <li><a href="/install/troubleshooting/">Get help</a></li>
-  <li><a href="/">Go to the home page</a></li>
-</ul>
+<section class="page-head with-arch">
+  <svg class="arch" data-nomirror viewBox="0 0 360 460" aria-hidden="true" focusable="false">
+    <defs>
+      <radialGradient id="lamp" cx="180" cy="372" r="190" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-opacity="0.34" />
+        <stop offset="0.55" stop-opacity="0.08" />
+        <stop offset="1" stop-opacity="0" />
+      </radialGradient>
+    </defs>
+    <path
+      d="M42 460V220C42 164 90 136 138 112C164 99 177 80 180 60C183 80 196 99 222 112C270 136 318 164 318 220V460Z"
+      fill="url(#lamp)"
+    />
+    <path
+      class="line"
+      d="M24 460V214C24 150 76 118 128 92C158 77 176 52 180 22C184 52 202 77 232 92C284 118 336 150 336 214V460"
+    />
+    <path
+      class="line soft"
+      d="M42 460V220C42 164 90 136 138 112C164 99 177 80 180 60C183 80 196 99 222 112C270 136 318 164 318 220V460"
+    />
+    <path
+      class="line"
+      d="M112 392C140 378 166 378 180 390C194 378 220 378 248 392M180 390V366M112 392V404C140 392 166 392 180 404C194 392 220 392 248 404V392"
+    />
+  </svg>
+  <div class="frame">
+    <h1>This page isn’t here</h1>
+    <p class="lead">
+      The address may have a typo, or the page has moved. One of these may be what you were looking
+      for.
+    </p>
+    <ul class="places">
+      <li>
+        <a href="/"
+          ><strong>Maktaba’s front door</strong><span>What Maktaba is, and how to start</span></a
+        >
+      </li>
+      <li>
+        <a href="/install/"
+          ><strong>Install guides</strong><span>A NAS, Docker, or a guide for your system</span></a
+        >
+      </li>
+      <li>
+        <a href="/problems/"
+          ><strong>Messages and what they mean</strong
+          ><span>What a message means and what you can do</span></a
+        >
+      </li>
+      <li>
+        <a href="/install/troubleshooting/"
+          ><strong>Troubleshooting</strong
+          ><span>When something doesn’t work, one problem at a time</span></a
+        >
+      </li>
+    </ul>
+    <p class="asked">The address you asked for: <code data-asked></code></p>
+  </div>
+</section>
