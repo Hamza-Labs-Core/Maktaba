@@ -136,7 +136,7 @@ fun Watch(
                 // the help is this refusal's own: a PIN typed or a request sent for an earlier one
                 // says nothing about this one (kept across them, "unlocked" asked the home for ever)
                 timeUp != null -> androidx.compose.runtime.key(playback.refusals) {
-                    val more = remember { com.hamzalabs.maktaba.desktop.watch.MoreTime(playback.client) { playback.stop(); playback.signedOut() } }
+                    val more = remember { com.hamzalabs.maktaba.desktop.watch.MoreTime(playback.client, signedOut = { playback.stop(); playback.signedOut() }) }
                     TimesUp(timeUp, onCheck = { playback.checkAgain() }, more = more)
                 }
                 // the home ended the stream: the video is no longer this account's

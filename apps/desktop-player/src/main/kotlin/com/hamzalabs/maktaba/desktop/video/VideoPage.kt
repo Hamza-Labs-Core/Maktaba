@@ -1,6 +1,7 @@
 package com.hamzalabs.maktaba.desktop.video
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -28,6 +29,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,7 +78,19 @@ fun VideoContent(state: VideoPageState, home: DesktopHome, features: Capabilitie
     val scope = rememberCoroutineScope()
     val d = state.detail
     val problem = state.problem
+    val mine by home.parental.mine.collectAsState()
     when {
+        // a sign-in under a limit (story 57.05): "This isn't available", with no title or picture
+        // (the home sends none) and a parent to ask. The home answers a hidden video as a missing one
+        state.notAvailable && mine.limited -> {
+            val help = remember(state) {
+                com.hamzalabs.maktaba.desktop.watch.MoreTime(home.client, home::signedOut, com.hamzalabs.maktaba.core.api.SubjectKind.VIDEO, state.id)
+            }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                com.hamzalabs.maktaba.desktop.watch.BlockedPage(mine, help, onUnlocked = { scope.launch { state.load() } })
+            }
+            return
+        }
         state.notAvailable -> {
             EmptyBox(t["video.notAvailable"], t["video.notAvailableDetail"], Modifier.testTag("not-available"))
             return
