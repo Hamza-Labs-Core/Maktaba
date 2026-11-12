@@ -111,12 +111,14 @@ deploy):
 1. `build`: `_website.yml` with `upload: true`. Its Lighthouse step runs the representatives
    (60.04). The deploy also refuses to run while the latest nightly full sweep on main is red.
 2. `deploy`:
-   1. **Secrets and the go-live switch:** the website's own token
-      `CLOUDFLARE_API_TOKEN_WEBSITE` (never the shared token that deploys maktaba.dev),
-      `CLOUDFLARE_ACCOUNT_ID` and the repository variable `WEBSITE_LIVE = true` must all be set.
-      Otherwise `::notice title=maktaba.tv not deployed::…` names what is missing and the job
-      passes.
-   2. `node tools/cloudflare/token-check.mjs --pieces workers,dns --zone maktaba.tv`.
+   1. **Secrets and the go-live switch:** a token (`CLOUDFLARE_API_TOKEN_WEBSITE` when set,
+      otherwise the shared `CLOUDFLARE_API_TOKEN`), `CLOUDFLARE_ACCOUNT_ID` and the repository
+      variable `WEBSITE_LIVE = true`, the only go-live switch. Without all three,
+      `::notice title=maktaba.tv not deployed::…` names what is missing, nothing is written,
+      and the job passes.
+   2. `node tools/cloudflare/token-check.mjs --pieces workers,dns --zone maktaba.tv`: read-only,
+      so it runs once a token and the account are set, live or not, naming any missing
+      permission in an annotation and the summary; it fails the run only once live.
    3. Download `website-site` (the same three-attempt download as devportal's).
    4. **Record the live version:** `wrangler deployments status` → `previous_id` (none on the
       first deploy). A bare `wrangler rollback` would choose the version uploaded before the
@@ -167,8 +169,10 @@ Write is only inside the `tunnel` piece. The owner grants it (A2).
 - **Given** a live smoke that fails, **then** the job rolls back to the previous version and fails.
 - **Given** the dispatch with `rollback: true`, **then** the previous version is live and the live
   smoke passes.
-- **Given** no website token, no account id, or `WEBSITE_LIVE` not `true`, **then** the deploy
-  job passes with a notice naming what is missing.
+- **Given** no token, no account id, or `WEBSITE_LIVE` not `true`, **then** the deploy job
+  writes nothing and passes with a notice naming what is missing.
+- **Given** a token and the account but `WEBSITE_LIVE` unset, **then** the read-only token check
+  runs and names any missing permission, and the run stays green.
 - **Given** the deploy, **then** app., api., admin., relay., watch. and plugins. answer as before,
   and the zone has no new record except `maktaba.tv` and `www.maktaba.tv`.
 - **Given** a missing path, **then** the answer is the 404 page in the path's language with status

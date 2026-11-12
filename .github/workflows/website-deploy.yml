@@ -7,13 +7,20 @@
 # never deploy: ci.yml's website job builds and tests them. The deploy runs only after this
 # run's own build and tests pass, and deploys the dist/ that build uploaded.
 #
-# It goes live only when all three are set (deploy/cloudflare/README.md, the website's row):
-#   - the secret CLOUDFLARE_API_TOKEN_WEBSITE: the website's own token, with DNS Edit on the
-#     maktaba.tv zone (its custom domains write their records); the shared CLOUDFLARE_API_TOKEN
-#     is never used here, so maktaba.dev's deploys cannot publish maktaba.tv by accident;
-#   - the secret CLOUDFLARE_ACCOUNT_ID;
-#   - the repository variable WEBSITE_LIVE = true: the go-live switch.
-# Without any of them the deploy job prints a notice naming what is missing and passes.
+# The token is CLOUDFLARE_API_TOKEN_WEBSITE when that secret is set, and otherwise the shared
+# CLOUDFLARE_API_TOKEN, as the other Cloudflare deploys do (deploy/cloudflare/README.md, the
+# token table: the shared token is the union of the rows, the website's included).
+#
+# The repository variable WEBSITE_LIVE = true is the only go-live switch, and the safeguard
+# against publishing maktaba.tv by accident: without it nothing is uploaded, promoted, attached
+# or rolled back, whatever the secrets (tools/ci/tests/test_website_deploy.py keeps every write
+# behind it). The deploy job then prints a notice naming what is missing and passes.
+#
+# The token check runs even while WEBSITE_LIVE is unset, as soon as a token and the account are
+# set: it is read-only (GET calls only: verify, the zone, the token's policy or one read per
+# permission), so a missing permission is named on every push to main, not first at go-live.
+# While the site is not live a failed check is reported (an error annotation naming the
+# permission, and the job summary) without failing the run; once live it stops the deploy.
 #
 # The nightly sweep (website-nightly.yml, story 60.04): a red sweep blocks the deploy until a
 # fix lands. The nightly job reads the latest sweep (tools/ci/website_nightly_state.sh); when it
@@ -121,34 +128,39 @@ jobs:
       run:
         working-directory: web/packages/website
     steps:
-      # The go-live gate: the website's own token, the account, and vars.WEBSITE_LIVE.
-      # (tools/ci/tests/test_website_deploy.py keeps every later step behind it.)
+      # The go-live gate: a token (the website's own, else the shared one), the account, and
+      # vars.WEBSITE_LIVE. `check` (a token and the account) lets the read-only token check
+      # run; `ok` (those and WEBSITE_LIVE = true) lets anything write.
+      # (tools/ci/tests/test_website_deploy.py keeps every later step behind them.)
       - name: Go-live gate
         id: gate
         working-directory: .
         env:
-          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_WEBSITE }}
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_WEBSITE || secrets.CLOUDFLARE_API_TOKEN }}
           ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           LIVE: ${{ vars.WEBSITE_LIVE }}
         run: |
           missing=()
-          [ -n "$TOKEN" ] || missing+=("the secret CLOUDFLARE_API_TOKEN_WEBSITE")
+          [ -n "$TOKEN" ] || missing+=("the secret CLOUDFLARE_API_TOKEN (or CLOUDFLARE_API_TOKEN_WEBSITE)")
           [ -n "$ACCOUNT" ] || missing+=("the secret CLOUDFLARE_ACCOUNT_ID")
+          if [ -n "$ACCOUNT" ]; then echo "::add-mask::$ACCOUNT"; fi
+          if [ ${#missing[@]} -eq 0 ]; then echo "check=true" >> "$GITHUB_OUTPUT"; else echo "check=false" >> "$GITHUB_OUTPUT"; fi
           [ "$LIVE" = "true" ] || missing+=("the repository variable WEBSITE_LIVE = true")
           if [ ${#missing[@]} -gt 0 ]; then
             list=$(printf '%s, ' "${missing[@]}")
             echo "::notice title=maktaba.tv not deployed::not set: ${list%, } (see deploy/cloudflare/README.md, the website's row)"
             echo "ok=false" >> "$GITHUB_OUTPUT"
           else
-            echo "::add-mask::$ACCOUNT"
             echo "ok=true" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/checkout@v6.0.2
-        if: steps.gate.outputs.ok == 'true'
+        if: steps.gate.outputs.check == 'true'
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v6.4.0
-        if: steps.gate.outputs.ok == 'true'
+        if: steps.gate.outputs.check == 'true'
         with:
           node-version-file: web/packages/website/.nvmrc
           package-manager-cache: false
@@ -158,15 +170,42 @@ jobs:
         if: steps.gate.outputs.ok == 'true'
         run: npm ci --no-audit --no-fund
 
-      # before any write: the token can deploy Workers, their routes, and the custom domains'
-      # DNS records on maktaba.tv
+      # Read-only, and before any write: the token can deploy Workers, their routes, and the
+      # custom domains' DNS records on maktaba.tv. It runs while the site is not live too, so a
+      # missing permission is named now; not live, a failure is reported without failing the
+      # run (the Report step), live, it stops the deploy.
       - name: Token check
-        if: steps.gate.outputs.ok == 'true'
+        id: token
+        if: steps.gate.outputs.check == 'true'
+        continue-on-error: ${{ steps.gate.outputs.ok != 'true' }}
         working-directory: .
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_WEBSITE }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_WEBSITE || secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: node tools/cloudflare/token-check.mjs --pieces workers,dns --zone maktaba.tv
+        run: |
+          set -o pipefail
+          node tools/cloudflare/token-check.mjs --pieces workers,dns --zone maktaba.tv | tee token-check.log
+          echo "result=ok" >> "$GITHUB_OUTPUT"
+
+      - name: Token check report
+        if: always() && steps.gate.outputs.check == 'true'
+        working-directory: .
+        env:
+          OUTCOME: ${{ steps.token.outcome }}
+          LIVE: ${{ steps.gate.outputs.ok }}
+        run: |
+          {
+            echo "### maktaba.tv: the Cloudflare token check"
+            echo
+            echo "Outcome: ${OUTCOME} (site live: ${LIVE})"
+            echo
+            echo '```'
+            cat token-check.log 2>/dev/null || echo "(no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$OUTCOME" != "success" ] && [ "$LIVE" != "true" ]; then
+            echo "::warning title=maktaba.tv token::the token check failed while the site is not live; the missing permissions are named above and in the summary. Add them to the token before setting WEBSITE_LIVE."
+          fi
 
       # The nightly sweep's gate (story 60.04): green or none yet, go on; red, go on only because
       # this run's build measured the failing pages again and they passed (the deploy needs the
@@ -242,7 +281,7 @@ jobs:
         if: steps.gate.outputs.ok == 'true' && !inputs.rollback
         working-directory: .
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_WEBSITE }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_WEBSITE || secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: node tools/cloudflare/website-deploy.mjs deploy --sha "$GITHUB_SHA"
 
@@ -251,7 +290,7 @@ jobs:
         if: steps.gate.outputs.ok == 'true' && inputs.rollback
         working-directory: .
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_WEBSITE }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_WEBSITE || secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           VERSION: ${{ inputs.version }}
           ACTOR: ${{ github.actor }}

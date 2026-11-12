@@ -141,12 +141,14 @@ detached again.
 
 ## Going live
 
-The deploy goes live only when all three are set: the secret `CLOUDFLARE_API_TOKEN_WEBSITE` (the
-website's own token, with DNS Edit on `maktaba.tv`, because custom domains write their records),
-the secret `CLOUDFLARE_ACCOUNT_ID`, and the repository variable `WEBSITE_LIVE` set to `true`.
-Without any of them the job prints a notice naming what is missing and passes. The shared
-`CLOUDFLARE_API_TOKEN`, which deploys this portal, is never read, so maktaba.tv cannot go live by
-accident. `deploy/cloudflare/README.md` has the token's permissions.
+The deploy's token is `CLOUDFLARE_API_TOKEN_WEBSITE` when that secret is set, and otherwise the
+shared `CLOUDFLARE_API_TOKEN` that also deploys this portal (it needs DNS Edit on `maktaba.tv`,
+because custom domains write their records). The repository variable `WEBSITE_LIVE` set to `true`
+is the only go-live switch: without it, or without a token or `CLOUDFLARE_ACCOUNT_ID`, nothing is
+written and the job prints a notice naming what is missing and passes. The token check only
+reads, so it runs on every run once a token and the account are set, and names any missing
+permission before go-live (an annotation and the run's summary; it fails the run only once the
+site is live). `deploy/cloudflare/README.md` has the token's permissions.
 
 ## Rolling back
 
