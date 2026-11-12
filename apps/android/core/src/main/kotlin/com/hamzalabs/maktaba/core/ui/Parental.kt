@@ -215,7 +215,8 @@ class ParentHelp(client: ApiClient, val subjectKind: String, subjectId: String =
 @Composable
 fun AskLine(state: AskState, modifier: Modifier = Modifier) {
     val text = when (state) {
-        AskState.Idle, AskState.Sending, AskState.NothingToAsk -> return
+        AskState.Idle, AskState.Sending, AskState.NothingToAsk, is AskState.Approved -> return
+        is AskState.Denied -> stringResource(R.string.parental_ask_denied)
         is AskState.Waiting -> stringResource(R.string.parental_ask_pending) + "\n" + stringResource(R.string.parental_ask_sent)
         AskState.TooMany -> stringResource(R.string.parental_ask_too_many)
         AskState.Failed -> stringResource(R.string.parental_ask_failed)
@@ -243,6 +244,18 @@ fun ParentHelpButtons(help: ParentHelp, onUnlocked: () -> Unit, modifier: Modifi
     var choosing by rememberSaveable { mutableStateOf(false) }
     var pinOpen by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(help) { help.pin.load() }
+    // the request this screen is about, as the home has it: followed while it waits and the app
+    // is in front; a parent's yes opens what was asked for, once
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(help, asked is AskState.Waiting, owner) {
+        owner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) { help.ask.follow() }
+    }
+    LaunchedEffect(asked) {
+        if (asked is AskState.Approved) {
+            help.ask.done()
+            onUnlocked()
+        }
+    }
     // a lock counts down on screen and clears by itself (story 57.06)
     LaunchedEffect(help, pinState is PinState.Locked) { help.pin.waitOutLock() }
     val nothing = asked == AskState.NothingToAsk || pinState == PinState.NothingToUnlock
@@ -257,7 +270,17 @@ fun ParentHelpButtons(help: ParentHelp, onUnlocked: () -> Unit, modifier: Modifi
                         onClick = { if (help.forTime) choosing = !choosing else scope.launch { help.ask.ask() } },
                         enabled = asked != AskState.Sending,
                         modifier = Modifier.heightIn(min = 48.dp).testTag("parental-ask"),
-                    ) { Text(stringResource(if (help.forTime) R.string.parental_time_ask_more else R.string.parental_blocked_ask)) }
+                    ) {
+                        Text(
+                            stringResource(
+                                when {
+                                    asked is AskState.Denied -> R.string.parental_ask_again
+                                    help.forTime -> R.string.parental_time_ask_more
+                                    else -> R.string.parental_blocked_ask
+                                },
+                            ),
+                        )
+                    }
                 }
                 if (holders.isNotEmpty()) {
                     OutlinedButton(

@@ -113,6 +113,16 @@ fun ParentHelpButtons(more: MoreTime, onUnlocked: () -> Unit, color: Color = Col
     }
     // a lock counts down on screen and clears by itself (story 57.06)
     LaunchedEffect(more, pinState is PinState.Locked) { more.pin.waitOutLock() }
+    // the request this screen is about, as the home has it: followed while it waits and the
+    // window is in front; a parent's yes opens what was asked for, once
+    val inFront = androidx.compose.ui.platform.LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(more, asked is AskState.Waiting, inFront) { if (inFront) more.ask.follow() }
+    LaunchedEffect(asked) {
+        if (asked is AskState.Approved) {
+            more.ask.done()
+            onUnlocked()
+        }
+    }
     // the home knows nothing to ask for: nothing more is offered
     if (asked == AskState.NothingToAsk || pinState == PinState.NothingToUnlock) return
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -121,7 +131,7 @@ fun ParentHelpButtons(more: MoreTime, onUnlocked: () -> Unit, color: Color = Col
                 onClick = { if (more.forTime) choosing = !choosing else scope.launch { more.ask.ask() } },
                 enabled = asked != AskState.Sending, modifier = Modifier.testTag("parental-ask"),
             ) {
-                Text(t[if (more.forTime) "parental.time.askMore" else "parental.blocked.ask"])
+                Text(t[if (asked is AskState.Denied) "parental.ask.again" else if (more.forTime) "parental.time.askMore" else "parental.blocked.ask"])
             }
         }
         if (holders.isNotEmpty()) {
@@ -141,6 +151,7 @@ fun ParentHelpButtons(more: MoreTime, onUnlocked: () -> Unit, color: Color = Col
         is AskState.Waiting -> t["parental.ask.pending"] + "\n" + t["parental.ask.sent"]
         AskState.TooMany -> t["parental.ask.tooMany"]
         AskState.Failed -> t["parental.ask.failed"]
+        is AskState.Denied -> t["parental.ask.denied"]
         else -> null
     }
     if (askLine != null) Text(askLine, color = color, modifier = Modifier.testTag("parental-ask-state"))

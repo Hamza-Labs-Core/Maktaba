@@ -46,6 +46,7 @@ import org.robolectric.annotation.Config
 import java.time.Instant
 
 private const val PHONE = "w411dp-h891dp-xxhdpi"
+private const val OWN = "/api/me/parental/requests"
 
 /**
  * Epic 57 on the phone's screens (stories 57.05, 57.06, 57.10, 57.15; T03's phone root), in
@@ -82,7 +83,13 @@ class ParentalScreensTest {
         .apply { if (status == 429) setHeader("Retry-After", "900") }
         .body("""{"type":"https://maktaba.tv/problems/x","title":"refused","status":$status,"code":"$code"$more}""").build()
 
-    private fun requests(path: String) = home.requests.filter { it.url.encodedPath == path }
+    /** What was sent to [path] (the reads of a child's own requests are counted by [ownReads]). */
+    private fun requests(path: String) = home.requests.filter { it.url.encodedPath == path && !(it.method == "GET" && path == OWN) }
+    private fun ownReads() = home.requests.count { it.url.encodedPath == OWN && it.method == "GET" }
+
+    private fun own(status: String, kind: String = "video", subject: String = "v9") = FakeHome.json(
+        """{"requests":[{"id":"r1","subject_kind":"$kind","subject_id":"$subject","status":"$status","created_at":"2026-11-11T19:00:00Z","expires_at":"2099-01-01T00:00:00Z"}]}""",
+    )
     private val tomorrow = Instant.now().plusSeconds(3 * 86_400)
 
     // ---- the time left and the warnings ----
@@ -323,6 +330,59 @@ class ParentalScreensTest {
         assertFalse("the lock's line is gone", "parental-pin-state" in compose.shown())
         compose.onNodeWithTag("parental-pin-field").performTextInput("111111")
         compose.onNodeWithTag("parental-pin-submit").assertIsEnabled()
+    }
+
+    @Test
+    fun aRequestAlreadyWaitingIsFollowedAndAParentsYesOpensTheItem() {
+        // asked earlier (another day, another device): the home says it still waits
+        var status = "pending"
+        home.answer(OWN) { own(status) }
+        var opened = 0
+        show { BlockedPage(limited, remember { ParentHelp(home.home.client, SubjectKind.VIDEO, "v9") }, onUnlocked = { opened++ }) }
+        compose.settled(home, "the request waits") { "parental-ask-state" in compose.shown() }
+        compose.onNodeWithTag("parental-ask-state").assertTextContains("Waiting for a parent", substring = true)
+        assertFalse("no Ask a parent while one waits", "parental-ask" in compose.shown())
+        val read = ownReads()
+        // fifteen seconds on: read again; still waiting
+        compose.mainClock.advanceTimeBy(15_000)
+        compose.settled(home, "read again") { ownReads() > read }
+        assertEquals(0, opened)
+        // the parent approves from their own phone
+        status = "approved"
+        compose.mainClock.advanceTimeBy(15_000)
+        compose.settled(home, "opened") { opened == 1 }
+        // once: nothing opens again and nothing more is followed
+        val after = ownReads()
+        compose.mainClock.advanceTimeBy(60_000)
+        compose.waitForIdle()
+        assertEquals(1, opened)
+        assertTrue("not read every 15 s with nothing waiting", ownReads() <= after + 1)
+    }
+
+    @Test
+    fun aDenialIsSaidWithAskAgainAndThePin() {
+        home.answer(OWN) { own("denied") }
+        show { BlockedPage(limited, remember { ParentHelp(home.home.client, SubjectKind.VIDEO, "v9") }, onUnlocked = {}) }
+        compose.settled(home, "the denial") { "parental-ask-state" in compose.shown() && "parental-pin" in compose.shown() }
+        compose.onNodeWithTag("parental-ask-state").assertTextEquals("A parent said no to this request.")
+        compose.onNodeWithTag("parental-ask").assertTextEquals("Ask again")
+    }
+
+    @Test
+    @Config(qualifiers = "ar-$PHONE")
+    fun aDenialInArabicAndAnEndedRequestOffersAskingAgain() {
+        var status = "denied"
+        home.answer(OWN) { own(status, kind = "time", subject = "30") }
+        show { TimesUpScreen(TimeRefusal(TimeReason.LIMIT_REACHED, null), 0, remember { ParentHelp(home.home.client, SubjectKind.TIME) }, onCheck = {}) }
+        compose.settled(home, "the denial") { "parental-ask-state" in compose.shown() }
+        compose.onNodeWithTag("parental-ask-state").assertTextEquals("رفض أحد الوالدين هذا الطلب.")
+        compose.onNodeWithTag("parental-ask").assertTextEquals("اطلب مجددًا")
+        // the app comes back to the front after the request ended: asking is offered as at first
+        status = "expired"
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+        compose.settled(home, "the ask button again") { "parental-ask-state" !in compose.shown() }
+        compose.onNodeWithTag("parental-ask").assertTextEquals("اطلب وقتًا إضافيًا")
     }
 
     @Test

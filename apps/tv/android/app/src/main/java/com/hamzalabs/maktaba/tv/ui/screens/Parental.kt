@@ -57,6 +57,7 @@ import com.hamzalabs.maktaba.core.parental.ParentalState
 import com.hamzalabs.maktaba.core.parental.PinState
 import com.hamzalabs.maktaba.core.parental.TimeView
 import com.hamzalabs.maktaba.core.parental.TimeWarnings
+import androidx.lifecycle.repeatOnLifecycle
 import com.hamzalabs.maktaba.core.ui.ParentHelp
 import com.hamzalabs.maktaba.core.ui.limitLine
 import com.hamzalabs.maktaba.core.ui.nextWords
@@ -170,6 +171,18 @@ private fun TvParentHelp(help: ParentHelp, onUnlocked: () -> Unit) {
     }
     // a lock counts down on screen and clears by itself (story 57.06)
     LaunchedEffect(help, pinState is PinState.Locked) { help.pin.waitOutLock() }
+    // the request this screen is about, as the home has it: followed while it waits and the TV
+    // shows the app; a parent's yes opens what was asked for, once
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(help, asked is AskState.Waiting, owner) {
+        owner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) { help.ask.follow() }
+    }
+    LaunchedEffect(asked) {
+        if (asked is AskState.Approved) {
+            help.ask.done()
+            onUnlocked()
+        }
+    }
     val nothing = asked == AskState.NothingToAsk || pinState == PinState.NothingToUnlock
     if (nothing) return
     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -178,7 +191,17 @@ private fun TvParentHelp(help: ParentHelp, onUnlocked: () -> Unit) {
                 onClick = { if (help.forTime) choosing = !choosing else scope.launch { help.ask.ask() } },
                 enabled = asked != AskState.Sending,
                 modifier = Modifier.testTag("parental-ask"),
-            ) { Text(stringResource(if (help.forTime) CoreR.string.parental_time_ask_more else CoreR.string.parental_blocked_ask)) }
+            ) {
+                Text(
+                    stringResource(
+                        when {
+                            asked is AskState.Denied -> CoreR.string.parental_ask_again
+                            help.forTime -> CoreR.string.parental_time_ask_more
+                            else -> CoreR.string.parental_blocked_ask
+                        },
+                    ),
+                )
+            }
         }
         if (holders.isNotEmpty()) {
             MaktabaButton(onClick = { help.pin.again(); pinOpen = !pinOpen }, modifier = Modifier.testTag("parental-pin")) {
@@ -199,6 +222,7 @@ private fun TvParentHelp(help: ParentHelp, onUnlocked: () -> Unit) {
         is AskState.Waiting -> stringResource(CoreR.string.parental_ask_pending) + "\n" + stringResource(CoreR.string.parental_ask_sent)
         AskState.TooMany -> stringResource(CoreR.string.parental_ask_too_many)
         AskState.Failed -> stringResource(CoreR.string.parental_ask_failed)
+        is AskState.Denied -> stringResource(CoreR.string.parental_ask_denied)
         else -> null
     }
     if (askLine != null) {

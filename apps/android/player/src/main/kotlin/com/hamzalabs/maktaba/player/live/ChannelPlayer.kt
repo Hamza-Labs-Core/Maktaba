@@ -286,6 +286,8 @@ class ChannelPlayer(
                 lanHttp = { streamHttp },
                 limited = limited,
                 gate = { api.client.channelNow(it) },
+                // the home's instants against the home's clock, not this device's (a child can set it)
+                nowMs = api.client::homeNowMs,
             )
         }
     }

@@ -20,6 +20,7 @@ import com.hamzalabs.maktaba.core.api.isParentPin
 import com.hamzalabs.maktaba.core.api.isRestricted
 import com.hamzalabs.maktaba.core.api.moreTimeWithPin
 import com.hamzalabs.maktaba.core.api.myParental
+import com.hamzalabs.maktaba.core.api.myRequests
 import com.hamzalabs.maktaba.core.api.myTime
 import com.hamzalabs.maktaba.core.api.parentPinHolders
 import com.hamzalabs.maktaba.core.api.timeRefusal
@@ -532,6 +533,133 @@ class ParentalApiTest {
         state.refresh()
         assertEquals(0, dropped)
         assertEquals(0, state.epoch.value)
+    }
+
+    @Test
+    fun aChannelIsAskedAboutAgainByTheHomesClockNotTheDevices() = runBlocking {
+        // the home says 20:00:00; the device's clock runs ten minutes fast
+        val homeNow = Instant.parse("2026-11-11T20:00:00Z")
+        val device = homeNow.plusSeconds(600).toEpochMilli()
+        val retryAt = homeNow.plusSeconds(300)
+        routes["POST /api/channels/c1/play"] = {
+            MockResponse.Builder().code(403).setHeader("Content-Type", "application/problem+json")
+                .setHeader("Date", "Wed, 11 Nov 2026 20:00:00 GMT")
+                .body(problem(403, "restricted", "restricted", ""","reason":"programme","retry_at":"$retryAt"""")).build()
+        }
+        val c = ApiClient(server.url("/"), MemoryTokens(token, "r"), now = { device })
+        assertEquals("before any answer: the device's own clock", device, c.homeNowMs())
+        assertEquals(ChannelNow.NotNow(retryAt), c.channelNow("c1"))
+        assertEquals("the home's clock, by its answer's Date", homeNow.toEpochMilli(), c.homeNowMs())
+        // five minutes and a second by the home's clock; the device's would ask again every 5 s
+        assertEquals(301_000L, channelAskAgainMs(retryAt, allowed = false, nowMs = c.homeNowMs()))
+        assertEquals(com.hamzalabs.maktaba.core.api.CHANNEL_ASK_MIN_MS, channelAskAgainMs(retryAt, allowed = false, nowMs = device))
+    }
+
+    private val ownRequests = "GET /api/me/parental/requests"
+
+    private fun own(vararg r: String) = json(200, """{"requests":[${r.joinToString(",")}]}""")
+
+    private fun request(id: String, status: String, kind: String = "video", subject: String = "v1", expires: String = "2026-11-12T04:00:00Z") =
+        """{"id":"$id","subject_kind":"$kind","subject_id":"$subject","status":"$status","created_at":"2026-11-11T19:00:00Z","expires_at":"$expires","something_new":1}"""
+
+    @Test
+    fun aChildReadsTheStateOfItsOwnRequests() = runBlocking {
+        routes[ownRequests] = { own(request("r2", "pending", kind = "time", subject = "30"), request("r1", "a_status_from_the_future")) }
+        val mine = client().myRequests()!!
+        assertEquals(listOf("r2", "r1"), mine.map { it.id })
+        assertTrue(mine[0].isFor(SubjectKind.TIME, "15"))
+        assertTrue(mine[1].isFor(SubjectKind.VIDEO, "v1"))
+        assertFalse(mine[1].isFor(SubjectKind.VIDEO, "v2"))
+        // an older home, and an account with no limit: nothing to follow
+        routes[ownRequests] = { json(404, "{}") }
+        assertNull(client().myRequests())
+        routes[ownRequests] = { json(405, "{}") }
+        assertNull(client().myRequests())
+        routes[ownRequests] = { json(403, problem(403, "not-restricted", "not_restricted")) }
+        assertNull(client().myRequests())
+    }
+
+    @Test
+    fun aWaitingRequestIsFollowedUntilAParentApproves() = runBlocking {
+        var status = "pending"
+        routes[ownRequests] = { own(request("r1", status), request("r0", "approved", subject = "v0")) }
+        val asking = com.hamzalabs.maktaba.core.parental.ParentAsk(client(), SubjectKind.VIDEO, "v1")
+        val waits = mutableListOf<Long>()
+        asking.follow(wait = { ms ->
+            waits += ms
+            // the request was already waiting when the screen opened: the home's answer says so
+            assertTrue(asking.state.value is AskState.Waiting)
+            if (waits.size == 3) status = "approved"
+        })
+        assertEquals("read every 15 seconds while it waits", listOf(15_000L, 15_000L, 15_000L), waits)
+        assertEquals("r1", (asking.state.value as AskState.Approved).request.id)
+        assertEquals("the list was read at once and after each wait", 4, synchronized(seen) { seen.count { it.url.encodedPath == "/api/me/parental/requests" } })
+        // acted on once: asking starts over, and the approval is not acted on again
+        asking.done()
+        assertEquals(AskState.Idle, asking.state.value)
+        asking.follow(wait = { fail("nothing waits") })
+        assertEquals("approved before this screen asked: nothing to act on", AskState.Idle, asking.state.value)
+    }
+
+    @Test
+    fun aDenialIsSaidAndAnEndedRequestOffersAskingAgain() = runBlocking {
+        var body = own(request("r1", "denied"))
+        routes[ownRequests] = { body }
+        val item = com.hamzalabs.maktaba.core.parental.ParentAsk(client(), SubjectKind.VIDEO, "v1")
+        item.follow(wait = { fail("a denial is not followed") })
+        assertTrue(item.state.value is AskState.Denied)
+        // expired, or a status this app does not know: the ask buttons again
+        body = own(request("r1", "expired"))
+        item.read()
+        assertEquals(AskState.Idle, item.state.value)
+        body = own(request("r1", "a_status_from_the_future"))
+        item.read()
+        assertEquals(AskState.Idle, item.state.value)
+        // a request for something else says nothing about this screen
+        body = own(request("r9", "denied", subject = "v9"))
+        item.read()
+        assertEquals(AskState.Idle, item.state.value)
+    }
+
+    @Test
+    fun aDeniedRequestForTimeIsDroppedOnceItsOwnEndHasPassed() = runBlocking {
+        val homeNow = Instant.parse("2026-11-11T20:00:00Z")
+        var expires = "2026-11-11T20:30:00Z"
+        routes[ownRequests] = {
+            MockResponse.Builder().code(200).setHeader("Content-Type", "application/json").setHeader("Date", "Wed, 11 Nov 2026 20:00:00 GMT")
+                .body("""{"requests":[${request("t1", "denied", kind = "time", subject = "30", expires = expires)}]}""").build()
+        }
+        // the device's clock is a day ahead: the home's clock decides
+        val c = ApiClient(server.url("/"), MemoryTokens(token, "r"), now = { homeNow.plusSeconds(86_400).toEpochMilli() })
+        val time = com.hamzalabs.maktaba.core.parental.ParentAsk(c, SubjectKind.TIME)
+        time.read()
+        time.read()
+        assertTrue("still within the request's time by the home's clock", time.state.value is AskState.Denied)
+        expires = "2026-11-11T19:59:00Z"
+        time.read()
+        assertEquals(AskState.Idle, time.state.value)
+    }
+
+    @Test
+    fun followingStopsAfterHalfAnHourWithNoChangeAndAnOlderHomeIsAskedOnce() = runBlocking {
+        routes[ownRequests] = { own(request("r1", "pending")) }
+        val asking = com.hamzalabs.maktaba.core.parental.ParentAsk(client(), SubjectKind.VIDEO, "v1")
+        var waited = 0L
+        asking.follow(wait = { waited += it })
+        assertEquals(30 * 60_000L, waited)
+        assertTrue("it still waits; Check again is the person's own", asking.state.value is AskState.Waiting)
+
+        routes[ownRequests] = { json(404, "{}") }
+        routes["POST /api/me/parental/requests"] = { json(201, """{"request":${request("r5", "pending", subject = "v5")}}""") }
+        val before = synchronized(seen) { seen.size }
+        val old = com.hamzalabs.maktaba.core.parental.ParentAsk(client(), SubjectKind.VIDEO, "v5")
+        old.follow(wait = { fail("an older home is not followed") })
+        old.ask()
+        assertTrue("today's behaviour: asked, and waiting", old.state.value is AskState.Waiting)
+        old.follow(wait = { fail("an older home is not followed") })
+        old.read()
+        val asked = synchronized(seen) { seen.drop(before).map { it.method + " " + it.url.encodedPath } }
+        assertEquals("the missing route is asked for once", listOf("GET /api/me/parental/requests", "POST /api/me/parental/requests"), asked)
     }
 
     @Test

@@ -110,6 +110,8 @@ fun ChannelScreen(id: String) {
             // under a parental limit the home is asked before the channel plays (Epic 57 story 57.10)
             limited = { home.parental.mine.value.limited },
             gate = { home.client.channelNow(it) },
+            // the home's instants against the home's clock, not this computer's
+            nowMs = home.client::homeNowMs,
         ).also { cp = it }
     }
     LaunchedEffect(id) {

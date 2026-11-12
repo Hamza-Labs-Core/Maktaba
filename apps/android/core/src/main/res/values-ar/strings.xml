@@ -364,6 +364,8 @@
     <string name="parental_ask_pending">بانتظار أحد الوالدين</string>
     <string name="parental_ask_too_many">لديك طلبات كثيرة قيد الانتظار.</string>
     <string name="parental_ask_failed">لم يُرسل الطلب. أعد المحاولة.</string>
+    <string name="parental_ask_denied">رفض أحد الوالدين هذا الطلب.</string>
+    <string name="parental_ask_again">اطلب مجددًا</string>
     <string name="parental_pin_choose">من يُدخل الرمز؟</string>
     <string name="parental_pin_enter">أدخل رمز الوالدين المكوّن من 6 أرقام</string>
     <string name="parental_pin_field">رمز الوالدين</string>

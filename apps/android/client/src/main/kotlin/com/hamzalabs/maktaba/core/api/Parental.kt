@@ -211,7 +211,35 @@ data class ParentalRequest(
     val minutes: Int? = null,
     val status: String = "pending",
     @SerialName("expires_at") val expiresAt: String? = null,
-)
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("decided_at") val decidedAt: String? = null,
+) {
+    /** Whether this is the request for [kind] and [id]; every request for time is the one for time. */
+    fun isFor(kind: String, id: String): Boolean = subjectKind == kind && (kind == SubjectKind.TIME || subjectId == id)
+
+    companion object {
+        const val PENDING = "pending"
+        const val APPROVED = "approved"
+        const val DENIED = "denied"
+
+        /** Anything else, a status this app does not know included, is an ended request. */
+        const val EXPIRED = "expired"
+    }
+}
+
+@Serializable
+private data class OwnRequests(val requests: List<ParentalRequest> = emptyList())
+
+/**
+ * The caller's own requests of the last 7 days, newest first (`GET /api/me/parental/requests`):
+ * no titles, no guardian. Null from a home too old to have the route (404, 405) and for an
+ * account that is not restricted (403 `not_restricted`): there is nothing to follow there.
+ */
+suspend fun ApiClient.myRequests(): List<ParentalRequest>? = try {
+    get<OwnRequests>("/api/me/parental/requests").requests
+} catch (e: ApiException.Status) {
+    if (e.code == 404 || e.code == 405 || (e.code == 403 && e.problem?.code == "not_restricted")) null else throw e
+}
 
 @Serializable
 private data class RequestEnvelope(val request: ParentalRequest = ParentalRequest())
@@ -395,7 +423,9 @@ const val CHANNEL_ASK_AGAIN_MS = 60_000L
 /**
  * How long to wait before asking about a channel again: a second after [at] (the time the home
  * named), never sooner than [CHANNEL_ASK_MIN_MS]; with no time, [CHANNEL_ASK_AGAIN_MS] while it
- * is refused and never (null) while it plays.
+ * is refused and never (null) while it plays. [nowMs] is the home's clock
+ * ([ApiClient.homeNowMs]): against a device clock that runs fast the home would be asked
+ * every five seconds until its time came, and against a slow one the slate would stay too long.
  */
 fun channelAskAgainMs(at: Instant?, allowed: Boolean, nowMs: Long): Long? = when {
     at != null -> (at.toEpochMilli() - nowMs + 1_000).coerceAtLeast(CHANNEL_ASK_MIN_MS)

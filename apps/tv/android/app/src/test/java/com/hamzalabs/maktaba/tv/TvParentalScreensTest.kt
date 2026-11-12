@@ -108,7 +108,13 @@ class TvParentalScreensTest {
     }
 
     private fun press(tag: String) = compose.onNodeWithTag(tag, useUnmergedTree = true).performSemanticsAction(SemanticsActions.OnClick)
-    private fun sent(path: String) = bodies.filter { it.first == path }.map { it.second }
+    /** The bodies sent to [path] (a read has none). */
+    private fun sent(path: String) = bodies.filter { it.first == path && it.second.isNotEmpty() }.map { it.second }
+    private fun ownReads() = bodies.count { it.first == "/api/me/parental/requests" && it.second.isEmpty() }
+
+    private fun own(status: String, kind: String = "video", subject: String = "v9") = json(
+        """{"requests":[{"id":"r1","subject_kind":"$kind","subject_id":"$subject","status":"$status","created_at":"2026-11-11T19:00:00Z","expires_at":"2099-01-01T00:00:00Z"}]}""",
+    )
 
     @Test
     fun theTimesUpScreenSaysWhyWhenAndWhereItStopped() {
@@ -189,6 +195,39 @@ class TvParentalScreensTest {
         until("the buttons go") { "parental-ask" !in shown() && "parental-pin" !in shown() }
         assertEquals(listOf("""{"subject_kind":"video","subject_id":"v9"}"""), sent("/api/me/parental/requests"))
         assertFalse(shown().toString(), shown().any { "v9" in it })
+    }
+
+    @Test
+    fun aRequestAlreadyWaitingIsFollowedAndAParentsYesOpensTheItem() {
+        var status = "pending"
+        routes["/api/me/parental/requests"] = { own(status) }
+        var opened = 0
+        show { TvBlocked(MyParental(restricted = true, maxTier = 9), remember { ParentHelp(client(), SubjectKind.VIDEO, "v9") }, onUnlocked = { opened++ }, onBack = {}) }
+        until("the request waits") { "parental-ask-state" in shown() && "parental-ask" !in shown() }
+        val read = ownReads()
+        compose.mainClock.advanceTimeBy(15_000)
+        until("read again after 15 s") { ownReads() > read }
+        assertEquals(0, opened)
+        // the parent approves from their own phone
+        status = "approved"
+        compose.mainClock.advanceTimeBy(15_000)
+        until("opened") { opened == 1 }
+        compose.mainClock.advanceTimeBy(60_000)
+        compose.waitForIdle()
+        assertEquals("once", 1, opened)
+    }
+
+    @Test
+    fun aDenialIsSaidWithAskAgainAndAnEndedRequestOffersAskingAgain() {
+        var status = "denied"
+        routes["/api/me/parental/requests"] = { own(status, kind = "time", subject = "30") }
+        show { TvTimesUp(TimeRefusal(TimeReason.LIMIT_REACHED), 0, remember { ParentHelp(client(), SubjectKind.TIME) }, onCheck = {}) }
+        until("the denial, Ask again and the PIN") { "A parent said no to this request." in shown() && "Ask again" in shown() && "parental-pin" in shown() }
+        // the TV comes back to the app after the request ended
+        status = "expired"
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+        until("asking is offered as at first") { "Ask for more time" in shown() && "parental-ask-state" !in shown() }
     }
 
     @Test

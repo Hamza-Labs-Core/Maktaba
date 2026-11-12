@@ -232,7 +232,8 @@ class LivePlayback(
     /** Asks the home about [id] again when it said the answer may change. */
     private fun askAgain(id: String, at: Instant?, allowed: Boolean) {
         recheck?.cancel()
-        val wait = channelAskAgainMs(at, allowed, System.currentTimeMillis()) ?: return
+        // the home's instant against the home's clock, not the TV's
+        val wait = channelAskAgainMs(at, allowed, api.homeNowMs()) ?: return
         recheck = scope.launch {
             delay(wait)
             if (channelId != id) return@launch

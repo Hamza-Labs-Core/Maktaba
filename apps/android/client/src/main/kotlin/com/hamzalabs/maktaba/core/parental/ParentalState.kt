@@ -10,7 +10,9 @@ import com.hamzalabs.maktaba.core.api.PinHolder
 import com.hamzalabs.maktaba.core.api.SubjectKind
 import com.hamzalabs.maktaba.core.api.UnlockAnswer
 import com.hamzalabs.maktaba.core.api.askParent
+import com.hamzalabs.maktaba.core.api.instantOrNull
 import com.hamzalabs.maktaba.core.api.myParental
+import com.hamzalabs.maktaba.core.api.myRequests
 import com.hamzalabs.maktaba.core.api.myTime
 import com.hamzalabs.maktaba.core.api.parentPinHolders
 import com.hamzalabs.maktaba.core.api.unlockWithPin
@@ -127,6 +129,12 @@ sealed interface AskState {
 
     /** The request did not go out (the network, the home): the person may try again. */
     data object Failed : AskState
+
+    /** A parent approved the request this screen was waiting on: the screen opens what was asked for, once. */
+    data class Approved(val request: ParentalRequest) : AskState
+
+    /** A parent said no: the screen says so and offers Ask again and the PIN. */
+    data class Denied(val request: ParentalRequest) : AskState
 }
 
 /** Asks for [subjectId] of [subjectKind] and says where that stands; it never throws but for a sign-out. */
@@ -243,8 +251,85 @@ class ParentAsk(
     val subjectId: String = "",
     private val signedOut: () -> Unit = {},
 ) {
+    companion object {
+        /** How often a waiting request is read again. */
+        const val FOLLOW_MS = 15_000L
+
+        /** A request waiting this long with no change is no longer read by itself. */
+        const val FOLLOW_FOR_MS = 30 * 60_000L
+    }
+
     private val _state = MutableStateFlow<AskState>(AskState.Idle)
     val state: StateFlow<AskState> = _state.asStateFlow()
+
+    /** The home has no route for a child's own requests (an older home): it is not asked again. */
+    private var unsupported = false
+
+    /**
+     * Reads the caller's own requests (`GET /api/me/parental/requests`) and takes the newest one
+     * for this screen: waiting, approved (only when this screen saw it waiting), denied (for
+     * time, until the request's own end), or ended, which offers asking again. What the screen
+     * remembered is only a first hint: the home's answer replaces it. A home that does not
+     * answer changes nothing.
+     */
+    suspend fun read() {
+        if (unsupported || _state.value == AskState.Sending) return
+        val mine = try {
+            client.myRequests()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: ApiException.SignedOut) {
+            signedOut()
+            return
+        } catch (_: Exception) {
+            return
+        }
+        if (mine == null) {
+            unsupported = true
+            return
+        }
+        val was = _state.value
+        if (was == AskState.Sending) return
+        val r = mine.firstOrNull { it.isFor(subjectKind, subjectId) }
+        val waitedOn = (was as? AskState.Waiting)?.request?.id
+        _state.value = when (r?.status) {
+            ParentalRequest.PENDING -> AskState.Waiting(r)
+            // approved before this screen asked (an earlier day's): nothing to act on
+            ParentalRequest.APPROVED -> if (waitedOn == r.id) AskState.Approved(r) else if (was is AskState.Approved) was else AskState.Idle
+            ParentalRequest.DENIED -> if (subjectKind == SubjectKind.TIME && ended(r)) AskState.Idle else AskState.Denied(r)
+            // not in the list (not asked, or the list has not caught up with a request just
+            // sent): what the screen knows stays, but for a denial that has left the list
+            null -> if (was is AskState.Denied) AskState.Idle else was
+            // ended, or a status this app does not know: asking is offered again
+            else -> AskState.Idle
+        }
+    }
+
+    /** Whether [r]'s own end has passed, by the home's clock. */
+    private fun ended(r: ParentalRequest): Boolean =
+        r.expiresAt?.let(::instantOrNull)?.let { it.toEpochMilli() <= client.homeNowMs() } == true
+
+    /**
+     * Follows this screen's request while it shows and the app is in front: reads now, then
+     * every [FOLLOW_MS] while a request waits, and stops when none does or after
+     * [FOLLOW_FOR_MS] with no change (Check again stays the person's own). Cancel it when the
+     * screen goes or the app leaves the front.
+     */
+    suspend fun follow(wait: suspend (Long) -> Unit = { delay(it) }) {
+        read()
+        var unchanged = 0L
+        while (!unsupported && _state.value is AskState.Waiting && unchanged < FOLLOW_FOR_MS) {
+            wait(FOLLOW_MS)
+            val before = _state.value
+            read()
+            unchanged = if (_state.value == before) unchanged + FOLLOW_MS else 0
+        }
+    }
+
+    /** The approval was acted on (the page reloaded, the video resumed): asking starts over. */
+    fun done() {
+        if (_state.value is AskState.Approved) _state.value = AskState.Idle
+    }
 
     suspend fun ask(minutes: Int? = null) {
         if (_state.value == AskState.Sending) return

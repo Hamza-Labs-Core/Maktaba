@@ -111,6 +111,65 @@ class TimesUpTest {
         }
     }
 
+    private fun own(status: String) =
+        """{"requests":[{"id":"r1","subject_kind":"time","subject_id":"30","minutes":30,"status":"$status","created_at":"2026-11-11T19:00:00Z","expires_at":"2099-01-01T00:00:00Z"}]}"""
+
+    @Test
+    fun aRequestAlreadyWaitingIsFollowedAndAParentsYesChecksAgainOnce() = TestHome().use { fake ->
+        val status = java.util.concurrent.atomic.AtomicReference("pending")
+        fake.answer("GET /api/me/parental/requests") { TestHome.json(own(status.get())) }
+        var checked = 0
+        runComposeUiTest {
+            setContent { InPlayer(fake.home()) { TimesUp(up, onCheck = { checked++ }, more = MoreTime(fake.client)) } }
+            // asked earlier: the home says it still waits, and nothing is asked for again
+            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-ask-state")).fetchSemanticsNodes().isNotEmpty() }
+            assertEquals(0, onAllNodes(hasTestTag("parental-ask")).fetchSemanticsNodes().size)
+            val read = fake.asked("GET /api/me/parental/requests").size
+            mainClock.advanceTimeBy(15_000)
+            waitUntil(timeoutMillis = 10_000) { fake.asked("GET /api/me/parental/requests").size > read }
+            assertEquals(0, checked)
+            // the parent approves from their own device
+            status.set("approved")
+            mainClock.advanceTimeBy(15_000)
+            waitUntil(timeoutMillis = 10_000) { checked == 1 }
+            mainClock.advanceTimeBy(60_000)
+            waitForIdle()
+            assertEquals("once", 1, checked)
+            assertEquals("nothing was sent for the child", 0, fake.asked("POST /api/me/parental/requests").size)
+        }
+    }
+
+    @Test
+    fun aDenialIsSaidWithAskAgainInBothLanguages() = TestHome().use { fake ->
+        fake.withPin()
+        fake.answer("GET /api/me/parental/requests", own("denied"))
+        runComposeUiTest {
+            setContent { InPlayer(fake.home()) { TimesUp(up, onCheck = {}, more = MoreTime(fake.client)) } }
+            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-ask-state")).fetchSemanticsNodes().isNotEmpty() }
+            onNodeWithText("A parent said no to this request.").assertExists()
+            onNodeWithText("Ask again").assertExists()
+            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-pin")).fetchSemanticsNodes().isNotEmpty() }
+        }
+        runComposeUiTest {
+            setContent { InPlayer(fake.home(), Lang.Ar) { TimesUp(up, onCheck = {}, more = MoreTime(fake.client)) } }
+            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-ask-state")).fetchSemanticsNodes().isNotEmpty() }
+            onNodeWithText("رفض أحد الوالدين هذا الطلب.").assertExists()
+            onNodeWithText("اطلب مجددًا").assertExists()
+        }
+    }
+
+    @Test
+    fun anEndedRequestOffersAskingAgain() = TestHome().use { fake ->
+        fake.answer("GET /api/me/parental/requests", own("expired"))
+        runComposeUiTest {
+            setContent { InPlayer(fake.home()) { TimesUp(up, onCheck = {}, more = MoreTime(fake.client)) } }
+            waitUntil(timeoutMillis = 10_000) { fake.asked("GET /api/me/parental/requests").isNotEmpty() }
+            waitForIdle()
+            onNodeWithText("Ask for more time").assertExists()
+            assertEquals(0, onAllNodes(hasTestTag("parental-ask-state")).fetchSemanticsNodes().size)
+        }
+    }
+
     @Test
     fun aLockCountsDownOnScreenAndThenThePinCanBeTypedAgain() = TestHome().use { fake ->
         fake.withPin()
