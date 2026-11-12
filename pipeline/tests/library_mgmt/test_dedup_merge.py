@@ -26,6 +26,7 @@ from maktaba_pipeline.library_mgmt.dedup_merge import (
     MergeRefused,
     apply_group,
     foreign_keys_to_videos,
+    merge_rows,
     uncovered_foreign_keys,
 )
 from maktaba_pipeline.library_mgmt.ledger import list_actions
@@ -478,3 +479,156 @@ async def test_an_exact_group_that_changed_is_not_merged(db: Database, tmp_path:
     assert res.summary["status"] == "failed" and "byte-identical" in res.summary["reason"]
     assert copy.exists() and own.exists()
     assert await _status(db, str(req.subject_id)) == "failed"
+
+
+# ------------------------------------------------------------------ parental controls
+
+
+async def _child(db: Database, user: str, name: str) -> None:
+    await db.execute("INSERT INTO users (id, username, pw_hash) VALUES ($1, $2, 'x')", user, name)
+    await db.execute("INSERT INTO parental_policies (user_id, max_tier) VALUES ($1, 9)", user)
+
+
+async def _rule(
+    db: Database, user: str, effect: str, video: str, expires: datetime | None = None
+) -> None:
+    await db.execute(
+        "INSERT INTO parental_rules (id, user_id, effect, subject_kind, subject_id, expires_at)"
+        " VALUES ($1, $2, $3, 'video', $4, $5)",
+        str(uuid.uuid4()), user, effect, video, None if expires is None else to_ts(db, expires),
+    )  # fmt: skip
+
+
+@pytest.mark.asyncio
+async def test_a_merge_carries_what_restricts_the_loser_to_the_keeper(
+    db: Database, tmp_path: Path
+) -> None:
+    """Epic 57 review, finding 2: an admin set 18 on copy A and blocked it for a child;
+    the merge of A into B left B with no admin tier and no block, so the child could
+    open it."""
+    w = await make_world(db, tmp_path)
+    k, _kp = await w.video("k.mkv", b"K" * 5000)
+    lo, _lp = await w.video("l.mkv", b"L" * 5000)
+    k, lo = str(k), str(lo)
+    await _child(db, U1, "child-one")
+    await _child(db, U2, "child-two")
+    soon, late = T0 + timedelta(days=1), T0 + timedelta(days=30)
+    # the admin's tier is on the loser; the keeper has a milder one
+    await db.execute("UPDATE videos SET age_tier_admin = 18 WHERE id = $1", lo)
+    await db.execute("UPDATE videos SET age_tier_admin = 9 WHERE id = $1", k)
+    # u1: blocked on the loser for good, and on the keeper until tomorrow; allowed on
+    # the loser until tomorrow, and on the keeper for a month
+    await _rule(db, U1, "block", lo)
+    await _rule(db, U1, "block", k, soon)
+    await _rule(db, U1, "allow", lo, soon)
+    await _rule(db, U1, "allow", k, late)
+    # u2: blocked on the loser only
+    await _rule(db, U2, "block", lo, late)
+    # requests: u1 asked for both copies, u2 for the loser; one old answer on the loser
+    for child, video, status in ((U1, lo, "pending"), (U1, k, "pending"),
+                                 (U2, lo, "pending"), (U2, lo, "denied")):  # fmt: skip
+        await db.execute(
+            "INSERT INTO parental_requests (id, child_id, subject_kind, subject_id, status)"
+            " VALUES ($1, $2, 'video', $3, $4)",
+            str(uuid.uuid4()), child, video, status,
+        )  # fmt: skip
+    await db.execute(
+        "INSERT INTO parental_events (id, child_id, kind, subject_kind, subject_id)"
+        " VALUES ($1, $2, 'blocked', 'video', $3)",
+        str(uuid.uuid4()), U2, lo,
+    )  # fmt: skip
+    # the screen found the loser to be 16; the keeper was never screened
+    await db.execute(
+        "INSERT INTO video_content_signals (video_id, tier, confidence, model, input_hash)"
+        " VALUES ($1, 16, 0.9, 'm', 'h')",
+        lo,
+    )
+    versions = dict(await _rows(db, "SELECT user_id, version FROM parental_policies"))
+    if is_pg(db):
+        await db.execute("DELETE FROM parental_recompute_jobs")
+
+    async with db.transaction():
+        moved = await merge_rows(db, k, lo, keeper_library=str(w.library_id))
+
+    # the stricter admin tier is the keeper's
+    assert await db.fetchval("SELECT age_tier_admin FROM videos WHERE id = $1", k) == 18
+    # no rule names the loser any more
+    assert await _n(db, "SELECT COUNT(*) FROM parental_rules WHERE subject_id = $1", lo) == 0
+    rules = {
+        (str(r["user_id"]), str(r["effect"])): r["expires_at"]
+        for r in await db.fetch(
+            "SELECT user_id, effect, expires_at FROM parental_rules WHERE subject_id = $1", k
+        )
+    }
+    assert set(rules) == {(U1, "block"), (U1, "allow"), (U2, "block")}
+    # two blocks: the longer one (for good); two allows: the shorter one
+    assert rules[(U1, "block")] is None
+    assert rules[(U1, "allow")] is not None and rules[(U2, "block")] is not None
+    assert str(rules[(U1, "allow")])[:10] == soon.date().isoformat()
+    assert str(rules[(U2, "block")])[:10] == late.date().isoformat()
+    # pending requests follow, one a child; the old answer is history and stays
+    asked = await _rows(
+        db, "SELECT child_id, subject_id, status FROM parental_requests ORDER BY child_id"
+    )
+    assert asked == {(U1, k, "pending"), (U2, k, "pending"), (U2, lo, "denied")}
+    # the guardian's activity names a video that will still exist
+    assert await _rows(db, "SELECT subject_id FROM parental_events") == {(k,)}
+    # the detected tier stands in on the keeper until it is screened itself
+    sig = await db.fetchrow("SELECT tier, model FROM video_content_signals WHERE video_id = $1", k)
+    assert sig is not None and sig["tier"] == 16
+    assert moved["videos.age_tier_admin"] == 1 and moved["parental_rules"] == 3
+    assert moved["parental_requests"] == 2 and moved["parental_events"] == 1
+    assert moved["video_content_signals"] == 1
+    # the children's policies moved on a version: a stale edit of theirs is refused
+    after = dict(await _rows(db, "SELECT user_id, version FROM parental_policies"))
+    assert all(int(after[u]) == int(versions[u]) + 1 for u in (U1, U2))
+    # the keeper's tier is worked out again (the API's queue, on Postgres)
+    if is_pg(db):
+        jobs = await _rows(
+            db, "SELECT kind, subject FROM parental_recompute_jobs WHERE subject = $1", k
+        )
+        assert ("video", k) in jobs
+
+
+@pytest.mark.asyncio
+async def test_a_merge_never_loosens_the_keeper(db: Database, tmp_path: Path) -> None:
+    """The other way round: the keeper is the stricter one, and stays so."""
+    w = await make_world(db, tmp_path)
+    k, _kp = await w.video("k.mkv", b"K" * 5000)
+    lo, _lp = await w.video("l.mkv", b"L" * 5000)
+    other, _op = await w.video("o.mkv", b"O" * 5000)
+    k, lo, other = str(k), str(lo), str(other)
+    await _child(db, U1, "child-one")
+    await db.execute("UPDATE videos SET age_tier_admin = 16 WHERE id = $1", k)
+    await db.execute("UPDATE videos SET age_tier_admin = 0 WHERE id = $1", lo)
+    await _rule(db, U1, "block", k)
+    await _rule(db, U1, "block", other)  # another video's rule is not this merge's
+    for video, tier, reviewed in ((k, 18, None), (lo, 9, None)):
+        await db.execute(
+            "INSERT INTO video_content_signals (video_id, tier, confidence, model, input_hash,"
+            " reviewed_at) VALUES ($1, $2, 0.9, 'm', 'h', $3)",
+            video, tier, reviewed,
+        )  # fmt: skip
+    async with db.transaction():
+        moved = await merge_rows(db, k, lo, keeper_library=str(w.library_id))
+    assert await db.fetchval("SELECT age_tier_admin FROM videos WHERE id = $1", k) == 16
+    assert await db.fetchval("SELECT tier FROM video_content_signals WHERE video_id = $1", k) == 18
+    assert await _rows(db, "SELECT subject_id FROM parental_rules") == {(k,), (other,)}
+    assert not {"videos.age_tier_admin", "parental_rules", "video_content_signals"} & set(moved)
+
+    # a keeper's signal an admin reviewed is the admin's word: a stricter loser's
+    # detected tier does not replace it (the loser's admin tier, if any, still carries)
+    lo2, _p = await w.video("l2.mkv", b"M" * 5000)
+    lo2 = str(lo2)
+    await db.execute(
+        "UPDATE video_content_signals SET tier = 9, reviewed_at = $2 WHERE video_id = $1",
+        k, to_ts(db, T0),
+    )  # fmt: skip
+    await db.execute(
+        "INSERT INTO video_content_signals (video_id, tier, confidence, model, input_hash)"
+        " VALUES ($1, 18, 0.9, 'm', 'h')",
+        lo2,
+    )
+    async with db.transaction():
+        await merge_rows(db, k, lo2, keeper_library=str(w.library_id))
+    assert await db.fetchval("SELECT tier FROM video_content_signals WHERE video_id = $1", k) == 9
