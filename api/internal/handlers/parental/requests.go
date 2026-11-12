@@ -178,9 +178,9 @@ func (h *AskHandler) Ask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.SubjectKind == parentalpkg.RequestTime {
-		if _, ok := parentalpkg.RequestMinutes(req.SubjectID); !ok {
+		if _, ok := parentalpkg.AskedMinutes(req.SubjectID); !ok {
 			httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "subject_id",
-				Message: "for time, the minutes asked for: a whole number from 1 to 480"}}))
+				Message: "for time, the minutes asked for: 15, 30 or 60"}}))
 			return
 		}
 	}

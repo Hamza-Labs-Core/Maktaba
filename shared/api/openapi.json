@@ -15003,7 +15003,7 @@
                   },
                   "subject_id": {
                     "type": "string",
-                    "description": "The item's id. For `time`: the minutes asked for, a whole number from 1 to 480 written as text (`\"30\"`)."
+                    "description": "The item's id. For `time`: the minutes asked for, `\"15\"`, `\"30\"` or `\"60\"` as text; any other number is a 422. A guardian can give another number when approving."
                   }
                 },
                 "required": [
@@ -15298,7 +15298,7 @@
                   },
                   "subject_id": {
                     "type": "string",
-                    "description": "The item's id. For kind `time`: the minutes to give, 1 to 480, as text."
+                    "description": "The item's id. For kind `time`: the minutes to give, `\"15\"`, `\"30\"` or `\"60\"` as text; any other number is a 422."
                   }
                 },
                 "required": [

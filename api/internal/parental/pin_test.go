@@ -122,6 +122,17 @@ func TestKinds(t *testing.T) {
 	if ValidSubjectKind(RequestTime) {
 		t.Error("a rule can name `time`")
 	}
+	// what the child's device may ask for, or unlock with a PIN: 15, 30 or 60
+	for id, want := range map[string]int{"15": 15, "30": 30, "60": 60} {
+		if n, ok := AskedMinutes(id); !ok || n != want {
+			t.Errorf("AskedMinutes(%q) = %d, %v", id, n, ok)
+		}
+	}
+	for _, id := range []string{"1", "14", "16", "45", "120", "480", "481", "0", "-15", "015", "+30", "60 ", "", "abc"} {
+		if _, ok := AskedMinutes(id); ok {
+			t.Errorf("AskedMinutes(%q) is valid", id)
+		}
+	}
 	for id, want := range map[string]int{"1": 1, "30": 30, "480": 480} {
 		if n, ok := RequestMinutes(id); !ok || n != want {
 			t.Errorf("RequestMinutes(%q) = %d, %v", id, n, ok)

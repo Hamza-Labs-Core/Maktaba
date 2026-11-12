@@ -13,6 +13,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 )
@@ -55,12 +56,29 @@ const RequestTime = "time"
 // time grant, not a rule.
 func ValidRequestKind(k string) bool { return k == RequestTime || ValidSubjectKind(k) }
 
-// RequestMinutes reads the subject_id of a `time` request: the minutes asked for,
-// a whole number from 1 to MaxGrantMinutes written plainly ("30", not "+30" or
-// "030").
+// RequestMinutes reads the subject_id of a stored `time` request: the minutes
+// asked for, a whole number from 1 to MaxGrantMinutes written plainly ("30", not
+// "+30" or "030"). A new request is held to AskedMinutes.
 func RequestMinutes(id string) (int, bool) {
 	n, err := strconv.Atoi(id)
 	if err != nil || n < 1 || n > MaxGrantMinutes || strconv.Itoa(n) != id {
+		return 0, false
+	}
+	return n, true
+}
+
+// ChildMinutes are the minutes a child's own device may ask for, or have unlocked
+// with a guardian's PIN typed on it (story 57.06). What the device sends is the
+// child's to change, so nothing else is taken from it: a guardian who wants to
+// give another number does it from their own sign-in (approve, or a time grant),
+// where 1 to MaxGrantMinutes holds.
+var ChildMinutes = []int{15, 30, 60}
+
+// AskedMinutes reads the subject_id of a `time` request or PIN unlock coming from
+// the child's device: one of ChildMinutes, written plainly.
+func AskedMinutes(id string) (int, bool) {
+	n, ok := RequestMinutes(id)
+	if !ok || !slices.Contains(ChildMinutes, n) {
 		return 0, false
 	}
 	return n, true
@@ -129,7 +147,7 @@ func scanRequest(row interface{ Scan(...any) error }) (*Request, error) {
 // request (created false). ErrNotRestricted when the account has no policy,
 // ErrInvalid for a bad kind or id, ErrSubjectNotFound, ErrTooManyRequests.
 //
-// A `time` request (id: the minutes, 1 to MaxGrantMinutes) has no subject to look
+// A `time` request (id: the minutes, one of ChildMinutes) has no subject to look
 // up. A child has one waiting at most: asking again, for any number of minutes,
 // returns the waiting one.
 func (s *Store) Ask(ctx context.Context, childID string, all bool, libraries []string, kind, id string) (req *Request, created bool, err error) {
@@ -138,7 +156,7 @@ func (s *Store) Ask(ctx context.Context, childID string, all bool, libraries []s
 	}
 	forTime := kind == RequestTime
 	if forTime {
-		if _, ok := RequestMinutes(id); !ok {
+		if _, ok := AskedMinutes(id); !ok {
 			return nil, false, fmt.Errorf("%w: subject_id", ErrInvalid)
 		}
 	} else if (RuleInput{Effect: EffectAllow, SubjectKind: kind, SubjectID: id}).validate() != nil {

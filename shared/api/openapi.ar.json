@@ -1434,8 +1434,8 @@
       "ar": "بثّ أحداث (`text/event-stream`)"
     },
     "/paths/~1me~1parental~1requests/post/requestBody/content/application~1json/schema/properties/subject_id/description": {
-      "en": "The item's id. For `time`: the minutes asked for, a whole number from 1 to 480 written as text (`\"30\"`).",
-      "ar": "معرّف العنصر. وللنوع `time`: الدقائق المطلوبة، عدد صحيح من 1 إلى 480 مكتوب نصًّا (`\"30\"`)."
+      "en": "The item's id. For `time`: the minutes asked for, `\"15\"`, `\"30\"` or `\"60\"` as text; any other number is a 422. A guardian can give another number when approving.",
+      "ar": "معرّف العنصر. وللنوع `time`: الدقائق المطلوبة، `\"15\"` أو `\"30\"` أو `\"60\"` نصًّا؛ وأي عدد آخر يُرَدّ بـ422. ويستطيع وليّ الأمر منح عدد آخر عند الموافقة."
     },
     "/paths/~1me~1parental~1requests/post/responses/200/content/application~1json/schema/properties/request/properties/subject_id/description": {
       "en": "The item's id; for a request for time, the minutes asked for, as text.",
@@ -4402,8 +4402,8 @@
       "ar": "فُتح: قاعدة السماح ومتى تنتهي؛ وفي النوع `time` الوقت الممنوح."
     },
     "/paths/~1me~1parental~1unlock/post/requestBody/content/application~1json/schema/properties/subject_id/description": {
-      "en": "The item's id. For kind `time`: the minutes to give, 1 to 480, as text.",
-      "ar": "معرّف العنصر. وفي النوع `time`: الدقائق الممنوحة، من 1 إلى 480، نصًّا."
+      "en": "The item's id. For kind `time`: the minutes to give, `\"15\"`, `\"30\"` or `\"60\"` as text; any other number is a 422.",
+      "ar": "معرّف العنصر. وفي النوع `time`: الدقائق الممنوحة، `\"15\"` أو `\"30\"` أو `\"60\"` نصًّا؛ وأي عدد آخر يُرَدّ بـ422."
     },
     "/paths/~1me~1parental~1unlock/post/responses/200/content/application~1json/schema/properties/rule/description": {
       "en": "The allow rule added; absent for kind `time`.",

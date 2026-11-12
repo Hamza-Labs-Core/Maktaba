@@ -362,10 +362,14 @@ func TestUnlockTime(t *testing.T) {
 		return map[string]any{"guardian_id": uGuardian, "pin": pin, "subject_kind": "time", "subject_id": minutes}
 	}
 
-	for _, bad := range []string{"0", "481", "abc", "030"} {
+	// Review finding 5: the child's device unlocks 15, 30 or 60 minutes and nothing
+	// else. A changed client that sends 480 beside a right PIN gets no grant.
+	for _, bad := range []string{"0", "481", "abc", "030", "1", "45", "120", "480"} {
 		e.want(422, "child", "POST", "/api/me/parental/unlock", timeUnlock(thePIN, bad))
+		// asking is held to the same three
+		e.want(422, "child", "POST", "/api/me/parental/requests", ask("time", bad))
 	}
-	e.want(403, "child", "POST", "/api/me/parental/unlock", timeUnlock("000000", "45"))
+	e.want(403, "child", "POST", "/api/me/parental/unlock", timeUnlock("000000", "60"))
 	if n := e.count(`SELECT count(*) FROM parental_time_grants`); n != 0 {
 		t.Fatalf("%d grants after bad minutes and a wrong PIN, want 0", n)
 	}
@@ -374,10 +378,10 @@ func TestUnlockTime(t *testing.T) {
 	}
 
 	rulesBefore := e.count(`SELECT count(*) FROM parental_rules WHERE user_id = $1`, uChild)
-	out := e.want(200, "child", "POST", "/api/me/parental/unlock", timeUnlock(thePIN, "45"))
+	out := e.want(200, "child", "POST", "/api/me/parental/unlock", timeUnlock(thePIN, "60"))
 	grant, _ := out["grant"].(map[string]any)
-	if grant == nil || grant["minutes"] != float64(45) || grant["granted_by"] != uGuardian || out["rule"] != nil {
-		t.Fatalf("the unlock = %v, want a grant of 45 minutes by the guardian and no rule", out)
+	if grant == nil || grant["minutes"] != float64(60) || grant["granted_by"] != uGuardian || out["rule"] != nil {
+		t.Fatalf("the unlock = %v, want a grant of 60 minutes by the guardian and no rule", out)
 	}
 	if n := e.count(`SELECT count(*) FROM parental_rules WHERE user_id = $1`, uChild); n != rulesBefore {
 		t.Errorf("%d rules after a time unlock, want the %d there were", n, rulesBefore)
@@ -403,4 +407,7 @@ func TestUnlockTime(t *testing.T) {
 	if n := e.count(`SELECT count(*) FROM parental_time_grants`); n != 1 {
 		t.Errorf("%d grants at the end, want 1", n)
 	}
+	// a guardian's own sign-in still gives any number from 1 to 480
+	e.want(201, "guardian", "POST", base+"/time-grants", map[string]any{"minutes": 480})
+	e.want(422, "guardian", "POST", base+"/time-grants", map[string]any{"minutes": 481})
 }
