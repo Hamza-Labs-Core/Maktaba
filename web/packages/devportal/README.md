@@ -189,9 +189,9 @@ The only step is the token and the two secrets. Wrangler creates the rest itself
 1. **Create a Cloudflare API token** (dashboard → My Profile → API Tokens → Create Token →
    Custom token) with:
    - Account → **Workers Scripts: Edit** (this account only);
-   - Zone → **Workers Routes: Edit**, **Zone: Read** and **DNS: Edit**, limited to
-     _Specific zone: maktaba.dev_. A custom domain writes its own DNS record and
-     certificate, which needs DNS: Edit.
+   - Zone → **Workers Routes: Edit** and **Zone: Read**, limited to
+     _Specific zone: maktaba.dev_. No DNS: Edit: Cloudflare creates a custom domain's DNS
+     record and certificate itself.
 2. **Add the secrets** to the repository or the organisation (Settings → Secrets and
    variables → Actions):
    - `CLOUDFLARE_API_TOKEN`: the token;

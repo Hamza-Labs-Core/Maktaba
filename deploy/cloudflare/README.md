@@ -77,15 +77,19 @@ account and the two zones. A piece may have its own token instead:
 `CLOUDFLARE_API_TOKEN_WEBSITE`.
 Each workflow uses its piece's own token when it is set, and the shared one otherwise.
 
+A Worker's custom domains need no DNS Edit: Cloudflare creates a custom domain's DNS record and
+certificate itself. maktaba.dev attaches `maktaba.dev` and `www.maktaba.dev` that way with the
+shared token, which has no DNS Edit. Only the Tunnel row writes DNS records through the API.
+
 | Piece | Account permissions | Zone permissions |
 | --- | --- | --- |
-| Developer portal (existing) | Workers Scripts: Edit | `maktaba.dev`: Workers Routes: Edit, Zone: Read, DNS: Edit |
+| Developer portal (existing) | Workers Scripts: Edit | `maktaba.dev`: Workers Routes: Edit, Zone: Read |
 | User and admin web Workers | Workers Scripts: Edit | `maktaba.tv`: Workers Routes: Edit, Zone: Read |
 | Zone security (WAF, managed rules, rate limits, settings) | — | `maktaba.tv`: Zone WAF: Edit, Zone Settings: Edit, Zone: Read |
 | Tunnel ingress and DNS records | Cloudflare Tunnel: Edit | `maktaba.tv`: DNS: Edit |
 | Per-hostname AOP certificate (50.31's fallback only) | — | `maktaba.tv`: SSL and Certificates: Edit |
-| Broadcast edge (50.21, later) | Workers Scripts: Edit, Workers R2 Storage: Edit | `maktaba.tv`: Workers Routes: Edit, DNS: Edit |
-| The website, maktaba.tv (Epic 60): the shared token, or `CLOUDFLARE_API_TOKEN_WEBSITE` when set | Workers Scripts: Edit | `maktaba.tv`: Workers Routes: Edit, Zone: Read, **DNS: Edit** |
+| Broadcast edge (50.21, later) | Workers Scripts: Edit, Workers R2 Storage: Edit | `maktaba.tv`: Workers Routes: Edit, Zone: Read |
+| The website, maktaba.tv (Epic 60): the shared token, or `CLOUDFLARE_API_TOKEN_WEBSITE` when set | Workers Scripts: Edit | `maktaba.tv`: Workers Routes: Edit, Zone: Read |
 
 **The website's token and its go-live switch.** `website-deploy.yml` uses
 `CLOUDFLARE_API_TOKEN_WEBSITE` when that secret is set, and otherwise the shared
@@ -96,16 +100,16 @@ it is `true` (`tools/ci/tests/test_website_deploy.py` keeps every write behind i
 job prints a notice naming what is missing and passes. Setting `WEBSITE_LIVE` to anything else
 stops further deploys; the live version stays until a rollback or the next deploy.
 
-The token check (the `workers` and `dns` pieces) runs on every deploy run once a token and
+The token check (the `workers` piece) runs on every deploy run once a token and
 `CLOUDFLARE_ACCOUNT_ID` are set, live or not. It only reads (verify, the zone, the token's policy
 or one read call per permission), so a missing permission is named before go-live: in an error
 annotation and the run's summary. While the site is not live that does not fail the run; once it
 is live it stops the deploy before any write.
 
 The Worker `maktaba-website` owns two names, as custom domains: **`maktaba.tv`** and
-**`www.maktaba.tv`**. Wrangler writes their DNS records and certificates when `triggers deploy`
-applies them (hence DNS Edit). A custom domain owns its exact hostname only, so `app.`, `api.`,
-`admin.`, `relay.`, `watch.` and `plugins.` keep their records and routes; the live smoke checks
+**`www.maktaba.tv`**. Cloudflare creates their DNS records and certificates itself when
+`triggers deploy` applies them, so the token needs no DNS Edit. A custom domain owns its exact
+hostname only, so `app.`, `api.`, `admin.`, `relay.`, `watch.` and `plugins.` keep their records and routes; the live smoke checks
 that `app.maktaba.tv` never answers from this Worker. A first deploy that fails its live smoke
 detaches both names again (`tools/cloudflare/website-deploy.mjs`).
 
@@ -134,8 +138,8 @@ These steps are on Epic 50's go-live list (README §15.7).
 3. Optionally, add required reviewers to the `production` environment, so each Cloudflare deploy
    waits for a person.
 4. For maktaba.tv (Epic 60 owner action A2): the shared `CLOUDFLARE_API_TOKEN` is its token, so
-   it needs the website's row above (on `maktaba.tv`: Workers Routes Edit, Zone Read and DNS
-   Edit; Workers Scripts Edit on the account). The deploy's token check names any permission it
-   lacks on each run; add those to the existing token. When the site should go live, set the
+   it needs the website's row above (on `maktaba.tv`: Workers Routes Edit and Zone Read;
+   Workers Scripts Edit on the account; no DNS Edit). The deploy's token check names any
+   permission it lacks on each run; add those to the existing token. When the site should go live, set the
    repository variable `WEBSITE_LIVE` to `true` (Settings → Secrets and variables → Actions →
    Variables). The next push that changes the site, or a run by hand, deploys it.

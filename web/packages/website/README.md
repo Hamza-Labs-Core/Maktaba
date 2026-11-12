@@ -94,8 +94,8 @@ source it is built from, by hand, and monthly (security.txt's Expires). The step
 when that smoke fails. A first deploy creates the Worker with no routes first, since a version
 cannot be uploaded to a Worker that does not exist.
 
-It uses `CLOUDFLARE_API_TOKEN_WEBSITE` when set, else the shared `CLOUDFLARE_API_TOKEN` (with
-DNS Edit on `maktaba.tv`). It goes live only when the repository variable `WEBSITE_LIVE = true`
+It uses `CLOUDFLARE_API_TOKEN_WEBSITE` when set, else the shared `CLOUDFLARE_API_TOKEN` (no
+DNS Edit: Cloudflare creates the custom domains' records itself). It goes live only when the repository variable `WEBSITE_LIVE = true`
 is set, with a token and `CLOUDFLARE_ACCOUNT_ID`; otherwise it writes nothing, prints a notice
 naming what is missing and passes. The read-only token check runs on every run once a token and
 the account are set, and names any missing permission before go-live. See
