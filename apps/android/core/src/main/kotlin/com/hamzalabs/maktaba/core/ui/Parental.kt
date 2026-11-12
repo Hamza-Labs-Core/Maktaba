@@ -118,7 +118,7 @@ fun timesUpTitle(reason: String): Int =
 
 /** The locale the screen's words are in (the app's language, which may differ from the device's). */
 @Composable
-fun wordsLocale(): Locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+fun wordsLocale(): Locale = LocalConfiguration.current.locales[0] ?: Locale.ENGLISH
 
 /** "7:30 PM" today, "Thursday 7:00 AM" another day, in the app's language. */
 @Composable
