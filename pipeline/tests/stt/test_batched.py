@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import gc
+import time
+import weakref
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -334,3 +337,82 @@ async def test_resuming_from_a_checkpoint_gives_the_uninterrupted_transcript() -
         (s.start, s.end, s.text) for s in whole.sentences
     ]
     assert cp.seek >= 2 * N_FRAMES and len(cp.segments) >= 2
+
+
+# --- memory: an idle Whisper lets its model go (stt/mlx_memory.py) ----------------------
+
+
+class _Loading(BatchedTranscriber):
+    """Loads its fake model the way MLX-Whisper's is loaded (in ``_load``, on the GPU
+    thread), so it may be let go when idle; remembers each file's spectrogram weakly."""
+
+    def __init__(self, settings: WhisperSettings) -> None:
+        super().__init__(settings)
+        self.model = FakeModel()
+        self.loads = 0
+        self.mels: list[weakref.ref[Any]] = []
+
+    def _load(self) -> None:
+        if self._decode is not None:
+            return
+        self.loads += 1
+
+        def mel_of(audio: np.ndarray) -> Any:
+            n = len(audio) // 480_000
+            mel = _Mel([[ts(0), 100 + int(audio[0]), 101, ts(5)] for _ in range(n)], int(audio[0]))
+            self.mels.append(weakref.ref(mel))
+            return mel
+
+        def window_of(mel: Any, seek: int, size: int) -> Any:
+            return (mel.windows[seek // N_FRAMES], mel.file * 100 + seek // N_FRAMES)
+
+        self._decode = self.model.decode
+        self._mel_of = mel_of
+        self._window_of = window_of
+        self._tokenizer = Tok()
+        self._mlx_loaded = True
+
+
+def _settings(idle: float) -> WhisperSettings:
+    return WhisperSettings(word_timestamps=False, max_batch=4, unload_idle_s=idle)
+
+
+async def _until(cond: Any, timeout: float = 10.0) -> None:
+    end = time.monotonic() + timeout
+    while not cond():
+        assert time.monotonic() < end, "timed out"
+        await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_an_idle_whisper_lets_its_model_go_and_loads_it_for_the_next_file() -> None:
+    bt = _Loading(_settings(idle=0.2))
+    first = await bt.transcribe(_audio(1, 2))
+    assert len(first.sentences) == 2
+    # no file for the idle time: the model is let go and the GPU thread ends
+    await _until(lambda: bt.unloads == 1 and bt._thread is None)
+    assert bt._decode is None and bt._mel_of is None and not bt._mlx_loaded
+    # the next file loads it again and is transcribed as the first was
+    again = await bt.transcribe(_audio(1, 2))
+    assert bt.loads == 2
+    assert [s.text for s in again.sentences] == [s.text for s in first.sentences]
+
+
+@pytest.mark.asyncio
+async def test_whisper_keeps_its_model_when_unloading_is_off() -> None:
+    bt = _Loading(_settings(idle=0))
+    await bt.transcribe(_audio(1, 1))
+    await asyncio.sleep(1.5)  # past the GPU thread's 1 s wait for work
+    assert bt.unloads == 0 and bt._decode is not None
+    assert bt._thread is not None and bt._thread.is_alive()
+
+
+@pytest.mark.asyncio
+async def test_a_finished_file_s_spectrogram_is_not_kept_while_the_thread_waits() -> None:
+    # the loop's variable kept the last finished file (its whole spectrogram, on the GPU
+    # with MLX) referenced until the next file finished
+    bt = _Loading(_settings(idle=0))
+    await bt.transcribe(_audio(1, 3))
+    await asyncio.sleep(0.1)
+    gc.collect()
+    assert bt.mels and all(ref() is None for ref in bt.mels)
