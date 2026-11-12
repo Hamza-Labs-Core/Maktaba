@@ -99,10 +99,7 @@ BEGIN
 END;
 -- +goose StatementEnd
 
--- +goose StatementBegin
-INSERT OR IGNORE INTO app_settings (key, value) VALUES ('parental.enabled', 'true');
--- +goose StatementEnd
-
+-- `parental.enabled` is seeded by slot 0225 (see the Postgres file).
 -- +goose StatementBegin
 INSERT OR IGNORE INTO app_settings (key, value) VALUES ('parental.unrated_on_signal', '"hide"');
 -- +goose StatementEnd

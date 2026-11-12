@@ -21,8 +21,8 @@ admin sets it up, while making it easy to set up.
 - The background `parental_recompute` fills `age_tier` from ratings that already exist (Plex,
   guide, plugin `content_rating`), by library, newest first, at low priority.
 - `app_settings.parental.enabled` starts **false** in a home with no restricted account and no
-  library default tier (slot 0225 turns slot 0221's seed off there; a home that has either
-  keeps it on; a value that is missing or cannot be read counts as on). While false:
+  library default tier (slot 0225 seeds it so, overwriting nothing; a home that has either
+  starts with it on; a value that is missing or cannot be read counts as on). While false:
   - device signals are **recorded** (57.04) but `ac` is not minted, so nothing is hidden;
   - restricted policies cannot exist yet (none do).
 - `parental.enabled` becomes true by itself the moment an admin makes the first account

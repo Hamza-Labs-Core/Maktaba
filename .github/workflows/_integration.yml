@@ -111,6 +111,21 @@ jobs:
       - name: Strict lock order on the test databases
         run: psql "postgres://maktaba:maktaba@localhost:5432/maktaba" -c "ALTER ROLE maktaba SET maktaba.lock_order_strict = 'on'"
 
+      # The tier's Go tests make a scratch database each from a migrated template and drop
+      # it (some hundreds in a run), and nothing on this server outlives the job: it does
+      # not wait for the disk. Measured on six of the API's packages that use it most
+      # (2026-11-12): 211 s of package time with fsync on, 168 s with it off. The tier's
+      # budget is unchanged.
+      - name: The test Postgres does not wait for the disk
+        run: |
+          psql "postgres://maktaba:maktaba@localhost:5432/maktaba" \
+            -c "ALTER SYSTEM SET fsync = off" \
+            -c "ALTER SYSTEM SET synchronous_commit = off" \
+            -c "ALTER SYSTEM SET full_page_writes = off" \
+            -c "SELECT pg_reload_conf()"
+          sleep 1
+          test "$(psql "postgres://maktaba:maktaba@localhost:5432/maktaba" -Atc "SHOW fsync")" = off
+
       - name: Run migrations (first run — applies pending)
         run: make migrate
 

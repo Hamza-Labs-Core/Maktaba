@@ -100,7 +100,20 @@ func setupFilter(t testing.TB) *pfEnv { return setupFilterWith(t, nil) }
 // stand-ins step aside for the real routes it brought.
 func setupFilterWith(t testing.TB, more func(r chi.Router, e *pfEnv)) *pfEnv {
 	t.Helper()
+	return setupFilterOn(t, more, nil)
+}
+
+// setupFilterOn is setupFilterWith over another handle of the same database: open,
+// when set, gives the database the routes and the gate read (a node's pair of the
+// home's database and its own copy, p57_node_pg_test.go). The test's own statements
+// still go straight to the scratch database.
+func setupFilterOn(t testing.TB, more func(r chi.Router, e *pfEnv), open func(dsn string) *sql.DB) *pfEnv {
+	t.Helper()
 	db, dsn := clustertest.ScratchDB(t)
+	served := db
+	if open != nil {
+		served = open(dsn)
+	}
 	e := &pfEnv{t: t, db: db, dsn: dsn, gate: parental.NewGate(), signer: &pfSigner{}, hub: ws.NewHub()}
 	e.exec(`INSERT INTO users (id, username, pw_hash, is_admin) VALUES
 		($1,'pf-admin','x',true), ($2,'pf-guardian','x',false), ($3,'pf-other-guardian','x',false),
@@ -131,7 +144,7 @@ func setupFilterWith(t testing.TB, more func(r chi.Router, e *pfEnv)) *pfEnv {
 	r := router.New(router.Deps{IdempotencyStore: idempotency.NewMemoryStore(), Parental: e.gate})
 	// a streaming service that keeps time limits (story 57.14): without one a
 	// restricted account's stream is refused
-	router.MountP6(r, router.P6Deps{DB: db, StreamingClient: &tmStreaming{leases: map[string]time.Time{}}, URLSigner: e.signer, ParentalGate: e.gate, EventHub: e.hub})
+	router.MountP6(r, router.P6Deps{DB: served, StreamingClient: &tmStreaming{leases: map[string]time.Time{}}, URLSigner: e.signer, ParentalGate: e.gate, EventHub: e.hub})
 	if e.gate.Cache() == nil {
 		t.Fatal("MountP6 gave the gate no cache")
 	}

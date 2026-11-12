@@ -223,14 +223,19 @@ func TestLibrarySuggestions(t *testing.T) {
 }
 
 // T01 and T05's database step: slot 0225 on a populated home. A home with nothing set
-// up goes off; one with a restricted account or a library default tier stays on;
-// nothing else changes; down puts the seed back.
+// up starts off; one with a restricted account or a library default tier starts on; a
+// value already there is kept; nothing else changes; down removes the key.
 func TestSlot0225UpAndDownOnPostgres(t *testing.T) {
 	up, down := gooseStatements(t, "0225_parental_enabled.sql")
+	// the stored value, "absent" when the key is not there
 	state := func(t *testing.T, e *env) string {
 		t.Helper()
 		var v string
-		if err := e.db.QueryRow(`SELECT value::text FROM app_settings WHERE key = 'parental.enabled'`).Scan(&v); err != nil {
+		err := e.db.QueryRow(`SELECT value::text FROM app_settings WHERE key = 'parental.enabled'`).Scan(&v)
+		if errors.Is(err, sql.ErrNoRows) {
+			return "absent"
+		}
+		if err != nil {
 			t.Fatal(err)
 		}
 		return v
@@ -238,8 +243,8 @@ func TestSlot0225UpAndDownOnPostgres(t *testing.T) {
 	populated := func(t *testing.T) *env {
 		e := setup(t) // users, libraries, an ACL
 		run(t, e.db, "0225 down", down)
-		if got := state(t, e); got != "true" {
-			t.Fatalf("after down: %s, want slot 0221's true", got)
+		if got := state(t, e); got != "absent" {
+			t.Fatalf("after down: %s, want the key gone (no slot before 0225 seeds it)", got)
 		}
 		return e
 	}
@@ -266,8 +271,23 @@ func TestSlot0225UpAndDownOnPostgres(t *testing.T) {
 		e.exec(`INSERT INTO app_settings (key, value) VALUES ('parental.notice_dismissed_at', '1'::jsonb)`)
 		run(t, e.db, "0225 down", down)
 		var left int
-		if err := e.db.QueryRow(`SELECT count(*) FROM app_settings WHERE key = 'parental.notice_dismissed_at'`).Scan(&left); err != nil || left != 0 || state(t, e) != "true" {
+		if err := e.db.QueryRow(`SELECT count(*) FROM app_settings WHERE key = 'parental.notice_dismissed_at'`).Scan(&left); err != nil || left != 0 || state(t, e) != "absent" {
 			t.Fatalf("after down: %s, %d dismissal rows (%v)", state(t, e), left, err)
+		}
+	})
+	// the slot overwrites nothing: what an admin chose stays, whichever way
+	t.Run("a value already there", func(t *testing.T) {
+		e := populated(t)
+		e.exec(`INSERT INTO app_settings (key, value) VALUES ('parental.enabled', 'true'::jsonb)`)
+		run(t, e.db, "0225 up", up)
+		if got := state(t, e); got != "true" {
+			t.Fatalf("on with nothing set up: %s, want it kept true", got)
+		}
+		e.exec(`UPDATE app_settings SET value = 'false'::jsonb WHERE key = 'parental.enabled'`)
+		e.exec(`UPDATE libraries SET age_tier = 0 WHERE id = $1`, libOpen)
+		run(t, e.db, "0225 up again", up)
+		if got := state(t, e); got != "false" {
+			t.Fatalf("off with a library default tier: %s, want it kept false", got)
 		}
 	})
 	t.Run("a restricted account", func(t *testing.T) {
@@ -306,29 +326,39 @@ func TestSlot0225OnSQLite(t *testing.T) {
 	state := func() string {
 		t.Helper()
 		var v string
-		if err := db.QueryRow(`SELECT value FROM app_settings WHERE key = 'parental.enabled'`).Scan(&v); err != nil {
+		err := db.QueryRow(`SELECT value FROM app_settings WHERE key = 'parental.enabled'`).Scan(&v)
+		if errors.Is(err, sql.ErrNoRows) {
+			return "absent"
+		}
+		if err != nil {
 			t.Fatal(err)
 		}
 		return v
 	}
-	if state() != "true" {
-		t.Fatalf("slot 0221's seed = %s", state())
+	if state() != "absent" {
+		t.Fatalf("before slot 0225: %s, want no key (slot 0221 does not seed it)", state())
 	}
 	run(t, db, "up", up)
 	run(t, db, "up again", up)
 	if state() != "false" {
 		t.Fatalf("after up with nothing set up: %s, want false", state())
 	}
-	run(t, db, "down", down)
-	if state() != "true" {
-		t.Fatalf("after down: %s, want true", state())
-	}
+	// a value already there is kept
 	run(t, db, "a library default tier", []string{`UPDATE libraries SET age_tier = 0`})
+	run(t, db, "up over a value", up)
+	if state() != "false" {
+		t.Fatalf("up over a stored value: %s, want it kept false", state())
+	}
+	run(t, db, "down", down)
+	if state() != "absent" {
+		t.Fatalf("after down: %s, want the key gone", state())
+	}
 	run(t, db, "up", up)
 	if state() != "true" {
 		t.Fatalf("with a library default tier: %s, want true", state())
 	}
-	run(t, db, "a restricted account instead", []string{`UPDATE libraries SET age_tier = NULL`,
+	run(t, db, "a restricted account instead", []string{`DELETE FROM app_settings WHERE key = 'parental.enabled'`,
+		`UPDATE libraries SET age_tier = NULL`,
 		`INSERT INTO users (id, username, pw_hash, is_admin) VALUES ('c', 's-child', 'x', 0)`,
 		`INSERT INTO parental_policies (user_id, max_tier) VALUES ('c', 9)`})
 	run(t, db, "up", up)

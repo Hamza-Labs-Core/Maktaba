@@ -79,13 +79,32 @@ class TvParentalScreensTest {
             }
         }
         server.start()
+        compose.registerIdlingResource(idling)
         routes["/api/me/parental/guardians"] = { json("""{"guardians":[{"id":"g1","username":"huda"}]}""") }
     }
 
     @After
     fun stop() = server.close()
 
-    private fun client() = ApiClient(server.url("/"), MemoryTokens(jwt(System.currentTimeMillis() / 1000 + 86_400), "r"))
+    /** The client's calls, on a dispatcher of their own so they can be counted ([idling]). */
+    private val calls = okhttp3.Dispatcher()
+
+    /**
+     * Idle when no call to the home is queued or running. OkHttp counts a call as running until
+     * its callback returns, and the client resumes its caller inside that callback, so once this
+     * is idle the screen's next step is already queued, and `waitForIdle()` runs it. A test that
+     * moves the clock for a screen's own wait (the 15 seconds between two reads of a request)
+     * settles first: the wait has then begun, and the clock moves it. A clock moved while the
+     * answer before it is still on its way moves nothing.
+     */
+    private val idling = object : androidx.compose.ui.test.IdlingResource {
+        override val isIdleNow: Boolean get() = calls.runningCallsCount() == 0 && calls.queuedCallsCount() == 0
+    }
+
+    private fun client() = ApiClient(
+        server.url("/"), MemoryTokens(jwt(System.currentTimeMillis() / 1000 + 86_400), "r"),
+        ApiClient.defaultHttp.newBuilder().dispatcher(calls).build(),
+    )
 
     private fun show(content: @Composable () -> Unit) {
         compose.setContent {
@@ -204,9 +223,12 @@ class TvParentalScreensTest {
         var opened = 0
         show { TvBlocked(MyParental(restricted = true, maxTier = 9), remember { ParentHelp(client(), SubjectKind.VIDEO, "v9") }, onUnlocked = { opened++ }, onBack = {}) }
         until("the request waits") { "parental-ask-state" in shown() && "parental-ask" !in shown() }
+        // the home's answers have landed: the screen is in its 15-second wait, which the clock ends
+        compose.waitForIdle()
         val read = ownReads()
         compose.mainClock.advanceTimeBy(15_000)
         until("read again after 15 s") { ownReads() > read }
+        compose.waitForIdle()
         assertEquals(0, opened)
         // the parent approves from their own phone
         status = "approved"

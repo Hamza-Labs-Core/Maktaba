@@ -204,9 +204,11 @@ CREATE OR REPLACE TRIGGER parental_guardians_notify_trg
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+-- `parental.enabled` is seeded by slot 0225, which knows whether anything is set up: a
+-- value seeded here and overwritten there would make the update one whose Down scripts
+-- cannot undo it (a rollback would put the whole database back from its dump).
 INSERT INTO app_settings (key, value)
-    VALUES ('parental.enabled', 'true'::jsonb),
-           ('parental.unrated_on_signal', '"hide"'::jsonb)
+    VALUES ('parental.unrated_on_signal', '"hide"'::jsonb)
 ON CONFLICT (key) DO NOTHING;
 -- +goose StatementEnd
 

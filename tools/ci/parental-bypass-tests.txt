@@ -30,6 +30,7 @@ TestP57LiveRemoteTimePG
 TestP57LiveTVPG
 TestP57LiveTimePG
 TestP57LiveTimeUnknownPG
+TestP57NodeFiltersFromItsCopyWithTheHomeDown
 TestP57RehearsalFindings
 TestP57ReviewPG
 TestP57RoleTable

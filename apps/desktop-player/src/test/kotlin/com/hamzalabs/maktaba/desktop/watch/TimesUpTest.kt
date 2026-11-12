@@ -120,13 +120,21 @@ class TimesUpTest {
         fake.answer("GET /api/me/parental/requests") { TestHome.json(own(status.get())) }
         var checked = 0
         runComposeUiTest {
+            // each move of the clock waits for the home's answers first (TestHome.idle): the
+            // screen is then in its 15-second wait, which the clock ends
+            fun settle() {
+                waitUntil(timeoutMillis = 10_000) { fake.idle }
+                waitForIdle()
+            }
             setContent { InPlayer(fake.home()) { TimesUp(up, onCheck = { checked++ }, more = MoreTime(fake.client)) } }
             // asked earlier: the home says it still waits, and nothing is asked for again
             waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-ask-state")).fetchSemanticsNodes().isNotEmpty() }
             assertEquals(0, onAllNodes(hasTestTag("parental-ask")).fetchSemanticsNodes().size)
+            settle()
             val read = fake.asked("GET /api/me/parental/requests").size
             mainClock.advanceTimeBy(15_000)
             waitUntil(timeoutMillis = 10_000) { fake.asked("GET /api/me/parental/requests").size > read }
+            settle()
             assertEquals(0, checked)
             // the parent approves from their own device
             status.set("approved")

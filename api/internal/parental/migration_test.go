@@ -103,7 +103,7 @@ func TestSlot0221UpAndDownOnPostgres(t *testing.T) {
 	}
 	var enabled string
 	if err := db.QueryRow(`SELECT value::text FROM app_settings WHERE key = 'parental.enabled'`).Scan(&enabled); err != nil || enabled != "false" {
-		// slot 0221 seeds it true; slot 0225 turns it off where nothing is set up
+		// slot 0225 seeds it off where nothing is set up
 		t.Fatalf("parental.enabled = %q (%v), want false", enabled, err)
 	}
 	// slots go down newest first: 0223's tables hang off parental_policies
