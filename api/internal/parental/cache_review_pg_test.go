@@ -251,3 +251,70 @@ func TestRuleSubjectIDsAreCanonical(t *testing.T) {
 		t.Error("live TV permits the blocked channel")
 	}
 }
+
+// The note that lets an unrestricted sign-in through is never written for a state a heard
+// change has passed: the account is restricted between the read and the note.
+func TestCacheNoteDoesNotOutliveAChangeHeardDuringTheRead(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	db, err := sql.Open("postgres", e.dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	c := parental.NewCache(parental.NewStore(db))
+	viewer := &principal.Principal{UserID: uViewer}
+	var once sync.Once
+	c.SetAfterRead(func() {
+		once.Do(func() {
+			// the read said "no policy"; now a guardian restricts the account and
+			// this cache hears of it, before the note is written
+			e.restrict(uViewer)
+			c.Invalidate(uViewer)
+		})
+	})
+	if eff, err := c.For(ctx, viewer); err != nil || eff.Limits() {
+		t.Fatalf("the read before the change: %+v, %v", eff, err)
+	}
+	_ = db.Close()
+	if eff, err := c.For(ctx, viewer); err == nil {
+		t.Errorf("an account restricted during the read was answered %+v with the database gone; want an error", eff)
+	}
+}
+
+// Nor is the note renewed by an answer from a kept entry: it ages from the database read
+// it came from.
+func TestCacheNoteIsNotRenewedFromAKeptEntry(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	db, err := sql.Open("postgres", e.dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	clock := &testClock{at: time.Now()}
+	c := parental.NewCache(parental.NewStore(db))
+	c.SetClock(clock.now)
+	c.Resume() // entries are kept
+	viewer := &principal.Principal{UserID: uViewer}
+	if _, err := c.For(ctx, viewer); err != nil { // the database read: the note is from now
+		t.Fatal(err)
+	}
+	if parental.UnlimitedFor > parental.EntryMaxAge+time.Minute || parental.UnlimitedFor > 2*time.Minute {
+		t.Fatalf("the note lives %s: keep it short", parental.UnlimitedFor)
+	}
+	for i := 0; i < 5; i++ { // answered from the kept entry, again and again
+		clock.add((parental.UnlimitedFor - 5*time.Second) / 5)
+		if _, err := c.For(ctx, viewer); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = db.Close()
+	if _, err := c.For(ctx, viewer); err != nil {
+		t.Errorf("inside the note's life: %v", err)
+	}
+	clock.add(10 * time.Second) // past the first read's note, well inside a renewed one's
+	if eff, err := c.For(ctx, viewer); err == nil {
+		t.Errorf("the note was renewed by a kept entry: answered %+v with the database gone", eff)
+	}
+}
