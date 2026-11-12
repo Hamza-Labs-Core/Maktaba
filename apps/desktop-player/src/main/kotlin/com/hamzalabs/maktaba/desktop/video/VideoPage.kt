@@ -87,7 +87,10 @@ fun VideoContent(state: VideoPageState, home: DesktopHome, features: Capabilitie
                 com.hamzalabs.maktaba.desktop.watch.MoreTime(home.client, home::signedOut, com.hamzalabs.maktaba.core.api.SubjectKind.VIDEO, state.id)
             }
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                com.hamzalabs.maktaba.desktop.watch.BlockedPage(mine, help, onUnlocked = { scope.launch { state.load() } })
+                com.hamzalabs.maktaba.desktop.watch.BlockedPage(
+                    mine, help, onUnlocked = { scope.launch { state.load() } },
+                    onReturn = { scope.launch { state.load() } },
+                )
             }
             return
         }

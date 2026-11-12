@@ -127,6 +127,32 @@ class ParentalPagesTest {
     }
 
     @Test
+    fun theBlockedPageReadsAgainWhenTheWindowComesBackToTheFront() = TestHome().use { fake ->
+        // a parent approves from their own device while the child looks at another window (story 57.06)
+        val home = fake.signedInRestricted()
+        val focused = androidx.compose.runtime.mutableStateOf(true)
+        val window = object : androidx.compose.ui.platform.WindowInfo {
+            override val isWindowFocused: Boolean get() = focused.value
+        }
+        runComposeUiTest {
+            setContent {
+                androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalWindowInfo provides window) {
+                    InPlayer(home) { Box(Modifier.size(1200.dp, 900.dp)) { VideoPage("v1", null) } }
+                }
+            }
+            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-blocked")).fetchSemanticsNodes().isNotEmpty() }
+            val before = fake.asked("GET /api/videos/v1").size
+            focused.value = false
+            waitForIdle()
+            assertEquals("leaving reads nothing", before, fake.asked("GET /api/videos/v1").size)
+            fake.answer("GET /api/videos/v1", """{"id":"v1","title":"Fiqh 7","duration_sec":3000}""")
+            focused.value = true
+            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("video-page")).fetchSemanticsNodes().isNotEmpty() }
+            onNodeWithText("Fiqh 7").assertExists()
+        }
+    }
+
+    @Test
     fun theLimitIsNamedInBothLanguages() {
         val en = Texts(Lang.En)
         val ar = Texts(Lang.Ar)

@@ -111,6 +111,8 @@ fun ParentHelpButtons(more: MoreTime, onUnlocked: () -> Unit, color: Color = Col
             onUnlocked()
         }
     }
+    // a lock counts down on screen and clears by itself (story 57.06)
+    LaunchedEffect(more, pinState is PinState.Locked) { more.pin.waitOutLock() }
     // the home knows nothing to ask for: nothing more is offered
     if (asked == AskState.NothingToAsk || pinState == PinState.NothingToUnlock) return
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -208,9 +210,11 @@ fun TimeNotes(time: MyTime?, cannotCheck: Boolean) {
     var warned by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(time) {
         val line = warnings.crossed(time) ?: return@LaunchedEffect
-        warned = line
+        // the time really left, not the line crossed (a video opened with two minutes left)
+        val seconds = TimeView.warningSeconds(line, time)
+        warned = seconds
         delay(TimeView.WARNING_SHOWN_MS)
-        if (warned == line) warned = null
+        if (warned == seconds) warned = null
     }
     warned?.let {
         Text(
@@ -283,11 +287,28 @@ fun limitLine(mine: com.hamzalabs.maktaba.core.api.MyParental, t: com.hamzalabs.
  * "This isn't available" (story 57.05): what a sign-in under a limit sees for something the home
  * does not show it. It never names what was asked for (the home sends nothing about it: a hidden
  * video answers as a missing one). [help] offers Ask a parent and Enter parent PIN; once the
- * home says there is nothing to ask for, both go.
+ * home says there is nothing to ask for, both go. [onReturn] runs each time the window comes back
+ * to the front while this shows: a parent may have approved from their own device meanwhile, and
+ * the page then reads again (story 57.06).
  */
 @Composable
-fun BlockedPage(mine: com.hamzalabs.maktaba.core.api.MyParental, help: MoreTime?, onUnlocked: () -> Unit, modifier: Modifier = Modifier) {
+fun BlockedPage(
+    mine: com.hamzalabs.maktaba.core.api.MyParental,
+    help: MoreTime?,
+    onUnlocked: () -> Unit,
+    modifier: Modifier = Modifier,
+    onReturn: (() -> Unit)? = null,
+) {
     val t = LocalTexts.current
+    val focused = androidx.compose.ui.platform.LocalWindowInfo.current.isWindowFocused
+    var wasAway by remember { mutableStateOf(false) }
+    LaunchedEffect(focused) {
+        if (!focused) wasAway = true
+        else if (wasAway) {
+            wasAway = false
+            onReturn?.invoke()
+        }
+    }
     Column(
         modifier.padding(24.dp).testTag("parental-blocked"),
         horizontalAlignment = Alignment.CenterHorizontally,

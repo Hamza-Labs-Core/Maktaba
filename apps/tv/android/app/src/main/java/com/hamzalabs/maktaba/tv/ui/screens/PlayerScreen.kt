@@ -128,9 +128,7 @@ fun PlayerScreen(
     val time = parental?.time?.collectAsState()?.value
     val restricted = mine?.restricted == true
     val timeUp = playback.timeUp
-    LaunchedEffect(parental, restricted, libraryId, timeUp == null) {
-        if (parental != null && restricted && timeUp == null) parental.followTime(libraryId)
-    }
+    com.hamzalabs.maktaba.core.ui.FollowTimeWhileShown(parental, on = restricted && timeUp == null, libraryId = libraryId)
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         val player = playback.player

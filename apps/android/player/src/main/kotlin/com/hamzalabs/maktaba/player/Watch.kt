@@ -126,9 +126,8 @@ fun WatchScreen(
     val timeUp = playback.timeUp
     val library = playback.video?.libraryId
     // the home's answer about the time, asked again while the video plays (never counted here)
-    LaunchedEffect(parental, restricted, library, timeUp == null) {
-        if (parental != null && restricted && timeUp == null) parental.followTime(library)
-    }
+    // and only while the app is in front: the sound may go on with the screen off, the poll does not
+    com.hamzalabs.maktaba.core.ui.FollowTimeWhileShown(parental, on = restricted && timeUp == null, libraryId = library)
     // where the video is drawn, in the window: the picture-in-picture window grows out of it
     var videoRect by remember { mutableStateOf<android.graphics.Rect?>(null) }
     val inPip = if (fullScreen) {

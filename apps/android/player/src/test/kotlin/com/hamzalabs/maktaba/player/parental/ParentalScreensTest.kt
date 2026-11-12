@@ -104,8 +104,8 @@ class ParentalScreensTest {
     fun theOneMinuteWarningInArabic() {
         show {
             androidx.compose.foundation.layout.Column {
-                TimeLeftLine(MyTime(allowed = true, limited = true, remainingSeconds = 45))
-                TimeWarning(MyTime(allowed = true, limited = true, remainingSeconds = 45))
+                TimeLeftLine(MyTime(allowed = true, limited = true, remainingSeconds = 55))
+                TimeWarning(MyTime(allowed = true, limited = true, remainingSeconds = 55))
             }
         }
         assertEquals(LayoutDirection.Rtl, direction)
@@ -134,6 +134,34 @@ class ParentalScreensTest {
         time.value = MyTime(allowed = false, limited = true, reason = TimeReason.LIMIT_REACHED, nextAllowedAt = null)
         compose.waitForIdle()
         compose.onNodeWithTag("parental-home-over").assertTextEquals("Time's up for today")
+    }
+
+    @Test
+    fun aWarningNamesTheTimeReallyLeft() {
+        // opened with two minutes left: under the five-minute line, but it says two minutes
+        show { TimeWarning(MyTime(allowed = true, limited = true, remainingSeconds = 125)) }
+        compose.onNodeWithTag("parental-time-warning").assertTextEquals("Watching ends in 2 minutes.")
+    }
+
+    // ---- the time poll (only while the app is in front) ----
+
+    @Test
+    fun theTimeIsNotAskedWhileTheAppIsInTheBackground() {
+        home.answer("/api/me/parental") { FakeHome.json("""{"restricted":true,"max_tier":9,"allow_only":false,"version":1}""") }
+        home.answer("/api/me/parental/time") { FakeHome.json("""{"allowed":true,"limited":true,"remaining_seconds":3000}""") }
+        val parental = com.hamzalabs.maktaba.core.parental.ParentalState(home.home.client)
+        kotlinx.coroutines.runBlocking { parental.refresh() }
+        show { com.hamzalabs.maktaba.core.ui.FollowTimeWhileShown(parental, on = true) }
+        compose.settled(home, "asked while shown") { requests("/api/me/parental/time").size == 1 }
+        // another app in front: two minutes pass and nothing is asked
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
+        compose.mainClock.advanceTimeBy(120_000)
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMinutes(2))
+        compose.waitForIdle()
+        assertEquals("no poll in the background", 1, requests("/api/me/parental/time").size)
+        // back in front: asked at once
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+        compose.settled(home, "asked again in front") { requests("/api/me/parental/time").size == 2 }
     }
 
     // ---- the time's-up screen ----
@@ -258,6 +286,43 @@ class ParentalScreensTest {
         assertEquals("""{"subject_kind":"video","subject_id":"v9"}""", requests("/api/me/parental/requests").single().body!!.utf8())
         // nothing about the video itself is on the page: the home sent none
         assertFalse(compose.shown().toString(), compose.shown().any { "v9" in it })
+    }
+
+    @Test
+    fun theBlockedPageReadsAgainWhenTheAppComesBackToTheFront() {
+        // a parent approves from their own phone while the child's app is away (story 57.06)
+        var returned = 0
+        show { BlockedPage(limited, help = null, onUnlocked = {}, onReturn = { returned++ }) }
+        assertEquals("not when it first shows", 0, returned)
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.STARTED)
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+        compose.waitForIdle()
+        assertEquals(1, returned)
+    }
+
+    @Test
+    fun aLockCountsDownOnScreenAndThenThePinCanBeTypedAgain() {
+        home.answer("/api/me/parental/unlock") {
+            MockResponse.Builder().code(429).setHeader("Content-Type", "application/problem+json").setHeader("Retry-After", "125")
+                .body("""{"type":"https://maktaba.tv/problems/parental-pin-locked","title":"locked","status":429,"code":"pin_locked"}""").build()
+        }
+        show { BlockedPage(limited, remember { ParentHelp(home.home.client, SubjectKind.VIDEO, "v9") }, onUnlocked = {}) }
+        compose.settled(home, "someone has a PIN") { "parental-pin" in compose.shown() }
+        compose.onNodeWithTag("parental-pin").performClick()
+        compose.onNodeWithTag("parental-pin-field").performTextInput("000000")
+        compose.onNodeWithTag("parental-pin-submit").performClick()
+        compose.settled(home, "locked") { "parental-pin-state" in compose.shown() }
+        compose.onNodeWithTag("parental-pin-state").assertTextEquals("Too many tries. Try again in 2 minutes.")
+        // the minutes shown go down
+        compose.mainClock.advanceTimeBy(10_000)
+        compose.waitForIdle()
+        compose.onNodeWithTag("parental-pin-state").assertTextEquals("Too many tries. Try again in 1 minute.")
+        // and at zero the lock is gone from the screen: a PIN can be sent again
+        compose.mainClock.advanceTimeBy(120_000)
+        compose.waitForIdle()
+        assertFalse("the lock's line is gone", "parental-pin-state" in compose.shown())
+        compose.onNodeWithTag("parental-pin-field").performTextInput("111111")
+        compose.onNodeWithTag("parental-pin-submit").assertIsEnabled()
     }
 
     @Test

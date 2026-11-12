@@ -332,6 +332,39 @@ class ParentalApiTest {
     }
 
     @Test
+    fun aLockCountsDownAndClearsByItself() = runBlocking {
+        routes["POST /api/me/parental/unlock"] = { json(429, problem(429, "parental-pin-locked", "pin_locked"), retryAfter = "3") }
+        val flow = PinUnlock(client(), SubjectKind.VIDEO, "v1")
+        flow.submit("g1", "000000")
+        assertEquals(PinState.Locked(3), flow.state.value)
+        val seen = mutableListOf<PinState>()
+        var waited = 0L
+        flow.waitOutLock(wait = { ms ->
+            waited += ms
+            seen += flow.state.value
+        })
+        assertEquals("the seconds left go down", listOf<PinState>(PinState.Locked(3), PinState.Locked(2), PinState.Locked(1)), seen)
+        assertEquals(3_000L, waited)
+        assertEquals("then the PIN can be typed again", PinState.Entering, flow.state.value)
+
+        // a lock the home named no time for is not counted, and a state that is no lock returns at once
+        routes["POST /api/me/parental/unlock"] = { json(429, problem(429, "parental-pin-locked", "pin_locked")) }
+        flow.submit("g1", "000000")
+        flow.waitOutLock(wait = { fail("nothing to wait for") })
+        assertEquals(PinState.Locked(null), flow.state.value)
+        flow.again()
+        flow.waitOutLock(wait = { fail("not locked") })
+
+        // closed or answered while it counts: the count stops and changes nothing
+        routes["POST /api/me/parental/unlock"] = { json(429, problem(429, "parental-pin-locked", "pin_locked"), retryAfter = "60") }
+        flow.submit("g1", "000000")
+        var ticks = 0
+        flow.waitOutLock(wait = { if (++ticks == 2) flow.again() })
+        assertEquals(2, ticks)
+        assertEquals(PinState.Entering, flow.state.value)
+    }
+
+    @Test
     fun onlySixDigitsAreAPin() {
         assertTrue(isParentPin("012345"))
         listOf("", "12345", "1234567", "12345a", "١٢٣٤٥٦").forEach { assertFalse(it, isParentPin(it)) }

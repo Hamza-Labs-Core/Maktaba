@@ -1,6 +1,7 @@
 package com.hamzalabs.maktaba.desktop.watch
 
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -107,6 +108,37 @@ class TimesUpTest {
             onNodeWithTag("parental-pin-submit").performClick()
             waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-pin-state")).fetchSemanticsNodes().isNotEmpty() }
             onNodeWithText("That PIN isn't right.").assertExists()
+        }
+    }
+
+    @Test
+    fun aLockCountsDownOnScreenAndThenThePinCanBeTypedAgain() = TestHome().use { fake ->
+        fake.withPin()
+        fake.answer("POST /api/me/parental/unlock") {
+            mockwebserver3.MockResponse.Builder().code(429).setHeader("Content-Type", "application/problem+json").setHeader("Retry-After", "2")
+                .body("""{"title":"locked","status":429,"code":"pin_locked"}""").build()
+        }
+        runComposeUiTest {
+            setContent { InPlayer(fake.home()) { TimesUp(up, onCheck = {}, more = MoreTime(fake.client)) } }
+            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-pin")).fetchSemanticsNodes().isNotEmpty() }
+            onNodeWithTag("parental-pin").performClick()
+            onNodeWithTag("parental-pin-field").performTextInput("000000")
+            onNodeWithTag("parental-pin-submit").performClick()
+            waitUntil(timeoutMillis = 10_000) { onAllNodes(hasTestTag("parental-pin-state")).fetchSemanticsNodes().isNotEmpty() }
+            onNodeWithText("Too many tries. Try again in 1 minute.").assertExists()
+            // the home's two seconds pass: the lock is gone from the screen, and a PIN can be sent again
+            waitUntil(timeoutMillis = 20_000) { onAllNodes(hasTestTag("parental-pin-state")).fetchSemanticsNodes().isEmpty() }
+            onNodeWithTag("parental-pin-field").performTextInput("111111")
+            onNodeWithTag("parental-pin-submit").assertIsEnabled()
+        }
+    }
+
+    @Test
+    fun aWarningNamesTheTimeReallyLeft() = TestHome().use { fake ->
+        runComposeUiTest {
+            // opened with two minutes left: under the five-minute line, but it says two minutes
+            setContent { InPlayer(fake.home()) { TimeNotes(MyTime(allowed = true, limited = true, remainingSeconds = 125), cannotCheck = false) } }
+            onNodeWithText("Watching ends in 2 minutes.").assertExists()
         }
     }
 

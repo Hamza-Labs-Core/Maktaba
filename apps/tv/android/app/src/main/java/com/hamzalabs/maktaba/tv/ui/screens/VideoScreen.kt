@@ -82,6 +82,7 @@ fun VideoScreen(
             help = remember(id) { com.hamzalabs.maktaba.core.ui.ParentHelp(api.client, com.hamzalabs.maktaba.core.api.SubjectKind.VIDEO, id, signedOut) },
             onUnlocked = retry,
             onBack = onBack,
+            onReturn = retry,
         )
         return
     }

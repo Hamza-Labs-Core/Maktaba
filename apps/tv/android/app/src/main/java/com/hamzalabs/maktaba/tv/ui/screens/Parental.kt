@@ -81,9 +81,11 @@ fun TvTimeOverlay(time: MyTime?, cannotCheck: Boolean, modifier: Modifier = Modi
     var warned by remember { mutableStateOf<Long?>(null) }
     LaunchedEffect(time) {
         val line = warnings.crossed(time) ?: return@LaunchedEffect
-        warned = line
+        // the time really left, not the line crossed (a video opened with two minutes left)
+        val seconds = TimeView.warningSeconds(line, time)
+        warned = seconds
         delay(TimeView.WARNING_SHOWN_MS)
-        if (warned == line) warned = null
+        if (warned == seconds) warned = null
     }
     Column(modifier, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val chip = Modifier.background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp)).padding(horizontal = 14.dp, vertical = 8.dp)
@@ -120,7 +122,8 @@ fun TvTimeOverlay(time: MyTime?, cannotCheck: Boolean, modifier: Modifier = Modi
 fun TvHomeTime(parental: ParentalState, modifier: Modifier = Modifier) {
     val mine by parental.mine.collectAsState()
     val time by parental.time.collectAsState()
-    LaunchedEffect(parental, mine.restricted) { if (mine.restricted) parental.followTime() }
+    // not while the TV is in standby or shows another app
+    com.hamzalabs.maktaba.core.ui.FollowTimeWhileShown(parental, on = mine.restricted)
     if (!mine.restricted) return
     val res = LocalContext.current.resources
     val over = TimeView.refusal(time)
@@ -158,7 +161,15 @@ private fun TvParentHelp(help: ParentHelp, onUnlocked: () -> Unit) {
     var minutes by remember { mutableStateOf(MORE_TIME_MINUTES[1]) }
     LaunchedEffect(help) { help.pin.load() }
     LaunchedEffect(holders) { if (holders.size == 1) who = holders.single().id }
-    LaunchedEffect(pinState) { if (pinState == PinState.Unlocked) onUnlocked() }
+    // once per unlock: the state is put back, so showing this screen again never asks by itself
+    LaunchedEffect(pinState) {
+        if (pinState == PinState.Unlocked) {
+            help.pin.again()
+            onUnlocked()
+        }
+    }
+    // a lock counts down on screen and clears by itself (story 57.06)
+    LaunchedEffect(help, pinState is PinState.Locked) { help.pin.waitOutLock() }
     val nothing = asked == AskState.NothingToAsk || pinState == PinState.NothingToUnlock
     if (nothing) return
     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -310,7 +321,16 @@ fun TvTimesUp(refusal: TimeRefusal, positionMs: Long, help: ParentHelp?, onCheck
  * asked for (the home sends none). [stopped]: a video the home ended while it played.
  */
 @Composable
-fun TvBlocked(mine: MyParental, help: ParentHelp?, onUnlocked: () -> Unit, stopped: Boolean = false, onBack: (() -> Unit)? = null) {
+fun TvBlocked(
+    mine: MyParental,
+    help: ParentHelp?,
+    onUnlocked: () -> Unit,
+    stopped: Boolean = false,
+    onBack: (() -> Unit)? = null,
+    /** Runs each time the TV comes back to the app while this shows: a parent may have approved meanwhile. */
+    onReturn: (() -> Unit)? = null,
+) {
+    com.hamzalabs.maktaba.core.ui.OnReturnToFront(onReturn)
     val first = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
     val res = LocalContext.current.resources

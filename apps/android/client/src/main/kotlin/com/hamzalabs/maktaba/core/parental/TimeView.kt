@@ -46,6 +46,16 @@ object TimeView {
         return WARNINGS_S.sorted().firstOrNull { left <= it }
     }
 
+    /**
+     * The seconds a warning names when [time] newly crossed [line]: the line itself ("5
+     * minutes") when the answer is within one poll of it, else the time really left (a video
+     * opened with two minutes left says two minutes, not five).
+     */
+    fun warningSeconds(line: Long, time: MyTime?): Long {
+        val left = left(time) ?: return line
+        return if (line - left <= NEAR_POLL_MS / 1000) line else left
+    }
+
     /** When to ask the home next after [time] (null: the call failed). */
     fun pollMs(time: MyTime?): Long = if (left(time)?.let { it <= NEAR_S } == true) NEAR_POLL_MS else POLL_MS
 

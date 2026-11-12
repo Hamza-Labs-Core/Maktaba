@@ -473,7 +473,7 @@ private fun EmptyHome(admin: Boolean, onSwitchHome: () -> Unit, onSignOut: () ->
 fun HomeTime(parental: com.hamzalabs.maktaba.core.parental.ParentalState, modifier: Modifier = Modifier) {
     val mine by parental.mine.collectAsState()
     val time by parental.time.collectAsState()
-    LaunchedEffect(parental, mine.restricted) { if (mine.restricted) parental.followTime() }
+    com.hamzalabs.maktaba.core.ui.FollowTimeWhileShown(parental, on = mine.restricted)
     if (!mine.restricted) return
     com.hamzalabs.maktaba.core.ui.HomeTimeLine(time, modifier)
 }

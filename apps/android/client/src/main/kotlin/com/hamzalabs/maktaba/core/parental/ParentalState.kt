@@ -211,6 +211,25 @@ class PinUnlock(
     fun again() {
         _state.value = PinState.Entering
     }
+
+    /**
+     * Counts a lock down while the panel shows it: the seconds left go down in
+     * [PinState.Locked] (from the home's `Retry-After`) and at zero the PIN can be typed again.
+     * Counted by [wait]s of a second, not by the device's clock (a child cannot shorten it by
+     * setting the clock; the home refuses a PIN typed too soon anyway). Returns at once when
+     * the state is not a lock, and waits for nothing when the home named no time.
+     */
+    suspend fun waitOutLock(wait: suspend (Long) -> Unit = { delay(it) }) {
+        var left = (_state.value as? PinState.Locked)?.retryAfterSec ?: return
+        while (left > 0) {
+            wait(1_000)
+            // answered, closed or typed again meanwhile: not this lock's to count
+            if (_state.value != PinState.Locked(left)) return
+            left--
+            if (left > 0) _state.value = PinState.Locked(left)
+        }
+        again()
+    }
 }
 
 /**

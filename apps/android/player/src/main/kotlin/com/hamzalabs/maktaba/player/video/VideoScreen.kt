@@ -304,6 +304,8 @@ fun VideoScreen(id: String, nav: PlayerNavigator) {
                     help = remember(client, id) { com.hamzalabs.maktaba.core.ui.ParentHelp(client, com.hamzalabs.maktaba.core.api.SubjectKind.VIDEO, id) { home.session.signedOut() } },
                     onUnlocked = { scope.launch { page.load() } },
                     onBack = if (nav.canGoBack) ({ nav.back() }) else null,
+                    // a parent may have approved from their own device while the app was away
+                    onReturn = { scope.launch { page.load() } },
                 )
                 page.notAvailable -> Message(
                     stringResource(R.string.video_not_available),
