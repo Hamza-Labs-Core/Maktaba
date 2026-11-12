@@ -752,6 +752,8 @@ apple_apps:
   - 'apps/tv/tvos/**'
   - 'tools/apple/**'
   - '.github/workflows/_apple-apps.yml'
+  # the demo library the product screenshots' UI tests bundle and serve (story 60.09)
+  - 'tests/fixtures/demo-library/**'
 
 # The Player's UI tests (a build per device, six shards each, the Mac): what the Player's
 # targets build (project.yml: Player/, Shared/Assets.xcassets, MaktabaKit's package) and their
@@ -773,7 +775,10 @@ apple_player_ui:
   - 'tools/apple/ui-durations.json'
   - 'tools/apple/check-app-log.py'
   - 'tools/apple/sim-settle.py'
+  - 'tools/apple/export-shots.py'
   - '.github/workflows/_apple-apps.yml'
+  # the demo library the product screenshots (PlayerDemoShots, the Mac's) are taken on (60.09)
+  - 'tests/fixtures/demo-library/**'
 
 # ---- the developer portal (_devportal.yml) ----------------------------------------------
 

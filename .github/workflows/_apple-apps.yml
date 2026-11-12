@@ -17,6 +17,9 @@ on:
     inputs:
       build: { type: boolean, default: true }
       player_ui: { type: boolean, default: true }
+      # only the product screenshots (story 60.09; product-shots.yml): each UI job runs its
+      # demo-shot tests alone, the Player's shards but the `shots` one are left out
+      shots_only: { type: boolean, default: false }
 
 permissions:
   contents: read
@@ -24,7 +27,7 @@ permissions:
 jobs:
   apple-apps:
     name: Apple apps (Remote, Player, TV)
-    if: inputs.build
+    if: inputs.build && !inputs.shots_only
     # the newest Xcode is on macos-26 (as testflight.yml)
     runs-on: macos-26
     timeout-minutes: 45
@@ -46,6 +49,10 @@ jobs:
       # the Player UI tests' split over shards (by measured time; every test in one shard)
       - name: UI test shards split every test once
         run: python3 tools/apple/ui-shard.py --self-test
+
+      # how the product screenshots (60.09) leave a result bundle
+      - name: The shots' export picks the shot- attachments only
+        run: python3 tools/apple/export-shots.py --self-test
 
       # how a UI shard reads its simulator's own processes to know it has settled
       - name: A simulator's settle check reads its own processes
@@ -182,7 +189,8 @@ jobs:
       fail-fast: false
       matrix:
         device: [iphone, ipad]
-        shard: [1, 2, 3, 4, 5, 6]
+        # `shots`: the product screenshots (PlayerDemoShots, story 60.09), on a shard of their own
+        shard: ${{ fromJSON(inputs.shots_only && '["shots"]' || '["1", "2", "3", "4", "5", "6", "shots"]') }}
         shards: [6]
     env:
       PRODUCTS: ${{ github.workspace }}/build/player-ui-products
@@ -311,10 +319,18 @@ jobs:
             ipad) scheme="Maktaba Player iPad" target="Maktaba Player iPad UITests" ;;
           esac
           tar -xf "$RUNNER_TEMP/player-ui-build.tar" -C "$PRODUCTS"
-          # this shard's tests: longest first, to the shard with the least time so far
           only=()
-          while IFS= read -r t; do only+=(-only-testing "$target/$t"); done \
-            < <(python3 ../../tools/apple/ui-shard.py "$device" "$shard" "$shards" UITests/Player*Tests.swift)
+          if [ "$shard" = shots ]; then
+            # the product screenshots: a status bar at noon, full, on Wi-Fi
+            xcrun simctl status_bar "$UDID" override --time 2026-06-15T12:00:00.000Z --dataNetwork wifi --wifiMode active \
+              --wifiBars 3 --cellularMode notSupported --batteryState charged --batteryLevel 100 \
+              || echo "::warning::the status bar override failed: the shots keep the simulator's own"
+            only=(-only-testing "$target/PlayerDemoShots")
+          else
+            # this shard's tests: longest first, to the shard with the least time so far
+            while IFS= read -r t; do only+=(-only-testing "$target/$t"); done \
+              < <(python3 ../../tools/apple/ui-shard.py "$device" "$shard" "$shards" UITests/Player*Tests.swift)
+          fi
           echo "shard $shard/$shards: ${#only[@]} arguments for $((${#only[@]} / 2)) tests"
           xctestrun=$(ls "$PRODUCTS/Products/${scheme}_iphonesimulator"*.xctestrun)
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test-without-building -xctestrun "$xctestrun" \
@@ -344,6 +360,20 @@ jobs:
           fi
           # checked whole: every launch's info and debug lines are in it
           python3 tools/apple/check-app-log.py "$log"
+
+      # the product screenshots (60.09), `<device>-<screen>-<language>.png`, for
+      # web/packages/website/scripts/shots.mjs --from-run
+      - name: Export the product screenshots
+        if: "!cancelled() && matrix.shard == 'shots'"
+        run: python3 tools/apple/export-shots.py build/product-shots "$RESULTS/${{ matrix.device }}-shots.xcresult"
+      - name: Keep the product screenshots
+        if: "!cancelled() && matrix.shard == 'shots'"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: product-shots-${{ matrix.device }}
+          path: build/product-shots
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Keep the screenshots, results and the app's log
         if: always()
@@ -399,11 +429,16 @@ jobs:
 
       - name: Run the TV UI tests
         working-directory: apps/apple
+        env:
+          SHOTS_ONLY: ${{ inputs.shots_only }}
         run: |
           set -euo pipefail
+          # and the product screenshots (TVDemoShotsUITests, story 60.09); only those for shots_only
+          only=(-only-testing "Maktaba TV UITests/TVDemoShotsUITests")
+          if [ "$SHOTS_ONLY" != true ]; then only+=(-only-testing "Maktaba TV UITests/TVLiveUITests"); fi
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba TV" \
             -destination "id=$UDID" -derivedDataPath "$DERIVED" -resultBundlePath "$RESULTS/tv.xcresult" \
-            CODE_SIGNING_ALLOWED=NO -only-testing "Maktaba TV UITests/TVLiveUITests"
+            CODE_SIGNING_ALLOWED=NO "${only[@]}"
 
       - name: Keep the app's log, delete the simulator
         if: always() && env.UDID != ''
@@ -412,6 +447,18 @@ jobs:
             --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/tv-app.log" || true
           xcrun simctl shutdown "$UDID" || true
           xcrun simctl delete "$UDID" || true
+
+      - name: Export the product screenshots
+        if: "!cancelled()"
+        run: python3 tools/apple/export-shots.py build/product-shots "$RESULTS/tv.xcresult"
+      - name: Keep the product screenshots
+        if: "!cancelled()"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: product-shots-appletv
+          path: build/product-shots
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Keep the screenshots, results and the app's log
         if: always()
@@ -448,6 +495,8 @@ jobs:
 
       - name: Run the Mac Player tests
         working-directory: apps/apple
+        env:
+          SHOTS_ONLY: ${{ inputs.shots_only }}
         run: |
           set -euo pipefail
           # a push to main measures coverage for the affected-tests map
@@ -459,18 +508,21 @@ jobs:
           sudo log config --subsystem com.hamzalabs.maktaba.player.mac --mode "level:debug,persist:debug"
           start=$(date '+%Y-%m-%d %H:%M:%S')
           status=0
+          # every Mac UI test, the product screenshots (PlayerMacDemoShotsUITests) among them;
+          # shots_only: those alone
+          only=(-only-testing "Maktaba Player Mac Tests/PlayerMenus"
+                -only-testing "Maktaba Player Mac Tests/MacPlayerSurface"
+                -only-testing "Maktaba Player Mac Tests/PlayerLaunchLog"
+                -only-testing "Maktaba Player Mac Tests/PageLocale"
+                -only-testing "Maktaba Player Mac Tests/SeriesScreenDetails"
+                -only-testing "Maktaba Player Mac Tests/PageSnapshots"
+                -only-testing "Maktaba Player Mac UITests")
+          if [ "$SHOTS_ONLY" = true ]; then only=(-only-testing "Maktaba Player Mac UITests/PlayerMacDemoShotsUITests"); fi
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Player Mac" \
             -destination platform=macOS -derivedDataPath "$DERIVED-mac" ${cover[@]+"${cover[@]}"} \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= \
             CODE_SIGN_ENTITLEMENTS="$PWD/PlayerMacTests/UI/PlayerMacUITests.entitlements" \
-            -resultBundlePath "$RESULTS/mac.xcresult" \
-            -only-testing "Maktaba Player Mac Tests/PlayerMenus" \
-            -only-testing "Maktaba Player Mac Tests/MacPlayerSurface" \
-            -only-testing "Maktaba Player Mac Tests/PlayerLaunchLog" \
-            -only-testing "Maktaba Player Mac Tests/PageLocale" \
-            -only-testing "Maktaba Player Mac Tests/SeriesScreenDetails" \
-            -only-testing "Maktaba Player Mac Tests/PageSnapshots" \
-            -only-testing "Maktaba Player Mac UITests" || status=1
+            -resultBundlePath "$RESULTS/mac.xcresult" "${only[@]}" || status=1
           log show --start "$start" --style compact --info --debug \
             --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/mac-app.log" || true
           python3 ../../tools/apple/check-app-log.py "$RESULTS/mac-app.log" || status=1
@@ -495,6 +547,18 @@ jobs:
           path: build/coverage-fragment
           if-no-files-found: ignore
           retention-days: 3
+
+      - name: Export the product screenshots
+        if: "!cancelled()"
+        run: python3 tools/apple/export-shots.py build/product-shots "$RESULTS/mac.xcresult"
+      - name: Keep the product screenshots
+        if: "!cancelled()"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: product-shots-mac
+          path: build/product-shots
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Keep the screenshots and results
         if: always()
@@ -553,11 +617,20 @@ jobs:
 
       - name: Run the Remote's diagnostics UI tests
         working-directory: apps/apple
+        env:
+          SHOTS_ONLY: ${{ inputs.shots_only }}
         run: |
           set -euo pipefail
+          # and the Remote's product screenshot (RemoteDemoShotsUITests, story 60.09), at noon on a
+          # full status bar; only that for shots_only
+          xcrun simctl status_bar "$UDID" override --time 2026-06-15T12:00:00.000Z --dataNetwork wifi --wifiMode active \
+            --wifiBars 3 --cellularMode notSupported --batteryState charged --batteryLevel 100 \
+            || echo "::warning::the status bar override failed: the shots keep the simulator's own"
+          only=(-only-testing "Maktaba Remote UITests/RemoteDemoShotsUITests")
+          if [ "$SHOTS_ONLY" != true ]; then only+=(-only-testing "Maktaba Remote UITests/RemoteDiagnosticsUITests"); fi
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Remote" \
             -destination "id=$UDID" -derivedDataPath "$DERIVED" -resultBundlePath "$RESULTS/remote.xcresult" \
-            CODE_SIGNING_ALLOWED=NO -only-testing "Maktaba Remote UITests/RemoteDiagnosticsUITests"
+            CODE_SIGNING_ALLOWED=NO "${only[@]}"
 
       - name: Keep the app's log, delete the simulator
         if: always() && env.UDID != ''
@@ -566,6 +639,19 @@ jobs:
             --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/remote-app.log" || true
           xcrun simctl shutdown "$UDID" || true
           xcrun simctl delete "$UDID" || true
+
+      # its own artifact: product-shots-iphone is the Player's (the files are iphone-remote-<language>.png)
+      - name: Export the product screenshots
+        if: "!cancelled()"
+        run: python3 tools/apple/export-shots.py build/product-shots "$RESULTS/remote.xcresult"
+      - name: Keep the product screenshots
+        if: "!cancelled()"
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: product-shots-iphone-remote
+          path: build/product-shots
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Keep the screenshots, results and the app's log
         if: always()
