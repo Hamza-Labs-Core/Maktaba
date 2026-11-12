@@ -6,6 +6,7 @@ package parental_test
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -199,5 +200,54 @@ func TestCacheEntriesHaveAMaximumAge(t *testing.T) {
 	}
 	if parental.EntryMaxAge > 2*time.Minute {
 		t.Errorf("the maximum age is %s, want a short one", parental.EntryMaxAge)
+	}
+}
+
+// Finding 6: a rule's uuid is stored in its canonical form whatever the client sent, and a
+// rule stored before that (in capitals) still names its subject.
+func TestRuleSubjectIDsAreCanonical(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	e.restrict(uChild)
+	const channel = "ab120000-0000-4000-8000-00000000cd34"
+	r, err := e.store.AddRule(ctx, uAdmin, uChild, parental.RuleInput{Effect: parental.EffectBlock, SubjectKind: parental.SubjectChannel, SubjectID: strings.ToUpper(channel)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SubjectID != channel {
+		t.Errorf("the rule was stored as %q, want %q", r.SubjectID, channel)
+	}
+	// the same rule in another spelling is the same rule, not a second one
+	if _, err := e.store.AddRule(ctx, uAdmin, uChild, parental.RuleInput{Effect: parental.EffectBlock, SubjectKind: parental.SubjectChannel, SubjectID: "{" + channel + "}"}); err != nil {
+		t.Fatal(err)
+	}
+	if n := e.count(`SELECT count(*) FROM parental_rules WHERE user_id = $1 AND subject_kind = 'channel'`, uChild); n != 1 {
+		t.Errorf("%d channel rules, want 1", n)
+	}
+	// an allow on a library the child has, sent in capitals, is still checked against its access
+	if _, err := e.store.AddRule(ctx, uAdmin, uChild, parental.RuleInput{Effect: parental.EffectAllow, SubjectKind: parental.SubjectLibrary, SubjectID: strings.ToUpper(libOpen)}); err != nil {
+		t.Errorf("an allow on the child's library, in capitals: %v", err)
+	}
+	// an id that is not a uuid is kept as sent
+	if p, err := e.store.AddRule(ctx, uAdmin, uChild, parental.RuleInput{Effect: parental.EffectAllow, SubjectKind: parental.SubjectPlugin, SubjectID: "Some.Plugin"}); err != nil || p.SubjectID != "Some.Plugin" {
+		t.Errorf("a plugin rule: %+v, %v", p, err)
+	}
+	// a rule already stored in capitals (before ids were kept canonical) still holds
+	const video = "cd340000-0000-4000-8000-00000000ab12"
+	e.exec(`INSERT INTO parental_rules (user_id, effect, subject_kind, subject_id) VALUES ($1, 'block', 'video', $2)`, uChild, strings.ToUpper(video))
+	eff, err := e.store.Effective(ctx, uChild)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if !eff.Blocked(parental.Subject{Kind: parental.SubjectVideo, ID: video}, now) {
+		t.Error("a block stored in capitals does not name the video")
+	}
+	if !eff.Blocked(parental.Subject{Kind: parental.SubjectChannel, ID: channel}, now) {
+		t.Error("the block sent in capitals does not name the channel")
+	}
+	zero := 0
+	if parental.ChannelPermitted(eff, parental.ChannelFacts{ID: channel, Tier: &zero}, now) {
+		t.Error("live TV permits the blocked channel")
 	}
 }

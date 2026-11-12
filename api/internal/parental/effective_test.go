@@ -1,6 +1,7 @@
 package parental
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -107,5 +108,49 @@ func TestValidators(t *testing.T) {
 	}
 	if !ValidSubjectKind(SubjectYouTubeSource) || ValidSubjectKind("user") {
 		t.Error("ValidSubjectKind")
+	}
+}
+
+// Review of the filter, finding 6: a rule's uuid matches whatever spelling it was
+// stored in. A block stored in capitals once never matched the lower-case id live TV
+// asks about, and the channel stayed in the child's guide.
+func TestRulesMatchAnySpellingOfAUUID(t *testing.T) {
+	const id = "ab120000-0000-4000-8000-00000000cd34"
+	now := time.Now()
+	spellings := []string{id, strings.ToUpper(id), strings.ReplaceAll(id, "-", ""), "{" + strings.ToUpper(id) + "}"}
+	for _, stored := range spellings {
+		for _, asked := range spellings {
+			block := &Effective{Restricted: true, MaxTier: Tier18, Rules: []Rule{{Effect: EffectBlock, SubjectKind: SubjectChannel, SubjectID: stored}}}
+			s := Subject{Kind: SubjectChannel, ID: asked}
+			if !block.Blocked(s, now) {
+				t.Errorf("a block stored as %q does not name %q", stored, asked)
+			}
+			if block.Permits(Item{Subjects: []Subject{s}}, now) {
+				t.Errorf("a block stored as %q permits %q", stored, asked)
+			}
+			// live TV asks with the channel row's own id
+			if !ChannelPermitted(block, ChannelFacts{ID: "ab120000-0000-4000-8000-00000000cd35", Tier: tier(0)}, now) {
+				t.Fatal("a channel no rule names is not permitted: the check below would prove nothing")
+			}
+			if ChannelPermitted(block, ChannelFacts{ID: id, Tier: tier(0)}, now) {
+				t.Errorf("live TV permits the channel under a block stored as %q", stored)
+			}
+			allow := &Effective{Restricted: true, MaxTier: NothingAllowed, AllowOnly: true, Rules: []Rule{{Effect: EffectAllow, SubjectKind: SubjectVideo, SubjectID: stored}}}
+			v := Subject{Kind: SubjectVideo, ID: asked}
+			if !allow.AllowedBy(v, now) || !allow.Permits(Item{Subjects: []Subject{v}}, now) {
+				t.Errorf("an allow stored as %q does not name %q", stored, asked)
+			}
+		}
+	}
+	// ids that are not uuids are compared as written, and another uuid never matches
+	e := &Effective{Restricted: true, Rules: []Rule{
+		{Effect: EffectBlock, SubjectKind: SubjectPlugin, SubjectID: "Some.Plugin"},
+		{Effect: EffectBlock, SubjectKind: SubjectVideo, SubjectID: id},
+	}}
+	if !e.Blocked(Subject{Kind: SubjectPlugin, ID: "Some.Plugin"}, now) || e.Blocked(Subject{Kind: SubjectPlugin, ID: "some.plugin"}, now) {
+		t.Error("an id that is not a uuid is not compared as written")
+	}
+	if e.Blocked(Subject{Kind: SubjectVideo, ID: "ab120000-0000-4000-8000-00000000cd35"}, now) || e.Blocked(Subject{Kind: SubjectChannel, ID: id}, now) {
+		t.Error("a rule names another id or another kind")
 	}
 }
