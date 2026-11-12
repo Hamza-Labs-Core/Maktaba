@@ -1,0 +1,11 @@
+{
+ "video_id": "v-coffee-run",
+ "position_sec": 0,
+ "completed": false,
+ "favorite": false,
+ "playlists": [],
+ "series": {
+  "id": "s-open-shorts",
+  "name": "Open Shorts"
+ }
+}

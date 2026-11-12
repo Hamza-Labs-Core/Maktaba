@@ -32,3 +32,8 @@ dependencies {
     testImplementation(libs.okhttp.tls)
     testImplementation(libs.kotlinx.coroutines.test)
 }
+
+// DemoLibraryTest reads the demo library (story 60.09) from the repository at test time
+tasks.test {
+    inputs.dir(file("../../../tests/fixtures/demo-library")).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("demoLibrary")
+}

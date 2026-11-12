@@ -1,0 +1,371 @@
+{
+  "$comment": "The demo library (story 60.09): openly licensed titles with their own artwork, for screenshots of every app. routes.mjs turns it into the home's answers, per language. Edit this file, never the generated routes/.",
+  "household": {
+    "en": "The Haddad family",
+    "ar": "عائلة حداد"
+  },
+  "home": {
+    "en": "Living room",
+    "ar": "الجهاز الرئيسي"
+  },
+  "user": {
+    "id": "u-demo",
+    "username": "haddad",
+    "is_admin": true
+  },
+  "clock": "2026-06-15T12:00:00Z",
+  "featured": "v-spring",
+  "libraries": [
+    {
+      "id": "lib-films",
+      "name": {
+        "en": "Films",
+        "ar": "أفلام"
+      }
+    },
+    {
+      "id": "lib-shorts",
+      "name": {
+        "en": "Shorts",
+        "ar": "أفلام قصيرة"
+      }
+    }
+  ],
+  "series": [
+    {
+      "id": "s-open-shorts",
+      "library_id": "lib-shorts",
+      "name": {
+        "en": "Open Shorts",
+        "ar": "حكايات قصيرة"
+      },
+      "year": 2013,
+      "poster": "gran-dillama",
+      "seasons": [
+        {
+          "season": 1,
+          "episodes": [
+            "v-gran-dillama",
+            "v-llamigos"
+          ]
+        },
+        {
+          "season": 2,
+          "episodes": [
+            "v-coffee-run",
+            "v-sprite-fright"
+          ]
+        }
+      ]
+    }
+  ],
+  "videos": [
+    {
+      "id": "v-sintel",
+      "art": "sintel",
+      "library_id": "lib-films",
+      "year": 2010,
+      "duration_sec": 888,
+      "added_days_ago": 2,
+      "title": {
+        "en": "Sintel",
+        "ar": "سينتل"
+      },
+      "synopsis": {
+        "en": "A lone young woman searches the frozen mountains for the baby dragon she once rescued and raised.",
+        "ar": "شابة وحيدة تجوب الجبال المتجمدة بحثًا عن تنين صغير أنقذته يومًا وربّته حتى كبر."
+      },
+      "watch": {
+        "position_sec": 380,
+        "last_watched_hours_ago": 3
+      },
+      "licence": "CC BY 3.0",
+      "credit": "© copyright Blender Foundation | durian.blender.org",
+      "source": "https://studio.blender.org/films/sintel/",
+      "artwork_url": "https://studio.blender.org/files/public/thumbnail/03/f7/03f7b0d15c55b428680d4c6bb313f742_m.webp"
+    },
+    {
+      "id": "v-big-buck-bunny",
+      "art": "big-buck-bunny",
+      "library_id": "lib-films",
+      "year": 2008,
+      "duration_sec": 596,
+      "added_days_ago": 5,
+      "title": {
+        "en": "Big Buck Bunny",
+        "ar": "الأرنب الكبير"
+      },
+      "synopsis": {
+        "en": "A gentle giant rabbit has had enough of three bullies in the forest, and plans a sweet revenge.",
+        "ar": "أرنب ضخم طيب القلب يضيق ذرعًا بثلاثة متنمرين في الغابة، فيدبّر لهم انتقامًا لطيفًا."
+      },
+      "watch": {
+        "completed": true,
+        "last_watched_hours_ago": 30
+      },
+      "licence": "CC BY 3.0",
+      "credit": "© copyright 2008, Blender Foundation | www.bigbuckbunny.org",
+      "source": "https://studio.blender.org/films/big-buck-bunny/",
+      "artwork_url": "https://studio.blender.org/files/public/thumbnail/92/96/9296b1255fff3ef0e25da43f70616349_m.webp"
+    },
+    {
+      "id": "v-spring",
+      "art": "spring",
+      "library_id": "lib-films",
+      "year": 2019,
+      "duration_sec": 464,
+      "added_days_ago": 1,
+      "title": {
+        "en": "Spring",
+        "ar": "الربيع"
+      },
+      "synopsis": {
+        "en": "A shepherd girl and her dog face the ancient spirits of the forest to keep the cycle of life turning.",
+        "ar": "راعية صغيرة وكلبها يواجهان أرواح الغابة القديمة كي تبقى دورة الحياة مستمرة."
+      },
+      "licence": "CC BY 4.0",
+      "credit": "Blender Studio, studio.blender.org",
+      "source": "https://studio.blender.org/films/spring/",
+      "artwork_url": "https://studio.blender.org/files/public/thumbnail/ea/65/ea65feaacf95911f39844e2ea97e68b5_m.webp"
+    },
+    {
+      "id": "v-tears-of-steel",
+      "art": "tears-of-steel",
+      "library_id": "lib-films",
+      "year": 2012,
+      "duration_sec": 734,
+      "added_days_ago": 9,
+      "title": {
+        "en": "Tears of Steel",
+        "ar": "دموع من فولاذ"
+      },
+      "synopsis": {
+        "en": "In a future Amsterdam, a band of scientists tries to undo a broken heart before the robots win.",
+        "ar": "في أمستردام المستقبل، يحاول فريق من العلماء إصلاح قلب مكسور قبل أن تنتصر الروبوتات."
+      },
+      "licence": "CC BY 3.0",
+      "credit": "© copyright Blender Foundation | mango.blender.org",
+      "source": "https://studio.blender.org/films/tears-of-steel/",
+      "artwork_url": "https://studio.blender.org/files/public/thumbnail/3c/83/3c833d978e7de4b58eaa1a12be541664_m.webp"
+    },
+    {
+      "id": "v-cosmos-laundromat",
+      "art": "cosmos-laundromat",
+      "library_id": "lib-films",
+      "year": 2015,
+      "duration_sec": 730,
+      "added_days_ago": 14,
+      "title": {
+        "en": "Cosmos Laundromat",
+        "ar": "مغسلة الكون"
+      },
+      "synopsis": {
+        "en": "On a desolate island, a weary sheep meets a strange salesman who offers him every life he could want.",
+        "ar": "على جزيرة مقفرة، يلتقي خروف متعب ببائع غريب يعرض عليه كل حياة يتمناها."
+      },
+      "licence": "CC BY 4.0",
+      "credit": "Blender Institute, gooseberry.blender.org",
+      "source": "https://studio.blender.org/films/cosmos-laundromat/",
+      "artwork_url": "https://studio.blender.org/files/public/thumbnail/75/54/7554352c0ec78a8540a8e5f3b3671927_m.webp"
+    },
+    {
+      "id": "v-elephants-dream",
+      "art": "elephants-dream",
+      "library_id": "lib-films",
+      "year": 2006,
+      "duration_sec": 654,
+      "added_days_ago": 21,
+      "title": {
+        "en": "Elephants Dream",
+        "ar": "حلم الفيلة"
+      },
+      "synopsis": {
+        "en": "Two men explore a vast machine that only one of them believes in: the first open movie.",
+        "ar": "رجلان يستكشفان آلة هائلة لا يؤمن بها إلا أحدهما، في أول فيلم مفتوح."
+      },
+      "watch": {
+        "completed": true,
+        "last_watched_hours_ago": 96
+      },
+      "licence": "CC BY 2.5",
+      "credit": "© copyright 2006, Blender Foundation, Netherlands Media Art Institute | www.elephantsdream.org",
+      "source": "https://studio.blender.org/films/elephants-dream/",
+      "artwork_url": "https://studio.blender.org/files/public/thumbnail/04/77/0477dfea1d88a94ba1a75f99f433b8f6_m.webp"
+    },
+    {
+      "id": "v-gran-dillama",
+      "art": "gran-dillama",
+      "library_id": "lib-shorts",
+      "series_id": "s-open-shorts",
+      "year": 2013,
+      "duration_sec": 146,
+      "added_days_ago": 4,
+      "title": {
+        "en": "Caminandes: Gran Dillama",
+        "ar": "كاميناندس: اللاما الكبير"
+      },
+      "synopsis": {
+        "en": "Koro the llama wants the grass on the other side of the fence, whatever it takes.",
+        "ar": "اللاما كورو يريد العشب على الجانب الآخر من السياج، مهما كلّفه ذلك."
+      },
+      "watch": {
+        "completed": true,
+        "last_watched_hours_ago": 48
+      },
+      "licence": "CC BY 3.0",
+      "credit": "Blender Foundation, caminandes.com",
+      "source": "https://studio.blender.org/films/caminandes-2/",
+      "artwork_url": "https://studio.blender.org/files/public/thumbnail/80/4b/804beb324d82e98db44d8308d9e6f495_m.webp"
+    },
+    {
+      "id": "v-llamigos",
+      "art": "llamigos",
+      "library_id": "lib-shorts",
+      "series_id": "s-open-shorts",
+      "year": 2016,
+      "duration_sec": 150,
+      "added_days_ago": 4,
+      "title": {
+        "en": "Caminandes: Llamigos",
+        "ar": "كاميناندس: صديقا اللاما"
+      },
+      "synopsis": {
+        "en": "In the snowy Patagonian winter, Koro meets a hungry penguin and they fight over the last berries.",
+        "ar": "في شتاء باتاغونيا الثلجي، يلتقي كورو بطريق جائع فيتنازعان على آخر حبات التوت."
+      },
+      "watch": {
+        "position_sec": 70,
+        "last_watched_hours_ago": 20
+      },
+      "licence": "CC BY 4.0",
+      "credit": "Blender Studio, studio.blender.org",
+      "source": "https://studio.blender.org/films/caminandes-3/",
+      "artwork_url": "https://studio.blender.org/files/public/thumbnail/6e/84/6e84fd08dda59d66aeb2152cb879f160_m.webp"
+    },
+    {
+      "id": "v-coffee-run",
+      "art": "coffee-run",
+      "library_id": "lib-shorts",
+      "series_id": "s-open-shorts",
+      "year": 2020,
+      "duration_sec": 184,
+      "added_days_ago": 4,
+      "title": {
+        "en": "Coffee Run",
+        "ar": "مشوار القهوة"
+      },
+      "synopsis": {
+        "en": "Fuelled by caffeine, a young woman runs through the bittersweet memories of a past love.",
+        "ar": "بدفعة من الكافيين، تركض شابة بين ذكريات حب مضى، حلوة ومُرّة معًا."
+      },
+      "licence": "CC BY 4.0",
+      "credit": "Blender Studio, studio.blender.org",
+      "source": "https://studio.blender.org/films/coffee-run/",
+      "artwork_url": "https://studio.blender.org/files/public/thumbnail/7a/43/7a43fa6b0bc44e62f1cbb21473800e07_m.webp"
+    },
+    {
+      "id": "v-sprite-fright",
+      "art": "sprite-fright",
+      "library_id": "lib-shorts",
+      "series_id": "s-open-shorts",
+      "year": 2021,
+      "duration_sec": 629,
+      "added_days_ago": 4,
+      "title": {
+        "en": "Sprite Fright",
+        "ar": "رعب الجنيات"
+      },
+      "synopsis": {
+        "en": "Teenagers camping in a mossy forest learn the hard way that its tiny guardians want to be left alone.",
+        "ar": "مراهقون يخيّمون في غابة مكسوة بالطحالب، فيتعلّمون بالطريقة الصعبة أن حرّاسها الصغار يريدون أن يُتركوا وشأنهم."
+      },
+      "licence": "CC BY 4.0",
+      "credit": "Blender Studio, studio.blender.org",
+      "source": "https://studio.blender.org/films/sprite-fright/",
+      "artwork_url": "https://studio.blender.org/files/public/thumbnail/ce/83/ce833b1d7d5862f1c6e64f7d5b8b0fc9_m.webp"
+    }
+  ],
+  "channels": [
+    {
+      "id": "ch-films",
+      "number": 1,
+      "name": {
+        "en": "Film Night",
+        "ar": "سهرة الأفلام"
+      },
+      "library_id": "lib-films",
+      "lineup": [
+        "v-tears-of-steel",
+        "v-sintel",
+        "v-cosmos-laundromat",
+        "v-big-buck-bunny",
+        "v-elephants-dream",
+        "v-spring"
+      ]
+    },
+    {
+      "id": "ch-shorts",
+      "number": 2,
+      "name": {
+        "en": "Shorts",
+        "ar": "قصيرة"
+      },
+      "library_id": "lib-shorts",
+      "lineup": [
+        "v-coffee-run",
+        "v-gran-dillama",
+        "v-sprite-fright",
+        "v-llamigos"
+      ]
+    },
+    {
+      "id": "ch-family",
+      "number": 3,
+      "name": {
+        "en": "Family",
+        "ar": "العائلة"
+      },
+      "library_id": "lib-films",
+      "lineup": [
+        "v-big-buck-bunny",
+        "v-llamigos",
+        "v-spring",
+        "v-gran-dillama"
+      ]
+    }
+  ],
+  "search": {
+    "query": {
+      "en": "dragon",
+      "ar": "تنين"
+    },
+    "titles": [
+      "v-sintel"
+    ],
+    "passages": [
+      {
+        "video_id": "v-sintel",
+        "start_sec": 212,
+        "lang": "en",
+        "text": "Have you seen a baby <mark>dragon</mark>? I lost him in the snow."
+      },
+      {
+        "video_id": "v-sintel",
+        "start_sec": 214,
+        "lang": "ar",
+        "text": "هل رأيت <mark>تنينًا</mark> صغيرًا؟ أضعته في الثلج."
+      },
+      {
+        "video_id": "v-elephants-dream",
+        "start_sec": 431,
+        "lang": "ar",
+        "text": "الآلة تتنفس مثل <mark>تنين</mark> نائم."
+      }
+    ]
+  },
+  "artwork": {
+    "licence": "CC BY 4.0",
+    "terms": "https://studio.blender.org/terms-and-conditions/",
+    "note": "Each title's art is its film card from Blender Studio's film page (the page's og:image), resized to a 640×360 backdrop and cropped to a 240×360 poster, metadata stripped."
+  }
+}

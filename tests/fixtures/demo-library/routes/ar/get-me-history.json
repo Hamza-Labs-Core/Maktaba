@@ -1,0 +1,61 @@
+{
+ "items": [
+  {
+   "video_id": "v-sintel",
+   "title": "سينتل",
+   "duration_sec": 888,
+   "times_watched": 1,
+   "total_watch_sec": 380,
+   "best_percent": 42.8,
+   "last_watched_at": "{{now-10800}}",
+   "position_sec": 380,
+   "completed": false
+  },
+  {
+   "video_id": "v-llamigos",
+   "title": "كاميناندس: صديقا اللاما",
+   "duration_sec": 150,
+   "times_watched": 1,
+   "total_watch_sec": 70,
+   "best_percent": 46.7,
+   "last_watched_at": "{{now-72000}}",
+   "position_sec": 70,
+   "completed": false
+  },
+  {
+   "video_id": "v-big-buck-bunny",
+   "title": "الأرنب الكبير",
+   "duration_sec": 596,
+   "times_watched": 1,
+   "total_watch_sec": 596,
+   "best_percent": 100,
+   "last_watched_at": "{{now-108000}}",
+   "position_sec": 596,
+   "completed": true
+  },
+  {
+   "video_id": "v-gran-dillama",
+   "title": "كاميناندس: اللاما الكبير",
+   "duration_sec": 146,
+   "times_watched": 1,
+   "total_watch_sec": 146,
+   "best_percent": 100,
+   "last_watched_at": "{{now-172800}}",
+   "position_sec": 146,
+   "completed": true
+  },
+  {
+   "video_id": "v-elephants-dream",
+   "title": "حلم الفيلة",
+   "duration_sec": 654,
+   "times_watched": 1,
+   "total_watch_sec": 654,
+   "best_percent": 100,
+   "last_watched_at": "{{now-345600}}",
+   "position_sec": 654,
+   "completed": true
+  }
+ ],
+ "limit": 50,
+ "offset": 0
+}

@@ -1,0 +1,30 @@
+# The Apple apps' product screenshots alone (story 60.09), on demand: the demo-shot UI tests
+# of the iPhone and iPad Player, the Remote, the Apple TV and the Mac Player
+# (`_apple-apps.yml` with `shots_only`), on the demo library. Its artifacts
+# `product-shots-<app>` are what `web/packages/website/scripts/shots.mjs --from-run <run id>`
+# reads. ci.yml takes the same shots on every pull request that runs the Apple UI jobs.
+#
+#   gh workflow run product-shots.yml --ref main
+
+name: Product shots
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-shots-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  apple:
+    permissions:
+      contents: read
+      actions: read # the Player shards wait for their build's artifact
+    uses: ./.github/workflows/_apple-apps.yml
+    with:
+      build: true
+      player_ui: true
+      shots_only: true

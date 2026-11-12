@@ -32,6 +32,7 @@ Worker, which:
 | `/schema/log-line.json`         | the log schema, at its `$id`                   | `shared/log/schema/line.schema.json`                 |
 | `/.well-known/security.txt`     | the disclosure policy, both `Canonical`s       | `api/internal/security/disclosure.go`                |
 | `/robots.txt`                   | every page may be crawled                      | `scripts/build.mjs`                                  |
+| `/shots/…`                      | the apps' product screenshots (60.09)          | `scripts/shots.mjs`, `shots-manifest.json`           |
 
 A page source in `src/pages/` is the page's `<main>` content after a leading comment
 (`title:`, `description:`, optionally `meta:`). `scripts/shell.mjs` wraps it in the document,
@@ -56,6 +57,17 @@ only when `WEBSITE_NOTICE_ENDPOINT` and `WEBSITE_TURNSTILE_SITEKEY` are both set
 endpoint is live; until then the page gives the agent's email and what a notice must contain. The look is a neutral
 placeholder (`static/assets/site.css`) until the design of story 60.01 replaces the shell and
 the stylesheet.
+
+## Product screenshots
+
+`static/shots/` holds every app's screenshots on the demo library (`tests/fixtures/demo-library/`),
+dark, in English and Arabic, as WebP and AVIF at each width `shots.config.json` sets, each under
+150 KB, with their sizes in `shots-manifest.json`. `npm run shots -- --from-run <run id>` makes
+them from a CI run's `product-shots-*` artifacts and Android's Roborazzi references; an app whose
+job did not pass keeps its previous images. `npm run shots:web` captures the web app locally
+(`scripts/capture-web.mjs`). The steps, and who captures what, are in
+`docs/developers/contributing/website.md` ("Product screenshots"). Tests: `scripts/shots.test.mjs`
+(T01, T06).
 
 ## Build and run
 

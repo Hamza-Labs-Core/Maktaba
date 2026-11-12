@@ -1,0 +1,674 @@
+[
+ {
+  "method": "GET",
+  "path": "/api/me",
+  "status": 200,
+  "file": "get-me.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/auth/me",
+  "status": 200,
+  "file": "get-auth-me.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/home",
+  "status": 200,
+  "file": "get-home.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/recommendations",
+  "status": 200,
+  "file": "get-recommendations.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/libraries",
+  "status": 200,
+  "file": "get-libraries.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/libraries/summary",
+  "status": 200,
+  "file": "get-libraries-summary.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/pinned-libraries",
+  "status": 200,
+  "file": "get-me-pinned-libraries.json"
+ },
+ {
+  "method": "PUT",
+  "path": "/api/me/pinned-libraries",
+  "status": 200,
+  "file": "put-me-pinned-libraries.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/libraries/lib-films/hub",
+  "status": 200,
+  "file": "get-libraries-lib-films-hub.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/libraries/lib-films/series",
+  "status": 200,
+  "file": "get-libraries-lib-films-series.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/libraries/lib-shorts/hub",
+  "status": 200,
+  "file": "get-libraries-lib-shorts-hub.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/libraries/lib-shorts/series",
+  "status": 200,
+  "file": "get-libraries-lib-shorts-series.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/libraries/{id}/collections",
+  "status": 200,
+  "file": "get-libraries-id-collections.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/libraries/{id}/categories",
+  "status": 200,
+  "file": "get-libraries-id-categories.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos",
+  "status": 200,
+  "file": "get-videos.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/facets",
+  "status": 200,
+  "file": "get-videos-facets.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-sintel",
+  "status": 200,
+  "file": "get-videos-v-sintel.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v-sintel",
+  "status": 200,
+  "file": "get-me-videos-v-sintel.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-sintel/poster",
+  "status": 200,
+  "art": "sintel-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-sintel/portrait",
+  "status": 200,
+  "art": "sintel-poster.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-sintel/backdrop",
+  "status": 200,
+  "art": "sintel-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-sintel/art",
+  "status": 200,
+  "art": "sintel-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-sintel/thumbnail",
+  "status": 200,
+  "art": "sintel-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-big-buck-bunny",
+  "status": 200,
+  "file": "get-videos-v-big-buck-bunny.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v-big-buck-bunny",
+  "status": 200,
+  "file": "get-me-videos-v-big-buck-bunny.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-big-buck-bunny/poster",
+  "status": 200,
+  "art": "big-buck-bunny-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-big-buck-bunny/portrait",
+  "status": 200,
+  "art": "big-buck-bunny-poster.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-big-buck-bunny/backdrop",
+  "status": 200,
+  "art": "big-buck-bunny-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-big-buck-bunny/art",
+  "status": 200,
+  "art": "big-buck-bunny-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-big-buck-bunny/thumbnail",
+  "status": 200,
+  "art": "big-buck-bunny-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-spring",
+  "status": 200,
+  "file": "get-videos-v-spring.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v-spring",
+  "status": 200,
+  "file": "get-me-videos-v-spring.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-spring/poster",
+  "status": 200,
+  "art": "spring-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-spring/portrait",
+  "status": 200,
+  "art": "spring-poster.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-spring/backdrop",
+  "status": 200,
+  "art": "spring-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-spring/art",
+  "status": 200,
+  "art": "spring-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-spring/thumbnail",
+  "status": 200,
+  "art": "spring-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-tears-of-steel",
+  "status": 200,
+  "file": "get-videos-v-tears-of-steel.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v-tears-of-steel",
+  "status": 200,
+  "file": "get-me-videos-v-tears-of-steel.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-tears-of-steel/poster",
+  "status": 200,
+  "art": "tears-of-steel-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-tears-of-steel/portrait",
+  "status": 200,
+  "art": "tears-of-steel-poster.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-tears-of-steel/backdrop",
+  "status": 200,
+  "art": "tears-of-steel-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-tears-of-steel/art",
+  "status": 200,
+  "art": "tears-of-steel-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-tears-of-steel/thumbnail",
+  "status": 200,
+  "art": "tears-of-steel-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-cosmos-laundromat",
+  "status": 200,
+  "file": "get-videos-v-cosmos-laundromat.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v-cosmos-laundromat",
+  "status": 200,
+  "file": "get-me-videos-v-cosmos-laundromat.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-cosmos-laundromat/poster",
+  "status": 200,
+  "art": "cosmos-laundromat-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-cosmos-laundromat/portrait",
+  "status": 200,
+  "art": "cosmos-laundromat-poster.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-cosmos-laundromat/backdrop",
+  "status": 200,
+  "art": "cosmos-laundromat-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-cosmos-laundromat/art",
+  "status": 200,
+  "art": "cosmos-laundromat-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-cosmos-laundromat/thumbnail",
+  "status": 200,
+  "art": "cosmos-laundromat-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-elephants-dream",
+  "status": 200,
+  "file": "get-videos-v-elephants-dream.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v-elephants-dream",
+  "status": 200,
+  "file": "get-me-videos-v-elephants-dream.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-elephants-dream/poster",
+  "status": 200,
+  "art": "elephants-dream-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-elephants-dream/portrait",
+  "status": 200,
+  "art": "elephants-dream-poster.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-elephants-dream/backdrop",
+  "status": 200,
+  "art": "elephants-dream-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-elephants-dream/art",
+  "status": 200,
+  "art": "elephants-dream-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-elephants-dream/thumbnail",
+  "status": 200,
+  "art": "elephants-dream-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-gran-dillama",
+  "status": 200,
+  "file": "get-videos-v-gran-dillama.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v-gran-dillama",
+  "status": 200,
+  "file": "get-me-videos-v-gran-dillama.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-gran-dillama/poster",
+  "status": 200,
+  "art": "gran-dillama-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-gran-dillama/portrait",
+  "status": 200,
+  "art": "gran-dillama-poster.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-gran-dillama/backdrop",
+  "status": 200,
+  "art": "gran-dillama-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-gran-dillama/art",
+  "status": 200,
+  "art": "gran-dillama-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-gran-dillama/thumbnail",
+  "status": 200,
+  "art": "gran-dillama-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-llamigos",
+  "status": 200,
+  "file": "get-videos-v-llamigos.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v-llamigos",
+  "status": 200,
+  "file": "get-me-videos-v-llamigos.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-llamigos/poster",
+  "status": 200,
+  "art": "llamigos-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-llamigos/portrait",
+  "status": 200,
+  "art": "llamigos-poster.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-llamigos/backdrop",
+  "status": 200,
+  "art": "llamigos-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-llamigos/art",
+  "status": 200,
+  "art": "llamigos-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-llamigos/thumbnail",
+  "status": 200,
+  "art": "llamigos-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-coffee-run",
+  "status": 200,
+  "file": "get-videos-v-coffee-run.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v-coffee-run",
+  "status": 200,
+  "file": "get-me-videos-v-coffee-run.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-coffee-run/poster",
+  "status": 200,
+  "art": "coffee-run-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-coffee-run/portrait",
+  "status": 200,
+  "art": "coffee-run-poster.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-coffee-run/backdrop",
+  "status": 200,
+  "art": "coffee-run-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-coffee-run/art",
+  "status": 200,
+  "art": "coffee-run-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-coffee-run/thumbnail",
+  "status": 200,
+  "art": "coffee-run-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-sprite-fright",
+  "status": 200,
+  "file": "get-videos-v-sprite-fright.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v-sprite-fright",
+  "status": 200,
+  "file": "get-me-videos-v-sprite-fright.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-sprite-fright/poster",
+  "status": 200,
+  "art": "sprite-fright-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-sprite-fright/portrait",
+  "status": 200,
+  "art": "sprite-fright-poster.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-sprite-fright/backdrop",
+  "status": 200,
+  "art": "sprite-fright-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-sprite-fright/art",
+  "status": 200,
+  "art": "sprite-fright-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v-sprite-fright/thumbnail",
+  "status": 200,
+  "art": "sprite-fright-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/{id}/chapters",
+  "status": 200,
+  "file": "get-videos-id-chapters.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/{id}/subtitles",
+  "status": 200,
+  "file": "get-videos-id-subtitles.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/series",
+  "status": 200,
+  "file": "get-series.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/series/s-open-shorts",
+  "status": 200,
+  "file": "get-series-s-open-shorts.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/series/s-open-shorts/episodes",
+  "status": 200,
+  "file": "get-series-s-open-shorts-episodes.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/series/s-open-shorts/poster",
+  "status": 200,
+  "art": "gran-dillama-backdrop.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/series/s-open-shorts/portrait",
+  "status": 200,
+  "art": "gran-dillama-poster.jpg"
+ },
+ {
+  "method": "GET",
+  "path": "/api/series/s-open-shorts/backdrop",
+  "status": 200,
+  "art": "gran-dillama-backdrop.jpg"
+ },
+ {
+  "method": "POST",
+  "path": "/api/search",
+  "status": 200,
+  "file": "post-search.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/search",
+  "status": 200,
+  "file": "get-search.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/search/results/{sid}",
+  "status": 200,
+  "file": "get-search-results-sid.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/search/suggest",
+  "status": 200,
+  "file": "get-search-suggest.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/search/recent",
+  "status": 200,
+  "file": "get-search-recent.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/channels",
+  "status": 200,
+  "file": "get-channels.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/channels/now",
+  "status": 200,
+  "file": "get-channels-now.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/channels/guide",
+  "status": 200,
+  "file": "get-channels-guide.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/channels/ch-films",
+  "status": 200,
+  "file": "get-channels-ch-films.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/channels/ch-films/guide",
+  "status": 200,
+  "file": "get-channels-ch-films-guide.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/channels/ch-shorts",
+  "status": 200,
+  "file": "get-channels-ch-shorts.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/channels/ch-shorts/guide",
+  "status": 200,
+  "file": "get-channels-ch-shorts-guide.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/channels/ch-family",
+  "status": 200,
+  "file": "get-channels-ch-family.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/channels/ch-family/guide",
+  "status": 200,
+  "file": "get-channels-ch-family-guide.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/history",
+  "status": 200,
+  "file": "get-me-history.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/playlists",
+  "status": 200,
+  "file": "get-me-playlists.json"
+ },
+ {
+  "method": "POST",
+  "path": "/api/me/watched",
+  "status": 200,
+  "file": "post-me-watched.json"
+ },
+ {
+  "method": "POST",
+  "path": "/api/me/favorites",
+  "status": 200,
+  "file": "post-me-favorites.json"
+ }
+]
