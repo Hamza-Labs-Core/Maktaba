@@ -178,6 +178,10 @@ export async function makeShots({
     }
     taken.push(app);
   }
+  // an app this run did not process (--only) keeps its entries as they were: a run for one app
+  // must not drop every other app's images from the manifest
+  for (const [id, entry] of Object.entries(previous.images))
+    if (!(entry.app in config.sources)) manifest.images[id] = entry;
   manifest.images = Object.fromEntries(
     Object.entries(manifest.images).sort(([a], [b]) => a.localeCompare(b))
   );
