@@ -175,6 +175,15 @@ class Playback(
      */
     var timeUp by mutableStateOf<TimeUp?>(null)
         private set
+
+    /** How many times the home refused on time: each refusal's screen starts afresh (its own ask, its own PIN). */
+    var refusals by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
+
+    private fun timeIsUp(up: TimeUp) {
+        refusals++
+        timeUp = up
+    }
     /**
      * The home ended the stream while it played (a progress post answered 404: the session is
      * gone, or the video is no longer this account's). The video has stopped; nothing asks again.
@@ -551,7 +560,7 @@ class Playback(
                 release(player)
                 player = null
                 playing = false
-                timeUp = over.copy(positionMs = fromMs)
+                timeIsUp(over.copy(positionMs = fromMs))
                 return
             }
             if (old != null) {
@@ -679,7 +688,7 @@ class Playback(
             is ProgressAnswer.TimeOver -> {
                 halt()
                 background.launch { client.closeStream(s) }
-                timeUp = TimeUp(answer.refusal.reason, answer.refusal.nextAllowedAt, atMs)
+                timeIsUp(TimeUp(answer.refusal.reason, answer.refusal.nextAllowedAt, atMs))
             }
             ProgressAnswer.Ended -> if (!ended) {
                 halt()

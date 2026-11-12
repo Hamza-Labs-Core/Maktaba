@@ -98,7 +98,13 @@ private fun MoreTimeButtons(more: MoreTime, onUnlocked: () -> Unit) {
     var minutes by remember { mutableStateOf(MORE_TIME_MINUTES[1]) }
     LaunchedEffect(more) { more.pin.load() }
     LaunchedEffect(holders) { if (holders.size == 1) who = holders.single().id }
-    LaunchedEffect(pinState) { if (pinState == PinState.Unlocked) onUnlocked() }
+    // once per unlock: the state is put back, so showing this screen again never asks by itself
+    LaunchedEffect(pinState) {
+        if (pinState == PinState.Unlocked) {
+            more.pin.again()
+            onUnlocked()
+        }
+    }
     // the home knows nothing to ask for: nothing more is offered
     if (asked == AskState.NothingToAsk || pinState == PinState.NothingToUnlock) return
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
