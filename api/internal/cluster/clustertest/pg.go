@@ -33,7 +33,7 @@ import (
 
 // ScratchDB creates and migrates a scratch database and returns a handle
 // and its DSN. It skips the test when MAKTABA_TEST_PG_URL is unset.
-func ScratchDB(t *testing.T) (*sql.DB, string) {
+func ScratchDB(t testing.TB) (*sql.DB, string) {
 	t.Helper()
 	base := testpg.Get()
 	if base == "" {
@@ -75,7 +75,7 @@ func ScratchDB(t *testing.T) (*sql.DB, string) {
 	return db, dsn
 }
 
-func dsnFor(t *testing.T, base, name string) string {
+func dsnFor(t testing.TB, base, name string) string {
 	t.Helper()
 	u, err := url.Parse(base)
 	if err != nil {
@@ -93,7 +93,7 @@ const templatePrefix = "t1_cluster_tmpl_"
 // making it the first time (under an advisory lock: the packages of a module
 // test in parallel processes). It is built under a temporary name and renamed
 // once migrated, so a template that exists is complete.
-func template(t *testing.T, admin *sql.DB, base string) string {
+func template(t testing.TB, admin *sql.DB, base string) string {
 	t.Helper()
 	sum := migrationsHash(t)
 	name := templatePrefix + sum
@@ -149,7 +149,7 @@ func template(t *testing.T, admin *sql.DB, base string) string {
 }
 
 // migrationsHash is a short hash of the Postgres migrations' names and contents.
-func migrationsHash(t *testing.T) string {
+func migrationsHash(t testing.TB) string {
 	t.Helper()
 	src := migrationsDir(t)
 	entries, err := os.ReadDir(src)
@@ -174,7 +174,7 @@ func migrationsHash(t *testing.T) string {
 }
 
 // WithUser rewrites dsn to log in as user/password.
-func WithUser(t *testing.T, dsn, user, password string) string {
+func WithUser(t testing.TB, dsn, user, password string) string {
 	t.Helper()
 	u, err := url.Parse(dsn)
 	if err != nil {
@@ -184,7 +184,7 @@ func WithUser(t *testing.T, dsn, user, password string) string {
 	return u.String()
 }
 
-func migrationsDir(t *testing.T) string {
+func migrationsDir(t testing.TB) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
@@ -196,11 +196,11 @@ func migrationsDir(t *testing.T) string {
 
 // migrate applies every Postgres slot (slot 0000 is the bootstrap goose
 // cannot run; the SQLite twins are skipped) from a staged copy.
-func migrate(t *testing.T, db *sql.DB) { MigrateTo(t, db, 0) }
+func migrate(t testing.TB, db *sql.DB) { MigrateTo(t, db, 0) }
 
 // MigrateTo applies the Postgres slots up to version (0: every one) to db, as db's
 // user.
-func MigrateTo(t *testing.T, db *sql.DB, version int64) {
+func MigrateTo(t testing.TB, db *sql.DB, version int64) {
 	t.Helper()
 	src := migrationsDir(t)
 	stage := t.TempDir()
@@ -242,7 +242,7 @@ func MigrateTo(t *testing.T, db *sql.DB, version int64) {
 // lockCluster takes the advisory lock key in base's database (an advisory lock is a
 // database's: every process of the tests reaches the cluster through base), and returns
 // its release.
-func lockCluster(ctx context.Context, t *testing.T, base, key string) func() {
+func lockCluster(ctx context.Context, t testing.TB, base, key string) func() {
 	t.Helper()
 	admin, err := sql.Open("postgres", base)
 	if err != nil {
@@ -266,7 +266,7 @@ func lockCluster(ctx context.Context, t *testing.T, base, key string) func() {
 }
 
 // DSN is base's URL for database name as user (password pw; "" keeps base's user).
-func DSN(t *testing.T, base, name, user, pw string) string {
+func DSN(t testing.TB, base, name, user, pw string) string {
 	t.Helper()
 	dsn := dsnFor(t, base, name)
 	if user == "" {

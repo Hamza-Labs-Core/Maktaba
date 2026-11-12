@@ -500,6 +500,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "createLibrary"
@@ -583,6 +586,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "updateLibrary"
@@ -664,6 +670,9 @@
                 }
               }
             }
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "deleteLibrary"
@@ -725,6 +734,9 @@
                 }
               }
             }
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "scanLibrary"
@@ -2205,6 +2217,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "listJobs"
@@ -2243,6 +2258,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "getJob"
@@ -2302,6 +2320,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "pauseJob"
@@ -2350,6 +2371,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "resumeJob"
@@ -2399,6 +2423,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "cancelJob"
@@ -2447,6 +2474,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "retryJob"
@@ -2477,6 +2507,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "getQueueStats"
@@ -2803,6 +2836,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "createTag"
@@ -3091,6 +3127,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "getSettings"
@@ -3165,6 +3204,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "listSttBackends"
@@ -3228,6 +3270,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "testSttBackend"
@@ -3626,6 +3671,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         }
       }
@@ -3690,6 +3738,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         }
       }
@@ -3752,6 +3803,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         }
       }
@@ -3781,6 +3835,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "getQueuesSnapshot"
@@ -3825,6 +3882,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "getQueueGraph"
@@ -3863,6 +3923,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "getQueueLibraries"
@@ -3959,6 +4022,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "getQueueLibraryActivity"
@@ -4116,6 +4182,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "patchYouTubeSource"
@@ -4246,6 +4315,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "guessYouTubeSource"
@@ -4362,6 +4434,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "getYouTubeTartubeImport"
@@ -4435,6 +4510,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "importYouTubeTartubeSources"
@@ -4495,6 +4573,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "getQueueHealth"
@@ -4606,6 +4687,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "getQueueDetail"
@@ -4767,6 +4851,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "getQueueRate"
@@ -4861,6 +4948,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "listQueueJobs"
@@ -4912,6 +5002,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "getQueueFailures"
@@ -5249,6 +5342,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "listPools"
@@ -5436,6 +5532,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "listIssues"
@@ -5538,6 +5637,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "listActivity"
@@ -5591,6 +5693,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "listJobEvents"
@@ -5679,6 +5784,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "getItemHistory"
@@ -5717,6 +5825,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "listWorkers"
@@ -5755,6 +5866,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "listExtensions"
@@ -6180,6 +6294,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "streamQueues"
@@ -8835,6 +8952,9 @@
           },
           "default": {
             "$ref": "#/components/responses/InternalError"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "setFeatured"
@@ -11203,6 +11323,9 @@
           },
           "default": {
             "$ref": "#/components/responses/InternalError"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "getSystemUpdates"
@@ -15684,6 +15807,9 @@
           },
           "default": {
             "$ref": "#/components/responses/InternalError"
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
           }
         },
         "operationId": "listParentalActivity"
@@ -16716,6 +16842,21 @@
       },
       "NotFound": {
         "description": "Resource not found.",
+        "headers": {
+          "X-Request-Id": {
+            "$ref": "#/components/headers/X-Request-Id"
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        }
+      },
+      "Restricted": {
+        "description": "A restricted account (one under parental controls) may not do this: `code` is `restricted` and `type` is `https://maktaba.tv/problems/restricted`. Any other account gets the operation's own answer.",
         "headers": {
           "X-Request-Id": {
             "$ref": "#/components/headers/X-Request-Id"

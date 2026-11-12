@@ -20,6 +20,13 @@ package parental
 //
 // It fails closed: when the limit or an answer cannot be read the event is not
 // sent and the feed ends (the client connects again and is asked anew).
+//
+// Reading the limit is a map lookup while the policy cache listens. While it does
+// not (its listener is reconnecting) every read is a query, and a busy channel
+// would make one per event per connection: a connection whose account had no
+// limit at its last read then reuses that answer for liveUnlimitedFor, unless a
+// policy changed in this process meanwhile. A restricted account's limit is always
+// read anew.
 
 import (
 	"context"
@@ -70,7 +77,14 @@ type LiveGuard struct {
 	checked bool // own was found allowed for the limit below
 	limit   *Effective
 	at      time.Time
+	// the last read of an account with no limit, while the cache does not listen
+	freeAt  time.Time
+	freeGen uint64
 }
+
+// liveUnlimitedFor is how long a connection of an account with no limit goes
+// without reading its policy again while the policy cache is not listening.
+const liveUnlimitedFor = 2 * time.Second
 
 // liveRecheck bounds how long the channel's own subject stays answered for one
 // limit: a tier can change with no change to the account's policy.
@@ -107,7 +121,7 @@ func (lg *LiveGuard) Event(ctx context.Context, typ string, payload map[string]a
 	if lg == nil || lg.gate == nil {
 		return false, true
 	}
-	e, err := lg.gate.Limit(ctx, lg.p)
+	e, err := lg.current(ctx)
 	if err != nil || e == nil {
 		return false, true
 	}
@@ -166,6 +180,33 @@ func (lg *LiveGuard) Event(ctx context.Context, typ string, payload map[string]a
 		}
 	}
 	return true, false
+}
+
+// current is the account's limit now (see the note on reuse above).
+func (lg *LiveGuard) current(ctx context.Context) (*Effective, error) {
+	c := lg.gate.Cache()
+	quiet := c != nil && !c.Listening()
+	var gen uint64
+	if quiet {
+		gen = c.Generation()
+		lg.mu.Lock()
+		reuse := !lg.freeAt.IsZero() && lg.freeGen == gen && time.Since(lg.freeAt) < liveUnlimitedFor
+		lg.mu.Unlock()
+		if reuse {
+			return unrestricted, nil
+		}
+	}
+	e, err := lg.gate.Limit(ctx, lg.p)
+	if err != nil || e == nil {
+		return nil, err
+	}
+	lg.mu.Lock()
+	lg.freeAt = time.Time{}
+	if quiet && !e.Limits() {
+		lg.freeAt, lg.freeGen = time.Now(), gen
+	}
+	lg.mu.Unlock()
+	return e, nil
 }
 
 // ownAllowed is whether the channel's own subject is allowed under e, answered

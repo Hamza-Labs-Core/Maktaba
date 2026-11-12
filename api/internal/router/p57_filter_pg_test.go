@@ -70,7 +70,7 @@ func (s *pfSigner) SignStreamURL(rawURL, _, _, _ string, ttl time.Duration) (str
 func (s *pfSigner) KeepTime(func(string) (bool, error)) {}
 
 type pfEnv struct {
-	t      *testing.T
+	t      testing.TB
 	db     *sql.DB
 	h      http.Handler
 	gate   *parental.Gate
@@ -87,7 +87,7 @@ var pfStandIns = []struct{ method, path string }{
 	{http.MethodGet, "/api/plugins"}, {http.MethodGet, "/api/users"},
 }
 
-func setupFilter(t *testing.T) *pfEnv {
+func setupFilter(t testing.TB) *pfEnv {
 	t.Helper()
 	db, _ := clustertest.ScratchDB(t)
 	e := &pfEnv{t: t, db: db, gate: parental.NewGate(), signer: &pfSigner{}, hub: ws.NewHub()}

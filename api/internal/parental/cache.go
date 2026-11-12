@@ -93,6 +93,14 @@ func (c *Cache) For(ctx context.Context, p *principal.Principal) (*Effective, er
 	return e.WithSignal(*sig), nil
 }
 
+// Generation changes whenever an entry was dropped or the cache started over: a
+// caller that kept an answer of its own asks again when it differs.
+func (c *Cache) Generation() uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.gen
+}
+
 // Invalidate drops userID's entry ("": every entry).
 func (c *Cache) Invalidate(userID string) {
 	c.mu.Lock()
