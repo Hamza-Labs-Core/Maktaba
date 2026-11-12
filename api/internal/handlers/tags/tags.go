@@ -23,6 +23,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 // Tag is the API shape.
@@ -60,19 +61,26 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	q := `SELECT id, name FROM tags ORDER BY name`
 	var args []any
-	if !p.AccessAllLibraries {
-		if len(p.Libraries) == 0 {
+	// story 57.03: a restricted account sees a tag only when a video it may see
+	// carries it (a tag's name can say what a hidden video is)
+	limit := parental.Where(r.Context(), "v")
+	if !p.AccessAllLibraries || limit != "" {
+		if !p.AccessAllLibraries && len(p.Libraries) == 0 {
 			common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": []Tag{}})
 			return
 		}
-		ph := make([]string, len(p.Libraries))
-		for i, lib := range p.Libraries {
-			args = append(args, lib)
-			ph[i] = "$" + strconv.Itoa(i+1)
+		scope := ""
+		if !p.AccessAllLibraries {
+			ph := make([]string, len(p.Libraries))
+			for i, lib := range p.Libraries {
+				args = append(args, lib)
+				ph[i] = "$" + strconv.Itoa(i+1)
+			}
+			scope = ` AND v.library_id IN (` + strings.Join(ph, ",") + `)`
 		}
 		q = `SELECT t.id, t.name FROM tags t
 			WHERE EXISTS (SELECT 1 FROM video_tags vt JOIN videos v ON v.id = vt.video_id
-			              WHERE vt.tag_id = t.id AND v.library_id IN (` + strings.Join(ph, ",") + `))
+			              WHERE vt.tag_id = t.id` + scope + limit + `)
 			ORDER BY t.name`
 	}
 	rows, err := h.DB.QueryContext(r.Context(), q, args...)

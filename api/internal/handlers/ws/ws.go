@@ -47,6 +47,30 @@ type Event struct {
 type Hub struct {
 	mu          sync.RWMutex
 	subscribers map[string]map[*Subscriber]struct{}
+
+	// Guard, when set, gives each connection (an SSE feed here, a GraphQL
+	// subscription) its own filter: the parental filter of Epic 57 story 57.03
+	// (parental.Gate.LiveGuard). Set once, before the first connection. nil:
+	// every event is sent.
+	Guard func(p *principal.Principal, channel string) Guard
+}
+
+// Guard is one connection's filter: whether an event may be sent on it now, and
+// whether the connection must end (send is then false). It is asked for every
+// event, so a change to the account's limit holds from the next one on.
+type Guard func(ctx context.Context, e Event) (send, end bool)
+
+// Watch is the filter of a new connection of p to channel: the hub's Guard, or
+// one that sends everything when none is set.
+func (h *Hub) Watch(p *principal.Principal, channel string) Guard {
+	if h == nil || h.Guard == nil {
+		return func(context.Context, Event) (bool, bool) { return true, false }
+	}
+	if g := h.Guard(p, channel); g != nil {
+		return g
+	}
+	// a hub that guards and gave this connection no filter sends it nothing
+	return func(context.Context, Event) (bool, bool) { return false, true }
 }
 
 // Subscriber is one open connection. Done is closed when the hub
@@ -267,13 +291,29 @@ func (h *Handler) sseChannel(channel string, w http.ResponseWriter, r *http.Requ
 	defer h.Hub.Unsubscribe(channel, sub)
 
 	ctx := r.Context()
+	// story 57.03: what a restricted account may be sent, asked for every frame
+	guard := h.Hub.Watch(p, channel)
+	// send writes e when the connection's filters allow it; false ends the feed
+	send := func(e Event) bool {
+		ok, end := guard(ctx, e)
+		if end {
+			return false
+		}
+		if !ok {
+			return true
+		}
+		if fe, ok := h.filter(p, channel, e); ok {
+			writeFrame(w, fe)
+		}
+		return true
+	}
 
 	if h.Initial != nil {
 		if ev := h.Initial(ctx, channel); ev != nil {
-			if e, ok := h.filter(p, channel, *ev); ok {
-				writeFrame(w, e)
-				flusher.Flush()
+			if !send(*ev) {
+				return
 			}
+			flusher.Flush()
 		}
 	}
 
@@ -287,8 +327,9 @@ func (h *Handler) sseChannel(channel string, w http.ResponseWriter, r *http.Requ
 		if last := parseLastEventID(r); last > 0 {
 			if evs, err := h.Replay.Replay(ctx, channel, last); err == nil {
 				for _, e := range evs {
-					if fe, ok := h.filter(p, channel, Event(e)); ok {
-						writeFrame(w, fe)
+					if !send(Event(e)) {
+						flusher.Flush()
+						return
 					}
 				}
 				flusher.Flush()
@@ -305,14 +346,19 @@ func (h *Handler) sseChannel(channel string, w http.ResponseWriter, r *http.Requ
 		case <-sub.Done:
 			return
 		case <-heartbeat.C:
+			// the feed ends when its channel is no longer the account's to hear
+			// (an event that is nothing: it is never sent, only asked about)
+			if _, end := guard(ctx, Event{}); end {
+				return
+			}
 			// Comment frame keeps the connection warm.
 			_, _ = w.Write([]byte(": ping\n\n"))
 			flusher.Flush()
 		case e := <-sub.C:
-			if fe, ok := h.filter(p, channel, e); ok {
-				writeFrame(w, fe)
-				flusher.Flush()
+			if !send(e) {
+				return
 			}
+			flusher.Flush()
 		}
 	}
 }

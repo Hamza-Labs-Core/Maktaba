@@ -775,6 +775,15 @@ func (h *Handler) PostProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Story 57.03: a video hidden from the account since its stream began (a
+	// block, a new tier) takes no more progress, so the session's lease is not
+	// renewed and the streaming service ends what it is still sending, a
+	// direct-play response under way included. The answer is a missing session's.
+	if !h.MayPlay(r.Context(), videoID) {
+		httperror.Write(w, r, httperror.NotFound("session "+sessionID))
+		return
+	}
+
 	warned := ""
 	if duration.Valid && req.PositionSec > duration.Float64 {
 		req.PositionSec = duration.Float64
