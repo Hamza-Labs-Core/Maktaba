@@ -120,9 +120,16 @@ func (g *Gate) Middleware(routes chi.Routes) func(http.Handler) http.Handler {
 			}
 			ctx := With(r.Context(), e)
 			if e.Limits() {
+				// an account with a policy of its own is never an admin, whatever
+				// its token still says
+				op, err := g.own(ctx, p, e)
+				if err != nil {
+					httperror.Write(w, r, httperror.Unavailable(5))
+					return
+				}
 				// a blocked library is one the account has no access to, for
 				// every library check of every handler
-				np, err := g.narrow(ctx, p, e)
+				np, err := g.narrow(ctx, op, e)
 				if err != nil {
 					httperror.Write(w, r, httperror.Unavailable(5))
 					return
@@ -225,6 +232,45 @@ func swapParam(path, pattern, param, value string) (string, bool) {
 		return "", false
 	}
 	return "/" + strings.Join(segs, "/"), true
+}
+
+// own is p as an account with a policy of its own stands: not an admin, and with
+// the libraries it was given (library_acl), not every library. A restricted
+// account is never an admin (story 57.02), but an access token minted while it
+// still was one says `is_admin` until it runs out, and the routes that guard
+// themselves (the parental routes, the notices) read the principal: with the
+// claim left on, a demoted and then restricted user could lift its own
+// restriction. A sign-in limited only by its device (no policy) keeps its role.
+func (g *Gate) own(ctx context.Context, p *principal.Principal, e *Effective) (*principal.Principal, error) {
+	if !e.Restricted || e.SignalOnly || (!p.IsAdmin && !p.AccessAllLibraries) {
+		return p, nil
+	}
+	c := g.cache.Load()
+	if c == nil {
+		return nil, ErrNoCache
+	}
+	rows, err := c.Store().DB.QueryContext(ctx,
+		`SELECT CAST(library_id AS TEXT) FROM library_acl WHERE user_id = $1 ORDER BY library_id`, p.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	libs := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		libs = append(libs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	np := *p
+	np.IsAdmin = false
+	np.AccessAllLibraries = false
+	np.Libraries = libs
+	return &np, nil
 }
 
 // narrow is p without the libraries e's live block rules name: a copy, so every
