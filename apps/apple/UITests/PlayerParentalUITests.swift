@@ -111,6 +111,34 @@ final class PlayerParentalUITests: PlayerUITestCase {
         XCTAssertFalse(element("blocked.title").exists)
     }
 
+    /// A child watches a video opened from Libraries; the limit's version moves for something
+    /// unrelated (a parent added a rule). The Libraries section is not built again around
+    /// the video: it stays open: no stream is closed, the player is not dismissed. Held in the
+    /// background meanwhile (57.09), that section's player paused too and did not start
+    /// again by itself.
+    func testAVideoPlayingFromLibrariesStaysOpenWhenTheLimitChanges() {
+        home.parental(Self.child)
+        launchSignedIn(sections: ["libraries"], open: "video/v1")
+        XCTAssertTrue(element("screen.videoDetail").waitForExistence(timeout: 20), "the video's page in Libraries")
+        app.buttons["Play"].firstMatch.tap()
+        XCTAssertTrue(element("player.surface").waitForExistence(timeout: 30), "the player")
+        waitUntil("the stream opened", timeout: 30) { self.count("POST", "/api/stream/sessions") >= 1 }
+        waitUntil("it plays", timeout: 30) { (self.element("player.surface").value as? String ?? "").contains("playing=true") }
+        let asked = count("GET", "/api/me/parental")
+        home.stub("GET", "/api/me/parental", body: #"{"restricted":true,"max_tier":9,"unrated":"hide","version":5}"#)
+        XCUIDevice.shared.press(.home)
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        app.activate()
+        waitUntil("the limit was read again", timeout: 20) { self.count("GET", "/api/me/parental") > asked }
+        // long enough for the section to be built again, were it still keyed on the limit
+        RunLoop.current.run(until: Date().addingTimeInterval(4))
+        XCTAssertTrue(element("player.surface").exists, "the video is still open")
+        XCTAssertEqual(count("DELETE", "/api/stream/sessions/ss-1"), 0, "its stream was not closed")
+        XCTAssertEqual(count("POST", "/api/stream/sessions"), 1, "nor opened again")
+        let state = element("player.surface").value as? String ?? ""
+        XCTAssertTrue(state.contains("playing=false"), "paused in the background under a limit, and not started again: \(state)")
+    }
+
     // MARK: 57.06
 
     /// T09 (and T08's other half): Enter parent PIN, a wrong PIN, then the right one opens
@@ -207,7 +235,7 @@ final class PlayerParentalUITests: PlayerUITestCase {
     private func guardian() {
         home.parental(#"{"restricted":false}"#, children: Self.children)
         home.stub("GET", "/api/parental/requests",
-                  body: #"{"requests":[{"id":"r1","child_id":"c2","subject_kind":"video","subject_id":"v2","status":"pending","created_at":"{{now-600}}","expires_at":"{{now+86400}}","child":{"id":"c2","username":"Sara"},"subject":{"kind":"video","id":"v2","title":"The long night","tier":16}}]}"#)
+                  body: #"{"requests":[{"id":"r1","child_id":"c2","subject_kind":"video","subject_id":"v2","status":"pending","created_at":"{{now-600}}","expires_at":"{{now+86400}}","child":{"id":"c2","username":"Sara"},"subject":{"kind":"video","id":"v2","title":"The long night","poster_url":"/api/videos/v2/poster","tier":16}}]}"#)
         home.stub("GET", "/api/users/c2/parental", body: Self.account)
         home.stub("GET", "/api/users/c2/parental/rules", body: #"{"rules":[]}"#)
         home.stub("GET", "/api/parental/users/c2/time-rules", body: #"{"rules":[],"time_zone":"Asia/Riyadh"}"#)
@@ -240,7 +268,9 @@ final class PlayerParentalUITests: PlayerUITestCase {
         XCTAssertTrue(element("family.request.approve.today").waitForExistence(timeout: 5), "Today, This week, Always")
         element("family.request.approve.today").tap()
         waitUntil("the approval sent") { self.count("POST", "/api/parental/requests/r1/approve") == 1 }
-        XCTAssertNotNil(body("POST", "/api/parental/requests/r1/approve")?["expires_at"] as? String, "Today ends at 04:00")
+        let approved = body("POST", "/api/parental/requests/r1/approve")
+        XCTAssertEqual(approved?["until"] as? String, "day_end", "Today ends when the home's day does: the home works it out")
+        XCTAssertNil(approved?["expires_at"], "no time from this device's clock")
         waitUntil("the request leaves the list") { !self.element("family.request.r1").exists }
 
         element("family.child.c2").tap()
@@ -486,5 +516,37 @@ final class PlayerParentalUITests: PlayerUITestCase {
                        "Not available right now. This channel comes back when the next programme starts.")
         XCTAssertFalse(home.seen.contains("POST /api/tv/remote/tune"), "nothing was tuned")
         shot("parental-live-slate")
+    }
+
+    /// The same when the channel opens before the home said the account has a limit (the
+    /// first moments after sign-in): nothing starts until the home has said, then the slate.
+    /// It used to start as for an account with no limit, and never showed the slate.
+    func testAChannelOpenedBeforeTheLimitIsKnownStillShowsTheSlate() {
+        home.parental(Self.child)
+        home.stub("GET", "/api/channels/ch-1/access", body: #"{"channel_id":"ch-1","restricted":true,"allowed":false,"until":null}"#)
+        home.delay("GET", "/api/me/parental", by: 5)
+        launchSignedIn(sections: ["home", "live"], open: "channel/ch-1")
+        XCTAssertTrue(element("live.slate").waitForExistence(timeout: 40), "the slate, once the home said the limit")
+        XCTAssertFalse(home.seen.contains("GET /api/tv/info"), "the channel was not started before the home said: \(home.seen)")
+        XCTAssertFalse(home.seen.contains("POST /api/tv/remote/tune"), "nothing was tuned")
+    }
+
+    /// The same when the home is slow to say it has channels (a loaded iPad runner): the
+    /// shell shows without Live TV after its wait, the channel opens on the first section's
+    /// stack, and when Live TV's section comes the channel goes there with it. It used to
+    /// stay behind on Home's stack, under Live TV's first screen.
+    func testAChannelOpenedBeforeLiveTVShowsGoesWithItAndShowsTheSlate() {
+        home.parental(Self.child)
+        home.stub("GET", "/api/channels/ch-1/access", body: #"{"channel_id":"ch-1","restricted":true,"allowed":false,"until":null}"#)
+        // longer than the shell waits for the answer (`LiveSectionGate.patience`, 3 s)
+        home.delay("GET", "/api/channels/now", by: 6)
+        launchSignedIn(sections: ["home", "live"], open: "channel/ch-1")
+        waitUntil("the home said it has channels", timeout: 40) { self.home.seen.contains("GET /api/channels/now") }
+        // past the move to Live TV: the slate is there after it, not only before
+        RunLoop.current.run(until: Date().addingTimeInterval(8))
+        XCTAssertTrue(element("live.slate").waitForExistence(timeout: 20), "the slate, after Live TV's section showed")
+        XCTAssertEqual(element("live.slate.text").label,
+                       "Not available right now. This channel comes back when the next programme starts.")
+        XCTAssertFalse(home.seen.contains("POST /api/tv/remote/tune"), "nothing was tuned")
     }
 }

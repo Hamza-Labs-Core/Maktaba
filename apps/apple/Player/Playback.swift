@@ -100,6 +100,36 @@ final class Playback {
     /// The audio session's interruptions (a call, an alarm, a Screen Time shield): each sends
     /// the position at once (story 57.09).
     private var interruptionObserver: NSObjectProtocol?
+    /// The app leaving and taking the front, heard by the playback itself (story 57.09): a
+    /// player shown by any screen (the watch screen, the Libraries section's cover) sends
+    /// its position and pauses under a limit without that screen having to say so.
+    private var sceneObservers: [NSObjectProtocol] = []
+    private let center: NotificationCenter
+    private let sceneNotes: SceneNotes
+    /// Where the app was at the last `sceneChanged` (a screen and the notifications both
+    /// say it: the second saying changes nothing).
+    private var scene = Scene.active
+
+    private enum Scene { case active, inactive, background }
+
+    /// The notifications that say the app left the front, went to the background, came back.
+    struct SceneNotes {
+        var inactive: Notification.Name?
+        var background: Notification.Name?
+        var active: Notification.Name?
+
+        /// The system's: iPhone and iPad (the Mac has no background to be held in; its
+        /// watch screen says when the window leaves the front).
+        static var platform: SceneNotes {
+            #if os(iOS)
+            SceneNotes(inactive: UIApplication.willResignActiveNotification,
+                       background: UIApplication.didEnterBackgroundNotification,
+                       active: UIApplication.didBecomeActiveNotification)
+            #else
+            SceneNotes()
+            #endif
+        }
+    }
     private var statusObservation: NSKeyValueObservation?
     private var groupsTask: Task<Void, Never>?
     /// Loading the enabled audio tracks' formats, when they were not read yet.
@@ -117,8 +147,10 @@ final class Playback {
     /// The person's audio choice, by language.
     private var chosenAudio: String?
 
-    init(client: APIClient) {
+    init(client: APIClient, center: NotificationCenter = .default, scene: SceneNotes = .platform) {
         self.client = client
+        self.center = center
+        sceneNotes = scene
     }
 
     /// Plays `v` from `start` seconds; nil: where the person left off (a finished video
@@ -170,6 +202,9 @@ final class Playback {
     /// until the person taps play (a shielded app must not start itself again); other
     /// sign-ins keep playing in the background as before (story 48.24).
     func sceneChanged(active: Bool, background: Bool) {
+        let now: Scene = active ? .active : background ? .background : .inactive
+        guard now != scene else { return }
+        scene = now
         guard !active, let p = player else { return }
         report()
         guard background, limited(), p.rate > 0 || pip.isActive else { return }
@@ -306,6 +341,25 @@ final class Playback {
     private func endInterruptions() {
         if let interruptionObserver { NotificationCenter.default.removeObserver(interruptionObserver) }
         interruptionObserver = nil
+        for o in sceneObservers { center.removeObserver(o) }
+        sceneObservers = []
+    }
+
+    /// Hears the app leave and take the front while a player is open.
+    private func observeScene() {
+        guard sceneObservers.isEmpty else { return }
+        // a player opens with the app at the front: what was heard for the last video (it
+        // may have been stopped in the background, unheard since) says nothing of now
+        scene = .active
+        let heard: [(Notification.Name?, Bool, Bool)] = [
+            (sceneNotes.inactive, false, false), (sceneNotes.background, false, true), (sceneNotes.active, true, false),
+        ]
+        for (name, active, background) in heard {
+            guard let name else { continue }
+            sceneObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.sceneChanged(active: active, background: background) }
+            })
+        }
     }
 
     func stop() {
@@ -498,6 +552,7 @@ final class Playback {
             startRoutes(of: p)
             startNowPlaying()
             observeInterruptions()
+            observeScene()
         }
         ended = false
         Log.ui.info("playback: opened at \(start, privacy: .public) s, playing \(playing, privacy: .public)")

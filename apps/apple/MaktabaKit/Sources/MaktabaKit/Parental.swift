@@ -503,6 +503,13 @@ public struct ParentalRequestItem: Decodable, Hashable, Sendable, Identifiable {
 
     public var id: String { request.id }
 
+    /// The video whose poster the request's row shows: only a video the home sent a poster
+    /// for (one this guardian may open, not removed). Nil for anything else.
+    public var posterVideo: String? {
+        guard subject.kind == "video", !subject.hidden, !subject.removed, subject.posterURL?.isEmpty == false else { return nil }
+        return subject.id
+    }
+
     /// "Sara asks for The long night", or for a time request "Sara asks for 30 min more time".
     public func line(_ locale: Locale = AppLanguage.locale) -> String {
         if request.isTime {
@@ -522,7 +529,34 @@ public struct ParentalRequestItem: Decodable, Hashable, Sendable, Identifiable {
     }
 }
 
-/// How long an approval lasts (`expires_at`): until 04:00 tomorrow, for seven days, or for good.
+/// When an allow or block rule, or an approval, ends, as the home is told.
+public enum ParentalEnding: Equatable, Sendable {
+    /// It does not end.
+    case never
+    /// `expires_at`: the instant, on the sender's clock.
+    case at(Date)
+    /// `until: day_end`: the end of the home's day (the next 04:00 in the home's time zone),
+    /// worked out by the home, so the sender's clock and time zone do not matter.
+    case dayEnd
+
+    /// The fields of the request's body that say it.
+    var body: [String: Any] {
+        switch self {
+        case .never: [:]
+        case let .at(date): ["expires_at": APIClient.rfc3339(date)]
+        case .dayEnd: ["until": "day_end"]
+        }
+    }
+
+    /// The home answered that it does not take `until` (one from before it: 400 for a field
+    /// it does not know, or 422): the sender then works the day's end out itself.
+    static func untilRefused(_ error: Error) -> Bool {
+        guard case let APIError.status(code, _, _)? = error as? APIError else { return false }
+        return code == 400 || code == 422
+    }
+}
+
+/// How long an approval lasts: until the home's day ends, for seven days, or for good.
 public enum ApprovalLength: String, CaseIterable, Sendable {
     case today, week, always
 
@@ -534,8 +568,27 @@ public enum ApprovalLength: String, CaseIterable, Sendable {
         }
     }
 
-    /// When the allow rule ends (nil: never). "Today" ends at the next 04:00, the home's day
-    /// line, on this device's clock; the home keeps the time it is given.
+    /// What the home is told. "Today" is the home's own day's end (`until: day_end`): the
+    /// home computes it, whatever this device's clock and time zone say.
+    public func ending(from now: Date = .now) -> ParentalEnding {
+        switch self {
+        case .always: .never
+        case .week: .at(now.addingTimeInterval(7 * 86400))
+        case .today: .dayEnd
+        }
+    }
+
+    /// A calendar in the home's time zone (`time_zone` of the time rules), for working out
+    /// the home's day line here; this device's zone when the home's is not known.
+    public static func homeCalendar(timeZone: String?) -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        if let timeZone, let zone = TimeZone(identifier: timeZone) { calendar.timeZone = zone }
+        return calendar
+    }
+
+    /// When the allow rule ends (nil: never), worked out here: only for a home that does not
+    /// take `until`. "Today" ends at the next 04:00, the home's day line, in `calendar`
+    /// (`homeCalendar`: the home's time zone, not this device's).
     public func expiresAt(from now: Date = .now, calendar: Calendar = .current) -> Date? {
         switch self {
         case .always: return nil
@@ -1009,9 +1062,10 @@ public extension APIClient {
         return a.rules
     }
 
-    func addParentalRule(_ user: String, effect: String, subject: ParentalSubject, expiresAt: Date? = nil) async throws -> ParentalRule {
+    func addParentalRule(_ user: String, effect: String, subject: ParentalSubject,
+                         ending: ParentalEnding = .never) async throws -> ParentalRule {
         var body: [String: Any] = ["effect": effect, "subject_kind": subject.kind, "subject_id": subject.id]
-        if let expiresAt { body["expires_at"] = Self.rfc3339(expiresAt) }
+        body.merge(ending.body) { _, new in new }
         return try await send(request("POST", "/api/users/\(Self.segment(user))/parental/rules", body: body))
     }
 
@@ -1079,10 +1133,10 @@ public extension APIClient {
         return a.requests
     }
 
-    /// `expiresAt` for an item's allow rule; `minutes` for a time request (nil: as asked).
-    func approveRequest(_ id: String, expiresAt: Date?, minutes: Int? = nil) async throws {
-        var body: [String: Any] = [:]
-        if let expiresAt { body["expires_at"] = Self.rfc3339(expiresAt) }
+    /// `ending` for an item's allow rule (never for a time request: the home answers 422);
+    /// `minutes` for a time request (nil: as asked).
+    func approveRequest(_ id: String, ending: ParentalEnding = .never, minutes: Int? = nil) async throws {
+        var body: [String: Any] = ending.body
         if let minutes { body["minutes"] = minutes }
         _ = try await sendRaw(request("POST", "/api/parental/requests/\(Self.segment(id))/approve", body: body))
     }

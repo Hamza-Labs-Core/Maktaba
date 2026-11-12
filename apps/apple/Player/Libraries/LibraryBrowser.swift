@@ -22,6 +22,8 @@ struct LibraryBrowser: View {
     @State private var model: LibrariesModel
     @State private var path: [PlayerRoute]
     @State private var choice: LibrariesChoice?
+    /// Moves when the account's parental limit changes: the lists are read again.
+    @State private var fresh = 0
     @Environment(\.horizontalSizeClass) private var width
 
     init(session: AppSession, user: User, client: APIClient, playing: Binding<Bool>) {
@@ -48,12 +50,24 @@ struct LibraryBrowser: View {
             .focusedSceneValue(\.playback, playback)
             .onChange(of: playback.video != nil) { playing = $1 }
             .onDisappear { playback.stop(); playing = false }
+            // Epic 57: the limit changed (`ParentalStore.epoch`). The lists and the pages are
+            // read again, so nothing hidden stays on them; what plays keeps playing (the home
+            // stops it if it must) and the stack stays where it is
+            .onChange(of: session.parental.epoch) {
+                model = LibrariesModel(client: client, signedOut: { session.signedOut() })
+                fresh += 1
+            }
+            .onChange(of: model.libraries.map(\.id)) { _, ids in
+                // wide: the library beside the list is no longer one the home gives
+                if case let .library(id)? = choice, !ids.isEmpty, !ids.contains(id) { choice = ids.first.map { .library($0) } }
+            }
     }
 
     @ViewBuilder private var layout: some View {
         if width == .compact {
             NavigationStack(path: $path) {
                 LibrariesScreen(context: context, model: model)
+                    .id(fresh)
                     .toolbar { LibrariesAccountMenu(context: context) }
                     .librariesDestinations(context)
             }
@@ -61,6 +75,7 @@ struct LibraryBrowser: View {
         } else {
             NavigationSplitView(columnVisibility: .constant(.all)) {
                 LibrariesScreen(context: context, model: model, choice: $choice)
+                    .id(fresh)
                     .toolbar { LibrariesAccountMenu(context: context) }
                     #if os(macOS)
                     .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 480)
@@ -69,7 +84,7 @@ struct LibraryBrowser: View {
                     #endif
             } detail: {
                 NavigationStack(path: $path) {
-                    page.librariesDestinations(context)
+                    FreshOnLimit(session: session) { page }.librariesDestinations(context)
                 }
             }
             .navigationSplitViewStyle(.balanced)
@@ -105,12 +120,14 @@ private extension View {
     /// 48.19's page and 48.23's player land; the rest open as in every section.
     func librariesDestinations(_ context: PlayerContext) -> some View {
         navigationDestination(for: PlayerRoute.self) { route in
-            switch route {
-            case let .video(id), let .watch(id, _): VideoBridge(context: context, id: id)
-            case let .series(id): SeriesScreen(context: context, id: id)
-            case let .library(id): LibraryScreen(context: context, id: id)
-            case let .channel(id): ChannelScreen(context: context, id: id)
-            case let .search(q): SearchScreen(context: context, query: q)
+            FreshOnLimit(session: context.session) {
+                switch route {
+                case let .video(id), let .watch(id, _): VideoBridge(context: context, id: id)
+                case let .series(id): SeriesScreen(context: context, id: id)
+                case let .library(id): LibraryScreen(context: context, id: id)
+                case let .channel(id): ChannelScreen(context: context, id: id)
+                case let .search(q): SearchScreen(context: context, query: q)
+                }
             }
         }
     }
@@ -119,6 +136,17 @@ private extension View {
     /// window on the Mac (the green button or Control-Command-F makes it full screen).
     func player(_ playback: Playback, session: AppSession) -> some View {
         modifier(PlayerOverlay(playback: playback, session: session))
+    }
+}
+
+/// A page built again when the account's parental limit changes: it reads the home afresh,
+/// so a page of something now hidden says so and nothing hidden stays on it.
+private struct FreshOnLimit<Content: View>: View {
+    let session: AppSession
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content.id(session.parental.epoch)
     }
 }
 

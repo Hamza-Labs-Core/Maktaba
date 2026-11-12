@@ -180,10 +180,12 @@ struct PlayerShell: View {
     private func settleLaunch() {
         guard liveUnsettled, context.session.capabilities.answered else { return }
         if sections.contains(.liveTV) {
+            // a channel opened on the first section's stack goes to Live TV's with the move
+            paths = ShellLaunch.settled(paths, from: selection, liveShown: true)
             selection = .liveTV
             liveUnsettled = false
         } else if liveTVHidden {
-            paths[.liveTV] = nil
+            paths = ShellLaunch.settled(paths, from: selection, liveShown: false)
             if selection == .liveTV { selection = sections.first ?? .libraries }
             unavailable = true
             liveUnsettled = false
@@ -232,7 +234,10 @@ struct PlayerShell: View {
                 // the time left today, or that it is over (57.15)
                 .parentalTime(context.session.parental)
         case .libraries:
-            LibraryBrowser(session: context.session, user: context.user, client: context.client, playing: $playing).id(epoch)
+            // not built again as a whole: it holds what plays and its own stack, and a video
+            // that is playing must not close because an unrelated rule changed. Its lists
+            // and pages are built again inside it
+            LibraryBrowser(session: context.session, user: context.user, client: context.client, playing: $playing)
         case .liveTV: LiveTVScreen(context: context).id(epoch)
         case .search: SearchScreen(context: context).id(epoch)
         case .profile: ProfileScreen(context: context)

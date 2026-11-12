@@ -73,7 +73,7 @@ struct SettingsView: View {
         if limit.limited || limit.devicePending {
             Section {
                 if limit.restricted {
-                    Label { Text(verbatim: ParentalWords.text("parental.profile.managed")) } icon: { Image(systemName: "person.2.badge.gearshape") }
+                    IconLine(ParentalWords.text("parental.profile.managed"), systemImage: "person.2.badge.gearshape")
                         .accessibilityIdentifier("settings.parental.managed")
                     if let tier = limit.maxTier {
                         LabeledContent {
@@ -81,15 +81,16 @@ struct SettingsView: View {
                         } label: {
                             Text(verbatim: ParentalWords.text("parental.profile.limit"))
                         }
+                        .accessibilityElement(children: .combine)
                         .accessibilityIdentifier("settings.parental.limit")
                     }
                 }
                 if let device = limit.deviceLimit {
-                    Label { Text(verbatim: ParentalWords.text("ageSignal.limit.device", AgeTier.label(device))) } icon: { Image(systemName: "appletv") }
+                    IconLine(ParentalWords.text("ageSignal.limit.device", AgeTier.label(device)), systemImage: "appletv")
                         .accessibilityIdentifier("settings.parental.device")
                 }
                 if limit.devicePending || session.ageSignal.answer?.pendingLooser == true {
-                    Label { Text(verbatim: ParentalWords.text("ageSignal.limit.pending")) } icon: { Image(systemName: "hourglass") }
+                    IconLine(ParentalWords.text("ageSignal.limit.pending"), systemImage: "hourglass")
                         .accessibilityIdentifier("settings.parental.pending")
                 }
             }

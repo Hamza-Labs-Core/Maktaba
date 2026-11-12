@@ -230,6 +230,14 @@ struct TVPinScreen: View {
             Group {
                 if entry.state == .checking {
                     ProgressView()
+                } else if entry.lockedUntil != nil {
+                    // PIN entry is closed: the time left counts down as it passes
+                    TimelineView(.periodic(from: .now, by: 5)) { timeline in
+                        Text(verbatim: entry.line(at: timeline.date) ?? " ")
+                            .foregroundStyle(Theme.goldText)
+                            .multilineTextAlignment(.center)
+                            .accessibilityIdentifier("pin.line")
+                    }
                 } else if let line = entry.line() {
                     Text(verbatim: line)
                         .foregroundStyle(entry.state == .unlocked ? Theme.text : Theme.goldText)
@@ -256,6 +264,8 @@ struct TVPinScreen: View {
         .onChange(of: entry.complete) { _, complete in
             if complete { Task { await entry.submit() } }
         }
+        // closed after too many tries: the keys open again when the lock ends
+        .task(id: entry.lockedUntil) { await entry.reopenWhenLockEnds() }
         .onChange(of: entry.state) { _, state in
             switch state {
             case .unlocked:
@@ -264,8 +274,9 @@ struct TVPinScreen: View {
                     unlocked()
                 }
             case .wrong, .failed, .entering:
-                // the keys took the remote again: back to the first
-                if key == nil { key = 1 }
+                // the keys took the remote again: back to the first (from Cancel too, where
+                // the focus waited while PIN entry was closed)
+                if key == nil || key == Self.cancel { key = 1 }
             case .locked:
                 key = Self.cancel
             case .checking:
@@ -365,9 +376,6 @@ struct TVTimeUpView: View {
     @FocusState private var focus: Field?
 
     private enum Field: Hashable { case minutes(Int), ask, pin, back }
-
-    /// How often the home is asked whether there is time again.
-    static let poll: Duration = .seconds(30)
 
     var body: some View {
         VStack(spacing: 24) {
@@ -478,17 +486,12 @@ struct TVTimeUpView: View {
             }
         }
         // never at once: the home just said no. Asked again every 30 s, for the library of
-        // what was playing, and the video goes on only when the home says there is time
+        // what was playing (`PlayingTime`, as on iPhone), and the video goes on only when the
+        // home says there is time
         .task {
-            while !Task.isCancelled {
-                do { try await Task.sleep(for: Self.poll) } catch { return }
-                guard let now = try? await client.myParentalTime(library: library) else { continue }
-                await session.parental.refreshTime()
-                if now.allowed {
-                    allowed()
-                    return
-                }
-            }
+            guard await PlayingTime(source: client, library: library).waitUntilAllowed() else { return }
+            await session.parental.refreshTime()
+            allowed()
         }
     }
 
@@ -505,9 +508,17 @@ struct TVTimeLeft: View {
     let store: ParentalStore
     /// Over the video: light text on a dark capsule, and the home asked again every 30 s.
     var overVideo = false
+    /// The player's: who asks, and the playing video's library (a rule on one library counts
+    /// only when the home is told the library).
+    var client: APIClient?
+    var library: String?
 
     @State private var warning: Int?
     @State private var last: Int?
+    @State private var time: PlayingTime?
+
+    /// The answer shown: the playing library's once the home gave it.
+    private var shown: ParentalStore.TimeReading? { overVideo ? time?.reading ?? store.time : store.time }
 
     var body: some View {
         if store.current.restricted, let reading = store.time {
@@ -532,12 +543,12 @@ struct TVTimeLeft: View {
 
     private var countdown: some View {
         TimelineView(.periodic(from: .now, by: 5)) { timeline in
-            let left = TimeLeft.seconds(store.time, at: timeline.date)
+            let left = TimeLeft.seconds(shown, at: timeline.date)
             Group {
                 if let warning {
                     label(TimeLeft.warningLine(warning), strong: true)
                         .accessibilityIdentifier("time.warning")
-                } else if let line = TimeLeft.line(store.time, at: timeline.date) {
+                } else if let line = TimeLeft.line(shown, at: timeline.date) {
                     label(line, strong: false)
                         .accessibilityIdentifier("time.left")
                 }
@@ -547,12 +558,23 @@ struct TVTimeLeft: View {
                 last = now
             }
         }
-        .task(id: overVideo) {
+        .task(id: library) {
             guard overVideo else { return }
-            while !Task.isCancelled {
-                await store.refreshTime()
-                do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            guard let client else {
+                // no client given: Home's question, as before
+                while !Task.isCancelled {
+                    await store.refreshTime()
+                    do { try await Task.sleep(for: PlayingTime.every) } catch { return }
+                }
+                return
             }
+            let t = PlayingTime(source: client, library: library)
+            time = t
+            await t.follow()
+        }
+        .onDisappear {
+            // Home's line (asked without a library) is read again when the player closes
+            if overVideo { Task { await store.refreshTime() } }
         }
     }
 
@@ -566,7 +588,7 @@ struct TVTimeLeft: View {
     }
 
     private func label(_ text: String, strong: Bool) -> some View {
-        Label { Text(verbatim: text) } icon: { Image(systemName: "hourglass") }
+        IconLine(text, systemImage: "hourglass")
             .font(Theme.body(28, weight: strong ? .semibold : .medium))
             .foregroundStyle(overVideo ? Color.white : Theme.text)
             .padding(.horizontal, 32)

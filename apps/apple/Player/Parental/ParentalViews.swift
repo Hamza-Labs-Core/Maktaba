@@ -224,6 +224,15 @@ struct PinSheet: View {
                 Group {
                     if entry.state == .checking {
                         ProgressView()
+                    } else if entry.lockedUntil != nil {
+                        // PIN entry is closed: the time left counts down as it passes
+                        TimelineView(.periodic(from: .now, by: 5)) { timeline in
+                            Text(verbatim: entry.line(at: timeline.date) ?? " ")
+                                .foregroundStyle(MaktabaTokens.Colors.error.color)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("pin.line")
+                        }
                     } else if let line = entry.line() {
                         Text(verbatim: line)
                             .foregroundStyle(entry.state == .unlocked ? Color.mktText : MaktabaTokens.Colors.error.color)
@@ -247,6 +256,8 @@ struct PinSheet: View {
         .onChange(of: entry.complete) { _, complete in
             if complete { Task { await entry.submit() } }
         }
+        // closed after too many tries: the keys open again when the lock ends
+        .task(id: entry.lockedUntil) { await entry.reopenWhenLockEnds() }
         .onChange(of: entry.state) { _, state in
             guard state == .unlocked else { return }
             Task {
@@ -308,6 +319,9 @@ struct TimeUpView: View {
     let up: TimeUp
     /// Where the video stopped, in seconds (nil: nothing was playing).
     var position: Double?
+    /// The library of what was playing: its own time rules count too, and the home applies
+    /// them only when it is told the library.
+    var library: String?
     let back: () -> Void
     /// The home allows watching again (a parent gave more time).
     var allowed: () -> Void = {}
@@ -318,6 +332,8 @@ struct TimeUpView: View {
     @State private var page: BlockedPage?
     @State private var asked: BlockedPage?
     @State private var enteringPIN = false
+    /// The home's time for what was playing, asked while this screen shows.
+    @State private var playing: PlayingTime?
 
     var body: some View {
         ScrollView {
@@ -421,17 +437,16 @@ struct TimeUpView: View {
                 }
             }
         }
+        // never at once: the home just said no. Asked after a 30 s wait and every 30 s
+        // after, for the library of what was playing (`PlayingTime`), and the video goes on
+        // only when the home says there is time for it
         .task(id: scenePhase == .active) {
             guard scenePhase == .active else { return }
-            let store = context.session.parental
-            while !Task.isCancelled {
-                await store.refreshTime()
-                if let t = store.time?.state, t.allowed {
-                    allowed()
-                    return
-                }
-                do { try await Task.sleep(for: .seconds(30)) } catch { return }
-            }
+            let time = playing ?? PlayingTime(source: context.client, library: library)
+            playing = time
+            guard await time.waitUntilAllowed() else { return }
+            await context.session.parental.refreshTime()
+            allowed()
         }
     }
 
@@ -447,20 +462,33 @@ struct TimeLeftBar: View {
     let store: ParentalStore
     /// Over the video: light text on a dark capsule.
     var overVideo = false
-    /// Ask the home again every 30 s while this shows (the player; Home asks as the store does).
-    var polls = false
+    /// The player's: the home is asked every 30 s for the playing video's library (a rule on
+    /// one library counts only then). Nil: Home's line, read as the store reads it.
+    var playing: Playing?
+
+    /// What plays, for the home's time question.
+    struct Playing: Equatable {
+        let client: APIClient
+        let library: String?
+
+        static func == (a: Playing, b: Playing) -> Bool { a.client === b.client && a.library == b.library }
+    }
 
     @State private var warning: Int?
     @State private var last: Int?
+    @State private var time: PlayingTime?
+
+    /// The answer shown: the playing library's once the home gave it.
+    private var reading: ParentalStore.TimeReading? { time?.reading ?? store.time }
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 5)) { timeline in
-            let left = TimeLeft.seconds(store.time, at: timeline.date)
+            let left = TimeLeft.seconds(reading, at: timeline.date)
             Group {
                 if let warning {
                     label(TimeLeft.warningLine(warning), strong: true)
                         .accessibilityIdentifier("time.warning")
-                } else if let line = TimeLeft.line(store.time, at: timeline.date) {
+                } else if let line = TimeLeft.line(reading, at: timeline.date) {
                     label(line, strong: false)
                         .accessibilityIdentifier("time.left")
                 }
@@ -470,12 +498,15 @@ struct TimeLeftBar: View {
                 last = now
             }
         }
-        .task(id: polls) {
-            guard polls else { return }
-            while !Task.isCancelled {
-                await store.refreshTime()
-                do { try await Task.sleep(for: .seconds(30)) } catch { return }
-            }
+        .task(id: playing) {
+            guard let playing else { return }
+            let t = PlayingTime(source: playing.client, library: playing.library)
+            time = t
+            await t.follow()
+        }
+        .onDisappear {
+            // Home's line (asked without a library) is read again when the player closes
+            if playing != nil { Task { await store.refreshTime() } }
         }
     }
 
@@ -491,7 +522,7 @@ struct TimeLeftBar: View {
     }
 
     private func label(_ text: String, strong: Bool) -> some View {
-        Label { Text(verbatim: text) } icon: { Image(systemName: "hourglass") }
+        IconLine(text, systemImage: "hourglass")
             .font(.maktabaBody(15, weight: strong ? .semibold : .medium, relativeTo: .subheadline))
             .foregroundStyle(overVideo ? Color.white : Color.mktText)
             .padding(.horizontal, MaktabaTokens.Spacing.s4)

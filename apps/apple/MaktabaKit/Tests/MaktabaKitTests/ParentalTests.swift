@@ -109,6 +109,8 @@ final class FakeParentalSource: ParentalSource, @unchecked Sendable {
     private var limit: Result<ParentalLimit?, APIError> = .success(ParentalLimit.none)
     private var children: [ParentalChild] = []
     private var time: ParentalTime?
+    private var libraryTime: [String: ParentalTime] = [:]
+    private var timeQuestions: [String?] = []
     private var asked = 0
 
     func set(_ json: String) { lock.withLock { limit = .success(try! JSONDecoder.home.decode(ParentalLimit.self, from: Data(json.utf8))) } }
@@ -118,6 +120,10 @@ final class FakeParentalSource: ParentalSource, @unchecked Sendable {
         lock.withLock { children = (0..<n).map { ParentalChild(id: "c\($0)", username: "child\($0)", policy: ParentalPolicy(userID: "c\($0)", maxTier: 9)) } }
     }
     func set(time t: ParentalTime?) { lock.withLock { time = t } }
+    /// The answer when the home is told `library` (its own rules count then).
+    func set(time t: ParentalTime, library: String) { lock.withLock { libraryTime[library] = t } }
+    /// The library of each time question, in order (nil: asked without one).
+    var timeAsked: [String?] { lock.withLock { timeQuestions } }
     var limitAsked: Int { lock.withLock { asked } }
 
     func myParental() async throws -> ParentalLimit? {
@@ -127,7 +133,12 @@ final class FakeParentalSource: ParentalSource, @unchecked Sendable {
         }
     }
     func parentalChildren() async throws -> [ParentalChild] { lock.withLock { children } }
-    func myParentalTime(library: String?) async throws -> ParentalTime? { lock.withLock { time } }
+    func myParentalTime(library: String?) async throws -> ParentalTime? {
+        lock.withLock {
+            timeQuestions.append(library)
+            return library.flatMap { libraryTime[$0] } ?? time
+        }
+    }
 }
 
 // MARK: 57.05
@@ -327,6 +338,127 @@ final class FakeParentalSource: ParentalSource, @unchecked Sendable {
     }
 }
 
+/// A sleep the test lets through one wait at a time.
+final class HeldWaits: @unchecked Sendable {
+    private let lock = NSLock()
+    private var waiting: [CheckedContinuation<Void, Error>] = []
+    private var started = 0
+
+    /// How many waits began.
+    var count: Int { lock.withLock { started } }
+
+    func sleep(_: Duration) async throws {
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+            lock.withLock {
+                started += 1
+                waiting.append(c)
+            }
+        }
+    }
+
+    /// Ends the wait under way (waits for one to begin first).
+    func pass() async {
+        while lock.withLock({ waiting.isEmpty }) { await Task.yield() }
+        lock.withLock { waiting.removeFirst() }.resume()
+    }
+
+    /// Ends every wait as a cancelled task's sleep ends.
+    func cancel() async {
+        while lock.withLock({ waiting.isEmpty }) { await Task.yield() }
+        for c in lock.withLock({ let all = waiting; waiting = []; return all }) { c.resume(throwing: CancellationError()) }
+    }
+}
+
+/// 57.15: the time of what plays is the playing library's, and a stop for time is never
+/// followed by a resume the home did not allow for that library.
+@Suite struct TheTimeOfWhatPlays {
+    private let over = ParentalTime(allowed: false, limited: true, reason: "limit_reached", remainingSeconds: 0)
+    private let open = ParentalTime(allowed: true, limited: true, remainingSeconds: 3600)
+
+    /// A rule on library X is used up: asked without the library the home says allowed, asked
+    /// for X it says no. The stopped video is not resumed, however long it waits.
+    @MainActor @Test func aLibrarysOwnRuleThatSaysNoIsNotResumed() async {
+        let source = FakeParentalSource()
+        source.set(time: open)
+        source.set(time: over, library: "lib-x")
+        let waits = HeldWaits()
+        let playing = PlayingTime(source: source, library: "lib-x", sleep: waits.sleep)
+        let resumed = Task { await playing.waitUntilAllowed() }
+        for _ in 0..<4 { await waits.pass() }
+        await waits.cancel()
+        #expect(await resumed.value == false, "the library's rule says no: nothing resumes")
+        #expect(source.timeAsked.count >= 2)
+        #expect(source.timeAsked.allSatisfy { $0 == "lib-x" }, "every question names the playing video's library")
+        #expect(playing.reading?.state.allowed == false)
+    }
+
+    /// The home just refused: it is not asked, and nothing resumes, before one full wait. Once
+    /// a parent gave time, the next question after a wait resumes.
+    @MainActor @Test func nothingIsAskedOrResumedBeforeTheFirstWait() async {
+        let source = FakeParentalSource()
+        source.set(time: open) // even an answer that would say yes
+        let waits = HeldWaits()
+        let playing = PlayingTime(source: source, library: "lib-x", sleep: waits.sleep)
+        let resumed = Task { await playing.waitUntilAllowed() }
+        while waits.count == 0 { await Task.yield() }
+        for _ in 0..<20 { await Task.yield() }
+        #expect(source.timeAsked.isEmpty, "no question before the first wait ends")
+        await waits.pass()
+        #expect(await resumed.value == true)
+        #expect(source.timeAsked == ["lib-x"])
+    }
+
+    /// Time given while it waits: no on the first question, yes on a later one.
+    @MainActor @Test func timeGivenLaterResumesAtTheNextQuestion() async {
+        let source = FakeParentalSource()
+        source.set(time: over, library: "lib-x")
+        let waits = HeldWaits()
+        let playing = PlayingTime(source: source, library: "lib-x", sleep: waits.sleep)
+        let resumed = Task { await playing.waitUntilAllowed() }
+        await waits.pass() // the first wait
+        while waits.count < 2 { await Task.yield() } // the home said no; the wait after it began
+        #expect(source.timeAsked.count == 1 && playing.reading?.state.allowed == false)
+        source.set(time: open, library: "lib-x")
+        await waits.pass()
+        #expect(await resumed.value == true)
+        #expect(source.timeAsked.count == 2)
+    }
+
+    /// The app came back to the front after the first wait: the home is asked at once.
+    @MainActor @Test func afterTheFirstWaitAComebackAsksAtOnce() async {
+        let source = FakeParentalSource()
+        source.set(time: over, library: "lib-x")
+        let waits = HeldWaits()
+        let playing = PlayingTime(source: source, library: "lib-x", sleep: waits.sleep)
+        let first = Task { await playing.waitUntilAllowed() }
+        await waits.pass()
+        await waits.cancel()
+        #expect(await first.value == false)
+        source.set(time: open, library: "lib-x")
+        let before = waits.count
+        #expect(await playing.waitUntilAllowed() == true)
+        #expect(waits.count == before, "no second first-wait")
+    }
+
+    /// Over the video: asked at once and after every wait, for the library, and the reading
+    /// is the library's (the countdown and warnings come from it).
+    @MainActor @Test func overTheVideoTheLibrarysTimeIsFollowed() async {
+        let source = FakeParentalSource()
+        source.set(time: open)
+        source.set(time: ParentalTime(allowed: true, limited: true, remainingSeconds: 240), library: "lib-x")
+        let waits = HeldWaits()
+        let at = Date(timeIntervalSince1970: 5_000)
+        let playing = PlayingTime(source: source, library: "lib-x", sleep: waits.sleep, now: { at })
+        let following = Task { await playing.follow() }
+        await waits.pass()
+        await waits.cancel()
+        await following.value
+        #expect(source.timeAsked == ["lib-x", "lib-x"])
+        #expect(TimeLeft.seconds(playing.reading, at: at.addingTimeInterval(40)) == 200)
+        #expect(TimeLeft.warning(from: nil, to: TimeLeft.seconds(playing.reading, at: at)) == 300)
+    }
+}
+
 @Suite(.serialized) struct AgainstAParentalStubHome {
     // MARK: 57.05 T02
 
@@ -415,6 +547,7 @@ final class FakeParentalSource: ParentalSource, @unchecked Sendable {
         await family.load()
         let item = family.requests[0]
         #expect(item.request.isTime && item.request.minutes == 30)
+        #expect(item.posterVideo == nil, "more time has no poster")
         #expect(item.line(en) == "Sara asks for 30 min more time")
         #expect(item.line(ar).hasPrefix("يطلب "))
         await family.approve(item, for: .always)
@@ -481,6 +614,59 @@ final class FakeParentalSource: ParentalSource, @unchecked Sendable {
         #expect(entry.state == .unlocked)
         #expect(entry.line(en) == "Unlocked for today.")
         #expect(ParentalStub.seen("POST /api/me/parental/unlock").count == 3)
+    }
+
+    /// 57.06 T09: after too many tries PIN entry is closed, the line counts the time left
+    /// down as it passes, and when the lock ends the pad takes keys again by itself (the
+    /// state goes back to entering), without the sheet being closed and opened.
+    @MainActor @Test func aLockedPadCountsDownAndOpensAgainWhenTheLockEnds() async {
+        ParentalStub.reset()
+        ParentalStub.on("POST /api/me/parental/unlock", 429,
+                        #"{"type":"https://maktaba.tv/problems/parental-pin-locked","status":429,"code":"pin_locked","retry_after":900}"#,
+                        headers: ["Retry-After": "900"])
+        let start = Date(timeIntervalSince1970: 10_000)
+        let clock = Clock(start)
+        let slept = Clock(start) // .now: the end of the last wait asked for
+        let entry = PinEntry(client: ParentalStub.client(), subject: .video("v-16"), guardian: ParentalPerson(id: "g1", username: "huda"),
+                             now: { clock.now }, sleep: { d in
+                                 // the wait passes: the clock is where it ends
+                                 clock.now = clock.now.addingTimeInterval(TimeInterval(d.components.seconds))
+                                 slept.now = clock.now
+                             })
+        [1, 1, 1, 1, 1, 1].forEach(entry.press)
+        await entry.submit()
+        #expect(entry.lockedUntil == start.addingTimeInterval(900) && !entry.canType)
+        #expect(entry.line(en) == "Too many tries. Try again in 15 min.")
+        // the line is drawn again as time passes: ten minutes on, five are left; then one
+        #expect(entry.line(en, at: start.addingTimeInterval(600)) == "Too many tries. Try again in 5 min.")
+        #expect(entry.line(en, at: start.addingTimeInterval(601)) == "Too many tries. Try again in 5 min.")
+        #expect(entry.line(en, at: start.addingTimeInterval(661)) == "Too many tries. Try again in 4 min.")
+        #expect(entry.line(en, at: start.addingTimeInterval(899)) == "Too many tries. Try again in 1 min.")
+        #expect(entry.state == .locked(until: start.addingTimeInterval(900)), "drawing the line changes nothing")
+
+        await entry.reopenWhenLockEnds()
+        #expect(slept.now == start.addingTimeInterval(900), "it waited until the lock ended, no less")
+        #expect(entry.state == .entering && entry.lockedUntil == nil && entry.canType)
+        #expect(entry.line(en) == nil)
+        entry.press(4)
+        #expect(entry.digits == "4", "the keys take again")
+    }
+
+    /// A wait that was cancelled (the sheet closed) opens nothing; nor does a pad that is
+    /// not locked wait.
+    @MainActor @Test func aCancelledWaitLeavesThePadLocked() async {
+        ParentalStub.reset()
+        ParentalStub.on("POST /api/me/parental/unlock", 429, #"{"status":429,"code":"pin_locked","retry_after":900}"#,
+                        headers: ["Retry-After": "900"])
+        let clock = Clock(Date(timeIntervalSince1970: 10_000))
+        let entry = PinEntry(client: ParentalStub.client(), subject: .video("v-16"), guardian: ParentalPerson(id: "g1", username: "huda"),
+                             now: { clock.now }, sleep: { _ in throw CancellationError() })
+        await entry.reopenWhenLockEnds()
+        #expect(entry.state == .entering, "not locked: nothing to wait for")
+        [1, 1, 1, 1, 1, 1].forEach(entry.press)
+        await entry.submit()
+        await entry.reopenWhenLockEnds()
+        #expect(entry.lockedUntil != nil && !entry.canType)
     }
 
     // MARK: 57.04
@@ -665,6 +851,9 @@ final class FakeParentalSource: ParentalSource, @unchecked Sendable {
         #expect(family.requests.first?.subject.displayTitle(en) == "The long night")
         #expect(family.requests.last?.subject.displayTitle(en) == "Series", "a subject this guardian cannot open has no title")
         #expect(ParentalStub.seen("GET /api/parental/requests").first?.query == "status=pending")
+        // a request's row shows the poster of a video the guardian may see, and nothing else's
+        #expect(family.requests.first?.posterVideo == "v-16")
+        #expect(family.requests.last?.posterVideo == nil, "a hidden series has no poster")
 
         await family.approve(family.requests[0], for: .always)
         #expect(family.requests.map(\.id) == ["r2"])
@@ -684,6 +873,121 @@ final class FakeParentalSource: ParentalSource, @unchecked Sendable {
         #expect(ApprovalLength.today.expiresAt(from: afternoon, calendar: calendar) == afternoon.addingTimeInterval(12 * 3600))
         let night = afternoon.addingTimeInterval(10 * 3600) // 02:00: the day line is two hours away
         #expect(ApprovalLength.today.expiresAt(from: night, calendar: calendar) == night.addingTimeInterval(2 * 3600))
+    }
+
+    /// What the home is told for each length: Today is the home's own day's end.
+    @Test func todayIsTheHomesDayEndNotThisDevicesClock() {
+        let now = homeTime("2026-11-11T22:30:00Z")!
+        #expect(ApprovalLength.today.ending(from: now) == .dayEnd)
+        #expect(ApprovalLength.week.ending(from: now) == .at(now.addingTimeInterval(7 * 86400)))
+        #expect(ApprovalLength.always.ending(from: now) == .never)
+        #expect(ParentalEnding.dayEnd.body["until"] as? String == "day_end" && ParentalEnding.dayEnd.body["expires_at"] == nil)
+        #expect(ParentalEnding.at(now).body["expires_at"] as? String == "2026-11-11T22:30:00Z" && ParentalEnding.at(now).body["until"] == nil)
+        #expect(ParentalEnding.never.body.isEmpty)
+        // the fallback's day line is the home's: 22:30 UTC is 01:30 in Riyadh, so the day
+        // ends in two and a half hours there (a device on UTC would have said 04:00 UTC)
+        let riyadh = ApprovalLength.homeCalendar(timeZone: "Asia/Riyadh")
+        #expect(ApprovalLength.today.expiresAt(from: now, calendar: riyadh) == homeTime("2026-11-12T01:00:00Z"))
+        #expect(ApprovalLength.homeCalendar(timeZone: nil).timeZone == Calendar(identifier: .gregorian).timeZone)
+        #expect(ApprovalLength.homeCalendar(timeZone: "Not/AZone").timeZone == Calendar(identifier: .gregorian).timeZone)
+    }
+
+    private static let oneRequest = #"{"requests":[{"id":"r1","child_id":"c2","subject_kind":"video","subject_id":"v-16","status":"pending","created_at":"2026-11-11T10:00:00Z","expires_at":"2026-11-18T10:00:00Z","child":{"id":"c2","username":"Sara"},"subject":{"kind":"video","id":"v-16","title":"The long night","poster_url":"/api/videos/v-16/poster","tier":16}}]}"#
+
+    @MainActor private func familyWithOneRequest() async -> FamilyModel {
+        ParentalStub.on("GET /api/parental/children", 200, #"{"children":[]}"#)
+        ParentalStub.on("GET /api/parental/requests", 200, Self.oneRequest)
+        ParentalStub.on("GET /api/me/parental-pin", 200, #"{"set":false}"#)
+        let family = FamilyModel(client: ParentalStub.client(), isAdmin: false)
+        await family.load()
+        return family
+    }
+
+    /// Approve for Today sends `until: day_end` and no time of this device's.
+    @MainActor @Test func approvingForTodayLetsTheHomeWorkOutItsDaysEnd() async {
+        ParentalStub.reset()
+        ParentalStub.on("POST /api/parental/requests/r1/approve", 200, #"{"request":{"id":"r1","status":"approved"}}"#)
+        let family = await familyWithOneRequest()
+        await family.approve(family.requests[0], for: .today)
+        let sent = ParentalStub.seen("POST /api/parental/requests/r1/approve")
+        #expect(sent.count == 1)
+        #expect(sent.first?.json["until"] as? String == "day_end")
+        #expect(sent.first?.json["expires_at"] == nil, "no time from this device's clock")
+        #expect(family.requests.isEmpty && family.notice == nil)
+        #expect(ParentalStub.seen("GET /api/parental/users/c2/time-rules").isEmpty, "the home's zone is not needed")
+    }
+
+    /// A home from before `until` refuses it: the day's end is then worked out in the home's
+    /// time zone and sent as `expires_at`.
+    @MainActor @Test func aHomeThatDoesNotTakeUntilGetsTheDaysEndInItsOwnZone() async {
+        for (status, body) in [(422, #"{"status":422,"errors":[{"field":"until","message":"must be day_end"}]}"#),
+                               (400, #"{"status":400,"title":"invalid json","detail":"json: unknown field \"until\""}"#)] {
+            ParentalStub.reset()
+            ParentalStub.on("POST /api/parental/requests/r1/approve", status, body)
+            ParentalStub.on("POST /api/parental/requests/r1/approve", 200, #"{"request":{"id":"r1","status":"approved"}}"#)
+            ParentalStub.on("GET /api/parental/users/c2/time-rules", 200, #"{"rules":[],"time_zone":"Pacific/Kiritimati"}"#)
+            let family = await familyWithOneRequest()
+            let before = Date()
+            await family.approve(family.requests[0], for: .today)
+            let sent = ParentalStub.seen("POST /api/parental/requests/r1/approve")
+            #expect(sent.count == 2)
+            #expect(sent.first?.json["until"] as? String == "day_end")
+            #expect(sent.last?.json["until"] == nil)
+            let end = (sent.last?.json["expires_at"] as? String).flatMap(homeTime)
+            #expect(end != nil, "an instant is sent: never an approval with no end")
+            if let end {
+                // 04:00 on the home's clock (UTC+14, as far from any test machine as a zone gets)
+                let home = ApprovalLength.homeCalendar(timeZone: "Pacific/Kiritimati")
+                let parts = home.dateComponents([.hour, .minute], from: end)
+                #expect(parts.hour == 4 && parts.minute == 0)
+                #expect(end > before && end <= before.addingTimeInterval(86400 + 1))
+            }
+            #expect(family.requests.isEmpty && family.notice == nil)
+        }
+    }
+
+    /// For a week and for good never use `until`, and a refusal of them is said, not retried.
+    @MainActor @Test func aRefusedApprovalThatIsNotForTodayIsSaid() async {
+        ParentalStub.reset()
+        ParentalStub.on("POST /api/parental/requests/r1/approve", 422, #"{"status":422}"#)
+        let family = await familyWithOneRequest()
+        await family.approve(family.requests[0], for: .week)
+        let sent = ParentalStub.seen("POST /api/parental/requests/r1/approve")
+        #expect(sent.count == 1 && sent.first?.json["until"] == nil && sent.first?.json["expires_at"] != nil)
+        #expect(family.notice != nil && family.requests.count == 1)
+    }
+
+    /// The home moves the limit's version when a rule is added or removed: the page reads
+    /// the account again, so the guardian's next change of the limit sends that version and
+    /// is not refused as someone else's (409 `stale`).
+    @MainActor @Test func afterARuleChangeTheLimitIsSentWithTheHomesNewVersion() async {
+        ParentalStub.reset()
+        // every answer of the route is set before the first call: read at load (version 3),
+        // again after the rule was added (4), again after one was removed (5)
+        ParentalStub.on("GET /api/users/c2/parental", 200, Self.account)
+        ParentalStub.on("GET /api/users/c2/parental", 200, Self.account.replacingOccurrences(of: #""version":3"#, with: #""version":4"#))
+        ParentalStub.on("GET /api/users/c2/parental", 200, Self.account.replacingOccurrences(of: #""version":3"#, with: #""version":5"#))
+        ParentalStub.on("GET /api/users/c2/parental/rules", 200,
+                        #"{"rules":[{"id":"ru2","user_id":"c2","effect":"block","subject_kind":"video","subject_id":"v9","created_at":"2026-11-10T10:00:00Z"}]}"#)
+        ParentalStub.on("POST /api/users/c2/parental/rules", 201,
+                        #"{"id":"ru3","user_id":"c2","effect":"allow","subject_kind":"series","subject_id":"s1","created_at":"2026-11-11T10:00:00Z"}"#)
+        ParentalStub.on("DELETE /api/users/c2/parental/rules/ru2", 204, "")
+        ParentalStub.on("PUT /api/users/c2/parental", 200, Self.account.replacingOccurrences(of: #""version":3"#, with: #""version":6"#))
+        let m = ChildModel(client: ParentalStub.client(), child: ParentalPerson(id: "c2", username: "Sara"))
+        await m.load()
+        #expect(m.policy?.version == 3)
+
+        await m.addRule("allow", ParentalSubject(kind: "series", id: "s1"))
+        #expect(m.policy?.version == 4, "read again after the rule was added")
+        await m.setLimit(maxTier: 13)
+        #expect(ParentalStub.seen("PUT /api/users/c2/parental").last?.json["version"] as? Int == 4)
+        #expect(m.notice == nil)
+
+        await m.remove(m.rules("block")[0])
+        #expect(m.policy?.version == 5, "read again after the rule was removed")
+        await m.setLimit(unrated: "tier_9")
+        #expect(ParentalStub.seen("PUT /api/users/c2/parental").last?.json["version"] as? Int == 5)
+        #expect(m.rules("allow").map(\.id) == ["ru3"] && m.rules("block").isEmpty && m.notice == nil)
     }
 
     static let account = #"{"policy":{"user_id":"c2","max_tier":9,"unrated":"hide","allow_only":false,"version":3,"updated_at":"2026-11-10T10:00:00Z"},"access":"guardian","guardians":[{"id":"g1","username":"huda","created_at":"2026-11-01T10:00:00Z"}],"signals":[{"refresh_family_id":"f1","lower":9,"upper":12,"declaration":"guardian_declared","tv_ceiling":400,"region":"US","tier_limit":9,"pending_looser":{"lower":18,"tier_limit":null,"observed_at":"2026-11-11T09:00:00Z"},"observed_at":"2026-11-10T09:00:00Z"}]}"#

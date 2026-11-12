@@ -138,7 +138,7 @@ struct QueuePlayerScreen: View {
                     .accessibilityIdentifier("queue.player")
                 // the time left today, in its last 15 minutes (57.15)
                 if let session {
-                    TVTimeLeft(store: session.parental, overVideo: true)
+                    TVTimeLeft(store: session.parental, overVideo: true, client: p.client, library: p.video.libraryID)
                         .padding(80)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         .allowsHitTesting(false)

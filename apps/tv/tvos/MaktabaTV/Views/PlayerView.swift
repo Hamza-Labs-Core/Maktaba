@@ -256,7 +256,7 @@ struct PlayerScreen: View {
                 SystemPlayer(player: player)
                 // the time left today, in its last 15 minutes (57.15)
                 if let session {
-                    TVTimeLeft(store: session.parental, overVideo: true)
+                    TVTimeLeft(store: session.parental, overVideo: true, client: playback.client, library: playback.video.libraryID)
                         .padding(80)
                         .allowsHitTesting(false)
                 }

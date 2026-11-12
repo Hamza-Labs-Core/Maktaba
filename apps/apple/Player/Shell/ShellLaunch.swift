@@ -33,6 +33,29 @@ enum ShellLaunch {
         #endif
     }
 
+    /// The sections' stacks once a launch into Live TV settles (`PlayerShell.settleLaunch`).
+    /// The shell may show before the home said it has channels: Live TV has no section yet
+    /// and a channel the launch asked for was pushed on the stack of `from`, the section
+    /// shown first. With Live TV's section there (`liveShown`) the channel goes to its
+    /// stack, since the shell moves there; left where it was, it stayed under Live TV's
+    /// first screen and the person saw the list, not the channel. Without the section
+    /// (Live TV is off for this viewer) no channel stays open on any stack.
+    static func settled(_ paths: [PlayerSection: [PlayerRoute]], from: PlayerSection, liveShown: Bool) -> [PlayerSection: [PlayerRoute]] {
+        func isChannel(_ route: PlayerRoute) -> Bool { if case .channel = route { true } else { false } }
+        var out = paths
+        guard liveShown else {
+            out[.liveTV] = nil
+            for (section, routes) in out where routes.contains(where: isChannel) {
+                out[section] = routes.filter { !isChannel($0) }
+            }
+            return out
+        }
+        guard from != .liveTV, let routes = out[from], routes.contains(where: isChannel) else { return out }
+        out[from] = routes.filter { !isChannel($0) }
+        out[.liveTV, default: []] += routes.filter(isChannel)
+        return out
+    }
+
     static func liveMode(arguments: [String] = CommandLine.arguments) -> String? {
         #if DEBUG
         value(of: "-maktaba-live", in: arguments)

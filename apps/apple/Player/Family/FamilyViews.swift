@@ -46,7 +46,7 @@ struct FamilyReadOnlyNote: View {
     var body: some View {
         if readOnly {
             Section {
-                Label { Text(verbatim: word("family.readOnlyCloud")) } icon: { Image(systemName: "lock") }
+                IconLine(word("family.readOnlyCloud"), systemImage: "lock")
                     .foregroundStyle(Color.mktMuted)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("family.readOnly")
@@ -231,6 +231,40 @@ private struct RestrictAccountSheet: View {
     }
 }
 
+/// Add a guardian (admins): the home's accounts that can look after this child; choosing one
+/// sends it.
+private struct GuardianPicker: View {
+    let candidates: [ParentalPerson]
+    /// The account chosen (nil: cancelled).
+    let done: (ParentalPerson?) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(candidates) { person in
+                    Button { done(person) } label: {
+                        Label { Text(verbatim: person.username).foregroundStyle(Color.mktText) } icon: { Image(systemName: "person.crop.circle") }
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    }
+                    .accessibilityIdentifier("child.guardian.add.\(person.id)")
+                }
+            }
+            .maktabaSurface()
+            .navigationTitle(Text(verbatim: word("family.guardians.add")))
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button { done(nil) } label: { Text(verbatim: word("parental.pin.cancel")) }
+                        .accessibilityIdentifier("child.guardian.add.cancel")
+                }
+            }
+            .accessibilityIdentifier("screen.addGuardian")
+        }
+    }
+}
+
 /// One waiting request: who asks for what (the guardian may see its title and tier), when,
 /// and Approve (today, this week, always) or Deny.
 private struct RequestRow: View {
@@ -239,17 +273,29 @@ private struct RequestRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: MaktabaTokens.Spacing.s2) {
-            Text(verbatim: item.line())
-                .foregroundStyle(Color.mktText)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: MaktabaTokens.Spacing.s2) {
-                if !item.request.isTime { Text(verbatim: AgeTier.contentLabel(item.subject.tier)) }
-                if let at = item.request.createdAt {
-                    Text(at, format: .relative(presentation: .named))
+            HStack(alignment: .top, spacing: MaktabaTokens.Spacing.s3) {
+                // the poster of a video the guardian may see (the home sends none otherwise)
+                if let video = item.posterVideo {
+                    AuthorizedImage(client: model.client, video: video, small: true)
+                        .frame(width: 96, height: 54)
+                        .clipShape(.rect(cornerRadius: MaktabaTokens.Radius.sm))
+                        .accessibilityHidden(true)
+                        .accessibilityIdentifier("family.request.poster.\(item.id)")
+                }
+                VStack(alignment: .leading, spacing: MaktabaTokens.Spacing.s2) {
+                    Text(verbatim: item.line())
+                        .foregroundStyle(Color.mktText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: MaktabaTokens.Spacing.s2) {
+                        if !item.request.isTime { Text(verbatim: AgeTier.contentLabel(item.subject.tier)) }
+                        if let at = item.request.createdAt {
+                            Text(at, format: .relative(presentation: .named))
+                        }
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(Color.mktMuted)
                 }
             }
-            .font(.footnote)
-            .foregroundStyle(Color.mktMuted)
             HStack(spacing: MaktabaTokens.Spacing.s3) {
                 Group {
                     if item.request.isTime {
@@ -435,6 +481,7 @@ struct ChildView: View {
 
     @State private var model: ChildModel
     @State private var confirmLift = false
+    @State private var addingGuardian = false
     @Environment(\.dismiss) private var dismiss
 
     init(context: PlayerContext, child: ParentalPerson, accounts: [ParentalPerson] = [], restricted: Set<String> = [],
@@ -472,7 +519,7 @@ struct ChildView: View {
                 Section {
                     ForEach(account.guardians) { guardian in
                         HStack {
-                            Label { Text(verbatim: guardian.username) } icon: { Image(systemName: "person.badge.shield.checkmark") }
+                            Label { Text(verbatim: guardian.username) } icon: { Image(systemName: "person.badge.shield.checkmark").accessibilityHidden(true) }
                             Spacer()
                             // naming and removing guardians is an admin's (the home refuses a guardian)
                             if account.isAdmin {
@@ -487,14 +534,13 @@ struct ChildView: View {
                     // naming a guardian is an admin's: one of the home's other accounts
                     let candidates = model.guardianCandidates(accounts, restricted: restricted)
                     if account.isAdmin, !candidates.isEmpty {
-                        Menu {
-                            ForEach(candidates) { person in
-                                Button { Task { await model.addGuardian(person) } } label: { Text(verbatim: person.username) }
-                                    .accessibilityIdentifier("child.guardian.add.\(person.id)")
-                            }
-                        } label: {
+                        // a sheet with the accounts, not a menu in the row: the page is still
+                        // reading its rules and time when this shows, and each answer drew
+                        // the row again and closed a menu that had just opened. The sheet
+                        // hangs on the page, not on this row, so a row drawn again keeps it
+                        Button { addingGuardian = true } label: {
                             Label { Text(verbatim: word("family.guardians.add")) } icon: { Image(systemName: "plus") }
-                                .frame(minHeight: 44)
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                         }
                         .accessibilityIdentifier("child.guardian.add")
                         .familyChange()
@@ -519,6 +565,12 @@ struct ChildView: View {
         .task { await model.load() }
         .refreshable { await model.load() }
         .familyNotice(Binding { model.notice } set: { model.notice = $0 })
+        .sheet(isPresented: $addingGuardian) {
+            GuardianPicker(candidates: model.guardianCandidates(accounts, restricted: restricted)) { person in
+                addingGuardian = false
+                if let person { Task { await model.addGuardian(person) } }
+            }
+        }
         .confirmationDialog(Text(verbatim: word("family.child.lift.confirm", child.username)), isPresented: $confirmLift, titleVisibility: .visible) {
             Button(role: .destructive) {
                 Task { await model.lift() }
@@ -602,7 +654,7 @@ struct RulesView: View {
                             }
                         }
                     } icon: {
-                        Image(systemName: Self.symbol(rule.subjectKind))
+                        Image(systemName: Self.symbol(rule.subjectKind)).accessibilityHidden(true)
                     }
                     Spacer()
                     Button { Task { await model.remove(rule) } } label: { Text(verbatim: word("family.rules.remove")) }
