@@ -1,7 +1,7 @@
-# Phase 1 review: the built pages beside part A's mockups (DRAFT)
+# Phase 1 review: the built pages beside part A's mockups
 
-**Status: draft, written with the pull request that put the part A shell on every page the site
-builds. The lead completes and signs it (the table at the end).**
+**Status: signed by the lead on 2026-11-12 (the table at the end). Written with the pull request
+that put the part A shell on every page the site builds (#1192).**
 
 Each page kind is compared at 360, 768 and 1280 px, in English and Arabic, dark: the built page's
 visual reference (`e2e/__screenshots__/`, rendered on Linux in the CI image) beside its mockup
@@ -37,6 +37,10 @@ Each difference between a built page and its mockup, fixed in the pull request o
 ## The images
 
 ### Text page (front door)
+
+Superseded: the home page (60.10, #1208) replaced the front door at `/` and `/ar/`, and these
+references are now the home page's, reviewed in `review-phase-2.md`. The rows below compared
+the front door when it was built.
 
 | Width | Language | Built (reference)                                             | Mockup                                                                   |
 | ----- | -------- | ------------------------------------------------------------- | ------------------------------------------------------------------------ |
@@ -104,6 +108,13 @@ Each difference between a built page and its mockup, fixed in the pull request o
 
 ## Sign-off
 
-| Date | Reviewer | Commit | Outcome | Changes asked |
-| ---- | -------- | ------ | ------- | ------------- |
-|      |          |        |         |               |
+| Date       | Reviewer | Commit    | Outcome                                                                                                                                      | Changes asked |
+| ---------- | -------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| 2026-11-12 | the lead | 7ebffe1e4 | approved: every difference above is fixed or accepted for its stated reason; the front door's rows are superseded by the home page (Phase 2) | none          |
+
+How it was reviewed: the pull request that built the shell compared every reference above with
+its mockup (#1192). The lead looked at the front door (1280 px, English), the longest problem page
+(360 px, Arabic) and the Docker guide (768 px, Arabic) beside their mockups, then read every row of
+the differences table. Phase 1's other gates hold on main: no dead maktaba.tv link (the link
+check's baseline is empty), Lighthouse 95+ ×4 and CLS 0 on mobile, axe clean, the RTL tests, and
+the server image public (A1). Going live stays the owner's decision.
