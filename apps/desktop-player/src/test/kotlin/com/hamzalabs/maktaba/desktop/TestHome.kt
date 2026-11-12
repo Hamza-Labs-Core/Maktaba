@@ -44,7 +44,22 @@ class TestHome : AutoCloseable {
         server.start()
     }
 
-    val client: ApiClient by lazy { ApiClient(server.url("/"), MemoryTokens(jwt(4_000_000_000L), "r")) }
+    /** The client's calls, on a dispatcher of their own so they can be counted ([idle]). */
+    private val calls = okhttp3.Dispatcher()
+
+    val client: ApiClient by lazy {
+        ApiClient(server.url("/"), MemoryTokens(jwt(4_000_000_000L), "r"), ApiClient.defaultHttp.newBuilder().dispatcher(calls).build())
+    }
+
+    /**
+     * Whether no call to this home is queued or running. OkHttp counts a call as running until
+     * its callback returns, and the client resumes its caller inside that callback, so once this
+     * holds the screen's next step is already queued for the test's thread. A test that moves
+     * the clock for a screen's own wait (the 15 seconds between two reads of a request) waits for
+     * this and then `waitForIdle()` first: the wait has then begun, and the clock moves it. A
+     * clock moved while the answer before it is still on its way moves nothing.
+     */
+    val idle: Boolean get() = calls.runningCallsCount() == 0 && calls.queuedCallsCount() == 0
 
     /** Answers [route] ("GET /api/home") with [body]. */
     fun answer(route: String, body: String, code: Int = 200) {
