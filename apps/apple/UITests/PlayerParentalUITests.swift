@@ -12,8 +12,21 @@ final class PlayerParentalUITests: PlayerUITestCase {
     private static let notFound = #"{"type":"https://maktaba.tv/problems/not-found","title":"not found","status":404}"#
     private static let huda = #"{"guardians":[{"id":"g1","username":"Huda"}]}"#
 
-    private func waitUntil(_ what: String, timeout: TimeInterval = 15, _ condition: () -> Bool) {
-        XCTAssertTrue(met(timeout, condition), what)
+    /// A failure points at the calling line, not at this helper.
+    private func waitUntil(_ what: String, timeout: TimeInterval = 15, file: StaticString = #filePath, line: UInt = #line,
+                           _ condition: () -> Bool) {
+        XCTAssertTrue(met(timeout, condition), what, file: file, line: line)
+    }
+
+    /// Presses a switch whose value moves only once the home has answered, until `sent`:
+    /// its control first, then, where that tap did not land on the control (CI's iPad in
+    /// Arabic), the control's own edge of the row (the leading side is the left one there).
+    private func press(_ row: XCUIElement, until sent: () -> Bool) {
+        let inner = row.switches.firstMatch
+        (inner.exists ? inner : row).tap()
+        if met(3, sent) { return }
+        let rightToLeft = language == "ar"
+        row.coordinate(withNormalizedOffset: CGVector(dx: rightToLeft ? 0.08 : 0.92, dy: 0.5)).tap()
     }
 
     /// Whether `condition` came true within `timeout`. It is asked once more only while it
@@ -647,14 +660,14 @@ final class PlayerParentalUITests: PlayerUITestCase {
         XCTAssertEqual(toggle.value as? String, "0", "off in this home")
         XCTAssertTrue(toggle.label.contains("الرقابة الأبوية"), toggle.label)
         home.stub("PUT", "/api/parental/settings", body: Self.settings(enabled: true, notice: false))
-        toggle.switches.firstMatch.tap()
+        press(toggle) { self.count("PUT", "/api/parental/settings") >= 1 }
         waitUntil("the switch sent") { self.count("PUT", "/api/parental/settings") == 1 }
         XCTAssertEqual(body("PUT", "/api/parental/settings")?["enabled"] as? Bool, true)
         waitUntil("the switch is on") { toggle.value as? String == "1" }
         home.stub("PUT", "/api/parental/settings", status: 409,
                   body: #"{"type":"https://maktaba.tv/problems/parental-restrictions-exist","title":"conflict","status":409,"code":"restrictions_exist"}"#)
         home.stub("GET", "/api/parental/settings", body: Self.settings(enabled: true, restricted: 1, notice: false))
-        toggle.switches.firstMatch.tap()
+        press(toggle) { self.count("PUT", "/api/parental/settings") >= 2 }
         let refused = app.alerts.firstMatch
         XCTAssertTrue(refused.waitForExistence(timeout: 10), "the home's refusal is said")
         let plain = "ارفع كل التقييدات قبل إيقاف هذا."
