@@ -11796,7 +11796,7 @@
                         "null"
                       ],
                       "enum": [
-                        "admin",
+                        "admin_video",
                         "admin_container",
                         "plex",
                         "guide",
@@ -11946,7 +11946,7 @@
                         "null"
                       ],
                       "enum": [
-                        "admin",
+                        "admin_video",
                         "admin_container",
                         "plex",
                         "guide",
@@ -12096,7 +12096,7 @@
                         "null"
                       ],
                       "enum": [
-                        "admin",
+                        "admin_video",
                         "admin_container",
                         "plex",
                         "guide",
@@ -12246,7 +12246,7 @@
                         "null"
                       ],
                       "enum": [
-                        "admin",
+                        "admin_video",
                         "admin_container",
                         "plex",
                         "guide",
@@ -12396,7 +12396,7 @@
                         "null"
                       ],
                       "enum": [
-                        "admin",
+                        "admin_video",
                         "admin_container",
                         "plex",
                         "guide",
@@ -12556,7 +12556,7 @@
                         "null"
                       ],
                       "enum": [
-                        "admin",
+                        "admin_video",
                         "admin_container",
                         "plex",
                         "guide",
@@ -12903,7 +12903,7 @@
                               "null"
                             ],
                             "enum": [
-                              "admin",
+                              "admin_video",
                               "admin_container",
                               "plex",
                               "guide",
@@ -13061,7 +13061,7 @@
                         "null"
                       ],
                       "enum": [
-                        "admin",
+                        "admin_video",
                         "admin_container",
                         "plex",
                         "guide",
@@ -13071,7 +13071,7 @@
                         "library_default",
                         null
                       ],
-                      "description": "Where the effective tier comes from: `admin` when a tier was given; after `null`, whatever is left (the library's tier, for one). Null when there is no tier."
+                      "description": "Where the effective tier comes from: `admin_video` when a tier was given; after `null`, whatever is left (the library's tier, for one). Null when there is no tier."
                     },
                     "recompute_count": {
                       "type": "integer",
@@ -13228,9 +13228,14 @@
                               "unrated": {
                                 "type": "string",
                                 "enum": [
-                                  "hide"
+                                  "hide",
+                                  "tier_0",
+                                  "tier_9",
+                                  "tier_13",
+                                  "tier_16",
+                                  "tier_18"
                                 ],
-                                "description": "What happens to a video with no age tier: `hide`."
+                                "description": "What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier."
                               },
                               "allow_only": {
                                 "type": "boolean",
@@ -13304,9 +13309,14 @@
                     "unrated": {
                       "type": "string",
                       "enum": [
-                        "hide"
+                        "hide",
+                        "tier_0",
+                        "tier_9",
+                        "tier_13",
+                        "tier_16",
+                        "tier_18"
                       ],
-                      "description": "What happens to a video with no age tier: `hide`."
+                      "description": "What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier."
                     },
                     "allow_only": {
                       "type": "boolean",
@@ -13430,8 +13440,10 @@
                   "type": "object",
                   "properties": {
                     "tier_limit": {
-                      "type": "integer",
-                      "nullable": true,
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
                       "enum": [
                         -1,
                         0,
@@ -13542,8 +13554,10 @@
                   "type": "object",
                   "properties": {
                     "tier_limit": {
-                      "type": "integer",
-                      "nullable": true,
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
                       "enum": [
                         -1,
                         0,
@@ -13649,9 +13663,14 @@
                         "unrated": {
                           "type": "string",
                           "enum": [
-                            "hide"
+                            "hide",
+                            "tier_0",
+                            "tier_9",
+                            "tier_13",
+                            "tier_16",
+                            "tier_18"
                           ],
-                          "description": "What happens to a video with no age tier: `hide`."
+                          "description": "What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier."
                         },
                         "allow_only": {
                           "type": "boolean",
@@ -13803,9 +13822,14 @@
                   "unrated": {
                     "type": "string",
                     "enum": [
-                      "hide"
+                      "hide",
+                      "tier_0",
+                      "tier_9",
+                      "tier_13",
+                      "tier_16",
+                      "tier_18"
                     ],
-                    "description": "What happens to a video with no age tier: `hide`."
+                    "description": "What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier."
                   },
                   "allow_only": {
                     "type": "boolean",
@@ -13853,9 +13877,14 @@
                         "unrated": {
                           "type": "string",
                           "enum": [
-                            "hide"
+                            "hide",
+                            "tier_0",
+                            "tier_9",
+                            "tier_13",
+                            "tier_16",
+                            "tier_18"
                           ],
-                          "description": "What happens to a video with no age tier: `hide`."
+                          "description": "What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier."
                         },
                         "allow_only": {
                           "type": "boolean",
@@ -17539,9 +17568,14 @@
                       "unrated": {
                         "type": "string",
                         "enum": [
-                          "hide"
+                          "hide",
+                          "tier_0",
+                          "tier_9",
+                          "tier_13",
+                          "tier_16",
+                          "tier_18"
                         ],
-                        "description": "What happens to a video with no age tier: `hide`."
+                        "description": "What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier."
                       },
                       "allow_only": {
                         "type": "boolean",
