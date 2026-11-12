@@ -72,6 +72,7 @@ func (s *pfSigner) KeepTime(func(string) (bool, error)) {}
 type pfEnv struct {
 	t      testing.TB
 	db     *sql.DB
+	dsn    string
 	h      http.Handler
 	gate   *parental.Gate
 	signer *pfSigner
@@ -99,8 +100,8 @@ func setupFilter(t testing.TB) *pfEnv { return setupFilterWith(t, nil) }
 // stand-ins step aside for the real routes it brought.
 func setupFilterWith(t testing.TB, more func(r chi.Router, e *pfEnv)) *pfEnv {
 	t.Helper()
-	db, _ := clustertest.ScratchDB(t)
-	e := &pfEnv{t: t, db: db, gate: parental.NewGate(), signer: &pfSigner{}, hub: ws.NewHub()}
+	db, dsn := clustertest.ScratchDB(t)
+	e := &pfEnv{t: t, db: db, dsn: dsn, gate: parental.NewGate(), signer: &pfSigner{}, hub: ws.NewHub()}
 	e.exec(`INSERT INTO users (id, username, pw_hash, is_admin) VALUES
 		($1,'pf-admin','x',true), ($2,'pf-guardian','x',false), ($3,'pf-other-guardian','x',false),
 		($4,'pf-child','x',false), ($5,'pf-child-two','x',false), ($6,'pf-viewer','x',false)`,

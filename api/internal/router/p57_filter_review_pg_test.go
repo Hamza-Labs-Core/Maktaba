@@ -5,11 +5,13 @@ package router_test
 // the production router on a real migrated Postgres.
 
 import (
+	"database/sql"
 	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 )
 
 // An admin is demoted and then restricted. Its access token, minted while it was an admin,
@@ -92,5 +94,46 @@ func TestP57StaleAdminTokenOnARestrictedAccount(t *testing.T) {
 	}
 	if code, body := h.get("admin", "/api/parental/children"); code != http.StatusOK || !strings.Contains(body, pfChild2) {
 		t.Errorf("an admin on a 9+ device, the children: %d %s", code, body)
+	}
+}
+
+// The policies cannot be read (a node whose home database is down). An account read a
+// moment ago with no limit at all keeps being served, so what the node holds still plays;
+// a restricted account, a sign-in its device limits and an account never read are refused.
+// Nothing above a limit is shown to anyone.
+func TestP57FilterWhenThePolicyCannotBeRead(t *testing.T) {
+	e := setupFilter(t)
+	policies, err := sql.Open("postgres", e.dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = policies.Close() }()
+	e.gate.SetCache(parental.NewCache(parental.NewStore(policies)))
+	paths := []string{"/api/videos", "/api/videos/" + pfKid, "/api/home"}
+	for _, who := range []string{"viewer", "viewer-device", "child"} {
+		if code, body := e.get(who, "/api/videos"); code != http.StatusOK {
+			t.Fatalf("%s before: %d %s", who, code, body)
+		}
+	}
+	_ = policies.Close() // the policies' database is gone; the handlers' own still answers
+
+	for _, p := range paths {
+		if code, body := e.get("viewer", p); code != http.StatusOK {
+			t.Errorf("an unrestricted account read a moment ago, GET %s: %d %s; want it served", p, code, body)
+		}
+	}
+	if code, body := e.get("viewer", "/api/videos"); !strings.Contains(body, pfTeen) {
+		t.Errorf("the unrestricted account's list lost the 16+ video: %d %s", code, body)
+	}
+	if rec := e.raw("viewer", http.MethodPost, "/api/stream/sessions", `{"video_id":"`+pfKid+`"}`); rec.Code == http.StatusServiceUnavailable {
+		t.Errorf("the unrestricted account's stream was refused for the policy: %d %s", rec.Code, rec.Body.String())
+	}
+	for _, who := range []string{"child", "viewer-device", "admin", "guardian"} {
+		for _, p := range append(paths, "/api/videos/"+pfTeen) {
+			code, body := e.get(who, p)
+			if code != http.StatusServiceUnavailable || strings.Contains(body, pfTeenName) || strings.Contains(body, "Kid-Title") {
+				t.Errorf("%s GET %s with the policies gone: %d %s, want 503", who, p, code, body)
+			}
+		}
 	}
 }

@@ -12,7 +12,10 @@ package parental
 //   - Closed, or a route no entry names: the answer of a route that does not exist.
 //
 // It fails closed: a policy that cannot be read refuses the request, and a gate
-// with no cache yet refuses every signed-in user.
+// with no cache yet refuses every signed-in user. The one exception is the
+// cache's (Cache.For): a sign-in read a moment ago with no limit at all is
+// answered that again for a bounded time, so an account nothing restricts still
+// plays what a node holds while the home's database is down.
 
 import (
 	"bytes"
