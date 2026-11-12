@@ -15,6 +15,8 @@ struct ProfileScreen: View {
     @State private var model: ProfileModel
     @AppStorage(ThemeMode.storageKey) private var theme = ThemeMode.dark
     @State private var confirmSignOut = false
+    /// Story 57.04's device check: five taps on About show what the device says about age.
+    @State private var showsAgeSignal = false
     @Environment(\.reportProblem) private var reportProblem
     /// The page shown in the first screen's place (nil: the first screen). The pages are not
     /// pushed: the section's stack holds `PlayerRoute`s only, and a view pushed beside them
@@ -95,6 +97,8 @@ struct ProfileScreen: View {
     private var root: some View {
         List {
             header
+            // Epic 57: the account's limit, the device's, the Age range row, Family
+            ParentalProfileSection(context: context)
             Section {
                 pageRow(.history, Text("Watch history", tableName: "Profile", comment: "The watch history page"), "clock.arrow.circlepath")
                 pageRow(.favorites, Text("Favorites", tableName: "Profile", comment: "The favorites page"), "heart")
@@ -261,12 +265,20 @@ struct ProfileScreen: View {
                 Text("The home: \(homeVersionText(unknown))", tableName: "Profile", comment: "About: the home's version")
                     .font(.footnote)
                     .foregroundStyle(Color.mktMuted)
+                if showsAgeSignal {
+                    Text(verbatim: context.session.ageSignal.diagnostics)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Color.mktMuted)
+                        .environment(\.layoutDirection, .leftToRight)
+                        .accessibilityIdentifier("profile.about.ageSignal")
+                }
             }
         } icon: {
             Image(systemName: "info.circle")
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("profile.about")
+        .onTapGesture(count: 5) { showsAgeSignal.toggle() }
     }
 
     private func homeVersionText(_ unknown: String) -> String { model.homeVersion ?? unknown }

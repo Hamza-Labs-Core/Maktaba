@@ -5,7 +5,7 @@ import SwiftUI
 /// Maktaba Remote). One code base for iPhone (iPhone Duo included), iPad and the Mac.
 @main
 struct PlayerApp: App {
-    @State private var session = AppSession(app: Bundle.main.bundleIdentifier ?? "com.hamzalabs.maktaba.player")
+    @State private var session: AppSession
     @AppStorage(ThemeMode.storageKey) private var theme = ThemeMode.system
     /// A video plays: the whole app goes dark, whatever the theme.
     @State private var playing = false
@@ -14,6 +14,12 @@ struct PlayerApp: App {
     @State private var link: PlayerRoute?
 
     init() {
+        // Epic 57: the Player asks the home for the account's parental limit and tells it
+        // what the device says about its user's age (the source is set before any sign-in
+        // is restored, so the first sign-in already sends it)
+        let session = AppSession(app: Bundle.main.bundleIdentifier ?? "com.hamzalabs.maktaba.player", parental: true)
+        session.ageSignal.use(DeviceAgeSignal.source())
+        _session = State(initialValue: session)
         // the launch's first log lines: the app and its version
         Log.launched()
         // a crash at an earlier launch is logged and kept on this device

@@ -195,7 +195,7 @@ struct LiveChannelRow: View {
                     .foregroundStyle(Color.mktBrassText)
                     .lineLimit(1)
                 if let current = now?.current {
-                    Text(current.title)
+                    Text(verbatim: current.displayTitle())
                         .font(.maktabaBody(MaktabaTokens.TypeSize.base, weight: .medium))
                         .foregroundStyle(Color.mktText)
                         .lineLimit(2)
@@ -242,7 +242,7 @@ struct LiveNextLine: View {
     let block: GuideBlock
 
     var body: some View {
-        Text("Next: \(block.start.formatted(date: .omitted, time: .shortened)) \(block.title)", tableName: "Live",
+        Text("Next: \(block.start.formatted(date: .omitted, time: .shortened)) \(block.displayTitle())", tableName: "Live",
              comment: "Live TV: what is on next, its start time then its title")
             .font(.maktabaBody(MaktabaTokens.TypeSize.sm))
             .foregroundStyle(Color.mktMuted)

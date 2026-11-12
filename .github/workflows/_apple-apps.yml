@@ -470,6 +470,7 @@ jobs:
             -only-testing "Maktaba Player Mac Tests/PageLocale" \
             -only-testing "Maktaba Player Mac Tests/SeriesScreenDetails" \
             -only-testing "Maktaba Player Mac Tests/PageSnapshots" \
+            -only-testing "Maktaba Player Mac Tests/PlaybackUnderALimit" \
             -only-testing "Maktaba Player Mac UITests" || status=1
           log show --start "$start" --style compact --info --debug \
             --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/mac-app.log" || true

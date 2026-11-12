@@ -18,6 +18,10 @@ struct ChannelScreen: View {
     @State private var keypad = false
     /// Digits typed so far (the number pad); the channel tunes a moment after the last one.
     @State private var typed = ""
+    /// Epic 57 story 57.10: the programme on now is above the account's limit
+    /// (`GET /api/channels/{id}/access`): the slate shows and nothing plays until the home
+    /// says otherwise.
+    @State private var slated = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
 
@@ -40,6 +44,7 @@ struct ChannelScreen: View {
                 .accessibilityHidden(true)
             status
             if controls { overlay.transition(.opacity) }
+            if slated { LiveSlate { dismiss() } }
             if !typed.isEmpty {
                 Text(verbatim: typed)
                     .font(.maktabaHeading(56, relativeTo: .largeTitle))
@@ -81,11 +86,14 @@ struct ChannelScreen: View {
             typed = ""
         }
         .task {
-            playback.start()
+            // under a parental limit the channel starts once the home says its programme
+            // may be watched (`watchAccess`); anyone else's starts at once
+            if !context.session.parental.current.limited { playback.start() }
             await model.keepFresh(context.client, guide: false)
         }
+        .task(id: playback.channelID) { await watchAccess(playback.channelID) }
         .onChange(of: model.channels.map(\.id), initial: true) { _, _ in playback.update(channels: model.channels) }
-        .onChange(of: model.onNow(playback.channelID)?.current?.title, initial: true) { _, title in playback.showProgramme(title) }
+        .onChange(of: model.onNow(playback.channelID)?.current?.displayTitle(), initial: true) { _, title in playback.showProgramme(title) }
         .onDisappear {
             let p = playback
             Task { await p.close() }
@@ -93,6 +101,46 @@ struct ChannelScreen: View {
         .sheet(isPresented: $keypad) {
             LiveKeypad { digit($0) } done: { keypad = false }
                 .presentationDetents([.height(360)])
+        }
+    }
+
+    /// Asks the home whether the programme on `channel` now may be watched, before it starts
+    /// and again when the answer may change (`until`): the slate while it may not, the
+    /// channel again when it may. The home's streaming service refuses the stream itself, so
+    /// this only decides what the screen says.
+    private func watchAccess(_ channel: String) async {
+        guard context.session.parental.current.limited else {
+            slated = false
+            return
+        }
+        var started = false
+        while !Task.isCancelled {
+            let wait: TimeInterval
+            do {
+                let access = try await context.client.channelAccess(channel)
+                let blocked = access.restricted && !access.allowed
+                if blocked {
+                    if !slated {
+                        slated = true
+                        await playback.hold()
+                    }
+                } else if slated || !started {
+                    slated = false
+                    started = true
+                    playback.start()
+                }
+                wait = access.askAgain()
+            } catch {
+                if Log.isCancellation(error) { return }
+                // the home did not say (a hidden channel answers 404): the channel is asked
+                // for as before, and the player says what the home answers
+                if !started, !slated {
+                    started = true
+                    playback.start()
+                }
+                wait = 30
+            }
+            do { try await Task.sleep(for: .seconds(wait)) } catch { return }
         }
     }
 
@@ -121,10 +169,15 @@ struct ChannelScreen: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("live.player.starting")
+        case let .failed(failure) where failure.kind == .notFound && context.session.parental.current.limited:
+            // 57.05: a channel the home does not give, under a limit, is the blocked page
+            BlockedPageView(context: context, subject: .channel(playback.channelID), back: { dismiss() }) { playback.start() }
         case let .failed(failure):
             HomeErrorView(failure) { act($0) }
                 .padding(MaktabaTokens.Spacing.s8)
                 .accessibilityIdentifier("live.player.error")
+        case .held:
+            EmptyView()
         case .ended:
             VStack(spacing: MaktabaTokens.Spacing.s3) {
                 Image(systemName: "stop.circle").font(.system(size: 48)).foregroundStyle(Color.brass)
@@ -287,7 +340,7 @@ struct LiveBanner: View {
                         .foregroundStyle(Color.mktBrassText)
                         .accessibilityIdentifier("live.player.channel")
                     if let current = now?.current {
-                        Text(current.title)
+                        Text(verbatim: current.displayTitle())
                             .font(.maktabaBody(MaktabaTokens.TypeSize.lg, weight: .semibold))
                             .foregroundStyle(.white)
                             .lineLimit(1)
@@ -328,7 +381,7 @@ struct LiveMiniGuide: View {
                             Text(channel.name)
                                 .font(.maktabaBody(MaktabaTokens.TypeSize.sm, weight: .semibold))
                                 .lineLimit(1)
-                            Text(verbatim: on?.current?.title ?? " ")
+                            Text(verbatim: on?.current?.displayTitle() ?? " ")
                                 .font(.maktabaBody(12))
                                 .lineLimit(1)
                             if let next = on?.next {

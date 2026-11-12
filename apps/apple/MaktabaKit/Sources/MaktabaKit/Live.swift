@@ -87,11 +87,19 @@ public struct GuideBlock: Decodable, Hashable, Sendable, Identifiable {
     public let isLive: Bool
     /// How far in, 0...1, by the home's clock when it answered (`progress(at:)` for now).
     public let progress: Double
+    /// Above the account's parental limit (Epic 57 story 57.10): the home sends its time
+    /// only, no title or description; the guide says "Not available" there.
+    public let restricted: Bool
 
     public var id: String { "\(channelID)@\(start.timeIntervalSince1970)" }
 
+    /// The title a guide shows: the programme's, or "Not available" for a masked one.
+    public func displayTitle(_ locale: Locale = AppLanguage.locale) -> String {
+        restricted && title.isEmpty ? ParentalWords.text("live.parental.notAvailable", locale) : title
+    }
+
     enum CodingKeys: String, CodingKey {
-        case kind, start, stop, title, desc, poster, genre, rating, series, season, episode, progress
+        case kind, start, stop, title, desc, poster, genre, rating, series, season, episode, progress, restricted
         case channelID = "channel_id"
         case subTitle = "sub_title"
         case onAir = "on_air"
@@ -116,6 +124,7 @@ public struct GuideBlock: Decodable, Hashable, Sendable, Identifiable {
         onAir = nil
         self.isLive = isLive
         self.progress = progress
+        restricted = false
     }
 
     public init(from decoder: Decoder) throws {
@@ -136,6 +145,7 @@ public struct GuideBlock: Decodable, Hashable, Sendable, Identifiable {
         onAir = c.lenient(.onAir)
         isLive = c.lenient(.isLive) ?? false
         progress = c.lenient(.progress) ?? 0
+        restricted = c.lenient(.restricted) ?? false
     }
 
     public var duration: TimeInterval { stop.timeIntervalSince(start) }

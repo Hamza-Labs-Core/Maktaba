@@ -26,7 +26,10 @@ struct HomeScreen: View {
         let session = context.session
         _model = State(initialValue: HomeModel(
             client: context.client,
-            cache: HomeCache.of(home: context.client.home, user: context.user.id),
+            // Epic 57: a sign-in the home limits keeps no shelves on the device (a limit may
+            // tighten while the app is closed, and a kept shelf would show what it hides)
+            cache: ParentalStore.wasLimited(home: context.client.home, user: context.user.id)
+                ? nil : HomeCache.of(home: context.client.home, user: context.user.id),
             signedOut: { session.signedOut() }))
     }
 

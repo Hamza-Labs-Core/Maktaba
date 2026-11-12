@@ -15,6 +15,12 @@ enum PlayerQueues {
         return q
     }
 
+    /// Forgets the queue held for `home` (Epic 57: the account's limit changed; the home
+    /// re-checks every item it sends, and the next read starts clean).
+    static func forget(_ home: URL) {
+        byHome[home] = nil
+    }
+
     /// The queue's next item as an Up next episode, when `video` is the queue's current one.
     static func next(after video: String, _ client: APIClient) async -> Episode? {
         let q = of(client)

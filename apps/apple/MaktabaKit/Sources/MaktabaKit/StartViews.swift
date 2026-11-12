@@ -42,7 +42,13 @@ public struct SessionGate<Content: View>: View {
         .onChange(of: scenePhase != .background, initial: true) { _, front in session.discover(front) }
         // what the home has on, asked again each time the app comes to the front (story 51.11)
         .onChange(of: scenePhase == .active) { _, active in
-            if active, session.signedIn { Task { await session.capabilities.refresh() } }
+            if active, session.signedIn {
+                Task {
+                    await session.capabilities.refresh()
+                    // the parental limit and the device's signal (Epic 57), for an app that uses them
+                    await session.parentalForeground()
+                }
+            }
         }
         #if os(macOS)
         // a link opened on the Mac goes to the window already open, not a new one

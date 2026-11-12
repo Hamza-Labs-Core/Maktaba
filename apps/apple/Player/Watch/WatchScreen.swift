@@ -12,6 +12,9 @@ struct WatchScreen: View {
 
     @State private var playback: Playback?
     @State private var failure: HomeFailure?
+    /// The home refused the video itself for the account's time (403 `parental-time`).
+    @State private var timeStop: TimeUp?
+    @Environment(\.scenePhase) private var scenePhase
     /// The home's status as the shell's strip read it (Epic 53 story 53.06)
     @Environment(\.homeStatus) private var homeStatus
     @Environment(\.dismiss) private var dismiss
@@ -22,9 +25,17 @@ struct WatchScreen: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            if let playback {
+            if let failure, failure.kind == .notFound, context.session.parental.current.limited {
+                // Epic 57 story 57.05: a link, Continue or a stale queue item to a video the
+                // home does not give, under a parental limit: the blocked page, not an error
+                BlockedPageView(context: context, subject: .video(videoID), back: { dismiss() }) { Task { await load() } }
+                    .environment(\.colorScheme, .dark)
+            } else if failure != nil, let timeStop {
+                TimeUpView(context: context, up: timeStop, back: { dismiss() }) { Task { await load() } }
+                    .environment(\.colorScheme, .dark)
+            } else if let playback {
                 if window == nil {
-                    WatchView(playback: playback, session: context.session) { dismiss() }
+                    WatchView(playback: playback, session: context.session, context: context) { dismiss() }
                         .focusedSceneValue(\.playback, playback)
                 } else {
                     Color.clear.focusedSceneValue(\.playback, playback)
@@ -60,6 +71,11 @@ struct WatchScreen: View {
         .toolbar(.hidden, for: .windowToolbar)
         #endif
         .task(id: videoID) { await load() }
+        // story 57.09: leaving the front sends the position at once; in the background a
+        // sign-in under a parental limit pauses and does not start again by itself
+        .onChange(of: scenePhase) { _, phase in
+            playback?.sceneChanged(active: phase == .active, background: phase == .background)
+        }
         .onChange(of: playback.map(ObjectIdentifier.init), initial: true) {
             guard let window, let playback else { return }
             window.show(playback) { dismiss() }
@@ -78,15 +94,19 @@ struct WatchScreen: View {
 
     private func load() async {
         failure = nil
+        timeStop = nil
         do {
             let video = try await context.client.video(videoID)
             let p = playback ?? Playback(client: context.client)
+            let parental = context.session.parental
+            p.limited = { parental.current.limited }
             Log.ui.info("watch: \(playback == nil ? "opens" : "loads again", privacy: .public) \(videoID, privacy: .public)")
             playback = p
             p.play(video, from: at)
         } catch is CancellationError {
             return
         } catch {
+            if case let .time(reason, next)? = ParentalRefusal(error) { timeStop = TimeUp(reason: reason, nextAllowedAt: next) }
             failure = HomeFailure(error)
         }
     }

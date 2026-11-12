@@ -26,6 +26,9 @@ final class LivePlayback {
         case failed(HomeFailure)
         /// The home ended the remote session.
         case ended
+        /// Nothing plays: the programme on now is above the account's parental limit, and
+        /// the screen shows its slate (story 57.10).
+        case held
     }
 
     let client: APIClient
@@ -156,6 +159,18 @@ final class LivePlayback {
         paused = false
         behind = false
         showNowPlaying()
+    }
+
+    /// Stops this channel without leaving it (story 57.10: the slate shows); `start` plays
+    /// it again. A remote session is ended on the way.
+    func hold() async {
+        running?.cancel()
+        await running?.value
+        running = nil
+        player.pause()
+        player.replaceCurrentItem(with: nil)
+        pip.stop()
+        phase = .held
     }
 
     /// Stops playing and ends a remote session; returns once the home was told.
