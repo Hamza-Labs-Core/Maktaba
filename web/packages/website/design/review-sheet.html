@@ -5,7 +5,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
-    <title>maktaba.tv shell review</title>
+    <title>maktaba.tv design review</title>
     <style>
       :root {
         --bg: #0b111c;
@@ -43,14 +43,24 @@
       figure { margin: 0; min-inline-size: 0; }
       figure img { display: block; inline-size: 100%; block-size: auto; border: 1px solid var(--rule); border-radius: 6px; }
       figcaption { margin-block-start: 4px; font-size: 13px; color: var(--muted); }
+      .part { margin: 48px 0 0; font-size: 26px; color: var(--brass); }
+      .note { margin: 16px 0 0; padding: 12px 16px; border-inline-start: 3px solid var(--brass); background: var(--panel); max-inline-size: 60rem; }
+      .table { overflow-x: auto; }
+      table { border-collapse: collapse; inline-size: 100%; }
+      th, td { padding: 10px 12px; border-block-end: 1px solid var(--rule); text-align: start; vertical-align: top; }
+      .says { color: var(--muted); font-size: 14px; }
+      td[lang="ar"] { font-size: 18px; }
       @media (max-width: 700px) { .shots { flex-direction: column; } figure { flex: none !important; inline-size: 100%; } }
     </style>
   </head>
   <body>
     <header>
-      <h1>maktaba.tv: the shell, for review</h1>
-      <p>Story 60.01 part A. 60 renders: every layout at 360, 768 and 1280 px, English and Arabic, dark; the front door, the legal page and the component sheet in light too. Each image opens full size. The spec is <code>design/README.md</code>; the voice guide <code>copy/voice.md</code>.</p>
+      <h1>maktaba.tv: the design, for review</h1>
+      <p>Stories 60.01 and 60.02. 150 renders, English and Arabic: every layout at 360, 768 and 1280 px in dark, with light where the spec asks for it; the tagline heroes at 1280; the social cards at 1200 × 630. Each image opens full size. The spec is <code>design/README.md</code>; the copy is in <code>copy/</code>; the voice guide is <code>copy/voice.md</code>.</p>
+      <p class="note"><strong>Screenshots are stand-ins.</strong> Every app screenshot in part B is a devportal Apps screenshot on test data (<code>web/packages/devportal/static/assets/apps/</code>), not a household's library and not drawn. Story 60.09 replaces them with shots of the demo library.</p>
+      <p class="note"><strong>Hidden on purpose.</strong> The download page and home show no iPhone, iPad, Apple TV, Android or Android TV app and no server-package card: none is publicly installable yet (Q5, A7). The TV is shown through big screen in the desktop apps and the TV's browser; phones and tablets through the browser.</p>
       <nav aria-label="Mockups"><ul>
+        <li><a href="#taglines">Tagline proposals</a></li>
         <li><a href="#404">404</a></li>
         <li><a href="#front-door">Front door</a></li>
         <li><a href="#legal">Legal page</a></li>
@@ -58,9 +68,31 @@
         <li><a href="#problems">Problem index</a></li>
         <li><a href="#install-guide">Install guide in the shell</a></li>
         <li><a href="#components">Component sheet</a></li>
+        <li><a href="#legal-p3">Legal page, part B</a></li>
+        <li><a href="#problem-p3">Problem page, part B</a></li>
+        <li><a href="#problems-p3">Problem index, part B</a></li>
+        <li><a href="#home">Home</a></li>
+        <li><a href="#home-tagline-2">Home hero, tagline 2</a></li>
+        <li><a href="#home-tagline-3">Home hero, tagline 3</a></li>
+        <li><a href="#home-tagline-4">Home hero, tagline 4</a></li>
+        <li><a href="#home-tagline-5">Home hero, tagline 5</a></li>
+        <li><a href="#download">Download</a></li>
+        <li><a href="#install-p3">Install guide, Phase 3</a></li>
+        <li><a href="#help">Help index</a></li>
+        <li><a href="#help-topic">Help topic</a></li>
+        <li><a href="#wordmark">Wordmark</a></li>
+        <li><a href="#foundations">Foundations</a></li>
+        <li><a href="#components-b">Component sheet, part B</a></li>
+        <li><a href="#social-home-1">Social card, tagline 1</a></li>
+        <li><a href="#social-home-2">Social card, tagline 2</a></li>
+        <li><a href="#social-home-3">Social card, tagline 3</a></li>
+        <li><a href="#social-home-4">Social card, tagline 4</a></li>
+        <li><a href="#social-home-5">Social card, tagline 5</a></li>
+        <li><a href="#social-download">Social card, download page</a></li>
       </ul></nav>
     </header>
     <main>
+    <h2 class="part">Part A: the shell (approved 2026-11-11)</h2>
     <section id="404">
       <h2>404</h2>
       <p class="sub">A page that is not there. Source: <code>mockups/404.en.html</code>, <code>mockups/404.ar.html</code>.</p>
@@ -246,6 +278,425 @@
           <figure style="flex: 360 1 0"><a href="mockups/png/components.ar.360.light.png"><img src="mockups/png/components.ar.360.light.png" alt="Component sheet, Arabic, light, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
           <figure style="flex: 768 1 0"><a href="mockups/png/components.ar.768.light.png"><img src="mockups/png/components.ar.768.light.png" alt="Component sheet, Arabic, light, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
           <figure style="flex: 1280 1 0"><a href="mockups/png/components.ar.1280.light.png"><img src="mockups/png/components.ar.1280.light.png" alt="Component sheet, Arabic, light, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <h2 class="part">Part B: the direction, the pages and the copy</h2>
+    <section id="taglines">
+      <h2>Tagline proposals</h2>
+      <p class="sub">Five per language, each written in its own language, with its one-liner. Each fits the social card in three lines or fewer (render.mjs fails otherwise). The hero renders and the social cards below show each one in place.</p>
+      <div class="table"><table>
+        <thead><tr><th scope="col">#</th><th scope="col">English</th><th scope="col">Arabic</th><th scope="col">Gloss of the Arabic</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">1</th><td lang="en" dir="ltr"><strong>Your own library, on every screen at home.</strong><br /><span class="says">Ownership and reach: the films are yours, and every screen in the house plays them.</span></td><td lang="ar" dir="rtl"><strong>مكتبتكم، على كل شاشة في البيت.</strong><br /><span class="says">الملكية والوصول: الأفلام أفلامكم، وكل شاشة في البيت تعرضها.</span></td><td class="says">Your library, on every screen at home.</td></tr>
+          <tr><th scope="row">2</th><td lang="en" dir="ltr"><strong>Everything your family watches, kept at home.</strong><br /><span class="says">Privacy and warmth: the household's whole collection lives in the house, not on someone else's computers.</span></td><td lang="ar" dir="rtl"><strong>ما تحبون مشاهدته، محفوظٌ في بيتكم.</strong><br /><span class="says">الخصوصية والدفء: مجموعة البيت كلها تبقى فيه، لا على حواسيب غيركم.</span></td><td class="says">What you love to watch, kept in your home.</td></tr>
+          <tr><th scope="row">3</th><td lang="en" dir="ltr"><strong>A quiet home for your films and series.</strong><br /><span class="says">Calm and order: a collection scattered over folders and drives gets one tidy place.</span></td><td lang="ar" dir="rtl"><strong>أفلام البيت ومسلسلاته، في مكان واحد هادئ.</strong><br /><span class="says">الترتيب والسكينة: ما تفرّق في المجلدات والأقراص يجتمع في مكان واحد مرتّب.</span></td><td class="says">The home's films and series, in one quiet place.</td></tr>
+          <tr><th scope="row">4</th><td lang="en" dir="ltr"><strong>Your library speaks Arabic and English.</strong><br /><span class="says">Two languages as equals: every screen reads naturally in either.</span></td><td lang="ar" dir="rtl"><strong>مكتبةٌ تتكلم لغتكم.</strong><br /><span class="says">اللغة: «مكتبة» اسم البرنامج ومعناه معًا، وهو يتكلم العربية كما يتكلم الإنجليزية.</span></td><td class="says">A library that speaks your language. (Maktaba means library.)</td></tr>
+          <tr><th scope="row">5</th><td lang="en" dir="ltr"><strong>Find the moment a word is said.</strong><br /><span class="says">What sets it apart: search reaches inside the films, to what is spoken, not only to their titles.</span></td><td lang="ar" dir="rtl"><strong>ابحثوا بالكلمة، تجدوا اللحظة.</strong><br /><span class="says">ما يميّزه: البحث يصل إلى ما قيل داخل الأفلام، لا إلى عناوينها وحدها.</span></td><td class="says">Search by the word, find the moment.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+    <section id="legal-p3">
+      <h2>Legal page, part B</h2>
+      <p class="sub">The legal page in the part B shell, with the display face. Source: <code>mockups/legal-p3.en.html</code>, <code>mockups/legal-p3.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/legal-p3.en.360.dark.png"><img src="mockups/png/legal-p3.en.360.dark.png" alt="Legal page, part B, English, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/legal-p3.en.768.dark.png"><img src="mockups/png/legal-p3.en.768.dark.png" alt="Legal page, part B, English, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/legal-p3.en.1280.dark.png"><img src="mockups/png/legal-p3.en.1280.dark.png" alt="Legal page, part B, English, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/legal-p3.ar.360.dark.png"><img src="mockups/png/legal-p3.ar.360.dark.png" alt="Legal page, part B, Arabic, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/legal-p3.ar.768.dark.png"><img src="mockups/png/legal-p3.ar.768.dark.png" alt="Legal page, part B, Arabic, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/legal-p3.ar.1280.dark.png"><img src="mockups/png/legal-p3.ar.1280.dark.png" alt="Legal page, part B, Arabic, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="problem-p3">
+      <h2>Problem page, part B</h2>
+      <p class="sub">One message in the part B shell. Source: <code>mockups/problem-p3.en.html</code>, <code>mockups/problem-p3.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/problem-p3.en.360.dark.png"><img src="mockups/png/problem-p3.en.360.dark.png" alt="Problem page, part B, English, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/problem-p3.en.768.dark.png"><img src="mockups/png/problem-p3.en.768.dark.png" alt="Problem page, part B, English, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/problem-p3.en.1280.dark.png"><img src="mockups/png/problem-p3.en.1280.dark.png" alt="Problem page, part B, English, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/problem-p3.ar.360.dark.png"><img src="mockups/png/problem-p3.ar.360.dark.png" alt="Problem page, part B, Arabic, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/problem-p3.ar.768.dark.png"><img src="mockups/png/problem-p3.ar.768.dark.png" alt="Problem page, part B, Arabic, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/problem-p3.ar.1280.dark.png"><img src="mockups/png/problem-p3.ar.1280.dark.png" alt="Problem page, part B, Arabic, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="problems-p3">
+      <h2>Problem index, part B</h2>
+      <p class="sub">The message index in the part B shell. Source: <code>mockups/problems-p3.en.html</code>, <code>mockups/problems-p3.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/problems-p3.en.360.dark.png"><img src="mockups/png/problems-p3.en.360.dark.png" alt="Problem index, part B, English, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/problems-p3.en.768.dark.png"><img src="mockups/png/problems-p3.en.768.dark.png" alt="Problem index, part B, English, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/problems-p3.en.1280.dark.png"><img src="mockups/png/problems-p3.en.1280.dark.png" alt="Problem index, part B, English, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/problems-p3.ar.360.dark.png"><img src="mockups/png/problems-p3.ar.360.dark.png" alt="Problem index, part B, Arabic, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/problems-p3.ar.768.dark.png"><img src="mockups/png/problems-p3.ar.768.dark.png" alt="Problem index, part B, Arabic, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/problems-p3.ar.1280.dark.png"><img src="mockups/png/problems-p3.ar.1280.dark.png" alt="Problem index, part B, Arabic, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="home">
+      <h2>Home</h2>
+      <p class="sub">Tagline 1 on the hero, then every section, from copy/home.*.md. Source: <code>mockups/home.en.html</code>, <code>mockups/home.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/home.en.360.dark.png"><img src="mockups/png/home.en.360.dark.png" alt="Home, English, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/home.en.768.dark.png"><img src="mockups/png/home.en.768.dark.png" alt="Home, English, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/home.en.1280.dark.png"><img src="mockups/png/home.en.1280.dark.png" alt="Home, English, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>English, light</h3>
+        <div class="shots">
+          <figure style="flex: 1280 1 0"><a href="mockups/png/home.en.1280.light.png"><img src="mockups/png/home.en.1280.light.png" alt="Home, English, light, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/home.ar.360.dark.png"><img src="mockups/png/home.ar.360.dark.png" alt="Home, Arabic, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/home.ar.768.dark.png"><img src="mockups/png/home.ar.768.dark.png" alt="Home, Arabic, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/home.ar.1280.dark.png"><img src="mockups/png/home.ar.1280.dark.png" alt="Home, Arabic, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, light</h3>
+        <div class="shots">
+          <figure style="flex: 1280 1 0"><a href="mockups/png/home.ar.1280.light.png"><img src="mockups/png/home.ar.1280.light.png" alt="Home, Arabic, light, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="home-tagline-2">
+      <h2>Home hero, tagline 2</h2>
+      <p class="sub">The hero only, 1280 px. Source: <code>mockups/home-tagline-2.en.html</code>, <code>mockups/home-tagline-2.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1280 1 0"><a href="mockups/png/home-tagline-2.en.1280.dark.png"><img src="mockups/png/home-tagline-2.en.1280.dark.png" alt="Home hero, tagline 2, English, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1280 1 0"><a href="mockups/png/home-tagline-2.ar.1280.dark.png"><img src="mockups/png/home-tagline-2.ar.1280.dark.png" alt="Home hero, tagline 2, Arabic, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="home-tagline-3">
+      <h2>Home hero, tagline 3</h2>
+      <p class="sub">The hero only, 1280 px. Source: <code>mockups/home-tagline-3.en.html</code>, <code>mockups/home-tagline-3.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1280 1 0"><a href="mockups/png/home-tagline-3.en.1280.dark.png"><img src="mockups/png/home-tagline-3.en.1280.dark.png" alt="Home hero, tagline 3, English, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1280 1 0"><a href="mockups/png/home-tagline-3.ar.1280.dark.png"><img src="mockups/png/home-tagline-3.ar.1280.dark.png" alt="Home hero, tagline 3, Arabic, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="home-tagline-4">
+      <h2>Home hero, tagline 4</h2>
+      <p class="sub">The hero only, 1280 px. Source: <code>mockups/home-tagline-4.en.html</code>, <code>mockups/home-tagline-4.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1280 1 0"><a href="mockups/png/home-tagline-4.en.1280.dark.png"><img src="mockups/png/home-tagline-4.en.1280.dark.png" alt="Home hero, tagline 4, English, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1280 1 0"><a href="mockups/png/home-tagline-4.ar.1280.dark.png"><img src="mockups/png/home-tagline-4.ar.1280.dark.png" alt="Home hero, tagline 4, Arabic, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="home-tagline-5">
+      <h2>Home hero, tagline 5</h2>
+      <p class="sub">The hero only, 1280 px. Source: <code>mockups/home-tagline-5.en.html</code>, <code>mockups/home-tagline-5.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1280 1 0"><a href="mockups/png/home-tagline-5.en.1280.dark.png"><img src="mockups/png/home-tagline-5.en.1280.dark.png" alt="Home hero, tagline 5, English, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1280 1 0"><a href="mockups/png/home-tagline-5.ar.1280.dark.png"><img src="mockups/png/home-tagline-5.ar.1280.dark.png" alt="Home hero, tagline 5, Arabic, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="download">
+      <h2>Download</h2>
+      <p class="sub">From copy/download.*.md, with v0.3.131's real files, sizes and digest. Source: <code>mockups/download.en.html</code>, <code>mockups/download.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/download.en.360.dark.png"><img src="mockups/png/download.en.360.dark.png" alt="Download, English, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/download.en.768.dark.png"><img src="mockups/png/download.en.768.dark.png" alt="Download, English, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/download.en.1280.dark.png"><img src="mockups/png/download.en.1280.dark.png" alt="Download, English, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>English, light</h3>
+        <div class="shots">
+          <figure style="flex: 1280 1 0"><a href="mockups/png/download.en.1280.light.png"><img src="mockups/png/download.en.1280.light.png" alt="Download, English, light, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/download.ar.360.dark.png"><img src="mockups/png/download.ar.360.dark.png" alt="Download, Arabic, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/download.ar.768.dark.png"><img src="mockups/png/download.ar.768.dark.png" alt="Download, Arabic, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/download.ar.1280.dark.png"><img src="mockups/png/download.ar.1280.dark.png" alt="Download, Arabic, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, light</h3>
+        <div class="shots">
+          <figure style="flex: 1280 1 0"><a href="mockups/png/download.ar.1280.light.png"><img src="mockups/png/download.ar.1280.light.png" alt="Download, Arabic, light, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="install-p3">
+      <h2>Install guide, Phase 3</h2>
+      <p class="sub">The Synology guide as the site's install page. Source: <code>mockups/install-p3.en.html</code>, <code>mockups/install-p3.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/install-p3.en.360.dark.png"><img src="mockups/png/install-p3.en.360.dark.png" alt="Install guide, Phase 3, English, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/install-p3.en.768.dark.png"><img src="mockups/png/install-p3.en.768.dark.png" alt="Install guide, Phase 3, English, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/install-p3.en.1280.dark.png"><img src="mockups/png/install-p3.en.1280.dark.png" alt="Install guide, Phase 3, English, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/install-p3.ar.360.dark.png"><img src="mockups/png/install-p3.ar.360.dark.png" alt="Install guide, Phase 3, Arabic, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/install-p3.ar.768.dark.png"><img src="mockups/png/install-p3.ar.768.dark.png" alt="Install guide, Phase 3, Arabic, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/install-p3.ar.1280.dark.png"><img src="mockups/png/install-p3.ar.1280.dark.png" alt="Install guide, Phase 3, Arabic, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="help">
+      <h2>Help index</h2>
+      <p class="sub">The help topics from the app's own catalog. Source: <code>mockups/help.en.html</code>, <code>mockups/help.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/help.en.360.dark.png"><img src="mockups/png/help.en.360.dark.png" alt="Help index, English, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/help.en.768.dark.png"><img src="mockups/png/help.en.768.dark.png" alt="Help index, English, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/help.en.1280.dark.png"><img src="mockups/png/help.en.1280.dark.png" alt="Help index, English, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/help.ar.360.dark.png"><img src="mockups/png/help.ar.360.dark.png" alt="Help index, Arabic, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/help.ar.768.dark.png"><img src="mockups/png/help.ar.768.dark.png" alt="Help index, Arabic, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/help.ar.1280.dark.png"><img src="mockups/png/help.ar.1280.dark.png" alt="Help index, Arabic, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="help-topic">
+      <h2>Help topic</h2>
+      <p class="sub">The search topic, in the app's own words. Source: <code>mockups/help-topic.en.html</code>, <code>mockups/help-topic.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/help-topic.en.360.dark.png"><img src="mockups/png/help-topic.en.360.dark.png" alt="Help topic, English, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/help-topic.en.768.dark.png"><img src="mockups/png/help-topic.en.768.dark.png" alt="Help topic, English, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/help-topic.en.1280.dark.png"><img src="mockups/png/help-topic.en.1280.dark.png" alt="Help topic, English, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/help-topic.ar.360.dark.png"><img src="mockups/png/help-topic.ar.360.dark.png" alt="Help topic, Arabic, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/help-topic.ar.768.dark.png"><img src="mockups/png/help-topic.ar.768.dark.png" alt="Help topic, Arabic, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/help-topic.ar.1280.dark.png"><img src="mockups/png/help-topic.ar.1280.dark.png" alt="Help topic, Arabic, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="wordmark">
+      <h2>Wordmark</h2>
+      <p class="sub">Lockups for header, footer and social card, LTR and RTL, minimum sizes. Source: <code>mockups/wordmark.en.html</code>, <code>mockups/wordmark.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/wordmark.en.360.dark.png"><img src="mockups/png/wordmark.en.360.dark.png" alt="Wordmark, English, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/wordmark.en.768.dark.png"><img src="mockups/png/wordmark.en.768.dark.png" alt="Wordmark, English, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/wordmark.en.1280.dark.png"><img src="mockups/png/wordmark.en.1280.dark.png" alt="Wordmark, English, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/wordmark.ar.360.dark.png"><img src="mockups/png/wordmark.ar.360.dark.png" alt="Wordmark, Arabic, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/wordmark.ar.768.dark.png"><img src="mockups/png/wordmark.ar.768.dark.png" alt="Wordmark, Arabic, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/wordmark.ar.1280.dark.png"><img src="mockups/png/wordmark.ar.1280.dark.png" alt="Wordmark, Arabic, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="foundations">
+      <h2>Foundations</h2>
+      <p class="sub">Display face, type scales, the colour extension with tested ratios, icons. Source: <code>mockups/foundations.en.html</code>, <code>mockups/foundations.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/foundations.en.360.dark.png"><img src="mockups/png/foundations.en.360.dark.png" alt="Foundations, English, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/foundations.en.768.dark.png"><img src="mockups/png/foundations.en.768.dark.png" alt="Foundations, English, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/foundations.en.1280.dark.png"><img src="mockups/png/foundations.en.1280.dark.png" alt="Foundations, English, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/foundations.ar.360.dark.png"><img src="mockups/png/foundations.ar.360.dark.png" alt="Foundations, Arabic, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/foundations.ar.768.dark.png"><img src="mockups/png/foundations.ar.768.dark.png" alt="Foundations, Arabic, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/foundations.ar.1280.dark.png"><img src="mockups/png/foundations.ar.1280.dark.png" alt="Foundations, Arabic, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="components-b">
+      <h2>Component sheet, part B</h2>
+      <p class="sub">Download card, disclosures, frames, feature block, states. Source: <code>mockups/components-b.en.html</code>, <code>mockups/components-b.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/components-b.en.360.dark.png"><img src="mockups/png/components-b.en.360.dark.png" alt="Component sheet, part B, English, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/components-b.en.768.dark.png"><img src="mockups/png/components-b.en.768.dark.png" alt="Component sheet, part B, English, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/components-b.en.1280.dark.png"><img src="mockups/png/components-b.en.1280.dark.png" alt="Component sheet, part B, English, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 360 1 0"><a href="mockups/png/components-b.ar.360.dark.png"><img src="mockups/png/components-b.ar.360.dark.png" alt="Component sheet, part B, Arabic, dark, 360 px wide" loading="lazy" /></a><figcaption>360 px</figcaption></figure>
+          <figure style="flex: 768 1 0"><a href="mockups/png/components-b.ar.768.dark.png"><img src="mockups/png/components-b.ar.768.dark.png" alt="Component sheet, part B, Arabic, dark, 768 px wide" loading="lazy" /></a><figcaption>768 px</figcaption></figure>
+          <figure style="flex: 1280 1 0"><a href="mockups/png/components-b.ar.1280.dark.png"><img src="mockups/png/components-b.ar.1280.dark.png" alt="Component sheet, part B, Arabic, dark, 1280 px wide" loading="lazy" /></a><figcaption>1280 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="social-home-1">
+      <h2>Social card, tagline 1</h2>
+      <p class="sub">1200 × 630. Source: <code>mockups/social-home-1.en.html</code>, <code>mockups/social-home-1.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1200 1 0"><a href="mockups/png/social-home-1.en.1200.dark.png"><img src="mockups/png/social-home-1.en.1200.dark.png" alt="Social card, tagline 1, English, dark, 1200 px wide" loading="lazy" /></a><figcaption>1200 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1200 1 0"><a href="mockups/png/social-home-1.ar.1200.dark.png"><img src="mockups/png/social-home-1.ar.1200.dark.png" alt="Social card, tagline 1, Arabic, dark, 1200 px wide" loading="lazy" /></a><figcaption>1200 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="social-home-2">
+      <h2>Social card, tagline 2</h2>
+      <p class="sub">1200 × 630. Source: <code>mockups/social-home-2.en.html</code>, <code>mockups/social-home-2.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1200 1 0"><a href="mockups/png/social-home-2.en.1200.dark.png"><img src="mockups/png/social-home-2.en.1200.dark.png" alt="Social card, tagline 2, English, dark, 1200 px wide" loading="lazy" /></a><figcaption>1200 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1200 1 0"><a href="mockups/png/social-home-2.ar.1200.dark.png"><img src="mockups/png/social-home-2.ar.1200.dark.png" alt="Social card, tagline 2, Arabic, dark, 1200 px wide" loading="lazy" /></a><figcaption>1200 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="social-home-3">
+      <h2>Social card, tagline 3</h2>
+      <p class="sub">1200 × 630. Source: <code>mockups/social-home-3.en.html</code>, <code>mockups/social-home-3.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1200 1 0"><a href="mockups/png/social-home-3.en.1200.dark.png"><img src="mockups/png/social-home-3.en.1200.dark.png" alt="Social card, tagline 3, English, dark, 1200 px wide" loading="lazy" /></a><figcaption>1200 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1200 1 0"><a href="mockups/png/social-home-3.ar.1200.dark.png"><img src="mockups/png/social-home-3.ar.1200.dark.png" alt="Social card, tagline 3, Arabic, dark, 1200 px wide" loading="lazy" /></a><figcaption>1200 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="social-home-4">
+      <h2>Social card, tagline 4</h2>
+      <p class="sub">1200 × 630. Source: <code>mockups/social-home-4.en.html</code>, <code>mockups/social-home-4.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1200 1 0"><a href="mockups/png/social-home-4.en.1200.dark.png"><img src="mockups/png/social-home-4.en.1200.dark.png" alt="Social card, tagline 4, English, dark, 1200 px wide" loading="lazy" /></a><figcaption>1200 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1200 1 0"><a href="mockups/png/social-home-4.ar.1200.dark.png"><img src="mockups/png/social-home-4.ar.1200.dark.png" alt="Social card, tagline 4, Arabic, dark, 1200 px wide" loading="lazy" /></a><figcaption>1200 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="social-home-5">
+      <h2>Social card, tagline 5</h2>
+      <p class="sub">1200 × 630. Source: <code>mockups/social-home-5.en.html</code>, <code>mockups/social-home-5.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1200 1 0"><a href="mockups/png/social-home-5.en.1200.dark.png"><img src="mockups/png/social-home-5.en.1200.dark.png" alt="Social card, tagline 5, English, dark, 1200 px wide" loading="lazy" /></a><figcaption>1200 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1200 1 0"><a href="mockups/png/social-home-5.ar.1200.dark.png"><img src="mockups/png/social-home-5.ar.1200.dark.png" alt="Social card, tagline 5, Arabic, dark, 1200 px wide" loading="lazy" /></a><figcaption>1200 px</figcaption></figure>
+        </div>
+      </div>
+    </section>
+    <section id="social-download">
+      <h2>Social card, download page</h2>
+      <p class="sub">1200 × 630. Source: <code>mockups/social-download.en.html</code>, <code>mockups/social-download.ar.html</code>.</p>
+      <div class="row">
+        <h3>English, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1200 1 0"><a href="mockups/png/social-download.en.1200.dark.png"><img src="mockups/png/social-download.en.1200.dark.png" alt="Social card, download page, English, dark, 1200 px wide" loading="lazy" /></a><figcaption>1200 px</figcaption></figure>
+        </div>
+      </div>
+      <div class="row">
+        <h3>Arabic, dark</h3>
+        <div class="shots">
+          <figure style="flex: 1200 1 0"><a href="mockups/png/social-download.ar.1200.dark.png"><img src="mockups/png/social-download.ar.1200.dark.png" alt="Social card, download page, Arabic, dark, 1200 px wide" loading="lazy" /></a><figcaption>1200 px</figcaption></figure>
         </div>
       </div>
     </section>

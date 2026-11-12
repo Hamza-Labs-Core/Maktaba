@@ -3,7 +3,9 @@
 - [`voice.md`](voice.md): the voice guide, in English and in Arabic (story 60.02 part A). Every
   page on the site follows it.
 - `<page>.en.md` and `<page>.ar.md`: each page's copy, written separately in each language
-  (part B). Each pair is that page's strings table.
+  (part B), with the same `##` keys (`design/tests/mockups.test.mjs` checks). Each pair is that
+  page's strings table: `home` (with the five tagline proposals), `download`, and
+  `front-door` (Phase 1's front door, rewritten in the voice).
 
 ## Approvals
 
@@ -19,3 +21,7 @@ its date and the commit it approves.
 | The part A mockups' copy (`../design/mockups/make.mjs`) | Arabic   | the owner   | 2026-11-11 | fb0cb05a3 |                                |
 | The tagline (part B)                                    | English  |             |            |           |                                |
 | The tagline (part B)                                    | Arabic   |             |            |           |                                |
+| Home and download copy (`home.*.md`, `download.*.md`)   | English  |             |            |           |                                |
+| Home and download copy (`home.*.md`, `download.*.md`)   | Arabic   |             |            |           |                                |
+| The front door's lines (`front-door.*.md`)              | English  |             |            |           |                                |
+| The front door's lines (`front-door.*.md`)              | Arabic   |             |            |           |                                |

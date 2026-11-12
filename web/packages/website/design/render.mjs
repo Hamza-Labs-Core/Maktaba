@@ -1,7 +1,9 @@
-// Renders the part A mockups to PNG (story 60.01 T01): every mockup at 360, 768 and 1280 px,
-// English and Arabic, dark; the text pages (front door, legal) and the component sheet in
-// light too. Full-page PNGs under mockups/png/, each under 1 MB. Each page is also loaded
-// at 320 px and fails the run if it scrolls sideways (WCAG 1.4.10 reflow).
+// Renders the mockups to PNG (story 60.01 T01): each mockup at the widths make.mjs's
+// renderOf() gives it (360, 768 and 1280 px by default), English and Arabic, dark, and light
+// where stated. Full-page PNGs under mockups/png/, each under 1 MB; the tagline alternates
+// are one 1280 × 800 viewport, the social cards 1200 × 630. Each page is also loaded at 320 px
+// and fails the run if it scrolls sideways (WCAG 1.4.10 reflow); a social card fails when
+// its title overflows its three lines.
 //
 //   node design/render.mjs            render, then check sizes
 //   RENDER_ONLY=a,b node design/render.mjs   render only those mockups
@@ -17,26 +19,28 @@ import { createServer } from "node:http";
 import { mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { LANGS, MOCKUPS } from "./mockups/make.mjs";
+import { LANGS, MOCKUPS, renderOf } from "./mockups/make.mjs";
 import { pngChunks } from "./png.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = resolve(here, "..", "..", "..");
 const outDir = join(here, "mockups", "png");
 
-export const WIDTHS = [360, 768, 1280];
-export const LIGHT = new Set(["front-door", "legal", "components"]);
 export const MAX_BYTES = 1024 * 1024;
+
+/** The PNGs of one mockup in one language: [width, scheme] pairs. */
+export function shotsOf(name) {
+  const r = renderOf(name);
+  return [...r.widths.map((w) => [w, "dark"]), ...r.light.map((w) => [w, "light"])];
+}
 
 /** Every PNG the run must leave, as file names. */
 export function expectedPngs() {
   const out = [];
   for (const name of Object.keys(MOCKUPS)) {
     for (const lang of LANGS) {
-      for (const width of WIDTHS) {
-        out.push(`${name}.${lang}.${width}.dark.png`);
-        if (LIGHT.has(name)) out.push(`${name}.${lang}.${width}.light.png`);
-      }
+      for (const [width, scheme] of shotsOf(name))
+        out.push(`${name}.${lang}.${width}.${scheme}.png`);
     }
   }
   return out;
@@ -49,6 +53,8 @@ const TYPES = {
   ".mjs": "text/javascript; charset=utf-8",
   ".woff2": "font/woff2",
   ".png": "image/png",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
 };
 
 function serve() {
@@ -99,49 +105,86 @@ async function render() {
   const base = `http://127.0.0.1:${server.address().port}`;
   const browser = await chromium.launch();
   const problems = [];
+  const rendered = [];
   try {
     for (const name of Object.keys(MOCKUPS).filter((n) => !only || only.includes(n))) {
       for (const lang of LANGS) {
         const url = `${base}/${relative(webRoot, join(here, "mockups", `${name}.${lang}.html`))}`;
-        const schemes = LIGHT.has(name) ? ["dark", "light"] : ["dark"];
-        for (const scheme of schemes) {
-          for (const width of [320, ...WIDTHS]) {
-            const page = await browser.newPage({
-              viewport: { width, height: 800 },
-              colorScheme: scheme,
-              reducedMotion: "reduce",
-              deviceScaleFactor: 1,
+        const r = renderOf(name);
+        // The 320 px reflow load first (not for fixed-size cards), then each PNG.
+        const runs = [
+          ...(r.social ? [] : [[320, "dark", false]]),
+          ...shotsOf(name).map(([w, s]) => [w, s, true]),
+        ];
+        for (const [width, scheme, shoot] of runs) {
+          const page = await browser.newPage({
+            viewport: { width, height: r.height },
+            colorScheme: scheme,
+            reducedMotion: "reduce",
+            deviceScaleFactor: 1,
+          });
+          const failed = [];
+          page.on("requestfailed", (q) => failed.push(q.url()));
+          page.on("response", (q) => q.status() >= 400 && failed.push(`${q.status()} ${q.url()}`));
+          await page.goto(url, { waitUntil: "networkidle" });
+          await page.evaluate(() => document.fonts.ready);
+          // A full-page shot never scrolls, so lazy pictures would stay empty: load them all.
+          await page.evaluate(async () => {
+            const imgs = [...document.images];
+            for (const i of imgs) i.loading = "eager";
+            await Promise.all(
+              imgs.map((i) =>
+                i.complete
+                  ? i.decode().catch(() => {})
+                  : new Promise(
+                      (ok) =>
+                        i.addEventListener("load", ok, { once: true }) ||
+                        i.addEventListener("error", ok, { once: true })
+                    )
+              )
+            );
+          });
+          const fonts = await page.evaluate(() =>
+            [...document.fonts].filter((f) => f.status === "loaded").map((f) => f.family)
+          );
+          if (!fonts.some((f) => f.includes("Maktaba Text")) && !r.social) {
+            problems.push(`${name}.${lang}: the site's font did not load`);
+          }
+          if (
+            /part B/.test(await page.content()) &&
+            !fonts.some((f) => f.includes("Maktaba Display"))
+          ) {
+            problems.push(`${name}.${lang}: the display face did not load`);
+          }
+          if (failed.length) problems.push(`${name}.${lang}: failed requests ${failed.join(", ")}`);
+          if (r.social) {
+            // Lines, not scroll height: the display face's tall ascent and descent spill
+            // past the line box as ink, which is not an overflow.
+            const lines = await page.evaluate(() => {
+              const t = document.querySelector("[data-fit]");
+              if (!t) return 0;
+              return Math.round(
+                t.getBoundingClientRect().height / parseFloat(getComputedStyle(t).lineHeight)
+              );
             });
-            const failed = [];
-            page.on("requestfailed", (r) => failed.push(r.url()));
-            page.on(
-              "response",
-              (r) => r.status() >= 400 && failed.push(`${r.status()} ${r.url()}`)
-            );
-            await page.goto(url, { waitUntil: "networkidle" });
-            await page.evaluate(() => document.fonts.ready);
-            const fonts = await page.evaluate(() =>
-              [...document.fonts].filter((f) => f.status === "loaded").map((f) => f.family)
-            );
-            if (!fonts.some((f) => f.includes("Maktaba Text"))) {
-              problems.push(`${name}.${lang}: the site's font did not load`);
-            }
-            if (failed.length)
-              problems.push(`${name}.${lang}: failed requests ${failed.join(", ")}`);
+            if (lines > 3)
+              problems.push(`${name}.${lang}: the card's title takes ${lines} lines, over 3`);
+          } else {
             const overflow = await page.evaluate(
               () => document.documentElement.scrollWidth - document.documentElement.clientWidth
             );
             if (overflow > 0)
               problems.push(`${name}.${lang} at ${width}px scrolls sideways by ${overflow}px`);
-            if (width !== 320) {
-              await page.screenshot({
-                path: join(outDir, `${name}.${lang}.${width}.${scheme}.png`),
-                fullPage: true,
-                animations: "disabled",
-              });
-            }
-            await page.close();
           }
+          if (shoot) {
+            rendered.push(`${name}.${lang}.${width}.${scheme}.png`);
+            await page.screenshot({
+              path: join(outDir, `${name}.${lang}.${width}.${scheme}.png`),
+              fullPage: r.full,
+              animations: "disabled",
+            });
+          }
+          await page.close();
         }
       }
     }
@@ -152,7 +195,7 @@ async function render() {
   // A 256-colour palette: the renders are flat colour and text (quantize.py).
   const q = spawnSync(
     "uvx",
-    ["--with", "pillow", "python", "-I", join(here, "quantize.py"), outDir],
+    ["--with", "pillow", "python", "-I", join(here, "quantize.py"), outDir, ...rendered],
     {
       encoding: "utf8",
     }

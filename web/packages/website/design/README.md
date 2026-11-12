@@ -1,28 +1,32 @@
-# maktaba.tv design, part A: the shell
+# maktaba.tv design: the shell (part A) and the direction (part B)
 
-The written spec of the shell that Phase 1's pages are built on (story 60.01 part A): its
-tokens, type, components and layouts, with mockups of each layout at 360, 768 and 1280 px in
-English and Arabic. Part B (the full direction: the brand look, the display face, imagery and
-the Phase 2 layouts) adds to this file.
+The written spec of the site (story 60.01). Part A is the shell that Phase 1's pages are built
+on: its tokens, type, components and layouts. Part B, from
+[Part B: the direction](#part-b-the-direction) on, adds the brand look, the wordmark, the
+display face, the colour extension, imagery and icons, and the layouts of home, download,
+install, help and the Phase 3 pages. Every layout has mockups at 360, 768 and 1280 px in
+English and Arabic.
 
 ## What is here
 
-| Path                                   | What it is                                                                                                                    |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `site-tokens.css`                      | the site's tokens, **generated** from `web/design-system/tokens/` by `build-tokens.mjs` (do not edit)                         |
-| `fonts.css`                            | the `@font-face` rules: the text face and its metric-matched fallback                                                         |
-| `shell.css`                            | the shell: every component and layout below, logical properties only                                                          |
-| `shell.js`                             | the phone menu, copy buttons, the index filter and the language hint (about 3 KB, no framework)                               |
-| `mockups/make.mjs`                     | writes `mockups/*.html` from the shell and each page's copy (`node mockups/make.mjs`)                                         |
-| `mockups/*.html`                       | the mockups: front door, legal, problem, problem index, install guide, 404, component sheet                                   |
-| `mockups/png/`                         | their renders (`node render.mjs`): 60 PNGs, each under 1 MB, reduced to a 256-colour palette by `quantize.py` (5.3 MB in all) |
-| `render.mjs`, `png.mjs`, `quantize.py` | the render (Playwright, a local server, the 320 px reflow check), the PNG chunk reader, the palette step                      |
-| `review-sheet.mjs`                     | writes `review-sheet.html` from the same list of renders                                                                      |
-| `mockups/vendor/install.css`           | a copy of Epic 59's guide stylesheet at `a4c35d7eb`, for the install mockup                                                   |
-| `mockups/src/unraid.*.html`            | the built Unraid guide's header and main, the screenshot placeholders left out (60.05)                                        |
-| `review-sheet.html`                    | every PNG on one page, by mockup, width and language, for review                                                              |
-| `tests/`                               | T01, T02's site half, T03, T04 and the copy checks; `make test-tokens` runs them                                              |
-| `fonts/`                               | the subset and rename scripts behind `../static/fonts/`                                                                       |
+| Path                                      | What it is                                                                                                               |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `site-tokens.css`                         | the site's tokens, **generated** from `web/design-system/tokens/` by `build-tokens.mjs` (do not edit)                    |
+| `fonts.css`                               | the `@font-face` rules: the text face, the display face and their metric-matched fallbacks                               |
+| `site.css`                                | part B's page components (hero, frames, download cards, help), on top of `shell.css`                                     |
+| `shell.css`                               | the shell: every component and layout below, logical properties only                                                     |
+| `shell.js`                                | the phone menu, copy buttons, the index filter and the language hint (about 3 KB, no framework)                          |
+| `mockups/make.mjs`                        | writes `mockups/*.html` from the shell and each page's copy (`node mockups/make.mjs`)                                    |
+| `mockups/shell.mjs`, `mockups/part-b.mjs` | the shell's HTML (header, footer, wordmark, page); part B's pages, read from `../copy/*.md`                              |
+| `mockups/*.html`                          | part A: front door, legal, problem, problem index, install guide, 404, component sheet; part B: below                    |
+| `mockups/png/`                            | their renders (`node render.mjs`): 150 PNGs, each under 1 MB, reduced to a 256-colour palette by `quantize.py` (19.5 MB) |
+| `render.mjs`, `png.mjs`, `quantize.py`    | the render (Playwright, a local server, the 320 px reflow check), the PNG chunk reader, the palette step                 |
+| `review-sheet.mjs`                        | writes `review-sheet.html` from the same list of renders                                                                 |
+| `mockups/vendor/install.css`              | a copy of Epic 59's guide stylesheet at `a4c35d7eb`, for the install mockup                                              |
+| `mockups/src/unraid.*.html`               | the built Unraid guide's header and main, the screenshot placeholders left out (60.05)                                   |
+| `review-sheet.html`                       | every PNG on one page, by mockup, width and language, for review                                                         |
+| `tests/`                                  | T01, T02's site half, T03, T04 and the copy checks; `make test-tokens` runs them                                         |
+| `fonts/`                                  | the subset and rename scripts behind `../static/fonts/`                                                                  |
 
 `make test-tokens` (the `unit_tokens` CI job) builds the tokens with `--check` (the site's CSS
 must be current), then runs `tests/`: the mockups current with `make.mjs`, every PNG present,
@@ -303,4 +307,212 @@ its pull request before part A is approved.
 | Part                  | Date       | Reviewer                           | Commit                                           | Outcome                                              | Changes asked                                    |
 | --------------------- | ---------- | ---------------------------------- | ------------------------------------------------ | ---------------------------------------------------- | ------------------------------------------------ |
 | A, the shell          | 2026-11-11 | the owner, after the lead's review | fb0cb05a3 (renders); 8c88225b7 (formatting only) | approved: the look, the voice guide and the wordmark | none; the font name stays "Maktaba Text" (below) |
-| B, the full direction |            |                                    |                                                  |                                                      |                                                  |
+| B, the full direction | (pending)  | the owner, after the lead's review | (this pull request's head)                       |                                                      |                                                  |
+
+# Part B: the direction
+
+Stories 60.01 part B and 60.02 part B. Part A's decisions stand: ink and brass, dark by
+default and light by preference, the one text face, the arch, the household plural, «مكتبة»
+and the wordmark. Part B adds to them; it changes none.
+
+## Brand direction
+
+A household's own library at night, with the lights low and one lamp on. The site sells a
+quiet thing (your films, kept at home, on every screen) and it looks quiet: ink fields, brass
+only where it means something, headlines in a book face, and the app's own screens shown in
+plain frames, never staged in a room or a hand. Every page shows the real app on test data,
+not illustrations. Three boards, described in words:
+
+1. **The reading room at night.** Deep ink blue going to black at the edges; a single warm
+   light falling on a page; brass fittings, not gold leaf. Hairline rules, wide margins, a
+   serif headline that looks set, not typed. (The hero's glow behind the screenshot, the
+   section bands, the arch at the end of a line.)
+2. **The good book jacket.** Two faces only, one of them with a calligraphic Arabic: a large
+   headline in Amiri, short and true, and a plain line under it. The name in both scripts,
+   side by side, a brass rule between them. (The wordmark lockups, the social card, the
+   display scale.)
+3. **The screen as the photograph.** The product shot is the one picture: an app screen in a
+   symmetric, near-black frame, sitting on a slightly lighter band, with its name and one line
+   under it. Nothing else competes: no people, no stock photography, no device brand marks.
+   (The device frames, the screenshot band, the "on every screen" shelf.)
+
+## Wordmark (Q3)
+
+The app icon beside the name in the display face (`wordmark()` in `mockups/shell.mjs`; sheet:
+`mockups/wordmark.*.html`).
+
+| Lockup        | Where                    | Icon  | Name                                                    | Gap   |
+| ------------- | ------------------------ | ----- | ------------------------------------------------------- | ----- |
+| Single script | the header               | 32 px | the page's language only: "Maktaba" or «مكتبة», 23 px   | 11 px |
+| Both scripts  | the footer, social cards | 28–56 | the page's language first, a brass rule, then the other | 0.35× |
+
+- **Direction:** on an Arabic page the lockup runs right to left (icon at the right, «مكتبة»,
+  rule, "Maktaba"); on an English page the mirror. The icon itself never mirrors.
+- **Minimum sizes:** the lockup down to a 24 px icon; under 24 px the icon stands alone
+  (favicon 16 and 32, the home-screen icons).
+- **Clear space:** half the icon's width on every side, with no text or edge inside it.
+- **Surfaces:** the page (ink), the hero and the section band in dark, and the light page;
+  the icon keeps its own dark tile on all of them.
+- **Never:** recolour the icon or set it on a light tile; stretch, rotate or mirror it; set
+  the name in another face, or letter-space the Arabic; put both names on one line without
+  the rule.
+- **The icon as SVG:** `../static/icon.svg` (3 KB) is traced from `web/public/icons/icon-512.png`
+  (the arch, the open book and the lamp, symmetrised; the gradients sampled from the PNG). It
+  matches the PNG at every size the site uses (16 to 72 px). At 512 px one difference shows:
+  the tops of the book's pages next to the spine are slightly flatter under the lamp. The
+  PNGs stay the source for the app; the site draws the SVG through one `<symbol>`.
+
+## Display face (Q9): Amiri Bold, as "Maktaba Display"
+
+Headlines (the hero, section heads, a page's `h1`, the social card) are set in Amiri Bold;
+everything else stays in Maktaba Text. Amiri first, because:
+
+- it is a Naskh drawn from the Bulaq press tradition: a book face, which is what a library
+  should look like, and the warmth part A's ink and brass ask for;
+- it has a real Latin companion in the same family, so "Maktaba" and «مكتبة» sit together
+  in one face, at one weight, with no mismatch in the lockup;
+- it is OFL 1.1, maintained, and complete in the shaping an Arabic headline needs
+  (contextual forms, ligatures, mark positioning, all kept in the subset);
+- its bold stays open and readable at the phone sizes (32–44 px), where a hairline or
+  decorative display Arabic would not.
+
+| File                               | Characters                                        | Size  |
+| ---------------------------------- | ------------------------------------------------- | ----- |
+| `maktaba-display-700-latin.woff2`  | Basic Latin, Latin-1, punctuation                 | 19 KB |
+| `maktaba-display-700-arabic.woff2` | the Arabic letters, marks, digits and punctuation | 38 KB |
+
+- **Budget:** an English page loads 49 KB of fonts, an Arabic page 142 KB, inside 150 KB per
+  page per language (`tests/mockups.test.mjs` fails over it). Display files are preloaded on
+  part B pages (English: Latin; Arabic: both).
+- **Name:** the subset is a Modified Version under the OFL, so it is renamed "Maktaba
+  Display" ("Amiri" is not reserved, but the rename keeps one rule for both faces);
+  `../static/fonts/OFL-Amiri.txt` sits beside it.
+- **Fallback:** "Maktaba Display Fallback", local Times New Roman Bold with `size-adjust:
+99.5%`, `ascent-override: 113%`, `descent-override: 63.7%`, `line-gap-override: 0%`, so a
+  headline does not move when Amiri arrives (`font-display: swap`).
+- **Type scale** (tokens `site.type.display-*` and `site.type-arabic.display-*`; Arabic runs
+  larger and much taller, for Amiri's deep descenders and marks):
+
+| Step            | Used for                                             | Latin   | Arabic   |
+| --------------- | ---------------------------------------------------- | ------- | -------- |
+| display-1       | the home hero, ≥ 1024 px                             | 60 / 68 | 66 / 100 |
+| display-1-phone | the home hero, < 768 px (768–1023: display-2's size) | 40 / 48 | 44 / 68  |
+| display-2       | a page's `h1` (download, install, help)              | 44 / 52 | 48 / 76  |
+| display-2-phone | the same, < 768 px                                   | 32 / 40 | 36 / 56  |
+| display-3       | section heads on home                                | 32 / 40 | 36 / 56  |
+| social card     | the tagline on the 1200 × 630 card                   | 68 / 80 | 72 / 108 |
+
+## Colour extension
+
+Part B's surfaces and their tested ratios (`tests/contrast.test.mjs`; text 4.5:1, large text
+and UI parts 3:1). New tokens: `site.surface.frame`, `site.line.frame`, `site.accent.glow`;
+the rest are part A's, used in new places.
+
+| Role    | Token (dark / light)                                           | Pairs and ratios (dark / light)                                                                       |
+| ------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| hero    | `site.surface.hero` #0E1624 / #FBF5E8, with `site.accent.glow` | headline 11.81 / 14.30; lead 6.62 / 6.39 (over the glow)                                              |
+| section | `site.surface.section` #0F1725 / #FFF9EA                       | text 15.15 / 16.83; muted 8.49 / 7.53; links 9.20 / 5.21; badge 11.65 / 14.98; card edges 4.14 / 3.97 |
+| shot    | `site.surface.shot` #131D2E / #F4EAD3                          | caption name 14.26 / 14.78; caption 7.99 / 6.61; kicker 8.65 / 4.58; shelf line 8.65 / 4.58           |
+| cta     | `site.accent.cta` #E3B252 (both)                               | label 9.37 / 9.37                                                                                     |
+| hover   | `site.accent.cta-hover` #EFCB7C / #C8952C                      | label 11.77 / 6.79                                                                                    |
+| frame   | `site.surface.frame` #06090F / #1B1F27, edge `site.line.frame` | holds a screenshot only; no text on it, so no ratio applies                                           |
+| glow    | `site.accent.glow` rgba(227,178,82,.14) / rgba(200,149,44,.16) | decorative; the text over it is tested as composited                                                  |
+
+The frame stays near-black in light mode too: the app's screens are dark (the screenshots
+are dark stand-ins), and a dark bezel reads as a device on a light page.
+
+## Imagery and icons
+
+- **Device frames** (`site.css`, `[data-kind]`), symmetric, so they never mirror:
+
+| Kind    | Frame                                              | Shows                               |
+| ------- | -------------------------------------------------- | ----------------------------------- |
+| tv      | 1.1% bezel, 10 px radius, a stand 34% of the width | big screen                          |
+| phone   | 3.4% bezel, rounded, no notch, no buttons          | the web app on a phone              |
+| tablet  | 2.6% bezel                                         | the web app on a tablet             |
+| window  | a 30 px bar with three dots and the app's name     | Maktaba Player (Windows, Linux)     |
+| browser | a 30 px bar with the site's name only, no URL      | the web app, an install step's page |
+
+- **How many:** home 8 (the hero's TV; the shelf's TV, phone, tablet, computer and browser;
+  the English and Arabic pair), download 2 (the pair), an install guide one per step that
+  needs one (the Synology mockup shows one), help and the problem pages none, legal none.
+- **Backdrop:** a screenshot sits on the shot band (`site.surface.shot`), or on the hero with
+  the brass glow behind it; never on a photograph or a gradient of its own.
+- **Screenshots:** dark, real, on test data. The mockups use the devportal Apps screenshots
+  as stand-ins (`web/packages/devportal/static/assets/apps/`); story 60.09 replaces them with
+  the demo library. Never a household's library, never a drawn screen. Each has an alt text
+  that says what the screen shows, written per language.
+- **Language of a screenshot:** an Arabic page shows the Arabic screen and an English page the
+  English one, except the pair, which shows both on purpose.
+- **Icons:** one style, part A's: a 24-unit grid, a 1.75 stroke, round caps and joins, no
+  fill, `currentColor`. Part B adds star, library, subtitles, live, updates, server, check,
+  download, tv, phone, laptop, window, terminal, box, clock, lock, shield, chevron, play and
+  memory (`P` in `mockups/part-b.mjs`).
+- **Mirror rules:** icons that point along the reading direction mirror on an Arabic page
+  (`.dir-icon`: onward, back, external link, the disclosure chevron). Everything else never
+  mirrors: play (media runs left to right everywhere), check, download, the devices, clocks,
+  the logo. Screenshots and frames carry `data-nomirror` and never flip; a screenshot's
+  language comes from the screen itself.
+
+## Part B layouts
+
+Each at 360, 768 and 1280 px, English and Arabic, dark; home and download in light at 1280 too.
+
+| Mockup                                    | Path                      | What it shows                                                                                      |
+| ----------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------- |
+| `home`                                    | `/`                       | the hero (tagline 1), the shelf of screens, six features, Arabic and English, privacy, three steps |
+| `home-tagline-2` … `5`                    | `/`                       | the hero only, with each other tagline, at 1280                                                    |
+| `download`                                | `/download/`              | the visitor's platform first, then every system; other formats and verify in disclosures           |
+| `install-p3`                              | `/install/synology/`      | the Synology guide as the site's install page (Phase 3): facts, checklist, steps with a screen     |
+| `help`, `help-topic`                      | `/help/`, `/help/search/` | the app's own help catalog and topic text, with the same filter as the problem index               |
+| `legal-p3`, `problem-p3`, `problems-p3`   | as in part A              | part A's pages in the part B shell (display `h1`, both-script footer)                              |
+| `wordmark`, `foundations`, `components-b` | sheets                    | the lockups; type, colour and budget; the components below                                         |
+| `social-home-1` … `5`, `social-download`  | the `og:image`s           | 1200 × 630 cards; `render.mjs` fails a title over three lines                                      |
+
+Hidden on purpose: no card or link names the iPhone, iPad, Apple TV, Android or Android TV
+apps, or a server package, while none is publicly installable (Q5, A7). The help index leaves
+out those four topics (`HIDDEN_TOPICS` in `part-b.mjs`); `tests/mockups.test.mjs` fails a
+part B page or copy file that names one.
+
+## Part B components
+
+Anatomy, states, sizes, RTL, and accessible name and role. All use logical properties only.
+
+- **Download card** (`.card`, in a `ul.cards`): an icon ring, the system's name (`h3`), the
+  requirements line, version, date and size (a `dl`), the primary button (an `a` with the
+  file's real name in `download`), then two disclosures. The visitor's own system is the wide
+  `.card.mine` at the top, with a brass edge and a "For this computer" badge; the platform note
+  above says how it was guessed. States: rest, hover (edge to `site.accent.mark`), focus (part A's
+  ring), disclosure open. Sizes: one column under 768, two at 768, the wide card plus three
+  at 1280. Name: the `li` is labelled by its `h3`; the button's name is "Download for Mac", the
+  size read after it.
+- **Disclosure** (`details.disclose` / `summary`): "Other formats" and "Verify this
+  download". The chevron mirrors in RTL and turns a quarter when open. The verify panel holds
+  the digest (`.hash`, LTR, wraps anywhere) and the command (part A's code block, LTR).
+- **The need block** (`.need`): "What do I need?", the home computer and the three kinds of
+  screen, each with its icon and one line; a link to the install guides.
+- **Feature block** (`.feature`): an icon ring (48 px), an `h3`, two sentences, one link
+  "How … works" with the onward arrow. Six in a grid: one column, two at 768, three at 1280.
+- **Device frame** (`figure.device`): the frame, the screenshot (`img`, real alt text,
+  `loading="lazy"` except the hero's), and a `figcaption` with the screen's name and a line.
+  `role` stays `figure`; the window and browser bars are `aria-hidden` (the caption names the
+  screen).
+- **Step with a screenshot** (part A's step list): the step's number ring, title and text,
+  then a browser frame of the page that step shows.
+- **Help layouts:** the index is part A's filtered index (a search field labelled "Filter
+  topics", a live count, groups as `section`s labelled by their `h2`). A topic is a two-column
+  layout at 1280 (a contents `nav`, then the topic's text as an `article` ending in related
+  topics), one column below; app routes the site cannot link show as text, "In Maktaba:
+  **Search**".
+- **Social card** (`.card-canvas`, 1200 × 630): the both-script wordmark at the top, the
+  title in display face (68/80 Latin, 72/108 Arabic, at most three lines), the arch at the
+  inline end, and maktaba.tv with one line at the foot. It is an image: its text is repeated
+  in `og:title` and `og:description`.
+
+## Copy (story 60.02 part B)
+
+`../copy/home.*.md`, `../copy/download.*.md` and `../copy/front-door.*.md` (the Phase 1
+front door's lines, rewritten in the voice), each pair with the same keys; the mockups read
+them directly, so the renders show the text under review. Five tagline proposals per
+language are in `home.*.md` (`tagline.N` and its one-liner `tagline.N.says`), each written in
+its own language; the review sheet sets them side by side. Every claim is true of v0.3.131.
