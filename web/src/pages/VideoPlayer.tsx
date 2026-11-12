@@ -60,6 +60,10 @@ import { mediaError, reportPlaybackFailure, type PlaybackFailure } from "../lib/
 import { UpNext } from "../components/UpNext";
 import { ScrubPreview } from "../components/ScrubPreview";
 import { BackButton } from "../components/BackButton";
+import { formatDuration } from "../components/VideoViews";
+import { useMyParental, useMyTime } from "../lib/parental";
+import { timeRefusal, type TimeRefusal } from "../lib/parentalApi";
+import { TimeLeft, TimesUp, TimeWarning } from "../components/parental/TimeState";
 
 interface OpenSessionResponse {
   session_id: string;
@@ -171,6 +175,10 @@ export function VideoPlayer({
   const [session, setSession] = useState<OpenSessionResponse | null>(null);
   const [err, setErr] = useState<Failure | null>(null);
   const [playError, setPlayError] = useState<Failure | null>(null);
+  // Epic 57 story 57.15: the home said this account's time is over (403
+  // parental-time). Playback has stopped, with where it stopped; nothing asks the
+  // home again until the viewer does.
+  const [timeUp, setTimeUp] = useState<(TimeRefusal & { at: number }) | null>(null);
   // The last playback failure heard of: what the error screen says when the
   // stream cannot be recovered.
   const faultRef = useRef<PlaybackFault | null>(null);
@@ -245,6 +253,29 @@ export function VideoPlayer({
     setPlayError({ error: classifyPlayback(faultRef.current) });
   }, []);
 
+  // Epic 57 story 57.15: stop for the account's time. The stream is closed and the
+  // time's-up screen takes the player's place; the home is not asked again here.
+  const stopForTime = useCallback((over: TimeRefusal, position?: number) => {
+    const el = videoRef.current;
+    const at = position ?? el?.currentTime ?? 0;
+    el?.pause?.();
+    const id = sessionIdRef.current;
+    if (id) {
+      sessionIdRef.current = null;
+      void api.delete(`/api/stream/sessions/${encodeURIComponent(id)}`).catch(() => {});
+    }
+    setSession(null);
+    setTimeUp({ ...over, at: Number.isFinite(at) ? at : 0 });
+  }, []);
+  // The home's own answer about this account's time (a restricted account only),
+  // for the countdown and the warnings. When it says the time is over, stop.
+  const { restricted } = useMyParental();
+  const { time } = useMyTime(restricted && !timeUp);
+  useEffect(() => {
+    if (time && !time.allowed && sessionIdRef.current)
+      stopForTime({ reason: time.reason, nextAllowedAt: time.nextAllowedAt });
+  }, [time, stopForTime]);
+
   // Open a streaming session for this video.
   useEffect(() => {
     if (!videoId) return;
@@ -252,6 +283,7 @@ export function VideoPlayer({
     // A new video (or a retry) starts clean: no old error, no old stream.
     setErr(null);
     setPlayError(null);
+    setTimeUp(null);
     faultRef.current = null;
     setSession(null);
     // the open call's own id (the same action's): its playlist carries it as rid
@@ -287,7 +319,9 @@ export function VideoPlayer({
       })
       .catch((e) => {
         if (cancelled) return;
-        setErr(failure(e));
+        const over = timeRefusal(e);
+        if (over) setTimeUp({ ...over, at: startAt });
+        else setErr(failure(e));
       });
     return () => {
       cancelled = true;
@@ -335,8 +369,14 @@ export function VideoPlayer({
           position_sec: Math.floor(el.currentTime),
           ...(completed ? { completed: true } : {}),
         })
-        .catch(() => {});
+        .catch((e: unknown) => {
+          // the home counted this account's time out: stop here, and say so
+          const over = timeRefusal(e);
+          if (over) stopForTime(over);
+        });
     };
+    // While it plays the home hears of it every 5 s, well inside the 60 s a
+    // restricted account's stream is served for after its last post (story 57.14).
     const onTimeUpdate = () => {
       const now = Date.now();
       if (now - last < 5000) return;
@@ -344,6 +384,11 @@ export function VideoPlayer({
       beat();
     };
     const onPause = () => beat();
+    // Playing again after a pause longer than that: the post opens the stream again.
+    const onPlay = () => {
+      last = Date.now();
+      beat();
+    };
     // Completed only at the video's real end (the catalogue's length): a stream
     // that stopped short of it ends early. With no length known at all, the end
     // of playback is all there is to go by.
@@ -356,15 +401,17 @@ export function VideoPlayer({
     };
     el.addEventListener("timeupdate", onTimeUpdate);
     el.addEventListener("pause", onPause);
+    el.addEventListener("play", onPlay);
     el.addEventListener("ended", onEnded);
     el.addEventListener("loadedmetadata", onLoaded);
     return () => {
       el.removeEventListener("timeupdate", onTimeUpdate);
       el.removeEventListener("pause", onPause);
+      el.removeEventListener("play", onPlay);
       el.removeEventListener("ended", onEnded);
       el.removeEventListener("loadedmetadata", onLoaded);
     };
-  }, [session]);
+  }, [session, stopForTime]);
 
   // Attach the stream. Direct play: the file URL on the element. HLS: native
   // or hls.js (attachVod), starting at the ?t= offset or the resume point.
@@ -446,7 +493,10 @@ export function VideoPlayer({
           setSession({ ...s, rid });
         })
         .catch((e) => {
-          if (!cancelled) setErr(failure(e));
+          if (cancelled) return;
+          const over = timeRefusal(e);
+          if (over) stopForTime(over, position);
+          else setErr(failure(e));
         })
         .finally(() => {
           refreshingRef.current = false;
@@ -501,7 +551,7 @@ export function VideoPlayer({
       h.detach();
     };
     // speed is applied on attach only; the controls set it live.
-  }, [session, videoId, startAt, failure, report, playFailed]);
+  }, [session, videoId, startAt, failure, report, playFailed, stopForTime]);
 
   // A stream that stops arriving while it should play (a direct file whose
   // reads stall on the NAS, segments that never come) raises no error of its
@@ -692,6 +742,22 @@ export function VideoPlayer({
     );
   };
 
+  if (timeUp)
+    return (
+      <div className="mkt-player__failed" data-error-kind="parentalTime">
+        <TimesUp
+          reason={timeUp.reason}
+          nextAllowedAt={timeUp.nextAllowedAt}
+          savedAt={timeUp.at >= 1 ? formatDuration(timeUp.at) : undefined}
+          // the viewer's own tap (a parent may have given more time since)
+          onCheck={() => {
+            if (timeUp.at > 0) resumeRef.current = { at: timeUp.at, play: true };
+            setReload((x) => x + 1);
+          }}
+          action={backButton}
+        />
+      </div>
+    );
   if (err?.waiting)
     return (
       <div className="mkt-player__loading" role="status" data-testid="player-waiting">
@@ -761,6 +827,8 @@ export function VideoPlayer({
         </div>
       )}
       {playError && <div className="mkt-player__error">{failedView(playError)}</div>}
+      <TimeLeft time={time} />
+      <TimeWarning time={time} />
       <div
         className="mkt-player__stage"
         style={bare ? undefined : { ["--mkt-caption-scale" as string]: String(captionScale) }}

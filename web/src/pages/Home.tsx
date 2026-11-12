@@ -21,6 +21,7 @@ import { HomePlaceholder, Loading } from "../components/Placeholders";
 import { usePageData } from "../lib/usePageData";
 import { useFeature } from "../lib/capabilities";
 import { ContinueQueue } from "../components/ContinueQueue";
+import { HomeTime } from "../components/parental/TimeState";
 
 export function Home() {
   const { t } = useI18n();
@@ -64,6 +65,9 @@ export function Home() {
           onChange={reload}
         />
       )}
+
+      {/* Epic 57 story 57.15: a restricted account's time today, as the home says it */}
+      <HomeTime />
 
       {/* Epic 56: the queue last used, on any device */}
       <ContinueQueue />

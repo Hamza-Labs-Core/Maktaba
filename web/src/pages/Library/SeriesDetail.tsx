@@ -27,6 +27,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { api } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
+import { AgeTierControl } from "../../components/parental/AgeTierControl";
 import { TitleRow } from "../../help/HelpLink";
 import { seriesPictureUrl } from "./SeriesBrowser";
 import { errorText } from "../../lib/errorText";
@@ -301,6 +302,8 @@ export function SeriesDetail() {
                 {t("series.acceptAll")}
               </Button>
             )}
+            {/* Epic 57 story 57.01: a rating on the series reaches every episode */}
+            <AgeTierControl target={{ kind: "series", id: seriesId }} />
           </div>
         </div>
       </header>

@@ -53,6 +53,35 @@ After 5 wrong passwords in a row, an account is locked for 15 minutes. Click **U
 
 The same dialog shows the person's **Linked accounts**: the Maktaba Cloud account linked to them and whether it may only watch or also manage. **Unlink** ends their sign-ins through Maktaba Cloud at once (see [Linked accounts](/help/account#linked-accounts)).
 
+### Time limits {#time-limits}
+
+A **restricted account** is a child's account: an administrator, or a guardian the administrator names, limits what it may watch. [Time limits](/family) lists the restricted accounts you look after: an administrator sees all of them, a guardian sees their own children. Open one to set its **Time** rules. Anyone else finds the list empty, and Maktaba refuses them the rules.
+
+- **Days**: the days of the week the rule covers.
+- **Watching hours**: watching is allowed only between the two times. An end before the start runs past midnight.
+- **Daily limit**: the most minutes watched in one day. A day ends at 04:00, so a late evening counts as one day.
+- **Applies to**: the whole account, or one library.
+
+Every rule that covers a moment must allow it, so a second rule can only narrow the first. An account with no rules has no time limit. Your home keeps the clock, in its own time zone, and counts the time on every device together: the phone, the TV and the web. A device's own clock is never used.
+
+**Today** shows how long the account watched today and on the last days. **Give more time today** adds minutes for today only.
+
+When the time is over, the child's player stops and says when watching opens again. After you give more time, the child taps **Check again**.
+
+A restricted account is made in the Maktaba app on iPhone or iPad, under **Profile**, then **Family**.
+
+### Ratings the home detected {#detected-ratings}
+
+Most videos carry no age rating. Maktaba can work one out from a video's transcript, on your home's own language model. [Detected ratings](/parental/review) lists what nobody has decided yet:
+
+- **Not sure**: Maktaba found a rating but was not sure enough, so the video stays unrated.
+- **Not confirmed**: Maktaba was sure, and the rating applies, but no administrator has confirmed it.
+- **Not checked**: the video has no transcript, or is in a language Maktaba does not read.
+
+For each video the page shows what was heard and where in the video. An administrator picks a rating and clicks **Confirm** or **Save**; that rating then beats every other source. A guardian can read the list for the libraries their children can open, and cannot change it.
+
+A rating found this way never makes a video less strict than another rating says, and it does not look at the picture.
+
 ### Delete a user {#delete-a-user}
 
 Click **Delete**, then **Delete** again in the box. This cannot be undone.

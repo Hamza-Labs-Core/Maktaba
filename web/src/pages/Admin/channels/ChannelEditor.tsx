@@ -31,6 +31,7 @@ import { ArtSection, PendingArtSection, type PendingArt } from "./ArtSection";
 import { FillerSection, maxGapOf } from "./FillerSection";
 import { LiveSection } from "./LiveSection";
 import { PreferHost } from "./PreferHost";
+import { AgeTierControl } from "../../../components/parental/AgeTierControl";
 import { PreviewSection } from "./PreviewSection";
 import { RuleSection, ruleProblem } from "./RuleSection";
 import { ScheduleSection } from "./ScheduleSection";
@@ -310,6 +311,9 @@ export function ChannelEditor({
         label={t("channels.field.enabled")}
       />
       {isEdit && draft.slug && <PreferHost slug={draft.slug} />}
+      {/* Epic 57 stories 57.01 and 57.10: a channel with no rating is hidden from a
+          restricted account */}
+      {isEdit && draft.id && <AgeTierControl target={{ kind: "channel", id: draft.id }} />}
       {isEdit && <p className="mkt-muted">{t("channels.nextBoundaryNote")}</p>}
     </div>
   );

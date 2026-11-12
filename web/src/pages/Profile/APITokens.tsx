@@ -21,6 +21,7 @@ import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api } from "../../lib/api";
+import { useMyParental } from "../../lib/parental";
 import { useI18n } from "../../lib/i18n";
 import { copyText } from "../../lib/clipboard";
 import { TitleRow } from "../../help/HelpLink";
@@ -55,6 +56,7 @@ function loadTokens() {
 export function APITokens() {
   const { t, formatDate } = useI18n();
   const toast = useToast();
+  const { restricted } = useMyParental();
   const {
     data: tokens,
     err,
@@ -97,9 +99,15 @@ export function APITokens() {
         <TitleRow>
           <h1>{t("tokens.title")}</h1>
         </TitleRow>
-        <Button onClick={() => setCreateOpen(true)}>{t("tokens.create")}</Button>
+        {/* Epic 57: the home mints no token for a restricted account (403 restricted) */}
+        {!restricted && <Button onClick={() => setCreateOpen(true)}>{t("tokens.create")}</Button>}
       </header>
       <p className="mkt-muted">{t("tokens.desc")}</p>
+      {restricted && (
+        <p role="note" data-testid="tokens-restricted">
+          {t("parental.restricted")}
+        </p>
+      )}
 
       {error ? (
         <ErrorState
