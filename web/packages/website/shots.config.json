@@ -16,8 +16,8 @@
       "widths": [720, 1080, 1440]
     },
     "iphone": {
-      "artifact": "product-shots-iphone",
-      "job": "Player UI tests (iphone",
+      "artifact": ["product-shots-iphone", "product-shots-iphone-remote"],
+      "job": ["Player UI tests (iphone", "Remote UI tests"],
       "screens": ["home", "film", "player", "remote"],
       "crop": {
         "top": 0,
@@ -30,7 +30,7 @@
     "ipad": {
       "artifact": "product-shots-ipad",
       "job": "Player UI tests (ipad",
-      "screens": ["home", "film", "player", "remote"],
+      "screens": ["home", "film", "player"],
       "crop": {
         "top": 0,
         "right": 0,

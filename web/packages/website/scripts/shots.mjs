@@ -58,7 +58,7 @@ function findCaptures(app, src, { input, repo }) {
     ? walk(join(repo, src.repo)).filter((f) =>
         f.includes(`${join("src", "test", "screenshots", "demo")}/`)
       )
-    : walk(join(input, src.artifact));
+    : [src.artifact].flat().flatMap((a) => walk(join(input, a)));
   const found = new Map();
   for (const f of files) {
     const name = f.split("/").pop();
@@ -68,13 +68,17 @@ function findCaptures(app, src, { input, repo }) {
   return found;
 }
 
-/** Why `src`'s job in `run` does not count (null when it passed, or no run is known). */
+/** Why `src`'s jobs in `run` do not count (null when all passed, or no run is known). */
+// `artifact` and `job` may each be a list: an app whose screens come from more than one job
 function redJob(src, run) {
   if (!run?.jobs) return null;
-  const jobs = run.jobs.filter((j) => j.name.includes(src.job));
-  if (!jobs.length) return `no job named like "${src.job}" ran`;
-  const bad = jobs.find((j) => j.conclusion !== "success");
-  return bad ? `its job "${bad.name}" concluded ${bad.conclusion || bad.status}` : null;
+  for (const name of [src.job].flat()) {
+    const jobs = run.jobs.filter((j) => j.name.includes(name));
+    if (!jobs.length) return `no job named like "${name}" ran`;
+    const bad = jobs.find((j) => j.conclusion !== "success");
+    if (bad) return `its job "${bad.name}" concluded ${bad.conclusion || bad.status}`;
+  }
+  return null;
 }
 
 /** Encodes `image` at `width`, at `quality`, both formats. */
