@@ -104,6 +104,11 @@ describe("the built site (dist/)", () => {
     expect(fs.existsSync(path.join(DIST, "index.html")), "run `npm run build` first").toBe(true);
   });
 
+  it("the front door's headline is the chosen tagline (Q1, 2026-11-12), in both languages", () => {
+    expect(read("index.html")).toContain("<h1>Your own library, on every screen at home.</h1>");
+    expect(read("ar/index.html")).toContain("<h1>مكتبتكم، على كل شاشة في البيت.</h1>");
+  });
+
   it("T05: serves the log schema at its $id, byte for byte", () => {
     const src = fs.readFileSync(path.join(REPO, "shared/log/schema/line.schema.json"));
     expect(fs.readFileSync(path.join(DIST, "schema/log-line.json")).equals(src)).toBe(true);
