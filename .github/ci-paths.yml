@@ -777,6 +777,8 @@ apple_player_ui:
   - 'tools/apple/sim-settle.py'
   - 'tools/apple/export-shots.py'
   - '.github/workflows/_apple-apps.yml'
+  # its on-demand caller for the shots alone (60.09)
+  - '.github/workflows/product-shots.yml'
   # the demo library the product screenshots (PlayerDemoShots, the Mac's) are taken on (60.09)
   - 'tests/fixtures/demo-library/**'
 
