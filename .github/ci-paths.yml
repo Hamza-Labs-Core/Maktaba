@@ -58,6 +58,8 @@ _go: &go
 # the pipeline, and what its tests read outside it
 _pipeline: &pipeline
   - 'pipeline/**'
+  # how CI installs the pipeline's environment (every extra but torch's CUDA tree)
+  - 'tools/ci/pipeline-deps.sh'
   - 'shared/**'
   # the plugin SDK and Maktaba's first-party plugins ride in the pipeline's wheel
   - 'plugins/**'
@@ -534,6 +536,8 @@ e2e:
   - 'tests/e2e/**'
   - 'pyproject.toml'
   - '.github/workflows/_e2e.yml'
+  # how CI installs the pipeline's environment (every extra but torch's CUDA tree)
+  - 'tools/ci/pipeline-deps.sh'
 
 # the api's and streaming's tests with a real ffmpeg (tools/media-e2e.sh)
 media_e2e:
@@ -562,6 +566,8 @@ perf_ci:
   - 'pipeline/uv.lock'
   - 'pipeline/.python-version'
   - '.github/workflows/_perf-ci.yml'
+  # how CI installs the pipeline's environment (every extra but torch's CUDA tree)
+  - 'tools/ci/pipeline-deps.sh'
 
 # make build-go (api, streaming, the cloudlink), the relay binary and make build-web
 build_artifacts:

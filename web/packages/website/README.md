@@ -85,10 +85,12 @@ source it is built from, by hand, and monthly (security.txt's Expires). The step
 when that smoke fails. A first deploy creates the Worker with no routes first, since a version
 cannot be uploaded to a Worker that does not exist.
 
-It goes live only when the secret `CLOUDFLARE_API_TOKEN_WEBSITE` (the website's own token, with
-DNS Edit on `maktaba.tv`), the secret `CLOUDFLARE_ACCOUNT_ID` and the repository variable
-`WEBSITE_LIVE = true` are all set. Otherwise the job prints a notice naming what is missing and
-passes. See `deploy/cloudflare/README.md` for the token.
+It uses `CLOUDFLARE_API_TOKEN_WEBSITE` when set, else the shared `CLOUDFLARE_API_TOKEN` (with
+DNS Edit on `maktaba.tv`). It goes live only when the repository variable `WEBSITE_LIVE = true`
+is set, with a token and `CLOUDFLARE_ACCOUNT_ID`; otherwise it writes nothing, prints a notice
+naming what is missing and passes. The read-only token check runs on every run once a token and
+the account are set, and names any missing permission before go-live. See
+`deploy/cloudflare/README.md` for the token.
 
 **Rollback by hand:** Actions → Deploy maktaba.tv → Run workflow with `rollback: true`, and
 optionally `version` (an id from the run summary or `wrangler deployments list`). Without a
