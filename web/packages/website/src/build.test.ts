@@ -118,11 +118,23 @@ describe("the built site (dist/)", () => {
     expect(txt.match(/^Canonical: /gm)).toHaveLength(2);
   });
 
-  it("has the front door and the 404 page in both languages", () => {
+  it("has the home page (60.10) and the 404 page in both languages", () => {
     const en = read("index.html");
     expect(en).toContain('<html lang="en" dir="ltr">');
     expect(en).toContain('id="lang-switch" class="lang-switch" href="/ar/"');
     expect(read("ar/index.html")).toContain('<html lang="ar" dir="rtl">');
+    // the home page's marker (tools/cloudflare/smoke.mjs), the chosen tagline, part B's shell
+    expect(en).toContain('data-page="home"');
+    expect(en).toContain("Your own library, on every screen at home.");
+    expect(read("ar/index.html")).toContain('data-page="home"');
+    expect(read("ar/index.html")).toContain("مكتبتكم، على كل شاشة في البيت.");
+    for (const f of ["index.html", "ar/index.html"]) {
+      expect(read(f), f).toMatch(
+        /<link rel="stylesheet" href="\/assets\/part-b-[\w-]{10}\.css" \/>/
+      );
+      expect(read(f), f).toMatch(/<script src="\/assets\/home-[\w-]{10}\.js"><\/script>/);
+      expect(read(f), f).toContain('<use href="#mk-icon"/>');
+    }
     for (const f of ["404.html", "ar/404.html"]) expect(read(f), f).toContain('content="404"');
     expect(read("404.html")).toContain("This page isn’t here");
     expect(read("ar/404.html")).toContain("هذه الصفحة غير موجودة");

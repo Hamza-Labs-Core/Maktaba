@@ -8,7 +8,7 @@
 //      header and footer (shell.mjs's inShell, story 60.01 part A);
 //   2. the generated families (FAMILIES: /problems 60.06, /help 60.12, /download 60.11);
 //   3. the hand-made pages (src/pages/, each wrapped in the shell, scripts/shell.mjs): the
-//      front door, the install chooser (/install/, story 60.05) and the 404 page; and the
+//      home page (scripts/home.mjs, story 60.10, in part B's shell), the install chooser (/install/, story 60.05) and the 404 page; and the
 //      legal pages (story 60.07) from their copy and sources (scripts/legal.mjs: the privacy
 //      page reads privacy.CurrentPolicy() through `go run ./cmd/privacy-json`, so the build
 //      needs Go), with the copyright notice form only when WEBSITE_NOTICE_ENDPOINT and
@@ -38,7 +38,8 @@ import { stripTypeScriptTypes } from "node:module";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { inShell, page, shellAssets } from "./shell.mjs";
+import { bLinks, inShell, page, shellAssets } from "./shell.mjs";
+import { homeCardTitle, homePage, homeScriptFile } from "./home.mjs";
 import { completeHead, readHead } from "./head.mjs";
 import { cardPath, renderCard } from "./cards.mjs";
 import { writeIcons } from "./icons.mjs";
@@ -66,12 +67,12 @@ export const INSTALL_OUT = path.join(REPO, "web/dist-install");
  */
 export const FAMILIES = [PROBLEMS];
 
-/** The hand-made pages: their source in src/pages/ (or, for a legal page, its copy in
- * copy/legal/, scripts/legal.mjs), their English path (null: no address of its own), and the
- * file each becomes. */
+/** The hand-made pages: their source in src/pages/ (or, for the home page, scripts/home.mjs
+ * from its copy and screenshots; for a legal page, its copy in copy/legal/, scripts/legal.mjs),
+ * their English path (null: no address of its own), and the file each becomes. */
 export const PAGES = [
-  { src: "index.html", lang: "en", path: "/", out: "index.html" },
-  { src: "ar/index.html", lang: "ar", path: "/", out: "ar/index.html" },
+  { home: true, lang: "en", path: "/", out: "index.html" },
+  { home: true, lang: "ar", path: "/", out: "ar/index.html" },
   { src: "404.html", lang: "en", path: null, out: "404.html" },
   { src: "ar/404.html", lang: "ar", path: null, out: "ar/404.html" },
   { src: "install/index.html", lang: "en", path: "/install/", out: "install/index.html" },
@@ -342,7 +343,32 @@ export async function build({
     log(`the copyright notice form posts to ${notice.endpoint}`);
   }
   const legal = legalPages({ sources: readSources(), notice, noticeScript });
+  // the home page (story 60.10) is part B's: its shell links Download and Help once their pages
+  // are built (bLinks), and its one script runs in the <head> (scripts/home.mjs)
+  const links = bLinks(resolves);
+  const homeScript = homeScriptFile();
+  write(homeScript.file, homeScript.js);
   for (const p of PAGES) {
+    if (p.home) {
+      const h = homePage(p.lang, { links, resolves });
+      write(
+        p.out,
+        page({
+          lang: p.lang,
+          path: p.path,
+          title: h.title,
+          description: h.description,
+          social: h.social,
+          body: h.body,
+          meta: h.meta,
+          mainAttrs: h.mainAttrs,
+          variant: "b",
+          links,
+          headScripts: [`/${homeScript.file}`],
+        })
+      );
+      continue;
+    }
     const src = p.legal
       ? legal.find((l) => l.name === p.legal && l.lang === p.lang)
       : parsePage(fs.readFileSync(path.join(PKG, "src/pages", p.src), "utf8"), p.src);
@@ -383,7 +409,15 @@ export async function build({
       throw new Error(`${p.file}: <html lang="${head.lang}">, not ${p.lang}`);
     const done = completeHead(html, { ...p, ...head });
     if (done !== html) fs.writeFileSync(file, done);
-    write(cardPath(p.lang, p.path).slice(1), await renderCard({ lang: p.lang, title: head.title }));
+    write(
+      cardPath(p.lang, p.path).slice(1),
+      await renderCard({
+        lang: p.lang,
+        // the home page's card is its tagline, as part B's social-home card
+        title: p.path === "/" ? homeCardTitle(p.lang) : (head.social ?? head.title),
+        path: p.path,
+      })
+    );
   }
   write("sitemap.xml", sitemapXml(pages.map((p) => p.path)));
   write("robots.txt", ROBOTS);

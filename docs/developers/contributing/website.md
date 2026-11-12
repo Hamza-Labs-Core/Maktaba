@@ -169,6 +169,17 @@ The widths per app and the crop are in `shots.config.json`: the design (60.01) c
 there. To see the web captures on your machine: `pnpm -C web install`, then `npm run shots:web`
 (writes `shots-capture/web/`). Apple's are never taken on a local Mac.
 
+**Placing a screenshot on a page:** the home page names the capture each frame shows in
+`SHOTS` (`scripts/home.mjs`), by its manifest key (`appletv-home-{lang}`: the page's language),
+and the width each frame draws at in `SIZES`, the `<img sizes>` the browser picks a file by.
+`picture()` writes the `<picture>` (AVIF, then WebP, every width, the width and height from the
+manifest), lazy except the hero's, which the head preloads. A new frame needs its alt text in
+both copy files. Leave out a capture the issue tracker says is wrong in one language (a Mac
+window that does not mirror, Eastern Arabic digits): `scripts/home.test.mjs` names the ones
+the page may not show. Lighthouse fails the page on a "properly size images" or "next-gen
+formats" finding (`lighthouserc.json`), so a `sizes` that asks for a file much larger than the
+frame fails the pull request.
+
 ## The nightly sweep
 
 `website-nightly.yml` runs every night on `main` (and by hand): Lighthouse on every page in both

@@ -1,0 +1,66 @@
+/*
+ * What only the built site's part B pages need, after design/site.css (story 60.10). The
+ * site's CSP refuses style attributes, so what the mockups set inline is a class here.
+ * Logical properties only.
+ */
+
+/* the wordmark's sizes (design/mockups/shell.mjs sets --wm inline) */
+.wordmark.wm-24 {
+  --wm: 24px;
+}
+
+.wordmark.wm-28 {
+  --wm: 28px;
+}
+
+.wordmark.wm-32 {
+  --wm: 32px;
+}
+
+/* a screenshot is a <picture> (AVIF, then WebP): a block, so the frame holds it exactly */
+.device picture {
+  display: block;
+}
+
+/* the Mac app's screenshot carries its own window and title bar: the frame adds no bar */
+.device[data-kind="window"][data-chrome="own"] .body {
+  background: transparent;
+  border: 0;
+  border-radius: 12px;
+}
+
+/* the privacy band's link, below the promises */
+.stays .more {
+  margin-block-start: var(--spacing-8);
+}
+
+/* the Download button's label for the visitor's system: src/home.ts names the system on <html>
+   before the first paint (data-platform); without it, or on a system with no label of its
+   own, the button reads "Download Maktaba" */
+.for-platform [data-for] {
+  display: none;
+}
+
+:root[data-platform="mac"] .for-platform [data-for="mac"],
+:root[data-platform="windows"] .for-platform [data-for="windows"] {
+  display: inline;
+}
+
+:root[data-platform="mac"] .for-platform [data-for="any"],
+:root[data-platform="windows"] .for-platform [data-for="any"] {
+  display: none;
+}
+
+.for-platform [data-for="any"] {
+  display: inline;
+}
+
+/* 1.4.12: with a reader's text spacing the hero grows, and the arch behind the TV must not make
+   it clip: the stage clips the arch, the hero clips nothing */
+.hero {
+  overflow: visible;
+}
+
+.hero .stage {
+  overflow: clip;
+}
