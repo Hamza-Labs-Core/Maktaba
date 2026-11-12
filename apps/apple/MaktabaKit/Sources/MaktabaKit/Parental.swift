@@ -1009,33 +1009,40 @@ public struct ChannelAccess: Decodable, Equatable, Sendable {
     public let allowed: Bool
     /// When the answer may change (nil: nothing in the next 12 hours changes it).
     public let until: Date?
+    /// The home's time for this answer (nil: a home older than the field).
+    public let now: Date?
 
-    public init(restricted: Bool, allowed: Bool, until: Date? = nil) {
+    public init(restricted: Bool, allowed: Bool, until: Date? = nil, now: Date? = nil) {
         self.restricted = restricted
         self.allowed = allowed
         self.until = until
+        self.now = now
     }
 
-    enum CodingKeys: String, CodingKey { case restricted, allowed, until }
+    enum CodingKeys: String, CodingKey { case restricted, allowed, until, now }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         restricted = c.lenient(.restricted) ?? false
         allowed = c.lenient(.allowed) ?? true
         until = c.lenient(.until)
+        now = c.lenient(.now)
     }
 
-    /// How long to wait before asking again: until `until` (at least 5 s, at most 5 minutes,
-    /// so a guardian's change shows without the programme changing).
+    /// How long to wait before asking again, from the moment the answer came: until `until`
+    /// (at least 5 s, at most 5 minutes, so a guardian's change shows without the programme
+    /// changing). The caller waits it on a monotonic clock (`Task.sleep(for:)`).
     ///
-    /// `until` is the home's time and `now` this device's: the answer carries no clock of
-    /// the home's to measure against, so a device clock that is off waits too little (never
-    /// under 5 s) or too long (never over 5 minutes). What the device shows meanwhile is
-    /// still the home's: its streaming refuses the programme itself, and a player shows the
-    /// slate on that refusal (`programmeRefused`) without waiting for this question.
-    public func askAgain(after now: Date = .now) -> TimeInterval {
+    /// `until` is the home's time. With the home's `now` beside it the wait is `until` minus
+    /// `now`, both the home's, so this device's clock (`device`) is not read and may be as
+    /// wrong as it likes. An older home sends no `now`: the wait is then measured against
+    /// this device's clock, and one that is off waits too little (never under 5 s) or too
+    /// long (never over 5 minutes). What the device shows meanwhile is still the home's: its
+    /// streaming refuses the programme itself, and a player shows the slate on that refusal
+    /// (`programmeRefused`) without waiting for this question.
+    public func askAgain(after device: Date = .now) -> TimeInterval {
         guard let until else { return 300 }
-        return min(300, max(5, until.timeIntervalSince(now) + 1))
+        return min(300, max(5, until.timeIntervalSince(now ?? device) + 1))
     }
 
     /// The home refused the channel because the programme on now is above the limit (403

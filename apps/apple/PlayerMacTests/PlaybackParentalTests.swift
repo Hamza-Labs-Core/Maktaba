@@ -122,25 +122,34 @@ import MaktabaKit
         #expect(p.parentalStop == nil && p.player == nil)
     }
 
-    /// The time's-up screen's "saved at" is the place the home holds: the last post it took
-    /// (the home stores nothing from the post it refuses), else where the stream opened.
-    /// The video itself goes on, when time is given, from where the picture stopped.
+    /// The time's-up screen's "saved at" is the place the home holds: the position of the
+    /// post it refused because the time is over (the home stores it before it answers), else
+    /// the last post it took, else where the stream opened. The video itself goes on, when
+    /// time is given, from where the picture stopped.
     @Test func aStopForTimeSaysThePlaceTheHomeHolds() async {
         let p = await playback(limited: true)
         p.adopt(session: "s1", openedFrom: 30)
         p.progressTaken(session: "another-session", at: 999)
         #expect(p.savedPosition == nil, "another stream's post says nothing of this one")
         p.progressTaken(session: "s1", at: 100)
-        p.progressRefused(Self.timeOver, session: "s1", at: 110)
-        #expect(p.parentalStop == .time(TimeUp(reason: "limit_reached", nextAllowedAt: nil), position: 110), "it resumes where it stopped")
-        #expect(p.savedPosition == 100, "and says the place the home has")
+        p.progressRefused(Self.timeOver, session: "s1", at: 110.6, sent: 110)
+        #expect(p.parentalStop == .time(TimeUp(reason: "limit_reached", nextAllowedAt: nil), position: 110.6), "it resumes where it stopped")
+        #expect(p.savedPosition == 110, "and says the place the home has: the position the refused post carried")
         p.stop()
         #expect(p.savedPosition == nil)
 
-        // refused before any post was taken: the home has where the stream opened
+        // outside the watching hours: the home stores that post's position too
+        let slot = await playback(limited: true)
+        slot.adopt(session: "s3", openedFrom: 30)
+        slot.progressRefused(APIError.status(403, #"{"type":"https://maktaba.tv/problems/parental-time","status":403,"code":"parental_time","reason":"outside_slot"}"#), session: "s3", at: 38)
+        #expect(slot.savedPosition == 38)
+        slot.stop()
+
+        // a refusal for time that came some other way (a stream that would not open) says
+        // nothing was stored: the home has the last post it took, else where the stream opened
         let q = await playback(limited: true)
         q.adopt(session: "s2", openedFrom: 30)
-        q.progressRefused(Self.timeOver, session: "s2", at: 38)
+        q.stopForParental(.time(TimeUp(reason: "limit_reached", nextAllowedAt: nil), position: 38))
         #expect(q.savedPosition == 30)
         q.stop()
     }
