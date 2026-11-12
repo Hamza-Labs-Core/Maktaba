@@ -128,7 +128,7 @@ builds and checks the site as a pull request does (with the pages the latest nig
 failed), refuses while that sweep is red and unreadable, then runs these steps
 (`tools/cloudflare/website-deploy.mjs`):
 
-1. the token check (`token-check.mjs --pieces workers,dns`);
+1. the token check (`token-check.mjs --pieces workers`);
 2. record the version serving now (`wrangler deployments status`): a rollback returns to it;
 3. upload the new version, not yet live (`wrangler versions upload`), and smoke its preview URL;
 4. promote it at 100% (`wrangler versions deploy`), then apply the custom domains
@@ -142,8 +142,8 @@ detached again.
 ## Going live
 
 The deploy's token is `CLOUDFLARE_API_TOKEN_WEBSITE` when that secret is set, and otherwise the
-shared `CLOUDFLARE_API_TOKEN` that also deploys this portal (it needs DNS Edit on `maktaba.tv`,
-because custom domains write their records). The repository variable `WEBSITE_LIVE` set to `true`
+shared `CLOUDFLARE_API_TOKEN` that also deploys this portal (it needs no DNS Edit on `maktaba.tv`:
+Cloudflare creates the custom domains' records itself). The repository variable `WEBSITE_LIVE` set to `true`
 is the only go-live switch: without it, or without a token or `CLOUDFLARE_ACCOUNT_ID`, nothing is
 written and the job prints a notice naming what is missing and passes. The token check only
 reads, so it runs on every run once a token and the account are set, and names any missing

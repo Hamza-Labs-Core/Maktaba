@@ -83,7 +83,9 @@ def test_nothing_that_writes_runs_without_the_go_live_variable() -> None:
 
 def test_the_token_check_is_read_only_and_does_not_fail_the_run_before_go_live() -> None:
     token = next(s for s in steps() if s.get("id") == "token")
-    assert token["run"].count("token-check.mjs --pieces workers,dns --zone maktaba.tv") == 1
+    assert token["run"].count("token-check.mjs --pieces workers --zone maktaba.tv") == 1
+    # custom domains need no DNS Edit (Cloudflare creates their records), so no dns piece
+    assert "dns" not in token["run"]
     assert "wrangler" not in token["run"] and "website-deploy.mjs" not in token["run"]
     assert token["continue-on-error"] == "${{ steps.gate.outputs.ok != 'true' }}"
     # the check itself only reads: every Cloudflare call in it is a GET

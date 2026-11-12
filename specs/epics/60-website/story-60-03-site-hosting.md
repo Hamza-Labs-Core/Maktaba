@@ -116,7 +116,7 @@ deploy):
       variable `WEBSITE_LIVE = true`, the only go-live switch. Without all three,
       `::notice title=maktaba.tv not deployed::…` names what is missing, nothing is written,
       and the job passes.
-   2. `node tools/cloudflare/token-check.mjs --pieces workers,dns --zone maktaba.tv`: read-only,
+   2. `node tools/cloudflare/token-check.mjs --pieces workers --zone maktaba.tv`: read-only,
       so it runs once a token and the account are set, live or not, naming any missing
       permission in an annotation and the summary; it fails the run only once live.
    3. Download `website-site` (the same three-attempt download as devportal's).
@@ -155,11 +155,11 @@ www, http and `app.` checks). `website` holds them all:
 
 **Token.** `deploy/cloudflare/README.md`'s token table gains the website row:
 - account: Workers Scripts Edit;
-- the `maktaba.tv` zone: Workers Routes Edit, Zone Read, and **DNS Edit**, because custom domains
-  write their records.
+- the `maktaba.tv` zone: Workers Routes Edit and Zone Read.
 
-`token-check.mjs` learns the `dns` piece, `{ zone: ["DNS Write", "Zone Read"] }`; today DNS
-Write is only inside the `tunnel` piece. The owner grants it (A2).
+No DNS Edit: Cloudflare creates a custom domain's DNS record and certificate itself, as it does
+for maktaba.dev's custom domains with the same shared token. `token-check.mjs` checks the
+`workers` piece only; DNS Write stays inside the `tunnel` piece.
 
 ## Acceptance criteria
 
