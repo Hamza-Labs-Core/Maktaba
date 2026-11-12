@@ -5,6 +5,7 @@
 TestDeviceSignalRidesTheAccessToken
 TestEveryRouteHasParentalSurface
 TestP57CapabilitiesParental
+TestP57ChannelAnswersCarryNowPG
 TestP57ExistingHome
 TestP57FilterAutoCollection
 TestP57FilterByID
@@ -44,6 +45,7 @@ TestP57VideoTierIsQueuedWithTheChange
 TestPGTimeKeptReachesStreaming
 TestPGTimeLimitRefusesStreams
 TestPGTimeRequestApprovedAllowsTheStream
+TestPGTimeStopStoresThePosition
 TestPGTimeWiringFailsClosed
 TestParentalBypass
 TestParentalBypassCatchesAMissingFilter
