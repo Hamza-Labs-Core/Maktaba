@@ -64,7 +64,20 @@ final class PlayerDemoShots: PlayerUITestCase {
             XCTAssertTrue(waitUntil(timeout: 15) { (Int(self.state["position"] ?? "") ?? 0) >= start + 2 }, "it plays on: \(state)")
             // the controls hide 4 s after the last touch (`WatchView.hideAfter`)
             XCTAssertTrue(app.buttons["player.playPause"].waitForNonExistence(timeout: 15), "the controls gone")
-            demoShot("player")
+            // the line drawn on the picture: the test stream starts its timestamps again every
+            // 4 s (two segments in turn), and the player can drop the line there or, on the iPad,
+            // draw it under the picture, so the shot waits for its white letters inside the
+            // picture (on the iPad, the 16:9 frame in the surface; the iPhone's is the screen)
+            let frame = surface.frame
+            let picture = isPad ? CGRect(x: frame.minX, y: frame.midY - frame.width * 9 / 32, width: frame.width, height: frame.width * 9 / 16) : nil
+            var shot = XCUIScreen.main.screenshot()
+            let end = Date().addingTimeInterval(30)
+            while brightPixels(shot, in: picture) < 500, Date() < end {
+                usleep(500_000)
+                shot = XCUIScreen.main.screenshot()
+            }
+            XCTAssertGreaterThanOrEqual(brightPixels(shot, in: picture), 500, "the subtitle line on the picture")
+            demoShot("player", shot)
         }
     }
 
@@ -101,9 +114,31 @@ final class PlayerDemoShots: PlayerUITestCase {
         waitUntilHomeIsQuiet(2, timeout: 30)
     }
 
-    /// The screen as an attachment named `shot-<device>-<screen>-<language>`, kept always.
-    private func demoShot(_ screen: String) {
-        let shot = XCUIScreen.main.screenshot()
+    /// The near-white pixels (a subtitle line's letters) in `shot`, inside `rect` (in the
+    /// app's points, upright) or in all of it.
+    private func brightPixels(_ shot: XCUIScreenshot, in rect: CGRect? = nil) -> Int {
+        guard let cg = shot.image.cgImage else { return 0 }
+        var area = CGRect(x: 0, y: 0, width: cg.width, height: cg.height)
+        if let rect {
+            let k = CGFloat(cg.width) / app.frame.width
+            area = CGRect(x: rect.minX * k, y: rect.minY * k, width: rect.width * k, height: rect.height * k).integral.intersection(area)
+        }
+        guard let crop = cg.cropping(to: area) else { return 0 }
+        let (w, h) = (crop.width, crop.height)
+        var gray = [UInt8](repeating: 0, count: w * h)
+        let drawn = gray.withUnsafeMutableBytes { buffer -> Bool in
+            guard let ctx = CGContext(data: buffer.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w,
+                                      space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return false }
+            ctx.draw(crop, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        return drawn ? gray.reduce(0) { $1 > 245 ? $0 + 1 : $0 } : 0
+    }
+
+    /// The screen (`shot`, else taken now) as an attachment named
+    /// `shot-<device>-<screen>-<language>`, kept always.
+    private func demoShot(_ screen: String, _ taken: XCUIScreenshot? = nil) {
+        let shot = taken ?? XCUIScreen.main.screenshot()
         guard XCUIDevice.shared.orientation == .landscapeLeft else { return attach(XCTAttachment(screenshot: shot), screen) }
         // in landscape the screen's picture comes as the panel's (upright, the content's top at
         // its right edge): turned a quarter to the left, as the screen is seen
