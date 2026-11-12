@@ -53,6 +53,13 @@ class SignedInAppTest {
     private val paths: MutableList<String> = Collections.synchronizedList(mutableListOf())
     private val features = MutableStateFlow(Capabilities.AllOn)
 
+    /**
+     * Every call the signed-in app sends, counted ([HomeCalls.ofTheWholeApp]): `waitForIdle()`
+     * returns only once each has been answered and what the answer started has run, so a count
+     * of what the home was asked, read after it, cannot still be moving.
+     */
+    private val calls = HomeCalls.ofTheWholeApp()
+
     private class Tokens(var a: String?, var r: String?) : TokenStore {
         override val access get() = a
         override val refresh get() = r
@@ -81,14 +88,20 @@ class SignedInAppTest {
             }
         }
         server.start()
+        compose.registerIdlingResource(calls.idling)
     }
 
     @After
     fun stop() = server.close()
 
+    private fun client() = ApiClient(server.url("/"), Tokens(token, "r1"), calls.http)
+
+    @After
+    fun unregister() = compose.unregisterIdlingResource(calls.idling)
+
     private fun signedIn() {
         val app = ApplicationProvider.getApplicationContext<MaktabaTVApp>()
-        val client = ApiClient(server.url("/"), Tokens(token, "r1"))
+        val client = client()
         compose.setContent {
             MaktabaTvTheme { SignedInApp(app, User(id = "u1", username = "layla"), client, features) }
         }
@@ -136,6 +149,7 @@ class SignedInAppTest {
         val started = requireNotNull(shadowOf(ApplicationProvider.getApplicationContext<Application>()).nextStartedActivity)
         assertEquals(Intent.ACTION_VIEW, started.action)
         assertEquals(server.url("/settings/components").toString(), started.dataString)
+        compose.waitForIdle()
         assertFalse("nothing asks for channels while Live TV is off", "/api/channels/now" in paths)
     }
 
@@ -152,42 +166,89 @@ class SignedInAppTest {
         compose.onNodeWithTag("feature-off-${Feature.LIVE_TV}").assertExists()
     }
 
-    /**
-     * Epic 57 story 57.05: a guardian changed the sign-in's limit while the TV showed another
-     * app. Back in the app, the limit's version has moved: Home reads again (what it showed was
-     * read under the limit before) and the queue's window and the pictures go.
-     */
-    @Test
-    fun aChangedParentalLimitReadsHomeAgainAndForgetsTheQueue() {
-        var version = 1
+    /** The home answers `GET /api/me/parental` with a 13+ limit at [version], and records the read. */
+    private fun aLimitedSignIn(version: java.util.concurrent.atomic.AtomicInteger) {
         val inner = server.dispatcher
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse =
                 if (request.url.encodedPath == "/api/me/parental") {
                     paths += request.url.encodedPath
-                    json(200, """{"restricted":true,"max_tier":13,"allow_only":false,"version":$version}""")
+                    json(200, """{"restricted":true,"max_tier":13,"allow_only":false,"version":${version.get()}}""")
                 } else {
                     inner.dispatch(request)
                 }
         }
-        fun homeReads() = synchronized(paths) { paths.count { it == "/api/home" } }
-        fun limitReads() = synchronized(paths) { paths.count { it == "/api/me/parental" } }
+    }
+
+    private fun homeReads() = synchronized(paths) { paths.count { it == "/api/home" } }
+    private fun limitReads() = synchronized(paths) { paths.count { it == "/api/me/parental" } }
+
+    /** The TV goes behind another app and comes back. */
+    private fun leaveAndComeBack() {
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.STARTED)
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+    }
+
+    /**
+     * Epic 57 story 57.05: a guardian changed the sign-in's limit while the TV showed another
+     * app. Back in the app, the limit's version has moved: Home reads again (what it showed was
+     * read under the limit before) and the queue's window and the pictures go.
+     *
+     * Each count is read once the home's answers have all landed ([calls]). The first answer of
+     * a limited sign-in this TV has no mark for is itself a change (what was kept before is not
+     * trusted), so Home may read twice at the start: that second read has landed too before the
+     * count is taken.
+     */
+    @Test
+    fun aChangedParentalLimitReadsHomeAgainAndForgetsTheQueue() {
+        val version = java.util.concurrent.atomic.AtomicInteger(1)
+        aLimitedSignIn(version)
         signedIn()
         compose.waitUntil(STALL_MS) { compose.waitForIdle(); limitReads() >= 1 && homeReads() >= 1 }
         compose.waitForIdle()
         // the same limit when the TV comes back: nothing reads again
         val settled = homeReads()
-        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.STARTED)
-        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
-        compose.waitUntil(STALL_MS) { compose.waitForIdle(); limitReads() >= 2 }
+        val askedFirst = limitReads()
+        leaveAndComeBack()
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); limitReads() > askedFirst }
         compose.waitForIdle()
         assertEquals("an unchanged limit reloads nothing", settled, homeReads())
         // the guardian lowers it; the TV comes back to the app
-        version = 2
+        version.set(2)
         val asked = limitReads()
-        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.STARTED)
-        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+        leaveAndComeBack()
         compose.waitUntil(STALL_MS) { compose.waitForIdle(); limitReads() > asked && homeReads() > settled }
+        compose.waitForIdle()
+        assertEquals("one change of the limit reads Home again once", settled + 1, homeReads())
+        // and coming back once more under that limit reads nothing
+        val askedAfter = limitReads()
+        leaveAndComeBack()
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); limitReads() > askedAfter }
+        compose.waitForIdle()
+        assertEquals("the changed limit, read again, reloads nothing", settled + 1, homeReads())
+    }
+
+    /**
+     * A sign-in whose limit this TV remembers from the launch before, and it still holds: the
+     * first answer of this launch is no change, and Home is read once.
+     */
+    @Test
+    fun aRememberedLimitThatStillHoldsReadsHomeOnce() {
+        val version = java.util.concurrent.atomic.AtomicInteger(1)
+        aLimitedSignIn(version)
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        val mark = com.hamzalabs.maktaba.core.parental.KeptLimit.InFile.of(context.filesDir, server.url("/"), "u1")
+        kotlinx.coroutines.runBlocking { com.hamzalabs.maktaba.core.parental.ParentalState(client(), mark).refresh() }
+        assertTrue("the launch before left its mark", mark.read()!!.limited)
+        val asked = limitReads()
+        signedIn()
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); limitReads() > asked && homeReads() >= 1 }
+        compose.waitForIdle()
+        assertEquals("the first answer is the remembered limit: nothing reads again", 1, homeReads())
+        leaveAndComeBack()
+        compose.waitUntil(STALL_MS) { compose.waitForIdle(); limitReads() > asked + 1 }
+        compose.waitForIdle()
+        assertEquals(1, homeReads())
     }
 
     @Test
@@ -226,7 +287,7 @@ class SignedInAppTest {
             }
         }
         val app = ApplicationProvider.getApplicationContext<MaktabaTVApp>()
-        val client = ApiClient(server.url("/"), Tokens(token, "r1"))
+        val client = client()
         val parental = com.hamzalabs.maktaba.core.parental.ParentalState(client)
         kotlinx.coroutines.runBlocking { parental.refresh() }
         compose.setContent {

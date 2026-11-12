@@ -16,6 +16,7 @@ import com.hamzalabs.maktaba.desktop.InPlayer
 import com.hamzalabs.maktaba.desktop.Lang
 import com.hamzalabs.maktaba.desktop.STALL_MS
 import com.hamzalabs.maktaba.desktop.TestHome
+import com.hamzalabs.maktaba.desktop.settle
 import com.hamzalabs.maktaba.desktop.Texts
 import com.hamzalabs.maktaba.desktop.home.HomeScreen
 import com.hamzalabs.maktaba.desktop.video.VideoPage
@@ -66,7 +67,7 @@ class ParentalPagesTest {
         runBlocking { home.parental.refresh() }
         runComposeUiTest {
             setContent { InPlayer(home) { Box(Modifier.size(1200.dp, 900.dp)) { HomeScreen() } } }
-            waitForIdle()
+            settle(fake)
             assertEquals(0, onAllNodes(hasTestTag("parental-home-time")).fetchSemanticsNodes().size)
             assertEquals("the home is not asked about time", 0, fake.asked("GET /api/me/parental/time").size)
         }
@@ -148,7 +149,7 @@ class ParentalPagesTest {
             waitUntil(timeoutMillis = STALL_MS) { onAllNodes(hasTestTag("parental-blocked")).fetchSemanticsNodes().isNotEmpty() }
             val before = fake.asked("GET /api/videos/v1").size
             focused.value = false
-            waitForIdle()
+            settle(fake)
             assertEquals("leaving reads nothing", before, fake.asked("GET /api/videos/v1").size)
             fake.answer("GET /api/videos/v1", """{"id":"v1","title":"Fiqh 7","duration_sec":3000}""")
             focused.value = true

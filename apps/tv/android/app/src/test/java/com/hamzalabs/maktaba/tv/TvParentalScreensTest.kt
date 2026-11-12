@@ -79,31 +79,24 @@ class TvParentalScreensTest {
             }
         }
         server.start()
-        compose.registerIdlingResource(idling)
+        compose.registerIdlingResource(calls.idling)
         routes["/api/me/parental/guardians"] = { json("""{"guardians":[{"id":"g1","username":"huda"}]}""") }
     }
 
     @After
     fun stop() = server.close()
 
-    /** The client's calls, on a dispatcher of their own so they can be counted ([idling]). */
-    private val calls = okhttp3.Dispatcher()
-
     /**
-     * Idle when no call to the home is queued or running. OkHttp counts a call as running until
-     * its callback returns, and the client resumes its caller inside that callback, so once this
-     * is idle the screen's next step is already queued, and `waitForIdle()` runs it. A test that
-     * moves the clock for a screen's own wait (the 15 seconds between two reads of a request)
-     * settles first: the wait has then begun, and the clock moves it. A clock moved while the
-     * answer before it is still on its way moves nothing.
+     * The client's calls, counted ([HomeCalls]). A test that moves the clock for a screen's own
+     * wait (the 15 seconds between two reads of a request) settles first: the wait has then
+     * begun, and the clock moves it. A clock moved while the answer before it is still on its
+     * way moves nothing.
      */
-    private val idling = object : androidx.compose.ui.test.IdlingResource {
-        override val isIdleNow: Boolean get() = calls.runningCallsCount() == 0 && calls.queuedCallsCount() == 0
-    }
+    private val calls = HomeCalls()
 
     private fun client() = ApiClient(
         server.url("/"), MemoryTokens(jwt(System.currentTimeMillis() / 1000 + 86_400), "r"),
-        ApiClient.defaultHttp.newBuilder().dispatcher(calls).build(),
+        calls.http,
     )
 
     private fun show(content: @Composable () -> Unit) {

@@ -31,6 +31,7 @@ import com.hamzalabs.maktaba.core.parental.PinState
 import com.hamzalabs.maktaba.core.parental.PinUnlock
 import com.hamzalabs.maktaba.core.parental.ask
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -510,6 +511,101 @@ class ParentalApiTest {
         state.refresh()
         assertEquals(3, state.epoch.value)
         assertEquals(9, state.mine.value.maxTier)
+    }
+
+    /**
+     * Two reads on their way at once (the app came back while the first was still out): the
+     * answer to the earlier read lands last and is older than what is known. It is left: the
+     * limit stays the newer one and the kept things were dropped once.
+     */
+    @Test
+    fun anAnswerToAnEarlierReadNeverReplacesANewerOne() = runBlocking {
+        val firstArrived = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val reads = java.util.concurrent.atomic.AtomicInteger()
+        routes["GET /api/me/parental"] = {
+            if (reads.incrementAndGet() == 1) {
+                firstArrived.countDown()
+                release.await()
+                json(200, limit(3))
+            } else {
+                json(200, limit(4, tier = 9))
+            }
+        }
+        val kept = Remembered()
+        var dropped = 0
+        val state = ParentalState(client(), kept).also { it.onChange = { dropped++ } }
+        try {
+            val early = launch { state.refresh() }
+            kotlinx.coroutines.yield()
+            assertTrue("the first read reached the home", firstArrived.await(60, java.util.concurrent.TimeUnit.SECONDS))
+            state.refresh()
+            assertEquals(4L, state.mine.value.version)
+            assertEquals(1, state.epoch.value)
+            release.countDown()
+            early.join()
+            assertEquals("the older answer is left", 4L, state.mine.value.version)
+            assertEquals(9, state.mine.value.maxTier)
+            assertEquals("two reads on their way: one reload", 1, state.epoch.value)
+            assertEquals(1, dropped)
+            assertTrue("the mark is the newer limit's", kept.mark!!.signature.endsWith("|4"))
+        } finally {
+            release.countDown()
+        }
+    }
+
+    /**
+     * The app leaves the front while the answer is being taken (the read is cancelled while the
+     * kept things go): the drop still ends, the screens still read again, and the read after
+     * finds nothing more to do. The mark is written last, so a drop that never ended is done
+     * again at the next launch.
+     */
+    @Test
+    fun aReadCancelledWhileTheKeptThingsGoStillDropsThemAndMovesTheEpoch() = runBlocking {
+        routes["GET /api/me/parental"] = { json(200, limit(3)) }
+        val kept = Remembered()
+        val dropping = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val goOn = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var dropped = 0
+        var markWhileDropping: com.hamzalabs.maktaba.core.parental.KeptLimit.Mark? = null
+        val state = ParentalState(client(), kept)
+        state.onChange = {
+            markWhileDropping = kept.mark
+            dropping.complete(Unit)
+            goOn.await()
+            dropped++
+        }
+        val read = launch { state.refresh() }
+        dropping.await()
+        read.cancel()
+        goOn.complete(Unit)
+        read.join()
+        assertTrue("the caller is still told it was cancelled", read.isCancelled)
+        assertEquals("the drop ended", 1, dropped)
+        assertEquals("the screens read again", 1, state.epoch.value)
+        assertNull("the mark is written after the drop", markWhileDropping)
+        assertTrue(kept.mark!!.limited)
+        state.refresh()
+        assertEquals("the same limit read again: nothing more", 1, state.epoch.value)
+        assertEquals(1, dropped)
+    }
+
+    /** A sign-in whose remembered limit still holds: the first answer of the launch is no change. */
+    @Test
+    fun theFirstAnswerIsNoChangeWhenTheRememberedLimitStillHolds() = runBlocking {
+        routes["GET /api/me/parental"] = { json(200, limit(3)) }
+        val kept = Remembered()
+        ParentalState(client(), kept).refresh()
+        var dropped = 0
+        val next = ParentalState(client(), kept).also { it.onChange = { dropped++ } }
+        next.refresh()
+        next.refresh()
+        assertEquals(0, dropped)
+        assertEquals(0, next.epoch.value)
+        // another person's mark on the same home is not this one's: no mark, a limit now
+        val other = ParentalState(client(), Remembered()).also { it.onChange = { dropped++ } }
+        other.refresh()
+        assertEquals(1, dropped)
     }
 
     @Test

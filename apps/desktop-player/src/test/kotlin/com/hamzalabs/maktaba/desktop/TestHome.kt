@@ -13,6 +13,7 @@ import com.hamzalabs.maktaba.desktop.shell.HomeActions
 import com.hamzalabs.maktaba.desktop.shell.LocalDesktopHome
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import mockwebserver3.Dispatcher
@@ -71,6 +72,16 @@ class TestHome : AutoCloseable {
     /** How many calls to this home are queued or running (one a test holds on the home counts until it is let go). */
     val running: Int get() = calls.runningCallsCount() + calls.queuedCallsCount()
 
+    /** The scope of [home]'s changes that outlive their page ([DesktopHome.change]). */
+    val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * Whether nothing is on its way: no call to this home is queued or running, and no change a
+     * page started ([DesktopHome.change]) is still alive. A change is alive until it has taken
+     * the home's answer, so once this holds the answer has been applied.
+     */
+    val settled: Boolean get() = idle && background.coroutineContext[Job]!!.children.none()
+
     /** Answers [route] ("GET /api/home") with [body]. */
     fun answer(route: String, body: String, code: Int = 200) {
         routes[route] = { json(body, code) }
@@ -97,7 +108,7 @@ class TestHome : AutoCloseable {
 
     fun home(admin: Boolean = false): DesktopHome = DesktopHome(
         User("u1", "amina", isAdmin = admin), client, "Kitchen", prefs,
-        CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        background,
         capabilities = features,
         posters = Posters(null),
         actions = HomeActions(openUrl = { opened += it }),
@@ -113,6 +124,20 @@ class TestHome : AutoCloseable {
         /** Features with [off] off; [admin] answers with the admin block. */
         fun caps(vararg off: String, admin: Boolean = false) = Capabilities(off = off.toSet(), admin = admin)
     }
+}
+
+/**
+ * Lets everything on its way to and from [fake] land before a test says nothing more happened:
+ * returns once [TestHome.settled] holds before and after the screen has run what was left for
+ * it, and the home was asked nothing new meanwhile. It waits for that state, never for a
+ * length of time: [STALL_MS] is the net under a stall.
+ */
+@OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+fun androidx.compose.ui.test.ComposeUiTest.settle(fake: TestHome) = waitUntil(timeoutMillis = STALL_MS) {
+    val asked = fake.seen.size
+    val quiet = fake.settled
+    waitForIdle()
+    quiet && fake.settled && asked == fake.seen.size
 }
 
 /** [content] in the Player's theme, in [lang], around [home]. */

@@ -108,8 +108,8 @@ class TvParentalTimeTest {
         server.close()
     }
 
-    /** The client's calls, on a dispatcher of their own so they can be counted ([settle]). */
-    private val calls = okhttp3.Dispatcher()
+    /** The client's calls, counted ([settle]). */
+    private val calls = HomeCalls()
 
     /** The playback's own time: the main looper's clock (which only [idleFor] moves) from a fixed date. */
     private val looperTime: () -> Long = { 1_794_000_000_000L + SystemClock.uptimeMillis() }
@@ -117,7 +117,7 @@ class TvParentalTimeTest {
     private fun playback(startMs: Long = 0): TvPlayback {
         val client = ApiClient(
             server.url("/"), MemoryTokens(jwt(System.currentTimeMillis() / 1000 + 86_400), "r1"),
-            ApiClient.defaultHttp.newBuilder().dispatcher(calls).build(),
+            calls.http,
         )
         return TvPlayback(context, client, "v1", startMs, scope, background, signedOut = {}, nowMs = looperTime).also { playback = it }
     }
@@ -148,19 +148,8 @@ class TvParentalTimeTest {
      * [heldPosts] of them progress posts, each with its background work still alive: everything
      * but those has landed.
      */
-    private fun settle(held: Int = 0, heldPosts: Int = 0) {
-        fun quiet() = calls.runningCallsCount() == held && calls.queuedCallsCount() == 0 &&
-            background.coroutineContext[Job]!!.children.count() == heldPosts
-        val until = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(STALL_MS)
-        while (true) {
-            val asked = seen.size
-            val before = quiet()
-            shadowOf(Looper.getMainLooper()).idle()
-            if (before && quiet() && asked == seen.size) return
-            check(System.nanoTime() < until) { "the home's answers never settled; it was asked $seen" }
-            LockSupport.parkNanos(500_000)
-        }
-    }
+    private fun settle(held: Int = 0, heldPosts: Int = 0) =
+        settleLooper(calls, background, asked = { seen.size }, held = held, heldJobs = heldPosts)
 
     /**
      * Moves the main looper's clock on, once what was on its way has landed (a clock moved while
@@ -324,7 +313,7 @@ class TvParentalTimeTest {
         runUntil { posts() == 1 }
         runUntil { background.coroutineContext[Job]!!.children.none() }
         shadowOf(Looper.getMainLooper()).idle()
-        assertEquals("only the renewal is on its way", 1, calls.runningCallsCount())
+        assertEquals("only the renewal is on its way", 1, calls.running)
         assertEquals(2, opens())
         renewal.release()
         runUntil { "DELETE /api/stream/sessions/s1" in seen }
