@@ -271,7 +271,32 @@ export function VideoPlayer({
   // The home's own answer about this account's time (a restricted account only),
   // for the countdown and the warnings. When it says the time is over, stop.
   const { restricted } = useMyParental();
-  const { time } = useMyTime(restricted && !timeUp);
+  // A time rule may cover one library only, and the home counts such a rule only
+  // when it is told the library: the video's own (GET /api/videos/{id}), read for a
+  // restricted account alone. undefined: not read yet (the home is not asked about
+  // the time before it is); null: it could not be read, so the home is asked about
+  // the whole account, and still refuses the stream itself.
+  const [libraryId, setLibraryId] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    setLibraryId(undefined);
+    if (!restricted || !videoId) return;
+    let alive = true;
+    api
+      .get<{ library_id?: string | null } | null>(`/api/videos/${encodeURIComponent(videoId)}`)
+      .then((v) => {
+        if (alive) setLibraryId(typeof v?.library_id === "string" ? v.library_id || null : null);
+      })
+      .catch(() => {
+        if (alive) setLibraryId(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [restricted, videoId]);
+  const { time } = useMyTime(
+    restricted && !timeUp && libraryId !== undefined,
+    libraryId ?? undefined
+  );
   useEffect(() => {
     if (time && !time.allowed && sessionIdRef.current)
       stopForTime({ reason: time.reason, nextAllowedAt: time.nextAllowedAt });

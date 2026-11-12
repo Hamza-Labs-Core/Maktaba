@@ -48,6 +48,10 @@ function timeOver(reason = "limit_reached", next: string | null = NEXT.toISOStri
 
 /** What GET /api/me/parental/time answers; the other reads (chapters) answer an empty list. */
 let myTime: Record<string, unknown> | null = null;
+/** What GET /api/videos/v1 answers (the video, with its library); an Error: the read fails. */
+let video: Record<string, unknown> | Error = { items: [] };
+const timeAsks = () =>
+  get.mock.calls.map((c) => String(c[0])).filter((p) => p.startsWith("/api/me/parental/time"));
 
 function renderPlayer(opts: { restricted?: boolean; locale?: "en" | "ar"; at?: number } = {}) {
   localStorage.setItem("mkt:locale", opts.locale ?? "en");
@@ -75,8 +79,13 @@ beforeEach(() => {
   del.mockResolvedValue(undefined);
   localStorage.clear();
   myTime = { allowed: true, limited: false, remaining_seconds: null };
+  video = { items: [] };
   get.mockImplementation((path: string) =>
-    Promise.resolve(path.startsWith("/api/me/parental/time") ? myTime : { items: [] })
+    path === "/api/videos/v1"
+      ? video instanceof Error
+        ? Promise.reject(video)
+        : Promise.resolve(video)
+      : Promise.resolve(path.startsWith("/api/me/parental/time") ? myTime : { items: [] })
   );
   vi.spyOn(HTMLMediaElement.prototype, "canPlayType").mockReturnValue("maybe");
   vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
@@ -201,6 +210,71 @@ describe("VideoPlayer under the home's time rules (57.15)", () => {
     expect(await screen.findByTestId("parental-time-warning")).toHaveTextContent(
       "Watching ends in 5 minutes."
     );
+  });
+
+  // A rule may cover one library only ("60 minutes a day in Movies"). The home
+  // counts it only when the question names the library, so the player names the
+  // video's own.
+  it("asks about the video's own library, so a rule on that library alone counts", async () => {
+    post.mockResolvedValue(SESSION);
+    video = { id: "v1", library_id: "lib-movies", title: "Film" };
+    // the home's answers: with the library, five minutes are left; without it no
+    // rule covers the account at all
+    get.mockImplementation((path: string) =>
+      path === "/api/videos/v1"
+        ? Promise.resolve(video)
+        : path === "/api/me/parental/time?library_id=lib-movies"
+          ? Promise.resolve({ allowed: true, limited: true, remaining_seconds: 300 })
+          : path.startsWith("/api/me/parental/time")
+            ? Promise.resolve({ allowed: true, limited: false, remaining_seconds: null })
+            : Promise.resolve({ items: [] })
+    );
+    renderPlayer();
+    await screen.findByTestId("mkt-video");
+    expect(await screen.findByTestId("parental-time-left")).toHaveTextContent(
+      "5 minutes left today"
+    );
+    expect(screen.getByTestId("parental-time-warning")).toHaveTextContent(
+      "Watching ends in 5 minutes."
+    );
+    // never the question without the library: its answer would hide the countdown
+    expect(timeAsks()).toEqual(["/api/me/parental/time?library_id=lib-movies"]);
+  });
+
+  it("stops when the library's own rule says the time is over", async () => {
+    post.mockResolvedValue(SESSION);
+    video = { id: "v1", library_id: "lib-movies" };
+    get.mockImplementation((path: string) =>
+      path === "/api/videos/v1"
+        ? Promise.resolve(video)
+        : path === "/api/me/parental/time?library_id=lib-movies"
+          ? Promise.resolve({ allowed: false, limited: true, reason: "limit_reached" })
+          : path.startsWith("/api/me/parental/time")
+            ? Promise.resolve({ allowed: true, limited: false, remaining_seconds: null })
+            : Promise.resolve({ items: [] })
+    );
+    renderPlayer();
+    expect(await screen.findByRole("heading", { name: "Time's up for today" })).toBeInTheDocument();
+    await waitFor(() => expect(del).toHaveBeenCalledWith("/api/stream/sessions/sess-1"));
+  });
+
+  it("asks about the whole account when the video's library cannot be read", async () => {
+    post.mockResolvedValue(SESSION);
+    video = new Error("offline");
+    myTime = { allowed: true, limited: true, remaining_seconds: 14 * 60 };
+    renderPlayer();
+    expect(await screen.findByTestId("parental-time-left")).toHaveTextContent(
+      "14 minutes left today"
+    );
+    expect(timeAsks()).toEqual(["/api/me/parental/time"]);
+  });
+
+  it("an account that is not restricted reads no video for its library", async () => {
+    post.mockResolvedValue(SESSION);
+    renderPlayer({ restricted: false });
+    await screen.findByTestId("mkt-video");
+    await act(async () => {});
+    expect(get).not.toHaveBeenCalledWith("/api/videos/v1");
   });
 
   it("shows no time while more than 15 minutes remain", async () => {

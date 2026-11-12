@@ -61,6 +61,7 @@ vi.mock("../lib/api", async () => {
   return { ...actual, api: { ...actual.api, post, get, delete: del } };
 });
 
+import { ApiError } from "../lib/api";
 import { VideoPlayer } from "./VideoPlayer";
 import { I18nProvider } from "../lib/i18n";
 import { withRid } from "../test/ridMatcher";
@@ -254,6 +255,46 @@ describe("VideoPlayer — hls.js (no native HLS)", () => {
       expect(del).not.toHaveBeenCalled();
     }
   );
+
+  // Epic 57 story 57.15: the home stops serving a restricted account's stream when
+  // its time is over, so a segment answers 403 mid-play; the reopen then says why
+  // (403 parental-time), and the player shows the time's-up screen, not an error.
+  it("a segment refused mid-play leads through the reopen to the time's-up screen", async () => {
+    post.mockResolvedValueOnce(session()).mockRejectedValue(
+      new ApiError({
+        type: "https://maktaba.tv/problems/parental-time",
+        title: "watching time is over",
+        status: 403,
+        code: "parental_time",
+        reason: "limit_reached",
+      } as never)
+    );
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    renderPlayer();
+    const hls = await hlsReady();
+    const video = screen.getByTestId("mkt-video") as HTMLVideoElement;
+    Object.defineProperty(video, "currentTime", { value: 754, configurable: true });
+    act(() => {
+      hls.emit("hlsError", {
+        type: "networkError",
+        details: "fragLoadError",
+        fatal: false,
+        response: { code: 403, text: "" },
+      });
+    });
+    expect(await screen.findByRole("heading", { name: "Time's up for today" })).toBeInTheDocument();
+    expect(screen.getByTestId("parental-times-up")).toHaveTextContent(
+      "Your place in this video is saved at 12:34."
+    );
+    // the stream is closed, the player is gone, and nothing opens it again by itself
+    expect(screen.queryByTestId("mkt-video")).toBeNull();
+    expect(screen.queryByText("This video can't play right now")).toBeNull();
+    await waitFor(() => expect(del).toHaveBeenCalledWith(`/api/stream/sessions/${SID}`));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(opens()).toHaveLength(2);
+  });
 
   it("reopens once even when several requests fail with 403", async () => {
     post
