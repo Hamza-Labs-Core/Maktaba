@@ -208,15 +208,38 @@ func (p *Pacer) Writer(ctx context.Context, w http.ResponseWriter, video string,
 	return &pacedWriter{ResponseWriter: w, ctx: ctx, g: p.g, key: p.user + "|" + video, rate: bytesPerSecond}
 }
 
+// pacedWriter passes a handler's body on at the pace. What it passes on goes out with
+// nosniff, and never as a page (httpx.PassHeaders): a body with no type is not left
+// for the server to guess one from its first bytes.
 type pacedWriter struct {
 	http.ResponseWriter
 	ctx  context.Context
 	g    *Registry
 	key  string
 	rate float64 // bytes of the file per second of media
+	// typed: the headers were prepared (by the handler's goroutine only)
+	typed bool
+}
+
+// pass prepares the headers of the body passed on with status, once.
+func (w *pacedWriter) pass(status int) {
+	if w.typed {
+		return
+	}
+	w.typed = true
+	h := w.ResponseWriter.Header()
+	if ct := httpx.PassHeaders(h, status); ct != "" {
+		h.Set("Content-Type", ct)
+	}
+}
+
+func (w *pacedWriter) WriteHeader(status int) {
+	w.pass(status)
+	w.ResponseWriter.WriteHeader(status)
 }
 
 func (w *pacedWriter) Write(b []byte) (int, error) {
+	w.pass(http.StatusOK)
 	media := time.Duration(float64(len(b)) / w.rate * float64(time.Second))
 	wait, ok := w.g.reserve(w.key, media, "")
 	if !ok {
@@ -228,8 +251,10 @@ func (w *pacedWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
-// Flush and Unwrap keep the wrapped writer's streaming behaviour.
+// Flush and Unwrap keep the wrapped writer's streaming behaviour. A flush before any
+// write sends the headers, so they are prepared first.
 func (w *pacedWriter) Flush() {
+	w.pass(http.StatusOK)
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}

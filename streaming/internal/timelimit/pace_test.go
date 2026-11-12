@@ -141,3 +141,53 @@ func TestSegmentIndexAndByteRate(t *testing.T) {
 		t.Errorf("fallback: %v", r)
 	}
 }
+
+// What the paced writer passes on goes out with nosniff, under the handler's own
+// type, and never as a page: a body with no type that begins like a page is not left
+// for the server to guess a type from, whichever of a write, a status or a flush
+// comes first.
+func TestPacedWriterPassesBodiesSafely(t *testing.T) {
+	now := time.Date(2026, 11, 10, 17, 0, 0, 0, time.UTC)
+	var slept time.Duration
+	p := &Pacer{g: paced(&now, &slept), user: "child"}
+	const page = "<script>alert(1)</script>"
+	for in, want := range map[string]string{
+		"video/mp4":                "video/mp4",
+		"text/html; charset=utf-8": "application/octet-stream",
+		"image/svg+xml":            "application/octet-stream",
+		"":                         "application/octet-stream",
+	} {
+		firsts := map[string]func(w http.ResponseWriter){
+			"a write":  func(http.ResponseWriter) {},
+			"a status": func(w http.ResponseWriter) { w.WriteHeader(http.StatusPartialContent) },
+			"a flush":  func(w http.ResponseWriter) { w.(http.Flusher).Flush() },
+		}
+		for name, first := range firsts {
+			rec := httptest.NewRecorder()
+			w := p.Writer(context.Background(), rec, "film "+name+in, 1e9)
+			if in != "" {
+				w.Header().Set("Content-Type", in)
+			}
+			first(w)
+			for _, part := range []string{page, "more"} {
+				if _, err := w.Write([]byte(part)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			res := rec.Result()
+			if res.Header.Get("X-Content-Type-Options") != "nosniff" || res.Header.Get("Content-Type") != want {
+				t.Errorf("%s first, type %q: headers %v, want the type %q and nosniff", name, in, res.Header, want)
+			}
+			if rec.Body.String() != page+"more" {
+				t.Errorf("%s first, type %q: body %q", name, in, rec.Body.String())
+			}
+		}
+	}
+	// a status that carries no body gets no type
+	rec := httptest.NewRecorder()
+	w := p.Writer(context.Background(), rec, "unchanged", 1e9)
+	w.WriteHeader(http.StatusNotModified)
+	if res := rec.Result(); res.Header.Get("Content-Type") != "" || res.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Errorf("a 304: headers %v, want nosniff and no type", res.Header)
+	}
+}
