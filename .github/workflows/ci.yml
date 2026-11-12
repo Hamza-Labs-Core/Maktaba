@@ -432,6 +432,8 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.website == 'true'
     uses: ./.github/workflows/_website.yml
+    with:
+      shots: true
 
   # The plugin store (Epic 54, story 54.19): its TypeScript typechecks, its tests run the
   # store-commerce migrations on node:sqlite with the fake and the recorded Adyen shapes (no

@@ -21,7 +21,7 @@ and anywhere else an app is shown: every app shows the same library, in English 
 
 ```sh
 node tests/fixtures/demo-library/routes.mjs            # after changing library.json
-node --test tests/fixtures/demo-library/                # the tests (CI: lint / demo library)
+node --test tests/fixtures/demo-library/demo-library.test.mjs                # the tests (CI: website / Tests (the demo library))
 ```
 
 Times in the answers are `{{now}}`, `{{now-N}}`, `{{now+N}}` (seconds), as in Apple's

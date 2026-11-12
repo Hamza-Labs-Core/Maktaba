@@ -12,7 +12,9 @@
     "e2e": "playwright test",
     "e2e:update": "bash scripts/e2e-update.sh",
     "lint:css": "node scripts/lint-css.mjs",
-    "lighthouse": "node scripts/lighthouse.mjs"
+    "lighthouse": "node scripts/lighthouse.mjs",
+    "shots": "node scripts/shots.mjs",
+    "shots:web": "node scripts/capture-web.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.10.2",
@@ -21,6 +23,7 @@
     "@playwright/test": "1.64.1",
     "@resvg/resvg-js": "2.6.2",
     "@types/node": "^25.6.0",
+    "sharp": "0.35.5",
     "typescript": "5.7.3",
     "vitest": "4.1.12",
     "wrangler": "4.151.0"

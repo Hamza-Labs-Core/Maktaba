@@ -21,6 +21,10 @@ on:
         description: run the quality jobs (axe, the visual references, Lighthouse) on the build
         type: boolean
         default: true
+      shots:
+        description: capture the web app's product screenshots on the demo library (story 60.09) and upload them as product-shots-web; ci.yml only, so the deploy never waits on them
+        type: boolean
+        default: false
       lighthouse_extra:
         description: a JSON list of site paths Lighthouse also measures, 3 runs each (the deploy passes the pages the last nightly sweep failed)
         type: string
@@ -95,6 +99,12 @@ jobs:
       # node tests of the scripts (the link check, the CSS lint, the Lighthouse URL sets)
       - name: Tests (the Worker, the build, the built site, the scripts)
         run: npm test
+
+      # 60.09 T02, T03: the demo library the product screenshots are taken on (licences,
+      # credits, no person's data), and its generated routes in step with library.json
+      - name: Tests (the demo library)
+        working-directory: .
+        run: node --test tests/fixtures/demo-library/demo-library.test.mjs
 
       # T07: logical properties only, in the site's and the install guides' stylesheets
       - name: CSS lint (no physical left or right)
@@ -191,6 +201,58 @@ jobs:
   # Playwright and axe on every page in both languages, and the visual references, in the image
   # the references were rendered in (scripts/e2e-update.sh renders them in the same one). Four
   # shards (Playwright's --shard): the problem pages (60.06) put about 590 pages under every test.
+  # Story 60.09: the web app's product screenshots, dark, in English and Arabic, at 1440×900
+  # @2x: Vite serves the Player web app and Playwright answers every /api/* request from the
+  # demo library (tests/fixtures/demo-library), with the clock pinned. The images go up as
+  # product-shots-web; `npm run shots -- --from-run <run id>` makes the site's images from
+  # them. In the Playwright image, so the fonts are the same on every run.
+  shots:
+    name: product shots (web)
+    if: inputs.shots
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host --init
+    defaults:
+      run:
+        working-directory: web/packages/website
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: pnpm/action-setup@v6.0.8
+        with:
+          version: 9.15.4
+          run_install: false
+
+      # Vite for the web app, and the site's own tools (Playwright, sharp)
+      - name: Install
+        run: |
+          pnpm -C ../.. install --frozen-lockfile
+          npm ci --no-audit --no-fund
+
+      - name: Capture the web app on the demo library
+        run: timeout 900 node scripts/capture-web.mjs --out shots-capture/web
+
+      # the run's images through the site's processing (crop, sizes, budget, no metadata),
+      # into a scratch folder: a capture that cannot become the site's images fails here
+      - name: Process the captures as the site would
+        run: |
+          mkdir -p /tmp/shots/in/product-shots-web
+          cp shots-capture/web/*.png /tmp/shots/in/product-shots-web/
+          node scripts/shots.mjs --from-dir /tmp/shots/in --only web --out /tmp/shots/out --manifest /tmp/shots/shots-manifest.json
+
+      - name: Upload the web app's product shots
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: product-shots-web
+          path: |
+            web/packages/website/shots-capture/web/*.png
+            web/packages/website/shots-capture/web/web-capture.log
+          if-no-files-found: error
+          retention-days: 30
+
   quality:
     name: quality (axe, keyboard, layout, RTL, visual; shard ${{ matrix.shard }}/4)
     needs: [website]

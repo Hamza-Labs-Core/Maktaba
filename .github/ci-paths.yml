@@ -823,6 +823,8 @@ website:
   - 'tools/cloudflare/website-deploy.mjs'
   - '.github/workflows/_website.yml'
   - '.github/workflows/website-deploy.yml'
+  # the product screenshots (60.09): the demo library, and the web app they photograph
+  - 'tests/fixtures/demo-library/**'
 
 # ---- the in-repo wiki app and its database (ci.yml's wiki job) ---------------------------
 

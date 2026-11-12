@@ -1,0 +1,56 @@
+{
+  "$comment": "Product screenshots (60.09), read by scripts/shots.mjs. widths: the srcset sizes per app (60.01 part B sets them; change them here). crop: pixels cut from each edge of the capture before resizing (the frame's safe area). artifact: the CI artifact a run uploads the app's PNGs in; repo: where they are committed instead (Roborazzi references). job: a part of the CI job's name that made them, so a red job keeps the previous images.",
+  "budgetBytes": 150000,
+  "langs": ["en", "ar"],
+  "sources": {
+    "web": {
+      "artifact": "product-shots-web",
+      "job": "product shots (web)",
+      "screens": ["home", "film", "series", "search", "guide"],
+      "crop": { "top": 0, "right": 0, "bottom": 0, "left": 0 },
+      "widths": [720, 1080, 1440]
+    },
+    "iphone": {
+      "artifact": "product-shots-iphone",
+      "job": "Player UI tests",
+      "screens": ["home", "film", "player", "remote"],
+      "crop": { "top": 0, "right": 0, "bottom": 0, "left": 0 },
+      "widths": [240, 360, 480]
+    },
+    "ipad": {
+      "artifact": "product-shots-ipad",
+      "job": "Player iPad UI tests",
+      "screens": ["home", "film", "player", "remote"],
+      "crop": { "top": 0, "right": 0, "bottom": 0, "left": 0 },
+      "widths": [480, 720, 960]
+    },
+    "appletv": {
+      "artifact": "product-shots-appletv",
+      "job": "tv-ui-tests",
+      "screens": ["home", "series", "player", "guide"],
+      "crop": { "top": 0, "right": 0, "bottom": 0, "left": 0 },
+      "widths": [640, 960, 1280]
+    },
+    "mac": {
+      "artifact": "product-shots-mac",
+      "job": "Mac app",
+      "screens": ["library", "player"],
+      "crop": { "top": 0, "right": 0, "bottom": 0, "left": 0 },
+      "widths": [640, 960, 1280]
+    },
+    "androidtv": {
+      "repo": "apps/android",
+      "job": "Android",
+      "screens": ["home", "player", "guide"],
+      "crop": { "top": 0, "right": 0, "bottom": 0, "left": 0 },
+      "widths": [640, 960, 1280]
+    },
+    "android-phone": {
+      "repo": "apps/android",
+      "job": "Android",
+      "screens": ["home", "film"],
+      "crop": { "top": 0, "right": 0, "bottom": 0, "left": 0 },
+      "widths": [240, 360, 480]
+    }
+  }
+}
