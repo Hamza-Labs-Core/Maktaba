@@ -63,6 +63,8 @@ interface Gap {
 }
 interface SeriesHeader {
   id: string;
+  /** Epic 57: the age tier an admin set (null: none); only an admin's answer has it */
+  age_tier?: number | null;
   name: string;
   poster_path?: string;
   poster_video_id?: string;
@@ -310,7 +312,7 @@ export function SeriesDetail() {
               </Button>
             )}
             {/* Epic 57 story 57.01: a rating on the series reaches every episode */}
-            <AgeTierControl target={{ kind: "series", id: seriesId }} />
+            <AgeTierControl target={{ kind: "series", id: seriesId }} current={header?.age_tier} />
           </div>
         </div>
       </header>

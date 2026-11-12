@@ -354,6 +354,7 @@ function Guardians({
                 variant="secondary"
                 size="sm"
                 disabled={busy}
+                aria-label={`${t("family.remove")} ${g.username || g.id}`}
                 onClick={() =>
                   void run(async () => {
                     await removeGuardian(userId, g.id);
@@ -362,7 +363,6 @@ function Guardians({
                 }
               >
                 {t("family.remove")}
-                <span className="mkt-visually-hidden"> {g.username}</span>
               </Button>
             </li>
           ))}

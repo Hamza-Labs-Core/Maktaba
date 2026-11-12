@@ -349,7 +349,7 @@ function CollectionOf({ id }: { id: string }) {
         </p>
       )}
       {/* Epic 57 story 57.01: a rating on the collection reaches every video in it */}
-      <AgeTierControl target={{ kind: "collection", id: col.id }} />
+      <AgeTierControl target={{ kind: "collection", id: col.id }} current={col.age_tier} />
       {admin && (
         <CollectionSettingsPanel
           col={col}

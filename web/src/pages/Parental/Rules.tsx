@@ -110,10 +110,10 @@ export function ChildRules({ userId }: { userId: string }) {
                     variant="secondary"
                     size="sm"
                     disabled={busy}
+                    aria-label={`${t("family.remove")} ${name ?? t(`family.kind.${r.subjectKind}`)}`}
                     onClick={() => void remove(r)}
                   >
                     {t("family.remove")}
-                    <span className="mkt-visually-hidden"> {name}</span>
                   </Button>
                 </li>
               );

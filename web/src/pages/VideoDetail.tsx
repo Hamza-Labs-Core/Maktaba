@@ -57,6 +57,8 @@ import { VIDEO_ANSWERS, forgetAnswers } from "../lib/pageCache";
 
 interface Video extends DisplayTitleVideo {
   id: string;
+  /** Epic 57: the age tier an admin set on this video itself (null: none); only an admin's answer has it */
+  age_tier_admin?: number | null;
   title?: string | null;
   filename: string;
   description?: string | null;
@@ -355,7 +357,7 @@ export function VideoDetail() {
         {/* Phase 2: resume, watched, favorite, add to playlist, the series' lessons */}
         <VideoActions videoId={videoId} />
         {/* Epic 57 story 57.01: an admin's own rating beats every other source */}
-        <AgeTierControl target={{ kind: "video", id: video.id }} />
+        <AgeTierControl target={{ kind: "video", id: video.id }} current={video.age_tier_admin} />
       </header>
       <Tabs label={videoTitle(video)} items={items} value={tab} onChange={selectTab} />
       {/* story 54.20: installed plugins' panels, below Maktaba's own sections */}
