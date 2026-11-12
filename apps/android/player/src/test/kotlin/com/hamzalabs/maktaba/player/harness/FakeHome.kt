@@ -25,6 +25,7 @@ import okhttp3.ConnectionPool
 import okio.Buffer
 import okhttp3.Dispatcher as CallDispatcher
 import org.junit.rules.ExternalResource
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -56,7 +57,8 @@ class FakeHome(
 
     private val server = MockWebServer()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val routes = linkedMapOf<String, (RecordedRequest) -> MockResponse>()
+    /** Written by the test's thread while the server's threads read it. */
+    private val routes = ConcurrentHashMap<String, (RecordedRequest) -> MockResponse>()
 
     private val recorded = mutableListOf<RecordedRequest>()
 
@@ -65,6 +67,9 @@ class FakeHome(
      * thread records more (iterating the live list would race the dispatcher).
      */
     val requests: List<RecordedRequest> get() = synchronized(recorded) { recorded.toList() }
+
+    /** How many requests the home has taken so far (a count that only grows). */
+    val asked: Int get() = synchronized(recorded) { recorded.size }
 
     /** The paths asked so far, in order (no query). */
     val paths: List<String> get() = requests.map { it.url.encodedPath }
@@ -138,14 +143,19 @@ class FakeHome(
         /** The held read has been asked (it waits for [release]). */
         val wasAsked: Boolean get() = asked.count == 0L
 
-        /** Waits (off the main thread) until the held read is asked. */
-        fun awaitAsked() = check(asked.await(10, TimeUnit.SECONDS)) { "the held read was never asked" }
+        /** Waits (off the main thread) until the held read is asked; the bound is only the net under a stall. */
+        fun awaitAsked() = check(asked.await(60, TimeUnit.SECONDS)) { "the held read was never asked" }
 
         fun release() = released.countDown()
 
+        /**
+         * Holds the server's thread until the test lets go. The bound is only the net under a
+         * test that never does (the rule lets go when the test ends): an answer that went out
+         * by itself after a while would decide a slow run's result.
+         */
         internal fun hold() {
             asked.countDown()
-            released.await(20, TimeUnit.SECONDS)
+            released.await(60, TimeUnit.SECONDS)
         }
     }
 

@@ -20,10 +20,13 @@ import com.google.android.gms.cast.MediaMetadata as CastMetadata
 import com.hamzalabs.maktaba.core.api.Video
 import com.hamzalabs.maktaba.player.Playback
 import com.hamzalabs.maktaba.player.harness.FakeHome
+import com.hamzalabs.maktaba.player.harness.NoStall
 import com.hamzalabs.maktaba.player.watch.FakeStreams
 import com.hamzalabs.maktaba.player.watch.idleFor
 import com.hamzalabs.maktaba.player.watch.int
+import com.hamzalabs.maktaba.player.watch.looperTime
 import com.hamzalabs.maktaba.player.watch.runUntil
+import com.hamzalabs.maktaba.player.watch.settle
 import com.hamzalabs.maktaba.player.watch.testPlayer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +50,7 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class CastTest {
+    @get:Rule(order = NoStall.FIRST) val noStall = NoStall()
     @get:Rule val home = FakeHome()
     @get:Rule val codecs: ShadowMediaCodecConfig = ShadowMediaCodecConfig.withAllDefaultSupportedCodecs()
 
@@ -65,6 +69,7 @@ class CastTest {
             context, home.home.client, scope, background, signedOut = {}, build = testPlayer(context),
             cast = { local -> FakeCastPlayer(local).also { receiver = it } },
             system = false,
+            nowMs = looperTime,
         )
     }
 
@@ -132,6 +137,8 @@ class CastTest {
         playback.play(v1)
         val cast = playing()
         cast.startCasting(atMs = 3_000)
+        // the phone's own pause as the receiver took over has been posted and answered
+        settle(home, background)
         val before = streams.progress().size
 
         // the 10-second watch reads the receiver's position, as it plays there

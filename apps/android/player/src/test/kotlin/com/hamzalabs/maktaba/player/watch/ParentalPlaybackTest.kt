@@ -4,6 +4,8 @@ package com.hamzalabs.maktaba.player.watch
 
 import android.content.Context
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import androidx.annotation.OptIn
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -19,6 +21,7 @@ import com.hamzalabs.maktaba.core.api.TimeReason
 import com.hamzalabs.maktaba.core.api.Video
 import com.hamzalabs.maktaba.player.Playback
 import com.hamzalabs.maktaba.player.harness.FakeHome
+import com.hamzalabs.maktaba.player.harness.NoStall
 import com.hamzalabs.maktaba.player.playbackTimeRefusal
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +49,7 @@ import java.time.Instant
  */
 @RunWith(AndroidJUnit4::class)
 class ParentalPlaybackTest {
+    @get:Rule(order = NoStall.FIRST) val noStall = NoStall()
     @get:Rule val home = FakeHome()
     @get:Rule val codecs: ShadowMediaCodecConfig = ShadowMediaCodecConfig.withAllDefaultSupportedCodecs()
 
@@ -61,7 +65,11 @@ class ParentalPlaybackTest {
     fun setUp() {
         streams = FakeStreams(home)
         streams.install()
-        playback = Playback(context, home.home.client, scope, background, signedOut = {}, build = testPlayer(context))
+        // the player's clock, the looper's and the playback's own are all the test's to move
+        playback = Playback(
+            context, home.home.client, scope, background, signedOut = {},
+            build = testPlayer(context), nowMs = looperTime,
+        )
     }
 
     @After
@@ -78,19 +86,26 @@ class ParentalPlaybackTest {
                 (if (next != null) ""","next_allowed_at":"$next"""" else "") + "}",
         ).build()
 
+    /** Every answer on its way has landed and been read: no call is out, no background work is left. */
+    private fun settle() = settle(home, background)
+
     /**
-     * Lets the answers still on their way land: half a second of the looper's work, a task at a
-     * time (idling it whole never returns while a released player's test clock keeps posting).
+     * A minute passes with nobody touching anything (the 10-second watch would tick, a retry
+     * would fire), and whatever that sent has been answered.
      */
-    private fun settle() {
-        val end = System.currentTimeMillis() + 500
-        runUntil { System.currentTimeMillis() > end }
+    private fun aMinutePasses() {
+        settle()
+        idleFor(60_000)
+        settle()
     }
 
     private fun playing(): ExoPlayer {
-        runUntil { playback.player?.playbackState == Player.STATE_READY && playback.tracks.groups.isNotEmpty() }
+        runUntil(what = "the stream to play") { playback.player?.playbackState == Player.STATE_READY && playback.tracks.groups.isNotEmpty() }
         return playback.player!!
     }
+
+    /** Plays on to past [ms]; the player's clock then stands still until the test's next wait. */
+    private fun ExoPlayer.playedPast(ms: Long) = runUntil(what = "the video to play past $ms ms") { currentPosition > ms }
 
     @Test
     fun anOpenRefusedForTimeShowsWhyAndIsNotAskedAgain() {
@@ -106,7 +121,7 @@ class ParentalPlaybackTest {
         assertNull(playback.player)
 
         // a minute passes: the home is not asked again by itself
-        idleFor(60_000)
+        aMinutePasses()
         assertEquals(1, streams.opens().size)
         assertNotNull(playback.timeUp)
     }
@@ -115,7 +130,7 @@ class ParentalPlaybackTest {
     fun aProgressPostRefusedForTimeStopsTheVideoWhereItIs() {
         playback.play(v1, startSec = 1)
         val p = playing()
-        runUntil { p.currentPosition > 1_200 }
+        p.playedPast(1_200)
         home.answer("/api/stream/sessions/s1/progress") { timeOver(TimeReason.LIMIT_REACHED) }
         // a pause posts the position at once; the home answers that the time is over
         p.pause()
@@ -129,7 +144,7 @@ class ParentalPlaybackTest {
         runUntil { "s1" in streams.closed() }
 
         val posts = streams.progress().size
-        settle()
+        aMinutePasses()
         assertEquals("nothing is opened again", 1, streams.opens().size)
         assertEquals("and nothing more is posted", posts, streams.progress().size)
     }
@@ -138,12 +153,12 @@ class ParentalPlaybackTest {
     fun aLapsedLeaseOnAProgressPostReopensTheStreamOnceWhereItIs() {
         playback.play(v1, startSec = 1)
         val p = playing()
-        runUntil { p.currentPosition > 1_200 }
+        p.playedPast(1_200)
         // a long pause: the stream's lease lapsed. That is not the time being over
         home.answer("/api/stream/sessions/s1/progress") { timeOver(TimeReason.NO_HEARTBEAT, next = null) }
         p.pause()
         runUntil { streams.opens().size == 2 && "s1" in streams.closed() }
-        settle()
+        aMinutePasses()
         assertNull("no time's-up screen: the home gave the stream again", playback.timeUp)
         assertNull(playback.problem)
         assertNotNull(playback.player)
@@ -156,7 +171,7 @@ class ParentalPlaybackTest {
     fun aLapsedLeaseWhoseReopenIsRefusedShowsTimesUp() {
         playback.play(v1, startSec = 1)
         val p = playing()
-        runUntil { p.currentPosition > 1_200 }
+        p.playedPast(1_200)
         home.answer("/api/stream/sessions/s1/progress") { timeOver(TimeReason.NO_HEARTBEAT, next = null) }
         // the time ran out meanwhile: the home refuses the reopen
         home.answer("/api/stream/sessions") { timeOver(TimeReason.LIMIT_REACHED) }
@@ -165,7 +180,7 @@ class ParentalPlaybackTest {
         assertEquals(TimeReason.LIMIT_REACHED, playback.timeUp!!.refusal.reason)
         assertEquals(Instant.parse("2026-11-12T04:00:00Z"), playback.timeUp!!.refusal.nextAllowedAt)
         assertNull(playback.player)
-        settle()
+        aMinutePasses()
         assertEquals("the first open and the one reopen", 2, streams.opens().size)
     }
 
@@ -173,17 +188,18 @@ class ParentalPlaybackTest {
     fun aLeaseThatLapsesAgainRightAfterItsReopenStops() {
         playback.play(v1, startSec = 1)
         val p = playing()
-        runUntil { p.currentPosition > 1_200 }
+        p.playedPast(1_200)
         home.answer("/api/stream/sessions/s1/progress") { timeOver(TimeReason.NO_HEARTBEAT, next = null) }
         home.answer("/api/stream/sessions/s2/progress") { timeOver(TimeReason.NO_HEARTBEAT, next = null) }
         p.pause()
-        runUntil { streams.opens().size == 2 && playback.control?.playbackState == Player.STATE_READY }
-        // the reopened stream is refused the same way at once: no loop of opens
-        playback.control!!.play()
+        runUntil { streams.opens().size == 2 }
+        // the reopened stream's own post (it is paused again) is refused the same way at once:
+        // no loop of opens
         runUntil { playback.timeUp != null }
         assertEquals(TimeReason.NO_HEARTBEAT, playback.timeUp!!.refusal.reason)
         assertNull(playback.timeUp!!.refusal.nextAllowedAt)
-        settle()
+        assertTrue("the reopened stream's own post was the one refused", streams.progress().any { it.first == "s2" })
+        aMinutePasses()
         assertEquals(2, streams.opens().size)
     }
 
@@ -214,7 +230,27 @@ class ParentalPlaybackTest {
         assertEquals(TimeReason.LIMIT_REACHED, playback.timeUp!!.refusal.reason)
         assertNull("the time's-up screen, not the error screen", playback.problem)
         assertNull(playback.player)
-        settle()
+        aMinutePasses()
+        assertEquals(1, streams.opens().size)
+    }
+
+    /**
+     * The refusal lands inside the looper's run that moves the clock, so the player is let go of
+     * there. Idling the looper whole never came back from that (a released player's test clock
+     * hands the main looper its next message as it handles the last): the test, and the job,
+     * stalled.
+     */
+    @Test
+    fun aRefusalThatLandsWhileTheClockMovesStopsTheVideo() {
+        playback.play(v1, startSec = 1)
+        val p = playing()
+        Handler(Looper.getMainLooper()).post {
+            playback.refusedForTime(playbackTimeRefusal(streamRefused(TimeReason.LIMIT_REACHED))!!, p.currentPosition)
+        }
+        idleFor(10_000)
+        assertEquals(TimeReason.LIMIT_REACHED, playback.timeUp!!.refusal.reason)
+        assertNull(playback.player)
+        aMinutePasses()
         assertEquals(1, streams.opens().size)
     }
 
@@ -222,13 +258,14 @@ class ParentalPlaybackTest {
     fun aPausedStreamWhoseLeaseLapsedIsOpenedAgainWhenTheServiceRefusesIt() {
         playback.play(v1, startSec = 1)
         val p = playing()
-        runUntil { p.currentPosition > 1_200 }
+        p.playedPast(1_200)
         p.pause()
         runUntil { streams.progress().isNotEmpty() }
+        settle()
         // paused for over a minute, then scrubbed: the segment answers 403 no_heartbeat
         playback.refusedForTime(playbackTimeRefusal(streamRefused(TimeReason.NO_HEARTBEAT))!!, p.currentPosition)
         runUntil { streams.opens().size == 2 && "s1" in streams.closed() }
-        settle()
+        aMinutePasses()
         assertNull("not the time's-up screen", playback.timeUp)
         assertNull(playback.problem)
         assertNotNull(playback.player)
@@ -253,7 +290,7 @@ class ParentalPlaybackTest {
     fun aMissingSessionOnAProgressPostIsTheStreamsEnd() {
         playback.play(v1, startSec = 1)
         val p = playing()
-        runUntil { p.currentPosition > 1_200 }
+        p.playedPast(1_200)
         home.answer("/api/stream/sessions/s1/progress") {
             FakeHome.json("""{"type":"https://maktaba.tv/problems/not-found","title":"Not found","status":404}""", code = 404)
         }
@@ -261,7 +298,7 @@ class ParentalPlaybackTest {
         runUntil { playback.endedByHome }
         assertNull(playback.player)
         assertNull("not the time's-up screen", playback.timeUp)
-        settle()
+        aMinutePasses()
         assertEquals("not opened again", 1, streams.opens().size)
     }
 
@@ -269,7 +306,7 @@ class ParentalPlaybackTest {
     fun aHomeThatCannotCheckTheTimeDoesNotStopTheVideo() {
         playback.play(v1, startSec = 1)
         val p = playing()
-        runUntil { p.currentPosition > 1_200 }
+        p.playedPast(1_200)
         home.answer("/api/stream/sessions/s1/progress") {
             MockResponse.Builder().code(503).setHeader("Retry-After", "5").setHeader("Content-Type", "application/problem+json")
                 .body("""{"type":"https://maktaba.tv/problems/unavailable","title":"Unavailable","status":503}""").build()
@@ -296,7 +333,7 @@ class ParentalPlaybackTest {
         assertEquals(ErrorKind.Busy, playback.problem!!.kind)
         assertEquals(5L, playback.problem!!.retryAfterSec)
         assertTrue("an older home's bare 503 to a restricted account: can't check the time, as before", playback.problem!!.cannotCheckTime(restricted = true))
-        idleFor(30_000)
+        aMinutePasses()
         assertEquals("only the person's Try again asks", 1, streams.opens().size)
     }
 
@@ -328,7 +365,7 @@ class ParentalPlaybackTest {
     fun anOpenThatAnswersAfterTheTimeRanOutPlaysNothingUnderTheTimesUpScreen() {
         playback.play(v1, startSec = 1)
         val p = playing()
-        runUntil { p.currentPosition > 1_200 }
+        p.playedPast(1_200)
         // a quality change reopens the stream; the home is slow to answer it
         val slow = home.hold("/api/stream/sessions") {
             FakeHome.json("""{"session_id":"s2","mode":"transcode","manifest_url":"/stream/s2/master.m3u8?sig=x","expires_at":"2099-01-01T00:00:00Z","ladder":[]}""", code = 201)
@@ -343,7 +380,7 @@ class ParentalPlaybackTest {
         // the open succeeds after all (a grant just landed): nothing starts playing behind the screen
         slow.release()
         runUntil { "s2" in streams.closed() }
-        settle()
+        aMinutePasses()
         assertNull("no player under the time's-up screen", playback.player)
         assertNull(playback.control)
         assertFalse(playback.isPlaying)
@@ -355,7 +392,7 @@ class ParentalPlaybackTest {
     fun resumingPostsTheProgressAtOnce() {
         playback.play(v1, startSec = 1)
         val p = playing()
-        runUntil { p.currentPosition > 1_200 }
+        p.playedPast(1_200)
         p.pause()
         runUntil { streams.progress().isNotEmpty() }
         val paused = streams.progress().size
@@ -369,12 +406,12 @@ class ParentalPlaybackTest {
     fun aLateAnswerForAClosedSessionChangesNothing() {
         playback.play(v1, startSec = 1)
         val p = playing()
-        runUntil { p.currentPosition > 1_200 }
+        p.playedPast(1_200)
         home.answer("/api/stream/sessions/s1/progress") { timeOver(TimeReason.LIMIT_REACHED) }
         // leaving posts the last position; its refusal arrives after the video was stopped
         playback.stop()
         runUntil { streams.progress().isNotEmpty() && "s1" in streams.closed() }
-        settle()
+        aMinutePasses()
         assertNull(playback.timeUp)
         assertNull(playback.video)
     }

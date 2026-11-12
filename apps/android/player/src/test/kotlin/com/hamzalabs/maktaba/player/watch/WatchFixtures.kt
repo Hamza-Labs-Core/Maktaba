@@ -1,14 +1,18 @@
 package com.hamzalabs.maktaba.player.watch
 
 import android.content.Context
+import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.test.utils.FakeClock
+import androidx.media3.test.utils.ThreadTestUtil
 import androidx.media3.test.utils.robolectric.CapturingRenderersFactory
-import androidx.media3.test.utils.robolectric.RobolectricUtil
 import com.hamzalabs.maktaba.player.harness.FakeHome
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.int
@@ -18,7 +22,11 @@ import mockwebserver3.MockResponse
 import mockwebserver3.RecordedRequest
 import okio.Buffer
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.shadows.ShadowSystemClock
 import java.time.Duration
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.locks.LockSupport
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -108,17 +116,98 @@ fun JsonObject.int(key: String): Int? = this[key]?.jsonPrimitive?.int
  * The player as the tests build it: a clock that runs as fast as the stream allows and the
  * decoders faked on the JVM (Robolectric has none), so a stream really plays: tracks are read,
  * renderers enabled, samples fed.
+ *
+ * The clock moves in step with the test: only as the test runs the main looper ([runUntil],
+ * [idleFor], [settle]), [IN_STEP_MS] of the stream at a time. Left to itself it runs the whole
+ * 4-second stream on the playback thread while the test is between two lines, on a slow machine
+ * to its end, and what the test does next (a pause that posts the position) then meets an ended
+ * video.
+ *
+ * Never idle the main looper whole with such a player (`ShadowLooper.idle()`, `idleFor()`): the
+ * clock hands the looper its next message as the last one is handled, so the looper never runs
+ * dry and the call never returns. [idleFor] and [runDue] here stop at a mark.
  */
 @OptIn(UnstableApi::class)
 fun testPlayer(context: Context): (ExoPlayer.Builder) -> ExoPlayer.Builder = { b ->
     val clock = FakeClock(true)
+    // a message of the clock's own for the main looper: the clock hands out one message at a
+    // time and waits for it to be handled, so it stops here until the test's thread runs it
+    val main = clock.createHandler(Looper.getMainLooper(), null)
+    main.postDelayed(object : Runnable {
+        override fun run() {
+            // a breath for the other threads: with nothing else to run, the clock would hand
+            // this straight back, and the test's wait would spin on it
+            LockSupport.parkNanos(50_000)
+            main.postDelayed(this, IN_STEP_MS)
+        }
+    }, IN_STEP_MS)
     b.setClock(clock).setRenderersFactory(CapturingRenderersFactory(context, clock))
 }
 
-/** Runs the main looper until [condition] holds (10 s at most). */
-fun runUntil(timeoutMs: Long = 10_000, condition: () -> Boolean) {
-    RobolectricUtil.runMainLooperUntil(timeoutMs) { condition() }
+/** How far the player's clock runs between two looks of the test. */
+const val IN_STEP_MS = 20L
+
+/** The safety net of every wait here: far longer than any wait takes, so only a real stall meets it. */
+const val STALL_MS = 60_000L
+
+/**
+ * The time [Playback] is given in these tests: the main looper's clock (which only [idleFor]
+ * moves) from a fixed date, so "30 seconds since the stream opened" is the test's to decide.
+ */
+val looperTime: () -> Long = { 1_794_000_000_000L + SystemClock.uptimeMillis() }
+
+private val mainLooper get() = shadowOf(Looper.getMainLooper())
+
+/**
+ * Runs the main looper's due work, a task at a time, until [condition] holds. It waits for the
+ * state, not for a length of time: [timeoutMs] is only the net under a stall. The looper's clock
+ * is not moved (the 10-second watch does not tick; [idleFor] moves it), and nothing due means
+ * the answer is still on another thread, which is given the processor.
+ */
+fun runUntil(timeoutMs: Long = STALL_MS, what: String? = null, condition: () -> Boolean) {
+    val end = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+    while (!condition()) {
+        if (Thread.interrupted()) throw InterruptedException("interrupted while waiting" + (what?.let { " for $it" } ?: ""))
+        if (System.nanoTime() > end) throw TimeoutException("still waiting after $timeoutMs ms" + (what?.let { " for $it" } ?: ""))
+        ThreadTestUtil.unblockThreadsWaitingForProgressOnCurrentLooper()
+        if (mainLooper.isIdle) LockSupport.parkNanos(200_000) else mainLooper.runOneTask()
+    }
 }
 
-/** Moves the main looper's clock on (the player's 10-second watch, Up next's countdown). */
-fun idleFor(ms: Long) = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ms))
+/**
+ * Runs what is on the main looper and due now, up to a mark put behind it. (Idling the looper
+ * whole never returns once a player's test clock hands it message after message: a player let
+ * go of inside such a call, by a refusal that landed there, stalled the test and the whole job.)
+ */
+fun runDue() {
+    var reached = false
+    Handler(Looper.getMainLooper()).post { reached = true }
+    runUntil(what = "the main looper to run what is due") { reached }
+}
+
+/** Moves the main looper's clock on (the player's 10-second watch, Up next's countdown) and runs what is due then. */
+fun idleFor(ms: Long) {
+    ShadowSystemClock.advanceBy(Duration.ofMillis(ms))
+    runDue()
+}
+
+/**
+ * Lets everything on its way land: returns once no call to [home] is queued or running, no
+ * coroutine of [scopes] (the playback's background work) is alive, the home was asked nothing
+ * new, and the main looper has run what those left it. After it "nothing more was posted" is a
+ * fact, not a guess about how long an answer takes.
+ */
+fun settle(home: FakeHome, vararg scopes: CoroutineScope) {
+    fun quiet() = home.idling.isIdleNow && scopes.all { it.coroutineContext[Job]!!.children.none() }
+    val end = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(STALL_MS)
+    while (true) {
+        // a call or coroutine that ends from here on has already queued its next step on the
+        // main looper, before the mark; one that starts is seen below, by itself or by its ask
+        val asked = home.asked
+        val before = quiet()
+        runDue()
+        if (before && quiet() && asked == home.asked) return
+        if (System.nanoTime() > end) throw TimeoutException("the home's answers never settled; asked ${home.paths.takeLast(20)}")
+        LockSupport.parkNanos(200_000)
+    }
+}

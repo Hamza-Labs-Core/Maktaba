@@ -32,6 +32,7 @@ import com.hamzalabs.maktaba.core.ui.TimeLeftLine
 import com.hamzalabs.maktaba.core.ui.TimeWarning
 import com.hamzalabs.maktaba.core.ui.TimesUpScreen
 import com.hamzalabs.maktaba.player.harness.FakeHome
+import com.hamzalabs.maktaba.player.harness.NoStall
 import com.hamzalabs.maktaba.player.harness.settled
 import com.hamzalabs.maktaba.player.harness.shown
 import mockwebserver3.MockResponse
@@ -56,6 +57,7 @@ private const val OWN = "/api/me/parental/requests"
 @RunWith(AndroidJUnit4::class)
 @Config(qualifiers = PHONE)
 class ParentalScreensTest {
+    @get:Rule(order = NoStall.FIRST) val noStall = NoStall()
     @get:Rule(order = 0) val home = FakeHome()
     @get:Rule(order = 1) val compose = createAndroidComposeRule<ComponentActivity>()
 

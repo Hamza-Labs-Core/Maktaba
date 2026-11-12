@@ -95,6 +95,8 @@ class Playback(
     private val cast: (ExoPlayer) -> Player = { castable(context, it) },
     /** Hands the player to the system's controls (the notification, the lock screen). */
     private val system: Boolean = true,
+    /** The time now, in milliseconds: when the stream was opened and when to renew it (a test gives its own clock). */
+    private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
     var video by mutableStateOf<Video?>(null)
         private set
@@ -353,7 +355,7 @@ class Playback(
             waiting = null
             ladder = s.ladder
             ended = false
-            openedAt = System.currentTimeMillis()
+            openedAt = nowMs()
             renewAt = (s.expiresMillis ?: Long.MAX_VALUE).let { if (it == Long.MAX_VALUE) it else it - 60_000 }
             if (old != null && old != s.sessionId) background.launch { client.closeStream(old) }
         } catch (e: CancellationException) {
@@ -490,7 +492,7 @@ class Playback(
      */
     internal fun refusedForTime(refusal: TimeRefusal, atMs: Long) {
         val s = session
-        val sinceReopen = System.currentTimeMillis() - lapseReopenedAt
+        val sinceReopen = nowMs() - lapseReopenedAt
         if (refusal.reason != TimeReason.NO_HEARTBEAT || s == null || sinceReopen < LAPSE_REOPEN_ONCE_MS) {
             stopForTime(refusal, atMs)
             return
@@ -503,7 +505,7 @@ class Playback(
                 // stopped, or already replaced, while this waited its turn
                 if (session != s) return@withLock
                 open(fromMs = atMs.coerceAtLeast(0))
-                if (session != null && session != s) lapseReopenedAt = System.currentTimeMillis()
+                if (session != null && session != s) lapseReopenedAt = nowMs()
             }
             if (!wasPlaying) control?.playWhenReady = false
         }
@@ -544,13 +546,13 @@ class Playback(
                 if (control == null) return
                 continue
             }
-            if (failed != null && System.currentTimeMillis() - openedAt < 30_000) {
+            if (failed != null && nowMs() - openedAt < 30_000) {
                 releasePlayers()
                 Log.w("Maktaba", "player: ${failed.errorCodeName}", failed)
                 problem = playbackFailure(failed)
                 return
             }
-            if (failed != null || System.currentTimeMillis() >= renewAt) {
+            if (failed != null || nowMs() >= renewAt) {
                 val wasPlaying = p.playWhenReady
                 openWhenFree(fromMs = p.currentPosition)
                 if (!wasPlaying) control?.playWhenReady = false
