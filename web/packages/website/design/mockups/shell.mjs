@@ -250,6 +250,9 @@ export function footer(lang, page, variant = "a") {
 // A 404 answers the address that was asked for, which is no page: it carries no canonical or
 // hreflang alternates (they would name a dead address, and the link check rightly refuses one),
 // and asks not to be indexed.
+// Part B's pages that maktaba.tv does not serve yet (60.10, 60.11, 60.12 build them).
+const UNBUILT = ["download", "help", "help-topic"];
+
 const NOT_FOUND_HEAD = '<meta name="robots" content="noindex" />';
 
 export const PATHS = {
@@ -285,8 +288,11 @@ export function page({
 }) {
   const dir = lang === "ar" ? "rtl" : "ltr";
   const path = PATHS[key];
-  const en = `https://maktaba.tv${path}`;
-  const ar = `https://maktaba.tv/ar${path}`;
+  // A page the site does not have yet names itself root-relative, so the head names no dead
+  // maktaba.tv address (the link check refuses one); its build makes the address absolute.
+  const origin = UNBUILT.includes(key) ? "" : "https://maktaba.tv";
+  const en = `${origin}${path}`;
+  const ar = `${origin}/ar${path}`;
   const b = variant === "b";
   const textFonts = (lang === "ar" ? ["400-arabic", "600-arabic", "400-latin"] : ["400-latin", "600-latin"]).map(
     (f) => `maktaba-text-${f}`
@@ -322,7 +328,7 @@ ${
     <meta property="og:title" content="${social}" />
     <meta property="og:description" content="${description}" />
     <meta property="og:locale" content="${lang === "ar" ? "ar_AR" : "en_US"}" />
-    <meta property="og:image" content="https://maktaba.tv/${lang === "ar" ? "ar/" : ""}social/${key}.png" />
+    <meta property="og:image" content="png/social-${key === "home" ? "home-1" : key}.${lang}.1200.dark.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />`
