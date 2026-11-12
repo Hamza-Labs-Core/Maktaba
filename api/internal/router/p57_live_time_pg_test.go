@@ -29,7 +29,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 )
 
-const liveTimeProblem = "https://maktaba.tv/problems/parental-time"
+const liveTimeProblem = parentalh.TypeParentalTime
 
 type liveTimeEnv struct {
 	*liveEnv
