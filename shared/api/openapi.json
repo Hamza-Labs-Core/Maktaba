@@ -9883,6 +9883,148 @@
         "operationId": "markFavorites"
       }
     },
+    "/me/history": {
+      "get": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "The caller's watch history",
+        "description": "The videos the signed-in user watched, newest first: their own history only, for any signed-in user. A video the account watched and may no longer see (a parental limit hides it now) stays in the list as a row with `available: false`. Such a row says when and how much was watched and carries no video id, title, length or position. An app shows it as \"Not available\", with no title, no poster, no link to the video and no remove button.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Rows per page.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Rows to skip.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "description": "Only watches that started at or after this time: RFC 3339, or a date as `YYYY-MM-DD`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "description": "Only watches that started at or before this time: RFC 3339, or a date as `YYYY-MM-DD`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the history.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items",
+                    "limit",
+                    "offset"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "key",
+                          "available",
+                          "video_id",
+                          "title",
+                          "times_watched",
+                          "total_watch_sec",
+                          "last_watched_at"
+                        ],
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "description": "The row's identity in a list. The video's id when `available` is true. Otherwise a value made from the time of the last watch: the same on every read, and it names no video."
+                          },
+                          "available": {
+                            "type": "boolean",
+                            "description": "False when the account may no longer see the video. The row then has an empty `video_id` and `title`, and its `duration_sec`, `best_percent`, `position_sec` and `completed` are zero and false."
+                          },
+                          "video_id": {
+                            "type": "string",
+                            "description": "The video's id; empty when `available` is false."
+                          },
+                          "title": {
+                            "type": "string",
+                            "description": "The video's title; empty when `available` is false."
+                          },
+                          "duration_sec": {
+                            "type": "number",
+                            "description": "The video's length in seconds."
+                          },
+                          "times_watched": {
+                            "type": "integer",
+                            "description": "How many times the caller watched it."
+                          },
+                          "total_watch_sec": {
+                            "type": "integer",
+                            "description": "The seconds the caller watched it in all."
+                          },
+                          "best_percent": {
+                            "type": "number",
+                            "description": "The furthest the caller got, as a percentage of the video."
+                          },
+                          "last_watched_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "When the caller's last watch of it started."
+                          },
+                          "position_sec": {
+                            "type": "number",
+                            "description": "Where playback resumes, in seconds."
+                          },
+                          "completed": {
+                            "type": "boolean",
+                            "description": "The caller finished the video."
+                          }
+                        }
+                      }
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getMyHistory"
+      }
+    },
     "/me/pinned-libraries": {
       "get": {
         "tags": [

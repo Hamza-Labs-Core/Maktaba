@@ -6,6 +6,7 @@ package router_test
 
 import (
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -136,4 +137,105 @@ func TestP57FilterWhenThePolicyCannotBeRead(t *testing.T) {
 			}
 		}
 	}
+}
+
+// Finding 10 (story 57.03's history row): what the child watched and may no longer see
+// stays in its own history and activity as a row that is not available. The row says when
+// and how much was watched and nothing that names the video: no id, title, length or
+// position, and a key made from the time alone.
+func TestP57FilterHistoryShowsHiddenAsNotAvailable(t *testing.T) {
+	e := setupHome(t).pfEnv
+	for _, u := range []string{pfChild, pfViewer} {
+		e.exec(`INSERT INTO watch_sessions (id, user_id, video_id, started_at, duration_sec, percent_complete, state) VALUES
+			(gen_random_uuid(), $1, $2, now() - interval '3 hours', 60, 50, 'stopped'),
+			(gen_random_uuid(), $1, $3, now() - interval '2 hours', 40, 30, 'stopped'),
+			(gen_random_uuid(), $1, $3, now() - interval '1 hour', 30, 70, 'stopped')`, u, pfKid, pfTeen)
+		e.exec(`INSERT INTO playback_state (user_id, video_id, position_sec, completed, updated_at) VALUES ($1, $2, 33, false, now())`, u, pfTeen)
+	}
+	type item struct {
+		Key           string  `json:"key"`
+		Available     *bool   `json:"available"`
+		VideoID       string  `json:"video_id"`
+		Title         string  `json:"title"`
+		DurationSec   float64 `json:"duration_sec"`
+		TimesWatched  int     `json:"times_watched"`
+		TotalWatchSec int     `json:"total_watch_sec"`
+		BestPercent   float64 `json:"best_percent"`
+		LastWatchedAt string  `json:"last_watched_at"`
+		PositionSec   float64 `json:"position_sec"`
+	}
+	history := func(who string) (string, []item) {
+		t.Helper()
+		code, body := e.get(who, "/api/me/history")
+		var page struct {
+			Items []item `json:"items"`
+		}
+		if err := json.Unmarshal([]byte(body), &page); err != nil || code != http.StatusOK {
+			t.Fatalf("%s history: %d %s (%v)", who, code, body, err)
+		}
+		return body, page.Items
+	}
+	// an account with no limit: both rows, each available, keyed by its video
+	_, rows := history("viewer")
+	if len(rows) != 2 || rows[0].VideoID != pfTeen || rows[1].VideoID != pfKid {
+		t.Fatalf("viewer history: %+v", rows)
+	}
+	for _, r := range rows {
+		if r.Available == nil || !*r.Available || r.Key != r.VideoID || r.Title == "" {
+			t.Errorf("viewer row: %+v, want available and keyed by its video", r)
+		}
+	}
+	for _, who := range []string{"child", "child-cookie", "viewer-device"} {
+		body, rows := history(who)
+		if len(rows) != 2 {
+			t.Fatalf("%s history has %d rows, want the hidden one kept: %s", who, len(rows), body)
+		}
+		hidden, shown := rows[0], rows[1]
+		if shown.VideoID != pfKid || shown.Available == nil || !*shown.Available || shown.Key != pfKid || shown.Title != "Kid-Title" {
+			t.Errorf("%s: the row it may see: %+v", who, shown)
+		}
+		if hidden.Available == nil || *hidden.Available {
+			t.Errorf("%s: the hidden row is not marked unavailable: %+v", who, hidden)
+		}
+		if hidden.VideoID != "" || hidden.Title != "" || hidden.DurationSec != 0 || hidden.PositionSec != 0 || hidden.BestPercent != 0 {
+			t.Errorf("%s: the hidden row says more than when and how much: %+v", who, hidden)
+		}
+		if hidden.TimesWatched != 2 || hidden.TotalWatchSec != 70 || hidden.LastWatchedAt == "" {
+			t.Errorf("%s: the hidden row lost the child's own numbers: %+v", who, hidden)
+		}
+		if hidden.Key == "" || hidden.Key == shown.Key {
+			t.Errorf("%s: the hidden row has no key of its own: %+v", who, hidden)
+		}
+		for _, m := range append([]string{pfTeen, pfTeenName}, e.hashOf(pfTeen), strings.ReplaceAll(pfTeen, "-", "")) {
+			if strings.Contains(body, m) {
+				t.Errorf("%s history names %s: %s", who, m, body)
+			}
+		}
+		// the key is the same on every read
+		if _, again := history(who); again[0].Key != hidden.Key {
+			t.Errorf("%s: the hidden row's key changed between reads: %q, %q", who, hidden.Key, again[0].Key)
+		}
+		// the activity feed keeps the entry the same way
+		code, feed := e.get(who, "/api/me/activity?types=watched")
+		if code != http.StatusOK || strings.Contains(feed, pfTeen) || strings.Contains(feed, pfTeenName) {
+			t.Errorf("%s activity names the hidden video: %d %s", who, code, feed)
+		}
+		if strings.Count(feed, `"available":false`) != 2 || strings.Count(feed, `"available":true`) != 1 {
+			t.Errorf("%s activity: want two entries not available and one available: %s", who, feed)
+		}
+	}
+	// allowed again, the row is the video's again
+	e.rule(parental.EffectAllow, parental.SubjectVideo, pfTeen)
+	if _, rows := history("child"); len(rows) != 2 || rows[0].VideoID != pfTeen || rows[0].Title != pfTeenName || rows[0].Available == nil || !*rows[0].Available {
+		t.Errorf("child history after an allow: %+v", rows)
+	}
+}
+
+func (e *pfEnv) hashOf(id string) string {
+	e.t.Helper()
+	var h string
+	if err := e.db.QueryRow(`SELECT content_hash FROM videos WHERE id = $1`, id).Scan(&h); err != nil {
+		e.t.Fatal(err)
+	}
+	return h
 }

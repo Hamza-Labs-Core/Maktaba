@@ -2745,6 +2745,78 @@
       "en": "Add videos to or remove them from the favorites",
       "ar": "إضافة مقاطع إلى المفضلة أو إزالتها منها"
     },
+    "/paths/~1me~1history/get/summary": {
+      "en": "The caller's watch history",
+      "ar": "سجلّ مشاهدة المستخدم"
+    },
+    "/paths/~1me~1history/get/description": {
+      "en": "The videos the signed-in user watched, newest first: their own history only, for any signed-in user. A video the account watched and may no longer see (a parental limit hides it now) stays in the list as a row with `available: false`. Such a row says when and how much was watched and carries no video id, title, length or position. An app shows it as \"Not available\", with no title, no poster, no link to the video and no remove button.",
+      "ar": "الفيديوهات التي شاهدها المستخدم المسجَّل دخوله، الأحدث أولًا: سجلّه هو فقط، ولأي مستخدم مسجَّل دخوله. الفيديو الذي شاهده الحساب ولم يعد مسموحًا له برؤيته (يحجبه الآن حدّ الرقابة الأبوية) يبقى في القائمة صفًّا فيه `available: false`. هذا الصف يذكر متى شوهد وكم شوهد، ولا يحمل معرّف الفيديو ولا عنوانه ولا مدّته ولا موضع المتابعة. يعرضه التطبيق بعبارة «غير متاح»، بلا عنوان ولا ملصق ولا رابط إلى الفيديو ولا زر إزالة."
+    },
+    "/paths/~1me~1history/get/parameters/0/description": {
+      "en": "Rows per page.",
+      "ar": "عدد الصفوف في الصفحة."
+    },
+    "/paths/~1me~1history/get/parameters/1/description": {
+      "en": "Rows to skip.",
+      "ar": "عدد الصفوف التي تُتخطّى."
+    },
+    "/paths/~1me~1history/get/parameters/2/description": {
+      "en": "Only watches that started at or after this time: RFC 3339, or a date as `YYYY-MM-DD`.",
+      "ar": "المشاهدات التي بدأت في هذا الوقت أو بعده فقط: بصيغة RFC 3339، أو تاريخ بصيغة `YYYY-MM-DD`."
+    },
+    "/paths/~1me~1history/get/parameters/3/description": {
+      "en": "Only watches that started at or before this time: RFC 3339, or a date as `YYYY-MM-DD`.",
+      "ar": "المشاهدات التي بدأت في هذا الوقت أو قبله فقط: بصيغة RFC 3339، أو تاريخ بصيغة `YYYY-MM-DD`."
+    },
+    "/paths/~1me~1history/get/responses/200/description": {
+      "en": "One page of the history.",
+      "ar": "صفحة واحدة من السجلّ."
+    },
+    "/paths/~1me~1history/get/responses/200/content/application~1json/schema/properties/items/items/properties/key/description": {
+      "en": "The row's identity in a list. The video's id when `available` is true. Otherwise a value made from the time of the last watch: the same on every read, and it names no video.",
+      "ar": "هوية الصف في القائمة. هي معرّف الفيديو حين تكون `available` صحيحة. وفي غير ذلك قيمة مصنوعة من وقت آخر مشاهدة: تبقى نفسها في كل قراءة، ولا تدلّ على أي فيديو."
+    },
+    "/paths/~1me~1history/get/responses/200/content/application~1json/schema/properties/items/items/properties/available/description": {
+      "en": "False when the account may no longer see the video. The row then has an empty `video_id` and `title`, and its `duration_sec`, `best_percent`, `position_sec` and `completed` are zero and false.",
+      "ar": "تكون خاطئة حين لم يعد مسموحًا للحساب برؤية الفيديو. عندها يكون `video_id` و`title` فارغين، وتكون `duration_sec` و`best_percent` و`position_sec` أصفارًا و`completed` خاطئة."
+    },
+    "/paths/~1me~1history/get/responses/200/content/application~1json/schema/properties/items/items/properties/video_id/description": {
+      "en": "The video's id; empty when `available` is false.",
+      "ar": "معرّف الفيديو؛ يكون فارغًا حين تكون `available` خاطئة."
+    },
+    "/paths/~1me~1history/get/responses/200/content/application~1json/schema/properties/items/items/properties/title/description": {
+      "en": "The video's title; empty when `available` is false.",
+      "ar": "عنوان الفيديو؛ يكون فارغًا حين تكون `available` خاطئة."
+    },
+    "/paths/~1me~1history/get/responses/200/content/application~1json/schema/properties/items/items/properties/duration_sec/description": {
+      "en": "The video's length in seconds.",
+      "ar": "مدّة الفيديو بالثواني."
+    },
+    "/paths/~1me~1history/get/responses/200/content/application~1json/schema/properties/items/items/properties/times_watched/description": {
+      "en": "How many times the caller watched it.",
+      "ar": "عدد مرّات مشاهدة المستخدم له."
+    },
+    "/paths/~1me~1history/get/responses/200/content/application~1json/schema/properties/items/items/properties/total_watch_sec/description": {
+      "en": "The seconds the caller watched it in all.",
+      "ar": "مجموع الثواني التي شاهده فيها المستخدم."
+    },
+    "/paths/~1me~1history/get/responses/200/content/application~1json/schema/properties/items/items/properties/best_percent/description": {
+      "en": "The furthest the caller got, as a percentage of the video.",
+      "ar": "أبعد ما وصل إليه المستخدم، نسبةً مئوية من الفيديو."
+    },
+    "/paths/~1me~1history/get/responses/200/content/application~1json/schema/properties/items/items/properties/last_watched_at/description": {
+      "en": "When the caller's last watch of it started.",
+      "ar": "وقت بدء آخر مشاهدة للمستخدم."
+    },
+    "/paths/~1me~1history/get/responses/200/content/application~1json/schema/properties/items/items/properties/position_sec/description": {
+      "en": "Where playback resumes, in seconds.",
+      "ar": "موضع متابعة التشغيل، بالثواني."
+    },
+    "/paths/~1me~1history/get/responses/200/content/application~1json/schema/properties/items/items/properties/completed/description": {
+      "en": "The caller finished the video.",
+      "ar": "أتمّ المستخدم مشاهدة الفيديو."
+    },
     "/paths/~1me~1pinned-libraries/get/responses/200/description": {
       "en": "The pins in order.",
       "ar": "المثبّتات بترتيبها."

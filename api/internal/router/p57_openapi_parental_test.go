@@ -32,6 +32,7 @@ import (
 var p57Touched = []string{
 	"/search", "/search/suggest", "/tags", "/libraries/{id}/stats", "/channels", "/libraries/manage", "/capabilities",
 	"/stream/sessions", "/stream/sessions/{id}", "/stream/sessions/{id}/progress", "/stream/sessions/{id}/errors", "/stream/capabilities",
+	"/me/history", // a hidden video's row is "not available" (57.03)
 }
 
 func sharedAPI(t *testing.T, name string) []byte {

@@ -47,7 +47,17 @@ type SessionView struct {
 
 // HistoryItem is one watched video in the caller's history, with the
 // resume position sourced from playback_state (D2).
+//
+// A video the caller watched and may no longer see (Epic 57 story 57.03: its
+// parental limit hides it now) stays in the history as a row that is not
+// available: Available is false and the row says only when and how much the
+// caller watched. It carries no video id, title, length or position, so
+// nothing in it names the video or leads to its poster. Key is every row's
+// identity in a list: the video's id for an available row, and for one that is
+// not, a value made from the time of the last watch (it names no video).
 type HistoryItem struct {
+	Key           string  `json:"key"`
+	Available     bool    `json:"available"`
 	VideoID       string  `json:"video_id"`
 	Title         string  `json:"title"`
 	DurationSec   float64 `json:"duration_sec"`

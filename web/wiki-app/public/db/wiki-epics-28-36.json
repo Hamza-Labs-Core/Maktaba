@@ -229,14 +229,17 @@
       "related": [
         "epic-29-analytics",
         "plan-29.02-watch-history",
-        "entity-playback_state"
+        "entity-playback_state",
+        "ep-get-me-history"
       ],
       "files": {
         "story": "specs/epics/29-analytics/story-29-02-watch-history.md",
         "plan": "specs/epics/29-analytics/plan-29-02-watch-history.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /me/history"
+      ],
       "db_tables": [
         "playback_state"
       ],

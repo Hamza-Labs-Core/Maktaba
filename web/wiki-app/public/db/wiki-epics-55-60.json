@@ -1096,7 +1096,8 @@
         "ep-get-videos",
         "ep-get-search",
         "ep-post-search",
-        "ep-post-stream-sessions"
+        "ep-post-stream-sessions",
+        "ep-get-me-history"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-03-server-filter.md",
@@ -1107,7 +1108,8 @@
         "GET /videos",
         "GET /search",
         "POST /search",
-        "POST /stream/sessions"
+        "POST /stream/sessions",
+        "GET /me/history"
       ],
       "db_tables": [
         "collection_items",
