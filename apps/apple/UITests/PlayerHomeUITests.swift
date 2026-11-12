@@ -113,10 +113,20 @@ final class PlayerHomeUITests: PlayerUITestCase {
         scrollTo(card)
         // the recommendations and each card's title come after Home shows: a press during
         // their redraw opened no menu (#695's iPad, 2026-11-07)
+        // and For You is the page's last row: the swipe that brought it may still be coming
+        // to rest. Pressed once the card has stopped and the home has been asked nothing more
+        waitUntilStill(card, timeout: 10)
         waitUntilHomeIsQuiet()
-        card.press(forDuration: 2.5)
+        waitUntilStill(card, timeout: 5)
+        // held 4 s: on CI's iPhone a 2.5 s hold ended before the app had taken the touch for
+        // a long press, and the lift was a tap that opened v6's page (2026-11-12; Home did
+        // not move or reload in that run's recording, and no touch was cancelled)
+        card.press(forDuration: 4)
         let item = app.buttons["home.menu.notInterested"].firstMatch
-        XCTAssertTrue(item.waitForExistence(timeout: 5), "Not interested in the context menu")
+        let shown = item.waitForExistence(timeout: 10)
+        XCTAssertTrue(shown, "Not interested in the context menu"
+            + (shown ? "" : element("screen.video").exists ? ": the press was taken as a tap (v6's page opened)" : ": no menu and no page"))
+        guard shown else { return }
         item.tap()
         XCTAssertTrue(card.waitForNonExistence(timeout: 5), "the card is gone")
         XCTAssertTrue(row("rec-for_you").descendants(matching: .any)["home.card.v11"].exists, "the others stay")
