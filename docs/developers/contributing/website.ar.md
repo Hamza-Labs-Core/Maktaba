@@ -121,14 +121,15 @@ npm run lighthouse -- run --set pr --base http://127.0.0.1:8788 --out lighthouse
 | التطبيق | يلتقطها | ملف التكامل المستمر أو الملف |
 |---|---|---|
 | الويب | `scripts/capture-web.mjs`: يقدّم Vite تطبيق الويب، ويجيب Playwright عن `/api/*` من المكتبة التجريبية، بقياس 1440×900 وكثافة 2× | `product-shots-web` (مهمة `product shots (web)` في عمل الموقع) |
-| iPhone وiPad | اختبارات الواجهة على MockHome في محاكٍ يُنشأ لكل جولة | `product-shots-iphone` و`product-shots-ipad` |
+| iPhone وiPad | اختبارات الواجهة على MockHome في محاكٍ يُنشأ لكل جولة؛ وطابور تطبيق Remote من اختبارات واجهته (على iPhone وحده) | `product-shots-iphone` و`product-shots-iphone-remote` و`product-shots-ipad` |
 | Apple TV | `tv-ui-tests` في محاكي tvOS يُنشأ لكل جولة | `product-shots-appletv` |
 | Mac | اختبارات واجهة تطبيق Mac في التكامل المستمر (لا على جهاز Mac محلي أبدًا) | `product-shots-mac` |
 | Android TV والهاتف | صور Roborazzi المرجعية على المكتبة التجريبية | `apps/android/player/src/test/screenshots/demo/`, `apps/tv/android/app/src/test/screenshots/demo/` |
 
 **إعادة التقاطها عند كل إصدار:**
 
-1. اختاروا جولة التكامل المستمر لإيداع الإصدار على main (`gh run list -w CI -b main`).
+1. اختاروا جولة التكامل المستمر لإيداع الإصدار على main (`gh run list -w CI -b main`). ولتطبيقات Apple وحدها،
+   يشغّل `gh workflow run product-shots.yml --ref main` اختبارات لقطاتها فقط.
 2. من `web/packages/website`: `npm run shots -- --from-run <run id>`. ينزّل ملفات `product-shots-*`
    من الجولة، ويقصّ كل لقطة إلى المنطقة الآمنة من الإطار، ويكتب WebP وAVIF بكل عرض من أعراض نقاط
    التوقف بلا بيانات وصفية، ويُبقي كل ملف أقل من 150 كيلوبايت، ويعيد كتابة `shots-manifest.json`.

@@ -124,14 +124,15 @@ by `scripts/shots.mjs`, with each one's sizes in `shots-manifest.json`.
 | App | Captured by | CI artifact or file |
 |---|---|---|
 | Web | `scripts/capture-web.mjs`: Vite serves the web app, Playwright answers `/api/*` from the demo library, 1440×900 at 2× | `product-shots-web` (the website job's `product shots (web)`) |
-| iPhone, iPad | the MockHome UI tests on a per-run simulator | `product-shots-iphone`, `product-shots-ipad` |
+| iPhone, iPad | the MockHome UI tests on a per-run simulator; the Remote's Queue from the Remote UI tests (iPhone only) | `product-shots-iphone`, `product-shots-iphone-remote`, `product-shots-ipad` |
 | Apple TV | `tv-ui-tests` on a per-run tvOS simulator | `product-shots-appletv` |
 | Mac | the Mac app's CI UI tests (never on a local Mac) | `product-shots-mac` |
 | Android TV, phone | Roborazzi references on the demo library | `apps/android/player/src/test/screenshots/demo/`, `apps/tv/android/app/src/test/screenshots/demo/` |
 
 **Rerunning them at a release:**
 
-1. Pick the CI run of the release's commit on main (`gh run list -w CI -b main`).
+1. Pick the CI run of the release's commit on main (`gh run list -w CI -b main`). For the Apple apps alone,
+   `gh workflow run product-shots.yml --ref main` runs only their shot tests.
 2. From `web/packages/website`: `npm run shots -- --from-run <run id>`. It downloads the run's
    `product-shots-*` artifacts, crops each capture to the frame's safe area, writes WebP and
    AVIF at each breakpoint width without metadata, keeps each file under 150 KB, and rewrites
