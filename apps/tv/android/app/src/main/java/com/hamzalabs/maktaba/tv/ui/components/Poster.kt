@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.hamzalabs.maktaba.core.api.ApiClient
@@ -31,7 +32,8 @@ private val posters = LruCache<String, ImageBitmap>(160)
 /**
  * A video's picture. The home serves it only to a signed-in caller, so it is fetched with the
  * token through the core's client ([ApiClient.poster]), not by URL. Until it arrives (or when
- * the video has none) the card shows the gold ۞ on the surface colour.
+ * the video has none) the card shows the gold ۞ on the surface colour. Tagged `poster-shown` once
+ * the picture is drawn and `poster-loading` until then, so a test waits for the real picture.
  */
 @Composable
 fun Poster(client: ApiClient, video: String, modifier: Modifier = Modifier) {
@@ -53,7 +55,7 @@ fun Poster(client: ApiClient, video: String, modifier: Modifier = Modifier) {
     // the whole frame, as a player shows the video: a vertical or square one has black bars
     // at its sides, an ultra-wide one above and below
     Box(
-        modifier.background(if (img != null) Color.Black else MaktabaPalette.Raised),
+        modifier.background(if (img != null) Color.Black else MaktabaPalette.Raised).testTag(if (img != null) "poster-shown" else "poster-loading"),
         contentAlignment = Alignment.Center,
     ) {
         if (img != null) {

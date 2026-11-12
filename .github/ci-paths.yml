@@ -700,6 +700,8 @@ linux_app:
 android_apps:
   - *ci
   - 'apps/android/**'
+  # the demo library the Demo*ScreenshotTests and DemoLibraryTest read (60.09)
+  - 'tests/fixtures/demo-library/**'
   # the problem types and codes the apps compare are checked against the registry (60.06)
   - 'shared/api/problems.json'
   - '.github/workflows/_android-apps.yml'
@@ -714,6 +716,8 @@ android_apps:
 android_tv:
   - *ci
   - 'apps/tv/android/**'
+  # the demo library the TV's DemoScreenshotTest reads (60.09)
+  - 'tests/fixtures/demo-library/**'
   - 'apps/android/core/**'
   - 'apps/android/client/**'
   - 'apps/android/gradle/libs.versions.toml'
@@ -728,6 +732,8 @@ android_tv:
 desktop_player:
   - *ci
   - 'apps/desktop-player/**'
+  # the demo library the client's DemoLibraryTest reads (60.09)
+  - 'tests/fixtures/demo-library/**'
   - 'apps/android/client/**'
   - 'apps/android/core/src/main/res/font/**'
   - 'apps/android/gradle/libs.versions.toml'
