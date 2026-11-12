@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 216,
+    "endpoint": 218,
     "entity": 42,
     "epic": 59,
     "feature": 3,
@@ -10025,6 +10025,50 @@
         "path": "/libraries/{id}/youtube/sources/{sid}/age-tier",
         "tag": "Parental controls",
         "operationId": "setYouTubeSourceAgeTier"
+      }
+    },
+    {
+      "id": "ep-get-parental-review",
+      "type": "endpoint",
+      "title": "GET /parental/review",
+      "content": "The detected age tiers waiting for an admin",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.17"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/review",
+        "tag": "Parental controls",
+        "operationId": "listParentalReview"
+      }
+    },
+    {
+      "id": "ep-post-parental-review-video-id",
+      "type": "endpoint",
+      "title": "POST /parental/review/{video_id}",
+      "content": "Answer a detected age tier",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/parental/review/{video_id}",
+        "tag": "Parental controls",
+        "operationId": "decideParentalReview"
       }
     },
     {

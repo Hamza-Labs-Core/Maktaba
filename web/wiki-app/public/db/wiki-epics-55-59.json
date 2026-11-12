@@ -1539,14 +1539,17 @@
       ],
       "related": [
         "epic-57-parental-controls",
-        "entity-transcript_segments"
+        "entity-transcript_segments",
+        "ep-get-parental-review"
       ],
       "files": {
         "story": "specs/epics/57-parental-controls/story-57-17-detected-tiers.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /parental/review"
+      ],
       "db_tables": [
         "transcript_segments"
       ],

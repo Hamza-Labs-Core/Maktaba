@@ -12118,6 +12118,510 @@
         "operationId": "setYouTubeSourceAgeTier"
       }
     },
+    "/parental/review": {
+      "get": {
+        "tags": [
+          "Parental controls"
+        ],
+        "summary": "The detected age tiers waiting for an admin",
+        "description": "The videos whose age tier the content screen read from the transcript, on the home's own language model, and that no admin has answered: a tier the screen was not sure of (it rates nothing), a tier at or above the home's confidence line (it rates the video, and only ever more strictly than the library does), and a video the screen could not check. A video an admin rated is not listed. An admin sees every library; a guardian sees the libraries the accounts they look after can open. Newest first.",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "low_confidence",
+                "unconfirmed",
+                "not_checked"
+              ]
+            },
+            "description": "Only the videos in this state."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "description": "How many videos to return."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            },
+            "description": "How many videos to skip."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The review list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items",
+                    "total",
+                    "min_confidence",
+                    "limit",
+                    "offset"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "video_id",
+                          "title",
+                          "library_id",
+                          "library_name",
+                          "state",
+                          "detected_tier",
+                          "confidence",
+                          "categories",
+                          "not_checked",
+                          "model",
+                          "tier",
+                          "source",
+                          "updated_at"
+                        ],
+                        "properties": {
+                          "video_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "library_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "library_name": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "low_confidence",
+                              "unconfirmed",
+                              "not_checked"
+                            ],
+                            "description": "Why the video is in the list: `low_confidence`, the screen was not sure enough, so its tier rates nothing; `unconfirmed`, a detected tier at or above the line that no admin has answered; `not_checked`, the screen could not read the video."
+                          },
+                          "detected_tier": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "enum": [
+                              0,
+                              9,
+                              13,
+                              16,
+                              18,
+                              null
+                            ],
+                            "description": "The tier the screen read from the transcript; null when it could not say or did not check."
+                          },
+                          "confidence": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 1,
+                            "description": "How sure the screen is, from 0 to 1."
+                          },
+                          "categories": {
+                            "type": "object",
+                            "description": "What the screen heard, by category. Empty when the video was not checked.",
+                            "properties": {
+                              "violence": {
+                                "type": "object",
+                                "properties": {
+                                  "level": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 3,
+                                    "description": "How strong it is: `0` none, `1` mild, `2` moderate, `3` strong."
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "maxItems": 3,
+                                    "items": {
+                                      "type": "number"
+                                    },
+                                    "description": "Up to three times in the video, in seconds, where it was heard."
+                                  }
+                                }
+                              },
+                              "sexual_content": {
+                                "type": "object",
+                                "properties": {
+                                  "level": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 3,
+                                    "description": "How strong it is: `0` none, `1` mild, `2` moderate, `3` strong."
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "maxItems": 3,
+                                    "items": {
+                                      "type": "number"
+                                    },
+                                    "description": "Up to three times in the video, in seconds, where it was heard."
+                                  }
+                                }
+                              },
+                              "coarse_language": {
+                                "type": "object",
+                                "properties": {
+                                  "level": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 3,
+                                    "description": "How strong it is: `0` none, `1` mild, `2` moderate, `3` strong."
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "maxItems": 3,
+                                    "items": {
+                                      "type": "number"
+                                    },
+                                    "description": "Up to three times in the video, in seconds, where it was heard."
+                                  }
+                                }
+                              },
+                              "drugs_alcohol": {
+                                "type": "object",
+                                "properties": {
+                                  "level": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 3,
+                                    "description": "How strong it is: `0` none, `1` mild, `2` moderate, `3` strong."
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "maxItems": 3,
+                                    "items": {
+                                      "type": "number"
+                                    },
+                                    "description": "Up to three times in the video, in seconds, where it was heard."
+                                  }
+                                }
+                              },
+                              "frightening_scenes": {
+                                "type": "object",
+                                "properties": {
+                                  "level": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 3,
+                                    "description": "How strong it is: `0` none, `1` mild, `2` moderate, `3` strong."
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "maxItems": 3,
+                                    "items": {
+                                      "type": "number"
+                                    },
+                                    "description": "Up to three times in the video, in seconds, where it was heard."
+                                  }
+                                }
+                              },
+                              "mature_themes": {
+                                "type": "object",
+                                "properties": {
+                                  "level": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 3,
+                                    "description": "How strong it is: `0` none, `1` mild, `2` moderate, `3` strong."
+                                  },
+                                  "evidence": {
+                                    "type": "array",
+                                    "maxItems": 3,
+                                    "items": {
+                                      "type": "number"
+                                    },
+                                    "description": "Up to three times in the video, in seconds, where it was heard."
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "not_checked": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "enum": [
+                              "no_transcript",
+                              "unsupported_language",
+                              null
+                            ],
+                            "description": "Why the screen did not check the video: it has no transcript, or its language is not one the screen reads (Arabic and English). Null when it did."
+                          },
+                          "model": {
+                            "type": "string",
+                            "description": "The home's language model that gave the answer; empty when the video was not checked."
+                          },
+                          "tier": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "enum": [
+                              0,
+                              9,
+                              13,
+                              16,
+                              18,
+                              null
+                            ],
+                            "description": "The video's effective tier now, from every source. Null is unrated."
+                          },
+                          "source": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "enum": [
+                              "admin",
+                              "admin_container",
+                              "plex",
+                              "guide",
+                              "youtube",
+                              "plugin",
+                              "detected",
+                              "library_default",
+                              null
+                            ],
+                            "description": "Where the effective tier comes from. Null when there is no tier."
+                          },
+                          "updated_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "When the screen last wrote its answer."
+                          }
+                        }
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "description": "How many videos are in the list, before `limit` and `offset`."
+                    },
+                    "min_confidence": {
+                      "type": "number",
+                      "description": "The home's confidence line: a detected tier under it rates nothing. The setting `parental.detect_min_confidence`, 0.8 unless the home changed it."
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid `state`, `limit` or `offset`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Only an admin or a guardian reads the list; a restricted account is refused with `code`: `restricted`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listParentalReview"
+      }
+    },
+    "/parental/review/{video_id}": {
+      "parameters": [
+        {
+          "name": "video_id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": "The video's id."
+        }
+      ],
+      "post": {
+        "tags": [
+          "Parental controls"
+        ],
+        "summary": "Answer a detected age tier",
+        "description": "The admin confirms the detected tier, gives another, or clears it with `null`. The tier is stored as the admin's own tier on the video, which wins over every other source, and the video leaves the review list: what the screen detected for it rates nothing from then on, until the screen reads a changed transcript.",
+        "x-maktaba-role": "admin",
+        "requestBody": {
+          "required": true,
+          "description": "The admin's tier for the video.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "tier"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "tier": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "enum": [
+                      0,
+                      9,
+                      13,
+                      16,
+                      18,
+                      null
+                    ],
+                    "description": "The video's tier, or null for no admin tier."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The video's tier after the answer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "tier",
+                    "source",
+                    "recompute_count"
+                  ],
+                  "properties": {
+                    "tier": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "enum": [
+                        0,
+                        9,
+                        13,
+                        16,
+                        18,
+                        null
+                      ],
+                      "description": "The video's effective tier now. Null is unrated."
+                    },
+                    "source": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "admin",
+                        "admin_container",
+                        "plex",
+                        "guide",
+                        "youtube",
+                        "plugin",
+                        "detected",
+                        "library_default",
+                        null
+                      ],
+                      "description": "Where the effective tier comes from: `admin` when a tier was given; after `null`, whatever is left (the library's tier, for one). Null when there is no tier."
+                    },
+                    "recompute_count": {
+                      "type": "integer",
+                      "description": "Always 1: the video itself."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such video, or the screen has written nothing for it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "decideParentalReview"
+      }
+    },
     "/parental/ratings": {
       "get": {
         "tags": [

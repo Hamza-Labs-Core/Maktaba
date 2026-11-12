@@ -58,7 +58,8 @@ func everyMountWith(t *testing.T, caps *components.Capabilities) chi.Router {
 	MountClusterAuth(r, ClusterAuthDeps{DB: db})
 	MountNodeLocal(r, NodeLocalDeps{})
 	MountP51(r, P51Deps{DB: db, Capabilities: caps})
-	MountP57Tiers(r, P57TiersDeps{DB: db})
+	rc := MountP57Tiers(r, P57TiersDeps{DB: db})
+	MountP57Review(r, P57ReviewDeps{DB: db, Recompute: rc})
 	return r
 }
 
