@@ -536,10 +536,17 @@ func (h *Handler) AutoCollection(w http.ResponseWriter, r *http.Request) {
 		internal(w, r, "load collection", err)
 		return
 	}
+	// the count and the cards are of what the account may see (Epic 57 story 57.03)
 	member := `FROM ` + items + ` i JOIN videos v ON v.id = i.video_id
-		WHERE i.` + owner + ` = $1 AND v.library_id = $2 AND ` + visible
+		WHERE i.` + owner + ` = $1 AND v.library_id = $2 AND ` + shown(ctx)
 	if err := h.DB.QueryRowContext(ctx, `SELECT COUNT(*) `+member, gid, lib.ID).Scan(&ref.Videos); err != nil {
 		internal(w, r, "count collection", err)
+		return
+	}
+	if ref.Videos == 0 && parental.From(ctx).Limits() {
+		// a group with nothing the account may see is not in its list
+		// (libraryCollections) and answers here as one that is not there
+		httperror.Write(w, r, httperror.NotFound("collection "+gid))
 		return
 	}
 	var uid any

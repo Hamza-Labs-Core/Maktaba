@@ -134,7 +134,12 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	key := p.UserID + ":" + surface
-	if cached, ok := h.cacheLookup(key); ok {
+	// A kept answer was built under the limit of the request that made it. The
+	// limit differs by sign-in (a device's signal) and changes when a guardian
+	// tightens it, so a request with a limit is always read fresh and never
+	// kept (Epic 57 story 57.03), as the home's row cache does.
+	limited := parental.From(r.Context()).Limits()
+	if cached, ok := h.cacheLookup(key); ok && !limited {
 		cached.CacheHit = true
 		common.WriteJSON(w, r, http.StatusOK, cached)
 		return
@@ -184,7 +189,9 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt:   now.Add(h.ttlFor(r.Context())),
 	}
 
-	h.cacheStore(key, resp)
+	if !limited {
+		h.cacheStore(key, resp)
+	}
 	common.WriteJSON(w, r, http.StatusOK, resp)
 }
 
