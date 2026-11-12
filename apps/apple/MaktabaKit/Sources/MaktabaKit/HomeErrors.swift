@@ -26,6 +26,11 @@ public enum ErrorKind: Equatable, Hashable, Sendable {
     /// Light-tier NAS converts one video at a time). The player asks again by itself, after
     /// `retryAfter` seconds when the home said.
     case transcodeBusy(retryAfter: Int?)
+    /// 503 `parental_time_unknown` (Epic 57 story 57.14): the home cannot read a restricted
+    /// account's watching time right now, so it gives nothing rather than uncounted time.
+    /// Not an error and not the end of the time: the player waits and asks again by itself,
+    /// after `retryAfter` seconds when the home said.
+    case timeUnknown(retryAfter: Int?)
 
     /// The kind of an answer with `status` and its problem+json (nil: not one).
     public static func of(status: Int, problem: Problem?, retryAfter: Int? = nil) -> ErrorKind {
@@ -44,6 +49,7 @@ public enum ErrorKind: Equatable, Hashable, Sendable {
         if status == 503 && (code == "transcode_busy" || slug == "transcode-busy") {
             return .transcodeBusy(retryAfter: retryAfter)
         }
+        if status == 503 && code == "parental_time_unknown" { return .timeUnknown(retryAfter: retryAfter) }
         switch status {
         case 401: return .signedOut
         case 403: return .noAccess
@@ -64,6 +70,19 @@ extension ErrorKind {
         guard case let .transcodeBusy(after) = self else { return nil }
         return min(max(after ?? 10, 1), 60)
     }
+
+    /// The seconds before the home is asked again when it could not read a restricted
+    /// account's watching time (its `Retry-After`, else 5, kept within 1...60); nil for any
+    /// other kind.
+    public var timeUnknownRetrySeconds: Int? {
+        guard case let .timeUnknown(after) = self else { return nil }
+        return min(max(after ?? 5, 1), 60)
+    }
+
+    /// A player that got this kind for a stream waits and asks again by itself, this many
+    /// seconds later, showing the kind's sentence and no error screen: the home has no
+    /// transcode slot free, or cannot read the account's watching time right now.
+    public var waitRetrySeconds: Int? { transcodeRetrySeconds ?? timeUnknownRetrySeconds }
 }
 
 /// Why Maktaba Cloud's relay refused a plan's play (Epic 50 story 50.19).
@@ -230,7 +249,7 @@ public struct HomeFailure: Equatable, Sendable {
         switch kind {
         case .signedOut: [.signInAgain, .back]
         case .unreachable: [.tryAgain, .chooseAnotherHome, .back]
-        case .notReady, .busy, .server, .relay(.streamLimit), .relay(.homeBusy), .transcodeBusy: [.tryAgain, .back]
+        case .notReady, .busy, .server, .relay(.streamLimit), .relay(.homeBusy), .transcodeBusy, .timeUnknown: [.tryAgain, .back]
         case .notFound, .noAccess, .off, .relay(.needsPlan): [.back]
         }
     }
@@ -249,7 +268,7 @@ public struct HomeFailure: Equatable, Sendable {
         case .relay(.needsPlan): "icloud.slash"
         case .relay(.streamLimit): "rectangle.stack"
         case .relay(.homeBusy): "clock"
-        case .transcodeBusy: "hourglass"
+        case .transcodeBusy, .timeUnknown: "hourglass"
         }
     }
 }

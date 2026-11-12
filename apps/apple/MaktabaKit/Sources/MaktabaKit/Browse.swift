@@ -1117,8 +1117,17 @@ public struct Profile: Decodable, Sendable {
 }
 
 /// A watched video in the person's history (`GET /api/me/history`).
+///
+/// Epic 57 story 57.03: a video the person watched and may no longer see (a parental limit
+/// hides it now) stays in the list as a row that is not `available`. The home sends no video
+/// id, title, length or position for it, only when and how often it was watched: the row
+/// reads "Not available", shows no poster and leads nowhere. `key` is every row's identity
+/// (the video's id for an available row; for one that is not, a value that names no video).
 public struct HistoryEntry: Decodable, Identifiable, Hashable, Sendable {
-    public var id: String { videoID }
+    public var id: String { key }
+    public let key: String
+    public let available: Bool
+    /// Empty for a row that is not available.
     public let videoID: String
     public let title: String
     public let durationSec: Double?
@@ -1130,13 +1139,22 @@ public struct HistoryEntry: Decodable, Identifiable, Hashable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyKey.self)
         func k(_ s: String) -> AnyKey { AnyKey(stringValue: s) }
-        videoID = try c.decode(String.self, forKey: k("video_id"))
-        title = c.lenient(k("title")) ?? ""
-        durationSec = c.lenient(k("duration_sec"))
+        let video: String = c.lenient(k("video_id")) ?? ""
+        // a home from before `available` sends only rows that are (each with its video)
+        let said: Bool? = c.lenient(k("available"))
+        available = (said ?? true) && !video.isEmpty
+        guard let key = (c.lenient(k("key")) as String?)?.nilIfBlank ?? video.nilIfBlank else {
+            throw DecodingError.dataCorrupted(.init(codingPath: c.codingPath, debugDescription: "a history row with no key and no video"))
+        }
+        self.key = key
+        // nothing of a row that is not available is kept, whatever the home sent
+        videoID = available ? video : ""
+        title = available ? c.lenient(k("title")) ?? "" : ""
+        durationSec = available ? c.lenient(k("duration_sec")) : nil
         timesWatched = c.lenient(k("times_watched")) ?? 0
         lastWatchedAt = c.lenient(k("last_watched_at"))
-        positionSec = c.lenient(k("position_sec")) ?? 0
-        completed = c.lenient(k("completed")) ?? false
+        positionSec = available ? c.lenient(k("position_sec")) ?? 0 : 0
+        completed = available ? c.lenient(k("completed")) ?? false : false
     }
 
     public var progress: Double { completed ? 1 : fraction(positionSec, of: durationSec) }

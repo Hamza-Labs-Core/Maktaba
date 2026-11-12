@@ -36,6 +36,7 @@ struct BlockedPageView: View {
 
     @State private var page: BlockedPage
     @State private var enteringPIN = false
+    @Environment(\.scenePhase) private var scenePhase
 
     init(context: PlayerContext, subject: ParentalSubject, stoppedLine: String? = nil, back: @escaping () -> Void,
          opened: @escaping () -> Void = {}) {
@@ -68,42 +69,7 @@ struct BlockedPageView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("blocked.reason")
                 }
-                VStack(spacing: MaktabaTokens.Spacing.s3) {
-                    if page.canAsk {
-                        Button {
-                            Task { await page.askParent() }
-                        } label: {
-                            Text(verbatim: ParentalWords.text(page.ask == .pending ? "parental.ask.pending" : "parental.blocked.ask"))
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color.brass)
-                        .foregroundStyle(MaktabaTokens.Colors.accentFg.color)
-                        .disabled(page.ask == .sending || page.ask == .pending || page.ask == .tooMany)
-                        .accessibilityIdentifier("blocked.ask")
-                    }
-                    if page.canEnterPIN {
-                        Button {
-                            enteringPIN = true
-                        } label: {
-                            Text(verbatim: ParentalWords.text("parental.blocked.pin"))
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(Color.brass)
-                        .accessibilityIdentifier("blocked.pin")
-                    }
-                    Button(action: back) {
-                        Text(verbatim: ParentalWords.text("parental.blocked.back"))
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.borderless)
-                    .frame(minHeight: 44)
-                    .foregroundStyle(Color.mktBrassText)
-                    .accessibilityIdentifier("blocked.back")
-                }
-                .frame(maxWidth: 360)
+                buttons.frame(maxWidth: 360)
                 if let line = page.askLine() {
                     Text(verbatim: line)
                         .font(.maktabaBody(15, relativeTo: .subheadline))
@@ -121,10 +87,18 @@ struct BlockedPageView: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.blocked")
         .task { await page.load() }
-        // a request waits: the home is asked every 30 s whether the limit changed (a parent
-        // answered); the screen behind reads again when it did
-        .task(id: page.ask == .pending) {
-            guard page.ask == .pending else { return }
+        // what became of the request for this: the home's list of the child's own requests,
+        // read while the app is in front and a request waits (`RequestFollow`)
+        .task(id: Following(front: scenePhase == .active, waiting: page.waiting)) {
+            guard scenePhase == .active, page.canAsk else { return }
+            await page.follow.follow()
+        }
+        // a parent said yes while this page watched: the limit is read and the item opens
+        .onChange(of: page.follow.approvals) { _, _ in reopen() }
+        // a home from before that list: asked every 30 s whether the limit changed (a parent
+        // answered), as before; the screen behind reads again when it did
+        .task(id: page.waiting && page.follow.unsupported) {
+            guard page.waiting, page.follow.unsupported else { return }
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(30)) } catch { return }
                 await context.session.parental.refresh()
@@ -133,12 +107,87 @@ struct BlockedPageView: View {
         .sheet(isPresented: $enteringPIN) {
             PinSheet(client: context.client, subject: page.subject, people: page.unlockers) {
                 enteringPIN = false
-                Task {
-                    await context.session.parental.refresh()
-                    opened()
-                }
+                reopen()
             }
         }
+    }
+
+    /// What the following of a request depends on: the app in front, a request waiting.
+    private struct Following: Equatable {
+        let front: Bool
+        let waiting: Bool
+    }
+
+    /// A parent opened it (a PIN, an approval): the limit is read again and the screen
+    /// behind loads the item.
+    private func reopen() {
+        Task {
+            await context.session.parental.refresh()
+            opened()
+        }
+    }
+
+    /// Ask a parent (Ask again after a no), Check again while a request waits, Enter parent
+    /// PIN, Back.
+    private var buttons: some View {
+        VStack(spacing: MaktabaTokens.Spacing.s3) {
+            if page.canAsk {
+                Button {
+                    Task { await page.askParent() }
+                } label: {
+                    Text(verbatim: ParentalWords.text(page.askKey("parental.blocked.ask")))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.brass)
+                .foregroundStyle(MaktabaTokens.Colors.accentFg.color)
+                .disabled(!page.canPressAsk)
+                .accessibilityIdentifier("blocked.ask")
+            }
+            if page.waiting, !page.follow.unsupported {
+                CheckAgainButton(follow: page.follow, id: "blocked.check")
+            }
+            if page.canEnterPIN {
+                Button {
+                    enteringPIN = true
+                } label: {
+                    Text(verbatim: ParentalWords.text("parental.blocked.pin"))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+                .tint(Color.brass)
+                .accessibilityIdentifier("blocked.pin")
+            }
+            Button(action: back) {
+                Text(verbatim: ParentalWords.text("parental.blocked.back"))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .frame(minHeight: 44)
+            .foregroundStyle(Color.mktBrassText)
+            .accessibilityIdentifier("blocked.back")
+        }
+    }
+}
+
+/// Check again: reads the home's list of the child's own requests once, now (the list is
+/// read by itself every 15 seconds while a request waits, for 30 minutes).
+struct CheckAgainButton: View {
+    let follow: RequestFollow
+    let id: String
+
+    var body: some View {
+        Button {
+            Task { await follow.check() }
+        } label: {
+            Text(verbatim: ParentalWords.text("parental.ask.check"))
+                .frame(maxWidth: 320, minHeight: 44)
+        }
+        .buttonStyle(.bordered)
+        .tint(Color.brass)
+        .disabled(follow.checking)
+        .accessibilityIdentifier(id)
     }
 }
 
@@ -366,47 +415,7 @@ struct TimeUpView: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("timeUp.ask")
-                if let page, page.canAsk {
-                    Picker(selection: $minutes) {
-                        ForEach(ParentalSubject.timeChoices, id: \.self) { m in
-                            Text(verbatim: ParentalWords.length(seconds: m * 60)).tag(m)
-                        }
-                    } label: {
-                        Text(verbatim: ParentalWords.text("parental.time.askMore"))
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 320)
-                    .accessibilityIdentifier("timeUp.minutes")
-                    Button {
-                        let ask = page.asking(.time(minutes: minutes))
-                        asked = ask
-                        Task { await ask.askParent() }
-                    } label: {
-                        Text(verbatim: ParentalWords.text(asked?.ask == .pending ? "parental.ask.pending" : "parental.time.askMore"))
-                            .frame(maxWidth: 320, minHeight: 44)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.brass)
-                    .foregroundStyle(MaktabaTokens.Colors.accentFg.color)
-                    .disabled(asked?.ask == .sending || asked?.ask == .pending || asked?.ask == .tooMany)
-                    .accessibilityIdentifier("timeUp.askMore")
-                    if page.canEnterPIN {
-                        Button { enteringPIN = true } label: {
-                            Text(verbatim: ParentalWords.text("parental.blocked.pin")).frame(maxWidth: 320, minHeight: 44)
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(Color.brass)
-                        .accessibilityIdentifier("timeUp.pin")
-                    }
-                    if let line = asked?.askLine() {
-                        Text(verbatim: line)
-                            .font(.maktabaBody(15, relativeTo: .subheadline))
-                            .foregroundStyle(Color.mktMuted)
-                            .multilineTextAlignment(.center)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("timeUp.askLine")
-                    }
-                }
+                if let page, page.canAsk { asking(page) }
                 Button(action: back) {
                     Text(verbatim: ParentalWords.text("parental.blocked.back"))
                         .frame(maxWidth: 320, minHeight: 44)
@@ -437,6 +446,23 @@ struct TimeUpView: View {
                 }
             }
         }
+        // what became of the request for more time: the home's list of the child's own
+        // requests, read while the app is in front and a request waits (`RequestFollow`)
+        .task(id: Following(front: scenePhase == .active, ready: page != nil, waiting: page?.waiting ?? false)) {
+            guard scenePhase == .active, let page, page.canAsk else { return }
+            await page.follow.follow()
+        }
+        // a parent said yes while this screen watched: the home's time is read once, and the
+        // video goes on when it says there is time
+        .onChange(of: page?.follow.approvals ?? 0) { _, _ in
+            Task {
+                let time = playing ?? PlayingTime(source: context.client, library: library)
+                playing = time
+                guard let t = await time.ask(), t.allowed else { return }
+                await context.session.parental.refreshTime()
+                allowed()
+            }
+        }
         // never at once: the home just said no. Asked after a 30 s wait and every 30 s
         // after, for the library of what was playing (`PlayingTime`), and the video goes on
         // only when the home says there is time for it
@@ -447,6 +473,61 @@ struct TimeUpView: View {
             guard await time.waitUntilAllowed() else { return }
             await context.session.parental.refreshTime()
             allowed()
+        }
+    }
+
+    /// What the following of a request depends on: the app in front, the page read, a
+    /// request waiting.
+    private struct Following: Equatable {
+        let front: Bool
+        let ready: Bool
+        let waiting: Bool
+    }
+
+    /// Ask for more time: how much, the button (Ask again after a no), Check again while the
+    /// request waits, Enter parent PIN, and what became of the request.
+    @ViewBuilder private func asking(_ page: BlockedPage) -> some View {
+        Picker(selection: $minutes) {
+            ForEach(ParentalSubject.timeChoices, id: \.self) { m in
+                Text(verbatim: ParentalWords.length(seconds: m * 60)).tag(m)
+            }
+        } label: {
+            Text(verbatim: ParentalWords.text("parental.time.askMore"))
+        }
+        .pickerStyle(.segmented)
+        .frame(maxWidth: 320)
+        .accessibilityIdentifier("timeUp.minutes")
+        Button {
+            let ask = page.asking(.time(minutes: minutes))
+            asked = ask
+            Task { await ask.askParent() }
+        } label: {
+            Text(verbatim: ParentalWords.text(page.askKey("parental.time.askMore")))
+                .frame(maxWidth: 320, minHeight: 44)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(Color.brass)
+        .foregroundStyle(MaktabaTokens.Colors.accentFg.color)
+        .disabled(!(asked ?? page).canPressAsk)
+        .accessibilityIdentifier("timeUp.askMore")
+        if page.waiting, !page.follow.unsupported {
+            CheckAgainButton(follow: page.follow, id: "timeUp.check")
+        }
+        if page.canEnterPIN {
+            Button { enteringPIN = true } label: {
+                Text(verbatim: ParentalWords.text("parental.blocked.pin")).frame(maxWidth: 320, minHeight: 44)
+            }
+            .buttonStyle(.bordered)
+            .tint(Color.brass)
+            .accessibilityIdentifier("timeUp.pin")
+        }
+        if let line = (asked ?? page).askLine() {
+            Text(verbatim: line)
+                .font(.maktabaBody(15, relativeTo: .subheadline))
+                .foregroundStyle(Color.mktMuted)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("timeUp.askLine")
         }
     }
 

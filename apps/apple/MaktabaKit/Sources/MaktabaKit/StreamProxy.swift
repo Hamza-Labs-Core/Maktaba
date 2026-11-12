@@ -40,9 +40,35 @@ public final class StreamProxy: @unchecked Sendable {
     /// The only home paths served (`/stream/channel/{id}/`), nil: any `/stream/` path.
     public let onlyUnder: String?
 
-    public init(client: APIClient, session: URLSession = PinnedTrust.session, reach: Reach = .loopback, onlyUnder: String? = nil) throws {
+    /// How the proxy waits before asking the home again (a test's own).
+    private let sleep: @Sendable (Duration) async throws -> Void
+
+    /// Epic 57: a restricted account's media is served as it plays, and the home's streaming
+    /// service answers 429 (`media-too-fast`, with `Retry-After`) to a player that reads more
+    /// than about two minutes ahead of what plays. That is the player buffering, not a
+    /// failure: the proxy waits as the home said and asks again, so the player sees a slow
+    /// answer, never an error.
+    enum Pace {
+        /// How many times one request is asked again before the 429 is handed to the player.
+        static let tries = 3
+        /// The longest single wait, whatever the home said (its own is 30 s): two of them
+        /// stay under the minute a player gives a request before it calls it failed.
+        static let longest = 25
+
+        /// The seconds to wait after a 429 with this `Retry-After` (2 when the home named none).
+        static func wait(retryAfter: Int?) -> Int { min(max(retryAfter ?? 2, 1), longest) }
+    }
+
+    public convenience init(client: APIClient, session: URLSession = PinnedTrust.session, reach: Reach = .loopback,
+                            onlyUnder: String? = nil) throws {
+        try self.init(client: client, session: session, reach: reach, onlyUnder: onlyUnder) { try await Task.sleep(for: $0) }
+    }
+
+    init(client: APIClient, session: URLSession, reach: Reach = .loopback, onlyUnder: String? = nil,
+         sleep: @escaping @Sendable (Duration) async throws -> Void) throws {
         self.client = client
         self.session = session
+        self.sleep = sleep
         self.reach = reach
         self.onlyUnder = onlyUnder
         let params = NWParameters.tcp
@@ -151,12 +177,7 @@ public final class StreamProxy: @unchecked Sendable {
             return
         }
         do {
-            var r = URLRequest(url: url)
-            r.httpMethod = req.method
-            for name in ["Range", "If-Range", "Accept"] { if let v = req.headers[name.lowercased()] { r.setValue(v, forHTTPHeaderField: name) } }
-            for (k, v) in try await client.playbackHeaders(minLife: 60).headers { r.setValue(v, forHTTPHeaderField: k) }
-            let (bytes, response) = try await session.bytes(for: r, delegate: SameOriginRedirects.shared)
-            let http = response as? HTTPURLResponse
+            let (bytes, http) = try await fetch(req, from: url)
             var out = "HTTP/1.1 \(http?.statusCode ?? 502) \(HTTPURLResponse.localizedString(forStatusCode: http?.statusCode ?? 502))\r\n"
             for name in ["Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Cache-Control", "ETag", "Last-Modified"] {
                 if let v = http?.value(forHTTPHeaderField: name) { out += "\(name): \(v)\r\n" }
@@ -176,6 +197,25 @@ public final class StreamProxy: @unchecked Sendable {
             if !chunk.isEmpty { try await send(conn, chunk) }
         } catch {
             try? await send(conn, Self.status(502, "Bad Gateway"))
+        }
+    }
+
+    /// Asks the home for `url` with the token as it is now. A 429 (the home paces a
+    /// restricted account's media, `Pace`) is waited out as its `Retry-After` says and asked
+    /// again, with a fresh token each time; after `Pace.tries` the player gets the 429.
+    private func fetch(_ req: Request, from url: URL) async throws -> (URLSession.AsyncBytes, HTTPURLResponse?) {
+        var asked = 0
+        while true {
+            var r = URLRequest(url: url)
+            r.httpMethod = req.method
+            for name in ["Range", "If-Range", "Accept"] { if let v = req.headers[name.lowercased()] { r.setValue(v, forHTTPHeaderField: name) } }
+            for (k, v) in try await client.playbackHeaders(minLife: 60).headers { r.setValue(v, forHTTPHeaderField: k) }
+            let (bytes, response) = try await session.bytes(for: r, delegate: SameOriginRedirects.shared)
+            let http = response as? HTTPURLResponse
+            asked += 1
+            guard http?.statusCode == 429, asked < Pace.tries else { return (bytes, http) }
+            bytes.task.cancel()
+            try await sleep(.seconds(Pace.wait(retryAfter: http.flatMap(APIClient.retryAfter))))
         }
     }
 

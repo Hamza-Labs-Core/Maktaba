@@ -27,6 +27,23 @@ import Testing
         #expect(ShellTabs.shown(offered: offered, selected: "search", order: order) == offered)
     }
 
+    /// Live TV goes off while a channel is open on its tab: the tab stays through the
+    /// change and through the way back out of the channel (the same selection), in its
+    /// place, and goes with the first other tab chosen; the tabs' count never drops to one
+    /// on the way (the shell would swap its tab bar for a single stack under the open screen).
+    @Test func liveTVGoingOffUnderAnOpenChannelKeepsItsTabUntilAnotherIsChosen() {
+        let on = order
+        let off = ["home", "libraries", "search", "profile"]
+        #expect(ShellTabs.shown(offered: on, selected: "live", order: order) == order)
+        let kept = ShellTabs.shown(offered: off, selected: "live", order: order)
+        #expect(kept == order)
+        #expect(ShellTabs.shown(offered: off, selected: "live", order: order) == kept, "asked again: the same")
+        #expect(ShellTabs.shown(offered: off, selected: "home", order: order) == off)
+        // Live TV and one other section: two tabs before, two while it is kept, one after
+        #expect(ShellTabs.shown(offered: ["libraries"], selected: "live", order: order) == ["libraries", "live"])
+        #expect(ShellTabs.shown(offered: ["libraries"], selected: "libraries", order: order) == ["libraries"])
+    }
+
     @Test func aTabOutsideTheOrderGoesLast() {
         #expect(ShellTabs.shown(offered: ["home"], selected: "extra", order: order) == ["home", "extra"])
     }

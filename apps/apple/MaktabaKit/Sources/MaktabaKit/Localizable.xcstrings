@@ -11793,6 +11793,244 @@
           }
         }
       }
+    },
+    "parental.ask.again" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ask again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اطلب مجددًا"
+          }
+        }
+      }
+    },
+    "parental.ask.check" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحقّق مجددًا"
+          }
+        }
+      }
+    },
+    "parental.notice.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A child may be using Maktaba"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ربما يستخدم طفلٌ Maktaba"
+          }
+        }
+      }
+    },
+    "parental.notice.body" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A device signed in to Maktaba says a child uses it. Set up parental controls."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يشير جهاز مسجَّل الدخول إلى Maktaba إلى أن طفلًا يستخدمه. اضبط الرقابة الأبوية."
+          }
+        }
+      }
+    },
+    "parental.notice.action" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set up"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعداد"
+          }
+        }
+      }
+    },
+    "parental.notice.dismiss" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dismiss"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إغلاق"
+          }
+        }
+      }
+    },
+    "parental.enabled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parental controls"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الرقابة الأبوية"
+          }
+        }
+      }
+    },
+    "parental.enabled.on" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parental controls are on. A device that says a child uses it is held to that child's age."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الرقابة الأبوية مفعَّلة. الجهاز الذي يشير إلى أن طفلًا يستخدمه يُقيَّد بعمر ذلك الطفل."
+          }
+        }
+      }
+    },
+    "parental.enabled.off" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parental controls are off. Nothing is hidden from anyone. They turn on when you make an account restricted or give a library a default age rating."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الرقابة الأبوية متوقفة. لا يُخفى شيء عن أحد. تتفعَّل حين تجعل حسابًا مقيَّدًا أو تعطي مكتبة تصنيفًا عمريًا افتراضيًا."
+          }
+        }
+      }
+    },
+    "parental.enabled.offBlocked" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lift every restriction before turning this off."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ارفع كل التقييدات قبل إيقاف هذا."
+          }
+        }
+      }
+    },
+    "family.rateLibraries.suggested" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Suggested: %@"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المقترح: %@"
+          }
+        }
+      }
+    },
+    "family.rateLibraries.saveSuggested" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save suggested ratings"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حفظ التصنيفات المقترحة"
+          }
+        }
+      }
+    },
+    "family.rateLibraries.suggested.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Libraries that are mostly lectures or Quran recitation start as All ages. Nothing is saved until you save it."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المكتبات التي معظمها محاضرات أو تلاوات قرآنية تبدأ بتصنيف «لكل الأعمار». لا يُحفظ شيء حتى تحفظه."
+          }
+        }
+      }
+    },
+    "help.parental.web" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A guardian with no iPhone or iPad uses Family on the home's web page (/family)."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "وليّ الأمر الذي لا يملك iPhone أو iPad يستخدم «العائلة» في صفحة الويب للجهاز الرئيسي (‎/family)."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

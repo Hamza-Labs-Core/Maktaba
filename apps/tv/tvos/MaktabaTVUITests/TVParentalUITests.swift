@@ -71,6 +71,60 @@ final class TVParentalUITests: XCTestCase {
         XCTAssertTrue(element("home.row.continue").waitForExistence(timeout: 10), "to Home")
     }
 
+    /// The child's own requests (`GET /api/me/parental/requests`) with the remote: while a
+    /// request waits, Check again has the focus; a parent's no is said and the focus goes to
+    /// Ask again; a parent's yes, seen while the page watched, opens the video's page.
+    func testAParentsNoIsSaidWithAskAgainAndAParentsYesOpensTheVideo() throws {
+        childWithEveryVideoHidden()
+        home.stub("GET", "/api/me/parental/requests", body: #"{"requests":[]}"#)
+        let made = { (id: String) in
+            #"{"request":{"id":"\#(id)","child_id":"u1","subject_kind":"video","subject_id":"v2","status":"pending","created_at":"{{now}}","expires_at":"{{now+604800}}"}}"#
+        }
+        home.stub("POST", "/api/me/parental/requests", status: 201, body: made("r1"))
+        signIn("en")
+        let opened = openFirstCard()
+        let request = { (id: String, status: String) in
+            #"{"id":"\#(id)","subject_kind":"video","subject_id":"\#(opened)","status":"\#(status)","created_at":"{{now-60}}","expires_at":"{{now+604800}}"}"#
+        }
+        XCTAssertTrue(element("blocked.title").waitForExistence(timeout: 20), "the blocked page; the home saw \(home.seen.suffix(8))")
+        let ask = app.buttons["blocked.ask"], check = app.buttons["blocked.check"]
+        XCTAssertTrue(wait(timeout: 10) { ask.hasFocus }, "the focus lands on Ask a parent")
+        XCTAssertTrue(wait(timeout: 10) { self.count("GET", "/api/me/parental/requests") >= 1 }, "the child's own requests were read")
+        XCTAssertFalse(check.exists, "nothing waits: nothing to check")
+
+        remote.press(.select)
+        XCTAssertTrue(check.waitForExistence(timeout: 10), "a request waits: Check again")
+        XCTAssertEqual(check.label, "Check again")
+        XCTAssertEqual(ask.label, "Waiting for a parent")
+        XCTAssertTrue(wait(timeout: 5) { !ask.isEnabled }, "asked once: the button waits")
+        XCTAssertTrue(wait(timeout: 5) { check.hasFocus }, "and Check again takes the focus")
+
+        // the parent says no on their own phone
+        home.stub("GET", "/api/me/parental/requests", body: #"{"requests":[\#(request("r1", "denied"))]}"#)
+        remote.press(.select)
+        XCTAssertTrue(wait(timeout: 10) { self.element("blocked.askLine").label == "A parent said no." }, "the no is said")
+        XCTAssertEqual(ask.label, "Ask again")
+        XCTAssertTrue(wait(timeout: 5) { ask.isEnabled && ask.hasFocus }, "Ask again has the focus")
+        XCTAssertFalse(check.exists, "nothing waits any more")
+        shot("tv-parental-blocked-denied-en")
+
+        // asked again; this time the parent says yes: the home gives the video and the limit moved
+        home.stub("POST", "/api/me/parental/requests", status: 201, body: made("r2"))
+        remote.press(.select)
+        XCTAssertTrue(wait(timeout: 10) { check.exists && check.hasFocus }, "the second request waits")
+        XCTAssertEqual(count("POST", "/api/me/parental/requests"), 2)
+        home.stub("GET", "/api/videos/\(opened)", body: try XCTUnwrap(home.fixture(named: "video-\(opened)")))
+        home.stub("GET", "/api/me/videos/\(opened)", body: try XCTUnwrap(home.fixture(named: "me-video-\(opened)")))
+        home.stub("GET", "/api/me/parental", body: #"{"restricted":true,"max_tier":9,"unrated":"hide","version":5}"#)
+        home.stub("GET", "/api/me/parental/requests",
+                  body: #"{"requests":[\#(request("r2", "approved")),\#(request("r1", "denied"))]}"#)
+        remote.press(.select)
+        XCTAssertTrue(wait(timeout: 20) { !self.element("blocked.title").exists },
+                      "the video's page after the yes; the home saw \(home.seen.suffix(8))")
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@", "Play", "Resume")).firstMatch
+            .waitForExistence(timeout: 20), "its Play or Resume")
+    }
+
     /// T03: the same in Arabic, then Live TV: a programme above the limit reads "Not
     /// available" with nothing of its title, the grid runs right to left, and a channel whose
     /// programme now is above the limit shows the slate and does not play.

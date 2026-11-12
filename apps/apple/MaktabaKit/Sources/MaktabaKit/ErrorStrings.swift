@@ -33,6 +33,8 @@ public struct ErrorStrings: Sendable {
         case relayNeedsPlan, relayStreamLimit, relayHomeBusy
         // every transcode slot of the home is taken (story 59.05); the player asks again by itself
         case transcodeBusy
+        // the home cannot read the account's watching time right now (story 57.14); asked again by itself
+        case timeUnknown
     }
 
     /// The one sentence for `kind`; `video`: said about the video being played.
@@ -51,6 +53,7 @@ public struct ErrorStrings: Sendable {
             text(.relayStreamLimit).replacingOccurrences(of: "%@", with: n.map { $0.formatted() } ?? "")
         case .relay(.homeBusy): text(.relayHomeBusy)
         case .transcodeBusy: text(.transcodeBusy)
+        case .timeUnknown: text(.timeUnknown)
         }
     }
 
@@ -116,6 +119,7 @@ public struct ErrorStrings: Sendable {
         .relayStreamLimit: "%@ devices are already playing through the relay, the most your plan allows. Stop one, or play at home or over a direct connection.",
         .relayHomeBusy: "Your home is too busy to prepare this video for remote play right now. Try again shortly.",
         .transcodeBusy: "Another video is being converted on this home. Yours will start when it finishes.",
+        .timeUnknown: "Your home is checking your watching time. This will start in a moment.",
     ]
 
     static let ar: [Key: String] = [
@@ -141,5 +145,6 @@ public struct ErrorStrings: Sendable {
         .relayStreamLimit: "يوجد %@ أجهزة تشغّل عبر الوسيط، وهو الحد الأقصى في خطتك. أوقف أحدها، أو شغّل في المنزل أو عبر اتصال مباشر.",
         .relayHomeBusy: "جهازك الرئيسي مشغول جدًا لتجهيز هذا الفيديو للتشغيل عن بُعد الآن. حاول بعد قليل.",
         .transcodeBusy: "يجري تحويل فيديو آخر على هذا الجهاز الرئيسي، وسيبدأ الفيديو الخاص بك عند انتهائه.",
+        .timeUnknown: "يتحقق جهازك الرئيسي من وقت المشاهدة. سيبدأ التشغيل بعد قليل.",
     ]
 }

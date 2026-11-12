@@ -68,7 +68,8 @@ struct WatchView: View {
                     } else {
                         VStack(spacing: 16) {
                             ProgressView().tint(.white)
-                            // no transcode slot free (story 59.05): it asks again by itself
+                            // no transcode slot free (story 59.05), or the home cannot read
+                            // the account's watching time yet (57.14): it asks again by itself
                             if let waiting = playback.waiting {
                                 Text(waiting.message(video: true))
                                     .font(.body)

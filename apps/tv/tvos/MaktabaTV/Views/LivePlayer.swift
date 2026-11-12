@@ -22,6 +22,10 @@ final class LivePlayback {
         /// (`GET /api/channels/{id}/access`): nothing plays and the slate shows, until the
         /// home says the channel may be watched again (the next programme, a parent's change).
         case slated
+        /// Epic 57 story 57.14: the account's watching time is over (403 `parental-time`
+        /// from the channel's access, play or stream): nothing plays and the time's-up
+        /// screen shows, not the slate.
+        case timeUp(TimeUp)
     }
 
     let client: APIClient
@@ -215,17 +219,37 @@ final class LivePlayback {
                 do { try await Task.sleep(for: .seconds(access.askAgain())) } catch { return nil }
             } catch {
                 if Log.isCancellation(error) { return nil }
-                return Date.now.addingTimeInterval(30)
+                if let up = TimeUp(error) {
+                    // the account's time is over: time's up, and nothing is asked for
+                    timeIsUp(up)
+                    return nil
+                }
+                guard let after = HomeFailure(error).kind.timeUnknownRetrySeconds else {
+                    return Date.now.addingTimeInterval(30)
+                }
+                // the home cannot read the account's time yet: nothing is tuned and nothing
+                // is said to be over; asked again as its Retry-After says
+                do { try await Task.sleep(for: .seconds(after)) } catch { return nil }
             }
         }
         return nil
     }
 
+    /// The home said the account's watching time is over: nothing plays, time's up shows.
+    private func timeIsUp(_ up: TimeUp) {
+        replaceItem(nil)
+        phase = .timeUp(up)
+    }
+
     /// Whether the programme on `channel` now is above the limit (false when the home does
-    /// not say), and when to ask again.
-    private func blockedNow(_ channel: String) async -> (blocked: Bool, again: Date) {
-        guard let access = try? await client.channelAccess(channel) else { return (false, Date.now.addingTimeInterval(30)) }
-        return (access.restricted && !access.allowed, Date.now.addingTimeInterval(access.askAgain()))
+    /// not say), when to ask again, and the time's-up answer when the home gave that.
+    private func blockedNow(_ channel: String) async -> (blocked: Bool, again: Date, timeUp: TimeUp?) {
+        do {
+            let access = try await client.channelAccess(channel)
+            return (access.restricted && !access.allowed, Date.now.addingTimeInterval(access.askAgain()), nil)
+        } catch {
+            return (false, Date.now.addingTimeInterval(30), TimeUp(error))
+        }
     }
 
     /// Plays the channel until the tune is cancelled or it fails. True when it stopped for
@@ -246,7 +270,7 @@ final class LivePlayback {
             guard !Task.isCancelled else { return false }
             replaceItem(nil)
             Log.failure("play live channel", error)
-            phase = .failed(HomeFailure.live(error))
+            phase = TimeUp(error).map(Phase.timeUp) ?? .failed(HomeFailure.live(error))
             return false
         }
     }
@@ -289,6 +313,10 @@ final class LivePlayback {
                 // the answer may have changed (the next programme started): asked again
                 let now = await blockedNow(channel)
                 guard !Task.isCancelled, phase == .playing else { return false }
+                if let up = now.timeUp {
+                    timeIsUp(up)
+                    return false
+                }
                 if now.blocked {
                     replaceItem(nil)
                     phase = .slated
@@ -388,6 +416,7 @@ struct LivePlayerScreen: View {
                 Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .buttonStyle(LiveSurfaceStyle())
+            .disabled(timeUp != nil)
             .accessibilityLabel(Text(playback.channel?.name ?? ""))
             .accessibilityIdentifier("live.player.surface")
             Group {
@@ -403,11 +432,14 @@ struct LivePlayerScreen: View {
                 }
             }
             .allowsHitTesting(false)
+            timeUpScreen
         }
         .ignoresSafeArea()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("live.player")
         .onMoveCommand { direction in
+            // time's up is for every channel: its screen has the remote, nothing surfs
+            guard timeUp == nil else { return }
             switch direction {
             case .up: playback.next()
             case .down: playback.previous()
@@ -441,6 +473,20 @@ struct LivePlayerScreen: View {
             try? await Task.sleep(until: next, clock: .continuous)
             guard !Task.isCancelled else { return }
             withAnimation { now = .now }
+        }
+    }
+
+    /// The account's watching time is over (57.14): the home said so for this channel.
+    private var timeUp: TimeUp? {
+        if case let .timeUp(up) = playback.phase { return up }
+        return nil
+    }
+
+    /// The time's-up screen over the player, with Ask for more time and the parent PIN; the
+    /// channel is tuned again when the home says there is time.
+    @ViewBuilder private var timeUpScreen: some View {
+        if let timeUp, let session {
+            TVTimeUpView(client: playback.client, session: session, up: timeUp, back: { dismiss() }) { playback.retry() }
         }
     }
 
@@ -480,6 +526,8 @@ struct LivePlayerScreen: View {
             playback.retry()
         case .starting, .playing, .slated:
             change { $0.toggleMiniGuide(at: $1) }
+        case .timeUp:
+            break
         }
     }
 
@@ -510,6 +558,9 @@ struct LivePlayerScreen: View {
                             ? String(localized: "Select to try again, or ▲ ▼ for another channel.")
                             : String(localized: "▲ ▼ for another channel."))
                 .accessibilityIdentifier("live.player.error")
+        case .timeUp:
+            // the time's-up screen covers the player (`timeUpScreen`)
+            EmptyView()
         case .ended:
             LiveMessage(symbol: "stop.circle", text: String(localized: "The home ended this stream."),
                         hint: String(localized: "Select to watch again, or ▲ ▼ for another channel."))

@@ -184,6 +184,9 @@ public enum ParentalRefusal: Equatable, Sendable {
     /// 409 `restricted_guardian`: a restricted account (or the account itself) cannot look
     /// after it.
     case restrictedGuardian
+    /// 409 `restrictions_exist`: parental controls cannot be turned off while an account is
+    /// restricted (story 57.12).
+    case restrictionsExist
 
     public init?(_ error: Error) {
         guard case let APIError.status(status, body, retryAfter)? = error as? APIError else { return nil }
@@ -207,6 +210,7 @@ public enum ParentalRefusal: Equatable, Sendable {
         case (409, "no_sign_in"): self = .noSignIn
         case (409, "restricted_admin"): self = .restrictedAdmin
         case (409, "restricted_guardian"): self = .restrictedGuardian
+        case (409, "restrictions_exist"): self = .restrictionsExist
         case (403, "device_limited"): self = .deviceLimited
         case (403, "admin_only"), (403, "cloud_scope"), (403, "scope"): self = .notYours
         case (410, _), (409, "request_decided"): self = .requestGone
@@ -231,7 +235,11 @@ public struct ParentalSubject: Hashable, Sendable {
     public static func video(_ id: String) -> ParentalSubject { .init(kind: "video", id: id) }
     public static func channel(_ id: String) -> ParentalSubject { .init(kind: "channel", id: id) }
     /// More watching time today (story 57.06): the kind is `time`, the id the minutes as text.
-    public static func time(minutes: Int) -> ParentalSubject { .init(kind: "time", id: String(min(480, max(1, minutes)))) }
+    /// A child's device asks for, or unlocks, only 15, 30 or 60 minutes (the home refuses
+    /// anything else): another number becomes the choice that covers it, 60 at most.
+    public static func time(minutes: Int) -> ParentalSubject {
+        .init(kind: "time", id: String(timeChoices.first { $0 >= minutes } ?? timeChoices[timeChoices.count - 1]))
+    }
     /// What a child may ask for at once.
     public static let timeChoices = [15, 30, 60]
 }
@@ -491,6 +499,60 @@ public struct ParentalRequest: Decodable, Hashable, Sendable, Identifiable {
         status = c.lenient(.status) ?? "pending"
         createdAt = c.lenient(.createdAt)
         expiresAt = c.lenient(.expiresAt)
+        minutes = c.lenient(.minutes) ?? (subjectKind == "time" ? Int(subjectID) : nil)
+    }
+}
+
+/// One of the caller's own requests (`GET /api/me/parental/requests`): what became of it.
+/// The home sends no title and not who answered: only the id the child already had.
+public struct OwnRequest: Decodable, Hashable, Sendable, Identifiable {
+    public enum Status: String, Sendable {
+        case pending, approved, denied, expired
+    }
+
+    public let id: String
+    public let subjectKind: String
+    public let subjectID: String
+    /// A request for more time: how many minutes.
+    public let minutes: Int?
+    /// A status this app does not know counts as expired: the ask buttons show again.
+    public let status: Status
+    public let createdAt: Date?
+    public let expiresAt: Date?
+    public let decidedAt: Date?
+
+    public var isTime: Bool { subjectKind == "time" }
+
+    enum CodingKeys: String, CodingKey {
+        case id, status, minutes
+        case subjectKind = "subject_kind"
+        case subjectID = "subject_id"
+        case createdAt = "created_at"
+        case expiresAt = "expires_at"
+        case decidedAt = "decided_at"
+    }
+
+    public init(id: String, subjectKind: String, subjectID: String, status: Status, minutes: Int? = nil,
+                createdAt: Date? = nil, expiresAt: Date? = nil, decidedAt: Date? = nil) {
+        self.id = id
+        self.subjectKind = subjectKind
+        self.subjectID = subjectID
+        self.status = status
+        self.minutes = minutes
+        self.createdAt = createdAt
+        self.expiresAt = expiresAt
+        self.decidedAt = decidedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        subjectKind = c.lenient(.subjectKind) ?? ""
+        subjectID = c.lenient(.subjectID) ?? ""
+        status = (c.lenient(.status) as String?).flatMap(Status.init(rawValue:)) ?? .expired
+        createdAt = c.lenient(.createdAt)
+        expiresAt = c.lenient(.expiresAt)
+        decidedAt = c.lenient(.decidedAt)
         minutes = c.lenient(.minutes) ?? (subjectKind == "time" ? Int(subjectID) : nil)
     }
 }
@@ -849,6 +911,96 @@ public struct ParentalTimeUsage: Decodable, Sendable {
     }
 }
 
+// MARK: turning it on in an existing home (57.12)
+
+/// `GET /api/parental/settings` (admins): the home's switch for parental controls and what
+/// an admin is told with it.
+public struct ParentalSettings: Decodable, Equatable, Sendable {
+    public let enabled: Bool
+    /// How many accounts are restricted; the switch cannot go off while there is one.
+    public let restrictedAccounts: Int
+    public let canDisable: Bool
+    /// How many sign-ins' devices said a child may be using them and are not applied because
+    /// the switch is off.
+    public let childDevices: Int
+    /// Show the notice: the switch is off and such a device spoke since an admin last
+    /// dismissed it.
+    public let childDeviceNotice: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case enabled
+        case restrictedAccounts = "restricted_accounts"
+        case canDisable = "can_disable"
+        case childDevices = "child_devices"
+        case childDeviceNotice = "child_device_notice"
+    }
+
+    public init(enabled: Bool, restrictedAccounts: Int = 0, canDisable: Bool? = nil, childDevices: Int = 0,
+                childDeviceNotice: Bool = false) {
+        self.enabled = enabled
+        self.restrictedAccounts = restrictedAccounts
+        self.canDisable = canDisable ?? (restrictedAccounts == 0)
+        self.childDevices = childDevices
+        self.childDeviceNotice = childDeviceNotice
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // a switch that cannot be read counts as on, as on the home
+        enabled = c.lenient(.enabled) ?? true
+        restrictedAccounts = c.lenient(.restrictedAccounts) ?? 0
+        canDisable = c.lenient(.canDisable) ?? (restrictedAccounts == 0)
+        childDevices = c.lenient(.childDevices) ?? 0
+        childDeviceNotice = c.lenient(.childDeviceNotice) ?? false
+    }
+}
+
+/// One library in Rate libraries (`GET /api/parental/library-suggestions`, admins): its
+/// stored default tier and what the form starts with when it has none.
+public struct LibrarySuggestion: Decodable, Hashable, Sendable, Identifiable {
+    public let id: String
+    public let name: String
+    /// The default tier stored now (nil: none).
+    public let tier: Int?
+    /// What the form starts with for a library with no tier: 0 (All ages) for one that is
+    /// mostly lectures or Quran recitation, nil (Not rated) for the rest.
+    public let suggestedTier: Int?
+    public let classified: Int
+    public let lectures: Int
+
+    enum CodingKeys: String, CodingKey {
+        case name, tier, classified, lectures
+        case id = "library_id"
+        case suggestedTier = "suggested_tier"
+    }
+
+    public init(id: String, name: String, tier: Int? = nil, suggestedTier: Int? = nil, classified: Int = 0, lectures: Int = 0) {
+        self.id = id
+        self.name = name
+        self.tier = tier
+        self.suggestedTier = suggestedTier
+        self.classified = classified
+        self.lectures = lectures
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = c.lenient(.name) ?? ""
+        tier = c.lenient(.tier)
+        suggestedTier = c.lenient(.suggestedTier)
+        classified = c.lenient(.classified) ?? 0
+        lectures = c.lenient(.lectures) ?? 0
+    }
+
+    /// The tier Rate libraries offers for this library and has not saved: only for a library
+    /// with no tier of its own, and only a tier the home may store.
+    public var offered: Int? {
+        guard tier == nil, let suggestedTier, AgeTier.content.contains(suggestedTier) else { return nil }
+        return suggestedTier
+    }
+}
+
 // MARK: live TV (57.10)
 
 /// `GET /api/channels/{id}/access`: whether the programme on now is within the caller's limit.
@@ -980,6 +1132,27 @@ public extension APIClient {
         let a: RequestAnswer = try await send(request("POST", "/api/me/parental/requests",
                                                       body: ["subject_kind": subject.kind, "subject_id": subject.id]))
         return a.request
+    }
+
+    /// `GET /api/me/parental/requests`: the caller's own requests of the last seven days,
+    /// newest first (a restricted account only). Nil on a home from before the route (404 or
+    /// 405): the screens then go on as they did, and do not ask again.
+    func myParentalRequests() async throws -> [OwnRequest]? {
+        struct A: Decodable {
+            let requests: [OwnRequest]
+            init(from decoder: Decoder) throws {
+                requests = try decoder.container(keyedBy: AnyKey.self).lenientList(AnyKey(stringValue: "requests"))
+            }
+        }
+        var r = request("GET", "/api/me/parental/requests")
+        r.cachePolicy = .reloadIgnoringLocalCacheData
+        let (data, response) = try await exchange(r, answered: [404, 405])
+        if response?.statusCode == 404 || response?.statusCode == 405 { return nil }
+        do {
+            return try JSONDecoder.home.decode(A.self, from: data).requests
+        } catch {
+            throw APIError.decoding(String(describing: error))
+        }
     }
 
     /// `GET /api/me/parental/guardians`: who has a parent PIN (a restricted account only).
@@ -1171,6 +1344,51 @@ public extension APIClient {
     /// `POST …/time-grants`: more time today.
     func grantTime(_ user: String, minutes: Int) async throws {
         _ = try await sendRaw(request("POST", "/api/parental/users/\(Self.segment(user))/time-grants", body: ["minutes": minutes]))
+    }
+
+    // MARK: the home's switch (57.12)
+
+    /// `GET /api/parental/settings` (admins); nil on a home from before the route (404).
+    func parentalSettings() async throws -> ParentalSettings? {
+        var r = request("GET", "/api/parental/settings")
+        r.cachePolicy = .reloadIgnoringLocalCacheData
+        let (data, response) = try await exchange(r, answered: [404])
+        if response?.statusCode == 404 { return nil }
+        do {
+            return try JSONDecoder.home.decode(ParentalSettings.self, from: data)
+        } catch {
+            throw APIError.decoding(String(describing: error))
+        }
+    }
+
+    /// `PUT /api/parental/settings {enabled}` (admins): off answers 409 `restrictions_exist`
+    /// while an account is restricted.
+    func setParentalEnabled(_ on: Bool) async throws -> ParentalSettings {
+        try await send(request("PUT", "/api/parental/settings", body: ["enabled": on]))
+    }
+
+    /// `POST /api/parental/settings/notice/dismiss` (admins): the notice goes for every
+    /// admin, until a child's device speaks again.
+    func dismissParentalNotice() async throws -> ParentalSettings {
+        try await send(request("POST", "/api/parental/settings/notice/dismiss"))
+    }
+
+    /// `GET /api/parental/library-suggestions` (admins): every library with what Rate
+    /// libraries starts with; nil on a home from before the route (404).
+    func librarySuggestions() async throws -> [LibrarySuggestion]? {
+        struct A: Decodable {
+            let libraries: [LibrarySuggestion]
+            init(from decoder: Decoder) throws {
+                libraries = try decoder.container(keyedBy: AnyKey.self).lenientList(AnyKey(stringValue: "libraries"))
+            }
+        }
+        let (data, response) = try await exchange(request("GET", "/api/parental/library-suggestions"), answered: [404])
+        if response?.statusCode == 404 { return nil }
+        do {
+            return try JSONDecoder.home.decode(A.self, from: data).libraries
+        } catch {
+            throw APIError.decoding(String(describing: error))
+        }
     }
 
     // MARK: rating libraries (57.01)

@@ -111,6 +111,57 @@ final class PlayerParentalUITests: PlayerUITestCase {
         XCTAssertFalse(element("blocked.title").exists)
     }
 
+    /// The child's own requests (`GET /api/me/parental/requests`): while a request waits the
+    /// page offers Check again; a parent's no is said with Ask again; a parent's yes, seen
+    /// while the page watched, opens the video without a restart.
+    func testAParentsNoIsSaidWithAskAgainAndAParentsYesOpensTheVideo() throws {
+        childWithHiddenVideo()
+        let request = { (id: String, status: String) in
+            #"{"id":"\#(id)","subject_kind":"video","subject_id":"v2","status":"\#(status)","created_at":"{{now-60}}","expires_at":"{{now+604800}}"}"#
+        }
+        let made = { (id: String) in
+            #"{"request":{"id":"\#(id)","child_id":"u1","subject_kind":"video","subject_id":"v2","status":"pending","created_at":"{{now}}","expires_at":"{{now+604800}}"}}"#
+        }
+        home.stub("GET", "/api/me/parental/requests", body: #"{"requests":[]}"#)
+        home.stub("POST", "/api/me/parental/requests", status: 201, body: made("r1"))
+        launchSignedIn(sections: ["home"], open: "video/v2")
+        XCTAssertTrue(element("blocked.title").waitForExistence(timeout: 20), "the blocked page")
+        waitUntil("the child's own requests were read") { self.count("GET", "/api/me/parental/requests") >= 1 }
+        XCTAssertEqual(element("blocked.ask").label, "Ask a parent")
+        XCTAssertFalse(element("blocked.check").exists, "nothing waits: nothing to check")
+
+        element("blocked.ask").tap()
+        XCTAssertTrue(element("blocked.check").waitForExistence(timeout: 10), "a request waits: Check again")
+        XCTAssertEqual(element("blocked.check").label, "Check again")
+        XCTAssertGreaterThanOrEqual(element("blocked.check").frame.height, 44, "at least 44 pt tall")
+        XCTAssertEqual(element("blocked.ask").label, "Waiting for a parent")
+        XCTAssertFalse(element("blocked.ask").isEnabled, "asked once: the button waits")
+
+        // the parent says no on their own phone
+        home.stub("GET", "/api/me/parental/requests", body: #"{"requests":[\#(request("r1", "denied"))]}"#)
+        element("blocked.check").tap()
+        waitUntil("the no is said") { self.element("blocked.askLine").label == "A parent said no." }
+        XCTAssertEqual(element("blocked.ask").label, "Ask again")
+        XCTAssertTrue(element("blocked.ask").isEnabled)
+        XCTAssertFalse(element("blocked.check").exists, "nothing waits any more")
+        XCTAssertTrue(element("blocked.title").exists, "still the blocked page")
+        shot("parental-blocked-denied")
+
+        // asked again; this time the parent says yes: the home gives the video and the limit moved
+        home.stub("POST", "/api/me/parental/requests", status: 201, body: made("r2"))
+        element("blocked.ask").tap()
+        XCTAssertTrue(element("blocked.check").waitForExistence(timeout: 10), "the second request waits")
+        XCTAssertEqual(count("POST", "/api/me/parental/requests"), 2)
+        home.stub("GET", "/api/videos/v2", body: try XCTUnwrap(home.fixture(named: "video-v2")))
+        home.stub("GET", "/api/me/videos/v2", body: try XCTUnwrap(home.fixture(named: "me-video-v2")))
+        home.stub("GET", "/api/me/parental", body: #"{"restricted":true,"max_tier":9,"unrated":"hide","version":5}"#)
+        home.stub("GET", "/api/me/parental/requests",
+                  body: #"{"requests":[\#(request("r2", "approved")),\#(request("r1", "denied"))]}"#)
+        element("blocked.check").tap()
+        XCTAssertTrue(app.buttons["video.favorite"].waitForExistence(timeout: 20), "the video's page, without a restart")
+        XCTAssertFalse(element("blocked.title").exists)
+    }
+
     /// A child watches a video opened from Libraries; the limit's version moves for something
     /// unrelated (a parent added a rule). The Libraries section is not built again around
     /// the video: it stays open: no stream is closed, the player is not dismissed. Held in the
@@ -411,6 +462,116 @@ final class PlayerParentalUITests: PlayerUITestCase {
         element("child.guardian.add.u4").tap()
         waitUntil("the guardian sent") { self.count("POST", "/api/users/c2/parental/guardians") == 1 }
         XCTAssertEqual(body("POST", "/api/users/c2/parental/guardians")?["guardian_id"] as? String, "u4")
+    }
+
+    // MARK: 57.12
+
+    private static func settings(enabled: Bool, restricted: Int = 0, notice: Bool) -> String {
+        #"{"enabled":\#(enabled),"restricted_accounts":\#(restricted),"can_disable":\#(restricted == 0),"child_devices":1,"child_device_notice":\#(notice)}"#
+    }
+
+    /// T06, in Arabic: parental controls are off and a signed-in device says a child uses it.
+    /// An admin sees the notice in Profile and at the top of Family, mirrored; Set up leads to
+    /// Rate libraries, where a lectures library is offered All ages and nothing is saved
+    /// until the admin saves it; Dismiss tells the home. The switch turns the feature on, and
+    /// off is refused in plain words while an account is restricted. Help says where a
+    /// guardian with no iPhone goes.
+    func testAnAdminSeesTheChildDeviceNoticeAndSetsUpParentalControlsInArabic() {
+        home.parental(#"{"restricted":false}"#)
+        home.stub("GET", "/api/admin/library-acl", body: #"{"users":[{"id":"u1","username":"tester"},{"id":"u3","username":"Omar"}],"libraries":[],"grants":[]}"#)
+        home.stub("GET", "/api/parental/settings", body: Self.settings(enabled: false, notice: true))
+        home.stub("GET", "/api/parental/library-suggestions",
+                  body: #"{"libraries":[{"library_id":"lib-docs","name":"Documentaries","tier":null,"suggested_tier":null,"classified":20,"lectures":2},{"library_id":"lib-lectures","name":"Lectures","tier":null,"suggested_tier":0,"classified":40,"lectures":39}]}"#)
+        home.stub("PUT", "/api/libraries/lib-lectures/age-tier", status: 204)
+        home.stub("POST", "/api/parental/settings/notice/dismiss", body: Self.settings(enabled: false, notice: false))
+        launchSignedIn("ar", sections: ["profile"], section: "profile")
+        let family = element("profile.family")
+        scrollUntil(family)
+        XCTAssertTrue(family.waitForExistence(timeout: 20), "Family, for an admin")
+        let title = element("family.notice.title")
+        XCTAssertTrue(title.waitForExistence(timeout: 15), "the notice, above Family; the home saw \(home.seen.suffix(6))")
+        XCTAssertEqual(title.label, "ربما يستخدم طفلٌ Maktaba")
+        XCTAssertEqual(element("family.notice.body").label, "يشير جهاز مسجَّل الدخول إلى Maktaba إلى أن طفلًا يستخدمه. اضبط الرقابة الأبوية.")
+        // the notice came in above Family and moved it down: brought back into reach
+        scrollUntil(family)
+        shot("parental-notice-profile")
+        family.tap()
+
+        XCTAssertTrue(element("screen.family").waitForExistence(timeout: 10), "the Family screen")
+        let setUp = element("family.notice.setUp")
+        XCTAssertTrue(setUp.waitForExistence(timeout: 15), "the notice's Set up")
+        XCTAssertEqual(element("family.notice.title").label, "ربما يستخدم طفلٌ Maktaba")
+        XCTAssertTrue(setUp.label.contains("إعداد"), setUp.label)
+        XCTAssertEqual(element("family.notice.dismiss").label, "إغلاق")
+        // mirrored: the title sits in the right half of the window, its words end at the right
+        let window = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(element("family.notice.title").frame.midX, window.midX, "right to left: the notice hugs the right edge")
+        XCTAssertGreaterThanOrEqual(setUp.frame.height, 44, "Set up is at least 44 pt tall")
+        XCTAssertGreaterThanOrEqual(element("family.notice.dismiss").frame.height, 44, "Dismiss is at least 44 pt tall")
+        shot("parental-notice")
+
+        // Set up: Rate libraries, with the lectures library offered All ages and nothing saved yet
+        setUp.tap()
+        XCTAssertTrue(element("screen.rateLibraries").waitForExistence(timeout: 10), "Rate libraries")
+        let lectures = element("family.rate.lib-lectures")
+        XCTAssertTrue(lectures.waitForExistence(timeout: 15), "the libraries")
+        waitUntil("the suggestion shows") { lectures.label.contains("المقترح") }
+        XCTAssertTrue(lectures.label.contains("لكل الأعمار"), "All ages is offered: \(lectures.label)")
+        XCTAssertFalse(element("family.rate.lib-docs").label.contains("المقترح"), "nothing is offered for the rest")
+        XCTAssertEqual(count("PUT", "/api/libraries/lib-lectures/age-tier"), 0, "nothing is saved until the admin says so")
+        shot("parental-rate-suggested")
+        let save = element("family.rate.saveSuggested")
+        XCTAssertTrue(save.waitForExistence(timeout: 5), "Save suggested ratings")
+        save.tap()
+        waitUntil("the suggested tier saved") { self.count("PUT", "/api/libraries/lib-lectures/age-tier") == 1 }
+        XCTAssertEqual(body("PUT", "/api/libraries/lib-lectures/age-tier")?["tier"] as? Int, 0, "All ages")
+        XCTAssertEqual(count("PUT", "/api/libraries/lib-docs/age-tier"), 0, "only what was suggested")
+        waitUntil("the row is no longer a suggestion") { !lectures.label.contains("المقترح") }
+        app.navigationBars.buttons.firstMatch.tap()
+
+        // Dismiss: the home is told and the notice goes
+        let dismiss = element("family.notice.dismiss")
+        XCTAssertTrue(dismiss.waitForExistence(timeout: 10), "back in Family")
+        dismiss.tap()
+        waitUntil("the dismissal sent") { self.count("POST", "/api/parental/settings/notice/dismiss") == 1 }
+        // (Profile, behind this sheet, keeps its copy until Family closes: Family's own goes now)
+        waitUntil("the notice goes from Family") { !dismiss.exists && !self.element("family.notice.setUp").exists }
+
+        // the switch: on is sent; off is refused while an account is restricted, said plainly
+        let toggle = app.switches["family.enabled"].firstMatch
+        scrollUntil(toggle)
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10), "the switch, for an admin")
+        XCTAssertEqual(toggle.value as? String, "0", "off in this home")
+        XCTAssertTrue(toggle.label.contains("الرقابة الأبوية"), toggle.label)
+        home.stub("PUT", "/api/parental/settings", body: Self.settings(enabled: true, notice: false))
+        toggle.switches.firstMatch.tap()
+        waitUntil("the switch sent") { self.count("PUT", "/api/parental/settings") == 1 }
+        XCTAssertEqual(body("PUT", "/api/parental/settings")?["enabled"] as? Bool, true)
+        waitUntil("the switch is on") { toggle.value as? String == "1" }
+        home.stub("PUT", "/api/parental/settings", status: 409,
+                  body: #"{"type":"https://maktaba.tv/problems/parental-restrictions-exist","title":"conflict","status":409,"code":"restrictions_exist"}"#)
+        home.stub("GET", "/api/parental/settings", body: Self.settings(enabled: true, restricted: 1, notice: false))
+        toggle.switches.firstMatch.tap()
+        let refused = app.alerts.firstMatch
+        XCTAssertTrue(refused.waitForExistence(timeout: 10), "the home's refusal is said")
+        let plain = "ارفع كل التقييدات قبل إيقاف هذا."
+        XCTAssertTrue(refused.label == plain || refused.staticTexts[plain].exists, "in plain words: \(refused.debugDescription)")
+        XCTAssertEqual(body("PUT", "/api/parental/settings")?["enabled"] as? Bool, false)
+        refused.buttons.firstMatch.tap()
+        waitUntil("the switch stays on") { toggle.value as? String == "1" }
+
+        // Help: Screen Time, and Family on the home's web page for a guardian with no iPhone
+        let web = element("family.help.web")
+        scrollUntil(web)
+        XCTAssertTrue(web.waitForExistence(timeout: 5), "Help's line about the web page")
+        XCTAssertTrue(web.label.contains("/family"), web.label)
+        XCTAssertTrue(element("family.help.screenTime").exists)
+        shot("parental-family-switch")
+
+        // Family closes: Profile reads the home again, and its copy of the notice is gone too
+        element("family.done").tap()
+        XCTAssertTrue(family.waitForExistence(timeout: 10), "back in Profile")
+        waitUntil("the notice goes from Profile") { !self.element("family.notice.title").exists }
     }
 
     /// A play-only sign-in through Maktaba Cloud (`cloud_scope: play` in who-am-I): Family

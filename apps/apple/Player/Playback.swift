@@ -26,8 +26,10 @@ final class Playback {
     private(set) var player: AVPlayer?
     /// Why it does not play (the watch screen says it and what can be done).
     private(set) var failure: HomeFailure?
-    /// The home has no transcode slot free (503 `transcode_busy`, story 59.05): no error
-    /// screen, the sentence shown while the stream is asked for again every 10 s.
+    /// The home has no transcode slot free (503 `transcode_busy`, story 59.05), or cannot
+    /// read a restricted account's watching time right now (503 `parental_time_unknown`,
+    /// story 57.14): no error screen and no time's-up screen, the sentence shown while the
+    /// stream is asked for again as the home's `Retry-After` says.
     private(set) var waiting: HomeFailure?
     /// Epic 57: the home stopped this video for a parental reason. Playback stopped, the
     /// position was sent, and nothing is tried again until `resumeAfterStop`.
@@ -506,7 +508,7 @@ final class Playback {
             case .other, .reopen:
                 break
             }
-            if f.kind.transcodeRetrySeconds != nil {
+            if f.kind.waitRetrySeconds != nil {
                 // what plays now plays on (a reopen: the 10 s watch asks again); with nothing
                 // playing, the sentence shows while `openWhenFree` asks again
                 if player != nil { return }
@@ -519,13 +521,14 @@ final class Playback {
         }
     }
 
-    /// Opens at `start`; while the home has no transcode slot free (`waiting`), asks again
-    /// every 10 s (its `Retry-After`) until one is (story 59.05).
+    /// Opens at `start`; while the home has no transcode slot free, or cannot read the
+    /// account's watching time (`waiting`), asks again after its `Retry-After` until it can
+    /// (stories 59.05 and 57.14).
     private func openWhenFree(from start: Double) async {
         while !Task.isCancelled {
             await open(from: start)
             if failure != nil { waiting = nil }
-            guard let after = waiting?.kind.transcodeRetrySeconds else { return }
+            guard let after = waiting?.kind.waitRetrySeconds else { return }
             do { try await Task.sleep(for: .seconds(after)) } catch { return }
         }
     }
