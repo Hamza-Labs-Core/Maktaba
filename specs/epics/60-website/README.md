@@ -620,7 +620,7 @@ All nine are decided (2026-11-11). The stories follow these decisions.
 
 | # | Action | Needed by |
 |---|---|---|
-| A1 | **Make the `maktaba-server` package public** on GitHub (the package's settings → Change visibility → Public). Every install guide depends on it | Phase 1 |
+| A1 | **Done (2026-11-11).** The `maktaba-server` package is public: an anonymous token request to ghcr.io answers 200 and its tags list without signing in. Every install guide depends on it; 60.08's release and daily checks keep it so | Phase 1 |
 | A2 | Make the website's own Cloudflare token: on `maktaba.tv`, Workers Routes Edit, Zone Read and **DNS Edit** (custom domains write their records), beside Workers Scripts Edit. Today's cloud web token has no DNS Edit on the zone (`deploy/cloudflare/README.md`). Set it as the secret `CLOUDFLARE_API_TOKEN_WEBSITE`, and set the repository variable `WEBSITE_LIVE` to `true` when the site should go live | Phase 1 |
 | A3 | Mail for `privacy@maktaba.tv` (already in `CurrentPolicy`) and `copyright@maktaba.tv` (the designated agent's address), for example through Cloudflare Email Routing | Phase 1 |
 | A4 | Register the designated agent with the US Copyright Office (50.24 lists it) | before 50.24's public channels |
