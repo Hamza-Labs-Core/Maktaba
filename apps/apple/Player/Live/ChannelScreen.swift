@@ -22,6 +22,9 @@ struct ChannelScreen: View {
     /// (`GET /api/channels/{id}/access`): the slate shows and nothing plays until the home
     /// says otherwise.
     @State private var slated = false
+    /// The channel was started (an account with no limit starts it once; a change of
+    /// channel after that is the playback's own).
+    @State private var begun = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
 
@@ -85,13 +88,16 @@ struct ChannelScreen: View {
             if let n = Int(typed) { playback.tune(number: n) }
             typed = ""
         }
-        .task {
-            // under a parental limit the channel starts once the home says its programme
-            // may be watched (`watchAccess`); anyone else's starts at once
-            if !context.session.parental.current.limited { playback.start() }
-            await model.keepFresh(context.client, guide: false)
+        .task { await model.keepFresh(context.client, guide: false) }
+        // under a parental limit the channel starts once the home says its programme may be
+        // watched; anyone else's starts as soon as the home has said the account has no
+        // limit. Asked again when the channel changes and when the limit becomes known or
+        // changes: a channel opened in the first moments after sign-in came before the
+        // home's answer about the limit, started as if there were none and showed no slate
+        .task(id: Watching(channel: playback.channelID, known: context.session.parental.answered,
+                           limited: context.session.parental.current.limited)) {
+            await watchAccess(playback.channelID)
         }
-        .task(id: playback.channelID) { await watchAccess(playback.channelID) }
         .onChange(of: model.channels.map(\.id), initial: true) { _, _ in playback.update(channels: model.channels) }
         .onChange(of: model.onNow(playback.channelID)?.current?.displayTitle(), initial: true) { _, title in playback.showProgramme(title) }
         .onDisappear {
@@ -109,8 +115,17 @@ struct ChannelScreen: View {
     /// channel again when it may. The home's streaming service refuses the stream itself, so
     /// this only decides what the screen says.
     private func watchAccess(_ channel: String) async {
-        guard context.session.parental.current.limited else {
-            slated = false
+        let parental = context.session.parental
+        // the home has not said yet whether this account has a limit: nothing starts (an
+        // answer that failed counts as one, and keeps what was known)
+        guard parental.answered || parental.current.limited else { return }
+        guard parental.current.limited else {
+            // no limit (or it was just lifted over a slate): the channel plays
+            if slated || !begun {
+                slated = false
+                begun = true
+                playback.start()
+            }
             return
         }
         var started = false
@@ -127,6 +142,7 @@ struct ChannelScreen: View {
                 } else if slated || !started {
                     slated = false
                     started = true
+                    begun = true
                     playback.start()
                 }
                 wait = access.askAgain()
@@ -136,12 +152,20 @@ struct ChannelScreen: View {
                 // for as before, and the player says what the home answers
                 if !started, !slated {
                     started = true
+                    begun = true
                     playback.start()
                 }
                 wait = 30
             }
             do { try await Task.sleep(for: .seconds(wait)) } catch { return }
         }
+    }
+
+    /// What `watchAccess` answers for: the channel, and what is known of the limit.
+    private struct Watching: Equatable {
+        let channel: String
+        let known: Bool
+        let limited: Bool
     }
 
     private func digit(_ s: String) {

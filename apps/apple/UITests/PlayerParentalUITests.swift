@@ -517,4 +517,36 @@ final class PlayerParentalUITests: PlayerUITestCase {
         XCTAssertFalse(home.seen.contains("POST /api/tv/remote/tune"), "nothing was tuned")
         shot("parental-live-slate")
     }
+
+    /// The same when the channel opens before the home said the account has a limit (the
+    /// first moments after sign-in): nothing starts until the home has said, then the slate.
+    /// It used to start as for an account with no limit, and never showed the slate.
+    func testAChannelOpenedBeforeTheLimitIsKnownStillShowsTheSlate() {
+        home.parental(Self.child)
+        home.stub("GET", "/api/channels/ch-1/access", body: #"{"channel_id":"ch-1","restricted":true,"allowed":false,"until":null}"#)
+        home.delay("GET", "/api/me/parental", by: 5)
+        launchSignedIn(sections: ["home", "live"], open: "channel/ch-1")
+        XCTAssertTrue(element("live.slate").waitForExistence(timeout: 40), "the slate, once the home said the limit")
+        XCTAssertFalse(home.seen.contains("GET /api/tv/info"), "the channel was not started before the home said: \(home.seen)")
+        XCTAssertFalse(home.seen.contains("POST /api/tv/remote/tune"), "nothing was tuned")
+    }
+
+    /// The same when the home is slow to say it has channels (a loaded iPad runner): the
+    /// shell shows without Live TV after its wait, the channel opens on the first section's
+    /// stack, and when Live TV's section comes the channel goes there with it. It used to
+    /// stay behind on Home's stack, under Live TV's first screen.
+    func testAChannelOpenedBeforeLiveTVShowsGoesWithItAndShowsTheSlate() {
+        home.parental(Self.child)
+        home.stub("GET", "/api/channels/ch-1/access", body: #"{"channel_id":"ch-1","restricted":true,"allowed":false,"until":null}"#)
+        // longer than the shell waits for the answer (`LiveSectionGate.patience`, 3 s)
+        home.delay("GET", "/api/channels/now", by: 6)
+        launchSignedIn(sections: ["home", "live"], open: "channel/ch-1")
+        waitUntil("the home said it has channels", timeout: 40) { self.home.seen.contains("GET /api/channels/now") }
+        // past the move to Live TV: the slate is there after it, not only before
+        RunLoop.current.run(until: Date().addingTimeInterval(8))
+        XCTAssertTrue(element("live.slate").waitForExistence(timeout: 20), "the slate, after Live TV's section showed")
+        XCTAssertEqual(element("live.slate.text").label,
+                       "Not available right now. This channel comes back when the next programme starts.")
+        XCTAssertFalse(home.seen.contains("POST /api/tv/remote/tune"), "nothing was tuned")
+    }
 }

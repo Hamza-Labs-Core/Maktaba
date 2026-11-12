@@ -180,10 +180,12 @@ struct PlayerShell: View {
     private func settleLaunch() {
         guard liveUnsettled, context.session.capabilities.answered else { return }
         if sections.contains(.liveTV) {
+            // a channel opened on the first section's stack goes to Live TV's with the move
+            paths = ShellLaunch.settled(paths, from: selection, liveShown: true)
             selection = .liveTV
             liveUnsettled = false
         } else if liveTVHidden {
-            paths[.liveTV] = nil
+            paths = ShellLaunch.settled(paths, from: selection, liveShown: false)
             if selection == .liveTV { selection = sections.first ?? .libraries }
             unavailable = true
             liveUnsettled = false

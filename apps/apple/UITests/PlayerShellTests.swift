@@ -33,6 +33,22 @@ final class PlayerShellTests: XCTestCase {
         XCTAssertEqual(PlayerSection.shown(all, hasChannels: true, liveTVOff: false, admin: false), all)
     }
 
+    /// A launch into a channel that settles after the shell showed (the home was slow to say
+    /// it has channels): the channel goes to Live TV's stack with the move there, and other
+    /// routes stay where they are; with Live TV off for the viewer no channel stays open.
+    func testAChannelOpenedBeforeLiveTVShowsMovesToItsStack() {
+        let channel = PlayerRoute.channel(id: "ch-1"), video = PlayerRoute.video(id: "v1")
+        XCTAssertEqual(ShellLaunch.settled([.home: [channel]], from: .home, liveShown: true), [.home: [], .liveTV: [channel]])
+        XCTAssertEqual(ShellLaunch.settled([.home: [video, channel]], from: .home, liveShown: true),
+                       [.home: [video], .liveTV: [channel]])
+        XCTAssertEqual(ShellLaunch.settled([.liveTV: [channel]], from: .liveTV, liveShown: true), [.liveTV: [channel]],
+                       "already on Live TV's stack")
+        XCTAssertEqual(ShellLaunch.settled([.home: [video]], from: .home, liveShown: true), [.home: [video]], "nothing to move")
+        XCTAssertEqual(ShellLaunch.settled([:], from: .home, liveShown: true), [:])
+        XCTAssertEqual(ShellLaunch.settled([.home: [video, channel], .liveTV: [channel]], from: .home, liveShown: false),
+                       [.home: [video]], "Live TV off for this viewer: no channel stays open")
+    }
+
     /// The Dynamic Type sizes a UI test asks the running app for (`setTextSize`, answered by
     /// the app's `TextSizeHook`): each one the hook knows, at the size it names; the default
     /// is the system's own setting (no override).
