@@ -1290,12 +1290,12 @@ deploy job says so and skips, and main stays green (50.34).
 
 | Piece | Workflow | Token permissions it needs |
 |---|---|---|
-| Developer portal (maktaba.dev, existing) | `devportal-deploy.yml` | Account: Workers Scripts Edit. Zone `maktaba.dev`: Workers Routes Edit, Zone Read, DNS Edit. |
+| Developer portal (maktaba.dev, existing) | `devportal-deploy.yml` | Account: Workers Scripts Edit. Zone `maktaba.dev`: Workers Routes Edit, Zone Read (no DNS Edit: Cloudflare creates a custom domain's record). |
 | User web (`maktaba-cloud-web`) and admin web (`maktaba-admin-web`) Workers | `cloud-web-deploy.yml` (new) | Account: Workers Scripts Edit. Zone `maktaba.tv`: Workers Routes Edit, Zone Read. |
 | Zone security: WAF custom rules, managed rules, rate-limit rules, SSL/TLS settings | `cloudflare-zone.yml` (new) | Zone `maktaba.tv`: Zone WAF Edit, Zone Settings Edit, Zone Read. |
 | The Tunnel's ingress and its DNS records | `cloudflare-zone.yml` | Account: Cloudflare Tunnel Edit. Zone `maktaba.tv`: DNS Edit. |
 | Per-hostname Authenticated Origin Pulls certificate (50.31's fallback only) | `cloudflare-zone.yml` | Zone `maktaba.tv`: SSL and Certificates Edit. |
-| Broadcast edge (50.21, later) | `broadcast-edge.yml` | Account: Workers Scripts Edit, Workers R2 Storage Edit. Zone `maktaba.tv`: Workers Routes Edit, DNS Edit (custom domains). |
+| Broadcast edge (50.21, later) | `broadcast-edge.yml` | Account: Workers Scripts Edit, Workers R2 Storage Edit. Zone `maktaba.tv`: Workers Routes Edit, Zone Read (custom domains need no DNS Edit). |
 | DNS-01 certificates on the nodes (50.02) | none: a **separate** token kept on the nodes | Zone `maktaba.tv`: DNS Edit only. Never the CI token. |
 | The plugin store (Epic 54) | the store's own workflows | **its own deploy token**, set up with Epic 54; separate from the nodes' DNS-edit token and not one of the cloud's rows here. |
 

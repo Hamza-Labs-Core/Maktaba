@@ -4,6 +4,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 /** An ICO file holding one PNG image (Windows Vista's format, which every browser reads). */
 export function icoOf(png) {
@@ -26,7 +27,19 @@ export function icoOf(png) {
   return Buffer.concat([head, png]);
 }
 
-/** The site's web manifest. The colours are the placeholder stylesheet's dark page. */
+/** The shell's dark page colour (design/site-tokens.css, the `color.semantic.bg` token). */
+export function pageColour(
+  css = fs.readFileSync(
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../design/site-tokens.css"),
+    "utf8"
+  )
+) {
+  const m = css.match(/--color-semantic-bg:\s*(#[0-9A-Fa-f]{6})/);
+  if (!m) throw new Error("design/site-tokens.css: no --color-semantic-bg");
+  return m[1];
+}
+
+/** The site's web manifest, in the shell's dark page colour. */
 export function manifest() {
   return {
     name: "Maktaba",
@@ -36,8 +49,8 @@ export function manifest() {
     start_url: "/",
     scope: "/",
     display: "browser",
-    background_color: "#141416",
-    theme_color: "#141416",
+    background_color: pageColour(),
+    theme_color: pageColour(),
     icons: [
       { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },

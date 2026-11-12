@@ -17,8 +17,8 @@ export const PIECES = {
   zone: { account: [], zone: ["Zone WAF Write", "Zone Settings Write", "Zone Read"] },
   tunnel: { account: ["Cloudflare Tunnel Write"], zone: ["DNS Write", "Zone Read"] },
   aop: { account: [], zone: ["SSL and Certificates Write", "Zone Read"] },
-  // a Worker's custom domains write their DNS records (maktaba.tv's apex and www, Epic 60)
-  dns: { account: [], zone: ["DNS Write", "Zone Read"] },
+  // No piece for a Worker's custom domains: Cloudflare creates a custom domain's DNS record
+  // itself, so `workers` covers them (maktaba.dev and maktaba.tv deploy with no DNS Edit).
 };
 
 /** One read call per permission: its path (a = account id, z = zone id). */

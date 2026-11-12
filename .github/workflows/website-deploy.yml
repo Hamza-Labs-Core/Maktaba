@@ -172,8 +172,8 @@ jobs:
         if: steps.gate.outputs.ok == 'true'
         run: npm ci --no-audit --no-fund
 
-      # Read-only, and before any write: the token can deploy Workers, their routes, and the
-      # custom domains' DNS records on maktaba.tv. It runs while the site is not live too, so a
+      # Read-only, and before any write: the token can deploy Workers and their routes on
+      # maktaba.tv. No DNS Edit: Cloudflare creates the custom domains' records itself. It runs while the site is not live too, so a
       # missing permission is named now; not live, a failure is reported without failing the
       # run (the Report step), live, it stops the deploy.
       - name: Token check
@@ -186,7 +186,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -o pipefail
-          node tools/cloudflare/token-check.mjs --pieces workers,dns --zone maktaba.tv | tee token-check.log
+          node tools/cloudflare/token-check.mjs --pieces workers --zone maktaba.tv | tee token-check.log
           echo "result=ok" >> "$GITHUB_OUTPUT"
 
       - name: Token check report

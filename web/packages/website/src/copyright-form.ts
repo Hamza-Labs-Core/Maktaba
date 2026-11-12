@@ -169,7 +169,7 @@ export function renderNoticeForm(lang: Lang, cfg: NoticeConfig, script = ""): st
 ${rows}
   <div class="cf-turnstile" data-sitekey="${esc(cfg.sitekey)}" data-language="${lang}"></div>
   <p id="notice-where">${esc(t.where)}</p>
-  <p><button type="submit">${esc(t.send)}</button></p>
+  <p><button class="button" type="submit">${esc(t.send)}</button></p>
   <p id="notice-status" role="status" aria-live="polite"></p>
 </form>
 </div>

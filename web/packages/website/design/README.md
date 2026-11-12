@@ -19,12 +19,13 @@ English and Arabic.
 | `mockups/make.mjs`                        | writes `mockups/*.html` from the shell and each page's copy (`node mockups/make.mjs`)                                    |
 | `mockups/shell.mjs`, `mockups/part-b.mjs` | the shell's HTML (header, footer, wordmark, page); part B's pages, read from `../copy/*.md`                              |
 | `mockups/*.html`                          | part A: front door, legal, problem, problem index, install guide, 404, component sheet; part B: below                    |
-| `mockups/png/`                            | their renders (`node render.mjs`): 150 PNGs, each under 1 MB, reduced to a 256-colour palette by `quantize.py` (19.5 MB) |
+| `mockups/png/`                            | their renders (`node render.mjs`): 134 PNGs, each under 1 MB, reduced to a 256-colour palette by `quantize.py` (18.1 MB) |
 | `render.mjs`, `png.mjs`, `quantize.py`    | the render (Playwright, a local server, the 320 px reflow check), the PNG chunk reader, the palette step                 |
 | `review-sheet.mjs`                        | writes `review-sheet.html` from the same list of renders                                                                 |
 | `mockups/vendor/install.css`              | a copy of Epic 59's guide stylesheet at `a4c35d7eb`, for the install mockup                                              |
 | `mockups/src/unraid.*.html`               | the built Unraid guide's header and main, the screenshot placeholders left out (60.05)                                   |
 | `review-sheet.html`                       | every PNG on one page, by mockup, width and language, for review                                                         |
+| `review-phase-1.md`                       | the built pages beside these mockups, each difference fixed or accepted (Phase 1 review, a draft until signed)           |
 | `tests/`                                  | T01, T02's site half, T03, T04 and the copy checks; `make test-tokens` runs them                                         |
 | `fonts/`                                  | the subset and rename scripts behind `../static/fonts/`                                                                  |
 
@@ -107,9 +108,12 @@ alone (WCAG 1.4.11 covers what is needed to understand or operate).
 OFL asks: `../static/fonts/README.md`). Weights **400 and 600** only: the shell uses no other.
 Each weight is split by `unicode-range` into a Latin and an Arabic file, so an English page
 downloads 29 KB of fonts and an Arabic page 83 KB, inside the 150 KB budget with room for part
-B's display face. Preloaded, `font-display: swap`.
+B's display face. Preloaded, `font-display: optional` (below).
 
-**No layout shift on swap.** `Maktaba Text Fallback` is Arial scaled to Plex's metrics:
+**No layout shift.** The faces are `optional`: a preloaded face arrives in the first moments
+and is drawn from the first paint; one that comes later is not swapped in, so a line never moves
+(the built site measured a shift of 0.00005 with `swap` on Linux, where Arial is missing). Should
+a face fall back, `Maktaba Text Fallback` is Arial scaled to Plex's metrics:
 `size-adjust: 101.6%` (400) and `97.15%` (600) from the average Latin advance, with
 `ascent-override` and `descent-override` from Plex's 1.085/0.415 em. Every text style also sets
 an explicit line height, so a line box is the same height in either face. Code uses the

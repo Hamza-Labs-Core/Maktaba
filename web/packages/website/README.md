@@ -35,9 +35,14 @@ Worker, which:
 | `/shots/…`                      | the apps' product screenshots (60.09)          | `scripts/shots.mjs`, `shots-manifest.json`           |
 
 A page source in `src/pages/` is the page's `<main>` content after a leading comment
-(`title:`, `description:`, optionally `meta:`). `scripts/shell.mjs` wraps it in the document,
-the header (with the language switch to its twin) and the footer. The install guides lose
-each "Screenshot to come" figure whose image does not exist yet (60.05 T07).
+(`title:`, `description:`, optionally `meta:`, and `main:`, a class for `<main>`).
+`scripts/shell.mjs` wraps it in the document and the shell of story 60.01 part A (the spec and
+mockups are `design/`): the header with the nav, the phone menu and the language switch to its
+twin, the language hint (§6.5), the footer and the skip link. The install guides go in the same
+header and footer (`inShell`), and lose each "Screenshot to come" figure whose image does not
+exist yet (60.05 T07). The shell's stylesheet (`design/` with `src/site.css`), scripts
+(`design/shell.js`, `src/shell-head.js`), fonts and mark are published under content-hashed
+names in `/assets/`. The Worker writes the address asked for into the 404 page.
 
 The problem pages are generated from the registry the API sends from, `shared/api/problems.json`
 (`scripts/problems.mjs`): one page per entry in each language, and the index, `/problems/`, grouped
@@ -54,9 +59,7 @@ structured document and renders with one function (`renderLegal`). The privacy p
 and is written from `docs/app-privacy.md`; a change to either without the page's copy fails the
 build, naming the section. The copyright page's notice form (`src/copyright-form.ts`) is built
 only when `WEBSITE_NOTICE_ENDPOINT` and `WEBSITE_TURNSTILE_SITEKEY` are both set, once Epic 50's
-endpoint is live; until then the page gives the agent's email and what a notice must contain. The look is a neutral
-placeholder (`static/assets/site.css`) until the design of story 60.01 replaces the shell and
-the stylesheet.
+endpoint is live; until then the page gives the agent's email and what a notice must contain.
 
 ## Product screenshots
 
@@ -94,8 +97,8 @@ source it is built from, by hand, and monthly (security.txt's Expires). The step
 when that smoke fails. A first deploy creates the Worker with no routes first, since a version
 cannot be uploaded to a Worker that does not exist.
 
-It uses `CLOUDFLARE_API_TOKEN_WEBSITE` when set, else the shared `CLOUDFLARE_API_TOKEN` (with
-DNS Edit on `maktaba.tv`). It goes live only when the repository variable `WEBSITE_LIVE = true`
+It uses `CLOUDFLARE_API_TOKEN_WEBSITE` when set, else the shared `CLOUDFLARE_API_TOKEN` (no
+DNS Edit: Cloudflare creates the custom domains' records itself). It goes live only when the repository variable `WEBSITE_LIVE = true`
 is set, with a token and `CLOUDFLARE_ACCOUNT_ID`; otherwise it writes nothing, prints a notice
 naming what is missing and passes. The read-only token check runs on every run once a token and
 the account are set, and names any missing permission before go-live. See

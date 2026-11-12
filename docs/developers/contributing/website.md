@@ -28,6 +28,27 @@ and is built and deployed the way this portal is: a Cloudflare Worker in front o
 7. the link check's manifest (`scripts/links.mjs --write-manifest dist`): commit
    `dist-manifest.json` when the pages change, because CI fails when it differs from the build.
 
+## The page shell
+
+Every page the site builds is in the shell that story 60.01's part A designed (its spec and
+mockups are `web/packages/website/design/`): the header with the nav, the phone menu and the
+language switch, the footer, the skip link, and the line that offers the Arabic page to a browser
+that prefers Arabic. Its files:
+
+- `scripts/shell.mjs`: the markup (header, footer, the language hint, callouts, code blocks, the
+  step list), `page()` for a hand-made or generated page, and `inShell()`, which wraps an install
+  guide in the shell's header and footer;
+- `design/shell.css`, `design/fonts.css` and `design/site-tokens.css` (generated from the
+  `site` token group), with what only the built site needs in `src/site.css`: the build joins
+  them into one stylesheet, `/assets/site-<hash>.css`;
+- `design/shell.js` (the menu, the copy buttons, the hint's Hide button) and
+  `src/shell-head.js`, which runs before the first paint so nothing moves;
+- the fonts, Maktaba Text from `static/fonts/`, and the mark, `src/mark-64.png`.
+
+Every one of these is published under a content-hashed name, so a change reaches visitors on the
+next deploy. A change to any of them makes Lighthouse measure every generated family, the install
+guides included.
+
 ## The legal pages
 
 `/legal/privacy/`, `/legal/terms/` and `/legal/copyright/` (and `/ar/…`) are written in
@@ -66,7 +87,7 @@ source it is built from:
   artifact; the Worker's log is `website-worker-log`.
 - **quality:** Playwright on every page in both languages, served by the Worker: axe with the
   WCAG 2.0, 2.1 and 2.2 A and AA rules, dark and light; the keyboard (a skip link first, Tab in
-  reading order, the phone menu once the shell declares one); a 2 px focus ring at 3:1, not
+  reading order, the phone menu); a 2 px focus ring at 3:1, not
   covered; 24 px targets; no sideways scroll at 320 px; text spacing; reduced motion; the
   languages; no layout shift; RTL mirroring; and the visual references. It runs in four shards
   (`--shard`), one job each. Kept, per shard `<n>`: `website-playwright-<n>` (the report),
@@ -164,7 +185,7 @@ builds and checks the site as a pull request does (with the pages the latest nig
 failed), refuses while that sweep is red and unreadable, then runs these steps
 (`tools/cloudflare/website-deploy.mjs`):
 
-1. the token check (`token-check.mjs --pieces workers,dns`);
+1. the token check (`token-check.mjs --pieces workers`);
 2. record the version serving now (`wrangler deployments status`): a rollback returns to it;
 3. upload the new version, not yet live (`wrangler versions upload`), and smoke its preview URL;
 4. promote it at 100% (`wrangler versions deploy`), then apply the custom domains
@@ -178,8 +199,8 @@ detached again.
 ## Going live
 
 The deploy's token is `CLOUDFLARE_API_TOKEN_WEBSITE` when that secret is set, and otherwise the
-shared `CLOUDFLARE_API_TOKEN` that also deploys this portal (it needs DNS Edit on `maktaba.tv`,
-because custom domains write their records). The repository variable `WEBSITE_LIVE` set to `true`
+shared `CLOUDFLARE_API_TOKEN` that also deploys this portal (it needs no DNS Edit on `maktaba.tv`:
+Cloudflare creates the custom domains' records itself). The repository variable `WEBSITE_LIVE` set to `true`
 is the only go-live switch: without it, or without a token or `CLOUDFLARE_ACCOUNT_ID`, nothing is
 written and the job prints a notice naming what is missing and passes. The token check only
 reads, so it runs on every run once a token and the account are set, and names any missing

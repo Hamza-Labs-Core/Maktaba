@@ -157,6 +157,11 @@ describe("the icons and the manifest", () => {
     expect(m.icons.map((i: { purpose: string }) => i.purpose)).toEqual(["any", "any", "maskable"]);
     for (const i of m.icons) expect(fs.existsSync(path.join(DIST, i.src)), i.src).toBe(true);
     expect(fs.existsSync(path.join(DIST, "apple-touch-icon.png"))).toBe(true);
+    // in the shell's dark page colour (design/site-tokens.css)
+    const bg = fs
+      .readFileSync(path.join(DIST, "..", "design/site-tokens.css"), "utf8")
+      .match(/--color-semantic-bg:\s*(#[0-9A-Fa-f]{6})/)![1];
+    expect([m.background_color, m.theme_color]).toEqual([bg, bg]);
   });
 
   it("icoOf refuses what is not a PNG; woffToSfnt refuses what is not WOFF 1.0", () => {
@@ -204,7 +209,7 @@ describe("60.06: the problem pages, as built", () => {
   it("the index links every entry, and its filter is one content-hashed script of the site", () => {
     for (const lang of ["en", "ar"]) {
       const html = read(`${lang === "ar" ? "ar/" : ""}problems/index.html`);
-      const links = [...html.matchAll(/<li><a href="([^"]+)"/g)].map((m) => m[1]);
+      const links = [...html.matchAll(/<li><a href="([^"]+)"><span class="t">/g)].map((m) => m[1]);
       expect(new Set(links).size, lang).toBe(reg.problems.length);
       const src = attr(html, /<script type="module" src="([^"]+)"/);
       expect(src, lang).toMatch(/^\/assets\/problems-filter-[A-Za-z0-9_-]{10}\.js$/);

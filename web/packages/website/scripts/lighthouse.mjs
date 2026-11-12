@@ -54,14 +54,22 @@ export const FAMILY_SOURCES = {
   problems: ["web/packages/website/scripts/problems.mjs", "shared/api/problems.json"],
   help: ["web/packages/website/scripts/help.mjs", "web/src/help/content/"],
 };
-/** The shell the hand-made pages and the problem and help pages are rendered in: a change to it
- * runs those families whole (the hand-made pages run on every pull request anyway). */
+/** The shell every page is rendered in (story 60.01 part A: scripts/shell.mjs, its stylesheets
+ * and scripts in design/ and src/): a change to it runs the generated families whole, the install
+ * guides too since the shell wraps them (the hand-made pages run on every pull request anyway). */
 export const SHELL_SOURCES = [
   "web/packages/website/scripts/shell.mjs",
   "web/packages/website/scripts/head.mjs",
-  "web/packages/website/static/assets/",
+  "web/packages/website/static/",
+  "web/packages/website/design/shell.css",
+  "web/packages/website/design/shell.js",
+  "web/packages/website/design/fonts.css",
+  "web/packages/website/design/site-tokens.css",
+  "web/packages/website/src/site.css",
+  "web/packages/website/src/shell-head.js",
+  "web/packages/website/src/mark-64.png",
 ];
-const SHELL_FAMILIES = ["problems", "help"];
+const SHELL_FAMILIES = ["help", "install", "problems"];
 
 const touches = (changed, sources) =>
   changed.some((f) => sources.some((s) => (s.endsWith("/") ? f.startsWith(s) : f === s)));

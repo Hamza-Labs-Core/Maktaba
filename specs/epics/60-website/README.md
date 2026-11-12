@@ -213,8 +213,8 @@ web/packages/website/            the site: a package in web's pnpm workspace, wi
 - **Why Workers static assets, not Pages:**
   - It is what maktaba.dev and the two cloud web Workers already run, so the deploy action,
     `wrangler rollback`, `tools/cloudflare/smoke.mjs`, the token check and the token table are
-    reused, extended by 60.03 (a `--base` and negative checks in the smoke, a `dns` piece in the
-    token check, a rollback to a recorded version).
+    reused, extended by 60.03 (a `--base` and negative checks in the smoke, a rollback to a
+    recorded version).
   - Versions give a preview URL per upload for staging and an atomic switch for the deploy.
   - The Worker gives headers and redirects in code that is tested, not in `_headers` files.
   - Cloudflare's own direction is to fold Pages into Workers.
@@ -253,7 +253,7 @@ monthly (security.txt's `Expires`, as on maktaba.dev):
    and otherwise the shared `CLOUDFLARE_API_TOKEN` that also deploys maktaba.dev. The repository
    variable `WEBSITE_LIVE = true` is the only go-live switch: without it, or without a token or
    `CLOUDFLARE_ACCOUNT_ID`, the job writes nothing, prints a notice naming what is missing and
-   passes. `token-check.mjs --pieces workers,dns --zone maktaba.tv` is read-only and runs on
+   passes. `token-check.mjs --pieces workers --zone maktaba.tv` is read-only and runs on
    every run once a token and the account are set, live or not, so a missing permission is
    named before go-live; it fails the run only once the site is live.
 3. **Record the live version.** `wrangler deployments status` gives the version now serving. It
@@ -623,7 +623,7 @@ All nine are decided (2026-11-11). The stories follow these decisions.
 | # | Action | Needed by |
 |---|---|---|
 | A1 | **Done (2026-11-11).** The `maktaba-server` package is public: an anonymous token request to ghcr.io answers 200 and its tags list without signing in. Every install guide depends on it; 60.08's release and daily checks keep it so | Phase 1 |
-| A2 | No separate website token (decided 2026-11-11): the shared `CLOUDFLARE_API_TOKEN` deploys maktaba.tv. It needs the website's row of `deploy/cloudflare/README.md` (on `maktaba.tv`: Workers Routes Edit, Zone Read and **DNS Edit**, since custom domains write their records; Workers Scripts Edit on the account). The deploy's read-only token check names any missing permission on each run; add it to the existing token. Set the repository variable `WEBSITE_LIVE` to `true` only when the site should go live | Phase 1 |
+| A2 | No separate website token (decided 2026-11-11): the shared `CLOUDFLARE_API_TOKEN` deploys maktaba.tv. It needs the website's row of `deploy/cloudflare/README.md` (on `maktaba.tv`: Workers Routes Edit and Zone Read; Workers Scripts Edit on the account; no DNS Edit, since Cloudflare creates the custom domains' records itself, as it does for maktaba.dev). The deploy's read-only token check names any missing permission on each run; add it to the existing token. Set the repository variable `WEBSITE_LIVE` to `true` only when the site should go live | Phase 1 |
 | A3 | Mail for `privacy@maktaba.tv` (already in `CurrentPolicy`) and `copyright@maktaba.tv` (the designated agent's address), for example through Cloudflare Email Routing | Phase 1 |
 | A4 | Register the designated agent with the US Copyright Office (50.24 lists it) | before 50.24's public channels |
 | A5 | Approve the tagline, the voice, the wordmark and the Arabic copy (Q1–Q3). **Done:** the voice (2026-11-11), the wordmark and the tagline (2026-11-12). **Open:** the owner's read of the Arabic copy (Q2) | Phase 2 |

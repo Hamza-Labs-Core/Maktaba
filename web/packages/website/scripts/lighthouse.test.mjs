@@ -68,11 +68,13 @@ test("a change to a family's generator or source runs the whole family, one run 
   assert.deepEqual(familiesChanged(["web/vite.install.config.ts"]), ["install"]);
   assert.deepEqual(familiesChanged(["shared/api/problems.json"]), ["problems"]);
   assert.deepEqual(familiesChanged(["web/src/help/content/en/a.md"]), ["help"]);
-  // the shell renders the problem and help pages too
-  assert.deepEqual(familiesChanged(["web/packages/website/scripts/shell.mjs"]), [
-    "help",
-    "problems",
-  ]);
+  // the shell renders the problem and help pages too, and wraps the install guides
+  for (const f of [
+    "web/packages/website/scripts/shell.mjs",
+    "web/packages/website/design/shell.css",
+    "web/packages/website/src/shell-head.js",
+  ])
+    assert.deepEqual(familiesChanged([f]), ["help", "install", "problems"], f);
   assert.deepEqual(familiesChanged(["README.md", "web/packages/installer.ts"]), []);
   const r = pick({ set: "pr", pages, reps, hand, changed: ["web/packages/install/src/page.ts"] });
   assert.deepEqual(r.single, ["/ar/install/qnap/", "/install/qnap/"]);

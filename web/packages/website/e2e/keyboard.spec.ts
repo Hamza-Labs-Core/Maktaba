@@ -19,7 +19,7 @@ async function expectedStops(page: Page): Promise<string[]> {
       if (el.tabIndex < 0) continue;
       if (!el.checkVisibility({ visibilityProperty: true })) {
         // the skip link is off screen, not hidden
-        if (!el.classList.contains("skip-link")) continue;
+        if (!el.classList.contains("skip")) continue;
       }
       if (el instanceof HTMLInputElement && el.type === "radio" && el.name) {
         const group = [
@@ -105,7 +105,7 @@ for (const p of sitePages()) {
       const stops = await expectedStops(page);
       await page.keyboard.press("Tab");
       const skip = page.locator(":focus");
-      await expect(skip, "the first Tab stop is the skip link").toHaveClass(/skip-link/);
+      await expect(skip, "the first Tab stop is the skip link").toHaveClass(/\bskip\b/);
       const target = (await skip.getAttribute("href")) ?? "";
       expect(target).toMatch(/^#./);
       await expect(page.locator(`main${target}`), "the skip link goes to <main>").toHaveCount(1);

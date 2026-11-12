@@ -87,26 +87,39 @@ test("an expired token, a zone not in the account, an unknown piece", async () =
   assert.throws(() => needed(["dnz"]), /unknown piece dnz/);
 });
 
-// Story 60.03: the website's custom domains write DNS records, so its deploy checks the dns piece.
-test("the dns piece needs DNS Write on the zone; a Workers-only token fails naming it", async () => {
-  assert.deepEqual([...needed(["workers", "dns"])], [
+// The website's deploy checks the workers piece only: Cloudflare creates a custom domain's DNS
+// record itself, so DNS Write is not needed (maktaba.dev attaches its custom domains with the
+// same shared token, which has none). The shared token as it is on maktaba.tv: Workers Scripts,
+// Workers Routes, Zone Read and Zone Settings pass; the DNS and Zone WAF reads are refused.
+test("the website's check passes a token without DNS Write; there is no dns piece", async () => {
+  assert.deepEqual([...needed(["workers"])], [
     ["Workers Scripts Write", "account"],
     ["Workers Routes Write", "zone"],
     ["Zone Read", "zone"],
-    ["DNS Write", "zone"],
   ]);
-  const f = await fakeServer(routes(policy.policies));
+  assert.throws(() => needed(["workers", "dns"]), /unknown piece dns/);
+  const noDns = policy.policies.map((p) => ({ ...p, permission_groups: p.permission_groups.filter((g) => g.name !== "DNS Write") }));
+  const f = await fakeServer(routes(noDns));
   try {
-    const r = await check({ pieces: ["workers", "dns"], zoneName: "maktaba.tv", accountId: ACC, token: "t", base: f.url });
+    const r = await check({ pieces: ["workers"], zoneName: "maktaba.tv", accountId: ACC, token: "t", base: f.url });
     assert.deepEqual(r.missing, []);
+    assert.ok(!r.lines.join("\n").includes("DNS"));
   } finally {
     await f.close();
   }
-  const noDns = policy.policies.map((p) => ({ ...p, permission_groups: p.permission_groups.filter((g) => g.name !== "DNS Write") }));
-  const g = await fakeServer(routes(noDns));
+  const g = await fakeServer({
+    ...routes(null),
+    [`GET /accounts/${ACC}/workers/scripts`]: () => ok([]),
+    [`GET /zones/${ZONE}/workers/routes`]: () => ok([]),
+    [`GET /zones/${ZONE}`]: () => ok({ id: ZONE }),
+    [`GET /zones/${ZONE}/settings/ssl`]: () => ok({ value: "strict" }),
+    [`GET /zones/${ZONE}/dns_records`]: () => denied(),
+    [`GET /zones/${ZONE}/rulesets`]: () => denied(),
+  });
   try {
-    const r = await check({ pieces: ["workers", "dns"], zoneName: "maktaba.tv", accountId: ACC, token: "t", base: g.url });
-    assert.deepEqual(r.missing, ["DNS Write"]);
+    const r = await check({ pieces: ["workers"], zoneName: "maktaba.tv", accountId: ACC, token: "t", base: g.url });
+    assert.deepEqual(r.missing, []);
+    assert.ok(r.lines.every((l) => !l.startsWith("MISSING")));
   } finally {
     await g.close();
   }

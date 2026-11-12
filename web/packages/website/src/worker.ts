@@ -16,6 +16,18 @@ export interface Env {
 
 const isArabic = (path: string) => path === "/ar" || path.startsWith("/ar/");
 
+/** The 404 page with the address asked for in its <code data-asked> (the design's 404,
+ * story 60.01 part A): escaped, and cut at 200 characters. */
+function withAsked(html: string, pathname: string): string {
+  const shown = pathname.length > 200 ? `${pathname.slice(0, 200)}…` : pathname;
+  const safe = shown
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+  return html.replace("<code data-asked></code>", () => `<code data-asked>${safe}</code>`);
+}
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
@@ -44,7 +56,10 @@ export default {
       const page = await env.ASSETS.fetch(new Request(new URL(notFound, url), { method: "GET" }));
       const headers = new Headers(page.headers);
       if (!page.ok) headers.set("Content-Type", "text/plain; charset=utf-8");
-      res = new Response(page.ok ? page.body : "Not found\n", { status: 404, headers });
+      // the page names the address that was asked for (its <code data-asked>), escaped
+      const body = page.ok ? withAsked(await page.text(), url.pathname) : "Not found\n";
+      headers.delete("Content-Length");
+      res = new Response(body, { status: 404, headers });
     }
     return withHeaders(res, url.pathname);
   },

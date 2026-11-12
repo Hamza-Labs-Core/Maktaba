@@ -12,10 +12,11 @@ workers_dev = false
 preview_urls = true
 
 # The custom domains (top-level keys: they must come before the [assets] table). Applied by
-# `wrangler triggers deploy` after the version is promoted; wrangler creates their DNS records
-# and certificates. A custom domain owns its exact hostname only: app., api., admin., relay.,
-# watch. and plugins. keep their records and routes. The token needs DNS Edit on the zone
-# (deploy/cloudflare/README.md, the token table).
+# `wrangler triggers deploy` after the version is promoted; Cloudflare creates their DNS records
+# and certificates itself. A custom domain owns its exact hostname only: app., api., admin.,
+# relay., watch. and plugins. keep their records and routes. The token needs no DNS Edit:
+# Workers Scripts Edit, Workers Routes Edit and Zone Read (deploy/cloudflare/README.md, the
+# token table).
 routes = [
   { pattern = "maktaba.tv", custom_domain = true },
   { pattern = "www.maktaba.tv", custom_domain = true },

@@ -9,7 +9,7 @@ const HTML = "text/html; charset=utf-8";
 const FILES: Record<string, [string, string]> = {
   "/": ['<!doctype html><html lang="en" dir="ltr">home', HTML],
   "/ar/": ['<!doctype html><html lang="ar" dir="rtl">الرئيسية', HTML],
-  "/404": ['<!doctype html><html lang="en">This page isn\'t here', HTML],
+  "/404": ['<!doctype html><html lang="en">This page isn\'t here <code data-asked></code>', HTML],
   "/ar/404": ['<!doctype html><html lang="ar">هذه الصفحة غير موجودة', HTML],
   "/install/docker/": ['<!doctype html><main id="app"></main>', HTML],
   "/install/assets/docker-Bx3k9Q2a.js": ["export{}", "text/javascript"],
@@ -172,6 +172,13 @@ describe("404 (T03)", () => {
       expect(res.status, p).toBe(404);
       expect(await res.text(), p).toContain("هذه الصفحة غير موجودة");
     }
+  });
+
+  it("names the address asked for in the page, escaped and cut at 200 characters", async () => {
+    const res = await get('https://maktaba.tv/instal/"x"<b>');
+    expect(await res.text()).toContain("<code data-asked>/instal/%22x%22%3Cb%3E</code>");
+    const long = await (await get(`https://maktaba.tv/${"a".repeat(300)}`)).text();
+    expect(long).toContain(`<code data-asked>/${"a".repeat(199)}…</code>`);
   });
 
   it("is case sensitive: /Install/Docker is not /install/docker", async () => {
