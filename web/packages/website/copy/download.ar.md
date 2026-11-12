@@ -205,3 +205,59 @@ Synology وTrueNAS وUnraid وQNAP وUGREEN، أو أي جهاز فيه Docker
 ## all
 
 كل ملفات هذا الإصدار، على GitHub
+
+## note.windows
+
+يبدو أن هذا حاسوب بنظام Windows. وإن لم يكن كذلك، فكل الأنظمة في الأسفل.
+
+## note.linux
+
+يبدو أن هذا حاسوب بنظام Linux. وإن لم يكن كذلك، فكل الأنظمة في الأسفل.
+
+## windows.verify.text
+
+يسجّل GitHub بصمة SHA-256 هذه للملف. وللمقارنة، شغّلوا هذا الأمر في PowerShell من المجلد الذي فيه الملف:
+
+## linux.verify.text
+
+يسجّل GitHub بصمة SHA-256 هذه للملف. وللمقارنة، شغّلوا هذا الأمر في الطرفية من المجلد الذي فيه الملف:
+
+## verify.sig
+
+ويرفق الإصدار معه الملف {file}، وهو توقيع الملف: ويتحقق التطبيق من توقيع مثله قبل أن يثبّت أي تحديث.
+
+## server.name
+
+حزم الخادم
+
+## server.apt
+
+Debian وUbuntu، من مستودع apt
+
+## server.dnf
+
+Fedora وRHEL، من مستودع dnf
+
+## server.brew
+
+macOS، عبر Homebrew
+
+## server.other.install
+
+سكربت التثبيت (`install.sh`)
+
+## server.other.linux-amd64
+
+الخادم وحده، لنظام Linux بمعالجات x86-64 ‏(`.tar.gz`)
+
+## server.other.linux-arm64
+
+الخادم وحده، لنظام Linux بمعالجات ARM64 ‏(`.tar.gz`)
+
+## server.other.darwin-arm64
+
+الخادم وحده، لنظام macOS بمعالج Apple ‏(`.tar.gz`)
+
+## server.other.windows
+
+الخادم وحده، لنظام Windows ‏(`.zip`)

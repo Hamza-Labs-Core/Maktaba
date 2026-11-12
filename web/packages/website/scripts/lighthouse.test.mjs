@@ -39,6 +39,9 @@ test("the hand-made pages: their paths, the 404 at /404 (status 200, which Light
     // the problem index (60.06), a family's own page
     "/problems/",
     "/ar/problems/",
+    // the download page (60.11), a family of one page
+    "/download/",
+    "/ar/download/",
   ];
   assert.deepEqual(handMadeUrls(), all);
   const re = new RegExp(handMadePattern());

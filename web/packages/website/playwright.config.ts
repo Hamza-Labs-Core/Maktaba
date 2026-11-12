@@ -26,8 +26,10 @@ export default defineConfig({
   },
   // pixels, not bytes: e2e/__screenshots__/<page>-<width>-<lang>[-light].png
   snapshotPathTemplate: "{testDir}/__screenshots__/{arg}{ext}",
-  // a missing reference fails in CI; e2e:update writes them
-  updateSnapshots: process.env.CI ? "none" : "missing",
+  // a reference that does not exist yet is written (in CI, in the runner's image), and the
+  // workflow then fails the job and uploads it to be looked at and committed (_website.yml);
+  // a reference that differs is never overwritten
+  updateSnapshots: "missing",
   fullyParallel: true,
   workers: process.env.CI ? 4 : undefined,
   retries: 0,

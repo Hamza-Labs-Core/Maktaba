@@ -81,7 +81,7 @@ func TestNotesMaktabaLinksAreFullLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	links := maktabaLinks(notes)
-	for _, want := range []string{"https://maktaba.tv/install/synology/", "https://maktaba.tv/install/truenas/"} {
+	for _, want := range []string{"https://maktaba.tv/download/", "https://maktaba.tv/install/synology/", "https://maktaba.tv/install/truenas/"} {
 		found := false
 		for _, l := range links {
 			found = found || l == want
@@ -94,5 +94,22 @@ func TestNotesMaktabaLinksAreFullLinks(t *testing.T) {
 		if !strings.HasPrefix(l, "https://maktaba.tv/") || !strings.HasSuffix(l, "/") {
 			t.Errorf("%s is not a full https://maktaba.tv/…/ link", l)
 		}
+	}
+}
+
+// Story 60.11: the Install section opens with the download page, which names the right file
+// for each device, before the developer-facing list.
+func TestNotesInstallOpensWithTheDownloadPage(t *testing.T) {
+	notes, err := Notes("v1.5.0", "", "", Where{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const line = "Choosing a file? https://maktaba.tv/download/ picks the right one for each device."
+	_, after, ok := strings.Cut(notes, "### Install\n\n")
+	if !ok {
+		t.Fatalf("no Install section in\n%s", notes)
+	}
+	if first, _, _ := strings.Cut(after, "\n"); first != line {
+		t.Fatalf("the Install section opens with %q, not %q", first, line)
 	}
 }
