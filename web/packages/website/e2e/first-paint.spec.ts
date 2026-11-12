@@ -61,7 +61,17 @@ test.beforeAll(async ({}, info) => {
     try {
       const url = new URL(req.url!, base);
       const cut = url.searchParams.get("cut");
-      const upstream = await fetch(new URL(url.pathname, base));
+      // only the site under test is ever fetched: a path that is not one plain path of
+      // it ("//host/..." names another host) is refused, and the request goes to the
+      // site's own origin whatever was asked
+      const site = new URL(base);
+      const target = new URL(site.origin);
+      if (!/^\/(?!\/)[\w\-./~%@+,:=]*$/.test(url.pathname) || url.origin !== site.origin) {
+        res.writeHead(400).end();
+        return;
+      }
+      target.pathname = url.pathname;
+      const upstream = await fetch(target);
       const type = upstream.headers.get("content-type") ?? "application/octet-stream";
       if (!cut) {
         // everything a page loads (its stylesheet, scripts, fonts, images): the site's own
