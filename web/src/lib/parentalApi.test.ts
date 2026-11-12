@@ -68,11 +68,32 @@ describe("tiers", () => {
 describe("the caller's own limit", () => {
   it("reads a restricted account and one limited only by its device", async () => {
     get.mockResolvedValue({ restricted: true, max_tier: 9, unrated: "hide", version: 3 });
-    expect(await fetchMyLimit()).toEqual({ restricted: true, maxTier: 9 });
-    get.mockResolvedValue({ restricted: false, max_tier: 13, device_limit: 13 });
-    expect(await fetchMyLimit()).toEqual({ restricted: false, maxTier: 13 });
+    expect(await fetchMyLimit()).toEqual({
+      restricted: true,
+      maxTier: 9,
+      deviceLimit: null,
+      devicePending: false,
+    });
+    // the device's own limit, and a looser statement that waits for a guardian
+    get.mockResolvedValue({
+      restricted: false,
+      max_tier: 13,
+      device_limit: 13,
+      device_pending: true,
+    });
+    expect(await fetchMyLimit()).toEqual({
+      restricted: false,
+      maxTier: 13,
+      deviceLimit: 13,
+      devicePending: true,
+    });
     get.mockResolvedValue({ restricted: false });
-    expect(await fetchMyLimit()).toEqual({ restricted: false, maxTier: null });
+    expect(await fetchMyLimit()).toEqual({
+      restricted: false,
+      maxTier: null,
+      deviceLimit: null,
+      devicePending: false,
+    });
   });
 
   it("lists the accounts the caller looks after; a broken answer is none", async () => {

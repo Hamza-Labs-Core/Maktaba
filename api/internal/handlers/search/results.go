@@ -185,7 +185,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	req.Q = strings.TrimSpace(req.Q)
 	if req.Q == "" {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.tv/problems/invalid-query",
+			Type:   httperror.Type("invalid-query"),
 			Title:  "invalid query",
 			Status: http.StatusBadRequest,
 			Detail: "q must be non-empty",

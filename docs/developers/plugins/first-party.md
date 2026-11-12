@@ -381,6 +381,12 @@ shared ones:
   and runs them in its own `plugin-runner/ml-<i>`, which holds the model and has the
   worker's slot and settings. With `gpu = "preferred"` its sandbox opens the GPU (Metal on
   macOS, the NVIDIA devices on Linux).
+- **Memory.** On Apple Silicon an `ml` runner holds Whisper (about 1.6 GB) and the second
+  listen's Cohere model (about 3.8 GB) in MLX, plus the files it is decoding and MLX's cache
+  of freed buffers, capped at `MAKTABA_STT_GPU_CACHE_GB` whichever model loads first. After
+  `MAKTABA_STT_UNLOAD_IDLE_S` seconds without transcription work (default 600; 0 keeps them)
+  it lets both models go and logs `stt.model_unloaded`; the next job loads them again. A plugin
+  that keeps a large model in a runner should let it go when idle the same way.
 - **`index`**, beside `pipeline/index`, which keeps answering search. While the home's
   vectors are in Chroma (one process may open its folder), the index and chapter stages
   stay in the worker; once they are in Postgres, the runner writes them like any table.

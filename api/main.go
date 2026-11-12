@@ -471,7 +471,7 @@ func runServe() error {
 	// machines' mutual TLS beside plain HTTP (nil: plain HTTP only)
 	var homeLinkSrv *homeLink
 	if nodeCfg.Enabled {
-		rt, closeNode, err := mountNode(r, nodeCfg, statsDataDir, loops, logger)
+		rt, closeNode, err := mountNode(r, nodeCfg, statsDataDir, loops, parentalGate, logger)
 		if err != nil {
 			return err
 		}
@@ -608,7 +608,8 @@ func runServe() error {
 				OnQueues: func(q *queues.Handler) {
 					_, remoteCtl, mountRemote = router.WireP32Remote(q, router.P32RemoteDeps{
 						DB: appDB, Secrets: homeSecrets, Logger: logger, Notifier: notifyHub, Loops: loops,
-						Parental: func() *parental.Cache { return parentalHandles.Cache },
+						Parental:     func() *parental.Cache { return parentalHandles.Cache },
+						ParentalTime: func() *parental.TimeKeeper { return parentalHandles.Time },
 					})
 				},
 				DB:                   appDB,
@@ -725,6 +726,7 @@ func runServe() error {
 				Secrets:       homeSecrets,
 				RemoteInfo:    router.RemoteAvailability(remoteCtl),
 				Parental:      parentalHandles.Cache,
+				Time:          parentalHandles.Time,
 				ChannelSigner: channelSigner(streamSigner),
 			})
 			if mountRemote != nil {
@@ -763,7 +765,8 @@ func runServe() error {
 			// and the capabilities every user reads, pushed on /ws/home (story 51.09)
 			componentsSvc := router.MountP51(r, router.P51Deps{DB: appDB, License: licRef, Logger: logger,
 				Capabilities: capabilities, DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping),
-				Bus: eventBus, Hub: eventHub, RunCapabilities: true, Loops: loops})
+				Bus: eventBus, Hub: eventHub, RunCapabilities: true, Loops: loops,
+				Parental: router.ParentalCapabilities(parentalHandles.Cache)})
 			// Epic 53 story 53.12: the queue's numbers on the home's /metrics, for the Queue
 			// and Processing dashboards (the home only: a joined machine reads the same table)
 			queues.RegisterMetrics(appDB)

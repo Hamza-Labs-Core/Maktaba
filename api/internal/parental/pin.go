@@ -212,7 +212,9 @@ func (s *Store) Unlock(ctx context.Context, childID string, all bool, libraries 
 	minutes, isTime := 0, kind == RequestTime
 	if isTime {
 		var ok bool
-		if minutes, ok = RequestMinutes(id); !ok {
+		// typed on the child's device, so only the minutes that device may ask for:
+		// a changed client cannot turn one PIN entry into eight hours
+		if minutes, ok = AskedMinutes(id); !ok {
 			return nil, fmt.Errorf("%w: minutes", ErrInvalid)
 		}
 	} else if err := (RuleInput{Effect: EffectAllow, SubjectKind: kind, SubjectID: id}).validate(); err != nil {

@@ -83,6 +83,8 @@ class VideoPageState(
                 val ch = c.await()
                 if (!order.fresh(ticket)) return@coroutineScope
                 detail = det
+                // a parent opened it meanwhile: the page is the video's again (story 57.06)
+                notAvailable = false
                 mine = my
                 chapters = ch
                 favorite = my?.favorite ?: det.favorite ?: false

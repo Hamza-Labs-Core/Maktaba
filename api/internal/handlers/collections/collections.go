@@ -50,6 +50,9 @@ type Collection struct {
 	SmartQuery  json.RawMessage `json:"smart_query,omitempty"`
 	CreatedAt   time.Time       `json:"created_at"`
 	UpdatedAt   time.Time       `json:"updated_at"`
+	// AgeTier is the age tier an admin set here (Epic 57): a tier or null. Only an
+	// admin's answer to GET /api/collections/{id} has it.
+	AgeTier *parental.AdminTier `json:"age_tier,omitempty"`
 	// HandOrdered: someone reordered this manual collection, and its items
 	// keep that order; otherwise they are newest-added first (slot 0163).
 	HandOrdered bool `json:"hand_ordered"`
@@ -74,7 +77,7 @@ type Collection struct {
 func (c Collection) Automatic() bool { return c.SourceKind != nil }
 
 // TypeAutomaticCollection is the 409 of a member or name edit on a sourced collection.
-const TypeAutomaticCollection = "https://maktaba.tv/problems/automatic_collection"
+var TypeAutomaticCollection = httperror.Type("automatic_collection")
 
 func automaticRefused() *httperror.Error {
 	return httperror.Conflict(TypeAutomaticCollection,
@@ -331,6 +334,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	c.AgeTier = parental.AdminTierOf(r.Context(), h.DB, principal.FromContext(r.Context()), parental.TierOnCollection, c.ID)
 	common.WriteJSON(w, r, http.StatusOK, c)
 }
 
@@ -916,7 +920,7 @@ func scanCollection(rs rowScanner) (Collection, error) {
 
 func nameExists() *httperror.Error {
 	return &httperror.Error{
-		Type:   "https://maktaba.tv/problems/collection-name-exists",
+		Type:   httperror.Type("collection-name-exists"),
 		Title:  "name already exists",
 		Status: http.StatusConflict,
 	}

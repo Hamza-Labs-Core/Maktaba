@@ -1,0 +1,20 @@
+{
+ "id": "v-coffee-run",
+ "library_id": "lib-shorts",
+ "path": "",
+ "filename": "coffee-run.mp4",
+ "title": "Coffee Run",
+ "description": "Fuelled by caffeine, a young woman runs through the bittersweet memories of a past love.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 184,
+ "size_bytes": 46000000,
+ "content_hash": "vcoffeerun000000000000000000000000000000000000000000000000000000",
+ "created_at": "{{now-345600}}",
+ "updated_at": "{{now-345000}}",
+ "published_at": "2020-06-01T00:00:00Z",
+ "playable": true,
+ "tags": [],
+ "poster_url": "/api/videos/v-coffee-run/poster",
+ "backdrop_url": "/api/videos/v-coffee-run/backdrop"
+}

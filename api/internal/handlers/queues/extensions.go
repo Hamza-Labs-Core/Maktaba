@@ -530,7 +530,7 @@ func (h *Handler) PutExtension(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(secretChanges) > 0 && h.Secrets == nil {
-		httperror.Write(w, r, &httperror.Error{Status: http.StatusServiceUnavailable,
+		httperror.Write(w, r, &httperror.Error{Type: httperror.TypeUnavailable, Status: http.StatusServiceUnavailable,
 			Title: "Service Unavailable", Detail: "the secrets store is not available on this server"})
 		return
 	}

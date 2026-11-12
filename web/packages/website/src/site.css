@@ -1,0 +1,118 @@
+/*
+ * maktaba.tv: what the built site adds to the part A shell (design/shell.css, story 60.01).
+ * The build serves one stylesheet, /assets/site-<hash>.css: design/site-tokens.css, then
+ * design/fonts.css (its font URLs pointed at the hashed files), design/shell.css, then this
+ * file. Only what the mockups did not need lives here: tokens only (no colour of its own),
+ * logical properties only (scripts/lint-css.mjs).
+ */
+
+/* The language hint (Epic 60 README §6.5): in every English page, drawn only when the head
+   script (src/shell-head.js) marks <html data-lang-hint> before the first paint. */
+.lang-hint {
+  display: none;
+}
+
+:root[data-lang-hint] .lang-hint {
+  display: block;
+}
+
+.lang-hint .button {
+  min-block-size: 36px;
+  padding-inline: var(--spacing-3);
+  font-weight: 400;
+}
+
+/* A band that follows another band directly (the front door's ways in, after its facts). */
+.band.flush-start {
+  padding-block-start: 0;
+}
+
+/* The index's slugs are <code> (the Arabic pages' Latin share counts them as code), drawn as the
+   mockup draws its plain slug: no chip. */
+.areas code.slug {
+  padding: 0;
+  border: 0;
+  background: none;
+  white-space: normal;
+}
+
+/* The 404's address line: the Worker writes the address asked for into its <code>; a 404 page
+   opened at its own path has none to show. */
+.lost .asked:has(code:empty) {
+  display: none;
+}
+
+/* The legal pages (story 60.07): sections in the article, the privacy page's policy table and
+   the copyright page's notice form, in the shell's type and tokens. */
+.prose > section:first-child > h2:first-child {
+  margin-block-start: 0;
+}
+
+.prose dl.policy {
+  display: grid;
+  gap: var(--spacing-1) var(--spacing-6);
+  margin-block: var(--spacing-4) var(--spacing-6);
+  padding-block: var(--spacing-4);
+  padding-inline: var(--spacing-5);
+  border: 1px solid var(--site-line-rule);
+  border-radius: var(--radius-md);
+  background: var(--site-surface-section);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.prose dl.policy dt {
+  font-weight: 600;
+}
+
+.prose dl.policy dd {
+  margin-block: 0 var(--spacing-3);
+  margin-inline: 0;
+  color: var(--color-semantic-muted);
+}
+
+.prose form label {
+  display: block;
+  margin-block: var(--spacing-4) var(--spacing-1);
+  font-weight: 600;
+}
+
+.prose form input:not([type="checkbox"]),
+.prose form textarea {
+  inline-size: 100%;
+  min-block-size: 48px;
+  padding-block: var(--spacing-2);
+  padding-inline: var(--spacing-3);
+  border: 1px solid var(--site-line-control);
+  border-radius: var(--radius-md);
+  background: var(--color-semantic-bg);
+  color: var(--color-semantic-fg);
+  font: inherit;
+}
+
+.prose form input[type="checkbox"] {
+  inline-size: 24px;
+  block-size: 24px;
+  margin-inline-end: var(--spacing-2);
+  accent-color: var(--site-accent-cta);
+}
+
+.prose form .check label {
+  display: inline;
+  font-weight: 400;
+}
+
+.prose form .hint {
+  display: block;
+  color: var(--color-semantic-muted);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+@media (forced-colors: active) {
+  .prose dl.policy,
+  .prose form input,
+  .prose form textarea {
+    border-color: CanvasText;
+  }
+}

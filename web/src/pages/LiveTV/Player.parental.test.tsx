@@ -5,7 +5,8 @@
 // time is over gets the time's-up screen. An account with no limit asks nothing.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Routes, Route, useNavigate } from "react-router-dom";
 
 const { get, post, del } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), del: vi.fn() }));
 vi.mock("../../lib/api", async () => {
@@ -46,12 +47,23 @@ function mockGet() {
   });
 }
 
+/** The address changing under the open player, as the browser's Back or a link does. */
+function Address() {
+  const nav = useNavigate();
+  return (
+    <button type="button" onClick={() => nav("/live/2")}>
+      to channel 2
+    </button>
+  );
+}
+
 function renderPlayer(parental: Partial<MyParental>, locale: "en" | "ar" = "en") {
   localStorage.setItem("mkt:locale", locale);
   return render(
     <MemoryRouter initialEntries={["/live/1"]}>
       <I18nProvider>
         <ParentalFixture value={parental}>
+          <Address />
           <Routes>
             <Route path="/live/:number" element={<Player />} />
             <Route path="/guide" element={<div>GUIDE</div>} />
@@ -156,6 +168,52 @@ describe("Live player under a parental limit (57.10, 57.15)", () => {
     expect(slate).toHaveTextContent("Time's up for today");
     expect(slate).toHaveTextContent("Ask a parent for more time");
     expect(active()).not.toBeVisible();
+  });
+
+  // The address changes while the player stays open (the browser's Back after
+  // surfing, a link): the home is asked about that channel, and it tunes.
+  it("a limited sign-in tunes the channel the address changes to, once the home says yes", async () => {
+    renderPlayer({ restricted: true, maxTier: 9 });
+    await waitFor(() => expect(active().getAttribute("src")).toBe("/stream/channel/c1/index.m3u8"));
+    expect(asked("/api/channels/c2/access")).toHaveLength(0);
+    await userEvent.click(screen.getByRole("button", { name: "to channel 2" }));
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/api/channels/c2/access"));
+    await waitFor(() => expect(active().getAttribute("src")).toBe("/stream/channel/c2/index.m3u8"));
+    expect(screen.queryByTestId("live-parental-slate")).toBeNull();
+  });
+
+  it("the channel the address changes to stays untuned while the home says no", async () => {
+    renderPlayer({ restricted: true, maxTier: 9 });
+    await waitFor(() => expect(active().getAttribute("src")).toBe("/stream/channel/c1/index.m3u8"));
+    get.mockImplementation((url: string) => {
+      if (url === "/api/channels/c2/access")
+        return Promise.resolve({ restricted: true, allowed: false, until: null });
+      if (url.includes("/access")) return Promise.resolve(access);
+      if (url.includes("/api/me/parental/time")) return Promise.resolve(myTime);
+      if (url.includes("/api/tv/info")) return Promise.resolve(lanInfo);
+      if (url.includes("/now"))
+        return Promise.resolve({ server_time: new Date().toISOString(), channels: [] });
+      return Promise.resolve(lineup);
+    });
+    await userEvent.click(screen.getByRole("button", { name: "to channel 2" }));
+    expect(await screen.findByTestId("live-parental-slate")).toBeInTheDocument();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 30));
+    });
+    // channel 2's stream was never asked for
+    expect(
+      [...document.querySelectorAll("video")].some((v) =>
+        (v.getAttribute("src") ?? "").includes("/c2/")
+      )
+    ).toBe(false);
+  });
+
+  it("an account with no limit tunes the channel the address changes to", async () => {
+    renderPlayer({ restricted: false });
+    await waitFor(() => expect(active().getAttribute("src")).toBe("/stream/channel/c1/index.m3u8"));
+    await userEvent.click(screen.getByRole("button", { name: "to channel 2" }));
+    await waitFor(() => expect(active().getAttribute("src")).toBe("/stream/channel/c2/index.m3u8"));
+    expect(asked("/access")).toHaveLength(0);
   });
 
   it("is Arabic in Arabic", async () => {

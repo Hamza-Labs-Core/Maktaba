@@ -18,7 +18,6 @@ import type { TimeRule } from "../../lib/parentalApi";
 import { renderPage, memberUser, adminUser } from "../../test/pageHarness";
 import type { User } from "../../lib/auth";
 import { TimeRulesPage, ruleProblem } from "./TimeRules";
-import { FamilyTime } from "./FamilyTime";
 
 const CHILD = "11111111-2222-3333-4444-555555555555";
 const guardian: User = { id: "u-guardian", username: "mum", is_admin: false };
@@ -161,6 +160,51 @@ describe("the time rules editor (Users > the user > Time)", () => {
     });
   });
 
+  it("a quiet re-read that says the same rules keeps what is being edited", async () => {
+    const saved = [{ id: "r1", days: 127, daily_minutes: 60 }];
+    home({ rules: saved });
+    // the page was open before: its kept answer shows at once, and is read again
+    const first = open();
+    await screen.findByTestId("parental-rule");
+    first.unmount();
+    let land: (v: unknown) => void = () => {};
+    const answers = get.getMockImplementation()!;
+    get.mockImplementation((path: string) =>
+      path.endsWith("/time-rules")
+        ? new Promise((resolve) => {
+            land = resolve;
+          })
+        : answers(path)
+    );
+    open();
+    const r = await screen.findByTestId("parental-rule");
+    const minutes = within(r).getByLabelText("Minutes a day");
+    await userEvent.clear(minutes);
+    await userEvent.type(minutes, "45");
+    // the re-read lands while the rule is being edited
+    land({ rules: saved, time_zone: "Asia/Riyadh" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(within(screen.getByTestId("parental-rule")).getByLabelText("Minutes a day")).toHaveValue(
+      45
+    );
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+
+  it("a re-read that brings other rules shows them", async () => {
+    home({ rules: [{ id: "r1", days: 127, daily_minutes: 60 }] });
+    const first = open();
+    await screen.findByTestId("parental-rule");
+    first.unmount();
+    // someone else changed the rules meanwhile
+    home({ rules: [{ id: "r1", days: 127, daily_minutes: 90 }] });
+    open();
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId("parental-rule")).getByLabelText("Minutes a day")
+      ).toHaveValue(90)
+    );
+  });
+
   it("will not save a rule with no day, and says why", async () => {
     home({ rules: [{ id: "r1", days: 1, daily_minutes: 60 }] });
     open();
@@ -279,36 +323,5 @@ describe("the time rules editor (Users > the user > Time)", () => {
     expect(within(r).getByText("الحد اليومي")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("الوقت");
     expect(screen.getByRole("button", { name: "حفظ" })).toBeInTheDocument();
-  });
-});
-
-describe("the list of restricted accounts", () => {
-  function list(user: User = guardian) {
-    return renderPage(<FamilyTime />, { path: "/family", user });
-  }
-
-  it("lists the accounts the home says this person looks after, each with its Time link", async () => {
-    home({
-      children: [
-        { id: "u2", username: "omar", max_tier: 0 },
-        { id: CHILD, username: "sara", max_tier: 13 },
-      ],
-    });
-    list();
-    const links = await screen.findAllByRole("link", { name: /Time/ });
-    expect(links.map((a) => a.getAttribute("href"))).toEqual([
-      "/family/u2/time",
-      `/family/${CHILD}/time`,
-    ]);
-    expect(links[0]).toHaveTextContent("omar");
-    expect(links[0]).toHaveTextContent("All ages");
-    expect(links[1]).toHaveTextContent("13+");
-  });
-
-  it("someone who looks after no one sees an empty list", async () => {
-    home({ children: [] });
-    list(memberUser);
-    expect(await screen.findByText("No restricted accounts")).toBeInTheDocument();
-    expect(screen.queryByTestId("parental-children")).toBeNull();
   });
 });

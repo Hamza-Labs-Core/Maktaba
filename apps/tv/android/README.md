@@ -33,6 +33,15 @@ so a two-hour film outlives many access tokens. A fresh transcode's rendition pl
 resumed video opens its session at the position (`start_sec`; the stream keeps the video's
 times) and the player seeks there.
 
+**Parental controls (Epic 57).** The home enforces every rule; the TV says what it answered, as
+the phone Player does (`apps/android/README.md`, "Parental controls"). For a restricted account:
+the time left on Home and over the player, the five- and one-minute warnings, the time's-up
+screen when an open, a renewal or a progress post answers 403 `parental-time` (Check again,
+Ask for more time, Enter parent PIN, all by remote), "This isn't available" for a video the
+home does not show, and Live TV's "Not available right now" slate (`ui/screens/Parental.kt`,
+`playback/TvPlayback.kt`). Progress goes out every 10 s while playing and at once on pause and
+resume.
+
 **10-foot UI.** Dark "Ink & Brass" (`ui/theme`), Amiri headings and IBM Plex Sans Arabic text
 (the core's fonts, SIL OFL, `assets/licenses/`), 56 dp overscan gutters, TV Material cards
 that scale up with a 3 dp gold ring on focus, buttons that turn gold. English and Arabic

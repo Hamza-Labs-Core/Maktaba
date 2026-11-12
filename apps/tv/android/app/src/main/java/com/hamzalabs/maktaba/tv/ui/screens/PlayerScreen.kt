@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -68,6 +69,10 @@ fun PlayerScreen(
     /** The server queue this video plays in (Epic 56), and how to play another of its items. */
     queue: PlayQueueModel? = null,
     onQueueItem: (QueueItem) -> Unit = {},
+    /** The sign-in's parental limit and time (Epic 57); null shows nothing of them. */
+    parental: com.hamzalabs.maktaba.core.parental.ParentalState? = null,
+    /** The video's library, whose time rules count too (null: the account's own). */
+    libraryId: String? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -117,6 +122,13 @@ fun PlayerScreen(
             if (ended && next == null && cancelled) return@LaunchedEffect
         }
     }
+
+    // Epic 57 story 57.15: a restricted account's time, as the home says it while the video plays
+    val mine = parental?.mine?.collectAsState()?.value
+    val time = parental?.time?.collectAsState()?.value
+    val restricted = mine?.restricted == true
+    val timeUp = playback.timeUp
+    com.hamzalabs.maktaba.core.ui.FollowTimeWhileShown(parental, on = restricted && timeUp == null, libraryId = libraryId)
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         val player = playback.player
@@ -172,8 +184,29 @@ fun PlayerScreen(
                 modifier = Modifier.align(Alignment.TopCenter).padding(32.dp),
             )
         }
+        if (player != null && restricted) {
+            TvTimeOverlay(time, playback.cannotCheck, Modifier.align(Alignment.TopEnd).padding(32.dp))
+        }
         val problem = playback.problem
         when {
+            // the home refused for time: the video has stopped and nothing asks again by itself
+            timeUp != null -> TvTimesUp(
+                timeUp.refusal,
+                timeUp.positionMs,
+                help = remember(client, timeUp) { com.hamzalabs.maktaba.core.ui.ParentHelp(client, com.hamzalabs.maktaba.core.api.SubjectKind.TIME, signedOut = signedOut) },
+                onCheck = playback::checkAgain,
+                onBack = onBack,
+            )
+            // the home ended the stream: "This isn't available", with a parent to ask under a limit
+            playback.endedByHome -> TvBlocked(
+                mine ?: com.hamzalabs.maktaba.core.api.MyParental.None,
+                help = remember(client, video) {
+                    if (mine?.limited == true) com.hamzalabs.maktaba.core.ui.ParentHelp(client, com.hamzalabs.maktaba.core.api.SubjectKind.VIDEO, video, signedOut) else null
+                },
+                onUnlocked = playback::checkAgain,
+                stopped = true,
+                onBack = onBack,
+            )
             problem != null -> TvErrorState(
                 problem,
                 title = stringResource(CoreR.string.error_playback_title),
@@ -182,6 +215,9 @@ fun PlayerScreen(
                 onSignIn = signedOut,
                 onChooseHome = { app.session.switchHome() },
                 onBack = onBack,
+                // the home could not read the account's time (never free time on an error); a rate
+                // limit or another outage keeps its own words, and every action it had
+                sentence = if (problem.cannotCheckTime(restricted)) stringResource(CoreR.string.parental_time_cannot_check) else null,
             )
             playback.opening || playback.waiting != null -> Column(
                 Modifier.fillMaxSize().padding(48.dp),

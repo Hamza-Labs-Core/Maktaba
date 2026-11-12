@@ -165,7 +165,7 @@ func TestSetupAdopt(t *testing.T) {
 	t.Cleanup(func() { adoptSys = prev })
 
 	// a fresh setup started first: the move drops what it collected
-	if code, _, ev := runStep(t, "admin", map[string]string{"username": "admin", "password": "s3cret-long"}); code != 0 {
+	if code, _, ev := runStep(t, "admin", map[string]string{"username": "owner", "password": "s3cret-long"}); code != 0 {
 		t.Fatalf("admin = %d %v", code, ev)
 	}
 	// ... but beside a node of a home it cannot go on: the app would be a

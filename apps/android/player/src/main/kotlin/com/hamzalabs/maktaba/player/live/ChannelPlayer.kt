@@ -4,6 +4,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.hamzalabs.maktaba.core.api.ApiClient
+import com.hamzalabs.maktaba.core.api.ChannelNow
+import com.hamzalabs.maktaba.core.api.GatedReopen
+import com.hamzalabs.maktaba.core.api.channelAskAgainMs
+import com.hamzalabs.maktaba.core.api.channelNow
+import com.hamzalabs.maktaba.core.api.programmeRefusal
+import java.time.Instant
 import com.hamzalabs.maktaba.core.api.LiveApi
 import com.hamzalabs.maktaba.core.api.LiveChannel
 import com.hamzalabs.maktaba.core.api.LiveSource
@@ -33,6 +39,13 @@ import okhttp3.OkHttpClient
  *   number typed on a keyboard.
  * - **Back to live:** after a pause the engine is behind the live edge; [backToLive] returns.
  *
+ * - **Under a parental limit** (Epic 57 story 57.10, [limited]): the home is asked to play the
+ *   channel ([gate], `POST /api/channels/{id}/play`). A programme above the limit is no error:
+ *   [notNow] holds until the time the home named, when it is asked again; while the channel
+ *   plays it is asked again when the home said the answer may change, and the video stops if
+ *   the next programme is above the limit. A tune or a stream the home refuses the same way
+ *   (403 `restricted`, `programme`) is "not now" too.
+ *
  * Every wait is a coroutine delay in [scope], so a test drives the clock.
  */
 class ChannelPlayer(
@@ -50,6 +63,11 @@ class ChannelPlayer(
     /** Outlives the screen: the remote session's end still goes out after the person left. */
     private val background: CoroutineScope = LiveBackground,
     heartbeatMs: Long = LiveSource.HEARTBEAT_MS,
+    /** Whether this sign-in is under a parental limit now (only then is [gate] asked). */
+    private val limited: () -> Boolean = { false },
+    /** Asks the home to play a channel for a limited account: its signed address, or "not now". */
+    private val gate: (suspend (String) -> ChannelNow)? = null,
+    private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
     /** The channel shown (playing, tuning, or why it does not play). */
     var channelId by mutableStateOf<String?>(null)
@@ -71,16 +89,35 @@ class ChannelPlayer(
     var sessionEnded by mutableStateOf(false)
         private set
 
+    /**
+     * "Not available right now": the programme on air is above this account's limit. The home is
+     * asked again at [NotNow.retryAt] (every minute when it named no time).
+     */
+    var notNow by mutableStateOf<NotNow?>(null)
+        private set
+
+    private var recheck: Job? = null
+
     val source = LiveSource(remote, lanUrl, scope, device, heartbeatMs = heartbeatMs, onEnded = { sessionEnded = true })
 
     private var job: Job? = null
 
+    /** One gated re-open per failure of a limited account's stream. */
+    private val reopen = GatedReopen(nowMs)
+
     /** Plays [id]: the channel before it stops (its remote session ends). */
     fun open(id: String) {
+        reopen.reset()
+        tune(id)
+    }
+
+    private fun tune(id: String) {
         job?.cancel()
+        recheck?.cancel()
         channelId = id
         stream = null
         problem = null
+        notNow = null
         sessionEnded = false
         tuning = true
         job = scope.launch {
@@ -88,16 +125,75 @@ class ChannelPlayer(
                 val s = source.open(id)
                 when (s) {
                     is LiveStream.Lan -> {
-                        waitPlayable(s.url)
-                        start(s, s.url, lanHttp(), attempt = 0)
+                        val ask = gate.takeIf { limited() }
+                        if (ask == null) {
+                            waitPlayable(s.url)
+                            start(s, s.url, lanHttp(), attempt = 0)
+                        } else when (val now = ask(id)) {
+                            is ChannelNow.NotNow -> refused(id, now.retryAt)
+                            is ChannelNow.Playing -> {
+                                // the signed address, through the same client (it adds the token too)
+                                val signed = LiveStream.Lan(id, now.url)
+                                waitPlayable(signed.url)
+                                start(signed, signed.url, lanHttp(), attempt = 0)
+                                askAgain(id, now.until, allowed = true)
+                            }
+                        }
                     }
                     is LiveStream.Relay -> start(s, s.url, relayHttp(source), attempt = RETRIES)
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                tuning = false
-                problem = e
+                val programme = e.programmeRefusal()
+                if (programme != null) refused(id, programme.retryAt) else {
+                    tuning = false
+                    problem = e
+                }
+            }
+        }
+    }
+
+    /** The programme on air is above the limit: nothing plays, and the home is asked again later. */
+    private fun refused(id: String, retryAt: Instant?) {
+        if (channelId != id) return
+        engine.release()
+        tuning = false
+        stream = null
+        problem = null
+        notNow = NotNow(retryAt)
+        askAgain(id, retryAt, allowed = false)
+    }
+
+    /**
+     * Asks the home about [id] again when it said the answer may change: a refused channel is
+     * opened again then; a playing one stops when the next programme is above the limit.
+     */
+    private fun askAgain(id: String, at: Instant?, allowed: Boolean) {
+        recheck?.cancel()
+        val ask = gate ?: return
+        val wait = channelAskAgainMs(at, allowed, nowMs()) ?: return
+        recheck = scope.launch {
+            delay(wait)
+            if (channelId != id) return@launch
+            if (!allowed) {
+                tune(id)
+                return@launch
+            }
+            val now = try {
+                ask(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // no answer: what plays goes on (the home's streaming service stops it itself)
+                return@launch
+            }
+            when (now) {
+                is ChannelNow.NotNow -> {
+                    job?.cancel()
+                    refused(id, now.retryAt)
+                }
+                is ChannelNow.Playing -> askAgain(id, now.until, allowed = true)
             }
         }
     }
@@ -113,6 +209,10 @@ class ChannelPlayer(
                     if (channelId == s.channelId && stream == s) {
                         start(s, s.url.newBuilder().setQueryParameter("retry", "${attempt + 1}").build(), http, attempt + 1)
                     }
+                } else if (gate != null && limited() && s is LiveStream.Lan && reopen.allowed()) {
+                    // a limited account's stream that stopped: the programme may have changed.
+                    // Once: a stream the home says plays and that fails again shows its error
+                    tune(s.channelId)
                 } else {
                     problem = e
                     stream = null
@@ -153,9 +253,12 @@ class ChannelPlayer(
     fun leave() {
         job?.cancel()
         job = null
+        recheck?.cancel()
+        recheck = null
         engine.release()
         channelId = null
         stream = null
+        notNow = null
         background.launch { source.close() }
     }
 
@@ -165,7 +268,13 @@ class ChannelPlayer(
         const val RETRY_MS = 2_000L
 
         /** A player for [api]'s home, its waits in [scope]. */
-        fun of(api: LiveApi, scope: CoroutineScope, engine: LiveEngine, device: String): ChannelPlayer {
+        fun of(
+            api: LiveApi,
+            scope: CoroutineScope,
+            engine: LiveEngine,
+            device: String,
+            limited: () -> Boolean = { false },
+        ): ChannelPlayer {
             val streamHttp by lazy { api.client.streamHttp() }
             return ChannelPlayer(
                 remote = api,
@@ -175,6 +284,10 @@ class ChannelPlayer(
                 device = device,
                 waitPlayable = { api.client.waitUntilPlayable(it) },
                 lanHttp = { streamHttp },
+                limited = limited,
+                gate = { api.client.channelNow(it) },
+                // the home's instants against the home's clock, not this device's (a child can set it)
+                nowMs = api.client::homeNowMs,
             )
         }
     }
@@ -191,3 +304,6 @@ fun neighbour(lineup: List<LiveChannel>, currentId: String?, by: Int): LiveChann
 
 /** Where a remote session's end goes out after its screen is gone. */
 internal val LiveBackground = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+/** Live TV's "not available right now": when the home said to ask again (null: it named no time). */
+data class NotNow(val retryAt: Instant?)

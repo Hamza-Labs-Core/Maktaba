@@ -190,6 +190,44 @@ describe("Epic 53 story 53.11 routes", () => {
   });
 });
 
+describe("Epic 57 routes (parental controls)", () => {
+  it("routes the family pages and the rating review for a signed-in person", async () => {
+    signedIn = true;
+    // the home decides who may read each page (a guardian, an admin); the app only routes
+    for (const [path, title] of [
+      ["/family", en["family.title"]],
+      ["/family/requests", en["family.requests"]],
+      ["/family/pin", en["family.pin"]],
+      ["/parental/review", en["parental.review.title"]],
+    ]) {
+      const { unmount } = open(path);
+      expect(
+        await screen.findByRole("heading", { level: 1, name: title }, { timeout: 3000 })
+      ).toBeInTheDocument();
+      unmount();
+    }
+    // a page of one account: the home says who it is; with no such account it says so
+    get.mockImplementation((path: string) => {
+      if (path === "/api/auth/me") return Promise.resolve({ user: amal });
+      if (path.startsWith("/api/notifications")) return Promise.resolve({ items: [], unread: 0 });
+      if (path.startsWith("/api/users/u9/parental") || path.startsWith("/api/parental/users/u9"))
+        return Promise.reject(new ApiError({ type: "about:blank", title: "", status: 404 }));
+      return Promise.resolve({ items: [], libraries: [], next_cursor: null });
+    });
+    for (const path of ["/family/u9/activity", "/family/u9/time"]) {
+      const { unmount } = open(path);
+      expect(
+        await screen.findByText(
+          path.endsWith("/time") ? en["parental.time.notFound"] : en["family.error.notFound"],
+          {},
+          { timeout: 3000 }
+        )
+      ).toBeInTheDocument();
+      unmount();
+    }
+  });
+});
+
 // The public pages sit outside AppShell, so App.tsx gives them their own
 // RouteErrorBoundary: a render crash there shows the fallback, and Back
 // brings the app back.

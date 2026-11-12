@@ -22,6 +22,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/httpx"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/session"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/timelimit"
 )
 
 func chiURLParam(r *http.Request, name string) string { return chi.URLParam(r, name) }
@@ -57,6 +58,10 @@ type ManifestHandler struct {
 	// Subtitles lists the session's sidecar subtitles, which an HLS master
 	// also lists as subtitle renditions (subtitle_playlist.go). Nil: none.
 	Subtitles SubtitleLister
+	// PaceVideo names the video the request's session plays, for the pace of an
+	// account whose time is kept (timelimit.Pacer): sessions of one video share
+	// one pace. Nil, or an error: the session is paced on its own.
+	PaceVideo func(ctx context.Context) (string, error)
 }
 
 // writtenSoon waits up to FirstWrite for path (under base) while sub's transcode
@@ -326,6 +331,20 @@ func (h *ManifestHandler) ServeSegment(w http.ResponseWriter, r *http.Request) {
 		httpx.Write(w, http.StatusNotFound, "segment-not-found",
 			"segment not yet written by FFmpeg", err.Error())
 		return
+	}
+
+	// Epic 57 story 57.14: a kept account's segments come as they play. Every
+	// other request has no pacer and is served at once.
+	if pacer := timelimit.PacerFrom(r.Context()); pacer != nil {
+		video := sub
+		if h.PaceVideo != nil {
+			if v, err := h.PaceVideo(r.Context()); err == nil && v != "" {
+				video = v
+			}
+		}
+		if !pacer.Segment(w, r, video, sub, segment, ffmpeg.SegmentSeconds*time.Second) {
+			return
+		}
 	}
 
 	_ = h.Sessions.Touch(r.Context(), id, h.now())

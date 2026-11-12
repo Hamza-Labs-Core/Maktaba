@@ -106,7 +106,7 @@ fun GuideGrid(window: GuideWindow, rows: List<GuideRow>, nowMs: Long, api: LiveA
                                 .testTag("programme-${p.channelId}-${p.start}"),
                         ) {
                             Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                                Text(p.title, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(if (p.restricted) com.hamzalabs.maktaba.desktop.LocalTexts.current["live.parental.notAvailable"] else p.title, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(timeRange(p), style = MaterialTheme.typography.labelSmall.copy(textDirection = TextDirection.Ltr), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                             }
                         }

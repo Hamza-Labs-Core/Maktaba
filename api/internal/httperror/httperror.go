@@ -11,6 +11,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/reqid"
 
@@ -146,6 +147,7 @@ func Write(w http.ResponseWriter, r *http.Request, err error) {
 		e = Internal("").Wrap(err)
 	}
 	e.Instance = r.URL.Path
+	e = checkType(r, e)
 	if e.Status >= http.StatusInternalServerError {
 		logServerError(r, e)
 	}
@@ -171,7 +173,7 @@ func Write(w http.ResponseWriter, r *http.Request, err error) {
 	// gets a readable page that follows the system theme, dark by default,
 	// instead of raw JSON on a white tab. Fetches keep problem+json.
 	if pagetheme.WantsHTML(r) {
-		writePage(w, e, body["requestId"].(string))
+		writePage(w, r, e, body["requestId"].(string))
 		return
 	}
 
@@ -196,10 +198,14 @@ func logServerError(r *http.Request, e *Error) {
 	mlog.From(r.Context()).Log(r.Context(), slog.LevelError, "http_error", attrs...)
 }
 
-func writePage(w http.ResponseWriter, e *Error, requestID string) {
+func writePage(w http.ResponseWriter, r *http.Request, e *Error, requestID string) {
 	links := []pagetheme.Link{{Href: "/", Text: "Back to Maktaba"}}
 	if e.Status == http.StatusUnauthorized || e.Status == http.StatusForbidden {
 		links = append([]pagetheme.Link{{Href: "/login", Text: "Sign in"}}, links...)
+	}
+	// the type's page on maktaba.tv says what it means and what to do (story 60.06)
+	if Registered(e.Type) {
+		links = append(links, meaningLink(r, e.Type))
 	}
 	detail := ""
 	if requestID != "" {
@@ -213,4 +219,22 @@ func writePage(w http.ResponseWriter, e *Error, requestID string) {
 		Detail:  detail,
 		Links:   links,
 	})
+}
+
+// meaningLink links a registered type's page on maktaba.tv: its Arabic page, with Arabic
+// words, for a browser whose first language is Arabic.
+func meaningLink(r *http.Request, typ string) pagetheme.Link {
+	slug := strings.TrimPrefix(typ, Base)
+	if prefersArabic(r.Header.Get("Accept-Language")) {
+		return pagetheme.Link{Href: "https://maktaba.tv/ar/problems/" + slug + "/", Text: "ما معنى هذا"}
+	}
+	return pagetheme.Link{Href: Base + slug + "/", Text: "What this means"}
+}
+
+// prefersArabic reports whether the first language of an Accept-Language header is Arabic.
+func prefersArabic(h string) bool {
+	first, _, _ := strings.Cut(h, ",")
+	tag, _, _ := strings.Cut(strings.TrimSpace(first), ";")
+	tag = strings.ToLower(strings.TrimSpace(tag))
+	return tag == "ar" || strings.HasPrefix(tag, "ar-")
 }

@@ -58,6 +58,8 @@ export interface Collection {
   show_on_library?: boolean;
   show_on_home?: boolean;
   sort_title?: string | null;
+  /** Epic 57: the age tier an admin set (null: none); only an admin's answer has it */
+  age_tier?: number | null;
 }
 
 /** An admin's display choices on a collection (any kind; the only ones a sourced one takes). */
@@ -106,6 +108,10 @@ function readCollection(raw: unknown): Collection | null {
     show_on_library: c.show_on_library === true,
     show_on_home: c.show_on_home === true,
     sort_title: typeof c.sort_title === "string" ? c.sort_title : null,
+    // absent (not an admin, or an older home) stays absent: the control then asks
+    ...(typeof c.age_tier === "number" || c.age_tier === null
+      ? { age_tier: c.age_tier as number | null }
+      : {}),
   };
 }
 

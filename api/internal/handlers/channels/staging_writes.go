@@ -126,7 +126,7 @@ func (h *Handler) reorderDraft(w http.ResponseWriter, r *http.Request, entries [
 		}
 	}
 	if msg := conflictsIn(lineup); msg != "" {
-		httperror.Write(w, r, httperror.Conflict("https://maktaba.tv/problems/channel-number-exists",
+		httperror.Write(w, r, httperror.Conflict(httperror.Type("channel-number-exists"),
 			"reorder would collide on a channel "+msg))
 		return
 	}

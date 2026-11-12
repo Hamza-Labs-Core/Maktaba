@@ -26,7 +26,11 @@
 --                            name what contains or matches the videos; 'all' is every
 --                            library. A job is worked in batches of 1,000 videos, newest
 --                            first, its place kept in cursor_at and cursor_id, and deleted
---                            when done. Working a job twice gives the same tiers.
+--                            when done. Working a job twice gives the same tiers. attempts
+--                            counts the batches of the job that failed: the queue is worked
+--                            by (attempts, batches, id), so a job that keeps failing goes
+--                            behind the others instead of holding them up, and is never
+--                            dropped.
 --
 -- The stages run under their own roles and write no tier, so triggers put the jobs in
 -- (the trigger functions are SECURITY DEFINER: a stage's role needs no grant on the
@@ -39,8 +43,11 @@
 -- One 'all' job is put in here, so the ratings a home already has (kept Plex ratings,
 -- plugins' ratings) fill in after the update, in the background.
 --
--- NO TRANSACTION for the two indexes (CONCURRENTLY: videos is large). Every statement is
--- harmless twice. Additive: an older release never reads the columns or the table.
+-- NO TRANSACTION for the two indexes (CONCURRENTLY: videos is large). The three checks on
+-- videos are added NOT VALID and validated in a statement of their own, so the table is
+-- read under a lock that blocks no reader or writer (as slot 0224 does); the other
+-- tables are small. Every statement is harmless twice. Additive: an older release never
+-- reads the columns or the table.
 --
 ALTER TABLE videos ADD COLUMN IF NOT EXISTS age_tier smallint;
 -- +goose StatementEnd
@@ -50,9 +57,13 @@ DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'videos_age_tier_valid') THEN
         ALTER TABLE videos ADD CONSTRAINT videos_age_tier_valid
-            CHECK (age_tier IS NULL OR age_tier IN (0, 9, 13, 16, 18));
+            CHECK (age_tier IS NULL OR age_tier IN (0, 9, 13, 16, 18)) NOT VALID;
     END IF;
 END $$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE videos VALIDATE CONSTRAINT videos_age_tier_valid;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -65,9 +76,13 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'videos_age_tier_source_valid') THEN
         ALTER TABLE videos ADD CONSTRAINT videos_age_tier_source_valid
             CHECK (age_tier_source IS NULL OR age_tier_source IN ('admin_video', 'admin_container', 'plex',
-                'guide', 'youtube', 'plugin', 'library_default'));
+                'guide', 'youtube', 'plugin', 'library_default')) NOT VALID;
     END IF;
 END $$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE videos VALIDATE CONSTRAINT videos_age_tier_source_valid;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -79,7 +94,25 @@ DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'videos_age_tier_admin_valid') THEN
         ALTER TABLE videos ADD CONSTRAINT videos_age_tier_admin_valid
-            CHECK (age_tier_admin IS NULL OR age_tier_admin IN (0, 9, 13, 16, 18));
+            CHECK (age_tier_admin IS NULL OR age_tier_admin IN (0, 9, 13, 16, 18)) NOT VALID;
+    END IF;
+END $$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE videos VALIDATE CONSTRAINT videos_age_tier_admin_valid;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- An index build that was cut short (the app quit, the machine slept) leaves the index
+-- there but INVALID: never used, kept up on every write, and skipped by IF NOT EXISTS
+-- below. It is dropped so that the build runs again.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+                WHERE c.relname = 'videos_library_age_tier_idx' AND c.relnamespace = 'public'::regnamespace
+                  AND NOT i.indisvalid) THEN
+        DROP INDEX IF EXISTS videos_library_age_tier_idx;
     END IF;
 END $$;
 -- +goose StatementEnd
@@ -179,6 +212,20 @@ ALTER TABLE youtube_videos ADD COLUMN IF NOT EXISTS age_limit smallint;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+-- An index build that was cut short (the app quit, the machine slept) leaves the index
+-- there but INVALID: never used, kept up on every write, and skipped by IF NOT EXISTS
+-- below. It is dropped so that the build runs again.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+                WHERE c.relname = 'channel_programs_rated_video_idx' AND c.relnamespace = 'public'::regnamespace
+                  AND NOT i.indisvalid) THEN
+        DROP INDEX IF EXISTS channel_programs_rated_video_idx;
+    END IF;
+END $$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 -- the guide ratings of a video's programmes: only programmes that carry a rating are in
 -- it, so the schedule's own writes do not pay for it
 CREATE INDEX CONCURRENTLY IF NOT EXISTS channel_programs_rated_video_idx
@@ -196,8 +243,14 @@ CREATE TABLE IF NOT EXISTS parental_recompute_jobs (
     cursor_at  timestamptz,
     cursor_id  uuid,
     batches    integer     NOT NULL DEFAULT 0,
+    attempts   integer     NOT NULL DEFAULT 0,
     created_at timestamptz NOT NULL DEFAULT now()
 );
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- a home that ran this slot before the column was in it
+ALTER TABLE parental_recompute_jobs ADD COLUMN IF NOT EXISTS attempts integer NOT NULL DEFAULT 0;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -326,10 +379,24 @@ $f$;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+-- (an earlier form of this slot also fired it on every UPDATE; replacing it narrows it)
 CREATE OR REPLACE TRIGGER media_metadata_enrichment_parental
-    AFTER INSERT OR DELETE OR UPDATE OF video_id, provider, external_id, confidence
-    ON media_metadata_enrichment
+    AFTER INSERT OR DELETE ON media_metadata_enrichment
     FOR EACH ROW EXECUTE FUNCTION parental_youtube_match_changed();
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- An UPDATE asks only when what the tier is read from changed: the video, the provider,
+-- the YouTube id or the confidence that picks the best match. A refresh that writes a
+-- match back as it was (an enrichment pass over a whole library) queues nothing.
+CREATE OR REPLACE TRIGGER media_metadata_enrichment_parental_upd
+    AFTER UPDATE OF video_id, provider, external_id, confidence ON media_metadata_enrichment
+    FOR EACH ROW
+    WHEN (OLD.video_id IS DISTINCT FROM NEW.video_id
+          OR OLD.provider IS DISTINCT FROM NEW.provider
+          OR OLD.external_id IS DISTINCT FROM NEW.external_id
+          OR OLD.confidence IS DISTINCT FROM NEW.confidence)
+    EXECUTE FUNCTION parental_youtube_match_changed();
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -488,6 +555,10 @@ DROP TRIGGER IF EXISTS youtube_videos_parental_upd ON youtube_videos;
 
 -- +goose StatementBegin
 DROP TRIGGER IF EXISTS youtube_videos_parental_ins ON youtube_videos;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DROP TRIGGER IF EXISTS media_metadata_enrichment_parental_upd ON media_metadata_enrichment;
 -- +goose StatementEnd
 
 -- +goose StatementBegin

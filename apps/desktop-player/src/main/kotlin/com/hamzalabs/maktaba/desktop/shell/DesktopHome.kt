@@ -73,6 +73,8 @@ class DesktopHome(
     val actions: HomeActions = HomeActions(),
     private val onPlay: (PlayRequest) -> Unit = {},
     private val onSignedOut: () -> Unit = {},
+    /** Where the sign-in's last parental limit is remembered between launches (null: nowhere). */
+    limitKept: com.hamzalabs.maktaba.core.parental.KeptLimit? = null,
 ) {
     /** The home's web address (under its base path): help and the admin's Components link go there. */
     val webUrl: String get() = client.home.toString().trimEnd('/')
@@ -84,11 +86,36 @@ class DesktopHome(
      */
     fun change(block: suspend CoroutineScope.() -> Unit): Job = background.launch(Dispatchers.Main, block = block)
 
+    /**
+     * What this sign-in is under parental controls (Epic 57): its limit, and for a restricted
+     * account the time the home says is left. The home enforces both; the screens only say so.
+     */
+    val parental: com.hamzalabs.maktaba.core.parental.ParentalState by lazy {
+        com.hamzalabs.maktaba.core.parental.ParentalState(client, limitKept).also { it.onChange = ::limitChanged }
+    }
+
     private val kept = mutableMapOf<String, Any>()
+
+    /** Moves when the kept states were dropped: a page that reads [keep] then makes its state anew. */
+    var keptEpoch by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
+
+    /**
+     * The sign-in's parental limit changed (story 57.05): every page's kept state and the
+     * posters were read under another limit and go; the pages then read again.
+     */
+    private fun limitChanged() {
+        kept.clear()
+        posters.clear()
+        keptEpoch++
+    }
 
     /** A page's state kept for as long as this home is signed in, under [key]. */
     @Suppress("UNCHECKED_CAST")
-    fun <T : Any> keep(key: String, create: () -> T): T = kept.getOrPut(key, create) as T
+    fun <T : Any> keep(key: String, create: () -> T): T {
+        keptEpoch // read: the page composes again when the kept states were dropped
+        return kept.getOrPut(key, create) as T
+    }
 
     /** Plays a video; the window shows the player until it is closed. */
     fun play(request: PlayRequest) = onPlay(request)

@@ -13,6 +13,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 )
@@ -55,12 +56,29 @@ const RequestTime = "time"
 // time grant, not a rule.
 func ValidRequestKind(k string) bool { return k == RequestTime || ValidSubjectKind(k) }
 
-// RequestMinutes reads the subject_id of a `time` request: the minutes asked for,
-// a whole number from 1 to MaxGrantMinutes written plainly ("30", not "+30" or
-// "030").
+// RequestMinutes reads the subject_id of a stored `time` request: the minutes
+// asked for, a whole number from 1 to MaxGrantMinutes written plainly ("30", not
+// "+30" or "030"). A new request is held to AskedMinutes.
 func RequestMinutes(id string) (int, bool) {
 	n, err := strconv.Atoi(id)
 	if err != nil || n < 1 || n > MaxGrantMinutes || strconv.Itoa(n) != id {
+		return 0, false
+	}
+	return n, true
+}
+
+// ChildMinutes are the minutes a child's own device may ask for, or have unlocked
+// with a guardian's PIN typed on it (story 57.06). What the device sends is the
+// child's to change, so nothing else is taken from it: a guardian who wants to
+// give another number does it from their own sign-in (approve, or a time grant),
+// where 1 to MaxGrantMinutes holds.
+var ChildMinutes = []int{15, 30, 60}
+
+// AskedMinutes reads the subject_id of a `time` request or PIN unlock coming from
+// the child's device: one of ChildMinutes, written plainly.
+func AskedMinutes(id string) (int, bool) {
+	n, ok := RequestMinutes(id)
+	if !ok || !slices.Contains(ChildMinutes, n) {
 		return 0, false
 	}
 	return n, true
@@ -129,7 +147,7 @@ func scanRequest(row interface{ Scan(...any) error }) (*Request, error) {
 // request (created false). ErrNotRestricted when the account has no policy,
 // ErrInvalid for a bad kind or id, ErrSubjectNotFound, ErrTooManyRequests.
 //
-// A `time` request (id: the minutes, 1 to MaxGrantMinutes) has no subject to look
+// A `time` request (id: the minutes, one of ChildMinutes) has no subject to look
 // up. A child has one waiting at most: asking again, for any number of minutes,
 // returns the waiting one.
 func (s *Store) Ask(ctx context.Context, childID string, all bool, libraries []string, kind, id string) (req *Request, created bool, err error) {
@@ -138,7 +156,7 @@ func (s *Store) Ask(ctx context.Context, childID string, all bool, libraries []s
 	}
 	forTime := kind == RequestTime
 	if forTime {
-		if _, ok := RequestMinutes(id); !ok {
+		if _, ok := AskedMinutes(id); !ok {
 			return nil, false, fmt.Errorf("%w: subject_id", ErrInvalid)
 		}
 	} else if (RuleInput{Effect: EffectAllow, SubjectKind: kind, SubjectID: id}).validate() != nil {
@@ -316,6 +334,70 @@ func (s *Store) Requests(ctx context.Context, guardianID string, all bool, statu
 	return out, nil
 }
 
+// OwnRequestsWindow is how far back a child's own list of requests goes, and
+// MaxOwnRequests how many it holds at most.
+const (
+	OwnRequestsWindow = 7 * 24 * time.Hour
+	MaxOwnRequests    = 50
+)
+
+// OwnRequest is a request as the child who made it reads it back: what it asked
+// for, by the id it sent, and what became of it. It carries no title and no one
+// who answered: the child learns nothing about a hidden item beyond the id it
+// already had, and not which guardian said yes or no.
+type OwnRequest struct {
+	ID          string `json:"id"`
+	SubjectKind string `json:"subject_kind"`
+	SubjectID   string `json:"subject_id"`
+	// Minutes is the minutes a `time` request asked for; absent for every other kind.
+	Minutes   int        `json:"minutes,omitempty"`
+	Status    string     `json:"status"`
+	CreatedAt time.Time  `json:"created_at"`
+	ExpiresAt time.Time  `json:"expires_at"`
+	DecidedAt *time.Time `json:"decided_at,omitempty"`
+}
+
+// OwnRequests lists the requests childID made in the last OwnRequestsWindow,
+// newest first, MaxOwnRequests at most, whatever their status. Only the child's
+// own rows are read: the query names no other account. A `time` request still
+// waiting after its home day ended is listed as expired (the activity loop closes
+// it within a minute; the list does not wait for it). No subject is looked up, so
+// a request whose subject was deleted, moved or hidden since is listed all the
+// same, by id only.
+func (s *Store) OwnRequests(ctx context.Context, childID string) ([]OwnRequest, error) {
+	out := []OwnRequest{}
+	if !isUUID(childID) {
+		return out, nil
+	}
+	now := s.now().UTC()
+	loc, err := homeLocation(ctx, s.DB, now)
+	if err != nil {
+		return nil, err
+	}
+	day := DayStart(now, loc)
+	rows, err := s.DB.QueryContext(ctx,
+		`SELECT `+requestCols+` FROM parental_requests
+		  WHERE child_id = $1 AND created_at > $2
+		  ORDER BY created_at DESC, id DESC LIMIT $3`, childID, now.Add(-OwnRequestsWindow), MaxOwnRequests)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		r, err := scanRequest(rows)
+		if err != nil {
+			return nil, err
+		}
+		r.fit(loc)
+		if r.Status == RequestPending && r.SubjectKind == RequestTime && r.CreatedAt.Before(day) {
+			r.Status = RequestExpired
+		}
+		out = append(out, OwnRequest{ID: r.ID, SubjectKind: r.SubjectKind, SubjectID: r.SubjectID, Minutes: r.Minutes,
+			Status: r.Status, CreatedAt: r.CreatedAt, ExpiresAt: r.ExpiresAt, DecidedAt: r.DecidedAt})
+	}
+	return out, rows.Err()
+}
+
 // RequestChild returns the child a request belongs to, or ErrRequestNotFound.
 func (s *Store) RequestChild(ctx context.Context, id string) (string, error) {
 	if !isUUID(id) {
@@ -388,6 +470,24 @@ func (s *Store) decide(ctx context.Context, actorID, id string, approve bool, a 
 	// (the transaction commits) and the caller is then told.
 	expired := false
 	err := s.inTx(ctx, func(tx *sql.Tx) error {
+		// The child's policy row is locked before the request's, the order Unlock
+		// and Ask take them in (a PIN unlock locks the policy and then closes the
+		// waiting requests). Taken the other way round, a guardian approving while
+		// another types the PIN for the same item is a deadlock, and the database
+		// rolls one of them back. The child id is read without a lock first; a
+		// request's child never changes.
+		var child string
+		err := tx.QueryRowContext(ctx, `SELECT child_id::text FROM parental_requests WHERE id = $1`, id).Scan(&child)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrRequestNotFound
+		}
+		if err != nil {
+			return err
+		}
+		// a child with no policy left has no row to lock, and no Unlock to meet
+		if _, err := tx.ExecContext(ctx, `SELECT 1 FROM parental_policies WHERE user_id = $1 FOR UPDATE`, child); err != nil {
+			return err
+		}
 		req, err := scanRequest(tx.QueryRowContext(ctx,
 			`SELECT `+requestCols+` FROM parental_requests WHERE id = $1 FOR UPDATE`, id))
 		if errors.Is(err, sql.ErrNoRows) {

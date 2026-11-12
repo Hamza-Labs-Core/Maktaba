@@ -160,3 +160,93 @@
   direction: ltr;
   text-align: start;
 }
+
+/* family settings: an account's limit, its rules, devices, requests and activity */
+.mkt-parental-child h2,
+.mkt-parental-child h3 {
+  margin-block: var(--space-5) var(--space-2);
+}
+.mkt-parental-policy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-inline-size: 32rem;
+}
+.mkt-parental-actions,
+.mkt-parental-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--space-3);
+}
+.mkt-parental-row {
+  margin-block: var(--space-3);
+}
+.mkt-parental-picker {
+  display: contents;
+}
+.mkt-parental-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.mkt-parental-list > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+.mkt-parental-list > li + li {
+  border-block-start: 1px solid var(--color-border);
+}
+.mkt-parental-list > li .mkt-parental-row {
+  margin-block: 0;
+}
+.mkt-parental-list__main {
+  display: flex;
+  flex: 1 1 14rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+.mkt-parental-list__main p {
+  margin: 0;
+}
+.mkt-parental-poster {
+  inline-size: 3.5rem;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-subtle);
+}
+.mkt-parental-asktime {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+.mkt-parental-asktime p {
+  margin: 0;
+}
+
+/* story 57.12: the notice that a child's device signed in before parental controls were set up */
+.mkt-parental-notice {
+  margin-block: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-inline-start: 4px solid var(--color-warn);
+  border-radius: var(--radius-md);
+}
+.mkt-parental-notice h2 {
+  margin-block-start: 0;
+}
+.mkt-parental-notice__action {
+  font-weight: 600;
+}

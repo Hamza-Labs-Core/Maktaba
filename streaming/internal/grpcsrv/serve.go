@@ -57,6 +57,7 @@ func serviceDesc(s *Server) *grpc.ServiceDesc {
 			{MethodName: "HealthCheck", Handler: jsonHandler(s.handleHealthCheck)},
 			{MethodName: "SetTimeLimit", Handler: jsonHandler(s.handleSetTimeLimit)},
 			{MethodName: "TimeServed", Handler: jsonHandler(s.handleTimeServed)},
+			{MethodName: "SetTimeKept", Handler: jsonHandler(s.handleSetTimeKept)},
 		},
 	}
 }
@@ -146,6 +147,11 @@ func (s *Server) handleSetTimeLimit(_ context.Context, m map[string]any) (map[st
 	if userID == "" {
 		return errResp(errors.New("user_id is required"))
 	}
+	if jsonBool(m["clear_all"]) {
+		// the account has no time rule left: its end goes in every library
+		s.TimeLimits.ClearEnds(userID)
+		return map[string]any{"ok": true}, nil
+	}
 	if jsonBool(m["clear"]) {
 		s.TimeLimits.Set(userID, jsonString(m["library_id"]), nil)
 		return map[string]any{"ok": true}, nil
@@ -166,6 +172,26 @@ func (s *Server) handleSetTimeLimit(_ context.Context, m map[string]any) (map[st
 		return errResp(errors.New("session_id and lease_until go together"))
 	}
 	s.TimeLimits.Set(userID, jsonString(m["library_id"]), lim)
+	return map[string]any{"ok": true}, nil
+}
+
+// handleSetTimeKept keeps the API's word that an account's playback time is kept
+// from now on (it was made restricted) or no longer is (the restriction was
+// lifted): see timelimit.Registry.SetKept. kept must be said: a body without it
+// changes nothing.
+func (s *Server) handleSetTimeKept(_ context.Context, m map[string]any) (map[string]any, error) {
+	if s.TimeLimits == nil {
+		return errResp(errors.New("time limits are not kept here"))
+	}
+	userID := jsonString(m["user_id"])
+	if userID == "" {
+		return errResp(errors.New("user_id is required"))
+	}
+	kept, said := m["kept"].(bool)
+	if !said {
+		return errResp(errors.New("kept is required"))
+	}
+	s.TimeLimits.SetKept(userID, kept)
 	return map[string]any{"ok": true}, nil
 }
 

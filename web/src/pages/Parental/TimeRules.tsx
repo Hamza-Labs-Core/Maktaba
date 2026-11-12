@@ -107,10 +107,15 @@ export function TimeRulesPage() {
   const [saving, setSaving] = useState(false);
   const [granting, setGranting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // The draft follows the saved rules when they change. A fresh read that says the
+  // same (the quiet re-read on coming back to the page) keeps what is being edited.
+  const savedRules = data ? JSON.stringify(data.rules.rules) : null;
   useEffect(() => {
-    setDraft(data ? data.rules.rules : null);
-    setUsage(data?.usage ?? null);
+    setDraft(savedRules === null ? null : (JSON.parse(savedRules) as TimeRule[]));
     setSaveError(null);
+  }, [savedRules]);
+  useEffect(() => {
+    setUsage(data?.usage ?? null);
   }, [data]);
 
   if (loading) return <p className="mkt-loading">{t("common.loading")}</p>;

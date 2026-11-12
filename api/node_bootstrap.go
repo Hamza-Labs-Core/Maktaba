@@ -30,6 +30,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/middleware"
@@ -52,6 +54,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httpsec"
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/pgdsn"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
@@ -777,7 +780,7 @@ func (rt *nodeRuntime) dbDownReads(next http.Handler) http.Handler {
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.Header().Set("Retry-After", "5")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://maktaba.tv/problems/home-unreachable",
+		_ = json.NewEncoder(w).Encode(map[string]any{"type": httperror.TypeHomeUnreachable,
 			"title": "the home's database is not reachable", "status": http.StatusServiceUnavailable,
 			"code":   "home_unreachable",
 			"detail": "this page reads the home's database, which does not answer; videos this machine can read still play"})
@@ -843,7 +846,13 @@ func nodeMachine(cfg nodemode.Config) string {
 // it, and mounts what a full node serves itself: the library and queue reads (`any`),
 // the guide reads, this machine's routes (`local`); everything else is proxied to the
 // home.
-func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, loops *runner.Runner, logger *slog.Logger) (*nodeRuntime, func(), error) {
+//
+// gate is the router's parental gate (Epic 57 story 57.03). A node filters as the home
+// does: MountP6 gives the gate its policy cache over this machine's database pair, so
+// an account's limit is read from wherever the request's content is read (the copy for
+// a read the copy answers, and for everything while the home's database is down). A
+// gate left without its cache refuses every signed-in user on every route.
+func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, loops *runner.Runner, gate *parental.Gate, logger *slog.Logger) (*nodeRuntime, func(), error) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		return nil, nil, fmt.Errorf("node mode needs the home's database (DATABASE_URL, the node role's from node.json)")
@@ -895,6 +904,7 @@ func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, loops *runner.
 		URLSigner: streamURLSigner(nil, logger),
 		// the home's database down: this machine's copy and session record
 		StreamOffline: rt.offline(),
+		ParentalGate:  gate,
 	})
 	router.MountP27(r, router.P27Deps{DB: appDB, PublicBaseURL: os.Getenv("MAKTABA_PUBLIC_BASE_URL"), DataDir: dataDir})
 	rt.mountNodeRoutes(r)

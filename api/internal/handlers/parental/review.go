@@ -282,12 +282,19 @@ func (h *ReviewHandler) Decide(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("mark the signal reviewed").Wrap(err))
 		return
 	}
+	// queued with the change, as PUT /api/videos/{id}/age-tier does: the video is
+	// rated even if the answer below cannot be given
+	if err := h.Recompute.Enqueue(ctx, tx, parental.KindVideo, id); err != nil {
+		httperror.Write(w, r, httperror.Internal("queue the recompute").Wrap(err))
+		return
+	}
 	if err := tx.Commit(); err != nil {
 		httperror.Write(w, r, httperror.Internal("review the video").Wrap(err))
 		return
 	}
 	got, err := h.Recompute.RecomputeVideo(ctx, id)
 	if err != nil {
+		h.Recompute.Wake()
 		httperror.Write(w, r, httperror.Internal("rate the video").Wrap(err))
 		return
 	}

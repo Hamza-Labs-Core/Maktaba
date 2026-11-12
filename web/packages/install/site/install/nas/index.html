@@ -7,6 +7,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
+    <meta name="maktaba-menu" content="none" />
     <title>Maktaba on a NAS · Maktaba</title>
     <meta
       name="description"
@@ -17,6 +18,7 @@
     <link rel="stylesheet" href="/install/install.css" />
   </head>
   <body>
+    <a class="skip-link" href="#main">Skip to the content</a>
     <header>
       <h1>Maktaba on a NAS</h1>
       <p class="lead">
@@ -25,7 +27,7 @@
       </p>
       <nav><a href="/ar/install/nas/" hreflang="ar" lang="ar">العربية</a></nav>
     </header>
-    <main class="guide wide">
+    <main id="main" class="guide wide">
       <p>
         Maktaba runs on a NAS as one container: the server, the web app, live TV, the pipeline that
         reads your library, and its own database. It runs as an ordinary user of the NAS, never as
@@ -100,6 +102,10 @@
         <li>
           <strong>A data folder</strong> on fast local storage, an SSD if there is one. Maktaba's
           database and thumbnails live there; never on a network share or a USB stick.
+        </li>
+        <li>
+          <strong>An internet connection during setup:</strong> it downloads the transcription and
+          search tools (about 2 GB) and the speech models, once.
         </li>
         <li><strong>About 20 minutes</strong>, and the NAS's address on your network.</li>
       </ul>

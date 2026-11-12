@@ -35,7 +35,7 @@ import (
 
 // TypePasswordChangeRequired is the problem type a session gets for any
 // request but the change-password form after an admin reset.
-const TypePasswordChangeRequired = middleware.TypePasswordChangeRequired
+var TypePasswordChangeRequired = middleware.TypePasswordChangeRequired
 
 // CredentialRevoker ends every credential a user holds: web sessions and
 // refresh-token families. It returns how many were revoked.

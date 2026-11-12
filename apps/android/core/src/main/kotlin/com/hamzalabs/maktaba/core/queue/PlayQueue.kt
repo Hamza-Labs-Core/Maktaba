@@ -92,6 +92,12 @@ class PlayQueueModel(private val transport: QueueTransport, private val deviceId
     /** Set when a move found the queue changed on another device (the app says so once). */
     var staleSeen: Boolean = false
 
+    /** Forgets the window (the account's parental limit changed: it was read under another). */
+    fun forget() {
+        doc = null
+        staleSeen = false
+    }
+
     private suspend fun call(method: String, path: String, body: String? = null): String {
         val (code, text) = transport.send(method, path, body)
         if (code == 422 && text.contains("empty_source")) throw EmptySource()

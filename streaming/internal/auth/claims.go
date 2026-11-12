@@ -47,14 +47,20 @@ type Claims struct {
 	Usr     string   `json:"usr,omitempty"`
 	Lib     []string `json:"lib,omitempty"`
 	IsAdmin bool     `json:"is_admin,omitempty"`
-	// Tls is the stream session whose time lease the URL needs (Epic 57 story
+	// TLS is the stream session whose time lease the URL needs (Epic 57 story
 	// 57.14): set on every stream URL of a restricted account. Empty: none needed.
-	Tls string `json:"tls,omitempty"`
+	TLS string `json:"tls,omitempty"`
 	// Tk is the API's word, on every stream URL, on whether the account's playback
-	// time is kept: "1" kept (the URL then names its session in Tls), "0" not
-	// kept. A stream URL with neither Tls nor Tk "0" is refused: streaming never
+	// time is kept: "1" kept (the URL then names its session in TLS), "0" not
+	// kept. A stream URL with neither TLS nor Tk "0" is refused: streaming never
 	// infers that an account is unlimited from what it happens to hold.
 	Tk string `json:"tk,omitempty"`
+	// Fam and Ac are, on a channel URL (Epic 57 stories 57.04 and 57.10), the
+	// sign-in it was signed for (its refresh-token family) and the age limit that
+	// sign-in's device gave. The live TV guard hands them to the API with every
+	// question about the viewer, so the answer is held to the device's limit too.
+	Fam string `json:"fam,omitempty"`
+	Ac  *int   `json:"ac,omitempty"`
 }
 
 // LibIDs parses the lib[] claim into UUIDs. Returns an error if any

@@ -390,6 +390,7 @@ func (h *Handler) libraryCollections(ctx context.Context, s scope, lib string, w
 		}
 	}
 	out := []LibraryCollection{}
+	var smart []string
 	for rows.Next() {
 		var c LibraryCollection
 		var n sql.NullInt64
@@ -401,6 +402,9 @@ func (h *Handler) libraryCollections(ctx context.Context, s scope, lib string, w
 			cid, ok := parental.CanonicalUUID(c.ID)
 			if !ok || blocked[cid] || (n.Valid && n.Int64 == 0) {
 				continue
+			}
+			if !n.Valid {
+				smart = append(smart, c.ID) // a saved filter: asked below, once the rows are read
 			}
 		}
 		c.SourceKind, c.sortTitle = sk.String, st.String
@@ -418,7 +422,28 @@ func (h *Handler) libraryCollections(ctx context.Context, s scope, lib string, w
 		c.PosterVideoIDs = []string{}
 		out = append(out, c)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(smart) == 0 {
+		return out, nil
+	}
+	_ = rows.Close()
+	// a saved filter that lists nothing the account may see is left out too
+	// (parental.Allowed evaluates it; a failed check hides it)
+	hide := map[string]bool{}
+	for _, id := range smart {
+		if ok, err := parental.Allowed(ctx, h.DB, limit, parental.SubjectCollection, id); err != nil || !ok {
+			hide[id] = true
+		}
+	}
+	kept := out[:0]
+	for _, c := range out {
+		if !hide[c.ID] {
+			kept = append(kept, c)
+		}
+	}
+	return kept, nil
 }
 
 // collectionPosters gives each card of the page its first four visible videos,
@@ -536,10 +561,17 @@ func (h *Handler) AutoCollection(w http.ResponseWriter, r *http.Request) {
 		internal(w, r, "load collection", err)
 		return
 	}
+	// the count and the cards are of what the account may see (Epic 57 story 57.03)
 	member := `FROM ` + items + ` i JOIN videos v ON v.id = i.video_id
-		WHERE i.` + owner + ` = $1 AND v.library_id = $2 AND ` + visible
+		WHERE i.` + owner + ` = $1 AND v.library_id = $2 AND ` + shown(ctx)
 	if err := h.DB.QueryRowContext(ctx, `SELECT COUNT(*) `+member, gid, lib.ID).Scan(&ref.Videos); err != nil {
 		internal(w, r, "count collection", err)
+		return
+	}
+	if ref.Videos == 0 && parental.From(ctx).Limits() {
+		// a group with nothing the account may see is not in its list
+		// (libraryCollections) and answers here as one that is not there
+		httperror.Write(w, r, httperror.NotFound("collection "+gid))
 		return
 	}
 	var uid any

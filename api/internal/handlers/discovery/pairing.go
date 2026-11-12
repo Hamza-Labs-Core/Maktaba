@@ -115,7 +115,7 @@ func (h *Handler) Request(w http.ResponseWriter, r *http.Request) {
 	// a paired device's tokens outlive a cloud link and carry the user's
 	// full role (Epic 42 story 42.7): only a sign-in on the home pairs
 	if p.ViaCloud() {
-		httperror.Write(w, r, httperror.Forbidden("https://maktaba.tv/problems/cloud-session",
+		httperror.Write(w, r, httperror.Forbidden(httperror.TypeCloudSession,
 			"a sign-in through Maktaba Cloud cannot pair a device; sign in on the home"))
 		return
 	}

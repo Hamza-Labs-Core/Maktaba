@@ -279,14 +279,17 @@
       "related": [
         "epic-29-analytics",
         "plan-29.02-watch-history",
-        "entity-playback_state"
+        "entity-playback_state",
+        "ep-get-me-history"
       ],
       "files": {
         "story": "specs/epics/29-analytics/story-29-02-watch-history.md",
         "plan": "specs/epics/29-analytics/plan-29-02-watch-history.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /me/history"
+      ],
       "db_tables": [
         "playback_state"
       ],
@@ -810,14 +813,17 @@
       ],
       "related": [
         "epic-32-tv-streaming-cluster-remote",
-        "plan-32.04-failover-drain"
+        "plan-32.04-failover-drain",
+        "ep-get-channels"
       ],
       "files": {
         "story": "specs/epics/32-tv-streaming-cluster-remote/story-32-04-failover-drain.md",
         "plan": "specs/epics/32-tv-streaming-cluster-remote/plan-32-04-failover-drain.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /channels"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "failover-drain"
@@ -1531,7 +1537,8 @@
       "related": [
         "epic-33-tv-staging-hot-swap",
         "plan-33.12-producers-review-mode",
-        "ep-get-queues"
+        "ep-get-queues",
+        "ep-get-channels"
       ],
       "files": {
         "story": "specs/epics/33-tv-staging-hot-swap/story-33-12-producers-review-mode.md",
@@ -1539,7 +1546,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /queues"
+        "GET /queues",
+        "GET /channels"
       ],
       "db_tables": [],
       "metadata": {
@@ -1706,14 +1714,17 @@
       ],
       "related": [
         "epic-34-tv-public-site",
-        "plan-34.01-public-channel-flag-rights"
+        "plan-34.01-public-channel-flag-rights",
+        "ep-get-channels"
       ],
       "files": {
         "story": "specs/epics/34-tv-public-site/story-34-01-public-channel-flag-rights.md",
         "plan": "specs/epics/34-tv-public-site/plan-34-01-public-channel-flag-rights.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /channels"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "public-channel-flag-rights"
@@ -1809,7 +1820,8 @@
       "related": [
         "epic-34-tv-public-site",
         "plan-34.04-worker-api-tokens",
-        "ep-get-ws"
+        "ep-get-ws",
+        "ep-get-channels"
       ],
       "files": {
         "story": "specs/epics/34-tv-public-site/story-34-04-worker-api-tokens.md",
@@ -1817,7 +1829,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /ws"
+        "GET /ws",
+        "GET /channels"
       ],
       "db_tables": [],
       "metadata": {

@@ -1,0 +1,6 @@
+/* the problem index without JavaScript (story 60.06): its filter would do nothing, so it is
+   hidden; the whole list shows. Loaded from a <noscript> in the head (the CSP allows no inline
+   style), before the shell's stylesheet, so the rule is more specific than the shell's. */
+.page-head .filter[role="search"] {
+  display: none;
+}

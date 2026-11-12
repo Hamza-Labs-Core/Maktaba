@@ -3125,14 +3125,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-50-cloud-no-downtime"
+        "epic-50-cloud-no-downtime",
+        "ep-get-channels"
       ],
       "files": {
         "story": "specs/epics/50-cloud-no-downtime/story-50-20-broadcaster-tier.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /channels"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "broadcaster-tier"
@@ -3200,7 +3203,8 @@
         "ep-get-settings",
         "ep-put-settings",
         "ep-get-ws",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-channels"
       ],
       "files": {
         "story": "specs/epics/50-cloud-no-downtime/story-50-22-home-broadcaster.md",
@@ -3211,7 +3215,8 @@
         "GET /settings",
         "PUT /settings",
         "GET /ws",
-        "GET /components"
+        "GET /components",
+        "GET /channels"
       ],
       "db_tables": [],
       "metadata": {
@@ -4025,7 +4030,8 @@
         "ep-get-ws",
         "ep-get-capabilities",
         "ep-get-components",
-        "ep-get-home"
+        "ep-get-home",
+        "ep-get-channels"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-09-capabilities.md",
@@ -4038,7 +4044,8 @@
         "GET /ws",
         "GET /capabilities",
         "GET /components",
-        "GET /home"
+        "GET /home",
+        "GET /channels"
       ],
       "db_tables": [
         "chapters",
@@ -6406,7 +6413,6 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-post-sessions",
         "ep-get-workers",
         "ep-get-home"
       ],
@@ -6416,7 +6422,6 @@
         "mockups": []
       },
       "api_endpoints": [
-        "POST /sessions",
         "GET /workers",
         "GET /home"
       ],

@@ -39,6 +39,7 @@ import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -293,7 +294,19 @@ fun VideoScreen(id: String, nav: PlayerNavigator) {
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             val video = page.video
+            val mine by home.parental.mine.collectAsState()
             when {
+                // a sign-in under a limit (Epic 57 story 57.05): "This isn't available", with no
+                // title or picture (the home sends none), and a parent to ask. The home answers
+                // a hidden video as a missing one; asking for a missing one offers nothing more.
+                page.notAvailable && mine.limited -> com.hamzalabs.maktaba.core.ui.BlockedPage(
+                    mine,
+                    help = remember(client, id) { com.hamzalabs.maktaba.core.ui.ParentHelp(client, com.hamzalabs.maktaba.core.api.SubjectKind.VIDEO, id) { home.session.signedOut() } },
+                    onUnlocked = { scope.launch { page.load() } },
+                    onBack = if (nav.canGoBack) ({ nav.back() }) else null,
+                    // a parent may have approved from their own device while the app was away
+                    onReturn = { scope.launch { page.load() } },
+                )
                 page.notAvailable -> Message(
                     stringResource(R.string.video_not_available),
                     Modifier.testTag("video-not-available"),

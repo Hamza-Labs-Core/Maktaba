@@ -124,6 +124,28 @@ reaches a home on the Mac's network by its address (`192.0.2.20:8088`).
   rendition playlist answers 404 until it is written, so the player waits for it first
   (`ApiClient.waitUntilPlayable`). Progress goes out every 10 s and the session closes when the
   player stops.
+- **Parental controls (Epic 57; the home enforces every rule, the apps only say what it
+  answered):** `client/api/Parental.kt` reads the sign-in's limit (`GET /api/me/parental`) and,
+  for a restricted account, its time (`GET /api/me/parental/time`, asked while Home or the
+  player shows it; the app keeps no count of its own). The Player shows the time left on Home
+  and, once 15 minutes or fewer remain, in the player, with a warning five minutes and one
+  minute before the end (`parental/TimeView.kt`). The progress post is also the stream's
+  heartbeat (at least every 60 s for an account with time rules): it goes out every 10 s while
+  playing and at once on pause and resume, and `ApiClient.reportProgress` returns what the home
+  said. A session open, a renewal or a progress post that answers 403 `parental-time` stops the
+  video and shows the time's-up screen (why, when watching opens again, the saved place);
+  nothing asks again until the person taps Check again. A 404 on a progress post is the
+  stream's end; a 503 is "can't check your watching time right now". From the time's-up screen
+  a child asks for 15, 30 or 60 more minutes (`POST /api/me/parental/requests`) or a parent
+  types their PIN there (`GET /api/me/parental/guardians`, `POST /api/me/parental/unlock`; the
+  PIN is sent and never kept). A video the home does not show a limited sign-in is "This isn't
+  available", with no title or picture, Ask a parent and Enter parent PIN; when the home
+  answers that request with 404 (a hidden item is a missing one) nothing more is offered. Live
+  TV asks `POST /api/channels/{id}/play` for a limited sign-in: a programme above the limit is
+  the "Not available right now" slate until the home's `retry_at`, and the guide shows such a
+  programme as "Not available". The same on Android TV (`apps/tv/android`, its screens in
+  `ui/screens/Parental.kt`). Guardians answer requests and set rules in the iPhone Player or on
+  the web (Settings > Users > the user > Time); the Android apps have no guardian screens.
 - **Layouts** (`core/layout/Panes.kt`, from Jetpack WindowManager's fold through Material's
   adaptive info):
   - one pane: a phone, a foldable folded;

@@ -92,7 +92,9 @@ fun ChannelScreen(id: String, nav: PlayerNavigator) {
     val env = LocalLiveEnv.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val player = remember(id) { ChannelPlayer.of(live.api, scope, env.engine(context), env.device) }
+    // under a parental limit the home is asked before the channel plays (Epic 57 story 57.10)
+    val parental = LocalPlayerHome.current.parental
+    val player = remember(id) { ChannelPlayer.of(live.api, scope, env.engine(context), env.device, limited = { parental.mine.value.limited }) }
     var nowMs by remember { mutableLongStateOf(live.serverNow(env.nowMs())) }
 
     LaunchedEffect(player) { player.open(id) }
@@ -177,6 +179,8 @@ fun ChannelScreen(id: String, nav: PlayerNavigator) {
         CompositionLocalProvider(LocalContentColor provides Color.White) {
             val problem = player.problem
             when {
+                // the programme on air is above the limit: the slate, until the home's time
+                player.notNow != null -> com.hamzalabs.maktaba.core.ui.NotNowSlate(player.notNow?.retryAt, Modifier.align(Alignment.Center))
                 problem != null -> Problem(problem, onRetry = player::retry, onBack = { nav.back() })
                 player.sessionEnded -> Problem(null, onRetry = player::retry, onBack = { nav.back() })
                 player.tuning -> Column(
@@ -257,12 +261,12 @@ private fun Controls(
             entry?.current?.let { p ->
                 Column(Modifier.widthIn(max = 640.dp).testTag("mini-guide"), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(stringResource(R.string.live_now), style = MaterialTheme.typography.labelMedium, color = InkAndBrass.Brass)
-                    Text(p.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(com.hamzalabs.maktaba.core.ui.programmeTitle(p), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(timeRange(p), style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Ltr), color = Color.White.copy(alpha = 0.75f))
                     p.progressAt(nowMs)?.let { ProgrammeProgress(it.toFloat()) }
                     entry.next?.let { n ->
                         Text(
-                            stringResource(R.string.live_next, n.startMs?.let(time) ?: "", n.title),
+                            stringResource(R.string.live_next, n.startMs?.let(time) ?: "", com.hamzalabs.maktaba.core.ui.programmeTitle(n)),
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White.copy(alpha = 0.75f),
                             maxLines = 1,

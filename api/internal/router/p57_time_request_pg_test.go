@@ -132,8 +132,20 @@ func TestPGTimeRequestApprovedAllowsTheStream(t *testing.T) {
 	if grant == nil || grant["minutes"] != float64(30) || grant["granted_by"] != tmGuardian || grant["day"] != e.today() {
 		t.Fatalf("the approval's grant = %v", out)
 	}
-	if svc.end == nil || !svc.end.After(time.Now().Add(25*time.Minute)) || svc.end.After(time.Now().Add(31*time.Minute)) {
-		t.Fatalf("after the approval streaming holds the end %v, want about 30 minutes from now", svc.end)
+	// about 30 minutes from now; when those minutes reach the day line (04:00 home
+	// time, here the server's zone) the new day's own 60 minutes follow on, so the
+	// end is that much later
+	now := time.Now()
+	latest := now.Add(31 * time.Minute)
+	line := time.Date(now.Year(), now.Month(), now.Day(), 4, 0, 0, 0, now.Location())
+	if !line.After(now) {
+		line = line.AddDate(0, 0, 1)
+	}
+	if !line.After(latest) {
+		latest = line.Add(61 * time.Minute)
+	}
+	if svc.end == nil || !svc.end.After(now.Add(25*time.Minute)) || svc.end.After(latest) {
+		t.Fatalf("after the approval streaming holds the end %v, want about 30 minutes from now (no later than %v)", svc.end, latest)
 	}
 	code, s = open(e, "child")
 	if code != http.StatusCreated {

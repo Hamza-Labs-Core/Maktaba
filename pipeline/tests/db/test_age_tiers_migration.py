@@ -27,6 +27,7 @@ TRIGGERS = {
     "videos_parental_ins",
     "videos_parental_upd",
     "media_metadata_enrichment_parental",
+    "media_metadata_enrichment_parental_upd",
     "youtube_videos_parental_ins",
     "youtube_videos_parental_upd",
     "youtube_videos_parental_del",

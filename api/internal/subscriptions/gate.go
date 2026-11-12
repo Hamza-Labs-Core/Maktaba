@@ -12,7 +12,7 @@ import (
 // refuses (story 16.2: the server enforces every gate). The body names
 // the feature, the home's tier and the lowest tier that grants it, and
 // says in plain words what to do; the web shows that detail as is.
-const TypeLicenseRequired = "https://maktaba.tv/problems/license-required"
+var TypeLicenseRequired = httperror.Type("license-required")
 
 // refusalText is what the admin reads when a paid feature is refused.
 var refusalText = map[Feature]string{

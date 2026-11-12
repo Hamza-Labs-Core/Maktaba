@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
@@ -72,7 +74,7 @@ func TestComponentOffAnswer(t *testing.T) {
 		var b map[string]any
 		_ = json.Unmarshal(rec.Body.Bytes(), &b)
 		if rec.Code != http.StatusConflict || b["code"] != "component_off" || b["component"] != "livetv" ||
-			b["feature"] != "live_tv" || b["type"] != "https://maktaba.tv/problems/component-off" || b["status"] != float64(409) {
+			b["feature"] != "live_tv" || b["type"] != httperror.Type("component-off") || b["status"] != float64(409) {
 			t.Fatalf("%s: %d %s", path, rec.Code, rec.Body)
 		}
 	}

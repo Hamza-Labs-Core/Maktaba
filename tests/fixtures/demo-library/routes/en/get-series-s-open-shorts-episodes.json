@@ -1,0 +1,66 @@
+{
+ "seasons": [
+  {
+   "season": 1,
+   "episodes": [
+    {
+     "video_id": "v-gran-dillama",
+     "season": 1,
+     "episode": 1,
+     "title": "Caminandes: Gran Dillama",
+     "thumbnail": "/api/videos/v-gran-dillama/poster",
+     "duration_sec": 146,
+     "progress_pct": 100,
+     "watched": true
+    },
+    {
+     "video_id": "v-llamigos",
+     "season": 1,
+     "episode": 2,
+     "title": "Caminandes: Llamigos",
+     "thumbnail": "/api/videos/v-llamigos/poster",
+     "duration_sec": 150,
+     "progress_pct": 46.67,
+     "watched": false
+    }
+   ]
+  },
+  {
+   "season": 2,
+   "episodes": [
+    {
+     "video_id": "v-coffee-run",
+     "season": 2,
+     "episode": 1,
+     "title": "Coffee Run",
+     "thumbnail": "/api/videos/v-coffee-run/poster",
+     "duration_sec": 184,
+     "progress_pct": 0,
+     "watched": false
+    },
+    {
+     "video_id": "v-sprite-fright",
+     "season": 2,
+     "episode": 2,
+     "title": "Sprite Fright",
+     "thumbnail": "/api/videos/v-sprite-fright/poster",
+     "duration_sec": 629,
+     "progress_pct": 0,
+     "watched": false
+    }
+   ]
+  }
+ ],
+ "numbering": "season",
+ "sort": "episode",
+ "next_episode": {
+  "video_id": "v-llamigos",
+  "season": 1,
+  "episode": 2,
+  "title": "Caminandes: Llamigos",
+  "thumbnail": "/api/videos/v-llamigos/poster",
+  "duration_sec": 150,
+  "progress_pct": 46.67,
+  "watched": false
+ }
+}

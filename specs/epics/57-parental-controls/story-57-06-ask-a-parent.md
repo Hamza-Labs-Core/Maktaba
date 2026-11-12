@@ -1,6 +1,9 @@
 # Story 57.06 — Ask a parent, and the parent PIN
 
 > Epic 57 · Phase 2 (API), 3 (iOS) · Depends on: 57.02, 57.05 · Needed by: 57.07, 57.08
+> **Status:** built (checked against the code 2026-11-12): the API; asking and the PIN pad on iPhone, iPad, the web, the
+> Android Player, Android TV and the desktop Player; answering a request on iPhone, iPad and
+> the web (`/family/requests`).
 
 ## Why
 
@@ -19,15 +22,26 @@ device.
 - `POST /api/me/parental/requests {subject_kind, subject_id}` by a restricted user (or a
   device-limited sign-in whose account has guardians). One pending request per subject per child;
   at most 20 pending per child (429 `too_many_requests`). Requests expire after 7 days.
-- A request may also be for more time: `subject_kind` `time` with `minutes` of 15, 30 or 60 and
-  no subject id. Approving it, or a correct PIN, makes a time grant for that day (57.14) and
+- A request may also be for more time: `subject_kind` is `time` and `subject_id` is the minutes
+  asked for, as text: a whole number from 1 to 480 written plainly (`"30"`). The apps offer 15,
+  30 and 60. Approving it, or a correct PIN, makes a time grant for that day (57.14) and
   not an allow rule. A time request expires at the day line (04:00 home time).
 - Guardians see them in Profile > Family > Requests (57.07): `GET /api/parental/requests`. Each
   shows the child, the title, poster and tier (the guardian may see them), and when it was asked.
 - `POST /api/parental/requests/{id}/approve {expires_at?}` adds an allow rule (57.02) on that
-  subject, with an expiry if chosen (Today, This week, Always). `deny` closes it.
-- The child's Player polls `GET /api/me/parental` on foreground, and through the websocket's
-  `parental` event when connected. On approval the blocked page turns into the video page.
+  subject, with an expiry if chosen (Today, This week, Always), and answers `{request, rule}`.
+  For a `time` request the body takes an optional `minutes` (1 to 480; left out, the minutes
+  asked for) and no `expires_at`, and the answer is `{request, grant}`. `deny` closes it.
+- The child reads what became of its requests with `GET /api/me/parental/requests`: its own
+  requests of the last 7 days, newest first, at most 50, each `{id, subject_kind, subject_id,
+  minutes?, status, created_at, expires_at, decided_at?}`. No title and no guardian: the child
+  learns nothing about a hidden item beyond the id it asked for. A request whose subject the
+  child can no longer reach is still listed, by id. Same caller rule as asking.
+- While a request is pending the child's app reads that list every 15 seconds while it is in
+  front (the web: while the tab is visible; it stops when nothing is pending and after 30
+  minutes with no change, and Check again stays). On approval the blocked page turns into the
+  video page, or, for time, the time is read once and playback resumes. On a denial it shows
+  `parental.ask.denied` with Ask again and the PIN. On expiry it shows the ask buttons again.
 - **Notifications** (off by default, README §6.9): a guardian who turns them on gets a push
   through the notification hub (`api/internal/notify`), the device registry and Maktaba Cloud's
   push fanout, with only "A request is
@@ -41,8 +55,11 @@ device.
   (`cluster_copy_excluded()`), never sent to any device.
 - On the child's device: Enter parent PIN → choose the guardian (their display names) → 6 digits →
   `POST /api/me/parental/unlock {guardian_id, pin, subject_kind, subject_id}`. A correct PIN adds an
-  allow rule on that subject for **today** (until 04:00 home time) and writes an `approved` event
-  naming the guardian.
+  allow rule on that subject for **today** (until 04:00 home time), answers `{rule}`, and writes
+  an `approved` event naming the guardian. With kind `time` (the minutes in `subject_id`) it is a
+  time grant instead: the answer is `{grant}`, a waiting request for time is answered, and a
+  running stream learns of it at once. `GET /api/me/parental/guardians` lists who has a PIN to
+  type; `GET /api/me/parental-pin` tells a guardian whether theirs is set.
 - The PIN unlocks one item. It never changes the limit, never leaves the child's account, and
   never signs anyone in.
 
@@ -84,6 +101,8 @@ digits. Wrong and locked answers do not say which guardian's PIN was close.
 | T07 | Go unit | notifications on/off | request | push payload has no title or name; none when off |
 | T08 | Player UI test (iPhone sim, en) | blocked → Ask → approve via `MockHome` | wait | video page |
 | T09 | Player UI test (iPad sim, ar) | PIN wrong ×5 | enter | locked message, mirrored keypad order kept left-to-right |
+| T10 | Go + Postgres | two children's requests; each status; 8-day-old and 60 rows | `GET /api/me/parental/requests` | own only; the four statuses; 7 days and 50, newest first; ids only |
+| T11 | Web unit | a pending request, then approved, denied, expired | poll | resume or reload; denied text with Ask again; ask buttons; polling stops when hidden, when nothing is pending and after 30 minutes |
 
 ## Strings
 

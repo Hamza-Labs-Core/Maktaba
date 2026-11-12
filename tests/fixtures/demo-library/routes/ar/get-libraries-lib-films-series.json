@@ -1,0 +1,10 @@
+{
+ "library": {
+  "id": "lib-films",
+  "name": "أفلام"
+ },
+ "sort": "name",
+ "items": [],
+ "total": 0,
+ "next": null
+}

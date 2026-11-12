@@ -180,7 +180,7 @@ func TestStreamGateNodeRefusesChannelSignedURL(t *testing.T) {
 // trusts from its own gate.
 func TestHomeStreamProxyDropsGateHeaders(t *testing.T) {
 	var got http.Header
-	home := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	home := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		got = r.Header.Clone()
 	}))
 	t.Cleanup(home.Close)
@@ -193,5 +193,74 @@ func TestHomeStreamProxyDropsGateHeaders(t *testing.T) {
 		if got.Get(h) != "" {
 			t.Errorf("%s reached the home: %q", h, got.Get(h))
 		}
+	}
+}
+
+// Review finding 11: the gate hands the streaming service the sign-in the session
+// is (its family and its device's age limit, as /api/auth/me says them), so a
+// channel played through the web port is held to the device's limit; what a client
+// sent in those headers never reaches the streaming service.
+func TestStreamGatePassesTheSignIn(t *testing.T) {
+	const family = "0f0f0f0f-1111-4222-8333-444444444444"
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/auth/me" {
+			switch r.Header.Get("Authorization") {
+			case "Bearer child-device":
+				_, _ = io.WriteString(w, `{"user_id":"`+p57Viewer+`","is_admin":false,"sign_in":"`+family+`","age_ceiling":9}`)
+			case "Bearer nothing-allowed":
+				_, _ = io.WriteString(w, `{"user_id":"`+p57Viewer+`","is_admin":false,"sign_in":"`+family+`","age_ceiling":-1}`)
+			case "Bearer plain":
+				_, _ = io.WriteString(w, `{"user_id":"`+p57Viewer+`","is_admin":false}`)
+			default:
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+			}
+			return
+		}
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	t.Cleanup(api.Close)
+	au, _ := url.Parse(api.URL)
+	path := "/stream/channel/" + chanID + "/index.m3u8"
+	for _, c := range []struct{ authz, wantFamily, wantCeiling string }{
+		{"Bearer child-device", family, "9"},
+		{"Bearer nothing-allowed", family, "-1"},
+		{"Bearer plain", "", ""},
+	} {
+		be := &signedBackend{}
+		g := newStreamGate(be, au)
+		g.now = func() time.Time { return signedNow }
+		// twice: the second is answered from the gate's cache of the session
+		for i := 0; i < 2; i++ {
+			rec := do(g, http.MethodGet, path, map[string]string{"Authorization": c.authz,
+				viewerSignInHeader: "ffffffff-ffff-4fff-8fff-ffffffffffff", viewerCeilingHeader: "18"})
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%s: %d (%q)", c.authz, rec.Code, rec.Body.String())
+			}
+		}
+		seen := be.seen()
+		if len(seen) != 2 {
+			t.Fatalf("%s: streaming saw %d requests", c.authz, len(seen))
+		}
+		for i, r := range seen {
+			if r.Header.Get(viewerHeader) != p57Viewer || r.Header.Get(viewerSignInHeader) != c.wantFamily ||
+				r.Header.Get(viewerCeilingHeader) != c.wantCeiling {
+				t.Errorf("%s, request %d: viewer %q sign-in %q ceiling %q, want %q %q %q", c.authz, i,
+					r.Header.Get(viewerHeader), r.Header.Get(viewerSignInHeader), r.Header.Get(viewerCeilingHeader),
+					p57Viewer, c.wantFamily, c.wantCeiling)
+			}
+		}
+	}
+	// a signed URL names its own sign-in: the headers a client sent are dropped
+	be := &signedBackend{}
+	g := newStreamGate(be, au)
+	g.now = func() time.Time { return signedNow }
+	g.channelSig = true
+	sig := fakeToken(t, audChannel, chanID, signedNow.Add(time.Hour))
+	rec := do(g, http.MethodGet, path+"?sig="+sig, map[string]string{viewerSignInHeader: family, viewerCeilingHeader: "18"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("a signed channel URL: %d (%q)", rec.Code, rec.Body.String())
+	}
+	if r := be.seen()[0]; r.Header.Get(viewerSignInHeader) != "" || r.Header.Get(viewerCeilingHeader) != "" {
+		t.Error("a client's sign-in headers reached streaming beside a signed URL")
 	}
 }

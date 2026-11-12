@@ -73,6 +73,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.material.icons.outlined.Lock
+import com.hamzalabs.maktaba.core.ui.tierWords
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -200,6 +202,11 @@ private fun RootPage(home: PlayerHome, state: ProfileState) {
         state.loadHomeVersion()
     }
 
+    // the sign-in's content limit, when it has one (Epic 57 story 57.05)
+    val mine by home.parental.mine.collectAsState()
+    val limit = (mine.maxTier ?: mine.deviceLimit)?.takeIf { mine.limited }
+    val resources = androidx.compose.ui.platform.LocalContext.current.resources
+
     LazyColumn(Modifier.fillMaxSize().testTag("profile-root"), contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
             ListItem(
@@ -208,6 +215,16 @@ private fun RootPage(home: PlayerHome, state: ProfileState) {
                 leadingContent = { Icon(Icons.Filled.AccountCircle, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary) },
                 modifier = Modifier.testTag("profile-header"),
             )
+        }
+        if (limit != null) {
+            item {
+                ListItem(
+                    headlineContent = { Text(stringResource(CoreR.string.parental_profile_limit)) },
+                    supportingContent = { Text(resources.tierWords(limit)) },
+                    leadingContent = { Icon(Icons.Outlined.Lock, null) },
+                    modifier = Modifier.testTag("profile-limit"),
+                )
+            }
         }
         // first, where a person looks when a TV shows a sign-in code (the TV's own screen
         // names this row: "in Maktaba Player open Profile and tap Approve a TV or device")

@@ -3,7 +3,7 @@
   "project": "Maktaba",
   "description": "Self-hosted media intelligence platform: full Plex alternative + every-word-searchable transcripts. See specs/architecture.md.",
   "generated_from": [
-    "specs/epics/** (59 epics, 01 to 59: READMEs, stories, plans)",
+    "specs/epics/** (60 epics, 01 to 60: READMEs, stories, plans)",
     "specs/architecture.md (DB tables)",
     "specs/*.md (15 reviews and audits)",
     "specs/diagrams/*.drawio (14 diagrams)",
@@ -13,15 +13,15 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 241,
+    "endpoint": 250,
     "entity": 42,
-    "epic": 59,
+    "epic": 60,
     "feature": 3,
     "mockup": 63,
     "phase": 17,
     "plan": 372,
     "review": 15,
-    "story": 720
+    "story": 733
   },
   "parts": [
     "wiki-epics-01-09.json",
@@ -30,7 +30,7 @@
     "wiki-epics-28-36.json",
     "wiki-epics-37-45.json",
     "wiki-epics-46-54.json",
-    "wiki-epics-55-59.json"
+    "wiki-epics-55-60.json"
   ],
   "entries": [
     {
@@ -3032,6 +3032,43 @@
       }
     },
     {
+      "id": "epic-60-website",
+      "type": "epic",
+      "title": "maktaba.tv, the website households find Maktaba on",
+      "epic": "60-website",
+      "phase": 5,
+      "engine": null,
+      "content": "maktaba.tv, the website households find Maktaba on.\n\nRequirement: every maktaba.tv address the product prints opens a real page, in English and in Arabic, and a household that hears of Maktaba can learn what it is, see it, download it for each of its devices, install it and get help, on a site that looks as good as the apps.",
+      "tags": [
+        "epic",
+        "60-website",
+        "phase-5"
+      ],
+      "related": [
+        "story-60.1",
+        "story-60.2",
+        "story-60.3",
+        "story-60.4",
+        "story-60.5",
+        "story-60.6",
+        "story-60.7",
+        "story-60.8",
+        "story-60.9",
+        "story-60.10",
+        "story-60.11",
+        "story-60.12",
+        "story-60.13"
+      ],
+      "files": {
+        "readme": "specs/epics/60-website/README.md"
+      },
+      "metadata": {
+        "story_count": 13,
+        "plan_count": 0,
+        "mockup_count": 0
+      }
+    },
+    {
       "id": "diagram-api-streaming-stories",
       "type": "diagram",
       "title": "Api Streaming Stories",
@@ -5189,7 +5226,8 @@
         "story-56.14",
         "story-57.1",
         "story-57.3",
-        "story-58.17"
+        "story-58.17",
+        "story-60.12"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5604,7 +5642,8 @@
         "story-51.9",
         "story-53.9",
         "story-55.4",
-        "story-57.3"
+        "story-57.3",
+        "story-60.12"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5642,7 +5681,8 @@
         "story-51.9",
         "story-53.9",
         "story-55.4",
-        "story-57.3"
+        "story-57.3",
+        "story-60.12"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6140,9 +6180,9 @@
       }
     },
     {
-      "id": "ep-post-sessions",
+      "id": "ep-post-stream-sessions",
       "type": "endpoint",
-      "title": "POST /sessions",
+      "title": "POST /stream/sessions",
       "content": "Mint a streaming session",
       "tags": [
         "api",
@@ -6155,17 +6195,11 @@
         "story-8.1",
         "story-8.3",
         "story-8.9",
-        "story-10.1",
-        "story-10.5",
         "story-11.3",
         "story-11.10",
-        "story-11.14",
         "story-12.3",
-        "story-26.4",
-        "story-54.15",
-        "story-55.9",
         "story-57.3",
-        "story-57.10",
+        "story-57.14",
         "story-58.2",
         "story-58.13",
         "story-58.17",
@@ -6176,15 +6210,15 @@
       },
       "metadata": {
         "method": "POST",
-        "path": "/sessions",
+        "path": "/stream/sessions",
         "tag": "Sessions",
         "operationId": "createSession"
       }
     },
     {
-      "id": "ep-get-sessions-id",
+      "id": "ep-get-stream-sessions-id",
       "type": "endpoint",
-      "title": "GET /sessions/{id}",
+      "title": "GET /stream/sessions/{id}",
       "content": "Fetch a session",
       "tags": [
         "api",
@@ -6196,23 +6230,24 @@
         "story-7.11",
         "story-11.3",
         "story-11.10",
-        "story-11.14",
-        "story-12.3"
+        "story-12.3",
+        "story-57.3",
+        "story-57.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
       "metadata": {
         "method": "GET",
-        "path": "/sessions/{id}",
+        "path": "/stream/sessions/{id}",
         "tag": "Sessions",
         "operationId": "getSession"
       }
     },
     {
-      "id": "ep-delete-sessions-id",
+      "id": "ep-delete-stream-sessions-id",
       "type": "endpoint",
-      "title": "DELETE /sessions/{id}",
+      "title": "DELETE /stream/sessions/{id}",
       "content": "Close a streaming session",
       "tags": [
         "api",
@@ -6224,23 +6259,24 @@
         "story-7.11",
         "story-11.3",
         "story-11.10",
-        "story-11.14",
-        "story-12.3"
+        "story-12.3",
+        "story-57.3",
+        "story-57.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
       "metadata": {
         "method": "DELETE",
-        "path": "/sessions/{id}",
+        "path": "/stream/sessions/{id}",
         "tag": "Sessions",
         "operationId": "closeSession"
       }
     },
     {
-      "id": "ep-post-sessions-id-progress",
+      "id": "ep-post-stream-sessions-id-progress",
       "type": "endpoint",
-      "title": "POST /sessions/{id}/progress",
+      "title": "POST /stream/sessions/{id}/progress",
       "content": "Heartbeat session progress",
       "tags": [
         "api",
@@ -6251,35 +6287,62 @@
         "story-7.11",
         "story-11.3",
         "story-11.10",
-        "story-12.3"
+        "story-12.3",
+        "story-57.3",
+        "story-57.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
       "metadata": {
         "method": "POST",
-        "path": "/sessions/{id}/progress",
+        "path": "/stream/sessions/{id}/progress",
         "tag": "Sessions",
         "operationId": "sessionProgressHeartbeat"
       }
     },
     {
-      "id": "ep-get-sessions-capabilities",
+      "id": "ep-post-stream-sessions-id-errors",
       "type": "endpoint",
-      "title": "GET /sessions/capabilities",
-      "content": "Streaming server capabilities",
+      "title": "POST /stream/sessions/{id}/errors",
+      "content": "Report a playback failure",
       "tags": [
         "api",
         "Sessions",
-        "get"
+        "post"
       ],
       "related": [],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
       "metadata": {
+        "method": "POST",
+        "path": "/stream/sessions/{id}/errors",
+        "tag": "Sessions",
+        "operationId": "reportPlaybackError"
+      }
+    },
+    {
+      "id": "ep-get-stream-capabilities",
+      "type": "endpoint",
+      "title": "GET /stream/capabilities",
+      "content": "Streaming server capabilities",
+      "tags": [
+        "api",
+        "Sessions",
+        "get"
+      ],
+      "related": [
+        "story-7.10",
+        "story-8.7",
+        "story-59.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
         "method": "GET",
-        "path": "/sessions/capabilities",
+        "path": "/stream/capabilities",
         "tag": "Sessions",
         "operationId": "getStreamCapabilities"
       }
@@ -6368,7 +6431,9 @@
         "story-54.13",
         "story-54.41",
         "story-55.2",
-        "story-59.16"
+        "story-57.12",
+        "story-59.16",
+        "story-60.12"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6417,7 +6482,9 @@
         "story-54.13",
         "story-54.41",
         "story-55.2",
-        "story-59.16"
+        "story-57.12",
+        "story-59.16",
+        "story-60.12"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7712,6 +7779,7 @@
       "related": [
         "story-29.3",
         "story-29.4",
+        "story-57.7",
         "story-57.8"
       ],
       "files": {
@@ -7971,6 +8039,7 @@
         "story-54.40",
         "story-55.2",
         "story-57.5",
+        "story-57.12",
         "story-57.13",
         "story-58.1",
         "story-59.16"
@@ -9037,7 +9106,8 @@
         "story-58.7",
         "story-58.9",
         "story-58.17",
-        "story-59.16"
+        "story-59.16",
+        "story-60.10"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -9328,6 +9398,30 @@
       }
     },
     {
+      "id": "ep-get-me-history",
+      "type": "endpoint",
+      "title": "GET /me/history",
+      "content": "The caller's watch history",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-29.2",
+        "story-57.3"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/history",
+        "tag": "Browse",
+        "operationId": "getMyHistory"
+      }
+    },
+    {
       "id": "ep-get-me-pinned-libraries",
       "type": "endpoint",
       "title": "GET /me/pinned-libraries",
@@ -9391,7 +9485,8 @@
         "story-56.4",
         "story-56.6",
         "story-56.14",
-        "story-57.1"
+        "story-57.1",
+        "story-60.12"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -10107,7 +10202,9 @@
         "Parental controls",
         "post"
       ],
-      "related": [],
+      "related": [
+        "story-57.17"
+      ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
@@ -10204,7 +10301,8 @@
         "post"
       ],
       "related": [
-        "story-57.4"
+        "story-57.4",
+        "story-57.12"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -10438,7 +10536,9 @@
         "Parental controls",
         "get"
       ],
-      "related": [],
+      "related": [
+        "story-57.10"
+      ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
@@ -10482,7 +10582,9 @@
         "Parental controls",
         "get"
       ],
-      "related": [],
+      "related": [
+        "story-57.10"
+      ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
@@ -10503,7 +10605,9 @@
         "Parental controls",
         "get"
       ],
-      "related": [],
+      "related": [
+        "story-57.10"
+      ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
@@ -10524,7 +10628,9 @@
         "Parental controls",
         "put"
       ],
-      "related": [],
+      "related": [
+        "story-57.10"
+      ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
@@ -10559,6 +10665,29 @@
       }
     },
     {
+      "id": "ep-get-me-parental-requests",
+      "type": "endpoint",
+      "title": "GET /me/parental/requests",
+      "content": "List the caller's own requests",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.6"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/parental/requests",
+        "tag": "Parental controls",
+        "operationId": "listOwnParentalRequests"
+      }
+    },
+    {
       "id": "ep-get-me-parental-guardians",
       "type": "endpoint",
       "title": "GET /me/parental/guardians",
@@ -10568,7 +10697,9 @@
         "Parental controls",
         "get"
       ],
-      "related": [],
+      "related": [
+        "story-57.6"
+      ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
@@ -10590,7 +10721,8 @@
         "post"
       ],
       "related": [
-        "story-57.6"
+        "story-57.6",
+        "story-57.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -10662,7 +10794,8 @@
       ],
       "related": [
         "story-57.6",
-        "story-57.7"
+        "story-57.7",
+        "story-57.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -10685,7 +10818,8 @@
         "post"
       ],
       "related": [
-        "story-57.6"
+        "story-57.6",
+        "story-57.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -10855,6 +10989,159 @@
         "path": "/me/parental/time",
         "tag": "Parental controls",
         "operationId": "getMyParentalTime"
+      }
+    },
+    {
+      "id": "ep-get-parental-settings",
+      "type": "endpoint",
+      "title": "GET /parental/settings",
+      "content": "Read whether parental controls are on",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.12"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/settings",
+        "tag": "Parental controls",
+        "operationId": "getParentalSettings"
+      }
+    },
+    {
+      "id": "ep-put-parental-settings",
+      "type": "endpoint",
+      "title": "PUT /parental/settings",
+      "content": "Turn parental controls on or off",
+      "tags": [
+        "api",
+        "Parental controls",
+        "put"
+      ],
+      "related": [
+        "story-57.12"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/parental/settings",
+        "tag": "Parental controls",
+        "operationId": "setParentalSettings"
+      }
+    },
+    {
+      "id": "ep-post-parental-settings-notice-dismiss",
+      "type": "endpoint",
+      "title": "POST /parental/settings/notice/dismiss",
+      "content": "Dismiss the notice that a child's device signed in",
+      "tags": [
+        "api",
+        "Parental controls",
+        "post"
+      ],
+      "related": [
+        "story-57.12"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/parental/settings/notice/dismiss",
+        "tag": "Parental controls",
+        "operationId": "dismissParentalNotice"
+      }
+    },
+    {
+      "id": "ep-get-parental-library-suggestions",
+      "type": "endpoint",
+      "title": "GET /parental/library-suggestions",
+      "content": "List the libraries with the tier Rate libraries starts with",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-57.12"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/parental/library-suggestions",
+        "tag": "Parental controls",
+        "operationId": "listParentalLibrarySuggestions"
+      }
+    },
+    {
+      "id": "ep-get-channels",
+      "type": "endpoint",
+      "title": "GET /channels",
+      "content": "List the channels",
+      "tags": [
+        "api",
+        "Parental controls",
+        "get"
+      ],
+      "related": [
+        "story-27.1",
+        "story-27.3",
+        "story-27.4",
+        "story-27.8",
+        "story-27.9",
+        "story-27.10",
+        "story-32.4",
+        "story-33.12",
+        "story-34.1",
+        "story-34.4",
+        "story-50.20",
+        "story-50.22",
+        "story-51.9",
+        "story-57.1",
+        "story-57.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/channels",
+        "tag": "Parental controls",
+        "operationId": "listChannels"
+      }
+    },
+    {
+      "id": "ep-get-libraries-manage",
+      "type": "endpoint",
+      "title": "GET /libraries/manage",
+      "content": "List every library for the management page",
+      "tags": [
+        "api",
+        "Libraries",
+        "get"
+      ],
+      "related": [
+        "story-45.2",
+        "story-56.7"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/libraries/manage",
+        "tag": "Libraries",
+        "operationId": "listManagedLibraries"
       }
     },
     {
@@ -11705,7 +11992,6 @@
         "story-29.3",
         "story-30.3",
         "story-42.7",
-        "story-57.13",
         "story-59.9",
         "story-10.11"
       ],

@@ -72,12 +72,18 @@ func (s *pfSigner) KeepTime(func(string) (bool, error)) {}
 type pfEnv struct {
 	t      testing.TB
 	db     *sql.DB
+	dsn    string
 	h      http.Handler
 	gate   *parental.Gate
 	signer *pfSigner
 	hub    *ws.Hub
 	// stream, when set, ends each request after that long: a live channel never ends itself
 	stream time.Duration
+	// as, when set, may answer another principal for a request (the bypass
+	// rehearsal's mutation check takes the filter off one route with it)
+	as func(req *http.Request, p *principal.Principal) *principal.Principal
+	// cache is the restricted accounts' cache the home's mounts share
+	cache *parental.Cache
 }
 
 // pfStandIns are the refused routes this test's router has no real mount for.
@@ -87,10 +93,28 @@ var pfStandIns = []struct{ method, path string }{
 	{http.MethodGet, "/api/plugins"}, {http.MethodGet, "/api/users"},
 }
 
-func setupFilter(t testing.TB) *pfEnv {
+func setupFilter(t testing.TB) *pfEnv { return setupFilterWith(t, nil) }
+
+// setupFilterWith is setupFilter with more of the home mounted: more, when set, mounts
+// on the same router after MountP6 (the whole home of p57_home_pg_test.go), and the
+// stand-ins step aside for the real routes it brought.
+func setupFilterWith(t testing.TB, more func(r chi.Router, e *pfEnv)) *pfEnv {
 	t.Helper()
-	db, _ := clustertest.ScratchDB(t)
-	e := &pfEnv{t: t, db: db, gate: parental.NewGate(), signer: &pfSigner{}, hub: ws.NewHub()}
+	return setupFilterOn(t, more, nil)
+}
+
+// setupFilterOn is setupFilterWith over another handle of the same database: open,
+// when set, gives the database the routes and the gate read (a node's pair of the
+// home's database and its own copy, p57_node_pg_test.go). The test's own statements
+// still go straight to the scratch database.
+func setupFilterOn(t testing.TB, more func(r chi.Router, e *pfEnv), open func(dsn string) *sql.DB) *pfEnv {
+	t.Helper()
+	db, dsn := clustertest.ScratchDB(t)
+	served := db
+	if open != nil {
+		served = open(dsn)
+	}
+	e := &pfEnv{t: t, db: db, dsn: dsn, gate: parental.NewGate(), signer: &pfSigner{}, hub: ws.NewHub()}
 	e.exec(`INSERT INTO users (id, username, pw_hash, is_admin) VALUES
 		($1,'pf-admin','x',true), ($2,'pf-guardian','x',false), ($3,'pf-other-guardian','x',false),
 		($4,'pf-child','x',false), ($5,'pf-child-two','x',false), ($6,'pf-viewer','x',false)`,
@@ -113,11 +137,14 @@ func setupFilter(t testing.TB) *pfEnv {
 	e.exec(`INSERT INTO collection_items (collection_id, video_id, position) VALUES ($1, $3, 0), ($1, $4, 1), ($2, $4, 0)`, pfCol, pfCol16, pfKid, pfTeen)
 	e.exec(`INSERT INTO parental_policies (user_id, max_tier, version) VALUES ($1, 9, 1), ($2, 9, 1)`, pfChild, pfChild2)
 	e.exec(`INSERT INTO parental_guardians (child_id, guardian_id) VALUES ($1,$2), ($3,$4)`, pfChild, pfGuardian, pfChild2, pfOtherG)
+	// a home with restricted accounts has parental controls on (story 57.12; slot 0225
+	// starts them off where nothing is set up)
+	e.exec(`UPDATE app_settings SET value = 'true' WHERE key = 'parental.enabled'`)
 
 	r := router.New(router.Deps{IdempotencyStore: idempotency.NewMemoryStore(), Parental: e.gate})
 	// a streaming service that keeps time limits (story 57.14): without one a
 	// restricted account's stream is refused
-	router.MountP6(r, router.P6Deps{DB: db, StreamingClient: &tmStreaming{leases: map[string]time.Time{}}, URLSigner: e.signer, ParentalGate: e.gate, EventHub: e.hub})
+	router.MountP6(r, router.P6Deps{DB: served, StreamingClient: &tmStreaming{leases: map[string]time.Time{}}, URLSigner: e.signer, ParentalGate: e.gate, EventHub: e.hub})
 	if e.gate.Cache() == nil {
 		t.Fatal("MountP6 gave the gate no cache")
 	}
@@ -132,8 +159,14 @@ func setupFilter(t testing.TB) *pfEnv {
 		}
 		_, _ = w.Write([]byte(`{"reached":true}`))
 	}
+	if more != nil {
+		more(r, e)
+	}
 	for _, s := range pfStandIns {
 		if r.Match(chi.NewRouteContext(), s.method, s.path) {
+			if more != nil {
+				continue // the whole home mounts the real route
+			}
 			t.Fatalf("%s %s is mounted now: test the real route", s.method, s.path)
 		}
 		r.MethodFunc(s.method, s.path, reached)
@@ -158,6 +191,22 @@ func setupFilter(t testing.TB) *pfEnv {
 			p = &principal.Principal{UserID: pfChild, AccessAllLibraries: true, Source: principal.SourceJWT}
 		case "viewer":
 			p = &principal.Principal{UserID: pfViewer, Libraries: libs, Source: principal.SourceJWT}
+		case "admin-token": // the admin token: an admin with no user row
+			p = &principal.Principal{IsAdmin: true, AccessAllLibraries: true, Source: principal.SourceAdminToken}
+		case "child-cloud": // the child signed in through Maktaba Cloud: a play-only sign-in
+			p = &principal.Principal{UserID: pfChild, Libraries: libs, Source: principal.SourceJWT}
+			p.ApplyCloudScope(principal.CloudScopePlay, libs)
+		case "child-relay": // the same sign-in, forwarded by the relay agent on this machine
+			p = &principal.Principal{UserID: pfChild, Libraries: libs, Source: principal.SourceJWT}
+			p.ApplyCloudScope(principal.CloudScopePlay, libs)
+			req.RemoteAddr = "127.0.0.1:49152"
+			req.Header.Set("X-Maktaba-Via", "relay")
+		case "viewer-device": // an unrestricted account whose device said 9+ (the token's `ac`)
+			limit := parental.Tier9
+			p = &principal.Principal{UserID: pfViewer, Libraries: libs, Source: principal.SourceJWT, AgeCeiling: &limit}
+		}
+		if e.as != nil {
+			p = e.as(req, p)
 		}
 		if p != nil {
 			req = req.WithContext(principal.WithPrincipal(req.Context(), p))
@@ -293,6 +342,24 @@ func TestP57FilterByID(t *testing.T) {
 		if code, body := e.get(who, "/api/videos/"+strings.ReplaceAll(pfTeen, "-", "")); code == http.StatusOK || strings.Contains(body, pfTeenName) {
 			t.Errorf("%s: the hidden video without hyphens answers %d", who, code)
 		}
+		// text that is no id is never written back as it was asked, in a page (what a
+		// browser's navigation gets) or in JSON, in the body or in a header
+		for _, accept := range []string{"text/html", "application/json"} {
+			// sent raw, as no browser sends it: an encoded one comes back encoded
+			req := httptest.NewRequest(http.MethodGet, "/api/videos/<script>alert(1)<!--", nil)
+			req.Header.Set("X-Test-As", who)
+			req.Header.Set("Accept", accept)
+			if accept == "text/html" {
+				req.Header.Set("Sec-Fetch-Dest", "document")
+			}
+			rec := httptest.NewRecorder()
+			e.h.ServeHTTP(rec, req)
+			var hb bytes.Buffer
+			_ = rec.Header().Write(&hb)
+			if rec.Code < 400 || strings.Contains(rec.Body.String(), "<script>") || strings.Contains(hb.String(), "<script>") {
+				t.Errorf("%s: a script asked for as an id (%s) answers %d %s %s", who, accept, rec.Code, hb.String(), rec.Body.String())
+			}
+		}
 		// what the limit allows is there
 		for _, p := range []string{"/api/videos/" + pfKid, "/api/series/" + pfSeries, "/api/series/" + pfSeries + "/episodes",
 			"/api/collections/" + pfCol, "/api/collections/" + pfCol + "/items", "/api/videos/" + pfKidB} {
@@ -322,8 +389,32 @@ func TestP57FilterByID(t *testing.T) {
 	}
 }
 
+// seriesCardEpisodes is the episode count on a series' card in who's grouped list
+// (GET /api/videos?group=series), or -1 when the list has no such card.
+func (e *pfEnv) seriesCardEpisodes(who, series string) int {
+	e.t.Helper()
+	code, body := e.get(who, "/api/videos?group=series&library_id="+pfLibA)
+	var list struct {
+		Items []struct {
+			Kind, ID     string
+			EpisodeCount int `json:"episode_count"`
+		} `json:"items"`
+	}
+	if code != http.StatusOK || json.Unmarshal([]byte(body), &list) != nil {
+		e.t.Fatalf("%s: the grouped list answers %d %s", who, code, body)
+	}
+	for _, it := range list.Items {
+		if it.Kind == "series" && it.ID == series {
+			return it.EpisodeCount
+		}
+	}
+	return -1
+}
+
 var pfLists = []string{
 	"/api/videos", "/api/videos?library_id=" + pfLibA, "/api/videos?q=Zarqa", "/api/videos/facets",
+	// one card per series (group.go): the card counts and names the episodes that pass only
+	"/api/videos?group=series", "/api/videos?group=series&library_id=" + pfLibA, "/api/videos?group=series&sort=name",
 	"/api/libraries", "/api/libraries/summary", "/api/libraries/" + pfLibA, "/api/libraries/" + pfLibA + "/hub",
 	"/api/libraries/" + pfLibA + "/categories", "/api/libraries/" + pfLibA + "/collections", "/api/libraries/" + pfLibA + "/series",
 	"/api/home", "/api/home/featured", "/api/recommendations", "/api/me/activity", "/api/me/history",
@@ -348,6 +439,9 @@ func TestP57FilterLists(t *testing.T) {
 	if code != http.StatusOK || !strings.Contains(body, pfTeen) || !strings.Contains(body, pfUnrated) {
 		t.Fatalf("the viewer's list lacks the 16+ or the unrated video: %d %s", code, body)
 	}
+	if n := e.seriesCardEpisodes("viewer", pfSeries); n != 2 {
+		t.Fatalf("the viewer's card of the show counts %d episodes, want 2", n)
+	}
 	for _, who := range []string{"child", "child-cookie", "child-token", "child-all"} {
 		for _, p := range pfLists {
 			code, body := e.get(who, p)
@@ -369,6 +463,11 @@ func TestP57FilterLists(t *testing.T) {
 		}
 		if json.Unmarshal([]byte(body), &list) == nil && list.Total != nil && *list.Total != 1 {
 			t.Errorf("%s: the list counts %d videos, want the 1 shown", who, *list.Total)
+		}
+		// a series card counts the episodes that pass only: the show has an all-ages
+		// and a 16+ episode
+		if n := e.seriesCardEpisodes(who, pfSeries); n != 1 {
+			t.Errorf("%s: the show's card counts %d episodes, want the 1 shown", who, n)
 		}
 		// closed: the answer of a route that is not there (search and the live rows
 		// are filtered now: p57_gaps_pg_test.go)

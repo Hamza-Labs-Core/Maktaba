@@ -74,7 +74,7 @@ internal fun NowTab(live: LiveTv, channels: List<NowEntry>, nowMs: Long, wide: B
 @Composable
 private fun ChannelNow(live: LiveTv, e: NowEntry, nowMs: Long, onOpen: (String) -> Unit) {
     val time = rememberTimeFormat()
-    val current = e.current?.takeIf { !it.isFiller || it.title.isNotBlank() }
+    val current = e.current?.takeIf { !it.isFiller || it.title.isNotBlank() || it.restricted }
     Row(
         Modifier
             .fillMaxWidth()
@@ -98,7 +98,7 @@ private fun ChannelNow(live: LiveTv, e: NowEntry, nowMs: Long, onOpen: (String) 
                 Text(e.channel.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Text(
-                current?.title?.ifBlank { null } ?: stringResource(R.string.live_nothing_on),
+                current?.let { com.hamzalabs.maktaba.core.ui.programmeTitle(it) }?.ifBlank { null } ?: stringResource(R.string.live_nothing_on),
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (current != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -110,7 +110,7 @@ private fun ChannelNow(live: LiveTv, e: NowEntry, nowMs: Long, onOpen: (String) 
             }
             e.next?.let { n ->
                 Text(
-                    stringResource(R.string.live_next, n.startMs?.let(time) ?: "", n.title),
+                    stringResource(R.string.live_next, n.startMs?.let(time) ?: "", com.hamzalabs.maktaba.core.ui.programmeTitle(n)),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

@@ -102,8 +102,9 @@ func TestSlot0221UpAndDownOnPostgres(t *testing.T) {
 		t.Fatalf("after the migrations: %d of the slot's tables", tables())
 	}
 	var enabled string
-	if err := db.QueryRow(`SELECT value::text FROM app_settings WHERE key = 'parental.enabled'`).Scan(&enabled); err != nil || enabled != "true" {
-		t.Fatalf("parental.enabled = %q (%v), want true", enabled, err)
+	if err := db.QueryRow(`SELECT value::text FROM app_settings WHERE key = 'parental.enabled'`).Scan(&enabled); err != nil || enabled != "false" {
+		// slot 0225 seeds it off where nothing is set up
+		t.Fatalf("parental.enabled = %q (%v), want false", enabled, err)
 	}
 	// slots go down newest first: 0223's tables hang off parental_policies
 	_, laterDown := gooseStatements(t, "0223_parental_time.sql")

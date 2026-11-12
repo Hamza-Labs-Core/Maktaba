@@ -492,6 +492,7 @@ export function YouTubeSourcesPanel({
                 // Epic 57 story 57.01: a rating on the source reaches every video from it
                 <AgeTierControl
                   target={{ kind: "youtube_source", libraryId: library.id, id: s.id }}
+                  current={s.age_tier}
                 />
               )}
               {editing === s.id && (

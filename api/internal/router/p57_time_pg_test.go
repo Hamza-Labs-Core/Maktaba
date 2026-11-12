@@ -9,6 +9,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/streaming"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
@@ -31,9 +33,9 @@ const (
 	tmViewer = "00000000-0000-4000-8000-000000571402"
 	tmLib    = "00000000-0000-4000-8000-00000571a000"
 	tmVideo  = "00000000-0000-4000-8000-0000571a0001"
-
-	tmProblem = "https://maktaba.tv/problems/parental-time"
 )
+
+var tmProblem = httperror.Type("parental-time")
 
 // tmStreaming is a streaming service that keeps time limits: it records the
 // sessions it opened and the leases it was given.
@@ -44,6 +46,7 @@ type tmStreaming struct {
 	leases map[string]time.Time // by stream session id
 	end    *time.Time           // the end streaming holds for the account, as last told
 	fail   error
+	kept   []string // the SetTimeKept calls, "user=true|false"
 }
 
 func (s *tmStreaming) OpenSession(ctx context.Context, req grpcstreaming.OpenSessionRequest) (grpcstreaming.OpenSessionResponse, error) {
@@ -65,6 +68,22 @@ func (s *tmStreaming) SetTimeLimit(_ context.Context, _, _ string, lim *grpcstre
 	if lim != nil && lim.SessionID != "" && lim.LeaseUntil != nil {
 		s.leases[lim.SessionID] = *lim.LeaseUntil
 	}
+	return nil
+}
+
+func (s *tmStreaming) ClearTimeLimits(context.Context, string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.fail
+}
+
+func (s *tmStreaming) SetTimeKept(_ context.Context, userID string, kept bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.fail != nil {
+		return s.fail
+	}
+	s.kept = append(s.kept, fmt.Sprintf("%s=%t", userID, kept))
 	return nil
 }
 
@@ -288,10 +307,19 @@ func TestPGTimeWiringFailsClosed(t *testing.T) {
 			t.Fatalf("%s: %d %v, want 503 and no URL", what, code, body)
 		}
 	}
+	// the time could not be read or counted: its own code, so an app tells it from a
+	// busy transcoder, a part that is off or a signer that is down
+	timeUnknown := func(what string, code int, body map[string]any) {
+		t.Helper()
+		unavailable(what, code, body)
+		if body["code"] != "parental_time_unknown" {
+			t.Fatalf("%s: code %v, want parental_time_unknown", what, body["code"])
+		}
+	}
 	// streaming without the time calls (an older build, or a stub)
 	e := setupTimeRouter(t, db, acStreaming{}, &tmSigner{})
 	code, body := open(e, "child")
-	unavailable("streaming keeps no time limits", code, body)
+	timeUnknown("streaming keeps no time limits", code, body)
 	if code, v := open(e, "viewer"); code != http.StatusCreated {
 		t.Fatalf("the viewer: %d %v", code, v)
 	}
@@ -299,12 +327,15 @@ func TestPGTimeWiringFailsClosed(t *testing.T) {
 	svc := &tmStreaming{leases: map[string]time.Time{}, fail: errors.New("streaming is down")}
 	e = setupTimeRouter(t, db, svc, &tmSigner{})
 	code, body = open(e, "child")
-	unavailable("streaming cannot be told", code, body)
+	timeUnknown("streaming cannot be told", code, body)
 	// a signer that cannot carry the claims signs nothing for a kept account
 	svc = &tmStreaming{leases: map[string]time.Time{}}
 	e = setupTimeRouter(t, db, svc, tmPlainSigner{})
 	code, body = open(e, "child")
 	unavailable("a signer that cannot be told", code, body)
+	if body["code"] == "parental_time_unknown" {
+		t.Fatalf("a signer that is down is not the time being unknown: %v", body)
+	}
 	code, v := open(e, "viewer")
 	if url, _ := v["direct_url"].(string); code != http.StatusCreated || !strings.HasSuffix(url, "?plain") {
 		t.Fatalf("the viewer through a plain signer: %d %v", code, v)

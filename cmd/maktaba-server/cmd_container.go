@@ -104,6 +104,9 @@ type containerDeps struct {
 	// preflight runs before anything else (story 59.01): the variables every child gets,
 	// or a refusal (exit 78). nil: none (tests).
 	preflight func() ([]string, error)
+	// database is whether setup made the home's database (the bundled Postgres's cluster,
+	// or a [database] url) for the server.toml at the path. nil: not asked (tests).
+	database func(cfgPath string) bool
 }
 
 func newContainerDeps() containerDeps {
@@ -137,6 +140,7 @@ func newContainerDeps() containerDeps {
 		},
 		preflight: newPreflight().run,
 		platform:  mediaaccess.PlatformFromEnv(),
+		database:  setupMadeDatabase,
 	}
 }
 
@@ -407,10 +411,16 @@ func serverVersion(ctx context.Context, cfgPath string) string {
 // it before it creates the database, and a server started then runs its own initdb on the
 // same folder as setup's (the TrueNAS app's CI saw both fail, Epic 59 story 59.08). So setup's
 // pending file (state/setup.json, removed once the finish step is done) must be gone too.
+// Neither is the pending file's absence: setup's first answer (the data folder) writes
+// server.toml before the admin step makes the pending file, so a container started before
+// its setup (every NAS guide's order) started the server in that gap, whose own database
+// then made setup say "set up already" with no admin in it. So the database setup's finish
+// step makes must be there as well.
 func (c containerDeps) waitSetup(ctx context.Context) bool {
 	said := false
 	for {
-		if _, err := os.Stat(c.config); err == nil && !setupRunning(c.config) {
+		if _, err := os.Stat(c.config); err == nil && !setupRunning(c.config) &&
+			(c.database == nil || c.database(c.config)) {
 			return true
 		}
 		if !said {
@@ -436,6 +446,16 @@ func setupRunning(cfgPath string) bool {
 	}
 	_, err = os.Stat(setupPendingFor(cfg))
 	return err == nil
+}
+
+// setupMadeDatabase is whether the install at cfgPath has its database (setup's finish step
+// made it). A config that does not load is not this check's to judge: the server says.
+func setupMadeDatabase(cfgPath string) bool {
+	cfg, _, err := config.LoadFrom(cfgPath)
+	if err != nil {
+		return true
+	}
+	return databaseExists(cfg)
 }
 
 // setupHint is what a container not set up says once: how to run its setup on platform

@@ -164,7 +164,7 @@ func runSetupWith(p *prompter) error {
 
 	fmt.Println()
 	for {
-		user := p.line("Admin username", "admin")
+		user := p.line("Admin username", "")
 		pass := p.secret("Admin password")
 		if p.secret("Password again") != pass {
 			fmt.Println("  The two passwords are not the same.")

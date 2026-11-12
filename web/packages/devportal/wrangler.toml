@@ -16,7 +16,8 @@ workers_dev = false
 #   - no other DNS record (A/AAAA/CNAME) on maktaba.dev or www.maktaba.dev, and no other
 #     Worker or Pages project holding either name: a custom domain owns its hostname;
 #   - the API token has Workers Scripts:Edit (account) and, on the maktaba.dev zone,
-#     Workers Routes:Edit, Zone:Read and DNS:Edit (a custom domain writes its DNS record).
+#     Workers Routes:Edit and Zone:Read. No DNS:Edit: Cloudflare creates a custom domain's
+#     DNS record itself.
 routes = [
   { pattern = "maktaba.dev", custom_domain = true },
   { pattern = "www.maktaba.dev", custom_domain = true },

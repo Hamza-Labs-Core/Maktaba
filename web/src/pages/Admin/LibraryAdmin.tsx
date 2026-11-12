@@ -282,7 +282,7 @@ function LibraryAdminInner() {
           {t("libdash.meta", { videos: n(lib.counts.total), seasons: n(row?.seasons ?? 0) })}
         </p>
         {/* Epic 57 story 57.01: the rating a video here takes when nothing else rates it */}
-        <AgeTierControl target={{ kind: "library", id: lib.id }} />
+        <AgeTierControl target={{ kind: "library", id: lib.id }} current={lib.age_tier} />
       </header>
 
       <nav className="mkt-lp-nav" aria-label={t("libpage.nav")}>

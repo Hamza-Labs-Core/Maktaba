@@ -39,9 +39,21 @@ type Tuner struct {
 	mu     sync.Mutex
 	loaded []netip.Prefix
 	until  time.Time
+	// ready: loaded is the outcome of a load (the list, or nothing after a failed
+	// one). loading is closed when the load under way ends.
+	ready   bool
+	loading chan struct{}
 }
 
 // Allowed reports whether addr may use the tuner.
+//
+// The list is loaded by one request at a time, outside the lock, and with a context
+// of its own: the request that happens to find the list due may hang up at any
+// moment, and its hanging up must not empty the list for everyone else (a load that
+// fails for a real reason still allows nothing beyond this machine). While a reload
+// runs, the other requests are answered from the list as it stands, so a slow
+// database or name lookup holds up one request, not all of them; only the very
+// first load is waited for.
 func (t *Tuner) Allowed(ctx context.Context, addr netip.Addr) bool {
 	if !addr.IsValid() {
 		return false
@@ -57,21 +69,49 @@ func (t *Tuner) Allowed(ctx context.Context, addr netip.Addr) bool {
 		now = t.Now()
 	}
 	t.mu.Lock()
-	defer t.mu.Unlock()
-	if !now.Before(t.until) {
-		ps, err := t.Load(ctx)
-		if err != nil {
-			// never the list as it was: an address removed since would stay allowed
-			ps = nil
-			if t.Logger != nil && !errors.Is(err, context.Canceled) {
-				t.Logger.Warn("tv: the tuner's allowed addresses could not be read; only this machine is allowed",
-					"err", err.Error(), "event", "tv_tuner_allowed_failed")
-			}
-			t.loaded, t.until = nil, now.Add(2*time.Second)
-		} else {
-			t.loaded, t.until = ps, now.Add(TunerTTL)
+	for {
+		if now.Before(t.until) {
+			ok := clientip.Contains(t.loaded, addr)
+			t.mu.Unlock()
+			return ok
 		}
+		if t.loading == nil {
+			break // this request loads
+		}
+		if t.ready {
+			ok := clientip.Contains(t.loaded, addr)
+			t.mu.Unlock()
+			return ok
+		}
+		wait := t.loading
+		t.mu.Unlock()
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			return false
+		}
+		t.mu.Lock()
 	}
+	done := make(chan struct{})
+	t.loading = done
+	t.mu.Unlock()
+
+	ps, err := t.Load(context.WithoutCancel(ctx))
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if err != nil {
+		// never the list as it was: an address removed since would stay allowed
+		if t.Logger != nil {
+			t.Logger.Warn("tv: the tuner's allowed addresses could not be read; only this machine is allowed",
+				"err", err.Error(), "event", "tv_tuner_allowed_failed")
+		}
+		t.loaded, t.until = nil, now.Add(2*time.Second)
+	} else {
+		t.loaded, t.until = ps, now.Add(TunerTTL)
+	}
+	t.ready, t.loading = true, nil
+	close(done)
 	return clientip.Contains(t.loaded, addr)
 }
 
@@ -84,6 +124,8 @@ func PGTunerLoad(pool *pgxpool.Pool, lookup func(ctx context.Context, host strin
 		}
 	}
 	return func(ctx context.Context) ([]netip.Prefix, error) {
+		// the only bound on a load: Tuner.Allowed calls it with a context no request
+		// can cancel
 		ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
 		var out []netip.Prefix

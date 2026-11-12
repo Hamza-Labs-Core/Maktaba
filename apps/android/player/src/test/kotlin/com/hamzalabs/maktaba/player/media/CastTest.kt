@@ -108,6 +108,25 @@ class CastTest {
         assertNull("nothing but the URL and the title: no token, no headers", media.customData)
     }
 
+    /** Epic 57 story 57.15: the time is over while a receiver plays: the receiver is told to stop, not just let go of. */
+    @Test
+    fun aTimeRefusalWhileCastingStopsTheReceiver() {
+        playback.play(v1)
+        val cast = playing()
+        cast.startCasting(atMs = 3_000)
+        assertEquals(0, cast.stops)
+        home.answer("/api/stream/sessions/s1/progress") {
+            mockwebserver3.MockResponse.Builder().code(403).setHeader("Content-Type", "application/problem+json")
+                .body("""{"type":"https://maktaba.tv/problems/parental-time","title":"over","status":403,"code":"parental_time","reason":"limit_reached"}""").build()
+        }
+        // the 10-second watch posts the receiver's position; the home answers that the time is over
+        idleFor(10_000)
+        runUntil { playback.timeUp != null }
+        assertEquals("the receiver was told to stop", 1, cast.stops)
+        assertTrue("and then let go of", cast.released)
+        assertNull(playback.control)
+    }
+
     @Test
     fun theProgressStillReportsFromTheReceiver() {
         playback.play(v1)
@@ -218,6 +237,22 @@ class FakeCastPlayer(private val local: ExoPlayer) : ForwardingPlayer(local) {
         } else {
             super.setMediaItem(mediaItem, startPositionMs)
         }
+    }
+
+    /** How many times it was told to stop (the receiver stops playing), and whether it was let go of. */
+    var stops = 0
+        private set
+    var released = false
+        private set
+
+    override fun stop() {
+        stops++
+        if (!casting) super.stop()
+    }
+
+    override fun release() {
+        released = true
+        // the phone's player is the playback's own to release
     }
 
     override fun prepare() { if (!casting) super.prepare() }

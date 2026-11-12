@@ -102,7 +102,7 @@ func TestDeviceSignalRidesTheAccessToken(t *testing.T) {
 	if router.MountP9(r, router.P9Deps{DB: db, Keys: set}) == nil {
 		t.Fatal("MountP9 mounted nothing")
 	}
-	router.MountParental(r, db, runner.New(runner.Options{}), nil, "", nil)
+	router.MountParental(context.Background(), r, db, runner.New(runner.Options{}), "", nil)
 	home := &signalHome{t: t, keys: set, h: authmw.JWTBearer(set, "api")(r)}
 
 	ctx := context.Background()
@@ -118,6 +118,10 @@ func TestDeviceSignalRidesTheAccessToken(t *testing.T) {
 	guardianID, childID := mk("s-guardian", false), mk("s-child", false)
 	mk("s-viewer", false)
 	if _, err := db.Exec(`INSERT INTO parental_policies (user_id, max_tier, version) VALUES ($1, 16, 1)`, childID); err != nil {
+		t.Fatal(err)
+	}
+	// the home has set parental controls up (slot 0225 starts them off)
+	if _, err := db.Exec(`UPDATE app_settings SET value = 'true' WHERE key = 'parental.enabled'`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`INSERT INTO parental_guardians (child_id, guardian_id) VALUES ($1, $2)`, childID, guardianID); err != nil {
@@ -155,16 +159,16 @@ func TestDeviceSignalRidesTheAccessToken(t *testing.T) {
 	if c := child.claims(); c.Ac == nil || *c.Ac != 9 {
 		t.Fatalf("after a looser statement: ac %v, want 9 still", c.Ac)
 	}
-	clear := "/api/users/" + childID + "/parental/signals/" + first.Fam + "/clear"
-	if out := child.do(403, "POST", clear, nil); out["code"] != "restricted" {
+	clearPath := "/api/users/" + childID + "/parental/signals/" + first.Fam + "/clear"
+	if out := child.do(403, "POST", clearPath, nil); out["code"] != "restricted" {
 		t.Fatalf("clear by the child = %v", out)
 	}
-	home.signIn("s-viewer").do(403, "POST", clear, nil)
-	if code, _ := home.call("POST", clear, "", nil); code != 401 {
+	home.signIn("s-viewer").do(403, "POST", clearPath, nil)
+	if code, _ := home.call("POST", clearPath, "", nil); code != 401 {
 		t.Fatalf("clear by no one = %d, want 401", code)
 	}
 	guardian := home.signIn("s-guardian")
-	if out := guardian.do(200, "POST", clear, nil); out["tier_limit"] != nil || out["removed"] != false {
+	if out := guardian.do(200, "POST", clearPath, nil); out["tier_limit"] != nil || out["removed"] != false {
 		t.Fatalf("clear by the guardian = %v", out)
 	}
 	// the token already out still carries 9 until it is renewed; then the account's

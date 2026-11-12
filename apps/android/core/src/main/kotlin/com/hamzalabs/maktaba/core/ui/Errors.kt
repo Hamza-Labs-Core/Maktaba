@@ -171,7 +171,8 @@ fun ErrorAction.label(): Int = when (this) {
  * fit it (the first filled) and, folded away, the home's own words (Details). Mirrors for a
  * right-to-left language like the rest of the layout.
  *
- * [video]: the failure is about a video (its "not found" sentence says so).
+ * [video]: the failure is about a video (its "not found" sentence says so). [sentence], when
+ * given, is read instead of the kind's own (a restricted account's "can't check your time").
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -184,6 +185,7 @@ fun ErrorState(
     onSignIn: (() -> Unit)? = null,
     onChooseHome: (() -> Unit)? = null,
     onBack: (() -> Unit)? = null,
+    sentence: String? = null,
 ) {
     val actions = errorActions(failure.kind, onRetry != null, onSignIn != null, onChooseHome != null, onBack != null)
     var showDetails by rememberSaveable(failure) { mutableStateOf(false) }
@@ -196,7 +198,7 @@ fun ErrorState(
         Icon(failure.kind.icon, contentDescription = null, modifier = Modifier.size(48.dp), tint = muted)
         Text(title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center, modifier = Modifier.testTag("error-title"))
         Text(
-            stringResource(failure.kind.sentence(video)),
+            sentence ?: stringResource(failure.kind.sentence(video)),
             style = MaterialTheme.typography.bodyLarge,
             color = muted,
             textAlign = TextAlign.Center,

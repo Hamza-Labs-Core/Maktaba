@@ -125,14 +125,14 @@ private fun NowRow(e: NowEntry, nowMs: Long, api: LiveApi, onOpen: () -> Unit) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(t["live.channel", e.channel.number, e.channel.name], style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             val cur = e.current
-            Text(cur?.title ?: t["live.nothingOn"], style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(cur?.let { if (it.restricted) t["live.parental.notAvailable"] else it.title } ?: t["live.nothingOn"], style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             cur?.progressAt(nowMs)?.let { f ->
                 ProgressStrip(f.toFloat())
                 Text(t["live.progress", (f * 100).toInt()], style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             e.next?.let { n ->
                 val at = n.startMs?.let { "⁦" + clock.withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(it)) + "⁩" } ?: ""
-                Text(t["live.next", at, n.title], style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(t["live.next", at, if (n.restricted) t["live.parental.notAvailable"] else n.title], style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

@@ -8,14 +8,20 @@ package parental
 //	POST /api/channels/{id}/play        signed in   the channel's signed stream URL
 //	GET  /api/tv/parental/verdict       this machine's streaming service only (local token)
 //
+// Live TV counts toward the time rules like any playback (story 57.14): access and
+// play refuse an account whose time is over with 403 parental-time, and the verdict
+// counts what the streaming service says it served and carries the time's answer.
+//
 // The checks themselves are internal/parental's (livetv.go): ChannelPermitted and
 // ProgrammePermitted over the account's effective policy.
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -82,9 +88,42 @@ func LiveGuard(l *parental.LiveTV) func(http.Handler) http.Handler {
 	}
 }
 
+// TimeOver is the 403 a restricted account gets for a channel while its watching
+// time is over (story 57.14): the same parental-time problem a video's stream
+// answers, with the reason and, when the rules allow playback again, when. It is
+// not ProgrammeRestricted: the player shows its time's-up screen, not the slate.
+func TimeOver(st parental.TimeState) *httperror.Error {
+	e := httperror.Forbidden(TypeParentalTime, "this account's watching time is over for now").
+		With("code", "parental_time").With("reason", st.Reason)
+	if st.NextAllowedAt != nil {
+		e = e.With("next_allowed_at", st.NextAllowedAt.UTC().Format(time.RFC3339))
+	}
+	return e
+}
+
+// TimeUnknown is the 503 when an account's time could not be read or counted:
+// never free time on an error.
+func TimeUnknown(err error) *httperror.Error {
+	return httperror.Unavailable(5).With("code", "parental_time_unknown").Wrap(err)
+}
+
+// LiveTime is the time keeper as live TV asks it (parental.TimeKeeper).
+type LiveTime interface {
+	// Time is the request's account's time now in a library.
+	Time(ctx context.Context, p *principal.Principal, libraryID string) (parental.TimeState, error)
+	// LiveServed counts live TV the streaming service served the account, and
+	// answers its time after that.
+	LiveServed(ctx context.Context, userID, libraryID string, served time.Duration) (parental.TimeState, error)
+	// RemoteBeat counts one call for a remote viewing session, and answers the
+	// account's time after that.
+	RemoteBeat(ctx context.Context, userID, libraryID, sessionID string, lastBeat time.Time) (parental.TimeState, error)
+}
+
 // ChannelSigner signs a channel's stream URL for a user (signedurl.Minter).
 type ChannelSigner interface {
-	SignChannelURL(rawURL, channelID, userID string, ttl time.Duration) (string, time.Time, error)
+	// SignChannelURLForSignIn signs for an account and the sign-in the request
+	// came through (its family and its device's age limit).
+	SignChannelURLForSignIn(rawURL, channelID, userID, family string, ceiling *int, ttl time.Duration) (string, time.Time, error)
 	// SignChannelURLForAdminToken signs for the admin token (no account).
 	SignChannelURLForAdminToken(rawURL, channelID string, ttl time.Duration) (string, time.Time, error)
 }
@@ -95,6 +134,10 @@ type LiveHandler struct {
 	Live *parental.LiveTV
 	// Signer signs channel stream URLs; nil: POST …/play answers 503.
 	Signer ChannelSigner
+	// Time is the time keeper (story 57.14): live TV counts like any playback and
+	// is refused by the same rules. Nil (a test, or a build with no time keeper):
+	// no time rule is asked.
+	Time LiveTime
 }
 
 // Mount registers the routes.
@@ -169,11 +212,27 @@ func (h *LiveHandler) channelFor(w http.ResponseWriter, r *http.Request) (*princ
 	if !verdict.Channel {
 		return notFound()
 	}
+	// Story 57.14: live TV is refused by the time rules like any playback. After
+	// the 404s (a channel the account may not see says nothing), before the
+	// programme's own answer: an account out of time is told so.
+	if h.Time != nil {
+		st, err := h.Time.Time(r.Context(), p, lib.String)
+		if err != nil {
+			w.Header().Set("Retry-After", "5")
+			httperror.Write(w, r, TimeUnknown(err))
+			return nil, "", parental.LiveVerdict{}, false
+		}
+		if !st.Allowed {
+			httperror.Write(w, r, TimeOver(st))
+			return nil, "", parental.LiveVerdict{}, false
+		}
+	}
 	return p, id, verdict, true
 }
 
 // Access implements GET /api/channels/{id}/access: whether the caller may watch the
-// channel now, and when that next changes (a player shows its slate from it).
+// channel now, and when that next changes (a player shows its slate from it). A
+// restricted account whose watching time is over gets 403 parental-time.
 func (h *LiveHandler) Access(w http.ResponseWriter, r *http.Request) {
 	_, id, v, ok := h.channelFor(w, r)
 	if !ok {
@@ -185,7 +244,9 @@ func (h *LiveHandler) Access(w http.ResponseWriter, r *http.Request) {
 
 // Play implements POST /api/channels/{id}/play: the channel's signed stream URL. A
 // restricted account whose channel plays a programme above its limit gets 403
-// restricted (reason programme, retry_at).
+// restricted (reason programme, retry_at); one whose watching time is over gets 403
+// parental-time (reason, next_allowed_at). The URL carries the sign-in's family and
+// its device's age limit, so the stream is held to them for as long as it lives.
 func (h *LiveHandler) Play(w http.ResponseWriter, r *http.Request) {
 	p, id, v, ok := h.channelFor(w, r)
 	if !ok {
@@ -207,14 +268,14 @@ func (h *LiveHandler) Play(w http.ResponseWriter, r *http.Request) {
 	const path = "/stream/channel/"
 	switch {
 	case p.UserID != "":
-		signed, exp, err = h.Signer.SignChannelURL(path+id+"/index.m3u8", id, p.UserID, 0)
+		signed, exp, err = h.Signer.SignChannelURLForSignIn(path+id+"/index.m3u8", id, p.UserID, p.RefreshFamily, p.AgeCeiling, 0)
 	case p.IsAdmin:
 		// the admin token: no account, so no policy to ask about; the URL says so
 		// in a signed claim the streaming service checks
 		signed, exp, err = h.Signer.SignChannelURLForAdminToken(path+id+"/index.m3u8", id, 0)
 	default:
 		// no account and not an admin: no one to sign for
-		httperror.Write(w, r, httperror.Forbidden("no_account", "this sign-in has no account to play a channel for"))
+		httperror.Write(w, r, httperror.Forbidden(httperror.Type("no-account"), "this sign-in has no account to play a channel for").With("code", "no_account"))
 		return
 	}
 	if err != nil {
@@ -231,17 +292,42 @@ type LiveVerdictBody struct {
 	ChannelAllowed bool       `json:"channel_allowed"`
 	Allowed        bool       `json:"allowed"`
 	Until          *time.Time `json:"until"`
+	// TimeAllowed: the viewer's time rules allow playback now (story 57.14). When
+	// false the stream is refused with the parental-time problem, whatever the
+	// programme: TimeReason and TimeNextAllowedAt are that problem's fields.
+	TimeAllowed       bool       `json:"time_allowed"`
+	TimeReason        string     `json:"time_reason,omitempty"`
+	TimeNextAllowedAt *time.Time `json:"time_next_allowed_at,omitempty"`
+	// TimeEndsAt is when a stream running now must end by the time rules; absent
+	// when nothing ends it.
+	TimeEndsAt *time.Time `json:"time_ends_at,omitempty"`
 }
 
-// Verdict implements GET /api/tv/parental/verdict?channel=&user=: the streaming
-// service's question at a request and at a programme boundary. Only this machine's
-// own services may ask (the supervisor's local token).
+// maxServedParam bounds the `served` a verdict question may carry, in seconds.
+const maxServedParam = 24 * 3600
+
+// Verdict implements GET /api/tv/parental/verdict?channel=&user=[&family=][&ac=]
+// [&served=]: the streaming service's question at a request and at a programme
+// boundary. Only this machine's own services may ask (the supervisor's local token).
+//
+// family and ac are the viewer's sign-in as the stream's credential carries it (a
+// signed channel URL's `fam` and `ac`, or what the web port's gate learned of the
+// session): the answer is held to that sign-in's device limit as well as to the
+// account's policy, the way every request of the sign-in is (Cache.For). With a
+// family the home reads the signal it holds for it now, so one tightened or
+// cleared since the URL was signed counts as it is; `ac` is believed only for a
+// sign-in with no family.
+//
+// served is the whole seconds of this channel the streaming service served the
+// viewer since it last said so (story 57.14): they are counted before the time
+// rules are read. Anything that cannot be read is an error, never an allowance.
 func (h *LiveHandler) Verdict(w http.ResponseWriter, r *http.Request) {
 	if !mw.FromSupervisor(r) {
 		httperror.Write(w, r, httperror.Forbidden("", "this machine's services only"))
 		return
 	}
-	channel, user := r.URL.Query().Get("channel"), r.URL.Query().Get("user")
+	q := r.URL.Query()
+	channel, user := q.Get("channel"), q.Get("user")
 	if _, err := uuid.Parse(channel); err != nil {
 		httperror.Write(w, r, httperror.BadRequest("channel must be a channel id"))
 		return
@@ -250,7 +336,34 @@ func (h *LiveHandler) Verdict(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.BadRequest("user must be a user id"))
 		return
 	}
-	view, err := h.Live.ViewOf(r.Context(), user)
+	who := &principal.Principal{UserID: strings.ToLower(user)}
+	if fam := q.Get("family"); fam != "" {
+		if _, err := uuid.Parse(fam); err != nil {
+			httperror.Write(w, r, httperror.BadRequest("family must be a sign-in's family id"))
+			return
+		}
+		who.RefreshFamily = strings.ToLower(fam)
+	}
+	if ac := q.Get("ac"); ac != "" {
+		n, err := strconv.Atoi(ac)
+		if err != nil {
+			httperror.Write(w, r, httperror.BadRequest("ac must be an age limit"))
+			return
+		}
+		if who.RefreshFamily == "" {
+			who.AgeCeiling = &n
+		}
+	}
+	served := 0
+	if sv := q.Get("served"); sv != "" {
+		n, err := strconv.Atoi(sv)
+		if err != nil || n < 0 || n > maxServedParam {
+			httperror.Write(w, r, httperror.BadRequest("served must be whole seconds"))
+			return
+		}
+		served = n
+	}
+	view, err := h.Live.View(r.Context(), who)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("load parental policy").Wrap(err))
 		return
@@ -260,18 +373,50 @@ func (h *LiveHandler) Verdict(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("load parental policy").Wrap(err))
 		return
 	}
+	body := LiveVerdictBody{Restricted: v.Restricted, ChannelAllowed: v.Channel, Allowed: v.Allowed, Until: utc(v.Until),
+		TimeAllowed: true}
+	if h.Time != nil {
+		var lib sql.NullString
+		err := h.DB.QueryRowContext(r.Context(), `SELECT library_id::text FROM channels WHERE id = $1::uuid`, channel).Scan(&lib)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			httperror.Write(w, r, httperror.Internal("load channel").Wrap(err))
+			return
+		}
+		st, err := h.Time.LiveServed(r.Context(), who.UserID, lib.String, time.Duration(served)*time.Second)
+		if err != nil {
+			w.Header().Set("Retry-After", "5")
+			httperror.Write(w, r, TimeUnknown(err))
+			return
+		}
+		body.TimeAllowed = st.Allowed
+		if !st.Allowed {
+			body.TimeReason, body.TimeNextAllowedAt = st.Reason, utc(st.NextAllowedAt)
+		}
+		body.TimeEndsAt = utc(st.EndsAt)
+	}
 	w.Header().Set("Cache-Control", "no-store")
-	common.WriteJSON(w, r, http.StatusOK, LiveVerdictBody{
-		Restricted: v.Restricted, ChannelAllowed: v.Channel, Allowed: v.Allowed, Until: utc(v.Until),
-	})
+	common.WriteJSON(w, r, http.StatusOK, body)
 }
 
 // RemoteGate is the check the remote viewing routes make (POST /api/tv/remote/tune
 // with a channel id; POST /api/tv/remote/sessions/{id}/heartbeat with the caller's
-// session id): a channel the account may not see is the 404 of an unknown one, a
-// programme above its limit is ProgrammeRestricted. An account without a policy is
-// never asked anything of the database.
-func RemoteGate(db *sql.DB, l *parental.LiveTV) func(r *http.Request, p *principal.Principal, channelID, sessionID string) *httperror.Error {
+// session id): a channel the account may not see is the 404 of an unknown one, an
+// account whose watching time is over gets TimeOver, a programme above its limit is
+// ProgrammeRestricted. An account without a policy is never asked anything of the
+// database.
+//
+// With a time keeper (story 57.14) remote viewing counts like any playback. The
+// video comes from the home's Cloudflare account, which the home cannot measure,
+// so the session's own calls are counted: a heartbeat adds the time since the one
+// before, and a tune adds it for the account's sessions already open on that
+// channel (a client that tunes again instead of sending heartbeats is counted the
+// same). A session ends without heartbeats, so a client cannot keep one and stay
+// uncounted.
+func RemoteGate(db *sql.DB, l *parental.LiveTV, keeper LiveTime) func(r *http.Request, p *principal.Principal, channelID, sessionID string) *httperror.Error {
+	type openSession struct {
+		id   string
+		beat time.Time
+	}
 	return func(r *http.Request, p *principal.Principal, channelID, sessionID string) *httperror.Error {
 		if p == nil {
 			return nil // the route's own sign-in check answers
@@ -283,17 +428,41 @@ func RemoteGate(db *sql.DB, l *parental.LiveTV) func(r *http.Request, p *princip
 		if !view.Restricted() {
 			return nil
 		}
+		var open []openSession
 		if channelID == "" {
 			if _, err := uuid.Parse(sessionID); err != nil {
 				return nil // the route answers its own 404
 			}
+			var beat time.Time
+			var ended bool
 			err := db.QueryRowContext(r.Context(),
-				`SELECT channel_id::text FROM tv_remote_sessions WHERE id = $1::uuid AND user_id = $2`,
-				sessionID, p.UserID).Scan(&channelID)
+				`SELECT channel_id::text, last_beat_at, ended_at IS NOT NULL FROM tv_remote_sessions WHERE id = $1::uuid AND user_id = $2`,
+				sessionID, p.UserID).Scan(&channelID, &beat, &ended)
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil // not this account's session: the route answers its own 404
 			}
 			if err != nil {
+				return httperror.Internal("load parental policy").Wrap(err)
+			}
+			if !ended {
+				open = append(open, openSession{strings.ToLower(sessionID), beat})
+			}
+		} else if _, err := uuid.Parse(channelID); err == nil && keeper != nil {
+			rows, err := db.QueryContext(r.Context(),
+				`SELECT id::text, last_beat_at FROM tv_remote_sessions
+				  WHERE user_id = $1 AND channel_id = $2::uuid AND ended_at IS NULL`, p.UserID, channelID)
+			if err != nil {
+				return httperror.Internal("load parental policy").Wrap(err)
+			}
+			for rows.Next() {
+				var s openSession
+				if err := rows.Scan(&s.id, &s.beat); err != nil {
+					_ = rows.Close()
+					return httperror.Internal("load parental policy").Wrap(err)
+				}
+				open = append(open, s)
+			}
+			if err := rows.Close(); err != nil {
 				return httperror.Internal("load parental policy").Wrap(err)
 			}
 		}
@@ -306,6 +475,25 @@ func RemoteGate(db *sql.DB, l *parental.LiveTV) func(r *http.Request, p *princip
 		}
 		if !v.Channel {
 			return httperror.NotFound("channel " + strings.ToLower(channelID))
+		}
+		if keeper != nil {
+			var lib sql.NullString
+			if err := db.QueryRowContext(r.Context(), `SELECT library_id::text FROM channels WHERE id = $1::uuid`, channelID).Scan(&lib); err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return httperror.Internal("load channel").Wrap(err)
+			}
+			st, err := keeper.Time(r.Context(), p, lib.String)
+			for _, s := range open {
+				if err != nil {
+					break
+				}
+				st, err = keeper.RemoteBeat(r.Context(), p.UserID, lib.String, s.id, s.beat)
+			}
+			if err != nil {
+				return TimeUnknown(err)
+			}
+			if !st.Allowed {
+				return TimeOver(st)
+			}
 		}
 		if !v.Allowed {
 			return ProgrammeRestricted(v.Until)

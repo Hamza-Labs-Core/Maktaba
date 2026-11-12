@@ -90,6 +90,16 @@ object ImageCache {
     }
 
     /**
+     * Empties the shared memory and disk caches (Epic 57 story 57.05: the sign-in's parental
+     * limit changed, and a picture of something now hidden must not be drawn from the device).
+     */
+    fun clear(context: Context) {
+        val (memory, disk) = shared(context)
+        memory.clear()
+        runCatching { disk.clear() }
+    }
+
+    /**
      * The image loader for [client]'s home: the shared caches, the token on the home's `/api/`
      * pictures, and the server's `max-age` honoured. Build one per signed-in home (it is cheap:
      * the caches are shared) and provide it with [LocalHomeImages]. [now], [online] and

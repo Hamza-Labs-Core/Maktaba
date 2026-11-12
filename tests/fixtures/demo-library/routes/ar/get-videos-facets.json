@@ -1,0 +1,29 @@
+{
+ "languages": [
+  {
+   "code": "en",
+   "videos": 10
+  }
+ ],
+ "tags": [],
+ "speakers": [],
+ "letters": [],
+ "durations": [
+  {
+   "value": "short",
+   "videos": 10
+  }
+ ],
+ "added": [
+  {
+   "value": "week",
+   "videos": 7
+  }
+ ],
+ "resolutions": [
+  {
+   "value": "hd",
+   "videos": 10
+  }
+ ]
+}

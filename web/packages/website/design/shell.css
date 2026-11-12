@@ -1,0 +1,1299 @@
+/*
+ * maktaba.tv's shell (story 60.01 part A): the header, nav, language switch, footer,
+ * callouts, code and compose blocks, the step list, and the text, problem, index, install
+ * and 404 layouts. Built on site-tokens.css (generated) and fonts.css. Logical properties
+ * only: one stylesheet serves both directions (T04 refuses a physical margin or padding).
+ * The written spec is README.md beside this file.
+ */
+
+/* ---------------------------------------------------------------- the type steps */
+
+:root {
+  --fs-h1: var(--site-type-heading-1-phone-size);
+  --lh-h1: var(--site-type-heading-1-phone-lineHeight);
+  --fs-h2: var(--site-type-heading-2-size);
+  --lh-h2: var(--site-type-heading-2-lineHeight);
+  --fs-h3: var(--site-type-heading-3-size);
+  --lh-h3: var(--site-type-heading-3-lineHeight);
+  --fs-lead: var(--site-type-lead-size);
+  --lh-lead: var(--site-type-lead-lineHeight);
+  --fs-body: var(--site-type-body-size);
+  --lh-body: var(--site-type-body-lineHeight);
+  --fs-small: var(--site-type-small-size);
+  --lh-small: var(--site-type-small-lineHeight);
+}
+
+:root:lang(ar) {
+  --fs-h1: var(--site-type-arabic-heading-1-phone-size);
+  --lh-h1: var(--site-type-arabic-heading-1-phone-lineHeight);
+  --fs-h2: var(--site-type-arabic-heading-2-size);
+  --lh-h2: var(--site-type-arabic-heading-2-lineHeight);
+  --fs-h3: var(--site-type-arabic-heading-3-size);
+  --lh-h3: var(--site-type-arabic-heading-3-lineHeight);
+  --fs-lead: var(--site-type-arabic-lead-size);
+  --lh-lead: var(--site-type-arabic-lead-lineHeight);
+  --fs-body: var(--site-type-arabic-body-size);
+  --lh-body: var(--site-type-arabic-body-lineHeight);
+  --fs-small: var(--site-type-arabic-small-size);
+  --lh-small: var(--site-type-arabic-small-lineHeight);
+}
+
+@media (min-width: 768px) {
+  :root {
+    --fs-h1: var(--site-type-heading-1-size);
+    --lh-h1: var(--site-type-heading-1-lineHeight);
+  }
+  :root:lang(ar) {
+    --fs-h1: var(--site-type-arabic-heading-1-size);
+    --lh-h1: var(--site-type-arabic-heading-1-lineHeight);
+  }
+}
+
+/* ---------------------------------------------------------------- the page */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-block-size: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-semantic-bg);
+  color: var(--color-semantic-fg);
+  font-family: var(--site-type-family);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  font-weight: 400;
+  overflow-wrap: break-word;
+}
+
+body > main {
+  flex: 1 0 auto;
+}
+
+.frame {
+  inline-size: 100%;
+  max-inline-size: var(--site-measure-wide);
+  margin-inline: auto;
+  padding-inline: var(--site-space-gutter);
+}
+
+a {
+  color: var(--color-semantic-accent-text);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--site-accent-focus);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+code,
+pre,
+kbd {
+  font-family: var(--site-type-mono);
+  font-size: var(--site-type-code-size);
+}
+
+/* An inline code run inside prose: its own direction, never reordered by the paragraph. */
+:not(pre) > code {
+  unicode-bidi: isolate;
+  direction: ltr;
+  padding-inline: 0.3em;
+  padding-block: 0.05em;
+  border-radius: var(--radius-sm);
+  background: var(--site-surface-code);
+  border: 1px solid var(--site-line-rule);
+  white-space: break-spaces;
+}
+
+/* The skip link: the first stop for the keyboard, hidden until focused. */
+.skip {
+  position: absolute;
+  inset-inline-start: var(--spacing-4);
+  inset-block-start: -100px;
+  z-index: 300;
+  padding-block: var(--spacing-3);
+  padding-inline: var(--spacing-4);
+  background: var(--site-accent-cta);
+  color: var(--site-accent-cta-fg);
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+}
+
+.skip:focus {
+  inset-block-start: var(--spacing-3);
+}
+
+.visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------------------------------------------------------- header and nav */
+
+.site-header {
+  position: relative;
+  z-index: 200;
+  background: var(--color-semantic-bg);
+  border-block-end: 1px solid var(--site-line-rule);
+}
+
+.site-header .bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  min-block-size: 64px;
+}
+
+.site-header .mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  color: var(--color-semantic-fg);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 19px;
+  line-height: 28px;
+  margin-inline-end: auto;
+  padding-block: var(--spacing-2);
+}
+
+.site-header .mark img {
+  inline-size: 32px;
+  block-size: 32px;
+  border-radius: var(--radius-md);
+}
+
+.site-header .nav ul {
+  display: flex;
+  gap: var(--spacing-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-header .nav a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 44px;
+  padding-inline: var(--spacing-3);
+  border-radius: var(--radius-md);
+  color: var(--color-semantic-fg);
+  text-decoration: none;
+}
+
+.site-header .nav a:hover {
+  background: var(--site-surface-section);
+}
+
+/* The current page: a brass rule under the word, and aria-current for a screen reader. */
+.site-header .nav a[aria-current="page"] {
+  box-shadow: inset 0 -2px 0 var(--site-accent-mark);
+}
+
+.lang-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-block-size: 44px;
+  padding-inline: var(--spacing-3);
+  border: 1px solid var(--site-line-control);
+  border-radius: var(--radius-full);
+  color: var(--color-semantic-fg);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.lang-switch:hover {
+  border-color: var(--site-accent-mark);
+}
+
+.lang-switch svg {
+  flex: none;
+}
+
+.site-header .menu-button {
+  display: none;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-block-size: 44px;
+  margin: 0;
+  padding-block: 0;
+  padding-inline: var(--spacing-3);
+  border: 1px solid var(--site-line-control);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-semantic-fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Under 768 px the nav folds behind Menu; the language switch stays in the bar. Without
+   script (no .js on <html>) the links stay in a wrapped row instead. */
+@media (max-width: 767.98px) {
+  .js .site-header .menu-button {
+    display: inline-flex;
+  }
+  .js .site-header .nav {
+    display: none;
+  }
+  .js .site-header.open .nav {
+    display: block;
+    position: absolute;
+    inset-inline: 0;
+    inset-block-start: 100%;
+    background: var(--color-semantic-bg);
+    border-block-end: 1px solid var(--site-line-rule);
+    box-shadow: var(--elevation-3);
+  }
+  .js .site-header.open .nav ul {
+    flex-direction: column;
+    max-inline-size: var(--site-measure-wide);
+    margin-inline: auto;
+    padding-block: var(--spacing-2) var(--spacing-4);
+    padding-inline: var(--site-space-gutter);
+  }
+  .js .site-header.open .nav a {
+    display: flex;
+    font-size: var(--fs-lead);
+    min-block-size: 52px;
+    border-block-end: 1px solid var(--site-line-rule);
+    border-radius: 0;
+    padding-inline: 0;
+  }
+  .js .site-header.open .nav a[aria-current="page"] {
+    box-shadow: none;
+    border-inline-start: 3px solid var(--site-accent-mark);
+    padding-inline-start: var(--spacing-3);
+  }
+  html:not(.js) .site-header .bar {
+    flex-wrap: wrap;
+  }
+  html:not(.js) .site-header .nav {
+    order: 3;
+    inline-size: 100%;
+  }
+}
+
+/* The narrowest phones (320 to 399 px): the bar keeps its three parts, without icons. */
+@media (max-width: 399.98px) {
+  .site-header .bar {
+    gap: var(--spacing-2);
+  }
+  .site-header .mark {
+    gap: var(--spacing-2);
+  }
+  .site-header .lang-switch svg,
+  .site-header .menu-button svg {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------- the language hint */
+
+.lang-hint {
+  background: var(--site-surface-section);
+  border-block-end: 1px solid var(--site-line-rule);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.lang-hint .frame {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2) var(--spacing-4);
+  padding-block: var(--spacing-2);
+}
+
+.lang-hint p {
+  margin: 0;
+  margin-inline-end: auto;
+}
+
+/* ---------------------------------------------------------------- the bands */
+
+.band {
+  padding-block: var(--site-space-section);
+}
+
+.band.tight {
+  padding-block: var(--spacing-12);
+}
+
+/* The page head: a quiet band under the header for the title. The front door and the 404
+   carry the arch (below); the other pages keep the band plain. */
+.page-head {
+  background: var(--site-surface-hero);
+  border-block-end: 1px solid var(--site-line-rule);
+  padding-block: var(--spacing-12) var(--spacing-12);
+}
+
+.page-head.with-arch {
+  position: relative;
+  overflow: hidden;
+}
+
+.page-head .arch {
+  display: none;
+}
+
+/* From 1024 px the arch stands at the end of the line, its foot on the band's edge. */
+@media (min-width: 1024px) {
+  .page-head.with-arch {
+    min-block-size: 30rem;
+  }
+  .page-head .arch {
+    display: block;
+    position: absolute;
+    inset-block-end: -1px;
+    inset-inline-end: max(
+      var(--site-space-gutter),
+      calc((100% - var(--site-measure-wide)) / 2 + 4rem)
+    );
+    block-size: calc(100% - 3rem);
+    inline-size: auto;
+    aspect-ratio: 360 / 460;
+  }
+  .page-head .arch .line {
+    fill: none;
+    stroke: var(--site-accent-mark);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+    opacity: 0.7;
+  }
+  .page-head .arch .soft {
+    opacity: 0.3;
+  }
+  .page-head .arch stop {
+    stop-color: var(--site-accent-mark);
+  }
+}
+
+.page-head.compact + .band {
+  padding-block-start: var(--spacing-12);
+}
+
+.page-head.compact {
+  padding-block: var(--spacing-8);
+}
+
+.page-head h1 {
+  margin: 0;
+  max-inline-size: 22ch;
+  font-size: var(--fs-h1);
+  line-height: var(--lh-h1);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+:root:lang(ar) .page-head h1 {
+  letter-spacing: 0;
+  max-inline-size: 20ch;
+}
+
+.page-head .lead {
+  margin-block: var(--spacing-4) 0;
+  max-inline-size: var(--site-measure-text);
+  font-size: var(--fs-lead);
+  line-height: var(--lh-lead);
+  color: var(--color-semantic-muted);
+}
+
+.page-head .meta {
+  margin-block: var(--spacing-4) 0;
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+  color: var(--color-semantic-muted);
+}
+
+.page-head .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  margin-block-start: var(--spacing-8);
+}
+
+/* ---------------------------------------------------------------- buttons */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2);
+  min-block-size: 48px;
+  max-inline-size: 100%;
+  padding-block: var(--spacing-2);
+  padding-inline: var(--spacing-5);
+  border: 1px solid var(--site-accent-cta);
+  border-radius: var(--radius-md);
+  background: var(--site-accent-cta);
+  color: var(--site-accent-cta-fg);
+  font: inherit;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  white-space: normal;
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--site-accent-cta-hover);
+  border-color: var(--site-accent-cta-hover);
+}
+
+.button.quiet {
+  background: transparent;
+  border-color: var(--site-line-control);
+  color: var(--color-semantic-fg);
+}
+
+.button.quiet:hover {
+  border-color: var(--site-accent-mark);
+}
+
+/* An arrow that means "onwards": it points the way the line reads. */
+.dir-icon {
+  flex: none;
+}
+
+:root[dir="rtl"] .dir-icon {
+  transform: scaleX(-1);
+}
+
+/* ---------------------------------------------------------------- prose (text pages) */
+
+.prose {
+  max-inline-size: var(--site-measure-text);
+}
+
+.prose > :first-child {
+  margin-block-start: 0;
+}
+
+.prose h2 {
+  margin-block: var(--spacing-12) var(--spacing-3);
+  font-size: var(--fs-h2);
+  line-height: var(--lh-h2);
+  font-weight: 600;
+  scroll-margin-block-start: var(--spacing-6);
+}
+
+.prose h3 {
+  margin-block: var(--spacing-8) var(--spacing-2);
+  font-size: var(--fs-h3);
+  line-height: var(--lh-h3);
+  font-weight: 600;
+}
+
+.prose p,
+.prose ul,
+.prose ol {
+  margin-block: 0 var(--spacing-4);
+}
+
+.prose ul,
+.prose ol {
+  padding-inline-start: 1.25em;
+}
+
+.prose li + li {
+  margin-block-start: var(--spacing-2);
+}
+
+.prose li::marker {
+  color: var(--color-semantic-accent-text);
+}
+
+.summary {
+  margin-block: 0 var(--spacing-8);
+  padding-block: var(--spacing-5);
+  padding-inline: var(--spacing-6);
+  border-radius: var(--radius-lg);
+  background: var(--site-surface-section);
+  border: 1px solid var(--site-line-rule);
+}
+
+.summary h2 {
+  margin-block: 0 var(--spacing-2);
+  font-size: var(--fs-h3);
+  line-height: var(--lh-h3);
+}
+
+.summary ul {
+  margin: 0;
+}
+
+/* The text page: the table of contents beside the article from 1024 px. */
+.text-layout {
+  display: grid;
+  gap: var(--spacing-8);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 1024px) {
+  .text-layout.with-toc {
+    grid-template-columns: 15rem minmax(0, var(--site-measure-text));
+    gap: var(--spacing-16);
+  }
+  .toc {
+    position: sticky;
+    inset-block-start: var(--spacing-6);
+    align-self: start;
+  }
+}
+
+.toc {
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.toc h2 {
+  margin: 0 0 var(--spacing-2);
+  font-size: var(--fs-small);
+  color: var(--color-semantic-muted);
+  font-weight: 600;
+}
+
+.toc ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-inline-start: 1px solid var(--site-line-rule);
+}
+
+.toc a {
+  display: block;
+  padding-block: var(--spacing-2);
+  padding-inline-start: var(--spacing-4);
+  margin-inline-start: -1px;
+  border-inline-start: 2px solid transparent;
+  color: var(--color-semantic-muted);
+  text-decoration: none;
+}
+
+.toc a:hover,
+.toc a[aria-current="true"] {
+  color: var(--color-semantic-fg);
+  border-inline-start-color: var(--site-accent-mark);
+}
+
+/* ---------------------------------------------------------------- the front door's ways in */
+
+.ways {
+  display: grid;
+  gap: 0;
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-block-start: 1px solid var(--site-line-rule);
+}
+
+@media (min-width: 768px) {
+  .ways {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--spacing-12);
+  }
+}
+
+.ways > li {
+  padding-block: var(--spacing-8);
+  border-block-end: 1px solid var(--site-line-rule);
+}
+
+.ways h2 {
+  margin: 0 0 var(--spacing-2);
+  font-size: var(--fs-h2);
+  line-height: var(--lh-h2);
+  font-weight: 600;
+}
+
+.ways p {
+  margin: 0 0 var(--spacing-4);
+  color: var(--color-semantic-muted);
+  max-inline-size: var(--site-measure-text);
+}
+
+.onward {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-block-size: 44px;
+  font-weight: 600;
+}
+
+.facts {
+  display: grid;
+  gap: var(--spacing-6);
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (min-width: 768px) {
+  .facts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.facts li {
+  padding-inline-start: var(--spacing-4);
+  border-inline-start: 2px solid var(--site-accent-mark);
+}
+
+.facts strong {
+  display: block;
+  font-size: var(--fs-h3);
+  line-height: var(--lh-h3);
+  margin-block-end: var(--spacing-1);
+}
+
+.facts span {
+  color: var(--color-semantic-muted);
+}
+
+/* ---------------------------------------------------------------- callouts */
+
+.callout {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--spacing-3);
+  margin-block: var(--spacing-6);
+  padding-block: var(--spacing-4);
+  padding-inline: var(--spacing-4) var(--spacing-5);
+  border-radius: var(--radius-md);
+  background: var(--site-surface-section);
+  border: 1px solid var(--site-line-rule);
+  border-inline-start: 3px solid var(--kind);
+}
+
+.callout[data-kind="note"] {
+  --kind: var(--site-callout-note);
+}
+
+.callout[data-kind="warning"] {
+  --kind: var(--site-callout-warning);
+}
+
+.callout[data-kind="tip"] {
+  --kind: var(--site-callout-tip);
+}
+
+.callout svg {
+  color: var(--kind);
+  margin-block-start: 0.2em;
+}
+
+.callout p {
+  margin: 0;
+}
+
+.callout .label {
+  font-weight: 600;
+  color: var(--color-semantic-fg);
+}
+
+/* ---------------------------------------------------------------- code and compose blocks */
+
+.code {
+  margin-block: var(--spacing-4) var(--spacing-6);
+  border: 1px solid var(--site-line-rule);
+  border-radius: var(--radius-md);
+  background: var(--site-surface-code);
+  overflow: hidden;
+}
+
+.code .code-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  min-block-size: 44px;
+  padding-inline: var(--spacing-4) var(--spacing-1);
+  border-block-end: 1px solid var(--site-line-rule);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+  color: var(--color-semantic-muted);
+}
+
+.code .code-bar .name {
+  margin-inline-end: auto;
+}
+
+.code .code-bar .name code {
+  white-space: nowrap;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--color-semantic-fg);
+}
+
+.copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-block-size: 36px;
+  min-inline-size: 44px;
+  margin-block: 4px;
+  padding-inline: var(--spacing-3);
+  border: 1px solid var(--site-line-control);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-semantic-fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.copy:hover {
+  border-color: var(--site-accent-mark);
+}
+
+.copy[data-copied] {
+  border-color: var(--site-callout-tip);
+  color: var(--site-callout-tip);
+}
+
+/* The code itself is always left to right, also on an Arabic page. */
+.code pre {
+  margin: 0;
+  padding-block: var(--spacing-4);
+  padding-inline: var(--spacing-4);
+  overflow-x: auto;
+  direction: ltr;
+  text-align: start;
+  unicode-bidi: isolate;
+  line-height: var(--site-type-code-lineHeight);
+  tab-size: 2;
+}
+
+.code pre code {
+  font-size: inherit;
+}
+
+.code .comment {
+  color: var(--color-semantic-muted);
+}
+
+/* ---------------------------------------------------------------- the step list */
+
+.steps {
+  margin: var(--spacing-6) 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.steps > li {
+  position: relative;
+  counter-increment: step;
+  padding-inline-start: 56px;
+  padding-block-end: var(--spacing-8);
+}
+
+/* The number in a brass ring, and the thread down to the next step. */
+.steps > li::before {
+  content: counter(step);
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: 0;
+  inline-size: 36px;
+  block-size: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--site-accent-mark);
+  color: var(--color-semantic-accent-text);
+  font-weight: 600;
+  font-size: 16px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.steps > li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: 17px;
+  inset-block: 44px 8px;
+  inline-size: 2px;
+  background: var(--site-line-rule);
+}
+
+.steps h3 {
+  margin: 0 0 var(--spacing-2);
+  padding-block-start: 4px;
+  font-size: var(--fs-h3);
+  line-height: var(--lh-h3);
+  font-weight: 600;
+}
+
+.steps p {
+  margin: 0 0 var(--spacing-3);
+}
+
+/* ---------------------------------------------------------------- the problem page */
+
+.crumbs {
+  margin: 0 0 var(--spacing-4);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.crumbs a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  min-block-size: 32px;
+  color: var(--color-semantic-muted);
+}
+
+.who {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-block: var(--spacing-4) 0;
+  padding-block: var(--spacing-1);
+  padding-inline: var(--spacing-3);
+  border-radius: var(--radius-full);
+  background: var(--color-semantic-accent-soft);
+  color: var(--color-semantic-fg);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.problem-layout {
+  display: grid;
+  gap: var(--spacing-12);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 1024px) {
+  .problem-layout {
+    grid-template-columns: minmax(0, var(--site-measure-text)) 18rem;
+    justify-content: space-between;
+  }
+}
+
+.problem-layout .prose h2:first-child {
+  margin-block-start: 0;
+}
+
+.aside-box {
+  align-self: start;
+  padding-block: var(--spacing-5);
+  padding-inline: var(--spacing-5);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--site-line-rule);
+  background: var(--site-surface-section);
+}
+
+.aside-box + .aside-box {
+  margin-block-start: var(--spacing-4);
+}
+
+.aside-box h2 {
+  margin: 0 0 var(--spacing-3);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  font-weight: 600;
+}
+
+.aside-box ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.aside-box li + li {
+  margin-block-start: var(--spacing-2);
+}
+
+.details dl {
+  display: grid;
+  gap: var(--spacing-1) var(--spacing-4);
+  margin: 0;
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.details dt {
+  color: var(--color-semantic-muted);
+}
+
+.details dd {
+  margin: 0 0 var(--spacing-2);
+}
+
+.details code {
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------- the problem index */
+
+.filter {
+  display: grid;
+  gap: var(--spacing-2);
+  max-inline-size: 28rem;
+  margin-block-start: var(--spacing-8);
+}
+
+.filter label {
+  font-weight: 600;
+}
+
+.filter .field {
+  position: relative;
+}
+
+.filter svg {
+  position: absolute;
+  inset-inline-start: var(--spacing-3);
+  inset-block-start: 50%;
+  transform: translateY(-50%);
+  color: var(--color-semantic-muted);
+  pointer-events: none;
+}
+
+.filter input {
+  inline-size: 100%;
+  min-block-size: 48px;
+  padding-inline: 44px var(--spacing-4);
+  border: 1px solid var(--site-line-control);
+  border-radius: var(--radius-md);
+  background: var(--color-semantic-bg);
+  color: var(--color-semantic-fg);
+  font: inherit;
+}
+
+.filter input::placeholder {
+  color: var(--color-semantic-muted);
+}
+
+.filter .count {
+  margin: 0;
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+  color: var(--color-semantic-muted);
+}
+
+.areas {
+  display: grid;
+  gap: var(--spacing-12) var(--spacing-16);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 768px) {
+  .areas {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.areas h2 {
+  margin: 0 0 var(--spacing-2);
+  font-size: var(--fs-h3);
+  line-height: var(--lh-h3);
+  font-weight: 600;
+}
+
+.areas ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-block-start: 1px solid var(--site-line-rule);
+}
+
+.areas li {
+  border-block-end: 1px solid var(--site-line-rule);
+}
+
+.areas a {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 var(--spacing-4);
+  padding-block: var(--spacing-3);
+  color: var(--color-semantic-fg);
+  text-decoration: none;
+}
+
+.areas a:hover .t {
+  color: var(--color-semantic-accent-text);
+  text-decoration: underline;
+}
+
+.areas .slug {
+  font-family: var(--site-type-mono);
+  font-size: 13px;
+  color: var(--color-semantic-muted);
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.no-match {
+  color: var(--color-semantic-muted);
+}
+
+/* ---------------------------------------------------------------- the 404 */
+
+.lost .places {
+  display: grid;
+  gap: var(--spacing-3);
+  grid-template-columns: minmax(0, 1fr);
+  margin: var(--spacing-8) 0 0;
+  padding: 0;
+  list-style: none;
+  max-inline-size: 40rem;
+}
+
+@media (min-width: 768px) {
+  .lost .places {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.lost .places a {
+  display: block;
+  padding-block: var(--spacing-4);
+  padding-inline: var(--spacing-5);
+  border: 1px solid var(--site-line-rule);
+  border-radius: var(--radius-md);
+  background: var(--color-semantic-bg);
+  text-decoration: none;
+  color: var(--color-semantic-fg);
+}
+
+.lost .places a:hover {
+  border-color: var(--site-accent-mark);
+}
+
+.lost .places strong {
+  display: block;
+  color: var(--color-semantic-accent-text);
+}
+
+.lost .places span {
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+  color: var(--color-semantic-muted);
+}
+
+.lost .asked {
+  margin-block-start: var(--spacing-6);
+  font-size: var(--fs-small);
+  color: var(--color-semantic-muted);
+}
+
+/* ---------------------------------------------------------------- an install guide in the shell */
+
+/* Epic 59's guide keeps its own stylesheet; the shell loads after it, takes the body back
+   (the guide's sets a max width and padding on <body>), and gives the guide its frame. */
+body.in-shell {
+  max-inline-size: none;
+  margin: 0;
+  padding: 0;
+  background: var(--color-semantic-bg);
+  color: var(--color-semantic-fg);
+  font-family: var(--site-type-family);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+}
+
+.guide-frame {
+  padding-block: var(--spacing-8) var(--site-space-section);
+}
+
+.guide-frame > header h1 {
+  font-size: var(--fs-h1);
+  line-height: var(--lh-h1);
+  font-weight: 600;
+}
+
+.guide-frame > header .lead {
+  font-size: var(--fs-lead);
+  line-height: var(--lh-lead);
+}
+
+.guide-frame > header nav {
+  font-size: var(--fs-small);
+}
+
+/* ---------------------------------------------------------------- footer */
+
+.site-footer {
+  margin-block-start: auto;
+  background: var(--site-surface-section);
+  border-block-start: 1px solid var(--site-line-rule);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+  color: var(--color-semantic-muted);
+}
+
+.site-footer .cols {
+  display: grid;
+  gap: var(--spacing-8);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding-block: var(--spacing-12) var(--spacing-8);
+}
+
+@media (min-width: 1024px) {
+  .site-footer .cols {
+    grid-template-columns: 2fr repeat(4, minmax(0, 1fr));
+  }
+}
+
+.site-footer .about {
+  grid-column: 1 / -1;
+}
+
+@media (min-width: 1024px) {
+  .site-footer .about {
+    grid-column: auto;
+  }
+}
+
+.site-footer .about .mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  color: var(--color-semantic-fg);
+  font-weight: 600;
+  font-size: var(--fs-body);
+  text-decoration: none;
+}
+
+.site-footer .about img {
+  inline-size: 24px;
+  block-size: 24px;
+  border-radius: 6px;
+}
+
+.site-footer .about p {
+  margin: var(--spacing-3) 0 0;
+  max-inline-size: 22rem;
+}
+
+.site-footer h2 {
+  margin: 0 0 var(--spacing-2);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+  font-weight: 600;
+  color: var(--color-semantic-fg);
+}
+
+.site-footer ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-footer li a {
+  display: inline-block;
+  padding-block: 5px;
+  color: var(--color-semantic-muted);
+  text-decoration: none;
+}
+
+.site-footer li a svg {
+  inline-size: 16px;
+  block-size: 16px;
+  vertical-align: -2px;
+}
+
+.site-footer li a:hover {
+  color: var(--color-semantic-fg);
+  text-decoration: underline;
+}
+
+.site-footer .base {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-3) var(--spacing-6);
+  padding-block: var(--spacing-5);
+  border-block-start: 1px solid var(--site-line-rule);
+}
+
+.site-footer .base p {
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------- motion, contrast modes */
+
+@media (prefers-reduced-motion: no-preference) {
+  .copy,
+  .button,
+  .lang-switch,
+  .site-header .nav a {
+    transition:
+      background-color var(--motion-duration-quick) var(--motion-ease-out),
+      border-color var(--motion-duration-quick) var(--motion-ease-out),
+      color var(--motion-duration-quick) var(--motion-ease-out);
+  }
+}
+
+@media (forced-colors: active) {
+  :focus-visible {
+    outline-color: Highlight;
+  }
+  .button,
+  .button.quiet,
+  .copy,
+  .lang-switch,
+  .site-header .menu-button,
+  .filter input,
+  .callout,
+  .code,
+  .aside-box,
+  .summary,
+  .lost .places a {
+    border-color: CanvasText;
+  }
+  .steps > li::before {
+    border-color: CanvasText;
+    color: CanvasText;
+  }
+  .site-header .nav a[aria-current="page"] {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+  }
+  .page-head .arch {
+    display: none;
+  }
+}
+
+@media print {
+  .site-header .nav,
+  .site-header .menu-button,
+  .lang-hint,
+  .copy,
+  .skip {
+    display: none;
+  }
+}

@@ -2,10 +2,14 @@
 //
 //   TimeLeft     "12 minutes left today", once 15 minutes or fewer remain (the
 //                player) or whenever a rule covers now (Home, `always`).
-//   TimeWarning  a notice five minutes and one minute before the end.
+//   TimeWarning  a notice five minutes and one minute before the end, saying the
+//                time that is left.
 //   TimesUp      the screen when the home refuses with `parental-time`: why, when
 //                watching opens again, the saved place. Playback has stopped and
-//                nothing asks again by itself; "Check again" is the viewer's tap.
+//                the time is not asked about again by itself; "Check again" is
+//                the viewer's tap. A restricted account asks for more time there,
+//                or a parent types their PIN (AskParent); while that request waits
+//                the home is asked what became of it, and a yes resumes by itself.
 //   HomeTime     Home's line: the time left, or that the time is over.
 //
 // The web keeps no count: every number is the home's last answer (lib/parental).
@@ -21,6 +25,8 @@ import {
   TIME_WARNINGS_S,
 } from "../../lib/parental";
 import type { MyTime, TimeReason } from "../../lib/parentalApi";
+import { recheckMyRequests } from "../../lib/parentalRequests";
+import { AskTime } from "./AskParent";
 import "../../styles/parental.css";
 
 type Words = Pick<I18nState, "t" | "n" | "locale" | "formatDate">;
@@ -74,10 +80,15 @@ export function TimeLeft({ time, always = false }: { time: MyTime | null; always
 /** How long a warning stays on screen. */
 export const WARNING_MS = 10_000;
 
-/** The five-minute and one-minute warnings, each shown once as the answer crosses its line. */
+/**
+ * The five-minute and one-minute warnings, each shown once as the answer crosses
+ * its line. The words say the time the home said is left, not the line: a video
+ * opened with two and a half minutes left is not told it has five.
+ */
 export function TimeWarning({ time }: { time: MyTime | null }) {
   const words = useI18n();
   const [warned, setWarned] = useState<number | null>(null);
+  // the seconds left when the warning came up; null: no warning on screen
   const [shown, setShown] = useState<number | null>(null);
 
   useEffect(() => {
@@ -85,7 +96,8 @@ export function TimeWarning({ time }: { time: MyTime | null }) {
     if (line === warned) return;
     // a tighter line than the last one warned of is a new warning; a looser one
     // (more time came: a grant, a new day) only lets the lines count again
-    if (line !== null && (warned === null || line < warned)) setShown(line);
+    if (line !== null && (warned === null || line < warned))
+      setShown(time?.remainingSeconds ?? line);
     setWarned(line);
   }, [time, warned]);
 
@@ -141,9 +153,17 @@ export function TimesUp({ reason, nextAllowedAt, savedAt, onCheck, action }: Tim
       {next && <p>{t("parental.time.next", { time: next })}</p>}
       {savedAt && <p>{t("parental.time.saved", { position: savedAt })}</p>}
       <p className="mkt-parental-timesup__ask">{t("parental.time.askParent")}</p>
+      <AskTime onCheck={onCheck} />
       <div className="mkt-parental-timesup__actions">
         {onCheck && (
-          <Button variant="secondary" onClick={onCheck}>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              // the request for more time too: a no or an expiry shows at once
+              recheckMyRequests();
+              onCheck();
+            }}
+          >
             {t("parental.time.check")}
           </Button>
         )}

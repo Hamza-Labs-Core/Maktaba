@@ -125,7 +125,8 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     "api only": (
         ["api/internal/handlers/browse/browse.go"],
         GO_SERVER,
-        {"lint": {"go"}, "unit": {"go"}, "integration": {"integration", "compat_prev"}},
+        # Epic 57 (story 57.13): the parental bypass rehearsal runs for the API's code
+        {"lint": {"go"}, "unit": {"go"}, "integration": {"integration", "compat_prev", "parental_bypass"}},
     ),
     "the affected-tests gate: its Go module, the hook and the map workflow": (
         ["tools/affected-tests/analyze.go", ".githooks/pre-push", ".github/workflows/coverage-map.yml"],
@@ -140,7 +141,8 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
             "lint": {"go", "catalog"},
             # the supervisor captures the logs: its change runs the log benches (53.13)
             "unit": {"go", "log_bench"},
-            "integration": {"integration"},
+            # Epic 57 review (finding 20): the bypass rehearsal builds the API with cmd
+            "integration": {"integration", "parental_bypass"},
             "node-packaging": {"release_venv"},
         },
     ),
@@ -194,7 +196,7 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     ),
     "design tokens": (
         ["web/design-system/tokens/color.json"],
-        {"unit", "e2e", "build-artifacts"},
+        {"unit", "e2e", "build-artifacts", "website"},
         {"lint": {"web"}, "unit": {"web", "tokens"}},
     ),
     "desktop shell": (
@@ -206,6 +208,8 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     # the wiki database is generated from the specs: a spec runs the wiki job's check
     "a spec: the wiki database's check": (["specs/epics/40-x/story.md"], {"wiki"}, {"lint": set()}),
     "a developer guide: the portal": (["docs/developers/plugins/manifest.md"], {"devportal"}, {"lint": set()}),
+    # maktaba.tv's deploy tool: the Cloudflare tools' tests and the site's own job
+    "the website's deploy tool": (["tools/cloudflare/website-deploy.mjs"], {"cloudflare", "website"}, {"lint": set()}),
     # the portal publishes the wiki, and the diagrams it shows
     "a diagram: the wiki and the portal": (["specs/diagrams/data-flow.drawio"], {"wiki", "devportal"}, {"lint": set()}),
     "a doc the pipeline's tests read": (
@@ -230,8 +234,16 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
         {
             "lint": {"go", "pipeline"},
             "unit": {"go", "pipeline"},
-            "integration": {"integration", "compat_prev"},
+            "integration": {"integration", "compat_prev", "parental_bypass"},
         },
+    ),
+    # Epic 57 (story 57.13): the streaming service signs the channel URLs and holds a
+    # restricted account's stream to its time: the bypass rehearsal runs for it, the
+    # previous release's API tests do not; a pipeline change runs neither ("pipeline only")
+    "streaming only: the parental bypass rehearsal": (
+        ["streaming/internal/hls/serve.go"],
+        {"unit", "integration", "replica", "e2e", "media-e2e", "build-artifacts", "launcher"},
+        {"lint": {"go"}, "unit": {"go"}, "integration": {"integration", "parental_bypass"}},
     ),
 }
 
@@ -243,6 +255,36 @@ def test_which_jobs_a_change_runs(name: str) -> None:
     assert ran(runs) == ALWAYS | jobs, f"{name}: ran {sorted(ran(runs) - ALWAYS)}, want {sorted(jobs)}"
     for job, want in want_parts.items():
         assert parts(runs, job) == want, f"{name}: {job} got {sorted(parts(runs, job))}, want {sorted(want)}"
+
+
+# Epic 57 review (finding 20): the bypass rehearsal compiles the API with the shared Go
+# libraries api/go.mod replaces and with cmd, reads the OpenAPI description, and requires
+# the tests of its list. A change to any of them used to run nothing of it until the next
+# change under api/.
+@pytest.mark.parametrize(
+    "path",
+    [
+        "api/internal/parental/filter.go",
+        "streaming/internal/hls/serve.go",
+        "shared/log/go/log.go",
+        "shared/go/clientip/clientip.go",
+        "shared/api/openapi.yaml",
+        "shared/parental/ratings.json",
+        "shared/db/migrations/0220_age_tiers.sql",
+        "cmd/maktaba-server/main.go",
+        "tools/ci/parental-bypass-tests.txt",
+        "tools/ci/no-pg-skips.sh",
+    ],
+)
+def test_the_parental_bypass_rehearsal_runs_for_what_it_builds_and_reads(path: str) -> None:
+    assert "parental_bypass" in parts(run(path), "integration"), path
+
+
+def test_the_parental_bypass_rehearsal_does_not_run_for_the_rest() -> None:
+    for path in ("pipeline/src/maktaba_pipeline/classify/content_screen.py", "web/src/App.tsx",
+                 "tools/affected-tests/analyze.go"):  # fmt: skip
+        r = run(path).get("integration")
+        assert r is None or r.inputs.get("parental_bypass") is not True, path
 
 
 # what runs on an idle Core home: the mac app's Bundle size check counts its processes and
@@ -915,3 +957,39 @@ def test_guard_catches_a_filter_step_without_the_merge_base() -> None:
 def test_linux_downloads_only_on_main_and_release_pushes(event: str, ref: str, want: bool) -> None:
     cond = ci_paths.load_workflow().jobs["linux-app-downloads"]["if"]
     assert ci_paths.evaluate(cond, {"github": {"event_name": event, "ref": ref}}) is want
+
+
+# ---- maktaba.tv (Epic 60, story 60.03) --------------------------------------------------------
+
+# T07: the sources the site is built from (story 60.03, "The website filter covers").
+WEBSITE_SOURCES = [
+    "web/packages/website/src/worker.ts",
+    "web/packages/install/site/install/docker/index.html",
+    "web/vite.install.config.ts",
+    "web/src/help/content/en/getting-started.md",
+    "shared/api/problems.json",
+    "shared/log/schema/line.schema.json",
+    "cloud/internal/privacy/policy.go",
+    "cloud/cmd/privacy-json/main.go",
+    "docs/app-privacy.md",
+    "LICENSE",
+    "api/internal/security/disclosure.go",
+    "web/design-system/tokens/color.json",
+    ".github/workflows/_website.yml",
+    ".github/workflows/website-deploy.yml",
+]
+
+
+@pytest.mark.parametrize("path", WEBSITE_SOURCES)
+def test_the_website_filter_covers_each_source_the_site_is_built_from(path: str) -> None:
+    assert run(path)["website"] is not None, f"{path} does not run the website job"
+
+
+def test_the_website_deploy_runs_on_the_website_filters_paths() -> None:
+    root = Path(__file__).resolve().parents[3]
+    filters = yaml.safe_load((root / ".github/ci-paths.yml").read_text())
+    # less the shared group (*ci, a nested list once read): the deploy's own trigger
+    want = [g for g in filters["website"] if not isinstance(g, list)]
+    deploy = yaml.safe_load((root / ".github/workflows/website-deploy.yml").read_text())
+    on = deploy.get("on", deploy.get(True))
+    assert on["push"]["paths"] == want

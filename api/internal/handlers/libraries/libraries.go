@@ -40,6 +40,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libaccess"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libpaths"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/mediaaccess"
 )
@@ -60,7 +61,10 @@ type Library struct {
 	Settings  json.RawMessage `json:"settings"`
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
-	Warnings  []string        `json:"warnings,omitempty"`
+	// AgeTier is the library's default age tier, set by an admin (Epic 57): a tier
+	// or null. Only an admin's answer to GET /api/libraries/{id} has it.
+	AgeTier  *parental.AdminTier `json:"age_tier,omitempty"`
+	Warnings []string            `json:"warnings,omitempty"`
 	// CollectionMode is how the library grid shows collections (Epic 56
 	// story 56.08, slot 0193): tab_only, hide_items or show_both.
 	CollectionMode string `json:"collection_mode,omitempty"`
@@ -284,7 +288,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	roots, fieldErrs := h.normaliseAndValidateRoots(req.Roots)
 	if len(fieldErrs) > 0 {
 		e := httperror.Unprocessable(fieldErrs)
-		e.Type = "https://maktaba.tv/problems/library-roots-invalid"
+		e.Type = httperror.Type("library-roots-invalid")
 		httperror.Write(w, r, e)
 		return
 	}
@@ -313,7 +317,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		fieldErrs, warnings := ValidateLibrarySettings(decoded)
 		if len(fieldErrs) > 0 {
 			e := httperror.Unprocessable(fieldErrs)
-			e.Type = "https://maktaba.tv/problems/library-settings-invalid"
+			e.Type = httperror.Type("library-settings-invalid")
 			httperror.Write(w, r, e)
 			return
 		}
@@ -328,7 +332,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if isUniqueViolation(err, "name") {
 			httperror.Write(w, r, &httperror.Error{
-				Type:   "https://maktaba.tv/problems/library-name-exists",
+				Type:   httperror.Type("library-name-exists"),
 				Title:  "name already exists",
 				Status: http.StatusConflict,
 				Detail: req.Name + " is already in use",
@@ -375,6 +379,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("load library").Wrap(err))
 		return
 	}
+	lib.AgeTier = parental.AdminTierOf(r.Context(), h.DB, p, parental.TierOnLibrary, id)
 	common.WriteJSON(w, r, http.StatusOK, lib)
 }
 
@@ -442,7 +447,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		roots, fieldErrs := h.normaliseAndValidateRoots(*req.Roots)
 		if len(fieldErrs) > 0 {
 			e := httperror.Unprocessable(fieldErrs)
-			e.Type = "https://maktaba.tv/problems/library-roots-invalid"
+			e.Type = httperror.Type("library-roots-invalid")
 			httperror.Write(w, r, e)
 			return
 		}
@@ -480,7 +485,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		fieldErrs, warnings := ValidateLibrarySettings(decoded)
 		if len(fieldErrs) > 0 {
 			e := httperror.Unprocessable(fieldErrs)
-			e.Type = "https://maktaba.tv/problems/library-settings-invalid"
+			e.Type = httperror.Type("library-settings-invalid")
 			httperror.Write(w, r, e)
 			return
 		}
@@ -495,7 +500,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if isUniqueViolation(err, "name") {
 			httperror.Write(w, r, &httperror.Error{
-				Type:   "https://maktaba.tv/problems/library-name-exists",
+				Type:   httperror.Type("library-name-exists"),
 				Title:  "name already exists",
 				Status: http.StatusConflict,
 				Detail: cur.Name + " is already in use",
@@ -821,7 +826,7 @@ func (h *Handler) checkRootOverlap(ctx context.Context, exceptID string, roots [
 			for _, b := range existing {
 				if pathsOverlap(a, b) {
 					return &httperror.Error{
-						Type:   "https://maktaba.tv/problems/library-roots-overlap",
+						Type:   httperror.Type("library-roots-overlap"),
 						Title:  "library roots overlap",
 						Status: http.StatusUnprocessableEntity,
 						Detail: overlapDetail(a, b) + " (library " + name + ")",

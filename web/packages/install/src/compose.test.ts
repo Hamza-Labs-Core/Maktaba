@@ -53,7 +53,7 @@ describe("fillCompose", () => {
   });
 
   it("keeps the named volume without a data folder", () => {
-    const out = fillCompose(BASE, answers({ data: "" }));
+    const out = fillCompose(BASE, answers({ data: "", user: "1000:1000" }));
     expect(out).toContain("- maktaba:/var/lib/maktaba");
     expect(out).toMatch(/^volumes:\n {2}maktaba:/m);
   });
@@ -111,12 +111,16 @@ describe("problems", () => {
     [{ user: "0:100" }, "user-root"],
     [{ data: "volume1/x" }, "data"],
     [{ data: "/a:b" }, "data"],
+    // a new Docker volume is the image's folder, uid 1000's: another user cannot write it
+    [{ data: "", user: "1001:100" }, "data-volume-user"],
     [{ media: [{ path: "/", readOnly: false }] }, "media"],
     [{ media: [{ path: "  ", readOnly: false }] }, "media-none"],
     [{ video: "intel-amd" as const, renderGroup: "render" }, "render-group"],
     [{ tz: "Asia Riyadh" }, "tz"],
     [{ network: "bridge" as const, hostIp: "nas.local" }, "host-ip"],
   ])("%j is %s", (over, want) => expect(problems(answers(over))).toContain(want));
+  it("lets the user 1000 keep a Docker volume", () =>
+    expect(problems(answers({ data: "", user: "1000:100" }))).toEqual([]));
 });
 
 describe("tierFor", () => {

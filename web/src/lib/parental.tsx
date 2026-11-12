@@ -8,14 +8,21 @@
 //   - `children`: the restricted accounts this person looks after
 //     (GET /api/parental/children; an admin: all of them). Not asked for a
 //     restricted account, which looks after no one.
+//   - `pendingRequests`: how many requests wait for this person's answer
+//     (GET /api/parental/requests), asked only for someone who looks after a
+//     restricted account. `refresh` reads everything again (after an answer).
 //   - `time`: GET /api/me/parental/time, asked only for a restricted account
 //     (only they have time rules) and only while a page shows it (useMyTime). The
 //     web keeps no count of its own: every number shown is the home's last answer.
+//     It is not asked while the tab is hidden, nor again after a refusal until the
+//     instant the home named, the viewer's tap, or a parent's yes to a request for
+//     more time (lib/parentalRequests follows the request and asks then).
 //
 // Outside the provider, and until the home answers, nobody is restricted: the web
 // never hides a page because the home did not answer (the home still refuses).
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -32,6 +39,8 @@ import {
   type Child,
   type MyTime,
 } from "./parentalApi";
+import { fetchRequests } from "./familyApi";
+import { ASKED_TIME, forgetAsked } from "./parentalAsked";
 
 export interface MyParental {
   /** false until the home has answered once */
@@ -39,14 +48,26 @@ export interface MyParental {
   restricted: boolean;
   /** the tier limit of this sign-in (account or device); null: none */
   maxTier: number | null;
+  /** the limit this sign-in's device gave, when it gave one */
+  deviceLimit: number | null;
+  /** the device said something looser, which waits for a guardian or an admin */
+  devicePending: boolean;
   children: Child[];
+  /** the requests that wait for this person's answer */
+  pendingRequests: number;
+  /** asks the home again now */
+  refresh: () => void;
 }
 
 export const NOT_RESTRICTED: MyParental = Object.freeze({
   answered: false,
   restricted: false,
   maxTier: null,
+  deviceLimit: null,
+  devicePending: false,
   children: [],
+  pendingRequests: 0,
+  refresh: () => {},
 });
 
 const ParentalContext = createContext<MyParental>(NOT_RESTRICTED);
@@ -58,6 +79,8 @@ const FOREGROUND_MIN_GAP_MS = 60_000;
 export function ParentalProvider({ children }: { children: ReactNode }) {
   const userId = useOptionalAuth()?.user?.id ?? null;
   const [state, setState] = useState<MyParental>(NOT_RESTRICTED);
+  const loadRef = useRef<() => void>(() => {});
+  const refresh = useCallback(() => loadRef.current(), []);
 
   useEffect(() => {
     setState(NOT_RESTRICTED);
@@ -70,13 +93,28 @@ export function ParentalProvider({ children }: { children: ReactNode }) {
         .then(async (mine) => {
           // a restricted account looks after no one (the home answers an empty list)
           const kids = mine.restricted ? [] : await fetchChildren().catch(() => [] as Child[]);
-          if (alive) setState({ answered: true, ...mine, children: kids });
+          // only someone who looks after an account has requests to answer
+          const waiting =
+            kids.length > 0
+              ? await fetchRequests()
+                  .then((r) => r.length)
+                  .catch(() => 0)
+              : 0;
+          if (alive)
+            setState({
+              answered: true,
+              ...mine,
+              children: kids,
+              pendingRequests: waiting,
+              refresh,
+            });
         })
         .catch(() => {
           // an older home, or no answer: keep what is known
         });
     };
     load();
+    loadRef.current = load;
     const foreground = () => {
       if (document.visibilityState === "hidden") return;
       if (Date.now() - last >= FOREGROUND_MIN_GAP_MS) load();
@@ -85,10 +123,11 @@ export function ParentalProvider({ children }: { children: ReactNode }) {
     document.addEventListener("visibilitychange", foreground);
     return () => {
       alive = false;
+      loadRef.current = () => {};
       window.removeEventListener("focus", foreground);
       document.removeEventListener("visibilitychange", foreground);
     };
-  }, [userId]);
+  }, [userId, refresh]);
 
   return <ParentalContext.Provider value={state}>{children}</ParentalContext.Provider>;
 }
@@ -119,17 +158,27 @@ export const TIME_POLL_NEAR_MS = 10_000;
 export const TIME_NEAR_S = 6 * 60;
 /** The time left shows once this many seconds or fewer remain. */
 export const TIME_SHOW_S = 15 * 60;
+/** After a refusal, the home's own instant is asked about no sooner than this. */
+export const TIME_REFUSED_MIN_MS = 5_000;
 /** The warnings: five minutes and one minute before the end. */
 export const TIME_WARNINGS_S = [300, 60] as const;
 
 /**
  * The home's answer about the caller's time, asked again every TIME_POLL_MS while
  * `on` (and sooner near the end). null: not asked, or no answer yet. `ask` asks now.
+ *
+ * It does not ask when asking is no use:
+ *   - while the tab is hidden: the question that came due is asked when the tab
+ *     shows again;
+ *   - after the home said watching is not allowed: the next question waits for
+ *     the instant the home named (`next_allowed_at`) or for the viewer's own tap
+ *     (`ask`), not for the clock.
  */
 export function useMyTime(
   on: boolean,
   libraryId?: string
 ): { time: MyTime | null; ask: () => void } {
+  const userId = useOptionalAuth()?.user?.id ?? null;
   const [time, setTime] = useState<MyTime | null>(null);
   const askRef = useRef<() => void>(() => {});
 
@@ -141,28 +190,58 @@ export function useMyTime(
     }
     let alive = true;
     let timer: number | undefined;
+    // a question came due while the tab was hidden
+    let due = false;
+    const hidden = () => document.visibilityState === "hidden";
     const ask = () => {
       window.clearTimeout(timer);
+      due = false;
       void fetchMyTime(libraryId)
         .then((t) => {
           if (!alive) return;
           setTime(t);
-          const near =
-            t.allowed && t.remainingSeconds !== null && t.remainingSeconds <= TIME_NEAR_S;
-          timer = window.setTimeout(ask, near ? TIME_POLL_NEAR_MS : TIME_POLL_MS);
+          if (!t.allowed) {
+            // refused: nothing changes until the home's own instant, or a parent
+            // gives more time and the viewer taps Check again
+            const at = t.nextAllowedAt ? Date.parse(t.nextAllowedAt) : NaN;
+            if (Number.isFinite(at)) later(Math.max(TIME_REFUSED_MIN_MS, at - Date.now() + 1000));
+            return;
+          }
+          // watching is allowed: a request for more time has been answered or is
+          // not needed, so the next time's-up screen may ask again
+          forgetAsked(userId, ASKED_TIME);
+          const near = t.remainingSeconds !== null && t.remainingSeconds <= TIME_NEAR_S;
+          later(near ? TIME_POLL_NEAR_MS : TIME_POLL_MS);
         })
         .catch(() => {
           // no answer: the last one stays; the home refuses the stream itself
-          if (alive) timer = window.setTimeout(ask, TIME_POLL_MS);
+          if (alive) later(TIME_POLL_MS);
         });
     };
+    // asks again in `ms`, unless the tab is hidden then: the question waits for it
+    const later = (ms: number) => {
+      window.clearTimeout(timer);
+      // setTimeout holds at most about 24 days
+      timer = window.setTimeout(
+        () => {
+          if (hidden()) due = true;
+          else ask();
+        },
+        Math.min(ms, 0x7fffffff)
+      );
+    };
+    const shown = () => {
+      if (alive && due && !hidden()) ask();
+    };
+    document.addEventListener("visibilitychange", shown);
     askRef.current = ask;
     ask();
     return () => {
       alive = false;
       window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", shown);
     };
-  }, [on, libraryId]);
+  }, [on, libraryId, userId]);
 
   return useMemo(() => ({ time, ask: () => askRef.current() }), [time]);
 }

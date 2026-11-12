@@ -1,0 +1,33 @@
+# maktaba.tv, the website households find Maktaba on (Epic 60, story 60.03): a Worker in
+# front of static assets. Build first (npm run build writes ./dist), then:
+#   npm run dev             local preview on http://localhost:8787 (no canonical redirects)
+# Deploys run only from .github/workflows/website-deploy.yml (tools/cloudflare/website-deploy.mjs),
+# never by hand with this file: it carries the custom domains. No backend, no KV, no secrets.
+name = "maktaba-website"
+main = "src/worker.ts"
+compatibility_date = "2026-09-01"
+# no workers.dev URL: the site lives on maktaba.tv only
+workers_dev = false
+# each uploaded version gets a preview URL (the deploy's staging smoke)
+preview_urls = true
+
+# The custom domains (top-level keys: they must come before the [assets] table). Applied by
+# `wrangler triggers deploy` after the version is promoted; Cloudflare creates their DNS records
+# and certificates itself. A custom domain owns its exact hostname only: app., api., admin.,
+# relay., watch. and plugins. keep their records and routes. The token needs no DNS Edit:
+# Workers Scripts Edit, Workers Routes Edit and Zone Read (deploy/cloudflare/README.md, the
+# token table).
+routes = [
+  { pattern = "maktaba.tv", custom_domain = true },
+  { pattern = "www.maktaba.tv", custom_domain = true },
+]
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+# a missing path gets dist/404.html (dist/ar/404.html under /ar/) with a 404 status; the
+# Worker makes sure of it too
+not_found_handling = "404-page"
+html_handling = "auto-trailing-slash"
+# every request goes through the Worker: the redirects and the security headers
+run_worker_first = true

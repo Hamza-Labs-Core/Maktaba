@@ -57,7 +57,11 @@ import { IS_REMOTE, SERVER_PAGES } from "./lib/edition";
 import { serverRoutes } from "./serverRoutes";
 import { RemoteHome } from "./pages/RemoteHome";
 import { ParentalProvider } from "./lib/parental";
-import { FamilyTime } from "./pages/Parental/FamilyTime";
+import { Family } from "./pages/Parental/Family";
+import { ChildPage } from "./pages/Parental/Child";
+import { ActivityPage } from "./pages/Parental/Activity";
+import { RequestsPage } from "./pages/Parental/Requests";
+import { ParentPinPage } from "./pages/Parental/ParentPin";
 import { TimeRulesPage } from "./pages/Parental/TimeRules";
 import { TierReview } from "./pages/Parental/TierReview";
 import { logRouteChanged, routePattern } from "./lib/errorLog";
@@ -196,9 +200,13 @@ export function App() {
                                 <Route path="/account/reports" element={<MyReports />} />
                                 <Route path="/account/preferences/*" element={<Preferences />} />
                                 <Route path="/pair" element={<Pair />} />
-                                {/* Epic 57: the time rules (admins, guardians) and the
+                                {/* Epic 57: family settings (admins, guardians) and the
                                   review of detected ratings; the home refuses anyone else */}
-                                <Route path="/family" element={<FamilyTime />} />
+                                <Route path="/family" element={<Family />} />
+                                <Route path="/family/requests" element={<RequestsPage />} />
+                                <Route path="/family/pin" element={<ParentPinPage />} />
+                                <Route path="/family/:userId" element={<ChildPage />} />
+                                <Route path="/family/:userId/activity" element={<ActivityPage />} />
                                 <Route path="/family/:userId/time" element={<TimeRulesPage />} />
                                 <Route path="/parental/review" element={<TierReview />} />
                                 {SERVER_PAGES && serverRoutes()}

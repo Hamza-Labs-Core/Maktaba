@@ -4,7 +4,7 @@
     "title": "Maktaba API",
     "version": "0.1.0",
     "summary": "Self-hosted video library with automatic transcription, semantic search, and adaptive streaming.",
-    "description": "The Maktaba API is the control plane for a self-hosted video library. It exposes\nlibraries, videos, transcripts, search, processing jobs, streaming sessions, and\nuser state over a uniform JSON surface.\n\n## Conventions\n\n- **Transport.** HTTP/1.1 and HTTP/2 over TLS. JSON request and response bodies\n  use `Content-Type: application/json; charset=utf-8`. Error responses use\n  [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json`.\n- **Identifiers.** Resource ids are UUIDv4 unless documented otherwise.\n  `Job.id` and `AudioTrack.id` are 64-bit integers.\n- **Times.** All timestamps are RFC 3339 / ISO 8601 in UTC (`Z` suffix).\n  Durations and offsets are seconds as floats.\n- **Pagination.** Cursor-based. Pass `limit` (default 50, max 200) and the\n  opaque `cursor` returned from the previous page. The page envelope is\n  `{ items: [...], next: \"<cursor>\" | null }`. Cursors encode\n  `(updated_at DESC, id DESC)` and rotate when the schema version changes.\n- **Idempotency.** All `POST /api/jobs/{id}/{action}` endpoints are idempotent.\n  Clients may set `Idempotency-Key: <uuid>` on `POST` and `PATCH` requests; the\n  server replays the original response for 24 hours.\n- **Request correlation.** Every response carries `X-Request-Id` (UUIDv7).\n  Clients may pass their own `X-Request-Id` to thread it through.\n- **Rate limits.** Default: 600 requests / minute / authenticated user, 6 000 /\n  minute / IP. Exhausted requests get `429 Too Many Requests` with `Retry-After`\n  and headers `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.\n\n## Authentication\n\nTwo equivalent paths backed by the same identity:\n\n- **Web** uses `httpOnly` cookies set by `POST /api/auth/login`. State-changing\n  requests must also include the `X-CSRF-Token` header (value mirrored from the\n  `csrf_token` cookie).\n- **Mobile / desktop / TV** uses bearer JWT (RS256, 15 min) with a long-lived\n  opaque refresh token. Public keys are exposed at `/api/.well-known/jwks.json`.\n\nSingle-user installs may pass a static admin token via `Authorization: Bearer`.\n\n## Streaming\n\nThe `/api/sessions` endpoints mint short-lived signed URLs that the client\nsends to the Streaming Service (separate origin) directly. Bytes never round\ntrip the API.\n\n## WebSocket\n\n`GET /api/ws` upgrades to a multiplexed event stream. Messages are JSON\n`{ type, data, at }` envelopes. Clients subscribe by sending\n`{ type: \"subscribe\", channels: [\"jobs\", \"playback\", \"library\"] }` on connect.\n",
+    "description": "The Maktaba API is the control plane for a self-hosted video library. It exposes\nlibraries, videos, transcripts, search, processing jobs, streaming sessions, and\nuser state over a uniform JSON surface.\n\n## Conventions\n\n- **Transport.** HTTP/1.1 and HTTP/2 over TLS. JSON request and response bodies\n  use `Content-Type: application/json; charset=utf-8`. Error responses use\n  [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json`.\n- **Identifiers.** Resource ids are UUIDv4 unless documented otherwise.\n  `Job.id` and `AudioTrack.id` are 64-bit integers.\n- **Times.** All timestamps are RFC 3339 / ISO 8601 in UTC (`Z` suffix).\n  Durations and offsets are seconds as floats.\n- **Pagination.** Cursor-based. Pass `limit` (default 50, max 200) and the\n  opaque `cursor` returned from the previous page. The page envelope is\n  `{ items: [...], next: \"<cursor>\" | null }`. Cursors encode\n  `(updated_at DESC, id DESC)` and rotate when the schema version changes.\n- **Idempotency.** All `POST /api/jobs/{id}/{action}` endpoints are idempotent.\n  Clients may set `Idempotency-Key: <uuid>` on `POST` and `PATCH` requests; the\n  server replays the original response for 24 hours.\n- **Request correlation.** Every response carries `X-Request-Id` (UUIDv7).\n  Clients may pass their own `X-Request-Id` to thread it through.\n- **Rate limits.** Default: 600 requests / minute / authenticated user, 6 000 /\n  minute / IP. Exhausted requests get `429 Too Many Requests` with `Retry-After`\n  and headers `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.\n\n## Authentication\n\nTwo equivalent paths backed by the same identity:\n\n- **Web** uses `httpOnly` cookies set by `POST /api/auth/login`. State-changing\n  requests must also include the `X-CSRF-Token` header (value mirrored from the\n  `csrf_token` cookie).\n- **Mobile / desktop / TV** uses bearer JWT (RS256, 15 min) with a long-lived\n  opaque refresh token. Public keys are exposed at `/api/.well-known/jwks.json`.\n\nSingle-user installs may pass a static admin token via `Authorization: Bearer`.\n\n## Streaming\n\nThe `/api/stream/sessions` endpoints mint short-lived signed URLs that the client\nsends to the Streaming Service (separate origin) directly. Bytes never round\ntrip the API.\n\n## WebSocket\n\n`GET /api/ws` upgrades to a multiplexed event stream. Messages are JSON\n`{ type, data, at }` envelopes. Clients subscribe by sending\n`{ type: \"subscribe\", channels: [\"jobs\", \"playback\", \"library\"] }` on connect.\n",
     "contact": {
       "name": "Maktaba",
       "url": "https://github.com/maktaba/maktaba"
@@ -359,7 +359,29 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/User"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/User"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "home_name": {
+                          "type": "string",
+                          "description": "The home's name for people (an admin renames it with PATCH /settings home.name; unset, the computer's name)."
+                        },
+                        "sign_in": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "The sign-in this request came through: the family of its refresh token. Absent for a session with no refresh token (a browser session, an API token)."
+                        },
+                        "age_ceiling": {
+                          "type": "integer",
+                          "description": "The age limit this sign-in's device gave (-1 nothing, 0, 9, 13, 16, 18). Absent when the device gave none."
+                        }
+                      }
+                    }
+                  ]
                 }
               }
             }
@@ -777,7 +799,8 @@
             "$ref": "#/components/responses/Unauthorized"
           }
         },
-        "operationId": "getLibraryStats"
+        "operationId": "getLibraryStats",
+        "description": "For a restricted account (one under parental controls) the numbers count only the videos it may see, and a library a rule blocks answers 404."
       }
     },
     "/videos": {
@@ -1764,7 +1787,7 @@
           "Search"
         ],
         "summary": "Hybrid search across the library",
-        "description": "Combines BM25 full-text and vector similarity using reciprocal rank fusion.\nResults carry per-stage timing under `took_ms`. When semantic backend is\noffline, the response sets `degraded=true` and falls back to FTS only.\n",
+        "description": "Combines BM25 full-text and vector similarity using reciprocal rank fusion.\nResults carry per-stage timing under `took_ms`. When semantic backend is\noffline, the response sets `degraded=true` and falls back to FTS only. For a restricted account (one under parental controls) the results, their totals and their snippets are of the videos it may see only.\n",
         "parameters": [
           {
             "in": "query",
@@ -1911,7 +1934,7 @@
           "Search"
         ],
         "summary": "Hybrid search with a structured request body",
-        "description": "Same semantics as `GET /search`; the body form is preferred when filters get long.",
+        "description": "Same semantics as `GET /search`; the body form is preferred when filters get long. For a restricted account (one under parental controls) the results, their totals and their snippets are of the videos it may see only.",
         "requestBody": {
           "required": true,
           "content": {
@@ -2006,7 +2029,8 @@
             "$ref": "#/components/responses/Unauthorized"
           }
         },
-        "operationId": "searchSuggest"
+        "operationId": "searchSuggest",
+        "description": "For a restricted account (one under parental controls) the suggestions come from its own earlier searches only, never from a title."
       }
     },
     "/search/save": {
@@ -2780,7 +2804,8 @@
             "$ref": "#/components/responses/Unauthorized"
           }
         },
-        "operationId": "listTags"
+        "operationId": "listTags",
+        "description": "For a restricted account (one under parental controls) only the tags carried by at least one video it may see are listed."
       },
       "post": {
         "tags": [
@@ -2844,7 +2869,7 @@
         "operationId": "createTag"
       }
     },
-    "/sessions": {
+    "/stream/sessions": {
       "post": {
         "tags": [
           "Sessions"
@@ -2894,7 +2919,7 @@
             "$ref": "#/components/responses/NotFound"
           },
           "503": {
-            "description": "`transcode_busy`: every transcode this home runs at once is taken; ask again after `Retry-After`. Also when a restricted account's watching time cannot be read, or the streaming service cannot be told of it: the stream is refused, never let through uncounted; ask again after `Retry-After`.",
+            "description": "`transcode_busy`: every transcode this home runs at once is taken; ask again after `Retry-After`. Also when a restricted account's watching time cannot be read, or the streaming service cannot be told of it: the stream is refused, never let through uncounted; ask again after `Retry-After`. For the watching time, the problem's `code` is `parental_time_unknown`.",
             "headers": {
               "Retry-After": {
                 "$ref": "#/components/headers/Retry-After"
@@ -2931,7 +2956,7 @@
         "operationId": "createSession"
       }
     },
-    "/sessions/{id}": {
+    "/stream/sessions/{id}": {
       "parameters": [
         {
           "in": "path",
@@ -3000,7 +3025,7 @@
         "operationId": "closeSession"
       }
     },
-    "/sessions/{id}/progress": {
+    "/stream/sessions/{id}/progress": {
       "parameters": [
         {
           "in": "path",
@@ -3070,7 +3095,7 @@
             "$ref": "#/components/responses/NotFound"
           },
           "503": {
-            "description": "A restricted account's watching time could not be counted: the progress is refused, never taken uncounted; ask again after `Retry-After`.",
+            "description": "A restricted account's watching time could not be counted: the progress is refused, never taken uncounted; ask again after `Retry-After`. The problem's `code` is `parental_time_unknown`, which tells this answer from any other 503.",
             "headers": {
               "Retry-After": {
                 "$ref": "#/components/headers/Retry-After"
@@ -3097,7 +3122,74 @@
         "operationId": "sessionProgressHeartbeat"
       }
     },
-    "/sessions/capabilities": {
+    "/stream/sessions/{id}/errors": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": "The stream session's id."
+        }
+      ],
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Report a playback failure",
+        "description": "A player says what went wrong with its own stream session, for the home's log. Reports are rate limited per session and per account; one over the limit is accepted and dropped.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "video_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "outcome": {
+                    "type": "string",
+                    "description": "What the player did: `fatal`, `reopen` or `stalled`."
+                  },
+                  "code": {
+                    "type": "string",
+                    "description": "The player's own name for the error."
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "position_sec": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "reportPlaybackError"
+      }
+    },
+    "/stream/capabilities": {
       "get": {
         "tags": [
           "Sessions"
@@ -3233,7 +3325,7 @@
             }
           },
           "503": {
-            "description": "A restricted account's watching time could not be read: the watch is refused, never let through on an error; ask again after `Retry-After`.",
+            "description": "A restricted account's watching time could not be read: the watch is refused, never let through on an error; ask again after `Retry-After`. The problem's `code` is `parental_time_unknown`, which tells this answer from any other 503.",
             "headers": {
               "Retry-After": {
                 "$ref": "#/components/headers/Retry-After"
@@ -3367,7 +3459,7 @@
             }
           },
           "503": {
-            "description": "A restricted account's watching time could not be read: the watch is refused, never let through on an error; ask again after `Retry-After`.",
+            "description": "A restricted account's watching time could not be read: the watch is refused, never let through on an error; ask again after `Retry-After`. The problem's `code` is `parental_time_unknown`, which tells this answer from any other 503.",
             "headers": {
               "Retry-After": {
                 "$ref": "#/components/headers/Retry-After"
@@ -6601,15 +6693,20 @@
           "Components"
         ],
         "summary": "What this home has on",
-        "description": "Each feature a client shows (`live_tv`, `transcripts`, `search`, ...) and whether it is on, off, or not available, so an app hides or explains what is off. Answers 304 to a matching `If-None-Match`; `/ws/home` sends `capabilities_changed` when it moves.",
+        "description": "Each feature a client shows (`live_tv`, `transcripts`, `search`, ...) and whether it is on, off, or not available, so an app hides or explains what is off. Answers 304 to a matching `If-None-Match`; `/ws/home` sends `capabilities_changed` when it moves. The answer also carries the caller's own `parental` block, and the ETag covers it, so a changed limit is a changed answer.",
         "responses": {
           "200": {
-            "description": "The features.",
+            "description": "The features, and the caller's `parental` block.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "additionalProperties": true,
+                  "properties": {
+                    "parental": {
+                      "$ref": "#/components/schemas/ParentalCapabilities"
+                    }
+                  }
                 }
               }
             }
@@ -6625,6 +6722,16 @@
           },
           "304": {
             "description": "Unchanged since the ETag sent."
+          },
+          "503": {
+            "description": "The account's limits cannot be read now (`code: parental_unavailable`): try again after `Retry-After`. An app must not treat this as an account nothing limits.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "operationId": "getCapabilities"
@@ -9798,6 +9905,148 @@
         "operationId": "markFavorites"
       }
     },
+    "/me/history": {
+      "get": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "The caller's watch history",
+        "description": "The videos the signed-in user watched, newest first: their own history only, for any signed-in user. A video the account watched and may no longer see (a parental limit hides it now) stays in the list as a row with `available: false`. Such a row says when and how much was watched and carries no video id, title, length or position. An app shows it as \"Not available\", with no title, no poster, no link to the video and no remove button.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Rows per page.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Rows to skip.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "description": "Only watches that started at or after this time: RFC 3339, or a date as `YYYY-MM-DD`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "description": "Only watches that started at or before this time: RFC 3339, or a date as `YYYY-MM-DD`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the history.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items",
+                    "limit",
+                    "offset"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "key",
+                          "available",
+                          "video_id",
+                          "title",
+                          "times_watched",
+                          "total_watch_sec",
+                          "last_watched_at"
+                        ],
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "description": "The row's identity in a list. The video's id when `available` is true. Otherwise a value made from the time of the last watch: the same on every read, and it names no video."
+                          },
+                          "available": {
+                            "type": "boolean",
+                            "description": "False when the account may no longer see the video. The row then has an empty `video_id` and `title`, and its `duration_sec`, `best_percent`, `position_sec` and `completed` are zero and false."
+                          },
+                          "video_id": {
+                            "type": "string",
+                            "description": "The video's id; empty when `available` is false."
+                          },
+                          "title": {
+                            "type": "string",
+                            "description": "The video's title; empty when `available` is false."
+                          },
+                          "duration_sec": {
+                            "type": "number",
+                            "description": "The video's length in seconds."
+                          },
+                          "times_watched": {
+                            "type": "integer",
+                            "description": "How many times the caller watched it."
+                          },
+                          "total_watch_sec": {
+                            "type": "integer",
+                            "description": "The seconds the caller watched it in all."
+                          },
+                          "best_percent": {
+                            "type": "number",
+                            "description": "The furthest the caller got, as a percentage of the video."
+                          },
+                          "last_watched_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "When the caller's last watch of it started."
+                          },
+                          "position_sec": {
+                            "type": "number",
+                            "description": "Where playback resumes, in seconds."
+                          },
+                          "completed": {
+                            "type": "boolean",
+                            "description": "The caller finished the video."
+                          }
+                        }
+                      }
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getMyHistory"
+      }
+    },
     "/me/pinned-libraries": {
       "get": {
         "tags": [
@@ -9919,6 +10168,7 @@
           "Series"
         ],
         "summary": "A series",
+        "description": "The series header. An administrator's answer also has `age_tier`: the age tier set with `PUT /api/series/{id}/age-tier` (Epic 57), or null when none is set. The field is absent for everyone else.",
         "parameters": [
           {
             "in": "path",
@@ -11710,7 +11960,7 @@
                         "null"
                       ],
                       "enum": [
-                        "admin",
+                        "admin_video",
                         "admin_container",
                         "plex",
                         "guide",
@@ -11860,7 +12110,7 @@
                         "null"
                       ],
                       "enum": [
-                        "admin",
+                        "admin_video",
                         "admin_container",
                         "plex",
                         "guide",
@@ -12010,7 +12260,7 @@
                         "null"
                       ],
                       "enum": [
-                        "admin",
+                        "admin_video",
                         "admin_container",
                         "plex",
                         "guide",
@@ -12160,7 +12410,7 @@
                         "null"
                       ],
                       "enum": [
-                        "admin",
+                        "admin_video",
                         "admin_container",
                         "plex",
                         "guide",
@@ -12310,7 +12560,7 @@
                         "null"
                       ],
                       "enum": [
-                        "admin",
+                        "admin_video",
                         "admin_container",
                         "plex",
                         "guide",
@@ -12470,7 +12720,7 @@
                         "null"
                       ],
                       "enum": [
-                        "admin",
+                        "admin_video",
                         "admin_container",
                         "plex",
                         "guide",
@@ -12787,9 +13037,10 @@
                             "enum": [
                               "no_transcript",
                               "unsupported_language",
+                              "model_failed",
                               null
                             ],
-                            "description": "Why the screen did not check the video: it has no transcript, or its language is not one the screen reads (Arabic and English). Null when it did."
+                            "description": "Why the screen did not check the video: it has no transcript, its language is not one the screen reads (Arabic and English), or the home's model failed on it (`model_failed`). Null when it did."
                           },
                           "model": {
                             "type": "string",
@@ -12816,7 +13067,7 @@
                               "null"
                             ],
                             "enum": [
-                              "admin",
+                              "admin_video",
                               "admin_container",
                               "plex",
                               "guide",
@@ -12974,7 +13225,7 @@
                         "null"
                       ],
                       "enum": [
-                        "admin",
+                        "admin_video",
                         "admin_container",
                         "plex",
                         "guide",
@@ -12984,7 +13235,7 @@
                         "library_default",
                         null
                       ],
-                      "description": "Where the effective tier comes from: `admin` when a tier was given; after `null`, whatever is left (the library's tier, for one). Null when there is no tier."
+                      "description": "Where the effective tier comes from: `admin_video` when a tier was given; after `null`, whatever is left (the library's tier, for one). Null when there is no tier."
                     },
                     "recompute_count": {
                       "type": "integer",
@@ -13141,9 +13392,14 @@
                               "unrated": {
                                 "type": "string",
                                 "enum": [
-                                  "hide"
+                                  "hide",
+                                  "tier_0",
+                                  "tier_9",
+                                  "tier_13",
+                                  "tier_16",
+                                  "tier_18"
                                 ],
-                                "description": "What happens to a video with no age tier: `hide`."
+                                "description": "What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier."
                               },
                               "allow_only": {
                                 "type": "boolean",
@@ -13217,9 +13473,14 @@
                     "unrated": {
                       "type": "string",
                       "enum": [
-                        "hide"
+                        "hide",
+                        "tier_0",
+                        "tier_9",
+                        "tier_13",
+                        "tier_16",
+                        "tier_18"
                       ],
-                      "description": "What happens to a video with no age tier: `hide`."
+                      "description": "What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier."
                     },
                     "allow_only": {
                       "type": "boolean",
@@ -13336,15 +13597,17 @@
         },
         "responses": {
           "200": {
-            "description": "Recorded. `tier_limit` is the limit in force, which is the earlier one when what was sent is looser.",
+            "description": "Recorded. `tier_limit` is the limit in force, which is the earlier one when what was sent is looser. While parental controls are off in this home (`enabled` false) the signal is recorded and limits nothing.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "tier_limit": {
-                      "type": "integer",
-                      "nullable": true,
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
                       "enum": [
                         -1,
                         0,
@@ -13362,21 +13625,24 @@
                     },
                     "refresh": {
                       "type": "boolean",
-                      "enum": [
-                        true
-                      ],
-                      "description": "Always `true`: refresh the access token now so the next one carries the limit."
+                      "description": "Refresh the access token now so the next one carries the limit. False while parental controls are off: nothing changed for this sign-in."
+                    },
+                    "enabled": {
+                      "type": "boolean",
+                      "description": "Parental controls are on in this home. When false, `tier_limit` is null and `pending_looser` false whatever the device said."
                     }
                   },
                   "required": [
                     "tier_limit",
                     "pending_looser",
-                    "refresh"
+                    "refresh",
+                    "enabled"
                   ],
                   "example": {
                     "tier_limit": 9,
                     "pending_looser": false,
-                    "refresh": true
+                    "refresh": true,
+                    "enabled": true
                   }
                 }
               }
@@ -13452,8 +13718,10 @@
                   "type": "object",
                   "properties": {
                     "tier_limit": {
-                      "type": "integer",
-                      "nullable": true,
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
                       "enum": [
                         -1,
                         0,
@@ -13559,9 +13827,14 @@
                         "unrated": {
                           "type": "string",
                           "enum": [
-                            "hide"
+                            "hide",
+                            "tier_0",
+                            "tier_9",
+                            "tier_13",
+                            "tier_16",
+                            "tier_18"
                           ],
-                          "description": "What happens to a video with no age tier: `hide`."
+                          "description": "What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier."
                         },
                         "allow_only": {
                           "type": "boolean",
@@ -13713,9 +13986,14 @@
                   "unrated": {
                     "type": "string",
                     "enum": [
-                      "hide"
+                      "hide",
+                      "tier_0",
+                      "tier_9",
+                      "tier_13",
+                      "tier_16",
+                      "tier_18"
                     ],
-                    "description": "What happens to a video with no age tier: `hide`."
+                    "description": "What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier."
                   },
                   "allow_only": {
                     "type": "boolean",
@@ -13763,9 +14041,14 @@
                         "unrated": {
                           "type": "string",
                           "enum": [
-                            "hide"
+                            "hide",
+                            "tier_0",
+                            "tier_9",
+                            "tier_13",
+                            "tier_16",
+                            "tier_18"
                           ],
-                          "description": "What happens to a video with no age tier: `hide`."
+                          "description": "What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier."
                         },
                         "allow_only": {
                           "type": "boolean",
@@ -14288,6 +14571,13 @@
                   "expires_at": {
                     "type": "string",
                     "format": "date-time"
+                  },
+                  "until": {
+                    "type": "string",
+                    "enum": [
+                      "day_end"
+                    ],
+                    "description": "In place of `expires_at`: `day_end` ends the rule when the home's day ends, the next 04:00 in the home's time zone. The home computes it, so it does not depend on the caller's clock. Giving both `until` and `expires_at` is refused (422)."
                   }
                 },
                 "required": [
@@ -14478,7 +14768,7 @@
           "Parental controls"
         ],
         "summary": "Whether the caller may watch a channel now",
-        "description": "Says whether the programme now on the channel is within the caller's parental limit, and when that may change. A player asks before it starts and again at `until`, and shows its \"not available right now\" screen while `allowed` is false. An account with no limit always gets `allowed: true`.",
+        "description": "Says whether the programme now on the channel is within the caller's parental limit, and when that may change. A player asks before it starts and again at `until`, and shows its \"not available right now\" screen while `allowed` is false. An account with no limit always gets `allowed: true`. Live TV counts toward the account's time rules like any playback: while its watching time is over the answer is 403 `parental-time`.",
         "responses": {
           "200": {
             "description": "The answer for now.",
@@ -14519,6 +14809,16 @@
               }
             }
           },
+          "403": {
+            "description": "The account's watching time is over for now: problem type `parental-time`, `code` is `parental_time`, `reason` is `outside_slot` or `limit_reached`, and `next_allowed_at` is when the rules allow playback again (absent when no moment in the next eight days does). The player shows its time's-up screen.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "No such channel that the caller may see. A channel above a restricted account's limit, or blocked for it, answers the same as one that does not exist.",
             "content": {
@@ -14528,6 +14828,9 @@
                 }
               }
             }
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
@@ -14560,7 +14863,7 @@
           "Parental controls"
         ],
         "summary": "Get a signed address to watch a channel",
-        "description": "Answers the channel's live stream address, signed for this caller. The home's streaming service serves a channel only to a request that carries this signature, to the home's web port for a signed-in account, or to an address allowed to use the tuner. For a signed address and for a signed-in account it asks, on every request and again when a programme starts, whether what plays now is within that viewer's parental limit, and it refuses when it cannot get an answer. When the programme now on the channel is above the caller's parental limit the answer is 403 with `code: restricted`, `reason: programme` and `retry_at`, and the player shows its \"not available right now\" screen until then. The stream itself stops for a restricted viewer when such a programme starts. A sign-in with no account, other than the admin token, gets 403 `no_account`. On another machine of the home a channel plays with a sign-in through that machine's web port, not with this address.",
+        "description": "Answers the channel's live stream address, signed for this caller. The home's streaming service serves a channel only to a request that carries this signature, to the home's web port for a signed-in account, or to an address allowed to use the tuner. For a signed address and for a signed-in account it asks, on every request and again when a programme starts, whether what plays now is within that viewer's parental limit, and it refuses when it cannot get an answer. When the programme now on the channel is above the caller's parental limit the answer is 403 with `code: restricted`, `reason: programme` and `retry_at`, and the player shows its \"not available right now\" screen until then. The stream itself stops for a restricted viewer when such a programme starts. A sign-in with no account, other than the admin token, gets 403 `no_account`. On another machine of the home a channel plays with a sign-in through that machine's web port, not with this address. Live TV counts toward the account's time rules like any playback, counted by the streaming service from what it serves: while the watching time is over the answer is 403 `parental-time` with `reason` and `next_allowed_at`, and a running stream stops within a minute. The address carries the sign-in it was made for, so the stream is held to that device's age limit as well as the account's.",
         "responses": {
           "200": {
             "description": "The signed address.",
@@ -14603,7 +14906,7 @@
             }
           },
           "403": {
-            "description": "The programme now on the channel is above the caller's limit: `code` is `restricted`, `reason` is `programme` and `retry_at` is when to ask again (absent when nothing in the next 12 hours changes it).",
+            "description": "The programme now on the channel is above the caller's limit: `code` is `restricted`, `reason` is `programme` and `retry_at` is when to ask again (absent when nothing in the next 12 hours changes it). Or the account's watching time is over: problem type `parental-time`, `code` is `parental_time`, with `reason` (`outside_slot` or `limit_reached`) and `next_allowed_at`.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14644,7 +14947,7 @@
           "Parental controls"
         ],
         "summary": "The parental answer for a viewer and a channel (this machine's services)",
-        "description": "For the streaming service on the home machine, which asks before it serves a live channel to a named viewer. It carries the machine's local token in `X-Maktaba-Local-Token`; no user sign-in opens it.",
+        "description": "For the streaming service on the home machine, which asks before it serves a live channel to a named viewer. It carries the machine's local token in `X-Maktaba-Local-Token`; no user sign-in opens it. It also says what it served the viewer of the channel since its last question (`served`), which the home counts toward the viewer's time rules, and names the sign-in the stream's credential carries (`family`, `ac`), so the answer is held to that device's age limit as well.",
         "security": [],
         "parameters": [
           {
@@ -14666,6 +14969,36 @@
               "format": "uuid"
             },
             "description": "The viewer's account id."
+          },
+          {
+            "name": "family",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The viewer's sign-in: the refresh-token family the stream's credential carries. The home reads the device limit it holds for that sign-in now."
+          },
+          {
+            "name": "ac",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "The age limit the credential carries for the sign-in's device. Used only when no `family` is given."
+          },
+          {
+            "name": "served",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 86400
+            },
+            "description": "Whole seconds of this channel served to the viewer since the last question; counted toward the viewer's time rules before they are read."
           }
         ],
         "responses": {
@@ -14679,7 +15012,8 @@
                     "restricted",
                     "channel_allowed",
                     "allowed",
-                    "until"
+                    "until",
+                    "time_allowed"
                   ],
                   "properties": {
                     "restricted": {
@@ -14701,6 +15035,28 @@
                       ],
                       "format": "date-time",
                       "description": "When the answer may change: the start of the next programme that flips it, in UTC. Null when nothing in the next 12 hours changes it. Ask again at this time."
+                    },
+                    "time_allowed": {
+                      "type": "boolean",
+                      "description": "True when the viewer's time rules allow playback now. When false the stream is refused with the `parental-time` problem, whatever the programme."
+                    },
+                    "time_reason": {
+                      "type": "string",
+                      "enum": [
+                        "outside_slot",
+                        "limit_reached"
+                      ],
+                      "description": "Why the time rules refuse: `outside_slot` or `limit_reached`. Absent when they allow."
+                    },
+                    "time_next_allowed_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "When the time rules next allow playback, in UTC. Absent when they allow now, or when no moment in the next eight days is allowed."
+                    },
+                    "time_ends_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "When a stream running now must end by the time rules, in UTC. Absent when nothing ends it. Ask again at this time."
                     }
                   }
                 }
@@ -14726,6 +15082,9 @@
                 }
               }
             }
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
@@ -14763,7 +15122,7 @@
                       "items": {
                         "type": "string"
                       },
-                      "description": "IP addresses or CIDR ranges, for example `192.168.1.20` or `192.168.1.0/24`. The answer has them normalised, without repeats."
+                      "description": "IP addresses or CIDR ranges, for example `192.0.2.20` or `192.0.2.0/24`. The answer has them normalised, without repeats."
                     }
                   }
                 }
@@ -14817,7 +15176,7 @@
                     "items": {
                       "type": "string"
                     },
-                    "description": "IP addresses or CIDR ranges, for example `192.168.1.20` or `192.168.1.0/24`. The answer has them normalised, without repeats."
+                    "description": "IP addresses or CIDR ranges, for example `192.0.2.20` or `192.0.2.0/24`. The answer has them normalised, without repeats."
                   }
                 }
               }
@@ -14842,7 +15201,7 @@
                       "items": {
                         "type": "string"
                       },
-                      "description": "IP addresses or CIDR ranges, for example `192.168.1.20` or `192.168.1.0/24`. The answer has them normalised, without repeats."
+                      "description": "IP addresses or CIDR ranges, for example `192.0.2.20` or `192.0.2.0/24`. The answer has them normalised, without repeats."
                     }
                   }
                 }
@@ -14914,7 +15273,7 @@
                   },
                   "subject_id": {
                     "type": "string",
-                    "description": "The item's id. For `time`: the minutes asked for, a whole number from 1 to 480 written as text (`\"30\"`)."
+                    "description": "The item's id. For `time`: the minutes asked for, `\"15\"`, `\"30\"` or `\"60\"` as text; any other number is a 422. A guardian can give another number when approving."
                   }
                 },
                 "required": [
@@ -15111,6 +15470,113 @@
           }
         },
         "operationId": "askParent"
+      },
+      "get": {
+        "tags": [
+          "Parental controls"
+        ],
+        "summary": "List the caller's own requests",
+        "description": "For a restricted account only, as asking is. Lists what became of the requests the caller made in the last seven days, newest first, 50 at most, so its app can show that a parent said yes or no. The list is the caller's own and names what was asked for by id only: no title, and not who answered. A request whose item was since deleted, or moved where the account cannot reach it, is still listed by its id. When the same item was asked for more than once, the first entry for it is the latest.",
+        "responses": {
+          "200": {
+            "description": "The caller's requests, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "requests": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "subject_kind": {
+                            "type": "string",
+                            "enum": [
+                              "library",
+                              "collection",
+                              "series",
+                              "channel",
+                              "youtube_source",
+                              "plugin",
+                              "video",
+                              "time"
+                            ]
+                          },
+                          "subject_id": {
+                            "type": "string",
+                            "description": "The item's id, as the caller sent it; for a request for time, the minutes asked for, as text."
+                          },
+                          "minutes": {
+                            "type": "integer",
+                            "description": "The minutes a request for time asked for; absent for any other kind."
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "approved",
+                              "denied",
+                              "expired"
+                            ],
+                            "description": "`pending` while it waits; `approved` or `denied` once a guardian answered (or `approved` when the limit was raised above the item); `expired` when it waited too long, its item was deleted, or, for a request for time, its home day ended."
+                          },
+                          "created_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "expires_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "When a request still waiting stops waiting: seven days after it was made, or, for a request for time, the end of the home day it was made on (04:00 home time)."
+                          },
+                          "decided_at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "When it was answered or closed; absent while it waits."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "subject_kind",
+                          "subject_id",
+                          "status",
+                          "created_at",
+                          "expires_at"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "requests"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a restricted account: `code` is `not_restricted`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listOwnParentalRequests"
       }
     },
     "/me/parental/guardians": {
@@ -15209,7 +15675,7 @@
                   },
                   "subject_id": {
                     "type": "string",
-                    "description": "The item's id. For kind `time`: the minutes to give, 1 to 480, as text."
+                    "description": "The item's id. For kind `time`: the minutes to give, `\"15\"`, `\"30\"` or `\"60\"` as text; any other number is a 422."
                   }
                 },
                 "required": [
@@ -15675,6 +16141,13 @@
                     "type": "string",
                     "format": "date-time",
                     "description": "When the allow rule ends; absent: it does not end. Must be in the future. Not for a request for time (422)."
+                  },
+                  "until": {
+                    "type": "string",
+                    "enum": [
+                      "day_end"
+                    ],
+                    "description": "In place of `expires_at`: `day_end` ends the allow rule when the home's day ends, the next 04:00 in the home's time zone. The home computes it, so it does not depend on the caller's clock. Giving both `until` and `expires_at` is refused (422). Not for a request for time (422)."
                   },
                   "minutes": {
                     "type": "integer",
@@ -16901,6 +17374,416 @@
         "operationId": "getMyParentalTime"
       }
     },
+    "/parental/settings": {
+      "get": {
+        "tags": [
+          "Parental controls"
+        ],
+        "summary": "Read whether parental controls are on",
+        "description": "The home's switch, how many accounts are restricted, and whether to show the notice that a child's device signed in before parental controls were set up.",
+        "x-maktaba-role": "admin",
+        "responses": {
+          "200": {
+            "description": "The settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParentalSettings"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin only. A restricted account gets `code: restricted`, any other account `code: admin_only`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getParentalSettings"
+      },
+      "put": {
+        "tags": [
+          "Parental controls"
+        ],
+        "summary": "Turn parental controls on or off",
+        "description": "On: every recorded device signal applies from the next request, and each app's next access token carries its limit. Off: device signals are recorded and limit nothing. Off is refused while any account is restricted.",
+        "x-maktaba-role": "admin",
+        "requestBody": {
+          "required": true,
+          "description": "The switch.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "enabled"
+                ],
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "description": "True turns parental controls on, false off."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The settings after the change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParentalSettings"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin only. A restricted account gets `code: restricted`, any other account `code: admin_only`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An account is restricted, so parental controls stay on: `code` is `restrictions_exist` and `type` is `https://maktaba.tv/problems/parental-restrictions-exist`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "setParentalSettings"
+      }
+    },
+    "/parental/settings/notice/dismiss": {
+      "post": {
+        "tags": [
+          "Parental controls"
+        ],
+        "summary": "Dismiss the notice that a child's device signed in",
+        "description": "The notice stays away, for every admin, until another device says a child may be using it.",
+        "x-maktaba-role": "admin",
+        "responses": {
+          "200": {
+            "description": "The settings, with the notice off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParentalSettings"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin only. A restricted account gets `code: restricted`, any other account `code: admin_only`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "dismissParentalNotice"
+      }
+    },
+    "/parental/library-suggestions": {
+      "get": {
+        "tags": [
+          "Parental controls"
+        ],
+        "summary": "List the libraries with the tier Rate libraries starts with",
+        "description": "Every library with its default age tier and the one the form offers for a library that has none: All ages when at least nine in ten of its classified videos are lectures, otherwise none. Nothing is stored until an admin sets a tier with `PUT /libraries/{id}/age-tier`.",
+        "x-maktaba-role": "admin",
+        "responses": {
+          "200": {
+            "description": "The libraries, by name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "libraries"
+                  ],
+                  "properties": {
+                    "libraries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "library_id",
+                          "name",
+                          "tier",
+                          "suggested_tier",
+                          "classified",
+                          "lectures"
+                        ],
+                        "properties": {
+                          "library_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "tier": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "enum": [
+                              0,
+                              9,
+                              13,
+                              16,
+                              18,
+                              null
+                            ],
+                            "description": "The default tier stored now, or null."
+                          },
+                          "suggested_tier": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "enum": [
+                              0,
+                              null
+                            ],
+                            "description": "What the form starts with: `0` (All ages) or null (Not rated)."
+                          },
+                          "classified": {
+                            "type": "integer",
+                            "description": "How many of its videos have a content type."
+                          },
+                          "lectures": {
+                            "type": "integer",
+                            "description": "How many of those are lectures or sermons."
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin only. A restricted account gets `code: restricted`, any other account `code: admin_only`.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listParentalLibrarySuggestions"
+      }
+    },
+    "/channels": {
+      "get": {
+        "tags": [
+          "Parental controls"
+        ],
+        "summary": "List the channels",
+        "description": "The live TV channels the caller may read, each with what it plays now. A restricted account is not sent a channel above its limit or under a block rule, and a programme above its limit is not named. An admin's answer also has each channel's `age_tier`.",
+        "responses": {
+          "200": {
+            "description": "The channels.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "number": {
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "age_tier": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "enum": [
+                              0,
+                              9,
+                              13,
+                              16,
+                              18,
+                              null
+                            ],
+                            "description": "The channel's age tier, set with `PUT /channels/{id}/age-tier`: a tier, or null when none is set. Only an administrator's answer has this field; it is absent for everyone else."
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listChannels"
+      }
+    },
+    "/libraries/manage": {
+      "get": {
+        "tags": [
+          "Libraries"
+        ],
+        "summary": "List every library for the management page",
+        "description": "Each library with its folders, counts, last scan and what it follows on YouTube, and the folders two libraries share. Each library carries its default `age_tier`.",
+        "x-maktaba-role": "admin",
+        "responses": {
+          "200": {
+            "description": "The libraries.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items",
+                    "conflict_groups"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "age_tier": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "enum": [
+                              0,
+                              9,
+                              13,
+                              16,
+                              18,
+                              null
+                            ],
+                            "description": "The library's default age tier, set with `PUT /libraries/{id}/age-tier`: a tier, or null when none is set."
+                          }
+                        }
+                      }
+                    },
+                    "conflict_groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Restricted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listManagedLibraries"
+      }
+    },
     "/pairing/approve": {
       "post": {
         "tags": [
@@ -17039,9 +17922,14 @@
                       "unrated": {
                         "type": "string",
                         "enum": [
-                          "hide"
+                          "hide",
+                          "tier_0",
+                          "tier_9",
+                          "tier_13",
+                          "tier_16",
+                          "tier_18"
                         ],
-                        "description": "What happens to a video with no age tier: `hide`."
+                        "description": "What happens to a video with no age tier: `hide` hides it; `tier_0`, `tier_9`, `tier_13`, `tier_16` and `tier_18` treat it as a video of that tier."
                       },
                       "allow_only": {
                         "type": "boolean",
@@ -17371,7 +18259,7 @@
           "type": {
             "type": "string",
             "format": "uri",
-            "description": "Stable problem identifier (`https://maktaba.tv/problems/<slug>`).",
+            "description": "Stable problem identifier (`https://maktaba.tv/problems/<slug>`). Every slug is an entry of the problem-type registry, `shared/api/problems.json`, which says in English and Arabic what it means and what to do; https://maktaba.tv/problems/ publishes a page for each.",
             "examples": [
               "https://maktaba.tv/problems/validation"
             ]
@@ -17625,6 +18513,21 @@
           "access_partial": {
             "type": "boolean",
             "description": "Some files could not be read, or a write failed since the check."
+          },
+          "age_tier": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "enum": [
+              0,
+              9,
+              13,
+              16,
+              18,
+              null
+            ],
+            "description": "The library's default age tier (Epic 57), set with `PUT /api/libraries/{id}/age-tier`: a tier, or null when none is set. Only an administrator's answer has this field; it is absent for everyone else."
           }
         }
       },
@@ -17843,6 +18746,21 @@
               },
               "playback_state": {
                 "$ref": "#/components/schemas/PlaybackState"
+              },
+              "age_tier_admin": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "enum": [
+                  0,
+                  9,
+                  13,
+                  16,
+                  18,
+                  null
+                ],
+                "description": "The age tier an administrator set on this video itself (Epic 57), with `PUT /api/videos/{id}/age-tier`: a tier, or null when the administrator set none. It is not what the video resolves to from its other sources. Only an administrator's answer has this field; it is absent for everyone else."
               }
             }
           }
@@ -18688,6 +19606,21 @@
           },
           "sort_title": {
             "type": "string"
+          },
+          "age_tier": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "enum": [
+              0,
+              9,
+              13,
+              16,
+              18,
+              null
+            ],
+            "description": "The age tier an administrator set on the collection (Epic 57), with `PUT /api/collections/{id}/age-tier`: a tier, or null when none is set. Only an administrator's answer to `GET /api/collections/{id}` has this field; it is absent for everyone else."
           }
         }
       },
@@ -21059,6 +21992,92 @@
               }
             }
           }
+        }
+      },
+      "ParentalSettings": {
+        "type": "object",
+        "description": "Whether parental controls are on in this home, and what an admin is told while they are off.",
+        "required": [
+          "enabled",
+          "restricted_accounts",
+          "can_disable",
+          "child_devices",
+          "child_device_notice"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Parental controls are on. They start off in a home that has set nothing up, and turn on by themselves when an admin makes the first account restricted or gives the first library a default age tier. While they are off a device's age signal is recorded and limits nothing. A restricted account's own limit is applied whatever this says."
+          },
+          "restricted_accounts": {
+            "type": "integer",
+            "description": "How many accounts are restricted."
+          },
+          "can_disable": {
+            "type": "boolean",
+            "description": "False while any account is restricted: lift every restriction before turning parental controls off."
+          },
+          "child_devices": {
+            "type": "integer",
+            "description": "How many sign-ins' devices said a child may be using them (a limit under 18) and are not applied because parental controls are off. Zero once they are on."
+          },
+          "child_device_notice": {
+            "type": "boolean",
+            "description": "Show the notice that a child may be using Maktaba: parental controls are off and such a device spoke since an admin last dismissed the notice."
+          }
+        },
+        "example": {
+          "enabled": false,
+          "restricted_accounts": 0,
+          "can_disable": true,
+          "child_devices": 1,
+          "child_device_notice": true
+        }
+      },
+      "ParentalCapabilities": {
+        "type": "object",
+        "description": "The caller's own part of the home's capabilities: what an app needs about parental controls before it draws anything.",
+        "required": [
+          "enabled",
+          "restricted",
+          "tier_limit",
+          "can_manage"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Parental controls are on in this home."
+          },
+          "restricted": {
+            "type": "boolean",
+            "description": "The account is restricted. A sign-in limited only by its device is not a restricted account."
+          },
+          "tier_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "enum": [
+              -1,
+              0,
+              9,
+              13,
+              16,
+              18,
+              null
+            ],
+            "description": "The age-tier limit this sign-in is held to, by the account's policy or by its device, whichever is stricter: `0` all ages, `9`, `13`, `16`, `18`; `-1` nothing that has a tier; `null` when nothing limits it."
+          },
+          "can_manage": {
+            "type": "boolean",
+            "description": "The caller is an admin, or the guardian of at least one restricted account: show the Family screens."
+          }
+        },
+        "example": {
+          "enabled": true,
+          "restricted": true,
+          "tier_limit": 9,
+          "can_manage": false
         }
       }
     },

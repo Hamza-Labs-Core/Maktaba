@@ -17,6 +17,8 @@ export const PIECES = {
   zone: { account: [], zone: ["Zone WAF Write", "Zone Settings Write", "Zone Read"] },
   tunnel: { account: ["Cloudflare Tunnel Write"], zone: ["DNS Write", "Zone Read"] },
   aop: { account: [], zone: ["SSL and Certificates Write", "Zone Read"] },
+  // No piece for a Worker's custom domains: Cloudflare creates a custom domain's DNS record
+  // itself, so `workers` covers them (maktaba.dev and maktaba.tv deploy with no DNS Edit).
 };
 
 /** One read call per permission: its path (a = account id, z = zone id). */
@@ -124,7 +126,7 @@ async function main() {
   const zoneName = arg("--zone", "maktaba.tv");
   const accountId = (process.env.CLOUDFLARE_ACCOUNT_ID ?? "").trim();
   const token = tokenFor(process.env, pieces.length === 1 ? pieces[0] : "");
-  if (!pieces.length) throw new Error("--pieces is required (workers, zone, tunnel, aop)");
+  if (!pieces.length) throw new Error(`--pieces is required (${Object.keys(PIECES).join(", ")})`);
   if (!accountId || !token) throw new Error("CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required");
   const { lines, missing } = await check({ pieces, zoneName, accountId, token, base: process.env.CLOUDFLARE_API_BASE || DEFAULT_BASE });
   for (const l of lines) console.log(l);

@@ -18,6 +18,14 @@ import Network
 ///   last seconds of a long video can be reached. Progress and closing a session answer 204.
 /// - A test changes an answer with `stub` (a status, a body, a delay) and checks what the
 ///   app asked with `requests` (method, path, query, body) or `seen` ("GET /api/home").
+/// - The demo library (story 60.09, `MockHome(demo: "ar")`): the product screenshots' home.
+///   Its routes and files are `tests/fixtures/demo-library/routes/<language>/` (generated from
+///   `library.json`, bundled as the folder `routes`), an image route's `art` a file of the
+///   folder `art`, served as JPEG. They win over everything but a test's stubs, `/api/me` and
+///   `/api/auth/me` included; the home's name is the demo's; a route the demo has not
+///   (the stream, sessions, the Remote's screens) answers as above. The demo's stream is
+///   `Fixtures/Stream/demo-*`: 720p segments of a still of Sintel's art (CC BY, as the art)
+///   with a line of English and Arabic subtitles written for the fixture.
 final class MockHome: @unchecked Sendable {
     /// One request the app made.
     struct Request: Sendable {
@@ -47,7 +55,14 @@ final class MockHome: @unchecked Sendable {
         let path: String
         let status: Int
         let file: String?
+        /// The demo library's image routes: a file of its `art` folder.
+        var art: String?
     }
+
+    /// The demo library's language ("en", "ar"), nil for the usual fixtures.
+    let demo: String?
+    /// The demo library's routes (`routes/<demo>/routes.json`), empty without `demo`.
+    private let demoRoutes: [Route]
 
     private let listener: NWListener
     private let queue = DispatchQueue(label: "maktaba.uitests.mockhome", attributes: .concurrent)
@@ -70,6 +85,8 @@ final class MockHome: @unchecked Sendable {
     private var master = "master"
     private var seconds = 3120
     private var fixedNow: Date?
+    /// The demo's last play queue (`demoQueue`).
+    private var demoQueueDoc: Data?
 
     /// What `/stream/{session}/manifest.m3u8` serves: `master` (the home's shape: the sound
     /// in the video's segments, two subtitle renditions) or `master-two-audio` (English and
@@ -95,7 +112,8 @@ final class MockHome: @unchecked Sendable {
 
     static let code = "TEST-2345"
 
-    init() throws {
+    /// `demo`: the demo library in that language ("en", "ar"); it must be in the bundle.
+    init(demo: String? = nil) throws {
         let params = NWParameters.tcp
         params.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
         listener = try NWListener(using: params)
@@ -103,6 +121,32 @@ final class MockHome: @unchecked Sendable {
         routes = fixtures.url(forResource: "routes", withExtension: "json")
             .flatMap { try? Data(contentsOf: $0) }
             .flatMap { try? JSONDecoder().decode([Route].self, from: $0) } ?? []
+        self.demo = demo
+        if let demo {
+            guard let url = fixtures.url(forResource: "routes", withExtension: "json", subdirectory: "routes/\(demo)") else {
+                throw URLError(.fileDoesNotExist, userInfo: [NSLocalizedDescriptionKey:
+                    "the demo library's routes/\(demo)/routes.json is not in the test bundle (project.yml's folder references)"])
+            }
+            demoRoutes = try JSONDecoder().decode([Route].self, from: Data(contentsOf: url))
+        } else {
+            demoRoutes = []
+        }
+    }
+
+    /// The demo library's pinned clock (`library.json`'s `clock`): noon UTC, so its dates are
+    /// the same day in every zone.
+    static var demoClock: Date {
+        let url = Bundle(for: MockHome.self).url(forResource: "library", withExtension: "json")
+        let json = url.flatMap { try? Data(contentsOf: $0) }
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        return (json?["clock"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) }
+            ?? Date(timeIntervalSince1970: 1_781_524_800) // 2026-06-15T12:00:00Z
+    }
+
+    /// `date` back to its quarter hour (12:07 → 12:00): a live guide drawn at a real time,
+    /// its programmes starting on the grid's lines.
+    static func quarterHour(_ date: Date = Date()) -> Date {
+        Date(timeIntervalSince1970: (date.timeIntervalSince1970 / 900).rounded(.down) * 900)
     }
 
     var url: String { "http://127.0.0.1:\(port)" }
@@ -302,6 +346,7 @@ final class MockHome: @unchecked Sendable {
             let n = r.value("page").flatMap(Int.init) ?? 0
             return Answer(status: 200, body: Data((bodies.indices.contains(n) ? bodies[n] : #"{"items":[]}"#).utf8))
         }
+        if let demoed = demoAnswer(r) { return demoed }
         if let fixed = remote(r.method, r.path, approved: ok) {
             return Answer(status: fixed.0, body: Data(fixed.1.utf8))
         }
@@ -310,9 +355,9 @@ final class MockHome: @unchecked Sendable {
             return Answer(status: 200, body: Self.png, contentType: "image/png")
         }
         // any HLS segment under /stream/: two seconds of the brand's ink (Fixtures/live-segment.ts),
-        // so a stubbed playlist really plays
+        // so a stubbed playlist really plays; the demo's still for the demo
         if r.method == "GET", r.path.hasPrefix("/stream/"), r.path.hasSuffix(".ts"),
-           let seg = fixtures.url(forResource: "live-segment", withExtension: "ts").flatMap({ try? Data(contentsOf: $0) }) {
+           let seg = resource(demo == nil ? "live-segment" : "demo-picture-0", "ts") {
             return Answer(status: 200, body: seg, contentType: "video/mp2t")
         }
         if let a = fixture(r.method, r.path, query: r.query) { return a }
@@ -321,14 +366,118 @@ final class MockHome: @unchecked Sendable {
 
     /// The Player's browse and live routes, from `Fixtures/routes.json`.
     private func fixture(_ method: String, _ path: String, query: String) -> Answer? {
-        // the videos' second (last) page
-        if method == "GET", path == "/api/videos", query.contains("cursor=c2") {
+        // the videos' second (last) page (the demo's list has one page)
+        if demo == nil, method == "GET", path == "/api/videos", query.contains("cursor=c2") {
             return file("videos-page2").map { Answer(status: 200, body: $0) }
         }
         guard let route = routes.first(where: { $0.method == method && Self.matches($0.path, path) }) else { return nil }
+        // under the demo, only what plays and what a TV or a queue keeps: nothing the fixtures
+        // say about their own videos (a transcript, a search) shows on a demo screen
+        if demo != nil, !Self.demoFallbacks.contains("\(route.method) \(route.path)") {
+            return Answer(status: 404, body: Data(#"{"title":"not in the demo library","status":404}"#.utf8))
+        }
         guard let name = route.file else { return Answer(status: route.status, body: Data()) }
         return file((name as NSString).deletingPathExtension).map { Answer(status: route.status, body: $0) }
     }
+
+    /// The demo library's answer to `r`, nil when the demo has no such route (or no demo).
+    /// Exact paths win over `{id}` patterns (`/api/videos/facets` before `/api/videos/{id}`).
+    private func demoAnswer(_ r: Request) -> Answer? {
+        guard let demo else { return nil }
+        if r.method == "GET", r.path == "/api/discovery/home" {
+            return Answer(status: 200, body: Data(#"{"id":"demo-home","name":"\#(demoHomeName)","version":"0.0.0","urls":[],"sign_in":{"password":true,"code":true}}"#.utf8))
+        }
+        if let queue = demoQueue(r, demo) { return queue }
+        let same = demoRoutes.filter { $0.method == r.method }
+        guard let route = same.first(where: { $0.path == r.path }) ?? same.first(where: { Self.matches($0.path, r.path) }) else {
+            return nil
+        }
+        if let art = route.art {
+            let file = fixtures.url(forResource: (art as NSString).deletingPathExtension,
+                                    withExtension: (art as NSString).pathExtension, subdirectory: "art")
+            return file.flatMap { try? Data(contentsOf: $0) }.map { Answer(status: route.status, body: $0, contentType: "image/jpeg") }
+                ?? Answer(status: 404, body: Data(#"{"title":"no such art","status":404}"#.utf8))
+        }
+        guard let name = route.file else { return Answer(status: route.status, body: Data()) }
+        return demoFile(name, demo).map { Answer(status: route.status, body: Data($0.utf8)) }
+    }
+
+    /// A file of the demo library's `routes/<language>/`, its times filled in from the clock.
+    private func demoFile(_ name: String, _ language: String) -> String? {
+        fixtures.url(forResource: (name as NSString).deletingPathExtension, withExtension: "json",
+                     subdirectory: "routes/\(language)")
+            .flatMap { try? Data(contentsOf: $0) }
+            .map { Self.fillTimes(String(decoding: $0, as: UTF8.self), now: clock ?? Date()) }
+    }
+
+    /// The demo's play queue (Epic 56: the TV plays a video through one): made from the demo
+    /// video's own JSON on `POST /api/me/play-queues` (a video source: that video; a series:
+    /// its episodes), and the same queue for its id, its current item and a reshuffle.
+    private func demoQueue(_ r: Request, _ language: String) -> Answer? {
+        let path = "/api/me/play-queues"
+        guard r.path == path || r.path.hasPrefix(path + "/"), r.path != path + "/current" else { return nil }
+        if r.method == "POST", r.path == path {
+            let body = (try? JSONSerialization.jsonObject(with: r.body) as? [String: Any]) ?? [:]
+            let source = body["source"] as? [String: Any] ?? [:]
+            let kind = source["kind"] as? String ?? "video", id = source["id"] as? String ?? ""
+            var ids = [id]
+            if kind != "video" {
+                let eps = demoFile("get-series-\(id)-episodes", language)
+                    .flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }
+                let seasons = eps?["seasons"] as? [[String: Any]] ?? []
+                ids = seasons.flatMap { ($0["episodes"] as? [[String: Any]] ?? []).compactMap { $0["video_id"] as? String } }
+            }
+            let items: [[String: Any]] = ids.enumerated().compactMap { pos, vid in
+                guard let v = demoFile("get-videos-\(vid)", language)
+                    .flatMap({ try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }) else { return nil }
+                var item: [String: Any] = ["pos": pos, "origin": "source", "id": vid]
+                for k in ["title", "filename", "library_id", "duration_sec"] { item[k] = v[k] }
+                return item
+            }
+            let doc: [String: Any] = ["id": "q-demo", "source": ["kind": kind, "id": id], "shuffle": false, "current_pos": 0,
+                                      "version": 1, "source_done": true, "total_estimate": items.count,
+                                      "used_at": ISO8601DateFormatter().string(from: clock ?? Date()), "device_id": "demo",
+                                      "items": items]
+            let data = (try? JSONSerialization.data(withJSONObject: doc)) ?? Data()
+            lock.withLock { demoQueueDoc = data }
+            return Answer(status: 201, body: data)
+        }
+        guard let doc = lock.withLock({ demoQueueDoc }) else { return nil }
+        return Answer(status: 200, body: doc)
+    }
+
+    /// A demo video's JSON (`GET /api/videos/<id>`), nil without a demo or such a video.
+    func demoVideo(_ id: String) -> [String: Any]? { demoDocument("get-videos-\(id)") }
+
+    /// The demo's route file `name` (`get-me-videos-v-sintel`: where Sintel resumes), as JSON.
+    func demoDocument(_ name: String) -> [String: Any]? {
+        guard let demo else { return nil }
+        return demoFile(name, demo).flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }
+    }
+
+    /// The id of the demo's first video in `GET /api/videos` (the first running job's subject).
+    var demoFirstVideoID: String? {
+        guard let demo, let list = demoFile("get-videos", demo),
+              let json = try? JSONSerialization.jsonObject(with: Data(list.utf8)) as? [String: Any] else { return nil }
+        return (json["items"] as? [[String: Any]])?.first?["id"] as? String
+    }
+
+    /// The demo home's name (`/api/auth/me`'s `home_name`: "Living room", «الجهاز الرئيسي»).
+    private var demoHomeName: String {
+        guard let demo, let me = demoFile("get-auth-me", demo),
+              let json = try? JSONSerialization.jsonObject(with: Data(me.utf8)) as? [String: Any],
+              let name = json["home_name"] as? String else { return "Maktaba" }
+        return name
+    }
+
+    /// The fixture routes the demo library still answers from `Fixtures/` (it has none of its
+    /// own): the stream session, the signed-in devices, the TV remote, the play queue's current.
+    static let demoFallbacks: Set<String> = [
+        "POST /api/stream/sessions", "GET /api/me/sessions", "GET /api/tv/info", "POST /api/tv/remote/tune",
+        "POST /api/tv/remote/sessions/{id}/heartbeat", "DELETE /api/tv/remote/sessions/{id}",
+        "GET /api/me/play-queues/current", "DELETE /api/search/recent",
+        "DELETE /api/recommendations/items/{video_id}", "DELETE /api/recommendations/rows/{reason_kind}",
+    ]
 
     /// The test stream, its progress reports and its closing.
     private func stream(_ method: String, _ path: String) -> Answer? {
@@ -340,6 +489,15 @@ final class MockHome: @unchecked Sendable {
         let playlist = "application/vnd.apple.mpegurl"
         let base = (name as NSString).deletingPathExtension
         switch name {
+        // the demo's cases first (a case with no guard above them would take their names)
+        case "manifest.m3u8" where demo != nil:
+            return resource("demo-master", "m3u8").map { Answer(status: 200, body: $0, contentType: playlist) }
+        case "video-0.ts" where demo != nil, "video-1.ts" where demo != nil:
+            return resource("demo-picture-\(base.suffix(1))", "ts").map { Answer(status: 200, body: $0, contentType: "video/mp2t") }
+        case "subs-en.vtt" where demo != nil, "subs-ar.vtt" where demo != nil:
+            return resource("demo-\(base)", "vtt").map { Answer(status: 200, body: $0, contentType: "text/vtt") }
+        case "subs-en.m3u8" where demo != nil, "subs-ar.m3u8" where demo != nil:
+            return Answer(status: 200, body: Data(Self.subtitleSegments(base, seconds: seconds).utf8), contentType: playlist)
         case "manifest.m3u8":
             return resource(master, "m3u8").map { Answer(status: 200, body: $0, contentType: playlist) }
         case "video.m3u8", "picture.m3u8", "audio-en.m3u8", "audio-ar.m3u8":
@@ -352,6 +510,19 @@ final class MockHome: @unchecked Sendable {
             let type = ext == "ts" ? "video/mp2t" : ext == "vtt" ? "text/vtt" : "application/octet-stream"
             return resource(base, ext).map { Answer(status: 200, body: $0, contentType: type) }
         }
+    }
+
+    /// The demo's subtitle playlist of `seconds`: `<name>.vtt` (its cue lasting the film) for
+    /// each of the picture's segments, after the same discontinuities (a subtitle segment
+    /// counts its times in its own discontinuity's: one segment for the whole stream lines up
+    /// with the first 4 s only, and the player drops the line past them).
+    static func subtitleSegments(_ name: String, seconds: Int) -> String {
+        var out = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n"
+        for i in 0 ..< max(1, seconds / 2) {
+            if i > 0, i % 2 == 0 { out += "#EXT-X-DISCONTINUITY\n" }
+            out += "#EXTINF:2.000,\n\(name).vtt\n"
+        }
+        return out + "#EXT-X-ENDLIST\n"
     }
 
     /// A media playlist of `seconds`: `<prefix>-0.ts` and `<prefix>-1.ts` in turn, each pair
@@ -369,8 +540,14 @@ final class MockHome: @unchecked Sendable {
         fixtures.url(forResource: name, withExtension: ext).flatMap { try? Data(contentsOf: $0) }
     }
 
+    /// A fixture as served. Under the demo the fixtures answer only what the demo has not (a
+    /// stream session and the like, never shown): their times are the real clock's, so a
+    /// session's `expires_at` is not already past for the app under the demo's pinned noon.
     private func file(_ name: String) -> Data? {
-        fixture(named: name).map { Data($0.utf8) }
+        guard demo != nil else { return fixture(named: name).map { Data($0.utf8) } }
+        return fixtures.url(forResource: name, withExtension: "json")
+            .flatMap { try? Data(contentsOf: $0) }
+            .map { Data(Self.fillTimes(String(decoding: $0, as: UTF8.self), now: Date()).utf8) }
     }
 
     /// `/api/videos/{id}/chapters` matches `/api/videos/v1/chapters`.
@@ -451,7 +628,7 @@ final class MockHome: @unchecked Sendable {
         case ("GET", "/api/system/processes"):
             return (200, Self.processes)
         case ("GET", "/api/queues/running"):
-            return (200, Self.running)
+            return (200, demoRunning ?? Self.running)
         default:
             return nil
         }
@@ -524,6 +701,21 @@ final class MockHome: @unchecked Sendable {
            {"seq":53,"at":"\#(time(-600))","role":"tv-slot","instance":"amber","kind":"exited","code":-1,"reason":"start_failed"},
            {"seq":54,"at":"\#(time(-60))","role":"tv-slot","instance":"amber","kind":"failed"}]}
         """#
+    }
+
+    /// The running jobs on the demo library's first three videos (their titles in its
+    /// language), nil without a demo.
+    private var demoRunning: String? {
+        guard let demo, let list = demoFile("get-videos", demo),
+              let json = try? JSONSerialization.jsonObject(with: Data(list.utf8)) as? [String: Any],
+              let items = json["items"] as? [[String: Any]], items.count >= 3 else { return nil }
+        var out = Self.running
+        for (old, item) in zip(["Seerah, lecture 12", "Tafsir, Surat al-Kahf part 2", "Fiqh of fasting"], items) {
+            let title = (item["title"] as? String) ?? ""
+            let quoted = String(decoding: (try? JSONSerialization.data(withJSONObject: [title])) ?? Data("[\"\"]".utf8), as: UTF8.self)
+            out = out.replacingOccurrences(of: #""\#(old)""#, with: String(quoted.dropFirst().dropLast()))
+        }
+        return out
     }
 
     static var running: String {

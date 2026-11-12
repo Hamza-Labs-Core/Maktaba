@@ -104,6 +104,7 @@ jobs:
       log_bench: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.log_bench == 'true' }}
       integration: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.integration == 'true' }}
       compat_prev: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.compat_prev == 'true' }}
+      parental_bypass: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.parental_bypass == 'true' }}
       replica: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.replica == 'true' }}
       components: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.components == 'true' }}
       components_chaos: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.components_chaos == 'true' }}
@@ -123,6 +124,7 @@ jobs:
       desktop_player: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.desktop_player == 'true' }}
       apple_apps: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.apple_apps == 'true' }}
       devportal: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.devportal == 'true' }}
+      website: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.website == 'true' }}
       wiki: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.wiki == 'true' }}
       # the Player's own files, or a Player object among the project file's changes
       apple_player_ui: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.apple_player_ui == 'true' || steps.apple.outputs.player_ui == 'true' }}
@@ -227,11 +229,12 @@ jobs:
 
   integration:
     needs: [changes]
-    if: needs.changes.outputs.integration == 'true' || needs.changes.outputs.compat_prev == 'true'
+    if: needs.changes.outputs.integration == 'true' || needs.changes.outputs.compat_prev == 'true' || needs.changes.outputs.parental_bypass == 'true'
     uses: ./.github/workflows/_integration.yml
     with:
       integration: ${{ needs.changes.outputs.integration == 'true' }}
       compat_prev: ${{ needs.changes.outputs.compat_prev == 'true' }}
+      parental_bypass: ${{ needs.changes.outputs.parental_bypass == 'true' }}
 
   replica:
     # Epic 37: the machines' copies and switching the home against real Postgres 16,
@@ -424,6 +427,16 @@ jobs:
     with:
       upload: ${{ github.event_name == 'pull_request' }}
 
+  # maktaba.tv, the website (Epic 60, story 60.03): build, tests, and the built site smoked
+  # through the Worker under wrangler dev. A pull request only builds it; website-deploy.yml
+  # deploys main.
+  website:
+    needs: [changes]
+    if: needs.changes.outputs.website == 'true'
+    uses: ./.github/workflows/_website.yml
+    with:
+      shots: true
+
   # The plugin store (Epic 54, story 54.19): its TypeScript typechecks, its tests run the
   # store-commerce migrations on node:sqlite with the fake and the recorded Adyen shapes (no
   # network, no keys), and every payment provider stays in its own module.
@@ -591,6 +604,7 @@ jobs:
       - desktop-player
       - apple-apps
       - devportal
+      - website
       - wiki
       - pr-body-check
       - affected-tests

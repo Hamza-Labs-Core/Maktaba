@@ -4,6 +4,7 @@ package parental
 // role rule is decided here, on the server:
 //
 //	ask, list who can unlock, unlock with a PIN   a restricted account, for itself
+//	read back what became of its own requests     a restricted account, its own only
 //	list, approve, deny requests                  admin, that child's guardian
 //	set a parent PIN                              admin, anyone's guardian (their own PIN)
 //	read a child's activity                       admin, that child's guardian
@@ -34,14 +35,14 @@ import (
 )
 
 // Problem types of these routes.
-const (
-	TypeNotRestricted   = "https://maktaba.tv/problems/not-restricted"
-	TypeTooManyRequests = "https://maktaba.tv/problems/parental-too-many-requests"
-	TypeRequestDecided  = "https://maktaba.tv/problems/parental-request-decided"
-	TypeRequestExpired  = "https://maktaba.tv/problems/parental-request-expired"
-	TypePINWrong        = "https://maktaba.tv/problems/parental-pin-wrong"
-	TypePINLocked       = "https://maktaba.tv/problems/parental-pin-locked"
-	TypePasswordWrong   = "https://maktaba.tv/problems/password-wrong"
+var (
+	TypeNotRestricted   = httperror.Type("not-restricted")
+	TypeTooManyRequests = httperror.Type("parental-too-many-requests")
+	TypeRequestDecided  = httperror.Type("parental-request-decided")
+	TypeRequestExpired  = httperror.Type("parental-request-expired")
+	TypePINWrong        = httperror.Type("parental-pin-wrong")
+	TypePINLocked       = httperror.Type("parental-pin-locked")
+	TypePasswordWrong   = httperror.Type("password-wrong")
 )
 
 // The notices guardians get. Neither carries a title or the child's name.
@@ -76,6 +77,7 @@ const DefaultMinAnswer = 250 * time.Millisecond
 // Mount attaches the routes.
 func (h *AskHandler) Mount(r chi.Router) {
 	r.Post("/api/me/parental/requests", h.Ask)
+	r.Get("/api/me/parental/requests", h.Mine)
 	r.Get("/api/me/parental/guardians", h.Unlockers)
 	r.Post("/api/me/parental/unlock", h.Unlock)
 	r.Get("/api/me/parental-pin", h.PIN)
@@ -178,9 +180,9 @@ func (h *AskHandler) Ask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.SubjectKind == parentalpkg.RequestTime {
-		if _, ok := parentalpkg.RequestMinutes(req.SubjectID); !ok {
+		if _, ok := parentalpkg.AskedMinutes(req.SubjectID); !ok {
 			httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "subject_id",
-				Message: "for time, the minutes asked for: a whole number from 1 to 480"}}))
+				Message: "for time, the minutes asked for: 15, 30 or 60"}}))
 			return
 		}
 	}
@@ -195,6 +197,27 @@ func (h *AskHandler) Ask(w http.ResponseWriter, r *http.Request) {
 		h.tell(r.Context(), p.UserID, NoticeRequest, "notify.parental.request", "info", "request:"+out.ID, nil)
 	}
 	common.WriteJSON(w, r, status, requestResponse{Request: out})
+}
+
+type ownRequestsResponse struct {
+	Requests []parentalpkg.OwnRequest `json:"requests"`
+}
+
+// Mine implements GET /api/me/parental/requests: what became of the requests the
+// caller made in the last seven days, newest first, 50 at most. For a restricted
+// account only, as asking is; the list is the caller's own, by id: no title, and
+// not who answered.
+func (h *AskHandler) Mine(w http.ResponseWriter, r *http.Request) {
+	p := h.child(w, r)
+	if p == nil {
+		return
+	}
+	list, err := h.Store.OwnRequests(r.Context(), p.UserID)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, ownRequestsResponse{Requests: list})
 }
 
 // tell sends one notice to each of childID's guardians, or to the admins when it
@@ -292,6 +315,9 @@ type approveRequest struct {
 	// ExpiresAt, when set, is when the approval ends; left out, it does not end.
 	// Not for a `time` request (422).
 	ExpiresAt *time.Time `json:"expires_at"`
+	// Until, in place of ExpiresAt, names an end the home computes: `day_end`,
+	// the end of the home's day. Not for a `time` request (422).
+	Until string `json:"until"`
 	// Minutes, for a `time` request only (422 on any other), is how many minutes
 	// to give, 1 to 480; left out, the minutes asked for.
 	Minutes *int `json:"minutes"`
@@ -299,12 +325,16 @@ type approveRequest struct {
 
 // approveInvalid is the 422 of an approval whose body does not fit: err names the
 // field (parental.ErrInvalid: <field>).
-func approveInvalid(err error) *httperror.Error {
+func approveInvalid(err error, until bool) *httperror.Error {
 	field := strings.TrimPrefix(err.Error(), parentalpkg.ErrInvalid.Error()+": ")
 	msg := "is not valid"
 	switch field {
 	case "expires_at":
 		msg = "must be in the future, and left out for a request for more time"
+		if until {
+			// the end came from `until`: that is the field the caller sent
+			field, msg = "until", "must be left out for a request for more time"
+		}
 	case "minutes":
 		msg = "must be from 1 to 480, and only for a request for more time"
 	default:
@@ -335,10 +365,15 @@ func (h *AskHandler) Approve(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "minutes", Message: "must be from 1 to 480"}}))
 		return
 	}
-	out, err := h.Store.ApproveWith(r.Context(), p.UserID, id, parentalpkg.Approval{ExpiresAt: req.ExpiresAt, Minutes: req.Minutes})
+	expiresAt, bad := h.ending(r.Context(), req.ExpiresAt, req.Until)
+	if bad != nil {
+		httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{*bad}))
+		return
+	}
+	out, err := h.Store.ApproveWith(r.Context(), p.UserID, id, parentalpkg.Approval{ExpiresAt: expiresAt, Minutes: req.Minutes})
 	if err != nil {
 		if errors.Is(err, parentalpkg.ErrInvalid) {
-			httperror.Write(w, r, approveInvalid(err))
+			httperror.Write(w, r, approveInvalid(err, req.Until != ""))
 			return
 		}
 		h.failAsk(w, r, err)

@@ -24,6 +24,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/httpx"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/probe"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/timelimit"
 )
 
 // FileOpener abstracts os.Open so tests inject in-memory readers.
@@ -202,6 +203,12 @@ func (h *DirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Last-Modified", stat.ModTime().UTC().Format(http.TimeFormat))
 	w.Header().Set("Cache-Control", "private, max-age=60")
 
+	// Epic 57 story 57.14: a kept account's bytes come as they play (the file's
+	// average byte rate, with a read-ahead). Every other request has no pacer, and
+	// body is w itself.
+	body := timelimit.PacerFrom(r.Context()).Writer(r.Context(), w, videoID.String(),
+		timelimit.ByteRate(stat.Size(), row.DurationSec, row.BitrateKbps))
+
 	rng := r.Header.Get("Range")
 	if rng == "" {
 		w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
@@ -210,7 +217,7 @@ func (h *DirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		n, cerr := copyReader(w, src, 0, stat.Size())
+		n, cerr := copyReader(body, src, 0, stat.Size())
 		h.copyFailed(videoID, mediaPath, 0, n, cerr)
 		return
 	}
@@ -239,7 +246,7 @@ func (h *DirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusPartialContent)
 	// a client that went away ends the copy too: only a source failure is logged
-	n, cerr := copyReader(w, src, start, length)
+	n, cerr := copyReader(body, src, start, length)
 	h.copyFailed(videoID, mediaPath, start, n, cerr)
 }
 

@@ -26,6 +26,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libpaths"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
@@ -75,10 +76,12 @@ type ManagedLibrary struct {
 	Settings  json.RawMessage `json:"settings"`
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
-	Counts    LibraryCounts   `json:"counts"`
-	LastScan  *ScanSummary    `json:"last_scan"`
-	Scanning  bool            `json:"scanning"`
-	Conflicts []RootConflict  `json:"conflicts"`
+	// AgeTier is the library's default age tier (Epic 57): a tier or null.
+	AgeTier   *parental.AdminTier `json:"age_tier,omitempty"`
+	Counts    LibraryCounts       `json:"counts"`
+	LastScan  *ScanSummary        `json:"last_scan"`
+	Scanning  bool                `json:"scanning"`
+	Conflicts []RootConflict      `json:"conflicts"`
 	// YouTube is what the library follows on YouTube (manage_youtube.go).
 	YouTube LibraryYouTube `json:"youtube"`
 	// CollectionMode is how the library grid shows collections (story 56.08).
@@ -169,10 +172,13 @@ func (h *Handler) Manage(w http.ResponseWriter, r *http.Request) {
 	}
 	problems := h.checkRoots(roots)
 
+	// each library's default age tier (Epic 57), for the rating control
+	tiers := parental.AdminTiers(ctx, h.DB, principal.FromContext(ctx), parental.TierOnLibrary, "")
 	resp := ManageResponse{Items: make([]ManagedLibrary, 0, len(libs)), ConflictGroups: []ConflictGroup{}}
 	for _, l := range libs {
 		m := ManagedLibrary{
-			ID: l.ID, Name: l.Name, Settings: l.Settings, CreatedAt: l.CreatedAt, UpdatedAt: l.UpdatedAt,
+			AgeTier: tiers[l.ID],
+			ID:      l.ID, Name: l.Name, Settings: l.Settings, CreatedAt: l.CreatedAt, UpdatedAt: l.UpdatedAt,
 			Roots: []ManagedRoot{}, Counts: counts[l.ID], Conflicts: []RootConflict{},
 			CollectionMode: l.CollectionMode,
 			Access:         l.Access, AccessCheckedAt: l.AccessCheckedAt, AccessPartial: l.AccessPartial,
@@ -551,7 +557,7 @@ func (h *Handler) Folders(w http.ResponseWriter, r *http.Request) {
 		names = res.names
 	case <-timer.C:
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.tv/problems/folder-timeout",
+			Type:   httperror.Type("folder-timeout"),
 			Title:  "folder did not answer",
 			Status: http.StatusGatewayTimeout,
 			Detail: "folder " + q + " did not answer in time; its drive or share may be disconnected",

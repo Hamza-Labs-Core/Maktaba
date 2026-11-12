@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **Messages in Arabic speak to the whole household (story 60.06).** The Arabic of every
+  message the API sends, and of its page on maktaba.tv, now addresses the household in the plural
+  and names the product «مكتبة» («برنامج مكتبة» where the bare word reads as a library), as the
+  site's voice guide does. The English and what each message means are unchanged.
+
 - **Updates on a NAS (story 59.12).** The Docker image's own updates and a NAS catalog's
   (TrueNAS app updates, Unraid's update check, Watchtower, a pull in Container Manager) now live
   side by side: neither needs turning off. **Admin → Updates** shows, on the image, the release
@@ -256,6 +261,33 @@ build fails when the two differ.
   days and opens an issue when a cost grows by more than 20 % (Epic 53 story 53.13).
 
 ### Fixed
+
+- **Transcription gives its memory back when idle.** On a Mac, each transcription runner kept
+  Whisper and the second listen's model loaded (5 to 10 GB each, with two runners on a large
+  Mac) for as long as it ran. After ten minutes without transcription work it now lets both go,
+  and loads them again for the next file. The second listen also keeps to the cap on its GPU
+  memory cache when it loads before Whisper, and a finished file's audio is no longer held
+  until the next one finishes.
+
+- **The NAS guides, followed step by step, now end with a working home.** The Docker,
+  Synology, TrueNAS, Unraid, QNAP and UGREEN guides were run on NAS-shaped containers, and five
+  faults on the way are gone:
+  - a container started before its setup (every guide's order) started the server at setup's
+    first answer; its own database then made setup stop and say "set up already" with no admin.
+    The container now waits until setup's database is there;
+  - the username setup offered, `admin`, is taken by Maktaba's own account, so setup failed at its
+    last step. Setup and the app's setup screen offer no name and refuse that one with the reason;
+  - in a container setup proposed the roomiest disk it saw for the data folder: a media mount
+    (read-only on TrueNAS, so every try failed). It now proposes the data volume and never offers
+    a read-only mount;
+  - on Unraid a fresh appdata folder belongs to root, so the container stopped at once; the guide
+    says to make it Maktaba's first, and the message gives the `chown` in Unraid's terminal;
+  - a home on a Docker bridge logged an unknown reason every few seconds and kept its components'
+    gates from refreshing.
+  The guides also say that setup needs the internet once, that libraries are added after setup
+  (Manage → Manage libraries), that a new library's first scan waits for the quiet hours, and
+  name the menus as the app does. The install page refuses a Docker volume for a user other than
+  1000, which cannot write it.
 
 - **A busy home no longer rate-limits its own plugin work.** Every program on the home's
   machine shared one rate-limit bucket on loopback (600 requests a minute), so on a large library
@@ -769,6 +801,101 @@ build fails when the two differ.
   alerted.
 
 ### Added
+
+- **Parental controls (Epic 57).** A home can now limit what a child's account sees and how
+  long it watches. An admin makes an account restricted and gives it an age limit (All ages, 9+,
+  13+, 16+, 18+, or nothing unless allowed), a rule for unrated videos (hidden unless you choose
+  otherwise), lists of what is allowed and blocked (a library, a collection, a series, a channel,
+  a YouTube source, a plugin or one video), and names its guardians. A guardian need not be an
+  admin: they change their own children's limits, and only an admin lifts a restriction. The
+  home enforces all of it, on the home network and through Maktaba Cloud, for every app: Home,
+  libraries, search (titles and spoken words), recommendations, Continue Watching, collections,
+  series, playlists, queues, pictures, subtitles, plugin panels, live TV and streams. A hidden
+  video answers exactly as one that does not exist. **Nothing changes until you set it up:**
+  parental controls are off in a home with no restricted account, and turn on when the first
+  account is made restricted or the first library gets a default age (an admin can also switch
+  them on or off). Set them on the web under **Family** (`/family`) or in the iPhone and iPad
+  Player under **Profile → Family**.
+
+- **Watching time, kept by the home (stories 57.14, 57.15).** A guardian sets how long a
+  restricted account may watch each day and in which hours, for the whole account or for one
+  library. The home counts the time on its own clock and in its own time zone, across every
+  device, so a second device does not give more time, and a day ends at 04:00. When the time is
+  up no video starts and a running one stops within a minute; browsing stays open. Each app
+  shows the time left, warns at 5 minutes and at 1, and shows a time's-up screen that says when
+  watching opens again. A guardian can give more time for today (up to 480 minutes).
+
+- **Ask a parent, and the parent PIN (story 57.06).** A child can ask for a blocked video, or
+  for more time. A guardian answers on the web (**Family → Requests**) or in the iPhone and
+  iPad Player: approve for today, this week or always, or deny. A guardian standing there can
+  type their six-digit parent PIN on the child's device to open one thing until the day ends,
+  or to give more time. The home checks the PIN; five wrong tries lock it for 15 minutes, and
+  each lock after that is twice as long, up to a day. Guardians get a notice that a request is
+  waiting, with no title and no name in it.
+
+- **Age ratings for everything, and ratings worked out from transcripts (stories 57.01,
+  57.17).** Every video gets an age tier: from what an admin sets on the video or on its
+  series, collection, channel, YouTube source or library, from ratings that already exist (the
+  guide, YouTube's age limit, plugins, ratings kept from Plex), and, where nothing rates it,
+  from its own transcript. The home's own language model reads the transcript, title and
+  description and proposes a tier; the transcript never leaves the home, and a home with no
+  model gets no detected tiers. A detected tier counts only when the model is sure enough, can
+  only tighten, and never beats a person's choice. What it is unsure about is on a review list
+  for an admin (`/parental/review` on the web). A library's default age rates a whole library in
+  one choice: in the library's settings on the web, or under **Rate libraries** in the iPhone
+  and iPad Player.
+
+- **What a child watched (story 57.08).** A guardian sees what a restricted account watched,
+  what was blocked, what it asked for and how long it watched each day, on the web and in the
+  iPhone and iPad Player. The record stays on the home and is kept for 90 days. Search terms
+  are not recorded.
+
+- **Live TV under parental controls (story 57.10).** A restricted account sees only the
+  channels within its limit. A programme above the limit shows as "Not available" in the guide,
+  and the channel stops for it and comes back with the next programme. Channel streams are now
+  signed. The tuner routes for Plex's DVR answer only this machine, the Plex server set up in
+  Maktaba and the addresses an admin lists under live TV's settings (`/api/tv/hdhr/allowed`); a
+  listed address is not limited per viewer, so list only machines that may show everything.
+
+- **Apple's age signals on iPhone and iPad (stories 57.04, 57.09).** The Player reads the film
+  and TV rating limit a parent set in Screen Time and sends it to the home, which holds that
+  sign-in to the stricter of the device's limit and the account's. A device can only tighten a
+  limit; a looser one waits for a guardian. When the Player leaves the front, as when Screen
+  Time shields it, it sends the position to the home. Help explains how to use Apple's controls
+  with Maktaba.
+
+- **Parental controls in each app.** The web: family settings for admins and guardians, and
+  the child's side. The iPhone and iPad Player: both as well. The Android Player (phone and
+  tablet), Android TV and the Player for Windows and Linux: the child's side only (the time
+  left and the time's-up screen, Ask a parent, the parent PIN, the blocked page, live TV), with
+  no screens for guardians; set the rules on the web. Every word is in English and Arabic.
+
+- **Parental controls: the update, and what is not there yet.** Migrations 0220 to 0225 add the
+  tables and columns; no account becomes restricted, no library gets an age and nobody sees
+  anything different until an admin sets it up. Not there yet: parental controls on Apple TV
+  beyond what the home enforces for any app (in progress); the notice in the iPhone Player that
+  a child's device signed in (the web shows it); the home's time rules through Apple's Screen
+  Time (it needs an entitlement Apple has not granted); guardian screens on Android and the
+  desktop Player; and the age range a parent shares through Apple's Declared Age Range, which
+  the Player sends only once the app has that capability. Detection reads the transcript, not
+  the picture.
+
+- **For app and plugin developers: the parental API (Epic 57).** The routes are described in
+  the API reference in English and Arabic. `GET /api/capabilities` has a `parental` block
+  (`enabled`, `restricted`, `tier_limit`, `can_manage`). A stream refused for time answers 403
+  `parental-time` with a `reason` and `next_allowed_at`; a player stops, does not retry by
+  itself, and posts progress at least every 60 seconds while it plays. Every API route has an
+  entry in the route registry (`parental.Surfaces`), and a new route fails the tests until it
+  has one. maktaba.dev: Contributing gains Parental controls for client and API authors.
+
+- **What an error means (story 60.06).** Every error the API sends now names a type from one
+  registry, `shared/api/problems.json`: 288 entries, each saying in English and Arabic what
+  happened, what you can do and whom to ask, ready for maktaba.tv's page per type. A browser
+  that opens an API error gets a **What this means** link to that page, in Arabic for an Arabic
+  browser. The API sends only registered types: in production an unknown one is logged and sent
+  as its status's general type, with the status kept; in the tests, and in the Android, Apple and
+  web apps' tests, an unregistered type or code fails the run. The word review's undo errors now
+  use hyphens in their type (`not-active`, as every other type), with the same `code`.
 
 - **A NAS as the home of several machines (story 59.13).** Computers join a NAS home as nodes
   and take transcription and conversions, opening the NAS's folders over SMB: the home works

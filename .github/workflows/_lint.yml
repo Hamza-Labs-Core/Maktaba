@@ -38,7 +38,10 @@ jobs:
   # runs).
   repo:
     runs-on: ubuntu-22.04
-    timeout-minutes: 10
+    # The routing tests ("which jobs a change runs") alone took 8 minutes on 2026-11-11, and
+    # main's runs of this job took 6 to 10 minutes; at 10 it was cancelled inside the trail
+    # step on two pull requests (#1175, #1176). 20 leaves headroom; a hang still ends.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6.0.2
         with:
@@ -130,6 +133,32 @@ jobs:
       - name: The agent trail checks (agent-trail)
         uses: Hamza-Labs-Core/agent-trail@v0
 
+  # Story 60.08: every maktaba.tv link the repository prints opens a page. On every pull request
+  # with no path filter: the files it reads (every tracked file but the trail, the specs, the
+  # wiki databases and test files) cannot be written as a ci-paths.yml filter, which has no
+  # negation. Problem links are checked against shared/api/problems.json, the others against
+  # web/packages/website/dist-manifest.json (the site build regenerates it). A dead link fails
+  # with its file, line and the nearest page; links-baseline.json lists the links that were dead
+  # when the check landed (the site did not exist yet), shrinks with each page that ships, and
+  # must be empty by the end of Epic 60's Phase 1. Node's standard library only: no install.
+  links:
+    name: maktaba.tv links
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: web/.nvmrc
+          package-manager-cache: false
+
+      - name: The link check's tests
+        run: node --test web/packages/website/scripts/links.test.mjs
+
+      - name: Every maktaba.tv link opens a page (links.mjs)
+        run: node web/packages/website/scripts/links.mjs
+
   lint:
     if: inputs.go || inputs.pipeline || inputs.web
     runs-on: ubuntu-22.04
@@ -192,6 +221,9 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
+          # keep the wheels: pruned (setup-uv's default) main's entry held 6 MB, and every
+          # run downloaded the whole set from PyPI again
+          prune-cache: false
           # restore main's uv cache; only a push to main saves it
           save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
@@ -226,7 +258,8 @@ jobs:
       - name: Install pipeline deps
         if: inputs.go || inputs.pipeline
         working-directory: pipeline
-        run: uv sync --frozen --all-extras
+        # every extra but torch's CUDA tree, plus torch's CPU build for mypy
+        run: ../tools/ci/pipeline-deps.sh --cpu-torch
 
       # Epic 51 (story 51.13): a rules section that removes a field or changes its kind
       # bumps its major version (compared with schema.json at the last release tag; the

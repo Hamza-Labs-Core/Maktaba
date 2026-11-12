@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -124,6 +125,64 @@ func TestContainerWaitsForSetupToFinish(t *testing.T) {
 	}()
 	if !c.waitSetup(context.Background()) {
 		t.Fatal("did not go on once setup finished")
+	}
+}
+
+// Every NAS guide starts the container before its setup. Setup's first answer (the data
+// folder) writes server.toml before the admin step makes the pending file: the container
+// waits through that gap until setup's finish step made the database, or the server ran its
+// own initdb there and setup then said "set up already" with no admin (found by following
+// the guides on Docker).
+func TestContainerWaitsForSetupsDatabase(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "server.toml")
+	if err := os.WriteFile(cfgPath, []byte(fmt.Sprintf("[server]\ndata_dir = %q\n", dir)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var made atomic.Bool
+	var asked atomic.Int32
+	var out bytes.Buffer
+	c := containerDeps{config: cfgPath, out: &out, every: 10 * time.Millisecond,
+		database: func(p string) bool {
+			if p != cfgPath {
+				t.Errorf("asked about %s", p)
+			}
+			asked.Add(1)
+			return made.Load()
+		}}
+	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
+	defer cancel()
+	if c.waitSetup(ctx) {
+		t.Fatal("went on with server.toml and no pending file, before setup made the database")
+	}
+	if asked.Load() == 0 {
+		t.Fatal("the database was not asked about")
+	}
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		made.Store(true)
+	}()
+	if !c.waitSetup(context.Background()) {
+		t.Fatal("did not go on once setup made the database")
+	}
+}
+
+// The real check: the bundled Postgres's cluster under the data folder, or a [database] url;
+// a server.toml that does not load is the server's to judge.
+func TestSetupMadeDatabase(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "server.toml")
+	if err := os.WriteFile(cfgPath, []byte("[database]\nurl = \"postgres://maktaba@db:5432/maktaba\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !setupMadeDatabase(cfgPath) {
+		t.Fatal("a [database] url is a database")
+	}
+	if err := os.WriteFile(cfgPath, []byte("[server\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !setupMadeDatabase(cfgPath) {
+		t.Fatal("a server.toml that does not load held the container")
 	}
 }
 

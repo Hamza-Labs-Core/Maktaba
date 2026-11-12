@@ -7,6 +7,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
+    <meta name="maktaba-menu" content="none" />
     <title>Troubleshooting on a NAS · Maktaba</title>
     <meta
       name="description"
@@ -17,6 +18,7 @@
     <link rel="stylesheet" href="/install/install.css" />
   </head>
   <body>
+    <a class="skip-link" href="#main">Skip to the content</a>
     <header>
       <h1>Troubleshooting on a NAS</h1>
       <p class="lead">Each message Maktaba shows, what it means, and the fix.</p>
@@ -25,7 +27,7 @@
         <a href="/ar/install/troubleshooting/" hreflang="ar" lang="ar">العربية</a>
       </nav>
     </header>
-    <main class="guide">
+    <main id="main" class="guide">
       <p>
         Messages printed before the web app is up appear in the container's log (Container Manager's
         Log tab, TrueNAS's app logs, Unraid's Docker log), in English and then in Arabic.
@@ -86,6 +88,21 @@
         Maktaba's database must be on a local disk: setup refuses a network share, and on Unraid the
         array's <code>/mnt/user</code>. Choose a folder on an SSD or a pool, such as
         <code>/mnt/cache/appdata/maktaba</code>. On spinning disks Maktaba works, a little slower.
+      </p>
+      <h2 id="setup-download">Setup stops while getting Maktaba ready</h2>
+      <p>
+        Setup says <strong>Installing the tools failed</strong> or
+        <strong>Downloading the models failed</strong>: the NAS could not reach the internet. Setup
+        downloads the transcription and search tools (about 2 GB) and the speech models once. Check
+        the NAS's network and its DNS, then run the setup command again: it goes on from where it
+        stopped.
+      </p>
+      <h2 id="empty-library">The library is empty after setup</h2>
+      <p>
+        The folders you gave setup only fill the folder list: add each library in
+        <strong>Manage → Manage libraries → Add library</strong>. On a Light or Standard NAS its
+        first scan then waits for the quiet hours (01:00 to 06:00 by default):
+        <strong>Run now</strong> on the library's page starts it at once.
       </p>
     </main>
   </body>

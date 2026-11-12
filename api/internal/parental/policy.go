@@ -245,6 +245,14 @@ type Store struct {
 	// (family) has a looser device signal waiting (story 57.04; the guardian's
 	// notice of it is story 57.08's).
 	OnSignalPending func(ctx context.Context, userID, family string)
+	// OnChildDevice, when set, is told after the commit that userID's sign-in's
+	// device said a child may be using it (a limit under 18) while parental controls
+	// are not turned on (story 57.12): the admins are told once per sign-in.
+	OnChildDevice func(ctx context.Context, userID, family string)
+	// OnKeptChange, when set (the time keeper's KeptChanged, story 57.14), is told
+	// after an account was made restricted, changed, or had its restriction lifted,
+	// so the streaming service learns at once whether its time is kept.
+	OnKeptChange func(ctx context.Context, userID string) error
 }
 
 // NewStore returns a Store over db.
@@ -405,6 +413,10 @@ func (s *Store) SetPolicy(ctx context.Context, actorID, userID string, in Policy
 				userID, in.MaxTier, in.Unrated, in.AllowOnly, nullUUID(actorID), at))
 			if errors.Is(err, sql.ErrNoRows) {
 				return ErrStale // made restricted by someone else meanwhile
+			}
+			if err == nil {
+				// the first restricted account turns parental controls on (story 57.12)
+				err = EnableTx(ctx, tx, actorID)
 			}
 		} else {
 			if in.Version != before.Version {
@@ -673,6 +685,12 @@ func (s *Store) AddRule(ctx context.Context, actorID, userID string, in RuleInpu
 func (s *Store) addRuleTx(ctx context.Context, tx *sql.Tx, actorID, userID string, in RuleInput) (*Rule, error) {
 	if err := in.validate(); err != nil {
 		return nil, err
+	}
+	// a uuid is kept in the one form every reader compares it in: a client that
+	// sent it in capitals (or with no hyphens) would otherwise store a rule that
+	// the lookups by id never match
+	if c, ok := CanonicalUUID(in.SubjectID); ok {
+		in.SubjectID = c
 	}
 	if _, err := policyOf(ctx, tx, userID, true); err != nil {
 		return nil, err

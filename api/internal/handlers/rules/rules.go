@@ -407,7 +407,7 @@ func writeVersion(ctx context.Context, tx *sql.Tx, section string, code Version,
 }
 
 func conflict(code, detail string) *httperror.Error {
-	return httperror.Conflict("https://maktaba.tv/problems/"+strings.ReplaceAll(code, "_", "-"), detail).
+	return httperror.Conflict(httperror.TypeForCode(code), detail).
 		With("code", code)
 }
 
@@ -589,7 +589,7 @@ func Effective(ctx context.Context, db *sql.DB, section string) (map[string]any,
 func adminOnly(w http.ResponseWriter, r *http.Request) bool {
 	p := principal.FromContext(r.Context())
 	if p == nil {
-		httperror.Write(w, r, (&httperror.Error{Type: "https://maktaba.tv/problems/auth-required",
+		httperror.Write(w, r, (&httperror.Error{Type: httperror.TypeAuthRequired,
 			Title: "sign in", Status: http.StatusUnauthorized, Detail: "sign in as an admin"}).With("code", "auth_required"))
 		return false
 	}

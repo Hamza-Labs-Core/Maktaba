@@ -51,8 +51,9 @@ describe("Users: time limits (57.15)", () => {
   it("says where a restricted account is made when there is none", () => {
     open({});
     const section = screen.getByRole("region", { name: "Time limits" });
+    // a home with no iPhone makes one on the web
     expect(within(section).queryByRole("link")).toBeNull();
-    expect(section).toHaveTextContent(/Profile, then Family/);
+    expect(section).toHaveTextContent(/on the Family page/);
   });
 
   it("someone who is not an admin gets none of the page", () => {

@@ -1,13 +1,15 @@
 # Story 57.01 — Age tiers on the home's content
 
 > Epic 57 · Phase 1 · Depends on: — · Needed by: 57.03, 57.04, 57.10, 57.11, 57.12
+> **Status:** built (checked against the code 2026-11-12). The web has the tier fields for admins.
 
 ## Why
 
 Nothing on the home has a rating column. The ratings that exist are free text in four places
-(Plex's `contentRating`, the guide's `title_snapshot.rating`, a plugin's `content_rating`, and an
-enrichment field nothing writes), and YouTube's age limit is not kept at all. A filter needs one
-number per video, decided the same way every time, in Go and in Swift.
+(Plex's `contentRating`, the guide's `title_snapshot.rating`, which no importer writes yet, a
+plugin's `content_rating`, and an enrichment field nothing writes), and YouTube's age limit is
+not kept at all. A filter needs one number per video, decided the same way every time, in Go
+and in Swift.
 
 ## Description
 
@@ -133,6 +135,13 @@ The OpenAPI summaries carry Arabic in `shared/api/openapi.ar.json` (57.13).
 - **Plex ratings**: `plex_items` is no longer refreshed (README §2.4), so a kept `contentRating`
   never changes. The recompute reads it as it is.
 - **SQLite** (the single-user desktop build): the same columns; recompute runs in-process.
+- **Guide ratings (a known gap)**: the `guide` source reads
+  `channel_programs.title_snapshot.rating`, and slot 0220's trigger and partial index watch it,
+  but nothing in the pipeline, the first-party plugins or the API writes that key: the programme
+  importers keep no rating in `title_snapshot`. Until one does, no video takes a tier from the
+  guide. The source, the trigger and the index stay in place for it and cost nothing meanwhile
+  (the index holds only programmes that carry a rating). Writing the rating where programmes are
+  imported is not part of this story.
 
 ## Build plan
 

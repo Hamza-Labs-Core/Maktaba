@@ -101,7 +101,7 @@ func adminOnly(next http.Handler) http.Handler {
 
 func problem(status int, code, title, detail string) *httperror.Error {
 	return (&httperror.Error{
-		Type:   "https://maktaba.tv/problems/" + strings.ReplaceAll(code, "_", "-"),
+		Type:   httperror.TypeForCode(code),
 		Title:  title,
 		Status: status,
 		Detail: detail,

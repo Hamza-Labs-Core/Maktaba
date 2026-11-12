@@ -404,7 +404,7 @@ func (h *Handler) PlexSigninUse(w http.ResponseWriter, r *http.Request) {
 	}
 	row, err := h.usePlexServer(r.Context(), *chosen, "", by)
 	if errors.Is(err, errNoSecretsStore) {
-		httperror.Write(w, r, &httperror.Error{Status: http.StatusServiceUnavailable,
+		httperror.Write(w, r, &httperror.Error{Type: httperror.TypeUnavailable, Status: http.StatusServiceUnavailable,
 			Title: "Service Unavailable", Detail: errNoSecretsStore.Error()})
 		return
 	}

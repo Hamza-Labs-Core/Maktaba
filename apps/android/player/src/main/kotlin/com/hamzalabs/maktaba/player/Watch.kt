@@ -70,7 +70,16 @@ import androidx.media3.ui.PlayerView
 import androidx.media3.ui.SubtitleView
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.Video
+import com.hamzalabs.maktaba.core.api.ErrorKind
+import com.hamzalabs.maktaba.core.api.SubjectKind
+import com.hamzalabs.maktaba.core.parental.ParentalState
+import com.hamzalabs.maktaba.core.ui.BlockedPage
 import com.hamzalabs.maktaba.core.ui.ErrorState
+import com.hamzalabs.maktaba.core.ui.ParentHelp
+import com.hamzalabs.maktaba.core.ui.TimeLeftLine
+import com.hamzalabs.maktaba.core.ui.TimeWarning
+import com.hamzalabs.maktaba.core.ui.TimesUpScreen
+import androidx.compose.runtime.collectAsState
 import com.hamzalabs.maktaba.core.ui.sentence
 import com.hamzalabs.maktaba.core.ui.InkAndBrass
 import com.hamzalabs.maktaba.core.R as CoreR
@@ -88,6 +97,11 @@ import com.hamzalabs.maktaba.core.ui.formatDuration
  * Full screen, going Home while it plays shrinks it into a picture-in-picture window (FR-37,
  * 48.33), which shows the video alone; closing the window pauses it. While a Cast receiver plays
  * it (FR-38), the screen says so and the controls drive the receiver.
+ *
+ * With [parental] (Epic 57 story 57.15) a restricted account sees the time the home says is
+ * left once 15 minutes or fewer remain, a warning five minutes and one minute before the end,
+ * and the time's-up screen when the home refuses for time; a video the home ended is "This
+ * isn't available" (story 57.05). The home is asked about the time only while this shows.
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -102,8 +116,18 @@ fun WatchScreen(
     onPlayNext: (Video) -> Unit = { playback.play(it) },
     /** The subtitles' size, as a scale of the player's own (Settings, FR-31). */
     subtitleScale: Float = 1f,
+    /** The sign-in's limit and time (null: nothing of parental controls shows). */
+    parental: ParentalState? = null,
 ) {
     if (fullScreen) ImmersiveWhileShown()
+    val mine = parental?.mine?.collectAsState()?.value
+    val time = parental?.time?.collectAsState()?.value
+    val restricted = mine?.restricted == true
+    val timeUp = playback.timeUp
+    val library = playback.video?.libraryId
+    // the home's answer about the time, asked again while the video plays (never counted here)
+    // and only while the app is in front: the sound may go on with the screen off, the poll does not
+    com.hamzalabs.maktaba.core.ui.FollowTimeWhileShown(parental, on = restricted && timeUp == null, libraryId = library)
     // where the video is drawn, in the window: the picture-in-picture window grows out of it
     var videoRect by remember { mutableStateOf<android.graphics.Rect?>(null) }
     val inPip = if (fullScreen) {
@@ -125,6 +149,30 @@ fun WatchScreen(
         val problem = playback.problem
         val title = playback.video?.displayTitle ?: ""
         when {
+            timeUp != null -> CompositionLocalProvider(LocalContentColor provides Color.White) {
+                val client = playback.client
+                TimesUpScreen(
+                    timeUp.refusal,
+                    timeUp.positionMs,
+                    help = remember(client, timeUp) { ParentHelp(client, SubjectKind.TIME, signedOut = { playback.stop(); playback.signedOut() }) },
+                    onCheck = playback::checkAgain,
+                    modifier = Modifier.safeDrawingPadding().padding(top = 48.dp),
+                    onBack = onClose,
+                )
+            }
+            playback.endedByHome -> CompositionLocalProvider(LocalContentColor provides Color.White) {
+                val client = playback.client
+                val id = playback.video?.id
+                BlockedPage(
+                    mine ?: com.hamzalabs.maktaba.core.api.MyParental.None,
+                    // only an account under a limit has a parent to ask
+                    help = remember(client, id) { if (mine?.limited == true && id != null) ParentHelp(client, SubjectKind.VIDEO, id) { playback.stop(); playback.signedOut() } else null },
+                    onUnlocked = playback::checkAgain,
+                    modifier = Modifier.safeDrawingPadding().padding(top = 48.dp),
+                    stopped = true,
+                    onBack = onClose,
+                )
+            }
             player != null -> {
                 AndroidView(
                     factory = { ctx ->
@@ -160,6 +208,30 @@ fun WatchScreen(
                 if (playback.casting) Casting(title, Modifier.align(Alignment.Center))
                 // the window shows the video alone
                 if (inPip) return@Box
+                if (restricted) {
+                    Column(
+                        Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = 64.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        TimeWarning(time)
+                        TimeLeftLine(
+                            time,
+                            Modifier.clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 10.dp, vertical = 4.dp),
+                            color = Color.White,
+                        )
+                        if (playback.cannotCheck) {
+                            Text(
+                                stringResource(CoreR.string.parental_time_cannot_check),
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelLarge,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha = 0.55f))
+                                    .padding(horizontal = 10.dp, vertical = 4.dp).testTag("parental-cannot-check"),
+                            )
+                        }
+                    }
+                }
                 PlayerControls(
                     playback,
                     clock,
@@ -186,6 +258,9 @@ fun WatchScreen(
                     onSignIn = { playback.stop(); onSignIn() },
                     onChooseHome = { playback.stop(); onChooseHome() },
                     onBack = onClose,
+                    // the home could not read the account's time (never free time on an error); a
+                    // rate limit or another outage keeps its own words
+                    sentence = if (problem.cannotCheckTime(restricted)) stringResource(CoreR.string.parental_time_cannot_check) else null,
                 )
             }
             else -> Column(

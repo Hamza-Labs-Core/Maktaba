@@ -13,6 +13,7 @@
 package parental
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -23,18 +24,19 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	parentalpkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
 
 // Problem types. Each answer also carries `code`, the short name the apps map to
 // their own words (parental.error.* in story 57.07).
-const (
-	TypeRestricted         = "https://maktaba.tv/problems/restricted"
-	TypeRestrictedAdmin    = "https://maktaba.tv/problems/restricted-admin"
-	TypeRestrictedGuardian = "https://maktaba.tv/problems/restricted-guardian"
-	TypeNoLibraryAccess    = "https://maktaba.tv/problems/no-library-access"
-	TypeAdminOnly          = "https://maktaba.tv/problems/admin-only"
-	TypePolicyStale        = "https://maktaba.tv/problems/parental-policy-stale"
-	TypeCloudSession       = "https://maktaba.tv/problems/cloud-session"
+var (
+	TypeRestricted         = httperror.Type("restricted")
+	TypeRestrictedAdmin    = httperror.Type("restricted-admin")
+	TypeRestrictedGuardian = httperror.Type("restricted-guardian")
+	TypeNoLibraryAccess    = httperror.Type("no-library-access")
+	TypeAdminOnly          = httperror.Type("admin-only")
+	TypePolicyStale        = httperror.Type("parental-policy-stale")
+	TypeCloudSession       = httperror.Type("cloud-session")
 )
 
 // Handler serves the routes. Cache may be nil (reads then go to the store).
@@ -331,6 +333,7 @@ func (h *Handler) Put(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.changed(id)
+	h.keptChanged(r, id)
 	access := parentalpkg.AccessGuardian
 	if p.IsAdmin {
 		access = parentalpkg.AccessAdmin
@@ -346,6 +349,21 @@ func (h *Handler) changed(id string) {
 	}
 }
 
+// keptChanged tells the time keeper (story 57.14) that the account was made
+// restricted, changed, or had its restriction lifted, after the cached policy was
+// dropped: the streaming service then refuses the stream URLs signed before the
+// account became restricted, and drops what it held for one that no longer is.
+// The policy is already written, so a failure is logged and the answer stands.
+func (h *Handler) keptChanged(r *http.Request, id string) {
+	if h.Store == nil || h.Store.OnKeptChange == nil {
+		return
+	}
+	if err := h.Store.OnKeptChange(context.WithoutCancel(r.Context()), id); err != nil {
+		mlog.From(r.Context()).Warn("parental: the streaming service was not told that the account's time keeping changed",
+			"user_id", id, "err", err.Error(), "event", "parental_time_kept_push_failed")
+	}
+}
+
 // Lift implements DELETE /api/users/{id}/parental (admin).
 func (h *Handler) Lift(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
@@ -358,6 +376,7 @@ func (h *Handler) Lift(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.changed(id)
+	h.keptChanged(r, id)
 	common.WriteNoContent(w)
 }
 
@@ -445,6 +464,28 @@ type ruleRequest struct {
 	SubjectKind string     `json:"subject_kind"`
 	SubjectID   string     `json:"subject_id"`
 	ExpiresAt   *time.Time `json:"expires_at"`
+	// Until, in place of ExpiresAt, names an end the home computes: `day_end`.
+	Until string `json:"until"`
+}
+
+// UntilDayEnd is the `until` value that ends a rule or an approval when the
+// home's day ends: the next 04:00 in the home's time zone, the end a PIN unlock
+// has. The home computes it, so every client agrees whatever its own clock says.
+const UntilDayEnd = "day_end"
+
+// ending is when a rule or an approval ends: expiresAt as given, or the instant
+// `until` names. The two are mutually exclusive; the error names the field at fault.
+func (h *Handler) ending(ctx context.Context, expiresAt *time.Time, until string) (*time.Time, *httperror.FieldError) {
+	switch {
+	case until == "":
+		return expiresAt, nil
+	case until != UntilDayEnd:
+		return nil, &httperror.FieldError{Field: "until", Message: "must be day_end"}
+	case expiresAt != nil:
+		return nil, &httperror.FieldError{Field: "until", Message: "give expires_at or until, not both"}
+	}
+	end := parentalpkg.DayEnd(h.Store.Clock(), h.Store.HomeLocation(ctx)).UTC()
+	return &end, nil
 }
 
 // AddRule implements POST /api/users/{id}/parental/rules.
@@ -473,12 +514,16 @@ func (h *Handler) AddRule(w http.ResponseWriter, r *http.Request) {
 	if req.ExpiresAt != nil && !req.ExpiresAt.After(time.Now()) {
 		errs = append(errs, httperror.FieldError{Field: "expires_at", Message: "must be in the future"})
 	}
+	expiresAt, bad := h.ending(r.Context(), req.ExpiresAt, req.Until)
+	if bad != nil {
+		errs = append(errs, *bad)
+	}
 	if len(errs) > 0 {
 		httperror.Write(w, r, httperror.Unprocessable(errs))
 		return
 	}
 	rule, err := h.Store.AddRule(r.Context(), p.UserID, id, parentalpkg.RuleInput{
-		Effect: req.Effect, SubjectKind: req.SubjectKind, SubjectID: req.SubjectID, ExpiresAt: req.ExpiresAt,
+		Effect: req.Effect, SubjectKind: req.SubjectKind, SubjectID: req.SubjectID, ExpiresAt: expiresAt,
 	})
 	if err != nil {
 		if errors.Is(err, parentalpkg.ErrInvalid) {

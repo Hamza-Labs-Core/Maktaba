@@ -76,7 +76,8 @@ sealed interface Place {
     data object Tabs : Place
     data class Library(val id: String, val name: String) : Place
     data class Video(val id: String) : Place
-    data class Player(val id: String, val title: String, val startMs: Long, val queued: Boolean = false) : Place
+    /** [libraryId]: the video's library, whose time rules count for a restricted account too (story 57.15). */
+    data class Player(val id: String, val title: String, val startMs: Long, val queued: Boolean = false, val libraryId: String? = null) : Place
     data class Series(val id: String, val season: Int? = null) : Place
     data class Season(val seriesId: String, val season: Int) : Place
     data class Collection(val library: String, val collection: TvCollection) : Place
@@ -114,17 +115,36 @@ fun SignedInApp(
     capabilities: StateFlow<Capabilities> = app.session.capabilities,
 ) {
     val api = remember(client) { TvApi(client) }
+    // Epic 57: the sign-in's parental limit, read at sign-in and whenever the TV comes back to the app
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val parental = remember(client) {
+        com.hamzalabs.maktaba.core.parental.ParentalState(
+            client, com.hamzalabs.maktaba.core.parental.KeptLimit.InFile.of(context.filesDir, client.home, user.id),
+        )
+    }
     // Epic 56: one server play queue behind every Play and Shuffle
     val queue = remember(client) { PlayQueueModel(ApiQueueTransport(client), "tv-${android.os.Build.MODEL ?: "android"}") }
+    // story 57.05: when the limit changes, what was read under the one before goes (the queue's
+    // window, the pictures, Search's and Live TV's kept answers) and every screen but a playing
+    // one reads again
+    val limitEpoch by parental.epoch.collectAsState()
+    androidx.compose.runtime.DisposableEffect(parental, queue) {
+        parental.onChange = { dropKeptForLimit(queue) }
+        onDispose { parental.onChange = null }
+    }
     val scope = rememberCoroutineScope()
+    androidx.lifecycle.compose.LifecycleResumeEffect(parental) {
+        val job = scope.launch { parental.refresh() }
+        onPauseOrDispose { job.cancel() }
+    }
     var notice by remember(client) { mutableStateOf<String?>(null) }
     var menu by remember(client) { mutableStateOf<Pair<String, String?>?>(null) }
     val queueEmpty = stringResource(R.string.queue_empty)
     val queueFailed = stringResource(R.string.queue_error_load)
     val queueStale = stringResource(R.string.queue_error_stale)
     val stack = remember(client) { mutableStateListOf<Place>(Place.Tabs) }
-    val search = remember(client) { SearchState() }
-    val live = remember(client) { LiveState() }
+    val search = remember(client, limitEpoch) { SearchState() }
+    val live = remember(client, limitEpoch) { LiveState() }
     val features by capabilities.collectAsState()
     val liveOn = features.isOn(Feature.LIVE_TV)
     // Live TV shows once the home says this user has a channel to watch (nothing asked while it is off)
@@ -148,7 +168,7 @@ fun SignedInApp(
     fun back() { if (stack.size > 1) stack.removeAt(stack.lastIndex) }
     fun playItem(item: QueueItem, replace: Boolean) {
         val startMs = resumeAt(item.positionSec, item.durationSec, item.completed == true)?.let { (it * 1000).toLong() } ?: 0L
-        val p = Place.Player(item.id, item.name, startMs, queued = true)
+        val p = playerPlace(item, startMs)
         if (replace && stack.last() is Place.Player) stack[stack.lastIndex] = p else open(p)
         if (queue.staleSeen) { notice = queueStale; queue.staleSeen = false }
     }
@@ -207,9 +227,14 @@ fun SignedInApp(
             liveTvOff = !hasLive,
         ) {
           Box(Modifier.fillMaxSize()) {
-            when (val top = stack.last()) {
+            val top = stack.last()
+            // a playing video or channel is not torn down: the home ends it itself when it must
+            androidx.compose.runtime.key(if (top is Place.Player || top is Place.LivePlayer) -1 else limitEpoch) {
+            when (top) {
                 Place.Tabs -> Box(Modifier.fillMaxSize()) {
                     if (tab == TvTab.Home) LibraryBackdrop()
+                    // a restricted account's time today, on Home (story 57.15)
+                    if (tab == TvTab.Home) com.hamzalabs.maktaba.tv.ui.screens.TvHomeTime(parental, Modifier.align(Alignment.BottomEnd).padding(32.dp))
                     Column(Modifier.fillMaxSize()) {
                         TopBar(
                             tabs = tabs,
@@ -246,20 +271,24 @@ fun SignedInApp(
                     onPlay = { _, startMs ->
                         scope.launch {
                             val item = runCatching { queue.create(QueueSource("video", top.id), false) }.getOrNull()
-                            if (item != null) open(Place.Player(item.id, item.name, startMs, queued = true)) else notice = queueFailed
+                            if (item != null) open(playerPlace(item, startMs)) else notice = queueFailed
                         }
                     },
                     signedOut = signedOut,
                     onBack = ::back,
                     onSeries = { open(Place.Series(it)) },
                     panels = features.panels,
+                    parental = parental,
                 )
                 is Place.Player -> PlayerScreen(
                     app, client, top.id, top.title, top.startMs, onBack = ::back, signedOut = signedOut,
                     queue = if (top.queued) queue else null,
                     onQueueItem = { playItem(it, replace = true) },
+                    parental = parental,
+                    libraryId = top.libraryId,
                 )
-                is Place.LivePlayer -> LivePlayerScreen(app, api, top.channelId, onBack = ::back, signedOut = signedOut)
+                is Place.LivePlayer -> LivePlayerScreen(app, api, top.channelId, onBack = ::back, signedOut = signedOut, parental = parental)
+            }
             }
             menu?.let { (video, series) ->
                 CardMenu(api, video, series, onClose = { menu = null }, onDone = { notice = it }, queue = queue)
@@ -272,3 +301,18 @@ fun SignedInApp(
         }
     }
 }
+
+/**
+ * What the TV keeps for the sign-in outside its screens (Epic 57 story 57.05): the queue's
+ * window and the decoded posters and logos. Dropped when the parental limit changes.
+ */
+fun dropKeptForLimit(queue: PlayQueueModel) {
+    queue.forget()
+    com.hamzalabs.maktaba.tv.ui.components.forgetPosters()
+    com.hamzalabs.maktaba.tv.ui.screens.forgetLogos()
+    com.hamzalabs.maktaba.core.ui.forgetPosters()
+}
+
+/** The player for a queue's [item] from [startMs], with the library its time rules are read for. */
+fun playerPlace(item: QueueItem, startMs: Long): Place.Player =
+    Place.Player(item.id, item.name, startMs, queued = true, libraryId = item.libraryId.ifEmpty { null })

@@ -69,6 +69,9 @@ type Video struct {
 	Tags          []string        `json:"tags,omitempty"`
 	LatestTrans   *string         `json:"latest_transcript_id,omitempty"`
 	PlaybackState *PlaybackState  `json:"playback_state,omitempty"`
+	// AgeTierAdmin is the age tier an admin set on this video itself (Epic 57): a
+	// tier or null. Only an admin's answer to GET /api/videos/{id} has it.
+	AgeTierAdmin *parental.AdminTier `json:"age_tier_admin,omitempty"`
 
 	// List only (Epic 45): the publish date (PublishedExpr) and, under
 	// sort=plays, everyone's plays.
@@ -154,7 +157,7 @@ func notQueued(err error, what string) *httperror.Error {
 		switch nq.Outcome {
 		case "unknown_stage", "invalid_subject":
 			return (&httperror.Error{
-				Type:   "https://maktaba.tv/problems/stage-not-per-video",
+				Type:   httperror.Type("stage-not-per-video"),
 				Title:  "stage not per-video",
 				Status: http.StatusBadRequest,
 				Detail: "stage " + nq.Stage + " cannot be queued for a video",
@@ -322,7 +325,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, ok := listSorts[sort]; !ok && !random && sort != sortRelevance && sort != sortShuffle {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.tv/problems/invalid-sort",
+			Type:   httperror.Type("invalid-sort"),
 			Title:  "invalid sort",
 			Status: http.StatusBadRequest,
 			Detail: "sort must be one of: " + listSortNames,
@@ -684,6 +687,8 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// the rating control's current value, for an admin alone
+	v.AgeTierAdmin = parental.AdminTierOf(r.Context(), h.DB, principal.FromContext(r.Context()), parental.TierOnVideo, id)
 
 	common.WriteJSON(w, r, http.StatusOK, v)
 }
@@ -893,7 +898,7 @@ func (h *Handler) Process(w http.ResponseWriter, r *http.Request) {
 	}
 	if stage == "scan" {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.tv/problems/stage-not-per-video",
+			Type:   httperror.Type("stage-not-per-video"),
 			Title:  "stage not per-video",
 			Status: http.StatusBadRequest,
 			Detail: "scan is library-scoped",
@@ -953,7 +958,7 @@ func (h *Handler) Reprocess(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.FromStage == "scan" {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.tv/problems/stage-not-per-video",
+			Type:   httperror.Type("stage-not-per-video"),
 			Title:  "stage not per-video",
 			Status: http.StatusBadRequest,
 			Detail: "scan is library-scoped",

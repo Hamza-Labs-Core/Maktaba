@@ -108,6 +108,15 @@ On [Preferences → Privacy](/account/preferences/privacy), the **Activity track
 
 The same tab shows your recent **Watch history**, with **Remove** on each row, and **Recent activity**. **See full watch history** and **See the whole timeline** open the full pages.
 
+### When something isn't available {#ask-a-parent}
+
+If your account is a restricted one, a parent has set what you may watch and for how long. A video, a series or a collection above your limit shows **This isn't available**, without its title or picture.
+
+- **Ask a parent** sends a request. A parent answers it from their own device; then click **Check again**.
+- **Enter parent PIN**: a parent who is with you chooses their name and types their PIN. It opens that one thing until the day ends. The button shows only when a parent has set a PIN.
+
+When your time for the day is over, the player stops and says when you can watch again. **Ask for more time** asks a parent for 15, 30 or 60 minutes, and **Enter parent PIN** lets a parent give them at once.
+
 ## What the states and messages mean {#states}
 
 - **This session** / **Current**: the session you are using now. It cannot be revoked from the list; use **Sign out** instead.

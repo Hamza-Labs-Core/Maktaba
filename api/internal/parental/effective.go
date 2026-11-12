@@ -44,10 +44,25 @@ type Effective struct {
 	SignalPending bool
 }
 
+// sameID reports whether a rule's subject id names id. Two spellings of one uuid
+// are the same id: a rule stored before ids were kept canonical (in capitals, say)
+// still matches, as it does in the SQL predicate and in Allowed.
+func sameID(rule, id string) bool {
+	if rule == id {
+		return true
+	}
+	a, ok := CanonicalUUID(rule)
+	if !ok {
+		return false
+	}
+	b, ok := CanonicalUUID(id)
+	return ok && a == b
+}
+
 func (e *Effective) has(effect string, s Subject, now time.Time) bool {
 	for i := range e.Rules {
 		r := &e.Rules[i]
-		if r.Effect != effect || r.SubjectKind != s.Kind || r.SubjectID != s.ID {
+		if r.Effect != effect || r.SubjectKind != s.Kind || !sameID(r.SubjectID, s.ID) {
 			continue
 		}
 		if r.ExpiresAt != nil && !r.ExpiresAt.After(now) {

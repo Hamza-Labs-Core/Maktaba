@@ -211,7 +211,7 @@ func MountP6(r chi.Router, d P6Deps) {
 	}
 	browseHandler.Mount(r)
 	// Epic 57 story 57.02: restricted accounts, guardians and rules.
-	parentalCache := MountParental(r, d.DB, d.Loops, d.BusCtx, d.BusDSN, d.BusResettle)
+	parentalCache := MountParental(d.BusCtx, r, d.DB, d.Loops, d.BusDSN, d.BusResettle)
 	if d.ParentalGate != nil {
 		d.ParentalGate.SetCache(parentalCache)
 		// story 57.03: every live connection (the /ws feeds, the GraphQL
@@ -298,6 +298,11 @@ func MountP6(r chi.Router, d P6Deps) {
 
 	colHandler := &collections.Handler{DB: d.DB, ListVideos: videoHandler.List}
 	colHandler.Mount(r)
+	if d.ParentalGate != nil {
+		// Epic 57 story 57.03: a smart collection that lists nothing a restricted
+		// account may see is hidden from it; the gate asks this handler
+		d.ParentalGate.SetSmartCollections(colHandler.SmartShows)
+	}
 	// Phase 8 / Story 9.14: smart-collection ?freeze convert endpoint.
 	colHandler.MountSmart(r)
 

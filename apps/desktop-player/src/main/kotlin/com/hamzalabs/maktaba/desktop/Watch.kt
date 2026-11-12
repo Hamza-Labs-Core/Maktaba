@@ -35,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -80,8 +81,18 @@ fun Watch(
     onFullScreen: (Boolean) -> Unit,
     onClose: () -> Unit,
     posters: Posters? = null,
+    /** The sign-in's parental limit and time (Epic 57 story 57.15); null shows nothing of them. */
+    parental: com.hamzalabs.maktaba.core.parental.ParentalState? = null,
 ) {
     val t = LocalTexts.current
+    val mine = parental?.mine?.collectAsState()?.value
+    val time = parental?.time?.collectAsState()?.value
+    val restricted = mine?.restricted == true
+    val over = playback.timeUp != null
+    // the home's answer about the time, asked again while the video plays (never counted here)
+    // with the video's library: a rule may be on one library only
+    val library = playback.libraryId
+    LaunchedEffect(parental, restricted, over, library) { if (parental != null && restricted && !over) parental.followTime(library) }
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
@@ -113,6 +124,7 @@ fun Watch(
                 playback.request?.title ?: "", color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).semantics { heading() },
             )
+            if (restricted && playback.player != null) com.hamzalabs.maktaba.desktop.watch.TimeNotes(time, playback.cannotCheck)
             if (playback.reopening) Text(t["watch.reopening"], color = Color.White, style = MaterialTheme.typography.labelLarge)
         }
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -121,7 +133,14 @@ fun Watch(
             val timeUp = playback.timeUp
             when {
                 // Epic 57 story 57.15: the home's time rules stopped the video
-                timeUp != null -> TimesUp(timeUp, onCheck = { playback.checkAgain() })
+                // the help is this refusal's own: a PIN typed or a request sent for an earlier one
+                // says nothing about this one (kept across them, "unlocked" asked the home for ever)
+                timeUp != null -> androidx.compose.runtime.key(playback.refusals) {
+                    val more = remember { com.hamzalabs.maktaba.desktop.watch.MoreTime(playback.client, signedOut = { playback.stop(); playback.signedOut() }) }
+                    TimesUp(timeUp, onCheck = { playback.checkAgain() }, more = more)
+                }
+                // the home ended the stream: the video is no longer this account's
+                playback.endedByHome -> Problem(t["parental.player.stopped"])
                 problem != null -> Problem(t["watch.failed", problem])
                 player == null -> Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     CircularProgressIndicator()

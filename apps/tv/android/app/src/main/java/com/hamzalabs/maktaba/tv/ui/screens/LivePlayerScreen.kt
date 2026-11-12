@@ -66,7 +66,13 @@ import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.Failure
 import com.hamzalabs.maktaba.core.api.LiveApi
 import com.hamzalabs.maktaba.core.api.LiveFailure
+import com.hamzalabs.maktaba.core.api.ChannelNow
+import com.hamzalabs.maktaba.core.api.GatedReopen
 import com.hamzalabs.maktaba.core.api.LiveSource
+import com.hamzalabs.maktaba.core.api.channelAskAgainMs
+import com.hamzalabs.maktaba.core.api.channelNow
+import com.hamzalabs.maktaba.core.api.programmeRefusal
+import java.time.Instant
 import com.hamzalabs.maktaba.core.api.LiveStream
 import com.hamzalabs.maktaba.core.api.NowAnswer
 import com.hamzalabs.maktaba.core.api.NowEntry
@@ -106,6 +112,11 @@ fun liveFailureWords(code: String): Int? = when (code) {
  * the source's interceptor (the newest signed token on every Cloudflare request). A channel
  * just asked for may answer with an error while its encoder warms up, so a failure is tried
  * again a few times before the error screen.
+ *
+ * Under a parental limit (Epic 57 story 57.10, [limited]) the home is asked to play the channel
+ * (`POST /api/channels/{id}/play`): a programme above the limit is no error, [notNow] holds
+ * until the time the home named and the channel is asked for again then; while it plays, the
+ * home is asked again when it said the answer may change.
  */
 @OptIn(UnstableApi::class)
 class LivePlayback(
@@ -117,7 +128,16 @@ class LivePlayback(
     private val background: CoroutineScope,
     device: String,
     private val signedOut: () -> Unit,
+    /** Whether this sign-in is under a parental limit now. */
+    private val limited: () -> Boolean = { false },
 ) {
+    private val api = client
+
+    /** "Not available right now": when the home said to ask again (null inside: it named no time). */
+    var notNow by mutableStateOf<TvNotNowState?>(null)
+        private set
+    private var recheck: Job? = null
+
     var player by mutableStateOf<ExoPlayer?>(null)
         private set
     var channelId by mutableStateOf<String?>(null)
@@ -141,22 +161,42 @@ class LivePlayback(
     })
     private val http = client.streamHttp().newBuilder().addInterceptor(source.interceptor).build()
     private var job: Job? = null
-    private var retries = 0
+    private val failures = LiveFailures(limited)
 
     /** Tunes [id]: the channel before it stops (its remote session ends on the home). */
     fun tune(id: String) {
+        failures.chosen()
+        open(id)
+    }
+
+    private fun open(id: String) {
         job?.cancel()
+        recheck?.cancel()
         channelId = id
         failure = null
         refusal = null
+        notNow = null
         tuning = true
         val mine = scope.launch {
             try {
                 val s = source.open(id)
                 relay = s is LiveStream.Relay
+                var url = s.url
+                if (s is LiveStream.Lan && limited()) {
+                    when (val now = api.channelNow(id)) {
+                        is ChannelNow.NotNow -> {
+                            refused(id, now.retryAt)
+                            return@launch
+                        }
+                        is ChannelNow.Playing -> {
+                            url = now.url
+                            askAgain(id, now.until, allowed = true)
+                        }
+                    }
+                }
                 val p = player ?: newPlayer().also { player = it }
-                retries = 0
-                p.setMediaItem(MediaItem.Builder().setUri(s.url.toString()).setMimeType(MimeTypes.APPLICATION_M3U8).build())
+                failures.started()
+                p.setMediaItem(MediaItem.Builder().setUri(url.toString()).setMimeType(MimeTypes.APPLICATION_M3U8).build())
                 p.prepare()
                 p.playWhenReady = true
             } catch (e: CancellationException) {
@@ -166,16 +206,54 @@ class LivePlayback(
             } catch (e: LiveFailure) {
                 AppLog.failure("tv live tune", e)
                 player?.stop()
+                val programme = (e.cause ?: e).programmeRefusal()
                 val words = liveFailureWords(e.code)
-                if (words != null) refusal = words else failure = Failure.of(e.cause ?: e)
+                if (programme != null) refused(id, programme.retryAt)
+                else if (words != null) refusal = words else failure = Failure.of(e.cause ?: e)
             } catch (e: Exception) {
                 AppLog.failure("tv live tune", e)
                 player?.stop()
-                failure = Failure.of(e)
+                val programme = e.programmeRefusal()
+                if (programme != null) refused(id, programme.retryAt) else failure = Failure.of(e)
             }
         }
         job = mine
         mine.invokeOnCompletion { if (job === mine) tuning = false }
+    }
+
+    /** The programme on air is above the limit: nothing plays, and the home is asked again later. */
+    private fun refused(id: String, retryAt: Instant?) {
+        if (channelId != id) return
+        player?.stop()
+        notNow = TvNotNowState(retryAt)
+        askAgain(id, retryAt, allowed = false)
+    }
+
+    /** Asks the home about [id] again when it said the answer may change. */
+    private fun askAgain(id: String, at: Instant?, allowed: Boolean) {
+        recheck?.cancel()
+        // the home's instant against the home's clock, not the TV's
+        val wait = channelAskAgainMs(at, allowed, api.homeNowMs()) ?: return
+        recheck = scope.launch {
+            delay(wait)
+            if (channelId != id) return@launch
+            if (!allowed) {
+                open(id)
+                return@launch
+            }
+            val now = try {
+                api.channelNow(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // no answer: what plays goes on (the home's streaming service stops it itself)
+                return@launch
+            }
+            when (now) {
+                is ChannelNow.NotNow -> refused(id, now.retryAt)
+                is ChannelNow.Playing -> askAgain(id, now.until, allowed = true)
+            }
+        }
     }
 
     /** Tries the channel again (a person pressed Try again). */
@@ -194,6 +272,8 @@ class LivePlayback(
     fun stop() {
         job?.cancel()
         job = null
+        recheck?.cancel()
+        recheck = null
         player?.release()
         player = null
         background.launch { source.close() }
@@ -211,22 +291,58 @@ class LivePlayback(
             .also { p ->
                 p.addListener(object : Player.Listener {
                     override fun onPlayerError(error: PlaybackException) {
-                        if (retries < WARM_UP_RETRIES) {
-                            retries++
-                            scope.launch {
-                                delay(WARM_UP_DELAY_MS)
+                        when (failures.next(gated = !relay && channelId != null)) {
+                            LiveFailures.Step.WarmUp -> scope.launch {
+                                delay(LiveFailures.WARM_UP_DELAY_MS)
                                 if (player === p) p.prepare()
                             }
-                        } else {
-                            AppLog.failure("tv live player", error)
-                            failure = tvPlaybackFailure(error)
+                            // a limited account's stream that stopped: the programme may have changed
+                            LiveFailures.Step.AskHome -> channelId?.let(::open)
+                            LiveFailures.Step.ShowError -> {
+                                AppLog.failure("tv live player", error)
+                                failure = tvPlaybackFailure(error)
+                            }
                         }
                     }
                 })
             }
     }
 
-    private companion object {
+}
+
+/**
+ * What each failure of a live stream leads to. A channel just asked for may answer with an error
+ * while its encoder warms up, so a failure is tried again [WARM_UP_RETRIES] times. After that a
+ * sign-in under a parental limit asks the home's gate again (the programme may have changed),
+ * once per failure: when the home says it plays and the stream fails through its warm-up again,
+ * the error shows, as it does for an account with no limit (never round and round on a black
+ * screen).
+ */
+class LiveFailures(private val limited: () -> Boolean, nowMs: () -> Long = System::currentTimeMillis) {
+    enum class Step { WarmUp, AskHome, ShowError }
+
+    private var retries = 0
+    private val reopen = GatedReopen(nowMs)
+
+    /** A person chose the channel (or Try again). */
+    fun chosen() = reopen.reset()
+
+    /** A stream was given to the player: its warm-up starts over. */
+    fun started() {
+        retries = 0
+    }
+
+    /** The player failed; [gated]: the stream is one the home's gate gave (at home, a channel shown). */
+    fun next(gated: Boolean): Step = when {
+        retries < WARM_UP_RETRIES -> {
+            retries++
+            Step.WarmUp
+        }
+        gated && limited() && reopen.allowed() -> Step.AskHome
+        else -> Step.ShowError
+    }
+
+    companion object {
         const val WARM_UP_RETRIES = 6
         const val WARM_UP_DELAY_MS = 2_000L
     }
@@ -239,11 +355,21 @@ class LivePlayback(
  */
 @OptIn(UnstableApi::class)
 @Composable
-fun LivePlayerScreen(app: MaktabaTVApp, api: TvApi, channelId: String, onBack: () -> Unit, signedOut: () -> Unit) {
+fun LivePlayerScreen(
+    app: MaktabaTVApp,
+    api: TvApi,
+    channelId: String,
+    onBack: () -> Unit,
+    signedOut: () -> Unit,
+    /** The sign-in's parental limit (Epic 57); null: none is read. */
+    parental: com.hamzalabs.maktaba.core.parental.ParentalState? = null,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val device = stringResource(R.string.tv_label)
-    val playback = remember(channelId) { LivePlayback(context, api.client, api.live, scope, app.background, device, signedOut) }
+    val playback = remember(channelId) {
+        LivePlayback(context, api.client, api.live, scope, app.background, device, signedOut, limited = { parental?.mine?.value?.limited == true })
+    }
     DisposableEffect(playback) {
         playback.tune(channelId)
         onDispose { playback.stop() }
@@ -311,7 +437,10 @@ fun LivePlayerScreen(app: MaktabaTVApp, api: TvApi, channelId: String, onBack: (
                 update = { view -> if (view.player !== player) view.player = player },
             )
         }
+        val notNow = playback.notNow
         when {
+            // the programme on air is above the limit: the slate, until the home's time
+            notNow != null -> TvNotNow(notNow.retryAt, onBack)
             failure != null -> TvErrorState(
                 failure,
                 title = stringResource(R.string.live_play_failed),
@@ -415,7 +544,7 @@ private fun Banner(api: TvApi, e: NowEntry, nowMs: Long, relay: Boolean, offerLi
                     if (relay) Pill(stringResource(R.string.live_remote_badge), MaktabaPalette.Gold)
                 }
                 Text(
-                    current?.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.live_no_content),
+                    current?.let { com.hamzalabs.maktaba.core.ui.programmeTitle(it) }?.takeIf { it.isNotBlank() } ?: stringResource(R.string.live_no_content),
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaktabaPalette.Text,
                     maxLines = 1,
@@ -424,7 +553,7 @@ private fun Banner(api: TvApi, e: NowEntry, nowMs: Long, relay: Boolean, offerLi
                 current?.progressAt(nowMs)?.let { LiveProgress(it) }
                 if (next != null) {
                     Text(
-                        stringResource(R.string.live_next, next.startMs?.let(time)?.let { "$it  ${next.title}" } ?: next.title),
+                        stringResource(R.string.live_next, com.hamzalabs.maktaba.core.ui.programmeTitle(next).let { t -> next.startMs?.let(time)?.let { "$it  $t" } ?: t }),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaktabaPalette.Faint,
                         maxLines = 1,
@@ -484,7 +613,7 @@ private fun MiniGuide(api: TvApi, channels: List<NowEntry>, selected: Int, playi
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            current?.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.live_no_content),
+                            current?.let { com.hamzalabs.maktaba.core.ui.programmeTitle(it) }?.takeIf { it.isNotBlank() } ?: stringResource(R.string.live_no_content),
                             style = MaterialTheme.typography.titleSmall,
                             color = if (on) MaktabaPalette.OnGold else MaktabaPalette.Text,
                             maxLines = 1,
@@ -513,3 +642,6 @@ private fun Refused(words: Int, onRetry: () -> Unit, onBack: () -> Unit) {
         }
     }
 }
+
+/** Live TV's "not available right now" on the TV: when the home said to ask again. */
+data class TvNotNowState(val retryAt: Instant?)
