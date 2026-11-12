@@ -49,6 +49,27 @@ final class PlayerShellTests: XCTestCase {
                        [.home: [video]], "Live TV off for this viewer: no channel stays open")
     }
 
+    /// Live TV goes off while a channel is open (story 51.11), for an account with a parental
+    /// limit and for one without (the limit plays no part in the sections): a viewer's
+    /// sections lose Live TV and an admin's keep it; the shell keeps the tab in view
+    /// (MaktabaKit's `ShellTabs`, tested there) and rewrites no stack, so the open channel
+    /// stays on Live TV's. Only a launch that had not settled yet takes a channel off.
+    func testLiveTVGoingOffWithAChannelOpenLeavesItsStackAlone() {
+        let all = PlayerSection.allCases, channel = PlayerRoute.channel(id: "ch-1")
+        XCTAssertEqual(PlayerSection.shown(all, hasChannels: true, liveTVOff: false, admin: false), all)
+        let off = PlayerSection.shown(all, hasChannels: true, liveTVOff: true, admin: false)
+        XCTAssertEqual(off, [.home, .libraries, .search, .profile])
+        XCTAssertEqual(PlayerSection.shown(all, hasChannels: false, liveTVOff: true, admin: false), off)
+        XCTAssertEqual(PlayerSection.shown(all, hasChannels: true, liveTVOff: true, admin: true), all)
+        XCTAssertEqual(PlayerSection.shown([.liveTV], hasChannels: true, liveTVOff: true, admin: false), [.liveTV],
+                       "Live TV alone: never no section")
+        // a settled launch's stacks: Live TV's channel is moved by nothing but the launch
+        let paths: [PlayerSection: [PlayerRoute]] = [.liveTV: [channel], .home: [.video(id: "v1")]]
+        XCTAssertEqual(ShellLaunch.settled(paths, from: .liveTV, liveShown: true), paths)
+        XCTAssertEqual(ShellLaunch.settled(paths, from: .liveTV, liveShown: false), [.home: [.video(id: "v1")]],
+                       "an unsettled launch into Live TV, off for this viewer: no channel stays open")
+    }
+
     /// The Dynamic Type sizes a UI test asks the running app for (`setTextSize`, answered by
     /// the app's `TextSizeHook`): each one the hook knows, at the size it names; the default
     /// is the system's own setting (no override).

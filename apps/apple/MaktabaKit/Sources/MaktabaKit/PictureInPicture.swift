@@ -5,6 +5,12 @@ import Observation
 /// the Player's own controls draw over a bare layer, so it drives
 /// `AVPictureInPictureController` itself. On iPhone and iPad it also starts by itself when the
 /// person goes home while the video plays.
+///
+/// The controller is taken apart on the main thread, by `close` when the player closes (or,
+/// failing that, when this object goes), and kept a while after: AVKit's own queue holds it
+/// for a moment while the player changes, and a controller let go at that moment was freed
+/// on that queue, where taking its view out of the window raised an Auto Layout exception
+/// that ended the app (an iPad leaving a live channel, CI 2026-11-12).
 @MainActor @Observable
 public final class PictureInPicture: NSObject {
     /// The window floats.
@@ -12,26 +18,52 @@ public final class PictureInPicture: NSObject {
     /// The layer is ready and the device can (false in a test host without a window).
     public private(set) var isPossible = false
 
-    @ObservationIgnored private var controller: AVPictureInPictureController?
-    @ObservationIgnored private var possible: NSKeyValueObservation?
-    @ObservationIgnored private weak var layer: AVPlayerLayer?
+    /// The controller and its observation, in a box `deinit` may hand to the main thread.
+    final class Held: @unchecked Sendable {
+        var controller: AVPictureInPictureController?
+        var possible: NSKeyValueObservation?
+    }
 
-    override public init() {}
+    @ObservationIgnored private let held = Held()
+    @ObservationIgnored private weak var layer: AVPlayerLayer?
+    /// How long a closed controller is kept before it is let go, on the main thread.
+    @ObservationIgnored private let linger: Duration
+
+    /// The closed controllers still kept (`retire`).
+    static private(set) var retired: [AVPictureInPictureController] = []
+
+    public init(linger: Duration = .seconds(10)) {
+        self.linger = linger
+    }
+
+    deinit {
+        // not closed by its player: taken apart on the main thread all the same
+        guard held.controller != nil else { return }
+        let held = held, linger = linger
+        DispatchQueue.main.async { MainActor.assumeIsolated { Self.retire(held, linger: linger) } }
+    }
 
     /// Whether this device has Picture in Picture at all.
     public static var isSupported: Bool { AVPictureInPictureController.isPictureInPictureSupported() }
 
+    /// A layer is attached and its controller made.
+    var isAttached: Bool { held.controller != nil }
+    /// The controller, for the tests of its teardown.
+    var controllerForTests: AVPictureInPictureController? { held.controller }
+
     /// The layer the picture is drawn in (again when the view is made anew).
     public func attach(_ layer: AVPlayerLayer) {
         guard Self.isSupported, layer !== self.layer else { return }
+        // the controller of the layer before goes as a closed one does
+        Self.retire(held, linger: linger)
         self.layer = layer
         let c = AVPictureInPictureController(playerLayer: layer)
         c?.delegate = self
         #if os(iOS)
         c?.canStartPictureInPictureAutomaticallyFromInline = true
         #endif
-        controller = c
-        possible = c.map { Self.observePossible($0) { [weak self] now in self?.isPossible = now } }
+        held.controller = c
+        held.possible = c.map { Self.observePossible($0) { [weak self] now in self?.isPossible = now } }
     }
 
     /// KVO may call back on any thread: the handler is made outside the main actor (no
@@ -44,9 +76,38 @@ public final class PictureInPicture: NSObject {
         }
     }
 
+    /// The player closes for good: the floating window comes back, and the controller is
+    /// taken off its layer here, on the main thread, before anything lets it go. The same
+    /// layer may be attached again after.
+    public func close() {
+        Self.retire(held, linger: linger)
+        layer = nil
+        if isActive { isActive = false }
+        if isPossible { isPossible = false }
+    }
+
+    /// Takes a controller apart on the main thread (no observation, no delegate, no layer:
+    /// nothing of UIKit is left for its `dealloc` to undo) and keeps it for `linger`, so
+    /// that the last reference to it is never one AVKit's queue holds.
+    static func retire(_ held: Held, linger: Duration) {
+        held.possible?.invalidate()
+        held.possible = nil
+        guard let c = held.controller else { return }
+        held.controller = nil
+        c.delegate = nil
+        if c.isPictureInPictureActive { c.stopPictureInPicture() }
+        c.contentSource = nil
+        retired.append(c)
+        let id = ObjectIdentifier(c)
+        Task { @MainActor in
+            try? await Task.sleep(for: linger)
+            retired.removeAll { ObjectIdentifier($0) == id }
+        }
+    }
+
     /// The button: start, or stop and come back.
     public func toggle() {
-        guard let controller else { return }
+        guard let controller = held.controller else { return }
         if controller.isPictureInPictureActive {
             controller.stopPictureInPicture()
         } else {
@@ -56,7 +117,7 @@ public final class PictureInPicture: NSObject {
 
     /// Back into the app (the player closes or the video changes screen).
     public func stop() {
-        controller?.stopPictureInPicture()
+        held.controller?.stopPictureInPicture()
     }
 }
 

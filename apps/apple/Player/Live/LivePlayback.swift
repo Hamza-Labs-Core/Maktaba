@@ -198,7 +198,9 @@ final class LivePlayback {
         lanProxy = nil
         relay = nil
         url = nil
-        pip.stop()
+        // taken apart here, on the main thread: left to go with this object, the controller
+        // could be freed on AVKit's queue, which ended the app (`PictureInPicture`)
+        pip.close()
         NowPlaying.shared.end(self)
     }
 
