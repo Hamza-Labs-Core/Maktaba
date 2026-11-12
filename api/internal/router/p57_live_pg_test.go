@@ -24,6 +24,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/signedurl"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 	parentalh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/parental"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
@@ -302,6 +303,11 @@ func TestP57LiveTVPG(t *testing.T) {
 		// a sign-in with no account that is no admin gets no URL
 		if code, c := claims("noaccount"); code != 403 || c != nil {
 			t.Errorf("no account and no admin = %d %v, want 403", code, c)
+		}
+		// and the refusal is a registered problem type with its code
+		if _, _, out := e.do("noaccount", "POST", "/api/channels/"+e.ch9+"/play", ""); out["type"] != httperror.Type("no-account") ||
+			out["code"] != "no_account" || !httperror.Registered(httperror.Type("no-account")) {
+			t.Errorf("no account's refusal = %v, want the type no-account with code no_account", out)
 		}
 	})
 

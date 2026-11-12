@@ -377,10 +377,24 @@ func (g *Guard) serveWatched(w http.ResponseWriter, r *http.Request, next http.H
 	wg.Wait()
 }
 
-// cutWriter refuses writes once cut.
+// cutWriter refuses writes once cut. What it passes on goes out with nosniff, and
+// never as a page (httpx.PassHeaders).
 type cutWriter struct {
 	http.ResponseWriter
 	cut atomic.Bool
+	// typed: the headers were prepared (by the handler's goroutine only)
+	typed bool
+}
+
+func (c *cutWriter) WriteHeader(status int) {
+	rw := c.ResponseWriter
+	if !c.typed {
+		c.typed = true
+		if ct := httpx.PassHeaders(rw.Header(), status); ct != "" {
+			rw.Header().Set("Content-Type", ct)
+		}
+	}
+	rw.WriteHeader(status)
 }
 
 // errCut is a write to a stream the guard cut.
@@ -390,7 +404,14 @@ func (c *cutWriter) Write(p []byte) (int, error) {
 	if c.cut.Load() {
 		return 0, errCut
 	}
-	return c.ResponseWriter.Write(p)
+	rw := c.ResponseWriter
+	if !c.typed {
+		c.typed = true
+		if ct := httpx.PassHeaders(rw.Header(), http.StatusOK); ct != "" {
+			rw.Header().Set("Content-Type", ct)
+		}
+	}
+	return rw.Write(p)
 }
 
 func (c *cutWriter) Flush() {
@@ -415,14 +436,23 @@ func serveSignedPlaylist(w http.ResponseWriter, r *http.Request, next http.Handl
 		return
 	}
 	body := buf.body.Bytes()
-	if buf.status == http.StatusOK {
+	// the signature came in the query: it is written into the playlist only when it
+	// is a token's characters and nothing else (an unsigned playlist's addresses
+	// fail, never open)
+	if buf.status == http.StatusOK && tokenRe.MatchString(sig) {
 		body = signPlaylist(body, sig)
 	}
 	w.Header().Del("Content-Length")
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	if ct := httpx.PassHeaders(w.Header(), buf.status); ct != "" && len(body) > 0 {
+		w.Header().Set("Content-Type", ct)
+	}
 	w.WriteHeader(buf.status)
 	_, _ = w.Write(body)
 }
+
+// tokenRe matches a signed URL's token: base64url parts joined by dots.
+var tokenRe = regexp.MustCompile(`^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*$`)
 
 // bufferWriter holds a response's body; one too large is passed through as it is
 // (passed), unsigned: its addresses then fail without the signature, never open.
@@ -442,18 +472,24 @@ func (b *bufferWriter) WriteHeader(status int) {
 }
 
 func (b *bufferWriter) Write(p []byte) (int, error) {
+	if !b.passed && b.body.Len()+len(p) <= playlistMax {
+		return b.body.Write(p)
+	}
+	rw := b.ResponseWriter
 	if b.passed {
-		return b.ResponseWriter.Write(p)
+		return rw.Write(p)
 	}
-	if b.body.Len()+len(p) > playlistMax {
-		b.passed = true
-		b.ResponseWriter.WriteHeader(b.status)
-		if _, err := b.ResponseWriter.Write(b.body.Bytes()); err != nil {
-			return 0, err
-		}
-		return b.ResponseWriter.Write(p)
+	// too large to hold: what was held and the rest go out as they are, with
+	// nosniff and never as a page
+	b.passed = true
+	if ct := httpx.PassHeaders(rw.Header(), b.status); ct != "" {
+		rw.Header().Set("Content-Type", ct)
 	}
-	return b.body.Write(p)
+	rw.WriteHeader(b.status)
+	if _, err := rw.Write(b.body.Bytes()); err != nil {
+		return 0, err
+	}
+	return rw.Write(p)
 }
 
 var uriAttrRe = regexp.MustCompile(`URI="([^"]+)"`)

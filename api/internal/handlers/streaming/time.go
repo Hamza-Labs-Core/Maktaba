@@ -27,7 +27,7 @@ import (
 // only under the lease these calls keep alive.
 
 // ProblemParentalTime is the 403 of a stream whose account's time is over.
-const ProblemParentalTime = "https://maktaba.tv/problems/parental-time"
+var ProblemParentalTime = httperror.Type("parental-time")
 
 // TimeGate is the time keeper (parental.TimeKeeper in production).
 type TimeGate interface {

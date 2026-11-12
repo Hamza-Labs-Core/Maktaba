@@ -30,7 +30,7 @@ func mintToken(t *testing.T, priv *rsa.PrivateKey, claims auth.Claims) string {
 	switch {
 	case claims.Tk == "none":
 		claims.Tk = ""
-	case claims.Tk == "" && claims.Tls != "":
+	case claims.Tk == "" && claims.TLS != "":
 		claims.Tk = "1"
 	case claims.Tk == "":
 		claims.Tk = "0"

@@ -82,8 +82,8 @@ func withParental(body, block []byte) []byte {
 	if len(trimmed) < 2 || trimmed[len(trimmed)-1] != '}' {
 		return body
 	}
-	out := make([]byte, 0, len(trimmed)+len(block)+12)
-	out = append(out, trimmed[:len(trimmed)-1]...)
+	// grown by append, never sized from the two lengths (their sum could overflow)
+	out := bytes.Clone(trimmed[:len(trimmed)-1])
 	if len(bytes.TrimSpace(trimmed[1:len(trimmed)-1])) > 0 {
 		out = append(out, ',')
 	}

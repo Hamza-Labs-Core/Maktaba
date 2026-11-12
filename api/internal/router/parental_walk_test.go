@@ -120,13 +120,13 @@ func TestParentalSurfacesEveryMethodNamed(t *testing.T) {
 		if _, ok := parentalUnwalked[s.Pattern]; ok {
 			continue
 		}
-		any := false
+		found := false
 		for _, m := range s.Methods {
 			if mounted[walkedRoute{m, s.Pattern}] {
-				any = true
+				found = true
 			}
 		}
-		if !any {
+		if !found {
 			t.Errorf("%v %s: none of its methods is mounted", s.Methods, s.Pattern)
 		}
 	}

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
@@ -122,7 +123,7 @@ func TestP57ExistingHome(t *testing.T) {
 	}
 	h.reset() // the two children are restricted again
 	code, out := h.json("admin", http.MethodPut, "/api/parental/settings", `{"enabled":false}`)
-	if code != http.StatusConflict || out["code"] != "restrictions_exist" || out["type"] != "https://maktaba.tv/problems/parental-restrictions-exist" {
+	if code != http.StatusConflict || out["code"] != "restrictions_exist" || out["type"] != httperror.Type("parental-restrictions-exist") {
 		t.Errorf("off with restricted accounts: %d %v", code, out)
 	}
 	h.exec(`DELETE FROM parental_policies`)

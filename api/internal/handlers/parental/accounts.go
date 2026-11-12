@@ -28,14 +28,14 @@ import (
 
 // Problem types. Each answer also carries `code`, the short name the apps map to
 // their own words (parental.error.* in story 57.07).
-const (
-	TypeRestricted         = "https://maktaba.tv/problems/restricted"
-	TypeRestrictedAdmin    = "https://maktaba.tv/problems/restricted-admin"
-	TypeRestrictedGuardian = "https://maktaba.tv/problems/restricted-guardian"
-	TypeNoLibraryAccess    = "https://maktaba.tv/problems/no-library-access"
-	TypeAdminOnly          = "https://maktaba.tv/problems/admin-only"
-	TypePolicyStale        = "https://maktaba.tv/problems/parental-policy-stale"
-	TypeCloudSession       = "https://maktaba.tv/problems/cloud-session"
+var (
+	TypeRestricted         = httperror.Type("restricted")
+	TypeRestrictedAdmin    = httperror.Type("restricted-admin")
+	TypeRestrictedGuardian = httperror.Type("restricted-guardian")
+	TypeNoLibraryAccess    = httperror.Type("no-library-access")
+	TypeAdminOnly          = httperror.Type("admin-only")
+	TypePolicyStale        = httperror.Type("parental-policy-stale")
+	TypeCloudSession       = httperror.Type("cloud-session")
 )
 
 // Handler serves the routes. Cache may be nil (reads then go to the store).

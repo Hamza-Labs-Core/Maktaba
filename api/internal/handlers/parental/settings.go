@@ -24,7 +24,7 @@ import (
 
 // TypeRestrictionsExist is the 409 of turning parental controls off while an account
 // is restricted (`code: restrictions_exist`).
-const TypeRestrictionsExist = "https://maktaba.tv/problems/parental-restrictions-exist"
+var TypeRestrictionsExist = httperror.Type("parental-restrictions-exist")
 
 // MountSettings attaches the routes.
 func (h *Handler) MountSettings(r chi.Router) {

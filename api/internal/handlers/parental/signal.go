@@ -24,9 +24,9 @@ import (
 )
 
 // Problem types of the signal routes.
-const (
-	TypeNoSignIn      = "https://maktaba.tv/problems/age-signal-no-sign-in"
-	TypeDeviceLimited = "https://maktaba.tv/problems/device-limited"
+var (
+	TypeNoSignIn      = httperror.Type("age-signal-no-sign-in")
+	TypeDeviceLimited = httperror.Type("device-limited")
 )
 
 // MountSignal attaches the signal routes.

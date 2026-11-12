@@ -96,7 +96,7 @@ func newFixture(t *testing.T) *fixture {
 	plex := netip.MustParsePrefix("192.168.1.20/32")
 	f.g = &Guard{Keys: keys, Verdicts: f.v, Now: f.clk.now,
 		Tuner: &Tuner{Now: f.clk.now, Load: func(context.Context) ([]netip.Prefix, error) { return []netip.Prefix{plex}, nil }}}
-	f.h = f.g.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	f.h = f.g.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		f.served++
 		_, _ = io.WriteString(w, "stream")
 	}))
@@ -602,7 +602,7 @@ func TestAPIVerdicts(t *testing.T) {
 		"not JSON":            func(w http.ResponseWriter) { _, _ = io.WriteString(w, "<html>") },
 		"an empty object":     func(w http.ResponseWriter) { _, _ = io.WriteString(w, "{}") },
 		"a field missing":     func(w http.ResponseWriter) { _, _ = io.WriteString(w, `{"restricted":false,"allowed":true}`) },
-		"slower than allowed": func(w http.ResponseWriter) { time.Sleep(400 * time.Millisecond) },
+		"slower than allowed": func(_ http.ResponseWriter) { time.Sleep(400 * time.Millisecond) },
 	} {
 		setAnswer(ans)
 		if v, err := a.Verdict(ctx, child, testChannel); err == nil {

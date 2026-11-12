@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/argon2id"
 	parentalh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/parental"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/parental"
@@ -97,13 +98,16 @@ func (e *env) askReset() {
 	e.video(vidClosed, libClosed, "Closed One", 16)
 	e.exec(`DELETE FROM parental_pins`)
 	if pinHash == "" {
-		if err := e.store.SetPIN(context.Background(), uGuardian, thePIN); err != nil {
-			e.t.Fatalf("set pin: %v", err)
+		// a light hash: these tests try the PIN some hundreds of times, and what a
+		// try costs is not what they check (TestSetPIN keeps the real hash, and
+		// TestUnlockTiming the least time an answer takes)
+		light := argon2id.DefaultParams()
+		light.Memory, light.Time = 64, 1
+		h, err := argon2id.Hash(thePIN, light)
+		if err != nil {
+			e.t.Fatalf("hash the pin: %v", err)
 		}
-		if err := e.db.QueryRow(`SELECT pin_hash FROM parental_pins WHERE guardian_id = $1`, uGuardian).Scan(&pinHash); err != nil {
-			e.t.Fatal(err)
-		}
-		e.exec(`DELETE FROM parental_pins`)
+		pinHash = h
 	}
 	e.exec(`INSERT INTO parental_pins (guardian_id, pin_hash) VALUES ($1, $3), ($2, $3)`, uGuardian, uAdmin, pinHash)
 }

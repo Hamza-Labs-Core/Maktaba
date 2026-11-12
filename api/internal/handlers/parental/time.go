@@ -31,7 +31,7 @@ import (
 // TypeParentalTime is the 403 a stream gets when the account's time is over. It
 // carries `reason` (outside_slot, limit_reached, no_heartbeat) and, when the rules
 // allow playback again, `next_allowed_at`.
-const TypeParentalTime = "https://maktaba.tv/problems/parental-time"
+var TypeParentalTime = httperror.Type("parental-time")
 
 // MountTime attaches the story's routes. h.Time must be set.
 func (h *Handler) MountTime(r chi.Router) {
@@ -253,7 +253,7 @@ func isUUID(s string) bool {
 				return false
 			}
 		default:
-			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+			if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
 				return false
 			}
 		}

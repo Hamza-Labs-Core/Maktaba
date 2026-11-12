@@ -95,8 +95,8 @@ func fPolicies() map[string]*parental.Effective {
 	rule := func(effect, kind, id string, exp *time.Time) parental.Rule {
 		return parental.Rule{Effect: effect, SubjectKind: kind, SubjectID: id, ExpiresAt: exp}
 	}
-	lim := func(max int, unrated string, only bool, rules ...parental.Rule) *parental.Effective {
-		return &parental.Effective{UserID: uChild, Restricted: true, MaxTier: max, Unrated: unrated, AllowOnly: only, Rules: rules}
+	lim := func(maxTier int, unrated string, only bool, rules ...parental.Rule) *parental.Effective {
+		return &parental.Effective{UserID: uChild, Restricted: true, MaxTier: maxTier, Unrated: unrated, AllowOnly: only, Rules: rules}
 	}
 	const A, B = parental.EffectAllow, parental.EffectBlock
 	out := map[string]*parental.Effective{

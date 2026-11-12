@@ -33,7 +33,7 @@ import (
 
 // TypeRestricted is the problem type of an action a restricted account may not
 // take (the same as handlers/parental's).
-const TypeRestricted = "https://maktaba.tv/problems/restricted"
+var TypeRestricted = httperror.Type("restricted")
 
 // RestrictedProblem is the 403 a Refuse route answers a restricted account.
 func RestrictedProblem() *httperror.Error {
@@ -279,12 +279,41 @@ func (g *Gate) narrow(ctx context.Context, p *principal.Principal, e *Effective)
 // replaced by the id that was asked, in the body and the headers. An event stream
 // is not held: it opens at once, on the stand-in's channel, which nothing
 // publishes to.
+//
+// The id asked comes from the request, so it is put back only when it is a UUID
+// in one of its spellings, made of nothing but letters, digits, hyphens, colons and
+// braces (askedID): the answer is the handler's own for one random UUID with
+// another UUID in its place, and no other text of the request can reach a body or
+// a header. Nothing else of the answer changes (no header is added, no type
+// rewritten, the id keeps the spelling it was asked in): a hidden object's answer
+// must stay the answer of a missing one, byte for byte.
 type echoWriter struct {
 	http.ResponseWriter
 	from, to string
 	code     int
 	live     bool
-	body     bytes.Buffer
+	// ctype is a live stream's Content-Type, as the handler set it.
+	ctype string
+	body  bytes.Buffer
+}
+
+// nilID stands for an asked id that is not a UUID (no object has such an id).
+const nilID = "00000000-0000-0000-0000-000000000000"
+
+// askedID is what replaces the stand-in id: the id as it was asked when it is a
+// UUID spelled with safe characters only, or the nil UUID when it is anything else.
+func (w *echoWriter) askedID() string {
+	if _, err := uuid.Parse(w.to); err != nil {
+		return nilID
+	}
+	for i := 0; i < len(w.to); i++ {
+		switch c := w.to[i]; {
+		case c >= '0' && c <= '9', c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c == '-', c == ':', c == '{', c == '}':
+		default:
+			return nilID
+		}
+	}
+	return w.to
 }
 
 func (w *echoWriter) WriteHeader(code int) {
@@ -292,8 +321,8 @@ func (w *echoWriter) WriteHeader(code int) {
 		return
 	}
 	w.code = code
-	if strings.HasPrefix(w.ResponseWriter.Header().Get("Content-Type"), "text/event-stream") {
-		w.live = true
+	if ct := w.Header().Get("Content-Type"); strings.HasPrefix(ct, "text/event-stream") {
+		w.live, w.ctype = true, ct
 		w.ResponseWriter.WriteHeader(code)
 	}
 }
@@ -302,10 +331,14 @@ func (w *echoWriter) Write(b []byte) (int, error) {
 	if w.code == 0 {
 		w.WriteHeader(http.StatusOK)
 	}
-	if w.live {
-		return w.ResponseWriter.Write(b)
+	if !w.live {
+		return w.body.Write(b)
 	}
-	return w.body.Write(b)
+	// an event stream's frames, under the type the handler gave the stream (it is
+	// already sent; it is named beside the write so the two are read together)
+	rw := w.ResponseWriter
+	rw.Header().Set("Content-Type", w.ctype)
+	return rw.Write(b)
 }
 
 // Flush sends a live stream's frames on; a held answer goes out whole, at the end.
@@ -325,17 +358,23 @@ func (w *echoWriter) flush() {
 	if w.code == 0 {
 		w.code = http.StatusOK
 	}
-	h := w.ResponseWriter.Header()
+	rw := w.ResponseWriter
+	id := w.askedID()
+	h := rw.Header()
 	for k, vs := range h {
 		for i, v := range vs {
-			vs[i] = strings.ReplaceAll(v, w.from, w.to)
+			vs[i] = strings.ReplaceAll(v, w.from, id)
 		}
 		h[k] = vs
 	}
-	body := bytes.ReplaceAll(w.body.Bytes(), []byte(w.from), []byte(w.to))
+	body := bytes.ReplaceAll(w.body.Bytes(), []byte(w.from), []byte(id))
 	if h.Get("Content-Length") != "" {
 		h.Set("Content-Length", strconv.Itoa(len(body)))
 	}
-	w.ResponseWriter.WriteHeader(w.code)
-	_, _ = w.ResponseWriter.Write(body)
+	// the body goes out under the type the handler gave it, and no other
+	if ct := h.Get("Content-Type"); ct != "" {
+		rw.Header().Set("Content-Type", ct)
+	}
+	rw.WriteHeader(w.code)
+	_, _ = rw.Write(body)
 }

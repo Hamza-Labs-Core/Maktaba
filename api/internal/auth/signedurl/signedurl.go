@@ -153,8 +153,8 @@ func (m *Minter) SignStreamURL(rawURL, sessionID, userID, libraryID string, ttl 
 			// the caller's session id: a stream session the home opened has a
 			// lease; anything else (a review clip's video id) has none, so
 			// streaming refuses it
-			claims.Tls = strings.ToLower(sessionID)
-			if claims.Tls == "" {
+			claims.TLS = strings.ToLower(sessionID)
+			if claims.TLS == "" {
 				return "", time.Time{}, errors.New("signedurl: a kept account's URL needs its stream session")
 			}
 		}

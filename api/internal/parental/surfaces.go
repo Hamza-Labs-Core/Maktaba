@@ -147,7 +147,6 @@ var (
 	mGet    = []string{http.MethodGet}
 	mPost   = []string{http.MethodPost}
 	mPut    = []string{http.MethodPut}
-	mPatch  = []string{http.MethodPatch}
 	mDelete = []string{http.MethodDelete}
 	mWrite  = []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete}
 )
