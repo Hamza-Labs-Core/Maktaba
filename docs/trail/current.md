@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.137
-up_to_commit: d5795d508
-built_from: v0.3.136
+tag: v0.3.138
+up_to_commit: aeb671047
+built_from: v0.3.137
 ---
 
-# Trail snapshot: v0.3.137
+# Trail snapshot: v0.3.138
 
 ## Keep doing
 
@@ -216,6 +216,7 @@ built_from: v0.3.136
 - Children for one story work on separate branches merged into one pull request, each told at once when a shared fixture's shape changes; look at the captures before fixing a fixture's shape. (#1186)
 - Re-run a check that read stale input (a pull request body from before an edit) rather than merging past its red entry. (#1186)
 - Compare built pages with their mockups at every width and in both languages before the first push. (#1192)
+- Prove a "flaky" CI failure's cause before re-running: the same value on two pages pointed to one geometric cause. Remove the options that were not chosen rather than mark them, so tests stay honest. (#1187)
 
 ## Stop doing
 
@@ -276,6 +277,7 @@ built_from: v0.3.136
 - Treating a crashed Lighthouse run as a page under the bar. (#1188)
 - Ending a child's brief without telling it not to end its turn before its report: a child stopped on a running CI job. (#1186)
 - Starting a watcher whose check-name pattern was not tested (`^quality` never matched `website / quality …` and ran to its bound). (#1192)
+- Writing copy into HTML attributes without escaping quotes and angle brackets, even our own copy, or stripping tags in one regex pass (CodeQL flagged both). (#1187)
 
 ## What we learned
 
@@ -572,6 +574,8 @@ built_from: v0.3.136
 - Every built page wears the approved shell (`scripts/shell.mjs`, `shellAssets()`: one hashed stylesheet, the head script before first paint, no inline style or script, `default-src 'self'`) and declares `maktaba-menu="phone"`. Linux CI has no Arial, so a metric-matched fallback matches nothing there and a late `swap` face moves lines: the faces are `font-display: optional`, and Arabic pages preload all four files. Lighthouse rounds a real shift to CLS 0.000; the Playwright layout-shift test, which wants no entry, is the stricter gate. With Docker down locally, a failing quality shard's visual-diff artifact holds every reference the change needs. (#1192)
 - The demo library (`tests/fixtures/demo-library/`, Blender open movies under CC BY, the Haddad household) serves the home's own answer shapes, so the web (Playwright routing), Apple (`MockHome(demo:)`) and Android (Roborazzi) shoot every app from it; `scripts/shots.mjs --from-run` turns a CI run's captures into `static/shots/`. A screenshot test waits on a condition (the subtitle's letters, a poster's loaded tag), never a delay; ffmpeg writes a `Lavc` comment into every JPEG; the Android hero calls an unpicked item the newest series. (#1186)
 - Epic 60's questions Q1–Q9 are decided: one chosen tagline from several in both languages, a single approver for the Arabic, the app icon with the name in both scripts, Q4–Q9 as their defaults; the Arabic name on the site is «مكتبة». (#1176)
+- Design part B is approved (#1187): the wordmark (the app icon with "Maktaba | مكتبة"), the display face "Maktaba Display" (an Amiri Bold subset, OFL), the colour extension, device frames, layouts for every page kind at 360, 768 and 1280 px, the home and download copy in both languages, and a traced `static/icon.svg`. The chosen tagline is the hero's headline and the card's title; the unchosen proposals are removed (`copy/README.md` keeps the record), with a test. The site build publishes any `maktaba-display-*` face `shell.mjs` names. (#1187)
+- `font-display: optional` still swaps a face that arrives inside its block period, so a fallback that does not measure like the face moves layout where the fallback's base font is missing (CI's Linux has no Arial): every text fallback also names Liberation Sans and the display fallback Liberation Serif Bold, checked by a test. A tall full-page screenshot can leave late pictures unpainted: `render.mjs` waits for each picture, decodes it and scrolls it into view first. (#1187)
 
 ## Open
 
@@ -631,7 +635,8 @@ built_from: v0.3.136
 - `relay.yml` and `release.yml` still use cosign-installer by tag (optional hygiene). (#1124)
 
 - NAS guides: device screenshots (dark, en+ar) for Unraid, QNAP and UGREEN beside TrueNAS's and Synology's; the menu names on an Arabic DSM/QTS to check on a device; the QNAP guide is untested on a device. (#1137)
-- Epic 60 (maktaba.tv): owner actions A3–A7 (README §12) wait; A1 is done and A2 is the shared token, which lacks only the Zone WAF Write `cloudflare-zone.yml` reports; go-live (`vars.WEBSITE_LIVE = true`) is the owner's call. `design/review-phase-1.md` is a draft for the lead to sign; the footer's Help link and the 404 point at Troubleshooting until 60.12; the legal contents list has no scroll-aware mark (part B); the language hint is one way only; `icon.svg` waits for a vector source of the mark; Epic 59's Arabic install guides move to «مكتبة». (#1158, #1161, #1171, #1176, #1163, #1183, #1192, #1200)
+- Epic 60 (maktaba.tv): owner actions A3–A7 (README §12) wait; A1 is done and A2 is the shared token, which lacks only the Zone WAF Write `cloudflare-zone.yml` reports; go-live (`vars.WEBSITE_LIVE = true`) is the owner's call. `design/review-phase-1.md` is a draft for the lead to sign; the footer's Help link and the 404 point at Troubleshooting until 60.12; the legal contents list has no scroll-aware mark (part B); the language hint is one way only; Epic 59's Arabic install guides move to «مكتبة». (#1158, #1161, #1171, #1176, #1163, #1183, #1192, #1200)
+- Epic 60 after part B: the Arabic home, download and front-door copy waits for its approver's read (Q2, A5); 60.10 (home) and 60.11 (download) build on part B. (#1187)
 - The site build should write and check the link manifest (T07). The other images (streaming, pipeline, caddy, cloud) are still private, outside Epic 60. (#1160, #1164, #1184)
 - `links-baseline.json` is empty since the problem pages and the redirects file landed; the site build could still run `--write-manifest` and Prettier itself so the manifest cannot fall behind. (#1169, #1171, #1180)
 - Problem registry (60.06): its 578 pages (`problems.mjs`) wear the approved shell since #1192; 60.12 adds a `help-link` representative, its family before `problems` in `FAMILIES`; every `install` field is null until troubleshooting anchors exist; the streaming service sends `maktaba.invalid/problems/*` slugs outside the registry. Odd sends: `TypeForbidden` with 401, `TypeConflict` with 410, `invalid-credentials` for a refused cloud link (422), batch undo's 409 for a missing edit, `token-expired` never sent; the components handler's `fail` does not recognise `*pl.Problem`, so `plugin_revoked` may answer 500 through `/api/components` (traced, not run). (#1162, #1180)
@@ -657,8 +662,9 @@ built_from: v0.3.136
 | #1128 | 2026-11-10 | docs(spec): Epic 57 checked again against main |
 | #1130 | 2026-11-10 | spec(epic57): time rules on every device, and tiers detected from transcripts |
 | #1139 | 2026-11-10 | spec(epic57): Q9 answered, detection covers what a video is |
-| #1187 | 2026-11-12 | Epic 60: design part B and the home and download copy (60.01, 60.02) |
 | #1190 | 2026-11-11 | ci: install the pipeline without torch's CUDA tree, and keep its wheels cached |
+| #1207 | 2026-11-12 | feat(website): the front door's headline is the chosen tagline |
+| #1211 | 2026-11-12 | ci: the reference-images check never cancels a run |
 
 ## Index
 
@@ -1281,6 +1287,7 @@ built_from: v0.3.136
 | 1183-website-shared-token | 2026-11-12 | pr | maktaba.tv deploys with the shared Cloudflare token; WEBSITE_LIVE is the only switch; the token check runs before go-live |
 | 1184-epic60-a1-image-public | 2026-11-12 | pr | Epic 60: owner action A1 done, the server image is public |
 | 1186-product-shots | 2026-11-12 | pr | maktaba.tv product screenshots of every app on an openly licensed demo library (60.09) |
+| 1187-website-part-b | 2026-11-12 | pr | Epic 60 stories 60.01 part B and 60.02 part B: the full design direction, approved, with the chosen tagline |
 | 1188-lighthouse-runtime-retry | 2026-11-12 | pr | maktaba.tv's Lighthouse gate measures again a run Lighthouse could not finish, never a low score |
 | 1191-ml-runner-memory | 2026-11-12 | pr | ml runners let idle models go and keep MLX's cache capped |
 | 1192-website-shell | 2026-11-12 | pr | maktaba.tv: the part A shell on every page the site builds |
