@@ -94,6 +94,8 @@ Screen Time sets how long and when. Maktaba sets what. Use both for a child's iP
 
 **Time limits:** under **Profile → Family →** the child **→ Time** you can set watching hours and a daily limit. Your home counts the time on every device, not only Apple's, and the Player shows the time left in the last 15 minutes. When Screen Time or your home stops a video, the place is saved and the video resumes from there next time; it does not start again by itself.
 
+A guardian with no iPhone or iPad can do the same on the web, under **Family** on your home's web page.
+
 **Activity:** **Profile → Family →** the child **→ Activity** lists what was watched, blocked and asked for. It is kept on your home for 90 days and never leaves it.
 
 Maktaba does not see the picture of a video. Ratings come from what an admin sets, from the ratings a video already has, and from what your home reads in a video's transcript and title; check what your child may watch if that matters to you.

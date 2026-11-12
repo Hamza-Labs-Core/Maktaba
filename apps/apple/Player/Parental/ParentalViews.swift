@@ -96,8 +96,10 @@ struct BlockedPageView: View {
                     Button(action: back) {
                         Text(verbatim: ParentalWords.text("parental.blocked.back"))
                             .frame(maxWidth: .infinity, minHeight: 44)
+                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.borderless)
+                    .frame(minHeight: 44)
                     .foregroundStyle(Color.mktBrassText)
                     .accessibilityIdentifier("blocked.back")
                 }
@@ -311,6 +313,11 @@ struct TimeUpView: View {
     var allowed: () -> Void = {}
 
     @Environment(\.scenePhase) private var scenePhase
+    /// Ask for more time (57.06): the minutes chosen, the request's state, who has a PIN.
+    @State private var minutes = 30
+    @State private var page: BlockedPage?
+    @State private var asked: BlockedPage?
+    @State private var enteringPIN = false
 
     var body: some View {
         ScrollView {
@@ -343,6 +350,47 @@ struct TimeUpView: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("timeUp.ask")
+                if let page, page.canAsk {
+                    Picker(selection: $minutes) {
+                        ForEach(ParentalSubject.timeChoices, id: \.self) { m in
+                            Text(verbatim: ParentalWords.length(seconds: m * 60)).tag(m)
+                        }
+                    } label: {
+                        Text(verbatim: ParentalWords.text("parental.time.askMore"))
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 320)
+                    .accessibilityIdentifier("timeUp.minutes")
+                    Button {
+                        let ask = page.asking(.time(minutes: minutes))
+                        asked = ask
+                        Task { await ask.askParent() }
+                    } label: {
+                        Text(verbatim: ParentalWords.text(asked?.ask == .pending ? "parental.ask.pending" : "parental.time.askMore"))
+                            .frame(maxWidth: 320, minHeight: 44)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.brass)
+                    .foregroundStyle(MaktabaTokens.Colors.accentFg.color)
+                    .disabled(asked?.ask == .sending || asked?.ask == .pending || asked?.ask == .tooMany)
+                    .accessibilityIdentifier("timeUp.askMore")
+                    if page.canEnterPIN {
+                        Button { enteringPIN = true } label: {
+                            Text(verbatim: ParentalWords.text("parental.blocked.pin")).frame(maxWidth: 320, minHeight: 44)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(Color.brass)
+                        .accessibilityIdentifier("timeUp.pin")
+                    }
+                    if let line = asked?.askLine() {
+                        Text(verbatim: line)
+                            .font(.maktabaBody(15, relativeTo: .subheadline))
+                            .foregroundStyle(Color.mktMuted)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("timeUp.askLine")
+                    }
+                }
                 Button(action: back) {
                     Text(verbatim: ParentalWords.text("parental.blocked.back"))
                         .frame(maxWidth: 320, minHeight: 44)
@@ -359,6 +407,20 @@ struct TimeUpView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.timeUp")
+        .task {
+            let p = BlockedPage(client: context.client, subject: .time(minutes: minutes), limit: context.session.parental.current)
+            await p.load()
+            page = p
+        }
+        .sheet(isPresented: $enteringPIN) {
+            PinSheet(client: context.client, subject: .time(minutes: minutes), people: page?.unlockers ?? []) {
+                enteringPIN = false
+                Task {
+                    await context.session.parental.refreshTime()
+                    allowed()
+                }
+            }
+        }
         .task(id: scenePhase == .active) {
             guard scenePhase == .active else { return }
             let store = context.session.parental

@@ -25,13 +25,15 @@ import ManagedSettings
 @MainActor
 enum DeviceAgeSignal {
     /// The launch's source: a Debug build's `-maktaba-age-signal 9-12:guardian_declared:400:400`
-    /// (the UI tests' double: a simulator cannot be a Family Sharing child); a Debug build
-    /// under the UI tests otherwise says nothing, so no system sheet comes up in a test that
-    /// does not expect one; else the device.
+    /// (the UI tests' double: a simulator cannot be a Family Sharing child), or
+    /// `-maktaba-age-signal device` for Apple's own APIs; a Debug build under the UI tests
+    /// otherwise says nothing, so no system sheet comes up in a test that does not expect
+    /// one; else the device.
     static func source(arguments: [String] = CommandLine.arguments) -> any AgeSignalSource {
         #if DEBUG
-        if let spec = ShellLaunch.value(of: "-maktaba-age-signal", in: arguments), let fixed = FixedAgeSignal(spec: spec) {
-            return fixed
+        if let spec = ShellLaunch.value(of: "-maktaba-age-signal", in: arguments) {
+            if spec == "device" { return AppleAgeSignal() }
+            if let fixed = FixedAgeSignal(spec: spec) { return fixed }
         }
         if arguments.contains("-maktaba-secrets-in-file") { return FixedAgeSignal(.notAvailable) }
         #endif

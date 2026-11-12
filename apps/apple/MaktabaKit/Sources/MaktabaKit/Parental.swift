@@ -223,6 +223,10 @@ public struct ParentalSubject: Hashable, Sendable {
 
     public static func video(_ id: String) -> ParentalSubject { .init(kind: "video", id: id) }
     public static func channel(_ id: String) -> ParentalSubject { .init(kind: "channel", id: id) }
+    /// More watching time today (story 57.06): the kind is `time`, the id the minutes as text.
+    public static func time(minutes: Int) -> ParentalSubject { .init(kind: "time", id: String(min(480, max(1, minutes)))) }
+    /// What a child may ask for at once.
+    public static let timeChoices = [15, 30, 60]
 }
 
 /// A subject as a guardian may see it (a request's, an event's).
@@ -457,9 +461,13 @@ public struct ParentalRequest: Decodable, Hashable, Sendable, Identifiable {
     public let status: String
     public let createdAt: Date?
     public let expiresAt: Date?
+    /// A request for more time: how many minutes.
+    public let minutes: Int?
+
+    public var isTime: Bool { subjectKind == "time" }
 
     enum CodingKeys: String, CodingKey {
-        case id, status
+        case id, status, minutes
         case childID = "child_id"
         case subjectKind = "subject_kind"
         case subjectID = "subject_id"
@@ -476,6 +484,7 @@ public struct ParentalRequest: Decodable, Hashable, Sendable, Identifiable {
         status = c.lenient(.status) ?? "pending"
         createdAt = c.lenient(.createdAt)
         expiresAt = c.lenient(.expiresAt)
+        minutes = c.lenient(.minutes) ?? (subjectKind == "time" ? Int(subjectID) : nil)
     }
 }
 
@@ -486,6 +495,15 @@ public struct ParentalRequestItem: Decodable, Hashable, Sendable, Identifiable {
     public let subject: ParentalSubjectInfo
 
     public var id: String { request.id }
+
+    /// "Sara asks for The long night", or for a time request "Sara asks for 30 min more time".
+    public func line(_ locale: Locale = AppLanguage.locale) -> String {
+        if request.isTime {
+            return ParentalWords.text("family.request.time", locale, child.username,
+                                      ParentalWords.length(seconds: (request.minutes ?? 0) * 60, locale))
+        }
+        return ParentalWords.text("family.request.from", locale, child.username, subject.displayTitle(locale))
+    }
 
     enum CodingKeys: String, CodingKey { case child, subject }
 
@@ -532,11 +550,14 @@ public struct ParentalEvent: Decodable, Hashable, Sendable, Identifiable {
     public let subject: ParentalSubjectInfo?
     public let guardian: ParentalPerson?
     public let device: String?
+    /// A time event's minutes (it has no subject).
+    public let minutes: Int?
 
-    enum CodingKeys: String, CodingKey { case id, kind, at, subject, guardian, device }
+    enum CodingKeys: String, CodingKey { case id, kind, at, subject, guardian, device, minutes }
 
     public init(id: String, kind: String, at: Date, subject: ParentalSubjectInfo? = nil, guardian: ParentalPerson? = nil,
-                device: String? = nil) {
+                device: String? = nil, minutes: Int? = nil) {
+        self.minutes = minutes
         self.id = id
         self.kind = kind
         self.at = at
@@ -553,6 +574,7 @@ public struct ParentalEvent: Decodable, Hashable, Sendable, Identifiable {
         subject = c.lenient(.subject)
         guardian = c.lenient(.guardian)
         device = c.lenient(.device)
+        minutes = c.lenient(.minutes)
     }
 }
 
@@ -1008,9 +1030,11 @@ public extension APIClient {
         return a.requests
     }
 
-    func approveRequest(_ id: String, expiresAt: Date?) async throws {
+    /// `expiresAt` for an item's allow rule; `minutes` for a time request (nil: as asked).
+    func approveRequest(_ id: String, expiresAt: Date?, minutes: Int? = nil) async throws {
         var body: [String: Any] = [:]
         if let expiresAt { body["expires_at"] = Self.rfc3339(expiresAt) }
+        if let minutes { body["minutes"] = minutes }
         _ = try await sendRaw(request("POST", "/api/parental/requests/\(Self.segment(id))/approve", body: body))
     }
 

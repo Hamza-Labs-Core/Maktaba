@@ -11674,6 +11674,74 @@
           }
         }
       }
+    },
+    "family.request.time" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ asks for %2$@ more time"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يطلب %1$@ %2$@ وقتًا إضافيًا"
+          }
+        }
+      }
+    },
+    "activity.time.more" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ more time"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ وقتًا إضافيًا"
+          }
+        }
+      }
+    },
+    "activity.kind.timeGrantedMinutes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A parent gave %@ more time"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "منح أحد الوالدين %@ وقتًا إضافيًا"
+          }
+        }
+      }
+    },
+    "parental.pin.unlockedTime" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More time given."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مُنح وقت إضافي."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

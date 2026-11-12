@@ -139,11 +139,11 @@ private struct RequestRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: MaktabaTokens.Spacing.s2) {
-            Text(verbatim: word("family.request.from", item.child.username, item.subject.displayTitle()))
+            Text(verbatim: item.line())
                 .foregroundStyle(Color.mktText)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: MaktabaTokens.Spacing.s2) {
-                Text(verbatim: AgeTier.contentLabel(item.subject.tier))
+                if !item.request.isTime { Text(verbatim: AgeTier.contentLabel(item.subject.tier)) }
                 if let at = item.request.createdAt {
                     Text(at, format: .relative(presentation: .named))
                 }
@@ -151,13 +151,22 @@ private struct RequestRow: View {
             .font(.footnote)
             .foregroundStyle(Color.mktMuted)
             HStack(spacing: MaktabaTokens.Spacing.s3) {
-                Menu {
-                    ForEach(ApprovalLength.allCases, id: \.self) { length in
-                        Button { Task { await model.approve(item, for: length) } } label: { Text(verbatim: word(length.key)) }
-                            .accessibilityIdentifier("family.request.approve.\(length.rawValue)")
+                Group {
+                    if item.request.isTime {
+                        // more time is for today: one tap gives the minutes asked
+                        Button { Task { await model.approve(item, for: .today) } } label: {
+                            Text(verbatim: word("family.device.approve")).frame(minWidth: 88, minHeight: 44)
+                        }
+                    } else {
+                        Menu {
+                            ForEach(ApprovalLength.allCases, id: \.self) { length in
+                                Button { Task { await model.approve(item, for: length) } } label: { Text(verbatim: word(length.key)) }
+                                    .accessibilityIdentifier("family.request.approve.\(length.rawValue)")
+                            }
+                        } label: {
+                            Text(verbatim: word("family.device.approve")).frame(minWidth: 88, minHeight: 44)
+                        }
                     }
-                } label: {
-                    Text(verbatim: word("family.device.approve")).frame(minWidth: 88, minHeight: 44)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Color.brass)

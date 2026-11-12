@@ -50,8 +50,8 @@ struct WatchView: View {
             } else if let stop = playback.parentalStop, let context = signedIn {
                 // Epic 57: the home stopped the video. Nothing is tried again from here.
                 switch stop {
-                case let .blocked(midPlay):
-                    BlockedPageView(context: context, subject: .video(playback.video?.id ?? ""),
+                case let .blocked(id, midPlay):
+                    BlockedPageView(context: context, subject: .video(id),
                                     stoppedLine: midPlay ? ParentalWords.text("parental.player.stopped") : nil,
                                     back: close) { playback.resumeAfterStop() }
                 case let .time(up, position):

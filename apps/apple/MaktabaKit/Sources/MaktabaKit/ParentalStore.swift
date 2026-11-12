@@ -299,8 +299,10 @@ public enum PlaybackVerdict: Equatable, Sendable {
         return .other
     }
 
-    /// For a progress post the home refused.
-    public static func progress(_ error: Error) -> PlaybackVerdict {
+    /// For a progress post the home refused. A 404 under a limit is the home saying the video
+    /// is now hidden from the account: the stream has ended.
+    public static func progress(_ error: Error, limited: Bool = false) -> PlaybackVerdict {
+        if limited, case APIError.status(404, _, _)? = error as? APIError { return .blocked }
         guard case let .time(reason, next)? = ParentalRefusal(error) else { return .other }
         return reason == "no_heartbeat" ? .reopen : .timeUp(TimeUp(reason: reason, nextAllowedAt: next))
     }
@@ -332,7 +334,7 @@ public final class BlockedPage {
 
     public private(set) var ask = Ask.idle
     /// The people with a parent PIN (empty: Enter parent PIN is not offered).
-    public private(set) var unlockers: [ParentalPerson] = []
+    public fileprivate(set) var unlockers: [ParentalPerson] = []
 
     public init(client: APIClient, subject: ParentalSubject, limit: ParentalLimit) {
         self.client = client
@@ -342,6 +344,13 @@ public final class BlockedPage {
 
     public var canAsk: Bool { limit.restricted }
     public var canEnterPIN: Bool { limit.restricted && !unlockers.isEmpty }
+
+    /// Another thing to ask for from the same page (the time's-up screen's minutes).
+    public func asking(_ subject: ParentalSubject) -> BlockedPage {
+        let page = BlockedPage(client: client, subject: subject, limit: limit)
+        page.unlockers = unlockers
+        return page
+    }
     public var reasonLine: String? { limit.reasonLine() }
 
     /// Who can unlock with a PIN; quiet on failure (the button stays away).
@@ -455,7 +464,7 @@ public final class PinEntry {
         case let .locked(until):
             let left = max(60, Int(until.timeIntervalSince(now()).rounded(.up)))
             return ParentalWords.text("parental.pin.locked", locale, ParentalWords.length(seconds: left, locale))
-        case .unlocked: return ParentalWords.text("parental.pin.unlocked", locale)
+        case .unlocked: return ParentalWords.text(subject.kind == "time" ? "parental.pin.unlockedTime" : "parental.pin.unlocked", locale)
         case .failed: return ParentalWords.text("parental.ask.failed", locale)
         }
     }

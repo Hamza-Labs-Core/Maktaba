@@ -377,6 +377,56 @@ final class FakeParentalSource: ParentalSource, @unchecked Sendable {
         #expect(sent.first?.json["subject_id"] as? String == "v-16")
     }
 
+    /// Ask for more time: the kind is `time` and the id the minutes; a guardian's PIN on the
+    /// child's device gives the time at once.
+    @MainActor @Test func askingForMoreTimeSendsTheMinutesAndAPINGivesThem() async {
+        ParentalStub.reset()
+        ParentalStub.on("POST /api/me/parental/requests", 201,
+                        #"{"request":{"id":"r9","child_id":"c1","subject_kind":"time","subject_id":"30","minutes":30,"status":"pending","created_at":"2026-11-11T10:00:00Z","expires_at":"2026-11-12T01:00:00Z"}}"#)
+        ParentalStub.on("POST /api/me/parental/unlock", 200,
+                        #"{"grant":{"id":"g1","user_id":"c1","day":"2026-11-11","minutes":30,"used_seconds":0,"granted_by":"g1","created_at":"2026-11-11T10:00:00Z"}}"#)
+        let client = ParentalStub.client()
+        #expect(ParentalSubject.time(minutes: 30) == ParentalSubject(kind: "time", id: "30"))
+        #expect(ParentalSubject.time(minutes: 9000).id == "480" && ParentalSubject.time(minutes: 0).id == "1")
+        let page = BlockedPage(client: client, subject: .time(minutes: 15), limit: ParentalLimit(restricted: true, maxTier: 9))
+        let ask = page.asking(.time(minutes: 30))
+        await ask.askParent()
+        #expect(ask.ask == .pending)
+        let sent = ParentalStub.seen("POST /api/me/parental/requests").first?.json
+        #expect(sent?["subject_kind"] as? String == "time" && sent?["subject_id"] as? String == "30")
+
+        let entry = PinEntry(client: client, subject: .time(minutes: 30), guardian: ParentalPerson(id: "g1", username: "huda"))
+        [1, 2, 3, 4, 5, 6].forEach(entry.press)
+        await entry.submit()
+        #expect(entry.state == .unlocked && entry.line(en) == "More time given.")
+        let unlock = ParentalStub.seen("POST /api/me/parental/unlock").first?.json
+        #expect(unlock?["subject_kind"] as? String == "time" && unlock?["subject_id"] as? String == "30")
+    }
+
+    /// A guardian's list has a time request with its minutes; Approve gives them for today.
+    @MainActor @Test func aTimeRequestIsListedWithItsMinutesAndApprovedForToday() async {
+        ParentalStub.reset()
+        ParentalStub.on("GET /api/parental/children", 200, #"{"children":[]}"#)
+        ParentalStub.on("GET /api/parental/requests", 200,
+                        #"{"requests":[{"id":"r9","child_id":"c2","subject_kind":"time","subject_id":"30","minutes":30,"status":"pending","created_at":"2026-11-11T10:00:00Z","expires_at":"2026-11-12T01:00:00Z","child":{"id":"c2","username":"Sara"},"subject":{"kind":"time","id":"30"}}]}"#)
+        ParentalStub.on("GET /api/me/parental-pin", 200, #"{"set":true}"#)
+        ParentalStub.on("POST /api/parental/requests/r9/approve", 200, #"{"request":{"id":"r9","status":"approved"},"grant":{"id":"g1","minutes":30}}"#)
+        let family = FamilyModel(client: ParentalStub.client(), isAdmin: false)
+        await family.load()
+        let item = family.requests[0]
+        #expect(item.request.isTime && item.request.minutes == 30)
+        #expect(item.line(en) == "Sara asks for 30 min more time")
+        #expect(item.line(ar).hasPrefix("يطلب "))
+        await family.approve(item, for: .always)
+        #expect(ParentalStub.seen("POST /api/parental/requests/r9/approve").first?.json["expires_at"] == nil, "time is for today: no expiry sent")
+        #expect(family.requests.isEmpty)
+        // a time event has minutes and no subject
+        let asked = ParentalEvent(id: "e", kind: "asked", at: .now, minutes: 30)
+        #expect(ActivityModel.line(asked, en) == "Asked for 30 min more time")
+        #expect(ActivityModel.line(ParentalEvent(id: "g", kind: "time_granted", at: .now, minutes: 15), en) == "A parent gave 15 min more time")
+        #expect(ActivityModel.line(ParentalEvent(id: "g", kind: "time_granted", at: .now), en) == "A parent gave more time")
+    }
+
     @MainActor @Test func aTwentyFirstRequestSaysTooMany() async {
         ParentalStub.reset()
         ParentalStub.on("POST /api/me/parental/requests", 429,
@@ -957,7 +1007,9 @@ final class Clock: @unchecked Sendable {
 
         #expect(PlaybackVerdict.progress(time) == .timeUp(up))
         #expect(PlaybackVerdict.progress(APIError.status(403, #"{"code":"parental_time","reason":"no_heartbeat"}"#)) == .reopen)
-        #expect(PlaybackVerdict.progress(gone) == .other, "a progress post that fails otherwise is left to the next one")
+        #expect(PlaybackVerdict.progress(gone) == .other, "with no limit a failed post is left to the next one")
+        #expect(PlaybackVerdict.progress(gone, limited: true) == .blocked, "the video was hidden while it played: the stream has ended")
+        #expect(PlaybackVerdict.progress(time, limited: true) == .timeUp(up))
         #expect(PlaybackVerdict.progress(APIError.transport("down")) == .other)
     }
 

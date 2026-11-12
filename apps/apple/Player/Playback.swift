@@ -37,9 +37,9 @@ final class Playback {
     @ObservationIgnored var limited: () -> Bool = { false }
 
     enum ParentalStop: Equatable {
-        /// The home no longer gives the video (404 on open or on a renewal): the blocked
-        /// page. `midPlay`: it was playing.
-        case blocked(midPlay: Bool)
+        /// The home no longer gives the video `id` (404 on open or on a renewal, or for the
+        /// queue's or the series' next one): the blocked page. `midPlay`: it was playing.
+        case blocked(id: String, midPlay: Bool)
         /// 403 `parental-time`: the time's-up screen, with where the video stopped.
         case time(TimeUp, position: Double)
     }
@@ -182,7 +182,16 @@ final class Playback {
     /// The home allows watching again (a parent gave more time, or allowed the video): the
     /// video opens where it stopped.
     func resumeAfterStop() {
-        guard let stop = parentalStop, video != nil else { return }
+        guard let stop = parentalStop, let current = video else { return }
+        // the next video was the blocked one: a parent allowed it, so it plays
+        if case let .blocked(id, _) = stop, id != current.id {
+            parentalStop = nil
+            Task {
+                guard let v = try? await client.video(id) else { return }
+                play(v)
+            }
+            return
+        }
         let at: Double = if case let .time(_, position) = stop { position } else { position }
         parentalStop = nil
         failure = nil
@@ -255,7 +264,13 @@ final class Playback {
                 PlayerQueues.played(v.id, client)
                 play(v)
             } catch {
-                failure = HomeFailure(error)
+                // a queue or a series made before the limit tightened: its next video is one
+                // the home no longer gives (57.05: the blocked page, not an error)
+                if PlaybackVerdict.open(error, limited: limited()) == .blocked {
+                    stopForParental(.blocked(id: n.videoID, midPlay: false))
+                } else {
+                    failure = HomeFailure(error)
+                }
             }
         }
     }
@@ -432,7 +447,7 @@ final class Playback {
                 stopForParental(.time(up, position: start))
                 return
             case .blocked:
-                stopForParental(.blocked(midPlay: player != nil))
+                stopForParental(.blocked(id: video.id, midPlay: player != nil))
                 return
             case .other, .reopen:
                 break
@@ -561,9 +576,12 @@ final class Playback {
     /// left to the next post.
     func progressRefused(_ error: Error, session refused: String, at: Double) {
         guard session == refused, parentalStop == nil else { return }
-        switch PlaybackVerdict.progress(error) {
-        case .other, .blocked:
+        switch PlaybackVerdict.progress(error, limited: limited()) {
+        case .other:
             return
+        case .blocked:
+            // the video was hidden from the account while it played: the stream has ended
+            if let id = video?.id { stopForParental(.blocked(id: id, midPlay: true)) }
         case .reopen:
             guard let p = player else { return }
             let again = reopening(p, fallback: at)
@@ -582,7 +600,7 @@ final class Playback {
     /// post until now), the player goes, and the screen shows the blocked page or time's up.
     private func stopForParental(_ stop: ParentalStop) {
         let at = player?.currentTime().seconds ?? position
-        if let session, at.isFinite, at > 0, case .blocked = stop {
+        if let session, at.isFinite, at > 0, case .blocked(_, true) = stop {
             Task { [client] in await client.reportProgress(session: session, positionSec: Int(at)) }
         }
         var kept = stop

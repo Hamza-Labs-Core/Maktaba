@@ -82,6 +82,11 @@ public final class FamilyModel {
     }
 
     public func approve(_ item: ParentalRequestItem, for length: ApprovalLength) async {
+        // more time is for today only: the home makes a grant of the minutes asked
+        if item.request.isTime {
+            await answer(item) { try await self.client.approveRequest(item.id, expiresAt: nil) }
+            return
+        }
         await answer(item) { try await self.client.approveRequest(item.id, expiresAt: length.expiresAt()) }
     }
 
@@ -366,7 +371,9 @@ public final class ActivityModel {
 
     /// A row's sentence.
     public nonisolated static func line(_ e: ParentalEvent, _ locale: Locale = AppLanguage.locale) -> String {
-        let what = e.subject?.displayTitle(locale) ?? ""
+        // a time event has minutes and no subject: "30 min more time"
+        let more = e.minutes.map { ParentalWords.text("activity.time.more", locale, ParentalWords.length(seconds: $0 * 60, locale)) }
+        let what = e.subject?.displayTitle(locale) ?? more ?? ""
         let who = e.guardian?.username ?? ""
         switch e.kind {
         case "watched": return ParentalWords.text("activity.kind.watched", locale, what)
@@ -377,7 +384,9 @@ public final class ActivityModel {
         case "pin_locked": return ParentalWords.text("activity.kind.pinLocked", locale, who.isEmpty ? what : who)
         case "signal": return ParentalWords.text("activity.kind.signal", locale, e.device ?? what)
         case "time_up": return ParentalWords.text("activity.kind.timeUp", locale)
-        case "time_granted": return ParentalWords.text("activity.kind.timeGranted", locale)
+        case "time_granted":
+            guard let m = e.minutes else { return ParentalWords.text("activity.kind.timeGranted", locale) }
+            return ParentalWords.text("activity.kind.timeGrantedMinutes", locale, ParentalWords.length(seconds: m * 60, locale))
         default: return e.kind.replacingOccurrences(of: "_", with: " ")
         }
     }

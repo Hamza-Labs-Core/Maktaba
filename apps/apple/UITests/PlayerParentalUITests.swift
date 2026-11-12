@@ -44,7 +44,7 @@ final class PlayerParentalUITests: PlayerUITestCase {
         home.stub("POST", "/api/me/parental/requests", status: 201,
                   body: #"{"request":{"id":"r1","child_id":"u1","subject_kind":"video","subject_id":"v2","status":"pending","created_at":"2026-11-11T10:00:00Z","expires_at":"2026-11-18T10:00:00Z"}}"#)
         launchSignedIn(sections: ["home"], open: "video/v2")
-        XCTAssertTrue(element("screen.blocked").waitForExistence(timeout: 20), "the blocked page")
+        XCTAssertTrue(element("blocked.title").waitForExistence(timeout: 20), "the blocked page")
         XCTAssertEqual(element("blocked.title").label, "This isn't available")
         XCTAssertEqual(element("blocked.reason").label, "Your account is limited to 9+.")
         XCTAssertEqual(element("blocked.lock").label, "Not available", "VoiceOver reads the lock")
@@ -72,7 +72,7 @@ final class PlayerParentalUITests: PlayerUITestCase {
     func testTheBlockedPageInArabic() {
         childWithHiddenVideo()
         launchSignedIn("ar", sections: ["home"], open: "video/v2")
-        XCTAssertTrue(element("screen.blocked").waitForExistence(timeout: 20), "the blocked page")
+        XCTAssertTrue(element("blocked.title").waitForExistence(timeout: 20), "the blocked page")
         XCTAssertEqual(element("blocked.title").label, "هذا غير متاح")
         XCTAssertTrue(element("blocked.reason").label.hasPrefix("حسابك مقيَّد بـ"), element("blocked.reason").label)
         XCTAssertTrue(element("blocked.reason").label.contains("+9"), "the tier reads +9: \(element("blocked.reason").label)")
@@ -98,7 +98,7 @@ final class PlayerParentalUITests: PlayerUITestCase {
     func testABlockedPageBecomesTheVideoWhenAParentAllowsIt() throws {
         childWithHiddenVideo()
         launchSignedIn(sections: ["home"], open: "video/v2")
-        XCTAssertTrue(element("screen.blocked").waitForExistence(timeout: 20), "the blocked page")
+        XCTAssertTrue(element("blocked.title").waitForExistence(timeout: 20), "the blocked page")
         // the parent allows it on their own phone: the home now gives the video, and the limit moved
         let video = try XCTUnwrap(home.fixture(named: "video-v2"))
         let mine = try XCTUnwrap(home.fixture(named: "me-video-v2"))
@@ -107,8 +107,8 @@ final class PlayerParentalUITests: PlayerUITestCase {
         home.stub("GET", "/api/me/parental", body: #"{"restricted":true,"max_tier":13,"unrated":"hide","version":5}"#)
         XCUIDevice.shared.press(.home)
         app.activate()
-        XCTAssertTrue(element("video.details").waitForExistence(timeout: 20), "the video's page, without a restart")
-        XCTAssertFalse(element("screen.blocked").exists)
+        XCTAssertTrue(app.buttons["video.favorite"].waitForExistence(timeout: 20), "the video's page, without a restart")
+        XCTAssertFalse(element("blocked.title").exists)
     }
 
     // MARK: 57.06
@@ -142,7 +142,7 @@ final class PlayerParentalUITests: PlayerUITestCase {
         home.stub("GET", "/api/me/videos/v2", body: try XCTUnwrap(home.fixture(named: "me-video-v2")))
         home.stub("GET", "/api/me/parental", body: #"{"restricted":true,"max_tier":9,"unrated":"hide","version":5}"#)
         for d in [6, 5, 4, 3, 2, 1] { element("pin.key.\(d)").tap() }
-        waitUntil("the video's page after the PIN", timeout: 20) { !self.element("screen.blocked").exists && self.element("video.details").exists }
+        waitUntil("the video's page after the PIN", timeout: 20) { !self.element("blocked.title").exists && self.app.buttons["video.favorite"].exists }
     }
 
     // MARK: 57.04
@@ -167,6 +167,36 @@ final class PlayerParentalUITests: PlayerUITestCase {
         XCTAssertFalse(element("profile.parental.managed").exists, "the account itself is not restricted")
         XCTAssertEqual(count("POST", "/api/me/age-signal"), 1, "sent once: nothing changed since")
         shot("parental-profile-device")
+    }
+
+    /// The build has neither the Declared Age Range capability nor Family Controls: reading
+    /// Apple's own signals must leave the app running, with no system sheet over it, and
+    /// send the home only what could be read. Five taps on About show what that was (the
+    /// line of the real-device check).
+    func testTheDevicesOwnSignalsAreReadWithoutAnyCapability() {
+        home.parental(#"{"restricted":false}"#)
+        home.stub("POST", "/api/me/age-signal", body: #"{"tier_limit":null,"pending_looser":false,"refresh":true}"#)
+        launchSignedIn(sections: ["profile"], section: "profile", extra: ["-maktaba-age-signal", "device"])
+        XCTAssertTrue(element("screen.profile").waitForExistence(timeout: 20), "Profile")
+        RunLoop.current.run(until: Date().addingTimeInterval(3))
+        XCTAssertEqual(app.state, .runningForeground, "the app runs on after reading the device")
+        let about = element("profile.about")
+        scrollUntil(about)
+        XCTAssertTrue(about.isHittable, "nothing of the system's is over the app")
+        about.tap(withNumberOfTaps: 5, numberOfTouches: 1)
+        let line = element("profile.about.ageSignal")
+        XCTAssertTrue(line.waitForExistence(timeout: 5) || about.label.contains("movie"), "the diagnostics line")
+        let text = line.exists ? line.label : about.label
+        XCTAssertTrue(text.contains("movie") && text.contains("tv") && text.contains("region"), text)
+        // no age range without the capability: nothing about an age is sent
+        if let sent = body("POST", "/api/me/age-signal") {
+            XCTAssertNil(sent["age_range"], "no capability, no age range: \(sent)")
+        }
+        XCTAssertFalse(element("profile.parental.ageRange").exists, "no Age range row where Apple offers none")
+        let a = XCTAttachment(string: text)
+        a.name = "age-signal-diagnostics"
+        a.lifetime = .keepAlways
+        add(a)
     }
 
     // MARK: 57.07, 57.08
@@ -267,7 +297,7 @@ final class PlayerParentalUITests: PlayerUITestCase {
         // time runs out: the next heartbeat is refused
         home.stub("GET", "/api/me/parental/time", body: #"{"allowed":false,"limited":true,"reason":"limit_reached","remaining_seconds":0,"slot_ends_at":null,"next_allowed_at":"{{now+3600}}","now":"{{now}}"}"#)
         home.stub("POST", "/api/stream/sessions/ss-1/progress", status: 403, body: timeOver())
-        XCTAssertTrue(element("screen.timeUp").waitForExistence(timeout: 40), "the time's-up screen")
+        XCTAssertTrue(element("timeUp.title").waitForExistence(timeout: 40), "the time's-up screen")
         XCTAssertEqual(element("timeUp.title").label, "Time's up for today")
         XCTAssertTrue(element("timeUp.next").label.hasPrefix("You can watch again at "), element("timeUp.next").label)
         XCTAssertTrue(element("timeUp.saved").exists, "where the video stopped")
@@ -276,7 +306,7 @@ final class PlayerParentalUITests: PlayerUITestCase {
         let opened = count("POST", "/api/stream/sessions")
         RunLoop.current.run(until: Date().addingTimeInterval(12))
         XCTAssertEqual(count("POST", "/api/stream/sessions"), opened, "not tried again")
-        XCTAssertTrue(element("screen.timeUp").exists)
+        XCTAssertTrue(element("timeUp.title").exists)
         element("timeUp.back").tap()
         XCTAssertTrue(element("screen.home").waitForExistence(timeout: 10), "Back leaves the player")
     }
@@ -287,11 +317,20 @@ final class PlayerParentalUITests: PlayerUITestCase {
         home.stub("POST", "/api/stream/sessions", status: 403,
                   body: #"{"type":"https://maktaba.tv/problems/parental-time","status":403,"code":"parental_time","reason":"outside_slot","next_allowed_at":"{{now+3600}}"}"#)
         launchSignedIn("ar", sections: ["home"], open: "watch/v1")
-        XCTAssertTrue(element("screen.timeUp").waitForExistence(timeout: 30), "the time's-up screen")
+        XCTAssertTrue(element("timeUp.title").waitForExistence(timeout: 30), "the time's-up screen")
         XCTAssertEqual(element("timeUp.title").label, "لم يحن وقت المشاهدة بعد")
         XCTAssertTrue(element("timeUp.next").label.hasPrefix("يمكنك المشاهدة مجددًا عند"), element("timeUp.next").label)
         XCTAssertEqual(element("timeUp.ask").label, "اطلب من أحد والديك وقتًا إضافيًا")
         XCTAssertEqual(count("POST", "/api/stream/sessions"), 1, "asked once")
+        // Ask for more time (57.06): the minutes asked for go as a `time` request
+        home.stub("POST", "/api/me/parental/requests", status: 201,
+                  body: #"{"request":{"id":"r9","child_id":"u1","subject_kind":"time","subject_id":"30","minutes":30,"status":"pending","created_at":"{{now}}","expires_at":"{{now+3600}}"}}"#)
+        XCTAssertTrue(element("timeUp.askMore").waitForExistence(timeout: 10), "Ask for more time")
+        element("timeUp.askMore").tap()
+        waitUntil("the time request sent") { self.count("POST", "/api/me/parental/requests") == 1 }
+        XCTAssertEqual(body("POST", "/api/me/parental/requests")?["subject_kind"] as? String, "time")
+        XCTAssertEqual(body("POST", "/api/me/parental/requests")?["subject_id"] as? String, "30")
+        XCTAssertTrue(element("timeUp.askLine").waitForExistence(timeout: 10), "the request's line")
         shot("parental-time-up")
     }
 
