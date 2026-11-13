@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.139
-up_to_commit: 7ebffe1e4
-built_from: v0.3.138
+tag: v0.3.140
+up_to_commit: ae002c5d9
+built_from: v0.3.139
 ---
 
-# Trail snapshot: v0.3.139
+# Trail snapshot: v0.3.140
 
 ## Keep doing
 
@@ -48,6 +48,8 @@ built_from: v0.3.138
 - When a rule file and a remembered instruction disagree, ask before telling delegates which wins. (#1020)
 - Before a removal step that says "one release later", check that the conditions that made the old path necessary are gone, not only that nothing was flipped back: read the dispatcher's fallback branches first. When a spec's preconditions do not hold in the code, stop and report with the evidence rather than ship a partial removal. (#1078)
 - After a merge call fails ("Base branch was modified"), read the PR's state before retrying: the merge can have gone through. (#1080)
+- Give a stalled agent a strict order and a time bound, and ask for an interim report so the finished part can merge. Review a multi-story branch whole, by area, after every story passes its own tests (file, line, scenario, fix, a test per fix): Epic 57's review found one critical and nine high defects the stories' tests had passed. (#1204)
+- Wait on CI in the foreground with a long timeout and say what is pending: two pull requests sat red for about nine hours on a cancelled check nobody was watching. (#1207, #1211)
 
 - After each code PR merges, check that its trail PR exists (`gh pr list --head trail/…`) and gather any stranded event into a batch: ten Epic 59 events sat only in children's worktrees. Commit and push an event as soon as it is written, and run `trail check` in the foreground, then open the PR in the same turn. (d20261110-epic59-stranded-trail-events)
 - After every push, check that the PR is MERGEABLE and that its run is for the pushed sha: a PR that conflicts with main runs no `pull_request` CI, and the green checks shown are an older head's. (#1120)
@@ -217,6 +219,9 @@ built_from: v0.3.138
 - Re-run a check that read stale input (a pull request body from before an edit) rather than merging past its red entry. (#1186)
 - Compare built pages with their mockups at every width and in both languages before the first push. (#1192)
 - Prove a "flaky" failure before re-running it (the same value on two pages pointed to one cause); remove design options that were not chosen rather than mark them, and test that none is left. (#1187)
+- When a budget fails, compare the same measurement on several runs of main before blaming the branch; reproduce a CI-only failure by forcing the suspected race (a held response, a loaded CPU, a split document) before changing code, and keep the forcing test. (#1204)
+- Read a red check's own runs before assuming a test failed (a head can carry a green run and a cancelled one); list a pull request's reference images in its body before pushing them, or re-run the check after. (#1211, #1209)
+- With Docker off, take website references from CI's own renders and look at each beside the mockup; run the link check against the built site (`links.mjs --dist dist`) before pushing a change to what pages link or preload. (#1207, #1209)
 
 ## Stop doing
 
@@ -275,7 +280,11 @@ built_from: v0.3.138
 - Rendering a full-site visual update on emulated amd64 (Apple Silicon) at the default worker count: shots time out; `--workers=2` renders clean. (#1175)
 - Opening a second pull request on a spec table while another that edits it is open: rows in one table share a hunk and conflict. (#1184)
 - Treating a crashed Lighthouse run as a page under the bar. (#1188)
-- Ending a child's brief without telling it not to end its turn before its report: a child stopped on a running CI job. (#1186)
+- Ending a turn on "CI is running", or a child's brief without telling it not to end its turn before its report: a child stopped on a running CI job, and red checks went unseen for hours. (#1186, #1207)
+- `cancel-in-progress` on checks that gate a fail-closed merge. (#1211)
+- Holding a long branch back from CI until it is finished: open the one pull request once the integration branch has real work, merge main in often, keep it green. (#1204)
+- Reading a single green run of main as the baseline for a number that has two levels, and naming a cause from a log without reproducing it (three wrong guesses in Epic 57). (#1204)
+- Promising that two open pull requests on the same package merge in either order: copying one hunk does not stop the files around it from conflicting. (#1208, #1209)
 - Starting a watcher whose check-name pattern was not tested (`^quality` never matched `website / quality …` and ran to its bound). (#1192)
 - Writing copy into HTML attributes without escaping quotes, even our own copy; stripping tags in one regex pass (CodeQL flags both). (#1187)
 
@@ -332,6 +341,8 @@ built_from: v0.3.138
 - Epic 57's device side is Apple's Screen Time: the effective movie and TV rating limit is readable without Family Controls (iOS 15+, tvOS 26+), watching it needs the entitlement, which needs Apple's approval per extension, so the app re-reads on foreground. Declared Age Range is iOS, iPadOS and macOS 26+ only and a plain capability. (#979)
 - A component's `reason` means why it is not ready; a ready but degraded component (`sandbox_partial` on a true Ready condition) carries `degraded_reason` instead, so clients that treat `reason` as a failure stay right. `shared/api/openapi.json` is what the router coverage test and the portal read; `openapi.yaml` and `openapi.ar.json` (keyed by the English text) are kept beside it by hand. (#1135)
 - A dependency that is optional "for tests" and soft-fails to success hides a missing production wiring: video process and reprocess answered 200 with no job in every build since Story 7.5 (`MountP6` never passed `JobQ`); they now queue forced runs, and a missing queue is 503. (#1147)
+- A gate in front of every route says per route what it needs to answer: routes that must work with the database down (`/api/cluster/emergency`) read no policy, a guard beside the registry lists them, and a second process mounting the same router (a node) gets every dependency the first got, checked by a test that walks each mount. A fallback for an unreadable policy is a fail-open risk: save "no policy" only after a fresh read with an unchanged cache generation, and never let a ping resume a suspended cache. (#1204)
+- A bypass rehearsal that fills a path parameter it has no fixture for (`x`) gets "not found" and counts the route as asked: it now probes every mounted content route with a real fixture and fails on one it cannot probe. (#1204)
 
 **CI and releases**
 - Homes' `releaseverify` accepts only a release whose Sigstore certificate's trigger (OID 1.3.6.1.4.1.57264.1.20) is `push`; a dispatched release differs in that claim alone and is refused, and a re-run of a dispatched run stays `workflow_dispatch`. A tag pushed with `GITHUB_TOKEN` starts no run, so tags come from a session's push; v0.3.83 to v0.3.85 have no release, so v0.3.86 is the first published release of their components (`since` says 0.3.86). (#725, #730, #748)
@@ -378,6 +389,10 @@ built_from: v0.3.138
 - `pull_request` workflows do not start while a PR conflicts with main: only `CI (branch head)` runs until main is merged in. Every `download-artifact` step needs the 3-attempt chain and its check step. A re-run uses the pull request's own copy of the workflow: a limit raised on main reaches it only once main is merged in. (#1109, #1118, #1171, #1176)
 - A conflict in a generated bundle (`firstparty.json`'s digest) is resolved by taking main's copy and regenerating. `merge-main.sh` can place an entry in the second `### Fixed` list of `[Unreleased]`: read where it landed. A test fake that ignores the SQL breaks silently when the query grows. (#1098, #1095, #1092)
 - A timing test sized from one calibration run flakes when the runner's load changes between calibration and run (plugind's slot-wait test; the host was right). Locally, Homebrew's `rustc` comes first on PATH without `wasm32-wasip2`, so `make plugind-guests` fails though rustup has the target: put rustup's stable toolchain first; without the guests every guest-based host test fails with "is missing". (#1144)
+- A check two events can start on one head (a push and a body edit) must have no `cancel-in-progress` group: the cancelled run stays on the head as a red mark, which the fail-closed merge rightly refuses; `reference-images.yml` has none, pinned by a test. (#1207, #1211)
+- A check that discovers files fails closed when it cannot see: `git status` printed nothing in a container that refused the checkout's ownership, so a job passed with eight new references written. Brand-new website references are written by CI in the runner's image, uploaded as `website-new-references-<shard>`, and fail the job. (#1209)
+- The API's idle memory has two levels on main, set by whether GitHub answers the update check (two loops decoded the 6.9 MB release list whole; both now read one release at a time); macOS keeps memory Go has freed in a process's resident size, so only not allocating lowers it. Integration's time was the scratch database copy and queueing: a template copy with fsync off and parallel parental tests took it from 5m04 to 2m33. CodeQL does not follow a response's content type through a helper: set it in the method that writes. (#1204)
+- A branch held back from CI until done met 153 new commits of main and new rules (the problem type registry, stricter lint): 16 checks failed on its first run. (#1204)
 
 **Database and migrations**
 - Number a migration slot only when merging main (slots are taken while a PR builds); a slot above a gap fails migration-lint; `SchemaRev` lives in three places. Check `git ls-tree origin/main shared/db/migrations/` right before each push, not only at the start; at each renumber rebuild `cluster_copy_excluded()` on the newest definition (Up adds, Down restores that one) and raise the three SchemaRev constants together. Slots moved three and four times while a PR waited; a moved migration is written again from its generator (`roles.py sql`, which `roles.py check` compares against every manifest), never sliced from the old file (a slice that kept `--` lines opened `StatementBegin` twice; migration-lint's `goose-annotations` now refuses it). Prove a migration parses with `go run . migrate up` from `api/` on a new database. The store's D1 migrations number separately but still collide within one series. (#669, #692, #678, #672, #657, #693, #762, #767, #778, #781, #815, d20261107-paid-plugins-merge-problems, #925, #949)
@@ -403,6 +418,7 @@ built_from: v0.3.138
 - A stage version bump re-queues every subject; to fix a subset change only their fingerprint and add a self-ending sweep. (#525)
 - A restore builds the HNSW vector index (`segment_embeddings_hnsw`, 28 M rows) after the other indexes, alone, with a third of RAM (at most 32 GB) and up to 7 workers through PGOPTIONS, falling back to no workers and then the server's settings; with the server's 64 MB it was 9% done after two hours while the home was down. Building it in the background after the swap was rejected: a rollback's older release would not know to build it. (d20261107-restore-vector-index)
 - Restores raced the PC's node-copy grant; after a hand recovery check vectors, post-data and ACLs. (#395, #433)
+- A migration that changes a row another slot inserted cannot be rolled back without a full restore (the updater counts the update as losing data): insert the row in the slot that owns its value, so its Down is a delete (0221, 0225). (#1204)
 
 **Platforms**
 - Windows: services cannot see mapped drives (sign-in task instead); `postgres.exe` needs a non-admin token; `os.Rename` cannot cross drives; CTRL_BREAK quirks; PowerShell's cold start on runners is 20-50 s. (#175, #196, #165, #205, #573)
@@ -538,6 +554,7 @@ built_from: v0.3.138
 - A package-level value that does real work runs in every role of a multi-role binary: keep expensive ones lazy (`sync.OnceValue`), and when one handler is fixed, look for the same pattern in its siblings (both sign-in handlers made their argon2id timing hash at init); load-small's per-tunnel memory comparison catches what unit tests cannot. A stopgap carried through several layers goes from all of them in one PR. (#1027, #1077)
 - A delegated agent cannot wait on PR checks, so stacked PRs need the coordinator to drive merges in order. Go 1.26 deprecates raw `ecdsa` coordinates: use `PublicKey.Bytes()` or `ecdsa.ParseUncompressedPublicKey`. (#1067)
 - A control that automation also writes records a person's choice even when the value does not change: a request for a stage's current impl answered 200 without setting `impl_changed_at`, and the next graph sync flipped the stage to `plugin` (rehearsal 16.7's one-off failure). A rehearsal step on the previous release runs that release's code, so the scenario waits for a state that release makes observable. (#1074)
+- On CI's older simulator OS a SwiftUI `Label` row reads as its symbol's name and an off-screen row of a lazy `Form` is an empty element with the identifier: make the row one element labelled by its words and scroll a control into view before reading it; neither shows on a newer local simulator. A test helper that advances a fake clock to the next scheduled task turns waits into a fast loop of the code's own timers: run what is due and never move the clock while waiting. (#1204)
 
 **NAS (Epic 59)**
 - Synology (59.09): `deploy/nas/generate.py` derives `deploy/nas/synology/compose{,.j4125}.yaml` from the published compose with the shared block rule, a test checks that maktaba.tv/install/synology's defaults give exactly those files, and the `synology-compose` cell runs the committed file on Container Manager's Docker 24.0.2 (dind). Two features can share a cell key by accident (`compose` with `blocks` and with `file`), with no textual conflict: the Synology cell is `compose_file`. `docker:dind`'s busybox `ps` has no `uid` column. (#1120)
@@ -575,6 +592,9 @@ built_from: v0.3.138
 - The demo library (`tests/fixtures/demo-library/`, Blender open movies under CC BY, the Haddad household) serves the home's own answer shapes, so the web (Playwright routing), Apple (`MockHome(demo:)`) and Android (Roborazzi) shoot every app from it; `scripts/shots.mjs --from-run` turns a CI run's captures into `static/shots/`. A screenshot test waits on a condition (the subtitle's letters, a poster's loaded tag), never a delay; ffmpeg writes a `Lavc` comment into every JPEG; the Android hero calls an unpicked item the newest series. (#1186)
 - Epic 60's questions Q1–Q9 are decided: one chosen tagline from several in both languages, a single approver for the Arabic, the app icon with the name in both scripts, Q4–Q9 as their defaults; the Arabic name on the site is «مكتبة». (#1176)
 - Design part B is approved (60.01, 60.02): the wordmark, the display face "Maktaba Display" (an Amiri Bold subset, OFL; `scripts/shell.mjs` publishes any `maktaba-display-*` face it names, hashed), layouts for every page kind at 360, 768 and 1280 px, the home and download copy, a traced `static/icon.svg`, and tagline proposal 1 as the hero headline and card title (`copy/README.md` keeps the other proposals). Before a full-page screenshot, `render.mjs` waits for each picture to load, decodes it and scrolls it into view: a tall shot left late pictures unpainted. (#1187)
+- A layout shift of the navigation on a different page each run was the browser painting a half-parsed header: every page carries `<link rel="expect" blocking="render">` for the shell's last element (55 of 60 forced runs failed before, 0 after). (#1204)
+- The home page (60.10) replaced the front door; the visual references mask the apps' screenshots in the frame's near-black (eight photographs made them 1.3 to 1.5 MB, over the 1 MB limit, and every release's shots would change them), and the pictures are checked by `scripts/shots.test.mjs` and 60.09's T04. With `/download/` built, part B's shell sends every Download link there. (#1207, #1208, #1209)
+- The download page (60.11) reads the latest stable release from the Releases API at build time (assets by pattern, digests checked against `checksums.txt`, platforms in `src/downloads.json`, one hidden when it has no asset or listing); the visitor's card comes first, so the visual check compares the set of cards; the release workflow dispatches the website deploy after a stable release, gated by `vars.WEBSITE_LIVE`. The shell's assets are one table read by script (two `display` entries had preloaded `href="undefined"`). (#1209)
 
 ## Open
 
@@ -608,7 +628,8 @@ built_from: v0.3.138
 - Dependabot dismissals to revisit when tauri moves to GTK4 and eslint adopts minimatch 11. (d20261102-dependabot-dismissals)
 - The rehearsal could skip, as not applicable, a row whose test does not exist at the rehearsed commit (for example `go test -list` first). (d20261108-rehearsal-matrix-skew)
 - Only the wave scenarios run the crash-loop check: the others use a fake pipeline wheel with no `maktaba_plugin_runner`; a fake runner module there would let every scenario run it. (d20261108-runners-wait-venv)
-- Epic 57 (parental controls, spec only): the build, Phase 1 first (57.01, 57.02, 57.03, 57.10), and a real-device check of whether the effective rating limit reflects the parent's own Content & Privacy Restrictions (57.04 §4), before the Phase 3 release tag. (#979)
+- Epic 57 (parental controls, built): 57.16 (time rules through Screen Time) waits for the Family Controls entitlement; the Declared Age Range capability on the Player App IDs and the checks on a real child device (the rating limit, Downtime, whether it reflects the parent's own restrictions, 57.04 §4; steps in `docs/testflight.md`); guardian screens on Android and the desktop Player, Notifications and the iPad split view on iPhone; the policy cache's listener holds one more Postgres connection at idle; restricted Home is over its 60 ms bound (the Home row cache is bypassed for restricted accounts). (#979, #1204)
+- `testNotInterestedRemovesTheCard` and `testAlsoSendToMaktabaWhenTheHomeAllowsIt` fail now and then on CI's simulators, on main too, cause not established; CI's simulator device pick will be refused under Xcode 27 (`docs/testflight.md`). (#1204)
 - Classify parity: every parity open still clones two databases and starts the dev server (about 1 s). In `compute_metrics`, `statistics.pstdev` is about 20 % of what is left for a season; replacing it would change the last bits of three metrics, so it stays. (#996, #1050)
 - One slow iPad shard's warm audits took 15.5 then 14.0 s: on such a runner a test's first audit can still reach XCTest's 15 s deadline. (#1001)
 - Plex removal's cleanup migration, a release or more later: the seven stages' rows, the two pools, the dizqueTV extension and component rows, settings keys, `external_links` targets, `plex_items` and the channel audit tables, the `maktaba_fp_dizquetv` role, the retired lists and the `rules.legacy_tv_live` fallback, and the retired `dizquetv_*` stages' rows (slot 0215 kept them). The mediaintel scripts still write Plex collections on their own. (d20261108-remove-plex-sync, #1078)
@@ -640,6 +661,7 @@ built_from: v0.3.138
 - Problem registry (60.06): its 578 pages (`problems.mjs`) wear the approved shell since #1192; 60.12 adds a `help-link` representative, its family before `problems` in `FAMILIES`; every `install` field is null until troubleshooting anchors exist; the streaming service sends `maktaba.invalid/problems/*` slugs outside the registry. Odd sends: `TypeForbidden` with 401, `TypeConflict` with 410, `invalid-credentials` for a refused cloud link (422), batch undo's 409 for a missing edit, `token-expired` never sent; the components handler's `fail` does not recognise `*pl.Problem`, so `plugin_revoked` may answer 500 through `/api/components` (traced, not run). (#1162, #1180)
 - Legal pages (60.07): the notice form goes live with Epic 50's `POST /v1/moderation/notices` (CORS for `https://maktaba.tv`, 202 with `notice_id`), which must also accept the no-JS urlencoded post or the plain-form path is dropped; owner actions A3 (mailboxes), A4 (designated agent, then the postal line) and Q7 (legal review before 50.24's public channels) wait; demo image credits wait for 60.09. (#1175)
 - Product shots (60.09): maktaba.dev's Apps pages could use them; no iPad Remote shot; the Mac app's Arabic window does not mirror and its shots are 1024×674 with no player controls; Apple TV and iPhone/iPad "On now" follow the simulator's clock; Android TV's player shot has no subtitle and Media3's controls do not mirror in Arabic; 60.01 part B sets frames and widths, 60.10 and 60.11 place the images. (#1186)
+- Download page (60.11): it still wears part A's shell and social card; store badges wait for public listings (A6), package rows for A7, the "How to install" links for 60.12; the new Arabic strings and `design/review-phase-2.md` wait for their reads and sign-off (Q2). (#1208, #1209)
 - `lint / repo` has 20 minutes; if its routing tests near that, split or speed them up rather than raising it again. (#1177)
 - ml runners during a backlog still hold two copies of the same models (about 9-10 GB each): sharing one per machine or a smaller top tier is a supervisor decision; check whether a fingerprint change queued the whole library again (about 6,700 videos a day transcribed); the `light` runner sat at 2.8 GB RSS and 62% CPU. (#1191)
 - NAS after #1164: a restart rebuilds the pipeline venv in place under running workers (transient `ModuleNotFoundError`, runner exit 75); setup downloads `large-v3-turbo` on a Light NAS where speech is off; the terminal setup keeps no log its errors point to; NAS UIs, GPUs, VA-API, mDNS beside the NAS's responder, Unraid's shfs refusal and discovery need real hardware. (#1164)
@@ -657,15 +679,8 @@ built_from: v0.3.138
 | #973 | 2026-11-08 | fix(supervisor): plugin runners wait for the venv like the pipeline |
 | #1023 | 2026-11-08 | test(rehearsal): scenario 16.7, wave 7's TV change across an update |
 | #1042 | 2026-11-08 | fix(web): an open screen keeps its feature gate when the feature goes off right after the first answer |
-| #1128 | 2026-11-10 | docs(spec): Epic 57 checked again against main |
-| #1130 | 2026-11-10 | spec(epic57): time rules on every device, and tiers detected from transcripts |
-| #1139 | 2026-11-10 | spec(epic57): Q9 answered, detection covers what a video is |
 | #1190 | 2026-11-11 | ci: install the pipeline without torch's CUDA tree, and keep its wheels cached |
-| #1204 | 2026-11-12 | Epic 57: parental controls |
-| #1207 | 2026-11-12 | feat(website): the front door's headline is the chosen tagline |
-| #1208 | 2026-11-12 | feat(website): the home page at / and /ar/ (story 60.10) |
-| #1209 | 2026-11-12 | feat(website): the download page at /download/ and /ar/download/ (story 60.11) |
-| #1211 | 2026-11-12 | ci: the reference-images check never cancels a run |
+| #1215 | 2026-11-12 | feat(website): the phone frame shows the web app; screenshots checked per language; the tagline in three lines |
 
 ## Index
 
@@ -1293,4 +1308,9 @@ built_from: v0.3.138
 | 1191-ml-runner-memory | 2026-11-12 | pr | ml runners let idle models go and keep MLX's cache capped |
 | 1192-website-shell | 2026-11-12 | pr | maktaba.tv: the part A shell on every page the site builds |
 | 1200-website-token-no-dns | 2026-11-12 | correction | maktaba.tv's token check no longer requires DNS Write: Cloudflare creates a custom domain's record itself |
+| 1204-epic-57-parental-controls | 2026-11-12 | pr | Epic 57: parental controls, built from the reworked spec as one pull request |
+| 1207-front-door-tagline | 2026-11-12 | pr | maktaba.tv's front door takes the chosen tagline |
+| 1208-website-home-page | 2026-11-12 | pr | Epic 60 story 60.10: maktaba.tv's home page |
+| 1209-website-download-page | 2026-11-12 | pr | Epic 60 story 60.11: maktaba.tv's download page, and the CI gaps its references found |
+| 1211-reference-images-no-cancel | 2026-11-12 | pr | CI: the reference-images check never cancels a run |
 
