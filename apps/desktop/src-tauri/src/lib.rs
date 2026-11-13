@@ -241,16 +241,17 @@ pub fn run() {
                 }
                 // Big Screen on a page already in big screen leaves it, so the
                 // one shortcut goes in and out; Leave Big Screen always leaves
-                let id = if id == bigscreen::LEAVE_MENU_ID
-                    || (id == bigscreen::MENU_ID && bigscreen::in_big_screen(app))
-                {
-                    bigscreen::on_leave_menu(app);
-                    bigscreen::LEAVE_MENU_ID.to_string()
-                } else {
-                    if id == bigscreen::MENU_ID {
-                        bigscreen::on_menu(app);
+                let id = match bigscreen::leaves(&id, bigscreen::in_big_screen(app)) {
+                    Some(leave) => {
+                        bigscreen::on_leave_menu(app);
+                        leave.to_string()
                     }
-                    id
+                    None => {
+                        if id == bigscreen::MENU_ID {
+                            bigscreen::on_menu(app);
+                        }
+                        id
+                    }
                 };
                 if let Err(e) = app.emit("menu", &id) {
                     applog::warn(&format!("the menu item {id} could not reach the window"), e);

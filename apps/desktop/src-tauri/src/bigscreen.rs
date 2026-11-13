@@ -185,6 +185,13 @@ pub fn leave_target(current: &Url) -> Option<Url> {
     Some(u)
 }
 
+/// What a click on a View menu item means: Leave Big Screen always leaves, and
+/// Big Screen leaves when the page is already in big screen (its shortcut goes
+/// in and out). Some(the id the page hears) for a leave, None for any other item.
+pub fn leaves(id: &str, in_big: bool) -> Option<&'static str> {
+    (id == LEAVE_MENU_ID || (id == MENU_ID && in_big)).then_some(LEAVE_MENU_ID)
+}
+
 /// Whether the main window's page is in big screen now.
 pub fn in_big_screen(app: &AppHandle) -> bool {
     app.get_webview_window(crate::webcache::MAIN)
@@ -350,6 +357,19 @@ mod tests {
         );
         // not in big screen: nothing to load
         assert_eq!(leave_target(&u("https://maktaba.home/videos/1")), None);
+    }
+
+    #[test]
+    fn big_screen_in_the_menu_goes_in_and_out_and_leave_always_leaves() {
+        // Leave Big Screen leaves wherever the page is
+        assert_eq!(leaves(LEAVE_MENU_ID, true), Some(LEAVE_MENU_ID));
+        assert_eq!(leaves(LEAVE_MENU_ID, false), Some(LEAVE_MENU_ID));
+        // Big Screen enters from a normal page and leaves from big screen
+        assert_eq!(leaves(MENU_ID, false), None);
+        assert_eq!(leaves(MENU_ID, true), Some(LEAVE_MENU_ID));
+        // no other item leaves
+        assert_eq!(leaves(START_MENU_ID, true), None);
+        assert_eq!(leaves("preferences", true), None);
     }
 
     #[test]
