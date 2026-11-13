@@ -76,3 +76,30 @@
     flex-wrap: wrap;
   }
 }
+
+/* The legal page's contents list marks the section being read (the mockup's aria-current on the
+   first entry, which review-phase-1 left to part B): CSS alone, with no script. The list is a
+   scroll-target group, and the browser matches :target-current on the link whose section is in
+   view, the first at the top. The mark is a colour and the border colour .toc a already reserves
+   (2 px, transparent), so it moves nothing. A browser without scroll-target-group draws no mark,
+   as before. */
+.toc ol {
+  scroll-target-group: auto;
+}
+
+.toc a:target-current {
+  color: var(--color-semantic-fg);
+  border-inline-start-color: var(--site-accent-mark);
+}
+
+/* The 404: when the page is shorter than the window, <main> grows to keep the footer at the
+   foot (shell.css), and its head grows with it, so no strip of the page's colour shows between
+   the head's band and the footer (part B's display title is a little shorter than part A's). */
+main.lost {
+  display: flex;
+  flex-direction: column;
+}
+
+main.lost > .page-head {
+  flex: 1 0 auto;
+}
