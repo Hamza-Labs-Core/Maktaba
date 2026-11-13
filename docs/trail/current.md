@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.138
-up_to_commit: aeb671047
-built_from: v0.3.137
+tag: v0.3.139
+up_to_commit: 7ebffe1e4
+built_from: v0.3.138
 ---
 
-# Trail snapshot: v0.3.138
+# Trail snapshot: v0.3.139
 
 ## Keep doing
 
@@ -661,7 +661,10 @@ built_from: v0.3.137
 | #1130 | 2026-11-10 | spec(epic57): time rules on every device, and tiers detected from transcripts |
 | #1139 | 2026-11-10 | spec(epic57): Q9 answered, detection covers what a video is |
 | #1190 | 2026-11-11 | ci: install the pipeline without torch's CUDA tree, and keep its wheels cached |
+| #1204 | 2026-11-12 | Epic 57: parental controls |
 | #1207 | 2026-11-12 | feat(website): the front door's headline is the chosen tagline |
+| #1208 | 2026-11-12 | feat(website): the home page at / and /ar/ (story 60.10) |
+| #1209 | 2026-11-12 | feat(website): the download page at /download/ and /ar/download/ (story 60.11) |
 | #1211 | 2026-11-12 | ci: the reference-images check never cancels a run |
 
 ## Index
