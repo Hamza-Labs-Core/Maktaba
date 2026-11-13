@@ -2021,24 +2021,30 @@ asyncio.run(main())
         return f"web {p['web']}, API {p['api']}, live TV {p['stream']}, Postgres {p['postgres']}; defaults free"
 
     def assert_live_tv_port(self) -> str:
-        """Live TV started on the port set in the container: the streaming role runs, and its
-        tuner answers there naming that port in its own address."""
+        """Live TV started on the port set in the container: the streaming role runs, the TV
+        tuner (livetv.hdhomerun, off by default) is turned on as Settings -> Components does,
+        and it answers there naming that port in its own address."""
         port = int(self.spec["ports"]["stream"])
         assert self.api is not None
         s, d = self.api.get("/api/system/processes")
         running = {p.get("role") for p in (d or {}).get("processes", []) if p.get("state") == "running"}
         if "streaming" not in running:
             raise AssertionError(f"streaming not running: {running}")
-        s, d = API(f"http://127.0.0.1:{port}").get("/discover.json", timeout=10)
-        if s == 200 and isinstance(d, dict):
-            base = str(d.get("BaseURL", ""))
-            if not base.endswith(f":{port}"):
-                raise AssertionError(f"the tuner's BaseURL {base!r} does not name port {port}")
-            return f"tuner on {port}: {base}"
-        if s in (401, 403, 404):
-            # the tuner is gated until live TV is set up: the port answers, Maktaba's
-            return f"streaming running, {port} answers ({s} before live TV is set up)"
-        raise AssertionError(f"{port}/discover.json: {s} {d}")
+        s, d = self.api.call("POST", "/api/components/apply",
+                             {"changes": [{"id": "livetv.hdhomerun", "want": "enabled"}], "with_conflicts": True})
+        if s != 200:
+            raise AssertionError(f"turning the tuner on: {s} {d}")
+        tuner = API(f"http://127.0.0.1:{port}")
+
+        def discover() -> Any:
+            s, d = tuner.get("/discover.json", timeout=10)
+            return d if s == 200 and isinstance(d, dict) else None
+
+        d = wait(f"the tuner on {port}", discover, 5 * 60, every=5)
+        base = str(d.get("BaseURL", ""))
+        if not base.endswith(f":{port}"):
+            raise AssertionError(f"the tuner's BaseURL {base!r} does not name port {port}")
+        return f"tuner on {port}: {base}"
 
     # -- logs, kept pass or fail
 
