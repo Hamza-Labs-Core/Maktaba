@@ -65,7 +65,7 @@ Checked on `main` at 9c415c0fd (2026-11-10). Details and paths are in research.m
 | Video | NVENC → QSV → libx264; **no VA-API** |
 | Speech to text | faster-whisper on x86_64 only; `large-v3-turbo` by default; **none on arm64** |
 | Plugins | runners from one venv built **at first run from PyPI**; Landlock + seccomp sandbox, `sandbox_partial` without Landlock; plugind already treats namespaces and Landlock as optional (reported `partial`) and requires only no-new-privs, rlimits and its own seccomp filter, so third-party plugins run with less isolation **without the admin being asked** |
-| Networking | host network for mDNS; announces through Avahi (`avahi-publish-service`) or its own zeroconf responder; ports 8088, 8080, 8081, 54329, moved by `ReconcilePorts` when taken; no trusted-proxy setting on the home |
+| Networking | host network for mDNS; announces through Avahi (`avahi-publish-service`) or its own zeroconf responder; ports 8088, 8080, 8081, 54329, moved by `ReconcilePorts` when taken (web, API, live TV) and set in `server.toml` only; no trusted-proxy setting on the home |
 | NAS packaging | Synology `INFO` and QNAP `qpkg.cfg` scaffolds; an old plan for Helm and PUID/PGID |
 
 ### Gap list
@@ -296,6 +296,13 @@ Detected at setup and at every start, and shown in Settings → This machine:
 
 - **Host network by default** (mDNS and SSDP need it). Maktaba's ports (8088, 8080, 8081, 54329)
   do not clash with DSM (80, 443, 5000, 5001, 5432) or TrueNAS (80, 443).
+- **Each port can be chosen.** Another app on the NAS (Plex, another package) may use one, so
+  `MAKTABA_WEB_PORT`, `MAKTABA_API_PORT`, `MAKTABA_STREAM_PORT` and `MAKTABA_POSTGRES_PORT` set
+  them from the compose file or the template (every NAS file shows them commented), over
+  `server.toml`. A default port another program holds still moves into 8780–8790 and setup
+  shows it; a port the household set is never moved: the start stops, naming the port and the
+  variable in both languages. On a bridge, `MAKTABA_PUBLIC_*_PORT` names a published port that
+  differs from the container's, and every address Maktaba hands out uses it.
 - The bundled Postgres listens on loopback until a node joins. The node's pairing opens it with
   TLS, as today.
 - **mDNS next to the NAS's own responder:**

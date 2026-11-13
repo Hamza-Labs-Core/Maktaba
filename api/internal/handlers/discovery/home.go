@@ -30,6 +30,10 @@ type HomeInfo struct {
 	Version string
 	// URLs are the home's base URLs: the LAN ones first, then the relay (public) one.
 	URLs []string
+	// StreamPort is the port of the home's live TV (its streaming service's public port, Epic
+	// 59 story 59.08: a household may set it, or Maktaba moved it off a taken one); 0 when the
+	// home does not know it. Its machines reach the home's TV front door there.
+	StreamPort int
 }
 
 // HomeFunc describes this home. r is the request asking (its own origin is the last
@@ -47,6 +51,8 @@ type homeResponse struct {
 	Version string     `json:"version"`
 	URLs    []string   `json:"urls"`
 	SignIn  homeSignIn `json:"sign_in"`
+	// StreamPort: HomeInfo's, left out when unknown
+	StreamPort int `json:"stream_port,omitempty"`
 }
 
 // MountHome attaches GET /api/discovery/home. perMin caps it per IP (0: the default,
@@ -66,10 +72,11 @@ func (h *Handler) MountHome(r chi.Router, perMin int) {
 func (h *Handler) DiscoveryHome(w http.ResponseWriter, r *http.Request) {
 	info := h.home(r)
 	common.WriteJSON(w, r, http.StatusOK, homeResponse{
-		ID:      info.ID,
-		Name:    info.Name,
-		Version: info.Version,
-		URLs:    info.URLs,
+		ID:         info.ID,
+		Name:       info.Name,
+		Version:    info.Version,
+		URLs:       info.URLs,
+		StreamPort: info.StreamPort,
 		// a code needs tokens to hand out: without a minter only the password signs in
 		SignIn: homeSignIn{Password: true, Code: h.Minter != nil},
 	})

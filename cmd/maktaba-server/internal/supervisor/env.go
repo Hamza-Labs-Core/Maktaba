@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dsn"
@@ -652,8 +653,23 @@ func forcedHome(cfg config.Config) bool {
 	return role == "home"
 }
 
+// homeStreamPort is the home's live TV port as the home said it (SetHomeStreamPort); 0:
+// not known, 8081 is assumed.
+var homeStreamPort atomic.Int32
+
+// SetHomeStreamPort records the home's live TV port as the home answered it (GET
+// /api/discovery/home's stream_port, Epic 59 story 59.08: a home whose port was set in its
+// container, or moved off a taken one); 0 forgets it.
+func SetHomeStreamPort(p int) {
+	if p < 0 || p > 65535 {
+		p = 0
+	}
+	homeStreamPort.Store(int32(p))
+}
+
 // HomeStreamURL is the home's streaming port, its TV front door (Epic 35 design
-// §11.3): MAKTABA_HOME_STREAM_URL, else the host of the home's API URL on 8081.
+// §11.3): MAKTABA_HOME_STREAM_URL, else the host of the home's API URL on the home's live
+// TV port (SetHomeStreamPort), 8081 when the home did not say.
 func HomeStreamURL(n config.NodeConfig) string {
 	if v := strings.TrimRight(strings.TrimSpace(os.Getenv("MAKTABA_HOME_STREAM_URL")), "/"); v != "" {
 		return v
@@ -662,7 +678,11 @@ func HomeStreamURL(n config.NodeConfig) string {
 	if err != nil || u.Host == "" {
 		return ""
 	}
-	return u.Scheme + "://" + net.JoinHostPort(u.Hostname(), ports.StreamingPublic.PortString())
+	port := ports.StreamingPublic.PortString()
+	if p := homeStreamPort.Load(); p > 0 {
+		port = strconv.Itoa(int(p))
+	}
+	return u.Scheme + "://" + net.JoinHostPort(u.Hostname(), port)
 }
 
 // LocalTokenPath is the per-boot token of the supervisor's loopback endpoints the

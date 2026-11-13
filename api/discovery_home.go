@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,9 @@ type homeDirectory struct {
 	// .local name ("" for none).
 	WebURL    string
 	LocalHost string
+	// StreamURL is the home's live TV address (MAKTABA_PUBLIC_BASE_URL): its port is the
+	// answer's stream_port.
+	StreamURL string
 	// Cloud is the home's place in Maktaba Cloud (nil: never claimed); RelayWS the relay
 	// agent's tunnel (MAKTABA_RELAY_WS, default defaultRelayWS).
 	Cloud   func() subh.CloudLink
@@ -48,6 +52,7 @@ type homeDirectory struct {
 func newHomeDirectory(cloud func() subh.CloudLink) *homeDirectory {
 	return &homeDirectory{
 		WebURL:    os.Getenv("MAKTABA_WEB_URL"),
+		StreamURL: os.Getenv("MAKTABA_PUBLIC_BASE_URL"),
 		LocalHost: discovery.LocalHostName(),
 		Cloud:     cloud,
 		RelayWS:   os.Getenv("MAKTABA_RELAY_WS"),
@@ -67,7 +72,7 @@ func (d *homeDirectory) setStore(s cluster.Store) {
 
 // Info implements discoveryh.HomeFunc.
 func (d *homeDirectory) Info(ctx context.Context, _ *http.Request) discoveryh.HomeInfo {
-	info := discoveryh.HomeInfo{Version: version.Version, URLs: d.urls()}
+	info := discoveryh.HomeInfo{Version: version.Version, URLs: d.urls(), StreamPort: urlPort(d.StreamURL)}
 	d.mu.RLock()
 	store := d.store
 	d.mu.RUnlock()
@@ -136,4 +141,17 @@ func (d *homeDirectory) relayURL() string {
 		return ""
 	}
 	return "https://" + slug + "." + strings.ToLower(u.Hostname())
+}
+
+// urlPort is the port u names (0: none, or not a URL).
+func urlPort(u string) int {
+	pu, err := url.Parse(strings.TrimSpace(u))
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(pu.Port())
+	if err != nil || n <= 0 || n > 65535 {
+		return 0
+	}
+	return n
 }

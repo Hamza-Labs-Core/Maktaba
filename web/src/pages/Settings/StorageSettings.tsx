@@ -478,7 +478,12 @@ function StorageInner({ pollMs, onReload }: { pollMs: number; onReload: () => vo
             <Input
               key={k}
               label={t(`storage.field.${k}`)}
-              description={t(`storage.field.${k}.help`)}
+              description={
+                doc.pinned?.[k]
+                  ? t("storage.field.pinned", { env: doc.pinned[k] })
+                  : t(`storage.field.${k}.help`)
+              }
+              disabled={Boolean(doc.pinned?.[k])}
               value={s[k]}
               dir="ltr"
               spellCheck={false}

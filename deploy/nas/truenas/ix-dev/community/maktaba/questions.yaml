@@ -86,7 +86,11 @@ questions:
             Bind to the host network (recommended for Maktaba). The apps and TVs of your network then
             find the home by themselves (mDNS) and reach it at the NAS's own address.</br>
             Off: the ports below are published and mDNS is off; apps connect by the NAS's address,
-            the home's HTTPS name, or a code from Maktaba Cloud.
+            the home's HTTPS name, or a code from Maktaba Cloud.</br>
+            Maktaba's own ports are 8088 (web), 8080 (API), 8081 (live TV) and 54329 (database).
+            If another app on the NAS uses one, add MAKTABA_WEB_PORT, MAKTABA_API_PORT,
+            MAKTABA_STREAM_PORT or MAKTABA_POSTGRES_PORT with a free port under Additional
+            Environment Variables.
           schema:
             type: boolean
             default: true

@@ -588,12 +588,8 @@ func stepLibraries(s *setupRun, in json.RawMessage) (any, error) {
 
 // setupPortMoves are the binds of cfg that another program holds and would move (a dry
 // run of ReconcilePorts; tests replace it).
-var setupPortMoves = func(cfg config.Config) []config.PortChange {
-	moved, err := cfg.ReconcilePorts(portProbe(), config.PortOptions{KeepOurs: true})
-	if err != nil {
-		return nil
-	}
-	return moved
+var setupPortMoves = func(cfg config.Config) ([]config.PortChange, error) {
+	return cfg.ReconcilePorts(portProbe(), config.PortOptions{KeepOurs: true})
 }
 
 // checkNetwork (Epic 59 story 59.08): on a Docker bridge apps cannot find the home by
@@ -605,7 +601,16 @@ func checkNetwork(cfg config.Config, m hostinfo.Machine, res *checkResult) {
 		en, _ := bridgeText(url)
 		res.Warn("network_bridge", en, "url", url)
 	}
-	for _, ch := range setupPortMoves(cfg) {
+	moved, err := setupPortMoves(cfg)
+	var pinned *config.ErrPortPinned
+	if errors.As(err, &pinned) {
+		// a port set in the environment (MAKTABA_WEB_PORT) is never moved: setup stops here
+		holder := portHolder(pinned.Port)
+		en, _ := portSettingTakenText(pinned.Port, holder, pinned.Setting())
+		res.Problem(portSettingTakenCode(holder), en, "port", pinned.Port, "holder", holder,
+			"setting", pinned.Setting(), "key", pinned.Key)
+	}
+	for _, ch := range moved {
 		if !ch.Taken {
 			continue
 		}

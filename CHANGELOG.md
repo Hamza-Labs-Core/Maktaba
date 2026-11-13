@@ -803,6 +803,17 @@ build fails when the two differ.
 
 ### Added
 
+- **Choose Maktaba's ports on a NAS (story 59.08).** Another app on the NAS, such as Plex or the
+  NAS's own UI, may already use one of Maktaba's ports. Each one can now be set in the container's
+  settings: `MAKTABA_WEB_PORT` (8088), `MAKTABA_API_PORT` (8080), `MAKTABA_STREAM_PORT` (8081, live
+  TV) and `MAKTABA_POSTGRES_PORT` (54329). Every NAS file shows them commented, and the Unraid
+  template has a field for each. A port set there is never moved: if another program holds it,
+  Maktaba stops and its log names the port and the setting, in English and Arabic. On a bridge
+  network, `MAKTABA_PUBLIC_WEB_PORT` and the others name a published port that differs from the
+  container's, so the addresses Maktaba hands out use it; the TrueNAS app sets them itself.
+  **Settings → Storage & discovery** shows a port set this way as set in the container. A home's
+  machines now find its live TV on its real port, not always on 8081.
+
 - **Parental controls (Epic 57).** A home can now limit what a child's account sees and how
   long it watches. An admin makes an account restricted and gives it an age limit (All ages, 9+,
   13+, 16+, 18+, or nothing unless allowed), a rule for unrated videos (hidden unless you choose

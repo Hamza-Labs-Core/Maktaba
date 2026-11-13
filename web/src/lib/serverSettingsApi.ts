@@ -74,6 +74,8 @@ export type ServerSettingsDoc =
       restart_needed: boolean;
       can_restart: boolean;
       reachability: ReachabilityRow[];
+      /** addresses whose port the container's environment sets (Epic 59 story 59.08): field -> variable */
+      pinned?: Partial<Record<string, string>>;
     };
 
 /** A finding about a move (storage.location.note.<code>), its English as the fallback. */

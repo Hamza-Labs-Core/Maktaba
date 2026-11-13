@@ -10,6 +10,7 @@ drift.
 |---|---|---|
 | Repository | `ghcr.io/hamza-labs-core/maktaba-server:latest` | the highest stable release; the server updates itself on its data folder after that |
 | Network | `host` | apps and TVs find Maktaba by mDNS; its ports (8088, 8080, 8081, 54329) are its own |
+| Ports | Web, API, Live TV and Database port (advanced, empty) | a port another app on the server uses is chosen there (`MAKTABA_*_PORT`, 59.08); empty keeps the default |
 | Extra Parameters | `--user 99:100 --stop-timeout 90` | Unraid's `nobody:users`, never root; 90 s for the launcher to drain the pipeline and Postgres |
 | Data | `/var/lib/maktaba` ← `/mnt/cache/appdata/maktaba` | a pool, never the array's `/mnt/user` (shfs, FUSE): setup refuses that for the data folder |
 | Media | `/mnt/user/Media` at the same path | shfs is fine for media; the same path inside keeps share identity for machines that join |

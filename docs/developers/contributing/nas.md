@@ -35,6 +35,33 @@ updates the volume itself, as a headless Linux install does (`cmd/maktaba-server
 | Speech | the pipeline | CTranslate2 on arm64; the model picked by a measured speed |
 | Plugins | plugind | isolation levels Full and Container; third-party plugins on Container held until the admin allows them |
 | Network | `serve_network.go`, `ports.go` | host network by default; on a bridge mDNS and SSDP are off and setup says why; a taken port moves into 8780 to 8790 and the move is printed in both languages |
+| Ports | `internal/config/portenv.go`, `serve_postgres.go` | each port set from the container's environment (below); a port set there is never moved: the start stops, naming the port and the variable in both languages |
+
+### Ports a household chooses
+
+Another app on a NAS (Plex, another package, the NAS's own UI) may already use one of Maktaba's
+ports. Each one has a variable, which every NAS file shows commented, beside its `server.toml`
+key:
+
+| Port | Variable | `server.toml` |
+|---|---|---|
+| 8088 web app | `MAKTABA_WEB_PORT` | `[server] web_listen` |
+| 8080 API (apps, the home's machines) | `MAKTABA_API_PORT` | `[server] listen` |
+| 8081 live TV | `MAKTABA_STREAM_PORT` | `[server] stream_addr` |
+| 54329 Postgres (the home's machines) | `MAKTABA_POSTGRES_PORT` | `[postgres] port` |
+| a published port on a bridge or a port forward | `MAKTABA_PUBLIC_WEB_PORT`, `MAKTABA_PUBLIC_API_PORT`, `MAKTABA_PUBLIC_STREAM_PORT` | `[server] public_web_port`, `public_api_port`, `public_stream_port` |
+
+- `config.LoadFrom` applies the variables over `server.toml` on every load, so each program that
+  reads the config uses the same port; a save writes the file's own values back, never the
+  variables'. Code that needs a port reads it from the config (`cfg.Server.Listen`,
+  `cfg.PublicWebPort()`), never a literal 8088.
+- A default port another program holds moves (`ReconcilePorts`); a port a variable sets returns
+  `config.ErrPortPinned` instead, and setup and serve say `setup.check.note.port_setting_taken`.
+- The addresses handed out (`PublicWebURL`, `PublicAPIURL`, `PublicStreamURL`, mDNS's ports)
+  use the published ports. A node learns its home's live TV port from `/api/discovery/home`'s
+  `stream_port`.
+- Tests: `portenv_test.go`, `ports_pinned_test.go`, and the `custom-ports`,
+  `bridge-published-ports` and `port-taken` cells of `tests/nas/cells.json`.
 
 ## The install files and the guides
 

@@ -127,6 +127,17 @@ describe("StorageSettings", () => {
     expect(await screen.findByText("Direct access from the internet")).toBeInTheDocument();
   });
 
+  // Epic 59 story 59.08: a port the container's environment sets is changed there, not here
+  it("shows a port the container sets as set there, and locks its field", async () => {
+    open({ ...DOC, pinned: { web_listen: "MAKTABA_WEB_PORT" } });
+    const web = await screen.findByLabelText(/^Web app address/);
+    expect(web).toBeDisabled();
+    expect(
+      screen.getByText(/Set by MAKTABA_WEB_PORT in the container's settings/)
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Server address/)).toBeEnabled();
+  });
+
   it("explains calmly when the server has no settings to change", async () => {
     open({ available: false, reason: "no supervisor: this API runs without maktaba-server" });
     expect(await screen.findByText(/can only be changed when Maktaba runs/)).toBeInTheDocument();

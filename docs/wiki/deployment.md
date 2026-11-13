@@ -51,6 +51,20 @@ the static `web/dist` bundle served behind the same proxy. `media/`,
 The two gRPC listeners bind only to loopback by default. The
 public-facing surface is just Caddy on 80/443.
 
+### Ports of the one-container install (the Docker image, a NAS)
+
+The image (`deploy/docker/server/Dockerfile`) runs everything in one container: the web app on
+8088, the API on 8080, live TV on 8081 and the bundled Postgres on 54329. Each can be chosen in
+the container's environment, over `server.toml`: `MAKTABA_WEB_PORT`, `MAKTABA_API_PORT`,
+`MAKTABA_STREAM_PORT`, `MAKTABA_POSTGRES_PORT`; on a bridge, `MAKTABA_PUBLIC_WEB_PORT`,
+`MAKTABA_PUBLIC_API_PORT` and `MAKTABA_PUBLIC_STREAM_PORT` name published ports that differ
+from the container's. Every NAS file shows them commented (Epic 59 story 59.08).
+
+**If a port is taken:** a default port another program holds when Maktaba starts moves to a
+free one from 8780 to 8790, and setup, the container's log and Settings → This machine show the
+new one. A port set in the environment is never moved: the start stops, and the log names the
+port and the variable to change, in English and Arabic.
+
 ---
 
 ## 3. The compose stack (`deploy/compose/docker-compose.yml`)

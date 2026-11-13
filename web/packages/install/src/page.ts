@@ -231,6 +231,7 @@ export function mount(root: HTMLElement, base: string, lang: Lang): void {
       out,
       el("div", { class: "actions" }, copy, download),
       el("p", {}, t(lang, "next")),
+      el("p", { class: "ports" }, t(lang, "ports")),
       el("p", {}, t(lang, "updates"))
     )
   );

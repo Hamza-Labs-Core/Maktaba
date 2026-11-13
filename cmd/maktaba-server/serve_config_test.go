@@ -221,3 +221,46 @@ func TestConfigRestart(t *testing.T) {
 		t.Fatal("no restart request written")
 	}
 }
+
+// Epic 59 story 59.08: a port the container's environment sets shows as set there, a change
+// to it is refused, and saving another setting never writes the variable's port to the file.
+func TestConfigSettingsPinnedPorts(t *testing.T) {
+	t.Setenv(config.EnvWebPort, "18088")
+	_, h, path := configAdminFixture(t, `[server]
+listen = "0.0.0.0:8080"
+web_listen = "0.0.0.0:8088"
+stream_addr = ":8081"
+`)
+	rec := configCall(h, "GET", "/config/settings", "tok", "")
+	var doc struct {
+		Saved  config.Editable   `json:"saved"`
+		Pinned map[string]string `json:"pinned"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if doc.Saved.Server.WebListen != "0.0.0.0:18088" || len(doc.Pinned) != 1 || doc.Pinned["web_listen"] != config.EnvWebPort {
+		t.Fatalf("doc = %s", rec.Body)
+	}
+	rec = configCall(h, "PUT", "/config/settings", "tok", `{"server":{"web_listen":"0.0.0.0:9000"}}`)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), `"field":"server.web_listen"`) ||
+		!strings.Contains(rec.Body.String(), config.EnvWebPort) {
+		t.Fatalf("pinned put: %d %s", rec.Code, rec.Body)
+	}
+	rec = configCall(h, "PUT", "/config/settings", "tok", `{"server":{"mdns":false}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("other put: %d %s", rec.Code, rec.Body)
+	}
+	var file struct {
+		Server struct {
+			WebListen string `toml:"web_listen"`
+			MDNS      string `toml:"mdns"`
+		} `toml:"server"`
+	}
+	if _, err := toml.DecodeFile(path, &file); err != nil {
+		t.Fatal(err)
+	}
+	if file.Server.WebListen != "0.0.0.0:8088" || file.Server.MDNS != "off" {
+		t.Fatalf("server.toml = %+v, want the file's own web_listen kept", file.Server)
+	}
+}

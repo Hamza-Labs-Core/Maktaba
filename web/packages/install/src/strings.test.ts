@@ -22,4 +22,21 @@ describe("the install page's strings", () => {
     expect(STRINGS.en["problem.data-volume-user"]).toContain("1000");
     expect(STRINGS.ar["problem.data-volume-user"]).toContain("1000");
   });
+
+  // story 59.08: what to do when a port is taken, in both languages
+  it("says what to do when a port is taken", () => {
+    for (const lang of ["en", "ar"] as const) {
+      const p = STRINGS[lang].ports;
+      for (const want of [
+        "8088",
+        "8080",
+        "8081",
+        "54329",
+        "8780",
+        "[ports]",
+        "MAKTABA_PUBLIC_WEB_PORT",
+      ])
+        expect(p, `${lang}: ${want}`).toContain(want);
+    }
+  });
 });
