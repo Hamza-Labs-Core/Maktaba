@@ -2022,7 +2022,7 @@ asyncio.run(main())
 
     def assert_live_tv_port(self) -> str:
         """Live TV started on the port set in the container: the streaming role runs, the TV
-        tuner (off on a new home) is turned on as the Live TV page does (PATCH /api/tv/hdhr),
+        tuner and live TV (off on a core-bundle home) are turned on as Settings and the Live TV page do,
         and it answers there naming that port in its own address."""
         port = int(self.spec["ports"]["stream"])
         assert self.api is not None
@@ -2030,7 +2030,12 @@ asyncio.run(main())
         running = {p.get("role") for p in (d or {}).get("processes", []) if p.get("state") == "running"}
         if "streaming" not in running:
             raise AssertionError(f"streaming not running: {running}")
-        # the Live TV page's tuner switch: the device row and the livetv.hdhomerun component
+        # live TV, which the cell's core bundle leaves off (the tuner requires it), then the
+        # Live TV page's tuner switch: the device row and the livetv.hdhomerun component
+        s, d = self.api.call("POST", "/api/components/apply", {"with_conflicts": True, "changes": [
+            {"id": "livetv", "want": "enabled"}, {"id": "livetv.hdhomerun", "want": "enabled"}]})
+        if s != 200:
+            raise AssertionError(f"turning live TV on: {s} {d}")
         s, d = self.api.call("PATCH", "/api/tv/hdhr", {"enabled": True})
         if s != 200:
             raise AssertionError(f"turning the tuner on: {s} {d}")
