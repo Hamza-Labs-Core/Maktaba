@@ -1,7 +1,7 @@
 # maktaba.tv: the website
 
 maktaba.tv is the site households find Maktaba on (Epic 60): the front door, the install
-guides, the download, problem and legal pages, and later help, every page in English and Arabic.
+guides, the download, help, problem and legal pages, every page in English and Arabic.
 (maktaba.dev is for developers.)
 
 The site is a Cloudflare Worker (`src/worker.ts`) in front of static assets (`dist/`), the same
@@ -9,9 +9,9 @@ shape as maktaba.dev. It has no backend, no KV and no secrets. Every request goe
 Worker, which:
 
 - redirects `www.maktaba.tv` and plain http to `https://maktaba.tv`;
-- redirects `/docs` to the front door (`/help/` once the help pages exist, story 60.12), and
-  `/ar/docs` to `/ar/`: the table is `src/redirects.json`, which the link check reads too (a link
-  to `/docs` passes when the page it redirects to exists);
+- redirects `/docs` to `/help/` and `/ar/docs` to `/ar/help/` (story 60.12): the table is
+  `src/redirects.json`, which the link check reads too (a link to `/docs` passes when the page it
+  redirects to exists), and where a help topic whose id changes keeps its old path;
 - answers a missing path with the 404 page in its language (`/404.html`, or `/ar/404.html`
   under `/ar/`) and status 404;
 - sets the headers on every answer (`src/headers.ts`): a strict CSP (no other origin; the
@@ -29,6 +29,7 @@ Worker, which:
 | `/legal/…`, `/ar/legal/…`       | privacy, terms, copyright (60.07)                 | `copy/legal/`, `scripts/legal.mjs`                                    |
 | `/problems/…`, `/ar/problems/…` | a page per problem type, and the index (60.06)    | `shared/api/problems.json`, `scripts/problems.mjs`                    |
 | `/download/`, `/ar/download/`   | every device's file of the latest release (60.11) | the GitHub Releases API, `src/downloads.json`, `scripts/download.mjs` |
+| `/help/…`, `/ar/help/…`         | the app's help topics, and the index (60.12)      | `web/src/help/` (topics and content), `scripts/help.mjs`              |
 | `/404.html`, `/ar/404.html`     | the 404 page                                      | `src/pages/404.html`, `src/pages/ar/404.html`                         |
 | `/schema/log-line.json`         | the log schema, at its `$id`                      | `shared/log/schema/line.schema.json`                                  |
 | `/.well-known/security.txt`     | the disclosure policy, both `Canonical`s          | `api/internal/security/disclosure.go`                                 |
@@ -50,10 +51,11 @@ The home page (story 60.10) is `scripts/home.mjs`: 60.01 part B's home mockup wi
 `<picture>` with its sizes), drawn in part B's shell (`page({ variant: "b" })`: the wordmark
 lockups, the Phase 2 nav, part B's stylesheet `design/site.css` with `src/part-b.css`, the display
 face preloaded). Download goes to `/download/` once story 60.11 builds it, until then to the
-latest release; a feature links its help topic once 60.12 builds it (`FEATURES`). Its one
+latest release; a feature links its help topic (`FEATURES`), once its page is built. Its one
 script, `src/home.ts`, runs in the head: it names the visitor's system on `<html>` (the button
 reads "Download for Mac" from its first frame) and adds it to each `/download/` link
-(`/download/#mac`). The other pages keep part A's shell until their part B layouts.
+(`/download/#mac`). The other pages keep part A's shell until their part B layouts; part A's footer and 404 send
+Help to `/help/`.
 
 The problem pages are generated from the registry the API sends from, `shared/api/problems.json`
 (`scripts/problems.mjs`): one page per entry in each language, and the index, `/problems/`, grouped
@@ -79,6 +81,22 @@ draws it), and its look is part B's (`design/site.css`) in a stylesheet of its o
 the unit tests (`scripts/download.test.mjs`) and the visual references read it. A release run
 starts the deploy for its tag once it is the latest (`tools/release/website-dispatch.sh`, from
 `release.yml` and `desktop-release.yml`).
+
+The help pages (`scripts/help.mjs`, story 60.12) publish the app's own help, so the two cannot
+drift: the categories and topics of `web/src/help/topics.ts` (read as data), each topic's Markdown
+in `web/src/help/content/<lang>/<topic>.md`, published as written, and each topic's title and
+summary from the app's catalog (`web/src/i18n/<lang>.json`). `/help/` lists every topic as the app
+groups them, with a filter that runs in the page over titles, summaries and headings (the problem
+index's script, `src/problems-filter.ts`); a topic page has its contents at the end side from
+1024 px, and three related topics (those it links to, then its category's). The Markdown is what
+the app's renderer reads, and pipe tables. Links are rewritten at build time: a help link becomes
+the site's page in the same language, and its anchor must exist; a link to a page of the app (any
+path the app's router, `web/src/App.tsx` and the route modules it imports, matches) becomes text,
+"In Maktaba: **Settings → Rules**", its label the link's own words; a path the router does not
+match fails the build, naming the topic and the link. A topic missing its Arabic file (or its
+title or summary in either catalog) fails the build, naming it: the app falls back to English, a
+public page does not. The pages are part B's (`src/help.css` after part B's stylesheet), and so is
+their social card. Tests: `scripts/help.test.mjs` (T01 to T04), `e2e/help.spec.ts` (T08).
 
 The legal pages are copy (`copy/legal/<page>.<lang>.md`) that `scripts/legal.mjs` turns into a
 structured document and renders with one function (`renderLegal`). The privacy page reads
@@ -110,7 +128,8 @@ npm run dev                # wrangler dev on http://localhost:8787, no canonical
 ```
 
 `scripts/build.mjs` runs, in order: the install build, the generated families (`FAMILIES`:
-problems 60.06, download 60.11, and help 60.12 before download once it lands), the hand-made pages, the copied files, and
+help 60.12, problems 60.06, download 60.11; a family's `paths` count as built for the ones before
+it), the hand-made pages, the copied files, and
 the checks (every page has its twin in the other language; an Arabic page is Arabic, by
 maktaba.dev's Latin-share check), and writes the link check's manifest (60.08).
 

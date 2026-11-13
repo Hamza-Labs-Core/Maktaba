@@ -6,7 +6,7 @@
 //      install/assets/) copied to the root of dist/, without the placeholder figures whose
 //      screenshot does not exist yet (story 60.05 T07), each guide wrapped in the shell's
 //      header and footer (shell.mjs's inShell, story 60.01 part A);
-//   2. the generated families (FAMILIES: /problems 60.06, /help 60.12, /download 60.11);
+//   2. the generated families (FAMILIES: /help 60.12, /problems 60.06, /download 60.11);
 //   3. the hand-made pages (src/pages/, each wrapped in the shell, scripts/shell.mjs): the
 //      home page (scripts/home.mjs, story 60.10, in part B's shell), the install chooser (/install/, story 60.05) and the 404 page; and the
 //      legal pages (story 60.07) from their copy and sources (scripts/legal.mjs: the privacy
@@ -46,6 +46,7 @@ import { writeIcons } from "./icons.mjs";
 import { ROBOTS, sitemapXml } from "./sitemap.mjs";
 import { LEGAL, legalPages, readSources } from "./legal.mjs";
 import { PROBLEMS } from "./problems.mjs";
+import { HELP } from "./help.mjs";
 import { DOWNLOAD } from "./download.mjs";
 import { noticeConfig } from "../src/copyright-form.ts";
 
@@ -62,13 +63,13 @@ export const INSTALL_OUT = path.join(REPO, "web/dist-install");
  * The generated families, each `{ name, story, build({ write, repo, resolves, script }) }`, run
  * in this order after the install pages and before the hand-made pages: `resolves(href)` says
  * whether a site path (and its #fragment) is already built, so a family links only pages that
- * exist (the problem pages link a help topic once 60.12's pages are built: help.mjs goes before
- * problems.mjs), and `script(src)` publishes a script of src/ under a content-hashed name.
- * Story 60.12 (help.mjs) adds its own here, before download.mjs, whose cards link a help topic
- * once it is built. The download page (60.11) reads the latest release from the GitHub Releases
- * API and fails the build when it cannot (scripts/download.mjs).
+ * exist, and `script(src)` publishes a script of src/ under a content-hashed name (once, however
+ * many families ask for it). Help (60.12, help.mjs) goes first: the problem pages link a help
+ * topic, and the download cards a topic's guide, once it is built. The download page (60.11)
+ * reads the latest release from the GitHub Releases API and fails the build when it cannot
+ * (scripts/download.mjs).
  */
-export const FAMILIES = [PROBLEMS, DOWNLOAD];
+export const FAMILIES = [HELP, PROBLEMS, DOWNLOAD];
 
 /** The hand-made pages: their source in src/pages/ (or, for the home page, scripts/home.mjs
  * from its copy and screenshots; for a legal page, its copy in copy/legal/, scripts/legal.mjs),
@@ -301,6 +302,13 @@ export function resolver(dist) {
   };
 }
 
+/** A resolver that also counts each family's declared `paths` (and their Arabic twins) as
+ * built: a family that fails to build them fails the build, so no link to them ships dead. */
+export function withDeclared(resolves, families) {
+  const declared = new Set(families.flatMap((f) => f.paths ?? []).flatMap((p) => [p, `/ar${p}`]));
+  return (href) => declared.has(href) || resolves(href);
+}
+
 export async function build({
   now = new Date(),
   install = true,
@@ -324,12 +332,19 @@ export async function build({
     );
   }
 
-  // 2. the generated families
-  const resolves = resolver(dist);
+  // 2. the generated families. A family's `paths` are the pages it always builds (or the build
+  // fails): an earlier family may link them before they are written (the help pages' nav links
+  // /download/, which is built after them)
+  const resolves = withDeclared(resolver(dist), FAMILIES);
+  // a script two families share (the help and problem indexes' filter) is written once
+  const scripts = new Map();
   const script = (src) => {
-    const s = scriptFile(src);
-    write(s.file, s.js);
-    return `/${s.file}`;
+    if (!scripts.has(src)) {
+      const s = scriptFile(src);
+      write(s.file, s.js);
+      scripts.set(src, `/${s.file}`);
+    }
+    return scripts.get(src);
   };
   for (const f of FAMILIES) {
     const n = await f.build({ write, repo: REPO, resolves, script });

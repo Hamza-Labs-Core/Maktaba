@@ -1,0 +1,101 @@
+/*
+ * maktaba.tv's help pages (story 60.12): what the built pages add to part B's help layouts
+ * (design/site.css, "help"), after part B's stylesheet. Logical properties only.
+ */
+
+/* the topic's one column below 1024 px: a wide table or command never widens the page */
+@media (max-width: 1023.98px) {
+  .topic-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* a long name or address breaks rather than widen its line (1.4.10, 1.4.12) */
+.topic-layout .prose {
+  overflow-wrap: break-word;
+}
+
+.topic-layout .prose code {
+  overflow-wrap: anywhere;
+}
+
+/* "In Maktaba: Settings → Rules": a label longer than a phone's line wraps, its tint carried
+   onto each line, so the page never scrolls sideways at 320 px */
+.prose .where {
+  white-space: normal;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* a focused link's ring is drawn over the tint of an "In Maktaba" path beside it, and the path,
+   which is text and does nothing when pressed, never takes the pointer from a link that wraps
+   around it */
+.prose a:focus-visible {
+  position: relative;
+  z-index: 1;
+}
+
+.prose .where {
+  pointer-events: none;
+}
+
+/* the related topics are cards, not a bulleted list: no indent, no marker */
+.prose .related .topics {
+  padding-inline-start: 0;
+}
+
+.prose .related .topics li + li {
+  margin-block-start: 0;
+}
+
+/* a table of the topic (the big screen's keys, the player's): its cells wrap on a narrow phone,
+   so neither the page nor the table scrolls sideways */
+.table-wrap {
+  margin-block: 0 var(--spacing-6);
+}
+
+.prose table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.prose th,
+.prose td {
+  overflow-wrap: anywhere;
+  padding-block: var(--spacing-2);
+  padding-inline: 0 var(--spacing-3);
+  border-block-end: 1px solid var(--site-line-rule);
+  text-align: start;
+  vertical-align: top;
+}
+
+.prose th {
+  font-weight: 600;
+  color: var(--color-semantic-muted);
+}
+
+.prose .code {
+  margin-block: 0 var(--spacing-6);
+}
+
+/* a command wraps instead of scrolling: a scrolling block would need a keyboard stop of its own
+   (axe's scrollable-region-focusable); Copy copies it as written */
+.prose .code pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.prose blockquote {
+  margin-block: 0 var(--spacing-4);
+  margin-inline: 0;
+  padding-inline-start: var(--spacing-4);
+  border-inline-start: 2px solid var(--site-accent-mark);
+}
+
+.prose hr {
+  margin-block: var(--spacing-8);
+  border: 0;
+  border-block-start: 1px solid var(--site-line-rule);
+}

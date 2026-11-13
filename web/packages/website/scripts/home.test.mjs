@@ -9,7 +9,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { FEATURES, SHOTS, featureHref, homePage, homeScriptFile, readCopy, shot } from "./home.mjs";
-import { bLinks, LATEST_RELEASE, HELP } from "./shell.mjs";
+import { bLinks, LATEST_RELEASE, TROUBLESHOOTING } from "./shell.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.resolve(HERE, "..");
@@ -53,7 +53,7 @@ test("T04: a feature links its help topic once built, else the install guides or
 });
 
 test("Download goes to the latest release until /download/ is built, then to /download/", () => {
-  assert.deepEqual(bLinks(none), { download: LATEST_RELEASE, help: HELP });
+  assert.deepEqual(bLinks(none), { download: LATEST_RELEASE, help: TROUBLESHOOTING });
   assert.deepEqual(bLinks(all), { download: "/download/", help: "/help/" });
   const before = homePage("en", { links: bLinks(none), resolves: none }).body;
   assert.equal([...before.matchAll(/<a [^>]*data-download/g)].length, 2);

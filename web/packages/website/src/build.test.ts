@@ -115,6 +115,28 @@ describe("the built site (dist/)", () => {
     }
   });
 
+  it("60.12: the help pages are in part B's shell: Help current, Download to its page (built after)", () => {
+    for (const lang of ["en", "ar"]) {
+      const pre = lang === "ar" ? "/ar" : "";
+      for (const rel of ["help/index.html", "help/search/index.html", "help/plex/index.html"]) {
+        const file = `${pre.slice(1)}${pre ? "/" : ""}${rel}`;
+        const html = read(file);
+        const nav = html.slice(html.indexOf('<nav class="nav"'), html.indexOf("</nav>"));
+        expect(nav, file).toContain(`<a href="${pre}/help/" aria-current="page">`);
+        // the download page is written after the help pages, and still their nav links it
+        expect(nav, file).toContain(`<a href="${pre}/download/">`);
+        expect(html, file).toMatch(/class="wordmark wm-32"/);
+        expect(html, file).toMatch(
+          /<link rel="stylesheet" href="\/assets\/help-[A-Za-z0-9_-]+\.css" \/>/
+        );
+      }
+    }
+    // part A's pages and the 404 send Help to the help pages, not to troubleshooting
+    for (const rel of ["install/index.html", "legal/privacy/index.html", "404.html"])
+      expect(read(rel), rel).toContain('href="/help/"');
+    expect(read("ar/404.html")).toContain('href="/ar/help/"');
+  });
+
   it("every product screenshot is in its page's language, but the two-language pair and #1198's", () => {
     // The visual references mask the apps' screenshots, so this is what checks a page shows
     // its own language's screens. Allowed in the other language: the pair that shows both side

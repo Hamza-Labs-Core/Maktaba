@@ -1,7 +1,7 @@
 # maktaba.tv: how the website is built and deployed
 
 maktaba.tv is the site households find Maktaba on (Epic 60): the front door, the install guides,
-and later the download, help, problem and legal pages, each in English and Arabic. It lives in
+the download, help, problem and legal pages, each in English and Arabic. It lives in
 `web/packages/website` ([README](https://github.com/Hamza-Labs-Core/Maktaba/tree/main/web/packages/website)),
 and is built and deployed the way this portal is: a Cloudflare Worker in front of static files.
 
@@ -13,7 +13,9 @@ and is built and deployed the way this portal is: a Cloudflare Worker in front o
    site at `/install/` and `/ar/install/`, its hashed files under `/install/assets/`, without
    each "Screenshot to come" figure whose image does not exist yet (the install package's own
    preview keeps them);
-2. the generated families: the problem pages, the download page (below), and help once its story adds it;
+2. the generated families: the help pages (below), the problem pages and the download page
+   (below), in that order: a family links an earlier one's pages, and a later one's own page
+   (`paths`, such as `/download/`) once the build is sure to make it;
 3. the hand-made pages (`src/pages/`: the front door, the `/install/` chooser, the 404 page) and
    the legal pages, each wrapped in the page shell (`scripts/shell.mjs`);
 4. the copied files: the app icons (`favicon.ico`, `apple-touch-icon.png`, the 192, 512 and
@@ -67,6 +69,40 @@ and `WEBSITE_TURNSTILE_SITEKEY`. Neither is set until that endpoint is live, so 
 designated agent's email and what a notice must contain, and no form. Only that page's CSP
 allows Turnstile and the API.
 
+## The help pages
+
+`/help/` and every `/help/<topic>/` (and `/ar/…`, story 60.12) are the app's own help, published
+from its sources, so the site and the app cannot drift. `scripts/help.mjs` builds them:
+
+- **The source.** The categories and topics of `web/src/help/topics.ts` (read as data, in the
+  app's order), each topic's Markdown in `web/src/help/content/<lang>/<topic>.md`, and its title
+  and summary from the app's catalog (`web/src/i18n/<lang>.json`). A change to any of them
+  publishes on the next deploy: the website's path filters include them.
+- **One language per page.** A topic whose Arabic file, title or summary is missing fails the
+  build, naming it: the app falls back to English, a public page never does.
+- **The Markdown** is what the app's renderer reads (headings with their `{#anchor}` as id,
+  lists, code, quotes, bold, italic, links), and pipe tables. A topic's text is published as
+  written; its title is the catalog's, as in the app.
+- **The links, rewritten at build time.** `/help/<topic>#<anchor>` becomes the site's page in the
+  same language (`/ar/help/<topic>/#<anchor>`), and the topic and anchor must exist. A link to a
+  page of the app is not a page of the site: any path the app's router matches (`web/src/App.tsx`
+  and the route modules it imports, never a hand-made list) is drawn as text, "In Maktaba:
+  **Settings → Rules**", its label the link's own words, the arrow the page's way; `/` is "the
+  home screen". A path the router does not match fails the build, naming the topic and the link,
+  so a topic that links a page the app no longer has is caught. External links stay as written.
+- **The pages** are part B's help layouts: the index groups the topics as the app does, with a
+  filter that runs in the page over titles, summaries and headings (`src/problems-filter.ts`,
+  shared with the problem index, hidden without JavaScript); a topic has its contents at the end
+  side from 1024 px and three related topics (those it links to, then its category's). Their
+  stylesheet is `src/help.css`, after part B's, and their social cards are part B's.
+- **A renamed topic** keeps its old path: add `/help/<old>/` and `/ar/help/<old>/` to
+  `src/redirects.json`, sent to the new one.
+
+Tests: `scripts/help.test.mjs` (every topic in both languages, the missing Arabic file, the
+"In Maktaba" text, an unknown route) and `e2e/help.spec.ts` (the filter, with no request).
+Lighthouse measures the longest topic, the shortest and one with a table
+(`e2e/representatives.json`); their visual references are the first 4,000 pixels of the page.
+
 ## The download page
 
 `/download/` and `/ar/download/` (story 60.11) offer each device the one right file of the latest
@@ -115,7 +151,7 @@ GitHub's latest release. The deploy goes live only with `vars.WEBSITE_LIVE`, lik
 ## The Worker
 
 `src/worker.ts` sends `www.maktaba.tv` and plain http to `https://maktaba.tv`, sends `/docs` to
-the front door (to `/help/` once the help pages exist), answers a missing path with the 404 page
+`/help/` (and `/ar/docs` to `/ar/help/`), answers a missing path with the 404 page
 in its language and status 404, and puts the headers on every answer: a strict CSP, HSTS without
 `includeSubDomains` (the relay's names must not inherit it), and the cache policy.
 

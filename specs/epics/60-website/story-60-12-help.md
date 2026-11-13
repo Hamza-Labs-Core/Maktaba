@@ -29,7 +29,7 @@ publishes the same topics, not a second copy, so the two cannot drift.
   `/review`, `/transcription` and others. The rewriter takes the route list from the app's router
   (`web/src/App.tsx`), not a hand-made list.
   - They render as text in a "where" style: "In Maktaba: **Settings → Privacy**" (Arabic: «في
-    Maktaba: **الإعدادات ← الخصوصية**»).
+    مكتبة: **الإعدادات ← الخصوصية**»).
   - The label comes from the link's own text.
   - The arrow is a direction mark and mirrors.
   - A link to the app's root (`](/)`) renders as "In Maktaba: the home screen", never as a link
@@ -73,7 +73,7 @@ with a table) and every topic on deploy.
 |---|---|---|---|---|
 | T01 | build | the help content | `help.mjs` | 88 pages and 2 indexes |
 | T02 | build | an English topic without its Arabic file (fixture) | build | fails naming it |
-| T03 | unit | `[Privacy](/settings/privacy)` | rewrite | "In Maktaba: Settings → Privacy" markup, en and ar |
+| T03 | unit | `[Settings → Privacy](/settings/privacy)` | rewrite | "In Maktaba: Settings → Privacy" markup (the link's own text), en and ar |
 | T04 | unit | an app route the rewriter does not know (fixture) | rewrite | fails |
 | T05 | link check | built help | 60.08 | every link and anchor resolves |
 | T06 | Worker unit | `/docs` | fetch | 301 `/help/` |
@@ -85,10 +85,17 @@ with a table) and every topic on deploy.
 | Key | English | Arabic |
 |---|---|---|
 | `help.title` | Help | المساعدة |
-| `help.sameAsApp` | This is the same help you'll find in the app, under Help. | هذه هي المساعدة نفسها التي تجدها في التطبيق، في قسم المساعدة. |
-| `help.where` | In Maktaba: | في Maktaba: |
+| `help.lead` | How to use Maktaba at home, one topic at a time. | طريقة استخدام برنامج مكتبة في البيت، موضوعًا بعد موضوع. |
+| `help.sameAsApp` | This is the same help you’ll find in the app, under Help. | هذه هي المساعدة نفسها التي تجدونها في التطبيق، في قسم المساعدة. |
+| `help.where` | In Maktaba: | في مكتبة: |
+| `help.home` | the home screen | الشاشة الرئيسية |
+| `help.toc` | On this page | في هذه الصفحة |
 | `help.related` | Related topics | مواضيع ذات صلة |
-| `help.filter` | Find a topic | ابحث عن موضوع |
+| `help.filter` | Find a topic | البحث عن موضوع |
+| `help.noMatch` | No topic matches. Try a shorter word. | لا موضوع يطابق ما كتبتم. جرّبوا كلمة أقصر. |
+
+The Arabic addresses the household in the plural and names the product «مكتبة», as the rest of
+the site does.
 
 ## Edge cases
 

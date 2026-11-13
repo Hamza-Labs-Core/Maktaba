@@ -52,7 +52,15 @@ const LHCI = path.join(PKG, "node_modules/@lhci/cli/src/cli.js");
 export const FAMILY_SOURCES = {
   install: ["web/packages/install/", "web/vite.install.config.ts"],
   problems: ["web/packages/website/scripts/problems.mjs", "shared/api/problems.json"],
-  help: ["web/packages/website/scripts/help.mjs", "web/src/help/content/"],
+  help: [
+    "web/packages/website/scripts/help.mjs",
+    "web/packages/website/src/help.css",
+    "web/packages/website/design/site.css",
+    "web/packages/website/src/part-b.css",
+    "web/src/help/content/",
+    "web/src/help/topics.ts",
+    "web/src/i18n/",
+  ],
 };
 /** The shell every page is rendered in (story 60.01 part A: scripts/shell.mjs, its stylesheets
  * and scripts in design/ and src/): a change to it runs the generated families whole, the install
@@ -84,8 +92,8 @@ export function familiesChanged(changed) {
 }
 
 /** The generated families' own indexes: one page each, measured as the hand-made pages are (the
- * download page, story 60.11, is a family of one page). */
-export const FAMILY_INDEXES = ["/problems/", "/download/"];
+ * download page, story 60.11, is a family of one page; /help/ is 60.12's). */
+export const FAMILY_INDEXES = ["/problems/", "/download/", "/help/"];
 
 /** The most pages of a changed family a pull request measures once each (beyond its
  * representatives): a family larger than this is sampled evenly, both languages. */
