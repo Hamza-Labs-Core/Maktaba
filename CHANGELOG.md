@@ -259,6 +259,7 @@ build fails when the two differ.
   alone. A value that cannot hold a secret is returned at once. A new Python logger bench sits
   beside the Go benches in CI's `log-bench` job. A nightly macOS run keeps the numbers for 90
   days and opens an issue when a cost grows by more than 20 % (Epic 53 story 53.13).
+- **Big screen has a way out you can see.** Every big screen page has **Leave big screen** in its top row, reachable with a mouse or the arrows, and it leaves at once. The Mac, Windows and Linux apps have **View → Leave Big Screen**, and **View → Big Screen** (`Cmd+Shift+B`, `Ctrl+Shift+B`) now leaves when you are already in it. Before, the only ways out were Settings or Back on Home.
 
 ### Fixed
 

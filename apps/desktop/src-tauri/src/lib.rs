@@ -239,9 +239,19 @@ pub fn run() {
                     bigscreen::on_start_menu(app);
                     return;
                 }
-                if id == bigscreen::MENU_ID {
-                    bigscreen::on_menu(app);
-                }
+                // Big Screen on a page already in big screen leaves it, so the
+                // one shortcut goes in and out; Leave Big Screen always leaves
+                let id = if id == bigscreen::LEAVE_MENU_ID
+                    || (id == bigscreen::MENU_ID && bigscreen::in_big_screen(app))
+                {
+                    bigscreen::on_leave_menu(app);
+                    bigscreen::LEAVE_MENU_ID.to_string()
+                } else {
+                    if id == bigscreen::MENU_ID {
+                        bigscreen::on_menu(app);
+                    }
+                    id
+                };
                 if let Err(e) = app.emit("menu", &id) {
                     applog::warn(&format!("the menu item {id} could not reach the window"), e);
                 }
@@ -386,6 +396,13 @@ fn build_menu(app: &tauri::AppHandle, server_items: bool) -> tauri::Result<Menu<
         true,
         Some(bigscreen::ACCELERATOR),
     )?;
+    let big_screen_leave = MenuItem::with_id(
+        app,
+        bigscreen::LEAVE_MENU_ID,
+        "Leave Big Screen",
+        true,
+        None::<&str>,
+    )?;
     let big_screen_start = CheckMenuItem::with_id(
         app,
         bigscreen::START_MENU_ID,
@@ -404,6 +421,7 @@ fn build_menu(app: &tauri::AppHandle, server_items: bool) -> tauri::Result<Menu<
             &PredefinedMenuItem::fullscreen(app, None)?,
             &PredefinedMenuItem::separator(app)?,
             &big_screen,
+            &big_screen_leave,
             &big_screen_start,
         ],
     )?;

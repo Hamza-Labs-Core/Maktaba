@@ -21,7 +21,7 @@ import {
   type FilteredFiles,
 } from "../lib/desktop";
 import { DropOverlay } from "./DropOverlay";
-import { BIG_BASE, isBigPath, rememberReturn } from "../lib/bigScreen";
+import { BIG_BASE, isBigPath, rememberReturn, returnPath, setFullScreen } from "../lib/bigScreen";
 
 function emit(name: string, detail?: unknown) {
   window.dispatchEvent(new CustomEvent(name, { detail }));
@@ -63,6 +63,13 @@ export function DesktopBridge() {
           if (!isBigPath(here.current.split("?")[0] ?? "")) {
             rememberReturn(here.current);
             navigate(BIG_BASE);
+          }
+          break;
+        case "big-screen-leave":
+          // the shell has taken the window out of full screen; back to where the user was
+          if (isBigPath(here.current.split("?")[0] ?? "")) {
+            void setFullScreen(false);
+            navigate(returnPath(), { replace: true });
           }
           break;
         case "external":
