@@ -456,6 +456,8 @@ export function currentOf(sitePath) {
   const en = sitePath.replace(/^\/ar(?=\/)/, "");
   if (en.startsWith("/install/")) return "install";
   if (en.startsWith("/problems/")) return "messages";
+  if (en === "/download/") return "download";
+  if (en.startsWith("/help/")) return "help";
   return null;
 }
 

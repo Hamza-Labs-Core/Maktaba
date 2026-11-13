@@ -591,7 +591,9 @@ export function styleFile() {
 export function downloadPages(data, ks, { resolves = () => false, styles, script, manifest }) {
   // part B's shell (as the home page): its header and footer, the wordmark, the display face's
   // preloads and part B's stylesheet; Download and Help go to their pages once built (bLinks)
-  const links = bLinks(resolves);
+  // this page is being written, so `resolves` cannot see it yet: it counts as built here, or
+  // its own nav would send Download to the release on GitHub
+  const links = bLinks((href) => href === PATH || resolves(href));
   const uaCards = ks
     .filter((k) => k.ua)
     .map((k) => k.id)
