@@ -10,8 +10,8 @@ CI image) beside its part B mockup (`mockups/png/`). The mockup's topic is "Sear
 the references are the help family's representatives (`e2e/representatives.json`): the longest
 topic (`failures`), the shortest (`word-review`) and one with a table (`big-screen`). A topic's
 reference is the page's first 4,000 pixels (`TALL` in `e2e/visual.spec.ts`), so it stays under
-1 MB: the longest topic is 32,000 pixels tall at 360 px. The shortest fits whole, with its related
-topics and footer. Every topic is checked by the structural tests (axe, keyboard, reflow, RTL,
+1 MB: the longest topic is 32,000 pixels tall at 360 px. The shortest shows its related topics at
+every width, and its footer where it fits (768 and 1280 px). Every topic is checked by the structural tests (axe, keyboard, reflow, RTL,
 layout shift) in both languages.
 
 ## Differences: the help index
