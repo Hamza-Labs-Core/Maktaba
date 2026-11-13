@@ -6,9 +6,9 @@
 //      install/assets/) copied to the root of dist/, without the placeholder figures whose
 //      screenshot does not exist yet (story 60.05 T07), each guide wrapped in the shell's
 //      header and footer (shell.mjs's inShell, story 60.01 part A);
-//   2. the generated families (FAMILIES: /problems 60.06, /help 60.12, /download 60.11);
-//   3. the hand-made pages (src/pages/, each wrapped in the shell, scripts/shell.mjs): the
-//      home page (scripts/home.mjs, story 60.10, in part B's shell), the install chooser (/install/, story 60.05) and the 404 page; and the
+//   2. the generated families (FAMILIES: /help 60.12, /download 60.11, /problems 60.06);
+//   3. the hand-made pages (src/pages/, each wrapped in part B's shell, scripts/shell.mjs): the
+//      home page (scripts/home.mjs, story 60.10), the install chooser (/install/, story 60.05) and the 404 page; and the
 //      legal pages (story 60.07) from their copy and sources (scripts/legal.mjs: the privacy
 //      page reads privacy.CurrentPolicy() through `go run ./cmd/privacy-json`, so the build
 //      needs Go), with the copyright notice form only when WEBSITE_NOTICE_ENDPOINT and
@@ -66,9 +66,11 @@ export const INSTALL_OUT = path.join(REPO, "web/dist-install");
  * problems.mjs), and `script(src)` publishes a script of src/ under a content-hashed name.
  * Story 60.12 (help.mjs) adds its own here, before download.mjs, whose cards link a help topic
  * once it is built. The download page (60.11) reads the latest release from the GitHub Releases
- * API and fails the build when it cannot (scripts/download.mjs).
+ * API and fails the build when it cannot (scripts/download.mjs). The problem pages go after it:
+ * they are in part B's shell (Epic 60 Phase 3), whose nav links /download/ only once it is built
+ * (shell.mjs bLinks).
  */
-export const FAMILIES = [PROBLEMS, DOWNLOAD];
+export const FAMILIES = [DOWNLOAD, PROBLEMS];
 
 /** The hand-made pages: their source in src/pages/ (or, for the home page, scripts/home.mjs
  * from its copy and screenshots; for a legal page, its copy in copy/legal/, scripts/legal.mjs),
@@ -336,8 +338,10 @@ export async function build({
     log(`family: ${f.name} (${f.story}): ${n} pages`);
   }
 
-  // 3. the hand-made pages, and the legal pages from their copy (legal.mjs). The copyright
-  // page's notice form is there only when its endpoint is configured (copyright-form.ts).
+  // 3. the hand-made pages, and the legal pages from their copy (legal.mjs), every one in part
+  // B's shell (Epic 60 Phase 3: the 404, the install chooser and the legal pages moved with
+  // 60.05, 60.07). The copyright page's notice form is there only when its endpoint is
+  // configured (copyright-form.ts).
   let noticeScript = "";
   if (notice) {
     const s = noticeScriptFile();
@@ -346,8 +350,8 @@ export async function build({
     log(`the copyright notice form posts to ${notice.endpoint}`);
   }
   const legal = legalPages({ sources: readSources(), notice, noticeScript });
-  // the home page (story 60.10) is part B's: its shell links Download and Help once their pages
-  // are built (bLinks), and its one script runs in the <head> (scripts/home.mjs)
+  // part B's shell links Download and Help once their pages are built (bLinks); the home page's
+  // one script runs in the <head> (scripts/home.mjs)
   const links = bLinks(resolves);
   const homeScript = homeScriptFile();
   write(homeScript.file, homeScript.js);
@@ -385,6 +389,8 @@ export async function build({
         body: src.body,
         meta: src.meta,
         mainClass: src.main,
+        variant: "b",
+        links,
       })
     );
   }

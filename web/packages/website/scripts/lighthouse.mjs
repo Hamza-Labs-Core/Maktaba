@@ -71,6 +71,15 @@ export const SHELL_SOURCES = [
 ];
 const SHELL_FAMILIES = ["help", "install", "problems"];
 
+/** Part B's shell (story 60.01 part B: its stylesheet design/site.css with src/part-b.css), which
+ * the problem pages and help are drawn in since Epic 60 Phase 3; the install guides keep part A's.
+ * A change to it runs those families whole. */
+export const PART_B_SOURCES = [
+  "web/packages/website/design/site.css",
+  "web/packages/website/src/part-b.css",
+];
+const PART_B_FAMILIES = ["help", "problems"];
+
 const touches = (changed, sources) =>
   changed.some((f) => sources.some((s) => (s.endsWith("/") ? f.startsWith(s) : f === s)));
 
@@ -80,6 +89,7 @@ export function familiesChanged(changed) {
   for (const [family, sources] of Object.entries(FAMILY_SOURCES))
     if (touches(changed, sources)) out.add(family);
   if (touches(changed, SHELL_SOURCES)) for (const f of SHELL_FAMILIES) out.add(f);
+  if (touches(changed, PART_B_SOURCES)) for (const f of PART_B_FAMILIES) out.add(f);
   return [...out].sort();
 }
 
