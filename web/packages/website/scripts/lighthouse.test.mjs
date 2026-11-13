@@ -81,6 +81,9 @@ test("a change to a family's generator or source runs the whole family, one run 
     "web/packages/website/src/shell-head.js",
   ])
     assert.deepEqual(familiesChanged([f]), ["help", "install", "problems"], f);
+  // part B's shell draws the problem and help pages (Epic 60 Phase 3), not the install guides
+  for (const f of ["web/packages/website/design/site.css", "web/packages/website/src/part-b.css"])
+    assert.deepEqual(familiesChanged([f]), ["help", "problems"], f);
   assert.deepEqual(familiesChanged(["README.md", "web/packages/installer.ts"]), []);
   const r = pick({ set: "pr", pages, reps, hand, changed: ["web/packages/install/src/page.ts"] });
   assert.deepEqual(r.single, ["/ar/install/qnap/", "/install/qnap/"]);

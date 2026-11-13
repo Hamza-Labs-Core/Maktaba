@@ -17,7 +17,7 @@ and is built and deployed the way this portal is: a Cloudflare Worker in front o
    (below), in that order: a family links an earlier one's pages, and a later one's own page
    (`paths`, such as `/download/`) once the build is sure to make it;
 3. the hand-made pages (`src/pages/`: the front door, the `/install/` chooser, the 404 page) and
-   the legal pages, each wrapped in the page shell (`scripts/shell.mjs`);
+   the legal pages, each wrapped in part B's page shell (`scripts/shell.mjs`);
 4. the copied files: the app icons (`favicon.ico`, `apple-touch-icon.png`, the 192, 512 and
    maskable icons and `manifest.webmanifest`), the log schema at `/schema/log-line.json` (its
    `$id`), and `security.txt` with a `Canonical` line for each domain;
@@ -50,6 +50,17 @@ that prefers Arabic. Its files:
 Every one of these is published under a content-hashed name, so a change reaches visitors on the
 next deploy. A change to any of them makes Lighthouse measure every generated family, the install
 guides included.
+
+**Every page is now drawn in part B's shell** (story 60.01 part B, `page({ variant: "b" })`),
+except the install guides, which keep part A's until they move to their own part B layout: the
+home and download pages, and since Phase 3 the problem pages and their index, the legal pages,
+the `/install/` chooser and the 404. Part B's shell adds the wordmark (the app icon with the name
+in the display face, both scripts in the footer), the nav with Download, Install, Help and
+Messages (Download and Help link their pages once the site builds them, `bLinks`), the display
+face for each page title, and part B's stylesheet (`design/site.css` with `src/part-b.css`); each
+of these pages has part B's social card (`cardSub` in `scripts/cards.mjs`). A change to part B's
+stylesheet makes Lighthouse measure the problem pages and help whole. On a legal page, the
+contents list marks the section in view with CSS alone (`scroll-target-group`), with no script.
 
 ## The legal pages
 

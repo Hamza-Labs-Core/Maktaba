@@ -11,6 +11,8 @@ import * as b from "../scripts/build.mjs";
 import { page, twinOf } from "../scripts/shell.mjs";
 // @ts-ignore
 import { readPolicy, POLICY_FIELDS } from "../scripts/legal.mjs";
+// @ts-ignore
+import { cardSub, isPartBCard } from "../scripts/cards.mjs";
 
 const DIST: string = b.DIST;
 const REPO: string = b.REPO;
@@ -135,6 +137,78 @@ describe("the built site (dist/)", () => {
     for (const rel of ["install/index.html", "legal/privacy/index.html", "404.html"])
       expect(read(rel), rel).toContain('href="/help/"');
     expect(read("ar/404.html")).toContain('href="/ar/help/"');
+  });
+
+  it("Phase 3: the problem pages, their index, the legal pages, the chooser and the 404 are in part B's shell", () => {
+    const moved = [
+      "problems/index.html",
+      "problems/invalid-query/index.html",
+      "problems/node-signature/index.html",
+      "legal/privacy/index.html",
+      "legal/terms/index.html",
+      "legal/copyright/index.html",
+      "install/index.html",
+      "404.html",
+    ];
+    const current: Record<string, string | null> = {
+      problems: "/problems/",
+      legal: null,
+      install: "/install/",
+      "404.html": null,
+    };
+    for (const en of moved)
+      for (const rel of [en, `ar/${en}`]) {
+        const html = read(rel);
+        const pre = rel.startsWith("ar/") ? "/ar" : "";
+        expect(html, rel).toMatch(
+          /<link rel="stylesheet" href="\/assets\/part-b-[\w-]{10}\.css" \/>/
+        );
+        expect(html, rel).toMatch(/class="wordmark wm-32"/);
+        expect(html, rel).toContain('<use href="#mk-icon"/>');
+        // part B's footer: the lockup in both scripts
+        expect(html, rel).toMatch(/class="wordmark wm-28"[^]*?class="wm-rule"/);
+        // the nav: Download is the built page (download.mjs runs before the problem pages,
+        // build.mjs FAMILIES), and the page's own item is marked current
+        const nav = html.slice(html.indexOf('<nav class="nav"'), html.indexOf("</nav>"));
+        expect(nav, rel).toContain(`<a href="${pre}/download/"`);
+        expect(nav, rel).not.toContain("releases/latest");
+        const own = current[en.split("/")[0]];
+        const marked = nav.match(/<a href="([^"]+)" aria-current="page">/)?.[1] ?? null;
+        expect(marked, rel).toBe(own === null ? null : `${pre}${own}`);
+        // part A's mark (an <img>) is gone
+        expect(html, rel).not.toMatch(/<a class="mark"[^>]*><img /);
+      }
+  });
+
+  it("Phase 3: every page in part B's shell has part B's social card, and the install guides keep theirs", () => {
+    for (const p of [
+      "/",
+      "/download/",
+      "/install/",
+      "/problems/",
+      "/problems/invalid-query/",
+      "/legal/terms/",
+      "/help/",
+      "/help/search/",
+    ])
+      expect(isPartBCard(p), p).toBe(true);
+    for (const p of ["/install/synology/", "/install/troubleshooting/"])
+      expect(isPartBCard(p), p).toBe(false);
+    expect(cardSub("/problems/node-signature/")).toEqual(cardSub("/problems/"));
+    expect(cardSub("/legal/copyright/").ar).toBe("الخصوصية وشروط الاستخدام وحقوق النشر");
+  });
+
+  it("Phase 3: the legal contents list marks the section in view with CSS alone", () => {
+    const css = fs
+      .readdirSync(path.join(DIST, "assets"))
+      .filter((f) => /^part-b-[\w-]{10}\.css$/.test(f))
+      .map((f) => fs.readFileSync(path.join(DIST, "assets", f), "utf8"))
+      .join("\n");
+    expect(css).toMatch(/\.toc ol\s*\{\s*scroll-target-group: auto;/);
+    expect(css).toMatch(/\.toc a:target-current\s*\{/);
+    // no script sets the mark, and no entry is marked in the markup (it would be wrong once
+    // the reader scrolls)
+    expect(read("legal/privacy/index.html")).not.toContain('aria-current="true"');
   });
 
   it("every product screenshot is in its page's language, but the two-language pair and #1198's", () => {

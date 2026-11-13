@@ -153,10 +153,18 @@ channels, digits, I for the guide), given a `base` prop so its own links stay un
   screen and returns there.
 - **Back at the top**: Back on Home asks "Leave big screen?" (Leave / Stay; Stay has the focus).
   Back on another top screen goes Home first.
+- **Leave big screen in the top row**: every big screen page that has the tab row (not the
+  players) has a **Leave big screen** button after the tabs, before the clock (`data-bs-focus`
+  `tab:leave`). The arrows reach it and a mouse can click it, and it leaves at once with no
+  question: the button says what it does.
 - **Desktop shell** (`apps/desktop/src-tauri/src/bigscreen.rs`):
   - View → **Big Screen** (`CmdOrCtrl+Shift+B`), menu id `big-screen`: the window goes full screen
     and the page opens `/big` (the `menu` event, as every menu item; a page the shell cannot talk to,
     another machine's in client mode, is loaded at its `/big`).
+  - View → **Leave Big Screen**, menu id `big-screen-leave`: the window leaves full screen and the
+    page goes back to where the user came from (the `menu` event; a page the shell cannot talk to
+    is loaded at its server's root). View → **Big Screen** does the same when the page is already
+    in big screen, so `CmdOrCtrl+Shift+B` goes in and out.
   - View → **Start in Big Screen** (a check item), id `big-screen-start`: saved in `big-screen.json`
     beside `mode.json` (this machine's state folder: the app's config folder on a Mac and Linux,
     `%LOCALAPPDATA%` on Windows, so a roaming profile does not carry it). At start, with it on, the

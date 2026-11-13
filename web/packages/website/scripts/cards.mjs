@@ -10,8 +10,9 @@
 // card is part B's (story 60.01 part B, `social-home` in design/mockups/part-b.mjs; cardSvgB), as
 // are the download page's and the help pages' (60.12):
 // the both-script wordmark at the top, the tagline in the display face (Amiri Bold, the copy the
-// Apple app ships), the arch at the inline end and maktaba.tv with one line at the foot. Part B
-// restyles the other pages' cards with their part B layouts (Phase 3).
+// Apple app ships), the arch at the inline end and maktaba.tv with one line at the foot. Every
+// page in part B's shell takes it (isPartBCard: the download page, and with Phase 3 the install
+// chooser, the problem pages and the legal pages); the install guides keep the first template.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -209,7 +210,7 @@ export async function cardSvg({ lang, title }) {
 </svg>`;
 }
 
-// ---- part B's card (the home page) ------------------------------------------------------------
+// ---- part B's card (the pages in part B's shell) -----------------------------------------
 
 /** Part B's dark colours (design/site-tokens.css): the hero's surface, the brass, the text. */
 const B = {
@@ -231,20 +232,39 @@ export const CARD_SUB = {
     en: "Mac · Windows · Linux · NAS",
     ar: "Mac وWindows وLinux وخوادم التخزين",
   },
+  "/install/": {
+    en: "A NAS, Docker, or any Linux computer",
+    ar: "خادم تخزين أو Docker أو أي حاسوب بنظام Linux",
+  },
+  // a family: every page under it (CARD_FAMILIES)
+  "/problems/": {
+    en: "Messages and what they mean",
+    ar: "الرسائل ومعانيها",
+  },
+  "/legal/": {
+    en: "Privacy, terms and copyright",
+    ar: "الخصوصية وشروط الاستخدام وحقوق النشر",
+  },
+  // the help index and every topic (story 60.12)
+  "/help/": {
+    en: "Help, the same as in the app",
+    ar: "المساعدة نفسها التي في التطبيق",
+  },
 };
 
-/** The foot's line on the help pages' cards (story 60.12): the index and every topic. */
-export const HELP_CARD_SUB = {
-  en: "Help, the same as in the app",
-  ar: "المساعدة نفسها التي في التطبيق",
-};
+/** The families whose every page takes its CARD_SUB line: the index and each problem page, each
+ * legal page (Epic 60 Phase 3), each help page (60.12). Any other key is one page. */
+export const CARD_FAMILIES = ["/problems/", "/legal/", "/help/"];
 
-/** The pages whose card is part B's: those CARD_SUB names, and the help pages. */
-export const PART_B_CARDS = Object.keys(CARD_SUB);
-export const isPartBCard = (sitePath) =>
-  PART_B_CARDS.includes(sitePath) || sitePath.startsWith("/help/");
-const cardSub = (sitePath, lang) =>
-  (CARD_SUB[sitePath] ?? (sitePath.startsWith("/help/") ? HELP_CARD_SUB : null))?.[lang] ?? "";
+/** A page's foot line, or undefined when its card is part A's. */
+export function cardSub(sitePath) {
+  if (CARD_SUB[sitePath]) return CARD_SUB[sitePath];
+  const family = CARD_FAMILIES.find((f) => sitePath.startsWith(f));
+  return family ? CARD_SUB[family] : undefined;
+}
+
+/** Whether a page's card is part B's: the pages in part B's shell. */
+export const isPartBCard = (sitePath) => cardSub(sitePath) !== undefined;
 
 const ICON_SVG = fs.readFileSync(
   path.resolve(path.dirname(new URL(import.meta.url).pathname), "../static/icon.svg"),
@@ -345,7 +365,7 @@ export async function cardSvgB({ lang, title, path: sitePath }) {
   // the foot: maktaba.tv (brass, 600), then the page's line (muted), 24 px apart
   const footBase = H - B_PAD.y - 9;
   const tvW = measure(Resvg, "maktaba.tv", 24, 700);
-  const sub = cardSub(sitePath, lang);
+  const sub = cardSub(sitePath)?.[lang] ?? "";
   const foot = `<text x="${rtl ? start - tvW : start}" y="${footBase}" font-size="24" font-weight="700" fill="${B.brass}">maktaba.tv</text>
   <text x="${step(start, tvW + 24)}" y="${footBase}" font-size="24" font-weight="400" fill="${B.muted}" text-anchor="${anchor}"${dir}>${esc(sub)}</text>`;
 
@@ -368,7 +388,7 @@ export async function cardSvgB({ lang, title, path: sitePath }) {
 </svg>`;
 }
 
-/** The card as PNG bytes: part B's for the pages that have it (isPartBCard). */
+/** The card as PNG bytes: part B's for the pages in part B's shell (isPartBCard). */
 export async function renderCard(page) {
   const Resvg = await resvg();
   const svg = isPartBCard(page.path) ? await cardSvgB(page) : await cardSvg(page);

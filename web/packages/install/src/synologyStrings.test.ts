@@ -48,3 +48,22 @@ describe("paths in the Arabic text", () => {
     expect(st("ar", "trouble.port")).toContain("⁦http://<your NAS>:8780⁩");
   });
 });
+
+// story 59.08: choosing a port when another package holds one, in both languages
+describe("a taken port", () => {
+  it("says how to set a port in the project's YAML, and that it is never moved", () => {
+    for (const lang of ["en", "ar"] as const) {
+      const t = st(lang, "trouble.port");
+      for (const v of [
+        "MAKTABA_WEB_PORT",
+        "MAKTABA_API_PORT",
+        "MAKTABA_STREAM_PORT",
+        "MAKTABA_POSTGRES_PORT",
+        "[ports]",
+      ])
+        expect(t, `${lang}: ${v}`).toContain(v);
+    }
+    expect(SYN.en["trouble.port"]).toContain("never moved");
+    expect(SYN.ar["trouble.port"]).toContain("لا يُنقل");
+  });
+});

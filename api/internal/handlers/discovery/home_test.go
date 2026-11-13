@@ -122,3 +122,21 @@ func TestDiscoveryHomeIsRateLimited(t *testing.T) {
 		t.Fatalf("another IP = %d", c)
 	}
 }
+
+// The home's live TV port is in the answer when the home knows it (Epic 59 story 59.08: a
+// port set in the container, or moved off a taken one), so its machines and apps use it.
+func TestDiscoveryHomeStreamPort(t *testing.T) {
+	h := &Handler{Store: discovery.NewMemoryPairingStore(),
+		Home: func(context.Context, *http.Request) HomeInfo {
+			return HomeInfo{ID: "0a1b2c3d-0000-4000-8000-000000000000", Name: "NAS", Version: "1.6.0",
+				URLs: []string{"http://192.168.1.5:18088"}, StreamPort: 18081}
+		}}
+	rec := getHome(homeRouter(h, -1), nil)
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["stream_port"] != float64(18081) || len(got) != 6 {
+		t.Fatalf("answer = %v, want stream_port 18081 beside the five keys", got)
+	}
+}

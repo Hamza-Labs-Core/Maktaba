@@ -20,13 +20,33 @@
 {% endif %}
 {% do c1.environment.add_user_envs(values.maktaba.additional_envs) %}
 
+{# Maktaba's own ports (Epic 59 story 59.08): 8088, 8080 and 8081 unless Additional Environment
+   Variables set MAKTABA_WEB_PORT, MAKTABA_API_PORT or MAKTABA_STREAM_PORT (another app on the
+   NAS holds one). On a bridge they are the container ports; the published ones below. #}
+{% set own = namespace(web=values.consts.internal_web_port, api=values.consts.internal_api_port, live=values.consts.internal_live_port) %}
+{% for e in values.maktaba.additional_envs %}
+  {% if e.name == "MAKTABA_WEB_PORT" and e.value %}{% set own.web = e.value | int %}{% endif %}
+  {% if e.name == "MAKTABA_API_PORT" and e.value %}{% set own.api = e.value | int %}{% endif %}
+  {% if e.name == "MAKTABA_STREAM_PORT" and e.value %}{% set own.live = e.value | int %}{% endif %}
+{% endfor %}
+
+{# Bridge: the ports the NAS publishes are the ones the household's devices reach, so the
+   addresses Maktaba hands out (setup, the Machines page, the TV tuner's URLs) name them. #}
+{% if not values.network.host_network %}
+  {% for key, env in [("web_port", "MAKTABA_PUBLIC_WEB_PORT"), ("api_port", "MAKTABA_PUBLIC_API_PORT"), ("live_port", "MAKTABA_PUBLIC_STREAM_PORT")] %}
+    {% if values.network[key].bind_mode == "published" %}
+      {% do c1.environment.add_env(env, values.network[key].port_number | string) %}
+    {% endif %}
+  {% endfor %}
+{% endif %}
+
 {# Host network (the default): the home announces itself by mDNS with its own responder and is
    reached at the NAS's address. No D-Bus socket is mounted. Bridge: the web app, the cluster's
    API and live TV are published; mDNS is off. #}
 {% if not values.network.host_network %}
-  {% do c1.add_port(values.network.web_port, {"container_port": values.consts.internal_web_port}) %}
-  {% do c1.add_port(values.network.api_port, {"container_port": values.consts.internal_api_port}) %}
-  {% do c1.add_port(values.network.live_port, {"container_port": values.consts.internal_live_port}) %}
+  {% do c1.add_port(values.network.web_port, {"container_port": own.web}) %}
+  {% do c1.add_port(values.network.api_port, {"container_port": own.api}) %}
+  {% do c1.add_port(values.network.live_port, {"container_port": own.live}) %}
 {% endif %}
 
 {# Data: server.toml, the runtime it updates, the database, logs and models. An ixVolume is
@@ -53,7 +73,7 @@
   {% do c1.depends.add_dependency(values.consts.perms_container_name, "service_completed_successfully") %}
 {% endif %}
 
-{% do tpl.portals.add(values.network.web_port, {"port": values.consts.internal_web_port if values.network.host_network else None}) %}
+{% do tpl.portals.add(values.network.web_port, {"port": own.web if values.network.host_network else None}) %}
 
 {% do tpl.notes.add_info("Before the first start, Maktaba needs its setup: open this app's Shell (Workloads → maktaba → Shell) and run `/opt/maktaba/server/bin/maktaba-server container setup`. The server then starts by itself.") %}
 {% do tpl.notes.add_info("Maktaba updates itself inside its update window (Admin → Updates), as well as when the catalog moves this app. An older image never replaces a newer version on the data storage.") %}

@@ -23,8 +23,26 @@ const answers = (over: Partial<Answers> = {}): Answers => ({
 describe("the published compose's blocks", () => {
   it("has the blocks the page turns on", () => {
     const b = blocks(BASE);
-    for (const n of ["memory", "bridge", "dbus", "dri", "nvidia"])
+    for (const n of ["memory", "bridge", "ports", "dbus", "dri", "nvidia"])
       expect(b.get(n)?.length, n).toBeGreaterThan(0);
+  });
+
+  // story 59.08: each port can be chosen, commented in every file the page makes
+  it("has a commented setting for each port, and the published ports on a bridge", () => {
+    const out = fillCompose(BASE, answers());
+    for (const v of [
+      "MAKTABA_WEB_PORT",
+      "MAKTABA_API_PORT",
+      "MAKTABA_STREAM_PORT",
+      "MAKTABA_POSTGRES_PORT",
+    ]) {
+      expect(out).toContain(`# ${v}: "`);
+      expect(enable(BASE, ["ports"])).toMatch(new RegExp(`^ {6}${v}: "\\d+"`, "m"));
+    }
+    const bridge = fillCompose(BASE, answers({ network: "bridge", hostIp: "192.168.1.20" }));
+    expect(bridge).toMatch(/^ {6}MAKTABA_PUBLIC_WEB_PORT: "8088"/m);
+    expect(bridge).toMatch(/^ {6}MAKTABA_PUBLIC_STREAM_PORT: "8081"/m);
+    expect(bridge).toContain('      - "8088:8088"');
   });
 
   it("keeps explanations as comments", () => {

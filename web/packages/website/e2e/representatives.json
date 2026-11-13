@@ -2,7 +2,7 @@
   "$comment": "Story 60.04: the pages that stand for each generated family on pull requests and deploys (Lighthouse, three runs each, and the visual references). e2e/representatives.spec.ts keeps each claim true (the longest is the longest, ...). The install guides all have visual references; these are their Lighthouse sample. problems (60.06): the longest, the shortest, and one whose related pages link a help topic (60.12). help (60.12): the longest topic, the shortest, and one with a table.",
   "install": {
     "longest": "/install/synology/",
-    "shortest": "/install/docker/",
+    "shortest": "/install/ugreen/",
     "table": "/install/nas/",
     "code": "/install/truenas/"
   },

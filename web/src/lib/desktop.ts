@@ -41,7 +41,8 @@ export type MenuAction =
   | { kind: "open-server-picker" }
   | { kind: "media-control"; command: "play" | "pause" }
   | { kind: "external"; url: string }
-  | { kind: "big-screen" };
+  | { kind: "big-screen" }
+  | { kind: "big-screen-leave" };
 
 /** The Help menu's page: maktaba.tv's help (Epic 60 story 60.12), in the UI's language. */
 export const DOCS_URL = "https://maktaba.tv/help/";
@@ -79,6 +80,8 @@ export const KNOWN_MENU_IDS = [
   "open-docs",
   // Epic 46: View → Big Screen (the shell also turns the window full screen)
   "big-screen",
+  // View → Leave Big Screen (and Big Screen again while in it)
+  "big-screen-leave",
   // Epic 53 story 53.15: Help → Report a Problem… and the tray's item
   "report-problem",
   // System-tray transport controls (Story 13.4) — emitted through the
@@ -127,6 +130,8 @@ export function resolveMenuAction(id: string, lang: string = uiLang()): MenuActi
       return { kind: "media-control", command: "pause" };
     case "big-screen":
       return { kind: "big-screen" };
+    case "big-screen-leave":
+      return { kind: "big-screen-leave" };
     case "report-problem":
       return { kind: "navigate", to: "/account/report" };
     case "open-docs":

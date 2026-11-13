@@ -1,6 +1,6 @@
 {
   "_doc": "The nas-shapes matrix (story 59.15). tests/nas/README.md says what each field means and how to add a cell. A cell runs once its `needs` are all in `landed`; an assertion likewise.",
-  "landed": ["59.04", "59.01", "pg-stale-lock", "59.02", "scan-grant-race", "59.03", "59.05", "59.06", "59.07", "plugin-cache-grant", "poster-queue", "59.11", "59.10", "59.08", "59.09", "59.12", "59.13"],
+  "landed": ["59.04", "59.01", "pg-stale-lock", "59.02", "scan-grant-race", "59.03", "59.05", "59.06", "59.07", "plugin-cache-grant", "poster-queue", "59.11", "59.10", "59.08", "59.09", "59.12", "59.13", "custom-ports"],
   "cells": [
     {
       "name": "uid-1000",
@@ -253,6 +253,33 @@
       "network": "bridge",
       "needs": ["59.08"],
       "asserts": ["ready", "bridge", "scan"]
+    },
+    {
+      "name": "custom-ports",
+      "about": "every port set in the container, as a household beside Plex sets them (59.08): MAKTABA_WEB_PORT 18088, MAKTABA_API_PORT 18080, MAKTABA_STREAM_PORT 18081, MAKTABA_POSTGRES_PORT 55439; the web app loads, the API and live TV answer there, nothing on the defaults",
+      "arches": ["amd64"],
+      "env": {"MAKTABA_WEB_PORT": "18088", "MAKTABA_API_PORT": "18080", "MAKTABA_STREAM_PORT": "18081", "MAKTABA_POSTGRES_PORT": "55439"},
+      "ports": {"web": 18088, "api": 18080, "stream": 18081, "postgres": 55439},
+      "needs": ["59.08", "custom-ports"],
+      "asserts": ["ready", "custom_ports", "live_tv_port", "scan"]
+    },
+    {
+      "name": "bridge-published-ports",
+      "about": "a bridge that publishes other ports (19088:8088, 19080:8080, 19081:8081) and names them (MAKTABA_PUBLIC_*_PORT): the address setup and the server hand out is the published one, and an app connects there (59.08)",
+      "arches": ["amd64"],
+      "network": "bridge",
+      "publish": {"8088": 19088, "8080": 19080, "8081": 19081},
+      "needs": ["59.08", "custom-ports"],
+      "asserts": ["ready", "bridge"]
+    },
+    {
+      "name": "port-taken",
+      "about": "MAKTABA_WEB_PORT set to a port another program holds: not moved, the server stops, its log naming the port and the variable in English and Arabic (59.08)",
+      "arches": ["amd64"],
+      "env": {"MAKTABA_WEB_PORT": "18089"},
+      "hold_port": 18089,
+      "needs": ["59.08", "custom-ports"],
+      "asserts": ["port_taken_message"]
     }
   ]
 }

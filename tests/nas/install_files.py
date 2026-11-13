@@ -6,7 +6,7 @@
                                 # development image resolved in the registry
 
 The published Docker compose (cloud/installers/docker/docker-compose.yml) is the NAS base:
-its optional settings are commented blocks, each headed `# [name] ...` (memory, bridge, dbus,
+its optional settings are commented blocks, each headed `# [name] ...` (memory, bridge, ports, dbus,
 dri, nvidia). `enable()` turns blocks on as a household (or maktaba.tv's install page,
 web/packages/install) does: it removes the "# " in front of each block's settings, and the
 bridge block also drops `network_mode: host`. T01: the file with no block, each block alone
@@ -43,7 +43,10 @@ RELEASE = ROOT / ".github/workflows/release.yml"
 
 IMAGE = "ghcr.io/hamza-labs-core/maktaba-server"
 DATA = "/var/lib/maktaba"
-BLOCKS = ("memory", "bridge", "dbus", "dri", "nvidia")
+BLOCKS = ("memory", "bridge", "ports", "dbus", "dri", "nvidia")
+# the ports a household chooses (Epic 59 story 59.08): the compose file's [ports] block, the
+# Unraid template's variables
+PORT_VARIABLES = ("MAKTABA_WEB_PORT", "MAKTABA_API_PORT", "MAKTABA_STREAM_PORT", "MAKTABA_POSTGRES_PORT")
 
 HEADER = re.compile(r"^(\s*)# \[([a-z0-9-]+)\]")
 # a commented setting: "# key:", "# key: value" or "#   - item", at any indent
@@ -119,7 +122,8 @@ def check_compose(text: str) -> list[str]:
         errs.append("the media folder is not mounted at its own path")
     on = enable(text, BLOCKS)
     for want in ("mem_limit:", "/dev/dri:/dev/dri", "group_add:", "driver: nvidia",
-                 "/var/run/dbus/system_bus_socket", "ports:", "MAKTABA_HOST_IP:"):
+                 "/var/run/dbus/system_bus_socket", "ports:", "MAKTABA_HOST_IP:", "MAKTABA_PUBLIC_WEB_PORT:",
+                 "MAKTABA_WEB_PORT:", "MAKTABA_API_PORT:", "MAKTABA_STREAM_PORT:", "MAKTABA_POSTGRES_PORT:"):
         if want not in on:
             errs.append(f"turning every block on gives no {want!r}")
     if "54329" in "\n".join(on.splitlines()[i] for i in found.get("bridge", [])):
@@ -232,6 +236,10 @@ def check_template(t: Template) -> list[str]:
         errs.append("MAKTABA_PLATFORM is not unraid")
     if "TZ" not in env:
         errs.append("no TZ")
+    # Epic 59 story 59.08: each port can be chosen; empty (the default port) unless set
+    for key in PORT_VARIABLES:
+        if key not in env or env[key]:
+            errs.append(f"no empty {key} (the port a household chooses when another app holds it)")
     support = urlparse(t.fields.get("Support", ""))
     if support.scheme != "https" or support.hostname != "maktaba.tv":
         errs.append("the support link is not maktaba.tv")
@@ -279,6 +287,10 @@ def check_drift(compose: str, t: Template) -> list[str]:
         errs.append("the render device differs")
     for key in ("MAKTABA_PLATFORM", "TZ"):
         if not setting(compose, key) or key not in t.env():
+            errs.append(f"{key} is not in both")
+    ports_on = enable(compose, ("ports",))
+    for key in PORT_VARIABLES:
+        if not setting(ports_on, key) or key not in t.env():
             errs.append(f"{key} is not in both")
     return errs
 

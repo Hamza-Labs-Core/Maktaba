@@ -75,4 +75,13 @@ describe("the install page", () => {
     expect(root.querySelector<HTMLTextAreaElement>("#out")!.value).toBe("");
     expect(root.querySelector(".problems")!.textContent).toContain("never runs as root");
   });
+
+  // story 59.08: under the file, what to do when a port is taken
+  it.each(["en", "ar"] as const)("says what to do when a port is taken (%s)", (lang) => {
+    const root = document.createElement("main");
+    mount(root, BASE, lang);
+    const p = root.querySelector<HTMLParagraphElement>("p.ports")!;
+    expect(p.textContent).toContain("[ports]");
+    expect(p.textContent).toContain("8780");
+  });
 });

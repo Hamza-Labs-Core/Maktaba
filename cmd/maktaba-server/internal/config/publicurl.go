@@ -3,6 +3,7 @@ package config
 import (
 	"net"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
@@ -26,6 +27,9 @@ func (c Config) PublicStreamURL() string {
 	host, port, err := net.SplitHostPort(strings.TrimSpace(c.Server.StreamAddr))
 	if err != nil || port == "" {
 		host, port = "", ports.StreamingPublic.PortString()
+	}
+	if c.Server.PublicStreamPort > 0 {
+		port = strconv.Itoa(c.Server.PublicStreamPort)
 	}
 	if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
 		host = lanIP()
@@ -79,10 +83,7 @@ func (c Config) PublicWebURL() string {
 		}
 		return u
 	}
-	_, port, err := net.SplitHostPort(strings.TrimSpace(c.Server.WebListen))
-	if err != nil || port == "" {
-		port = ports.Web.PortString()
-	}
+	port := strconv.Itoa(c.PublicWebPort())
 	stream := c.PublicStreamURL()
 	host := strings.TrimPrefix(strings.TrimPrefix(stream, "http://"), "https://")
 	if h, _, err := net.SplitHostPort(host); err == nil {
@@ -95,14 +96,51 @@ func (c Config) PublicWebURL() string {
 // address in their node.json): http://<host>:<port of listen>, the host taken as
 // PublicWebURL takes it.
 func (c Config) PublicAPIURL() string {
-	_, port, err := net.SplitHostPort(strings.TrimSpace(c.Server.Listen))
-	if err != nil || port == "" {
-		port = ports.APIPublic.PortString()
-	}
+	port := strconv.Itoa(c.PublicAPIPort())
 	web := strings.TrimPrefix(strings.TrimPrefix(c.PublicWebURL(), "http://"), "https://")
 	host := web
 	if h, _, err := net.SplitHostPort(web); err == nil {
 		host = h
 	}
 	return "http://" + net.JoinHostPort(strings.Trim(host, "[]"), port)
+}
+
+// PublicWebPort is the port the household's devices reach the web app at: [server]
+// public_web_port when set (a bridge network's published port), else web_listen's.
+func (c Config) PublicWebPort() int {
+	if c.Server.PublicWebPort > 0 {
+		return c.Server.PublicWebPort
+	}
+	return listenPort(c.Server.WebListen, ports.Web.Port)
+}
+
+// PublicAPIPort is the port the household's devices and machines reach the API at: [server]
+// public_api_port when set, else listen's.
+func (c Config) PublicAPIPort() int {
+	if c.Server.PublicAPIPort > 0 {
+		return c.Server.PublicAPIPort
+	}
+	return listenPort(c.Server.Listen, ports.APIPublic.Port)
+}
+
+// PublicStreamPort is the port the household's devices reach live TV at: [server]
+// public_stream_port when set, else stream_addr's.
+func (c Config) PublicStreamPort() int {
+	if c.Server.PublicStreamPort > 0 {
+		return c.Server.PublicStreamPort
+	}
+	return listenPort(c.Server.StreamAddr, ports.StreamingPublic.Port)
+}
+
+// listenPort is bind addr's port, def when it names none.
+func listenPort(addr string, def int) int {
+	_, p, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil {
+		return def
+	}
+	n, err := strconv.Atoi(p)
+	if err != nil || n <= 0 || n > 65535 {
+		return def
+	}
+	return n
 }

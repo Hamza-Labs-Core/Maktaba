@@ -23,7 +23,7 @@ import summary  # noqa: E402
 MATRIX = cell.load_cells()
 # Every story whose cells and assertions the harness knows (README §7 phases); a new needs
 # value is a typo unless it is added here with its cell.
-KNOWN_NEEDS = {"59.01", "59.02", "59.03", "59.04", "59.05", "59.06", "59.07", "59.08", "59.09", "59.10", "59.11", "59.12", "59.13", "pg-stale-lock", "scan-grant-race", "plugin-cache-grant", "poster-queue"}
+KNOWN_NEEDS = {"59.01", "59.02", "59.03", "59.04", "59.05", "59.06", "59.07", "59.08", "59.09", "59.10", "59.11", "59.12", "59.13", "pg-stale-lock", "scan-grant-race", "plugin-cache-grant", "poster-queue", "custom-ports"}
 # The phase-1 cells story 59.15 lists (README §9): each must be in the matrix
 PHASE_ONE = {"uid-1000", "uid-568", "uid-unraid", "uid-dsm", "media-ro", "media-none", "media-foreign",
              "mem-4g", "mem-6g", "no-landlock-enosys", "no-landlock-eperm"}
@@ -167,6 +167,29 @@ class Networking(unittest.TestCase):
         self.assertIn("nascell-n-dbus:/run/dbus", self.mk({"avahi": "dbus"}).shape())
         self.assertNotIn("nascell-n-dbus:/run/dbus", self.mk({"avahi": "sibling"}).shape())
         self.assertEqual(self.mk({"avahi": "sibling"}).network(), ["--network", "host"])
+
+    def test_custom_ports_cells(self) -> None:
+        """59.08: a cell that sets its ports reaches the web app on its own; a bridge that
+        publishes other ports names them to the container; the defaults are as before."""
+        m = {c["name"]: c for c in cell.load_cells()["cells"]}
+        c = self.mk({k: v for k, v in m["custom-ports"].items() if k != "name"})
+        self.assertEqual(c.web_port, 18088)
+        self.assertEqual(c.network(), ["--network", "host"])
+        self.assertIn("MAKTABA_WEB_PORT=18088", c.shape())
+        b = self.mk({k: v for k, v in m["bridge-published-ports"].items() if k != "name"})
+        self.assertEqual(b.web_port, 19088)
+        net = b.network()
+        for pair in ("19088:8088", "19080:8080", "19081:8081"):
+            self.assertIn(pair, net)
+        shape = b.shape()
+        for env in ("MAKTABA_PUBLIC_WEB_PORT=19088", "MAKTABA_PUBLIC_API_PORT=19080", "MAKTABA_PUBLIC_STREAM_PORT=19081"):
+            self.assertIn(env, shape)
+        plain = self.mk({"network": "bridge"})
+        self.assertEqual(plain.web_port, 8088)
+        self.assertFalse(any("MAKTABA_PUBLIC" in a for a in plain.shape()))
+        self.assertEqual(self.mk({}).web_port, 8088)
+        taken = m["port-taken"]
+        self.assertEqual(str(taken["env"]["MAKTABA_WEB_PORT"]), str(taken["hold_port"]))
 
     def test_the_bridge_cell_publishes_its_ports_but_not_postgres(self) -> None:
         c = self.mk({"network": "bridge"})
@@ -435,6 +458,22 @@ class TrueNASShape(unittest.TestCase):
         s["ports"].append({"target": 54329})
         with self.assertRaisesRegex(AssertionError, "Postgres"):
             self.check(c, v)
+
+        # story 59.08: the published ports are the ones Maktaba hands out
+        v = dict(self.values, network={"host_network": False, "host_ip": "192.168.1.20",
+                                       "web_port": {"bind_mode": "published", "port_number": 30088},
+                                       "api_port": {"bind_mode": "published", "port_number": 30080},
+                                       "live_port": {"bind_mode": "published", "port_number": 30081}})
+        c = self.compose()
+        s = c["services"]["maktaba"]
+        s.pop("network_mode")
+        s["ports"] = [{"target": t, "published": str(30000 + t % 1000)} for t in (8088, 8080, 8081)]
+        s["environment"].update(MAKTABA_HOST_IP="192.168.1.20", MAKTABA_PUBLIC_WEB_PORT="30088",
+                                MAKTABA_PUBLIC_API_PORT="30080")
+        with self.assertRaisesRegex(AssertionError, "MAKTABA_PUBLIC_STREAM_PORT"):
+            self.check(c, v)
+        s["environment"]["MAKTABA_PUBLIC_STREAM_PORT"] = "30081"
+        self.assertIn("bridge", self.check(c, v))
 
         v = dict(self.values, storage={"data": {"type": "host_path"}, "media": []})
         c = self.compose()

@@ -157,11 +157,16 @@ describe("resolveMenuAction", () => {
         "new-private",
         "open-docs",
         "big-screen",
+        "big-screen-leave",
         "report-problem",
         "media-play",
         "media-pause",
       ].sort()
     );
+  });
+
+  it("Leave Big Screen is its own action", () => {
+    expect(resolveMenuAction("big-screen-leave")).toEqual({ kind: "big-screen-leave" });
   });
 
   it("Report a Problem opens the web app's form (Epic 53 story 53.15)", () => {

@@ -2857,7 +2857,8 @@
       ],
       "related": [
         "epic-59-nas",
-        "ep-get-ws"
+        "ep-get-ws",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/59-nas/story-59-08-networking.md",
@@ -2865,7 +2866,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /ws"
+        "GET /ws",
+        "GET /home"
       ],
       "db_tables": [],
       "metadata": {

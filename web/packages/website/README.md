@@ -38,7 +38,7 @@ Worker, which:
 
 A page source in `src/pages/` is the page's `<main>` content after a leading comment
 (`title:`, `description:`, optionally `meta:`, and `main:`, a class for `<main>`).
-`scripts/shell.mjs` wraps it in the document and the shell of story 60.01 part A (the spec and
+`scripts/shell.mjs` wraps it in the document and the shell of story 60.01 (part B's; the spec and
 mockups are `design/`): the header with the nav, the phone menu and the language switch to its
 twin, the language hint (§6.5), the footer and the skip link. The install guides go in the same
 header and footer (`inShell`), and lose each "Screenshot to come" figure whose image does not
@@ -54,8 +54,14 @@ face preloaded). Download goes to `/download/` once story 60.11 builds it, until
 latest release; a feature links its help topic (`FEATURES`), once its page is built. Its one
 script, `src/home.ts`, runs in the head: it names the visitor's system on `<html>` (the button
 reads "Download for Mac" from its first frame) and adds it to each `/download/` link
-(`/download/#mac`). The other pages keep part A's shell until their part B layouts; part A's footer and 404 send
-Help to `/help/`.
+(`/download/#mac`). Every page the site builds is now in part B's shell, but the install guides
+(`inShell`, part A's until their own part B layout): with Epic 60's Phase 3 the problem pages and
+their index, the legal pages, the install chooser and the 404 moved onto it, and the help pages
+are built in it (60.12), in the layouts of
+the approved `problem-p3`, `problems-p3` and `legal-p3` mockups (the chooser and the 404, which
+have no part B mockup, keep part A's layout in part B's shell; `design/review-phase-3.md`). Each
+has part B's social card (`cards.mjs`, `cardSub`). The legal page's contents list marks the
+section in view with CSS alone (`scroll-target-group`, `src/part-b.css`).
 
 The problem pages are generated from the registry the API sends from, `shared/api/problems.json`
 (`scripts/problems.mjs`): one page per entry in each language, and the index, `/problems/`, grouped
@@ -128,8 +134,8 @@ npm run dev                # wrangler dev on http://localhost:8787, no canonical
 ```
 
 `scripts/build.mjs` runs, in order: the install build, the generated families (`FAMILIES`:
-help 60.12, problems 60.06, download 60.11; a family's `paths` count as built for the ones before
-it), the hand-made pages, the copied files, and
+help 60.12, download 60.11, then problems 60.06, whose part B nav links the built download page;
+a family's declared `paths` count as built for the families before it), the hand-made pages, the copied files, and
 the checks (every page has its twin in the other language; an Arabic page is Arabic, by
 maktaba.dev's Latin-share check), and writes the link check's manifest (60.08).
 

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -196,7 +197,7 @@ func (ln *launcher) lastLines() []string {
 func (ln *launcher) servePage(rec StartFailed) (stop func()) {
 	addr := ln.cfg.PageAddr
 	if addr == "" {
-		addr = "127.0.0.1:8088"
+		addr = net.JoinHostPort("127.0.0.1", pageWebPort())
 	}
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -299,4 +300,14 @@ func cantStartHTML(lang string, rec StartFailed, token, note string) string {
 	}
 	fmt.Fprintf(&b, ` <a href="/launcher/diagnostics">%s</a></body></html>`, e(w["diagnostics"]))
 	return b.String()
+}
+
+// pageWebPort is the web port the can't-start page takes: MAKTABA_WEB_PORT when the
+// container sets it (Epic 59 story 59.08: a port another app on the NAS holds), else 8088.
+func pageWebPort() string {
+	v := strings.TrimSpace(os.Getenv("MAKTABA_WEB_PORT"))
+	if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 65535 {
+		return strconv.Itoa(n)
+	}
+	return "8088"
 }

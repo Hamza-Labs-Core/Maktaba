@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"runtime"
@@ -21,6 +22,14 @@ var portProbe = config.DefaultPortProbe
 // and, when save is set and something moved, writes cfg to path.
 func reconcilePorts(cfg *config.Config, path string, o config.PortOptions, out io.Writer, save bool) ([]config.PortChange, error) {
 	changes, err := cfg.ReconcilePorts(portProbe(), o)
+	var pinned *config.ErrPortPinned
+	if errors.As(err, &pinned) {
+		// a port set in the environment is not moved: say which, who holds it and where to
+		// change it, in both languages (Epic 59 story 59.08)
+		pinned.Holder = portHolder(pinned.Port)
+		en, ar := portSettingTakenText(pinned.Port, pinned.Holder, pinned.Setting())
+		fmt.Fprintf(out, "  port: %s\n  port: %s\n", en, ar)
+	}
 	for i, ch := range changes {
 		if ch.Taken {
 			changes[i].Holder = portHolder(ch.OldPort)
@@ -124,4 +133,21 @@ func portMovesOf(changes []config.PortChange) []portMove {
 		out = append(out, portMove{Key: ch.Key, Old: ch.OldPort, New: ch.NewPort, Taken: ch.Taken, Holder: ch.Holder})
 	}
 	return out
+}
+
+// portSettingTakenCode is the setup note (setup.check.note.<code>) of a port the household
+// set that another program holds: with its holder's name, or "another program".
+func portSettingTakenCode(holder string) string {
+	if holder != "" {
+		return "port_setting_taken"
+	}
+	return "port_setting_taken_other"
+}
+
+// portSettingTakenText is a set port another program holds, and the setting that changes
+// it, in English and Arabic.
+func portSettingTakenText(port int, holder, setting string) (en, ar string) {
+	t := webSetupTexts["setup.check.note."+portSettingTakenCode(holder)]
+	r := strings.NewReplacer("{port}", strconv.Itoa(port), "{holder}", holder, "{setting}", setting)
+	return r.Replace(t[0]), r.Replace(t[1])
 }

@@ -383,6 +383,21 @@ describe("Back and leaving", () => {
     expect(screen.getByText("desk page")).toBeInTheDocument();
   });
 
+  it("Leave big screen in the top row leaves at once, from any screen, by click or the keyboard", async () => {
+    sessionStorage.setItem("mkt:big:return", "/library");
+    renderBig("/big/libraries");
+    await screen.findByTestId("big-libraries");
+    const leave = screen.getByTestId("big-leave");
+    expect(leave).toHaveTextContent(E["big.exit.leave"]!);
+    // it is one of the things the arrows can land on
+    expect(leave).toHaveAttribute("data-bs-focus", "tab:leave");
+    fireEvent.click(leave);
+    await waitFor(() => expect(where).toBe("/library"));
+    expect(screen.getByText("desk page")).toBeInTheDocument();
+    // no question on the way: the button says what it does
+    expect(screen.queryByTestId("big-exit")).toBeNull();
+  });
+
   it("Back on a top screen opened directly goes Home, not out", async () => {
     renderBig("/big/libraries");
     await screen.findByTestId("big-libraries");
@@ -402,6 +417,8 @@ describe("Back and leaving", () => {
       E["big.tab.search"],
       E["big.tab.live"],
       E["big.tab.settings"],
+      // the way out is the row's last item
+      E["big.exit.leave"],
     ]);
     tabs.forEach((t, i) => {
       t.getBoundingClientRect = () =>
@@ -424,6 +441,10 @@ describe("Back and leaving", () => {
     expect(document.activeElement).toBe(tabs[2]);
     key("ArrowLeft");
     expect(document.activeElement).toBe(tabs[1]);
+    // the arrows reach Leave big screen after Settings
+    act(() => tabs[5]!.focus());
+    key("ArrowRight");
+    expect(document.activeElement).toBe(screen.getByTestId("big-leave"));
     fireEvent.click(tabs[1]!);
     await screen.findByTestId("big-libraries");
     expect(where).toBe("/big/libraries");

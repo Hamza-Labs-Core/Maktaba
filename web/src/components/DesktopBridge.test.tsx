@@ -110,4 +110,25 @@ describe("DesktopBridge", () => {
     await waitFor(() => expect(onPicker).toHaveBeenCalledTimes(1));
     window.removeEventListener("maktaba:open-server-picker", onPicker);
   });
+  it("Leave Big Screen goes back to where the user was, and does nothing outside big screen", async () => {
+    let dispatch!: (a: MenuAction) => void;
+    mocks.registerMenuRouter.mockImplementation(async (cb: (a: MenuAction) => void) => {
+      dispatch = cb;
+      return () => {};
+    });
+    sessionStorage.setItem("mkt:big:return", "/series");
+
+    renderBridge("/big/libraries");
+    await waitFor(() => expect(dispatch).toBeDefined());
+    dispatch({ kind: "big-screen-leave" });
+    await waitFor(() =>
+      expect(screen.getByTestId("location-display")).toHaveTextContent("/series")
+    );
+
+    // not in big screen: the page stays where it is
+    dispatch({ kind: "big-screen-leave" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.getByTestId("location-display")).toHaveTextContent("/series");
+    sessionStorage.clear();
+  });
 });

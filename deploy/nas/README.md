@@ -12,7 +12,8 @@ its data on local storage and each media folder at its own path.
 
 **The base.** The published compose file's optional settings are commented blocks headed
 `# [name]`: `memory` (`mem_limit` by tier: 4g Light, 6g Standard, 16g Strong), `bridge` (the
-ports and `MAKTABA_HOST_IP`, and no `network_mode: host`), `dbus` (the host's Avahi), `dri`
+ports, `MAKTABA_HOST_IP` and the published ports' `MAKTABA_PUBLIC_*_PORT`, and no
+`network_mode: host`), `ports` (Maktaba's own ports, `MAKTABA_WEB_PORT` and the others, 59.08), `dbus` (the host's Avahi), `dri`
 (`/dev/dri` and the render group) and `nvidia`. Turning a block on removes the `# ` in front of
 its settings; release rewrites `:latest` to the release's tag (`maktaba-docker-compose.yml`).
 The install page (`web/packages/install`) and the checks (`tests/nas/install_files.py`) use the
@@ -21,8 +22,8 @@ same rule.
 **QNAP.** Container Station → Applications → Create, paste the file. The data folder is a share
 folder such as `/share/Container/maktaba`; the user is one made for Maktaba (`id <user>` over
 SSH gives its uid and gid). QTS keeps port 8080 for its own UI: Maktaba moves its cluster port
-at the start and setup shows the new one (59.08), kept in `server.toml`. Untested on a QNAP
-device so far (the device checklist covers it when one is available).
+at the start and setup shows the new one (59.08), kept in `server.toml`; to choose it instead,
+set `MAKTABA_API_PORT` in the file's `[ports]` block. Untested on a QNAP device so far (the device checklist covers it when one is available).
 
 **UGREEN (UGOS Pro).** Docker → Project → Create, with the project folder under
 `/volume1/docker/maktaba` and the file pasted. An N100 model (DXP4800 Plus) has VA-API: turn

@@ -15,7 +15,7 @@ It has its own screens, along the top: **Home**, **Libraries**, **Series**, **Se
 - Click **Big screen** at the top of any page, or press `g` then `b`.
 - In the Mac, Windows and Linux apps: choose **View → Big Screen** (`Cmd+Shift+B` on a Mac, `Ctrl+Shift+B` on Windows and Linux). The window goes full screen.
 
-To leave, go to **Settings → Leave big screen**, or press Back on Home and choose **Leave big screen**. You go back to the page you came from, and the window leaves full screen.
+To leave, choose **Leave big screen** at the top of any big screen page. In the Mac, Windows and Linux apps you can also choose **View → Leave Big Screen**, or press `Cmd+Shift+B` (`Ctrl+Shift+B` on Windows and Linux) again. **Settings → Leave big screen** and Back on Home still work. You go back to the page you came from, and the window leaves full screen.
 
 ### Start the app in big screen {#start-in-big-screen}
 

@@ -6,7 +6,8 @@
 // registry becomes a structured document per page (problemDoc, indexDoc), and one function
 // renders each (renderProblem, renderIndex), in 60.01 part A's problem and problem-index
 // layouts (the same sections and headings, the "Details for developers" block, the shell's
-// icons), inside the shell (shell.mjs).
+// icons), inside part B's shell (shell.mjs, `variant: "b"`; Epic 60 Phase 3, the approved
+// problem-p3 and problems-p3 mockups).
 //
 // The build fails, naming the entry and the field, when an entry lacks any text in either
 // language, names an area or audience this file has no words for, or has a malformed slug or
@@ -19,7 +20,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { esc, GITHUB, ICONS, inLang, page, TROUBLESHOOTING } from "./shell.mjs";
+import { bLinks, esc, GITHUB, ICONS, inLang, page, TROUBLESHOOTING } from "./shell.mjs";
 
 export const REGISTRY = "shared/api/problems.json";
 export const BASE = "https://maktaba.tv/problems/";
@@ -412,7 +413,10 @@ export const PROBLEMS = {
       resolves,
       script: script("problems-filter.ts"),
     });
-    for (const p of pages) write(p.out, page(p));
+    // part B's shell: its nav links /download/ and /help/ once built (download.mjs and help.mjs
+    // run before this family, build.mjs FAMILIES)
+    const links = bLinks(resolves);
+    for (const p of pages) write(p.out, page({ ...p, variant: "b", links }));
     return pages.length;
   },
 };

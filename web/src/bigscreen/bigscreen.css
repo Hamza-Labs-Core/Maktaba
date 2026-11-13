@@ -113,6 +113,10 @@
 .bs-tab[aria-current="page"]:focus {
   color: var(--bs-on-gold);
 }
+.bs-leave {
+  border: 1px solid var(--bs-muted);
+  white-space: nowrap;
+}
 .bs-clock {
   font-variant-numeric: tabular-nums;
   color: var(--bs-muted);
