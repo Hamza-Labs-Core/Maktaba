@@ -2022,7 +2022,7 @@ asyncio.run(main())
 
     def assert_live_tv_port(self) -> str:
         """Live TV started on the port set in the container: the streaming role runs, the TV
-        tuner (livetv.hdhomerun, off by default) is turned on as Settings -> Components does,
+        tuner (off on a new home) is turned on as the Live TV page does (PATCH /api/tv/hdhr),
         and it answers there naming that port in its own address."""
         port = int(self.spec["ports"]["stream"])
         assert self.api is not None
@@ -2030,17 +2030,23 @@ asyncio.run(main())
         running = {p.get("role") for p in (d or {}).get("processes", []) if p.get("state") == "running"}
         if "streaming" not in running:
             raise AssertionError(f"streaming not running: {running}")
-        s, d = self.api.call("POST", "/api/components/apply",
-                             {"changes": [{"id": "livetv.hdhomerun", "want": "enabled"}], "with_conflicts": True})
+        # the Live TV page's tuner switch: the device row and the livetv.hdhomerun component
+        s, d = self.api.call("PATCH", "/api/tv/hdhr", {"enabled": True})
         if s != 200:
             raise AssertionError(f"turning the tuner on: {s} {d}")
         tuner = API(f"http://127.0.0.1:{port}")
 
+        seen: list[str] = []
+
         def discover() -> Any:
             s, d = tuner.get("/discover.json", timeout=10)
+            seen[:] = [f"{s} {str(d)[:200]}"]
             return d if s == 200 and isinstance(d, dict) else None
 
-        d = wait(f"the tuner on {port}", discover, 5 * 60, every=5)
+        try:
+            d = wait(f"the tuner on {port}", discover, 5 * 60, every=5)
+        except AssertionError as e:
+            raise AssertionError(f"{e}; its last answer: {seen[0] if seen else 'none'}") from None
         base = str(d.get("BaseURL", ""))
         if not base.endswith(f":{port}"):
             raise AssertionError(f"the tuner's BaseURL {base!r} does not name port {port}")
