@@ -42,7 +42,7 @@ def _fake(text_of: dict[str, str], seconds: float = 30.0) -> benchmark.Transcrib
 
 def test_a_measure_reports_speed_and_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     clock = iter([0.0, 0.0, 10.0, 10.0, 70.0, 70.0])  # en takes 10 s, ar 60 s
-    monkeypatch.setattr("maktaba_pipeline.stt.benchmark.time.monotonic", lambda: next(clock))
+    monkeypatch.setattr(benchmark, "_now", lambda: next(clock))
     monkeypatch.setattr(benchmark, "_cpu_now", lambda: (0.0, 0.0, 4))
     ref = {lang: (benchmark.ASSETS / f"{lang}.txt").read_text("utf-8") for lang in benchmark.CLIPS}
     r = benchmark.measure(_fake(ref), model=engine.SIZES["base"], threads=2)
@@ -61,7 +61,7 @@ def test_a_busy_machine_is_measured_again_then_said(monkeypatch: pytest.MonkeyPa
         t[0] += 1.0
         return t[0]
 
-    monkeypatch.setattr("maktaba_pipeline.stt.benchmark.time.monotonic", tick)
+    monkeypatch.setattr(benchmark, "_now", tick)
     # the rest of the system takes 3.6 of 4 CPUs (90%) each run
     busy = iter([(0.0, 0.0, 4), (1000.0, 0.0, 4), (0.0, 0.0, 4), (1000.0, 0.0, 4)])
     monkeypatch.setattr(benchmark, "_cpu_now", lambda: next(busy))

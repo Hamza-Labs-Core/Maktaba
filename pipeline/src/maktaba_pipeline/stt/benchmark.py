@@ -130,6 +130,12 @@ class Result:
 Transcribe = Callable[[Path, str], tuple[str, float]]
 
 
+def _now() -> float:
+    """The clock a measure times with. Its own function so a test can stand in for it
+    without replacing ``time.monotonic`` for every thread of the process."""
+    return time.monotonic()
+
+
 def _cpu_now() -> tuple[float, float, int]:
     """(the system's busy CPU seconds, this process's CPU seconds, the CPUs)."""
     import psutil
@@ -144,12 +150,12 @@ def _run(clips: Sequence[str], transcribe: Transcribe, assets: Path) -> tuple[li
     """Each clip transcribed once, and the share of the CPU the rest of the system took."""
     out: list[Clip] = []
     sys0, me0, cpus = _cpu_now()
-    w0 = time.monotonic()
+    w0 = _now()
     for lang in clips:
         ref = (assets / f"{lang}.txt").read_text(encoding="utf-8")
-        t0 = time.monotonic()
+        t0 = _now()
         text, audio = transcribe(assets / f"{lang}.ogg", lang)
-        wall = max(time.monotonic() - t0, 1e-6)
+        wall = max(_now() - t0, 1e-6)
         out.append(
             Clip(
                 lang=lang,
@@ -160,7 +166,7 @@ def _run(clips: Sequence[str], transcribe: Transcribe, assets: Path) -> tuple[li
                 text=text.strip(),
             )
         )
-    wall = max(time.monotonic() - w0, 1e-6)
+    wall = max(_now() - w0, 1e-6)
     sys1, me1, _ = _cpu_now()
     others = max(0.0, (sys1 - sys0) - (me1 - me0)) / (wall * cpus)
     return out, others
