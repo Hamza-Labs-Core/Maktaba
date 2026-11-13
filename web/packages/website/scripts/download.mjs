@@ -33,7 +33,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { codeBlock, esc, GITHUB, ICONS, inLang, ORIGIN, page, shellAssets } from "./shell.mjs";
+import { bLinks, codeBlock, esc, GITHUB, ICONS, inLang, ORIGIN, page } from "./shell.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.resolve(HERE, "..");
@@ -581,24 +581,17 @@ const hashed = (name, ext, content) =>
 /** The page's own stylesheet: part B's components (design/site.css), then what the built page
  * adds (src/download.css). Loaded after the shell's, on this page only, as design/site.css says. */
 export function styleFile() {
-  const css = [
-    fs.readFileSync(path.join(PKG, "design/site.css"), "utf8"),
-    fs.readFileSync(path.join(PKG, "src/download.css"), "utf8"),
-  ].join("\n");
+  // part B's stylesheet (design/site.css, src/part-b.css) comes with part B's shell; this page
+  // adds only its own
+  const css = fs.readFileSync(path.join(PKG, "src/download.css"), "utf8");
   return { file: hashed("download", "css", css), content: css };
 }
 
 /** The pages, { lang, path, out, title, description, body, head, meta }, for page(). */
 export function downloadPages(data, ks, { resolves = () => false, styles, script, manifest }) {
-  const { display } = shellAssets();
-  const preload = (lang) =>
-    // shellAssets().display: the display face's files by script (the home page's too)
-    (lang === "ar" ? ["arabic", "latin"] : ["latin"])
-      .map((f) => {
-        if (!display[f]) throw new Error(`design/fonts.css: no display face for ${f}`);
-        return `<link rel="preload" href="${display[f]}" as="font" type="font/woff2" crossorigin />`;
-      })
-      .join("\n  ");
+  // part B's shell (as the home page): its header and footer, the wordmark, the display face's
+  // preloads and part B's stylesheet; Download and Help go to their pages once built (bLinks)
+  const links = bLinks(resolves);
   const uaCards = ks
     .filter((k) => k.ua)
     .map((k) => k.id)
@@ -611,9 +604,11 @@ export function downloadPages(data, ks, { resolves = () => false, styles, script
       out: `${lang === "ar" ? "ar/" : ""}download/index.html`,
       title: `${plain(word(c, "meta.title", lang))} · ${lang === "ar" ? "مكتبة" : "Maktaba"}`,
       description: plain(word(c, "meta.description", lang)),
+      social: plain(word(c, "social.title", lang)),
+      variant: "b",
+      links,
       meta: `<meta name="maktaba-release" content="${data.tag}" />`,
       head: [
-        preload(lang),
         `<script src="${script}" data-cards="${uaCards}"></script>`,
         `<link rel="stylesheet" href="${styles}" />`,
         softwareJsonLd(data, ks, lang),
