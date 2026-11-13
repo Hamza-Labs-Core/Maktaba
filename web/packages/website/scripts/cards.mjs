@@ -226,6 +226,10 @@ export const CARD_SUB = {
     en: "Free and open source, in Arabic and English",
     ar: "برنامج حرّ مفتوح المصدر، بالعربية والإنجليزية",
   },
+  "/download/": {
+    en: "Mac · Windows · Linux · NAS",
+    ar: "Mac وWindows وLinux وخوادم التخزين",
+  },
 };
 
 /** The pages whose card is part B's. */

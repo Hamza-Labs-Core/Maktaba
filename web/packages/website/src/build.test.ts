@@ -104,6 +104,17 @@ describe("the built site (dist/)", () => {
     expect(fs.existsSync(path.join(DIST, "index.html")), "run `npm run build` first").toBe(true);
   });
 
+  it("the download page is in part B's shell: its nav's Download is itself, marked current", () => {
+    for (const rel of ["download/index.html", "ar/download/index.html"]) {
+      const html = read(rel);
+      const nav = html.slice(html.indexOf('<nav class="nav"'), html.indexOf("</nav>"));
+      const own = rel.startsWith("ar/") ? "/ar/download/" : "/download/";
+      expect(nav, rel).toContain(`<a href="${own}" aria-current="page">`);
+      expect(nav, rel).not.toContain("releases/latest");
+      expect(html, rel).toMatch(/class="wordmark wm-32"/);
+    }
+  });
+
   it("every product screenshot is in its page's language, but the two-language pair and #1198's", () => {
     // The visual references mask the apps' screenshots, so this is what checks a page shows
     // its own language's screens. Allowed in the other language: the pair that shows both side
