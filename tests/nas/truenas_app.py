@@ -318,6 +318,13 @@ def check_shape(compose: dict[str, Any], values: dict[str, Any]) -> str:
             errs.append("the bundled Postgres's port published on a bridge")
         if net.get("host_ip") and env.get("MAKTABA_HOST_IP") != net["host_ip"]:
             errs.append(f"MAKTABA_HOST_IP {env.get('MAKTABA_HOST_IP')!r}, not {net['host_ip']}")
+        # story 59.08: the published ports are the ones Maktaba hands out
+        for key, var in (("web_port", "MAKTABA_PUBLIC_WEB_PORT"), ("api_port", "MAKTABA_PUBLIC_API_PORT"),
+                         ("live_port", "MAKTABA_PUBLIC_STREAM_PORT")):
+            p = net.get(key) or {}
+            if p.get("bind_mode", "published") == "published" and p.get("port_number") and \
+                    str(env.get(var)) != str(p["port_number"]):
+                errs.append(f"{var} {env.get(var)!r}, not the published {p['port_number']}")
 
     vols = s.get("volumes") or []
     by_target = {v.get("target"): v for v in vols}

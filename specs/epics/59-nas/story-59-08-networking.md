@@ -29,6 +29,45 @@ reverse proxy, uploads, WebSocket and the HLS paths need the right settings.
   with the new port and the holder's name. The web port (8088) is the one a household types, so
   when it moves, the container log prints the new address in both languages too.
 
+**Ports the household chooses.** Other apps on a NAS (Plex, another package, the NAS's own UI)
+may already use Maktaba's ports, so each one has a setting in the container's environment, the
+place a compose file or a NAS template sets things, beside its `server.toml` key:
+
+| Port | Variable | `server.toml` |
+|---|---|---|
+| 8088 web app | `MAKTABA_WEB_PORT` | `[server] web_listen` |
+| 8080 API (apps, the home's machines) | `MAKTABA_API_PORT` | `[server] listen` |
+| 8081 live TV | `MAKTABA_STREAM_PORT` | `[server] stream_addr` |
+| 54329 Postgres (the home's machines) | `MAKTABA_POSTGRES_PORT` | `[postgres] port` |
+
+- Every load of the config applies the variables over `server.toml` (`config/portenv.go`), so
+  every program that reads it uses the same port: serve and its roles' environment, setup, the
+  health check, the internal callers (each builds its address from the config), mDNS, the
+  launcher's can't-start page (`MAKTABA_WEB_PORT`). A variable is an override, never written to
+  `server.toml`: a save keeps the file's own value, so removing the variable goes back to it.
+  An empty variable is not set (Unraid passes a template's empty field as `""`); a value that
+  is not a port (1 to 65535) stops the start, naming the variable in both languages.
+- **Moved or not.** The automatic move stays the behaviour for a default port: one another
+  program holds at start moves into 8780–8790 and setup, the log and Settings → This machine
+  show it (above). A port a variable sets is never moved, since the household chose it and a
+  published port or a firewall rule may name it: setup's check and serve's start stop on it with
+  `setup.check.note.port_setting_taken` (the holder named, or `_other`), naming the port and the
+  variable, in the log in both languages.
+- **The database port.** A bundled Postgres port another program holds (no `postmaster.pid` of
+  this home's, which the supervisor's stale-lock step handles) is said in both languages,
+  naming `MAKTABA_POSTGRES_PORT` and `[postgres] port`; in a container, or when the variable set
+  the port, the start stops there. Elsewhere the supervisor holds the role until the port is
+  free (`port_taken`), as before. The machines that join are told the port the bundle runs on
+  (`ClusterDB.Port` in their database URL).
+- **Settings → Storage & discovery** shows an address whose port a variable sets as set there
+  (`storage.field.pinned`), its field locked; a change to it is refused.
+- **A home's machines** learn the home's live TV port from `GET /api/discovery/home`'s
+  `stream_port` when they start, so the home's TV front door is found on a port that is not 8081
+  (`MAKTABA_HOME_STREAM_URL` still wins).
+- **Fixed ports, not settings:** the optional browser HTTPS port (8443, off unless the cluster
+  rule turns it on), direct access (8444), the TV slot ports (8791–8793) and the intra-host role
+  ports, which `server.toml`'s `[server]` keys already move.
+
 **Postgres stays private.**
 - On a NAS platform the bundled Postgres listens on loopback until a node pairs. Pairing switches
   it to LAN with TLS, as today, and back when the last node leaves.
@@ -61,6 +100,14 @@ and a zeroconf responder of its own under `<host>-maktaba` when Avahi is not rea
   set it. Otherwise setup asks for it.
 - The bridge variants of the compose files publish 8088, 8080 and 8081, but never 54329, since a
   bridge home has no nodes.
+- **A published port that differs from the container's** ("19088:8088", TrueNAS's 30088): the
+  server does not see it, so the household names it with `MAKTABA_PUBLIC_WEB_PORT`,
+  `MAKTABA_PUBLIC_API_PORT` and `MAKTABA_PUBLIC_STREAM_PORT` (`[server] public_web_port`,
+  `public_api_port`, `public_stream_port`). Every address Maktaba hands out uses them: setup's
+  text, the Machines page and the cluster sign-in (`PublicWebURL`, `PublicAPIURL`), mDNS's
+  advertised ports, the TV tuner's URLs and the discovery answer (`PublicStreamURL`).
+  `web_public_url` and `public_url`, when set, still win. The TrueNAS app sets them from its
+  published port numbers; the compose file's bridge block carries them beside its `ports:`.
 
 **HTTPS.**
 - Maktaba's per-home HTTPS name (story 50.15) is the default on a NAS, as elsewhere. It needs
@@ -87,6 +134,14 @@ and a zeroconf responder of its own under `<host>-maktaba` when Avahi is not rea
   shows the new port and the holder.
 - **Given** bridge networking, **then** mDNS is off, setup shows the bridge text, and an app
   connects by address.
+- **Given** `MAKTABA_WEB_PORT`, `MAKTABA_API_PORT`, `MAKTABA_STREAM_PORT` and
+  `MAKTABA_POSTGRES_PORT` set, **then** the web app loads, the API and live TV answer, and
+  Postgres listens on those ports, nothing on the defaults, and the addresses handed out name
+  them.
+- **Given** a port set by a variable and held by another program, **then** it is not moved and
+  the start stops with a message in English and Arabic naming the port and the variable.
+- **Given** a bridge that publishes other ports and names them (`MAKTABA_PUBLIC_*_PORT`),
+  **then** setup and the server hand out the published address, and an app connects there.
 - **Given** a reverse proxy at a trusted address, **then** client IPs in logs are the real
   clients'. From an untrusted address, the header is ignored.
 
@@ -102,6 +157,13 @@ and a zeroconf responder of its own under `<host>-maktaba` when Avahi is not rea
 | T05 | Go handler | `X-Forwarded-For` from trusted / untrusted | request | used / ignored |
 | T06 | Go unit | NAS platform, no nodes | pgbundle | listens on loopback |
 | T07 | Device checklist | DSM, TrueNAS, Unraid | apps discover home; NAS names still resolve | pass |
+| T09 | Go unit | port variables set, empty, bad | load, save | applied over the file, never saved; a bad one named in both languages (`portenv_test.go`) |
+| T10 | Go unit | a variable's port held | setup check, serve | not moved; `port_setting_taken` in both languages (`ports_pinned_test.go`, `serve_network_test.go`) |
+| T11 | Go unit | the bundled Postgres's port held | serve | both languages; stops in a container (`TestPostgresPortCheck`) |
+| T12 | CI `custom-ports` cell | every port set | start | web app, API, live TV and Postgres on them, nothing on the defaults |
+| T13 | CI `bridge-published-ports` cell | 19088:8088 and the others published and named | setup, start | the published address handed out and answering |
+| T14 | CI `port-taken` cell | `MAKTABA_WEB_PORT` held by another program | start | the log names the port and the variable in both languages |
+| T15 | Go handler, Go unit | a home's live TV on 18081 | a node starts | `stream_port` in `/api/discovery/home`; the node's TV front door on 18081 |
 
 ## Strings
 
@@ -110,6 +172,9 @@ and a zeroconf responder of its own under `<host>-maktaba` when Avahi is not rea
 | `setup.check.note.network_bridge` | This container is on a bridge network, so apps can't find Maktaba by themselves. They can still connect by its address ({url}), by its HTTPS name, or with a code from Maktaba Cloud. | هذه الحاوية على شبكة جسرية، لذا لا تستطيع التطبيقات العثور على Maktaba بنفسها. لكنها تستطيع الاتصال به عبر عنوانه ({url})، أو اسمه الآمن HTTPS، أو برمز من Maktaba Cloud. |
 | `setup.check.note.port_moved` | Port {old} is used by {holder} on this machine, so Maktaba uses port {new} instead. | المنفذ {old} يستخدمه {holder} على هذا الجهاز، لذا تستخدم مكتبة المنفذ {new} بدلًا منه. |
 | `setup.check.note.port_moved_other` | Port {old} is used by another program on this machine, so Maktaba uses port {new} instead. | المنفذ {old} يستخدمه برنامج آخر على هذا الجهاز، لذا تستخدم مكتبة المنفذ {new} بدلًا منه. |
+| `setup.check.note.port_setting_taken` | Port {port} is used by {holder} on this machine, so Maktaba cannot use it. Set {setting} to a free port, then start Maktaba again. | المنفذ {port} يستخدمه {holder} على هذا الجهاز، فلا تستطيع مكتبة استخدامه. اضبط {setting} على منفذ متاح، ثم شغّل مكتبة من جديد. |
+| `setup.check.note.port_setting_taken_other` | Port {port} is used by another program on this machine, so Maktaba cannot use it. Set {setting} to a free port, then start Maktaba again. | المنفذ {port} يستخدمه برنامج آخر على هذا الجهاز، فلا تستطيع مكتبة استخدامه. اضبط {setting} على منفذ متاح، ثم شغّل مكتبة من جديد. |
+| `storage.field.pinned` | Set by {env} in the container's settings: change the port there. | يضبطه {env} في إعدادات الحاوية: غيّر المنفذ من هناك. |
 | `storage.field.trusted_proxies` | Trusted proxies: forwarded client addresses are believed only from these | الوكلاء الموثوقون: لا تُصدَّق عناوين العملاء المُمرَّرة إلا منهم |
 
 ## Edge cases
@@ -129,5 +194,7 @@ and a zeroconf responder of its own under `<host>-maktaba` when Avahi is not rea
 | `cmd/maktaba-server/ports.go`, `internal/supervisor/portcheck.go` | the moved-port notice with the holder's name |
 | `shared/` (trusted proxies helper), `api/`, `streaming/` | `[server] trusted_proxies` |
 | `cmd/maktaba-server/internal/pgbundle/` | loopback until a node pairs |
-| compose files and templates (59.09–59.11) | host network, the D-Bus mount as a commented option, bridge variant |
+| compose files and templates (59.09–59.11) | host network, the D-Bus mount as a commented option, bridge variant; the `[ports]` block (each port commented, with a line on why), the published ports in the bridge block, the Unraid template's port variables, the TrueNAS app's published ports |
+| `cmd/maktaba-server/internal/config/portenv.go`, `ports.go`, `serve_postgres.go`, `serve_config.go` | the port variables, the pinned port never moved, the database port check, Settings' locked field |
+| `api/internal/handlers/discovery/home.go`, `cmd/maktaba-server/serve_node.go` | `stream_port`, and a node learning it |
 | guides (59.14) | reverse proxy and firewall sections |

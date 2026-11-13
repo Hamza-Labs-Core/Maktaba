@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -53,6 +54,9 @@ func bundledPostgres(ctx context.Context, cfg *config.Config, prepare bool) (*pg
 		return nil, nil
 	}
 	if prepare {
+		if err := postgresPortCheck(b, *cfg, os.Stderr); err != nil {
+			return nil, err
+		}
 		if err := b.Prepare(ctx, os.Stderr); err != nil {
 			return nil, err
 		}
@@ -105,4 +109,35 @@ func warnOperatorPostgres(w io.Writer, cfg config.Config) {
 		"read every table through it, past what is published to that machine; only this home drops such a slot, within "+
 		"5 s, and only while its database user may end and drop it (pg_signal_backend, REPLICATION). Remove those "+
 		"plugins from that server before turning the rule on")
+}
+
+// pgPortFree reports whether the bundled Postgres's address can be bound (tests replace it).
+var pgPortFree = config.CanBind
+
+// postgresPortCheck (Epic 59 story 59.08): the bundled Postgres's port held by another
+// program, before anything starts on it. The log says so in both languages, naming the
+// holder and the setting that changes the port. In a container, or when MAKTABA_POSTGRES_PORT
+// set the port, the start stops there (the household chose the port, or nothing outside the
+// container's settings can change it); elsewhere the supervisor's own check holds the role
+// until the port is free (port_taken). A cluster with a postmaster.pid is left to the
+// supervisor too: an earlier Postgres of this home may still be exiting there, and the
+// stale-lock step ends it.
+func postgresPortCheck(b pgbundle.Bundle, cfg config.Config, out io.Writer) error {
+	if _, err := os.Stat(filepath.Join(b.Data, "postmaster.pid")); err == nil {
+		return nil
+	}
+	if pgPortFree(b.Addr()) {
+		return nil
+	}
+	setting := config.EnvPostgresPort
+	pinned := cfg.PinnedBy(config.PinPostgres) != ""
+	if !pinned {
+		setting += " / server.toml [postgres] port"
+	}
+	en, ar := portSettingTakenText(b.Port, portHolder(b.Port), setting)
+	fmt.Fprintf(out, "[postgres] %s\n[postgres] %s\n", en, ar)
+	if pinned || config.Container() != "" {
+		return errors.New(en + "\n" + ar)
+	}
+	return nil
 }

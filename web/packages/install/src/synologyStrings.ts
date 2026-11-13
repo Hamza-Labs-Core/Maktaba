@@ -107,7 +107,7 @@ export const SYN = {
     "trouble.memory":
       "Setup says there is not enough memory: Maktaba needs 3.5 GiB. Add memory if the model takes it, or use the NAS as storage for a Maktaba home on another computer.",
     "trouble.port":
-      "Another app on the NAS holds port 8088, 8080 or 8081: when it starts, Maktaba moves that port to a free one between 8780 and 8790. The container's log names the new port (if it was 8088, open http://<your NAS>:8780), and Settings → This machine shows what moved and which program holds the port.",
+      "Another app on the NAS holds port 8088, 8080 or 8081: when it starts, Maktaba moves that port to a free one between 8780 and 8790. The container's log names the new port (if it was 8088, open http://<your NAS>:8780), and Settings → This machine shows what moved and which program holds the port. To choose a port yourself (Plex already uses 32400, so this matters only when another package uses one of Maktaba's): Container Manager → Project → maktaba → Action → Stop, then YAML Configurations, remove the # in front of the port's line under [ports] (MAKTABA_WEB_PORT, MAKTABA_API_PORT, MAKTABA_STREAM_PORT or MAKTABA_POSTGRES_PORT), set a free port, Save, and Build the project again. A port set there is never moved: if another package holds it, the container stops and its log names the port and the line. Change the firewall rule to the new ports too.",
     "shot.guide-user": "The DSM user maktaba in User & Group, with no administrator rights",
     "shot.guide-uid": "The output of id maktaba, showing uid 1026 and group 100",
     "shot.guide-folder": "The docker/maktaba folder's permission: maktaba with Read/Write",
@@ -238,7 +238,7 @@ export const SYN = {
     "trouble.memory":
       "يقول الإعداد إن الذاكرة لا تكفي: يحتاج Maktaba إلى 3.5 غيغابايت. أضف ذاكرة إن كان الطراز يقبلها، أو استخدم الجهاز للتخزين لمنزل Maktaba على حاسوب آخر.",
     "trouble.port":
-      "يشغل تطبيق آخر على الجهاز المنفذ 8088 أو 8080 أو 8081: عند التشغيل ينقل Maktaba ذلك المنفذ إلى منفذ حر بين 8780 و8790. ويذكر سجل الحاوية المنفذ الجديد (إن كان 8088 فافتح ⁦http://<your NAS>:8780⁩)، وتعرض الإعدادات ← هذا الجهاز ما انتقل وأي برنامج يشغل المنفذ.",
+      "يشغل تطبيق آخر على الجهاز المنفذ 8088 أو 8080 أو 8081: عند التشغيل ينقل Maktaba ذلك المنفذ إلى منفذ حر بين 8780 و8790. ويذكر سجل الحاوية المنفذ الجديد (إن كان 8088 فافتح ⁦http://<your NAS>:8780⁩)، وتعرض الإعدادات ← هذا الجهاز ما انتقل وأي برنامج يشغل المنفذ. ولتختار منفذًا بنفسك (يستخدم Plex المنفذ 32400، فلا يهم هذا إلا حين تستخدم حزمة أخرى أحد منافذ Maktaba): من Container Manager ← المشروع ← maktaba ← إجراء ← إيقاف، ثم إعدادات YAML، احذف علامة # أمام سطر المنفذ تحت [ports] (MAKTABA_WEB_PORT أو MAKTABA_API_PORT أو MAKTABA_STREAM_PORT أو MAKTABA_POSTGRES_PORT)، واضبط منفذًا حرًا، واحفظ، ثم ابنِ المشروع من جديد. لا يُنقل المنفذ المضبوط هناك أبدًا: وإن شغلته حزمة أخرى تتوقف الحاوية ويذكر سجلها المنفذ والسطر. وغيّر قاعدة الجدار الناري إلى المنافذ الجديدة أيضًا.",
     "shot.guide-user": "مستخدم DSM باسم maktaba في المستخدم والمجموعة، دون صلاحيات المسؤول",
     "shot.guide-uid": "ناتج الأمر id maktaba، ويُظهر المعرّف 1026 والمجموعة 100",
     "shot.guide-folder": "إذن المجلد docker/maktaba: المستخدم maktaba بالقراءة والكتابة",

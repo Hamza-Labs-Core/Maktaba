@@ -26,6 +26,10 @@ The household's guide is maktaba.tv/install/truenas (its source:
   `/mnt/tank/media`, story 59.13), with a read-only toggle each. Never chowned.
 - **Network:** host network by default (mDNS by Maktaba's own responder; no D-Bus socket). Off:
   8088, 8080 and 8081 published (never 54329) and the Host IP question sets `MAKTABA_HOST_IP`.
+  The published port numbers are passed as `MAKTABA_PUBLIC_WEB_PORT`, `MAKTABA_PUBLIC_API_PORT`
+  and `MAKTABA_PUBLIC_STREAM_PORT`, so the addresses Maktaba hands out name them (59.08). Maktaba's
+  own ports are chosen with `MAKTABA_WEB_PORT` and the others under Additional Environment
+  Variables.
 - **Resources:** 4 CPUs and 8192 MB by default; Maktaba's tier follows the memory limit
   (story 59.04). The ARC at `/proc/spl/kstat/zfs/arcstats` stays readable: nothing masks it.
 - **GPU:** the catalog's own GPU question: Intel/AMD "allocate GPU" passes `/dev/dri` with the

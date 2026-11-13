@@ -470,6 +470,11 @@ class Cell:
             a += ["-e", f"{k}={v}"]
         if self.bridged:
             a += ["-e", f"MAKTABA_HOST_IP={host_ip()}"]
+            # a published port that differs from the container's is named to it (story 59.08)
+            for inner, var in ((8088, "MAKTABA_PUBLIC_WEB_PORT"), (8080, "MAKTABA_PUBLIC_API_PORT"),
+                               (8081, "MAKTABA_PUBLIC_STREAM_PORT")):
+                if self.published().get(inner, inner) != inner:
+                    a += ["-e", f"{var}={self.published()[inner]}"]
         if self.spec.get("avahi") == "dbus":
             # the NAS's system bus (the sibling's), as a household mounts the host's (59.08)
             a += ["-v", f"{self.vol('dbus')}:/run/dbus"]
@@ -526,12 +531,30 @@ class Cell:
         f = self.out / "docker-compose.yml"
         return docker("compose", "-p", self.container, "-f", str(f), *args, **kw)
 
+    @property
+    def web_port(self) -> int:
+        """The web port the cell reaches the server at: the cell's `ports.web` (the port it sets
+        in the container, story 59.08), its bridge's published web port, else 8088."""
+        published = self.published()
+        if published:
+            return published[8088]
+        return int(self.spec.get("ports", {}).get("web", 8088))
+
+    def published(self) -> dict[int, int]:
+        """A bridge cell's published ports, container port -> the host's: 8088, 8080 and 8081
+        as themselves, or the cell's `publish` (story 59.08: a NAS that publishes 19088:8088)."""
+        if not self.bridged:
+            return {}
+        out = {8088: 8088, 8080: 8080, 8081: 8081}
+        out.update({int(k): int(v) for k, v in self.spec.get("publish", {}).items()})
+        return out
+
     def network(self) -> list[str]:
         if self.local_port:
             return ["-p", f"127.0.0.1:{self.local_port}:28088"]
         if self.bridged:
             # the bridge variant of the compose files: 8088, 8080 and 8081, never 54329
-            return ["-p", "8088:8088", "-p", "8080:8080", "-p", "8081:8081"]
+            return [a for inner, outer in self.published().items() for a in ("-p", f"{outer}:{inner}")]
         return ["--network", "host"]
 
     def setup_network(self) -> list[str]:
@@ -615,8 +638,8 @@ class Cell:
         docker("run", "-d", "--name", self.container, *self.shape(), *self.network(), self.image)
         if self.local_port:
             docker("run", "-d", "--name", self.container + "-relay", "--network", f"container:{self.container}",
-                   "alpine/socat", "TCP-LISTEN:28088,fork,reuseaddr", "TCP:127.0.0.1:8088")
-        self.api = API(f"http://127.0.0.1:{self.local_port or 8088}")
+                   "alpine/socat", "TCP-LISTEN:28088,fork,reuseaddr", f"TCP:127.0.0.1:{self.web_port}")
+        self.api = API(f"http://127.0.0.1:{self.local_port or self.web_port}")
 
     # -- story 59.08: the NAS's own mDNS responder beside Maktaba
 
@@ -716,7 +739,7 @@ class Cell:
         """T04: on a bridge mDNS and SSDP are off, setup and the log say how apps connect,
         public_url comes from MAKTABA_HOST_IP, and an app connects by the address."""
         ip = host_ip()
-        url = f"http://{ip}:8088"
+        url = f"http://{ip}:{self.web_port}"
         m = self.machine()
         net = (m.get("machine") or {}).get("network") or {}
         if net.get("mode") != "bridge":
@@ -1927,6 +1950,96 @@ asyncio.run(main())
             raise AssertionError(f"exit {code}, not 78: {text[-400:]}")
         return "exit 78: " + text.strip().splitlines()[0][:160]
 
+    # -- story 59.08: the ports a household chooses
+
+    @property
+    def holder(self) -> str:
+        return self.container + "-holder"
+
+    def expect_port_taken(self) -> None:
+        """Setup with the port free, then another program takes the port the cell sets
+        (`hold_port`) on the host's network, then the server starts: it must stop on it."""
+        self.setup()
+        port = int(self.spec["hold_port"])
+        log(f"another program holds port {port}")
+        docker("run", "-d", "--name", self.holder, "--network", "host", "alpine/socat",
+               f"TCP-LISTEN:{port},fork,reuseaddr", "SYSTEM:echo busy")
+        self.start()
+
+    def container_log(self) -> str:
+        p = docker("logs", self.container, check=False)
+        return (p.stdout or "") + (p.stderr or "")
+
+    def assert_port_taken_message(self) -> str:
+        """The port set in the container is held by another program: it is not moved, the
+        server never answers, and the log names the port and the variable in both languages."""
+        port = int(self.spec["hold_port"])
+        var = next(k for k, v in self.spec.get("env", {}).items() if str(v) == str(port))
+        en = f"Port {port} is used by another program on this machine, so Maktaba cannot use it. Set {var} to a free port"
+        ar = f"المنفذ {port} يستخدمه برنامج آخر على هذا الجهاز"
+
+        def said() -> bool:
+            text = self.container_log()
+            return en in text and ar in text and f"اضبط {var}" in text
+
+        wait("the taken-port message in both languages", said, 15 * 60, every=10)
+        text = self.container_log()
+        for moved in ("port: web_listen", "8780"):
+            if moved in text:
+                raise AssertionError(f"the port was moved ({moved!r} in the log)")
+        return f"port {port}, {var}, English and Arabic"
+
+    @staticmethod
+    def answers_on(port: int) -> bool:
+        """Whether something accepts a connection on 127.0.0.1:port (the host's network)."""
+        import socket
+
+        with socket.socket() as so:
+            so.settimeout(3)
+            return so.connect_ex(("127.0.0.1", port)) == 0
+
+    def assert_custom_ports(self) -> str:
+        """Every port set in the container (story 59.08): the web app loads on its port, the API
+        and live TV answer on theirs, Postgres listens on its, nothing on the defaults, and the
+        addresses Maktaba hands out name the ports."""
+        p = {k: int(v) for k, v in self.spec["ports"].items()}
+        s, page = API(f"http://127.0.0.1:{p['web']}").call("GET", "/", raw=True, timeout=15)
+        if s != 200 or b"<html" not in (page if isinstance(page, bytes) else str(page).encode()).lower():
+            raise AssertionError(f"the web app on {p['web']}: {s}")
+        for what, port in (("the API", p["api"]), ("live TV", p["stream"])):
+            s, d = API(f"http://127.0.0.1:{port}").get("/healthz", timeout=10)
+            if s != 200 or not isinstance(d, dict) or d.get("status") != "ok":
+                raise AssertionError(f"{what} on {port}/healthz: {s} {d}")
+        if not self.answers_on(p["postgres"]):
+            raise AssertionError(f"nothing listens on the Postgres port {p['postgres']}")
+        on_default = [d for d in (8088, 8080, 8081, 54329) if self.answers_on(d)]
+        if on_default:
+            raise AssertionError(f"something listens on the default port(s) {on_default}")
+        m = self.machine()
+        if not str(m.get("web_url", "")).endswith(f":{p['web']}"):
+            raise AssertionError(f"web_url {m.get('web_url')!r} does not name port {p['web']}")
+        return f"web {p['web']}, API {p['api']}, live TV {p['stream']}, Postgres {p['postgres']}; defaults free"
+
+    def assert_live_tv_port(self) -> str:
+        """Live TV started on the port set in the container: the streaming role runs, and its
+        tuner answers there naming that port in its own address."""
+        port = int(self.spec["ports"]["stream"])
+        assert self.api is not None
+        s, d = self.api.get("/api/system/processes")
+        running = {p.get("role") for p in (d or {}).get("processes", []) if p.get("state") == "running"}
+        if "streaming" not in running:
+            raise AssertionError(f"streaming not running: {running}")
+        s, d = API(f"http://127.0.0.1:{port}").get("/discover.json", timeout=10)
+        if s == 200 and isinstance(d, dict):
+            base = str(d.get("BaseURL", ""))
+            if not base.endswith(f":{port}"):
+                raise AssertionError(f"the tuner's BaseURL {base!r} does not name port {port}")
+            return f"tuner on {port}: {base}"
+        if s in (401, 403, 404):
+            # the tuner is gated until live TV is set up: the port answers, Maktaba's
+            return f"streaming running, {port} answers ({s} before live TV is set up)"
+        raise AssertionError(f"{port}/discover.json: {s} {d}")
+
     # -- logs, kept pass or fail
 
     def collect(self) -> None:
@@ -1968,7 +2081,7 @@ asyncio.run(main())
     def teardown(self, quiet: bool = False) -> None:
         if self.compose is not None and (self.out / "docker-compose.yml").is_file():
             self.compose_cmd("down", "--remove-orphans", check=False)
-        for c in (self.container + "-relay", self.container, self.avahi):
+        for c in (self.container + "-relay", self.container, self.avahi, self.holder):
             docker("rm", "-f", c, check=False)
         for v in ("data", "media", "noaccess", "dbus"):
             docker("volume", "rm", "-f", self.vol(v), check=False)
@@ -1986,6 +2099,8 @@ asyncio.run(main())
             self.prepare()
             if self.spec.get("expect") == "refused":
                 self.expect_refused()
+            elif self.spec.get("hold_port"):
+                self.expect_port_taken()
             else:
                 self.setup()
                 self.start()

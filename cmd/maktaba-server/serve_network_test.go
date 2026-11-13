@@ -117,9 +117,9 @@ func TestPortMoveNamesTheHolder(t *testing.T) {
 func TestSetupCheckNetwork(t *testing.T) {
 	oldMoves, oldHolder := setupPortMoves, portHolder
 	t.Cleanup(func() { setupPortMoves, portHolder = oldMoves, oldHolder })
-	setupPortMoves = func(config.Config) []config.PortChange {
+	setupPortMoves = func(config.Config) ([]config.PortChange, error) {
 		return []config.PortChange{{Key: "listen", OldPort: 8080, NewPort: 8782, Taken: true},
-			{Key: "web_listen", OldPort: 8088, NewPort: 8780}}
+			{Key: "web_listen", OldPort: 8088, NewPort: 8780}}, nil
 	}
 	portHolder = func(int) string { return "thttpd" }
 	cfg := config.Defaults()
@@ -141,6 +141,35 @@ func TestSetupCheckNetwork(t *testing.T) {
 	checkNetwork(cfg, hostinfo.Machine{}, &res)
 	if len(res.Warnings) != 1 || res.Warnings[0].Code != "port_moved_other" {
 		t.Fatalf("host network, holder unseen: %+v", res.Warnings)
+	}
+}
+
+// Setup's check stops on a port set in the environment that another program holds (Epic
+// 59 story 59.08): a problem naming the port, its holder and the variable, in both
+// languages; nothing is moved.
+func TestSetupCheckPinnedPortTaken(t *testing.T) {
+	oldMoves, oldHolder := setupPortMoves, portHolder
+	t.Cleanup(func() { setupPortMoves, portHolder = oldMoves, oldHolder })
+	setupPortMoves = func(config.Config) ([]config.PortChange, error) {
+		return nil, &config.ErrPortPinned{Key: "web_listen", Env: config.EnvWebPort, Port: 32400}
+	}
+	portHolder = func(int) string { return "Plex Media Server" }
+	var res checkResult
+	checkNetwork(config.Defaults(), hostinfo.Machine{}, &res)
+	if len(res.Problems) != 1 || res.Problems[0].Code != "port_setting_taken" {
+		t.Fatalf("problems: %+v", res.Problems)
+	}
+	b, _ := json.Marshal(res.Problems)
+	for _, want := range []string{`"port":32400`, `"holder":"Plex Media Server"`, `"setting":"MAKTABA_WEB_PORT"`,
+		"Port 32400 is used by Plex Media Server", "Set MAKTABA_WEB_PORT to a free port"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("problem lacks %s: %s", want, b)
+		}
+	}
+	en, ar := portSettingTakenText(32400, "", config.EnvWebPort)
+	if !strings.Contains(en, "another program") || !strings.Contains(ar, "برنامج آخر") || !strings.Contains(ar, "MAKTABA_WEB_PORT") ||
+		!strings.Contains(ar, "32400") {
+		t.Fatalf("holder unseen: %q / %q", en, ar)
 	}
 }
 

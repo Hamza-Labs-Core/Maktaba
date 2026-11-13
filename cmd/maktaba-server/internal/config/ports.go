@@ -5,7 +5,9 @@ package config
 // anything is started. A port another program holds (Splunk's 8088, MiniTool
 // ShadowMaker's 8080 on Windows desktops) moves to the first free port of the
 // fallback range and the new address is written to server.toml; nothing fails
-// to bind silently.
+// to bind silently. A port a variable of the environment sets (MAKTABA_WEB_PORT,
+// portenv.go) is the exception: it is not moved, and ReconcilePorts returns
+// ErrPortPinned naming the port and the variable (Epic 59 story 59.08).
 //
 // Fallback range: FallbackPortLow..FallbackPortHigh (8780-8790). The web port
 // tries 8780 first, the streaming port 8781, the API 8782, each then the rest of
@@ -125,7 +127,8 @@ func (c *Config) ReconcilePorts(p PortProbe, o PortOptions) ([]PortChange, error
 		addr := strings.TrimSpace(*b.ptr)
 		host, port := splitBind(addr, b.defPort)
 
-		if b.key == "web_listen" && o.PreferWeb > 0 && port == ports.Web.Port && o.PreferWeb != port &&
+		pin := c.PinnedBy(b.key)
+		if b.key == "web_listen" && pin == "" && o.PreferWeb > 0 && port == ports.Web.Port && o.PreferWeb != port &&
 			!used[o.PreferWeb] && p.Free(joinBind(host, o.PreferWeb)) {
 			to := joinBind(host, o.PreferWeb)
 			changes = append(changes, c.move(b, addr, to, port, o.PreferWeb, "preferred web port on this platform"))
@@ -144,6 +147,10 @@ func (c *Config) ReconcilePorts(p PortProbe, o PortOptions) ([]PortChange, error
 				continue
 			}
 			return changes, ErrPortOurs{Key: b.key, Addr: addr}
+		}
+		// a port the household set in the environment is never moved (portenv.go)
+		if pin != "" {
+			return changes, &ErrPortPinned{Key: b.key, Env: pin, Port: port}
 		}
 		next := 0
 		for _, cand := range fallbackOrder(b.firstFall) {

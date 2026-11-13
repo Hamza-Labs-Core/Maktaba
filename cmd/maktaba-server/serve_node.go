@@ -30,7 +30,6 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/webui"
-	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // nodeServices is what the supervisor runs for node mode (nil on the home).
@@ -107,6 +106,8 @@ func startNodeServices(ctx context.Context, cfg config.Config, commands machinea
 		return nil, nil
 	}
 	ns := &nodeServices{node: n, rejoin: newRejoinWatch()}
+	// the home's live TV port, before any process's environment names it (Epic 59 story 59.08)
+	learnHomeStreamPort(ctx, n, &http.Client{Timeout: 3 * time.Second})
 	// this machine's login to its home's database, in its update.state (serve_homeaccess.go)
 	ns.homeDB = newHomeDBWatch(func() {
 		if ns.agent != nil {
@@ -294,8 +295,9 @@ func advertiseMachine(ctx context.Context, cfg config.Config, ns *nodeServices) 
 	if v == "0" || v == "false" || v == "off" {
 		return
 	}
-	apiPort := mdns.PortFromListen(cfg.Server.Listen, ports.APIPublic.Port)
-	webPort := mdns.PortFromListen(cfg.Server.WebListen, ports.Web.Port)
+	// the ports the household's devices reach (Epic 59 story 59.08: a published port that
+	// differs from the one Maktaba listens on, [server] public_*_port)
+	apiPort, webPort := cfg.PublicAPIPort(), cfg.PublicWebPort()
 	host, _ := os.Hostname()
 	m := mdns.Machine{Role: "home", Name: host, WebPort: webPort, Version: version.Version}
 	// the web base path (Epic 42 story 42.2: TXT path, sent only when it is not "/")
@@ -386,4 +388,38 @@ func vodOverLink(api, tokenFile string, direct http.Handler) http.Handler {
 		w.WriteHeader(resp.StatusCode)
 		_, _ = io.Copy(w, resp.Body)
 	})
+}
+
+// learnHomeStreamPort asks the home its live TV port (GET /api/discovery/home's stream_port,
+// Epic 59 story 59.08) and records it for HomeStreamURL: a home whose port was set in its
+// container, or moved off a taken one, is not on 8081. A home that does not answer, or does
+// not say, leaves 8081.
+func learnHomeStreamPort(ctx context.Context, n config.NodeConfig, client *http.Client) {
+	for _, base := range []string{n.Home.APIURL, n.HomeURL()} {
+		base = strings.TrimRight(strings.TrimSpace(base), "/")
+		if base == "" {
+			continue
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/discovery/home", nil)
+		if err != nil {
+			continue
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		var h struct {
+			StreamPort int `json:"stream_port"`
+		}
+		err = json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&h)
+		_ = resp.Body.Close()
+		if err != nil || resp.StatusCode != http.StatusOK {
+			continue
+		}
+		if h.StreamPort > 0 {
+			supervisor.SetHomeStreamPort(h.StreamPort)
+			fmt.Fprintf(os.Stderr, "[serve] node: the home's live TV is on port %d\n", h.StreamPort)
+		}
+		return
+	}
 }

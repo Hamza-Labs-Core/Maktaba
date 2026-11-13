@@ -56,6 +56,8 @@ export const STRINGS = {
     copied: "Copied",
     download: "Download docker-compose.yml",
     next: "Then run docker compose up -d, and docker compose run --rm maktaba setup once (it downloads about 2 GB of tools and the speech models, so it needs the internet). Open http://<this machine>:8088, sign in, and add a library for each folder: Manage → Manage libraries → Add library.",
+    ports:
+      "If a port is taken (Plex or another app already uses one): Maktaba uses 8088 (the web app), 8080 (the apps and the home's machines), 8081 (live TV) and 54329 (the database). A default port another program holds when Maktaba starts moves to a free one from 8780 to 8790, and the container's log and Settings → This machine show the new one. To choose a port yourself, remove the # in front of its line in the file's [ports] block and set a free port: a port set there is never moved, and if another program holds it, the container stops and its log names the port and the line to change. On a bridge network, change the left side of the ports: line and MAKTABA_PUBLIC_WEB_PORT (and the others) together.",
     updates:
       "Maktaba updates itself after that, in its update window. The file names the latest release (:latest); your NAS's own app updates, Watchtower included, can stay on too: a newer image goes onto the data folder at the next start, and an older one never replaces a newer Maktaba.",
     "problem.user": "Write the user as two numbers, uid:gid, such as 1000:100.",
@@ -126,6 +128,8 @@ export const STRINGS = {
     copied: "نُسخ",
     download: "نزّل docker-compose.yml",
     next: "ثم شغّل الأمر docker compose up -d، والأمر docker compose run --rm maktaba setup مرة واحدة (ينزّل نحو 2 GB من الأدوات ونماذج الكلام، فيحتاج إلى الإنترنت). وافتح العنوان http://<this machine>:8088، وسجّل الدخول، وأضف مكتبة لكل مجلد: الإدارة ← إدارة المكتبات ← إضافة مكتبة.",
+    ports:
+      "إن كان منفذ مشغولًا (يستخدمه Plex أو تطبيق آخر): يستخدم Maktaba المنفذ 8088 (تطبيق الويب) و8080 (التطبيقات وأجهزة المنزل الأخرى) و8081 (البث المباشر) و54329 (قاعدة البيانات). وإن كان برنامج آخر يشغل منفذًا افتراضيًا حين يبدأ Maktaba، ينتقل إلى منفذ حر بين 8780 و8790، ويعرض سجل الحاوية والإعدادات ← هذا الجهاز المنفذ الجديد. ولتختار منفذًا بنفسك، احذف علامة # أمام سطره في كتلة [ports] من الملف واضبط منفذًا حرًا: لا يُنقل المنفذ المضبوط هناك أبدًا، وإن شغله برنامج آخر تتوقف الحاوية ويذكر سجلها المنفذ والسطر الذي تغيّره. وعلى الشبكة الجسرية غيّر الجانب الأيسر من سطر ports: والمتغير MAKTABA_PUBLIC_WEB_PORT (وأمثاله) معًا.",
     updates:
       "بعد ذلك تحدّث مكتبة نفسها في نافذة التحديث. ويسمّي الملف أحدث إصدار (:latest)؛ ويمكن أن تبقى تحديثات التطبيقات في جهاز NAS، ومنها Watchtower، مفعّلة أيضًا: توضع الصورة الأحدث في مجلد البيانات عند التشغيل التالي، ولا تحلّ الصورة الأقدم أبدًا محلّ نسخة أحدث من مكتبة.",
     "problem.user": "اكتب المستخدم رقمين بهذا الشكل uid:gid، مثل 1000:100.",

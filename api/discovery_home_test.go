@@ -81,3 +81,15 @@ func TestWebBasePath(t *testing.T) {
 		}
 	}
 }
+
+// Epic 59 story 59.08: the answer's stream_port is the port of the home's live TV address
+// (MAKTABA_PUBLIC_BASE_URL), 0 when it names none.
+func TestHomeDirectoryStreamPort(t *testing.T) {
+	for in, want := range map[string]int{"http://192.168.1.5:18081": 18081, "http://nas.local:8081/": 8081,
+		"": 0, "http://192.168.1.5": 0, "::bad": 0} {
+		d := &homeDirectory{StreamURL: in, HostName: "nas"}
+		if got := d.Info(context.Background(), nil).StreamPort; got != want {
+			t.Errorf("%q: stream port %d, want %d", in, got, want)
+		}
+	}
+}

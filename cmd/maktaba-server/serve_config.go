@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -61,6 +63,41 @@ type settingsDoc struct {
 	Running       config.Editable `json:"running"`
 	RestartNeeded bool            `json:"restart_needed"`
 	CanRestart    bool            `json:"can_restart"`
+	// Pinned are the addresses whose port a variable of the container's environment sets
+	// (Epic 59 story 59.08): field (listen, web_listen, stream_addr) -> the variable. The page
+	// shows them as set there; a change here is refused (pinnedErrors).
+	Pinned map[string]string `json:"pinned,omitempty"`
+}
+
+// pinnedFields are the settings document's address fields a port variable can set.
+var pinnedFields = []string{config.PinAPI, config.PinWeb, config.PinStream}
+
+// pinnedOf is settingsDoc.Pinned for cfg.
+func pinnedOf(cfg config.Config) map[string]string {
+	var out map[string]string
+	for _, k := range pinnedFields {
+		if env := cfg.PinnedBy(k); env != "" {
+			if out == nil {
+				out = map[string]string{}
+			}
+			out[k] = env
+		}
+	}
+	return out
+}
+
+// pinnedErrors refuses a change to an address whose port the environment sets: it would be
+// written to server.toml and never used.
+func pinnedErrors(cfg config.Config, changed []string) []config.FieldError {
+	var errs []config.FieldError
+	for _, f := range changed {
+		k := strings.TrimPrefix(f, "server.")
+		if env := cfg.PinnedBy(k); env != "" && slices.Contains(pinnedFields, k) {
+			errs = append(errs, config.FieldError{Field: f,
+				Message: fmt.Sprintf("%s in the container's settings sets this port: change it there", env)})
+		}
+	}
+	return errs
 }
 
 // adminHandler adds /config/ to base.
@@ -103,6 +140,7 @@ func (c *configAdmin) doc() (settingsDoc, error) {
 		Running:       c.running,
 		RestartNeeded: !reflect.DeepEqual(saved, c.running),
 		CanRestart:    c.restart != nil || c.reload != nil,
+		Pinned:        pinnedOf(cfg),
 	}, nil
 }
 
@@ -139,6 +177,10 @@ func (c *configAdmin) put(w http.ResponseWriter, r *http.Request) {
 	next.Media.PathMap = append([]config.PathPair{}, saved.Media.PathMap...)
 	next.Media.Roots = append([]string{}, saved.Media.Roots...)
 	changed := patch.Apply(&next)
+	if errs := pinnedErrors(cfg, changed); len(errs) > 0 {
+		writeConfigJSON(w, http.StatusUnprocessableEntity, map[string]any{"errors": errs})
+		return
+	}
 	if errs := config.OnlyChanged(c.checks.Validate(next, saved, c.running), changed); len(errs) > 0 {
 		writeConfigJSON(w, http.StatusUnprocessableEntity, map[string]any{"errors": errs})
 		return

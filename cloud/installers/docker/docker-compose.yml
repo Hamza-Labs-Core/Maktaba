@@ -55,17 +55,33 @@ services:
       # MAKTABA_UPDATE_DISABLE: "1"   # only the image updates it (see above); off by default
       # [bridge] this machine's address on your network, for the apps on a bridge network
       # MAKTABA_HOST_IP: 192.168.1.20
+      # and the ports your devices reach it at: the left side of each ports: line below
+      # (change both together), so the addresses Maktaba hands out name them
+      # MAKTABA_PUBLIC_WEB_PORT: "8088"
+      # MAKTABA_PUBLIC_API_PORT: "8080"
+      # MAKTABA_PUBLIC_STREAM_PORT: "8081"
+      # [ports] Maktaba's ports, when another app on this machine (Plex, the NAS's own UI)
+      # uses one: set only the ones to change, then open the web app at its new port. A port
+      # set here is never moved: if another program holds it, Maktaba stops and its log names
+      # the port and this setting.
+      # MAKTABA_WEB_PORT: "8088"        # the web app
+      # MAKTABA_API_PORT: "8080"        # the API the apps and the home's machines use
+      # MAKTABA_STREAM_PORT: "8081"     # live TV
+      # MAKTABA_POSTGRES_PORT: "54329"  # the database the home's machines use
     # The host's network (Linux): the machines and apps of your network find this home (mDNS)
     # and reach it at this machine's own address, as with any other install. Maktaba answers
     # mDNS beside the NAS's own responder. Ports: 8088 web, 8080 cluster API, 8081 live TV,
-    # 54329 Postgres; one taken by the NAS (QNAP's QTS uses 8080) is moved, and setup shows
-    # the new one.
+    # 54329 Postgres. A default one another program already holds when Maktaba starts (QNAP's
+    # QTS uses 8080) moves to a free port from 8780 to 8790, and setup, the log and Settings ->
+    # This machine show the new one; to choose the ports yourself, see [ports] above.
     network_mode: host
     # [bridge] Docker Desktop (Mac, Windows) has no host network, and some households keep
     # every container on a bridge: delete the network_mode line above and turn this block on.
     # Apps cannot find Maktaba by themselves on a bridge; they connect by its address
     # (MAKTABA_HOST_IP above), its HTTPS name or a code from Maktaba Cloud. No machine can
     # join a bridge home, so the Postgres port is not published.
+    # The left side of each line is the port on this machine; the right side is Maktaba's
+    # port in the container (MAKTABA_WEB_PORT and the others above, when you set them).
     # ports:
     #   - "8088:8088"   # the web app
     #   - "8080:8080"   # the API the apps use

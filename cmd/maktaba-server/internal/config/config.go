@@ -70,6 +70,11 @@ type Config struct {
 	// NodeCopy is a full node's copy of its home's database (Epic 37, nodecopy), as
 	// serve resolved it ("": none).
 	NodeCopy NodeCopy `toml:"-"`
+	// PortPins are the ports a variable of the environment sets (portenv.go): server.toml
+	// key -> the variable (MAKTABA_WEB_PORT). Load fills them; Save writes server.toml's own
+	// values of those keys (file), never the variables'.
+	PortPins map[string]string `toml:"-"`
+	file     filePorts
 }
 
 // NodeCopy: the address this machine's programs reach its copy of the home's database
@@ -459,6 +464,16 @@ type ServerSection struct {
 	// proxies). Empty: loopback only. The roles get it as MAKTABA_TRUSTED_PROXIES and
 	// refuse to start on a bad entry.
 	TrustedProxies []string `toml:"trusted_proxies,omitempty"`
+	// PublicWebPort, PublicAPIPort and PublicStreamPort are the ports the household's
+	// devices reach the web app, the API and live TV at when they differ from the ports
+	// Maktaba listens on (Epic 59 story 59.08): a bridge network that publishes "9088:8088",
+	// a router's port forward. 0 (default): the port it listens on. The addresses Maktaba
+	// hands out (setup, the Machines page, mDNS, the cluster sign-in, the TV tuner's URLs)
+	// use them; web_public_url and public_url, when set, win. MAKTABA_PUBLIC_WEB_PORT,
+	// MAKTABA_PUBLIC_API_PORT and MAKTABA_PUBLIC_STREAM_PORT set them in a container.
+	PublicWebPort    int `toml:"public_web_port,omitempty"`
+	PublicAPIPort    int `toml:"public_api_port,omitempty"`
+	PublicStreamPort int `toml:"public_stream_port,omitempty"`
 }
 
 // TrustedProxyList is [server] trusted_proxies parsed; the error names the entry
@@ -721,7 +736,8 @@ func LoadFrom(path string) (Config, bool, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return cfg, false, nil
+			// the container's port variables hold before setup wrote the file, too
+			return cfg, false, cfg.applyPortEnv()
 		}
 		return cfg, false, fmt.Errorf("read %s: %w", path, err)
 	}
@@ -740,6 +756,10 @@ func LoadFrom(path string) (Config, bool, error) {
 	// operator chose stays)
 	if cfg.Server.AdminAddr == legacyAdminAddr {
 		cfg.Server.AdminAddr = Defaults().Server.AdminAddr
+	}
+	// the container's port variables over the file (portenv.go)
+	if err := cfg.applyPortEnv(); err != nil {
+		return cfg, true, err
 	}
 	return cfg, true, nil
 }
@@ -796,6 +816,8 @@ func (c Config) SaveTo(path string) error {
 // app's bundled Postgres from running; instances = 0 means no transcription
 // workers).
 func (c Config) fileTOML() ([]byte, error) {
+	// a port a variable of the environment sets is not the file's (portenv.go)
+	c = c.withFilePorts()
 	var buf bytes.Buffer
 	if err := toml.NewEncoder(&buf).Encode(c); err != nil {
 		return nil, fmt.Errorf("encode toml: %w", err)

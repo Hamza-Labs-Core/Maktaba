@@ -34,6 +34,31 @@
 | الكلام | المعالجة | ‏CTranslate2 على معالجات arm64، والنموذج يُختار بسرعة مقيسة |
 | الإضافات | ‏plugind | مستويا العزل الكامل والحاوية؛ وتُعلَّق إضافات الآخرين على مستوى الحاوية حتى يسمح بها المدير |
 | الشبكة | `serve_network.go` و`ports.go` | شبكة المضيف افتراضيًا؛ وعلى الشبكة الجسرية يُطفأ mDNS وSSDP ويقول الإعداد السبب؛ والمنفذ المشغول يُنقل إلى ما بين 8780 و8790 ويُطبع النقل باللغتين |
+| المنافذ | `internal/config/portenv.go` و`serve_postgres.go` | يُضبط كل منفذ من متغيرات بيئة الحاوية (أدناه)؛ ولا يُنقل المنفذ المضبوط هناك أبدًا: يتوقف التشغيل ويذكر المنفذ والمتغير باللغتين |
+
+### المنافذ التي تختارها الأسرة
+
+قد يستخدم تطبيق آخر على خادم التخزين (Plex، أو حزمة أخرى، أو واجهة الخادم نفسه) أحد منافذ
+مكتبة. ولكل منفذ متغير تعرضه ملفات التثبيت كلها مُعلَّقًا، بجانب مفتاحه في `server.toml`:
+
+| المنفذ | المتغير | `server.toml` |
+|---|---|---|
+| 8088 تطبيق الويب | `MAKTABA_WEB_PORT` | `[server] web_listen` |
+| 8080 الواجهة البرمجية (التطبيقات وأجهزة المنزل) | `MAKTABA_API_PORT` | `[server] listen` |
+| 8081 البث المباشر | `MAKTABA_STREAM_PORT` | `[server] stream_addr` |
+| 54329 قاعدة البيانات (أجهزة المنزل) | `MAKTABA_POSTGRES_PORT` | `[postgres] port` |
+| منفذ منشور على شبكة جسرية أو بتحويل منفذ | `MAKTABA_PUBLIC_WEB_PORT` و`MAKTABA_PUBLIC_API_PORT` و`MAKTABA_PUBLIC_STREAM_PORT` | `[server] public_web_port` و`public_api_port` و`public_stream_port` |
+
+- تطبّق `config.LoadFrom` المتغيرات فوق `server.toml` في كل تحميل، فيستخدم كل برنامج يقرأ
+  الإعداد المنفذ نفسه؛ ويكتب الحفظ قيم الملف نفسه، لا قيم المتغيرات. والشيفرة التي تحتاج إلى
+  منفذ تقرؤه من الإعداد (`cfg.Server.Listen` و`cfg.PublicWebPort()`)، لا الرقم 8088 حرفيًا.
+- يُنقل المنفذ الافتراضي الذي يشغله برنامج آخر (`ReconcilePorts`)، أما المنفذ الذي يضبطه متغير
+  فتُرجع له `config.ErrPortPinned`، ويقول الإعداد والخادم `setup.check.note.port_setting_taken`.
+- تستخدم العناوين التي يعطيها الخادم (`PublicWebURL` و`PublicAPIURL` و`PublicStreamURL` ومنافذ
+  mDNS) المنافذَ المنشورة. ويعرف الجهاز التابع منفذ البث المباشر في منزله من `stream_port` في
+  `/api/discovery/home`.
+- الاختبارات: `portenv_test.go` و`ports_pinned_test.go`، والخلايا `custom-ports`
+  و`bridge-published-ports` و`port-taken` في `tests/nas/cells.json`.
 
 ## ملفات التثبيت والأدلة
 

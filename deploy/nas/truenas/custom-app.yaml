@@ -36,6 +36,13 @@ services:
     environment:
       MAKTABA_PLATFORM: truenas
       TZ: Etc/UTC # CHANGE: your time zone, for example Asia/Riyadh
+      # If another app on the NAS uses one of Maktaba's ports, remove the # and set a free
+      # one; then open Maktaba at the new web port. A port set here is never moved: if
+      # another program holds it, Maktaba stops and its log names the port and this line.
+      # MAKTABA_WEB_PORT: "8088"        # the web app
+      # MAKTABA_API_PORT: "8080"        # the API the apps and the home's machines use
+      # MAKTABA_STREAM_PORT: "8081"     # live TV
+      # MAKTABA_POSTGRES_PORT: "54329"  # the database the home's machines use
     # the app's memory limit: Maktaba sizes itself to it (Light under 6 GB, Standard, Strong
     # from 16 GB). ZFS's ARC gives memory back when needed, and Maktaba counts it as available.
     deploy:
