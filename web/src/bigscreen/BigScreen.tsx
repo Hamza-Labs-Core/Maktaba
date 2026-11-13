@@ -313,6 +313,7 @@ function Tabs() {
   const tabs = TABS.filter((tab) => tab.to !== bigPath.live || liveGate !== "hide");
   const current = (to: string) =>
     to === bigPath.home ? pathname === to || pathname === `${to}/` : pathname.startsWith(to);
+  const exit = useExitBigScreen();
   return (
     <header className="bs-top">
       <span className="bs-brand" aria-hidden="true">
@@ -332,6 +333,16 @@ function Tabs() {
           </button>
         ))}
       </nav>
+      {/* always in reach, with a mouse or the arrows: the way out is not only Back on Home */}
+      <button
+        type="button"
+        className="bs-tab bs-leave"
+        data-bs-focus="tab:leave"
+        data-testid="big-leave"
+        onClick={exit}
+      >
+        {t("big.exit.leave")}
+      </button>
       <time className="bs-clock" dateTime={now.toISOString()}>
         {new Intl.DateTimeFormat(locale === "ar" ? "ar-EG" : "en", {
           hour: "numeric",

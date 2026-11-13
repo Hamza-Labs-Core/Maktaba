@@ -7,6 +7,11 @@
 //   item (the `menu` event); a page the shell cannot talk to (another
 //   machine's server in client mode: no capability covers it) is loaded at its
 //   /big instead (menu_target).
+// - View → Leave Big Screen (`big-screen-leave`): the window leaves full
+//   screen and the page goes back to where the user came from (the `menu`
+//   event); a page the shell cannot talk to is loaded at its server's root
+//   (leave_target). View → Big Screen does the same when the page is already
+//   in big screen, so its shortcut goes in and out.
 // - View → Start in Big Screen (`big-screen-start`, a check item): saved in
 //   big-screen.json beside mode.json, in this machine's state folder (the app's
 //   config folder on a Mac and Linux, %LOCALAPPDATA% on Windows, so a roaming
@@ -28,6 +33,8 @@ use crate::applog::Locked;
 pub const FILE: &str = "big-screen.json";
 /// View → Big Screen.
 pub const MENU_ID: &str = "big-screen";
+/// View → Leave Big Screen.
+pub const LEAVE_MENU_ID: &str = "big-screen-leave";
 /// View → Start in Big Screen.
 pub const START_MENU_ID: &str = "big-screen-start";
 /// Where the web app's big-screen mode lives.
@@ -158,6 +165,40 @@ fn set_start(app: &AppHandle, on: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether `url` is a page of big screen.
+pub fn is_big(url: &Url) -> bool {
+    matches!(url.scheme(), "http" | "https" | "tauri")
+        && (url.path() == PATH || url.path().starts_with(&format!("{PATH}/")))
+}
+
+/// View → Leave Big Screen on a page that cannot hear the shell: its server's
+/// root to load. None when the page hears the menu event and leaves itself, and
+/// when the page is not in big screen.
+pub fn leave_target(current: &Url) -> Option<Url> {
+    if page_hears_shell(current) || !is_big(current) {
+        return None;
+    }
+    let mut u = current.clone();
+    u.set_path("/");
+    u.set_query(None);
+    u.set_fragment(None);
+    Some(u)
+}
+
+/// What a click on a View menu item means: Leave Big Screen always leaves, and
+/// Big Screen leaves when the page is already in big screen (its shortcut goes
+/// in and out). Some(the id the page hears) for a leave, None for any other item.
+pub fn leaves(id: &str, in_big: bool) -> Option<&'static str> {
+    (id == LEAVE_MENU_ID || (id == MENU_ID && in_big)).then_some(LEAVE_MENU_ID)
+}
+
+/// Whether the main window's page is in big screen now.
+pub fn in_big_screen(app: &AppHandle) -> bool {
+    app.get_webview_window(crate::webcache::MAIN)
+        .and_then(|w| w.url().ok())
+        .is_some_and(|u| is_big(&u))
+}
+
 /// The main window full screen, or not.
 pub fn set_full_screen(app: &AppHandle, on: bool) -> Result<(), String> {
     let w = app
@@ -175,6 +216,19 @@ pub fn on_menu(app: &AppHandle) {
     };
     crate::shell::focus_main(app);
     if let Some(url) = w.url().ok().as_ref().and_then(menu_target) {
+        let _ = w.navigate(url);
+    }
+}
+
+/// View → Leave Big Screen: the window leaves full screen, and the page goes
+/// back to where the user came from (the `menu` event, sent by lib.rs; a page
+/// that cannot hear it is loaded at its server's root).
+pub fn on_leave_menu(app: &AppHandle) {
+    let _ = set_full_screen(app, false);
+    let Some(w) = app.get_webview_window(crate::webcache::MAIN) else {
+        return;
+    };
+    if let Some(url) = w.url().ok().as_ref().and_then(leave_target) {
         let _ = w.navigate(url);
     }
 }
@@ -277,6 +331,45 @@ mod tests {
         // not an http(s) address: left alone
         assert_eq!(entry_url("tauri://localhost/", true), "tauri://localhost/");
         assert_eq!(entry_url("not a url", true), "not a url");
+    }
+
+    #[test]
+    fn leaving_loads_the_root_only_on_a_big_page_that_cannot_hear_the_menu() {
+        let u = |s: &str| Url::parse(s).unwrap();
+        // which pages are big screen
+        assert!(is_big(&u("http://127.0.0.1:8088/big")));
+        assert!(is_big(&u("https://maktaba.home/big/watch/7?t=3")));
+        assert!(is_big(&u("tauri://localhost/big/settings")));
+        assert!(!is_big(&u("http://127.0.0.1:8088/bigger")));
+        assert!(!is_big(&u("http://127.0.0.1:8088/library")));
+        assert!(!is_big(&u("file:///big")));
+        // this machine's server and the bundled pages hear the menu event and leave themselves
+        assert_eq!(leave_target(&u("http://127.0.0.1:8088/big/series")), None);
+        assert_eq!(leave_target(&u("tauri://localhost/big")), None);
+        // another machine's page in big screen is loaded at its root
+        assert_eq!(
+            leave_target(&u("https://maktaba.home/big/watch/7?t=3#x")),
+            Some(u("https://maktaba.home/"))
+        );
+        assert_eq!(
+            leave_target(&u("http://10.0.0.5:8088/big")),
+            Some(u("http://10.0.0.5:8088/"))
+        );
+        // not in big screen: nothing to load
+        assert_eq!(leave_target(&u("https://maktaba.home/videos/1")), None);
+    }
+
+    #[test]
+    fn big_screen_in_the_menu_goes_in_and_out_and_leave_always_leaves() {
+        // Leave Big Screen leaves wherever the page is
+        assert_eq!(leaves(LEAVE_MENU_ID, true), Some(LEAVE_MENU_ID));
+        assert_eq!(leaves(LEAVE_MENU_ID, false), Some(LEAVE_MENU_ID));
+        // Big Screen enters from a normal page and leaves from big screen
+        assert_eq!(leaves(MENU_ID, false), None);
+        assert_eq!(leaves(MENU_ID, true), Some(LEAVE_MENU_ID));
+        // no other item leaves
+        assert_eq!(leaves(START_MENU_ID, true), None);
+        assert_eq!(leaves("preferences", true), None);
     }
 
     #[test]
