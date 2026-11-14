@@ -99,9 +99,11 @@ final class PlayerCastUITests: PlayerUITestCase {
         openWatch("en", cast: "fake-empty")
         tapCast()
         app.buttons["cast.interstitial.continue"].tap()
+        // the list looks for 5 s (a spinner) before it says none was found. On CI iPads the
+        // first query, made during that search, took 14 s and once timed out (35 s): no query
+        // until the search is over, then a wait that outlasts one slow snapshot
+        RunLoop.current.run(until: Date().addingTimeInterval(6))
         let empty = element("cast.picker.empty")
-        // the list looks for 5 s before it says none was found, and one snapshot of the sheet
-        // over the playing video took 14 s on a CI iPad: a 15 s wait checked once, too early
         XCTAssertTrue(empty.waitForExistence(timeout: 40), "the empty state")
         XCTAssertTrue(empty.label.contains("same Wi-Fi network"))
         XCTAssertTrue(empty.label.contains("AirPlay"))
