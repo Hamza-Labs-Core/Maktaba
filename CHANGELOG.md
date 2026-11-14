@@ -2837,6 +2837,15 @@ build fails when the two differ.
   switchable fallback. The edge stores and delivers what a home sends and never chooses, ranks
   or recommends anything. It is not deployed yet: broadcasting stays off until its gate opens.
 
+- **Parental controls on the new TVs (Epic 58, story 58.14).** A child's account signed in on a
+  Samsung or LG TV (`/tv/`), Roku, Fire TV or Android TV sees only what its limits allow, as
+  everywhere else. Something hidden, opened from a link, shows This isn't available with the
+  limit and Ask a parent, which takes the remote's focus; a parent answers from Maktaba on their
+  phone, and a yes opens it on the TV without a restart. The TV's Account or Settings says a
+  parent manages the account, and its content limit. Samsung, LG and Roku ask for no PIN on the
+  remote; Fire TV and Android TV keep the guardian's PIN. A deep link to a hidden item shows the
+  not-available line and asks nothing. English and Arabic, mirrored.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being

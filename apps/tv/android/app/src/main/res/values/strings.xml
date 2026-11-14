@@ -176,4 +176,7 @@
     <string name="device_tv">the TV</string>
     <string name="device_phone">a phone</string>
     <string name="device_web">a browser</string>
+    <!-- Epic 58 story 58.14: the blocked page's line under Ask a parent, and Account's managed line -->
+    <string name="tv_parental_ask_on_phone">A parent can answer from Maktaba on their phone.</string>
+    <string name="tv_parental_managed">A parent manages this account.</string>
 </resources>

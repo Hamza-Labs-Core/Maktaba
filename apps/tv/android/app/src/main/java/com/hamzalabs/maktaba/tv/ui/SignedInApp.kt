@@ -251,7 +251,7 @@ fun SignedInApp(
                             } else {
                                 LiveScreen(api, live, focusFirst = focusContent, onTune = { open(Place.LivePlayer(it)) }, signedOut = signedOut)
                             }
-                            TvTab.Account -> AccountScreen(app, user, onPlaylists = { open(Place.Playlists) })
+                            TvTab.Account -> AccountScreen(app, user, onPlaylists = { open(Place.Playlists) }, parental = parental)
                         }
                     }
                 }

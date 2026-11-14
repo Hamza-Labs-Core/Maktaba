@@ -308,5 +308,69 @@ maktaba.tv/tv ﻰﻟﺇ ﺐﻫﺫﺍ ﻭﺃ ،ﺯﺎﻔﻠﺗ</translation>
         <source>roku.player.off</source>
         <translation>ﻑﺎﻘﻳﺇ</translation>
     </message>
+    <message>
+        <source>parental.blocked.title</source>
+        <translation>ﺡﺎﺘﻣ ﺮﻴﻏ ﺍﺬﻫ</translation>
+    </message>
+    <message>
+        <source>parental.blocked.accountAll</source>
+        <translation>.ﺭﺎﻤﻋﻷﺍ ﻞﻜﻟ ـﺑ ﺪﻴﻘﻣ ﻚﺑﺎﺴﺣ</translation>
+    </message>
+    <message>
+        <source>parental.blocked.accountNone</source>
+        <translation>.ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﻪﺑ ﺢﻤﺳ ﺎﻤﺑ ﺪﻴﻘﻣ ﻚﺑﺎﺴﺣ</translation>
+    </message>
+    <message>
+        <source>parental.blocked.ask</source>
+        <translation>ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﻦﻣ ﺐﻠﻃﺍ</translation>
+    </message>
+    <message>
+        <source>parental.ask.again</source>
+        <translation>ﻯﺮﺧﺃ ﺓﺮﻣ ﺐﻠﻃﺍ</translation>
+    </message>
+    <message>
+        <source>parental.ask.sent</source>
+        <translation>.ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﺭﺎﻈﺘﻧﺎﺑ .ﺐﻠﻄﻟﺍ ﻞﺳﺭﺃ</translation>
+    </message>
+    <message>
+        <source>parental.ask.denied</source>
+        <translation>.ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﺾﻓﺭ</translation>
+    </message>
+    <message>
+        <source>parental.ask.approved</source>
+        <translation>.ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﻖﻓﺍﻭ</translation>
+    </message>
+    <message>
+        <source>parental.ask.tooMany</source>
+        <translation>.ﺩﺮﻟﺍ ﺭﺎﻈﺘﻧﺎﺑ ﺓﺮﻴﺜﻛ ﺕﺎﺒﻠﻃ ﻚﻳﺪﻟ</translation>
+    </message>
+    <message>
+        <source>parental.ask.failed</source>
+        <translation>.ﻯﺮﺧﺃ ﺓﺮﻣ ﻝﻭﺎﺣ .ﺐﻠﻄﻟﺍ ﻞﺳﺮﻳ ﻢﻟ</translation>
+    </message>
+    <message>
+        <source>parental.time.check</source>
+        <translation>ﺍﺩﺪﺠﻣ ﻖﻘﺤﺗ</translation>
+    </message>
+    <message>
+        <source>parental.profile.managed</source>
+        <translation>.ﺏﺎﺴﺤﻟﺍ ﺍﺬﻫ ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﺮﻳﺪﻳ</translation>
+    </message>
+    <message>
+        <source>parental.profile.limitAll</source>
+        <translation>ﺭﺎﻤﻋﻷﺍ ﻞﻜﻟ :ﻯﻮﺘﺤﻤﻟﺍ ﺪﺣ</translation>
+    </message>
+    <message>
+        <source>parental.profile.limitNone</source>
+        <translation>ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﺃ ﻪﺑ ﺢﻤﺳ ﺎﻣ :ﻯﻮﺘﺤﻤﻟﺍ ﺪﺣ</translation>
+    </message>
+    <message>
+        <source>tv.parental.askOnPhone</source>
+        <translation>.ﻪﻔﺗﺎﻫ ﻰﻠﻋ Maktaba ﻦﻣ ﺩﺮﻟﺍ ﻦﻳﺪﻟﺍﻮﻟﺍ ﺪﺣﻷ ﻦﻜﻤﻳ</translation>
+    </message>
+    <message>
+        <source>parental.blocked.deviceAll</source>
+        <translation>.ﺭﺎﻤﻋﻷﺍ ﻞﻜﻟ ـﺑ ﺪﻴﻘﻣ ﺯﺎﻬﺠﻟﺍ ﺍﺬﻫ</translation>
+    </message>
 </context>
 </TS>
