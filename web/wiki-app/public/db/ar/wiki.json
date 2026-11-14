@@ -21,7 +21,7 @@
     "phase": 17,
     "plan": 372,
     "review": 15,
-    "story": 733
+    "story": 742
   },
   "parts": [
     "wiki-epics-01-09.json",
@@ -3220,13 +3220,22 @@
         "story-54.40",
         "story-54.41",
         "story-54.42",
-        "story-54.43"
+        "story-54.43",
+        "story-54.44",
+        "story-54.45",
+        "story-54.46",
+        "story-54.47",
+        "story-54.48",
+        "story-54.49",
+        "story-54.50",
+        "story-54.51",
+        "story-54.52"
       ],
       "files": {
         "readme": "specs/epics/54-plugins/README.md"
       },
       "metadata": {
-        "story_count": 43,
+        "story_count": 52,
         "plan_count": 0,
         "mockup_count": 0
       },
@@ -7835,6 +7844,7 @@
         "story-54.11",
         "story-54.13",
         "story-54.41",
+        "story-54.44",
         "story-55.2",
         "story-57.12",
         "story-59.16",
@@ -7892,6 +7902,7 @@
         "story-54.11",
         "story-54.13",
         "story-54.41",
+        "story-54.44",
         "story-55.2",
         "story-57.12",
         "story-59.16",
@@ -9954,6 +9965,9 @@
         "story-54.37",
         "story-54.38",
         "story-54.42",
+        "story-54.48",
+        "story-54.50",
+        "story-54.51",
         "story-55.2",
         "story-56.13",
         "story-58.13",
@@ -10083,7 +10097,9 @@
       "related": [
         "story-51.17",
         "story-54.27",
-        "story-54.37"
+        "story-54.37",
+        "story-54.48",
+        "story-54.51"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"

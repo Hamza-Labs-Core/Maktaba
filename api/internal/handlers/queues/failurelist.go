@@ -146,10 +146,11 @@ WITH f AS (
        AND NOT (l.subject_kind = 'video' AND v.id IS NULL)
 )`
 
-// itemFilterSQL: $2 stage, $3 class (exact or a prefix before ':'), $4
+// itemFilterSQL: $2 stage (one, or several joined by commas: a plugin's stages, story
+// 54.44), $3 class (exact or a prefix before ':'), $4
 // signature, $5 library, $6 path prefix (LIKE-escaped), $7 status.
 const itemFilterSQL = `
-   ($2::text = '' OR i.stage = $2::text)
+   ($2::text = '' OR i.stage = ANY(string_to_array($2::text, ',')))
    AND ($3::text = '' OR i.failure_class = $3::text OR i.failure_class LIKE $3::text || ':%'
         OR ($3::text = 'unclassified' AND i.failure_class IS NULL))
    AND ($4::text = '' OR i.error_cause = $4::text)
@@ -233,7 +234,7 @@ SELECT i.id, i.stage, i.subject_kind, i.subject_id::text, ` + expr + `, i.path, 
 var failureFacetsSQL = openItemsCTE + `
 , filtered AS (
     SELECT i.* FROM items i
-     WHERE ($2::text = '' OR i.stage = $2::text)
+     WHERE ($2::text = '' OR i.stage = ANY(string_to_array($2::text, ',')))
        AND ($3::text = '' OR i.failure_class = $3::text OR i.failure_class LIKE $3::text || ':%'
             OR ($3::text = 'unclassified' AND i.failure_class IS NULL))
        AND ($4::text = '' OR i.error_cause = $4::text)

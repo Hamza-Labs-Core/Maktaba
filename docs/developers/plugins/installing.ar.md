@@ -196,3 +196,33 @@ outcome}` (`ok` و`failed`)، و`maktaba_plugin_job_seconds{plugin, quantile}` (
 | `GET`، `PUT /api/plugins/{id}/settings` | إعداداتها |
 | `GET`، `PUT /api/plugins/policy` | السماح بالإضافات غير المراجَعة |
 | `GET`، `PUT /api/plugins/isolation` | مستوى عزل كل جهاز؛ و`{"allow": true, "password": "…"}` يسمح بالإضافات ذات العزل على مستوى الحاوية فقط (`401 reauth_required` دون كلمة المرور) |
+
+### كل الإضافات في قائمة واحدة
+
+يجيب `GET /api/plugins` بـ`{plugins, policy, core}`. و`plugins` قائمة واحدة: الإضافات التي ثبّتها
+مسؤول والإضافات التي تنشرها مكتبة، بالشكل نفسه. لا يوجد حقل `built_in`. وبجانب الحقول أعلاه، لكل إضافة:
+
+| الحقل | معناه |
+|---|---|
+| `publisher` | `{"id": "maktaba", "verified": true}` لإضافة تنشرها مكتبة، و`{"id": ""}` لغيرها |
+| `source` | `release` (جاءت مع إصدار مكتبة هذا)، أو `store`، أو `file` |
+| `component` | المكوّن الذي يكتب فيه مفتاحها: مكوّنها لإضافة من مكتبة، و`plugin.<id>` لغيرها |
+| `stage_names`، `queues` | مراحلها، وأسماؤها في قائمة الانتظار (يقبل `GET /api/queues/failures?stage=` عدة مراحل تفصل بينها فواصل) |
+| `switch_locked` | سبب تعذّر استخدام مفتاحها (`licence_missing`، `held`، `revoked`، …)؛ ويغيب حين يمكن استخدامه |
+| `activity` | `pending`، `running`، `done_24h`، `failed_24h`، `problems`، `avg_ms`، `p95_ms` |
+| `resources` | `processes` (كل واحدة `{process, group, component, machine, rss_mb, scope, stages, shared_with, shared_core}`)، و`shared`، ولإضافة الطرف الثالث `data_rows` و`data_bytes` و`data_mb` و`memory_mb` و`peak_memory_mb` |
+
+كثيرًا ما تشغّل العملية الواحدة عدة إضافات (مجموعة مشغّل، أو عامل خط المعالجة، أو مضيف الإضافات):
+فـ`rss_mb` ذاكرة العملية كلها و`shared_with` يسمّي الإضافات الأخرى. لا شيء يقسّمها على الإضافات، ولا
+يُقاس استخدام المعالج لكل عملية.
+
+يسرد `core` أجزاء مكتبة نفسها التي يجب أن تعمل دائمًا. وهي ليست إضافات: لا تظهر في `plugins`، ويجيب
+`GET /api/plugins/{id}` عنها بـ`404 plugin_not_installed`.
+
+يجيب `GET /api/plugins/{id}/downstream` بما يفعله إيقاف الإضافة غير إيقافها هي: `stages` (مراحل إضافات
+أخرى تتعطّل)، و`also` (مكوّنات تنتظر أو تعمل بأقل، مع `plugin` لكل منها حين يكون له إضافة)،
+و`processes`، و`loops`، و`features`، و`queued_jobs_parked`، و`drain_s`.
+
+الإضافة التي `source` فيها `"release"` تُشغَّل وتُوقَف بـ`enable` و`disable` و`start` و`stop` مثل غيرها.
+أما مسارات تحديثها وإرجاعها وإزالتها ومنحها وإعداداتها وكتاباتها فتجيب بـ`409 plugin_with_release`:
+فهي تُحدَّث وتُزال مع مكتبة.

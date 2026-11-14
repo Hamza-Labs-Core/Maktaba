@@ -141,7 +141,8 @@ function routes(d: PluginDetail = detail(), list: Plugin[] = [plugin()]) {
   });
 }
 
-const open = () => renderPage(<PluginsSection />, { path: "/settings/plugins" });
+const open = (path = "/settings/plugins") =>
+  renderPage(<PluginsSection />, { path, route: "/settings/plugins/*" });
 
 beforeEach(() => {
   localStorage.removeItem("mkt:locale");
@@ -158,6 +159,7 @@ describe("Settings → Plugins", () => {
         names: { name: { en: "Flaky", ar: "متقلبة" }, summary: { en: "", ar: "" } },
         phase: "stopped",
         held_by: "plugin-breaker",
+        switch_locked: "held",
         health: { tripped: true, jobs_done: 0, jobs_failed: 6, recent: [] },
       }),
     ]);
@@ -241,7 +243,7 @@ describe("Settings → Plugins", () => {
     open();
     expect(await screen.findByText(EN["plugins.badge.store_warning"])).toBeInTheDocument();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: EN["plugins.action.open"] }));
+    await user.click(await screen.findByRole("link", { name: EN["plugins.action.open"] }));
     expect(await screen.findByText(/warns about this plugin \(a severe bug\)/)).toBeInTheDocument();
     await user.click(screen.getByRole("switch", { name: EN["plugins.auto_update.label"] }));
     expect(put).toHaveBeenCalledWith(`/api/plugins/${d.id}/auto-update`, { on: true });
@@ -268,7 +270,7 @@ describe("Settings → Plugins", () => {
     routes();
     open();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: AR["plugins.action.open"] }));
+    await user.click(await screen.findByRole("link", { name: AR["plugins.action.open"] }));
     expect(await screen.findByText(AR["plugins.capability.media_read.title"])).toBeInTheDocument();
     expect(screen.getByText(AR["plugins.capability.tags_write.title"])).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: /الواسم/ })).toBeInTheDocument();
@@ -287,7 +289,7 @@ describe("Settings → Plugins", () => {
     });
     open();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: EN["plugins.action.open"] }));
+    await user.click(await screen.findByRole("link", { name: EN["plugins.action.open"] }));
     expect(await screen.findByText(EN["plugins.permissions.no_library"])).toBeInTheDocument();
     await user.click(
       screen.getByRole("checkbox", { name: new RegExp(EN["plugins.capability.media_read.title"]) })
@@ -309,7 +311,7 @@ describe("Settings → Plugins", () => {
     post.mockResolvedValue({ reverted: 1 });
     open();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: EN["plugins.action.open"] }));
+    await user.click(await screen.findByRole("link", { name: EN["plugins.action.open"] }));
     const boxes = await screen.findAllByRole("checkbox", { name: EN["plugins.writes.select"] });
     await user.click(boxes[1]);
     await user.click(
@@ -422,7 +424,16 @@ describe("Settings → Plugins", () => {
           graph: { nodes: flowGraph.nodes.slice(0, 3), edges: flowGraph.edges.slice(0, 2) },
           findings: [],
         };
-      if (path === "/api/plugins/dev.example.tagger/downstream") return { stages };
+      if (path === "/api/plugins/dev.example.tagger/downstream")
+        return {
+          stages,
+          also: [],
+          processes: [],
+          loops: [],
+          features: [],
+          queued_jobs_parked: 0,
+          drain_s: 0,
+        };
       return base(path);
     });
   }
@@ -431,7 +442,7 @@ describe("Settings → Plugins", () => {
     flowRoutes();
     open();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: EN["plugins.action.open"] }));
+    await user.click(await screen.findByRole("link", { name: EN["plugins.action.open"] }));
     const charts = await screen.findAllByTestId("flow-chart");
     expect(charts).toHaveLength(2);
     expect(screen.getByText(/dev\.example\.writer >=1\.0\.0/)).toBeInTheDocument();
@@ -451,7 +462,7 @@ describe("Settings → Plugins", () => {
     flowRoutes();
     open();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: AR["plugins.action.open"] }));
+    await user.click(await screen.findByRole("link", { name: AR["plugins.action.open"] }));
     const [chart] = await screen.findAllByTestId("flow-chart");
     const svg = chart.querySelector("svg") as SVGElement;
     expect(svg.getAttribute("direction")).toBe("rtl");
@@ -466,8 +477,8 @@ describe("Settings → Plugins", () => {
     post.mockResolvedValue(detail({ want: "installed" }));
     open();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: EN["plugins.action.open"] }));
-    await user.click(await screen.findByRole("button", { name: EN["plugins.action.disable"] }));
+    await user.click(await screen.findByRole("link", { name: EN["plugins.action.open"] }));
+    await user.click(await screen.findByRole("switch", { name: /Tagger/ }));
     expect(await screen.findByText("dev.example.writer/write")).toBeInTheDocument();
     expect(post).not.toHaveBeenCalled();
     const dialog = screen.getByRole("dialog");
@@ -506,7 +517,7 @@ describe("Settings → Plugins", () => {
     put.mockResolvedValue({ plugin_id: "dev.example.tagger", report_logs: true });
     open();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: EN["plugins.action.open"] }));
+    await user.click(await screen.findByRole("link", { name: EN["plugins.action.open"] }));
     const box = await screen
       .findByRole("switch", { name: EN["plugins.report_logs.label"] })
       .catch(() => screen.getByRole("checkbox", { name: EN["plugins.report_logs.label"] }));
@@ -530,20 +541,165 @@ describe("Settings → Plugins", () => {
   });
 });
 
-describe("Settings → Plugins: built into Maktaba (Epic 54, story 54.22 §4)", () => {
-  const builtIn = {
-    id: "tv.maktaba.classify",
-    name: "Classify",
-    name_ar: "التصنيف",
-    summary: "Groups and titles the library.",
-    summary_ar: "يجمع المكتبة ويسمّيها.",
-    component: "classify",
-    stages: ["promo_links"],
-    capabilities: [
-      { key: "fp.trusted.db.statements", param: "promo_links" },
-      { key: "fp.trusted.settings.read", param: "groups" },
-    ],
+describe("Settings → Plugins: one page for every plugin (Epic 54, story 54.44)", () => {
+  const light = {
+    process: "plugin-runner/light",
+    group: "light",
+    component: "core.plugin_runners",
+    machine: "home",
+    phase: "running",
+    rss_mb: 310,
+    scope: "process" as const,
+    stages: ["subtitle_gen"],
+    shared_with: ["tv.maktaba.thumbnails"],
+    shared_core: true,
   };
+  /** A plugin Maktaba publishes, as GET /api/plugins lists it. */
+  function maktaba(over: Partial<Plugin> = {}): Plugin {
+    return plugin({
+      id: "tv.maktaba.subtitles",
+      component: "subtitles",
+      version: "0.3.90",
+      names: {
+        name: { en: "Subtitles", ar: "الترجمات" },
+        summary: { en: "Writes subtitle files.", ar: "تكتب ملفات الترجمة." },
+      },
+      review_level: "reviewed",
+      rating: 0,
+      required: [],
+      optional: [],
+      publisher: { id: "maktaba", verified: true },
+      source: "release",
+      stage_names: ["subtitle_gen"],
+      queues: ["subtitle_gen"],
+      activity: { pending: 4, running: 1, done_24h: 20, failed_24h: 3, problems: 2, avg_ms: 3000 },
+      resources: {
+        processes: [light],
+        shared: true,
+        data_rows: 0,
+        data_bytes: 0,
+        data_mb: 0,
+        memory_mb: 0,
+      },
+      settings: [],
+      ...over,
+    });
+  }
+  const thumbs = () =>
+    maktaba({
+      id: "tv.maktaba.thumbnails",
+      component: "media.thumbnails",
+      names: { name: { en: "Thumbnails", ar: "الصور المصغّرة" }, summary: { en: "", ar: "" } },
+      queues: ["thumbnail", "thumb_small"],
+      activity: { pending: 0, running: 0, done_24h: 0, failed_24h: 0, problems: 0 },
+    });
+  const third = () =>
+    plugin({
+      publisher: { id: "", verified: false },
+      source: "file",
+      queues: ["p_1_tag"],
+      activity: { pending: 0, running: 0, done_24h: 2, failed_24h: 0, problems: 0 },
+    });
+  const fromStore = () =>
+    plugin({
+      id: "dev.example.store",
+      names: { name: { en: "Storey", ar: "متجرية" }, summary: { en: "", ar: "" } },
+      review_level: "reviewed",
+      publisher: { id: "", verified: false },
+      source: "store",
+    });
+  function maktabaDetail(over: Partial<PluginDetail> = {}): PluginDetail {
+    return {
+      ...maktaba(),
+      manifest: { maktaba: ">=0.0.0" },
+      stages: [
+        {
+          name: "subtitle_gen",
+          queue: "subtitle_gen",
+          subject: "video",
+          version: 1,
+          pending: 4,
+          running: 1,
+          done_24h: 20,
+          failed_24h: 3,
+          problems: 2,
+          avg_ms: 3000,
+          runs_in: "light",
+        },
+      ],
+      writes: 0,
+      data_rows: 0,
+      data_bytes: 0,
+      data_mb: 0,
+      capabilities: [{ key: "fp.trusted.settings.read", param: "subtitles" }],
+      machines: [{ machine: "home", phase: "running", restarts_24h: 0, stale: false }],
+      settings: ["rules.repair", "toml:transcription.workers"],
+      ...over,
+    };
+  }
+  const quiet = {
+    stages: [],
+    also: [],
+    processes: [],
+    loops: [],
+    features: [],
+    queued_jobs_parked: 0,
+    drain_s: 0,
+  };
+  /** The page's reads: the list, one Maktaba plugin's page and one third-party plugin's. */
+  function page(
+    list: Plugin[],
+    opts: { detail?: PluginDetail; effect?: Record<string, unknown>; core?: boolean } = {}
+  ) {
+    const d = opts.detail ?? maktabaDetail();
+    const tp = detail({ ...third(), resources: thirdResources });
+    get.mockImplementation(async (path: string) => {
+      if (path === "/api/plugins")
+        return {
+          plugins: list,
+          policy: { allow_unreviewed: false },
+          core:
+            opts.core === false
+              ? []
+              : [{ component: "core.pipeline", title_key: "components.core.pipeline.title" }],
+        };
+      if (path === `/api/plugins/${d.id}`) return d;
+      if (path === `/api/plugins/${tp.id}`) return tp;
+      if (path.endsWith("/downstream")) return opts.effect ?? quiet;
+      if (path.endsWith("/flow"))
+        return { id: d.id, version: "1", name: "", graph: { nodes: [], edges: [] }, missing: [] };
+      if (path.endsWith("/graph")) return { graph: { nodes: [], edges: [] }, findings: [] };
+      if (path.includes("/writes")) return { writes: [] };
+      if (path.endsWith("/settings")) return { schema: null, values: {}, strings: {} };
+      if (path === "/api/plugins/trust") return trust;
+      if (path === "/api/plugins/store-account")
+        return { linked: false, store: "https://plugins.maktaba.tv" };
+      if (path === "/api/libraries/summary") return { items: [] };
+      throw new Error("unexpected " + path);
+    });
+  }
+  const thirdResources = {
+    processes: [
+      {
+        process: "plugins/",
+        group: "host",
+        component: "plugins.host",
+        machine: "home",
+        rss_mb: 120,
+        scope: "process" as const,
+        stages: [],
+        shared_with: ["dev.example.other"],
+        shared_core: false,
+      },
+    ],
+    shared: true,
+    data_rows: 12,
+    data_bytes: 5 << 20,
+    data_mb: 50,
+    memory_mb: 256,
+    peak_memory_mb: 90,
+  };
+  const card = (name: RegExp) => screen.findByRole("article", { name });
 
   // Epic 54: a first-party runner that failed is named above the list, with its stages
   it("names a failed plugin runner, its machine and its stages", async () => {
@@ -580,29 +736,405 @@ describe("Settings → Plugins: built into Maktaba (Epic 54, story 54.22 §4)", 
     expect(within(box).getByRole("link")).toHaveAttribute("href", "/settings/components");
   });
 
-  it("lists Maktaba's own plugins with what each can do, and no grants dialog", async () => {
-    get.mockImplementation(async (path: string) => {
-      if (path === "/api/plugins")
-        return { plugins: [], policy: { allow_unreviewed: false }, built_in: [builtIn] };
-      throw new Error("unexpected " + path);
-    });
+  it("T01: one list of every plugin, each marked with who publishes it, and no built-in class", async () => {
+    page([third(), maktaba(), thumbs()]);
     open();
-    const section = await screen.findByRole("region", { name: "Built into Maktaba" });
-    expect(section).toHaveTextContent("Classify");
-    expect(section).toHaveTextContent("Groups and titles the library.");
-    await userEvent.click(screen.getByText("What it can do"));
-    expect(section).toHaveTextContent(en["fp.trusted.db.statements"]);
-    expect(section).toHaveTextContent(en["fp.trusted.settings.read"]);
-    expect(section).toHaveTextContent("Turned on and off with");
-    // turning its component on is the decision (54.22 §4): no grants dialog to open
-    expect(section.querySelector("button")).toBeNull();
+    const sub = await card(/Subtitles/);
+    expect(within(sub).getByText(EN["plugins.publisher.maktaba_verified"])).toBeInTheDocument();
+    expect(within(sub).getByText("0.3.90")).toBeInTheDocument();
+    expect(within(sub).getByRole("switch", { name: /Subtitles/ })).toBeChecked();
+    expect(sub).toHaveTextContent("In the last day: 20 jobs done, 3 failed");
+    expect(sub).toHaveTextContent("310 MB memory, shared with other plugins");
+    expect(sub).toHaveTextContent("1 running, 4 waiting");
+    expect(within(sub).getByRole("link", { name: /Subtitles/ })).toHaveAttribute(
+      "href",
+      "/settings/plugins/tv.maktaba.subtitles"
+    );
+    const tag = await card(/Tagger/);
+    expect(within(tag).getByText(EN["plugins.source.file"])).toBeInTheDocument();
+    expect(within(tag).getByRole("switch", { name: /Tagger/ })).toBeChecked();
+    // all in one list, by one heading level: no second section for Maktaba's
+    expect(screen.getAllByRole("article")).toHaveLength(3);
+    expect(screen.queryByText(/Built into Maktaba/)).toBeNull();
+    expect(screen.queryByText(/on the Components page/)).toBeNull();
+    // core is said in one line, with where to see it, and has no card
+    const core = screen.getByTestId("plugins-core");
+    expect(core).toHaveTextContent(EN["components.core.pipeline.title"]);
+    expect(
+      within(core).getByRole("link", { name: EN["plugins.core.components_link"] })
+    ).toHaveAttribute("href", "/settings/components");
+    expect(
+      within(core).getByRole("link", { name: EN["plugins.core.health_link"] })
+    ).toHaveAttribute("href", "/admin/health");
   });
 
-  it("says nothing of built-in plugins when the release has none", async () => {
+  it("T02: the filter shows all, Maktaba's, others' from the store, or the ones from a file", async () => {
+    page([third(), fromStore(), maktaba(), thumbs()]);
+    open();
+    await card(/Subtitles/);
+    const filter = screen.getByTestId("plugins-filter");
+    const pick = (key: string) =>
+      userEvent.click(within(filter).getByRole("button", { name: new RegExp("^" + EN[key]) }));
+    expect(within(filter).getByRole("button", { name: /^All \(4\)/ })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    await pick("plugins.filter.maktaba");
+    expect(screen.getAllByRole("article").map((a) => a.getAttribute("aria-label"))).toEqual([
+      "Subtitles",
+      "Thumbnails",
+    ]);
+    await pick("plugins.filter.others");
+    expect(screen.getAllByRole("article").map((a) => a.getAttribute("aria-label"))).toEqual([
+      "Storey",
+    ]);
+    await pick("plugins.filter.file");
+    expect(screen.getAllByRole("article").map((a) => a.getAttribute("aria-label"))).toEqual([
+      "Tagger",
+    ]);
+    await pick("plugins.filter.all");
+    expect(screen.getAllByRole("article")).toHaveLength(4);
+  });
+
+  it("T02: the filter is in the address, so a link opens the list filtered", async () => {
+    page([third(), maktaba()]);
+    open("/settings/plugins?show=maktaba");
+    await card(/Subtitles/);
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+  });
+
+  it("T03: a Maktaba plugin is switched on its own card, through its own route", async () => {
+    page([maktaba({ want: "installed", phase: "off" }), third()]);
+    post.mockResolvedValue(maktabaDetail());
+    open();
+    const sub = await card(/Subtitles/);
+    const sw = within(sub).getByRole("switch", { name: /Subtitles/ });
+    expect(sw).not.toBeChecked();
+    await userEvent.click(sw);
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/plugins/tv.maktaba.subtitles/enable")
+    );
+    // nothing of the Components routes is called from this page
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("T03: a third-party plugin's switch is the same switch", async () => {
+    page([third()]);
+    post.mockResolvedValue(detail({ want: "installed" }));
+    open();
+    const tag = await card(/Tagger/);
+    await userEvent.click(within(tag).getByRole("switch", { name: /Tagger/ }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/plugins/dev.example.tagger/disable")
+    );
+  });
+
+  it("T04: turning off names exactly what else stops, by plugin name, before anything changes", async () => {
+    page(
+      [
+        maktaba({
+          id: "tv.maktaba.transcription",
+          component: "transcription",
+          names: { name: { en: "Transcription", ar: "التفريغ" }, summary: { en: "", ar: "" } },
+        }),
+        maktaba(),
+      ],
+      {
+        effect: {
+          stages: [],
+          also: [
+            {
+              component: "subtitles",
+              title_key: "components.subtitles.title",
+              plugin: "tv.maktaba.subtitles",
+              to: "waiting",
+            },
+            {
+              component: "parental.detect",
+              title_key: "components.parental.detect.title",
+              to: "degraded",
+            },
+          ],
+          processes: ["pipeline/stt-*", "plugin-runner/ml"],
+          loops: [],
+          features: ["transcripts"],
+          queued_jobs_parked: 7,
+          drain_s: 120,
+        },
+      }
+    );
+    post.mockResolvedValue(maktabaDetail());
+    open();
+    const tr = await card(/Transcription/);
+    await userEvent.click(within(tr).getByRole("switch", { name: /Transcription/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(post).not.toHaveBeenCalled();
+    expect(within(dialog).getByTestId("effect-stops")).toHaveTextContent(
+      /This also stops: .?Subtitles/
+    );
+    expect(within(dialog).getByTestId("effect-degrades")).toHaveTextContent(
+      EN["components.parental.detect.title"]
+    );
+    expect(within(dialog).getByTestId("effect-features")).toHaveTextContent(
+      EN["components.feature.transcripts"]
+    );
+    expect(within(dialog).getByTestId("effect-parts")).toHaveTextContent("plugin-runner/ml");
+    expect(dialog).toHaveTextContent("7 queued jobs will wait");
+    // Cancel changes nothing
+    await userEvent.click(within(dialog).getByRole("button", { name: EN["common.cancel"] }));
+    expect(post).not.toHaveBeenCalled();
+    await userEvent.click(within(tr).getByRole("switch", { name: /Transcription/ }));
+    await userEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: EN["plugins.action.disable"],
+      })
+    );
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/plugins/tv.maktaba.transcription/disable")
+    );
+  });
+
+  it("T04: a refused switch says why in words and leaves the switch as it was", async () => {
+    page([maktaba({ want: "installed", phase: "off" })]);
+    post.mockRejectedValue(problem(409, "plugin_with_release"));
+    open();
+    const sub = await card(/Subtitles/);
+    await userEvent.click(within(sub).getByRole("switch", { name: /Subtitles/ }));
+    expect(await within(sub).findByRole("alert")).toHaveTextContent(
+      EN["plugins.error.plugin_with_release"]
+    );
+    expect(within(sub).getByRole("switch", { name: /Subtitles/ })).not.toBeChecked();
+  });
+
+  it.each([
+    ["licence_missing", "plugins.lock.licence_missing"],
+    ["held", "plugins.lock.held"],
+    ["revoked", "plugins.lock.revoked"],
+    ["platform_unsupported", "components.reason.platform_unsupported"],
+  ])("T05: a switch that cannot be used (%s) is disabled, with why in words", async (code, key) => {
+    page([maktaba({ switch_locked: code, held_by: code === "held" ? "owner" : undefined })]);
+    open();
+    const sub = await card(/Subtitles/);
+    const sw = within(sub).getByRole("switch", { name: /Subtitles/ });
+    expect(sw).toBeDisabled();
+    const why = within(sub).getByTestId("switch-locked");
+    expect(why).toHaveTextContent(EN[key]);
+    expect(sw).toHaveAttribute("aria-describedby", why.id);
+    // a stopped plugin can be started from the same place
+    expect(within(sub).queryAllByRole("button", { name: EN["plugins.action.start"] })).toHaveLength(
+      code === "held" ? 1 : 0
+    );
+  });
+
+  it("T06: a card's problems count links to the failures view filtered to its stages", async () => {
+    page([maktaba(), thumbs()]);
+    open();
+    const sub = await card(/Subtitles/);
+    const link = within(sub).getByTestId("card-problems");
+    expect(link).toHaveTextContent("2 problems");
+    expect(link).toHaveAttribute("href", "/queue/failures?stage=subtitle_gen");
+    // a plugin with no problem says so and links nowhere
+    const th = await card(/Thumbnails/);
+    expect(th).toHaveTextContent(EN["plugins.errors.none"]);
+    expect(within(th).queryByTestId("card-problems")).toBeNull();
+  });
+
+  it("T07: a Maktaba plugin's page opens at its own address, with every section that applies", async () => {
+    page([maktaba(), thumbs()]);
+    open("/settings/plugins/tv.maktaba.subtitles");
+    expect(await screen.findByRole("heading", { level: 2, name: /Subtitles/ })).toBeInTheDocument();
+    expect(screen.getByTestId("plugin-source")).toHaveTextContent(
+      EN["plugins.source.long.release"]
+    );
+    // its stages, each a link to its queue
+    const stages = screen.getByTestId("plugin-stages");
+    expect(
+      within(stages).getByRole("link", { name: EN["queue.stage.subtitle_gen.title"] })
+    ).toHaveAttribute("href", "/queue/subtitle_gen");
+    expect(stages).toHaveTextContent(EN["plugins.group.light"]);
+    // what it can do in Maktaba's words, with nothing to grant
+    expect(screen.getByTestId("plugin-capabilities")).toHaveTextContent(
+      EN["fp.trusted.settings.read"]
+    );
+    expect(screen.queryByRole("button", { name: EN["plugins.permissions.save"] })).toBeNull();
+    // status on each machine
+    expect(screen.getByTestId("plugin-machines")).toHaveTextContent("home");
+    // errors: failed jobs (its stages) and logs (its component)
+    expect(screen.getByTestId("plugin-problems")).toHaveTextContent("2 problems");
+    expect(screen.getByTestId("plugin-failures-link")).toHaveAttribute(
+      "href",
+      "/queue/failures?stage=subtitle_gen"
+    );
+    expect(screen.getByTestId("plugin-error-logs-link")).toHaveAttribute(
+      "href",
+      "/admin/logs?components=subtitles&level=error"
+    );
+    // settings: where they live today
+    const links = screen.getByTestId("plugin-settings-links");
+    expect(within(links).getByRole("link", { name: EN["rules.repair.title"] })).toHaveAttribute(
+      "href",
+      "/settings/rules#repair"
+    );
+    expect(screen.getByText("transcription.workers")).toBeInTheDocument();
+    // versions: with Maktaba, a link to Updates; nothing to roll back or upload
+    const versions = screen.getByTestId("versions-with-release");
+    expect(within(versions).getByRole("link")).toHaveAttribute("href", "/admin/updates");
+    expect(screen.queryByText(EN["plugins.versions.update_file"])).toBeNull();
+    // what does not apply is absent: no writes, no remove buttons, and why in words
+    expect(screen.queryByRole("heading", { name: EN["plugins.section.writes"] })).toBeNull();
+    expect(screen.queryByRole("button", { name: EN["plugins.action.remove"] })).toBeNull();
+    expect(screen.queryByRole("button", { name: EN["plugins.action.purge"] })).toBeNull();
+    const why = screen.getByTestId("remove-with-release");
+    expect(why).toHaveTextContent(EN["plugins.remove.with_release"]);
+    expect(within(why).getByRole("link")).toHaveAttribute("href", "/settings/components#subtitles");
+    // the same switch as its card
+    expect(screen.getByRole("switch", { name: /Subtitles/ })).toBeChecked();
+    // a link back to the list
+    expect(screen.getByRole("link", { name: EN["plugins.page.back"] })).toHaveAttribute(
+      "href",
+      "/settings/plugins"
+    );
+  });
+
+  it("T07: Back returns from a plugin's page to the list, and to the page again", async () => {
+    page([maktaba()]);
+    open();
+    const sub = await card(/Subtitles/);
+    await userEvent.click(within(sub).getByRole("link", { name: EN["plugins.action.open"] }));
+    expect(await screen.findByTestId("plugin-stages")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "go back" }));
+    expect(await card(/Subtitles/)).toBeInTheDocument();
+    expect(screen.queryByTestId("plugin-stages")).toBeNull();
+  });
+
+  it("T07: an id that is no plugin (core included) says so, with the way back", async () => {
+    page([maktaba()]);
+    get.mockImplementation(async (path: string) => {
+      if (path === "/api/plugins/tv.maktaba.core-media") throw problem(404, "plugin_not_installed");
+      if (path === "/api/plugins") return { plugins: [], policy: { allow_unreviewed: false } };
+      throw new Error("unexpected " + path);
+    });
+    open("/settings/plugins/tv.maktaba.core-media");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      EN["plugins.error.plugin_not_installed"]
+    );
+    expect(screen.getByRole("link", { name: EN["plugins.page.back"] })).toBeInTheDocument();
+  });
+
+  it("T08: a shared runner group shows the group's memory and who shares it, not a split", async () => {
+    page([maktaba(), thumbs()]);
+    open("/settings/plugins/tv.maktaba.subtitles");
+    const table = await screen.findByTestId("resources-processes");
+    expect(table).toHaveTextContent("plugin-runner/light");
+    expect(table).toHaveTextContent("310 MB");
+    expect(table).toHaveTextContent(/Thumbnails.* and Maktaba itself/);
+    expect(screen.getByTestId("resources-shared")).toHaveTextContent(
+      EN["plugins.resources.shared_note"]
+    );
+    expect(screen.getByText(EN["plugins.resources.cpu_note"])).toBeInTheDocument();
+    // its jobs: running, waiting and the usual time
+    const section = screen.getByRole("region", { name: EN["plugins.section.resources"] });
+    expect(section).toHaveTextContent("3 s");
+    // no quota bar for a plugin with no store of its own
+    expect(screen.queryByTestId("resources-quota")).toBeNull();
+  });
+
+  it("T08: memory the supervisor reports only for the whole part is said so", async () => {
+    page([maktaba()], {
+      detail: maktabaDetail({
+        resources: {
+          processes: [{ ...light, scope: "component", rss_mb: 900, shared_with: [] }],
+          shared: true,
+          data_rows: 0,
+          data_bytes: 0,
+          data_mb: 0,
+          memory_mb: 0,
+        },
+      }),
+    });
+    open("/settings/plugins/tv.maktaba.subtitles");
+    expect(await screen.findByTestId("resources-processes")).toHaveTextContent(
+      "900 MB, with the other programs of the same part"
+    );
+  });
+
+  it("T08: a third-party plugin's page has its quota bar, the host it shares, and every switch", async () => {
+    page([third()]);
+    open("/settings/plugins/dev.example.tagger");
+    const quota = await screen.findByTestId("resources-quota");
+    expect(quota).toHaveTextContent("12 entries, 5 MB of 50 MB");
+    expect(within(quota).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "10");
+    expect(screen.getByTestId("resources-processes")).toHaveTextContent("dev.example.other");
+    expect(screen.getByText("up to 90 MB used lately, of 256 MB allowed")).toBeInTheDocument();
+    expect(screen.getByTestId("plugin-source")).toHaveTextContent(EN["plugins.source.long.file"]);
+    expect(screen.getByTestId("plugin-error-logs-link")).toHaveAttribute(
+      "href",
+      "/admin/logs?services=plugin.dev.example.tagger&level=error"
+    );
+    expect(screen.getByTestId("plugin-failures-link")).toHaveAttribute(
+      "href",
+      "/queue/failures?stage=p_1_tag"
+    );
+    expect(screen.getByRole("button", { name: EN["plugins.action.remove"] })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: EN["plugins.section.writes"] })).toBeInTheDocument();
+    expect(screen.queryByTestId("remove-with-release")).toBeNull();
+  });
+
+  it("T09: how to install is on the page, with what unreviewed means", async () => {
+    page([maktaba()]);
+    open();
+    const how = await screen.findByRole("region", { name: EN["plugins.how.title"] });
+    expect(how).toHaveTextContent(EN["plugins.how.store"]);
+    expect(how).toHaveTextContent(EN["plugins.how.file"]);
+    expect(how).toHaveTextContent(EN["plugins.how.unreviewed"]);
+    await userEvent.click(within(how).getByRole("button", { name: EN["plugins.how.file_do"] }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent(EN["plugins.install.title"]);
+  });
+
+  it("T09: a home with no plugin (a lite home) says how to install one", async () => {
+    page([], { core: false });
+    open();
+    const empty = await screen.findByTestId("plugins-empty");
+    expect(empty).toHaveTextContent(EN["plugins.page.none"]);
+    expect(empty).toHaveTextContent(EN["plugins.page.none_how"]);
+    expect(screen.getByRole("button", { name: EN["plugins.browse.button"] })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: EN["plugins.install.button"] })).toBeInTheDocument();
+  });
+
+  it("T10: Arabic: the list, the filter, the lock reason and the page, right to left", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    page([maktaba({ switch_locked: "licence_missing" }), thumbs()]);
+    open();
+    const sub = await card(/الترجمات/);
+    expect(document.documentElement.dir).toBe("rtl");
+    expect(within(sub).getByText(AR["plugins.publisher.maktaba_verified"])).toBeInTheDocument();
+    expect(within(sub).getByTestId("switch-locked")).toHaveTextContent(
+      AR["plugins.lock.licence_missing"]
+    );
+    expect(within(sub).getByRole("switch", { name: /الترجمات/ })).toBeDisabled();
+    expect(
+      within(screen.getByTestId("plugins-filter")).getByRole("button", {
+        name: new RegExp("^" + AR["plugins.filter.maktaba"]),
+      })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: AR["plugins.how.title"] })).toHaveTextContent(
+      AR["plugins.how.unreviewed"]
+    );
+    await userEvent.click(within(sub).getByRole("link", { name: AR["plugins.action.open"] }));
+    expect(await screen.findByTestId("resources-shared")).toHaveTextContent(
+      AR["plugins.resources.shared_note"]
+    );
+    expect(screen.getByTestId("remove-with-release")).toHaveTextContent(
+      AR["plugins.remove.with_release"]
+    );
+    expect(screen.getByTestId("plugin-problems")).toHaveTextContent(/مشكلات/);
+  });
+
+  it("says nothing of plugins when the home has none", async () => {
     routes(detail(), []);
     open();
     await screen.findByText(en["plugins.page.none"]);
-    expect(screen.queryByRole("region", { name: "Built into Maktaba" })).toBeNull();
+    expect(screen.queryByRole("article")).toBeNull();
   });
 
   it("has every trusted capability in English and Arabic", () => {

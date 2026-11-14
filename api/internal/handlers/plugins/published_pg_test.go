@@ -222,6 +222,7 @@ func TestActivityAndSharedProcesses(t *testing.T) {
 	job("subtitle_gen", "done", "now() - interval '9 minutes' AS s, now() - interval '9 minutes' + interval '4 seconds' AS f")
 	job("subtitle_gen", "done", "now() - interval '3 days' AS s, now() - interval '3 days' + interval '90 seconds' AS f")
 	job("subtitle_gen", "failed", "now() - interval '5 minutes' AS s, now() - interval '4 minutes' AS f")
+	// the newest job of the subject failed: one open problem, though two jobs failed
 	job("subtitle_gen", "failed", "now() - interval '4 days' AS s, now() - interval '4 days' AS f")
 	// subtitles is flipped to its runner; thumbnails (the same group) too
 	if _, err := db.Exec(`UPDATE job_stages SET impl = 'plugin' WHERE stage IN ('subtitle_gen', 'thumbnail', 'thumb_small', 'chapter_thumbs')`); err != nil {
@@ -236,7 +237,7 @@ func TestActivityAndSharedProcesses(t *testing.T) {
 		t.Fatalf("show: %d %v", code, got)
 	}
 	act, _ := got["activity"].(map[string]any)
-	if act["done_24h"] != float64(2) || act["failed_24h"] != float64(1) || act["problems"] != float64(2) ||
+	if act["done_24h"] != float64(2) || act["failed_24h"] != float64(1) || act["problems"] != float64(1) ||
 		act["avg_ms"] != float64(3000) || act["p95_ms"] == nil {
 		t.Fatalf("activity: %v", act)
 	}
@@ -266,7 +267,7 @@ func TestActivityAndSharedProcesses(t *testing.T) {
 	// the list carries the same numbers for the cards
 	_, list := f.call(f.admin, http.MethodGet, "/api/plugins")
 	card := byID(list["plugins"], "tv.maktaba.subtitles")
-	if a, _ := card["activity"].(map[string]any); a["problems"] != float64(2) {
+	if a, _ := card["activity"].(map[string]any); a["problems"] != float64(1) {
 		t.Fatalf("the card's activity: %v", card)
 	}
 }

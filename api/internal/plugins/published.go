@@ -299,8 +299,12 @@ func (l *Lifecycle) loadPage(ctx context.Context, stages []string) (*pageData, e
 	}); err != nil {
 		return nil, err
 	}
-	if err := l.each(ctx, `SELECT stage, count(*), count(*) FILTER (WHERE finished_at > now() - interval '1 day')
-		FROM processing_jobs WHERE stage = ANY($1) AND state = 'failed' GROUP BY stage`, arg, func(scan func(...any) error) error {
+	// a failed job is a problem while it is the subject's newest job of the stage (what the
+	// failures view lists); one a later run replaced is only a failure of its day
+	if err := l.each(ctx, `SELECT f.stage, count(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM processing_jobs n
+			WHERE n.subject_kind = f.subject_kind AND n.subject_id = f.subject_id AND n.stage = f.stage AND n.id > f.id)),
+		count(*) FILTER (WHERE f.finished_at > now() - interval '1 day')
+		FROM processing_jobs f WHERE f.stage = ANY($1) AND f.state = 'failed' GROUP BY f.stage`, arg, func(scan func(...any) error) error {
 		var stage string
 		var open, day int
 		if err := scan(&stage, &open, &day); err != nil {
@@ -426,9 +430,10 @@ func (l *Lifecycle) publishedView(fp *firstparty.FirstParty, d *pageData) View {
 	v := View{ID: fp.ID, Component: fp.Trusted.Component, Version: fp.Version, Digest: fp.Digest, Names: fpNames(fp),
 		ReviewLevel: "reviewed", Publisher: Publisher{ID: PublisherMaktaba, Verified: true}, Source: SourceRelease,
 		Grants: GrantSet{Capabilities: []string{}, Libraries: []string{}}, Required: []string{}, Optional: []string{},
-		Health: Health{Recent: json.RawMessage("[]")}, Want: components.WantEnabled, StageNames: nonNil(fp.Stages),
+		Health: Health{Recent: json.RawMessage("[]")}, Want: components.WantEnabled, StageNames: nonNil(fp.Stages), Queues: nonNil(fp.Stages),
 		Settings: []string{}}
-	if l.Version != "" {
+	// its version is the server's (README §15.6); a build with no version keeps the manifest's
+	if l.Version != "" && l.Version != "unknown" {
 		v.Version = l.Version
 	}
 	if c, ok := d.comps[v.Component]; ok {

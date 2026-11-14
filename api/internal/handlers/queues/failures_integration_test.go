@@ -87,6 +87,16 @@ func TestQueueHealth_AgainstPostgres(t *testing.T) {
 	if len(all.Items) != 2 || len(all.Facets["stage"]) != 2 {
 		t.Fatalf("all %+v", all)
 	}
+	// story 54.44: a plugin's page links here with its stages joined by commas
+	if got := get("?stage=content_hash"); len(got.Items) != 1 || got.Items[0].Stage != "content_hash" {
+		t.Fatalf("one stage %+v", got.Items)
+	}
+	if got := get("?stage=content_hash,fingerprint"); len(got.Items) != 2 {
+		t.Fatalf("two stages %+v", got.Items)
+	}
+	if got := get("?stage=thumbnail,probe"); len(got.Items) != 0 {
+		t.Fatalf("other stages %+v", got.Items)
+	}
 	if got := get("?status=waiting&library=" + lib); len(got.Items) != 1 || got.Items[0].Reason != "waiting:dependency:share:smb://nas/O" {
 		t.Fatalf("waiting %+v", got.Items)
 	}

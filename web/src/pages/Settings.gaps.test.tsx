@@ -74,6 +74,30 @@ describe("Settings", () => {
     auth.user = { id: "u1", username: "root", is_admin: true };
   });
 
+  it("54.44: a plugin's page has its own address under Settings, the Plugins tab marked", async () => {
+    serve(upToDate);
+    const base = get.getMockImplementation()!;
+    get.mockImplementation((url: string) => {
+      if (url === "/api/plugins/tv.maktaba.subtitles")
+        return Promise.reject(new Error("not this test's"));
+      if (url === "/api/plugins")
+        return Promise.resolve({ plugins: [], policy: { allow_unreviewed: false } });
+      return base(url);
+    });
+    renderAt("/settings/plugins/tv.maktaba.subtitles");
+    // the plugin's page, not the list and not the Account tab an unknown tab falls back to
+    expect(await screen.findByRole("link", { name: en["plugins.page.back"] })).toHaveAttribute(
+      "href",
+      "/settings/plugins"
+    );
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/api/plugins/tv.maktaba.subtitles"));
+    expect(screen.getByRole("link", { name: en["settings.section.plugins"] })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
+    expect(screen.queryByRole("heading", { name: en["plugins.page.title"] })).toBeNull();
+  });
+
   it("links personal access tokens from Account and sessions from Sessions", async () => {
     serve(upToDate);
     renderAt("/settings");

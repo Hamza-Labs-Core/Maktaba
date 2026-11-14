@@ -114,9 +114,12 @@ type View struct {
 	// (release, store, file), its stages, why its switch cannot be used ("" when it can),
 	// its jobs and what it uses. Settings are the settings its component owns
 	// (rules.<section>, toml:<key>), for a plugin whose settings are Maktaba's own pages.
-	Publisher    Publisher `json:"publisher"`
-	Source       string    `json:"source"`
-	StageNames   []string  `json:"stage_names"`
+	Publisher  Publisher `json:"publisher"`
+	Source     string    `json:"source"`
+	StageNames []string  `json:"stage_names"`
+	// Queues are its stages as the queue names them (the failures view's stage filter): a
+	// Maktaba plugin's are its stage names, any other's p_<hash>_<stage>.
+	Queues       []string  `json:"queues"`
 	SwitchLocked string    `json:"switch_locked,omitempty"`
 	Activity     Activity  `json:"activity"`
 	Resources    Resources `json:"resources"`
@@ -190,8 +193,10 @@ func (l *Lifecycle) view(ctx context.Context, id string) (*View, error) {
 	if in.ReviewLevel == "store" || in.ReviewLevel == "automated" || in.ReviewLevel == "reviewed" {
 		v.Source = SourceStore
 	}
+	v.Queues = []string{}
 	for _, s := range m.Stage {
 		v.StageNames = append(v.StageNames, s.Name)
+		v.Queues = append(v.Queues, components.PluginQueueName(id, s.Name))
 	}
 	v.Resources.DataMB, v.Resources.MemoryMB = m.Resources.DataMB, m.Resources.MemoryMB
 	var rev []byte

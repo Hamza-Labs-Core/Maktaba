@@ -63,6 +63,84 @@ export interface Plugin {
     issued: string;
   } | null;
   auto_update?: boolean;
+  /** Story 54.44, the same for every plugin: who publishes it ("maktaba", verified, or ""). */
+  publisher?: { id: string; verified: boolean };
+  /** where this home got it: with the Maktaba release, from the store, or from a file */
+  source?: PluginSource;
+  stage_names?: string[];
+  /** its stages as the queue names them (the failures view's stage filter) */
+  queues?: string[];
+  /** why its switch cannot be used (a components.reason.<code>, or "held"); absent when it can */
+  switch_locked?: string;
+  activity?: PluginActivity;
+  resources?: PluginResources;
+  /** the settings its component owns (rules.<section>, toml:<key>): Maktaba's own pages */
+  settings?: string[];
+}
+
+export type PluginSource = "release" | "store" | "file";
+
+/** A plugin's jobs over its stages (story 54.44). */
+export interface PluginActivity {
+  pending: number;
+  running: number;
+  done_24h: number;
+  failed_24h: number;
+  /** failed jobs open now: what the failures view lists */
+  problems: number;
+  avg_ms?: number;
+  p95_ms?: number;
+}
+
+/** One process that runs a plugin's stages on one machine, and its memory. A runner group,
+ * the pipeline worker and the plugin host are shared: the number is the whole process's. */
+export interface ProcessUse {
+  process: string;
+  /** light, files, net, service, ml, index; "worker" (the pipeline worker); "host" */
+  group: string;
+  component: string;
+  machine: string;
+  phase?: string;
+  rss_mb?: number;
+  /** what rss_mb measures: this process alone, or every process of its component */
+  scope?: "process" | "component";
+  stages: string[] | null;
+  shared_with: string[] | null;
+  shared_core: boolean;
+}
+
+export interface PluginResources {
+  processes: ProcessUse[] | null;
+  shared: boolean;
+  data_rows: number;
+  data_bytes: number;
+  data_mb: number;
+  memory_mb: number;
+  peak_memory_mb?: number;
+}
+
+/** A plugin's status on one machine. */
+export interface PluginMachine {
+  machine: string;
+  phase: string;
+  reason?: string;
+  reason_params?: Record<string, string> | null;
+  restarts_24h: number;
+  last_error_code?: string;
+  stale: boolean;
+}
+
+/** What turning a plugin off does beside stopping it (GET /api/plugins/{id}/downstream). */
+export interface SwitchEffect {
+  /** other plugins' stages that go idle (54.39 §6) */
+  stages: string[] | null;
+  /** components the switch moves (waiting: needs this one; degraded: runs with less) */
+  also: { component: string; title_key: string; plugin?: string; to?: string }[] | null;
+  processes: string[] | null;
+  loops: string[] | null;
+  features: string[] | null;
+  queued_jobs_parked: number;
+  drain_s: number;
 }
 
 /** One version in the store's catalog. */
@@ -132,6 +210,11 @@ export interface PluginStage {
   running: number;
   done_24h: number;
   failed_24h: number;
+  problems?: number;
+  avg_ms?: number;
+  p95_ms?: number;
+  /** a runner group, "worker" or "host" */
+  runs_in?: string;
 }
 
 export interface PluginDetail extends Plugin {
@@ -143,20 +226,9 @@ export interface PluginDetail extends Plugin {
   data_mb: number;
   /** an admin ticked "Include its logs in problem reports" (54.09 §3) */
   report_logs?: boolean;
-}
-
-/** One of Maktaba's own built-in (first-party) plugins (Epic 54, story 54.22 §4). Its
- * component's switch on the Components page is its switch: there is no grants dialog. */
-export interface BuiltInPlugin {
-  id: string;
-  name: string;
-  name_ar: string;
-  summary: string;
-  summary_ar: string;
-  component: string;
-  stages: string[];
-  /** fp.trusted.<capability> (and plugins.cap.<name>) words, each with its parameter */
-  capabilities: { key: string; param: string }[];
+  /** what a Maktaba-published plugin can do: fp.trusted.<capability> words with a parameter */
+  capabilities?: { key: string; param: string }[] | null;
+  machines?: PluginMachine[] | null;
 }
 
 export interface Policy {
@@ -343,10 +415,15 @@ export const pluginsApi = {
       }
     ),
   list: () =>
-    api.get<{ plugins: Plugin[]; policy: Policy; built_in?: BuiltInPlugin[] }>("/api/plugins"),
+    api.get<{
+      plugins: Plugin[];
+      policy: Policy;
+      /** parts of Maktaba itself: always on, not plugins */
+      core?: { component: string; title_key: string }[];
+    }>("/api/plugins"),
   graph: () => api.get<{ graph: FlowGraph; findings: FlowFinding[] | null }>("/api/plugins/graph"),
   flow: (id: string) => api.get<PluginFlow>(`/api/plugins/${enc(id)}/flow`),
-  downstream: (id: string) => api.get<{ stages: string[] }>(`/api/plugins/${enc(id)}/downstream`),
+  downstream: (id: string) => api.get<SwitchEffect>(`/api/plugins/${enc(id)}/downstream`),
   show: (id: string) => api.get<PluginDetail>(`/api/plugins/${enc(id)}`),
   setReportLogs: (id: string, include: boolean) =>
     api.put<{ plugin_id: string; report_logs: boolean }>(`/api/plugins/${enc(id)}/report-logs`, {
