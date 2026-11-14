@@ -1,17 +1,18 @@
 ---
 schema: 1
-tag: v0.3.140
-up_to_commit: ae002c5d9
-built_from: v0.3.139
+tag: v0.3.141
+up_to_commit: 09ec7ab6e
+built_from: v0.3.140
 ---
 
-# Trail snapshot: v0.3.140
+# Trail snapshot: v0.3.141
 
 ## Keep doing
 
 **Working**
 - Run the PR flow to the merge without asking; ask only for real product decisions (costly backfill, deleting data). Follow-ups start at once as parallel worktree agents. (d20261031-standing-rules, d20261102-coordinator-rules)
 - Verify every claim yourself before acting on it, and check a spec's claims against the code: read the code a spec section describes before relying on it (the code was right and the spec stale, twice). Before writing a fix for an issue, or its options, check that it is not already fixed or decided, and before carrying an open item forward or taking a trail line as work look for it in the code (native TV crash capture stayed open after it shipped); before blaming one PR, check the PRs merged around it; before splitting out a fix for a failure that breaks every PR, check main's latest merges; recount a brief's numbers against main before relying on them (link counts, pages that exist only in specs). (#1158, d20261014-pc-dizquetv-origin-and-rules, d20261031-standing-rules, #587, #795, #879, #888, d20261107-test-infra-missteps, d20261107-correction-0685-player-sentence, #952, d20261108-snapshot-fixture-clock)
+- Before saying a feature or behaviour does not exist, search `origin/main` (`git grep <text> origin/main` or a fresh worktree): the main checkout can be thousands of commits behind. In zsh a glob that matches nothing aborts the command (`no matches found`), so read an empty result as a failed search until it is shown to have run; grep for the behaviour itself (`ReconcilePorts`, `port_moved`) before accepting a task's premise that something is missing. (#1228, #1224)
 - When a check can't be made directly, look for what the context already proves: a page reached over the LAN address already proves the raw IP works. (#906)
 - Build tools for the work instead of doing it by hand; a recurring manual step becomes a feature; rules are settings with a UI, not code. (d20261014-pc-dizquetv-origin-and-rules, d20261020-pc-coordinator-merge-rules)
 - No placeholder features: a feature is built or it is not shown. (#128, d20261014-pc-dizquetv-origin-and-rules)
@@ -220,8 +221,12 @@ built_from: v0.3.139
 - Compare built pages with their mockups at every width and in both languages before the first push. (#1192)
 - Prove a "flaky" failure before re-running it (the same value on two pages pointed to one cause); remove design options that were not chosen rather than mark them, and test that none is left. (#1187)
 - When a budget fails, compare the same measurement on several runs of main before blaming the branch; reproduce a CI-only failure by forcing the suspected race (a held response, a loaded CPU, a split document) before changing code, and keep the forcing test. (#1204)
-- Read a red check's own runs before assuming a test failed (a head can carry a green run and a cancelled one); list a pull request's reference images in its body before pushing them, or re-run the check after. (#1211, #1209)
+- Read a red check's own runs before assuming a test failed (a head can carry a green run and a cancelled one); list a pull request's reference images in its body before pushing them, or re-run the check after. (#1211, #1209, #1215, #1219)
 - With Docker off, take website references from CI's own renders and look at each beside the mockup; run the link check against the built site (`links.mjs --dist dist`) before pushing a change to what pages link or preload. (#1207, #1209)
+- Look at CI's first render of a moved page before taking it as the reference; measure the box before changing a measure (a tagline's wrap came from its text column, not its `ch` cap). (#1219, #1215)
+- Fix a test that fails a second time for the same reason, even outside the change: a patched `time.monotonic` patches the `time` module for every thread, so give the code its own clock function and patch that. (#1228)
+- Read every port from the config (`cfg.Server.Listen`, `cfg.PublicWebPort()`), never a literal: `HomeStreamURL` hard-coded 8081 and the launcher's can't-start page 127.0.0.1:8088. (#1224)
+- Sign a design review after the fixes it depends on land, update the rows they fixed, and say what was looked at and what was relied on. (#1217)
 
 ## Stop doing
 
@@ -287,6 +292,9 @@ built_from: v0.3.139
 - Promising that two open pull requests on the same package merge in either order: copying one hunk does not stop the files around it from conflicting. (#1208, #1209)
 - Starting a watcher whose check-name pattern was not tested (`^quality` never matched `website / quality …` and ran to its bound). (#1192)
 - Writing copy into HTML attributes without escaping quotes, even our own copy; stripping tags in one regex pass (CodeQL flags both). (#1187)
+- Writing a whole manifest from a partial run (`shots --only <app>` would have dropped 46 entries). (#1215)
+- Asking the build's resolver about the page being built: a page is never written before its own links are chosen, so it counts itself. (#1219)
+- Leaving a review marked draft once its phase's work is merged. (#1217)
 
 ## What we learned
 
@@ -476,6 +484,7 @@ built_from: v0.3.139
 **Apps and UI tests**
 - In Arabic text a path is reordered at its slashes: wrap each path, command or URL in U+2066/U+2069, and measure positions with a Range before judging a bidi screenshot. Prettier rewrites escaped isolates as literal characters, so later replacements that search for the escape match nothing; a Vite dev server can serve a stale module until restarted with `--force`. Build an image `src` only from a fixed list (CodeQL flags one built from the page's language). (#1120)
 - Under Robolectric a bare `waitUntil` only polls; the v1 compose rule runs effects unconfined. Use settling waits and v2 rules. (#508)
+- The desktop shell's menu ids are kept by hand in Rust and in TypeScript; `apps/desktop/src-tauri/tests/menu_contract.rs` reads both and fails on an id the shell never declares. A file with no inline tests gets no affected-tests mapping: move the logic into a tested module (`bigscreen.rs`). (#1228)
 - Lazy grids anchor on the first visible key, so out-of-order answers open a page scrolled. A BackHandler always composed keeps its old order. (#529, #523)
 - A read that started before a write must not overwrite it on screen: one `ReadOrder` per platform. (#613, #616, #624)
 - SwiftUI: an identifier on a wrapping Section replaces its children's; a `LazyHStack` in a horizontal scroll can stay 0 pt; not every `INFOPLIST_KEY_*` is generated (check the built Info.plist); a `.task` on a view that draws nothing never starts, so put it on a container that always exists. On Android and Apple alike an empty lazy-list or grid item still takes the list's spacing: add the item only with content, on every platform at once. (#541, #569, #579, #787, d20261107-paid-plugins-merge-problems)
@@ -574,6 +583,7 @@ built_from: v0.3.139
 - OpenAPI: every `/api` route the home mounts is described or listed in `testdata/openapi_undocumented.txt` (the list only shrinks); `PUT /api/server/machine` dropped every field but the tier until 59.16 (web, API and supervisor each had tests, none across the three). `openapi.yaml` round-trips byte for byte when edited by script (PyYAML, `width=1000`). (#1142)
 - NAS install guides (59.14): maktaba.tv's install site (`web/packages/install`) has `/install/nas` (model table from `src/nas-models.json`) and guides for each NAS, each with an Arabic twin under `/ar/`; the build fails an Arabic page over 20% Latin (maktaba.dev's `parity.mjs`), «quoted» NAS menu names count as names, and `twins.test.ts` keeps the pairs mirrored. `web/src/i18n/epic59.test.ts` fails on any Epic 59 Strings-table key missing from either catalog (renamed keys are mapped in one documented table); container messages are English then Arabic, in each NAS's words (`MAKTABA_PLATFORM`). A web test reading files outside `web/` loads `node:fs` at run time: the web build typechecks tests with no node types. (#1137)
 - Following the guides on Docker (#1164): `admin` is migration 0029's sentinel account, never a default admin name; a container's `/mnt`, `/srv` and `/media` mounts are libraries, not disks to offer for data; Unraid's appdata is made by Docker as root; `bridge_network` must be in the components catalog. On macOS, unpack a Linux payload on a case-sensitive volume (terminfo's `2621A` and `2621a` collide, then `payload_invalid`). Docker Desktop's host network is the VM's; check each port with `lsof` before publishing one. (#1164)
+- Ports in a container (59.08): `MAKTABA_{WEB,API,STREAM,POSTGRES}_PORT` apply over `server.toml` at every config load and `MAKTABA_PUBLIC_*_PORT` name a bridge's published ports. A port a variable sets is never moved (setup and serve stop, bilingual, naming the holder); a taken default still moves into 8780–8790 through `ReconcilePorts`. `fileTOML` restores the file's own values for pinned keys so an override never leaks into `server.toml`; Unraid passes an empty variable as `""`, read as unset. Postgres's port is checked before it starts (it is not `ReconcilePorts`' business). A new home has the TV tuner off, so `/discover.json` answers 409 `component_off` until `POST /api/components/apply` turns it on. (#1224)
 
 **maktaba.tv (Epic 60)**
 - The zone is active with no DNS records at all; hundreds of repo links point at it (most at `/problems/`). The server image `ghcr.io/hamza-labs-core/maktaba-server` is public since 2026-11-11 (owner action A1): an anonymous pull works on amd64 and arm64, guarded by 60.08's release and daily checks. (#1158, #1184)
@@ -594,7 +604,8 @@ built_from: v0.3.139
 - Design part B is approved (60.01, 60.02): the wordmark, the display face "Maktaba Display" (an Amiri Bold subset, OFL; `scripts/shell.mjs` publishes any `maktaba-display-*` face it names, hashed), layouts for every page kind at 360, 768 and 1280 px, the home and download copy, a traced `static/icon.svg`, and tagline proposal 1 as the hero headline and card title (`copy/README.md` keeps the other proposals). Before a full-page screenshot, `render.mjs` waits for each picture to load, decodes it and scrolls it into view: a tall shot left late pictures unpainted. (#1187)
 - A layout shift of the navigation on a different page each run was the browser painting a half-parsed header: every page carries `<link rel="expect" blocking="render">` for the shell's last element (55 of 60 forced runs failed before, 0 after). (#1204)
 - The home page (60.10) replaced the front door; the visual references mask the apps' screenshots in the frame's near-black (eight photographs made them 1.3 to 1.5 MB, over the 1 MB limit, and every release's shots would change them), and the pictures are checked by `scripts/shots.test.mjs` and 60.09's T04. With `/download/` built, part B's shell sends every Download link there. (#1207, #1208, #1209)
-- The download page (60.11) reads the latest stable release from the Releases API at build time (assets by pattern, digests checked against `checksums.txt`, platforms in `src/downloads.json`, one hidden when it has no asset or listing); the visitor's card comes first, so the visual check compares the set of cards; the release workflow dispatches the website deploy after a stable release, gated by `vars.WEBSITE_LIVE`. The shell's assets are one table read by script (two `display` entries had preloaded `href="undefined"`). (#1209)
+- The download page (60.11) reads the latest stable release from the Releases API at build time (assets by pattern, digests checked against `checksums.txt`, platforms in `src/downloads.json`, one hidden when it has no asset or listing); the visitor's card comes first, so the visual check compares the set of cards; the release workflow dispatches the website deploy after a stable release, gated by `vars.WEBSITE_LIVE`. It wears part B's shell and card since #1219, and `currentOf()` knows `/download/` and `/help/`. The shell's assets are one table read by script (two `display` entries had preloaded `href="undefined"`). (#1209, #1219)
+- A capture that waits for every image needs a deadline and must make lazy images load: at a phone's width the web app's lazy images never loaded and the capture hung (now eager, failing after 15 s naming them). The phone frame shows the web app at 393 × 852 (`webphone-home-<lang>`), since the iPhone app is not publicly installable, and a build test checks each page's screenshots are in its language. (#1215)
 
 ## Open
 
@@ -655,16 +666,18 @@ built_from: v0.3.139
 - `relay.yml` and `release.yml` still use cosign-installer by tag (optional hygiene). (#1124)
 
 - NAS guides: device screenshots (dark, en+ar) for Unraid, QNAP and UGREEN beside TrueNAS's and Synology's; the menu names on an Arabic DSM/QTS to check on a device; the QNAP guide is untested on a device. (#1137)
-- Epic 60 (maktaba.tv): owner actions A3–A7 (README §12) wait; A1 is done and A2 is the shared token, which lacks only the Zone WAF Write `cloudflare-zone.yml` reports; go-live (`vars.WEBSITE_LIVE = true`) is the owner's call. `design/review-phase-1.md` is a draft for the lead to sign; the footer's Help link and the 404 point at Troubleshooting until 60.12; the legal contents list has no scroll-aware mark; the language hint is one way only; A5, the read of the Arabic home, download and front-door copy (Q2), waits; 60.10 (home) and 60.11 (download) build on part B; Epic 59's Arabic install guides move to «مكتبة». (#1158, #1161, #1171, #1176, #1163, #1183, #1192, #1200, #1187)
+- Epic 60 (maktaba.tv): owner actions A3–A7 (README §12) wait; A1 is done and A2 is the shared token, which lacks only the Zone WAF Write `cloudflare-zone.yml` reports; go-live (`vars.WEBSITE_LIVE = true`) is the owner's call. `design/review-phase-1.md` and `review-phase-2.md` are signed; the footer's Help link and the 404 point at Troubleshooting until 60.12; the legal contents list has no scroll-aware mark; the language hint is one way only; A5, the read of the Arabic home, download and front-door copy (Q2), waits, with the captures held back by issue #1198 and issue #1199; Epic 59's Arabic install guides move to «مكتبة». (#1158, #1161, #1171, #1176, #1163, #1183, #1192, #1200, #1187, #1217, #1219)
 - The site build should write and check the link manifest (T07). The other images (streaming, pipeline, caddy, cloud) are still private, outside Epic 60. (#1160, #1164, #1184)
 - `links-baseline.json` is empty since the problem pages and the redirects file landed; the site build could still run `--write-manifest` and Prettier itself so the manifest cannot fall behind. (#1169, #1171, #1180)
 - Problem registry (60.06): its 578 pages (`problems.mjs`) wear the approved shell since #1192; 60.12 adds a `help-link` representative, its family before `problems` in `FAMILIES`; every `install` field is null until troubleshooting anchors exist; the streaming service sends `maktaba.invalid/problems/*` slugs outside the registry. Odd sends: `TypeForbidden` with 401, `TypeConflict` with 410, `invalid-credentials` for a refused cloud link (422), batch undo's 409 for a missing edit, `token-expired` never sent; the components handler's `fail` does not recognise `*pl.Problem`, so `plugin_revoked` may answer 500 through `/api/components` (traced, not run). (#1162, #1180)
 - Legal pages (60.07): the notice form goes live with Epic 50's `POST /v1/moderation/notices` (CORS for `https://maktaba.tv`, 202 with `notice_id`), which must also accept the no-JS urlencoded post or the plain-form path is dropped; owner actions A3 (mailboxes), A4 (designated agent, then the postal line) and Q7 (legal review before 50.24's public channels) wait; demo image credits wait for 60.09. (#1175)
 - Product shots (60.09): maktaba.dev's Apps pages could use them; no iPad Remote shot; the Mac app's Arabic window does not mirror and its shots are 1024×674 with no player controls; Apple TV and iPhone/iPad "On now" follow the simulator's clock; Android TV's player shot has no subtitle and Media3's controls do not mirror in Arabic; 60.01 part B sets frames and widths, 60.10 and 60.11 place the images. (#1186)
-- Download page (60.11): it still wears part A's shell and social card; store badges wait for public listings (A6), package rows for A7, the "How to install" links for 60.12; the new Arabic strings and `design/review-phase-2.md` wait for their reads and sign-off (Q2). (#1208, #1209)
+- Download page (60.11): store badges wait for public listings (A6), package rows for A7, the "How to install" links for 60.12; the new Arabic strings and `design/review-phase-2.md` wait for their reads (Q2). (#1208, #1209, #1219)
 - `lint / repo` has 20 minutes; if its routing tests near that, split or speed them up rather than raising it again. (#1177)
 - ml runners during a backlog still hold two copies of the same models (about 9-10 GB each): sharing one per machine or a smaller top tier is a supervisor decision; check whether a fingerprint change queued the whole library again (about 6,700 videos a day transcribed); the `light` runner sat at 2.8 GB RSS and 62% CPU. (#1191)
 - NAS after #1164: a restart rebuilds the pipeline venv in place under running workers (transient `ModuleNotFoundError`, runner exit 75); setup downloads `large-v3-turbo` on a Light NAS where speech is off; the terminal setup keeps no log its errors point to; NAS UIs, GPUs, VA-API, mDNS beside the NAS's responder, Unraid's shfs refusal and discovery need real hardware. (#1164)
+- NAS ports: the browser HTTPS port (8443), direct access (8444) and the TV slot ports (8791–8793) are still fixed; the TrueNAS catalog app has no host-network port questions; no harness cell pairs a node on custom ports; a node that starts while its home is unreachable uses 8081 for the home's live TV until its next start. (#1224)
+- Leave big screen: the menu item was not clicked in a running desktop app (unit tested, compiles); it is not shown over a playing video or a live channel, which have no top row. (#1228)
 
 - Problem registry wording: it still calls the home's admin «المسؤول» where the voice guide prefers «من يدير الجهاز الرئيسي», and the app labels it quotes are singular in the web catalog; both belong to the app catalog's pass. (#1185)
 
@@ -680,7 +693,8 @@ built_from: v0.3.139
 | #1023 | 2026-11-08 | test(rehearsal): scenario 16.7, wave 7's TV change across an update |
 | #1042 | 2026-11-08 | fix(web): an open screen keeps its feature gate when the feature goes off right after the first answer |
 | #1190 | 2026-11-11 | ci: install the pipeline without torch's CUDA tree, and keep its wheels cached |
-| #1215 | 2026-11-12 | feat(website): the phone frame shows the web app; screenshots checked per language; the tagline in three lines |
+| #1223 | 2026-11-13 | feat(website): Phase 3: the problem, legal, chooser and 404 pages in part B's shell |
+| #1225 | 2026-11-13 | feat(website): help on maktaba.tv, from the app's own topics (60.12) |
 
 ## Index
 
@@ -1313,4 +1327,9 @@ built_from: v0.3.139
 | 1208-website-home-page | 2026-11-12 | pr | Epic 60 story 60.10: maktaba.tv's home page |
 | 1209-website-download-page | 2026-11-12 | pr | Epic 60 story 60.11: maktaba.tv's download page, and the CI gaps its references found |
 | 1211-reference-images-no-cancel | 2026-11-12 | pr | CI: the reference-images check never cancels a run |
+| 1215-website-home-followups | 2026-11-12 | pr | maktaba.tv: the phone frame shows the web app, screenshots checked per language, the tagline in three lines |
+| 1217-website-review-signoff | 2026-11-12 | pr | maktaba.tv: the lead signs the Phase 1 and Phase 2 design reviews |
+| 1219-download-part-b-shell | 2026-11-12 | pr | maktaba.tv's download page in part B's shell |
+| 1224-nas-custom-ports | 2026-11-12 | pr | Each port chosen in the container, published ports on a bridge (story 59.08) |
+| 1228-leave-big-screen | 2026-11-13 | pr | Big screen: a visible way out, in the top row and in the View menu |
 
