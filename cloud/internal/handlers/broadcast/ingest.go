@@ -1,16 +1,19 @@
-// The home's side of the broadcast edge's control plane (Epic 50 story 50.21 §2):
+// The ingest-token route serves the home's side of the broadcast edge's control plane (Epic 50 story
+// 50.21 §2):
 //
 //	POST /v1/broadcast/ingest-token   a home asks for its channel's ingest token
 //
 // The home's agent authenticates as on every agent route: basic auth with its server id and
 // secret, never a user token. The token is Ed25519-signed (internal/broadcast), bound to the
 // publisher (the home's owner), the channel, the rungs and the plan's top bitrate, and valid 24 h;
-// the home asks again every hour. What a plan allows is story 50.20's tier (StorePlans).
+// the home asks again every hour. What a plan allows comes from a Plans source: until the
+// Broadcaster tier lands (story 50.20) the default is Pro's guest sharing.
 
 package broadcast
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -19,7 +22,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	bc "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 )
 
@@ -43,12 +46,13 @@ var (
 	ErrUnknownServer = errors.New("broadcast: unknown server")
 )
 
-// Plans answers what a home may publish.
+// Plans answers what a home may publish (story 50.20 replaces the default with the
+// Broadcaster tier's catalog, the agreement check and the channel count).
 type Plans interface {
 	ForServer(ctx context.Context, serverID string) (Allowance, error)
 }
 
-// IngestDeps wires the ingest-token route. A nil Key turns it off (503 broadcast_disabled).
+// IngestDeps wires the handler. A nil Key turns the route off (503 broadcast_disabled).
 type IngestDeps struct {
 	Agents    Agents
 	Plans     Plans
@@ -57,7 +61,7 @@ type IngestDeps struct {
 	Now       func() time.Time
 }
 
-// MountIngest registers the home agent's ingest-token route, outside the user auth group.
+// MountIngest registers the home agent's broadcast routes, outside the user auth group.
 func MountIngest(r chi.Router, d *IngestDeps) {
 	r.Post("/v1/broadcast/ingest-token", d.IngestToken)
 }
@@ -141,26 +145,34 @@ func (d *IngestDeps) IngestToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// StorePlans is the Plans of story 50.20's BroadcastStore: the publisher's tier, behind the
-// broadcasting gate (a test publisher passes it while it is shut).
-type StorePlans struct{ Store *billingpkg.BroadcastStore }
+// GuestSharing is Pro's guest sharing (README §14.4, 50.20 §1): 2 rungs, up to 3,000 kbps.
+var GuestSharing = Allowance{MaxRungs: 2, MaxTopKbps: 3000}
 
-func (p StorePlans) ForServer(ctx context.Context, serverID string) (Allowance, error) {
-	pub, err := p.Store.Publisher(ctx, serverID)
-	if errors.Is(err, billingpkg.ErrUnknownPublisher) {
+// DBPlans is the default Plans: an active Pro owner gets guest sharing; any other plan none.
+// Story 50.20 replaces it with the Broadcaster tier (servers.broadcast_plan) and its catalog.
+type DBPlans struct{ DB *sql.DB }
+
+func (p DBPlans) ForServer(ctx context.Context, serverID string) (Allowance, error) {
+	var userID, plan, status string
+	err := p.DB.QueryRowContext(ctx, `
+        SELECT u.id::text, u.plan, u.status
+          FROM servers s JOIN users u ON u.id = s.owner_user_id
+         WHERE s.id::text = $1`, serverID).Scan(&userID, &plan, &status)
+	if errors.Is(err, sql.ErrNoRows) {
 		return Allowance{}, ErrUnknownServer
 	}
 	if err != nil {
 		return Allowance{}, err
 	}
-	return allowanceOf(pub, p.Store.Gated(pub))
+	return AllowanceFor(userID, plan, status)
 }
 
-// allowanceOf maps a publisher and the gate to what its home may publish.
-func allowanceOf(p billingpkg.Publisher, gated bool) (Allowance, error) {
-	t := p.Tier()
-	if t == nil || !gated {
+// AllowanceFor maps an owner's plan and account status to what the home may publish.
+func AllowanceFor(userID, plan, status string) (Allowance, error) {
+	if status != "active" || plan != billing.PlanPro {
 		return Allowance{}, ErrNotInPlan
 	}
-	return Allowance{Publisher: p.OwnerID, MaxRungs: t.MaxRungs, MaxTopKbps: t.MaxTopKbps}, nil
+	a := GuestSharing
+	a.Publisher = userID
+	return a, nil
 }

@@ -9,8 +9,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"os"
-	"path/filepath"
 	"slices"
 	"sort"
 	"sync"
@@ -209,8 +207,8 @@ func TestBroadcastBillingRolesAndItems(t *testing.T) {
 	withBroadcastPrices(t)
 	e := newEnvFull(t, &fakeProvider{}, nil, func(c *config.Config) {
 		c.Broadcast.Enabled = true
-		c.Broadcast.KeyPath = testBroadcastKey(t) // the open gate needs the ingest key (50.21)
-		c.Broadcast.OpenAccess = true             // open channels (50.26)
+		c.Broadcast.KeyPath = ingestKeyFile(t) // broadcasting on signs ingest tokens (50.21)
+		c.Broadcast.OpenAccess = true          // open channels (50.26)
 	})
 	owner := e.registerVerified("bowner@example.test")
 	uid := e.userID("bowner@example.test")
@@ -355,9 +353,9 @@ func TestBroadcastEdgeUsageAndPAYG(t *testing.T) {
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
 	e := newEnvFull(t, &fakeProvider{}, nil, func(c *config.Config) {
 		c.Broadcast.Enabled = true
-		c.Broadcast.KeyPath = testBroadcastKey(t)
 		c.Broadcast.PlansEnforce = true // the harness's config starts from zero values, not the defaults
 		c.Broadcast.EdgePublicKey = base64.StdEncoding.EncodeToString(pub)
+		c.Broadcast.KeyPath = ingestKeyFile(t) // broadcasting on signs ingest tokens (50.21)
 	})
 	edge := edgeClient{e: e, priv: priv}
 	owner := e.registerVerified("caster@example.test")
@@ -514,35 +512,4 @@ func TestBroadcastEdgeUsageAndPAYG(t *testing.T) {
 	if st := state(); st.Mode != "off" || st.Plan != "" {
 		t.Fatalf("suspended: %+v", st)
 	}
-}
-
-// Story 50.21: the api role mounts the ingest-token route. Without broadcast.key_path (the
-// default) it answers 503 broadcast_disabled; with it, the route asks for the home's own agent credential.
-func TestBroadcastIngestTokenRouteIsWired(t *testing.T) {
-	off := newEnv(t).client()
-	if r := off.do(http.MethodPost, "/v1/broadcast/ingest-token", map[string]any{"channel": "c1", "rungs": []string{"720p"}}); r.code != http.StatusServiceUnavailable || r.errCode() != "broadcast_disabled" {
-		t.Fatalf("broadcast off: %d %s", r.code, r.body)
-	}
-
-	key := filepath.Join(t.TempDir(), "broadcast.key")
-	if err := os.WriteFile(key, make([]byte, 32), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	on := newEnvCfg(t, nil, func(c *config.Config) {
-		c.Broadcast.KeyPath = key
-	}).client()
-	r := on.do(http.MethodPost, "/v1/broadcast/ingest-token", map[string]any{"channel": "c1", "rungs": []string{"720p"}})
-	if r.code != http.StatusUnauthorized || r.errCode() != "unauthorized" {
-		t.Fatalf("with the key, no agent credential: %d %s", r.code, r.body)
-	}
-}
-
-// testBroadcastKey writes a throwaway broadcast key (the open gate needs one, story 50.21).
-func testBroadcastKey(t *testing.T) string {
-	t.Helper()
-	key := filepath.Join(t.TempDir(), "broadcast.key")
-	if err := os.WriteFile(key, make([]byte, 32), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return key
 }

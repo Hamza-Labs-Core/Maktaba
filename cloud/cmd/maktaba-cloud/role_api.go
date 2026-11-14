@@ -335,7 +335,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		serversh.MountAgent(app, serversDeps)
 		broadcasth.MountAgent(app, broadcastDeps)
 		broadcasth.MountAccessAgent(app, broadcastDeps)
-		broadcasth.MountIngest(app, ingestDeps(cfg, servers, broadcastStore, logger))
+		broadcasth.MountIngest(app, ingestDeps(cfg, servers, pool, logger))
 		// the broadcast edge: each request signed with its key, no account
 		edgeh.Mount(app, edgeDeps)
 		reports.MountAgent(app, &reports.AgentDeps{Store: reportStore, Servers: servers, Logger: logger,
@@ -557,12 +557,11 @@ func turnstileGuard(cfg config.Config, fake turnstile.Verifier) (*turnstile.Guar
 		ClientIP: func(r *http.Request) string { return cmw.GetClientIP(r.Context()) }}, nil
 }
 
-// ingestDeps wires the broadcast edge's ingest tokens (story 50.21): on with broadcast.key_path
-// (the plan store applies the gate, so a test publisher gets its tokens while it is shut);
-// otherwise the route answers 503 broadcast_disabled.
-func ingestDeps(cfg config.Config, servers *stores.Servers, store *billingpkg.BroadcastStore, logger *slog.Logger) *broadcasth.IngestDeps {
-	d := &broadcasth.IngestDeps{Agents: servers, Plans: broadcasth.StorePlans{Store: store}, IngestURL: cfg.Broadcast.IngestURL}
-	if cfg.Broadcast.KeyPath == "" {
+// ingestDeps wires the broadcast edge's ingest tokens (story 50.21): on only with
+// broadcast.enabled and its key; otherwise the route answers 503 broadcast_disabled.
+func ingestDeps(cfg config.Config, servers *stores.Servers, pool *db.Pool, logger *slog.Logger) *broadcasth.IngestDeps {
+	d := &broadcasth.IngestDeps{Agents: servers, Plans: broadcasth.DBPlans{DB: pool.DB}, IngestURL: cfg.Broadcast.IngestURL}
+	if !cfg.Broadcast.Enabled {
 		return d
 	}
 	k, err := broadcast.LoadKey(cfg.Broadcast.KeyPath)

@@ -294,6 +294,27 @@ func TestParsePrefixesCIDRsOnly(t *testing.T) {
 	}
 }
 
+// Story 50.21: the ingest host has a default, its keys parse, and broadcasting on without the
+// ingest-token key is refused.
+func TestBroadcastIngestConfig(t *testing.T) {
+	c := defaultConfig()
+	if c.Broadcast.IngestURL != "https://ingest.maktaba.tv" || c.Broadcast.KeyPath != "" {
+		t.Fatalf("defaults: %+v", c.Broadcast)
+	}
+	if err := parseTOML("[broadcast]\nkey_path = \"/opt/maktaba-cloud/secrets/broadcast.key\"\ningest_url = \"https://ingest-staging.maktaba.tv\"\n", &c); err != nil {
+		t.Fatal(err)
+	}
+	if c.Broadcast.KeyPath != "/opt/maktaba-cloud/secrets/broadcast.key" || c.Broadcast.IngestURL != "https://ingest-staging.maktaba.tv" {
+		t.Fatalf("parsed: %+v", c.Broadcast)
+	}
+	c.Database.URL = "postgres://x"
+	c.Server.ListenAddr = "127.0.0.1:8090"
+	c.Broadcast.Enabled, c.Broadcast.KeyPath = true, ""
+	if err := Validate(c, RoleAPI); err == nil || !strings.Contains(err.Error(), "broadcast.key_path") {
+		t.Fatalf("on without a key: %v", err)
+	}
+}
+
 // Story 50.20: the broadcast keys, their defaults, and the broadcasting gate (T07).
 func TestBroadcastConfig(t *testing.T) {
 	c := defaultConfig()
@@ -317,39 +338,6 @@ func TestBroadcastConfig(t *testing.T) {
 	}
 	if err := ValidateBroadcast(BroadcastConfig{EdgePublicKey: key}); err != nil {
 		t.Fatalf("a good key, gate shut: %v", err)
-	}
-	if err := ValidateBroadcast(BroadcastConfig{OpenAccess: true}); err == nil {
-		t.Fatal("open access behind a shut gate was accepted")
-	}
-	if err := parseTOML("[broadcast.open_access]\nenabled = true\n", &c); err != nil || !c.Broadcast.OpenAccess {
-		t.Fatalf("open access: %v %+v", err, c.Broadcast)
-	}
-}
-
-// Story 50.21: the broadcast edge's settings parse, the ingest host has a default, and the api
-// role never issues ingest tokens without their key.
-func TestBroadcastEdgeConfig(t *testing.T) {
-	c := defaultConfig()
-	if c.Broadcast.Enabled || c.Broadcast.IngestURL != "https://ingest.maktaba.tv" {
-		t.Fatalf("defaults: %+v", c.Broadcast)
-	}
-	if err := parseTOML("[broadcast]\nenabled = true\ningest_url = \"https://ingest-staging.maktaba.tv\"\n", &c); err != nil {
-		t.Fatal(err)
-	}
-	if !c.Broadcast.Enabled || c.Broadcast.IngestURL != "https://ingest-staging.maktaba.tv" {
-		t.Fatalf("%+v", c.Broadcast)
-	}
-	c.Database.URL = "postgres://x"
-	c.Server.ListenAddr = "127.0.0.1:8090"
-	if err := Validate(c, RoleAPI); err == nil || !strings.Contains(err.Error(), "broadcast.key_path") {
-		t.Fatalf("on without a key: %v", err)
-	}
-	if err := parseTOML("[broadcast]\nkey_path = \"/opt/maktaba-cloud/secrets/broadcast.key\"\n", &c); err != nil {
-		t.Fatal(err)
-	}
-	// with the key, what's left is the gate's own check (the TBD prices), not the key
-	if err := Validate(c, RoleAPI); err != nil && strings.Contains(err.Error(), "broadcast.key_path") {
-		t.Fatalf("with the key: %v", err)
 	}
 }
 
@@ -449,5 +437,23 @@ direct_url = "postgres://primary/db"
 	}
 	if cfg.Server.DrainDelay != 15*time.Second || cfg.Database.DirectURL != "postgres://other/db" {
 		t.Fatalf("env: drain %s, direct %q", cfg.Server.DrainDelay, cfg.Database.DirectURL)
+	}
+}
+
+// Story 50.26: broadcast.open_access.enabled and broadcast.watch_url parse; open access is never
+// on behind a shut gate.
+func TestBroadcastOpenAccessConfig(t *testing.T) {
+	c := defaultConfig()
+	if c.Broadcast.OpenAccess || c.Broadcast.WatchURL != "https://watch.maktaba.tv" {
+		t.Fatalf("defaults: %+v", c.Broadcast)
+	}
+	if err := parseTOML("[broadcast]\nwatch_url = \"https://staging-watch.maktaba.dev\"\n[broadcast.open_access]\nenabled = true\n", &c); err != nil {
+		t.Fatal(err)
+	}
+	if !c.Broadcast.OpenAccess || c.Broadcast.WatchURL != "https://staging-watch.maktaba.dev" {
+		t.Fatalf("parsed: %+v", c.Broadcast)
+	}
+	if err := ValidateBroadcast(BroadcastConfig{OpenAccess: true}); err == nil {
+		t.Fatal("open access behind a shut gate was accepted")
 	}
 }

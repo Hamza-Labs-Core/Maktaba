@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	bc "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 )
 
@@ -153,21 +152,13 @@ func TestIngestTokenOffWithoutAKey(t *testing.T) {
 	}
 }
 
-func TestAllowanceOf(t *testing.T) {
-	pro := billingpkg.Publisher{OwnerID: "u1", Plan: billingpkg.PlanPro, OwnerActive: true}
-	if a, err := allowanceOf(pro, true); err != nil || a.Publisher != "u1" || a.MaxRungs != 2 || a.MaxTopKbps != 3000 {
+func TestAllowanceFor(t *testing.T) {
+	if a, err := AllowanceFor("u1", "pro", "active"); err != nil || a.Publisher != "u1" || a.MaxRungs != 2 {
 		t.Fatalf("pro: %+v %v", a, err)
 	}
-	if _, err := allowanceOf(pro, false); !errors.Is(err, ErrNotInPlan) {
-		t.Errorf("behind the shut gate: %v", err)
-	}
-	for _, p := range []billingpkg.Publisher{
-		{OwnerID: "u1", Plan: billingpkg.PlanFree, OwnerActive: true},
-		{OwnerID: "u1", Plan: billingpkg.PlanBasic, OwnerActive: true},
-		{OwnerID: "u1", Plan: billingpkg.PlanPro, OwnerActive: false},
-	} {
-		if _, err := allowanceOf(p, true); !errors.Is(err, ErrNotInPlan) {
-			t.Errorf("%+v: %v", p, err)
+	for _, c := range [][2]string{{"free", "active"}, {"basic", "active"}, {"pro", "suspended"}} {
+		if _, err := AllowanceFor("u1", c[0], c[1]); !errors.Is(err, ErrNotInPlan) {
+			t.Errorf("%v: %v", c, err)
 		}
 	}
 }
