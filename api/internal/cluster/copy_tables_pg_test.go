@@ -98,6 +98,10 @@ var copyReviewed = []string{
 	// reference, a proof link, a credit and times, no secret); a promoted copy keeps what
 	// its published channels may air
 	"publishable_sources",
+	// slot 0228 (story 50.24): the takedowns the home applied (notice ids, an item or a
+	// source, times, no secret); a promoted copy keeps them standing, so it never airs an
+	// item Maktaba took down
+	"broadcast_takedowns",
 }
 
 // Every table of a migrated database is either reviewed as copied or left out.

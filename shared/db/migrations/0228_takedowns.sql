@@ -1,3 +1,4 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 -- +goose StatementBegin
 --
@@ -15,7 +16,8 @@
 -- channel's player slates a slot already scheduled, and the Broadcast page's share drops it.
 -- Nothing else of the library changes, and nothing here leaves the home.
 --
--- Additive: a new table and function, slot 0227's function re-created with one more check.
+-- Additive: a new table and function, slot 0227's function re-created with one more check
+-- (SECURITY DEFINER still, as slot 0227 made it: the livetv plugins' statements call it).
 --
 CREATE TABLE IF NOT EXISTS broadcast_takedowns (
     id           text         PRIMARY KEY,
@@ -35,7 +37,8 @@ CREATE TABLE IF NOT EXISTS broadcast_takedowns (
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-CREATE INDEX IF NOT EXISTS broadcast_takedowns_video_idx ON broadcast_takedowns (video_id) WHERE restored_at IS NULL;
+-- built concurrently, so the slot runs outside a transaction; every statement here can run again
+CREATE INDEX CONCURRENTLY IF NOT EXISTS broadcast_takedowns_video_idx ON broadcast_takedowns (video_id) WHERE restored_at IS NULL;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -63,7 +66,7 @@ $f$;
 
 -- +goose StatementBegin
 CREATE OR REPLACE FUNCTION video_publishable_reason(vid uuid) RETURNS text
-LANGUAGE sql STABLE AS $f$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $f$
     SELECT CASE WHEN video_taken_down(vid) THEN NULL ELSE COALESCE(
         (SELECT v.publishable_reason FROM videos v WHERE v.id = vid),
         (SELECT 'cc_by' FROM youtube_videos y WHERE y.youtube_id = video_youtube_id(vid) AND y.license = 'cc_by'),
@@ -75,7 +78,7 @@ $f$;
 -- +goose Down
 -- +goose StatementBegin
 CREATE OR REPLACE FUNCTION video_publishable_reason(vid uuid) RETURNS text
-LANGUAGE sql STABLE AS $f$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $f$
     SELECT COALESCE(
         (SELECT v.publishable_reason FROM videos v WHERE v.id = vid),
         (SELECT 'cc_by' FROM youtube_videos y WHERE y.youtube_id = video_youtube_id(vid) AND y.license = 'cc_by'),

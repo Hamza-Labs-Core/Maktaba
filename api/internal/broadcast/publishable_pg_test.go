@@ -272,3 +272,38 @@ func TestPublishableOnlySwitch(t *testing.T) {
 		t.Fatalf("on again: %v %v", on, err)
 	}
 }
+
+// The rule's functions a plugin's statement calls answer for a role with no grant on the
+// tables they read (a plugin's maktaba_fp_* role): they are SECURITY DEFINER, and a later
+// slot that re-creates one (slot 0228's takedown check) keeps it so.
+func TestTheRuleAnswersARoleWithNoGrants(t *testing.T) {
+	h := newPubHome(t)
+	ctx := context.Background()
+	tx, err := h.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }() // the role goes with the transaction
+	for _, q := range []string{
+		`CREATE ROLE maktaba_test_no_grants NOLOGIN NOINHERIT`,
+		`GRANT USAGE ON SCHEMA public TO maktaba_test_no_grants`,
+		`SET LOCAL ROLE maktaba_test_no_grants`,
+	} {
+		if _, err := tx.ExecContext(ctx, q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	var reason sql.NullString
+	var attribution []byte
+	var limited bool
+	if err := tx.QueryRowContext(ctx, `SELECT video_publishable_reason($1::uuid), video_attribution($1::uuid),
+		channel_publishable_only($2::uuid)`, h.cc, h.ch).Scan(&reason, &attribution, &limited); err != nil {
+		t.Fatalf("the rule as a role with no grants: %v", err)
+	}
+	if reason.String != "cc_by" || len(attribution) == 0 || limited {
+		t.Fatalf("reason %v, attribution %s, limited %v", reason, attribution, limited)
+	}
+	if _, err := tx.ExecContext(ctx, `SELECT 1 FROM publishable_sources`); err == nil {
+		t.Fatal("the role reads publishable_sources itself")
+	}
+}
