@@ -33,6 +33,8 @@ const HOME = "http://10.0.0.7:8088";
 const TV_UI = "http://localhost:5177";
 const TOKEN = "tv-access-1";
 const RELAY = "https://h-test.relay.maktaba.tv";
+// the relay's address as a pattern (every character a pattern gives meaning to escaped)
+const RELAY_RE = RELAY.replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&");
 const CLOUD = "https://api.maktaba.tv";
 const GRANT = "Gr4nt_e2e_" + "k".repeat(33);
 const POLL_SECRET = "poll-secret-e2e-0123456789";
@@ -425,7 +427,7 @@ for (const platform of ["tizen", "webos"] as const) {
         ).toBeVisible({ timeout: 30_000 });
         await expect(page.getByTestId("tv-frame")).toHaveAttribute(
           "src",
-          new RegExp(`^${RELAY.replace(/\./g, "\\.")}/tv/\\?bridge=1&lang=${lang}$`)
+          new RegExp(`^${RELAY_RE}/tv/\\?bridge=1&lang=${lang}$`)
         );
         expect(trail.redeemed).toEqual([GRANT]);
         expect(home.calls.some((c) => c === "POST /api/pairing/device")).toBe(false);
@@ -454,7 +456,7 @@ for (const platform of ["tizen", "webos"] as const) {
         await page.reload();
         await expect(page.getByTestId("tv-frame")).toHaveAttribute(
           "src",
-          new RegExp(`^${RELAY.replace(/\./g, "\\.")}/tv/`)
+          new RegExp(`^${RELAY_RE}/tv/`)
         );
         expect(home.unknown).toEqual([]);
       } finally {

@@ -91,7 +91,7 @@ func TestTVOriginsOnTheTVRoutesOnly(t *testing.T) {
 // Without the option (the relay, the admin listener) a TV origin gets nothing anywhere.
 func TestNoTVOriginsWithoutTheOption(t *testing.T) {
 	r := NewRouter(slog.New(slog.DiscardHandler), nil, nil, BuildInfo{}, nil)
-	r.Post("/v1/tv/codes", func(w http.ResponseWriter, _ *http.Request) {})
+	r.Post("/v1/tv/codes", func(http.ResponseWriter, *http.Request) {})
 	req := httptest.NewRequest(http.MethodOptions, "/v1/tv/codes", nil)
 	req.Header.Set("Origin", "null")
 	rec := httptest.NewRecorder()
