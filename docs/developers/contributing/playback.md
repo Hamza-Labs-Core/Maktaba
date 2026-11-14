@@ -71,7 +71,9 @@ The rules:
   A value of the wrong type, or a list of more than 32 entries, is a 400.
 - Report again whenever the output changes (the TV's HDMI switched to a receiver without HDR, a
   Fire TV moved to another screen): open a new session at the same position. A session never
-  changes its mode, and a session opened for one report is never handed to another.
+  changes its mode, and a session opened for one report is never handed to another. A user keeps
+  at most two sessions of a video open for different reports (two TVs); opening a third closes
+  the oldest.
 - If the device cannot play what it got, retry once with `force_transcode`.
 
 ## How the mode is picked for a TV
