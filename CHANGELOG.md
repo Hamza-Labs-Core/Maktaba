@@ -864,17 +864,25 @@ build fails when the two differ.
 
 ### Added
 
-- **Cast to a TV from Chrome (Epic 58, story 58.06).** In Chrome, on the home's secure address,
-  the web player's **Cast to a TV** sends the video, or the whole **Play all** or **Shuffle**
-  queue, to a Chromecast, a Google TV or a TV with Chromecast built in, through Maktaba's own
-  receiver. The browser mints a cast grant for the video or queue and hands it to the TV, which
-  then plays and reports progress by itself, so the tab can close and Continue Watching follows
-  the TV; the player shows the TV's name, play, pause and **Stop casting**, and the TV follows
-  the web app's language. No Cast button on `http://`, in other browsers or through Maktaba
-  Cloud. The receiver's application ID lives in `shared/cast/app.json` with the custom-data
-  vectors every sender runs (`shared/cast/load-vectors.json`); until the ID is set, no build
-  shows Cast. The cast grant's refusals (`cast_via_cloud`, `cast_needs_person`, `cast_scope`)
-  now have their problem pages.
+- **Maktaba on Roku (Epic 58, story 58.12).** A Roku channel: a household signs in once with a
+  code its phone approves (through Maktaba Cloud, or the home's own code after finding it on the
+  network, or its address), and each later launch opens that home's Home. Continue watching,
+  Recently added and For you; the libraries with their five tabs, Play and Shuffle and the
+  letter rail; series, search, Resume or Start over, and the account page, on Roku's remote
+  (`*` opens a card's actions; Back asks before leaving). Deep links play the video, or open
+  Home saying it isn't available. English and Arabic, every screen mirrored and Arabic joined in
+  reading order with a bundled font. Nothing is sold in the channel. It is not in Roku's store
+  yet: a Roku in developer mode installs it from source; docs/stores/roku.md lists the steps
+  left to the store and the checks a real Roku runs.
+- **A home for TV store reviewers (Epic 58, story 58.04).** review.maktaba.tv is a Maktaba home
+  the project runs with public-domain and openly licensed content only (Blender's and Netflix's
+  open films, a CC BY lecture series, a LibriVox audiobook, each titled in English and Arabic),
+  test files for 4K HDR10, 1080p, an MKV with EAC3 and Arabic subtitles and a transcode, a
+  viewer account for reviewers and a restricted child for the parental checks.
+  `maktaba-server review-home seed|rotate` sets it up and rotates its passwords after each
+  submission round; the passwords live only in the release secrets, every store's submission
+  notes name the secret (`docs/stores/review-home.md`), and a check every 15 minutes walks the
+  cloud code and a stream of each test file.
 
 - **The Android Player casts to Maktaba's own receiver (Epic 58, story 58.06).** The Player's
   Cast button now sends the video, or the whole **Play all** or **Shuffle** queue, to Maktaba's
@@ -2693,6 +2701,71 @@ build fails when the two differ.
   carries `stream_sig`, which signs its subtitle and chapter URLs, so a TV player that sends no
   header fetches every URL it needs. The older profiles decide as before.
 
+- **The Samsung and LG app's launcher (story 58.09).** The app a Samsung (Tizen) or LG (webOS)
+  TV will install finds the home (the last one used opens at once; Find on this network tries
+  every address of the TV's network; or the home's address typed), checks that the home and the
+  app can work together, and shows the home's own TV interface full screen. Inside it the TV
+  signs in by the home's code, approved on a phone or a computer, and never asks for a password;
+  on the home's network without HTTPS the code screen and Settings → Connection say the
+  connection is not encrypted, and Settings → Switch home picks another home. English and
+  Arabic, right to left in Arabic. The store packages come with stories 58.10 and 58.11.
+
+- **Maktaba TV on Fire TV (story 58.05).** The Android TV app now has an Amazon Appstore build
+  for Fire TV sticks, the Cube and Fire TV Edition sets (Fire OS 7 or later): the same screens in
+  English and Arabic, signing in by the home's code, Amazon's remote, and Amazon's launcher. It
+  carries no Google Play code (CI checks its dependencies and manifest on every run), names itself
+  `firetv` to the home, and opens each stream with a report of what the TV plays (its hardware
+  decoders, the screen's HDR and the receiver's surround formats), which an older home is not
+  sent. A tag builds `maktaba-tv-<version>-amazon.apk`, signed and staged as a draft in the
+  Appstore once the Amazon keys are set; it reaches the store only after the real-device
+  checklist in `docs/stores/amazon.md` passed. Nothing is sold in it.
+
+- **Maktaba on LG TVs (story 58.11).** An LG TV on webOS 5 or later (2020 on) gets Maktaba as
+  an app: the launcher, packed as an `.ipk` that each release whose launcher changed attaches,
+  ready for the LG Content Store. Videos play on the TV's own player, with no conversion where
+  the TV can play the file: 4K, HDR10 and HLG, Dolby audio passed to a receiver, and Dolby
+  Vision only on the model years proven on a real TV. The app tells the home what the TV plays,
+  so the home converts only what it must; a file the TV refuses is opened again, converted,
+  from where it stopped. Subtitles are drawn by Maktaba, Arabic right to left, at the player's
+  sizes, and the Audio panel switches tracks. Back and the Magic Remote work as on the web
+  pages; Back from Home asks before leaving. The store listing, the review scenario and the
+  real-device checklist are in English and Arabic; the submission is made by a person.
+
+- **Maktaba for Samsung TVs (Epic 58, story 58.10).** The Samsung launcher plays with the TV's
+  own player, AVPlay: 4K, HDR10 and HLG where the TV has them, Dolby Digital and Dolby Digital
+  Plus passed through to a soundbar that takes them, audio track choice and seeking. It tells
+  the home what the TV plays (the decoder, the panel, HDR and the audio output), never Dolby
+  Vision, so the home sends files as they are when it can. Subtitles are drawn by Maktaba, so
+  Arabic is joined and right to left at the chosen size; a file the TV cannot play says so and
+  plays converted. The media and colour keys reach the TV screens, and Back on the top screen
+  asks before leaving. A tag whose launcher changed builds `maktaba-tizen-<version>.wgt`,
+  signed with the project's Samsung certificates; every pull request builds and lints the
+  unsigned package. The store listing and the checklist on real TVs are in
+  `docs/stores/samsung.md`.
+
+- **Maktaba's own Cast receiver (Epic 58, story 58.07).** Casting to a Chromecast, a Google TV
+  Streamer or a TV with Cast built in can now show Maktaba's player on the TV instead of Google's:
+  the title, the series, the position and chapter, an Up next card in a queue, the poster and
+  description when paused, and plain errors with what to do next, dark and in the sender's
+  language (Arabic mirrored, times kept left to right). The TV reaches the home on its own
+  network first and through Maktaba Cloud after 3 seconds, with a Remote badge; it reports
+  where it is every 10 seconds, renews its links, moves through the queue, and asks the home to
+  convert a file it cannot play. It is a page at cast.maktaba.tv that serves every home version
+  (an older home is asked to update); it needs the Cast console registration and the phone
+  apps' update (story 58.06) before anyone can cast to it.
+
+- **Cast to a TV from Chrome (Epic 58, story 58.06).** In Chrome, on the home's secure address,
+  the web player's **Cast to a TV** sends the video, or the whole **Play all** or **Shuffle**
+  queue, to a Chromecast, a Google TV or a TV with Chromecast built in, through Maktaba's own
+  receiver. The browser mints a cast grant for the video or queue and hands it to the TV, which
+  then plays and reports progress by itself, so the tab can close and Continue Watching follows
+  the TV; the player shows the TV's name, play, pause and **Stop casting**, and the TV follows
+  the web app's language. No Cast button on `http://`, in other browsers or through Maktaba
+  Cloud. The receiver's application ID lives in `shared/cast/app.json` with the custom-data
+  vectors every sender runs (`shared/cast/load-vectors.json`); until the ID is set, no build
+  shows Cast. The cast grant's refusals (`cast_via_cloud`, `cast_needs_person`, `cast_scope`)
+  now have their problem pages.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -3045,6 +3118,19 @@ build fails when the two differ.
   Back steps out to the tab's top, then its tabs, then out; each tab keeps its place. Up next shows
   in a video's last 30 seconds, and a shuffled queue offers Shuffle again. A focused card grows by
   1.08 inside the brass ring.
+
+- **One Plugins page for every plugin (story 54.44).** Settings → Plugins lists every plugin
+  in one list, the ones Maktaba publishes and the ones you installed, each marked with who
+  publishes it, with a filter. Every plugin has its own switch on its card, its jobs of the
+  last day, its problems (a link to its failed jobs and its logs) and the memory of the
+  program that runs it, said plainly when several plugins share that program. Each plugin has
+  a page at its own address. A plugin by Maktaba still comes with Maktaba and is updated with
+  it; its page says so instead of offering Remove. The parts that must always run are part of
+  Maktaba itself and are no longer shown as plugins. The Components page links to each
+  plugin's page. For scripts: `GET /api/plugins` has no `built_in` field any more. Its
+  `plugins` list is the installed plugins, as before; `GET /api/plugins?release=true` adds
+  Maktaba's plugins with `publisher` and `source`. `GET /api/queues/failures` takes several
+  stages in `stage`.
 
 ### Fixed
 
@@ -3620,6 +3706,10 @@ build fails when the two differ.
   they read the video, so a non-admin gets 403 whether or not the video exists. In the web, a
   library's refusal reads "Not available in this library" to anyone who is not an admin; an admin
   keeps the read-only reason and its fix.
+
+- **The Android TV app names itself to the home.** Its library, playlist and play-queue calls sent
+  `X-Maktaba-Client: native` instead of the app's name and version, so the home could not tell a
+  TV too old for it on those calls; they now send the same header as sign-in does.
 
 ## [0.2.0] - 2026-10-19
 

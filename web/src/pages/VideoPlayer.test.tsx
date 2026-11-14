@@ -187,6 +187,23 @@ describe("VideoPlayer", () => {
     }
   });
 
+  it("shows no Cast button while no Cast receiver is registered (story 58.06)", async () => {
+    post.mockResolvedValue({
+      session_id: "sess-cast",
+      mode: "direct",
+      manifest_url: "",
+      direct_url: "/files/original.mp4",
+      expires_at: "2026-05-17T12:00:00Z",
+    });
+    renderPlayer();
+    await screen.findByTestId("mkt-video");
+    expect(await screen.findByRole("button", { name: "Picture in picture" })).toBeInTheDocument();
+    expect(screen.queryByTestId("mkt-cast")).toBeNull();
+    // the sender never asked the home for addresses or a grant
+    expect(get).not.toHaveBeenCalledWith("/api/discovery/home");
+    expect(post).not.toHaveBeenCalledWith("/api/cast/grants", expect.anything());
+  });
+
   it("plays direct_url on the element even when manifest_url carries it too", async () => {
     post.mockResolvedValue({
       session_id: "sess-direct2",

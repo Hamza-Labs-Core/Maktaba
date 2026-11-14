@@ -99,7 +99,7 @@ Posters are requested at `?size=small`, and `RowList` loads rows lazily.
 | T01 | brs-engine (Node) unit tests in CI | API client, token refresh, probe, compat check (58.01 vectors), deep-link router | run | pass; brs-engine's stdout kept in the CI report |
 | T02 | BrighterScript compile + `bslint` | the channel | build | no errors; the zip under Roku's size limit |
 | T03 | brs-engine SceneGraph render (headless, its canvas) | Home, Library tabs, Series with a mock home | key sequences | focus moves as Epic 56 §6.5; screenshots en and ar, dark, kept as references with honest tolerance (brs-engine is not Roku's renderer) |
-| T04 | Rooibos on a real Roku (device checklist, and the optional self-hosted runner of Q6) | the same logic tests | run on device | pass |
+| T04 | The logic tests on a real Roku (device checklist, and the optional self-hosted runner of Q6) | the same BrightScript test files, side-loaded as one package (`tools/build.mjs --device-tests`) | run on device | every `RESULT` line has no failure; the debug console kept |
 | T05 | Roku Automated Channel Testing (WebDriver) on a real Roku | sign in by code (review home), browse, deep link, Back out | scripted | pass; the device's debug console (port 8085) captured into the report |
 
 **Honest note:**
@@ -109,6 +109,13 @@ Posters are requested at `?size=small`, and `RowList` loads rows lazily.
   differ.
 - T04 and T05 need a real Roku on a network the runner reaches. Without the self-hosted device
   runner (Q6), they run by hand from the checklist before each submission.
+- brs-node draws text with a canvas library that runs the bidi algorithm, which Roku never does.
+  The screen tests preload a shim that turns it off, so Arabic is drawn in stored order as on a
+  Roku.
+- The probe of Find on this network runs in CI on Linux only: brs-engine's HTTP is synchronous,
+  and only Linux refuses the other 127.0.0.x addresses at once.
+- brs-engine fetches posters without the scene's bearer, and does not keep a RowList's unfocused
+  rows at their own position. Both are real-device checklist rows.
 
 ## Strings
 
@@ -134,6 +141,8 @@ words) and:
 
 | File | Change |
 |---|---|
-| `apps/tv/roku/` (new) | `manifest`, `source/`, `components/`, `i18n/`, `bsconfig.json`, Rooibos tests |
-| `.github/workflows/_roku.yml` (new) | T01–T03 |
+| `apps/tv/roku/` (new) | `manifest`, `source/`, `components/`, `i18n/`, `bsconfig.json`, `tools/build.mjs`, the tests with their mock home and mock cloud |
+| `.github/workflows/_roku.yml` | T01–T03, the screenshots kept with the logs |
+| `docs/stores/roku.md` | what the owner does (account, key, package, dashboard), the build, the real-device checklist |
+| `web/packages/devportal/scripts/apps.mjs` | Roku on the TV page, with screenshots |
 | `cloud/internal/handlers/tvcodes/` | `qr.png` |

@@ -32,9 +32,13 @@ WEB = ROOT / "web/public/icons"
 WEB_ROOT = ROOT / "web/public"
 TV_ANDROID = ROOT / "apps/tv/android/app/src/main/res"
 TV_OS = ROOT / "apps/tv/tvos/MaktabaTV/Resources/Assets.xcassets/AppIcon.brandassets"
+# the Samsung TV package (story 58.10): config.xml's icon, 512 x 423 as Seller Office takes it
+TV_SAMSUNG = ROOT / "apps/tv/web/tizen/icon.png"
 MOBILE = ROOT / "apps/mobile/icons"
 ANDROID_NATIVE = ROOT / "apps/android/core/src/main/res"
 LIBRARY_ART = ROOT / "web/public/art/library/dark-wide-1.jpg"
+# the LG webOS package (Epic 58 story 58.11): appinfo.json's icon, largeIcon, splash
+WEBOS = ROOT / "apps/tv/web/webos"
 
 # Android density buckets: launcher icons are 48 dp, adaptive layers 108 dp.
 DENSITIES = {"mdpi": 1, "hdpi": 1.5, "xhdpi": 2, "xxhdpi": 3, "xxxhdpi": 4}
@@ -195,6 +199,21 @@ def tv_android(master: Image.Image, mark: Image.Image) -> None:
     d = TV_ANDROID / "drawable-xhdpi"
     d.mkdir(parents=True, exist_ok=True)
     banner.convert("RGB").save(d / "app_banner.png")
+
+
+def webos(master: Image.Image, mark: Image.Image) -> None:
+    """LG's app icons (80 and 130 px, the launcher bar and the store) and the splash."""
+    WEBOS.mkdir(parents=True, exist_ok=True)
+    full_tile(zoomed(master, 1.18), 80, margin=0.04).save(WEBOS / "icon.png")
+    full_tile(master, 130, margin=0.04).save(WEBOS / "largeIcon.png")
+    on_ground(mark, 1920, 1080, 0.32).convert("RGB").save(
+        WEBOS / "splash.png", optimize=True
+    )
+
+
+def tv_samsung(mark: Image.Image) -> None:
+    TV_SAMSUNG.parent.mkdir(parents=True, exist_ok=True)
+    on_ground(mark, 512, 423, 1.0).convert("RGB").save(TV_SAMSUNG, optimize=True)
 
 
 def imageset(path: pathlib.Path, images: dict[str, Image.Image]) -> None:
@@ -363,6 +382,8 @@ def main() -> None:
     web(master, mark)
     tv_android(master, mark)
     tv_os(mark)
+    webos(master, mark)
+    tv_samsung(mark)
     mobile(master, mark)
     android_native()
     print("icons written from", SOURCE.relative_to(ROOT))
