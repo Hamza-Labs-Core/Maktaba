@@ -285,6 +285,36 @@ class PlayerUITestCase: XCTestCase {
         }
     }
 
+    /// Opens `target`'s context menu with a long press and waits for `item`, one of its
+    /// buttons; when the press was taken as a tap (`page`, the screen a tap opens, showed),
+    /// goes `back`, lets the target settle again (`settle`) and presses once more. A second
+    /// miss fails, and so does a press that showed neither the menu nor the page.
+    ///
+    /// On CI's iPhone (main run 43598615449, after the hold had already gone from 1.2 to 2.5
+    /// to 4 s) the app's log has the press as "touch held 4.00 s at (100, 723)": held the
+    /// whole time, on the still card, Home asking nothing, and ended, not cancelled. A menu
+    /// that opens cancels the touch that opened it (Home's card tests log one cancel per
+    /// press), so the menu's long press never began, and the lift was the card's tap. A
+    /// longer hold cannot change that; a press that opened the page leaves nothing behind
+    /// once the page is closed, so it is pressed again.
+    func openMenu(on target: XCUIElement, item: XCUIElement, page: XCUIElement, _ what: String,
+                  settle: () -> Void, back: () -> Void, file: StaticString = #filePath, line: UInt = #line) {
+        for attempt in 1 ... 2 {
+            settle()
+            target.press(forDuration: Self.menuHold)
+            if item.waitForExistence(timeout: 10) { return }
+            guard page.exists else {
+                return XCTFail("\(what): no menu and no page after the press", file: file, line: line)
+            }
+            XCTAssertLessThan(attempt, 2, "\(what): both presses were taken as taps (the page opened)", file: file, line: line)
+            back()
+            XCTAssertTrue(waitUntil { target.isHittable }, "\(what): back where the press began", file: file, line: line)
+        }
+    }
+
+    /// How long a press that opens a context menu holds.
+    static let menuHold: TimeInterval = 2.5
+
     /// True once `condition` holds, after at least `reads` looks and at least `timeout` seconds
     /// (false when both have passed without it). On a loaded runner one look at the app's tree
     /// took 4.2 s (#761's iPad): a deadline alone ended after a single look, taken while the
