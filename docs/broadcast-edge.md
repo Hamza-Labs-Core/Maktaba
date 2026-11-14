@@ -102,6 +102,12 @@ time more than 60 s from the edge's is `400 clock_skew`, with the edge's time in
   live after another discontinuity. Each rung goes on its own: one stalled rung goes to the slate
   while the others stay live, and the home hears `rung_stalled`. After 24 h the channel is off
   air (`503 off_air`).
+- **Countries (50.23).** The ingest token may carry `geo {allow?, deny?}`: the channel's own
+  list and Maktaba's deny list, merged by the cloud. Every token-authenticated ingest call
+  records it in the channel (an older token's rule never replaces a newer one's). The master and
+  media playlists check `CF-IPCountry` against it (cached 10 s per isolate): a deny wins; with an
+  allow list, an unknown country (`XX`, `T1`, none) is outside. A viewer outside gets
+  `451 geo_blocked` and a `geo_blocked` Analytics Engine point with the country.
 - **No DVR (Q19).** An alarm every 60 s deletes objects 10 minutes after they were written, and
   sweeps any untracked object of the channel older than that. An R2 lifecycle rule of 1 day is
   the backstop (an owner action).

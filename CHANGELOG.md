@@ -844,6 +844,17 @@ build fails when the two differ.
 
 ### Added
 
+- **A published channel airs only what may be shared online (Epic 50, story 50.23).** While a
+  Live TV channel is broadcast, it airs only publishable items: the household's own recordings,
+  items cleared with a proof link, Creative Commons Attribution videos (read from YouTube at
+  intake and at every refresh), and sources the household recorded permission for, with the link
+  where the source allows sharing. The Broadcast page shows how much of each channel's next 7
+  days may air and the sources that would add most, each with Record permission. Turning the
+  limit off takes a typed confirmation. Each channel can play only in chosen countries or
+  everywhere but them, and Maktaba's own deny list applies to every channel; a viewer outside
+  sees that the channel isn't available in their country. An item that loses its permission
+  plays the "Not available online" card until the schedule is rebuilt.
+
 - **Apps can tell when they and the home are too far apart (story 58.01).** The home now
   publishes its API level, the oldest level it still serves, and the oldest build of each app it
   signs in, with no sign-in needed (`GET /api/discovery/home`: `api_level`, `api_level_oldest`,
