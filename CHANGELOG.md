@@ -288,6 +288,13 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Roku shows Arabic inside English lines joined and in the right order.** On the Account
+  screen in English, the language row read "Language: " with the Arabic name's letters unjoined
+  and reversed. The build step now shapes every catalog string that holds Arabic, in the English
+  catalog too, and a line filled with a home's or a person's name is shaped in both languages, so
+  an Arabic home name reads right on Account, Choose your home, Find on this network, the
+  connecting line and the update screen.
+
 - **An Arabic title reads the same on the Cast receiver as on every other TV (story 58.15).**
   On a TV playing from a sender set to English, a title such as "الحلقة 3 — Intro" showed with
   the number on the wrong side of the Arabic. The receiver's titles now take their direction
@@ -751,6 +758,13 @@ build fails when the two differ.
 
 ### Security
 
+- **A TV approved on maktaba.tv gets no sign-in once its cloud account is unlinked (Epic 58,
+  story 58.03).** When the cloud account that approved a TV's code was unlinked from the home, or
+  the home user was linked to another cloud account, before the TV collected its sign-in, the
+  home still handed the TV its tokens. The home now records the TV's sign-in in one step that
+  checks the link still names the approving account, and otherwise hands out nothing: the TV is
+  told its approval has expired and asks for a new code.
+
 - **Every event a plugin's emit refuses is logged (Epic 54).** A plugin's `events/emit` was
   refused (an undeclared event, a payload its schema refuses or over 16 KB, a subject out of
   the job's scope, a bad token, a request that does not decode, and the rest) with only the
@@ -875,6 +889,10 @@ build fails when the two differ.
 
 ### Added
 
+- **Roku's sign-in shows a QR (Epic 58, story 58.12).** The Roku channel's code screen now shows
+  a QR beside the code, as the other TV apps do: a phone's camera opens the approve page with
+  the code filled in (maktaba.tv/tv for a cloud code, the home's own page for the home's code).
+  The channel draws the QR itself, so no image is fetched from the home or the cloud.
 - **Playing on Roku (Epic 58, story 58.13).** The Roku channel's player: it tells the home
   what this Roku plays (H.264, HEVC, AV1 inside DASH, HDR10, HLG, Dolby Vision 5, the Dolby
   passthroughs), so a 4K HDR file plays directly where the Roku can and is converted only where
@@ -2825,6 +2843,15 @@ build fails when the two differ.
   Segments are deleted ten minutes after they arrive; nothing is kept for catch-up. Stream is the
   switchable fallback. The edge stores and delivers what a home sends and never chooses, ranks
   or recommends anything. It is not deployed yet: broadcasting stays off until its gate opens.
+
+- **Parental controls on the new TVs (Epic 58, story 58.14).** A child's account signed in on a
+  Samsung or LG TV (`/tv/`), Roku, Fire TV or Android TV sees only what its limits allow, as
+  everywhere else. Something hidden, opened from a link, shows This isn't available with the
+  limit and Ask a parent, which takes the remote's focus; a parent answers from Maktaba on their
+  phone, and a yes opens it on the TV without a restart. The TV's Account or Settings says a
+  parent manages the account, and its content limit. Samsung, LG and Roku ask for no PIN on the
+  remote; Fire TV and Android TV keep the guardian's PIN. A deep link to a hidden item shows the
+  not-available line and asks nothing. English and Arabic, mirrored.
 
 - **Viewer analytics and broadcast monitoring (story 50.28).** A home that broadcasts through
   Maktaba Cloud gets a **Viewers** page at app.maktaba.tv (from **Homes**, for the home's owner

@@ -18,7 +18,7 @@ end sub
 sub onParams()
     p = m.top.params
     name = ""
-    if p.home <> invalid and p.home.name <> invalid then name = ui_Vis(p.home.name, 30)
+    if p.home <> invalid and p.home.name <> invalid then name = ui_Arg(p.home.name)
     if p.verdict = "update_home" then
         m.title.text = ui_Tr("compat.updateHome.title")
         m.body.text = m.i18n.Format("compat.updateHome.viewer", [name])

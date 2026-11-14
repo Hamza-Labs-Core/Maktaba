@@ -10,6 +10,7 @@
   <script type="text/brightscript" uri="pkg:/source/store.brs" />
   <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
   <script type="text/brightscript" uri="pkg:/source/layout.brs" />
+  <script type="text/brightscript" uri="pkg:/source/parental.brs" />
   <script type="text/brightscript" uri="pkg:/source/visualtext.brs" />
   <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
   <children>

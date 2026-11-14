@@ -452,8 +452,8 @@ cloudflare:
   - '.github/workflows/cloudflare-ips.yml'
   - '.github/workflows/cloud-web-deploy.yml'
 
-# the broadcast edge (Epic 50 story 50.21): its Worker package, the cloud's token signer and
-# endpoint whose vectors its tests verify, Epic 34's Stream signer it reuses (and its TEST key),
+# the broadcast edge (Epic 50 story 50.21): its Worker package, the cloud's token signer, its
+# token endpoint and the edge API (the edge↔cloud contract) whose vectors its tests verify, Epic 34's Stream signer it reuses (and its TEST key),
 # the token check its deploy runs, and its workflows (_broadcast-edge.yml)
 broadcast_edge:
   - *ci
@@ -462,6 +462,7 @@ broadcast_edge:
   - 'web/packages/tvsite/src/testdata/**'
   - 'cloud/internal/broadcast/**'
   - 'cloud/internal/handlers/broadcast/**'
+  - 'cloud/internal/handlers/edge/**'
   - 'tools/cloudflare/token-check.mjs'
   - '.github/workflows/_broadcast-edge.yml'
   - '.github/workflows/broadcast-edge.yml'
@@ -879,6 +880,8 @@ roku:
   - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Resources/Fonts/IBMPlexSansArabic-*'
   - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Resources/Fonts/OFL-IBMPlexSansArabic.txt'
   - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Resources/Art/maktaba-logo.png'
+  # the code screen's QR is held to the web app's encoder (58.12)
+  - 'web/src/lib/qr.ts'
 
 # Maktaba's Cast receiver at cast.maktaba.tv (Epic 58 story 58.07): its package (the receiver,
 # the loader, the Worker, the tests) and its checks (_cast-receiver.yml); the release workflow

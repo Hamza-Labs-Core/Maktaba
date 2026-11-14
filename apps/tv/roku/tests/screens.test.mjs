@@ -20,7 +20,7 @@ import { after, before, test } from "node:test";
 
 import { build } from "../tools/build.mjs";
 import { LOGS, ROKU } from "./brs.mjs";
-import { HIDDEN, REFUSED, SERIES, startCloud, startHome, videos } from "./mockhome.mjs";
+import { HIDDEN, LATE, REFUSED, SERIES, startCloud, startHome, videos } from "./mockhome.mjs";
 import { Channel, SCREENS } from "./sg.mjs";
 
 const require = createRequire(import.meta.url);
@@ -88,7 +88,12 @@ test("T03: sign in by cloud code, browse in English, deep links, Back, then Arab
     await c.waitFor(/\[screen\] StartScreen ready homes=\s*0/, 30000);
     await compare(c, "start-en");
     await c.key("Select");
+    // the QR of the cloud's verify_url (maktaba.tv/tv?c=…), encoded in the Task and drawn on
+    // the device: a version 3 symbol, 29 modules a side; no image is asked of anyone
+    await c.waitFor(/\[qr\] encoded\s+32 bytes into\s+29 modules/, 20000);
+    await c.waitFor(/\[qr\] drawn\s+29 modules at\s+11 px/);
     await c.waitFor(/\[screen\] CodeScreen ready mode=cloud/);
+    assert.ok(!requests.some((l) => l.includes("qr.png")), "the QR is drawn, never fetched");
     await compare(c, "code-en");
     // the phone approves (the mock cloud, on its third poll); the grant goes to the home's LAN
     // address, never to the pinned local_ip a Roku cannot verify
@@ -384,6 +389,67 @@ test("T03 (58.13): a stream session the home refuses shows the error with its re
   }
 });
 
+test("T04 (58.14): a restricted child: the blocked page asks a parent and a yes opens the video; Account; a deep link", { timeout: 180000 }, async () => {
+  // the main test left the channel in Arabic: the blocked page is drawn in Arabic first
+  home.state.restricted = true;
+  home.state.requests = [];
+  const c = await Channel.start("parental", zip, data);
+  try {
+    await c.waitFor(/\[parental\] limited=true/, 30000);
+    await c.waitFor(/\[screen\] HomeScreen ready/, 30000);
+    await c.waitFor(/\[home\] for you/, 20000);
+    // a deep link to the hidden video: the not-available line, nothing more
+    await c.input({ contentId: LATE, mediaType: "movie" });
+    await c.waitFor(/\[link\] not_available/);
+    await c.waitFor(/\[home\] notice roku\.notAvailable/);
+    assert.ok(!requests.some((l) => l.startsWith("home ask")), "a deep link asks nothing");
+    await c.waitFor(/\[home\] for you/, 20000);
+    // Continue watching's first card is the hidden video: * → Open shows the blocked page
+    // (Up and Down: the reset Home's cards take the remote's focus, on its first card)
+    await c.key("Up");
+    await c.waitFor(/\[focus\] home menu/);
+    await c.key("Down");
+    await c.waitFor(/\[focus\] home row\s+0 item/);
+    await c.key("Info");
+    await c.waitFor(/\[actions\] play,over,open,cancel|\[actions\] [a-z,]*open/);
+    await c.keys(["Down", "Down"]);
+    await c.key("Select");
+    await c.waitFor(/\[screen\] BlockedScreen ready kind=video restricted=true/, 20000);
+    await c.waitFor(/\[focus\] blocked none/);
+    await compare(c, "blocked-ar");
+    // OK asks, with the id the screen had
+    await c.key("Select");
+    await c.waitFor(/\[parental\] asked/);
+    assert.ok(requests.some((l) => l === `home ask kind=video id=${LATE}`), "the request names the video");
+    await c.waitFor(/\[focus\] blocked pending/);
+    await compare(c, "blocked-asked-ar");
+    // the parent approves from their phone: the next read opens the video, no restart
+    home.state.requests[0].status = "approved";
+    await c.waitFor(/\[parental\] approved video/, 30000);
+    await c.waitFor(/\[screen\] VideoScreen ready/, 20000);
+    // Back goes to Home: the blocked page is gone from the stack
+    await c.key("Back");
+    await c.waitFor(/\[nav\] back to HomeScreen/);
+
+    // Account: a parent manages this account, its limit
+    await c.key("Up");
+    await c.waitFor(/\[focus\] home menu/);
+    await c.keys(["Left", "Left", "Left"]);
+    await c.key("Select");
+    await c.waitFor(/\[screen\] AccountScreen ready lang=ar managed=true/);
+    await compare(c, "account-managed-ar");
+    // English: the same lines, left to right
+    await c.keys(["Down", "Down"]);
+    await c.key("Select");
+    await c.waitFor(/\[account\] en/);
+    await c.waitFor(/\[screen\] AccountScreen ready lang=en managed=true/);
+    await compare(c, "account-managed-en");
+  } finally {
+    await c.stop();
+    home.state.restricted = false;
+  }
+});
+
 // The probe walks the whole /24; brs-engine's roUrlTransfer is synchronous, so each address
 // that does not answer waits for its connection to fail. Linux refuses loopback addresses
 // (127.0.0.2…) at once; macOS has no such addresses and waits out each one.
@@ -401,6 +467,8 @@ test("T03: Find on this network lists the home and signs in by the home's own co
     await compare(c, "find-en");
     await c.key("Select");
     await c.waitFor(/\[home\] h1test: plain HTTP on the LAN/, 10000);
+    // the home's own code carries its approve page (/pair?code=…) as a QR too
+    await c.waitFor(/\[qr\] encoded\s+\d+ bytes into\s+\d+ modules/, 20000);
     await c.waitFor(/\[screen\] CodeScreen ready mode=home/);
     await c.waitFor(/\[screen\] HomeScreen ready/, 20000);
   } finally {

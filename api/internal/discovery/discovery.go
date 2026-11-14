@@ -93,6 +93,10 @@ type PairingTicket struct {
 	IssuedAt   time.Time
 	ExpiresAt  time.Time
 	ConsumedAt *time.Time
+	// CloudUserID is the cloud account that approved the code on maktaba.tv (story 58.03),
+	// "" for every other approval: the TV's sign-in is recorded only while that account is
+	// still the one linked to UserID.
+	CloudUserID string
 }
 
 // PairingStore persists tickets. Production-backed by Postgres; tests

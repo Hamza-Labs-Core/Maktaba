@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- A QR code drawn from its modules (source/qr.brs, story 58.12): a white square with the
+     standard four-module quiet zone, each run of dark modules in a row one Rectangle. A QR is
+     never mirrored in Arabic; only its place on the screen is. -->
+<component name="QrCode" extends="Group">
+  <interface>
+    <field id="modules" type="array" onChange="onModules" />
+    <field id="width" type="integer" value="420" onChange="onModules" />
+  </interface>
+  <script type="text/brightscript" uri="QrCode.brs" />
+  <children>
+    <Rectangle id="paper" color="0xFFFFFFFF" />
+    <Group id="dark" />
+  </children>
+</component>
