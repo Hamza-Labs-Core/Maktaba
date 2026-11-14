@@ -48,8 +48,10 @@ final class PlayerCastUITests: PlayerUITestCase {
         tv.tap()
         waitFor("a cast grant for v2") { grants().contains { $0["video_id"] as? String == "v2" } }
         XCTAssertTrue(element("cast.panel").waitForExistence(timeout: 15), "the cast's panel")
-        XCTAssertEqual(element("cast.castingTo").label,
-                       language == "ar" ? "يُعرض على Living Room TV" : "Playing on Living Room TV")
+        // the TV's name is isolated (U+2068 … U+2069) in the right-to-left sentence
+        let playingOn = language == "ar" ? "يُعرض على Living Room TV" : "Playing on Living Room TV"
+        XCTAssertEqual(unisolated(element("cast.castingTo").label), playingOn)
+        XCTAssertEqual(unisolated(element("cast.panel").label), playingOn, "the panel's headline for VoiceOver")
         let loaded = castState
         XCTAssertEqual(loaded["home"], Self.relay, "the home's HTTPS address, never the phone's LAN IP")
         XCTAssertEqual(loaded["grant"], "yes")
@@ -113,6 +115,12 @@ final class PlayerCastUITests: PlayerUITestCase {
     }
 
     // MARK: helpers
+
+    /// A label without its bidi isolates: the app wraps a name in U+2068 … U+2069 inside a
+    /// right-to-left sentence, so a Latin name keeps its order.
+    private func unisolated(_ label: String) -> String {
+        label.filter { $0 != "\u{2068}" && $0 != "\u{2069}" }
+    }
 
     /// The video page of v2 (left at 1240 s), the home's discovery and the grant stubbed,
     /// then Resume: the watch screen reads the discovery as it opens.

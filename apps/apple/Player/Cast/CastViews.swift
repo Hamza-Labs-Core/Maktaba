@@ -214,10 +214,16 @@ struct CastPanel: View {
     var body: some View {
         VStack(spacing: 20) {
             Spacer()
+            // the panel's headline for VoiceOver, and what names the panel: a container's own
+            // identifier (one image and the mini controller's container) never reached the
+            // accessibility tree, where a single element's always does
             Image(systemName: "tv.badge.wifi")
                 .font(.system(size: 64))
                 .foregroundStyle(.white.opacity(0.8))
-                .accessibilityHidden(true)
+                .accessibilityElement()
+                .accessibilityLabel(Text(verbatim: cast.device.map { CastWords.castingTo($0.name) } ?? ""))
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("cast.panel")
             if cast.oldHome {
                 Text(verbatim: CastWords.oldHome)
                     .font(.maktabaBody(15, relativeTo: .subheadline))
@@ -236,7 +242,6 @@ struct CastPanel: View {
         }
         .padding()
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("cast.panel")
     }
 }
 
