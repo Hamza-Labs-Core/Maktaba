@@ -187,7 +187,7 @@ internal fun CloudCodeContent(ui: CloudCodeUi, onTryAgain: () -> Unit, modifier:
                     Column(Modifier.width(192.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Box(Modifier.testTag("cloud-qr")) { QrCode(ui.verifyUrl, size = 136.dp) }
                         Text(
-                            stringResource(R.string.signin_code_computer, "⁦" + HomeChoices.shownApprovePage(ui.verifyUrl) + "⁩"),
+                            stringResource(R.string.signin_code_computer, "\u2066" + HomeChoices.shownApprovePage(ui.verifyUrl) + "\u2069"),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaktabaPalette.Muted,
                             textAlign = TextAlign.Center,

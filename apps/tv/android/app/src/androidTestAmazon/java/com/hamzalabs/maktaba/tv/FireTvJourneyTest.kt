@@ -64,6 +64,8 @@ class FireTvJourneyTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
 
     companion object {
+        private const val TAG = "FireTvJourney"
+
         /**
          * The picker opens on the cloud code (58.03): before the app starts, its cloud is an
          * address nothing answers at, so the journey never asks the hosted cloud for a code
@@ -217,9 +219,5 @@ class FireTvJourneyTest {
         waitFor("the app to leave") {
             rule.activityRule.scenario.state.let { it == Lifecycle.State.DESTROYED || it == Lifecycle.State.CREATED }
         }
-    }
-
-    private companion object {
-        const val TAG = "FireTvJourney"
     }
 }
