@@ -3,6 +3,7 @@
 // the missing permission before anything is written.
 //
 //   node token-check.mjs --pieces zone,tunnel [--zone maktaba.tv]
+//   pieces: workers, zone, tunnel, aop, broadcast
 //
 // Env: CLOUDFLARE_ACCOUNT_ID, and the token (CLOUDFLARE_API_TOKEN, or a piece's own
 // CLOUDFLARE_API_TOKEN_<PIECE>). When the token may read its own policy (API Tokens: Read), the
@@ -17,6 +18,8 @@ export const PIECES = {
   zone: { account: [], zone: ["Zone WAF Write", "Zone Settings Write", "Zone Read"] },
   tunnel: { account: ["Cloudflare Tunnel Write"], zone: ["DNS Write", "Zone Read"] },
   aop: { account: [], zone: ["SSL and Certificates Write", "Zone Read"] },
+  // the broadcast edge (story 50.21): a Worker with R2 buckets and custom domains
+  broadcast: { account: ["Workers Scripts Write", "Workers R2 Storage Write"], zone: ["Workers Routes Write", "Zone Read"] },
   // No piece for a Worker's custom domains: Cloudflare creates a custom domain's DNS record
   // itself, so `workers` covers them (maktaba.dev and maktaba.tv deploy with no DNS Edit).
 };
@@ -25,6 +28,7 @@ export const PIECES = {
 const PROBES = {
   "Workers Scripts Write": (a) => `/accounts/${a}/workers/scripts`,
   "Workers Routes Write": (_a, z) => `/zones/${z}/workers/routes`,
+  "Workers R2 Storage Write": (a) => `/accounts/${a}/r2/buckets`,
   "Zone Read": (_a, z) => `/zones/${z}`,
   "Zone WAF Write": (_a, z) => `/zones/${z}/rulesets`,
   "Zone Settings Write": (_a, z) => `/zones/${z}/settings/ssl`,

@@ -79,5 +79,12 @@
   "search.noResults": "لا نتائج.",
   "account.signedInAs": "تم تسجيل الدخول باسم %1$s",
   "account.home": "الجهاز الرئيسي: %1$s",
-  "player.error": "لا يمكن تشغيل هذا الفيديو الآن."
+  "player.error": "لا يمكن تشغيل هذا الفيديو الآن.",
+  "roku.player.upNext": "التالي",
+  "roku.player.retrying": "جارٍ تجربة نسخة محوّلة…",
+  "roku.player.failed": "لا يمكن تشغيل هذا الفيديو على جهاز Roku هذا.",
+  "roku.player.audio": "الصوت",
+  "roku.player.subtitles": "الترجمة",
+  "roku.player.off": "إيقاف",
+  "roku.player.track": "المسار %1$s"
 }

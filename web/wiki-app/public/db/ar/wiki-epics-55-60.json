@@ -2037,7 +2037,10 @@
       ],
       "related": [
         "epic-58-smart-tv-platforms",
-        "ep-get-home"
+        "ep-get-home",
+        "ep-get-me-app-sign-ins",
+        "ep-get-pairing-cloud-code-code",
+        "ep-post-pairing-cloud-approve"
       ],
       "files": {
         "story": "specs/epics/58-smart-tv-platforms/story-58-03-cloud-tv-code.md",
@@ -2045,7 +2048,10 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /home"
+        "GET /home",
+        "GET /me/app-sign-ins",
+        "GET /pairing/cloud-code/{code}",
+        "POST /pairing/cloud-approve"
       ],
       "db_tables": [],
       "metadata": {
@@ -2534,7 +2540,8 @@
         "ep-post-stream-sessions",
         "ep-post-cast-grants",
         "ep-get-home",
-        "ep-get-discovery-home"
+        "ep-get-discovery-home",
+        "ep-post-pairing-cloud-approve"
       ],
       "files": {
         "story": "specs/epics/58-smart-tv-platforms/story-58-17-openapi-roles-rehearsal.md",
@@ -2546,7 +2553,8 @@
         "POST /stream/sessions",
         "POST /cast/grants",
         "GET /home",
-        "GET /discovery/home"
+        "GET /discovery/home",
+        "POST /pairing/cloud-approve"
       ],
       "db_tables": [],
       "metadata": {

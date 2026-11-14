@@ -261,14 +261,22 @@ if [ ! -f "${work}/off/active" ]; then ok "leader-guard: CLOUD_PROCESSES=off in 
 
 # migrate-db-nodes (story 50.18): its guards, against five stand-in hosts (NODE_EXEC): each
 # host's cloud-ha.env is ${STATE}/<host>.env, ${STATE}/leader names the pair's leader,
-# ${STATE}/pgb-down-<host> makes that PgBouncer silent. The whole move runs in the rehearsal
-# (db-nodes-migrate).
+# ${STATE}/pgb-down-<host> makes that PgBouncer silent. ${STATE}/members-late (and
+# ${STATE}/leader-late) take the place of members (and leader) from the ${STATE}/late-after'th
+# question on: a cluster that settles a few seconds after a change. The whole move runs in the
+# rehearsal (db-nodes-migrate).
 cat >"${work}/bin/dbhost" <<'STUB'
 #!/usr/bin/env bash
 host="$1"; cmd="${2//\/etc\/maktaba\/cloud-ha.env/${STATE}/${1}.env}"; cmd="${cmd//\/etc\/maktaba\/db-ca.crt/${STATE}/${1}-db-ca.crt}"
+late() { # late <name>: ${STATE}/<name>, or <name>-late once asked late-after times
+    local n=0
+    [ -f "${STATE}/$1-asked" ] && n="$(cat "${STATE}/$1-asked")"
+    n=$((n + 1)); echo "${n}" >"${STATE}/$1-asked"
+    if [ -f "${STATE}/$1-late" ] && [ "${n}" -gt "$(cat "${STATE}/late-after")" ]; then cat "${STATE}/$1-late"; else cat "${STATE}/$1"; fi
+}
 case "${cmd}" in
-    *"/primary"*) [ "$(cat "${STATE}/leader")" = "${host}" ] ;;
-    *"list -f json"*) cat "${STATE}/members" ;;
+    *"/primary"*) [ "$(late leader)" = "${host}" ] ;;
+    *"list -f json"*) late members ;;
     *pg_isready*) [ ! -f "${STATE}/pgb-down-${host}" ] ;;
     *) bash -c "${cmd}" ;;
 esac
@@ -315,6 +323,41 @@ mig_run DB_HOSTS="db-1 db-2 db-3" DB_SSLMODE=disable bash "${here}/bin/migrate-d
 if grep -q "check: node-a leads" "${MIG_DIR}/out"; then ok "migrate-db-nodes: DB_SSLMODE=disable (the rehearsal) needs no CA"; else fail "noca-plain: $(cat "${MIG_DIR}/out")"; fi
 mig badstep; mig_run DB_HOSTS="db-1 db-2 db-3" bash "${here}/bin/migrate-db-nodes" everything
 if grep -q "usage: migrate-db-nodes" "${MIG_DIR}/out"; then ok "migrate-db-nodes: an unknown step prints the usage"; else fail "badstep: $(cat "${MIG_DIR}/out")"; fi
+
+# retire and backup right after a change in the cluster: db-2 is still on the old timeline
+# (running, not streaming) and starts streaming only after a few questions, or never
+retire_members() { # retire_members <db-2's state>: the database nodes, the pair gone
+    printf '[{"Member":"db-1","Role":"Leader","State":"running"},{"Member":"db-2","Role":"Replica","State":"%s","Lag in MB":0},{"Member":"db-3","Role":"Sync Standby","State":"streaming","Lag in MB":0}]' "$1"
+}
+mig retire-late; retire_members running >"${MIG_DIR}/members"; retire_members streaming >"${MIG_DIR}/members-late"; echo 6 >"${MIG_DIR}/late-after"
+mig_run DB_HOSTS="db-1 db-2 db-3" SVC=true WAIT=20 bash "${here}/bin/migrate-db-nodes" retire
+if grep -q "retire: Patroni lists only the database nodes" "${MIG_DIR}/out" && grep -q "^PGBOUNCER=no" "${MIG_DIR}/node-a.env" \
+    && [ "$(cat "${MIG_DIR}/members-asked")" -gt 6 ]; then
+    ok "migrate-db-nodes: retire waits for a replica that starts streaming a few seconds after the etcd step"
+else
+    fail "retire-late: $(cat "${MIG_DIR}/out")"
+fi
+mig retire-never; retire_members running >"${MIG_DIR}/members"
+mig_run DB_HOSTS="db-1 db-2 db-3" SVC=true WAIT=2 bash "${here}/bin/migrate-db-nodes" retire
+if grep -q "refused: db-2 neither leads nor streams within 2 s" "${MIG_DIR}/out" && ! grep -q "^PGBOUNCER=no" "${MIG_DIR}/node-a.env"; then
+    ok "migrate-db-nodes: retire refuses, the pair untouched, when a replica never streams"
+else
+    fail "retire-never: $(cat "${MIG_DIR}/out")"
+fi
+mig backup-late; echo none >"${MIG_DIR}/leader"; echo db-1 >"${MIG_DIR}/leader-late"; echo 4 >"${MIG_DIR}/late-after"
+mig_run DB_HOSTS="db-1 db-2 db-3" WAIT=20 BACKUP_CMD="touch ${MIG_DIR}/backed-up" bash "${here}/bin/migrate-db-nodes" backup
+if [ -f "${MIG_DIR}/backed-up" ] && grep -q "backup: a full backup from db-1" "${MIG_DIR}/out"; then
+    ok "migrate-db-nodes: backup waits for the new leader's key after retire"
+else
+    fail "backup-late: $(cat "${MIG_DIR}/out")"
+fi
+mig backup-never; echo none >"${MIG_DIR}/leader"
+mig_run DB_HOSTS="db-1 db-2 db-3" WAIT=2 BACKUP_CMD="touch ${MIG_DIR}/backed-up" bash "${here}/bin/migrate-db-nodes" backup
+if [ ! -f "${MIG_DIR}/backed-up" ] && grep -q "refused: no database node leads within 2 s" "${MIG_DIR}/out"; then
+    ok "migrate-db-nodes: backup refuses when no database node ever leads"
+else
+    fail "backup-never: $(cat "${MIG_DIR}/out")"
+fi
 
 # make-pgbouncer-cert (story 50.18): signed by the etcd CA, db.internal checked by name
 mkdir -p "${work}/pki"

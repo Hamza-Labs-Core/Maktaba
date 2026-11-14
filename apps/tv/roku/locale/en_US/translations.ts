@@ -275,5 +275,29 @@
         <source>player.error</source>
         <translation>This video cannot play right now.</translation>
     </message>
+    <message>
+        <source>roku.player.upNext</source>
+        <translation>Up next</translation>
+    </message>
+    <message>
+        <source>roku.player.retrying</source>
+        <translation>Trying a converted version…</translation>
+    </message>
+    <message>
+        <source>roku.player.failed</source>
+        <translation>This video can't play on this Roku.</translation>
+    </message>
+    <message>
+        <source>roku.player.audio</source>
+        <translation>Audio</translation>
+    </message>
+    <message>
+        <source>roku.player.subtitles</source>
+        <translation>Subtitles</translation>
+    </message>
+    <message>
+        <source>roku.player.off</source>
+        <translation>Off</translation>
+    </message>
 </context>
 </TS>

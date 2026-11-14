@@ -19,6 +19,19 @@ const BUILD_VERSION = process.env.VERSION || "dev";
 const BUILD_COMMIT = process.env.COMMIT || "unknown";
 const BUILD_DATE = process.env.SOURCE_DATE_EPOCH || "unknown";
 
+// Maktaba's Cast receiver application ID (Epic 58 story 58.06): shared/cast/app.json, which
+// every sender reads; MAKTABA_CAST_APP_ID overrides it for a build. It is public, never a
+// secret. Empty (no receiver registered yet): the player shows no Cast button.
+function castAppId(): string {
+  if (process.env.MAKTABA_CAST_APP_ID !== undefined) return process.env.MAKTABA_CAST_APP_ID.trim();
+  const file = path.resolve(__dirname, "../shared/cast/app.json");
+  if (!existsSync(file)) return "";
+  const id = (JSON.parse(readFileSync(file, "utf8")) as { receiver_app_id?: unknown })
+    .receiver_app_id;
+  return typeof id === "string" ? id.trim() : "";
+}
+const CAST_APP_ID = castAppId();
+
 // writeVersionJson emits dist/version.json after the bundle is written so
 // the web client (and the mobile update check) can read the build it was
 // shipped as without an API round-trip.
@@ -224,6 +237,7 @@ export default defineConfig(({ mode }) =>
       : {
           define: {
             "import.meta.env.VITE_APP_VERSION": JSON.stringify(BUILD_VERSION),
+            "import.meta.env.VITE_CAST_APP_ID": JSON.stringify(CAST_APP_ID),
           },
           plugins: [
             react(),

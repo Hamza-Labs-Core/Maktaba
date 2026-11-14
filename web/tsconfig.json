@@ -40,6 +40,8 @@
     "wiki-app",
     "packages/devportal",
     "packages/website",
+    "packages/broadcast-edge",
+    "packages/castreceiver",
     "design-system/build",
     "design-system/storybook",
     "design-system/**/*.stories.tsx"

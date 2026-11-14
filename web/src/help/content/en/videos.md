@@ -30,6 +30,12 @@ Press **Play** on the **Watch** tab. The player opens with the usual controls (p
 
 Marks on the time bar show where chapters start. Move the pointer along the time bar, or drag it, and a small picture above it shows that moment of the video with its time (scrub thumbnails). Videos processed before this was added show fewer, coarser pictures until they are processed again; a video without them plays normally. **Back** returns to the video's page. Maktaba records how far you watched, for your history and the series progress.
 
+### Cast to a TV {#cast}
+
+In Chrome, **Cast to a TV** above the picture sends the video to a Chromecast, a Google TV or a TV with Chromecast built in on the same Wi-Fi network. If the video is part of a queue (**Play all**, **Shuffle**), the TV plays the whole queue. The TV fetches the video from your home itself, so you can close the tab or put the computer to sleep: the TV keeps playing, and your **Continue Watching** follows where the TV is. While the TV plays, the player here shows **Playing on** and the TV's name, with play, pause and **Stop casting**. The TV's screens follow the language Maktaba is in.
+
+The button shows only in Chrome, and only when you reach the home at its secure address (`https://`, the home's own name or the remote address). Casting needs the home's secure address (https): on a home opened at `http://` or by its IP alone, there is no Cast button. Casting is never through Maktaba Cloud: sign in on the home itself.
+
 ### Turn on subtitles {#subtitles}
 
 When a video has subtitles, turn them on from the player's own menu (the captions or three-dots button), or press `C`. Make them bigger with **Subtitle size**.
@@ -106,3 +112,9 @@ Only admins.
 - **What it means:** The video has no subtitle file yet, or they are turned off.
 - **Does Maktaba fix it itself?** Subtitles come from the video file itself or are made from the transcript, so some appear only after transcription.
 - **What you can do:** Press `C` or use the player's captions menu. Check the **Files** tab to see whether any subtitle file exists.
+
+### There is no Cast button {#no-cast-button}
+
+- **What it means:** This browser or this address can't cast. Casting works in Chrome, on the home's secure address (`https://`), with a TV on the same Wi-Fi network.
+- **Does Maktaba fix it itself?** No. The button appears by itself once those are true.
+- **What you can do:** Open the home in Chrome at its `https://` address (the address **Connect an app** lists), not at `http://` or an IP. If the button shows but finds no TV, check that the TV and the computer are on the same Wi-Fi network (guest and hotel networks often hide devices from each other).

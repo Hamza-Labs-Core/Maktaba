@@ -100,6 +100,7 @@ jobs:
       runner_stages: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.runner_stages == 'true' }}
       store: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.store == 'true' }}
       cloudflare: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.cloudflare == 'true' }}
+      broadcast_edge: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.broadcast_edge == 'true' }}
       mdns: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.mdns == 'true' }}
       log_bench: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.log_bench == 'true' }}
       integration: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.integration == 'true' }}
@@ -122,6 +123,7 @@ jobs:
       android_apps: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.android_apps == 'true' }}
       android_tv: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.android_tv == 'true' }}
       tv_web: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.tv_web == 'true' }}
+      cast_receiver: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.cast_receiver == 'true' }}
       roku: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.roku == 'true' }}
       desktop_player: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.desktop_player == 'true' }}
       apple_apps: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.apple_apps == 'true' }}
@@ -283,6 +285,14 @@ jobs:
     if: needs.changes.outputs.cloudflare == 'true'
     uses: ./.github/workflows/_cloudflare.yml
 
+  broadcast-edge:
+    # Epic 50 (50.21): the broadcast edge's Worker in Miniflare, the cloud's ingest tokens on the
+    # shared vectors, and the rehearsal under wrangler dev; no secret, no call to Cloudflare
+    # (see _broadcast-edge.yml)
+    needs: [changes]
+    if: needs.changes.outputs.broadcast_edge == 'true'
+    uses: ./.github/workflows/_broadcast-edge.yml
+
   e2e:
     needs: [changes, integration]
     # After integration (not when it failed); also when integration was not needed. Fork
@@ -368,6 +378,13 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.tv_web == 'true'
     uses: ./.github/workflows/_tv-web.yml
+
+  cast-receiver:
+    # Epic 58 (58.07): Maktaba's Cast receiver at cast.maktaba.tv — Vitest with a fake
+    # cast.framework, Playwright with a CAF stub and a mock home (see _cast-receiver.yml)
+    needs: [changes]
+    if: needs.changes.outputs.cast_receiver == 'true'
+    uses: ./.github/workflows/_cast-receiver.yml
 
   roku:
     # Epic 58 (58.15, 58.16): the Roku channel's BrightScript on brs-engine against the shared
@@ -605,6 +622,7 @@ jobs:
       - runner-stages
       - store
       - cloudflare
+      - broadcast-edge
       - e2e
       - media-e2e
       - perf-ci
@@ -618,6 +636,7 @@ jobs:
       - android-apps
       - android-tv
       - tv-web
+      - cast-receiver
       - roku
       - desktop-player
       - apple-apps

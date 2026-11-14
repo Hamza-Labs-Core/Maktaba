@@ -43,6 +43,8 @@ COPY apps/tv/web/i18n /src/apps/tv/web/i18n
 COPY shared/compat /src/shared/compat
 # the device-caps vectors the LG platform's tests read (story 58.11)
 COPY shared/playback/caps-vectors.json /src/shared/playback/caps-vectors.json
+# the Cast receiver's application ID (story 58.06), which vite.config.ts reads into the player
+COPY shared/cast/app.json /src/shared/cast/app.json
 COPY web ./
 RUN pnpm run build
 

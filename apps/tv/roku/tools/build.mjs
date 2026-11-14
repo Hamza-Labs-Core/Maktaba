@@ -6,6 +6,13 @@
 //   node tools/build.mjs --test --cloud URL --probe-ip IP --probe-port N --out FILE
 //                                              # a test build for the brs-engine screen tests
 //   node tools/build.mjs --device-tests        # build/maktaba-roku-device-tests.zip (T04)
+//   node tools/build.mjs --version 0.3.150 --out build/maktaba-roku-0.3.150.zip
+//                                              # a release's zip (roku-release.yml, story 58.13)
+//
+// A release's version goes in the manifest as Roku reads it: major_version and minor_version
+// stay the channel's own (1.0), and build_version is minor * 1000 + patch of the home's tag
+// (v0.3.150 is 3150), so each tag's package is higher than the last (the dashboard refuses one
+// that is not) while patch versions stay under 1000.
 //
 // The device-test package carries the channel's source with the logic tests (tests/*_test.brs,
 // the files brs-engine runs in T01) in place of the channel's Main: side-loaded on a Roku, it
@@ -42,6 +49,7 @@ function args(argv) {
     else if (a === "--probe-ip") out.probeIp = argv[++i];
     else if (a === "--probe-port") out.probePort = argv[++i];
     else if (a === "--out") out.out = argv[++i];
+    else if (a === "--version") out.version = argv[++i];
     else throw new Error(`unknown argument ${a}`);
   }
   return out;
@@ -75,7 +83,7 @@ async function images(STAGE) {
 }
 
 /** The logic tests that run on a device, in the order they run. */
-export const DEVICE_TESTS = ["channel", "layout", "i18n"];
+export const DEVICE_TESTS = ["channel", "layout", "i18n", "player"];
 
 /** Puts the logic tests in the staged source, with a Main that runs them in turn. */
 function deviceTests(STAGE) {
@@ -103,9 +111,19 @@ function deviceTests(STAGE) {
   writeFileSync(join(src, "main.brs"), main);
 }
 
+/** The manifest's build_version for a release's version (X.Y.Z): Y * 1000 + Z. */
+export function buildVersion(version) {
+  const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(version || "");
+  if (!m) throw new Error(`--version wants X.Y.Z, got ${version}`);
+  const patch = Number(m[3]);
+  if (patch >= 1000) throw new Error(`patch ${patch} does not fit build_version (minor * 1000 + patch)`);
+  return Number(m[2]) * 1000 + patch;
+}
+
 function manifest(STAGE, o) {
   const path = join(STAGE, "manifest");
   let text = readFileSync(path, "utf8");
+  if (o.version) text = text.replace(/^build_version=\d+$/m, `build_version=${buildVersion(o.version)}`);
   if (o.test) {
     text = text.replace(/^bs_const=TEST=false$/m, "bs_const=TEST=true");
     if (o.cloud) text += `maktaba_cloud=${o.cloud}\n`;

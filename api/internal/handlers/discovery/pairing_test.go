@@ -23,12 +23,20 @@ type fakeMinter struct {
 	lastUID string
 	lastKnd string
 	lastLbl string
+	lastVia string
 	err     error
+}
+
+// MintVia records how the device came by its code (ViaMinter).
+func (f *fakeMinter) MintVia(ctx context.Context, userID, kind, label, via string) (MintedTokens, error) {
+	t, err := f.Mint(ctx, userID, kind, label)
+	f.lastVia = via
+	return t, err
 }
 
 func (f *fakeMinter) Mint(_ context.Context, userID, kind, label string) (MintedTokens, error) {
 	f.calls++
-	f.lastUID, f.lastKnd, f.lastLbl = userID, kind, label
+	f.lastUID, f.lastKnd, f.lastLbl, f.lastVia = userID, kind, label, ""
 	if f.err != nil {
 		return MintedTokens{}, f.err
 	}
@@ -37,6 +45,7 @@ func (f *fakeMinter) Mint(_ context.Context, userID, kind, label string) (Minted
 		AccessExpiresIn:  900,
 		RefreshToken:     "mkt_rt_v1.row." + userID,
 		RefreshExpiresIn: int(PairRefreshTTL.Seconds()),
+		FamilyID:         "fam." + userID,
 		UserID:           userID,
 	}, nil
 }

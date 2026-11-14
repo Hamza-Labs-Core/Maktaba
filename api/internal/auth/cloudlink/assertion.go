@@ -30,6 +30,9 @@ const (
 	PurposeSignIn = "signin"
 	// PurposeLink is an assertion for the Account page's link step.
 	PurposeLink = "link"
+	// PurposeTVCode is an assertion for POST /api/pairing/cloud-assertion: a TV's cloud code
+	// approved on maktaba.tv by the linked cloud account (story 58.03); its nonce is the code.
+	PurposeTVCode = "tvcode"
 
 	// maxAssertionLife bounds exp - iat whatever the cloud wrote (it
 	// signs a minute); clockSkew is the leeway on both ends.
@@ -101,6 +104,8 @@ func VerifyAssertion(tok string, pub ed25519.PublicKey, purpose, serverID string
 		return Assertion{}, refuse("expired")
 	case purpose == PurposeLink && a.Non == "":
 		return Assertion{}, refuse("link without nonce")
+	case purpose == PurposeTVCode && a.Non == "":
+		return Assertion{}, refuse("tv code without its code")
 	}
 	return a, nil
 }

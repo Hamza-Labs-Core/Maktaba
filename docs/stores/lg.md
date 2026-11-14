@@ -116,11 +116,14 @@ screenshots above illustrate each step.
 
 ## Submitting (by a person)
 
-1. In LG Seller Lounge, add a new app or a new version of `com.hamzalabs.maktaba.tv`.
-2. Upload the `.ipk`, the store images, the listing in English and Arabic, the UX scenario
+1. The release candidate's checklist below has a passing result for its version
+   (`tools/release/tv_checklist_guard.py --platform lg --version <X.Y.Z>`); without one the
+   submission stops, with the reason the guard prints.
+2. In LG Seller Lounge, add a new app or a new version of `com.hamzalabs.maktaba.tv`.
+3. Upload the `.ipk`, the store images, the listing in English and Arabic, the UX scenario
    document, the self-checklist, and the review home's sign-in (from its secret).
-3. Countries: every country the LG Content Store serves.
-4. LG's QA runs in stages: pretest, function and content, with LG's App CTS suite. Every update is
+4. Countries: every country the LG Content Store serves.
+5. LG's QA runs in stages: pretest, function and content, with LG's App CTS suite. Every update is
    QA'd again. LG publishes no duration; reports run from 2 to 12 weeks, so the first submission
    is planned for the long end.
 

@@ -284,5 +284,29 @@ maktaba.tv/tv ﻰﻟﺇ ﺐﻫﺫﺍ ﻭﺃ ،ﺯﺎﻔﻠﺗ</translation>
         <source>player.error</source>
         <translation>.ﻥﻵﺍ ﻮﻳﺪﻴﻔﻟﺍ ﺍﺬﻫ ﻞﻴﻐﺸﺗ ﻦﻜﻤﻳ ﻻ</translation>
     </message>
+    <message>
+        <source>roku.player.upNext</source>
+        <translation>ﻲﻟﺎﺘﻟﺍ</translation>
+    </message>
+    <message>
+        <source>roku.player.retrying</source>
+        <translation>…ﺔﻟﻮﺤﻣ ﺔﺨﺴﻧ ﺔﺑﺮﺠﺗ ﺭﺎﺟ</translation>
+    </message>
+    <message>
+        <source>roku.player.failed</source>
+        <translation>.ﺍﺬﻫ Roku ﺯﺎﻬﺟ ﻰﻠﻋ ﻮﻳﺪﻴﻔﻟﺍ ﺍﺬﻫ ﻞﻴﻐﺸﺗ ﻦﻜﻤﻳ ﻻ</translation>
+    </message>
+    <message>
+        <source>roku.player.audio</source>
+        <translation>ﺕﻮﺼﻟﺍ</translation>
+    </message>
+    <message>
+        <source>roku.player.subtitles</source>
+        <translation>ﺔﻤﺟﺮﺘﻟﺍ</translation>
+    </message>
+    <message>
+        <source>roku.player.off</source>
+        <translation>ﻑﺎﻘﻳﺇ</translation>
+    </message>
 </context>
 </TS>

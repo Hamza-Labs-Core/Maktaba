@@ -41,11 +41,20 @@ import Testing
         #expect(en.text(.newCode) == "Get a new code" && ar.text(.newCode) == "احصل على رمز جديد")
         #expect(en.text(.enterCode) == "Enter code" && ar.text(.enterCode) == "أدخل الرمز")
         #expect(en.text(.dismiss) == "Dismiss" && ar.text(.dismiss) == "إخفاء")
+        // story 58.03: the same screen approves a TV's code from Maktaba Cloud
+        #expect(en.text(.approveCloudDone) == "Approved. The TV is signing in.")
+        #expect(ar.text(.approveCloudDone) == "تمت الموافقة. التلفاز يسجّل الدخول الآن.")
+        #expect(en.text(.approveCloudNeedsRemote) == "A code from Maktaba Cloud needs remote access turned on for this home. Use the code from the home instead.")
+        #expect(ar.text(.approveCloudNeedsRemote) == "يحتاج الرمز القادم من Maktaba Cloud إلى تفعيل الوصول عن بُعد لهذا المنزل. استخدم رمز المنزل بدلًا منه.")
     }
 
     @Test func everyNewKeyHasBothLanguages() {
         let keys: [ConnectStrings.Key] = [.lookedUp, .newCode, .confirmSignIn, .approveFromHome, .bannerTV, .bannerTVUnnamed,
-                                          .bannerDevice, .bannerDeviceUnnamed, .enterCode, .dismiss]
+                                          .bannerDevice, .bannerDeviceUnnamed, .enterCode, .dismiss,
+                                          // a TV's code from Maktaba Cloud, on the same screen (story 58.03)
+                                          .approveCloudConfirm, .approveCloudConfirmNoCountry, .approveCloudNeedsRemote,
+                                          .approveCloudDone, .appSignInsTitle, .appSignInsHint, .appSignInViaCloudCode,
+                                          .appSignOut, .appSignInLastUsed]
         for key in keys {
             #expect(ConnectStrings.en[key] != nil, "en \(key)")
             #expect(ConnectStrings.ar[key] != nil, "ar \(key)")
