@@ -28,7 +28,7 @@
     "ms": 1794528000000,
     "body": "{\"edge\":\"broadcast-edge\",\"windows\":[{\"key\":\"6f1c0a52-0d3e-4c55-9a51-3b1f0e7d2a10:2026-11-12T23:55:00Z\",\"publisher\":\"6f1c0a52-0d3e-4c55-9a51-3b1f0e7d2a10\",\"window_start\":\"2026-11-12T23:55:00Z\",\"window_end\":\"2026-11-13T00:00:00Z\",\"minutes_full\":12,\"minutes_lowest\":3,\"minutes_stream\":2,\"segments_in\":150,\"bytes_in\":123456789,\"peak_sessions\":9}]}",
     "signature": "jnrFrD9uSY_JgWGyaMOCAQ_PTYEC1fn-n99321CQQiJbXhUuREOXXPXqzwYoJ3A76rO6TkeQX-UlTCi2QW15AA",
-    "usage_reply": "{\"taken\":[\"6f1c0a52-0d3e-4c55-9a51-3b1f0e7d2a10:2026-11-12T23:55:00Z\"],\"duplicates\":[],\"rejected\":[],\"states\":[{\"publisher\":\"6f1c0a52-0d3e-4c55-9a51-3b1f0e7d2a10\",\"plan\":\"broadcaster\",\"mode\":\"lowest\",\"enforce\":true,\"max_channels\":3,\"max_concurrent_viewers\":500,\"max_rungs\":4,\"max_top_kbps\":8000,\"access\":[\"invite\",\"open\"],\"on_demand_only\":false,\"month\":\"2026-11\",\"usage\":{\"minutes_full\":300000,\"minutes_lowest\":1200,\"minutes_payg\":0},\"allowance_minutes\":300000,\"fair_use_minutes\":600000,\"payg\":{\"on\":false,\"cap_cents\":0,\"spent_cents\":0,\"minutes\":0,\"cap_minutes\":0},\"at\":\"2026-11-13T00:00:00Z\"}],\"plans\":[{\"pub\":\"6f1c0a52-0d3e-4c55-9a51-3b1f0e7d2a10\",\"version\":1794528000000,\"mode\":\"lowest\",\"max_rungs\":4,\"max_top_kbps\":8000,\"max_viewers\":500}]}"
+    "usage_reply": "{\"taken\":[\"6f1c0a52-0d3e-4c55-9a51-3b1f0e7d2a10:2026-11-12T23:55:00Z\"],\"duplicates\":[],\"rejected\":[],\"states\":[{\"publisher\":\"6f1c0a52-0d3e-4c55-9a51-3b1f0e7d2a10\",\"plan\":\"broadcaster\",\"mode\":\"lowest\",\"enforce\":true,\"max_channels\":3,\"max_concurrent_viewers\":500,\"max_rungs\":4,\"max_top_kbps\":8000,\"access\":[\"invite\",\"open\"],\"on_demand_only\":false,\"month\":\"2026-11\",\"usage\":{\"minutes_full\":300000,\"minutes_lowest\":1200,\"minutes_payg\":0},\"allowance_minutes\":300000,\"agreement_accepted\":false,\"agreement_version\":0,\"fair_use_minutes\":600000,\"payg\":{\"on\":false,\"cap_cents\":0,\"spent_cents\":0,\"minutes\":0,\"cap_minutes\":0},\"at\":\"2026-11-13T00:00:00Z\"}],\"plans\":[{\"pub\":\"6f1c0a52-0d3e-4c55-9a51-3b1f0e7d2a10\",\"version\":1794528000000,\"mode\":\"lowest\",\"max_rungs\":4,\"max_top_kbps\":8000,\"max_viewers\":500}]}"
   },
   "state": {
     "publisher": "6f1c0a52-0d3e-4c55-9a51-3b1f0e7d2a10",
@@ -51,6 +51,8 @@
       "minutes_payg": 0
     },
     "allowance_minutes": 300000,
+    "agreement_accepted": false,
+    "agreement_version": 0,
     "fair_use_minutes": 600000,
     "payg": {
       "on": false,
