@@ -8,6 +8,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"runtime"
+	"runtime/pprof"
+	"strconv"
 	"strings"
 	"time"
 
@@ -194,6 +197,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 	}
 	r.Get("/metrics", relayControl(relayMetrics(collector, relaypkg.WriteMetrics, relayh.WriteMetrics, relayh.WriteCacheMetrics, bus.WriteMetrics, meter.WriteMetrics, obs.WriteMetrics)))
 	r.Get("/privacy", relayControl(privacy.PolicyHandler))
+	r.Get("/debug/diagheap", relayControl(diagHeap)) // TEMP diagnostic, reverted
 	// Story 25.23: the edge's on-demand TLS asks here before it requests a
 	// certificate (Caddy `on_demand_tls { ask … }`): 200 only for the bare
 	// relay host and the subdomain of a claimed server, so random names
@@ -329,4 +333,16 @@ func relayPlans(cfg config.Config, db *sql.DB, relayID string) *relayh.Plans {
 // relay's memory per tunnel (story 50.14): steadier than the container's peak RSS.
 func relayMetrics(c *metricspkg.Collector, extra ...func(io.Writer) error) http.HandlerFunc {
 	return metricspkg.PrometheusHandler(c, append(extra, metricspkg.WriteGoHeap)...)
+}
+
+// diagHeap: TEMP diagnostic (reverted before merge): the heap profile, after a forced GC with ?gc=1.
+func diagHeap(w http.ResponseWriter, req *http.Request) {
+	if req.URL.Query().Get("gc") == "1" {
+		runtime.GC()
+	}
+	if req.URL.Query().Get("live") == "1" {
+		_, _ = io.WriteString(w, strconv.FormatUint(metricspkg.LiveHeapBytes(), 10))
+		return
+	}
+	_ = pprof.Lookup("heap").WriteTo(w, 0)
 }

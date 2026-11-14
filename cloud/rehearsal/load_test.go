@@ -3,13 +3,17 @@
 package rehearsal
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -75,7 +79,9 @@ func loadSmall(t *testing.T, c *cluster) Result {
 	} else {
 		heapRounds.Before = b
 	}
+	diagRelays(t, heap, "before", true)
 	slugs := c.homesOnline(n)
+	diagRelays(t, heap, "homes", true)
 
 	out, err := exec.Command("docker", "info", "--format", "{{.NCPU}}").Output()
 	if err != nil {
@@ -121,6 +127,7 @@ func loadSmall(t *testing.T, c *cluster) Result {
 		}
 		cpu0, bytes0 = cpu1, bytes1
 		heapRounds.EndRound()
+		diagRelays(t, heap, fmt.Sprintf("round%d", len(perRound)), true)
 	}
 	sampleHeap := func(ctx context.Context) {
 		if !heapOK {
@@ -130,6 +137,7 @@ func loadSmall(t *testing.T, c *cluster) Result {
 		switch {
 		case err == nil:
 			heapRounds.Add(b)
+			diagRelays(t, heap, "sample", false)
 		case ctx.Err() == nil:
 			t.Logf("the relays' live heap: %v", err)
 		}
@@ -151,6 +159,7 @@ loop:
 		}
 	}
 	<-done
+	diagRelays(t, heap, "end", true)
 	endRound()
 	took := time.Since(start)
 	st := g.Stats()
@@ -182,4 +191,42 @@ loop:
 	return Result{FailedRequests: st.Failed, Requests: st.OK + st.Failed, Notes: []string{
 		fmt.Sprintf("%.1f Mbit/s; %.4f CPU-s/Mbit; %.0f B/tunnel live heap (%.0f peak container); stalls %.2f%% (the runner shares its CPUs with the cluster: a regression check, not a capacity)",
 			rate, base.CPUSecondsPerMbit, base.HeapBytesPerTunnel, base.MemBytesPerTunnel, st.StallRate()*100)}}
+}
+
+// diagRelays: TEMP diagnostic (reverted before merge): each relay's heap, tunnels and GC state,
+// and with prof its heap profiles (as the last GC left it, and after a forced one).
+func diagRelays(t *testing.T, h loadtest.LiveHeap, label string, prof bool) {
+	for i, u := range h.URLs {
+		get := func(url string) []byte {
+			req, _ := http.NewRequest(http.MethodGet, url, nil)
+			req.Host = h.Host
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Logf("diag %s: %v", url, err)
+				return nil
+			}
+			defer resp.Body.Close()
+			b, _ := io.ReadAll(resp.Body)
+			return b
+		}
+		m := loadtest.ParseProm(bytes.NewReader(get(u)))
+		var keys []string
+		for k := range m {
+			if strings.HasPrefix(k, "diag") || k == "maktaba_relay_active_tunnels" || k == loadtest.LiveHeapSeries {
+				keys = append(keys, k)
+			}
+		}
+		sort.Strings(keys)
+		var sb strings.Builder
+		for _, k := range keys {
+			fmt.Fprintf(&sb, " %s=%.0f", strings.TrimPrefix(k, "diag_"), m[k])
+		}
+		t.Logf("DIAG %s relay%d:%s", label, i, sb.String())
+		if prof {
+			base := strings.TrimSuffix(u, "/metrics") + "/debug/diagheap"
+			_ = os.WriteFile(filepath.Join(outDir(t), fmt.Sprintf("heap-%s-relay%d.pb.gz", label, i)), get(base), 0o644)
+			_ = os.WriteFile(filepath.Join(outDir(t), fmt.Sprintf("heap-%s-relay%d-gc.pb.gz", label, i)), get(base+"?gc=1"), 0o644)
+			t.Logf("DIAG %s relay%d live after forced GC: %s", label, i, get(base+"?live=1"))
+		}
+	}
 }
