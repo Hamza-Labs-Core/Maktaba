@@ -135,6 +135,39 @@ jobs:
         # versions as no-ops, so this exits 0 with no DDL emitted.
         run: make migrate
 
+      # TEMPORARY (perf/integration-pytest-collect): time pytest's overhead; removed before merge
+      - name: TEMP time pytest collection
+        working-directory: pipeline
+        run: |
+          set +e
+          t() { s=$(date +%s.%N); "$@" >/tmp/t.out 2>&1; rc=$?; e=$(date +%s.%N); printf 'TIMING %6.2fs rc=%s :: %s\n' "$(echo "$e - $s" | bc)" "$rc" "$*"; tail -n 1 /tmp/t.out; }
+          C="pytest --collect-only -q -m integration -p no:cacheprovider"
+          t uv run true
+          t uv run true
+          t uv run python -c pass
+          t uv run python -c 'import maktaba_pipeline'
+          t uv run $C
+          t uv run $C
+          uv run $C | grep '::' | cut -d: -f1 | sort -u > /tmp/files.txt
+          echo "integration files: $(wc -l < /tmp/files.txt)"
+          t uv run $C $(cat /tmp/files.txt)
+          t uv run $C $(cat /tmp/files.txt)
+          echo "--- importtime, top 30 cumulative (us)"
+          uv run python -X importtime -m pytest --collect-only -q -m integration -p no:cacheprovider 2>/tmp/imp >/dev/null
+          sort -t'|' -k2 -n -r /tmp/imp | head -30
+          echo "--- whole run alone, every duration summed"
+          s=$(date +%s.%N)
+          uv run pytest -q -m integration -p no:cacheprovider --durations=0 -o faulthandler_timeout=0 > /tmp/run.out 2>&1
+          e=$(date +%s.%N); printf 'TIMING %6.2fs :: pytest -m integration alone\n' "$(echo "$e - $s" | bc)"
+          tail -n 1 /tmp/run.out
+          awk '$2 ~ /^(setup|call|teardown)$/ && $1 ~ /s$/ { sub(/s$/, "", $1); x[$2] += $1; n++ } END { for (k in x) printf "sum %s = %.2fs\n", k, x[k]; print n " durations" }' /tmp/run.out
+          echo "--- collection beside a Go integration compile of api"
+          ( cd ../api && go test -tags=integration -count=1 -run '^$' ./... > /tmp/go.out 2>&1 ) & g=$!
+          sleep 3
+          t uv run $C
+          t uv run $C $(cat /tmp/files.txt)
+          wait $g; echo "go rc=$?"
+
       # The Go tests gated on MAKTABA_TEST_PG_URL (cluster, secrets,
       # tvremote, tvcluster, streaming placement, ...) run here against
       # the Postgres service: each creates, migrates and drops its own
