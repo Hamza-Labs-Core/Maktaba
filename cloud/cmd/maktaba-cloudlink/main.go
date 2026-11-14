@@ -124,6 +124,8 @@ func adminMux(sup *cloudlink.Supervisor, rep *cloudlink.LinkReporter) http.Handl
 	mux.Handle("/admin/cloud-link/reports/replies", cloudlink.ReportsHandler(rep))
 	// direct remote access (50.15)
 	mux.Handle("/admin/cloud-link/direct", cloudlink.DirectHandler(sup.Direct))
+	// who may watch the home's broadcast channels: access, limits, invites (50.26)
+	mux.Handle(cloudlink.BroadcastAccessPrefix, cloudlink.BroadcastAccessHandler(rep))
 	return mux
 }
 
