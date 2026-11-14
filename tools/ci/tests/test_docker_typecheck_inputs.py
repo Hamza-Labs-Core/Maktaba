@@ -197,11 +197,10 @@ def build_stage_copies(dockerfile_text: str) -> list[tuple[str, str]]:
 
 def copied_at_its_place(path: str, copies: list[tuple[str, str]]) -> bool:
     """A COPY of the file, or of a directory holding it, to /src/<the same repo path>."""
-    for src, dest in copies:
-        if path == src or path.startswith(src + "/"):
-            if PurePosixPath(dest) == PurePosixPath(IMAGE_ROOT) / src:
-                return True
-    return False
+    return any(
+        (path == src or path.startswith(src + "/")) and PurePosixPath(dest) == PurePosixPath(IMAGE_ROOT) / src
+        for src, dest in copies
+    )
 
 
 def missing_copies(dockerfile_text: str, needed: dict[str, str]) -> list[str]:
