@@ -86,6 +86,10 @@ func TestBroadcastAnalytics(t *testing.T) {
 	if n := e.count(`SELECT COUNT(*) FROM broadcast_usage_hourly WHERE publisher_id = $1`, home); n != 1 {
 		t.Fatalf("hourly rows %d", n)
 	}
+	// a publisher is its home (the server id, as the edge's tokens name it): a row under the
+	// owner's account id, which every home of that owner would share, is never this home's
+	e.exec(`INSERT INTO broadcast_usage_hourly (publisher_id, channel_id, hour, viewer_minutes, sessions) VALUES ($1, 'c1', $2, 6000, 1000)`,
+		e.userID("publisher@example.test"), hour)
 	path := "/v1/broadcast/analytics?server=" + home + "&period=day&date=" + day + "&tz=UTC"
 
 	t.Run("the owner sees Egypt 12 and Other 2, Germany unnamed (T02, acceptance 1)", func(t *testing.T) {
