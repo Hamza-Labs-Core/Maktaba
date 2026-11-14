@@ -2687,7 +2687,7 @@ build fails when the two differ.
   with a reason and, for a takedown or a restore, a fresh MFA check; every decision is audited
   and only a service admin is answered. A takedown reaches the home as a signed instruction: the
   home takes the programme (or its whole source) out of its published channels, the edge shows
-  the slate until the slot ends if it is on air, and the home answers what it did. The publisher
+  the slate at once if it is on air, and the home answers what it did. The publisher
   sees a statement of reasons in English and Arabic on the Broadcast page and by email, can file
   a counter-notice there, and the item can come back 10 business days later unless the claimant
   goes to court. Three valid notices in 12 months end broadcasting for the account (remote play

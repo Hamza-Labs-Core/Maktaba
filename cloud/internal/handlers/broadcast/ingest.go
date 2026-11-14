@@ -63,18 +63,42 @@ type IngestDeps struct {
 	// GeoDeny is Maktaba's broadcast country deny list (story 50.23 §5), merged into every
 	// token; nil: none. A failure to read it refuses the token (never a token without it).
 	GeoDeny func(ctx context.Context) ([]string, error)
-	// EdgeChannels records a published channel's edge id when the home names its cloud id (story
-	// 50.24: a takedown's programme slate names it); nil: not recorded. A failure is logged only.
+	// EdgeChannels binds a published channel's edge id when the home names its cloud id (story
+	// 50.24: a takedown's programme slate names it); nil: not recorded. The first token binds it:
+	// a later request naming another local channel for the same cloud id answers
+	// ErrEdgeMismatch, and no token is issued (a home cannot move a channel's slate target).
 	EdgeChannels func(ctx context.Context, serverID, cloudID, edgeChannel string) error
 }
 
-// DBEdgeChannels writes broadcast_channels.edge_channel for the home's own live channel.
+// ErrEdgeMismatch is a token request naming another local channel for a cloud id already bound.
+var ErrEdgeMismatch = errors.New("broadcast: the cloud id is bound to another channel")
+
+// DBEdgeChannels binds broadcast_channels.edge_channel for the home's own live channel, once.
 func DBEdgeChannels(db *sql.DB) func(ctx context.Context, serverID, cloudID, edgeChannel string) error {
 	return func(ctx context.Context, serverID, cloudID, edgeChannel string) error {
-		_, err := db.ExecContext(ctx, `UPDATE broadcast_channels SET edge_channel = $3
-            WHERE id::text = $2 AND server_id::text = $1 AND unpublished_at IS NULL
-              AND edge_channel IS DISTINCT FROM $3`, serverID, cloudID, edgeChannel)
-		return err
+		var bound sql.NullString
+		err := db.QueryRowContext(ctx, `
+            WITH set AS (
+                UPDATE broadcast_channels SET edge_channel = $3
+                 WHERE id::text = $2 AND server_id::text = $1 AND unpublished_at IS NULL
+                   AND (edge_channel IS NULL OR edge_channel = '')
+                RETURNING edge_channel)
+            SELECT edge_channel FROM set
+            UNION ALL
+            SELECT edge_channel FROM broadcast_channels
+             WHERE id::text = $2 AND server_id::text = $1 AND unpublished_at IS NULL
+               AND edge_channel IS NOT NULL AND edge_channel <> ''
+            LIMIT 1`, serverID, cloudID, edgeChannel).Scan(&bound)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil // not this home's live channel: nothing to bind
+		}
+		if err != nil {
+			return err
+		}
+		if bound.String != edgeChannel {
+			return ErrEdgeMismatch
+		}
+		return nil
 	}
 }
 
@@ -190,6 +214,18 @@ func (d *IngestDeps) IngestToken(w http.ResponseWriter, r *http.Request) {
 	}
 	now := d.now()
 	ch := bc.ChannelID(serverID, req.Channel)
+	if d.EdgeChannels != nil && uuidRE.MatchString(req.CloudID) {
+		err := d.EdgeChannels(r.Context(), serverID, req.CloudID, ch)
+		if errors.Is(err, ErrEdgeMismatch) {
+			slog.Warn("broadcast: a token asked for another channel under a bound cloud id", "event", "broadcast_edge_mismatch",
+				"server_id", serverID, "cloud_id", req.CloudID)
+			writeErr(w, 409, "edge_channel_mismatch", "this cloud channel is bound to another of the home's channels")
+			return
+		}
+		if err != nil {
+			slog.Warn("broadcast: the channel's edge id was not recorded", "err", err, "server_id", serverID)
+		}
+	}
 	tok, err := bc.IssueIngest(*d.Key, bc.IngestClaims{
 		Pub: allow.Publisher, Ch: ch, Rungs: req.Rungs, Home: serverID, Kbps: allow.MaxTopKbps,
 		Geo: bc.MergeGeo(mode, countries, deny),
@@ -201,11 +237,6 @@ func (d *IngestDeps) IngestToken(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, 500, "sign_failed", "")
 		return
-	}
-	if d.EdgeChannels != nil && uuidRE.MatchString(req.CloudID) {
-		if err := d.EdgeChannels(r.Context(), serverID, req.CloudID, ch); err != nil {
-			slog.Warn("broadcast: the channel's edge id was not recorded", "err", err, "server_id", serverID)
-		}
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, 200, tokenResp{

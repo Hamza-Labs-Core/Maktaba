@@ -150,9 +150,10 @@ signed instruction:
   speaker, a label). The home writes a row in `broadcast_takedowns`; slot 0229's
   `video_taken_down()` makes `video_publishable_reason()` answer `NULL` for it, so the scheduler
   leaves it out and a slot already scheduled plays the slate. The home answers
-  (`POST .../takedowns/{id}/ack`) `applied` with the end of the slot on air now (the edge's
-  programme slate holds just that long), `not_found` (the item is gone; the notice still counts)
-  or `failed`. A restore clears the row the same way.
+  (`POST .../takedowns/{id}/ack`) `applied` with the end of the slot on air now, `not_found` (the
+  item is gone; the notice still counts) or `failed`. The answer is shown to staff and changes
+  nothing at the edge: the programme slate keeps the end staff gave it (else 4 hours), since the
+  home is the publisher the notice is about. A restore clears the row the same way.
 - **The cloud learns** only the item's opaque id and its title, the guide's own fields. Nothing of
   the library leaves the home.
 - **The page.** `GET /api/tv/broadcast/moderation` returns the cloud's records for this home (the

@@ -56,8 +56,8 @@ type Ack struct {
 	// ItemRef and Programme are what the home resolved from the time (a takedown by time).
 	ItemRef   string `json:"item_ref"`
 	Programme string `json:"programme"`
-	// AiringUntil is the end of the item's slot when it is on air now (nil: not airing): the
-	// programme slate at the edge holds until then.
+	// AiringUntil is the end of the item's slot when it is on air now (nil: not airing), as the
+	// home says: shown to staff, never acted on (the slate keeps its own end).
 	AiringUntil *time.Time `json:"airing_until"`
 }
 

@@ -41,7 +41,7 @@ var (
 	ErrBadRequest    = errors.New("moderation: bad request")
 )
 
-// System is the actor of what the cloud does by itself (a slate shortened when the home confirms).
+// System is the actor of what the cloud does by itself, with no staff behind it.
 var System = bc.Actor{ID: "system:moderation"}
 
 // SlateMax is how long a programme's slate holds when the item's end is not known: until the home
@@ -678,8 +678,11 @@ func (s *Store) Instructions(ctx context.Context, serverID string) ([]Instructio
 	return out, rs.Err()
 }
 
-// Acknowledge records a home's answer to an instruction. A takedown's programme slate is then
-// shortened to the item's slot (the home says when it ends) or lifted when the item is not on air.
+// Acknowledge records a home's answer to an instruction. The answer never changes the edge: a
+// takedown's programme slate holds until its own end (the staff's airing_until, else SlateMax).
+// The home is the publisher the notice is about, so its word alone cannot shorten or lift the
+// slate; the slot end it reports goes in home_detail, and staff lift the slate early from the
+// kill switch page (audited) when the guide confirms the item is off air.
 func (s *Store) Acknowledge(ctx context.Context, serverID, actionID string, ack Ack) error {
 	a, err := s.action(ctx, actionID)
 	if err != nil {
@@ -694,13 +697,8 @@ func (s *Store) Acknowledge(ctx context.Context, serverID, actionID string, ack 
 	if _, err := s.DB.ExecContext(ctx, `UPDATE moderation_actions SET home_state = $2, home_detail = $3, home_at = now(),
         item_ref = CASE WHEN item_ref = '' THEN $4 ELSE item_ref END,
         programme = CASE WHEN programme = '' THEN $5 ELSE programme END
-        WHERE id::text = $1`, actionID, ack.Result, truncate(ack.Detail, 500), truncate(ack.ItemRef, 200), truncate(ack.Programme, 300)); err != nil {
+        WHERE id::text = $1`, actionID, ack.Result, truncate(ackDetail(ack), 500), truncate(ack.ItemRef, 200), truncate(ack.Programme, 300)); err != nil {
 		return err
-	}
-	if a.Kind == "takedown" && a.Revocation != "" && (a.Scope == ScopeItem || a.Scope == ScopeSource) && ack.Result != "failed" {
-		if err := s.settleSlate(ctx, a, ack); err != nil {
-			s.log().Warn("moderation: the programme slate was not settled", "err", err, "action_id", a.ID)
-		}
 	}
 	s.log().Info("moderation: the home answered", "event", "moderation_home_ack", "action_id", actionID, "result", ack.Result)
 	return nil
@@ -714,42 +712,14 @@ func truncate(s string, n int) string {
 	return s
 }
 
-// settleSlate shortens or lifts a takedown's programme slate once the home confirmed: the new
-// entry (until the item's slot ends) is added before the old one is lifted, so the channel never
-// shows the item in between.
-func (s *Store) settleSlate(ctx context.Context, a Action, ack Ack) error {
-	old, ok := bc.ParseEntryID(a.Revocation)
-	if !ok {
-		return nil
+// ackDetail is the home's detail, with the slot end it reported (for staff, never acted on).
+func ackDetail(a Ack) string {
+	if a.AiringUntil == nil {
+		return a.Detail
 	}
-	var until sql.NullTime
-	var ref, reason string
-	var lifted sql.NullTime
-	if err := s.DB.QueryRowContext(ctx, `SELECT until_at, ref, reason, lifted_at FROM broadcast_revocations WHERE id = $1`, old).
-		Scan(&until, &ref, &reason, &lifted); err != nil {
-		return err
+	d := "on air until " + a.AiringUntil.UTC().Format(time.RFC3339) + " (the home's word)"
+	if a.Detail != "" {
+		d = a.Detail + "; " + d
 	}
-	if lifted.Valid {
-		return nil
-	}
-	now := s.now()
-	if ack.AiringUntil != nil && ack.AiringUntil.After(now) && until.Valid && ack.AiringUntil.Before(until.Time) {
-		u := *ack.AiringUntil
-		row, _, err := s.Rev.Add(ctx, bc.Entry{Kind: bc.KindProgramme, Ref: ref, Action: bc.ActionSlate, Reason: reason, Until: &u},
-			"the home confirmed the takedown; the slate holds until the item's slot ends", System)
-		if err != nil {
-			return err
-		}
-		n, _ := bc.ParseEntryID(row.ID)
-		if _, err := s.DB.ExecContext(ctx, `UPDATE moderation_actions SET revocation_id = $2 WHERE id::text = $1`, a.ID, n); err != nil {
-			return err
-		}
-	} else if ack.AiringUntil != nil && ack.AiringUntil.After(now) {
-		return nil // the slot ends after the slate: the slate stays as it is
-	}
-	if _, err := s.Rev.Lift(ctx, old, "the home confirmed the takedown", System); err != nil && !errors.Is(err, bc.ErrRevocationNotFound) {
-		return err
-	}
-	s.push(ctx)
-	return nil
+	return d
 }

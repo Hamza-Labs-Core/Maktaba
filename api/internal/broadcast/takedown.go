@@ -11,8 +11,8 @@ package broadcast
 //     broadcast_takedowns, which slot 0229's video_publishable_reason() reads, so the item stops
 //     being publishable whatever made it so; the slot plays the slate and the next top-up
 //     replaces it (story 50.23 §3);
-//   - answers the cloud: applied (with the item's slot end when it is on air now, so the edge's
-//     slate holds just that long), not_found (the item is already gone) or failed.
+//   - answers the cloud: applied (with the item's slot end when it is on air now, shown to staff;
+//     the edge's slate keeps its own end), not_found (the item is already gone) or failed.
 //
 // A restore (after a counter-notice, or a withdrawn notice) clears the row the same way. Nothing
 // of the library leaves the home: the cloud learns only the item's opaque id and its title, the

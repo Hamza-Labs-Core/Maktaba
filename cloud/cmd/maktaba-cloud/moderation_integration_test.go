@@ -62,7 +62,7 @@ func instructions(t *testing.T, key broadcast.Key, text string) []moderation.Ins
 
 // Story 50.24 on the api role's real routers: anyone files a notice or a report; only a service
 // admin acts on one (T08: a customer 401, staff with no role or another role 403); a takedown
-// reaches the home signed, slates the channel at the edge until the home confirms (T03, T04), and
+// reaches the home signed, slates the channel at the edge until the slate's own end, whatever the home answers (T03, T04), and
 // records the strike and the statement; a counter-notice opens the restore window 10 business days
 // later (T06); the third strike ends broadcasting (T05); an urgent report pages (T07); a home sees
 // only its own records; every staff action is audited, and the records export.
@@ -160,14 +160,14 @@ func TestModerationNoticeTakedownCounterRestore(t *testing.T) {
 		t.Errorf("another home's ack = %d", r.code)
 	}
 	home.agent.mustStatus(home.agent.do("POST", "/v1/broadcast/takedowns/"+aid+"/ack", ack), http.StatusNoContent)
-	// the slate now ends with the item's slot
-	if e.count(`SELECT count(*) FROM broadcast_revocations WHERE kind = 'programme' AND ref = $1 AND lifted_at IS NULL`, edge) != 1 ||
-		e.count(`SELECT count(*) FROM broadcast_revocations WHERE kind = 'programme' AND ref = $1 AND lifted_at IS NULL
-			AND until_at = $2`, edge, until) != 1 {
-		t.Fatal("the slate was not shortened to the slot")
+	// the home is the publisher the notice is about: its word neither shortens nor lifts the slate
+	if e.count(`SELECT count(*) FROM broadcast_revocations WHERE kind = 'programme' AND ref = $1 AND lifted_at IS NULL
+			AND until_at <> $2`, edge, until) != 1 {
+		t.Fatal("the home's ack changed the slate")
 	}
-	if e.count(`SELECT count(*) FROM moderation_actions WHERE id = $1 AND home_state = 'applied' AND item_ref = 'vid-1'`, aid) != 1 {
-		t.Fatal("the ack was not recorded")
+	if e.count(`SELECT count(*) FROM moderation_actions WHERE id = $1 AND home_state = 'applied' AND item_ref = 'vid-1'
+			AND home_detail LIKE '%on air until%'`, aid) != 1 {
+		t.Fatal("the ack was not recorded with the slot end it reported")
 	}
 
 	// the home's page: its statement with the counter-notice offered, its standing

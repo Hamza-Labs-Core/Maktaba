@@ -224,6 +224,9 @@ func TestIngestTokenRecordsTheEdgeChannel(t *testing.T) {
 		Now:   func() time.Time { return at },
 		EdgeChannels: func(_ context.Context, serverID, cloudID, edge string) error {
 			got = append(got, serverID+" "+cloudID+" "+edge)
+			if edge != bc.ChannelID("pro-home", "7") {
+				return ErrEdgeMismatch // bound to channel 7 already
+			}
 			return nil
 		},
 	}
@@ -243,5 +246,10 @@ func TestIngestTokenRecordsTheEdgeChannel(t *testing.T) {
 	}
 	if len(got) != 1 {
 		t.Fatalf("a body without a cloud id recorded %q", got)
+	}
+	// another local channel under the bound cloud id: refused, no token
+	if w := post(r, "pro-home", "s3cret", `{"channel":"8","rungs":["src"],"cloud_id":"`+cloudID+`"}`); w.Code != http.StatusConflict ||
+		errOf(w) != "edge_channel_mismatch" {
+		t.Fatalf("a rebind = %d %s", w.Code, w.Body)
 	}
 }
