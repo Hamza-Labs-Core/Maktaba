@@ -43,7 +43,10 @@
 --
 -- The three a plugin's statement calls (video_publishable_reason, video_attribution and
 -- channel_publishable_only) are SECURITY DEFINER: they answer for one item or channel, and
--- a plugin's role needs no grant on publishable_sources or the tables they read.
+-- a plugin's role needs no grant on publishable_sources or the tables they read. What they
+-- return is what a guide entry shows (a reason, an attribution or a credit line, a yes or
+-- no), never a proof link, a note or who recorded it, so EXECUTE stays with PUBLIC: a
+-- plugin's role a later roles slot makes can call them with no grant of its own.
 --
 -- Nothing here leaves the home: the cloud learns only a programme's attribution, in the
 -- guide it is sent.
