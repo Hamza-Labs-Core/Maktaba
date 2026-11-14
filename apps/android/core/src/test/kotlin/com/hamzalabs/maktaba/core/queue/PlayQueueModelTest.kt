@@ -1,6 +1,13 @@
 package com.hamzalabs.maktaba.core.queue
 
+import com.hamzalabs.maktaba.core.api.ApiClient
+import com.hamzalabs.maktaba.core.api.AuthTokens
+import com.hamzalabs.maktaba.core.api.ClientHeader
+import com.hamzalabs.maktaba.core.session.TokenStore
 import kotlinx.coroutines.runBlocking
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
+import java.util.Base64
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -81,5 +88,33 @@ class PlayQueueModelTest {
         val first = model.create(QueueSource("library", "L"), shuffle = false)
         assertEquals("Night lecture", first?.name)
         assertEquals(listOf("Night lecture", "Dawn"), model.doc?.items?.map { it.name })
+    }
+
+    /** Story 58.05: the queue's calls name the app to the home, as every other call does (they sent `native`). */
+    @Test
+    fun theQueueTransportNamesTheAppToTheHome() = runBlocking {
+        val enc = Base64.getUrlEncoder().withoutPadding()
+        val token = enc.encodeToString("""{"alg":"RS256"}""".toByteArray()) + "." +
+            enc.encodeToString("""{"exp":${System.currentTimeMillis() / 1000 + 86_400}}""".toByteArray()) + ".sig"
+        val tokens = object : TokenStore {
+            override val access get() = token
+            override val refresh get() = "r1"
+            override fun save(tokens: AuthTokens) {}
+            override fun clear() {}
+        }
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse.Builder().code(200).body(win(0, listOf("a"))).build())
+            server.start()
+            ClientHeader.use("tv/9.9.9 (firetv; tv)")
+            try {
+                val (code, _) = ApiQueueTransport(ApiClient(server.url("/"), tokens)).send("GET", "/api/me/queue", null)
+                assertEquals(200, code)
+                val r = server.takeRequest()
+                assertEquals("tv/9.9.9 (firetv; tv)", r.headers[ClientHeader.NAME])
+                assertEquals("Bearer $token", r.headers["Authorization"])
+            } finally {
+                ClientHeader.use("native")
+            }
+        }
     }
 }
