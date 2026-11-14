@@ -396,11 +396,14 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
         #expect(await eventually { proxy.serving == 0 })
     }
 
-    /// The body is kept only up to the ceiling: a request nobody reads from holds the home back.
-    @Test func aBodyNobodyTakesIsKeptOnlyToTheCeiling() async throws {
+    /// What is kept of a body is its mark and one delivery, whoever reads and however slowly:
+    /// never a share of the body. Nobody reading; then a reader that stops after each chunk
+    /// (the case that ran away when the bound was a suspended task: 20 MB on CI, hundreds of
+    /// megabytes against a fast home).
+    @Test func aBodyIsKeptOnlyToItsMarkAndOneDelivery() async throws {
         let home = try await LoopbackHome()
         defer { home.stop() }
-        let size = 96 << 20
+        let size = 192 << 20
         home.on("/stream/abc/big.mp4", .init(length: size))
         var r = URLRequest(url: home.url.appending(path: "stream/abc/big.mp4"))
         r.httpMethod = "GET"
@@ -408,16 +411,23 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
         #expect(try await body.response()?.statusCode == 200)
         // nobody asks for the body: the home stops writing once the mark and the sockets are full
         let wrote = try #require(await settled { home.bytesWritten }, "the home never stopped writing")
-        #expect(wrote < size / 2, "the home wrote \(wrote) of \(size) bytes to a reader that took none")
-        #expect(body.peak >= UpstreamBody.highWater && body.peak <= UpstreamBody.ceiling, "kept \(body.peak) bytes")
-        // and then every byte still comes, in order
-        var offset = 0
+        #expect(wrote < size / 4, "the home wrote \(wrote) of \(size) bytes to a reader that took none")
+        #expect(body.peak < UpstreamBody.highWater + body.biggestDelivery, "kept \(body.peak), biggest delivery \(body.biggestDelivery)")
+        // a reader that stops after every chunk: every byte comes, in order, and the home is
+        // never far ahead of what was taken
+        var offset = 0, ahead = 0, chunks = 0
         while let chunk = try await body.next() {
             #expect(LoopbackHome.matches(chunk, from: offset))
             offset += chunk.count
+            chunks += 1
+            if chunks % 8 == 0 { try await Task.sleep(for: .milliseconds(5)) }
+            ahead = max(ahead, home.bytesWritten - offset)
         }
         #expect(offset == size)
-        #expect(body.peak <= UpstreamBody.ceiling, "kept \(body.peak) bytes while read")
+        // the property: held to the mark and one delivery, a small part of the body
+        #expect(body.peak < UpstreamBody.highWater + body.biggestDelivery, "kept \(body.peak), biggest delivery \(body.biggestDelivery)")
+        #expect(body.peak < size / 8, "kept \(body.peak) of \(size)")
+        #expect(ahead < size / 4, "the home was \(ahead) bytes ahead of the reader")
     }
 
     /// A player that reads nothing (paused, its buffer full) holds the home back through the
@@ -577,6 +587,10 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
             home.answerHeld()
             #expect(await eventually { proxy.serving == 0 }, "round \(round): serving \(proxy.serving)")
         }
+        // each request had a URL session of its own; only a few are kept for the next ones
+        #expect(await eventually { proxy.idleSessions >= 1 && proxy.idleSessions <= UpstreamSessions.keptIdle }, "idle sessions \(proxy.idleSessions)")
+        proxy.stop()
+        #expect(proxy.idleSessions == 0, "and none once the proxy stopped")
     }
 
     /// More requests at once than a player makes are refused, not queued; a place that is
@@ -792,5 +806,98 @@ func eventually(_ seconds: Double = 5, _ ok: @Sendable () -> Bool) async -> Bool
         let wall = Double(t.components.seconds) + Double(t.components.attoseconds) / 1e18
         print(String(format: "BENCH 500 playlist requests, a connection each: %.2f ms each, CPU %.2f ms each",
                      wall * 2, (Self.cpu() - c0) * 2))
+    }
+
+    /// What one reader that takes nothing pins: a 1 GB body, nobody reading, looked at for
+    /// several seconds; the chunked copy (`UpstreamBody`) and the copy as it was (`AsyncBytes`).
+    @Test(.enabled(if: on)) func whatAReaderThatTakesNothingPins() async throws {
+        let size = 1 << 30
+        for way in ["UpstreamBody", "AsyncBytes"] {
+            let home = try await LoopbackHome()
+            home.on("/stream/abc/huge.mp4", .init(length: size))
+            let url = home.url.appending(path: "stream/abc/huge.mp4")
+            // MAKTABA_PROXY_BENCH_STARVE=ms: the session's delegate queue is held that long
+            // right after the request starts (a busy device), while the home keeps writing
+            let starve = Int(ProcessInfo.processInfo.environment["MAKTABA_PROXY_BENCH_STARVE"] ?? "") ?? 0
+            let callbacks = OperationQueue()
+            callbacks.maxConcurrentOperationCount = 1
+            let session = URLSession(configuration: .ephemeral, delegate: nil, delegateQueue: callbacks)
+            if starve > 0 { callbacks.addOperation { Thread.sleep(forTimeInterval: Double(starve) / 1000) } }
+            var body: UpstreamBody?
+            var bytes: URLSession.AsyncBytes?
+            if way == "UpstreamBody" {
+                body = UpstreamBody(URLRequest(url: url), session: session)
+                _ = try await body?.response()
+                // read a little, stop: a player that paused after it had been reading
+                for _ in 0..<3 {
+                    try await Task.sleep(for: .milliseconds(300))
+                    _ = try await body?.next()
+                }
+            } else {
+                let (b, _) = try await session.bytes(for: URLRequest(url: url))
+                bytes = b
+                // one byte read, as a copy that has started and then waits on a write
+                var it = b.makeAsyncIterator()
+                _ = try await it.next()
+            }
+            var line = "PIN \(way):"
+            for _ in 0..<8 {
+                try await Task.sleep(for: .milliseconds(500))
+                line += " \(home.bytesWritten >> 20)"
+                if let body { line += "/\(body.peak >> 20)" }
+            }
+            print(line + "  (MB the home wrote" + (body != nil ? " / MB kept" : "") + ", every 0.5 s)")
+            body?.cancel()
+            bytes?.task.cancel()
+            session.invalidateAndCancel()
+            home.stop()
+        }
+    }
+
+    /// What a slow reader pins while it reads: the most the home had written beyond what the
+    /// reader had taken (kept in the copy, the session and the sockets), over a 1 GB body read
+    /// with a pause of MAKTABA_PROXY_BENCH_PAUSE ms (default 5) after each chunk (64 KB for
+    /// the copy as it was).
+    @Test(.enabled(if: on)) func whatASlowReaderPins() async throws {
+        let size = 1 << 30
+        let pause = Duration.milliseconds(Int(ProcessInfo.processInfo.environment["MAKTABA_PROXY_BENCH_PAUSE"] ?? "") ?? 5)
+        let limit = ContinuousClock.now + .seconds(12)
+        for way in ["UpstreamBody", "AsyncBytes"] {
+            let home = try await LoopbackHome()
+            home.on("/stream/abc/huge.mp4", .init(length: size))
+            let url = home.url.appending(path: "stream/abc/huge.mp4")
+            let session = URLSession(configuration: .ephemeral)
+            var taken = 0, ahead = 0, biggest = 0
+            let until = min(limit, ContinuousClock.now + .seconds(6))
+            if way == "UpstreamBody" {
+                let body = UpstreamBody(URLRequest(url: url), session: session)
+                _ = try await body.response()
+                while ContinuousClock.now < until, let chunk = try await body.next() {
+                    taken += chunk.count
+                    biggest = max(biggest, chunk.count)
+                    ahead = max(ahead, home.bytesWritten - taken)
+                    try await Task.sleep(for: pause)
+                }
+                print("PIN slow reader, UpstreamBody: kept at most \(body.peak >> 10) KB, biggest delivery \(body.biggestDelivery >> 10) KB, biggest chunk \(biggest >> 10) KB, the home at most \(ahead >> 10) KB ahead; \(taken >> 20) MB read")
+                body.cancel()
+            } else {
+                let (bytes, _) = try await session.bytes(for: URLRequest(url: url))
+                var n = 0
+                for try await _ in bytes {
+                    n += 1
+                    if n == 64 << 10 {
+                        taken += n
+                        n = 0
+                        ahead = max(ahead, home.bytesWritten - taken)
+                        if ContinuousClock.now >= until { break }
+                        try await Task.sleep(for: pause)
+                    }
+                }
+                print("PIN slow reader, AsyncBytes: the home at most \(ahead >> 10) KB ahead; \(taken >> 20) MB read")
+                bytes.task.cancel()
+            }
+            session.invalidateAndCancel()
+            home.stop()
+        }
     }
 }

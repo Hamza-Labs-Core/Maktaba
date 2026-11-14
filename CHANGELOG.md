@@ -3778,7 +3778,7 @@ build fails when the two differ.
   priority than the remote. It holds the home back while the player reads slowly or is paused,
   so memory does not grow with the file, and a paused film keeps its connection however long
   the pause; it ends the home's request when the player drops a connection mid-stream (a
-  channel change, a seek), and serves at most 32 requests at once. A stream the home cuts
+  channel change, a seek), and serves at most 16 requests at once. A stream the home cuts
   short reaches the player as an error, never as a whole file. On Apple TV, Menu leaves the
   live player in at most two presses whatever the channel is doing (starting, buffering,
   failed, time's up), unless the viewer changed channel, pressed Select or asked for the

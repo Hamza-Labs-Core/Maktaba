@@ -17,7 +17,8 @@ import Network
 /// A stream is copied for as long as it plays, so the copy is kept cheap and bounded:
 /// - the body goes on in the chunks it arrives in (`UpstreamBody`), never byte by byte, in
 ///   tasks below the interface's priority;
-/// - one chunk is written before the next is taken, and at most about 1 MB of a body is kept:
+/// - one chunk is written before the next is taken, and a body is kept only up to a mark
+///   (256 KB and one delivery of the URL session, measured at 4 MB at most):
 ///   a player that reads slowly or is paused holds the home back, memory does not grow;
 /// - the request to the home ends the moment the player closes its connection (a channel
 ///   change, a seek, a rendition switch: the connection fails or a write to it does) and when
@@ -49,7 +50,7 @@ public final class StreamProxy: @unchecked Sendable {
     }
 
     private let client: APIClient
-    private let session: URLSession
+    private let sessions: UpstreamSessions
     private let listener: NWListener
     private let queue = DispatchQueue(label: "com.hamzalabs.maktaba.stream-proxy", qos: .utility)
     /// The path prefix a request must carry: a per-proxy secret.
@@ -66,7 +67,7 @@ public final class StreamProxy: @unchecked Sendable {
     /// The most requests served at once: a player opens a handful (a playlist, a segment or
     /// two, a rendition switch); one that opens more without closing any is answered 503, so
     /// connections, tasks and requests to the home cannot pile up.
-    static let mostAtOnce = 32
+    static let mostAtOnce = 16
     /// How long a connection may take to send its request's head before it is closed (a
     /// client that connects and says nothing). Nothing else is timed: a player that reads
     /// slowly, or not at all for a while, keeps its connection.
@@ -109,7 +110,7 @@ public final class StreamProxy: @unchecked Sendable {
          sleep: @escaping @Sendable (Duration) async throws -> Void) throws {
         self.headPatience = headPatience
         self.client = client
-        self.session = session
+        sessions = UpstreamSessions(like: session)
         self.sleep = sleep
         self.reach = reach
         self.onlyUnder = onlyUnder
@@ -167,6 +168,7 @@ public final class StreamProxy: @unchecked Sendable {
     /// home is cancelled and its connection closed).
     public func stop() {
         listener.cancel()
+        sessions.close()
         let serving = lock.withLock {
             stopped = true
             defer { open.removeAll() }
@@ -177,6 +179,9 @@ public final class StreamProxy: @unchecked Sendable {
             s.peer.close()
         }
     }
+
+    /// How many URL sessions wait for the next request (never more than a few).
+    var idleSessions: Int { sessions.idleCount }
 
     /// How many requests are being served now.
     var serving: Int { lock.withLock { open.count } }
@@ -338,7 +343,9 @@ public final class StreamProxy: @unchecked Sendable {
             r.httpMethod = req.method
             for name in ["Range", "If-Range", "Accept"] { if let v = req.headers[name.lowercased()] { r.setValue(v, forHTTPHeaderField: name) } }
             for (k, v) in try await client.playbackHeaders(minLife: 60).headers { r.setValue(v, forHTTPHeaderField: k) }
-            let body = UpstreamBody(r, session: session)
+            // a session of this request's own: its callbacks are held while the player reads slowly
+            let own = sessions.take()
+            let body = UpstreamBody(r, session: own) { [sessions] in sessions.give(own) }
             let http: HTTPURLResponse?
             do {
                 http = try await body.response()
@@ -525,38 +532,93 @@ final class Peer: @unchecked Sendable {
     }
 }
 
+/// The URL sessions the proxy asks the home through: one for each request under way, so that
+/// holding one request's callbacks back (`UpstreamBody`) holds nothing else back. Each is the
+/// home session over again (its configuration, its delegate: the pinned trust), with a
+/// callback queue of its own at utility priority. A session whose request ended is used
+/// again by the next one, with the connection it kept open; a few idle ones are kept.
+final class UpstreamSessions: @unchecked Sendable {
+    /// How many idle sessions are kept for the next requests.
+    static let keptIdle = 4
+
+    private let base: URLSession
+    private let lock = NSLock()
+    private var idle: [URLSession] = []
+    private var closed = false
+
+    init(like base: URLSession) { self.base = base }
+
+    deinit { idle.forEach { $0.invalidateAndCancel() } }
+
+    /// A session no other request is using.
+    func take() -> URLSession {
+        if let s = lock.withLock({ idle.popLast() }) { return s }
+        let callbacks = OperationQueue()
+        callbacks.maxConcurrentOperationCount = 1
+        callbacks.qualityOfService = .utility
+        return URLSession(configuration: base.configuration, delegate: base.delegate, delegateQueue: callbacks)
+    }
+
+    /// The request that took `session` has ended.
+    func give(_ session: URLSession) {
+        let keep = lock.withLock { () -> Bool in
+            guard !closed, idle.count < Self.keptIdle else { return false }
+            idle.append(session)
+            return true
+        }
+        // a session holds its delegate until it is invalidated
+        if !keep { session.finishTasksAndInvalidate() }
+    }
+
+    /// The proxy stopped: no session is kept any more.
+    func close() {
+        let all = lock.withLock { () -> [URLSession] in
+            closed = true
+            defer { idle = [] }
+            return idle
+        }
+        all.forEach { $0.invalidateAndCancel() }
+    }
+
+    var idleCount: Int { lock.withLock { idle.count } }
+}
+
 /// One request to the home, its answer's body handed on in the chunks it arrives in.
 ///
 /// `URLSession.AsyncBytes` gives a body one byte at a time: copying a stream through it costs
 /// an async-sequence step and an append for every byte, for as long as a channel plays. Here
-/// the session's data callbacks are taken as they come (tens of kilobytes each) and kept
-/// until `next()` asks. At `highWater` kept the task is suspended (URLSession stops reading
-/// the socket, so TCP holds the home back) and it is resumed when the kept bytes are taken.
-/// What is kept can pass the mark by what URLSession had already read when it was suspended
-/// (about 4 MB was seen on a Mac's loopback; `ceiling` is what the tests hold it to): bounded
-/// by the session's own buffers, not by the body's length.
+/// the session's data callbacks are taken as they come (tens of kilobytes to a few megabytes
+/// each) and kept until `next()` asks.
 ///
-/// The session's delegate queue is not lowered in priority: it is the home session's own
-/// (`PinnedTrust.session`), shared with every API request; these callbacks only append and
-/// hand on. Cancelling it (the player left) ends the request
-/// to the home at once, also while suspended.
+/// What is kept is bounded by holding the callback: once `highWater` is kept, the data
+/// callback does not return until `next()` has taken the bytes (or the request was
+/// cancelled). A URL session delivers nothing more to a callback queue that is busy and
+/// stops reading the socket, so TCP holds the home back. So at most `highWater` and one
+/// delivery are ever kept. (Suspending the task is not a bound: measured against a fast
+/// home, a task suspended after it had been resumed once went on delivering, hundreds of
+/// megabytes.) The callback queue is therefore held while a player reads slowly: the session
+/// must be this request's own (`UpstreamSessions`), never one shared with other requests.
+/// Cancelling (the player left) lets a held callback go and ends the request to the home.
 final class UpstreamBody: NSObject, URLSessionDataDelegate, @unchecked Sendable {
-    /// The bytes kept before the home is held back.
-    static let highWater = 1 << 20
-    /// The most that may ever be kept (the mark and URLSession's overshoot).
-    static let ceiling = 8 << 20
+    /// The bytes kept before the session's callbacks are held.
+    static let highWater = 256 << 10
 
-    private let lock = NSLock()
+    private let lock = NSCondition()
     private var task: URLSessionDataTask?
     private var kept = Data()
-    private var paused = false
+    private var cancelled = false
     private var head: Result<HTTPURLResponse?, Error>?
     private var ended: Result<Void, Error>?
     private var headWaiter: CheckedContinuation<HTTPURLResponse?, Error>?
     private var bodyWaiter: CheckedContinuation<Data?, Error>?
     private var most = 0
+    private var biggest = 0
+    private let done: (@Sendable () -> Void)?
 
-    init(_ request: URLRequest, session: URLSession) {
+    /// `session`: this request's own (its callbacks are held while the body waits to be
+    /// taken). `done`: called once, when the request has ended, however it ended.
+    init(_ request: URLRequest, session: URLSession, done: (@Sendable () -> Void)? = nil) {
+        self.done = done
         super.init()
         let t = session.dataTask(with: request)
         t.delegate = self
@@ -564,14 +626,21 @@ final class UpstreamBody: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         t.resume()
     }
 
-    /// The most bytes that were ever kept at once.
-    var peak: Int { lock.withLock { most } }
+    private func locked<T>(_ f: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return f()
+    }
+
+    /// The most bytes that were ever kept at once, and the biggest single delivery.
+    var peak: Int { locked { most } }
+    var biggestDelivery: Int { locked { biggest } }
 
     /// The answer's status and headers (nil when it is not HTTP).
     func response() async throws -> HTTPURLResponse? {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (c: CheckedContinuation<HTTPURLResponse?, Error>) in
-                let now = lock.withLock { () -> Result<HTTPURLResponse?, Error>? in
+                let now = locked { () -> Result<HTTPURLResponse?, Error>? in
                     if head == nil { headWaiter = c }
                     return head
                 }
@@ -586,14 +655,12 @@ final class UpstreamBody: NSObject, URLSessionDataDelegate, @unchecked Sendable 
     func next() async throws -> Data? {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (c: CheckedContinuation<Data?, Error>) in
-                let now = lock.withLock { () -> Result<Data?, Error>? in
+                let now = locked { () -> Result<Data?, Error>? in
                     if !kept.isEmpty {
                         let data = kept
                         kept = Data()
-                        if paused {
-                            paused = false
-                            task?.resume()
-                        }
+                        // a callback held at the mark goes on
+                        lock.broadcast()
                         return .success(data)
                     }
                     if let ended { return ended.map { nil } }
@@ -609,7 +676,12 @@ final class UpstreamBody: NSObject, URLSessionDataDelegate, @unchecked Sendable 
 
     /// Ends the request to the home (nothing happens when it already ended).
     func cancel() {
-        lock.withLock { task }?.cancel()
+        let t = locked { () -> URLSessionDataTask? in
+            cancelled = true
+            lock.broadcast()
+            return task
+        }
+        t?.cancel()
     }
 
     // MARK: URLSession
@@ -623,7 +695,7 @@ final class UpstreamBody: NSObject, URLSessionDataDelegate, @unchecked Sendable 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
                     completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void) {
         let http = response as? HTTPURLResponse
-        let waiter = lock.withLock { () -> CheckedContinuation<HTTPURLResponse?, Error>? in
+        let waiter = locked { () -> CheckedContinuation<HTTPURLResponse?, Error>? in
             head = .success(http)
             defer { headWaiter = nil }
             return headWaiter
@@ -633,25 +705,28 @@ final class UpstreamBody: NSObject, URLSessionDataDelegate, @unchecked Sendable 
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        let waiter = lock.withLock { () -> CheckedContinuation<Data?, Error>? in
-            if let w = bodyWaiter {
-                // asked for already: handed straight on (nothing is kept while it waits)
-                bodyWaiter = nil
-                return w
-            }
-            if kept.isEmpty { kept = data } else { kept.append(data) }
-            most = max(most, kept.count)
-            if kept.count >= Self.highWater, !paused {
-                paused = true
-                dataTask.suspend()
-            }
-            return nil
+        lock.lock()
+        biggest = max(biggest, data.count)
+        if let w = bodyWaiter {
+            // asked for already: handed straight on (nothing is kept while it waits)
+            bodyWaiter = nil
+            lock.unlock()
+            w.resume(returning: data)
+            return
         }
-        waiter?.resume(returning: data)
+        if cancelled {
+            lock.unlock()
+            return
+        }
+        if kept.isEmpty { kept = data } else { kept.append(data) }
+        most = max(most, kept.count)
+        // held here until the bytes are taken: the session delivers nothing more meanwhile
+        while kept.count >= Self.highWater, !cancelled { lock.wait() }
+        lock.unlock()
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        let (h, b) = lock.withLock { () -> (CheckedContinuation<HTTPURLResponse?, Error>?, CheckedContinuation<Data?, Error>?) in
+        let (h, b) = locked { () -> (CheckedContinuation<HTTPURLResponse?, Error>?, CheckedContinuation<Data?, Error>?) in
             let end: Result<Void, Error> = error.map { .failure($0) } ?? .success(())
             ended = end
             if head == nil { head = .failure(error ?? URLError(.badServerResponse)) }
@@ -661,6 +736,7 @@ final class UpstreamBody: NSObject, URLSessionDataDelegate, @unchecked Sendable 
         }
         h?.resume(throwing: error ?? URLError(.badServerResponse))
         if let error { b?.resume(throwing: error) } else { b?.resume(returning: nil) }
+        done?()
     }
 }
 
