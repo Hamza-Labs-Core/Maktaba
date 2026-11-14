@@ -927,7 +927,10 @@ export const APPS = [
                   ),
                 ],
                 [
-                  t("Roku (Roku OS, every current Roku)", "روكو (نظام Roku OS، كل أجهزة روكو الحالية)"),
+                  t(
+                    "Roku (Roku OS, every current Roku)",
+                    "روكو (نظام Roku OS، كل أجهزة روكو الحالية)"
+                  ),
                   t(
                     `Not in Roku's store yet. A Roku in developer mode installs the channel built from [\`apps/tv/roku/\`](${SRC}/apps/tv/roku) (\`node tools/build.mjs\`) from its developer page. The channel is in English and Arabic, the whole of it mirrored in Arabic with the text joined and in reading order, and it opens straight to a video from a deep link`,
                     `ليست في متجر روكو بعد. يثبّت جهاز روكو في وضع المطوّر القناةَ المبنية من [\`apps/tv/roku/\`](${SRC}/apps/tv/roku) (\`node tools/build.mjs\`) من صفحة المطوّر فيه. القناة بالعربية والإنجليزية، وهي كلها معكوسة الاتجاه بالعربية والنص فيها موصول الحروف وبترتيب القراءة، وتفتح الفيديو مباشرة من رابط عميق`
