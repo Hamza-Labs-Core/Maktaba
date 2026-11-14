@@ -162,7 +162,7 @@
   "billing.plan.broadcaster": "البث",
   "billing.plan.broadcaster.desc": "انشر حتى {channels} من قنواتك لأشخاص من خارج منزلك: حتى {viewers} مشاهد في الوقت نفسه و{hours} ساعة مشاهدة شهريًا، بجودة تصل إلى 1080p.",
   "billing.plan.pro.guestSharing": "مشاركة الضيوف: ادعُ حتى {viewers} أشخاص لمشاهدة إحدى قنواتك، {hours} ساعة مشاهدة شهريًا.",
-  "billing.broadcast.payg.desc": "حافظ على الجودة الكاملة بعد رصيدك، بسعر {price} لكل 100 ساعة مشاهدة، حتى حد شهري تحدده أنت. متوقف ما لم تفعّله.",
+  "billing.broadcast.payg.desc": "حافظ على الجودة الكاملة بعد حصتك، بسعر {price} لكل 100 ساعة مشاهدة، حتى حد شهري تحدده أنت. متوقف ما لم تفعّله.",
   "billing.broadcast.addOnNeedsPro": "إضافة إلى الخطة الاحترافية، لكل منزل.",
   "billing.broadcast.section": "البث",
   "billing.broadcast.title": "البث — {home}",
