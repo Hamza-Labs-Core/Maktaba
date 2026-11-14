@@ -17,7 +17,7 @@
 | واجهة المنزل البرمجية | `api/internal/broadcast/` | المسارات، وفحوص النشر، واختبار السرعة، وتجديد رموز الاستقبال (`api:broadcast_tokens`) |
 | رابط السحابة | `cloud/internal/cloudlink/broadcast.go` | يمرّر وكيل الترحيل أربعة طلبات إلى سحابة مكتبة باعتماد المنزل؛ ولا تحمله الواجهة البرمجية أبدًا |
 | الباثّ | `streaming/internal/broadcast/` | ffmpeg واحد لسلّم الجودات لكل قناة، والرافع، ومقبس التحكم، وبطاقة الانقطاع (`streaming:broadcast_uploader`، `streaming:broadcast_control`) |
-| قاعدة البيانات | الخانة 0226 | `broadcast_channels`، `broadcast_uplink`، `broadcast_confirmations`، `broadcast_ingest_tokens` |
+| قاعدة البيانات | الخانة 0227 | `broadcast_channels`، `broadcast_uplink`، `broadcast_confirmations`، `broadcast_ingest_tokens` |
 | الإعدادات | `rules.broadcast` | `uplink_share` (0.5)، `rung_slot_weight` (0.5)، `allow_software_rungs` (متوقف) |
 
 الحلقات الثلاث كلها تابعة للمكوّن `livetv.broadcast`. وهو خارج كل الحزم، فيبقى متوقفًا حتى يشغّله
@@ -52,7 +52,7 @@
 العناصر **القابلة للنشر**، ويسجّل المنزل سبب جواز عرض كل منها. هذا دليل لما يفعله الكود، وليس
 استشارة قانونية.
 
-يكون العنصر قابلًا للنشر لأحد أربعة أسباب، بهذا الترتيب (`video_publishable_reason`، الخانة 0227؛
+يكون العنصر قابلًا للنشر لأحد أربعة أسباب، بهذا الترتيب (`video_publishable_reason`، الخانة 0228؛
 ويستدعي المجدول ومشغّل البث والواجهة البرمجية جميعًا استعلام SQL نفسه):
 
 | السبب | مصدره |

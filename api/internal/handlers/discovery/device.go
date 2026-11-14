@@ -66,6 +66,10 @@ const (
 	// cloudTicketPrefix is an approval of a TV's cloud code (story 58.03): the ticket itself
 	// says so, so the sign-in is restricted even when the home restarted in between.
 	cloudTicketPrefix = "device-cc."
+	// cloudLinkTicketPrefix is a cloud code approved on maktaba.tv for a linked cloud account
+	// (story 58.03): its sign-in is restricted, and recorded as a cloud sign-in of that link, so
+	// unlinking the account (or the link's scope) ends it.
+	cloudLinkTicketPrefix = "device-cl."
 	// legacyDeviceKind is the device kind of an app that does not say what it is (the
 	// TVs from before X-Maktaba-Client).
 	legacyDeviceKind = "tv"
@@ -480,11 +484,16 @@ func (h *Handler) DeviceToken(w http.ResponseWriter, r *http.Request) {
 	}
 	code := h.deviceCode(raw)
 	asked, held := h.requests.get(code, now)
-	via := ""
+	via, linked := "", false
 	t, err := h.Store.Consume(r.Context(), deviceTicketPrefix+code)
 	if errors.Is(err, discovery.ErrCodeNotFound) {
 		if t, err = h.Store.Consume(r.Context(), cloudTicketPrefix+code); err == nil {
 			via = ViaCloudCode
+		}
+	}
+	if errors.Is(err, discovery.ErrCodeNotFound) {
+		if t, err = h.Store.Consume(r.Context(), cloudLinkTicketPrefix+code); err == nil {
+			via, linked = ViaCloudCode, true
 		}
 	}
 	if errors.Is(err, discovery.ErrCodeNotFound) {
@@ -528,6 +537,11 @@ func (h *Handler) DeviceToken(w http.ResponseWriter, r *http.Request) {
 			label = describeClient(who)
 		}
 	}
+	if linked && h.CloudAssertions == nil {
+		// a sign-in that unlinking could not end is not handed out
+		httperror.Write(w, r, httperror.Unavailable(0))
+		return
+	}
 	var tok MintedTokens
 	if via != "" {
 		// a cloud code's sign-in is restricted: a minter that cannot say so mints nothing
@@ -543,6 +557,13 @@ func (h *Handler) DeviceToken(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("mint device tokens").Wrap(err))
 		return
+	}
+	if linked {
+		// recorded before it is handed out: unlinking the cloud account ends it
+		if err := h.CloudAssertions.RecordTVCodeSignIn(r.Context(), tok.FamilyID, t.UserID); err != nil {
+			httperror.Write(w, r, httperror.Internal("record the cloud sign-in").Wrap(err))
+			return
+		}
 	}
 	h.requests.drop(code)
 	if h.Audit != nil {

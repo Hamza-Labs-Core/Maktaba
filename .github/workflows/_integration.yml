@@ -286,6 +286,9 @@ jobs:
   # an unrestricted viewer must be shown the fixtures, and with the filter taken off one
   # surface it must fail naming it. The story's other attempts (the role table, the time
   # rules on a fake clock, the device signal's ratchet, the registry walk) run beside it.
+  # Epic 58 story 58.14 adds the TVs' rows (TestP58Bypass*, A23–A27): the cast grant, a
+  # grant after the limit is tightened, the cloud code's approver, deep links by id, and
+  # the same answers for every TV client and a phone's browser.
   parental-bypass:
     if: inputs.parental_bypass
     runs-on: ubuntu-22.04
@@ -338,7 +341,7 @@ jobs:
           mkdir -p "$out"
           set +e
           go test -tags parental_bypass -count=1 -timeout 10m -v \
-            -run 'TestParentalBypass|TestP57|TestPGTime|TestDeviceSignalRidesTheAccessToken|TestEveryRouteHasParentalSurface|TestParentalSurfaces' \
+            -run 'TestParentalBypass|TestP57|TestP58Bypass|TestPGTime|TestDeviceSignalRidesTheAccessToken|TestEveryRouteHasParentalSurface|TestParentalSurfaces' \
             ./internal/router/ > "$out/rehearsal.log" 2>&1
           rc=$?
           set -e

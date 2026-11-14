@@ -3,7 +3,7 @@
 // rule, the encoder slots, the calls to Maktaba Cloud through the relay agent (which alone
 // holds the home's server secret) and the hourly ingest-token refresh. The broadcaster
 // itself (the ladder, the uploader, the control socket) runs in the home's front door
-// (streaming/internal/broadcast); the two meet in the broadcast_* tables (slot 0226).
+// (streaming/internal/broadcast); the two meet in the broadcast_* tables (slot 0227).
 package broadcast
 
 import (

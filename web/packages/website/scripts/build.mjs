@@ -83,6 +83,9 @@ export const PAGES = [
   { src: "ar/404.html", lang: "ar", path: null, out: "ar/404.html" },
   { src: "install/index.html", lang: "en", path: "/install/", out: "install/index.html" },
   { src: "ar/install/index.html", lang: "ar", path: "/install/", out: "ar/install/index.html" },
+  // a TV's QR (story 58.03): the page forwards the code to Maktaba Cloud (src/tv.ts)
+  { src: "tv/index.html", lang: "en", path: "/tv/", out: "tv/index.html", script: "tv.ts" },
+  { src: "ar/tv/index.html", lang: "ar", path: "/tv/", out: "ar/tv/index.html", script: "tv.ts" },
   ...LEGAL.flatMap((name) =>
     ["en", "ar"].map((lang) => ({
       legal: name,
@@ -283,6 +286,18 @@ export function scriptFile(src) {
   return { file: `assets/${src.replace(/\.ts$/, "")}-${hash}.js`, js };
 }
 
+/** A classic script of src/ (TypeScript that imports nothing, whose `export`s are for its
+ * tests) with its types and `export`s stripped, under a content-hashed name, as
+ * scripts/home.mjs publishes src/home.ts: { file: "assets/<name>-<hash>.js", js }. */
+export function classicScriptFile(src) {
+  const ts = fs.readFileSync(path.join(PKG, "src", src), "utf8");
+  const js = stripTypeScriptTypes(ts).replace(/^export /gm, "");
+  if (/\b(import|export)\b/.test(js.replace(/\/\/.*$/gm, "")))
+    throw new Error(`src/${src}: a classic script may not import or export`);
+  const hash = crypto.createHash("sha256").update(js).digest("base64url").slice(0, 10);
+  return { file: `assets/${src.replace(/\.ts$/, "")}-${hash}.js`, js };
+}
+
 /** src/copyright-form.ts with its types stripped, under a content-hashed name. */
 export const noticeScriptFile = () => scriptFile("copyright-form.ts");
 
@@ -370,6 +385,16 @@ export async function build({
   const links = bLinks(resolves);
   const homeScript = homeScriptFile();
   write(homeScript.file, homeScript.js);
+  // a hand-made page's own script runs in its <head> (the /tv page's forward, src/tv.ts)
+  const pageScripts = new Map();
+  const pageScript = (src) => {
+    if (!pageScripts.has(src)) {
+      const s = classicScriptFile(src);
+      write(s.file, s.js);
+      pageScripts.set(src, `/${s.file}`);
+    }
+    return pageScripts.get(src);
+  };
   for (const p of PAGES) {
     if (p.home) {
       const h = homePage(p.lang, { links, resolves });
@@ -406,6 +431,7 @@ export async function build({
         mainClass: src.main,
         variant: "b",
         links,
+        headScripts: p.script ? [pageScript(p.script)] : [],
       })
     );
   }
