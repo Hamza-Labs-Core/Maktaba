@@ -122,6 +122,9 @@ func (d *RevocationDeps) Pull(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Maktaba-Revocations-Version", strconv.FormatInt(l.Version, 10))
 	_, _ = io.WriteString(w, text)
+	if edge {
+		d.Rev.EdgeTook(r.Context())
+	}
 }
 
 // puller is who asks: the edge (its signature), or a home (its id, by its secret); neither is

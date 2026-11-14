@@ -224,6 +224,21 @@ type Revocations struct {
 	HTTP       *http.Client
 	Logger     *slog.Logger
 	Now        func() time.Time
+	// Took notes that the edge holds the current list as of a time: after a push it took (2xx,
+	// or 409 for a newer one there already) and after its own pull (RecordRevocations, story
+	// 50.28's stale-list alert; nil notes nothing).
+	Took func(ctx context.Context, at time.Time) error
+}
+
+// EdgeTook calls Took for the edge holding the list now; a failure is logged, never returned
+// (the list reached the edge either way).
+func (r *Revocations) EdgeTook(ctx context.Context) {
+	if r.Took == nil {
+		return
+	}
+	if err := r.Took(ctx, r.now()); err != nil && r.Logger != nil {
+		r.Logger.Warn("broadcast: recording the revocation list's delivery failed", "err", err)
+	}
 }
 
 func (r *Revocations) now() time.Time {
@@ -326,6 +341,7 @@ func (r *Revocations) Push(ctx context.Context) error {
 			if r.Logger != nil {
 				r.Logger.Info("broadcast: revocation list pushed", "version", l.Version, "entries", len(l.Entries), "status", resp.StatusCode)
 			}
+			r.EdgeTook(ctx)
 			return nil
 		}
 		last = fmt.Errorf("the edge answered %d", resp.StatusCode)

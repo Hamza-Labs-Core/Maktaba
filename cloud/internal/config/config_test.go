@@ -341,6 +341,30 @@ func TestBroadcastConfig(t *testing.T) {
 	}
 }
 
+// Story 50.28: the analytics keys parse beside 50.20's and 50.21's, with their defaults, and
+// the token comes from the environment.
+func TestBroadcastAnalyticsConfig(t *testing.T) {
+	c := defaultConfig()
+	if c.Broadcast.AnalyticsK != 5 || c.Broadcast.AnalyticsURL != "https://api.cloudflare.com/client/v4" || c.Broadcast.MonthlyBudgetUSD != 0 {
+		t.Fatalf("defaults: %+v", c.Broadcast)
+	}
+	if err := parseTOML("[broadcast]\nenabled = true\nanalytics_account_id = \"acct\"\nanalytics_token_path = \"/x/token\"\nanalytics_k = 7\nmonthly_budget_usd = 120.5\n", &c); err != nil {
+		t.Fatal(err)
+	}
+	if !c.Broadcast.Enabled || c.Broadcast.AnalyticsAccountID != "acct" || c.Broadcast.AnalyticsTokenPath != "/x/token" ||
+		c.Broadcast.AnalyticsK != 7 || c.Broadcast.MonthlyBudgetUSD != 120.5 || c.Broadcast.IngestURL != "https://ingest.maktaba.tv" {
+		t.Fatalf("parsed: %+v", c.Broadcast)
+	}
+	t.Setenv("MAKTABA_CLOUD_BROADCAST_ANALYTICS_TOKEN", "tok")
+	l, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Broadcast.AnalyticsToken != "tok" {
+		t.Fatalf("env token: %+v", l.Broadcast)
+	}
+}
+
 // The edge's key reads as base64url (how the docs and the shared vectors print it) or standard
 // base64, padded or not.
 func TestEdgeKeyEncodings(t *testing.T) {

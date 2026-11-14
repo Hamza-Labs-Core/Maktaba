@@ -3,8 +3,10 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -119,5 +121,27 @@ func TestBroadcastKillSwitchRolesAuditAndPull(t *testing.T) {
 	// the gate audits every request it served too
 	if n := e.count(`SELECT count(*) FROM audit_log WHERE action = 'admin.request' AND detail->>'route' LIKE '/v1/admin/broadcast/revocations%'`); n < 4 {
 		t.Errorf("admin.request rows for the kill switch: %d", n)
+	}
+}
+
+// Story 50.28's stale-revocation-list alert reads broadcast_monitor.revocations_at: the api's
+// kill switch writes it when the edge takes a push of the list (and on the edge's own pull).
+func TestBroadcastRevocationPushRecordsTheEdgesCopy(t *testing.T) {
+	e := newEnvCfg(t, nil, func(c *config.Config) { c.Broadcast.KeyPath = ingestKeyFile(t) })
+	edge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	defer edge.Close()
+	cfg := e.cfg
+	cfg.Broadcast.IngestURL = edge.URL
+	d := revocationDeps(cfg, nil, e.pool, e.logger, nil)
+	if n := e.count(`SELECT count(*) FROM broadcast_monitor WHERE revocations_at IS NOT NULL`); n != 0 {
+		t.Fatalf("recorded before any push: %d", n)
+	}
+	before := time.Now().Add(-time.Second)
+	if err := d.Rev.Push(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var got time.Time
+	if err := e.pool.DB.QueryRow(`SELECT revocations_at FROM broadcast_monitor WHERE id = 1`).Scan(&got); err != nil || got.Before(before) {
+		t.Fatalf("the edge's copy recorded at %v (%v), want after %v", got, err, before)
 	}
 }

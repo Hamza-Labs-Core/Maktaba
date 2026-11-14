@@ -9,6 +9,11 @@ import { defineConfig } from "vitest/config";
 //   - the Stream signing key: Epic 34's TEST key (web/packages/tvsite/src/testdata/parity.json);
 //   - the Stream API: a fake Worker bound as STREAM_API (no call leaves the machine).
 const vectors = readFileSync("../../../cloud/internal/broadcast/testdata/vectors.json", "utf8");
+// story 50.28: the analytics events' columns, shared with the cloud's rollup
+const eventsSchema = readFileSync(
+  "../../../cloud/internal/broadcast/testdata/events_schema.json",
+  "utf8"
+);
 const parity = JSON.parse(readFileSync("../tvsite/src/testdata/parity.json", "utf8")) as {
   kid: string;
   jwk: string;
@@ -57,6 +62,7 @@ export default defineConfig({
           STREAM_KEY_ID: parity.kid,
           STREAM_KEY_JWK: parity.jwk,
           TEST_VECTORS: vectors,
+          TEST_EVENTS_SCHEMA: eventsSchema,
         },
         serviceBindings: { STREAM_API: "fake-stream" },
         workers: [
