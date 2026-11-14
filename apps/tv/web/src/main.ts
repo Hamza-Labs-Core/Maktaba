@@ -16,9 +16,11 @@ window.addEventListener("unhandledrejection", (e) =>
 );
 
 initLang(navigator.language);
+const platform = detectPlatform(window);
 const launcher = new Launcher({
   window,
-  platform: detectPlatform(window),
+  platform,
+  player: platform.player ? platform.player.bind(platform) : undefined,
   fetch: (url, init) => fetch(url, { ...init, credentials: "omit", cache: "no-store" }),
 });
 void launcher.start();

@@ -3,6 +3,7 @@
 // PlayerAdapter (player.ts), filled for AVPlay by 58.10 and for webOS's <video> by 58.11.
 
 import type { BridgeAction } from "../bridge";
+import type { PlayerAdapter } from "../player";
 
 export type PlatformName = "tizen" | "webos" | "browser";
 
@@ -53,6 +54,11 @@ export interface Platform {
   deviceCaps(): DeviceCaps;
   /** Leaves the app (after the UI's own confirm). */
   exit(): void;
+  /**
+   * The platform's own player (Samsung's AVPlay, 58.10; LG's, 58.11), given the launcher's
+   * <video> plane, which stays in the stage; without one the launcher plays in that <video>.
+   */
+  player?(video: HTMLVideoElement): PlayerAdapter;
 }
 
 /** The Chromium major version in a user agent (0 when there is none). */
