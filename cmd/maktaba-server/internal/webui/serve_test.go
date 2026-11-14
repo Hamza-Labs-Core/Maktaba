@@ -98,3 +98,39 @@ func TestTVPathWithoutTVBuild(t *testing.T) {
 		t.Errorf("/tv/big without a TV build: %d, want 404", rec.Code)
 	}
 }
+
+// Story 58.09: only the Samsung and LG launcher (a packaged file:// or app:// page) and the
+// home itself may frame /tv/'s page; the web app's pages and hashed files carry no such CSP.
+func TestTVFrameAncestors(t *testing.T) {
+	h := serveSPA(fstest.MapFS{
+		"index.html":              {Data: []byte(`web page`)},
+		"tv/index.html":           {Data: []byte(`tv page`)},
+		"tv/assets/index.tv-1.js": {Data: []byte("console.log(1)")},
+	}, "/api/")
+	for _, path := range []string{"/tv/", "/tv/big/library/42"} {
+		if got := get(t, h, path).Header().Get("Content-Security-Policy"); got != TVFrameAncestors {
+			t.Errorf("%s: CSP %q, want %q", path, got, TVFrameAncestors)
+		}
+	}
+	if !strings.Contains(TVFrameAncestors, "file:") || strings.Contains(TVFrameAncestors, "*") {
+		t.Errorf("TVFrameAncestors %q: want file: and no wildcard", TVFrameAncestors)
+	}
+	// behind the home's own headers: its frame-ancestors 'none' gives way, the rest stays
+	home := "default-src 'self'; img-src 'self' data: blob:; frame-ancestors 'none'"
+	withHome := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", home)
+		h.ServeHTTP(w, r)
+	})
+	want := "default-src 'self'; img-src 'self' data: blob:; " + TVFrameAncestors
+	if got := get(t, withHome, "/tv/big").Header().Get("Content-Security-Policy"); got != want {
+		t.Errorf("/tv/big behind the home's CSP: %q, want %q", got, want)
+	}
+	if got := get(t, withHome, "/library").Header().Get("Content-Security-Policy"); got != home {
+		t.Errorf("/library behind the home's CSP: %q, want it unchanged", got)
+	}
+	for _, path := range []string{"/", "/library/42", "/tv/assets/index.tv-1.js"} {
+		if got := get(t, h, path).Header().Get("Content-Security-Policy"); got != "" {
+			t.Errorf("%s: CSP %q, want none", path, got)
+		}
+	}
+}

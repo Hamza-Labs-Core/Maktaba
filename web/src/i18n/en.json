@@ -8244,5 +8244,18 @@
   "tv.exitConfirm.no": "Stay",
   "tv.signIn.title": "Sign in to watch",
   "tv.signIn.body": "This TV is not signed in to your Maktaba home yet.",
-  "tv.signIn.go": "Sign in"
+  "tv.signIn.go": "Sign in",
+  "tv.code.title": "Sign in with a code",
+  "tv.code.where": "On a phone or computer signed in to Maktaba, open {url} or scan the code, then approve this TV.",
+  "tv.code.expires": "This code lasts {n} minutes.",
+  "tv.code.waiting": "Waiting for the approval…",
+  "tv.code.lookedUp": "A phone found this code: approve it there.",
+  "tv.code.new": "Get a new code",
+  "tv.code.qr": "The approve page for this code",
+  "tv.code.failed": "Could not get a code from the home. Try again.",
+  "tv.code.onlyCode": "A password is never sent without encryption: sign in with a code.",
+  "tv.plainHttp": "Connected without encryption on your network",
+  "tv.account.connection": "Connection",
+  "tv.account.encrypted": "Connected with encryption",
+  "tv.account.switchHome": "Switch home"
 }

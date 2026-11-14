@@ -42,6 +42,13 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 # the plugin flow chart's drawing (story 54.41), imported from source as @maktaba/flowchart
 COPY tools/plugin-sdk/js/src/flowchart.ts /src/tools/plugin-sdk/js/src/flowchart.ts
+# the Samsung and LG launcher's source and the compatibility vectors its tests read (story
+# 58.09): web/tsconfig.json typechecks them with the web app (the editions' builds start with
+# tsc -p tsconfig.json), at their repo-relative place
+COPY apps/tv/web/src /src/apps/tv/web/src
+COPY apps/tv/web/bridge.schema.json /src/apps/tv/web/bridge.schema.json
+COPY apps/tv/web/i18n /src/apps/tv/web/i18n
+COPY shared/compat /src/shared/compat
 # the Cast receiver's application ID (story 58.06), which vite.config.ts reads into the player
 COPY shared/cast/app.json /src/shared/cast/app.json
 COPY web ./
