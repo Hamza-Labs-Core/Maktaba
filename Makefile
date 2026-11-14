@@ -67,7 +67,24 @@ UNIT_PER_TEST_SOFT_CAP  ?= 400ms
 # (SQLite's deprecated datetime adapter) were a third of the tvrelease
 # tests' time and are gone. The failing runs were ~20% slower in every
 # module, a slower runner: 6m30s is the slowest of them plus ~30%.
+# On 2026-11-14 main's runs took 3m42s-4m57s and a PR failed at 5m02s with every test
+# passing. The api module (249-295s) and pytest (220-268s, 120-147s of it collection)
+# ended within a minute of each other: the 4-vCPU runner ran four `go test -p 4` processes,
+# pytest and Postgres at once, and starved both. The same collection takes 9s cold and 3s
+# warm on a machine to itself, and no test module imports anything heavy (python -X
+# importtime: the largest is 68ms). Nor is api's time compiling: its 133 test binaries
+# build and link in ~66 CPU-seconds warm. It is running tests (422-451s of package time)
+# beside cmd/maktaba-server's (365-395s) and streaming's (78-88s) on the same 4 vCPUs.
+# PR #1303 had shown that trimming pytest alone does not move it: a warm-up collection cut
+# pytest's collection to 54s, its tests took the time back, the tier stayed api-bound.
+# So CI spreads the tier over three runners (_integration.yml): the Go modules in two
+# shards of about the same test time (`make test-integration-go INTEGRATION_GO_SHARD=api`
+# and `=rest`, each under this budget), and the pipeline's integration tests in their own
+# job (`make test-integration-py`, INTEGRATION_PY_TIER_BUDGET). `make test-integration`
+# still runs everything side by side, under this budget.
 INTEGRATION_TIER_BUDGET ?= 6m30s
+# The pipeline's integration tests alone on their runner (`make test-integration-py`).
+INTEGRATION_PY_TIER_BUDGET ?= 3m
 E2E_TIER_BUDGET         ?= 5m
 MEDIA_E2E_TIER_BUDGET   ?= 9m
 PERF_CI_TIER_BUDGET     ?= 2m
@@ -380,31 +397,56 @@ INTEGRATION_GO_PG_URL ?=
 # covers it.
 INTEGRATION_GO_MODULES := $(filter-out shared/go/releaseverify tools/release,$(GO_MODULES))
 
+# CI runs the Go modules in two shards of about the same test time, each on its own runner
+# (_integration.yml's matrix): api, and the rest. `all` (the default) runs every module.
+INTEGRATION_GO_SHARD ?= all
+INTEGRATION_GO_SHARD_all := $(INTEGRATION_GO_MODULES)
+INTEGRATION_GO_SHARD_api := api
+INTEGRATION_GO_SHARD_rest := $(filter-out api,$(INTEGRATION_GO_MODULES))
+
 .PHONY: test-integration
-test-integration:  ## Integration tier (Story 20.1, Epic 20.4).
+test-integration:  ## Integration tier (Story 20.1, Epic 20.4): the Go modules and the pipeline side by side.
 	@bash tools/test-budget.sh wall integration $(INTEGRATION_TIER_BUDGET) -- \
 		$(MAKE) --no-print-directory test-integration-inner
 
-# The Go modules run four at a time (tools/ci/integration-go.sh: their output in order,
-# the tier failing when any fails), with the pipeline's integration tests beside them
-# (their 25 slowest listed, as each Go module's ten slowest are). The tier's wall is the api
-# module's go test plus ~2s; pytest ends before it. pytest's `session time:` line splits its
-# session (PR #1303): 125s of 215s was collection, the job's first Python run compiling the
-# bytecode of everything the tests import on one core beside the Go builds (15s cold, 4s
-# warm, with the runner to itself). Collecting only the files holding integration tests left
-# it at 119s; a warm-up collection before the tier cut it to 54s, but the tests then took the
-# time back and the tier stayed api-bound, so neither shipped.
-# pytest exits 5 when no tests match the marker: that is no failure (the `|| ...` forms:
-# .SHELLFLAGS has -e).
+# CI runs the tier on three runners (_integration.yml): the Go modules' two shards
+# (`integration`'s matrix) and the pipeline's tests (`pipeline`). On one runner each part
+# starved the others of CPU (INTEGRATION_TIER_BUDGET's comment).
+.PHONY: test-integration-go
+test-integration-go:  ## The integration tier's Go modules alone (CI's integration job; INTEGRATION_GO_SHARD=api|rest).
+	@bash tools/test-budget.sh wall integration-go-$(INTEGRATION_GO_SHARD) $(INTEGRATION_TIER_BUDGET) -- \
+		$(MAKE) --no-print-directory test-integration-go-inner
+
+.PHONY: test-integration-py
+test-integration-py:  ## The integration tier's pipeline tests alone (CI's pipeline job).
+	@bash tools/test-budget.sh wall integration-py $(INTEGRATION_PY_TIER_BUDGET) -- \
+		$(MAKE) --no-print-directory test-integration-py-inner
+
+# The Go modules run four at a time (tools/ci/integration-go.sh: their output in order, the
+# tier failing when any fails), each listing its ten slowest tests.
+.PHONY: test-integration-go-inner
+test-integration-go-inner:
+	@$(if $(INTEGRATION_GO_SHARD_$(INTEGRATION_GO_SHARD)),,$(error INTEGRATION_GO_SHARD=$(INTEGRATION_GO_SHARD): not all, api or rest))
+	@$(if $(INTEGRATION_GO_PG_URL),MAKTABA_TEST_PG_URL='$(INTEGRATION_GO_PG_URL)') \
+		bash tools/ci/integration-go.sh $(INTEGRATION_GO_SHARD_$(INTEGRATION_GO_SHARD))
+
+# The pipeline's integration tests: their 25 slowest after the warnings summary (`slowest 25
+# durations`), then the `session time:` line (pipeline/tests/conftest.py: collection, and
+# each test phase summed over the tests). pytest exits 5 when no tests match the marker:
+# that is no failure (.SHELLFLAGS has -e).
+.PHONY: test-integration-py-inner
+test-integration-py-inner:
+	@cd $(PIPELINE_DIR) && { uv run pytest -m integration --durations=25 || [ $$? -eq 5 ]; }
+
+# Both halves side by side, the pipeline's output after the Go modules' (a local run).
 .PHONY: test-integration-inner
 test-integration-inner:
 	@py_log="$$(mktemp)"; \
-	( cd $(PIPELINE_DIR) && uv run pytest -m integration --durations=25 ) >"$$py_log" 2>&1 & py=$$!; \
-	go_rc=0; $(if $(INTEGRATION_GO_PG_URL),MAKTABA_TEST_PG_URL='$(INTEGRATION_GO_PG_URL)') \
-		bash tools/ci/integration-go.sh $(INTEGRATION_GO_MODULES) || go_rc=$$?; \
+	$(MAKE) --no-print-directory test-integration-py-inner >"$$py_log" 2>&1 & py=$$!; \
+	go_rc=0; $(MAKE) --no-print-directory test-integration-go-inner || go_rc=$$?; \
 	py_rc=0; wait $$py || py_rc=$$?; \
 	echo "==> pytest -m integration ($(PIPELINE_DIR))"; cat "$$py_log"; rm -f "$$py_log"; \
-	if [ $$py_rc -ne 0 ] && [ $$py_rc -ne 5 ]; then exit $$py_rc; fi; \
+	if [ $$py_rc -ne 0 ]; then exit $$py_rc; fi; \
 	exit $$go_rc
 
 # Epic 35 story 35.5 AC6: the previous stable release against this build's database (its
