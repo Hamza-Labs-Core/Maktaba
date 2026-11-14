@@ -232,3 +232,21 @@ refused from then on (401).
 3. Tap **Install**. Each new tag's build arrives as an update in TestFlight.
 
 Nothing here submits the apps for App Store review or adds external testers.
+
+## When Install fails though the build is listed
+
+Seen from about 0.3.100 to 0.3.142 (November 2026): TestFlight lists the new build for an
+internal tester, and Install or Update answers
+
+> Could not install Maktaba Player. The requested app is not available or doesn't exist.
+
+The uploads were all green, and nothing in what is built or uploaded had changed (the same
+Xcode, export and app settings before and after). It is the app record's state in App Store
+Connect, not the build.
+
+What fixed it (2026-11-14, by the owner, in App Store Connect): make the app available for
+sale for a few minutes, then remove it from sale again. Installs from TestFlight worked
+afterwards. It is a workaround: why the record got into that state is not known.
+
+If it happens again, do this first. The build, the tester group and the device are not where
+to look.
