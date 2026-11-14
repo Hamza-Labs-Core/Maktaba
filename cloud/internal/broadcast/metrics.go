@@ -125,7 +125,7 @@ func (j *Jobs) PollMinute(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE broadcast_monitor SET snapshot = $1, polled_minute = $2, updated_at = now() WHERE id = 1`, out, minute); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE broadcast_monitor SET snapshot = $1, polled_minute = $2, updated_at = now() WHERE id = 1`, string(out), minute); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM broadcast_live`); err != nil {
