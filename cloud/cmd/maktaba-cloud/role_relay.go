@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -123,14 +124,22 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 		directory = pg
 		peerAuth = relaypkg.NewPeerAuth([]byte(cfg.Auth.TokenSecret))
 	}
+	// Story 50.16: in a pool, this relay heartbeats its member row, answers each home's
+	// handshake with its assignment, and moves the homes no longer placed here.
+	rebalancer, err := relayPool(ctx, logger, cfg, relaypkg.PGPoolStore{DB: pool.DB}, registry, tickets)
+	if err != nil {
+		logger.Error("relay: the pool did not start", "err", err)
+		os.Exit(1)
+	}
 	r.Get("/v1/relay/ws", (&relaypkg.TunnelServer{
-		Registry:  registry,
-		Store:     relaypkg.NewTunnelStore(serversStore),
-		Logger:    logger,
-		Tickets:   tickets,
-		Drain:     cfg.Relay.DrainEnabled,
-		Directory: directory,
-		Direct:    directHandler(cfg, pool, logger),
+		Registry:   registry,
+		Store:      relaypkg.NewTunnelStore(serversStore),
+		Logger:     logger,
+		Tickets:    tickets,
+		Drain:      cfg.Relay.DrainEnabled,
+		Directory:  directory,
+		Direct:     directHandler(cfg, pool, logger),
+		Rebalancer: rebalancer,
 	}).ServeHTTP)
 
 	// All non-control paths fall through to the proxy. We deliberately
@@ -183,7 +192,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 			h(w, req)
 		}
 	}
-	r.Get("/metrics", relayControl(metricspkg.PrometheusHandler(collector, relaypkg.WriteMetrics, relayh.WriteMetrics, relayh.WriteCacheMetrics, bus.WriteMetrics, meter.WriteMetrics, obs.WriteMetrics)))
+	r.Get("/metrics", relayControl(relayMetrics(collector, relaypkg.WriteMetrics, relayh.WriteMetrics, relayh.WriteCacheMetrics, bus.WriteMetrics, meter.WriteMetrics, obs.WriteMetrics)))
 	r.Get("/privacy", relayControl(privacy.PolicyHandler))
 	// Story 25.23: the edge's on-demand TLS asks here before it requests a
 	// certificate (Caddy `on_demand_tls { ask … }`): 200 only for the bare
@@ -198,6 +207,34 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 		logger.Error("relay exited", "err", err)
 		os.Exit(1)
 	}
+}
+
+// relayPool joins the relay pool when relay.pool.enabled (story 50.16): the member's first
+// heartbeat is written before it returns (so the relay is in the pool when it takes tunnels),
+// then every 5 s, and the rebalancer runs until ctx ends. Off: nil, one relay as Phase 1.
+func relayPool(ctx context.Context, logger *slog.Logger, cfg config.Config, store relaypkg.PoolStore, reg *relaypkg.Registry, tickets *relaypkg.Tickets) (*relaypkg.Rebalancer, error) {
+	if !cfg.Relay.PoolEnabled {
+		return nil, nil
+	}
+	member := cfg.Relay.PoolMemberID()
+	pl := relaypkg.NewPool(store, member)
+	if err := pl.Start(ctx, relaypkg.PoolRelay{ID: member, PublicIP: cfg.Relay.PoolPublicIP, PrivateIP: cfg.Relay.PoolPrivate(),
+		CapacityMbps: cfg.Relay.PoolCapacityMbps}); err != nil {
+		return nil, err
+	}
+	rb := &relaypkg.Rebalancer{
+		Registry: reg,
+		Pool:     pl,
+		Hosts:    cfg.Relay.PoolHostTemplate(),
+		Every:    cfg.Relay.RebalanceEvery,
+		Rate:     cfg.Relay.RebalanceRate,
+		Drain:    relaypkg.DrainOptions{Within: cfg.Relay.DrainWithin, Deadline: cfg.Relay.DrainDeadline},
+		Mint:     tickets.Mint,
+		Logger:   logger,
+	}
+	go rb.Run(ctx)
+	logger.Info("relay: in the pool", "member", member, "capacity_mbps", cfg.Relay.PoolCapacityMbps, "event", "relay_pool_joined")
+	return rb, nil
 }
 
 // relayReadiness is the relay's /readyz rule (story 50.05): lenient while
@@ -285,4 +322,11 @@ func relayPlans(cfg config.Config, db *sql.DB, relayID string) *relayh.Plans {
 		StreamLimit: cfg.Relay.StreamLimitEnabled,
 		Streams:     &billingpkg.Streams{DB: db, Relay: relayID},
 	}
+}
+
+// relayMetrics serves the relay's /metrics: the collector's series, then extra's, then the Go
+// live heap (metricspkg.WriteGoHeap), which the cloud rehearsal's load-small reads for the
+// relay's memory per tunnel (story 50.14): steadier than the container's peak RSS.
+func relayMetrics(c *metricspkg.Collector, extra ...func(io.Writer) error) http.HandlerFunc {
+	return metricspkg.PrometheusHandler(c, append(extra, metricspkg.WriteGoHeap)...)
 }

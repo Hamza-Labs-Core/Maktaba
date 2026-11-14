@@ -540,6 +540,18 @@ func (p *fakeProvider) ReportedUsage(ctx context.Context, sub string, month time
 	return p.billing.ReportedUsage(ctx, sub, month)
 }
 
+func (p *fakeProvider) SetBroadcastItems(ctx context.Context, sub string, it billingpkg.BroadcastItems) error {
+	return p.billing.SetBroadcastItems(ctx, sub, it)
+}
+
+func (p *fakeProvider) ReportBroadcastUsage(ctx context.Context, r billingpkg.BroadcastUsageReport) error {
+	return p.billing.ReportBroadcastUsage(ctx, r)
+}
+
+func (p *fakeProvider) ReportedBroadcastUsage(ctx context.Context, sub, server string, month time.Time) (int64, error) {
+	return p.billing.ReportedBroadcastUsage(ctx, sub, server, month)
+}
+
 func (*fakeProvider) Name() string  { return "testpay" }
 func (*fakeProvider) Enabled() bool { return true }
 func (*fakeProvider) Sells(plan string) bool {
@@ -598,6 +610,8 @@ type testEvent struct {
 	DisputeID      string    `json:"dispute_id,omitempty"`
 	ExtraStreams   int       `json:"extra_streams,omitempty"`
 	PAYG           bool      `json:"payg,omitempty"`
+	// story 50.20: the broadcast items per home
+	Broadcast []billingpkg.BroadcastItems `json:"broadcast,omitempty"`
 }
 
 func (*fakeProvider) ParseWebhook(_ context.Context, payload []byte, h http.Header) (billingpkg.Event, error) {
@@ -613,7 +627,7 @@ func (*fakeProvider) ParseWebhook(_ context.Context, payload []byte, h http.Head
 		UserID: te.UserID, CustomerID: te.CustomerID, SubscriptionID: te.SubscriptionID,
 		Plan: te.Plan, PriceID: "price_" + te.Plan, Interval: te.Interval, Status: te.Status, PeriodEnd: te.PeriodEnd,
 		InvoiceID: te.InvoiceID, AmountCents: te.AmountCents, Currency: te.Currency, DisputeID: te.DisputeID,
-		ExtraStreams: te.ExtraStreams, PAYG: te.PAYG,
+		ExtraStreams: te.ExtraStreams, PAYG: te.PAYG, Broadcast: te.Broadcast,
 		Payload: payload,
 	}, nil
 }

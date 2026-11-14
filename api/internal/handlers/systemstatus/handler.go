@@ -18,6 +18,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tv"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tvcluster"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/hostload"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 )
 
@@ -58,6 +59,9 @@ type Handler struct {
 	TV        TVInfo
 	// Components reads component_status for the Components line (nil: no line).
 	Components ComponentStatuses
+	// HostLoad is the load of the machine this server runs on (false: not readable
+	// here); nil: no "This machine's load" item.
+	HostLoad func(ctx context.Context) (hostload.State, bool)
 	// PluginStages answers the stages set to run as plugins (tests); nil reads job_stages.
 	PluginStages func(ctx context.Context) ([]string, error)
 

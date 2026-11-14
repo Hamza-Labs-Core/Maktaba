@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 251,
+    "endpoint": 252,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -7006,6 +7006,27 @@
         "path": "/queues/resume-all",
         "tag": "Queue",
         "operationId": "resumeAllQueues"
+      }
+    },
+    {
+      "id": "ep-post-queues-workers-restart",
+      "type": "endpoint",
+      "title": "POST /queues/workers/restart",
+      "content": "Restart the pipeline workers",
+      "tags": [
+        "api",
+        "Queue",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/queues/workers/restart",
+        "tag": "Queue",
+        "operationId": "restartQueueWorkers"
       }
     },
     {

@@ -17,6 +17,7 @@ import {
   Row,
   Screen,
   VideoTile,
+  Ltr,
   cardTitle,
   clock,
   posterOf,
@@ -238,10 +239,10 @@ function Hero({ video, resuming }: { video: VideoCard; resuming: boolean }) {
         {resuming && frac !== null && (
           <p className="bs-hero__meta">
             <Progress fraction={frac} label={t("home.watched")} />
-            <span>
+            <Ltr>
               {clock(pos)}
               {video.duration_sec ? ` / ${clock(video.duration_sec)}` : ""}
-            </span>
+            </Ltr>
           </p>
         )}
         <div className="bs-hero__actions" data-bs-group="hero">

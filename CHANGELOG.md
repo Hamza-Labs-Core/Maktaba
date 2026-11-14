@@ -283,6 +283,37 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The Queues page says which workers are not running their jobs, and an admin can restart
+  them.** A worker can stay up and start nothing while the others work (after the database
+  restarts, for one). The page now names each such worker (main, transcription or search, with
+  its machine): one that has not reported in for two minutes, or one with a free slot that has
+  started nothing for ten minutes while a job it could take waited. It says since when and
+  how many jobs wait; they stay queued and nothing is lost. **Restart these workers** restarts
+  only the workers named, **Restart all workers** every worker of the computer that runs
+  Maktaba. Queues that are paused, or whose pool is full or set to 0, raise no notice. System
+  health says the same on its Queues line. Before, such a stall looked like a calm page, and
+  the only way out was to end a process by hand.
+
+- **A database restart no longer fails jobs for good.** A step that runs as one of Maktaba's
+  plugins (the second listen, among others) could meet a connection the database had closed
+  and fail with `plugin_database: driver: bad connection`, never to be tried again. The server
+  now runs such a statement once more on a new connection, and a job that still finds the
+  database away fails as retryable and is tried again by itself.
+
+- **Maktaba says when its machine is overloaded.** When the computer that runs Maktaba has had
+  more than twice as much work as processor cores for five minutes, the Queues page and System
+  health (**This machine's load**) say so: jobs and the database are slow until it eases, and
+  these programs use the most CPU. Maktaba stops no program by itself. On a Mac or Linux
+  server; Windows keeps no load figure.
+- **Processing goes on by itself after the database restarts.** When the home's database was
+  restarted (or stopped answering for a while) under a running worker, the worker could stay up
+  for hours doing nothing: no job started, nothing was logged, and its health check still said
+  "ok", so nothing restarted it and every queue waited for someone to restart it by hand. A
+  worker now picks its work up again as soon as the database answers, and hears about new jobs
+  at once again. Its health check says "ok" only while it can start jobs: it turns not-ok when
+  the worker has not looked at the queue, or the database has not answered it, for five minutes,
+  and a worker that cannot get back to work ends so that it is started again.
+
 - **Transcription gives its memory back when idle.** On a Mac, each transcription runner kept
   Whisper and the second listen's model loaded (5 to 10 GB each, with two runners on a large
   Mac) for as long as it ran. After ten minutes without transcription work it now lets both go,
@@ -832,6 +863,14 @@ build fails when the two differ.
   fails any response change an older app would get wrong until the level is raised
   (`docs/api/levels.md`). The `X-Maktaba-Client` header names the smart TV platforms (`tizen`,
   `webos`, `firetv`, `roku`, `vega`, `cast`) and the Samsung and LG launcher (`tv-web`).
+
+- **The apps say when they and the home need an update (story 58.01).** The Android phone
+  and TV apps and the iPhone, iPad, Mac and Apple TV apps read the home's API level before they
+  sign in. A home too old for the app shows **This home needs an update**, naming the home and
+  its version, with **Admin → Updates** for its admin and whom to ask for anyone else; an app
+  too old for the home, or below its floor (`426 client_too_old`), shows **Update this app**
+  with the store to open. Both pages have **Try again** and **Choose another home**, in English
+  and Arabic, and a home from before the contract lets every app carry on.
 
 - **Choose Maktaba's ports on a NAS (story 59.08).** Another app on the NAS, such as Plex or the
   NAS's own UI, may already use one of Maktaba's ports. Each one can now be set in the container's
@@ -2580,6 +2619,15 @@ build fails when the two differ.
   pass the API now also returns in the body to native apps, so the screen works while the API
   is down; a refusal says only admins can open it and never signs the app out.
 
+- **A pool of relays (story 50.16).** The cloud can run several relay machines in one pool:
+  each home keeps its tunnel on one relay and an idle standby tunnel on another, chosen by
+  weighted rendezvous hashing, so a relay lost costs a home seconds, and adding one moves only
+  the homes it wins. Any relay answers for any home. Apps get a `relay_hint` connection that
+  goes straight to the home's relay. The witness keeps `relay.maktaba.tv` round robin over the
+  healthy relays (`maktaba-cloud relay-dns`); staff take a relay out with `maktaba-cloud relay
+  drain|down|activate`. Off until `[relay.pool] enabled = true`; proven in the cloud rehearsal
+  (relay loss, relay added).
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -2921,6 +2969,17 @@ build fails when the two differ.
   twin, and the build fails on an Arabic page left mostly in English. The Synology guide now says
   to run setup in Container Manager's terminal, as the container expects, and a container waiting
   for setup says how in English and Arabic, in each NAS's own words.
+
+- **The big screen gets the TV apps' library (story 58.08).** A library on the big screen
+  (`/big`) now opens on the tabs of the Apple TV and Android TV apps: Recommended, Library (Show
+  videos or series, Sort, Filter and a letter rail, A to Z and the Arabic letters), Collections,
+  Playlists and Categories. Play and Shuffle play the Library tab's view in its order on the play
+  queue; collections and playlists have their own pages with Play and Shuffle; a series gains Mark
+  watched and a season's Mark season watched. On a focused card Play/Pause plays it, and a long OK
+  or the menu key offers Play next, Add to queue, Add to playlist, Go to series and Mark watched.
+  Back steps out to the tab's top, then its tabs, then out; each tab keeps its place. Up next shows
+  in a video's last 30 seconds, and a shuffled queue offers Shuffle again. A focused card grows by
+  1.08 inside the brass ring.
 
 ### Fixed
 

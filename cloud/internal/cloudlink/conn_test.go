@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -129,7 +130,7 @@ func TestHTTPEndpointFromWS(t *testing.T) {
 	}
 }
 
-// Story 50.03: the agent announces drain and ticket; with a ticket it sends
+// Story 50.03: the agent announces drain and ticket (and pool, 50.16); with a ticket it sends
 // no secret; a refused ticket is ErrTicketRefused (the dialer then retries
 // with the bearer); AUTH_OK's ticket comes back in the result.
 func TestAuthenticate_TicketAndFeatures(t *testing.T) {
@@ -138,7 +139,7 @@ func TestAuthenticate_TicketAndFeatures(t *testing.T) {
 		f, _ := cloudEnd.ReadFrame()
 		var ap authPayload
 		_ = json.Unmarshal(f.Payload, &ap)
-		if ap.Secret != "" || ap.Ticket != "tk" || len(ap.Features) != 2 {
+		if ap.Secret != "" || ap.Ticket != "tk" || !slices.Equal(ap.Features, []string{"drain", "ticket", "pool"}) || ap.Role != "" {
 			t.Errorf("AUTH with a ticket: %+v", ap)
 		}
 		_ = cloudEnd.WriteFrame(Frame{Kind: KindAuthFail, Payload: []byte(`{"error":"ticket_invalid"}`)})

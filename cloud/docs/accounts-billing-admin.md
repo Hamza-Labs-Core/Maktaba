@@ -176,6 +176,54 @@ mode (`billing.ModeFor`, `relay_usage_monthly`), and counts the request's bytes 
   `relay.stream_limit.enabled` (default true): the limit within them. Free is refused either
   way.
 
+## Broadcasting — Epic 50 story 50.20
+
+Two broadcasting tiers, per home (`billing.BroadcastFor`): **guest sharing**, in Pro (1
+invite-only on-demand channel, 5 viewers at once, 50 viewer-hours a month, 2 rungs), and the
+**Broadcaster** add-on to Pro (`servers.broadcast_plan = 'broadcaster'`: 3 channels, invite or
+open, 100 viewers at once, 5,000 viewer-hours a month, 3 rungs up to 1080p, pay-as-you-go, extra
+channels and extra 100-viewer packs). Prices are TBD in the catalog
+(`cloud/internal/billing/broadcast_catalog.go`); `broadcast.enabled` refuses to start while any
+is, naming the fields.
+
+The edge (story 50.21) counts **viewer-minutes** in 5-minute windows by mode and posts them;
+the cloud keeps the month's totals (`broadcast_usage_monthly`) and answers each publisher's
+mode for **new** sessions (`billing.BroadcastModeFor`). A playing viewer keeps their mode; only
+`off` stops them.
+
+| Mode | When |
+|---|---|
+| `full` | within the allowance, or past it while pay-as-you-go is on and under the cap; any plan while `broadcast.plans.enforce` is off (up to the viewer limit) |
+| `lowest` | past the allowance and the cap: new viewers get the lowest rung, up to twice the allowance (fair use, bought minutes not counted) |
+| `wait` | past twice the allowance, or at the viewers-at-once limit: new viewers wait |
+| `off` | no plan, the gate shut (`broadcast.enabled` off and not a test publisher), or the owner suspended |
+
+- **Edge API** (`cloud/internal/handlers/edge`): `POST /_edge/usage` takes up to 2,000 windows
+  `{"publisher","window","minutes_full","minutes_lowest"}` (key `<publisher>:<window>`, a repeat
+  counted once) and answers `taken`, `duplicates`, `rejected` and each publisher's state;
+  `GET /_edge/publishers/{id}` is one state. Each request is signed with the edge's Ed25519 key
+  (`X-Maktaba-Edge-Timestamp`, `X-Maktaba-Edge-Signature` over `<ts>\n<METHOD> <path>\n<body>`,
+  5 minutes of skew); the cloud holds the public half, `broadcast.edge_public_key`.
+- **Publishing** (`POST /v1/broadcast/channels`, the home's agent): `402 broadcast_needs_plan`,
+  `403 broadcast_not_enabled`, `402 broadcast_limit {limit}`, `409 broadcast_agreement_required
+  {version}`, then `201`. The owner accepts the agreement at `POST /v1/broadcast/agreement`.
+- **Billing** (`/v1/billing/broadcast`, owner only, `403 not_owner`): the view, the add-on
+  (`PUT`, the provider confirms by webhook), pay-as-you-go with a monthly cap (`PATCH …/payg`)
+  and extras (`PATCH …/extras`). The worker queues whole viewer-hours past the allowance every
+  hour in `broadcast_usage_outbox` (id `<server_id>:<month>:<hour>`), clamped to the cap,
+  emails at 80 % and 100 % of the allowance and the cap, and reconciles daily
+  (`broadcast_usage_mismatch` over 1 h).
+- **Staff**: `POST /v1/admin/servers/{id}/broadcast {plan, test_publisher, reason}` (service
+  admin, a fresh MFA, audited `admin.server.broadcast`). A test publisher broadcasts with the gate
+  shut.
+- **Licence**: the `broadcast` feature is in a home's licence when its plan includes
+  broadcasting and the gate is open (or it is a test publisher).
+- **Switches.** `broadcast.enabled` (default false), `broadcast.plans.enforce` (default true;
+  false is the rollback: full up to the viewer limit), `billing.broadcast_payg.enabled` (default
+  true: the hourly reports).
+- **Rehearsal**: `broadcast-plans` (`cloud/rehearsal/broadcast_test.go`) drives a publisher
+  through every mode, a 2-hour API outage and a repeated window.
+
 ## Licenses — Epic 16
 
 A paid plan becomes a **license** its homes verify: Ed25519-signed JSON

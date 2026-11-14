@@ -66,9 +66,20 @@ public struct ConnectStrings: Sendable {
         // story 50.13: the cloud down
         case cloudHomesSaved, cloudHomesSavedOld, cloudSignInCloudDown
         case homeRefusedCloud, homeLocked, homeMustChangePassword, homeNotInCloud, homeOther
+        // story 58.01: the app and the home too far apart
+        case compatUpdateHomeTitle, compatUpdateHomeAdmin, compatUpdateHomeViewer, compatHomeVersion
+        case compatUpdateAppTitle, compatUpdateAppWhy, compatUpdateAppApple, compatUpdateAppTV
     }
 
     static let en: [Key: String] = [
+        .compatUpdateHomeTitle: "This home needs an update",
+        .compatUpdateHomeAdmin: "Update Maktaba on %@ in Admin → Updates, then come back.",
+        .compatUpdateHomeViewer: "Ask the person who runs %@ to update Maktaba.",
+        .compatHomeVersion: "%@ runs Maktaba %@.",
+        .compatUpdateAppTitle: "Update this app",
+        .compatUpdateAppWhy: "%@ no longer works with this version of the app.",
+        .compatUpdateAppApple: "Open the App Store, find Maktaba and choose Update.",
+        .compatUpdateAppTV: "Open the App Store on this Apple TV, find Maktaba and choose Update.",
         .onThisNetwork: "On this network",
         .searching: "Looking for homes on this network…",
         .onThisNetworkHint: "A home on this Wi-Fi or Ethernet shows here. Not there? Type its address or scan its QR code.",
@@ -187,6 +198,14 @@ public struct ConnectStrings: Sendable {
     ]
 
     static let ar: [Key: String] = [
+        .compatUpdateHomeTitle: "يحتاج هذا الجهاز الرئيسي إلى تحديث",
+        .compatUpdateHomeAdmin: "حدِّث مكتبة على %@ من الإدارة ← التحديثات، ثم عُد.",
+        .compatUpdateHomeViewer: "اطلب من مسؤول %@ تحديث مكتبة.",
+        .compatHomeVersion: "يعمل %@ بإصدار مكتبة %@.",
+        .compatUpdateAppTitle: "حدِّث هذا التطبيق",
+        .compatUpdateAppWhy: "لم يعد %@ يعمل مع هذا الإصدار من التطبيق.",
+        .compatUpdateAppApple: "افتح App Store، وابحث عن مكتبة واختر «تحديث».",
+        .compatUpdateAppTV: "افتح App Store على جهاز Apple TV هذا، وابحث عن مكتبة واختر «تحديث».",
         .onThisNetwork: "على هذه الشبكة",
         .searching: "جارٍ البحث عن أجهزة رئيسية على هذه الشبكة…",
         .onThisNetworkHint: "يظهر هنا الجهاز الرئيسي الموجود على شبكة Wi-Fi أو Ethernet هذه. لا تجده؟ اكتب عنوانه أو امسح رمز QR الخاص به.",

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -29,6 +30,8 @@ import (
 	adminh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/admin"
 	authh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/auth"
 	billingh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/billing"
+	broadcasth "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/broadcast"
+	edgeh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/edge"
 	healthh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/health"
 	homesh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/homes"
 	metricsh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/metrics"
@@ -44,6 +47,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
 	pushpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/push"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/ratelimit"
+	relaypkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/reports"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/staffauth"
@@ -177,14 +181,30 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// the home embed its public half); without it, licensing is off.
 	var licenses *license.Issuer
 	if entSigner != nil {
-		licenses = &license.Issuer{DB: pool.DB, Priv: entSigner.Priv}
+		licenses = &license.Issuer{DB: pool.DB, Priv: entSigner.Priv, BroadcastEnabled: cfg.Broadcast.Enabled}
 	}
+	// Home broadcasting (story 50.20): the publishers' plan state and usage, the edge's signed
+	// usage posts (off without broadcast.edge_public_key), and the agreement and publish check.
+	broadcastStore := &billingpkg.BroadcastStore{DB: pool.DB, Enabled: cfg.Broadcast.Enabled, Enforce: cfg.Broadcast.PlansEnforce}
+	edgeDeps := &edgeh.Deps{Store: broadcastStore, Logger: logger}
+	if cfg.Broadcast.EdgePublicKey != "" {
+		if edgeDeps.Key, err = config.EdgeKey(cfg.Broadcast.EdgePublicKey); err != nil {
+			return apiRouters{}, nil, err
+		}
+	}
+	ipSalt := sha256.Sum256([]byte("maktaba-broadcast-agreement-ip\x00" + string(secret)))
+	broadcastDeps := &broadcasth.Deps{DB: pool.DB, Servers: servers, Store: broadcastStore, Logger: logger, IPSalt: ipSalt[:]}
 	serversDeps := serversh.Deps{Servers: servers, Assertions: assertions, Licenses: licenses,
 		ManageURL: strings.TrimRight(cfg.Server.WebURL, "/") + "/billing"}
 	homes := &homesh.Deps{Servers: servers, Users: users, Signer: assertions, RelayHost: cfg.Relay.PublicHost,
 		WebURL: cfg.Server.WebURL}
 	if cfg.Direct.Enabled {
 		homes.Direct = stores.NewDirect(pool.DB) // story 50.15: a direct entry once its check passed
+	}
+	if cfg.Relay.PoolEnabled {
+		// story 50.16: each home's relay hint, its primary relay in the pool (read-only view)
+		homes.Pool = relaypkg.NewPool(relaypkg.PGPoolStore{DB: pool.DB}, "")
+		homes.PoolHosts = cfg.Relay.PoolHostTemplate()
 	}
 
 	// Push dispatcher — both drivers may be nil in non-prod; the
@@ -302,6 +322,9 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// A home's agent: the claim code or the server's own secret is its
 		// credential, never a user token.
 		serversh.MountAgent(app, serversDeps)
+		broadcasth.MountAgent(app, broadcastDeps)
+		// the broadcast edge: each request signed with its key, no account
+		edgeh.Mount(app, edgeDeps)
 		reports.MountAgent(app, &reports.AgentDeps{Store: reportStore, Servers: servers, Logger: logger,
 			Refuse: strings.EqualFold(os.Getenv("MAKTABA_CLOUD_REPORTS"), "off")})
 		// a release's symbol tables: the symbols token, no account
@@ -316,7 +339,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 
 		billing := &billingh.Deps{
 			DB: pool.DB, Provider: payments, Users: users, Sessions: sess, Abuse: detector, Audit: auditLog,
-			Mailer: mailer, Logger: logger, Entitlements: entSigner,
+			Mailer: mailer, Logger: logger, Entitlements: entSigner, Broadcast: broadcastStore,
 			WebURL: cfg.Server.WebURL,
 		}
 		// Public billing routes: the catalog, the entitlement key, and the
@@ -331,6 +354,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			homesh.MountUser(g, homes)
 			(&healthh.Deps{DB: pool.DB}).Mount(g)
 			billingh.Mount(g, billing)
+			broadcasth.MountUser(g, broadcastDeps)
 			pushh.Mount(g, pushh.Deps{DB: pool.DB, Dispatcher: dispatcher})
 		})
 	})

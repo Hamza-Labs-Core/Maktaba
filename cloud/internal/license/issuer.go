@@ -26,6 +26,10 @@ type Issuer struct {
 	DB   *sql.DB
 	Priv ed25519.PrivateKey
 	Now  func() time.Time
+	// BroadcastEnabled is broadcast.enabled (story 50.20): on, a home whose plan includes
+	// broadcasting gets the broadcast feature; off, only a test publisher a service admin
+	// granted does.
+	BroadcastEnabled bool
 }
 
 func (is *Issuer) now() time.Time {
@@ -40,10 +44,12 @@ func (is *Issuer) now() time.Time {
 func (is *Issuer) ForServer(ctx context.Context, serverID string) (License, error) {
 	var plan, status, email string
 	var userID string
+	var broadcastPlan sql.NullString
+	var testPublisher bool
 	err := is.DB.QueryRowContext(ctx, `
-        SELECT u.id::text, u.plan, u.status, u.email
+        SELECT u.id::text, u.plan, u.status, u.email, s.broadcast_plan, s.broadcast_test_publisher
           FROM servers s JOIN users u ON u.id = s.owner_user_id
-         WHERE s.id::text = $1`, serverID).Scan(&userID, &plan, &status, &email)
+         WHERE s.id::text = $1`, serverID).Scan(&userID, &plan, &status, &email, &broadcastPlan, &testPublisher)
 	if errors.Is(err, sql.ErrNoRows) {
 		return License{}, ErrUnknownServer
 	}
@@ -63,7 +69,11 @@ func (is *Issuer) ForServer(ctx context.Context, serverID string) (License, erro
 	if tier == "" {
 		return License{}, ErrNoLicense
 	}
-	lic, err := ForPlan(is.Priv, serverID, tier, email, is.now())
+	var features []string
+	if BroadcastIncluded(plan, broadcastPlan.String) && (is.BroadcastEnabled || testPublisher) {
+		features = append(features, FeatureBroadcast)
+	}
+	lic, err := ForPlan(is.Priv, serverID, tier, email, is.now(), features...)
 	if err != nil {
 		return License{}, err
 	}

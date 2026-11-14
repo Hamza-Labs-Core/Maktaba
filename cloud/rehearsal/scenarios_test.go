@@ -84,7 +84,7 @@ func repoRoot(t *testing.T) string {
 }
 
 // TestScenario runs every scenario (C01–C10, 50.11's status-feed, 53.16's report-symbolicated,
-// 50.17's api-pool, 50.18's db-nodes-failover and db-nodes-migrate);
+// 50.16's relay pool, 50.17's api-pool, 50.18's db-nodes-failover and db-nodes-migrate);
 // one with -run 'TestScenario/<name>'.
 func TestScenario(t *testing.T) {
 	skip := notBuilt(t)
@@ -113,6 +113,9 @@ func TestScenario(t *testing.T) {
 		{"origin-aop", originAOP},
 		{"report-symbolicated", reportSymbolicated},
 		{"api-pool", apiPool},
+		{"relay-pool-kill-one", relayPoolKillOne},
+		{"rebalance-add-relay", rebalanceAddRelay},
+		{"broadcast-plans", broadcastPlans},
 		{"db-nodes-failover", dbNodesFailover},
 		{"db-nodes-migrate", dbNodesMigrate},
 	} {
@@ -129,6 +132,10 @@ func TestScenario(t *testing.T) {
 				c = upDirect(t, s.name)
 			case "api-pool":
 				c = upPool(t, s.name)
+			case "relay-pool-kill-one":
+				c = upRelayPool(t, s.name, "postgres", "r1", "r2", "r3", "edge")
+			case "rebalance-add-relay":
+				c = upRelayPool(t, s.name, "postgres", "r1", "r2", "edge")
 			case "failover-kill-leader", "failover-network-partition", "switchover", "restore-pitr",
 				"runbook-switchover", "runbook-forced-failover", "runbook-dns-swap",
 				"origin-only-via-edge", "origin-aop", "db-nodes-failover", "db-nodes-migrate":
@@ -171,7 +178,7 @@ type cluster struct {
 	project string
 	dir     string   // tools/rehearsal-cloud
 	base    string   // the compose file ("": compose.yml; direct-remote: compose-direct.yml)
-	over    []string // compose files over it (relay-plans: compose-plans.yml)
+	over    []string // compose files over it (relay-plans: compose-plans.yml; broadcast-plans: compose-broadcast.yml)
 	extra   []string // more environment for compose (a scenario's own ports and ids)
 	edge    string   // http://127.0.0.1:<port>
 	db      *sql.DB
@@ -238,8 +245,11 @@ func (c *cluster) must(args ...string) string {
 func up(t *testing.T, scenario string) *cluster {
 	t.Helper()
 	c := &cluster{t: t, project: "mr-" + scenario, dir: filepath.Join(repoRoot(t), "tools/rehearsal-cloud")}
-	if scenario == "relay-plans" {
+	switch scenario {
+	case "relay-plans":
 		c.over = []string{"compose-plans.yml"}
+	case "broadcast-plans":
+		c.over = []string{"compose-broadcast.yml"}
 	}
 	ports := portsFor(c.project)
 	c.edge = fmt.Sprintf("http://127.0.0.1:%d", ports[1])

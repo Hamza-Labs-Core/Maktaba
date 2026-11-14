@@ -18,6 +18,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	relayh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/relay"
+	metricspkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/metrics"
 	relaypkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
 )
@@ -219,5 +220,50 @@ func TestTheWorkerSweepsStreams(t *testing.T) {
 	<-done
 	if s.n.Load() < 2 {
 		t.Fatalf("swept %d times", s.n.Load())
+	}
+}
+
+// The relay's /metrics ends with the Go live heap, which load-small reads for the relay's memory
+// per tunnel (story 50.14), after the extra series it is given.
+func TestRelayMetricsServeTheLiveHeap(t *testing.T) {
+	h := relayMetrics(metricspkg.NewCollector(), func(w io.Writer) error {
+		_, err := io.WriteString(w, "maktaba_relay_tunnel_drain_forced_total 0\n")
+		return err
+	})
+	rec := httptest.NewRecorder()
+	h(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := rec.Body.String()
+	extra := strings.Index(body, "maktaba_relay_tunnel_drain_forced_total 0\n")
+	heap := strings.Index(body, "\n"+metricspkg.LiveHeapSeries+" ")
+	if extra < 0 || heap < extra {
+		t.Errorf("body:\n%s", body)
+	}
+}
+
+// Story 50.16: with relay.pool.enabled the relay writes its member row before it takes tunnels
+// and hands the tunnel server a rebalancer for its member; off, there is none.
+func TestRelayPoolWiring(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	store := relaypkg.NewMemPoolStore()
+	var cfg config.Config
+	cfg.Relay.PublicHost = "relay.test"
+	if rb, err := relayPool(ctx, slog.New(slog.DiscardHandler), cfg, store, relaypkg.NewRegistry(), nil); rb != nil || err != nil {
+		t.Fatalf("pool off: %v %v", rb, err)
+	}
+	cfg.Relay.PoolEnabled, cfg.Relay.ID, cfg.Relay.PoolMember = true, "r2-blue", "r2"
+	cfg.Relay.PoolPublicIP, cfg.Relay.PeerAddr, cfg.Relay.PoolCapacityMbps = "203.0.113.12", "10.0.1.12:8444", 1500
+	cfg.Relay.RebalanceEvery, cfg.Relay.RebalanceRate = time.Minute, 20
+	rb, err := relayPool(ctx, slog.New(slog.DiscardHandler), cfg, store, relaypkg.NewRegistry(), nil)
+	if err != nil || rb == nil {
+		t.Fatalf("pool on: %v", err)
+	}
+	rows, _ := store.Relays(ctx)
+	if len(rows) != 1 || rows[0].ID != "r2" || rows[0].PublicIP != "203.0.113.12" || rows[0].PrivateIP != "10.0.1.12" ||
+		rows[0].CapacityMbps != 1500 || !rows[0].Healthy() {
+		t.Fatalf("member row: %+v", rows)
+	}
+	if rb.Pool.Self != "r2" || rb.Hosts != "{id}.relay.test" || rb.Payload(relaypkg.Assignment{Primary: "r2"}).Primary.Host != "r2.relay.test" {
+		t.Fatalf("rebalancer: %+v", rb)
 	}
 }
