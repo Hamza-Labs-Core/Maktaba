@@ -151,7 +151,7 @@ describe("T01 the events a viewer's requests write", () => {
     expect(kinds).toEqual(["play", "beat", "switch", "error"]);
     const play = named(points[0]!);
     expect(play).toMatchObject({
-      publisher: "pub-1",
+      publisher: "home-1",
       channel: ch,
       country: "EG",
       device: "tvos",
@@ -209,7 +209,7 @@ describe("T01 the events a viewer's requests write", () => {
     await runInDurableObject(stub, (instance) => {
       const env = (instance as unknown as { env: Env }).env;
       env.AE = AE;
-      env.CANARY_PUBLISHER = "pub-1";
+      env.CANARY_PUBLISHER = "home-1";
     });
     expect((await putSegment(ch, "src", 1)).status).toBe(201);
     // seq 3 waits for 2: visible only when 2 arrives, then both are written
@@ -219,7 +219,7 @@ describe("T01 the events a viewer's requests write", () => {
     expect(points.map((p) => named(p).event)).toEqual(["ingest", "ingest", "ingest"]);
     const first = named(points[0]!);
     expect(first).toMatchObject({
-      publisher: "pub-1",
+      publisher: "home-1",
       channel: ch,
       rung: "src",
       segment_bytes: 2048,
