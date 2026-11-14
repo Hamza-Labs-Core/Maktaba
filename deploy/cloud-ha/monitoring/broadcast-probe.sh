@@ -50,7 +50,7 @@ get "${BROADCAST_PASS_URL:?}" "${work}/pass.json" || fail "pass"
 master="$(jq -r '.master // empty' "${work}/pass.json" 2>/dev/null)"
 [ -n "${master}" ] || fail "pass"
 get "${master}" "${work}/master.m3u8" || fail "master"
-rung="$(grep -v '^#' "${work}/master.m3u8" | grep -m1 . || true)"
+rung="$(awk '!/^#/ && NF && !n { print; n = 1 }' "${work}/master.m3u8")"
 [ -n "${rung}" ] || fail "master"
 media="$(resolve "${master}" "${rung}")"
 get "${media}" "${work}/index.m3u8" || fail "playlist"
@@ -68,7 +68,7 @@ done
 startup=$(( $(nowms) - t0 ))
 
 # has the playlist moved since the last play? (the edge's own sequence: no clock involved)
-seq="$(sed -n 's/^#EXT-X-MEDIA-SEQUENCE:\([0-9]*\).*/\1/p' "${work}/index.m3u8" | head -n1)"
+seq="$(awk -F: '/^#EXT-X-MEDIA-SEQUENCE:/ && !n { sub(/[^0-9].*/, "", $2); print $2; n = 1 }' "${work}/index.m3u8")"
 last="${segs[${#segs[@]}-1]}"
 if [ -n "${STATE_FILE:-}" ]; then
     prev="$(cat "${STATE_FILE}" 2>/dev/null || true)"
@@ -80,7 +80,7 @@ fi
 now_s="$(jq -n "$(nowms) / 1000")"
 shown=""
 if [ -n "${BROADCAST_OCR_CMD:-}" ]; then
-    shown="$(bash -c "${BROADCAST_OCR_CMD} \"\$1\"" _ "${work}/seg${i}.ts" 2>/dev/null | grep -Eo '^[0-9]+(\.[0-9]+)?$' | head -n1 || true)"
+    shown="$(bash -c "${BROADCAST_OCR_CMD} \"\$1\"" _ "${work}/seg${i}.ts" 2>/dev/null | awk '/^[0-9]+(\.[0-9]+)?$/ && !n { print; n = 1 }' || true)"
 fi
 pdt="$(grep '^#EXT-X-PROGRAM-DATE-TIME:' "${work}/index.m3u8" | tail -n1 | cut -d: -f2-)"
 dur="$(grep '^#EXTINF:' "${work}/index.m3u8" | tail -n1 | sed 's/^#EXTINF:\([0-9.]*\).*/\1/')"
