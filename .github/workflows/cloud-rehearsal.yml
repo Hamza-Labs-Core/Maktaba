@@ -24,6 +24,8 @@ on:
       - 'deploy/cloud-relay/**'
       - 'deploy/caddy/**'
       - 'tools/rehearsal-cloud/**'
+      # the broadcast rehearsal's stack has its own workflow (broadcast-rehearsal.yml)
+      - '!tools/rehearsal-cloud/broadcast/**'
       - 'tools/release/cloud-guard*.sh'
       # the direct-remote scenario's home (Dockerfile.home)
       - 'api/cmd/rehearsal-direct-home/**'

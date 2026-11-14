@@ -1,0 +1,21 @@
+# The broadcast rehearsal's stack (Epic 50 story 50.29, docs/cloud-rehearsal.md): this commit's
+# edge in Miniflare (Dockerfile.edge) and a home running the streaming service's broadcaster on a
+# test pattern (Dockerfile.home). The simulated viewers (tools/broadcast-viewers) and the cloud's
+# part (the signed ingest tokens and revocation list, with the cloud's TEST key) run in the test.
+# Each scenario is its own compose project; nothing is reachable from outside the runner.
+services:
+  edge:
+    image: ${EDGE_IMAGE:-maktaba-broadcast-edge:rehearsal}
+    environment:
+      REHEARSAL_PLANT: ${REHEARSAL_PLANT:-}
+      REHEARSAL_LOCATIONS: ${REHEARSAL_LOCATIONS:-5}
+    ports:
+      - "127.0.0.1:${EDGE_PORT:-18787}:8787"
+      - "127.0.0.1:${EDGE_CONTROL_PORT:-18788}:8788"
+  home:
+    image: ${HOME_IMAGE:-maktaba-broadcast-home:rehearsal}
+    depends_on:
+      edge:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${HOME_PORT:-18090}:8090"

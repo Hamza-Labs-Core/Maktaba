@@ -1,0 +1,25 @@
+# syntax=docker/dockerfile:1.7
+# The broadcast rehearsal's edge (Epic 50 story 50.29): this commit's web/packages/broadcast-edge
+# Worker in Miniflare (workerd, local R2 and Durable Objects, a fake Analytics Engine), as several
+# simulated locations, with the rehearsal's counters around its bindings (edge/entry.ts). No
+# Cloudflare account, no call out. Never published.
+#
+#   docker build -f tools/rehearsal-cloud/broadcast/Dockerfile.edge -t maktaba-broadcast-edge:rehearsal .
+FROM node:22-bookworm-slim
+WORKDIR /app
+COPY web/packages/broadcast-edge/package.json web/packages/broadcast-edge/package-lock.json web/packages/broadcast-edge/
+RUN --mount=type=cache,target=/root/.npm \
+    cd web/packages/broadcast-edge && npm ci --no-audit --no-fund
+COPY web/packages/broadcast-edge/src web/packages/broadcast-edge/src
+# the Stream fallback signs with tvsite's signer (src/stream_fallback.ts)
+COPY web/packages/tvsite/src/sign.ts web/packages/tvsite/src/sign.ts
+COPY web/packages/broadcast-edge/tsconfig.json web/packages/broadcast-edge/wrangler.toml web/packages/broadcast-edge/
+# the cloud's TEST public keys (CLOUD_PUBKEYS): the rehearsal signs as the cloud with their halves
+COPY cloud/internal/broadcast/testdata/vectors.json cloud/internal/broadcast/testdata/vectors.json
+COPY tools/rehearsal-cloud/broadcast/edge tools/rehearsal-cloud/broadcast/edge
+RUN ln -s /app/web/packages/broadcast-edge/node_modules tools/rehearsal-cloud/broadcast/edge/node_modules
+ENV REHEARSAL_DATA=/data
+EXPOSE 8787 8788
+HEALTHCHECK --interval=2s --timeout=3s --retries=60 \
+  CMD node -e "fetch('http://127.0.0.1:8788/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+CMD ["node", "tools/rehearsal-cloud/broadcast/edge/server.mjs"]

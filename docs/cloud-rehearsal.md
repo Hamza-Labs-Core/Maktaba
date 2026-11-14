@@ -90,3 +90,72 @@ tests had passed: tunnel seqs that ordered tunnels wrongly across processes, a r
 when a drained tunnel closed, a 15 s budget that a fixed reconnect window could not meet, and
 two ways a request or the readiness probe waited on a database that had vanished. Each is
 fixed in its story's pull request (#705, #714).
+
+## The broadcast rehearsal
+
+Story 50.29 adds broadcasting's failure paths, and the one number that must hold: **one upload
+from the home per segment per rung, whatever the number of viewers**. It has its own workflow,
+`.github/workflows/broadcast-rehearsal.yml`, and its own stack, `tools/rehearsal-cloud/broadcast/`.
+
+- **The edge:** this commit's `web/packages/broadcast-edge` in Miniflare (`Dockerfile.edge`,
+  `edge/server.mjs`): five simulated locations, each a copy of the Worker with its own cache,
+  sharing the Durable Objects and R2. A router picks the location from `X-Rehearsal-Location`.
+  `edge/entry.ts` wraps the real Worker with counters (R2 gets by key, ingest PUTs by rung,
+  Durable Object stubs, Analytics Engine points) at `/__rehearsal/counters`, and a fast clock at
+  `/__rehearsal/clock`. A control port (`:8788`) redeploys every location with new variables
+  (break-glass), and a second version of the Workers serves a gradual rollout.
+- **The home:** the streaming service's broadcaster (`streaming/internal/broadcast`) on a test
+  pattern with a burned clock and frame counter, encoded in software
+  (`streaming/cmd/rehearsal-broadcast-home`, `Dockerfile.home`). It counts every PUT at its HTTP
+  transport (the proxy counter), beside the uploader's own report.
+- **The cloud's part:** the ingest tokens and the revocation list are signed in the test with the
+  cloud's TEST key (`cloud/internal/broadcast/testdata/vectors.json`), and viewer tokens with the
+  rehearsal's viewer key. None of these keys is used in production.
+- **Viewers:** `tools/broadcast-viewers`, a Go load generator. Each player fetches the master
+  and its rung's playlist every target duration, fetches each new segment, sends heartbeats, and
+  records the slate and `off_air`.
+
+| Scenario | Story | Pass when |
+|---|---|---|
+| `broadcast-fanout` | 50.21 | 1 → 10 → 100 viewers (1,000 nightly) across 5 locations: home PUTs = segments × rungs at every step, exactly; R2 reads ≤ 2 per object per location; 0 viewer errors; copy-rung fetch p95 ≤ 1.5 s and ≤ 6.5 s after the home's PUT; at the end, the uploader's count, the proxy's and the edge's agree on every rung |
+| `broadcast-fanout-planted` | 50.29 T03 | the fan-out with every location's cache planted off (`REHEARSAL_PLANT=per-viewer-fetch`) **fails**, naming `r2_reads`, while the home's upload still holds |
+| `broadcast-home` | 50.22 | the encoder killed for 30 s: the slate ≤ 15 s; live again after the restart; every player saw both; no player error |
+| `broadcast-home-offline-24h` | 50.21 | the home stopped: the slate, still the slate at 23 h 50 on the fast clock, `off_air` after 24 h |
+| `broadcast-kill` | 50.25 | 200 viewers: a revocation list stops every one ≤ 60 s and the home stops uploading; a new list lifts it; break-glass (`BROADCAST_OFF_CHANNELS`) does the same with the cloud out of the loop |
+| `broadcast-edge-deploy` | 50.21 | a new edge version rolled out 10 → 50 → 100 % mid-stream, then a redeploy: no viewer error, every viewer live, the channel's Durable Object kept its playlist |
+
+`broadcast-plans`, `broadcast-publishable`, `broadcast-access`, `broadcast-takedown`,
+`broadcast-hetzner-down` and `broadcast-observe` have no body yet. They are listed in
+`tools/rehearsal-cloud/broadcast/expected-failures.txt` and reported XFAIL. A listed scenario that
+passes fails the run (XPASS) until its line goes, and an unlisted scenario without a body fails.
+`tools/broadcast-viewers/rehearsal/catalog.go` is the list of scenarios; the CI matrix is built
+from it.
+
+A pull request runs the short set when it touches the edge, the broadcast packages of the
+cloud, the streaming service or the API, or the rehearsal itself. The nightly run (and a manual
+run with `set: nightly`) runs the full set. The verdict job writes one report (each scenario's
+verdict and timings, the fan-out table, the latency percentiles) to the run's summary and to the
+`broadcast-report` artifact. Every scenario's stack log is kept in its own artifact.
+
+### Run one broadcast scenario locally
+
+```bash
+docker build -f tools/rehearsal-cloud/broadcast/Dockerfile.edge -t maktaba-broadcast-edge:rehearsal .
+docker build -f tools/rehearsal-cloud/broadcast/Dockerfile.home -t maktaba-broadcast-home:rehearsal .
+cd tools/broadcast-viewers
+REHEARSAL_OUT=/tmp/broadcast go test -tags broadcastrehearsal -run 'TestBroadcast/broadcast-fanout$' -timeout 40m -v ./rehearsal/
+```
+
+`BROADCAST_VIEWERS` and `BROADCAST_STEP_SECONDS` scale the fan-out (`BROADCAST_KILL_VIEWERS`,
+`BROADCAST_DEPLOY_VIEWERS` the others). `REHEARSAL_KEEP=1` leaves the stack up
+(`docker compose -p bc-fanout down -v`). Rebuild the images after changing the edge or the home:
+the compose file runs the tagged images and never builds them.
+
+### What it found while it was being built
+
+- Miniflare 5 ignores the per-Worker `cache: false` option, so the first planted run passed. The
+  plant now lives in `edge/entry.ts`, where the rehearsal controls it.
+- The broadcaster's own report comes every 10 s, so it lags the proxy's count while the home
+  uploads. The three counts are compared after the test pattern stops.
+- A day on the fast clock expires a viewer token minted on real time. The scenarios mint tokens
+  on the edge's clock.

@@ -14,6 +14,17 @@ build fails when the two differ.
 
 ### Changed
 
+- **Broadcasting is rehearsed in CI (Epic 50, story 50.29).** Every pull request that touches
+  the broadcast edge or the broadcast code of the cloud, the streaming service or the API now runs
+  the broadcast rehearsal. The edge runs in Miniflare as five simulated locations, a home runs
+  the real broadcaster on a test pattern, and up to 100 simulated viewers watch (1,000 nightly).
+  The run checks that the home uploads each segment once per rung however many people watch,
+  that the edge reads R2 at most twice per object per location, and that viewers see no error.
+  It also covers the slate when the home's encoder dies, `off_air` after a day offline, the kill
+  switch and break-glass stopping every viewer within a minute, and an edge rollout mid-stream.
+  A self-test with the edge cache planted off must fail on the R2 counter. Scenarios not built
+  yet are reported as expected failures.
+
 - **The cloud's database can run on machines of its own (Epic 50, story 50.18).** Three
   database nodes (a primary, a replica that confirms every commit, and a second replica) sit
   behind PgBouncer and a Floating IP of their own; losing the primary promotes the replica that

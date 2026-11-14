@@ -1,0 +1,10 @@
+# The broadcast rehearsal's scenarios not turned on yet (Epic 50 story 50.29 §2): one per line,
+# "<scenario> <the story that turns it on> <why>". A listed scenario is run when it has a body and
+# reported as an expected failure (XFAIL), never as a pass; if it passes, the run fails until the
+# line goes (XPASS). The story that turns a scenario on removes its line in the same pull request.
+broadcast-plans            50.20  run by the cloud rehearsal as broadcast-plans (C20) against the cloud's own fake edge; the Miniflare edge joins it with the cloud stack here
+broadcast-publishable      50.23  needs the home's API and its catalog (the publishable guide) in the stack
+broadcast-access           50.26  needs watch.maktaba.tv's invite and open flows with the cloud's access push in the stack
+broadcast-takedown         50.24  needs the cloud's moderation queue and a staff session in the stack
+broadcast-hetzner-down     14.8   needs the cloud stack and its metering in the stack
+broadcast-observe          50.28  needs the canary, the alerts and the status component in the stack
