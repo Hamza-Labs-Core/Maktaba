@@ -16,7 +16,7 @@ import (
 type Profile struct {
 	Name             string
 	Containers       []string // e.g. "mp4", "mkv", "webm", "mov", "ts"
-	VideoCodecs      []string // e.g. "h264", "h265", "vp9", "av1"
+	VideoCodecs      []string // e.g. "h264", "hevc", "vp9", "av1" (read through canonVideo)
 	AudioCodecs      []string // e.g. "aac", "ac3", "eac3", "mp3", "opus", "flac"
 	HDR              []string // e.g. "sdr", "hdr10", "dolby-vision", "hlg"
 	MaxHeight        int      // 1080, 720, 2160…
@@ -162,9 +162,9 @@ func (r *Registry) Get(name string) (*Profile, bool) {
 //
 //  1. force_transcode → always transcode
 //  2. exceeds matrix bitrate/height → transcode (with cap)
-//  3. container-only mismatch → remux
-//  4. all containers/codecs in profile allow-list → direct
-//  5. otherwise → transcode
+//  3. a codec not in the profile, or HDR it does not show → transcode
+//  4. container-only mismatch → remux
+//  5. all containers/codecs/HDR in profile allow-list → direct
 func (r *Registry) Decide(profile *Profile, src Source, ov Override) Verdict {
 	if profile.Detailed {
 		return decideDetailed(profile, src, ov)
@@ -201,9 +201,17 @@ func (r *Registry) Decide(profile *Profile, src Source, ov Override) Verdict {
 		}
 	}
 
-	codecsOK := contains(profile.VideoCodecs, src.VideoCodec) && contains(profile.AudioCodecs, src.AudioCodec)
+	// a profile's codec names and the probe's (ffprobe's "hevc", "eac3") are
+	// read as one name each: "h265" in a profile is the probe's "hevc"
+	codecsOK := has(profile.VideoCodecs, src.VideoCodec, canonVideo) && has(profile.AudioCodecs, src.AudioCodec, canonAudio)
 	if !codecsOK {
 		return Verdict{Mode: ModeTranscode, Reason: "codec not in profile",
+			BitrateCapKbps: effectiveBitrate(profile, ov),
+			HeightCap:      effectiveHeight(profile, ov)}
+	}
+	if !showsPicture(profile, src) {
+		// the transcode tone-maps it to SDR
+		return Verdict{Mode: ModeTranscode, Reason: "HDR not in profile",
 			BitrateCapKbps: effectiveBitrate(profile, ov),
 			HeightCap:      effectiveHeight(profile, ov)}
 	}
@@ -290,9 +298,11 @@ func defaultProfiles() []*Profile {
 			SupportsHLS:      true,
 		},
 		{
-			Name:             "browser-chrome",
-			Containers:       []string{"mp4", "webm", "mkv"},
-			VideoCodecs:      []string{"h264", "h265", "vp9", "av1"},
+			Name:       "browser-chrome",
+			Containers: []string{"mp4", "webm", "mkv"},
+			// no HEVC: Chrome decodes it only where the hardware does, and
+			// Firefox and Edge on Linux not at all
+			VideoCodecs:      []string{"h264", "vp9", "av1"},
 			AudioCodecs:      []string{"aac", "opus", "mp3", "flac"},
 			HDR:              []string{"sdr", "hlg"},
 			MaxHeight:        2160,
@@ -302,9 +312,12 @@ func defaultProfiles() []*Profile {
 			SupportsDASH:     true,
 		},
 		{
-			Name:             "browser-safari",
-			Containers:       []string{"mp4", "mov"},
-			VideoCodecs:      []string{"h264", "h265"},
+			Name:       "browser-safari",
+			Containers: []string{"mp4", "mov"},
+			// no HEVC: Safari and AVPlayer refuse an MP4 whose HEVC is
+			// tagged hev1 (ffmpeg's default), and the probe does not record
+			// the tag; these profiles' remux is a transcode
+			VideoCodecs:      []string{"h264"},
 			AudioCodecs:      []string{"aac", "ac3"},
 			HDR:              []string{"sdr", "hdr10", "dolby-vision"},
 			MaxHeight:        2160,
@@ -313,9 +326,12 @@ func defaultProfiles() []*Profile {
 			SupportsHLS:      true,
 		},
 		{
-			Name:             "ios-native",
-			Containers:       []string{"mp4", "mov"},
-			VideoCodecs:      []string{"h264", "h265"},
+			Name:       "ios-native",
+			Containers: []string{"mp4", "mov"},
+			// no HEVC: Safari and AVPlayer refuse an MP4 whose HEVC is
+			// tagged hev1 (ffmpeg's default), and the probe does not record
+			// the tag; these profiles' remux is a transcode
+			VideoCodecs:      []string{"h264"},
 			AudioCodecs:      []string{"aac", "ac3", "eac3"},
 			HDR:              []string{"sdr", "hdr10", "dolby-vision"},
 			MaxHeight:        2160,
@@ -324,9 +340,12 @@ func defaultProfiles() []*Profile {
 			SupportsHLS:      true,
 		},
 		{
-			Name:             "tvos",
-			Containers:       []string{"mp4", "mov", "mkv"},
-			VideoCodecs:      []string{"h264", "h265"},
+			Name:       "tvos",
+			Containers: []string{"mp4", "mov", "mkv"},
+			// no HEVC: Safari and AVPlayer refuse an MP4 whose HEVC is
+			// tagged hev1 (ffmpeg's default), and the probe does not record
+			// the tag; these profiles' remux is a transcode
+			VideoCodecs:      []string{"h264"},
 			AudioCodecs:      []string{"aac", "ac3", "eac3"},
 			HDR:              []string{"sdr", "hdr10", "dolby-vision"},
 			MaxHeight:        2160,
@@ -337,7 +356,7 @@ func defaultProfiles() []*Profile {
 		{
 			Name:             "android-native",
 			Containers:       []string{"mp4", "mkv", "webm"},
-			VideoCodecs:      []string{"h264", "h265", "vp9", "av1"},
+			VideoCodecs:      []string{"h264", "hevc", "vp9", "av1"},
 			AudioCodecs:      []string{"aac", "opus", "mp3"},
 			HDR:              []string{"sdr", "hdr10"},
 			MaxHeight:        2160,
@@ -349,7 +368,7 @@ func defaultProfiles() []*Profile {
 		{
 			Name:             "androidtv",
 			Containers:       []string{"mp4", "mkv"},
-			VideoCodecs:      []string{"h264", "h265", "vp9", "av1"},
+			VideoCodecs:      []string{"h264", "hevc", "vp9", "av1"},
 			AudioCodecs:      []string{"aac", "ac3", "eac3", "opus"},
 			HDR:              []string{"sdr", "hdr10", "dolby-vision"},
 			MaxHeight:        2160,

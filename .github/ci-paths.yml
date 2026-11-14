@@ -819,6 +819,13 @@ tv_web:
   - 'web/e2e/tv/**'
   - 'web/tv-build/**'
   - '.github/workflows/_tv-web.yml'
+  # the Samsung and LG launcher (story 58.09): its build, its Playwright, its Vitest (the
+  # vitest config names its tests) and the compatibility vectors its tests run (58.01)
+  - 'web/vite.launcher.config.ts'
+  - 'web/playwright.launcher.config.ts'
+  - 'web/e2e/launcher/**'
+  - 'web/vitest.config.ts'
+  - 'shared/compat/**'
 
 # Maktaba's Cast receiver at cast.maktaba.tv (Epic 58 story 58.07): its package (the receiver,
 # the loader, the Worker, the tests) and its checks (_cast-receiver.yml); the release workflow

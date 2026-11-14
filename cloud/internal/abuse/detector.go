@@ -37,7 +37,7 @@ func (d *Detector) Record(ctx context.Context, s Subject, kind string, severity 
 	_, err := d.DB.ExecContext(ctx, `
         INSERT INTO abuse_signals (subject, subject_kind, kind, severity, detail)
         VALUES ($1,$2,$3,$4,$5)
-    `, s.ID, s.Kind, kind, severity, dj)
+    `, s.ID, s.Kind, kind, severity, string(dj)) // a json column takes a string (db.WithBinaryParameters)
 	return err
 }
 
