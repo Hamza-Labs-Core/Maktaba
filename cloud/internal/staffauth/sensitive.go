@@ -3,16 +3,17 @@ package staffauth
 // Sensitive are the admin routes that need an MFA check within the last five minutes (story
 // 50.33 §5), as "METHOD /route/pattern" exactly as chi registers them.
 var Sensitive = map[string]bool{
-	"POST /v1/admin/accounts/{id}/suspend":   true,
-	"POST /v1/admin/accounts/{id}/unsuspend": true,
-	"POST /v1/admin/accounts/{id}/plan":      true,
-	"POST /v1/admin/servers/{id}/broadcast":  true,
-	"PUT /v1/admin/broadcast/geo-deny":       true,
-	"POST /v1/admin/abuse/block":             true,
-	"POST /v1/admin/abuse/unblock":           true,
-	"POST /v1/admin/licenses/{id}/revoke":    true,
-	"POST /v1/admin/licenses/{id}/unrevoke":  true,
-	"DELETE /v1/admin/privacy/users/{id}":    true,
+	"POST /v1/admin/accounts/{id}/suspend":         true,
+	"POST /v1/admin/accounts/{id}/unsuspend":       true,
+	"POST /v1/admin/accounts/{id}/plan":            true,
+	"POST /v1/admin/servers/{id}/broadcast":        true,
+	"PUT /v1/admin/broadcast/geo-deny":             true,
+	"POST /v1/admin/broadcast/invites/{id}/revoke": true,
+	"POST /v1/admin/abuse/block":                   true,
+	"POST /v1/admin/abuse/unblock":                 true,
+	"POST /v1/admin/licenses/{id}/revoke":          true,
+	"POST /v1/admin/licenses/{id}/unrevoke":        true,
+	"DELETE /v1/admin/privacy/users/{id}":          true,
 	// the broadcast kill switch (50.25): taking channels off air, and lifting it
 	"POST /v1/admin/broadcast/revocations":           true,
 	"POST /v1/admin/broadcast/revocations/{id}/lift": true,

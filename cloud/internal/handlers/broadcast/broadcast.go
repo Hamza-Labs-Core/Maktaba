@@ -9,7 +9,7 @@
 //	DELETE /v1/broadcast/channels/{id}   a home: unpublish one
 //	GET  /v1/broadcast/state             a home: its PublisherState (the Broadcast page's usage)
 //
-// Story 50.22 adds the ladder, the ingest token (50.21) and PATCH to the channel routes.
+// Story 50.26 adds viewer access (invites.go). Story 50.22 adds the ladder, the ingest token (50.21) and PATCH to the channel routes.
 package broadcast
 
 import (
@@ -23,10 +23,12 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
+	bc "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
@@ -39,6 +41,16 @@ type Deps struct {
 	Logger  *slog.Logger
 	// IPSalt keys the hash of the address an agreement was accepted from (never the address).
 	IPSalt []byte
+
+	// Viewer access (story 50.26). Key signs invites and the access posts (nil: invites answer
+	// 503 broadcast_disabled); OpenAccess is broadcast.open_access.enabled; WatchURL is the
+	// invite links' origin (default https://watch.maktaba.tv); Edge receives the access posts
+	// (nil: nothing is pushed).
+	Key        *bc.Key
+	OpenAccess bool
+	WatchURL   string
+	Edge       EdgeClient
+	Now        func() time.Time
 }
 
 // MountAgent registers the routes a home calls with its server credential.
@@ -198,6 +210,19 @@ func (d *Deps) Publish(w http.ResponseWriter, r *http.Request) {
 		limitErr(w, "max_top_kbps", tier.MaxTopKbps)
 		return
 	}
+	// open (story 50.26): broadcast.open_access.enabled and a verified publisher; a first
+	// publish is never verified (7 days since the first publish)
+	if req.Access == billingpkg.AccessOpen {
+		code, status, err := d.openRefusal(ctx, p)
+		if err != nil {
+			d.fail(w, r, "open check", err)
+			return
+		}
+		if code != "" {
+			writeOpenRefusal(w, code, status)
+			return
+		}
+	}
 	accepted, err := d.Store.AgreementAccepted(ctx, p.OwnerID)
 	if err != nil {
 		d.fail(w, r, "load agreement", err)
@@ -221,10 +246,15 @@ func (d *Deps) Publish(w http.ResponseWriter, r *http.Request) {
 		d.fail(w, r, "publish", err)
 		return
 	}
+	if err := BumpAccess(ctx, tx, id); err != nil {
+		d.fail(w, r, "bump", err)
+		return
+	}
 	if err := tx.Commit(); err != nil {
 		d.fail(w, r, "commit", err)
 		return
 	}
+	d.pushOne(ctx, id)
 	writeJSON(w, http.StatusCreated, map[string]any{"id": chID, "slug": req.Slug, "access": req.Access,
 		"on_demand": req.OnDemand, "rungs": req.Rungs, "top_kbps": req.TopKbps})
 }
@@ -253,16 +283,16 @@ func (d *Deps) Unpublish(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "not_found", "")
 		return
 	}
-	res, err := d.DB.ExecContext(r.Context(), `UPDATE broadcast_channels SET unpublished_at = now() WHERE id = $1 AND server_id = $2 AND unpublished_at IS NULL`, ch, id)
-	if err != nil {
-		d.fail(w, r, "unpublish", err)
-		return
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		writeErr(w, http.StatusNotFound, "not_found", "")
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	d.change(w, r, id, func(tx *sql.Tx) (int, error) {
+		res, err := tx.ExecContext(r.Context(), `UPDATE broadcast_channels SET unpublished_at = now() WHERE id = $1 AND server_id = $2 AND unpublished_at IS NULL`, ch, id)
+		if err != nil {
+			return 0, err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return http.StatusNotFound, nil
+		}
+		return http.StatusNoContent, nil
+	})
 }
 
 // State is the home's publisher state: its plan's limits, this month's viewer-hours, its

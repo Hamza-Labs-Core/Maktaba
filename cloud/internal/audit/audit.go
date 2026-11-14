@@ -30,6 +30,9 @@ const (
 	// ActionAdminBroadcast is a service admin setting a home's broadcast plan or test
 	// publisher grant (story 50.20).
 	ActionAdminBroadcast = "admin.server.broadcast"
+	// ActionAdminBroadcastInviteRevoke is a service admin revoking a publisher's viewer invite
+	// (story 50.26).
+	ActionAdminBroadcastInviteRevoke = "admin.broadcast.invite.revoke"
 	// ActionAdminBroadcastGeo is a service admin changing Maktaba's broadcast country deny
 	// list (story 50.23 §5).
 	ActionAdminBroadcastGeo = "admin.broadcast.geo_deny"
