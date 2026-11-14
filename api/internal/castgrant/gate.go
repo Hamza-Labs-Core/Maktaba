@@ -168,8 +168,11 @@ func (g *Gate) allows(r *http.Request, db *sql.DB, p *principal.Principal, c che
 		var body struct {
 			VideoID string `json:"video_id"`
 		}
+		// fail closed: a body the gate cannot read names no video of the grant, so it is
+		// refused here rather than passed on; the gate never relies on the handler's decoder
+		// refusing the same bodies json.Unmarshal does.
 		if json.Unmarshal(raw, &body) != nil || body.VideoID == "" {
-			return false, true, nil // the handler refuses the body itself
+			return false, false, nil
 		}
 		ok, err := MayPlay(ctx, db, p, body.VideoID)
 		return ok, false, err
