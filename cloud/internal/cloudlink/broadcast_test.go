@@ -122,3 +122,51 @@ func TestBroadcastHandlerRefusesBrowsers(t *testing.T) {
 		}
 	}
 }
+
+// Stories 50.22 and 50.26 share the loopback prefix: one mux entry passes the publishing calls
+// and the viewer-access calls each to its own handler, and still refuses the rest.
+func TestBroadcastLoopbackServesBothRouteLists(t *testing.T) {
+	var seen []string
+	cloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Method+" "+r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer cloud.Close()
+	mux := http.NewServeMux()
+	mux.Handle(BroadcastPrefix, BroadcastLoopback(&LinkReporter{CloudAPI: cloud.URL, Creds: Credentials{ServerID: "srv-1", Secret: "s3"}}))
+	if BroadcastAccessPrefix != BroadcastPrefix {
+		t.Fatalf("the prefixes differ (%q, %q): give each its own mux entry", BroadcastPrefix, BroadcastAccessPrefix)
+	}
+	call := func(method, path string) int {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(method, path, strings.NewReader("{}"))
+		req.Host = "127.0.0.1:9123"
+		req.Header.Set("Content-Type", "application/json")
+		mux.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	for _, c := range [][2]string{
+		{"GET", "/admin/cloud-link/broadcast/state"},
+		{"POST", "/admin/cloud-link/broadcast/ingest-token"},
+		{"GET", "/admin/cloud-link/broadcast/access"},
+		{"PUT", "/admin/cloud-link/broadcast/channels/c-1/access"},
+		{"POST", "/admin/cloud-link/broadcast/invites"},
+	} {
+		if code := call(c[0], c[1]); code != http.StatusOK {
+			t.Errorf("%s %s: %d", c[0], c[1], code)
+		}
+	}
+	want := "GET /v1/broadcast/state|POST /v1/broadcast/ingest-token|GET /v1/broadcast/access|" +
+		"PUT /v1/broadcast/channels/c-1/access|POST /v1/broadcast/invites"
+	if strings.Join(seen, "|") != want {
+		t.Fatalf("cloud saw %q", seen)
+	}
+	for _, c := range [][2]string{
+		{"GET", "/admin/cloud-link/broadcast/agreement"},
+		{"PUT", "/admin/cloud-link/broadcast/viewer-limits/x"},
+	} {
+		if code := call(c[0], c[1]); code != http.StatusNotFound {
+			t.Errorf("%s %s: %d, want 404", c[0], c[1], code)
+		}
+	}
+}
