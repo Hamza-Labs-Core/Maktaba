@@ -6,6 +6,10 @@
 #     (web/tv-build/tvcheck.mjs: es-check es2017 and the CSS lint, T01);
 #   - Playwright on /tv/ against the mock home, D-pad keys only, 1920×1080, dark, English and
 #     Arabic, with the CPU throttled ×6 for the timing (T03, T04).
+#   - the Samsung and LG launcher (story 58.09): its Vitest (the subnet probe, the bridge, the
+#     compatibility vectors, the bridge schema: T01, T02, T03, T06), its catalogs, its build
+#     and the --bundle-ui build, checked for Chromium 68, and Playwright on the launcher opened
+#     from file:// with a Tizen and a webOS shim, against a mock home on the TV's /24 (T04).
 #
 # The run keeps the screenshots, the console and network logs, the traces and the report for
 # 30 days, passed or failed. No secret, no network call beyond the packages.
@@ -27,7 +31,7 @@ jobs:
       - uses: actions/checkout@v6.0.2
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v6.0.8
+      - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
         with:
           version: 9.15.4
           run_install: false
@@ -49,7 +53,14 @@ jobs:
 
       - name: The big screen's tests (T02)
         working-directory: web
-        run: pnpm exec vitest run src/bigscreen src/tv src/pages/Login.test.tsx src/lib/swRuntime.test.ts
+        run: pnpm exec vitest run src/bigscreen src/tv src/pages/Login.test.tsx src/lib/swRuntime.test.ts src/lib/apiBearer.test.ts
+
+      - name: The launcher's tests (58.09 T01, T02, T03, T06)
+        working-directory: web
+        run: pnpm exec vitest run ../apps/tv/web/src
+
+      - name: The TV catalogs, English and Arabic
+        run: python3 tools/i18n/check_tv_catalogs.py
 
       - name: The build checks' tests (T01)
         run: node --test web/tv-build/tv.test.mjs
@@ -57,6 +68,14 @@ jobs:
       - name: build:tv, checked for Chromium 68 (T01)
         working-directory: web
         run: pnpm run build:tv
+
+      - name: build:launcher:bundled (--bundle-ui), checked for Chromium 68
+        working-directory: web
+        run: pnpm run build:launcher:bundled
+
+      - name: build:launcher, checked for Chromium 68
+        working-directory: web
+        run: pnpm run build:launcher
 
       - name: Chromium for Playwright
         working-directory: web
@@ -67,6 +86,12 @@ jobs:
           CI: 'true'
         run: pnpm e2e:tv
 
+      - name: The launcher from file://, Samsung and LG, en and ar (58.09 T04)
+        working-directory: web
+        env:
+          CI: 'true'
+        run: pnpm e2e:launcher
+
       # the screenshots, the console and network logs, the traces and the report, passed or
       # failed (.github/actions/tv-logs: 30 days, linked from the job summary; story 58.16)
       - name: App logs
@@ -74,7 +99,9 @@ jobs:
         uses: ./.github/actions/tv-logs
         with:
           name: tv-web-logs
-          what: Playwright's screenshots (dark, en and ar), console and network logs, traces and report
+          what: Playwright's screenshots (dark, en and ar), the launcher's log, console and network logs, traces and report
           path: |
             web/test-results/tv
             web/test-results/tv-report
+            web/test-results/launcher
+            web/test-results/launcher-report

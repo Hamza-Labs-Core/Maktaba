@@ -1,10 +1,13 @@
 package relay
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +15,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 
 	relaypkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay/simhome"
@@ -27,6 +32,58 @@ type poolRelay struct {
 	pool   *relaypkg.Pool
 	stop   context.CancelFunc
 	killed atomic.Bool
+	// lns are the public, peer and tunnel servers' listeners: kill closes every connection
+	// they accepted, the hijacked ones (websockets) httptest no longer tracks included
+	lns []*trackedListener
+}
+
+// trackedListener remembers every connection it accepts until closed, and refuses (closes at
+// once) any accepted after Close: a powered-off machine takes no new connection and keeps none.
+type trackedListener struct {
+	net.Listener
+	mu     sync.Mutex
+	conns  map[net.Conn]struct{}
+	closed bool
+}
+
+func (l *trackedListener) Accept() (net.Conn, error) {
+	for {
+		c, err := l.Listener.Accept()
+		if err != nil {
+			return nil, err
+		}
+		l.mu.Lock()
+		if l.closed {
+			l.mu.Unlock()
+			_ = c.Close()
+			continue
+		}
+		l.conns[c] = struct{}{}
+		l.mu.Unlock()
+		return c, nil
+	}
+}
+
+// drop stops accepting and closes every connection accepted so far.
+func (l *trackedListener) drop() {
+	l.mu.Lock()
+	l.closed = true
+	conns := l.conns
+	l.conns = map[net.Conn]struct{}{}
+	l.mu.Unlock()
+	_ = l.Close()
+	for c := range conns {
+		_ = c.Close()
+	}
+}
+
+// serve starts an httptest server for h on a trackedListener.
+func serve(h http.Handler) (*httptest.Server, *trackedListener) {
+	s := httptest.NewUnstartedServer(h)
+	l := &trackedListener{Listener: s.Listener, conns: map[net.Conn]struct{}{}}
+	s.Listener = l
+	s.Start()
+	return s, l
 }
 
 type memPool struct {
@@ -72,25 +129,26 @@ func (mp *memPool) add(id string) *poolRelay {
 	p := &proc{id: id, reg: relaypkg.NewRegistry(), meter: &fakeMeter{}}
 	auth := relaypkg.NewPeerAuth(peerSecret)
 	peerHandler := &switchHandler{}
-	p.peer = httptest.NewServer(peerHandler)
+	var peerLn, publicLn, tunnelLn *trackedListener
+	p.peer, peerLn = serve(peerHandler)
 	view := mp.dir.For(id, strings.TrimPrefix(p.peer.URL, "http://"))
 	p.deps = &Deps{Registry: p.reg, Lookup: mp.lookup, Meter: p.meter, PublicHost: "relay.test",
 		RelayID: id, Directory: view, PeerAuth: auth, HoldMax: 3 * time.Second, Logger: slog.New(slog.DiscardHandler)}
 	peerDeps := *p.deps
 	peerDeps.PeerMode = true
 	peerHandler.set(peerDeps.Handler())
-	p.public = httptest.NewServer(p.deps.Handler())
+	p.public, publicLn = serve(p.deps.Handler())
 	pool := relaypkg.NewPool(mp.store, id)
 	rb := &relaypkg.Rebalancer{Registry: p.reg, Pool: pool, Hosts: "{id}.relay.test", Every: time.Second, Rate: 200,
 		Drain: relaypkg.DrainOptions{Within: 200 * time.Millisecond, Deadline: 20 * time.Second}, Logger: slog.New(slog.DiscardHandler)}
-	p.tunnel = httptest.NewServer(&relaypkg.TunnelServer{Registry: p.reg, Store: mp.homes, Drain: true,
+	p.tunnel, tunnelLn = serve(&relaypkg.TunnelServer{Registry: p.reg, Store: mp.homes, Drain: true,
 		Logger: slog.New(slog.DiscardHandler), Directory: view, Rebalancer: rb})
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := pool.Start(ctx, relaypkg.PoolRelay{ID: id, PublicIP: "127.0.0.1", PrivateIP: "127.0.0.1", CapacityMbps: 1000}); err != nil {
 		t.Fatal(err)
 	}
 	go rb.Run(ctx)
-	r := &poolRelay{proc: p, id: id, pool: pool, stop: cancel}
+	r := &poolRelay{proc: p, id: id, pool: pool, stop: cancel, lns: []*trackedListener{publicLn, peerLn, tunnelLn}}
 	mp.mu.Lock()
 	mp.relays[id] = r
 	mp.mu.Unlock()
@@ -98,17 +156,20 @@ func (mp *memPool) add(id string) *poolRelay {
 	return r
 }
 
-// kill powers relay r off: its listeners and tunnels go at once, its heartbeat stops; its
-// directory rows stay until the sweep (what peers see of a dead machine).
+// kill powers relay r off: its listeners and every connection they accepted go at once (a
+// tunnel still in its handshake included), its heartbeat stops; its directory rows stay until
+// the sweep (what peers see of a dead machine). The listeners close before anything waits:
+// Close waits for the requests in flight (a held one, up to HoldMax), and a home must not reach
+// the dead relay meanwhile.
 func (r *poolRelay) kill(mp *memPool) {
 	if !r.killed.CompareAndSwap(false, true) {
 		return
 	}
+	for _, l := range r.lns {
+		l.drop()
+	}
 	r.stop()
 	mp.store.Stop(r.id)
-	for _, s := range []*httptest.Server{r.public, r.peer, r.tunnel} {
-		s.CloseClientConnections()
-	}
 	for _, tn := range r.reg.All() {
 		tn.Close()
 	}
@@ -331,4 +392,35 @@ func fetch(srv *httptest.Server, slug string) int {
 		return -1
 	}
 	return resp.StatusCode
+}
+
+// A killed relay drops every connection, a tunnel still in its handshake included: a home whose
+// AUTH lands after the kill gets no tunnel on the dead relay. httptest forgets a connection once
+// it is hijacked (every websocket), so neither CloseClientConnections nor Close reaches it; one
+// that finished its handshake after the registry was swept lived on, answering PINGs, and its
+// home never moved off the dead relay (the T04 flake).
+func TestPoolKillDropsAHandshakeInFlight(t *testing.T) {
+	mp := newMemPool(t, "r1")
+	r := mp.get("r1")
+	c, _, err := websocket.DefaultDialer.Dial(r.endpoint(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	r.kill(mp)
+
+	id, secret, _ := simhome.Creds(1)
+	auth, _ := json.Marshal(relaypkg.AuthPayload{ServerID: id, Secret: secret})
+	var b bytes.Buffer
+	_ = relaypkg.WriteFrame(&b, relaypkg.Frame{Kind: relaypkg.KindAuth, Payload: auth})
+	_ = c.SetWriteDeadline(time.Now().Add(time.Second))
+	_ = c.WriteMessage(websocket.BinaryMessage, b.Bytes()) // may fail: the connection is gone
+	_ = c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, data, err := c.ReadMessage(); err == nil {
+		f, _ := relaypkg.ReadFrame(bytes.NewReader(data))
+		t.Fatalf("the killed relay answered a handshake (frame kind %#x)", f.Kind)
+	}
+	if n := r.reg.Live(); n != 0 {
+		t.Fatalf("the killed relay holds %d tunnels", n)
+	}
 }

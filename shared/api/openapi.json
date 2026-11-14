@@ -11866,6 +11866,83 @@
         "operationId": "runStageNow"
       }
     },
+    "/plugins": {
+      "get": {
+        "tags": [
+          "Plugins"
+        ],
+        "summary": "List the plugins",
+        "description": "The installed plugins, each with its state, its jobs and what it uses, the home's plugin policy, and the parts of Maktaba itself that are not plugins. By default `plugins` holds only the plugins an admin installed, as clients that list them as installed plugins expect. With `release=true` it also holds the plugins Maktaba publishes that came with this release (`publisher.id` is `maktaba`, `source` is `release`), in the same shape.",
+        "x-maktaba-role": "admin",
+        "parameters": [
+          {
+            "name": "release",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "`true`: also list the plugins Maktaba publishes that came with this release. Left out, the list is the installed plugins only."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The plugins.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "plugins": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      },
+                      "description": "The installed plugins by id; with `release=true`, also the plugins Maktaba publishes."
+                    },
+                    "policy": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "description": "The home's plugin policy (`allow_unreviewed`)."
+                    },
+                    "core": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      },
+                      "description": "The parts of Maktaba itself that must always run. They are not plugins and are never in `plugins`."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listPlugins"
+      }
+    },
     "/plugins/isolation": {
       "get": {
         "tags": [

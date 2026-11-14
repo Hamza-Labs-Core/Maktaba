@@ -56,6 +56,10 @@ _go: &go
   - 'web/src/help/content/**'
   # the API level check reads docs/api/levels.md (Epic 58 story 58.01)
   - 'docs/api/levels.md'
+  # the review home's manifest and plan (Epic 58 story 58.04): api/internal/reviewhome and
+  # cloud/internal/billing's tests read them
+  - 'deploy/review-home/content/manifest.json'
+  - 'deploy/review-home/review-home.env.example'
 
 # the pipeline, and what its tests read outside it
 _pipeline: &pipeline
@@ -780,6 +784,8 @@ android_apps:
   - 'shared/api/problems.json'
   # the compatibility vectors the client's CompatTest runs (58.01)
   - 'shared/compat/**'
+  # the playback vectors the client's DeviceCapsTest runs (58.02, 58.05)
+  - 'shared/playback/**'
   - '.github/workflows/_android-apps.yml'
   # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
   - 'tools/ci/gradle-wrapper.sh'
@@ -798,6 +804,10 @@ android_tv:
   - 'apps/android/client/**'
   - 'apps/android/gradle/libs.versions.toml'
   - '.github/workflows/_android-tv.yml'
+  # the Fire TV APK's release lane and its Appstore submission (58.05)
+  - '.github/workflows/tv-release.yml'
+  - 'tools/release/amazon_submit.py'
+  - 'tools/ci/firetv-journey.sh'
   # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
   - 'tools/ci/gradle-wrapper.sh'
   - 'tools/release/fetch-pinned.sh'
@@ -819,6 +829,13 @@ tv_web:
   - 'web/e2e/tv/**'
   - 'web/tv-build/**'
   - '.github/workflows/_tv-web.yml'
+  # the Samsung and LG launcher (story 58.09): its build, its Playwright, its Vitest (the
+  # vitest config names its tests) and the compatibility vectors its tests run (58.01)
+  - 'web/vite.launcher.config.ts'
+  - 'web/playwright.launcher.config.ts'
+  - 'web/e2e/launcher/**'
+  - 'web/vitest.config.ts'
+  - 'shared/compat/**'
 
 # The desktop Player for Windows and Linux (Epic 42.4): its project, the portable client
 # and the fonts it shares with the Android apps, the catalog.
