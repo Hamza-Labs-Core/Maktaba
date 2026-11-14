@@ -19,6 +19,7 @@
 # when ORIGIN_MODE=aop; in tunnel mode that directory is empty.
 #
 # Env: RELAY_DOMAIN, ACME_EMAIL, CF_API_TOKEN, RELAY_UPSTREAMS ("127.0.0.1:8443 127.0.0.1:8453"),
+# RELAY_METRICS_UPSTREAMS (the relays' private metrics listeners, "127.0.0.1:8445 127.0.0.1:8455"),
 # NODE_ADDR (the node's private address: the edge's own health check listens there, 50.07's
 # switchover asks it before it moves the lead).
 
@@ -67,12 +68,14 @@ import /etc/caddy/origin.d/*.caddy
 
 # The leading relay process's /metrics, for the witness's Prometheus (story 50.10), on the
 # private address only (UFW opens 9443 to the private network); Caddy's own metrics beside.
+# It reaches each relay's private metrics listener (server.metrics_listen_addr, story 50.28),
+# never its public one: the broadcast series are served only there, whatever a Host says.
 http://{$NODE_ADDR}:9443 {
 	handle /caddy-metrics {
 		metrics
 	}
 	handle {
-		reverse_proxy {$RELAY_UPSTREAMS} {
+		reverse_proxy {$RELAY_METRICS_UPSTREAMS} {
 			lb_policy first
 			health_uri /readyz
 			health_interval 5s

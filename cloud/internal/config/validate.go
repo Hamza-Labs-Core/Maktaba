@@ -56,6 +56,9 @@ func Validate(c Config, role Role) error {
 		if err := validateAdminListener(c.Server); err != nil {
 			return err
 		}
+		if err := ValidateMetricsListener(c.Server); err != nil {
+			return err
+		}
 		// the broadcast edge's ingest tokens (story 50.21) are never on without their key
 		if c.Broadcast.Enabled && c.Broadcast.KeyPath == "" {
 			return fmt.Errorf("%w: broadcast.enabled is on but broadcast.key_path is not set", ErrMissing)
@@ -75,6 +78,9 @@ func Validate(c Config, role Role) error {
 			return fmt.Errorf("%w: [relay].public_host", ErrMissing)
 		}
 		if err := ValidatePeerAddr(c.Relay.PeerAddr); err != nil {
+			return err
+		}
+		if err := ValidateMetricsListener(c.Server); err != nil {
 			return err
 		}
 		if err := validatePool(c.Relay); err != nil {
@@ -216,6 +222,27 @@ func ValidateOriginListen(addr string) error {
 	ip, err := netip.ParseAddr(host)
 	if err != nil || ip.IsUnspecified() || (!ip.IsLoopback() && !ip.IsPrivate()) {
 		return errors.New("it must be a loopback or private address: only the Tunnel reaches the api")
+	}
+	return nil
+}
+
+// ValidateMetricsListener checks server.metrics_listen_addr (story 50.28): the private series are
+// served only there, so it is a loopback or private address in every environment (the listener
+// is the trust boundary, never a request's Host), and never a listener the public reaches.
+func ValidateMetricsListener(s ServerConfig) error {
+	if s.MetricsListenAddr == "" {
+		return nil
+	}
+	if err := ValidateOriginListen(s.MetricsListenAddr); err != nil {
+		return fmt.Errorf("config: server.metrics_listen_addr %q: %w", s.MetricsListenAddr, err)
+	}
+	if strings.HasSuffix(s.MetricsListenAddr, ":0") {
+		return nil
+	}
+	for _, other := range []string{s.ListenAddr, s.AdminListenAddr} {
+		if s.MetricsListenAddr == other {
+			return fmt.Errorf("config: server.metrics_listen_addr %q is another listener's: the private series need their own", s.MetricsListenAddr)
+		}
 	}
 	return nil
 }
