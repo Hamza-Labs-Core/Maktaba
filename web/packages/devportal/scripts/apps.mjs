@@ -913,8 +913,8 @@ export const APPS = [
           {
             ul: [
               t(
-                "**Sign in with a code**: the TV shows a code and a QR code; approve it in Maktaba on your phone (**Profile → Approve a TV**) or at maktaba.tv/tv. **Find on this network** looks for homes on the TV's network and shows that home's own code. The last home used opens at once next time.",
-                "**تسجيل الدخول برمز**: يعرض التلفاز رمزًا ورمز QR؛ وافق عليه في مكتبة على هاتفك (**الملف الشخصي ← الموافقة على تلفاز**) أو في maktaba.tv/tv. ويبحث خيار **ابحث في هذه الشبكة** عن الأجهزة الرئيسية في شبكة التلفاز ويعرض رمز الجهاز الذي اخترته. وفي المرة التالية يُفتح آخر جهاز رئيسي استُخدم مباشرة."
+                "**Sign in with a code**: the TV shows a code and a QR code; approve it in Maktaba on your phone (**Profile → Approve a TV**) or computer. **Find on this network** looks for homes on the TV's network and shows that home's own code. The last home used opens at once next time.",
+                "**تسجيل الدخول برمز**: يعرض التلفاز رمزًا ورمز QR؛ وافق عليه في مكتبة على هاتفك (**الملف الشخصي ← الموافقة على تلفاز**) أو حاسوبك. ويبحث خيار **ابحث في هذه الشبكة** عن الأجهزة الرئيسية في شبكة التلفاز ويعرض رمز الجهاز الذي اخترته. وفي المرة التالية يُفتح آخر جهاز رئيسي استُخدم مباشرة."
               ),
               t(
                 "**Playback on the TV's own player**: 4K, HDR10 and HLG, and Dolby audio passed to a soundbar, where the TV supports them. The app tells the home what this TV decodes, so the home plays a file as it is when it can and converts it only when it must. If the TV cannot play a stream, the app asks the home once more for a converted one.",

@@ -36,8 +36,8 @@ it. The package lint (`apps/tv/web/webos/lint-ipk.mjs`) fails a package whose li
   LG TV: lessons, films, series and live channels, with your progress kept across your phone,
   computer and TV.
 
-  - Sign in with a code. The TV shows a short code; approve it in Maktaba on your phone, or at
-    maktaba.tv/tv. There is no password to type with the remote.
+  - Sign in with a code. The TV shows a short code; approve it in Maktaba on your phone or
+    computer. There is no password to type with the remote.
   - Or find your home on this network: the app looks for it on your Wi-Fi.
   - Plays on the TV's own player: 4K, HDR10 and Dolby audio where your TV supports them. Files
     your TV cannot play are converted by your home.
@@ -59,8 +59,8 @@ it. The package lint (`apps/tv/web/webos/lint-ipk.mjs`) fails a package whose li
   مكتبة هي مكتبة وسائط منزلية تديرها بنفسك. يضع هذا التطبيق مكتبة منزلك على تلفاز LG:
   الدروس والأفلام والمسلسلات والقنوات المباشرة، ويحفظ تقدّمك بين هاتفك وحاسوبك وتلفازك.
 
-  - سجّل الدخول برمز: يعرض التلفاز رمزًا قصيرًا، فتوافق عليه في مكتبة على هاتفك أو في
-    maktaba.tv/tv، دون كتابة كلمة مرور بجهاز التحكم.
+  - سجّل الدخول برمز: يعرض التلفاز رمزًا قصيرًا، فتوافق عليه في مكتبة على هاتفك أو
+    حاسوبك، دون كتابة كلمة مرور بجهاز التحكم.
   - أو ابحث عن منزلك في هذه الشبكة: يبحث التطبيق عنه في شبكة Wi-Fi لديك.
   - يعرض الفيديو بمشغّل التلفاز نفسه: دقة 4K وHDR10 وصوت Dolby حيث يدعمها تلفازك، ويحوّل منزلك
     الملفات التي لا يستطيع تلفازك تشغيلها.
