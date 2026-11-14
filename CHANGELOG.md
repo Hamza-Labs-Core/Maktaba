@@ -2793,8 +2793,12 @@ build fails when the two differ.
   device): a cloud code can be read out to anyone anywhere. No cloud account is needed, only a
   home with remote access. Codes last 10 minutes, at most 10 per address, and the cloud sweeps
   them an hour after they expire. `GET /api/me/app-sign-ins` lists a person's apps signed in by
-  code (a cloud-code TV says so) and `DELETE /api/me/app-sign-ins/{id}` signs one out. The
-  approve screens in the Players and the web follow.
+  code (a cloud-code TV says so) and `DELETE /api/me/app-sign-ins/{id}` signs one out.
+  **Approve a TV** in the Android and Apple Players and the web's **Sign in a device** take
+  these codes: a code the home does not hold is looked up in the cloud, the app asks **Is this
+  your TV?** with its platform and country, and approves it only then; a home without remote
+  access is told to use the home's own code. **Sessions** lists the apps signed in with a code,
+  each signed out there, a cloud-code TV named as one.
 
 ### Changed
 

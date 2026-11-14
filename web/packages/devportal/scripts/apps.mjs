@@ -48,6 +48,12 @@ const SIGN_IN = [
   },
   {
     p: t(
+      "A TV that cannot find the home on its network (at a relative's house, or a platform with no local discovery) shows a code from **Maktaba Cloud** instead. It is approved in the same place: the app first asks the home, then the cloud, and asks **Is this your TV?** with the TV's platform and country before approving. The person approving needs no cloud account, only a home with remote access turned on. A TV signed in this way watches as that person but never acts as an admin and cannot sign in other devices. It shows under **Profile → Sessions** (the web app's **Active sessions**) as a TV via a Maktaba Cloud code, and is signed out from there.",
+      "التلفاز الذي لا يجد الجهاز الرئيسي في شبكته (في بيت أحد الأقارب، أو على منصة بلا اكتشاف محلي) يعرض بدلًا من ذلك رمزًا من **Maktaba Cloud**. ويُوافق عليه في المكان نفسه: يسأل التطبيق الجهاز الرئيسي أولًا ثم السحابة، ثم يسأل **هل هذا تلفازك؟** مع منصة التلفاز وبلده قبل الموافقة. ولا يحتاج من يوافق إلى حساب سحابي، بل إلى جهاز رئيسي فُعّل فيه الوصول عن بُعد. والتلفاز الذي يسجّل دخوله هكذا يشاهد باسم ذلك الشخص، لكنه لا يتصرّف أبدًا كمسؤول ولا يستطيع تسجيل دخول أجهزة أخرى. ويظهر في **الملف الشخصي ← الجلسات** (صفحة **الجلسات النشطة** في تطبيق الويب) تلفازًا عبر رمز Maktaba Cloud، ومنها يُسجَّل خروجه."
+    ),
+  },
+  {
+    p: t(
       "The home enforces every role itself. An app hiding a screen is a convenience, not the rule: a modified app holding a viewer's token is still a viewer.",
       "يفرض الجهاز الرئيسي كل دور بنفسه. أما إخفاء التطبيق لشاشة ما فهو تيسير لا قاعدة: فالتطبيق المعدَّل الذي يحمل رمز مشاهد يبقى مشاهدًا."
     ),
@@ -1401,8 +1407,8 @@ export const APPS = [
                 "**البث إلى تلفاز**، في Chrome على العنوان الآمن للجهاز الرئيسي (`https://`): يرسل المشغّل المقطع، أو قائمة **تشغيل الكل** و**تشغيل عشوائي** كلها، إلى Chromecast أو Google TV أو تلفاز مدمج فيه Chromecast على شبكة Wi-Fi نفسها، عبر المستقبِل الخاص بمكتبة. يجلب التلفاز المقطع من الجهاز الرئيسي بنفسه بتصريح بث (تصريح مدته ست ساعات لذلك المقطع أو تلك القائمة، وليس تسجيل دخول الشخص أبدًا)، فيمكن إغلاق التبويب وتبقى **تابع المشاهدة** تتبع التلفاز؛ ويعرض المشغّل اسم التلفاز والتشغيل والإيقاف المؤقت و**إيقاف البث**، وتتبع شاشات التلفاز لغة تطبيق الويب. لا يظهر زر البث على `http://` ولا في المتصفحات الأخرى ولا عبر سحابة مكتبة. ويظهر حين تحمل النسخة معرّف تطبيق مستقبِل البث (`shared/cast/app.json`)؛ والعقد في [دليل البث](/contributing/casting/)."
               ),
               t(
-                "**Account**: devices, **Connect an app** (the link and QR code the apps take), sessions, API tokens, history and preferences; and **Sign in a device**, where a code is approved.",
-                "**الحساب**: الأجهزة، و**ربط تطبيق** (الرابط ورمز QR اللذان تقبلهما التطبيقات)، والجلسات، ورموز الواجهة البرمجية، والسجل، والتفضيلات؛ وصفحة **تسجيل دخول جهاز** للموافقة على الرموز."
+                "**Account**: devices, **Connect an app** (the link and QR code the apps take), sessions and the apps signed in with a code, API tokens, history and preferences; and **Sign in a device**, where a code is approved.",
+                "**الحساب**: الأجهزة، و**ربط تطبيق** (الرابط ورمز QR اللذان تقبلهما التطبيقات)، والجلسات والتطبيقات المسجّل دخولها برمز، ورموز الواجهة البرمجية، والسجل، والتفضيلات؛ وصفحة **تسجيل دخول جهاز** للموافقة على الرموز."
               ),
               t(
                 "For admins: the libraries and their processing, the queue and its failures, the Live TV channels, the machines, the users, the updates and the settings.",

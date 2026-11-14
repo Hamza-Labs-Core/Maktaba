@@ -137,6 +137,11 @@
     <string name="approve_already">This code was already approved.</string>
     <string name="approve_cloud">Approve from home: connect to your home\'s network first.</string>
     <string name="approve_another">Approve another</string>
+    <string name="approve_cloud_confirm">Is this your TV? %1$s, in %2$s.</string>
+    <string name="approve_cloud_confirm_no_country">Is this your TV? %1$s.</string>
+    <string name="approve_cloud_a_tv">A TV</string>
+    <string name="approve_cloud_needs_remote">A code from Maktaba Cloud needs remote access turned on for this home. Use the code from the home instead.</string>
+    <string name="approve_cloud_done">Approved. The TV is signing in.</string>
     <!-- story 42.7: through Maktaba Cloud -->
     <string name="cloud_title">Through Maktaba Cloud</string>
     <string name="cloud_intro">Away from home, or a home on another network: sign in with your Maktaba Cloud account and open a home linked to it. Each home decides what you can do there.</string>

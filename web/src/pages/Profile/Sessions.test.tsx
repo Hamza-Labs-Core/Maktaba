@@ -41,6 +41,8 @@ const S2 = {
   user_agent: "Maktaba-iOS/1.4",
   current: false,
 };
+// the apps signed in with a code (story 58.03) answer beside the sessions; none unless a case says so
+const NO_APPS = { items: [] };
 const S3 = { ...S2, id: "s3", ip: "198.51.100.6", user_agent: "Maktaba-Android/2.0" };
 
 function problem(status: number, title: string, detail?: string) {
@@ -56,6 +58,7 @@ function deferred<T>() {
 function sessionsSeq(...replies: unknown[]) {
   let i = 0;
   get.mockImplementation((url: string) => {
+    if (url === "/api/me/app-sign-ins") return Promise.resolve(NO_APPS);
     if (url !== "/api/me/sessions") return Promise.reject(new Error(`unmocked GET ${url}`));
     const r = replies[Math.min(i++, replies.length - 1)];
     return r instanceof Error ? Promise.reject(r) : Promise.resolve(r);
@@ -71,12 +74,18 @@ function open(opts: { user?: null } = {}) {
   );
 }
 
+/** How many times the page read the sessions (the app sign-ins are read beside them). */
+const sessionReads = () => get.mock.calls.filter(([u]) => u === "/api/me/sessions").length;
+
 const row = (text: string) => screen.getByText(text).closest("tr") as HTMLElement;
 
 describe("Sessions (test-cases/account-sessions.md)", () => {
   beforeEach(() => {
     for (const f of [get, post, put, patch, del]) f.mockReset();
-    routeGet(get, { "/api/me/sessions": { items: [S1, S2] } });
+    routeGet(get, {
+      "/api/me/app-sign-ins": NO_APPS,
+      "/api/me/sessions": { items: [S1, S2] },
+    });
   });
 
   it("ASE-01: sessions table renders with the current session badged", async () => {
@@ -147,7 +156,7 @@ describe("Sessions (test-cases/account-sessions.md)", () => {
     const button = within(row("Maktaba-iOS/1.4")).getByRole("button", { name: "Revoke" });
     expect(button).toBeEnabled();
     expect(button).not.toHaveAttribute("aria-busy");
-    expect(get).toHaveBeenCalledTimes(1);
+    expect(sessionReads()).toBe(1);
     await user.click(button);
     expect(del).toHaveBeenCalledTimes(2);
   });
@@ -198,7 +207,10 @@ describe("Sessions (test-cases/account-sessions.md)", () => {
   });
 
   it("ASE-08: items [] shows the empty state", async () => {
-    routeGet(get, { "/api/me/sessions": { items: [] } });
+    routeGet(get, {
+      "/api/me/app-sign-ins": NO_APPS,
+      "/api/me/sessions": { items: [] },
+    });
     open();
     expect(await screen.findByText("No active sessions")).toBeInTheDocument();
     expect(screen.getByText("You have no other active sessions.")).toBeInTheDocument();
@@ -211,14 +223,20 @@ describe("Sessions (test-cases/account-sessions.md)", () => {
     ["items missing", {}],
     ["HTML body", "<!doctype html><html></html>"],
   ])("ASE-09: %s shows the empty state", async (_, body) => {
-    routeGet(get, { "/api/me/sessions": body });
+    routeGet(get, {
+      "/api/me/app-sign-ins": NO_APPS,
+      "/api/me/sessions": body,
+    });
     open();
     expect(await screen.findByText("No active sessions")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("ASE-09: a null body shows the error state with Retry", async () => {
-    routeGet(get, { "/api/me/sessions": null });
+    routeGet(get, {
+      "/api/me/app-sign-ins": NO_APPS,
+      "/api/me/sessions": null,
+    });
     open();
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Something went wrong.");
@@ -227,6 +245,7 @@ describe("Sessions (test-cases/account-sessions.md)", () => {
 
   it("ASE-10: null / empty ip and user_agent; null dates", async () => {
     routeGet(get, {
+      "/api/me/app-sign-ins": NO_APPS,
       "/api/me/sessions": {
         items: [
           { ...S2, id: "a", user_agent: null },
@@ -253,7 +272,10 @@ describe("Sessions (test-cases/account-sessions.md)", () => {
   });
 
   it("ASE-11: no row has current: true", async () => {
-    routeGet(get, { "/api/me/sessions": { items: [{ ...S1, current: false }, S2] } });
+    routeGet(get, {
+      "/api/me/app-sign-ins": NO_APPS,
+      "/api/me/sessions": { items: [{ ...S1, current: false }, S2] },
+    });
     open();
     await screen.findByRole("table");
     expect(screen.getAllByRole("button", { name: "Revoke" })).toHaveLength(2);
@@ -298,7 +320,10 @@ describe("Sessions (test-cases/account-sessions.md)", () => {
 
   it("ASE-16: crash during render shows the route fallback; Back recovers", async () => {
     const quiet = quietCrash();
-    routeGet(get, { "/api/me/sessions": { items: [{ ...S2, user_agent: { ua: "x" } }] } });
+    routeGet(get, {
+      "/api/me/app-sign-ins": NO_APPS,
+      "/api/me/sessions": { items: [{ ...S2, user_agent: { ua: "x" } }] },
+    });
     open();
     const user = userEvent.setup();
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -307,7 +332,10 @@ describe("Sessions (test-cases/account-sessions.md)", () => {
     await user.click(screen.getByRole("link", { name: "go elsewhere" }));
     expect(await screen.findByText("elsewhere")).toBeInTheDocument();
 
-    routeGet(get, { "/api/me/sessions": { items: [S1, S2] } });
+    routeGet(get, {
+      "/api/me/app-sign-ins": NO_APPS,
+      "/api/me/sessions": { items: [S1, S2] },
+    });
     await user.click(screen.getByRole("button", { name: "go back" }));
     expect(await screen.findByRole("table")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
@@ -325,7 +353,7 @@ describe("Sessions (test-cases/account-sessions.md)", () => {
     await user.click(screen.getByRole("link", { name: "go elsewhere" }));
     await user.click(await screen.findByRole("button", { name: "go back" }));
     expect(await screen.findByRole("table")).toBeInTheDocument();
-    expect(get).toHaveBeenCalledTimes(3);
+    expect(sessionReads()).toBe(3);
     expect(screen.queryByText("Maktaba-iOS/1.4")).toBeNull();
   });
 
@@ -351,4 +379,69 @@ describe("Sessions (test-cases/account-sessions.md)", () => {
   // Minor a11y bugs in Sessions.tsx: every "Revoke" has the same name, and
   // focus falls to <body> when the revoked row disappears.
   it.todo("ASE-21: Revoke buttons name their session; focus moves sensibly after a revoke");
+});
+
+// Epic 58 story 58.03: the apps signed in with a code, a cloud code's TV named as such, each
+// signed out here.
+describe("Sessions: app sign-ins", () => {
+  const TV = {
+    id: "f1",
+    kind: "tv",
+    label: "tizen",
+    via: "cloud_code",
+    created_at: "2026-11-13T20:00:00Z",
+    last_seen_at: "2026-11-14T07:00:00Z",
+    expires_at: "2026-12-13T20:00:00Z",
+    current: false,
+  };
+  const PHONE = { ...TV, id: "f2", kind: "player", label: "Pixel 9", via: "" };
+  beforeEach(() => {
+    for (const f of [get, post, put, patch, del]) f.mockReset();
+  });
+
+  it("lists each app, a cloud code's TV named as one, and signs one out", async () => {
+    routeGet(get, {
+      "/api/me/sessions": { items: [S1] },
+      "/api/me/app-sign-ins": { items: [TV, PHONE] },
+    });
+    del.mockResolvedValue(undefined);
+    open();
+    const tv = (await screen.findByText(/Samsung.* TV, via Maktaba Cloud code/)).closest(
+      "tr"
+    ) as HTMLElement;
+    expect(screen.getByText(/Maktaba Player · .*Pixel 9/)).toBeInTheDocument();
+    // the home's list after the sign-out
+    routeGet(get, {
+      "/api/me/sessions": { items: [S1] },
+      "/api/me/app-sign-ins": { items: [PHONE] },
+    });
+    await userEvent.setup().click(within(tv).getByRole("button", { name: "Sign out" }));
+    await waitFor(() => expect(del).toHaveBeenCalledWith("/api/me/app-sign-ins/f1"));
+    expect(await screen.findByText("Signed out.")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByText(/via Maktaba Cloud code/)).not.toBeInTheDocument()
+    );
+  });
+
+  it("no app sign-ins: says so beside the sessions", async () => {
+    routeGet(get, { "/api/me/sessions": { items: [S1] }, "/api/me/app-sign-ins": NO_APPS });
+    open();
+    expect(await screen.findByText(en["appSignIns.empty.title"])).toBeInTheDocument();
+    expect(screen.getByText("Mozilla/5.0 (Macintosh) Firefox/131")).toBeInTheDocument();
+  });
+
+  it("in Arabic a cloud code's TV reads right to left", async () => {
+    routeGet(get, { "/api/me/sessions": { items: [S1] }, "/api/me/app-sign-ins": { items: [TV] } });
+    localStorage.setItem("mkt:locale", "ar");
+    try {
+      open();
+      expect(
+        await screen.findByText(/تلفاز .*Samsung.*، عبر رمز Maktaba Cloud/)
+      ).toBeInTheDocument();
+      expect(screen.getByText(ar["appSignIns.title"])).toBeInTheDocument();
+      expect(document.documentElement.dir).toBe("rtl");
+    } finally {
+      localStorage.removeItem("mkt:locale");
+    }
+  });
 });
