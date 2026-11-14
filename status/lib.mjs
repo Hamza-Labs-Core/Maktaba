@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 export const STATES = ["operational", "maintenance", "degraded", "outage"];
-export const KNOWN_COMPONENTS = ["relay", "api", "push", "payments", "plugins"];
+export const KNOWN_COMPONENTS = ["relay", "api", "push", "payments", "plugins", "broadcasting"];
 const INCIDENT_STATES = ["investigating", "identified", "monitoring", "resolved"];
 const MAINTENANCE_STATES = ["scheduled", "in_progress", "completed"];
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?Z$/;
@@ -22,7 +22,8 @@ export function worst(states) {
 
 /**
  * One round's state of a component, or null when nothing measured it. A round is
- * { at, relay: { actions, witness, held_ratio? }, api: { actions, witness }, push: { lag } }
+ * { at, relay: { actions, witness, held_ratio? }, api: { actions, witness }, push: { lag },
+ *   broadcasting?: { actions, witness } } (the canary broadcast, story 50.28)
  * with 1 (pass), 0 (fail) or null (that network gave no answer) per network.
  * Every network that answered failing is an outage; one of two failing is degraded
  * (probably that probe's own network).
@@ -235,7 +236,10 @@ export function model({ config, state, dayOf, posts, now }) {
     || (p.kind === "maintenance" && (p.state === "completed" || ms(p.ends) <= t) && ms(p.ends) >= since90))
     .sort((a, b) => (b.resolved || b.ends).localeCompare(a.resolved || a.ends));
 
-  const shown = [...config.components, ...(config.plugins_listed ? ["plugins"] : [])];
+  // Broadcasting (story 50.28) is measured from the first canary broadcast and listed from the
+  // broadcasting gate (broadcasting_listed): a component for a service not yet open is not shown
+  const shown = [...config.components, ...(config.plugins_listed ? ["plugins"] : []),
+    ...(config.broadcasting_listed ? ["broadcasting"] : [])];
   const days = lastDays(now, config.days);
   const components = {};
   for (const c of shown) {

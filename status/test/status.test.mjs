@@ -73,6 +73,24 @@ test("update folds rounds into day files and skips rounds it has seen", () => {
   assert.equal(s.updated_at, "2026-11-03T10:03:00Z");
 });
 
+test("story 50.28: the canary broadcast drives Broadcasting, listed from the broadcasting gate", () => {
+  const d = tmp(), out = tmp(), inc = tmp();
+  const probed = [...config.probed, "broadcasting"];
+  const rounds = [];
+  // both networks fail the canary broadcast twice in a row
+  for (let i = 0; i < 4; i++) rounds.push({ at: `2026-11-03T10:0${i}:00Z`, relay: { actions: 1, witness: 1 }, api: { actions: 1, witness: 1 }, push: { lag: 1 }, broadcasting: { actions: i < 2 ? 1 : 0, witness: i < 2 ? 1 : 0 } });
+  const s = update(d, rounds, probed);
+  assert.equal(s.components.broadcasting.state, "outage");
+  assert.equal(roundState("broadcasting", { broadcasting: { actions: 0, witness: 1 } }), "degraded");
+  // before the gate the page doesn't list it; after, it does, in both languages
+  let m = build({ checksDir: d, incidentsDir: inc, out, now: new Date("2026-11-03T12:00:00Z"), config: { ...config, probed } });
+  assert.equal(m.components.broadcasting, undefined);
+  m = build({ checksDir: d, incidentsDir: inc, out, now: new Date("2026-11-03T12:00:00Z"), config: { ...config, probed, broadcasting_listed: true } });
+  assert.equal(m.components.broadcasting.state, "outage");
+  assert.match(read(out, "index.html"), /Broadcasting/);
+  assert.match(read(out, "ar/index.html"), /البث/);
+});
+
 test("T01 the uptime bars follow the fixture's per-day uptime", () => {
   const d = tmp(), out = tmp(), inc = tmp();
   put(d, "checks/state.json", { updated_at: "2026-11-03T10:00:00Z", components: { relay: { state: "operational" }, api: { state: "operational" }, push: { state: "operational" } } });
