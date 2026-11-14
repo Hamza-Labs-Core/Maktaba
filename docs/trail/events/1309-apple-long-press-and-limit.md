@@ -5,7 +5,7 @@ pr: 1309
 title: "Apple: a long press taken as a tap, dropped taps and split double taps get one more try; blocked pages read the limit"
 date: 2026-11-14
 session: b47dc279-403a-4d10-8efc-873b659d9e1a
-prs: [1249]
+prs: [1249, 1310]
 ---
 
 ## What happened
@@ -29,5 +29,5 @@ prs: [1249]
 - When a proof run fails, read that iteration's touch log before deciding: a dropped tap gets the retry; anything else gets its real cause found, which here was an app bug.
 
 ## Open
-- Accessibility custom actions for Home's card menu (for VoiceOver users), separate from the tests.
+- Accessibility custom actions for Home's card menu (for VoiceOver users): done in #1310 (event #1315); the tests still open the menu by a long press, through `openMenu`.
 - A starved simulator can still outrun XCTest's 30 s query limit; if it recurs, look at the runner's load (and `apsd`'s loop) rather than the test.
