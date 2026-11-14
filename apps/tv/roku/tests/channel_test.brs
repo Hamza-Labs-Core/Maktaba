@@ -143,6 +143,42 @@ sub t_Net()
     ck_Eq("relay last", got[2].kind, "relay")
     ck_Eq("no connections", NetCloudConnections(invalid).Count(), 0)
 
+    ' the approving home, known by its address: the cloud's home_id is its server id, which
+    ' discovery never gives (it answers with the home's instance id)
+    ck_Eq("compare base", NetCompareBase(" HTTPS://Relay.Maktaba.TV/h/H1// "), "https://relay.maktaba.tv/h/H1")
+    ck_Eq("compare base no path", NetCompareBase("http://10.0.0.2:8088/"), "http://10.0.0.2:8088")
+    approval = [
+        {kind: "local", url: "http://192.168.1.20:8088"}
+        {kind: "local_ip", url: "http://192.168.1.20:8088/"}
+        {kind: "relay_hint", url: "https://h1.relay.maktaba.tv"}
+        {kind: "relay", url: "https://relay.maktaba.tv/h/h1"}
+    ]
+    ours = {id: "instance-a", urls: ["http://192.168.1.20:8088", "https://H1.relay.maktaba.tv/"]}
+    other = {id: "instance-b", urls: ["http://192.168.1.20:8088", "https://h2.relay.maktaba.tv"]}
+    ck_True("relay accepted whatever id answers", NetIsApprovedHome("https://relay.maktaba.tv/h/h1", other, approval))
+    ck_True("relay hint accepted as it is", NetIsApprovedHome("https://h1.relay.maktaba.tv", {id: "x", urls: []}, approval))
+    ck_True("direct name accepted as it is", NetIsApprovedHome("https://h1.d.example", {id: "x", urls: []}, [{kind: "direct", url: "https://h1.d.example/"}]))
+    ck_True("https LAN name accepted as it is", NetIsApprovedHome("https://192-168-1-20.h1.d.example:8443", {id: "x", urls: []}, [{kind: "local", url: "https://192-168-1-20.h1.d.example:8443"}]))
+    plainDirect = [{kind: "direct", url: "http://203.0.113.5:8088"}]
+    ck_Eq("plain http direct refused with only itself listed", NetIsApprovedHome("http://203.0.113.5:8088", {id: "x", urls: ["http://203.0.113.5:8088"]}, plainDirect), false)
+    ipDirect = [{kind: "direct", url: "https://203.0.113.5:8443"}, {kind: "relay", url: "https://relay.maktaba.tv/h/h1"}]
+    ck_Eq("https raw IP direct refused alone", NetIsApprovedHome("https://203.0.113.5:8443", {id: "x", urls: ["https://203.0.113.5:8443"]}, ipDirect), false)
+    ck_True("https raw IP direct accepted when the home lists the relay", NetIsApprovedHome("https://203.0.113.5:8443", {id: "x", urls: ["https://relay.maktaba.tv/h/h1"]}, ipDirect))
+    ck_True("proven name", NetIsProvenName("https://Relay.Maktaba.tv/h/h1"))
+    ck_Eq("plain http not proven", NetIsProvenName("http://h1.d.example"), false)
+    ck_Eq("raw IPv4 not proven", NetIsProvenName("https://10.0.0.2:8443"), false)
+    ck_Eq("bracketed IPv6 not proven", NetIsProvenName("https://[fd00::1]:8443"), false)
+    ck_Eq("all-digit host not proven", NetIsProvenName("https://167772162"), false)
+    ck_True("LAN accepted when the home lists the relay", NetIsApprovedHome("http://192.168.1.20:8088", ours, approval))
+    ck_True("local_ip accepted when the home lists the relay", NetIsApprovedHome("http://192.168.1.20:8088/", ours, approval))
+    ck_Eq("LAN refused when another home answers", NetIsApprovedHome("http://192.168.1.20:8088", other, approval), false)
+    ck_Eq("LAN refused when the home lists no relay", NetIsApprovedHome("http://192.168.1.20:8088", {id: "x", urls: ["http://192.168.1.20:8088"]}, approval), false)
+    ck_Eq("LAN refused with no cloud-named address", NetIsApprovedHome("http://192.168.1.20:8088", ours, [{kind: "local", url: "http://192.168.1.20:8088"}]), false)
+    ck_Eq("address not in the cloud's list refused", NetIsApprovedHome("http://192.168.1.21:8088", ours, approval), false)
+    ck_Eq("relay-like address not in the list refused", NetIsApprovedHome("https://relay.maktaba.tv/h/h2", ours, approval), false)
+    ck_Eq("not a home answer refused", NetIsApprovedHome("https://relay.maktaba.tv/h/h1", {urls: []}, approval), false)
+    ck_Eq("no connections refused", NetIsApprovedHome("https://relay.maktaba.tv/h/h1", ours, invalid), false)
+
     ' the subnet probe
     targets = NetProbeTargets("192.168.1.9")
     ck_Eq("253 addresses", targets.Count(), 253)

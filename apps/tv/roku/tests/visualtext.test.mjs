@@ -1,7 +1,7 @@
 // Story 58.15 T03 and T04: VisualText on brs-engine against shared/i18n/visual-vectors.json
 // (the reference's outputs, apps/tv/roku/tools/gen_vectors.py), its ASCII fast path against
-// its full steps, and its cost on 20 long descriptions (tests/timing_test.brs). brs-engine's
-// stdout is kept in build/logs.
+// its full steps (T04, its cost, is tests/timing/t04.test.mjs). brs-engine's stdout is kept in
+// build/logs.
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -137,27 +137,4 @@ ${BRS_HELPERS}`;
   const r = runBrs("visualtext-ascii", [writeTest("visualtext_ascii", code)]);
   assert.deepEqual(r.failures, [], r.failures.slice(0, 20).join("\n"));
   assert.equal(r.pass, strings.length * 7 * 5 + 1);
-});
-
-// T04: tests/timing_test.brs shapes 20 long descriptions as one screen and prints their cost
-// next to a reference loop's, both the best of 5 runs (the log keeps the line; the device-test
-// package prints the same line on a Roku Express for docs/stores/roku.md row 10). brs-engine's
-// speed changes from one machine to the next, so the budget here is in units of that loop:
-// 20 descriptions cost about 2.5 loops (207 ms against 83 ms in the Linux container), 4.0
-// before the hot paths were reworked. The ceiling, 3.5, leaves a margin for a runner's noise
-// and fails on a return to the old cost, a quadratic step or a call per character.
-const T04_MAX_UNITS = 3.5;
-
-test("shaping 20 long descriptions costs at most 3.5 reference loops on brs-engine (T04)", () => {
-  const r = runBrs("visualtext-timing", [join(ROKU, "tests", "timing_test.brs"), join(ROKU, "tests", "check.brs")]);
-  const line = r.out.split("\n").find((l) => l.startsWith("TIMING"));
-  console.log(line);
-  assert.deepEqual(r.failures, [], r.failures.join("\n"));
-  assert.equal(r.fail, 0);
-  const m = /TIMING shape=(\d+) loop=(\d+)/.exec(line ?? "");
-  assert.ok(m, `no TIMING line in build/logs/visualtext-timing.log:\n${r.out.slice(-2000)}`);
-  const shape = Number(m[1]);
-  const loop = Number(m[2]);
-  assert.ok(loop > 0, line);
-  assert.ok(shape / loop <= T04_MAX_UNITS, `${line}: ${(shape / loop).toFixed(2)} units, over ${T04_MAX_UNITS}`);
 });
