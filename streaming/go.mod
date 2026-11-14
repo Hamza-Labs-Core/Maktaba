@@ -7,8 +7,8 @@ go 1.25.0
 godebug multipathtcp=0
 
 require (
-	github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/components v0.0.0
+	github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/health/go v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/log/go v0.0.0
 	github.com/go-chi/chi/v5 v5.4.0
@@ -21,7 +21,10 @@ require (
 	google.golang.org/grpc v1.83.2
 )
 
-require github.com/BurntSushi/toml v1.6.0 // indirect
+require (
+	github.com/BurntSushi/toml v1.6.0 // indirect
+	github.com/coder/websocket v1.8.15 // indirect
+)
 
 require (
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/ports v0.0.0

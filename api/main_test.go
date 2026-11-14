@@ -219,3 +219,16 @@ func getJSON(t *testing.T, url string) map[string]any {
 	}
 	return out
 }
+
+// Story 50.22: the Broadcast page reaches Maktaba Cloud through the relay agent's loopback
+// admin port the supervisor sets, and through nothing else.
+func TestBroadcastDepsUseTheRelayAgent(t *testing.T) {
+	t.Setenv("MAKTABA_CLOUDLINK_ADMIN", "127.0.0.1:8765")
+	if d := broadcastDeps(nil, nil, nil); d.AgentAddr != "127.0.0.1:8765" || d.NoLoop {
+		t.Fatalf("deps %+v", d)
+	}
+	t.Setenv("MAKTABA_CLOUDLINK_ADMIN", "")
+	if d := broadcastDeps(nil, nil, nil); d.AgentAddr != "" {
+		t.Fatalf("an unclaimed home has an agent: %+v", d)
+	}
+}

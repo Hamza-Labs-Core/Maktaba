@@ -22,7 +22,7 @@ import (
 // loop.
 func TestStreamingLoopsMatchTheCatalog(t *testing.T) {
 	loopcheck.Check(t, loopcheck.Spec{
-		Host: componentHost, Root: ".", StartFiles: []string{"main.go", "tvcluster_wire.go", "slots_wire.go"},
+		Host: componentHost, Root: ".", StartFiles: []string{"main.go", "tvcluster_wire.go", "slots_wire.go", "broadcast_wire.go"},
 		Declare: []string{"Loop"}, Plain: []loopcheck.Plain{{Pkg: "bg", Func: "Go", NameArg: -1}},
 	})
 }

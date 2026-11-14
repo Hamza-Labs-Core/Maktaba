@@ -49,6 +49,12 @@ var ComponentRoutes = componentTable{
 	// an admin sending a home's problem report to Maktaba (53.16); a new report with the
 	// Maktaba box ticked (POST /api/reports, core) is refused by its handler
 	{Exact: "POST /api/reports/{id}/share", Component: "reports.share", Admin: true},
+	// home broadcasting (Epic 50 story 50.22): the Broadcast page, admins only
+	{Exact: "GET /api/tv/broadcast", Component: "livetv.broadcast", Admin: true},
+	{Exact: "PUT /api/tv/broadcast/channels/{id}", Component: "livetv.broadcast", Admin: true},
+	{Exact: "POST /api/tv/broadcast/channels/{id}/publish", Component: "livetv.broadcast", Admin: true},
+	{Exact: "POST /api/tv/broadcast/channels/{id}/unpublish", Component: "livetv.broadcast", Admin: true},
+	{Exact: "POST /api/tv/broadcast/speedtest", Component: "livetv.broadcast", Admin: true},
 }
 
 // CoreRoutes never answer component_off: every other route family. A route family

@@ -2884,6 +2884,19 @@ build fails when the two differ.
   switchable fallback. The edge stores and delivers what a home sends and never chooses, ranks
   or recommends anything. It is not deployed yet: broadcasting stays off until its gate opens.
 
+- **A home can broadcast chosen Live TV channels to viewers outside it (Epic 50, story 50.22).**
+  An admin sets a channel up on the new Broadcast panel of the Live TV page (its link name,
+  invite-only or open, always on or only while someone watches, its qualities) and publishes it
+  after ticking that the home has the rights to what it airs. Before anything starts the home
+  checks, in order, the Maktaba Cloud plan, the publisher agreement, the schedule, the measured
+  internet upload (suggesting fewer qualities when it is too slow) and the encoder's free slots,
+  and names the first that fails. A published channel's qualities (up to 1080p, three by
+  default) are made at home and each segment is sent once to the broadcast edge, so the upload
+  is the same however many people watch; the channel shows an offline card when the home is
+  away, keeps going for a day without Maktaba Cloud, and is never released while published.
+  Only admins can set up, publish or unpublish, and the API enforces it. Broadcasting is off
+  until an admin turns it on, and nothing reaches viewers until the broadcast edge is deployed.
+
 - **Parental controls on the new TVs (Epic 58, story 58.14).** A child's account signed in on a
   Samsung or LG TV (`/tv/`), Roku, Fire TV or Android TV sees only what its limits allow, as
   everywhere else. Something hidden, opened from a link, shows This isn't available with the
