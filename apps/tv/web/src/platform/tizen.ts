@@ -4,7 +4,7 @@
 // never reach a page), and tizen.application to leave. AVPlay is 58.10's player adapter.
 
 import {
-  DEFAULT_CAPS,
+  capsForPanel,
   chromiumMajor,
   commonKeyAction,
   engineOf,
@@ -100,7 +100,7 @@ export function tizenPlatform(w: Window): Platform {
         uhd = false;
       }
       // the rest of the report (HEVC, AV1, HDR, passthrough) is AVPlay's, story 58.10
-      return { ...DEFAULT_CAPS, max_height: uhd ? 2160 : 1080 };
+      return capsForPanel(uhd);
     },
     exit() {
       try {

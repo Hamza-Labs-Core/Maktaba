@@ -836,6 +836,8 @@ tv_web:
   - 'web/e2e/launcher/**'
   - 'web/vitest.config.ts'
   - 'shared/compat/**'
+  # the device caps vectors the Samsung and LG readers are tested against (58.02)
+  - 'shared/playback/caps-vectors.json'
 
 # The Roku channel (Epic 58 stories 58.12, 58.13, 58.15): its BrightScript on brs-engine, the
 # build-time shaping of its Arabic catalogs and the shared vectors both are held to (_roku.yml)
