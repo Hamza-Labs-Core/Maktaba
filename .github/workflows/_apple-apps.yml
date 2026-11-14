@@ -590,7 +590,7 @@ jobs:
     name: Remote UI tests
     if: inputs.player_ui
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 120 # TEMPORARY: -test-iterations 3
     env:
       DERIVED: ${{ github.workspace }}/build/remote-ui-derived
       SHOTS: ${{ github.workspace }}/build/remote-shots
@@ -642,7 +642,7 @@ jobs:
           if [ "$SHOTS_ONLY" != true ]; then only+=(-only-testing "Maktaba Remote UITests/RemoteDiagnosticsUITests"); fi
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Remote" \
             -destination "id=$UDID" -derivedDataPath "$DERIVED" -resultBundlePath "$RESULTS/remote.xcresult" \
-            CODE_SIGNING_ALLOWED=NO "${only[@]}"
+            CODE_SIGNING_ALLOWED=NO -test-iterations 3 "${only[@]}"
 
       - name: Keep the app's log, delete the simulator
         if: always() && env.UDID != ''
