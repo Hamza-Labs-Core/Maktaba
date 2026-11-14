@@ -46,6 +46,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/compat"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
@@ -65,6 +66,10 @@ import (
 // constructs a Deps with the in-memory store and no DB).
 type Deps struct {
 	IdempotencyStore idempotency.Store
+
+	// ClientFloor is the oldest build of each app this home signs in (Epic 58 story 58.01);
+	// nil: compat.ReleaseFloor.
+	ClientFloor compat.Floor
 
 	// IPRatePerMin / UserRatePerMin are the per-IP and per-user
 	// rate-limit caps. Pass 0 to skip the corresponding middleware
@@ -163,6 +168,8 @@ func New(d Deps) chi.Router {
 	r.Use(tracing.HTTP)
 	r.Use(mw.SLogLogger)
 	r.Use(mw.Client)
+	// Epic 58 story 58.01: a build below the client floor is refused at sign-in (426)
+	r.Use(compat.Gate(d.ClientFloor))
 	r.Use(mw.Metrics)
 	r.Use(mw.Usage(d.Usage))
 

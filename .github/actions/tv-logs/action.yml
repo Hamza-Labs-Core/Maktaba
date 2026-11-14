@@ -1,0 +1,68 @@
+# Uploads a TV job's app logs as an artifact kept 30 days and links it from the job summary
+# (story 58.16). Every TV job (_android-tv.yml, and each TV platform's workflow as its story
+# adds it) ends with it, run whether the job passed or failed:
+#
+#   - name: App logs
+#     if: always()
+#     uses: ./.github/actions/tv-logs
+#     with:
+#       name: roku-logs
+#       what: brs-engine stdout, the render tests' screenshots
+#       path: |
+#         apps/tv/roku/build/logs/
+#         apps/tv/roku/build/screenshots/
+#
+# What each platform keeps: Playwright's console log, network log and trace; Robolectric's
+# stdout (logging=stdout) and the emulator's logcat; brs-engine's stdout; an emulator's or
+# simulator's own log; the launcher's in-app log buffer. The logs pass the same redaction the
+# apps' logs do (no `sig`, tokens or grants); this action uploads what it is given.
+# tools/ci/tests/test_tv_logs.py checks that every TV job ends with it.
+
+name: TV app logs
+description: Uploads a TV job's app logs (30 days) and links them from the job summary.
+
+inputs:
+  name:
+    description: the artifact's name, unique in the run (e.g. android-tv-logs)
+    required: true
+  path:
+    description: the files and folders to upload, one per line (upload-artifact's path)
+    required: true
+  what:
+    description: what the logs are, one line for the summary
+    required: false
+    default: the app's logs
+
+outputs:
+  artifact-url:
+    description: the artifact's URL, empty when no file matched
+    value: ${{ steps.upload.outputs.artifact-url }}
+
+runs:
+  using: composite
+  steps:
+    - name: Upload the app logs (kept 30 days)
+      id: upload
+      uses: actions/upload-artifact@v7.0.1
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ inputs.path }}
+        retention-days: 30
+        if-no-files-found: warn
+
+    - name: Link the app logs from the job summary
+      shell: bash
+      env:
+        NAME: ${{ inputs.name }}
+        WHAT: ${{ inputs.what }}
+        URL: ${{ steps.upload.outputs.artifact-url }}
+      run: |
+        {
+          echo "### App logs: ${NAME}"
+          echo
+          if [ -n "$URL" ]; then
+            echo "[${NAME}](${URL}): ${WHAT}. Kept 30 days."
+          else
+            echo "No log file was found for ${NAME} (${WHAT}): the job stopped before writing one."
+          fi
+        } >>"$GITHUB_STEP_SUMMARY"

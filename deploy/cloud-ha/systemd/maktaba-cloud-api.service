@@ -9,7 +9,9 @@ EnvironmentFile=/etc/maktaba/cloud.env
 ExecStart=/usr/local/bin/maktaba-cloud serve --role api --config /etc/maktaba/cloud.toml
 Restart=on-failure
 RestartSec=2
-TimeoutStopSec=30
+# in the api pool (story 50.17) a stop first drains for server.drain_delay (12 s), then has the
+# shutdown grace (20 s): systemd waits for both
+TimeoutStopSec=45
 NoNewPrivileges=yes
 # this node's log keeper (story 53.17): /var/lib/maktaba-cloud/logs, writable under ProtectSystem
 StateDirectory=maktaba-cloud

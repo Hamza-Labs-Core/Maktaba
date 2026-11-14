@@ -19,6 +19,8 @@ and CI. The source lives at
   server-side roles, no secrets, commit style.
 - [Problem types](problem-types.md): the API's errors, their registry, how to add one, and
   the checks that keep the API, the apps and maktaba.tv in step.
+- [API levels](api-levels.md): how a home and its apps tell whether they can work together,
+  the client floor, the TV platform names, and how to change a response safely.
 - [Parental controls](parental-controls.md): for client and API authors: what a player must
   do, the routes and their codes, the route registry, and how to run the role table and the
   bypass rehearsal.

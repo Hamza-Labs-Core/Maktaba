@@ -496,6 +496,29 @@
       "install": null
     },
     {
+      "slug": "client-too-old",
+      "status": 426,
+      "area": "apps",
+      "audience": "app",
+      "codes": [
+        "client_too_old"
+      ],
+      "title": {
+        "en": "This app is too old for this home",
+        "ar": "هذا التطبيق أقدم من أن يعمل مع هذا الجهاز الرئيسي"
+      },
+      "means": {
+        "en": "Your home no longer serves this version of the app, usually after a security fix. The app has to be updated before it can sign in again.",
+        "ar": "لم يعد جهازكم الرئيسي يخدم هذا الإصدار من التطبيق، وغالبًا ما يكون ذلك بعد إصلاح أمني. يجب تحديث التطبيق قبل أن يتمكن من تسجيل الدخول مجددًا."
+      },
+      "do": {
+        "en": "Update the app from your TV's or phone's app store, then open it again. Roku and Fire TV update apps by themselves; restarting the device fetches the update sooner.",
+        "ar": "حدّثوا التطبيق من متجر التطبيقات على التلفاز أو الهاتف، ثم افتحوه مجددًا. يحدّث Roku وFire TV التطبيقات تلقائيًا، وإعادة تشغيل الجهاز تجلب التحديث أسرع."
+      },
+      "help": null,
+      "install": null
+    },
+    {
       "slug": "cloud-session",
       "status": 403,
       "area": "accounts",
