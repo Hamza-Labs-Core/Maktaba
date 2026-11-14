@@ -81,6 +81,21 @@ func BroadcastHandler(rep *LinkReporter) http.HandlerFunc {
 	}
 }
 
+// BroadcastLoopback serves BroadcastPrefix, which home broadcasting (story 50.22) and the
+// viewer-access calls (story 50.26, BroadcastAccessPrefix) share: a ServeMux takes one
+// handler per pattern, so each request goes to the handler whose routes name it (the two
+// route lists never name the same method and path); anything neither names is 404.
+func BroadcastLoopback(rep *LinkReporter) http.Handler {
+	publish, access := BroadcastHandler(rep), BroadcastAccessHandler(rep)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if broadcastAccessAllowed(r.Method, strings.TrimPrefix(r.URL.Path, BroadcastPrefix)) {
+			access(w, r)
+			return
+		}
+		publish(w, r)
+	})
+}
+
 // fromLocalProgram refuses what a web page in a browser on the home machine could send to
 // the loopback port (the agent adds the server's secret): a Host that is not loopback (DNS
 // rebinding), any Origin or a cross-site Sec-Fetch-Site (a browser's request), and a POST

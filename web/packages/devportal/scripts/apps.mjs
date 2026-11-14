@@ -861,6 +861,10 @@ export const APPS = [
           {
             ul: [
               t(
+                "**Signing in** on Android TV, Google TV and Fire TV: the TV opens on a code from Maktaba Cloud and its QR code. On a phone signed in to the home, **Approve a TV or device** takes the code, from any network: the TV does not need to be at home. The homes on the TV's network and a typed address are beside it. A TV signed in by a cloud code watches as the person who approved it, and never runs the home.",
+                "**تسجيل الدخول** على أندرويد تي في وجوجل تي في وفاير تي في: يفتح التلفاز على رمز من Maktaba Cloud ورمز QR الخاص به. وعلى هاتف مسجَّل الدخول إلى الجهاز الرئيسي، يأخذ **الموافقة على تلفاز أو جهاز** الرمز من أي شبكة: لا يلزم أن يكون التلفاز في المنزل. وبجانبه الأجهزة الرئيسية على شبكة التلفاز وعنوان يُكتب. والتلفاز الذي سُجّل دخوله برمز سحابي يشاهد باسم من وافق عليه، ولا يدير الجهاز الرئيسي أبدًا."
+              ),
+              t(
                 "**Home**: the home's rows, continue watching first.",
                 "**الرئيسية**: صفوف الجهاز الرئيسي، وأولها تابع المشاهدة."
               ),
@@ -1097,6 +1101,12 @@ export const APPS = [
                 "مكتبة على فاير تي في: تبويباتها والمقترحات"
               ),
               shot(
+                "firetv-cloud-code",
+                "wide",
+                "Signing in on a Fire TV: a code from Maktaba Cloud and its QR code, the homes on this network and an address beside it",
+                "تسجيل الدخول على فاير تي في: رمز من Maktaba Cloud ورمز QR الخاص به، وبجانبهما الأجهزة الرئيسية على هذه الشبكة وعنوان"
+              ),
+              shot(
                 "lgtv-watch",
                 "wide",
                 "Playing on an LG TV: the TV's own player under the controls, and Arabic subtitles drawn by Maktaba",
@@ -1136,8 +1146,8 @@ export const APPS = [
           },
           {
             p: t(
-              "The first four screenshots are from the Apple TV app, the sign-in from the Android TV app, the next two from the Fire TV build, the next from the LG app and the next from the Samsung app, each taken in its browser test with a pretend TV (behind the Samsung shot, a frame stands in for the video), and the last four from the Roku channel, drawn by brs-engine (Roku's own renderer differs a little; behind the player, the video is black). The Android TV app, its Fire TV build and the Roku channel have the same sections as the Apple TV app, laid out for the TV's remote.",
-              "أول أربع لقطات من تطبيق آبل تي في، ولقطة تسجيل الدخول من تطبيق أندرويد تي في، واللقطتان التاليتان من إصدار فاير تي في، والتالية من تطبيق LG والتي تليها من تطبيق سامسونج، وكلٌّ منهما التُقطت في اختبار تطبيقها في المتصفح مع تلفاز وهمي (وخلف لقطة سامسونج إطار بديل عن الفيديو)، وآخر أربع لقطات من قناة روكو كما يرسمها brs-engine (ويختلف عنه عارض روكو نفسه قليلًا، والفيديو خلف المشغّل أسود). ولتطبيق أندرويد تي في وإصداره لفاير تي في وقناة روكو أقسام تطبيق آبل تي في نفسها، مرتبةً لجهاز تحكم التلفاز."
+              "The first four screenshots are from the Apple TV app, the sign-in from the Android TV app, the next three from the Fire TV build, the next from the LG app and the next from the Samsung app, each taken in its browser test with a pretend TV (behind the Samsung shot, a frame stands in for the video), and the last four from the Roku channel, drawn by brs-engine (Roku's own renderer differs a little; behind the player, the video is black). The Android TV app, its Fire TV build and the Roku channel have the same sections as the Apple TV app, laid out for the TV's remote.",
+              "أول أربع لقطات من تطبيق آبل تي في، ولقطة تسجيل الدخول من تطبيق أندرويد تي في، واللقطات الثلاث التالية من إصدار فاير تي في، والتالية من تطبيق LG والتي تليها من تطبيق سامسونج، وكلٌّ منهما التُقطت في اختبار تطبيقها في المتصفح مع تلفاز وهمي (وخلف لقطة سامسونج إطار بديل عن الفيديو)، وآخر أربع لقطات من قناة روكو كما يرسمها brs-engine (ويختلف عنه عارض روكو نفسه قليلًا، والفيديو خلف المشغّل أسود). ولتطبيق أندرويد تي في وإصداره لفاير تي في وقناة روكو أقسام تطبيق آبل تي في نفسها، مرتبةً لجهاز تحكم التلفاز."
             ),
           },
           { p: SHOTS_NOTE },
@@ -1436,6 +1446,14 @@ export const APPS = [
               t(
                 "**Word review** (`/review`), for admins: the words the home doubts in its transcripts, each with its sentence, its clip, why it was flagged and the spellings suggested. Accept, correct, mark as a name, add to the dictionary or skip, for one place or every place with the same word, and undo. Beside it: **Fixes**, the **Vocabulary**, the **Language packs**, and each library's word review settings.",
                 "**مراجعة الكلمات** (`/review`)، للمدراء: الكلمات التي يشكّ فيها الجهاز الرئيسي في نصوصه المفرَّغة، ومع كل منها جملتها ومقطعها الصوتي وسبب تعليمها والتهجئات المقترحة. اقبل أو صحّح أو علّم اسمًا أو أضف إلى القاموس أو تخطَّ، في موضع واحد أو في كل موضع فيه الكلمة نفسها، ويمكنك التراجع. وبجانبها: **التصحيحات** و**المفردات** و**حزم اللغات**، وإعدادات مراجعة الكلمات لكل مكتبة."
+              ),
+              t(
+                "**Broadcast access** (`/admin/broadcast-access`), for the home's owner and admins: who may watch the channels the home publishes through Maktaba Cloud. Each channel is **Invite only** or, for a verified account with the Broadcaster add-on, **Anyone with the link**. Create invite links and short TV codes (`MK-…`), each for some channels or all, a number of devices and a number of days; see the devices on each, remove one, or withdraw the invite, and its viewers stop within a minute. Viewer limits set the devices per network and the minutes a day. Viewers never pay and need no account. The same page is **Who can watch** in Maktaba Cloud's web app.",
+                "**الوصول إلى البث** (`/admin/broadcast-access`)، لمالك الجهاز الرئيسي ومدرائه: من يمكنه مشاهدة القنوات التي ينشرها الجهاز الرئيسي عبر سحابة مكتبة. كل قناة إما **بالدعوة فقط** أو، لحساب موثّق لديه إضافة المذيع، **أي شخص لديه الرابط**. أنشئ روابط دعوة ورموز تلفاز قصيرة (`MK-…`)، لكل منها بعض القنوات أو كلها، وعدد من الأجهزة وعدد من الأيام؛ واطّلع على أجهزة كل دعوة، وأزل جهازًا منها، أو اسحب الدعوة فيتوقف مشاهدوها خلال دقيقة. وتحدد حدود المشاهدة عدد الأجهزة على الشبكة الواحدة والدقائق في اليوم. لا يدفع المشاهدون شيئًا ولا يحتاجون إلى حساب. والصفحة نفسها هي **من يمكنه المشاهدة** في تطبيق سحابة مكتبة على الويب."
+              ),
+              t(
+                "**Guests watch in a browser** at `watch.maktaba.tv`, with no account: an invite link opens the publisher's channels, each with its player, what is on now and next, today's programmes, the credit of a Creative Commons programme and a Report link, and a guide for all of them. Arabic is the default and English is a tap away. Channels switch with up and down, a swipe or the channel's number; when the home is offline its slate plays with a note. A page links only to the same publisher's channels. A TV without a keyboard shows a QR code that opens the pairing page on a phone, where the guest pastes the invite and the TV starts.",
+                "**يشاهد الضيوف في المتصفح** على `watch.maktaba.tv` من دون حساب: يفتح رابط الدعوة قنوات الناشر، ولكل قناة مشغّلها وما يُعرض الآن وما يليه وبرامج اليوم ونسبة البرنامج المرخّص بالمشاع الإبداعي إلى صاحبه ورابط للإبلاغ، ومعها دليل برامج لكل القنوات. العربية هي الأساس والإنجليزية على بُعد نقرة. وتتبدّل القنوات بالأعلى والأسفل أو بالسحب أو برقم القناة؛ وإن انقطع اتصال الجهاز الرئيسي عُرضت شريحته مع ملاحظة. ولا تربط الصفحة إلا بقنوات الناشر نفسه. أما التلفاز الذي لا لوحة مفاتيح له فيعرض رمز QR يفتح صفحة الربط على الهاتف، فيلصق الضيف الدعوة ويبدأ التلفاز."
               ),
               t(
                 "**Logs**, **Errors** and **Dashboards**, for admins. Logs searches every part's lines, follows one request from app to server and back, and follows new lines live. Errors groups repeated failures, with how often and since which version, and tells admins of a new one. **Diagnostics settings** choose how long logs are kept and turn on detailed logs for an hour. Dashboards draw the home's metrics over a chosen range; with several machines the Overview shows totals across them and the five most in need of attention, a machine that is offline first and named as offline, each machine by its name from the Machines page (its id beside it in the picker), says how many of how many it shows, and opens any one machine on its own.",

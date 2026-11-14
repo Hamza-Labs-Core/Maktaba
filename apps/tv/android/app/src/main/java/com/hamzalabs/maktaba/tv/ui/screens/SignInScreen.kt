@@ -1,6 +1,5 @@
 package com.hamzalabs.maktaba.tv.ui.screens
 
-import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -110,10 +109,7 @@ fun SignInScreen(app: MaktabaTVApp, home: Home) {
 
 @Composable
 private fun CodeSignIn(app: MaktabaTVApp, home: Home, onPassword: () -> Unit, onUnsupported: () -> Unit) {
-    val label = stringResource(R.string.tv_label).let { base ->
-        val model = Build.MODEL?.takeIf { it.isNotBlank() }
-        if (model != null) "$base ($model)" else base
-    }
+    val label = tvDeviceLabel()
     var code by remember { mutableStateOf<DeviceCode?>(null) }
     var renewed by remember { mutableStateOf(false) }
     var lookedUp by remember { mutableStateOf(false) }

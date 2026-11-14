@@ -42,7 +42,7 @@ string ships in English and Arabic together.
 
 | App | Entry | How the guest gets in |
 |---|---|---|
-| Apple TV (tvOS) | Home → **Watch a broadcast** | type the short code with the remote, or show a QR code that opens `watch.maktaba.tv/pair?tv=<nonce>` on a phone, where the guest taps an invite or opens the channel; the TV receives the pass over a long-poll (`/api/v1/pair/<nonce>`, 10 min) |
+| Apple TV (tvOS) | Home → **Watch a broadcast** | type the publisher's handle and the invite's short code (`MK-` and four letters or digits; a code belongs to one publisher, so it is typed with the handle) with the remote, or show a QR code that opens `watch.maktaba.tv/pair?tv=<nonce>` on a phone, where the guest taps an invite or opens the channel; the TV receives the pass over a long-poll (`/api/v1/pair/<nonce>`, 10 min) |
 | iOS, iPadOS | open an invite link (universal link) or scan a QR code; the menu → Watch a broadcast | the pass goes in the keychain |
 | Android, Android TV | the same (app links, QR code, short code); Android TV uses the code and phone pairing flow | the pass goes in the keystore |
 | Desktop player, web app | open the link | cookie or local store |
@@ -69,7 +69,7 @@ an EN/AR string and a "try again" action where it helps.
   **then** it shows RTL, the channel plays within 3 s (p75), and swiping switches channels in
   under 2 s.
 - **Given** an Apple TV with the app,
-  **when** the guest types a valid short code,
+  **when** the guest types the publisher's handle and a valid short code,
   **then** the channel plays, and the broadcast is saved for next time.
 - **Given** the QR code flow on Android TV,
   **when** the guest opens the invite on their phone,
