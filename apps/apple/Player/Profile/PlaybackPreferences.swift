@@ -1,4 +1,5 @@
 import Foundation
+import MaktabaKit
 import Observation
 
 // FR-31's playback settings, kept on this device. The Profile's Playback page (story 48.22)
@@ -150,7 +151,7 @@ final class PlaybackPreferences {
     /// What the player sends as `max_bitrate_kbps` (nil: none).
     func maxBitrateKbps(expensive: Bool) -> Int? { quality(expensive: expensive).maxBitrateKbps }
 
-    /// Back to the defaults (and the theme to dark), once per launch: a Debug launch with
+    /// Back to the defaults (the theme to dark, the crash question unanswered), once per launch: a Debug launch with
     /// `-maktaba-settings-reset`, so a UI test starts as a fresh install. `PlayerApp` calls it
     /// as it starts (the Profile again as it appears: a no-op by then).
     static func resetIfAsked(arguments: [String] = CommandLine.arguments) {
@@ -158,6 +159,8 @@ final class PlaybackPreferences {
         guard !didReset, arguments.contains("-maktaba-settings-reset") else { return }
         didReset = true
         for key in Key.all + ["theme"] { UserDefaults.standard.removeObject(forKey: key) }
+        // and the crash-report question's answers: a fresh install has none
+        CrashConsent().forgetAll()
         shared.reload()
         #endif
     }
