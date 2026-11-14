@@ -11,7 +11,14 @@
 // Screenshots are dark, in English and Arabic (test-results/launcher/shots); the launcher's
 // own log (window.__maktabaLauncherLog), the console, the network and the home's calls are
 // attached to the report.
-import { expect, test, type BrowserContext, type Page, type Route, type TestInfo } from "@playwright/test";
+import {
+  expect,
+  test,
+  type BrowserContext,
+  type Page,
+  type Route,
+  type TestInfo,
+} from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -113,7 +120,10 @@ async function lanHome(page: Page): Promise<{ home: MockHome; trail: Trail }> {
     const req = route.request();
     const url = new URL(req.url());
     const auth = (await req.headerValue("authorization")) ?? "";
-    if (auth) trail.bearer.push(`${req.method()} ${url.pathname} ${auth === `Bearer ${TOKEN}` ? "ok" : auth}`);
+    if (auth)
+      trail.bearer.push(
+        `${req.method()} ${url.pathname} ${auth === `Bearer ${TOKEN}` ? "ok" : auth}`
+      );
     if (url.pathname === "/api/pairing/device" && req.method() === "POST")
       return json(route, 200, {
         code: "KQ7M-4R2P",
@@ -139,7 +149,12 @@ async function lanHome(page: Page): Promise<{ home: MockHome; trail: Trail }> {
   return { home, trail };
 }
 
-async function openLauncher(context: BrowserContext, page: Page, platform: Platform, lang: "en" | "ar") {
+async function openLauncher(
+  context: BrowserContext,
+  page: Page,
+  platform: Platform,
+  lang: "en" | "ar"
+) {
   await context.addInitScript(shim, platform);
   await context.addInitScript((l) => {
     try {
@@ -176,7 +191,9 @@ const tvFrame = (page: Page) => page.frameLocator('[data-testid="tv-frame"]');
 
 for (const platform of ["tizen", "webos"] as const) {
   for (const lang of ["en", "ar"] as const) {
-    test(`${platform} ${lang}: probe, code sign-in by bearer, play, leave`, async ({ browser }, info) => {
+    test(`${platform} ${lang}: probe, code sign-in by bearer, play, leave`, async ({
+      browser,
+    }, info) => {
       const context = await browser.newContext({
         userAgent: UA[platform],
         colorScheme: "dark",
@@ -208,7 +225,9 @@ for (const platform of ["tizen", "webos"] as const) {
 
         // approved on a phone: signed in by bearer, the big screen opens
         trail.approved = true;
-        await expect(frame.locator('[data-testid="big-home"], [data-bs-focus]').first()).toBeVisible({
+        await expect(
+          frame.locator('[data-testid="big-home"], [data-bs-focus]').first()
+        ).toBeVisible({
           timeout: 20_000,
         });
         expect(trail.bearer.some((l) => l.startsWith("GET /api/auth/me ok"))).toBe(true);
@@ -227,7 +246,9 @@ for (const platform of ["tizen", "webos"] as const) {
           window.parent.postMessage({ type: "maktaba:play", url, start_sec: 0 }, "*");
         }, `${HOME}/stream/v1/master.m3u8`);
         await expect
-          .poll(() => page.evaluate(() => document.querySelector("video")?.getAttribute("src") ?? ""))
+          .poll(() =>
+            page.evaluate(() => document.querySelector("video")?.getAttribute("src") ?? "")
+          )
           .toContain("/stream/v1/master.m3u8");
 
         // Leave Maktaba (the UI's confirm) exits through the TV's API
@@ -237,7 +258,9 @@ for (const platform of ["tizen", "webos"] as const) {
           .toBe(platform);
         if (platform === "tizen")
           expect(
-            await page.evaluate(() => (window as unknown as { __registered?: string[] }).__registered)
+            await page.evaluate(
+              () => (window as unknown as { __registered?: string[] }).__registered
+            )
           ).toContain("MediaPlayPause");
 
         // the next start opens the saved home at once; Switch home is the launcher's picker
@@ -245,7 +268,9 @@ for (const platform of ["tizen", "webos"] as const) {
         await expect(page.getByTestId("tv-frame")).toBeVisible();
         await tvWin.page().waitForTimeout(0);
         const again = page.frames().find((f) => f.url().startsWith(`${HOME}/tv/`))!;
-        await again.evaluate(() => window.parent.postMessage({ type: "maktaba:openHomePicker" }, "*"));
+        await again.evaluate(() =>
+          window.parent.postMessage({ type: "maktaba:openHomePicker" }, "*")
+        );
         await expect(page.getByTestId("saved-home")).toContainText("Test home");
         await expect(page.getByTestId("tv-frame")).toHaveCount(0);
         await shot(page, `${platform}-${lang}-saved`);

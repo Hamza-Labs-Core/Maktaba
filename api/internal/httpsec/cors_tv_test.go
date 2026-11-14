@@ -86,7 +86,7 @@ func TestCORS_PackagedAppOriginWithoutCredentials(t *testing.T) {
 	// switched off: nothing
 	cfg := DefaultCORS()
 	cfg.PackagedApps = false
-	off := CORS(cfg)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	off := CORS(cfg)(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 	req := httptest.NewRequest(http.MethodGet, "/api/libraries", nil)
 	req.Header.Set("Origin", "file://")
 	rec := httptest.NewRecorder()
@@ -100,7 +100,7 @@ func TestCORS_PackagedAppOriginWithoutCredentials(t *testing.T) {
 func TestCORS_AllowListedOriginKeepsCredentials(t *testing.T) {
 	cfg := DefaultCORS()
 	cfg.AllowedOrigins = []string{"https://app.maktaba.local"}
-	h := CORS(cfg)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	h := CORS(cfg)(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 	req := httptest.NewRequest(http.MethodGet, "/api/discovery/home", nil)
 	req.Header.Set("Origin", "https://app.maktaba.local")
 	rec := httptest.NewRecorder()

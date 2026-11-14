@@ -187,7 +187,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // a TV in its launcher signs out its bearer sign-in (Epic 58 story 58.09)
         const bearer = bearerAuth();
         try {
-          await api.post("/api/auth/logout", bearer?.logoutBody());
+          const body = bearer?.logoutBody();
+          await (body ? api.post("/api/auth/logout", body) : api.post("/api/auth/logout"));
         } catch (e) {
           // refused, or not answered in time: the session (and its HttpOnly
           // cookie) may hold, so the user stays signed in and is told
@@ -214,6 +215,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (isHomeUnreachable(e) || isHomeTimeout(e)) throw e;
           console.warn("auth: logout-all call failed", e);
         }
+        bearerAuth()?.clear();
         await purgeApiCacheOnLogout();
         setUser(null);
         return scope;
