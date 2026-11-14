@@ -67,7 +67,11 @@ final class RemoteDemoShotsUITests: XCTestCase {
         let field = app.textFields["picker.address"]
         XCTAssertTrue(field.waitForExistence(timeout: 10), "the home picker")
         field.typeExactly(home.url, in: app)
-        app.buttons["picker.connect"].tap()
+        // submitted from the field's own Return (`onSubmit`, the same `add` as Connect), as
+        // PlayerUITestCase.signIn does: a Connect tap as the keyboard still settled after
+        // typing was lost (main run 43556127370: no connect began, the picker stayed with the
+        // address typed). Connect's own tap is ConnectUITests'.
+        field.typeText("\n")
         let byCode = app.buttons[language == "ar" ? "برمز" : "With a code"]
         XCTAssertTrue(byCode.waitForExistence(timeout: 10), "the sign-in screen offers a code")
         byCode.tap()

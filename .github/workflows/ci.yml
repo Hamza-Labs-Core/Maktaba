@@ -123,6 +123,8 @@ jobs:
       android_apps: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.android_apps == 'true' }}
       android_tv: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.android_tv == 'true' }}
       tv_web: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.tv_web == 'true' }}
+      cast_receiver: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.cast_receiver == 'true' }}
+      roku: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.roku == 'true' }}
       desktop_player: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.desktop_player == 'true' }}
       apple_apps: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.apple_apps == 'true' }}
       devportal: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.devportal == 'true' }}
@@ -377,6 +379,20 @@ jobs:
     if: needs.changes.outputs.tv_web == 'true'
     uses: ./.github/workflows/_tv-web.yml
 
+  cast-receiver:
+    # Epic 58 (58.07): Maktaba's Cast receiver at cast.maktaba.tv — Vitest with a fake
+    # cast.framework, Playwright with a CAF stub and a mock home (see _cast-receiver.yml)
+    needs: [changes]
+    if: needs.changes.outputs.cast_receiver == 'true'
+    uses: ./.github/workflows/_cast-receiver.yml
+
+  roku:
+    # Epic 58 (58.15, 58.16): the Roku channel's BrightScript on brs-engine against the shared
+    # visual-text vectors, and its catalogs shaped at build time (see _roku.yml)
+    needs: [changes]
+    if: needs.changes.outputs.roku == 'true'
+    uses: ./.github/workflows/_roku.yml
+
   desktop-player:
     needs: [changes]
     if: needs.changes.outputs.desktop_player == 'true'
@@ -620,6 +636,8 @@ jobs:
       - android-apps
       - android-tv
       - tv-web
+      - cast-receiver
+      - roku
       - desktop-player
       - apple-apps
       - devportal

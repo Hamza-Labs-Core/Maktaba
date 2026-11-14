@@ -1,0 +1,42 @@
+/* Story 58.10 — Samsung's player plane and the playback notice.
+   AVPlay draws beneath the whole web layer: while it plays, the page behind the iframe
+   is transparent (body.ml-avplay), or its black would cover the video. */
+
+.ml-avplay-plane {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.ml-avplay-plane[hidden] {
+  display: none;
+}
+
+body.ml-avplay,
+body.ml-avplay #stage {
+  background: transparent;
+}
+
+.ml-notice {
+  position: absolute;
+  inset-block-start: 6%;
+  inset-inline: 0;
+  margin-inline: auto;
+  inline-size: fit-content;
+  max-inline-size: 70%;
+  z-index: 1;
+  padding-block: 0.5em;
+  padding-inline: 1em;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  font-family: var(--ml-sans);
+  font-size: 32px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.ml-notice[hidden] {
+  display: none;
+}

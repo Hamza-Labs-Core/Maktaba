@@ -205,7 +205,7 @@ fun WatchScreen(
                         delay(500)
                     }
                 }
-                if (playback.casting) Casting(title, Modifier.align(Alignment.Center))
+                if (playback.casting) Casting(title, playback.castSender, Modifier.align(Alignment.Center))
                 // the window shows the video alone
                 if (inPip) return@Box
                 if (restricted) {
@@ -301,21 +301,63 @@ fun WatchScreen(
                 )
             }
         }
+        // over the controls, so a tap puts it away
+        val castSender = playback.castSender
+        if (!inPip && castSender != null) castSender.error?.let { CastError(it, castSender, Modifier.align(Alignment.BottomCenter)) }
     }
 }
 
-/** A Cast receiver plays the video: the phone says so (the controls over it drive the receiver). */
+/**
+ * A Cast receiver plays the video: the phone says where, and what (the receiver's own item: it
+ * may walk a queue on its own); the controls over it drive the receiver. An older home's cast
+ * says the TV shows Google's player (story 58.06).
+ */
 @Composable
-private fun Casting(title: String, modifier: Modifier) {
+private fun Casting(title: String, sender: com.hamzalabs.maktaba.player.media.CastSender?, modifier: Modifier) {
     Column(
         modifier.padding(32.dp).testTag("casting"),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Icon(Icons.Filled.Cast, null, tint = InkAndBrass.Brass, modifier = Modifier.size(56.dp))
-        Text(stringResource(R.string.watch_casting), color = Color.White, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-        Text(title, color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+        val device = sender?.device?.takeIf { it.isNotBlank() }
+        Text(
+            if (device != null) stringResource(R.string.cast_casting_to, device) else stringResource(R.string.watch_casting),
+            color = Color.White,
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.testTag("casting-to"),
+        )
+        Text(title, color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.testTag("casting-title"))
+        if (sender?.mode == com.hamzalabs.maktaba.player.media.CastMode.OldHome) {
+            Text(
+                stringResource(R.string.cast_old_home),
+                color = Color.White.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("cast-old-home"),
+            )
+        }
     }
+}
+
+/** Why a cast did not start, or what the receiver said went wrong; a tap puts it away. */
+@Composable
+private fun CastError(@androidx.annotation.StringRes text: Int, sender: com.hamzalabs.maktaba.player.media.CastSender, modifier: Modifier) {
+    Text(
+        stringResource(text),
+        color = Color.White,
+        style = MaterialTheme.typography.bodyMedium,
+        textAlign = TextAlign.Center,
+        modifier = modifier
+            .safeDrawingPadding()
+            .padding(bottom = 96.dp, start = 16.dp, end = 16.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.Black.copy(alpha = 0.7f))
+            .clickable { sender.clearError() }
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .testTag("cast-error"),
+    )
 }
 
 /** Hides the status and navigation bars while on screen (a swipe shows them for a moment). */

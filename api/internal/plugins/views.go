@@ -13,6 +13,7 @@ import (
 	"time"
 
 	svc "github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/firstparty"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginmanifest"
 )
@@ -64,7 +65,9 @@ type Health struct {
 
 // StageView is one of a plugin's stages and its queue.
 type StageView struct {
-	Name    string `json:"name"`
+	Name string `json:"name"`
+	// Label is the stage's name for people as its manifest gives it ("" when it has none).
+	Label   string `json:"label,omitempty"`
 	Queue   string `json:"queue"`
 	Subject string `json:"subject"`
 	Version int    `json:"version"`
@@ -72,6 +75,13 @@ type StageView struct {
 	Running int    `json:"running"`
 	Done24h int    `json:"done_24h"`
 	Fail24h int    `json:"failed_24h"`
+	// Problems are its failed jobs open now; AvgMS and P95MS the last day's done jobs' time.
+	Problems int    `json:"problems"`
+	AvgMS    *int64 `json:"avg_ms,omitempty"`
+	P95MS    *int64 `json:"p95_ms,omitempty"`
+	// RunsIn is where it runs now: a runner group (light, files, net, service, ml, index),
+	// "worker" (the pipeline worker) or "host" (the plugin host).
+	RunsIn string `json:"runs_in,omitempty"`
 }
 
 // View is one installed plugin as GET /api/plugins lists it.
@@ -102,6 +112,20 @@ type View struct {
 	Revoked    bool            `json:"revoked"`
 	Revocation json.RawMessage `json:"revocation,omitempty"`
 	AutoUpdate bool            `json:"auto_update"`
+	// Story 54.44, the same for every plugin: who publishes it, where this home got it
+	// (release, store, file), its stages, why its switch cannot be used ("" when it can),
+	// its jobs and what it uses. Settings are the settings its component owns
+	// (rules.<section>, toml:<key>), for a plugin whose settings are Maktaba's own pages.
+	Publisher  Publisher `json:"publisher"`
+	Source     string    `json:"source"`
+	StageNames []string  `json:"stage_names"`
+	// Queues are its stages as the queue names them (the failures view's stage filter): a
+	// Maktaba plugin's are its stage names, any other's p_<hash>_<stage>.
+	Queues       []string  `json:"queues"`
+	SwitchLocked string    `json:"switch_locked,omitempty"`
+	Activity     Activity  `json:"activity"`
+	Resources    Resources `json:"resources"`
+	Settings     []string  `json:"settings"`
 }
 
 // Detail is GET /api/plugins/{id}: the view, its manifest's summary, its stages and their
@@ -116,6 +140,11 @@ type Detail struct {
 	DataMB    int             `json:"data_mb"`
 	// ReportLogs: an admin ticked "Include its logs in problem reports" (54.09 §3).
 	ReportLogs bool `json:"report_logs"`
+	// Capabilities are what a Maktaba-published plugin can do, in Maktaba's words (a
+	// third-party plugin's are Required, Optional and Grants). Machines is its status on
+	// each machine.
+	Capabilities []TrustedCapability `json:"capabilities"`
+	Machines     []MachineState      `json:"machines"`
 }
 
 // List is every installed plugin, by id.
@@ -161,7 +190,17 @@ func (l *Lifecycle) view(ctx context.Context, id string) (*View, error) {
 		Names: namesOf(in.Path, m), ReviewLevel: in.ReviewLevel, Rating: pluginmanifest.Rating(m.asked(), in.ReviewLevel),
 		InstalledAt: in.InstalledAt, Required: nonNil(m.Capabilities.Required), Optional: nonNil(m.Capabilities.Optional),
 		Previous: in.PrevVersion.String, Grants: GrantSet{Capabilities: []string{}, Libraries: []string{}},
-		Health: Health{Recent: json.RawMessage("[]")}}
+		Health: Health{Recent: json.RawMessage("[]")}, Source: SourceFile, StageNames: []string{}, Settings: []string{},
+		Resources: Resources{Processes: []ProcessUse{}}}
+	if in.ReviewLevel == "store" || in.ReviewLevel == "automated" || in.ReviewLevel == "reviewed" {
+		v.Source = SourceStore
+	}
+	v.Queues = []string{}
+	for _, s := range m.Stage {
+		v.StageNames = append(v.StageNames, s.Name)
+		v.Queues = append(v.Queues, components.PluginQueueName(id, s.Name))
+	}
+	v.Resources.DataMB, v.Resources.MemoryMB = m.Resources.DataMB, m.Resources.MemoryMB
 	var rev []byte
 	if err := l.DB.QueryRowContext(ctx, `SELECT revoked, revocation, auto_update FROM plugin_installs WHERE plugin_id = $1`, id).Scan(&v.Revoked, &rev, &v.AutoUpdate); err != nil {
 		return nil, err
@@ -193,6 +232,10 @@ func (l *Lifecycle) view(ctx context.Context, id string) (*View, error) {
 			}
 		}
 	}
+	v.SwitchLocked = lockOf(v.Reason, v.HeldBy)
+	if v.Revoked {
+		v.SwitchLocked = "revoked"
+	}
 	return v, nil
 }
 
@@ -218,8 +261,12 @@ func (l *Lifecycle) health(ctx context.Context, id string, h *Health) error {
 	return nil
 }
 
-// Show is one plugin's detail (404 plugin_not_installed).
+// Show is one plugin's detail (404 plugin_not_installed): an installed plugin's, or a
+// Maktaba-published plugin's (story 54.44).
 func (l *Lifecycle) Show(ctx context.Context, id string) (*Detail, error) {
+	if fp := firstparty.ByID(id); fp != nil && IsPublished(id) {
+		return l.showPublished(ctx, fp)
+	}
 	v, err := l.view(ctx, id)
 	if err != nil {
 		return nil, err
@@ -232,15 +279,21 @@ func (l *Lifecycle) Show(ctx context.Context, id string) (*Detail, error) {
 		return nil, err
 	}
 	m, _ := parseManifest(in.Manifest)
-	d := &Detail{View: *v, Manifest: in.Manifest, Stages: []StageView{}, DataMB: m.Resources.DataMB}
+	d := &Detail{View: *v, Manifest: in.Manifest, Stages: []StageView{}, DataMB: m.Resources.DataMB,
+		Capabilities: []TrustedCapability{}, Machines: []MachineState{}}
+	var queues, enabled []string
 	for _, s := range m.Stage {
-		sv := StageView{Name: s.Name, Queue: components.PluginQueueName(id, s.Name), Subject: s.Subject, Version: s.Version}
-		_ = l.DB.QueryRowContext(ctx, `SELECT count(*) FILTER (WHERE state = 'pending'),
-			count(*) FILTER (WHERE state IN ('claimed', 'running')),
-			count(*) FILTER (WHERE state = 'done' AND finished_at > now() - interval '1 day'),
-			count(*) FILTER (WHERE state = 'failed' AND finished_at > now() - interval '1 day')
-			FROM processing_jobs WHERE stage = $1`, sv.Queue).Scan(&sv.Pending, &sv.Running, &sv.Done24h, &sv.Fail24h)
-		d.Stages = append(d.Stages, sv)
+		queues = append(queues, components.PluginQueueName(id, s.Name))
+	}
+	page, err := l.loadPage(ctx, queues)
+	if err != nil {
+		return nil, err
+	}
+	for i, s := range m.Stage {
+		a := page.activity[queues[i]]
+		d.Stages = append(d.Stages, StageView{Name: s.Name, Queue: queues[i], Subject: s.Subject, Version: s.Version,
+			Pending: a.Pending, Running: a.Running, Done24h: a.Done24h, Fail24h: a.Failed24h, Problems: a.Problems,
+			AvgMS: a.AvgMS, P95MS: a.P95MS, RunsIn: "host"})
 	}
 	_ = l.DB.QueryRowContext(ctx, `SELECT count(*) FROM plugin_writes WHERE plugin_id = $1 AND reverted_at IS NULL`, id).Scan(&d.Writes)
 	if set, err := ReportLogPlugins(ctx, l.DB); err == nil {
@@ -248,6 +301,26 @@ func (l *Lifecycle) Show(ctx context.Context, id string) (*Detail, error) {
 	}
 	_ = l.DB.QueryRowContext(ctx, `SELECT count(*), COALESCE(sum(bytes), 0) FROM plugin_data WHERE plugin_id = $1`, id).
 		Scan(&d.DataRows, &d.DataBytes)
+	// the other plugins the host runs: every enabled one. The id is what follows the
+	// "plugin." prefix (never trim(): that takes a set of characters, not a prefix)
+	if err := l.each(ctx, `SELECT substr(id, length($1) + 1) FROM components
+		WHERE left(id, length($1)) = $1 AND want = 'enabled'`,
+		components.PluginPrefix, func(scan func(...any) error) error {
+			var other string
+			if err := scan(&other); err != nil {
+				return err
+			}
+			enabled = append(enabled, other)
+			return nil
+		}); err != nil {
+		return nil, err
+	}
+	d.Activity = page.activityOf(queues)
+	d.Resources = l.thirdPartyResources(&d.View, page, enabled)
+	d.Resources.DataRows, d.Resources.DataBytes = d.DataRows, d.DataBytes
+	if c, ok := page.comps[d.Component]; ok {
+		d.Machines = machinesOf(c)
+	}
 	return d, nil
 }
 

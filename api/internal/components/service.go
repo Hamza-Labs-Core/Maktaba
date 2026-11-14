@@ -316,6 +316,10 @@ type View struct {
 	// Progress is this machine's last or running install or removal of an asset, as its
 	// supervisor reports it (story 51.16); nil when there was none or no supervisor answers.
 	Progress *InstallProgress `json:"progress,omitempty"`
+	// Plugin is the plugin whose page shows this component (story 54.44): the plugin
+	// Maktaba publishes that implements its stages, or a plugin entry's own. Empty for a
+	// part of Maktaba itself (a core component is not a plugin, whatever implements it).
+	Plugin string `json:"plugin,omitempty"`
 }
 
 // InstallProgress is the supervisor's progress of an asset's install or removal
@@ -484,6 +488,11 @@ func (s *Service) view(snap *snapshot, c *components.Component, parts bool) View
 		Want:     components.WantEnabled, Machines: []MachineView{}}
 	if v.Conflicts == nil {
 		v.Conflicts = []string{}
+	}
+	if c.Switchable && c.Plugin != "" {
+		v.Plugin = c.Plugin
+	} else if p, ok := strings.CutPrefix(c.ID, components.PluginPrefix); ok {
+		v.Plugin = p
 	}
 	if c.Kind == components.KindPlugin && s.Plugins != nil {
 		// a plugin's name and summary are its own words, not Maktaba's (54.37 §1)

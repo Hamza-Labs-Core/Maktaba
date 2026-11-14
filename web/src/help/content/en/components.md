@@ -10,6 +10,8 @@ The line under the title says which starting set your home is based on, for exam
 
 The **Always on** group (the database, the server, playback, the library scan) has no switch: without those parts there is no home to set up.
 
+A part that a plugin does the work of has a **Plugin page** link on its row: the plugin's page shows the same switch, with its jobs, its problems and what it uses. See [Plugins](/help/plugins).
+
 ## How to use it {#how-to-use}
 
 ### Turn a part on or off {#enable}

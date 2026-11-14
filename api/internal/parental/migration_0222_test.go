@@ -44,19 +44,30 @@ func TestSlot0222UpAndDownOnPostgres(t *testing.T) {
 	excluded := func() int {
 		return count(`SELECT count(*) FROM unnest(cluster_copy_excluded()) AS t(name) WHERE name = ANY($1::text[])`, slot0222Tables)
 	}
-	total := func() int {
+	names := func() map[string]bool {
 		t.Helper()
-		var n int
-		if err := db.QueryRow(`SELECT cardinality(cluster_copy_excluded())`).Scan(&n); err != nil {
+		rows, err := db.Query(`SELECT unnest(cluster_copy_excluded())`)
+		if err != nil {
 			t.Fatal(err)
 		}
-		return n
+		defer func() { _ = rows.Close() }()
+		got := map[string]bool{}
+		for rows.Next() {
+			var n string
+			if err := rows.Scan(&n); err != nil {
+				t.Fatal(err)
+			}
+			got[n] = true
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		return got
 	}
 	if tables() != len(slot0222Tables) || indexes() != len(slot0222Indexes) || excluded() != len(slot0222Tables) {
 		t.Fatalf("after the migrations: %d tables, %d indexes, %d left out of a machine's copy",
 			tables(), indexes(), excluded())
 	}
-	with := total()
 	// the retention index is the one on `at`
 	var def string
 	if err := db.QueryRow(`SELECT indexdef FROM pg_indexes WHERE indexname = 'parental_events_at_idx'`).Scan(&def); err != nil ||
@@ -73,10 +84,10 @@ func TestSlot0222UpAndDownOnPostgres(t *testing.T) {
 	if tables() != 0 || indexes() != 0 || excluded() != 0 {
 		t.Fatalf("after down: %d tables, %d indexes, %d names in the exclusion left", tables(), indexes(), excluded())
 	}
-	// Down restores slot 0204's list: the four names fewer, nothing else gone
-	if got := total(); got != with-len(slot0222Tables) {
-		t.Fatalf("after down the exclusion has %d names, want %d", got, with-len(slot0222Tables))
-	}
+	// Down restores slot 0204's list, checked against slot 0222's own Up below (not against
+	// the head: a later slot's Up extends the list, and this Down leaves that slot's names
+	// out too)
+	afterDown := names()
 	var kept bool
 	if err := db.QueryRow(`SELECT 'plugin_entitlements' = ANY(cluster_copy_excluded())`).Scan(&kept); err != nil || !kept {
 		t.Fatalf("slot 0204's exclusion after down: %v (%v)", kept, err)
@@ -88,6 +99,16 @@ func TestSlot0222UpAndDownOnPostgres(t *testing.T) {
 	run(t, db, "up", up)
 	if tables() != len(slot0222Tables) || indexes() != len(slot0222Indexes) || excluded() != len(slot0222Tables) {
 		t.Fatalf("after up again: %d tables, %d indexes, %d excluded", tables(), indexes(), excluded())
+	}
+	// slot 0222's Up against its Down: the four names more, nothing else changed
+	afterUp := names()
+	for n := range afterDown {
+		if !afterUp[n] {
+			t.Errorf("%s is in the exclusion after down but not after up", n)
+		}
+	}
+	if len(afterUp) != len(afterDown)+len(slot0222Tables) {
+		t.Errorf("up has %d names, down %d: want the %d of slot 0222 between them", len(afterUp), len(afterDown), len(slot0222Tables))
 	}
 	run(t, db, "up twice", up) // every statement can run again
 }

@@ -226,6 +226,7 @@ func buildSurfaces() SurfaceTable {
 		"/api/pairing/device",
 		"/api/pairing/device/token",
 		"/api/pairing/device/{code}",
+		"/api/pairing/cloud-code/{code}",
 		"/api/pairing/exchange",
 		"/api/pairing/pending",
 		"/api/pairing/request",
@@ -233,9 +234,12 @@ func buildSurfaces() SurfaceTable {
 	)
 	exact(Guarded, all, "approving a device as another user is an admin's or a guardian's (57.02): the handler reads the caller's role",
 		"/api/pairing/approve",
+		"/api/pairing/cloud-approve",
 	)
 	exact(Open, all, "the caller's own account, sign-ins and devices; no content",
 		"/api/me",
+		"/api/me/app-sign-ins",
+		"/api/me/app-sign-ins/{id}",
 		"/api/me/change-password",
 		"/api/me/cloud-link",
 		"/api/me/cloud-link/start",

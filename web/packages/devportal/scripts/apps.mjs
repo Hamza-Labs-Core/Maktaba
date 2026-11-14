@@ -3,8 +3,9 @@
 //
 // The list of apps follows the code and the release workflows: apps/apple (Player for iPhone,
 // iPad and Mac, Remote; testflight.yml), apps/android (Player and Remote; play-bundles.yml),
-// apps/tv (Apple TV, Android TV and Google TV; testflight.yml, play-bundles.yml,
-// tv-release.yml), apps/desktop-player (Player for Windows and Linux; desktop-release.yml),
+// apps/tv (Apple TV, Android TV, Google TV and Fire TV; testflight.yml, play-bundles.yml,
+// tv-release.yml; the Roku channel, apps/tv/roku, built from source until its store listing),
+// apps/desktop-player (Player for Windows and Linux; desktop-release.yml),
 // apps/desktop (Maktaba, the server with the web app; desktop-release.yml) and web/ (the web
 // app and its big-screen view).
 //
@@ -16,7 +17,8 @@
 // the app was shot in both, else a single `<name>-en.webp` or `<name>-ar.webp`). They were
 // taken on made-up test data only: the Apple apps' CI UI tests against MockHome, the Android
 // Roborazzi screenshot tests, the desktop Player's off-screen Compose tests against its test
-// home (TestHome's MockWebServer), and, for the web app and the big screen, a scratch home
+// home (TestHome's MockWebServer), the Roku channel's screen tests (brs-engine against its mock
+// home, apps/tv/roku/tests/mockhome.mjs), and, for the web app and the big screen, a scratch home
 // seeded with invented libraries or the web app in a headless browser with its API answered
 // by invented data. The scan (scan.mjs) checks every image carries no metadata.
 
@@ -62,8 +64,8 @@ const TESTING = t(
 );
 
 const SHOTS_NOTE = t(
-  "Every screenshot on these pages was taken in the dark theme on made-up test data: the Apple apps' screenshots come from their UI tests in CI, which run against a pretend home; the Android ones from the apps' screenshot tests; the Windows and Linux Player's from its screen tests, which also run against a pretend home; the web app and the big screen from a test home filled with invented libraries. The names, titles and codes in them are test data.",
-  "التُقطت كل لقطات الشاشة في هذه الصفحات بالمظهر الداكن وعلى بيانات اختبار مصطنعة: لقطات تطبيقات آبل من اختبارات الواجهة في التكامل المستمر، وهي تعمل على جهاز رئيسي وهمي؛ ولقطات أندرويد من اختبارات لقطات الشاشة في التطبيقين؛ ولقطات المشغّل على ويندوز ولينكس من اختبارات شاشاته، وهي تعمل أيضًا على جهاز رئيسي وهمي؛ ولقطات تطبيق الويب والشاشة الكبيرة من جهاز رئيسي تجريبي مُلئ بمكتبات مختلَقة. فالأسماء والعناوين والرموز فيها كلها بيانات اختبار."
+  "Every screenshot on these pages was taken in the dark theme on made-up test data: the Apple apps' screenshots come from their UI tests in CI, which run against a pretend home; the Android ones from the apps' screenshot tests; the Windows and Linux Player's from its screen tests, which also run against a pretend home; the Roku channel's from its screen tests on brs-engine, against a pretend home too; the web app and the big screen from a test home filled with invented libraries. The names, titles and codes in them are test data.",
+  "التُقطت كل لقطات الشاشة في هذه الصفحات بالمظهر الداكن وعلى بيانات اختبار مصطنعة: لقطات تطبيقات آبل من اختبارات الواجهة في التكامل المستمر، وهي تعمل على جهاز رئيسي وهمي؛ ولقطات أندرويد من اختبارات لقطات الشاشة في التطبيقين؛ ولقطات المشغّل على ويندوز ولينكس من اختبارات شاشاته، وهي تعمل أيضًا على جهاز رئيسي وهمي؛ ولقطات قناة روكو من اختبارات شاشاتها على brs-engine، على جهاز رئيسي وهمي كذلك؛ ولقطات تطبيق الويب والشاشة الكبيرة من جهاز رئيسي تجريبي مُلئ بمكتبات مختلَقة. فالأسماء والعناوين والرموز فيها كلها بيانات اختبار."
 );
 
 /** The pages: the overview (slug "") first, then one page per app. */
@@ -116,10 +118,13 @@ export const APPS = [
                 [
                   t("[Maktaba TV](/apps/tv/)", "[تطبيق التلفاز](/apps/tv/)"),
                   t("watching across the room", "المشاهدة من أنحاء الغرفة"),
-                  t("Apple TV, Android TV, Google TV", "آبل تي في، أندرويد تي في، جوجل تي في"),
                   t(
-                    "TestFlight on the Apple TV; Google Play internal testing, or the signed `.apk` when a release carries one",
-                    "TestFlight على آبل تي في؛ الاختبار الداخلي في Google Play، أو ملف `.apk` الموقَّع حين يتضمنه الإصدار"
+                    "Apple TV, Android TV, Google TV, Fire TV, LG TVs (webOS), Samsung TVs from 2020, Roku",
+                    "آبل تي في، أندرويد تي في، جوجل تي في، فاير تي في، تلفزيونات LG ‏(webOS)، تلفزيونات سامسونج من 2020، روكو"
+                  ),
+                  t(
+                    "TestFlight on the Apple TV; Google Play internal testing, or the signed `.apk` when a release carries one; Amazon's Live App Testing on Fire TV; on an LG TV, the `.ipk` a release carries, until the LG Content Store lists it; Samsung's app store once Samsung approves it; on Roku, built from source and side-loaded until the channel is in Roku's store",
+                    "TestFlight على آبل تي في؛ الاختبار الداخلي في Google Play، أو ملف `.apk` الموقَّع حين يتضمنه الإصدار؛ اختبار التطبيق المباشر من أمازون على فاير تي في؛ وعلى تلفاز LG ملف `.ipk` الذي يتضمنه الإصدار، إلى أن يُدرَج في متجر LG Content Store؛ ومتجر تطبيقات سامسونج بعد موافقة سامسونج؛ وعلى روكو، يُبنى من المصدر ويُثبَّت يدويًا إلى أن تصل القناة إلى متجر روكو"
                   ),
                 ],
                 [
@@ -281,11 +286,19 @@ export const APPS = [
                   ),
                 ],
                 [
-                  t("Android TV and Google TV", "أندرويد تي في وجوجل تي في"),
+                  t("Android TV, Google TV and Fire TV", "أندرويد تي في وجوجل تي في وفاير تي في"),
                   t("Compose for TV and Media3", "‏Compose for TV وMedia3"),
                   t(
                     `[\`apps/tv/android/\`](${SRC}/apps/tv/android)`,
                     `[\`apps/tv/android/\`](${SRC}/apps/tv/android)`
+                  ),
+                ],
+                [
+                  t("Roku", "روكو"),
+                  t("BrightScript and SceneGraph", "‏BrightScript وSceneGraph"),
+                  t(
+                    `[\`apps/tv/roku/\`](${SRC}/apps/tv/roku)`,
+                    `[\`apps/tv/roku/\`](${SRC}/apps/tv/roku)`
                   ),
                 ],
                 [
@@ -363,8 +376,8 @@ export const APPS = [
                 "**الملف الشخصي**: سجل المشاهدة والمفضلة وقوائم التشغيل والجلسات، و**الموافقة على تلفاز أو جهاز**، وتبديل الجهاز الرئيسي، وإعدادات المظهر واللغة والتشغيل على هذا الجهاز."
               ),
               t(
-                "**Watching**: subtitles and audio tracks, the next lesson, AirPlay and Picture in Picture on Apple devices, picture in picture and sound with the screen off on Android. On the Mac the video fills the window and the **Playback** menu has the keys. On Windows and Linux: the **Audio**, **Subtitles** and **Quality** menus, Up next, and the keys below.",
-                "**المشاهدة**: الترجمات ومسارات الصوت، والدرس التالي، وAirPlay وصورة داخل صورة على أجهزة آبل، وصورة داخل صورة واستمرار الصوت مع إطفاء الشاشة على أندرويد. وعلى الماك يملأ المقطع النافذة، وفي قائمة **التشغيل** اختصارات لوحة المفاتيح. وعلى ويندوز ولينكس: قوائم **الصوت** و**الترجمة** و**الجودة**، و«التالي»، والمفاتيح المبيّنة أدناه."
+                "**Watching**: subtitles and audio tracks, the next lesson, AirPlay and Picture in Picture on Apple devices, picture in picture, sound with the screen off and **Cast** to a Chromecast or a Google TV on Android (the TV plays and reports where it is by itself, so the phone can lock). On the Mac the video fills the window and the **Playback** menu has the keys. On Windows and Linux: the **Audio**, **Subtitles** and **Quality** menus, Up next, and the keys below.",
+                "**المشاهدة**: الترجمات ومسارات الصوت، والدرس التالي، وAirPlay وصورة داخل صورة على أجهزة آبل، وصورة داخل صورة واستمرار الصوت مع إطفاء الشاشة و**البث** إلى Chromecast أو Google TV على أندرويد (يشغّل التلفاز ويبلّغ عن موضعه بنفسه، فيمكن قفل الهاتف). وعلى الماك يملأ المقطع النافذة، وفي قائمة **التشغيل** اختصارات لوحة المفاتيح. وعلى ويندوز ولينكس: قوائم **الصوت** و**الترجمة** و**الجودة**، و«التالي»، والمفاتيح المبيّنة أدناه."
               ),
               t(
                 "**The status strip**: when the home's streaming is down, the Player says so before you press play.",
@@ -883,8 +896,124 @@ export const APPS = [
                     `الاختبار الداخلي في Google Play، أو تثبيت \`maktaba-tv-<version>.apk\` يدويًا حين يتضمنه [أحدث إصدار](${RELEASES}) (ولا يُرفق إلا الإصدار الموقَّع)`
                   ),
                 ],
+                [
+                  t(
+                    "Fire TV (Fire OS 7 or later: Fire TV sticks, the Cube, Fire TV Edition sets)",
+                    "فاير تي في (‏Fire OS 7 أو أحدث: عصيّ فاير تي في، وCube، وأجهزة التلفاز بإصدار Fire TV)"
+                  ),
+                  t(
+                    `Amazon's Live App Testing, from the Appstore on the Fire TV, or install \`maktaba-tv-<version>-amazon.apk\` by hand when the [latest release](${RELEASES}) carries it. The Fire TV build carries no Google Play code, names itself \`firetv\` to the home, and tells it which formats, HDR and surround sound the Fire TV and its screen play`,
+                    `اختبار التطبيق المباشر من أمازون، من متجر التطبيقات على فاير تي في، أو تثبيت \`maktaba-tv-<version>-amazon.apk\` يدويًا حين يتضمنه [أحدث إصدار](${RELEASES}). لا يحمل إصدار فاير تي في أي شيفرة من Google Play، ويعرّف نفسه للجهاز الرئيسي باسم \`firetv\`، ويخبره بالصيغ والـHDR والصوت المحيطي التي يشغّلها الجهاز وشاشته`
+                  ),
+                ],
+                [
+                  t(
+                    "LG TVs (webOS 5, from 2020, or later)",
+                    "تلفزيونات LG ‏(webOS 5، من 2020، أو أحدث)"
+                  ),
+                  t(
+                    `the LG Content Store once it lists Maktaba; until then \`maktaba-webos-<version>.ipk\` from a [release](${RELEASES}) that carries one, installed on a TV in Developer Mode with \`ares-install\``,
+                    `متجر LG Content Store حين يُدرج مكتبة؛ وحتى ذلك الحين ملف \`maktaba-webos-<version>.ipk\` من [إصدار](${RELEASES}) يتضمنه، يُثبَّت على تلفاز في وضع المطوّر بالأمر \`ares-install\``
+                  ),
+                ],
+                [
+                  t(
+                    "Samsung TVs from 2020 (Tizen 5.5 or later)",
+                    "تلفزيونات سامسونج من 2020 (Tizen 5.5 أو أحدث)"
+                  ),
+                  t(
+                    "Samsung's app store (Apps on the TV), once Samsung approves it: in the United States first, then in further countries, the Gulf included, after Samsung's partner approval",
+                    "متجر تطبيقات سامسونج (التطبيقات على التلفاز) بعد موافقة سامسونج: في الولايات المتحدة أولًا، ثم في بلدان أخرى منها الخليج بعد موافقة سامسونج على الشراكة"
+                  ),
+                ],
+                [
+                  t(
+                    "Roku (Roku OS, every current Roku)",
+                    "روكو (نظام Roku OS، كل أجهزة روكو الحالية)"
+                  ),
+                  t(
+                    `Not in Roku's store yet. A Roku in developer mode installs the channel from its developer page: the \`maktaba-roku-<version>.zip\` a release carries when the channel changed, or one built from [\`apps/tv/roku/\`](${SRC}/apps/tv/roku) (\`node tools/build.mjs\`). The channel is in English and Arabic, the whole of it mirrored in Arabic with the text joined and in reading order, and it opens straight to a video from a deep link. Its player tells the home what the Roku plays (HEVC and HDR where it can, AV1 by DASH), has Maktaba's own controls with scrub thumbnails and audio and subtitle choices, draws Arabic subtitles itself, joined and right to left, saves your place, and shows Up next in a queue`,
+                    `ليست في متجر روكو بعد. يثبّت جهاز روكو في وضع المطوّر القناةَ من صفحة المطوّر فيه: الملف \`maktaba-roku-<version>.zip\` الذي يحمله الإصدار حين تتغيّر القناة، أو قناة مبنية من [\`apps/tv/roku/\`](${SRC}/apps/tv/roku) (\`node tools/build.mjs\`). القناة بالعربية والإنجليزية، وهي كلها معكوسة الاتجاه بالعربية والنص فيها موصول الحروف وبترتيب القراءة، وتفتح الفيديو مباشرة من رابط عميق. ومشغّلها يُخبر الجهاز الرئيسي بما يشغّله روكو (HEVC وHDR حيث يستطيع، وAV1 عبر DASH)، وله أزرار تحكم من مكتبة نفسها مع صور مصغّرة للتنقل واختيار الصوت والترجمة، ويرسم الترجمة العربية بنفسه موصولة الحروف ومن اليمين إلى اليسار، ويحفظ موضع مشاهدتك، ويُظهر «التالي» في قائمة التشغيل`
+                  ),
+                ],
               ],
             },
+          },
+        ],
+      },
+      {
+        h: t("On an LG TV", "على تلفاز LG"),
+        blocks: [
+          {
+            p: t(
+              "The LG app is a small launcher that opens your home's own TV screens, the same ones a browser shows at `/tv/`, so they update with the home and the app itself changes rarely.",
+              "تطبيق LG مشغّل صغير يفتح شاشات التلفاز الخاصة بجهازك الرئيسي، وهي نفسها التي يعرضها المتصفح في `/tv/`، فتتحدّث مع الجهاز الرئيسي ولا يتغيّر التطبيق نفسه إلا نادرًا."
+            ),
+          },
+          {
+            ul: [
+              t(
+                "**Sign in with a code**: the TV shows a code and a QR code; approve it in Maktaba on your phone (**Profile → Approve a TV**) or computer. **Find on this network** looks for homes on the TV's network and shows that home's own code. The last home used opens at once next time.",
+                "**تسجيل الدخول برمز**: يعرض التلفاز رمزًا ورمز QR؛ وافق عليه في مكتبة على هاتفك (**الملف الشخصي ← الموافقة على تلفاز**) أو حاسوبك. ويبحث خيار **ابحث في هذه الشبكة** عن الأجهزة الرئيسية في شبكة التلفاز ويعرض رمز الجهاز الذي اخترته. وفي المرة التالية يُفتح آخر جهاز رئيسي استُخدم مباشرة."
+              ),
+              t(
+                "**Playback on the TV's own player**: 4K, HDR10 and HLG, and Dolby audio passed to a soundbar, where the TV supports them. The app tells the home what this TV decodes, so the home plays a file as it is when it can and converts it only when it must. If the TV cannot play a stream, the app asks the home once more for a converted one.",
+                "**التشغيل بمشغّل التلفاز نفسه**: دقة 4K وHDR10 وHLG، وتمرير صوت Dolby إلى مكبّر الصوت، حيث يدعمها التلفاز. ويخبر التطبيق الجهاز الرئيسي بما يستطيع هذا التلفاز تشغيله، فيشغّل الجهاز الملف كما هو حين يمكنه، ولا يحوّله إلا عند الحاجة. وإن تعذّر على التلفاز تشغيل البث، يطلب التطبيق من الجهاز الرئيسي مرة أخرى نسخة محوّلة."
+              ),
+              t(
+                "**Subtitles drawn by Maktaba**: Arabic joined and right to left, above the controls, at the size chosen in the player. The audio tracks of the file are listed in **Audio**.",
+                "**ترجمات ترسمها مكتبة**: العربية متصلة الحروف ومن اليمين إلى اليسار، فوق أزرار التحكم، بالحجم المختار في المشغّل. وتُعرض مسارات صوت الملف في **الصوت**."
+              ),
+              t(
+                "**The Magic Remote**: the pointer focuses what it hovers, the arrows and OK move as on any remote, and the media keys play, pause and seek. Back goes up a screen; on Home it asks whether to leave, and **Leave** returns to the TV's launcher.",
+                "**جهاز Magic Remote**: يحدّد المؤشر ما يمر فوقه، وتعمل الأسهم وزر OK كما في أي جهاز تحكم، وتشغّل مفاتيح الوسائط وتوقف وتتنقل. ويرجع زر الرجوع شاشة واحدة؛ وفي الرئيسية يسأل هل تريد المغادرة، ويعيدك **مغادرة** إلى مشغّل تطبيقات التلفاز."
+              ),
+              t(
+                "An LG TV older than webOS 5 (2019 and before) is told it is too old, and that it can still be cast to from Maktaba on a phone if it supports Google Cast or AirPlay.",
+                "ويُبلَّغ تلفاز LG الأقدم من webOS 5 (من 2019 وما قبلها) بأنه أقدم من أن يعمل عليه التطبيق، وبأنه ما زال يمكن البث إليه من مكتبة على الهاتف إن كان يدعم Google Cast أو AirPlay."
+              ),
+            ],
+          },
+          {
+            p: t(
+              "Developers: [The Samsung and LG launcher](/contributing/tv-launcher/) explains the bridge between the launcher and the home's TV screens, and the LG player, package and store steps.",
+              "للمطوّرين: تشرح صفحة [مشغّل سامسونج وLG](/contributing/tv-launcher/) الجسر بين المشغّل وشاشات التلفاز في الجهاز الرئيسي، ومشغّل LG وحزمته وخطوات المتجر."
+            ),
+          },
+        ],
+      },
+      {
+        h: t("On a Samsung TV", "على تلفاز سامسونج"),
+        blocks: [
+          {
+            p: t(
+              "The Samsung app is a small launcher: it finds the home, by searching this network or with the home's address, and then shows the home's own TV screens, so they update with the home and not through the store. Signing in is by a code approved from a phone; on the home's network without encryption it is by code only, so no password crosses the network in the clear.",
+              "تطبيق سامسونج مُشغِّل صغير: يعثر على الجهاز الرئيسي بالبحث في هذه الشبكة أو بعنوانه، ثم يعرض شاشات التلفاز الخاصة بالجهاز الرئيسي نفسه، فتتحدّث مع الجهاز الرئيسي لا عبر المتجر. ويكون تسجيل الدخول برمز يُوافَق عليه من الهاتف؛ وعلى شبكة المنزل دون تشفير لا يكون إلا بالرمز، فلا تعبر كلمة مرور الشبكة مكشوفة."
+            ),
+          },
+          {
+            ul: [
+              t(
+                "Plays with the TV's own player: 4K, HDR10 and HLG where the TV has them, and Dolby Digital and Dolby Digital Plus passed through to a soundbar or receiver that takes them. Samsung TVs have no Dolby Vision, so such a file plays as HDR10.",
+                "يشغّل بمشغّل التلفاز نفسه: دقة 4K وHDR10 وHLG حيث يدعمها التلفاز، مع تمرير Dolby Digital وDolby Digital Plus إلى مكبّر الصوت أو جهاز الاستقبال الذي يقبلهما. ولا تدعم تلفزيونات سامسونج Dolby Vision، فيُشغَّل ملفها بصيغة HDR10."
+              ),
+              t(
+                "The TV tells the home what it plays, so the home sends the file as it is when it can and converts only what the TV cannot play. If the TV still cannot play a file, it says **The TV couldn't play this. Trying a converted version…** and plays a converted one.",
+                "يُعلِم التلفاز الجهاز الرئيسي بما يستطيع تشغيله، فيرسل الجهاز الرئيسي الملف كما هو متى أمكن ولا يحوّل إلا ما لا يشغّله التلفاز. وإن تعذّر على التلفاز تشغيل ملف رغم ذلك، يقول **تعذّر على التلفاز تشغيل هذا. جارٍ تجربة نسخة محوّلة…** ويشغّل نسخة محوّلة."
+              ),
+              t(
+                "Subtitles are drawn by Maktaba, not the TV, so Arabic is joined and right to left, at the size chosen in the TV app's settings.",
+                "تُرسم الترجمة بواسطة مكتبة لا بواسطة التلفاز، فتظهر العربية متصلة ومن اليمين إلى اليسار، بالحجم المختار في إعدادات تطبيق التلفاز."
+              ),
+              t(
+                "The remote's play, pause, rewind, fast-forward and colour keys work; Back on the top screen asks before leaving the app.",
+                "تعمل أزرار التشغيل والإيقاف المؤقت والترجيع والتقديم والأزرار الملوّنة في جهاز التحكم؛ ويسأل زر الرجوع في الشاشة العليا قبل مغادرة التطبيق."
+              ),
+              t(
+                "A Samsung TV older than 2020 is told it is too old for the app, and that it can still be cast to from a phone if it supports Google Cast or AirPlay.",
+                "يُخبَر تلفاز سامسونج الأقدم من 2020 بأنه أقدم من أن يعمل عليه التطبيق، وبأنه ما زال يمكن البث إليه من الهاتف إن كان يدعم Google Cast أو AirPlay."
+              ),
+            ],
           },
         ],
       },
@@ -934,12 +1063,60 @@ export const APPS = [
                 "Signing in on an Android TV: the code, its QR code, and a phone that found the TV",
                 "تسجيل الدخول على أندرويد تي في: الرمز ورمز QR الخاص به، وهاتف وجد التلفاز"
               ),
+              shot(
+                "firetv-home",
+                "wide",
+                "Maktaba TV's Home on a Fire TV: Continue watching and the libraries' rows",
+                "الرئيسية في تطبيق التلفاز على فاير تي في: تابع المشاهدة وصفوف المكتبات"
+              ),
+              shot(
+                "firetv-library",
+                "wide",
+                "A library on a Fire TV: its tabs and Recommended",
+                "مكتبة على فاير تي في: تبويباتها والمقترحات"
+              ),
+              shot(
+                "lgtv-watch",
+                "wide",
+                "Playing on an LG TV: the TV's own player under the controls, and Arabic subtitles drawn by Maktaba",
+                "التشغيل على تلفاز LG: مشغّل التلفاز نفسه تحت أزرار التحكم، وترجمة عربية ترسمها مكتبة"
+              ),
+              shot(
+                "samsung-error",
+                "wide",
+                "The Samsung app playing: Arabic subtitles drawn right to left, and the notice that a converted version follows",
+                "تطبيق سامسونج أثناء التشغيل: ترجمة عربية مرسومة من اليمين إلى اليسار، وتنبيه بأن نسخة محوّلة ستتبع"
+              ),
+              shot(
+                "roku-home",
+                "wide",
+                "Maktaba's Home on Roku: Continue watching and Recently added",
+                "الرئيسية في قناة مكتبة على روكو: متابعة المشاهدة وأضيف حديثًا"
+              ),
+              shot(
+                "roku-library",
+                "wide",
+                "A library on Roku: the five tabs, Play and Shuffle, the grid and its letter rail",
+                "مكتبة على روكو: التبويبات الخمسة، والتشغيل والتشغيل العشوائي، والشبكة وشريط الحروف"
+              ),
+              shot(
+                "roku-player",
+                "wide",
+                "Playing on Roku: Maktaba's controls, the chapter, and the audio and subtitle choices",
+                "التشغيل على روكو: أزرار التحكم من مكتبة، والفصل، واختيار الصوت والترجمة"
+              ),
+              shot(
+                "roku-subtitles",
+                "wide",
+                "Arabic subtitles on Roku, drawn by the channel joined and right to left",
+                "ترجمة عربية على روكو، ترسمها القناة موصولة الحروف ومن اليمين إلى اليسار"
+              ),
             ],
           },
           {
             p: t(
-              "The first four screenshots are from the Apple TV app, the sign-in from the Android TV app. The Android TV app has the same sections as the Apple TV app, laid out for the Android TV remote.",
-              "أول أربع لقطات من تطبيق آبل تي في، ولقطة تسجيل الدخول من تطبيق أندرويد تي في. ولتطبيق أندرويد تي في أقسام تطبيق آبل تي في نفسها، مرتبةً لجهاز تحكم أندرويد تي في."
+              "The first four screenshots are from the Apple TV app, the sign-in from the Android TV app, the next two from the Fire TV build, the next from the LG app and the next from the Samsung app, each taken in its browser test with a pretend TV (behind the Samsung shot, a frame stands in for the video), and the last four from the Roku channel, drawn by brs-engine (Roku's own renderer differs a little; behind the player, the video is black). The Android TV app, its Fire TV build and the Roku channel have the same sections as the Apple TV app, laid out for the TV's remote.",
+              "أول أربع لقطات من تطبيق آبل تي في، ولقطة تسجيل الدخول من تطبيق أندرويد تي في، واللقطتان التاليتان من إصدار فاير تي في، والتالية من تطبيق LG والتي تليها من تطبيق سامسونج، وكلٌّ منهما التُقطت في اختبار تطبيقها في المتصفح مع تلفاز وهمي (وخلف لقطة سامسونج إطار بديل عن الفيديو)، وآخر أربع لقطات من قناة روكو كما يرسمها brs-engine (ويختلف عنه عارض روكو نفسه قليلًا، والفيديو خلف المشغّل أسود). ولتطبيق أندرويد تي في وإصداره لفاير تي في وقناة روكو أقسام تطبيق آبل تي في نفسها، مرتبةً لجهاز تحكم التلفاز."
             ),
           },
           { p: SHOTS_NOTE },
@@ -1218,6 +1395,10 @@ export const APPS = [
               t(
                 "A library's **Playlists** tab, **Save as smart playlist** on its filters, **Shuffle** on a series and on each season, and **Continue your queue** on Home. Admins choose how each collection shows: its name, whether it is hidden, and its rows on Recommended and Home.",
                 "تبويب **قوائم التشغيل** في المكتبة، و**الحفظ كقائمة تشغيل ذكية** من مرشّحاتها، و**تشغيل عشوائي** في السلسلة وفي كل موسم، و**تابع قائمة الانتظار** في الرئيسية. ويختار المدراء طريقة عرض كل مجموعة: اسمها، وهل هي مخفية، وصفوفها في المقترحات والرئيسية."
+              ),
+              t(
+                "**Cast to a TV**, in Chrome on the home's secure address (`https://`): the player sends the video, or the whole queue of **Play all** and **Shuffle**, to a Chromecast, a Google TV or a TV with Chromecast built in on the same Wi-Fi network, through Maktaba's own receiver. The TV fetches the video from the home itself with a cast grant (a six-hour pass for that video or queue, never the person's sign-in), so the tab can close and **Continue Watching** still follows the TV; the player shows the TV's name, play, pause and **Stop casting**, and the TV's screens follow the web app's language. There is no Cast button on `http://`, in other browsers, or through Maktaba Cloud. It appears once the build carries the Cast receiver's application ID (`shared/cast/app.json`); the contract is the [casting guide](/contributing/casting/).",
+                "**البث إلى تلفاز**، في Chrome على العنوان الآمن للجهاز الرئيسي (`https://`): يرسل المشغّل المقطع، أو قائمة **تشغيل الكل** و**تشغيل عشوائي** كلها، إلى Chromecast أو Google TV أو تلفاز مدمج فيه Chromecast على شبكة Wi-Fi نفسها، عبر المستقبِل الخاص بمكتبة. يجلب التلفاز المقطع من الجهاز الرئيسي بنفسه بتصريح بث (تصريح مدته ست ساعات لذلك المقطع أو تلك القائمة، وليس تسجيل دخول الشخص أبدًا)، فيمكن إغلاق التبويب وتبقى **تابع المشاهدة** تتبع التلفاز؛ ويعرض المشغّل اسم التلفاز والتشغيل والإيقاف المؤقت و**إيقاف البث**، وتتبع شاشات التلفاز لغة تطبيق الويب. لا يظهر زر البث على `http://` ولا في المتصفحات الأخرى ولا عبر سحابة مكتبة. ويظهر حين تحمل النسخة معرّف تطبيق مستقبِل البث (`shared/cast/app.json`)؛ والعقد في [دليل البث](/contributing/casting/)."
               ),
               t(
                 "**Account**: devices, **Connect an app** (the link and QR code the apps take), sessions, API tokens, history and preferences; and **Sign in a device**, where a code is approved.",

@@ -94,6 +94,19 @@ func RelayIncluded(plan string) bool {
 	return !ok || t.Relay
 }
 
+// LowestRelayPlan is the cheapest plan that reaches its home through the relay (Basic). The
+// store reviewers' home runs on it (Epic 58 story 58.04), so a reviewer's relayed streams get
+// the lowest paid cap; deploy/review-home/review-home.env.example names it as REVIEW_HOME_PLAN
+// and plans_test.go fails when the two differ.
+func LowestRelayPlan() string {
+	for _, id := range Plans {
+		if Tiers[id].Relay {
+			return id
+		}
+	}
+	return ""
+}
+
 // LaunchCheck is the launch gate's check (story 50.19 T12): paid plans can't be switched on
 // while any of their values is TBD. It names each one.
 func LaunchCheck(tiers map[string]Tier) error {

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Search (Epic 58 story 58.12): Roku's MiniKeyboard (the remote's voice types into it) and the results. -->
+<component name="SearchScreen" extends="Screen">
+  <script type="text/brightscript" uri="SearchScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common.brs" />
+  <script type="text/brightscript" uri="pkg:/source/config.brs" />
+  <script type="text/brightscript" uri="pkg:/source/net.brs" />
+  <script type="text/brightscript" uri="pkg:/source/nav.brs" />
+  <script type="text/brightscript" uri="pkg:/source/store.brs" />
+  <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
+  <script type="text/brightscript" uri="pkg:/source/layout.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
+  <children>
+    <Label id="title" translation="[120,60]" width="1680" />
+    <MiniKeyboard id="keyboard" translation="[120,150]" />
+    <Label id="query" translation="[120,780]" width="640" />
+    <MarkupGrid id="results" translation="[800,150]" itemComponentName="PosterCard" itemSize="[300,230]" itemSpacing="[28,40]" numColumns="3" numRows="3" />
+    <Label id="empty" translation="[800,300]" width="900" visible="false" />
+  </children>
+</component>

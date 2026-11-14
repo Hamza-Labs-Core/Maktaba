@@ -64,7 +64,7 @@ func TestCapabilitiesRoles(t *testing.T) {
 		rec := getCaps(r, p, "")
 		var b capsBody
 		decode(t, rec, http.StatusOK, &b)
-		if b.Admin != nil || b.Features["semantic_search"] != "off" || b.ETag != "c-1842-1" {
+		if b.Admin != nil || b.Features["semantic_search"] != "off" || b.ETag != "c-1842-3" {
 			t.Fatalf("%s: %s", name, rec.Body)
 		}
 		var raw map[string]any
@@ -86,24 +86,25 @@ func TestCapabilitiesRoles(t *testing.T) {
 	}
 }
 
+// The ETag ends in the licence mask, 3 with livetv.broadcast and cloud.relay both gated.
 // T05: the ETag header, Cache-Control, and If-None-Match: the same is 304 with no body,
 // an old one 200.
 func TestCapabilitiesETag(t *testing.T) {
 	r, caps := capsRouter(t)
 	rec := getCaps(r, viewer(), "")
-	if rec.Header().Get("ETag") != `"c-1842-1"` || rec.Header().Get("Cache-Control") != "private, no-cache" {
+	if rec.Header().Get("ETag") != `"c-1842-3"` || rec.Header().Get("Cache-Control") != "private, no-cache" {
 		t.Fatalf("headers %v", rec.Header())
 	}
-	for _, inm := range []string{`"c-1842-1"`, `W/"c-1842-1"`, `"c-1-1", "c-1842-1"`, "*"} {
+	for _, inm := range []string{`"c-1842-3"`, `W/"c-1842-3"`, `"c-1-1", "c-1842-3"`, "*"} {
 		if rec := getCaps(r, viewer(), inm); rec.Code != http.StatusNotModified || rec.Body.Len() != 0 {
 			t.Fatalf("If-None-Match %s: %d %q", inm, rec.Code, rec.Body)
 		}
 	}
-	if rec := getCaps(r, viewer(), `"c-1841-1"`); rec.Code != http.StatusOK {
+	if rec := getCaps(r, viewer(), `"c-1841-3"`); rec.Code != http.StatusOK {
 		t.Fatalf("old etag: %d", rec.Code)
 	}
 	caps.Apply(nil, 1843)
-	if rec := getCaps(r, viewer(), `"c-1842-1"`); rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"c-1843-1"` {
+	if rec := getCaps(r, viewer(), `"c-1842-3"`); rec.Code != http.StatusOK || rec.Header().Get("ETag") != `"c-1843-3"` {
 		t.Fatalf("after a change: %d %s", rec.Code, rec.Header().Get("ETag"))
 	}
 }

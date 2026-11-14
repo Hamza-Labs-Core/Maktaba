@@ -41,13 +41,13 @@ const ctx = (lang, extra = {}) => ({
 
 test("T01: every topic in both languages, and the two indexes", () => {
   const ids = src.categories.flatMap((c) => c.topics);
-  assert.equal(ids.length, 44);
+  assert.equal(ids.length, 45);
   const pages = helpPages(src);
-  assert.equal(pages.length, 90);
+  assert.equal(pages.length, 92);
   for (const lang of ["en", "ar"]) {
     const prefix = lang === "ar" ? "ar/" : "";
     const own = pages.filter((p) => p.lang === lang);
-    assert.equal(own.length, 45, lang);
+    assert.equal(own.length, 46, lang);
     assert.ok(
       own.some((p) => p.out === `${prefix}help/index.html`),
       `${lang} index`
@@ -235,10 +235,10 @@ test("the index: every category in the app's order, every topic, the filter and 
       cats,
       src.categories.map((c) => c.id)
     );
-    assert.equal([...body.matchAll(/<li data-search=/g)].length, 44);
+    assert.equal([...body.matchAll(/<li data-search=/g)].length, 45);
     assert.match(body, /<div class="frame help-groups" data-filter-list>/);
     assert.match(body, /<input id="filter" type="search"/);
-    assert.match(body, lang === "en" ? /44 topics/ : /44 موضوعًا/);
+    assert.match(body, lang === "en" ? /45 topics/ : /45 موضوعًا/);
   }
 });
 

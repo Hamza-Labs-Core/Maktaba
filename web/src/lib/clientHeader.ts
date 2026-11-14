@@ -65,6 +65,15 @@ export function clientHeaderValue(): string {
   return cached;
 }
 
+/**
+ * Names the app explicitly: /tv/ in the Samsung or LG launcher is the launcher's client,
+ * `tv-web/<launcher version> (tizen|webos; tv)` (Epic 58 story 58.09), so the home's
+ * client floor (58.01) and its logs see the TV app, not a browser.
+ */
+export function setClientHeaderValue(value: string): void {
+  cached = value;
+}
+
 /** Tests: forget the worked-out value. */
 export function resetClientHeaderForTest(): void {
   cached = null;

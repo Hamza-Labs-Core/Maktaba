@@ -23,12 +23,14 @@ object ClientHeader {
      * The value for a package: the app from its id (`…tv` the Android TV app, `…remote…` the
      * Remote, else the Player), and the [device] it runs on ([deviceFor]; the Android TV app is
      * always a TV). Each app is one package for phones, foldables and tablets (one Google Play
-     * listing), so the device is read from the screen, not the package.
+     * listing), so the device is read from the screen, not the package. The TV app's platform is
+     * its store build's [tvPlatform]: `androidtv` (Google Play) or `firetv` (the Amazon Appstore,
+     * story 58.05), the same package in both.
      */
-    fun make(packageName: String, version: String?, device: String = PHONE): String {
+    fun make(packageName: String, version: String?, device: String = PHONE, tvPlatform: String = ANDROID_TV): String {
         val parts = packageName.lowercase().split('.')
         val v = version?.takeIf { it.isNotBlank() } ?: "dev"
-        if (parts.lastOrNull() == "tv") return "tv/$v (androidtv; tv)"
+        if (parts.lastOrNull() == "tv") return "tv/$v (${tvPlatform.ifBlank { ANDROID_TV }}; tv)"
         val app = if ("remote" in parts) "remote" else "player"
         return "$app/$v (android; $device)"
     }
@@ -47,4 +49,8 @@ object ClientHeader {
     const val PHONE = "phone"
     const val TABLET = "tablet"
     const val FOLDABLE = "foldable"
+
+    /** The TV app's platforms, as `X-Maktaba-Client` and the streaming profiles name them. */
+    const val ANDROID_TV = "androidtv"
+    const val FIRE_TV = "firetv"
 }

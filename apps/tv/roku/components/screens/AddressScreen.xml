@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Enter the home's address (Epic 58 story 58.12) on Roku's MiniKeyboard. -->
+<component name="AddressScreen" extends="Screen">
+  <script type="text/brightscript" uri="AddressScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common.brs" />
+  <script type="text/brightscript" uri="pkg:/source/config.brs" />
+  <script type="text/brightscript" uri="pkg:/source/net.brs" />
+  <script type="text/brightscript" uri="pkg:/source/nav.brs" />
+  <script type="text/brightscript" uri="pkg:/source/store.brs" />
+  <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
+  <script type="text/brightscript" uri="pkg:/source/layout.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
+  <children>
+    <Label id="title" translation="[120,90]" width="1680" />
+    <Label id="hint" translation="[120,170]" width="1680" />
+    <MiniKeyboard id="keyboard" translation="[120,260]" />
+    <TvButton id="connect" translation="[120,860]" width="360" />
+    <Label id="state" translation="[560,870]" width="1240" height="120" wrap="true" />
+  </children>
+</component>

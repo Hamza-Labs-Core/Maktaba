@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Choose your home (Epic 58 story 58.12): the saved homes, then Sign in with a code (the default for a new TV), Find on this network and a typed address. -->
+<component name="StartScreen" extends="Screen">
+  <script type="text/brightscript" uri="StartScreen.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common.brs" />
+  <script type="text/brightscript" uri="pkg:/source/config.brs" />
+  <script type="text/brightscript" uri="pkg:/source/net.brs" />
+  <script type="text/brightscript" uri="pkg:/source/nav.brs" />
+  <script type="text/brightscript" uri="pkg:/source/store.brs" />
+  <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
+  <script type="text/brightscript" uri="pkg:/source/layout.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
+  <children>
+    <Label id="title" translation="[120,90]" width="1680" />
+    <Label id="note" translation="[120,170]" width="1680" height="100" wrap="true" />
+    <LabelList id="list" translation="[120,300]" itemSize="[1000,72]" itemSpacing="[0,12]" />
+  </children>
+</component>

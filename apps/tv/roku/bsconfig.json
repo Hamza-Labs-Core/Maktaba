@@ -1,0 +1,17 @@
+{
+  "rootDir": ".",
+  "files": [
+    "manifest",
+    "source/**/*.brs",
+    "components/**/*.xml",
+    "components/**/*.brs",
+    "locale/**/*"
+  ],
+  "stagingDir": "build/stage",
+  "retainStagingDir": true,
+  "createPackage": false,
+  "sourceMap": false,
+  "plugins": ["@rokucommunity/bslint"],
+  "lintConfig": "bslint.json",
+  "diagnosticFilters": []
+}

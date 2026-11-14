@@ -5541,74 +5541,6 @@
       "en": "The caller is an admin, or the guardian of at least one restricted account: show the Family screens.",
       "ar": "المتصل مشرف، أو وليّ حساب مقيَّد واحد على الأقل: اعرض شاشات العائلة."
     },
-    "/components/schemas/SessionRequest/properties/device_caps/description": {
-      "en": "What the device reports it plays, from its platform's own query, sent at start and again whenever its output changes (a new session at the same position: a session never changes its mode). Optional.",
-      "ar": "ما يبلّغ الجهاز أنه يشغّله، من استعلام منصته نفسها، ويُرسل عند البدء ثم كلما تغيّر مخرجه (جلسة جديدة عند الموضع نفسه: فالجلسة لا تغيّر نمطها أبدًا). اختياري."
-    },
-    "/components/schemas/DeviceCaps/description": {
-      "en": "A device's report of what it plays. The streaming service merges it into the client profile: the report narrows the profile freely and widens it only up to the platform's ceiling, so a report can never ask for more than its platform plays (Samsung never gets Dolby Vision; Roku gets it only as profile 5, and AV1 only by DASH). A field left out is the profile's. Keys this home does not know are ignored; a value of the wrong type is a 400. Each list holds at most 32 entries.",
-      "ar": "تقرير الجهاز عمّا يشغّله. تدمجه خدمة البث في ملف تعريف العميل: فالتقرير يضيّق الملف بحرية ولا يوسّعه إلا حتى سقف المنصة، فلا يمكن لتقرير أن يطلب أكثر مما تشغّله منصته (لا تنال Samsung رؤية Dolby أبدًا؛ وتنالها Roku بالملف 5 وحده، وAV1 عبر DASH وحده). والحقل المحذوف يبقى على قيمة الملف. والمفاتيح التي لا يعرفها هذا المنزل تُتجاهل؛ والقيمة من نوع خاطئ تعطي 400. وتحمل كل قائمة 32 عنصرًا على الأكثر."
-    },
-    "/components/schemas/DeviceCaps/properties/containers/description": {
-      "en": "Containers it plays directly (`mp4`, `mkv`, `ts`, …).",
-      "ar": "الحاويات التي يشغّلها مباشرة (`mp4` و`mkv` و`ts`، …)."
-    },
-    "/components/schemas/DeviceCaps/properties/video/description": {
-      "en": "Video codecs it decodes, each with its limits.",
-      "ar": "مرمِّزات الفيديو التي يفكّها، ولكلٍّ منها حدوده."
-    },
-    "/components/schemas/DeviceCaps/properties/hdr/description": {
-      "en": "HDR formats it shows: `hdr10`, `hlg`, `dv-p5`, `dv-p7`, `dv-p8`. A Dolby Vision profile 8 or 7 source goes to a device without its `dv-*` as its HDR10 or HLG base layer, by remux.",
-      "ar": "صيغ HDR التي يعرضها: `hdr10` و`hlg` و`dv-p5` و`dv-p7` و`dv-p8`. ومصدر رؤية Dolby بالملف 8 أو 7 يذهب إلى جهاز ليس فيه `dv-*` الخاص به بطبقته الأساسية HDR10 أو HLG، بإعادة التغليف."
-    },
-    "/components/schemas/DeviceCaps/properties/audio/description": {
-      "en": "Audio codecs it decodes (`aac`, `ac3`, `eac3`, …).",
-      "ar": "مرمِّزات الصوت التي يفكّها (`aac` و`ac3` و`eac3`، …)."
-    },
-    "/components/schemas/DeviceCaps/properties/passthrough/description": {
-      "en": "Audio it passes on undecoded to a receiver. TrueHD and DTS go to a device that neither decodes nor passes them as EAC3, the video untouched.",
-      "ar": "الصوت الذي يمرّره دون فكّ إلى جهاز استقبال. ويذهب TrueHD وDTS إلى جهاز لا يفكّهما ولا يمرّرهما بصيغة EAC3، والفيديو على حاله."
-    },
-    "/components/schemas/DeviceCaps/properties/max_audio_channels/description": {
-      "en": "The most audio channels it plays.",
-      "ar": "أكبر عدد من قنوات الصوت يشغّله."
-    },
-    "/components/schemas/DeviceCaps/properties/hls_segments/description": {
-      "en": "HLS segment formats it plays. HEVC and AV1 go in fMP4; everything else stays in TS unless the device lists only `fmp4`.",
-      "ar": "صيغ مقاطع HLS التي يشغّلها. يذهب HEVC وAV1 في fMP4؛ ويبقى كل ما عداهما في TS ما لم يذكر الجهاز `fmp4` وحدها."
-    },
-    "/components/schemas/DeviceCaps/properties/dash/description": {
-      "en": "Whether it plays DASH.",
-      "ar": "هل يشغّل DASH."
-    },
-    "/components/schemas/DeviceCaps/properties/max_bitrate_kbps/description": {
-      "en": "The highest bitrate it plays. A relay plan's cap still applies over it. Left out with `video` given, the platform's ceiling holds.",
-      "ar": "أعلى معدل بتات يشغّله. ويبقى حدّ خطة المرحِّل ساريًا فوقه. وإذا حُذف مع ذكر `video`، يسري سقف المنصة."
-    },
-    "/components/schemas/DeviceVideoCap/description": {
-      "en": "One video codec a device decodes and its limits.",
-      "ar": "مرمِّز فيديو واحد يفكّه الجهاز وحدوده."
-    },
-    "/components/schemas/DeviceVideoCap/properties/codec/description": {
-      "en": "`h264`, `hevc`, `av1` or `vp9`.",
-      "ar": "`h264` أو `hevc` أو `av1` أو `vp9`."
-    },
-    "/components/schemas/DeviceVideoCap/properties/max_height/description": {
-      "en": "The tallest picture it decodes in this codec (clamped to the platform's ceiling).",
-      "ar": "أطول صورة يفكّها بهذا المرمِّز (مقيّدة بسقف المنصة)."
-    },
-    "/components/schemas/DeviceVideoCap/properties/max_fps/description": {
-      "en": "The highest frame rate it decodes in this codec.",
-      "ar": "أعلى معدل إطارات يفكّه بهذا المرمِّز."
-    },
-    "/components/schemas/DeviceVideoCap/properties/bit_depth/description": {
-      "en": "The deepest samples it decodes in this codec.",
-      "ar": "أعمق عيّنات يفكّها بهذا المرمِّز."
-    },
-    "/components/schemas/Session/properties/stream_sig/description": {
-      "en": "The signed-URL token for every path under the session's `/stream/{session_id}/` (its subtitle renditions, `subs/sidecar/{lang}.vtt`, `subs/auto.vtt`, `chapters.json`), in every mode, direct play too. A player that cannot send a header (a TV's media player, a Cast receiver) fetches them with `?sig=` and this token. It expires with the session's URLs.",
-      "ar": "رمز الرابط الموقَّع لكل مسار تحت `/stream/{session_id}/` الخاص بالجلسة (نسخ الترجمة فيها و`subs/sidecar/{lang}.vtt` و`subs/auto.vtt` و`chapters.json`)، في كل نمط، والتشغيل المباشر أيضًا. والمشغّل الذي لا يستطيع إرسال ترويسة (مشغّل وسائط التلفاز، أو مستقبِل Cast) يجلبها بـ`?sig=` وهذا الرمز. وتنتهي صلاحيته مع روابط الجلسة."
-    },
     "/paths/~1discovery~1home/get/summary": {
       "en": "Who this home is, and its API level",
       "ar": "من هو هذا المنزل، ومستوى واجهته البرمجية"
@@ -6052,6 +5984,234 @@
     "/paths/~1tv~1broadcast~1publishable~1only/put/responses/409/description": {
       "en": "Broadcasting is off on this home.",
       "ar": "البث متوقف على هذا المنزل."
+    },
+    "/paths/~1plugins/get/summary": {
+      "en": "List the plugins",
+      "ar": "عرض الإضافات"
+    },
+    "/paths/~1plugins/get/description": {
+      "en": "The installed plugins, each with its state, its jobs and what it uses, the home's plugin policy, and the parts of Maktaba itself that are not plugins. By default `plugins` holds only the plugins an admin installed, as clients that list them as installed plugins expect. With `release=true` it also holds the plugins Maktaba publishes that came with this release (`publisher.id` is `maktaba`, `source` is `release`), in the same shape.",
+      "ar": "الإضافات المثبّتة، ولكل منها حالتها ومهامّها وما تستخدمه، وسياسة الإضافات في الجهاز الرئيسي، وأجزاء مكتبة نفسها التي ليست إضافات. افتراضيًا لا يضم `plugins` إلا الإضافات التي ثبّتها مسؤول، كما تتوقع التطبيقات التي تعرضها على أنها الإضافات المثبّتة. ومع `release=true` يضم أيضًا الإضافات التي تنشرها مكتبة وجاءت مع هذا الإصدار (`publisher.id` هو `maktaba` و`source` هو `release`)، بالشكل نفسه."
+    },
+    "/paths/~1plugins/get/parameters/0/description": {
+      "en": "`true`: also list the plugins Maktaba publishes that came with this release. Left out, the list is the installed plugins only.",
+      "ar": "`true`: تُعرض أيضًا الإضافات التي تنشرها مكتبة وجاءت مع هذا الإصدار. وبدونه تقتصر القائمة على الإضافات المثبّتة."
+    },
+    "/paths/~1plugins/get/responses/200/description": {
+      "en": "The plugins.",
+      "ar": "الإضافات."
+    },
+    "/paths/~1plugins/get/responses/200/content/application~1json/schema/properties/plugins/description": {
+      "en": "The installed plugins by id; with `release=true`, also the plugins Maktaba publishes.",
+      "ar": "الإضافات المثبّتة مرتّبة بمعرّفها؛ ومع `release=true` الإضافات التي تنشرها مكتبة أيضًا."
+    },
+    "/paths/~1plugins/get/responses/200/content/application~1json/schema/properties/policy/description": {
+      "en": "The home's plugin policy (`allow_unreviewed`).",
+      "ar": "سياسة الإضافات في الجهاز الرئيسي (`allow_unreviewed`)."
+    },
+    "/paths/~1plugins/get/responses/200/content/application~1json/schema/properties/core/description": {
+      "en": "The parts of Maktaba itself that must always run. They are not plugins and are never in `plugins`.",
+      "ar": "أجزاء مكتبة نفسها التي يجب أن تعمل دائمًا. وهي ليست إضافات ولا تظهر في `plugins` أبدًا."
+    },
+    "/paths/~1plugins/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/summary": {
+      "en": "Read a TV's code from Maktaba Cloud",
+      "ar": "قراءة رمز تلفاز من سحابة مكتبة"
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/description": {
+      "en": "A TV that cannot find the home asks Maktaba Cloud for a code and shows it. A person signed in on the home reads it here first: what the TV is and the country of its address, so they can say it is their TV. The home asks the cloud through its relay agent; it needs remote access turned on. A sign-in through Maktaba Cloud cannot approve a device, so it is refused here too.",
+      "ar": "يطلب التلفاز الذي لا يجد المنزل رمزًا من سحابة مكتبة ويعرضه. ويقرؤه هنا أولًا شخص مسجّل الدخول على المنزل: ما هذا التلفاز وبلد عنوانه، ليؤكّد أنه تلفازه. يسأل المنزل السحابة عبر وكيل الترحيل لديه، ولا بد من تفعيل الوصول عن بُعد. ولا يستطيع تسجيل الدخول عبر سحابة مكتبة الموافقة على جهاز، فيُرفض هنا أيضًا."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/parameters/0/description": {
+      "en": "Eight characters, with or without the dash.",
+      "ar": "ثمانية أحرف، بالشرطة أو بدونها."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/responses/200/description": {
+      "en": "The code is open: what asked with it.",
+      "ar": "الرمز مفتوح: ما الذي طلبه."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/responses/200/content/application~1json/schema/properties/code/description": {
+      "en": "The code as the TV shows it (ABCD-2345).",
+      "ar": "الرمز كما يعرضه التلفاز (ABCD-2345)."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/responses/200/content/application~1json/schema/properties/platform/description": {
+      "en": "What the TV said it is (tizen, webos, roku and so on).",
+      "ar": "ما قاله التلفاز عن نفسه (tizen وwebos وroku وغيرها)."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/responses/200/content/application~1json/schema/properties/country/description": {
+      "en": "The country of the TV's public address, as two letters; empty when the cloud could not tell.",
+      "ar": "بلد العنوان العام للتلفاز بحرفين؛ فارغ إن لم تعرفه السحابة."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/responses/403/description": {
+      "en": "A sign-in through Maktaba Cloud.",
+      "ar": "تسجيل دخول عبر سحابة مكتبة."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/responses/404/description": {
+      "en": "The cloud holds no open code by that name: unknown, expired or already approved.",
+      "ar": "لا تحمل السحابة رمزًا مفتوحًا بهذا الاسم: مجهول أو منتهٍ أو تمّت الموافقة عليه."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/responses/409/description": {
+      "en": "This home is not registered with Maktaba Cloud (`code`: `cloud_not_linked`): approve the home's own code instead.",
+      "ar": "هذا المنزل غير مسجّل في سحابة مكتبة (`code`: `cloud_not_linked`): وافقوا على رمز المنزل نفسه بدلًا منه."
+    },
+    "/paths/~1pairing~1cloud-code~1{code}/get/responses/502/description": {
+      "en": "Maktaba Cloud is out of reach.",
+      "ar": "سحابة مكتبة بعيدة المنال."
+    },
+    "/paths/~1pairing~1cloud-approve/post/summary": {
+      "en": "Approve a TV's code from Maktaba Cloud",
+      "ar": "الموافقة على رمز تلفاز من سحابة مكتبة"
+    },
+    "/paths/~1pairing~1cloud-approve/post/description": {
+      "en": "Signs the TV showing a Maktaba Cloud code in as the caller, or, with `as_user`, as a restricted account the caller looks after (a guardian or an admin). The home makes one of its own device codes for that person, approves it at once and hands it to the cloud as the TV's single-use grant, with the home's connections; the TV redeems the grant with `POST /api/pairing/device/token`. The TV gets the approver's role, libraries and parental policy. No cloud account is needed: the home's registration with the cloud is enough. A sign-in through Maktaba Cloud cannot approve.",
+      "ar": "يسجّل دخول التلفاز الذي يعرض رمزًا من سحابة مكتبة باسم المتصل، أو باسم حساب مقيّد يرعاه المتصل عند تمرير `as_user` (وليّ أمر أو مشرف). يُنشئ المنزل رمز جهاز من رموزه لذلك الشخص، ويوافق عليه فورًا، ويسلّمه للسحابة منحةً لمرة واحدة للتلفاز مع طرق الوصول إلى المنزل؛ ويصرف التلفاز المنحة بـ`POST /api/pairing/device/token`. ينال التلفاز دور الموافِق ومكتباته وسياسته الأبوية. لا حاجة إلى حساب سحابي: يكفي تسجيل المنزل في السحابة. ولا يستطيع تسجيل الدخول عبر سحابة مكتبة الموافقة."
+    },
+    "/paths/~1pairing~1cloud-approve/post/requestBody/content/application~1json/schema/properties/code/description": {
+      "en": "The code the TV shows.",
+      "ar": "الرمز الذي يعرضه التلفاز."
+    },
+    "/paths/~1pairing~1cloud-approve/post/requestBody/content/application~1json/schema/properties/as_user/description": {
+      "en": "The restricted account to sign the TV in as; absent: the caller.",
+      "ar": "الحساب المقيّد الذي يُسجَّل دخول التلفاز باسمه؛ إن غاب: المتصل."
+    },
+    "/paths/~1pairing~1cloud-approve/post/responses/200/description": {
+      "en": "Approved; the TV signs in on its next poll of the cloud.",
+      "ar": "تمّت الموافقة؛ يسجّل التلفاز دخوله عند سؤاله التالي للسحابة."
+    },
+    "/paths/~1pairing~1cloud-approve/post/responses/200/content/application~1json/schema/properties/user_id/description": {
+      "en": "Whose sign-in the TV gets.",
+      "ar": "صاحب تسجيل الدخول الذي يناله التلفاز."
+    },
+    "/paths/~1pairing~1cloud-approve/post/responses/403/description": {
+      "en": "A sign-in through Maktaba Cloud, or a restricted account naming another account (`code`: `restricted`).",
+      "ar": "تسجيل دخول عبر سحابة مكتبة، أو حساب مقيّد يسمّي حسابًا آخر (`code`: `restricted`)."
+    },
+    "/paths/~1pairing~1cloud-approve/post/responses/404/description": {
+      "en": "The cloud holds no open code by that name, or `as_user` is not a restricted account the caller looks after.",
+      "ar": "لا تحمل السحابة رمزًا مفتوحًا بهذا الاسم، أو `as_user` ليس حسابًا مقيّدًا يرعاه المتصل."
+    },
+    "/paths/~1pairing~1cloud-approve/post/responses/409/description": {
+      "en": "Someone approved the code first, or this home is not registered with Maktaba Cloud (`code`: `cloud_not_linked`).",
+      "ar": "وافق أحد على الرمز أولًا، أو هذا المنزل غير مسجّل في سحابة مكتبة (`code`: `cloud_not_linked`)."
+    },
+    "/paths/~1pairing~1cloud-approve/post/responses/502/description": {
+      "en": "Maktaba Cloud is out of reach; nothing was approved.",
+      "ar": "سحابة مكتبة بعيدة المنال؛ لم تتمّ الموافقة على شيء."
+    },
+    "/paths/~1me~1app-sign-ins/get/summary": {
+      "en": "List the apps signed in by code",
+      "ar": "عرض التطبيقات المسجّل دخولها برمز"
+    },
+    "/paths/~1me~1app-sign-ins/get/description": {
+      "en": "The caller's own apps signed in by a code a phone or the web approved (TVs, phones, remotes), newest use first. A TV that signed in with a Maktaba Cloud code says so (`via`).",
+      "ar": "تطبيقات المتصل نفسه التي سجّلت دخولها برمز وافق عليه هاتف أو الويب (أجهزة تلفاز وهواتف وأجهزة تحكّم)، الأحدث استخدامًا أولًا. ويذكر التلفاز الذي سجّل دخوله برمز من سحابة مكتبة ذلك (`via`)."
+    },
+    "/paths/~1me~1app-sign-ins/get/responses/200/description": {
+      "en": "The caller's app sign-ins.",
+      "ar": "تسجيلات دخول تطبيقات المتصل."
+    },
+    "/paths/~1me~1app-sign-ins/get/responses/200/content/application~1json/schema/properties/items/items/properties/id/description": {
+      "en": "The sign-in (its refresh family).",
+      "ar": "تسجيل الدخول (عائلة رموز التحديث الخاصة به)."
+    },
+    "/paths/~1me~1app-sign-ins/get/responses/200/content/application~1json/schema/properties/items/items/properties/kind/description": {
+      "en": "What signed in: the app (tv, player, remote and so on).",
+      "ar": "ما الذي سجّل دخوله: التطبيق (tv وplayer وremote وغيرها)."
+    },
+    "/paths/~1me~1app-sign-ins/get/responses/200/content/application~1json/schema/properties/items/items/properties/label/description": {
+      "en": "What the device called itself, or its platform.",
+      "ar": "الاسم الذي أطلقه الجهاز على نفسه، أو منصته."
+    },
+    "/paths/~1me~1app-sign-ins/get/responses/200/content/application~1json/schema/properties/items/items/properties/via/description": {
+      "en": "Present when a TV signed in with a code from Maktaba Cloud.",
+      "ar": "يظهر حين يسجّل تلفاز دخوله برمز من سحابة مكتبة."
+    },
+    "/paths/~1me~1app-sign-ins/get/responses/200/content/application~1json/schema/properties/items/items/properties/current/description": {
+      "en": "The sign-in this request came with.",
+      "ar": "تسجيل الدخول الذي جاء به هذا الطلب."
+    },
+    "/paths/~1me~1app-sign-ins~1{id}/delete/summary": {
+      "en": "Sign an app out",
+      "ar": "تسجيل خروج تطبيق"
+    },
+    "/paths/~1me~1app-sign-ins~1{id}/delete/description": {
+      "en": "Ends one of the caller's app sign-ins: the app must sign in again. Another person's sign-in answers 404.",
+      "ar": "ينهي أحد تسجيلات دخول تطبيقات المتصل: على التطبيق أن يسجّل دخوله من جديد. وتسجيل دخول شخص آخر يُجاب عنه بـ404."
+    },
+    "/paths/~1me~1app-sign-ins~1{id}/delete/responses/204/description": {
+      "en": "Signed out.",
+      "ar": "تمّ تسجيل الخروج."
+    },
+    "/components/schemas/SessionRequest/properties/device_caps/description": {
+      "en": "What the device reports it plays, from its platform's own query, sent at start and again whenever its output changes (a new session at the same position: a session never changes its mode). Optional.",
+      "ar": "ما يبلّغ الجهاز أنه يشغّله، من استعلام منصته نفسها، ويُرسل عند البدء ثم كلما تغيّر مخرجه (جلسة جديدة عند الموضع نفسه: فالجلسة لا تغيّر نمطها أبدًا). اختياري."
+    },
+    "/components/schemas/DeviceCaps/description": {
+      "en": "A device's report of what it plays. The streaming service merges it into the client profile: the report narrows the profile freely and widens it only up to the platform's ceiling, so a report can never ask for more than its platform plays (Samsung never gets Dolby Vision; Roku gets it only as profile 5, and AV1 only by DASH). A field left out is the profile's. Keys this home does not know are ignored; a value of the wrong type is a 400. Each list holds at most 32 entries.",
+      "ar": "تقرير الجهاز عمّا يشغّله. تدمجه خدمة البث في ملف تعريف العميل: فالتقرير يضيّق الملف بحرية ولا يوسّعه إلا حتى سقف المنصة، فلا يمكن لتقرير أن يطلب أكثر مما تشغّله منصته (لا تنال Samsung رؤية Dolby أبدًا؛ وتنالها Roku بالملف 5 وحده، وAV1 عبر DASH وحده). والحقل المحذوف يبقى على قيمة الملف. والمفاتيح التي لا يعرفها هذا المنزل تُتجاهل؛ والقيمة من نوع خاطئ تعطي 400. وتحمل كل قائمة 32 عنصرًا على الأكثر."
+    },
+    "/components/schemas/DeviceCaps/properties/containers/description": {
+      "en": "Containers it plays directly (`mp4`, `mkv`, `ts`, …).",
+      "ar": "الحاويات التي يشغّلها مباشرة (`mp4` و`mkv` و`ts`، …)."
+    },
+    "/components/schemas/DeviceCaps/properties/video/description": {
+      "en": "Video codecs it decodes, each with its limits.",
+      "ar": "مرمِّزات الفيديو التي يفكّها، ولكلٍّ منها حدوده."
+    },
+    "/components/schemas/DeviceCaps/properties/hdr/description": {
+      "en": "HDR formats it shows: `hdr10`, `hlg`, `dv-p5`, `dv-p7`, `dv-p8`. A Dolby Vision profile 8 or 7 source goes to a device without its `dv-*` as its HDR10 or HLG base layer, by remux.",
+      "ar": "صيغ HDR التي يعرضها: `hdr10` و`hlg` و`dv-p5` و`dv-p7` و`dv-p8`. ومصدر رؤية Dolby بالملف 8 أو 7 يذهب إلى جهاز ليس فيه `dv-*` الخاص به بطبقته الأساسية HDR10 أو HLG، بإعادة التغليف."
+    },
+    "/components/schemas/DeviceCaps/properties/audio/description": {
+      "en": "Audio codecs it decodes (`aac`, `ac3`, `eac3`, …).",
+      "ar": "مرمِّزات الصوت التي يفكّها (`aac` و`ac3` و`eac3`، …)."
+    },
+    "/components/schemas/DeviceCaps/properties/passthrough/description": {
+      "en": "Audio it passes on undecoded to a receiver. TrueHD and DTS go to a device that neither decodes nor passes them as EAC3, the video untouched.",
+      "ar": "الصوت الذي يمرّره دون فكّ إلى جهاز استقبال. ويذهب TrueHD وDTS إلى جهاز لا يفكّهما ولا يمرّرهما بصيغة EAC3، والفيديو على حاله."
+    },
+    "/components/schemas/DeviceCaps/properties/max_audio_channels/description": {
+      "en": "The most audio channels it plays.",
+      "ar": "أكبر عدد من قنوات الصوت يشغّله."
+    },
+    "/components/schemas/DeviceCaps/properties/hls_segments/description": {
+      "en": "HLS segment formats it plays. HEVC and AV1 go in fMP4; everything else stays in TS unless the device lists only `fmp4`.",
+      "ar": "صيغ مقاطع HLS التي يشغّلها. يذهب HEVC وAV1 في fMP4؛ ويبقى كل ما عداهما في TS ما لم يذكر الجهاز `fmp4` وحدها."
+    },
+    "/components/schemas/DeviceCaps/properties/dash/description": {
+      "en": "Whether it plays DASH.",
+      "ar": "هل يشغّل DASH."
+    },
+    "/components/schemas/DeviceCaps/properties/max_bitrate_kbps/description": {
+      "en": "The highest bitrate it plays. A relay plan's cap still applies over it. Left out with `video` given, the platform's ceiling holds.",
+      "ar": "أعلى معدل بتات يشغّله. ويبقى حدّ خطة المرحِّل ساريًا فوقه. وإذا حُذف مع ذكر `video`، يسري سقف المنصة."
+    },
+    "/components/schemas/DeviceVideoCap/description": {
+      "en": "One video codec a device decodes and its limits.",
+      "ar": "مرمِّز فيديو واحد يفكّه الجهاز وحدوده."
+    },
+    "/components/schemas/DeviceVideoCap/properties/codec/description": {
+      "en": "`h264`, `hevc`, `av1` or `vp9`.",
+      "ar": "`h264` أو `hevc` أو `av1` أو `vp9`."
+    },
+    "/components/schemas/DeviceVideoCap/properties/max_height/description": {
+      "en": "The tallest picture it decodes in this codec (clamped to the platform's ceiling).",
+      "ar": "أطول صورة يفكّها بهذا المرمِّز (مقيّدة بسقف المنصة)."
+    },
+    "/components/schemas/DeviceVideoCap/properties/max_fps/description": {
+      "en": "The highest frame rate it decodes in this codec.",
+      "ar": "أعلى معدل إطارات يفكّه بهذا المرمِّز."
+    },
+    "/components/schemas/DeviceVideoCap/properties/bit_depth/description": {
+      "en": "The deepest samples it decodes in this codec.",
+      "ar": "أعمق عيّنات يفكّها بهذا المرمِّز."
+    },
+    "/components/schemas/Session/properties/stream_sig/description": {
+      "en": "The signed-URL token for every path under the session's `/stream/{session_id}/` (its subtitle renditions, `subs/sidecar/{lang}.vtt`, `subs/auto.vtt`, `chapters.json`), in every mode, direct play too. A player that cannot send a header (a TV's media player, a Cast receiver) fetches them with `?sig=` and this token. It expires with the session's URLs.",
+      "ar": "رمز الرابط الموقَّع لكل مسار تحت `/stream/{session_id}/` الخاص بالجلسة (نسخ الترجمة فيها و`subs/sidecar/{lang}.vtt` و`subs/auto.vtt` و`chapters.json`)، في كل نمط، والتشغيل المباشر أيضًا. والمشغّل الذي لا يستطيع إرسال ترويسة (مشغّل وسائط التلفاز، أو مستقبِل Cast) يجلبها بـ`?sig=` وهذا الرمز. وتنتهي صلاحيته مع روابط الجلسة."
     },
     "/paths/~1cast~1grants/post/summary": {
       "en": "Mint a cast grant for a Cast receiver",

@@ -101,15 +101,21 @@ class CompatScreenTest {
     private fun updateApp() {
         val session = show(
             """{"id":"h","name":"Kitchen","version":"9.0.0","urls":[],"api_level":99,"api_level_oldest":99,"client_floor":{}}""",
-            CompatApp("tv", "androidtv", "1.0.0"),
+            // this build's platform: Google Play's words on the google build, the Appstore's on Fire TV (58.05)
+            CompatApp("tv", BuildConfig.TV_PLATFORM, "1.0.0"),
         )
         assertEquals(CompatVerdict.UpdateApp, session.compatBlock.value?.verdict)
         assertEquals(string(CoreR.string.compat_update_app_title), text("compat-title"))
         assertEquals(string(CoreR.string.compat_update_app_why, "Kitchen"), text("compat-line-0"))
-        assertEquals(string(CoreR.string.compat_update_app_androidtv), text("compat-line-1"))
+        assertEquals(
+            string(if (BuildConfig.TV_PLATFORM == "firetv") CoreR.string.compat_update_app_firetv else CoreR.string.compat_update_app_androidtv),
+            text("compat-line-1"),
+        )
         assertFits()
         assertEquals(listOf("/api/discovery/home"), asked.toList())
-        compose.onRoot().captureRoboImage("src/test/screenshots/compat_update_app_tv_dark_$lang.png", roborazziOptions = options)
+        // the Fire TV build's page names the Amazon Appstore (its own references)
+        val build = if (BuildConfig.TV_PLATFORM == "firetv") "firetv" else "tv"
+        compose.onRoot().captureRoboImage("src/test/screenshots/compat_update_app_${build}_dark_$lang.png", roborazziOptions = options)
 
         // Try again asks the home again (it is still too new for this build)
         compose.onNodeWithTag("compat-try-again").performSemanticsAction(SemanticsActions.OnClick)
