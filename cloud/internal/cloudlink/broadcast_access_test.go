@@ -35,7 +35,7 @@ func TestTheAgentPassesViewerAccessAsTheHome(t *testing.T) {
 	}
 	for _, c := range pass {
 		rec := httptest.NewRecorder()
-		h(rec, httptest.NewRequest(c.method, BroadcastAccessPrefix+c.path, strings.NewReader(c.body)))
+		h(rec, homeCall(c.method, c.path, c.body))
 		if rec.Code != http.StatusCreated || rec.Body.String() != `{"id":"i1"}` {
 			t.Fatalf("%s %s: %d %s", c.method, c.path, rec.Code, rec.Body)
 		}
@@ -62,12 +62,52 @@ func TestTheAgentPassesViewerAccessAsTheHome(t *testing.T) {
 	if len(seen) != len(pass) {
 		t.Fatalf("the cloud saw %d calls", len(seen))
 	}
+
+	// a web page reaching the loopback port (DNS rebinding, a form) is refused: another Host,
+	// an Origin, a change that is not JSON
+	refused := []*http.Request{
+		func() *http.Request {
+			r := homeCall(http.MethodGet, "invites", "")
+			r.Host = "evil.example:8765"
+			return r
+		}(),
+		func() *http.Request {
+			r := homeCall(http.MethodPost, "invites", "{}")
+			r.Header.Set("Origin", "http://127.0.0.1:8765")
+			return r
+		}(),
+		func() *http.Request {
+			r := homeCall(http.MethodPost, "invites", "label=x")
+			r.Header.Set("Content-Type", "text/plain")
+			return r
+		}(),
+	}
+	for i, r := range refused {
+		rec := httptest.NewRecorder()
+		h(rec, r)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("refused[%d]: %d", i, rec.Code)
+		}
+	}
+	if len(seen) != len(pass) {
+		t.Fatalf("the cloud saw %d calls", len(seen))
+	}
+}
+
+// homeCall is a call as the home's API makes it: to the loopback address, JSON for a change.
+func homeCall(method, path, body string) *http.Request {
+	r := httptest.NewRequest(method, BroadcastAccessPrefix+path, strings.NewReader(body))
+	r.Host = "127.0.0.1:8765"
+	if body != "" {
+		r.Header.Set("Content-Type", "application/json")
+	}
+	return r
 }
 
 func TestViewerAccessUnreachableCloudIsABadGateway(t *testing.T) {
 	h := BroadcastAccessHandler(&LinkReporter{CloudAPI: "http://127.0.0.1:1", Creds: Credentials{ServerID: "srv-1", Secret: "s3"}})
 	rec := httptest.NewRecorder()
-	h(rec, httptest.NewRequest(http.MethodGet, BroadcastAccessPrefix+"invites", nil))
+	h(rec, homeCall(http.MethodGet, "invites", ""))
 	if rec.Code != http.StatusBadGateway {
 		t.Fatalf("%d", rec.Code)
 	}

@@ -3,6 +3,7 @@ package cloudlink
 import (
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -47,6 +48,10 @@ func BroadcastAccessHandler(rep *LinkReporter) http.HandlerFunc {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
+		if !fromTheHomeAPI(r) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 		defer cancel()
 		var body io.Reader
@@ -79,6 +84,29 @@ func BroadcastAccessHandler(rep *LinkReporter) http.HandlerFunc {
 		w.WriteHeader(resp.StatusCode)
 		_, _ = io.Copy(w, io.LimitReader(resp.Body, 1<<20))
 	}
+}
+
+// fromTheHomeAPI keeps a web page out (DNS rebinding): the home's API calls the agent by its
+// loopback address, sends no Origin, and sends a change as JSON, which a page cannot send to
+// another origin without a preflight the agent never answers.
+func fromTheHomeAPI(r *http.Request) bool {
+	if r.Header.Get("Origin") != "" {
+		return false
+	}
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if ip := net.ParseIP(strings.Trim(host, "[]")); host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+		return false
+	}
+	if r.Method == http.MethodPost || r.Method == http.MethodPut {
+		ct := r.Header.Get("Content-Type")
+		if mt, _, _ := strings.Cut(ct, ";"); strings.TrimSpace(mt) != "application/json" {
+			return false
+		}
+	}
+	return true
 }
 
 func broadcastAccessAllowed(method, sub string) bool {
