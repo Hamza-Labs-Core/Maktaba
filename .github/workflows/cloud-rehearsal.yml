@@ -84,7 +84,7 @@ jobs:
     name: ${{ matrix.scenario }}
     needs: [image]
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
@@ -199,6 +199,8 @@ jobs:
           git worktree add --detach "${RUNNER_TEMP}/base" "${base}"
           echo "base: ${base}"
           docker build -q -f tools/rehearsal-cloud/Dockerfile -t maktaba-cloud:rehearsal-base "${RUNNER_TEMP}/base"
+          # TEMPORARY evidence: the leak build (64 KB per tunnel connect)
+          docker build -q -f tools/rehearsal-cloud/Dockerfile --build-arg BUILD_TAGS=rehearsalleak -t maktaba-cloud:rehearsal-leak .
       - name: Run load-small, the base's relay then this commit's
         if: matrix.scenario == 'load-small'
         env:
@@ -220,6 +222,20 @@ jobs:
             [ -s "${f}" ] || { echo "::error::${f} is missing: load-small measured nothing to compare"; exit 1; }
           done
           CGO_ENABLED=0 go run ./cmd/maktaba-loadtest compare --baseline "${OUT}/base/load-small-baseline.json" --current "${OUT}/load-small-baseline.json"
+          # TEMPORARY evidence: this commit three times more and the leak build, on this runner
+          run maktaba-cloud:rehearsal-this "${OUT}/this2"
+          run maktaba-cloud:rehearsal-leak "${OUT}/leak"
+          run maktaba-cloud:rehearsal-this "${OUT}/this3"
+          run maktaba-cloud:rehearsal-this "${OUT}/this4"
+          docker tag maktaba-cloud:rehearsal-this maktaba-cloud:rehearsal
+          for d in base this2 leak this3 this4; do echo "== ${d}"; cat "${OUT}/${d}/load-small-baseline.json"; done
+          echo "== this"; cat "${OUT}/load-small-baseline.json"
+          lt() { CGO_ENABLED=0 go run ./cmd/maktaba-loadtest compare --baseline "$1" --current "$2"; }
+          for p in "${OUT}/load-small-baseline.json ${OUT}/this2/load-small-baseline.json" "${OUT}/this2/load-small-baseline.json ${OUT}/this3/load-small-baseline.json" "${OUT}/this3/load-small-baseline.json ${OUT}/this4/load-small-baseline.json" "${OUT}/this4/load-small-baseline.json ${OUT}/load-small-baseline.json"; do
+            echo "== same code: ${p}"; lt ${p}
+          done
+          echo "== leak against this (must fail)"
+          if lt "${OUT}/this2/load-small-baseline.json" "${OUT}/leak/load-small-baseline.json"; then echo "::error::the leak passed"; exit 1; fi
       - uses: actions/upload-artifact@v7.0.1
         if: matrix.scenario == 'load-small'
         with:
