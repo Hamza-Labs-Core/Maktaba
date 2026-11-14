@@ -513,6 +513,9 @@ func TestRunnerRules(t *testing.T) {
 	rg.ctx = context.Background()
 	want := packsAbsent(g.m, "runtime.ml", map[string]store.Desired{"runtime.ml": {ID: "runtime.ml", Want: components.WantInstalled, Generation: 5}})
 	rg.Desired(want)
+	// the install starts on its own goroutine: wait for its try, since waitIdle's first look
+	// can come before the goroutine marks the pack busy on a loaded runner
+	g.waitReqs(t, "/"+rv.ChecksumsFile+" ", 1)
 	waitIdle(t, g.m, "runtime.ml")
 	n := len(g.reqs("/" + rv.ChecksumsFile + " "))
 	if n != 1 {

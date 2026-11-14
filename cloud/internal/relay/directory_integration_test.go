@@ -40,10 +40,10 @@ func TestPGDirectory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	must(blue.Up(ctx, "dir-box", sv.ID, 4))
-	must(green.Up(ctx, "dir-box", sv.ID, 5))
-	must(blue.Up(ctx, "dir-box", sv.ID, 3))
-	must(blue.Down(ctx, "dir-box", 4))
+	must(blue.Up(ctx, "dir-box", sv.ID, RolePrimary, 4))
+	must(green.Up(ctx, "dir-box", sv.ID, RolePrimary, 5))
+	must(blue.Up(ctx, "dir-box", sv.ID, RolePrimary, 3))
+	must(blue.Down(ctx, "dir-box", RolePrimary, 4))
 	p, ok := blue.Lookup(ctx, "dir-box")
 	if !ok || p.RelayID != "a-green" || p.Seq != 5 || p.Addr != "127.0.0.1:8445" {
 		t.Fatalf("blue's lookup %+v %v, want a-green/5", p, ok)
@@ -74,7 +74,7 @@ func TestPGDirectory(t *testing.T) {
 		t.Errorf("a dead node: %d", n)
 	}
 	// a restarted process clears what its earlier run left
-	must(blue.Up(ctx, "dir-box", sv.ID, 9))
+	must(blue.Up(ctx, "dir-box", sv.ID, RolePrimary, 9))
 	must(NewPGDirectory(pool.DB, "a-blue", "127.0.0.1:8444").Start(ctx))
 	_ = pool.DB.QueryRowContext(ctx, `SELECT count(*) FROM relay_tunnels`).Scan(&n)
 	if n != 0 {

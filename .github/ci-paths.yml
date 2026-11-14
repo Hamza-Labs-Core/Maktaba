@@ -56,6 +56,10 @@ _go: &go
   - 'web/src/help/content/**'
   # the API level check reads docs/api/levels.md (Epic 58 story 58.01)
   - 'docs/api/levels.md'
+  # the review home's manifest and plan (Epic 58 story 58.04): api/internal/reviewhome and
+  # cloud/internal/billing's tests read them
+  - 'deploy/review-home/content/manifest.json'
+  - 'deploy/review-home/review-home.env.example'
 
 # the pipeline, and what its tests read outside it
 _pipeline: &pipeline
@@ -778,6 +782,8 @@ android_apps:
   - 'tests/fixtures/demo-library/**'
   # the problem types and codes the apps compare are checked against the registry (60.06)
   - 'shared/api/problems.json'
+  # the compatibility vectors the client's CompatTest runs (58.01)
+  - 'shared/compat/**'
   - '.github/workflows/_android-apps.yml'
   # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
   - 'tools/ci/gradle-wrapper.sh'
@@ -801,6 +807,30 @@ android_tv:
   - 'tools/release/fetch-pinned.sh'
   - '.github/workflows/play-bundles.yml'
 
+# The TV build of the big screen, /tv/ (Epic 58 stories 58.08, 58.16): everything its bundle
+# holds (web/src: the big screen and what it imports), its build and its checks (_tv-web.yml)
+tv_web:
+  - *ci
+  # the TV web group (story 58.16): apps/tv/web, the big screen, vite.config.ts, tv-logs
+  - *tv_web
+  - 'web/src/**'
+  - 'web/design-system/**'
+  - 'web/index.tv.html'
+  - 'web/package.json'
+  - 'web/pnpm-lock.yaml'
+  - 'web/tsconfig.json'
+  - 'web/playwright.tv.config.ts'
+  - 'web/e2e/tv/**'
+  - 'web/tv-build/**'
+  - '.github/workflows/_tv-web.yml'
+  # the Samsung and LG launcher (story 58.09): its build, its Playwright, its Vitest (the
+  # vitest config names its tests) and the compatibility vectors its tests run (58.01)
+  - 'web/vite.launcher.config.ts'
+  - 'web/playwright.launcher.config.ts'
+  - 'web/e2e/launcher/**'
+  - 'web/vitest.config.ts'
+  - 'shared/compat/**'
+
 # The desktop Player for Windows and Linux (Epic 42.4): its project, the portable client
 # and the fonts it shares with the Android apps, the catalog.
 desktop_player:
@@ -823,6 +853,8 @@ apple_apps:
   - 'apps/apple/**'
   # the problem types and codes the apps compare are checked against the registry (60.06)
   - 'shared/api/problems.json'
+  # the compatibility vectors MaktabaKit's CompatTests run (58.01)
+  - 'shared/compat/**'
   - 'apps/tv/tvos/**'
   - 'tools/apple/**'
   - '.github/workflows/_apple-apps.yml'

@@ -3,12 +3,15 @@
 // error, empty). Every control is a real <button> carrying data-bs-focus (a
 // stable id, for Back's focus restore) inside a data-bs-group (its row or
 // grid), so the focus engine, the browser's Tab and a screen reader agree.
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { apiUrl, authHeaders, bearerAuth } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { videoTitle } from "../lib/videoTitle";
 import { watchedFraction, type VideoCard } from "../lib/browse";
 import { formatDuration } from "../components/VideoViews";
 import { useLayer } from "./focus/FocusProvider";
+import { cardRef, type CardActions } from "./cards";
+import { usePlay } from "./play";
 
 export function Screen({
   title,
@@ -77,15 +80,65 @@ export function Grid({
   );
 }
 
+/** A left-to-right run (a time, a code) inside a sentence: marked with LRM on each side. */
+export function lrm(text: string): string {
+  return `\u200E${text}\u200E`;
+}
+
+/**
+ * The src an <img> can load. Signed in by bearer (a TV in its launcher, Epic 58 story
+ * 58.09) an <img> sends no token and no cookie reaches it, so the home's own pictures are
+ * fetched with the token and shown from a blob URL (revoked when the picture goes).
+ */
+/** The URL of a home's own picture (same origin as the API), or null for any other address. */
+export function ownPictureUrl(src: string | null): string | null {
+  if (!src || !src.startsWith("/")) return null;
+  try {
+    const api = new URL(apiUrl("/"), window.location.href);
+    // parsed, not matched: "/\t/host" and "/\\host" are another site to the URL parser
+    const u = new URL(apiUrl(src), window.location.href);
+    return u.origin === api.origin ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
+export function useImageSrc(src: string | null): { src: string | null; failed: boolean } {
+  const bearer = !!bearerAuth()?.token();
+  const own = bearer ? ownPictureUrl(src) : null;
+  const [blob, setBlob] = useState<{ for: string; url: string | null } | null>(null);
+  useEffect(() => {
+    if (!own || !src) return;
+    let url: string | null = null;
+    let live = true;
+    void fetch(own, { credentials: "omit", headers: authHeaders() })
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))))
+      .then((b) => {
+        if (!live) return;
+        url = URL.createObjectURL(b);
+        setBlob({ for: src, url });
+      })
+      .catch(() => live && setBlob({ for: src, url: null }));
+    return () => {
+      live = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [own, src]);
+  if (!own) return { src, failed: false };
+  if (!blob || blob.for !== src) return { src: null, failed: false };
+  return { src: blob.url, failed: blob.url === null };
+}
+
 /** A picture that leaves a plain panel when it does not load (a video without a thumbnail yet). */
 export function Picture({ src, className }: { src: string | null; className?: string }) {
   const [broken, setBroken] = useState(false);
-  if (!src || broken)
+  const shown = useImageSrc(src);
+  if (!src || broken || shown.failed || !shown.src)
     return <span className={`bs-pic bs-pic--none ${className ?? ""}`} aria-hidden />;
   return (
     <img
       className={`bs-pic ${className ?? ""}`}
-      src={src}
+      src={shown.src}
       alt=""
       loading="lazy"
       onError={() => setBroken(true)}
@@ -94,6 +147,8 @@ export function Picture({ src, className }: { src: string | null; className?: st
 }
 
 export const posterOf = (videoId: string) => `/api/videos/${encodeURIComponent(videoId)}/poster`;
+/** A card's poster: the small size (story 48.5), what a 10-foot grid needs. */
+export const posterSmall = (videoId: string) => `${posterOf(videoId)}?size=small`;
 
 export function cardTitle(v: { title?: string | null; filename?: string | null; id: string }) {
   return videoTitle(v);
@@ -115,25 +170,45 @@ export function Progress({ fraction, label }: { fraction: number; label: string 
   );
 }
 
-/** A video's poster tile in a row or a grid. */
+/** A video's poster tile in a row or a grid. Play/Pause plays it; a long OK opens its actions. */
 export function VideoTile({
   video,
   focusId,
   onSelect,
   autoFocus,
   meta,
+  onPlay,
 }: {
   video: VideoCard;
   focusId: string;
   onSelect: () => void;
   autoFocus?: boolean;
   meta?: ReactNode;
+  /** Play/Pause on the card, when not the video on its own (a collection plays from it) */
+  onPlay?: () => void;
 }) {
   const { t } = useI18n();
+  const play = usePlay();
   const frac = watchedFraction(video);
   const name = cardTitle(video);
+  const series = video.series?.id ?? null;
+  const actions: CardActions = {
+    kind: "video",
+    title: name,
+    videoId: video.id,
+    seriesId: series,
+    watched: !!video.completed,
+    play:
+      onPlay ??
+      (() =>
+        void play(
+          { kind: "video", id: video.id },
+          { at: video.completed ? 0 : video.position_sec, series }
+        )),
+  };
   return (
     <button
+      ref={cardRef(actions)}
       type="button"
       role="listitem"
       className="bs-tile"
@@ -142,9 +217,9 @@ export function VideoTile({
       onClick={onSelect}
     >
       <span className="bs-tile__art">
-        <Picture src={posterOf(video.id)} />
+        <Picture src={posterSmall(video.id)} />
         {typeof video.duration_sec === "number" && video.duration_sec > 0 && (
-          <span className="bs-tile__dur">{formatDuration(video.duration_sec)}</span>
+          <Ltr className="bs-tile__dur">{formatDuration(video.duration_sec)}</Ltr>
         )}
         {video.completed && (
           <span className="bs-tile__done" aria-label={t("big.watched")}>
@@ -154,6 +229,79 @@ export function VideoTile({
         {frac !== null && <Progress fraction={frac} label={t("home.watched")} />}
       </span>
       <bdi className="bs-tile__title">{name}</bdi>
+      {meta && <span className="bs-tile__meta">{meta}</span>}
+    </button>
+  );
+}
+
+/**
+ * Text that reads left to right inside either direction: a time (1:02:03), an
+ * episode code (S01E02), a resolution (1080p). Isolated, so in Arabic it does
+ * not reorder the words around it, nor they it.
+ */
+export function Ltr({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <bdi dir="ltr" className={className}>
+      {children}
+    </bdi>
+  );
+}
+
+/** Up to four posters as one picture (a collection or playlist with no art of its own). */
+export function Collage({
+  videoIds,
+  className,
+}: {
+  videoIds: readonly string[];
+  className?: string;
+}) {
+  const ids = videoIds.slice(0, 4);
+  if (ids.length <= 1)
+    return <Picture src={ids[0] ? posterSmall(ids[0]) : null} className={className} />;
+  return (
+    <span className={`bs-collage bs-collage--${ids.length} ${className ?? ""}`} aria-hidden>
+      {ids.map((id) => (
+        <Picture key={id} src={posterSmall(id)} />
+      ))}
+    </span>
+  );
+}
+
+/** A card that is not one video: a series, a collection, a playlist. */
+export function CardTile({
+  focusId,
+  title,
+  meta,
+  badge,
+  art,
+  actions,
+  onSelect,
+  autoFocus,
+}: {
+  focusId: string;
+  title: string;
+  meta?: ReactNode;
+  badge?: string | null;
+  art: ReactNode;
+  actions: CardActions | null;
+  onSelect: () => void;
+  autoFocus?: boolean;
+}) {
+  return (
+    <button
+      ref={cardRef(actions)}
+      type="button"
+      role="listitem"
+      className="bs-tile"
+      data-bs-focus={focusId}
+      data-bs-autofocus={autoFocus || undefined}
+      onClick={onSelect}
+    >
+      <span className="bs-tile__art">
+        {art}
+        {badge && <span className="bs-tile__badge">{badge}</span>}
+      </span>
+      <bdi className="bs-tile__title">{title}</bdi>
       {meta && <span className="bs-tile__meta">{meta}</span>}
     </button>
   );

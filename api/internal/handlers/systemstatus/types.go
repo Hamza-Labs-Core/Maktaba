@@ -64,13 +64,15 @@ const (
 	// KindPluginRunners: Maktaba's own plugin runners that failed, and the stages set to
 	// run as plugins that run in the worker meanwhile (Epic 54).
 	KindPluginRunners = "plugin_runners"
+	// KindHostLoad: the load of the machine this server runs on (hostload.go).
+	KindHostLoad = "host_load"
 )
 
 // Kinds lists every kind (the help coverage test).
 var Kinds = []string{
 	KindAPI, KindPostgres, KindStreaming, KindPipeline, KindProcess, KindWorkers, KindWorker,
 	KindStreamingHost, KindDependency, KindPlexLiveTV, KindQueues, KindTVChannels, KindTVChange,
-	KindTVSlot, KindTVTuner, KindHostAccess, KindComponents, KindPluginRunners,
+	KindTVSlot, KindTVTuner, KindHostAccess, KindComponents, KindPluginRunners, KindHostLoad,
 }
 
 // Item is one part of Maktaba on the page.

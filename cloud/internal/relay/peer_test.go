@@ -56,10 +56,10 @@ func TestMemDirectorySeqs(t *testing.T) {
 	ctx := context.Background()
 	m := NewMemDirectory()
 	blue, green := m.For("a-blue", "127.0.0.1:1"), m.For("a-green", "127.0.0.1:2")
-	_ = blue.Up(ctx, "acme", "s", 4)
-	_ = green.Up(ctx, "acme", "s", 5)
-	_ = blue.Up(ctx, "acme", "s", 3) // an older attempt never wins
-	_ = blue.Down(ctx, "acme", 4)
+	_ = blue.Up(ctx, "acme", "s", RolePrimary, 4)
+	_ = green.Up(ctx, "acme", "s", RolePrimary, 5)
+	_ = blue.Up(ctx, "acme", "s", RolePrimary, 3) // an older attempt never wins
+	_ = blue.Down(ctx, "acme", RolePrimary, 4)
 	if p, ok := m.Row("acme"); !ok || p.RelayID != "a-green" || p.Seq != 5 {
 		t.Fatalf("row %+v %v, want a-green/5", p, ok)
 	}

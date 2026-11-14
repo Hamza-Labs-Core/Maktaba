@@ -25,6 +25,10 @@ public struct SessionGate<Content: View>: View {
         // a container (not a Group, which would hand these modifiers to the screen, whose own
         // alerts would then hide them)
         ZStack {
+            if let block = session.compatBlock {
+                // story 58.01: this app and the home are too far apart: the page, instead of signing in
+                CompatView(block: block, tryAgain: { session.recheckCompat() }, otherHome: { session.switchHome() })
+            } else {
             switch session.phase {
             case .choosingHome:
                 HomePickerView(session: session, title: title)
@@ -34,6 +38,7 @@ public struct SessionGate<Content: View>: View {
                 if let client = session.client {
                     content(user, client)
                 }
+            }
             }
         }
         .onOpenURL { session.open($0) }

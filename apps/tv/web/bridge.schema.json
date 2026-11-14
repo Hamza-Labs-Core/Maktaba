@@ -1,0 +1,241 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://maktaba.dev/schemas/tv-bridge-1.json",
+  "title": "The web-TV bridge, bridge_level 1 (Epic 58 story 58.09)",
+  "description": "postMessage between the Samsung and LG launcher (apps/tv/web/src/bridge.ts) and the home's /tv/ in its iframe (web/src/bigscreen/input/bridge.ts). Every message is an object whose type starts with maktaba:. A side takes a message only from the window and origin it expects. A message the launcher does not know is answered with maktaba:error {error: unknown}; the UI uses only what maktaba:hello lists. A new message or field keeps bridge_level; changing or removing one raises it.",
+  "definitions": {
+    "action": {
+      "enum": [
+        "up",
+        "down",
+        "left",
+        "right",
+        "select",
+        "back",
+        "playPause",
+        "play",
+        "pause",
+        "seekBack",
+        "seekForward",
+        "next",
+        "previous",
+        "search",
+        "menu"
+      ]
+    },
+    "uiMessage": {
+      "enum": [
+        "ready",
+        "hello",
+        "exit",
+        "setLanguage",
+        "openHomePicker",
+        "play",
+        "pause",
+        "resume",
+        "seek",
+        "stop",
+        "audioTrack",
+        "subtitle",
+        "logs"
+      ]
+    },
+    "deviceCaps": {
+      "type": "object",
+      "required": ["video", "audio", "hdr", "max_height"],
+      "additionalProperties": false,
+      "properties": {
+        "video": { "type": "array", "items": { "type": "string" } },
+        "audio": { "type": "array", "items": { "type": "string" } },
+        "hdr": { "type": "array", "items": { "type": "string" } },
+        "max_height": { "type": "integer" }
+      }
+    },
+    "subtitle": {
+      "type": "object",
+      "required": ["id", "url"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "url": { "type": "string" },
+        "lang": { "type": "string" },
+        "label": { "type": "string" }
+      }
+    }
+  },
+  "uiToLauncher": {
+    "maktaba:ready": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": { "type": { "const": "maktaba:ready" } }
+    },
+    "maktaba:hello": {
+      "type": "object",
+      "required": ["type", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "maktaba:hello" },
+        "id": { "type": "integer" },
+        "bridge_level": { "type": "integer" }
+      }
+    },
+    "maktaba:exit": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": { "type": { "const": "maktaba:exit" } }
+    },
+    "maktaba:setLanguage": {
+      "type": "object",
+      "required": ["type", "lang"],
+      "additionalProperties": false,
+      "properties": { "type": { "const": "maktaba:setLanguage" }, "lang": { "enum": ["en", "ar"] } }
+    },
+    "maktaba:openHomePicker": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": { "type": { "const": "maktaba:openHomePicker" } }
+    },
+    "maktaba:play": {
+      "type": "object",
+      "required": ["type", "url"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "maktaba:play" },
+        "url": { "type": "string" },
+        "start_sec": { "type": "number" },
+        "subtitles": { "type": "array", "items": { "$ref": "#/definitions/subtitle" } },
+        "audio": { "type": ["integer", "null"] },
+        "mode": { "enum": ["vod", "live"] }
+      }
+    },
+    "maktaba:pause": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": { "type": { "const": "maktaba:pause" } }
+    },
+    "maktaba:resume": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": { "type": { "const": "maktaba:resume" } }
+    },
+    "maktaba:seek": {
+      "type": "object",
+      "required": ["type", "sec"],
+      "additionalProperties": false,
+      "properties": { "type": { "const": "maktaba:seek" }, "sec": { "type": "number" } }
+    },
+    "maktaba:stop": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": { "type": { "const": "maktaba:stop" } }
+    },
+    "maktaba:audioTrack": {
+      "type": "object",
+      "required": ["type", "i"],
+      "additionalProperties": false,
+      "properties": { "type": { "const": "maktaba:audioTrack" }, "i": { "type": "integer" } }
+    },
+    "maktaba:subtitle": {
+      "type": "object",
+      "required": ["type", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "maktaba:subtitle" },
+        "id": { "type": ["string", "null"] }
+      }
+    },
+    "maktaba:logs": {
+      "type": "object",
+      "required": ["type", "id"],
+      "additionalProperties": false,
+      "properties": { "type": { "const": "maktaba:logs" }, "id": { "type": "integer" } }
+    }
+  },
+  "launcherToUi": {
+    "maktaba:hello": {
+      "type": "object",
+      "required": [
+        "type",
+        "re",
+        "bridge_level",
+        "platform",
+        "model",
+        "year",
+        "engine",
+        "version",
+        "device_caps",
+        "keys",
+        "messages"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "maktaba:hello" },
+        "re": { "type": "integer" },
+        "bridge_level": { "type": "integer" },
+        "platform": { "enum": ["tizen", "webos", "browser"] },
+        "model": { "type": "string" },
+        "year": { "type": "integer" },
+        "engine": { "type": "string" },
+        "version": { "type": "string" },
+        "device_caps": { "$ref": "#/definitions/deviceCaps" },
+        "keys": { "type": "array", "items": { "type": "string" } },
+        "messages": { "type": "array", "items": { "$ref": "#/definitions/uiMessage" } }
+      }
+    },
+    "maktaba:action": {
+      "type": "object",
+      "required": ["type", "action"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "maktaba:action" },
+        "action": { "$ref": "#/definitions/action" }
+      }
+    },
+    "maktaba:state": {
+      "type": "object",
+      "required": ["type", "position", "duration", "buffering", "ended", "error"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "maktaba:state" },
+        "position": { "type": "number" },
+        "duration": { "type": "number" },
+        "buffering": { "type": "boolean" },
+        "ended": { "type": "boolean" },
+        "error": { "type": ["string", "null"] }
+      }
+    },
+    "maktaba:visibility": {
+      "type": "object",
+      "required": ["type", "hidden"],
+      "additionalProperties": false,
+      "properties": { "type": { "const": "maktaba:visibility" }, "hidden": { "type": "boolean" } }
+    },
+    "maktaba:logs": {
+      "type": "object",
+      "required": ["type", "re", "lines"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "maktaba:logs" },
+        "re": { "type": "integer" },
+        "lines": { "type": "string" }
+      }
+    },
+    "maktaba:error": {
+      "type": "object",
+      "required": ["type", "re_type", "error"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "maktaba:error" },
+        "re_type": { "type": "string" },
+        "error": { "enum": ["unknown", "bad_message", "failed"] },
+        "detail": { "type": "string" }
+      }
+    }
+  }
+}

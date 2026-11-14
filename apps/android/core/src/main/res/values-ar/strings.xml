@@ -390,4 +390,14 @@
     <string name="live_parental_not_available">غير متاح</string>
     <string name="live_parental_slate">غير متاح الآن. تعود هذه القناة عند بدء البرنامج التالي.</string>
     <string name="live_parental_back">تعود عند %1$s</string>
+    <!-- عقد التوافق (الملحمة 58، القصة 58.01): التطبيق والجهاز الرئيسي متباعدان -->
+    <string name="compat_update_home_title">يحتاج هذا الجهاز الرئيسي إلى تحديث</string>
+    <string name="compat_update_home_admin">حدِّث مكتبة على %1$s من الإدارة ← التحديثات، ثم عُد.</string>
+    <string name="compat_update_home_viewer">اطلب من مسؤول %1$s تحديث مكتبة.</string>
+    <string name="compat_home_version">يعمل %1$s بإصدار مكتبة %2$s.</string>
+    <string name="compat_update_app_title">حدِّث هذا التطبيق</string>
+    <string name="compat_update_app_why">لم يعد %1$s يعمل مع هذا الإصدار من التطبيق.</string>
+    <string name="compat_update_app_android">افتح Google Play، وابحث عن مكتبة واختر «تحديث».</string>
+    <string name="compat_update_app_androidtv">افتح Google Play على هذا التلفاز، وابحث عن مكتبة واختر «تحديث».</string>
+    <string name="compat_update_app_firetv">افتح متجر Amazon Appstore، وابحث عن مكتبة واختر «تحديث».</string>
 </resources>

@@ -1,6 +1,10 @@
 package httpsec
 
 import (
+	"bufio"
+	"context"
+	"errors"
+	"net"
 	"net/http"
 	"strings"
 )
@@ -30,17 +34,142 @@ type CORSConfig struct {
 
 	// MaxAge is the preflight cache duration, in seconds.
 	MaxAge int
+
+	// BearerOrigins are origins answered for bearer requests only (Epic 58 story
+	// 58.07: Maktaba's Cast receiver, which holds a cast grant and no cookie): their
+	// responses carry `Access-Control-Allow-Origin` but never
+	// `Access-Control-Allow-Credentials`, so a browser sends them no cookie and reads no
+	// answer to one. An origin also in AllowedOrigins is answered as one of those.
+	BearerOrigins []string
+
+	// PublicPaths are routes whose answer is public (Epic 58 story 58.09: GET
+	// /api/discovery/home): any origin may read them, `Access-Control-Allow-Origin: *`,
+	// never with credentials. The Samsung and LG launcher reads the home's identity and
+	// level there from its packaged file:// page before anything else.
+	PublicPaths []string
+
+	// PackagedApps answers a packaged TV app's origin (story 58.09, the --bundle-ui
+	// build): `null` and `file://` (Tizen's and webOS's packaged pages) and `app://…`.
+	// The answer echoes the origin and NEVER allows credentials, so the browser sends no
+	// cookie and shows no answer to a request that carried one: the app reaches the API
+	// only with a bearer token it holds (Authorization), like a native app, and every
+	// route keeps its own sign-in and role checks. Only a call that carries a bearer token
+	// (or a preflight asking to send `Authorization`) is answered: a web page that claims
+	// such an origin (a sandboxed frame says `null`) reads nothing it could not read with a
+	// token of its own, never an answer that needs no sign-in.
+	PackagedApps bool
 }
+
+// bearerHeaders are the request headers a bearer origin may send.
+const bearerHeaders = "Authorization, Content-Type, X-Maktaba-Client"
+
+// packagedOrigin reports whether origin is a packaged TV app's (see PackagedApps).
+func packagedOrigin(origin string) bool {
+	return origin == "null" || origin == "file://" || strings.HasPrefix(origin, "app://")
+}
+
+// packagedOpenPaths are answered for a packaged origin before it holds a token: whether it
+// is signed in (a 401 at most), renewing a token it holds, and redeeming a device code it
+// was given. Starting a code (POST /api/pairing/device) is not among them: a web page that
+// claims `null` could otherwise read a fresh home code and phish its approval.
+var packagedOpenPaths = map[string]bool{
+	"/api/auth/me":              true,
+	"/api/auth/refresh":         true,
+	"/api/pairing/device/token": true,
+}
+
+// asksBearer reports whether a preflight asks to send Authorization: only a bearer call's
+// preflight is answered for a packaged origin (a preflight carries no credential; the call
+// itself is answered only once its token is verified, see packagedGate).
+func asksBearer(r *http.Request) bool {
+	for _, h := range strings.Split(r.Header.Get("Access-Control-Request-Headers"), ",") {
+		if strings.EqualFold(strings.TrimSpace(h), "authorization") {
+			return true
+		}
+	}
+	return false
+}
+
+// packagedGate marks a packaged origin's request whose answer waits for the API's verdict:
+// MarkVerified gives it when the caller's token was verified, and unauthWriter on a 401 (a
+// TV must read it to renew its token, and it tells nothing). The header alone proves
+// nothing: an invalid bearer is treated as no sign-in, and a page claiming `null` could
+// send `Bearer garbage` to a route that needs no sign-in.
+type packagedGate struct{ origin string }
+
+type gateKey struct{}
+
+// allowPackaged gives a packaged origin its answer (never credentials).
+func allowPackaged(h http.Header, origin string) {
+	h.Set("Access-Control-Allow-Origin", origin)
+	h.Set("Access-Control-Expose-Headers", exposedHeaders)
+}
+
+// MarkVerified gives a packaged origin its answer when verified says the request's
+// credential was checked (placed after the API's credential middlewares, before any
+// handler writes). Outside a packaged origin's request it does nothing.
+func MarkVerified(verified func(*http.Request) bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if g, ok := r.Context().Value(gateKey{}).(*packagedGate); ok && verified(r) {
+				allowPackaged(w.Header(), g.origin)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// unauthWriter gives a packaged origin its answer on a 401 (a status always set with
+// WriteHeader); the body is the handler's, untouched.
+type unauthWriter struct {
+	http.ResponseWriter
+	origin string
+}
+
+func (u *unauthWriter) WriteHeader(code int) {
+	if code == http.StatusUnauthorized {
+		allowPackaged(u.Header(), u.origin)
+	}
+	u.ResponseWriter.WriteHeader(code)
+}
+
+// Flush passes a streaming answer's flush through.
+func (u *unauthWriter) Flush() {
+	if f, ok := u.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Hijack passes a WebSocket upgrade through (a socket answers no CORS headers).
+func (u *unauthWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := u.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, errors.New("httpsec: the response writer cannot be hijacked")
+}
+
+// Unwrap lets http.ResponseController reach the writer underneath.
+func (u *unauthWriter) Unwrap() http.ResponseWriter { return u.ResponseWriter }
+
+// packagedHeaders are the request headers a packaged app's calls carry.
+const packagedHeaders = "Authorization, Content-Type, X-Maktaba-Client, X-Request-Id"
+
+// exposedHeaders are the answer headers a cross-origin app reads.
+const exposedHeaders = "Retry-After, X-Request-Id, X-Maktaba-Home"
 
 // DefaultCORS returns the policy used in the default deployment:
 // nothing allowed until the operator names origins. AllowCredentials
-// is on because the web SPA uses cookies (Story 10.2).
+// is on because the web SPA uses cookies (Story 10.2). The home's
+// identity is public, and a packaged TV app's origin gets the
+// credential-less answer (Epic 58 story 58.09).
 func DefaultCORS() CORSConfig {
 	return CORSConfig{
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Maktaba-CSRF", "X-Maktaba-Client"},
 		AllowCredentials: true,
 		MaxAge:           300,
+		PublicPaths:      []string{"/api/discovery/home"},
+		PackagedApps:     true,
 	}
 }
 
@@ -57,16 +186,66 @@ func CORS(cfg CORSConfig) func(http.Handler) http.Handler {
 	for _, o := range cfg.AllowedOrigins {
 		allowed[o] = struct{}{}
 	}
+	bearer := make(map[string]struct{}, len(cfg.BearerOrigins))
+	for _, o := range cfg.BearerOrigins {
+		bearer[o] = struct{}{}
+	}
 	methods := strings.Join(cfg.AllowedMethods, ", ")
 	headers := strings.Join(cfg.AllowedHeaders, ", ")
+	public := make(map[string]struct{}, len(cfg.PublicPaths))
+	for _, p := range cfg.PublicPaths {
+		public[p] = struct{}{}
+	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
 			isPreflight := r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != ""
 
+			_, isPublic := public[r.URL.Path]
+			_, listed := allowed[origin]
+			switch {
+			case origin != "" && isPublic && !listed:
+				// a public answer: any origin, no credentials
+				h := w.Header()
+				h.Set("Access-Control-Allow-Origin", "*")
+				// an allow-listed origin gets its own answer here: no shared cache serves it "*"
+				h.Add("Vary", "Origin")
+				if isPreflight {
+					h.Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+					h.Set("Access-Control-Allow-Headers", "Content-Type, X-Maktaba-Client, X-Request-Id")
+					if cfg.MaxAge > 0 {
+						h.Set("Access-Control-Max-Age", itoa(cfg.MaxAge))
+					}
+				}
+			case origin != "" && cfg.PackagedApps && packagedOrigin(origin) && !listed:
+				// a packaged TV app: its origin, never credentials (bearer only)
+				h := w.Header()
+				h.Add("Vary", "Origin")
+				switch {
+				case isPreflight:
+					if !packagedOpenPaths[r.URL.Path] && !asksBearer(r) {
+						break
+					}
+					h.Set("Access-Control-Allow-Origin", origin)
+					if methods != "" {
+						h.Set("Access-Control-Allow-Methods", methods)
+					}
+					h.Set("Access-Control-Allow-Headers", packagedHeaders)
+					if cfg.MaxAge > 0 {
+						h.Set("Access-Control-Max-Age", itoa(cfg.MaxAge))
+					}
+				case packagedOpenPaths[r.URL.Path]:
+					h.Set("Access-Control-Allow-Origin", origin)
+					h.Set("Access-Control-Expose-Headers", exposedHeaders)
+				default:
+					// answered once the token is verified, or on a 401 (see packagedGate)
+					r = r.WithContext(context.WithValue(r.Context(), gateKey{}, &packagedGate{origin: origin}))
+					w = &unauthWriter{ResponseWriter: w, origin: origin}
+				}
+			}
 			if origin != "" {
-				if _, ok := allowed[origin]; ok {
+				if listed {
 					h := w.Header()
 					h.Set("Access-Control-Allow-Origin", origin)
 					h.Add("Vary", "Origin")
@@ -80,6 +259,20 @@ func CORS(cfg CORSConfig) func(http.Handler) http.Handler {
 						if headers != "" {
 							h.Set("Access-Control-Allow-Headers", headers)
 						}
+						if cfg.MaxAge > 0 {
+							h.Set("Access-Control-Max-Age", itoa(cfg.MaxAge))
+						}
+					}
+				} else if _, ok := bearer[origin]; ok {
+					h := w.Header()
+					h.Set("Access-Control-Allow-Origin", origin)
+					h.Add("Vary", "Origin")
+					h.Set("Access-Control-Expose-Headers", "Retry-After")
+					if isPreflight {
+						if methods != "" {
+							h.Set("Access-Control-Allow-Methods", methods)
+						}
+						h.Set("Access-Control-Allow-Headers", bearerHeaders)
 						if cfg.MaxAge > 0 {
 							h.Set("Access-Control-Max-Age", itoa(cfg.MaxAge))
 						}

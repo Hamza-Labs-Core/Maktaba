@@ -20,6 +20,7 @@ vi.mock("../lib/api", async () => {
 
 import BigScreen from "./BigScreen";
 import { resetFocusMemory } from "./focus/FocusProvider";
+import { resetLibraryMemory } from "./screens/Library";
 import { ACTION_EVENT } from "./input/actions";
 
 const E = en as Record<string, string>;
@@ -186,14 +187,14 @@ function Where() {
   return null;
 }
 
-function renderBig(path = "/big", history: string[] = []) {
+function renderBig(path = "/big", history: string[] = [], mode: "desktop" | "tv" = "desktop") {
   return render(
     <I18nProvider>
       <TestAuth user={memberUser}>
         <MemoryRouter initialEntries={[...history, path]}>
           <Where />
           <Routes>
-            <Route path="/big/*" element={<BigScreen />} />
+            <Route path="/big/*" element={<BigScreen mode={mode} />} />
             <Route path="*" element={<p>desk page</p>} />
           </Routes>
         </MemoryRouter>
@@ -209,6 +210,7 @@ beforeEach(() => {
   post.mockReset();
   del.mockReset().mockResolvedValue(undefined);
   resetFocusMemory();
+  resetLibraryMemory();
   localStorage.clear();
   sessionStorage.clear();
   localStorage.setItem("mkt:locale", "en");
@@ -398,6 +400,42 @@ describe("Back and leaving", () => {
     expect(screen.queryByTestId("big-exit")).toBeNull();
   });
 
+  it("the TV build has no Leave button; Back on Home asks Leave Maktaba? and Leave closes the app", async () => {
+    const close = vi.spyOn(window, "close").mockImplementation(() => {});
+    try {
+      renderBig("/big", [], "tv");
+      await screen.findByTestId("big-hero");
+      expect(screen.queryByTestId("big-leave")).toBeNull();
+      key("Escape");
+      const dialog = await screen.findByTestId("big-exit");
+      expect(within(dialog).getByText(E["tv.exitConfirm"]!)).toBeInTheDocument();
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          within(dialog).getByRole("button", { name: E["tv.exitConfirm.no"] })
+        )
+      );
+      fireEvent.click(within(dialog).getByRole("button", { name: E["tv.exitConfirm.yes"] }));
+      expect(close).toHaveBeenCalled();
+      // no desktop page to go back to
+      expect(screen.queryByText("desk page")).toBeNull();
+    } finally {
+      close.mockRestore();
+    }
+  });
+
+  it("the TV build's leave question in Arabic", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    renderBig("/big", [], "tv");
+    await screen.findByTestId("big-hero");
+    key("Escape");
+    const dialog = await screen.findByTestId("big-exit");
+    expect(within(dialog).getByText(A["tv.exitConfirm"]!)).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: A["tv.exitConfirm.yes"] })
+    ).toBeInTheDocument();
+    expect(document.documentElement.dir).toBe("rtl");
+  });
+
   it("Back on a top screen opened directly goes Home, not out", async () => {
     renderBig("/big/libraries");
     await screen.findByTestId("big-libraries");
@@ -493,12 +531,26 @@ describe("Libraries and a library", () => {
     expect(names).toEqual(["Tafsir", "Hadith"]);
     expect(within(grid).getByText("40 videos")).toBeInTheDocument();
     fireEvent.click(within(grid).getAllByRole("listitem")[0]!);
-    const lib = await screen.findByTestId("big-library");
+    let lib = await screen.findByTestId("big-library");
     expect(where).toBe("/big/library/L1");
     expect(within(lib).getByRole("heading", { name: "Tafsir" })).toBeInTheDocument();
+    // Recommended first (Epic 56 §6.4): the hub's rows
+    expect(within(lib).getByRole("tab", { name: E["library.tab.recommended"] })).toHaveAttribute(
+      "aria-selected",
+      "true"
+    );
     expect(
       within(lib).getByRole("heading", { name: E["big.row.mostWatched"] })
     ).toBeInTheDocument();
+    // a series in the library opens the series
+    fireEvent.click(within(lib).getByText("Tafsir al-Fatiha"));
+    await screen.findByTestId("big-series");
+    expect(where).toBe("/big/series/S1");
+    key("Escape");
+    lib = await screen.findByTestId("big-library");
+    // the Library tab: every video, newest first, with Load more
+    fireEvent.click(screen.getByRole("tab", { name: E["library.tab.library"] }));
+    expect(where).toBe("/big/library/L1?tab=library");
     expect(await within(lib).findByText("Newest")).toBeInTheDocument();
     expect(within(lib).getByText("Second")).toBeInTheDocument();
     expect(get).toHaveBeenCalledWith(
@@ -507,10 +559,6 @@ describe("Libraries and a library", () => {
     fireEvent.click(within(lib).getByRole("button", { name: E["common.loadMore"] }));
     expect(await within(lib).findByText("Older")).toBeInTheDocument();
     expect(within(lib).queryByRole("button", { name: E["common.loadMore"] })).toBeNull();
-    // a series in the library opens the series
-    fireEvent.click(within(lib).getByText("Tafsir al-Fatiha"));
-    await screen.findByTestId("big-series");
-    expect(where).toBe("/big/series/S1");
   });
 
   it("a library the user may not see says not found", async () => {
@@ -566,9 +614,13 @@ describe("Play and Shuffle on the big screen", () => {
     const lib = await screen.findByTestId("big-library");
     fireEvent.click(within(lib).getByRole("button", { name: `⤮ ${E["big.shuffle"]}` }));
     await waitFor(() => expect(where).toBe("/big/watch/v6"));
+    // the Library tab's view: its order (newest added, the default) goes with it
     expect(post).toHaveBeenCalledWith(
       "/api/me/play-queues",
-      expect.objectContaining({ source: { kind: "library", id: "L1" }, shuffle: true })
+      expect.objectContaining({
+        source: { kind: "library", id: "L1", filters: { sort: "created_at", order: "desc" } },
+        shuffle: true,
+      })
     );
   });
 
@@ -592,7 +644,8 @@ describe("A video's page", () => {
     renderBig("/big/video/v1");
     const page = await screen.findByTestId("big-video");
     expect(within(page).getByText("About the verse.")).toBeInTheDocument();
-    expect(within(page).getByText("You stopped at 2:00")).toBeInTheDocument();
+    // the time is marked left to right (LRM), so Arabic does not reorder it
+    expect(within(page).getByText("You stopped at \u200E2:00\u200E")).toBeInTheDocument();
     expect(await within(page).findByText("The verse")).toBeInTheDocument();
     expect(await within(page).findByText("In the name of God")).toBeInTheDocument();
     fireEvent.click(within(page).getByText("The verse"));

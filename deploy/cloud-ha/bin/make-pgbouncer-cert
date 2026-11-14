@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# PgBouncer's certificate (Epic 50 story 50.18), made on the OWNER's machine with the etcd CA
+# (bin/make-etcd-certs, same out-dir): the apps reach PgBouncer on the database's Floating IP,
+# a public address, so they check its name (sslmode=verify-full) against that CA.
+#
+#   make-pgbouncer-cert <out-dir> [name ...]
+#
+# Writes <out-dir>/pgbouncer.crt and pgbouncer.key: server auth, db.internal and any further
+# names as SANs, 10 years. One certificate for every node that runs PgBouncer (A, B, db-1..3:
+# the Floating IP lands on whichever leads). Copy the pair to each node's /etc/pgbouncer/tls.crt
+# and tls.key before setup.sh, and ca.crt to every app node's /etc/maktaba/db-ca.crt. An
+# existing certificate is kept.
+set -euo pipefail
+out="${1:?usage: make-pgbouncer-cert <out-dir> [name ...]}"; shift
+[ -s "${out}/ca.key" ] || { echo "make-pgbouncer-cert: no ${out}/ca.key (bin/make-etcd-certs first)" >&2; exit 2; }
+[ -s "${out}/pgbouncer.crt" ] && { echo "kept ${out}/pgbouncer.crt"; exit 0; }
+san="DNS:db.internal"
+for n in "$@"; do san="${san},DNS:${n}"; done
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout "${out}/pgbouncer.key" -out "${out}/pgbouncer.csr" \
+    -subj "/CN=db.internal" >/dev/null 2>&1
+printf 'subjectAltName=%s\nextendedKeyUsage=serverAuth\n' "${san}" >"${out}/pgbouncer.ext"
+openssl x509 -req -in "${out}/pgbouncer.csr" -CA "${out}/ca.crt" -CAkey "${out}/ca.key" -CAcreateserial \
+    -out "${out}/pgbouncer.crt" -days 3650 -extfile "${out}/pgbouncer.ext" >/dev/null 2>&1
+rm -f "${out}/pgbouncer.csr" "${out}/pgbouncer.ext"
+chmod 0600 "${out}/pgbouncer.key"
+echo "made ${out}/pgbouncer.crt (${san})"

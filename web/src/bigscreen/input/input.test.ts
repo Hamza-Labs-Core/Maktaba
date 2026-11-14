@@ -1,5 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { keyAction } from "./keys";
+import {
+  BRIDGE_ACTION,
+  BRIDGE_EXIT,
+  BRIDGE_READY,
+  bridgeAction,
+  inLauncher,
+  launcherOrigin,
+  listenToLauncher,
+  resetBridgeForTest,
+  setLauncherHelloForTest,
+  tellLauncher,
+  type LauncherHello,
+} from "./bridge";
 import {
   BUTTON_ACTIONS,
   PadReader,
@@ -146,5 +159,83 @@ describe("gamepad", () => {
     expect(padLayout(undefined)).toBe("generic");
     expect(padGlyphs("playstation")).toEqual({ select: "✕", back: "○" });
     expect(padGlyphs("xbox")).toEqual({ select: "A", back: "B" });
+  });
+});
+
+// Epic 58 story 58.08: a Samsung or LG remote by key code, and the launcher's bridge
+describe("TV remotes and the launcher bridge", () => {
+  it("maps Tizen and webOS key codes, whatever key name the browser gives", () => {
+    const code = (keyCode: number, key = "Unidentified") => keyAction({ key, keyCode });
+    expect(code(10009)).toBe("back"); // Tizen Return
+    expect(code(461)).toBe("back"); // webOS Back
+    expect(keyAction({ key: "XF86Back" })).toBe("back");
+    expect(code(10252)).toBe("playPause");
+    expect(code(415)).toBe("play");
+    expect(code(19)).toBe("pause");
+    expect(code(413)).toBe("pause");
+    expect(code(417)).toBe("seekForward");
+    expect(code(412)).toBe("seekBack");
+    expect(code(403)).toBe("menu"); // the red key
+    // arrows and OK keep their own names
+    expect(keyAction({ key: "ArrowLeft", keyCode: 37 })).toBe("left");
+    expect(keyAction({ key: "Enter", keyCode: 13 })).toBe("select");
+  });
+
+  it("takes only a known action from a bridge message", () => {
+    expect(bridgeAction({ type: BRIDGE_ACTION, action: "back" })).toBe("back");
+    expect(bridgeAction({ type: BRIDGE_ACTION, action: "menu" })).toBe("menu");
+    expect(bridgeAction({ type: BRIDGE_ACTION, action: "rm -rf" })).toBeNull();
+    expect(bridgeAction({ type: "other", action: "back" })).toBeNull();
+    expect(bridgeAction("back")).toBeNull();
+    expect(bridgeAction(null)).toBeNull();
+  });
+
+  it("listens to the parent window only, and says it is ready", () => {
+    const parent = { postMessage: vi.fn() };
+    const spy = vi.spyOn(window, "parent", "get").mockReturnValue(parent as unknown as Window);
+    try {
+      const seen: string[] = [];
+      const stop = listenToLauncher((a) => seen.push(a));
+      expect(parent.postMessage).toHaveBeenCalledWith({ type: BRIDGE_READY }, "*");
+      const msg = { type: BRIDGE_ACTION, action: "down" };
+      const from = (origin: string) =>
+        window.dispatchEvent(
+          new MessageEvent("message", { data: msg, source: parent as never, origin })
+        );
+      from("null"); // a packaged Tizen or webOS app
+      // a web page framing /tv/ is not a launcher
+      from("https://evil.example");
+      from("http://192.168.1.9:8088");
+      // another frame, or the page itself, is not the launcher
+      window.dispatchEvent(new MessageEvent("message", { data: msg, source: window }));
+      window.dispatchEvent(new MessageEvent("message", { data: msg }));
+      expect(seen).toEqual(["down"]);
+      // before a launcher answered hello (story 58.09): nothing but ready
+      tellLauncher(BRIDGE_EXIT);
+      expect(parent.postMessage).toHaveBeenLastCalledWith({ type: BRIDGE_READY }, "*");
+      setLauncherHelloForTest({ messages: [] } as unknown as LauncherHello);
+      tellLauncher(BRIDGE_EXIT);
+      expect(parent.postMessage).toHaveBeenLastCalledWith({ type: BRIDGE_EXIT }, "*");
+      resetBridgeForTest();
+      stop();
+      from("null");
+      expect(seen).toEqual(["down"]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("a launcher's origin: a packaged app or the home itself", () => {
+    expect(launcherOrigin("null")).toBe(true);
+    expect(launcherOrigin("file://")).toBe(true);
+    expect(launcherOrigin("app://tv.maktaba")).toBe(true);
+    expect(launcherOrigin(window.location.origin)).toBe(true);
+    expect(launcherOrigin("https://evil.example")).toBe(false);
+    expect(launcherOrigin("")).toBe(false);
+  });
+
+  it("outside a launcher, telling it is a no-op", () => {
+    expect(inLauncher()).toBe(false);
+    expect(() => tellLauncher(BRIDGE_EXIT)).not.toThrow();
   });
 });

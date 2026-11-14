@@ -10,7 +10,7 @@ import { api } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { renderSnippet, type SearchResponse } from "../../pages/searchShared";
 import { bigPath, useBigNav } from "../nav";
-import { Empty, Failed, Screen, VideoTile, clock } from "../ui";
+import { Empty, Failed, Ltr, Screen, VideoTile, clock } from "../ui";
 import { LAYOUTS, applyKey, searchable, type KeyEdit, type KeyboardLayout } from "./keyboard";
 import { errorText } from "../../lib/errorText";
 
@@ -190,7 +190,7 @@ export function BigSearch() {
                       <bdi className="bs-match__title">{v.title}</bdi>
                       {p && (
                         <span className="bs-match__line">
-                          <span className="bs-line__at">{clock(p.start_sec)}</span>
+                          <Ltr className="bs-line__at">{clock(p.start_sec)}</Ltr>
                           <span dir="auto">{renderSnippet(p.snippet)}</span>
                         </span>
                       )}

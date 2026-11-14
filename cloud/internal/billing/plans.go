@@ -58,6 +58,10 @@ type Tier struct {
 	ExtraStreamPriceCents *int
 	// MaxServers is how many homes an account links (values set with the prices).
 	MaxServers int
+	// Broadcast is what a home on this plan may publish to people outside it (story 50.20):
+	// nil on Free and Basic, Pro's guest sharing on Pro. The Broadcaster add-on replaces it on
+	// a Pro home that bought it (BroadcastFor).
+	Broadcast *BroadcastTier
 }
 
 func intp(v int) *int { return &v }
@@ -78,6 +82,7 @@ var Tiers = map[string]Tier{
 		ID: PlanPro, Name: "Pro", Relay: true,
 		RelayCapKbps: 0, RelaySlowCapKbps: 1500,
 		FairUseBytesPerMo: 500 * GB, PayAsYouGo: true, ExtraStreamsAddOn: true, MaxServers: 5,
+		Broadcast: &GuestSharing,
 	},
 }
 
@@ -87,6 +92,19 @@ var Tiers = map[string]Tier{
 func RelayIncluded(plan string) bool {
 	t, ok := Tiers[plan]
 	return !ok || t.Relay
+}
+
+// LowestRelayPlan is the cheapest plan that reaches its home through the relay (Basic). The
+// store reviewers' home runs on it (Epic 58 story 58.04), so a reviewer's relayed streams get
+// the lowest paid cap; deploy/review-home/review-home.env.example names it as REVIEW_HOME_PLAN
+// and plans_test.go fails when the two differ.
+func LowestRelayPlan() string {
+	for _, id := range Plans {
+		if Tiers[id].Relay {
+			return id
+		}
+	}
+	return ""
 }
 
 // LaunchCheck is the launch gate's check (story 50.19 T12): paid plans can't be switched on

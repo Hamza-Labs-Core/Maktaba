@@ -18,6 +18,9 @@ export default defineConfig({
         __dirname,
         path.resolve(__dirname, "../cloud/installers/docker"),
         path.resolve(__dirname, "../tools/plugin-sdk"),
+        // the Samsung and LG launcher (story 58.09) and the shared compat vectors (58.01)
+        path.resolve(__dirname, "../apps/tv/web"),
+        path.resolve(__dirname, "../shared/compat"),
       ],
     },
   },
@@ -40,6 +43,8 @@ export default defineConfig({
       "admin/src/**/*.test.{ts,tsx}",
       "design-system/**/*.test.{ts,tsx}",
       "packages/**/*.test.{ts,tsx}",
+      // the Samsung and LG launcher (story 58.09): its source is apps/tv/web
+      "../apps/tv/web/src/**/*.test.ts",
     ],
     // the developer portal and maktaba.tv have their own vitest (node, over their built site):
     // packages/devportal, packages/website (_website.yml)

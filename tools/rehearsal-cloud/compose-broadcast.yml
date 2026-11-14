@@ -1,0 +1,11 @@
+# The broadcast-plans scenario's api role (Epic 50 story 50.20 T10), over compose.yml with the
+# "api" profile: the plans build (BUILD_TAGS=rehearsalplans: the broadcast prices set to the
+# rehearsal's, so the broadcasting gate can open) with broadcasting on and enforced, and the
+# rehearsal's own edge key (broadcast-plans.toml). The scenario is the edge: it signs its usage
+# posts with that key's private half, a rehearsal-only seed in the test.
+services:
+  api:
+    image: ${PLANS_IMAGE:-maktaba-cloud:rehearsal-plans}
+    volumes:
+      - ./broadcast-plans.toml:/etc/maktaba/cloud.toml:ro
+      - ./.work/symbols.token:/run/maktaba/symbols.token:ro

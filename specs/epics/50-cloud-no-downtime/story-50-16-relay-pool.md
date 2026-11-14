@@ -113,8 +113,10 @@ dead relay needs no drain: its homes are already on their standby tunnels.
 
 - **Given** three healthy relays,
   **when** 1,000 homes connect,
-  **then** each relay holds primary tunnels for its weighted share ±10 %, and each home holds a
-  standby tunnel on a different relay.
+  **then** each relay holds primary tunnels for its weighted share within 4 standard deviations
+  of the binomial count (home ids are random: ±18 % of a third at 1,000 homes on 3 relays; a
+  flat ±10 % fails a uniform hash in about 7 % of runs), and each home holds a standby tunnel on
+  a different relay. The hash's own accuracy is T01's ±2 % over 100,000 ids.
 - **Given** a home streaming through relay r3,
   **when** r3 is powered off,
   **then** the stream continues through the home's standby tunnel within **10 s** (README §4.2
@@ -148,8 +150,8 @@ dead relay needs no drain: its homes are already on their standby tunnels.
 | T05 | integration | stream counting across 3 relays | open N+1 streams | last one `429 stream_limit`; rows expire 2 min after a crash |
 | T06 | unit (witness `relay-dns`) | fake Cloudflare API | relay down / last relay down | record removed / last record kept |
 | T07 | unit (cloud) | `GET /v1/homes` | pool on | `relay_hint` before `relay` |
-| T08 | rehearsal (CI, 50.06 `relay-pool-kill-one`) | 3 relay containers, 1,000 simulated homes, stream generator | `docker kill` one relay | 0 failed requests after 10 s; p99 move ≤ 10 s |
-| T09 | rehearsal (CI, 50.06 `rebalance-add-relay`) | 2 relays, 1,000 homes | start a 3rd | ≤ 20 moves/s per relay; 0 failed requests; final shares ±10 % |
+| T08 | rehearsal (CI, 50.06 `relay-pool-kill-one`) | 3 relay containers, 1,000 simulated homes, stream generator | `docker kill` one relay | 0 failed requests after 10 s (a request in flight on the killed relay fails with it); p99 move ≤ 10 s |
+| T09 | rehearsal (CI, 50.06 `rebalance-add-relay`) | 2 relays, 1,000 homes | start a 3rd | ≤ 20 moves/s per relay; 0 failed requests; final shares within 4 σ (±18 %) |
 | T10 | load (50.14) | pool of 3 | sustained load | forwarding hop adds ≤ 5 ms p95 |
 
 ## Edge cases

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
@@ -290,6 +291,88 @@ func TestParsePrefixesCIDRsOnly(t *testing.T) {
 		if _, err := ParsePrefixes([]string{bad}); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+// Story 50.20: the broadcast keys, their defaults, and the broadcasting gate (T07).
+func TestBroadcastConfig(t *testing.T) {
+	c := defaultConfig()
+	if c.Broadcast.Enabled || !c.Broadcast.PlansEnforce || !c.Broadcast.PAYGReports {
+		t.Fatalf("defaults: %+v", c.Broadcast)
+	}
+	key := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	if err := parseTOML("[broadcast]\nenabled = true\nedge_public_key = \""+key+"\"\n[broadcast.plans]\nenforce = false\n[billing.broadcast_payg]\nenabled = false\n", &c); err != nil {
+		t.Fatal(err)
+	}
+	if !c.Broadcast.Enabled || c.Broadcast.PlansEnforce || c.Broadcast.PAYGReports || c.Broadcast.EdgePublicKey != key {
+		t.Fatalf("parsed: %+v", c.Broadcast)
+	}
+	// every broadcast price is TBD: switching broadcasting on is refused, naming the fields
+	err := ValidateBroadcast(c.Broadcast)
+	if err == nil || !strings.Contains(err.Error(), "broadcaster.price") || !strings.Contains(err.Error(), "broadcaster.payg_price_per_100h") {
+		t.Fatalf("the gate with TBD prices: %v", err)
+	}
+	if err := ValidateBroadcast(BroadcastConfig{EdgePublicKey: "c2hvcnQ="}); err == nil {
+		t.Fatal("a short edge key was accepted")
+	}
+	if err := ValidateBroadcast(BroadcastConfig{EdgePublicKey: key}); err != nil {
+		t.Fatalf("a good key, gate shut: %v", err)
+	}
+}
+
+// Story 50.16: the pool is off by default; its keys from the file and the per-machine env; on,
+// the relay role needs the directory, the member's addresses and a host template with {id}.
+func TestRelayPoolConfig(t *testing.T) {
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Relay.PoolEnabled || c.Relay.PoolCapacityMbps != 1000 || c.Relay.RebalanceEvery.Seconds() != 30 || c.Relay.RebalanceRate != 20 {
+		t.Errorf("defaults: %+v", c.Relay)
+	}
+	if c.Relay.PoolHostTemplate() != "{id}.relay.maktaba.tv" {
+		t.Errorf("default hosts %q", c.Relay.PoolHostTemplate())
+	}
+	dir := t.TempDir()
+	path := dir + "/relay.toml"
+	if err := os.WriteFile(path, []byte("[relay]\npool.enabled = true\npool.capacity_mbps = 2000\npool.hosts = \"{id}.relay.test\"\npool.rebalance_every = \"10s\"\npool.rebalance_rate = 5\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MAKTABA_CLOUD_RELAY_ID", "r2-blue")
+	t.Setenv("MAKTABA_CLOUD_RELAY_PEER_ADDR", "10.0.1.12:8444")
+	t.Setenv("MAKTABA_CLOUD_RELAY_POOL_MEMBER", "r2")
+	t.Setenv("MAKTABA_CLOUD_RELAY_POOL_PUBLIC_IP", "203.0.113.12")
+	t.Setenv("MAKTABA_CLOUD_DB_URL", "postgres://x")
+	c, err = Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := c.Relay
+	if !r.PoolEnabled || r.PoolMemberID() != "r2" || r.PoolPublicIP != "203.0.113.12" || r.PoolPrivate() != "10.0.1.12" ||
+		r.PoolCapacityMbps != 2000 || r.PoolHostTemplate() != "{id}.relay.test" || r.RebalanceEvery.Seconds() != 10 || r.RebalanceRate != 5 {
+		t.Errorf("pool: %+v", r)
+	}
+	if err := Validate(c, RoleRelay); err != nil {
+		t.Errorf("a full pool config refused: %v", err)
+	}
+	for name, mut := range map[string]func(*Config){
+		"no peer addr":   func(c *Config) { c.Relay.PeerAddr = "" },
+		"no public ip":   func(c *Config) { c.Relay.PoolPublicIP = "" },
+		"bad public ip":  func(c *Config) { c.Relay.PoolPublicIP = "relay.example" },
+		"no capacity":    func(c *Config) { c.Relay.PoolCapacityMbps = 0 },
+		"hosts no {id}":  func(c *Config) { c.Relay.PoolHosts = "relay.test" },
+		"no rebalancing": func(c *Config) { c.Relay.RebalanceRate = 0 },
+	} {
+		bad := c
+		mut(&bad)
+		if err := Validate(bad, RoleRelay); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	off := c
+	off.Relay.PoolEnabled, off.Relay.PoolPublicIP = false, ""
+	if err := Validate(off, RoleRelay); err != nil {
+		t.Errorf("pool off needs none of it: %v", err)
 	}
 }
 

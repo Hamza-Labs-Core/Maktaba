@@ -54,10 +54,19 @@ ip_allowlist = []
 [database]
 url = "postgres://maktaba_cloud@localhost:5432/maktaba_cloud?sslmode=require"
 # Override via MAKTABA_CLOUD_DB_URL.
-# A direct connection to the primary for what holds a session of its own: the relay's change
-# listener (LISTEN) and the worker's leader lock (story 50.17). Needed once url goes through
-# PgBouncer's transaction pool (50.18); empty means url. Override via MAKTABA_CLOUD_DB_DIRECT_URL.
-# direct_url = "postgres://maktaba_cloud@10.0.0.2:5432/maktaba_cloud?sslmode=require"
+# On the database nodes (story 50.18) url is PgBouncer's transaction pool on the database's
+# Floating IP, a public address, so PgBouncer's name is checked against the owner's CA:
+# postgres://maktaba:…@db.internal:6432/maktaba?sslmode=verify-full&sslrootcert=/etc/maktaba/db-ca.crt
+# (deploy/cloud-ha/bin/make-pgbouncer-cert). The cloud sends
+# every query with arguments in one round trip (binary_parameters=yes, added to url when it
+# names none): in two, PgBouncer can give the second half to another server connection.
+#
+# A connection for what holds a session of its own: the relay's change listener (LISTEN) and
+# the worker's leader lock (story 50.17); the migrator's lock is a transaction lock and goes
+# through url. Needed once url goes through PgBouncer's transaction pool; empty means url. On
+# the database nodes it is PgBouncer's session pool, cloud_session, on the same address: it
+# follows the primary as url does. Override via MAKTABA_CLOUD_DB_DIRECT_URL.
+# direct_url = "postgres://maktaba:…@db.internal:6432/cloud_session?sslmode=verify-full&sslrootcert=/etc/maktaba/db-ca.crt"
 max_open_conns    = 25
 max_idle_conns    = 5
 conn_max_lifetime = "30m"
@@ -139,6 +148,18 @@ within   = "5s"
 deadline = "120s"
 rate     = 100
 
+[relay.pool]
+# Epic 50 story 50.16: a pool of relay machines (deploy/cloud-ha/relay-pool/). Off: one relay,
+# as Phase 1. On (every relay and the api): each relay heartbeats its member row; each home
+# gets a primary and a standby relay by weighted rendezvous hashing; the api gives apps a
+# relay_hint. The member id and addresses are per machine (MAKTABA_CLOUD_RELAY_POOL_MEMBER,
+# _PUBLIC_IP, _PRIVATE_IP; member defaults to relay.id, private_ip to peer_addr's host).
+enabled         = false
+# hosts         = "{id}.relay.maktaba.tv"   # a member's tunnel host; default "{id}.<public_host>"
+capacity_mbps   = 1000                      # weights the hash (50.14's measurement)
+rebalance_every = "30s"
+rebalance_rate  = 20                        # homes moved a second, at most
+
 [relay.ticket]
 # Homes reconnect with a 10-minute resume ticket instead of their secret.
 enabled = true
@@ -194,3 +215,22 @@ enabled     = false
 site_key    = ""
 # Defaults to server.web_url.
 web_origins = ["https://app.maktaba.tv"]
+
+[broadcast]
+# Home broadcasting (Epic 50 story 50.20): the broadcasting gate. Off by default: only test
+# publishers a service admin granted may publish, and homes' licences don't carry the broadcast
+# flag. The api role refuses to start with it on while any broadcast price is TBD, naming each.
+enabled = false
+# The broadcast edge's Ed25519 public key (base64) for its usage posts (POST /_edge/usage);
+# public, the private half is a Worker secret. Empty: the edge routes answer 503.
+edge_public_key = ""
+
+[broadcast.plans]
+# true: new viewer sessions get full, lowest or wait as the publisher's plan and usage say;
+# false (the rollback): full up to the concurrent-viewer limit, viewer-minutes still counted.
+enforce = true
+
+[billing.broadcast_payg]
+# Hourly pay-as-you-go viewer-hour reports to the payment provider; false stops new ones (the
+# queued ones still go, so nothing used goes unbilled).
+enabled = true
