@@ -4,7 +4,7 @@
 // The list of apps follows the code and the release workflows: apps/apple (Player for iPhone,
 // iPad and Mac, Remote; testflight.yml), apps/android (Player and Remote; play-bundles.yml),
 // apps/tv (Apple TV, Android TV, Google TV and Fire TV; testflight.yml, play-bundles.yml,
-// tv-release.yml), apps/desktop-player (Player for Windows and Linux; desktop-release.yml),
+// tv-release.yml; the Roku channel, apps/tv/roku, built from source until its store listing), apps/desktop-player (Player for Windows and Linux; desktop-release.yml),
 // apps/desktop (Maktaba, the server with the web app; desktop-release.yml) and web/ (the web
 // app and its big-screen view).
 //
@@ -16,7 +16,8 @@
 // the app was shot in both, else a single `<name>-en.webp` or `<name>-ar.webp`). They were
 // taken on made-up test data only: the Apple apps' CI UI tests against MockHome, the Android
 // Roborazzi screenshot tests, the desktop Player's off-screen Compose tests against its test
-// home (TestHome's MockWebServer), and, for the web app and the big screen, a scratch home
+// home (TestHome's MockWebServer), the Roku channel's screen tests (brs-engine against its mock
+// home, apps/tv/roku/tests/mockhome.mjs), and, for the web app and the big screen, a scratch home
 // seeded with invented libraries or the web app in a headless browser with its API answered
 // by invented data. The scan (scan.mjs) checks every image carries no metadata.
 
@@ -62,8 +63,8 @@ const TESTING = t(
 );
 
 const SHOTS_NOTE = t(
-  "Every screenshot on these pages was taken in the dark theme on made-up test data: the Apple apps' screenshots come from their UI tests in CI, which run against a pretend home; the Android ones from the apps' screenshot tests; the Windows and Linux Player's from its screen tests, which also run against a pretend home; the web app and the big screen from a test home filled with invented libraries. The names, titles and codes in them are test data.",
-  "التُقطت كل لقطات الشاشة في هذه الصفحات بالمظهر الداكن وعلى بيانات اختبار مصطنعة: لقطات تطبيقات آبل من اختبارات الواجهة في التكامل المستمر، وهي تعمل على جهاز رئيسي وهمي؛ ولقطات أندرويد من اختبارات لقطات الشاشة في التطبيقين؛ ولقطات المشغّل على ويندوز ولينكس من اختبارات شاشاته، وهي تعمل أيضًا على جهاز رئيسي وهمي؛ ولقطات تطبيق الويب والشاشة الكبيرة من جهاز رئيسي تجريبي مُلئ بمكتبات مختلَقة. فالأسماء والعناوين والرموز فيها كلها بيانات اختبار."
+  "Every screenshot on these pages was taken in the dark theme on made-up test data: the Apple apps' screenshots come from their UI tests in CI, which run against a pretend home; the Android ones from the apps' screenshot tests; the Windows and Linux Player's from its screen tests, which also run against a pretend home; the Roku channel's from its screen tests on brs-engine, against a pretend home too; the web app and the big screen from a test home filled with invented libraries. The names, titles and codes in them are test data.",
+  "التُقطت كل لقطات الشاشة في هذه الصفحات بالمظهر الداكن وعلى بيانات اختبار مصطنعة: لقطات تطبيقات آبل من اختبارات الواجهة في التكامل المستمر، وهي تعمل على جهاز رئيسي وهمي؛ ولقطات أندرويد من اختبارات لقطات الشاشة في التطبيقين؛ ولقطات المشغّل على ويندوز ولينكس من اختبارات شاشاته، وهي تعمل أيضًا على جهاز رئيسي وهمي؛ ولقطات قناة روكو من اختبارات شاشاتها على brs-engine، على جهاز رئيسي وهمي كذلك؛ ولقطات تطبيق الويب والشاشة الكبيرة من جهاز رئيسي تجريبي مُلئ بمكتبات مختلَقة. فالأسماء والعناوين والرموز فيها كلها بيانات اختبار."
 );
 
 /** The pages: the overview (slug "") first, then one page per app. */
@@ -117,12 +118,12 @@ export const APPS = [
                   t("[Maktaba TV](/apps/tv/)", "[تطبيق التلفاز](/apps/tv/)"),
                   t("watching across the room", "المشاهدة من أنحاء الغرفة"),
                   t(
-                    "Apple TV, Android TV, Google TV, Fire TV",
-                    "آبل تي في، أندرويد تي في، جوجل تي في، فاير تي في"
+                    "Apple TV, Android TV, Google TV, Fire TV, Roku",
+                    "آبل تي في، أندرويد تي في، جوجل تي في، فاير تي في، روكو"
                   ),
                   t(
-                    "TestFlight on the Apple TV; Google Play internal testing, or the signed `.apk` when a release carries one; Amazon's Live App Testing on Fire TV",
-                    "TestFlight على آبل تي في؛ الاختبار الداخلي في Google Play، أو ملف `.apk` الموقَّع حين يتضمنه الإصدار؛ اختبار التطبيق المباشر من أمازون على فاير تي في"
+                    "TestFlight on the Apple TV; Google Play internal testing, or the signed `.apk` when a release carries one; Amazon's Live App Testing on Fire TV; on Roku, built from source and side-loaded until the channel is in Roku's store",
+                    "TestFlight على آبل تي في؛ الاختبار الداخلي في Google Play، أو ملف `.apk` الموقَّع حين يتضمنه الإصدار؛ اختبار التطبيق المباشر من أمازون على فاير تي في؛ وعلى روكو، يُبنى من المصدر ويُثبَّت يدويًا إلى أن تصل القناة إلى متجر روكو"
                   ),
                 ],
                 [
@@ -289,6 +290,14 @@ export const APPS = [
                   t(
                     `[\`apps/tv/android/\`](${SRC}/apps/tv/android)`,
                     `[\`apps/tv/android/\`](${SRC}/apps/tv/android)`
+                  ),
+                ],
+                [
+                  t("Roku", "روكو"),
+                  t("BrightScript and SceneGraph", "‏BrightScript وSceneGraph"),
+                  t(
+                    `[\`apps/tv/roku/\`](${SRC}/apps/tv/roku)`,
+                    `[\`apps/tv/roku/\`](${SRC}/apps/tv/roku)`
                   ),
                 ],
                 [
@@ -896,6 +905,13 @@ export const APPS = [
                     `اختبار التطبيق المباشر من أمازون، من متجر التطبيقات على فاير تي في، أو تثبيت \`maktaba-tv-<version>-amazon.apk\` يدويًا حين يتضمنه [أحدث إصدار](${RELEASES}). لا يحمل إصدار فاير تي في أي شيفرة من Google Play، ويعرّف نفسه للجهاز الرئيسي باسم \`firetv\`، ويخبره بالصيغ والـHDR والصوت المحيطي التي يشغّلها الجهاز وشاشته`
                   ),
                 ],
+                [
+                  t("Roku (Roku OS, every current Roku)", "روكو (نظام Roku OS، كل أجهزة روكو الحالية)"),
+                  t(
+                    `Not in Roku's store yet. A Roku in developer mode installs the channel built from [\`apps/tv/roku/\`](${SRC}/apps/tv/roku) (\`node tools/build.mjs\`) from its developer page. The channel is in English and Arabic, the whole of it mirrored in Arabic with the text joined and in reading order, and it opens straight to a video from a deep link`,
+                    `ليست في متجر روكو بعد. يثبّت جهاز روكو في وضع المطوّر القناةَ المبنية من [\`apps/tv/roku/\`](${SRC}/apps/tv/roku) (\`node tools/build.mjs\`) من صفحة المطوّر فيه. القناة بالعربية والإنجليزية، وهي كلها معكوسة الاتجاه بالعربية والنص فيها موصول الحروف وبترتيب القراءة، وتفتح الفيديو مباشرة من رابط عميق`
+                  ),
+                ],
               ],
             },
           },
@@ -959,12 +975,24 @@ export const APPS = [
                 "A library on a Fire TV: its tabs and Recommended",
                 "مكتبة على فاير تي في: تبويباتها والمقترحات"
               ),
+              shot(
+                "roku-home",
+                "wide",
+                "Maktaba's Home on Roku: Continue watching and Recently added",
+                "الرئيسية في قناة مكتبة على روكو: متابعة المشاهدة وأضيف حديثًا"
+              ),
+              shot(
+                "roku-library",
+                "wide",
+                "A library on Roku: the five tabs, Play and Shuffle, the grid and its letter rail",
+                "مكتبة على روكو: التبويبات الخمسة، والتشغيل والتشغيل العشوائي، والشبكة وشريط الحروف"
+              ),
             ],
           },
           {
             p: t(
-              "The first four screenshots are from the Apple TV app, the sign-in from the Android TV app, the last two from the Fire TV build. The Android TV app, and its Fire TV build, have the same sections as the Apple TV app, laid out for the TV's remote.",
-              "أول أربع لقطات من تطبيق آبل تي في، ولقطة تسجيل الدخول من تطبيق أندرويد تي في، وآخر لقطتين من إصدار فاير تي في. ولتطبيق أندرويد تي في وإصداره لفاير تي في أقسام تطبيق آبل تي في نفسها، مرتبةً لجهاز تحكم التلفاز."
+              "The first four screenshots are from the Apple TV app, the sign-in from the Android TV app, the next two from the Fire TV build and the last two from the Roku channel, drawn by brs-engine (Roku's own renderer differs a little). The Android TV app, its Fire TV build and the Roku channel have the same sections as the Apple TV app, laid out for the TV's remote.",
+              "أول أربع لقطات من تطبيق آبل تي في، ولقطة تسجيل الدخول من تطبيق أندرويد تي في، واللقطتان التاليتان من إصدار فاير تي في، وآخر لقطتين من قناة روكو كما يرسمها brs-engine (ويختلف عنه عارض روكو نفسه قليلًا). ولتطبيق أندرويد تي في وإصداره لفاير تي في وقناة روكو أقسام تطبيق آبل تي في نفسها، مرتبةً لجهاز تحكم التلفاز."
             ),
           },
           { p: SHOTS_NOTE },

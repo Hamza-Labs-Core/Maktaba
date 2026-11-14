@@ -864,6 +864,16 @@ build fails when the two differ.
 
 ### Added
 
+- **Maktaba on Roku (Epic 58, story 58.12).** A Roku channel: a household signs in once with a
+  code its phone approves (through Maktaba Cloud, or the home's own code after finding it on the
+  network, or its address), and each later launch opens that home's Home. Continue watching,
+  Recently added and For you; the libraries with their five tabs, Play and Shuffle and the
+  letter rail; series, search, Resume or Start over, and the account page, on Roku's remote
+  (`*` opens a card's actions; Back asks before leaving). Deep links play the video, or open
+  Home saying it isn't available. English and Arabic, every screen mirrored and Arabic joined in
+  reading order with a bundled font. Nothing is sold in the channel. It is not in Roku's store
+  yet: a Roku in developer mode installs it from source; docs/stores/roku.md lists the steps
+  left to the store and the checks a real Roku runs.
 - **A home for TV store reviewers (Epic 58, story 58.04).** review.maktaba.tv is a Maktaba home
   the project runs with public-domain and openly licensed content only (Blender's and Netflix's
   open films, a CC BY lecture series, a LibriVox audiobook, each titled in English and Arabic),
