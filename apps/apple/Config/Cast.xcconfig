@@ -1,0 +1,11 @@
+// Generated from shared/cast/app.json by tools/apple/cast-app-id.py: do not edit by hand.
+// The Cast receiver the Player casts to (Epic 58 story 58.06). Empty: no Cast button, the
+// Google Cast SDK never started, no Cast Bonjour service declared.
+MAKTABA_CAST_APP_ID =
+MAKTABA_CAST_ENABLED = NO
+MAKTABA_CAST_BONJOUR_NO = _maktaba._tcp
+MAKTABA_CAST_BONJOUR_APP_NO = _maktaba._tcp
+MAKTABA_CAST_BONJOUR_YES = _googlecast._tcp
+MAKTABA_CAST_BONJOUR_APP_YES = _$(MAKTABA_CAST_APP_ID)._googlecast._tcp
+MAKTABA_CAST_BONJOUR = $(MAKTABA_CAST_BONJOUR_$(MAKTABA_CAST_ENABLED))
+MAKTABA_CAST_BONJOUR_APP = $(MAKTABA_CAST_BONJOUR_APP_$(MAKTABA_CAST_ENABLED))

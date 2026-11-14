@@ -24,23 +24,33 @@ struct WatchScreen: View {
     /// The Mac's window-wide player: there the sidebar is beside the stack, so the picture is
     /// shown over the whole window by the shell and this screen keeps only its black.
     @Environment(WindowPlayer.self) private var window: WindowPlayer?
+    /// Casting (story 58.06): nil where this build cannot cast.
+    @Environment(CastController.self) private var cast: CastController?
 
     // The body is in small typed pieces: as one expression it took the compiler too long to
     // type-check on CI ("unable to type-check this expression in reasonable time").
     var body: some View {
         screen
             .task(id: videoID) { await load() }
+            .task(id: videoID) { await cast?.readReach(context.client) }
             // story 57.09: leaving the front sends the position at once; in the background a
             // sign-in under a parental limit pauses and does not start again by itself
             .onChange(of: scenePhase) { _, phase in sceneChanged(phase) }
-            .onChange(of: playbackID, initial: true) { showInWindow() }
+            .onChange(of: playbackID, initial: true) {
+                showInWindow()
+                followCast()
+            }
+            .onAppear { cast?.watchShowing += 1 }
             .onChange(of: isStopped) { wasStopped, stopped in
                 // Playback ▸ Stop (⌘.) stops the video: the player closes with it, as Close does,
                 // rather than staying open on a stopped picture (`play` swaps a video in one step,
                 // so the next video never shows as stopped here)
                 if !wasStopped, stopped { dismiss() }
             }
-            .onDisappear { closed() }
+            .onDisappear {
+                cast?.watchShowing -= 1
+                closed()
+            }
     }
 
     /// The screen without what it reacts to.
@@ -49,6 +59,7 @@ struct WatchScreen: View {
             Color.black.ignoresSafeArea()
             content
         }
+        .modifier(CastSheetsIfAny(cast: cast, playback: playback))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("screen.watch")
         .navigationBarBackButtonHidden()
@@ -103,7 +114,11 @@ struct WatchScreen: View {
     }
 
     @ViewBuilder private func player(_ playback: Playback) -> some View {
-        if window == nil {
+        if let cast, cast.isCasting, playback.castActive {
+            // the TV plays it: its panel and the mini controller, not the picture
+            CastPanel(cast: cast)
+                .environment(\.colorScheme, .dark)
+        } else if window == nil {
             WatchView(playback: playback, session: context.session, context: context) { dismiss() }
                 .focusedSceneValue(\.playback, playback)
         } else {
@@ -142,6 +157,19 @@ struct WatchScreen: View {
         window.show(playback) { dismiss() }
     }
 
+    /// The cast takes this screen's video from the phone and gives it back (story 58.06).
+    private func followCast() {
+        guard let cast, let playback else { return }
+        cast.handOver = { [weak playback] id in
+            guard let playback, playback.video?.id == id else { return 0 }
+            return playback.handOverToCast()
+        }
+        cast.giveBack = { [weak playback] id, at in
+            guard let playback, playback.video?.id == id else { return }
+            playback.returnFromCast(at: at)
+        }
+    }
+
     private func closed() {
         if let playback { window?.hide(playback) }
         playback?.stop()
@@ -159,6 +187,9 @@ struct WatchScreen: View {
             playback = p
             checkingTime = nil
             p.play(video, from: at)
+            // the TV already plays this video (the screen opened again while casting): the
+            // phone follows it and posts no progress of its own
+            if let cast, cast.isCasting, cast.castVideoID == videoID { _ = p.handOverToCast() }
         } catch is CancellationError {
             return
         } catch {
@@ -194,5 +225,19 @@ final class WindowPlayer {
         guard self.playback === playback else { return }
         self.playback = nil
         close = nil
+    }
+}
+
+/// The Cast screens for the watch screen, when this build casts.
+private struct CastSheetsIfAny: ViewModifier {
+    let cast: CastController?
+    let playback: Playback?
+
+    func body(content: Content) -> some View {
+        if let cast {
+            content.castSheets(cast, player: playback?.player, video: { playback?.video }, at: { playback?.position ?? 0 })
+        } else {
+            content
+        }
     }
 }

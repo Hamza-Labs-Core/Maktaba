@@ -78,6 +78,10 @@ final class Playback {
     private(set) var upNextCountdown: Int?
     /// Settings' playback values, read when a video starts.
     private(set) var settings = PlaybackSettings.read()
+    /// Story 58.06: the video plays on a Cast receiver, which reports its progress itself with
+    /// the cast grant; this device posts none meanwhile (two reporters would double or move
+    /// Continue Watching back) and its own stream waits paused.
+    private(set) var castActive = false
 
     struct Sound: Equatable {
         let codec: String?
@@ -255,6 +259,36 @@ final class Playback {
         }
     }
 
+    /// A cast takes the video (story 58.06): the position is sent once, the stream waits
+    /// paused and the 10 s reports stop. Returns where it was: the receiver starts there.
+    func handOverToCast() -> Double {
+        let at = player?.currentTime().seconds ?? position
+        report()
+        castActive = true
+        running?.cancel()
+        running = nil
+        player?.pause()
+        isPlaying = false
+        Log.ui.info("playback: handed over to a cast")
+        return at.isFinite ? max(0, at) : position
+    }
+
+    /// The cast ended: the video is back here, paused where the TV was (`at`). nil: the cast
+    /// never began (refused, failed), so it plays on from where this device stopped. It
+    /// reports again from here.
+    func returnFromCast(at: Double?) {
+        guard castActive else { return }
+        castActive = false
+        let from = at ?? position
+        Log.ui.info("playback: back from a cast")
+        running?.cancel()
+        running = Task {
+            await open(from: from, playing: at == nil)
+            guard player != nil else { return }
+            await watch()
+        }
+    }
+
     /// Moves `seconds` forward (back when negative), not before the start nor past the end.
     func skip(by seconds: Double) {
         guard let p = player else { return }
@@ -392,12 +426,15 @@ final class Playback {
         player?.pause()
         if let session {
             let at = player?.currentTime().seconds ?? 0
+            // while cast, the receiver's position is the one the home keeps
+            let reports = CastProgress.phoneReports(casting: castActive)
             Task { [client] in
-                if at.isFinite, at > 0 { await client.reportProgress(session: session, positionSec: Int(at)) }
+                if reports, at.isFinite, at > 0 { await client.reportProgress(session: session, positionSec: Int(at)) }
                 await client.closeStream(session)
             }
         }
         session = nil
+        castActive = false
         openedFrom = nil
         savedPosition = nil
         player = nil
@@ -446,6 +483,7 @@ final class Playback {
             "ended=\(ended)",
             "route=\(routes.route.rawValue)",
             "pip=\(pip.isActive)",
+            "cast=\(castActive)",
             "pipSupported=\(PictureInPicture.isSupported)",
             "pipPossible=\(pip.isPossible)",
             "backgroundAudio=\(PlaybackAudio.declaredInInfoPlist)",
@@ -632,7 +670,7 @@ final class Playback {
     /// the home keeps the stream's heartbeat, posted every 10 s while it plays (the home wants
     /// one at least every 60 s). The home's refusal of it stops the video (`progressRefused`).
     private func report(completed: Bool = false) {
-        guard let session, let p = player else { return }
+        guard CastProgress.phoneReports(casting: castActive), let session, let p = player else { return }
         var at = p.currentTime().seconds
         if completed, duration > 0 { at = duration }
         guard at.isFinite, at > 0 || completed else { return }
