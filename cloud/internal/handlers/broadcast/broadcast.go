@@ -1,58 +1,52 @@
-// Package broadcast serves the home's side of the broadcast edge's control plane (Epic 50 story
-// 50.21 §2):
+// Package broadcast (handlers) is home broadcasting's cloud API (Epic 50 story 50.20):
 //
-//	POST /v1/broadcast/ingest-token   a home asks for its channel's ingest token
+//	GET  /v1/broadcast/agreement         the account: the current Broadcaster agreement and
+//	                                     whether it accepted it
+//	POST /v1/broadcast/agreement         {version}: accept it (409 agreement_version_stale)
+//	POST /v1/broadcast/channels          a home (basic auth server_id:secret): publish a channel;
+//	                                     402 broadcast_needs_plan, 403 broadcast_not_enabled,
+//	                                     402 broadcast_limit {limit}, 409 broadcast_agreement_required
+//	DELETE /v1/broadcast/channels/{id}   a home: unpublish one
+//	GET  /v1/broadcast/state             a home: its PublisherState (the Broadcast page's usage)
+//	POST /v1/broadcast/ingest-token      a home: its channel's ingest token (story 50.21,
+//	                                     ingest_token.go)
 //
-// The home's agent authenticates as on every agent route: basic auth with its server id and
-// secret, never a user token. The token is Ed25519-signed (internal/broadcast), bound to the
-// publisher (the home's owner), the channel, the rungs and the plan's top bitrate, and valid 24 h;
-// the home asks again every hour. What a plan allows comes from a Plans source: until the
-// Broadcaster tier lands (story 50.20) the default is Pro's guest sharing.
+// Story 50.22 adds the ladder and PATCH to the channel routes.
 package broadcast
 
 import (
-	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
+	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	bc "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
 
-// Agents checks a home agent's credential (stores.Servers).
-type Agents interface {
-	VerifySecret(ctx context.Context, serverID, secret string) error
-}
-
-// Allowance is what a home's owner's plan lets it publish.
-type Allowance struct {
-	// Publisher is the cloud account that publishes (the home's owner).
-	Publisher  string
-	MaxRungs   int
-	MaxTopKbps int
-}
-
-var (
-	// ErrNotInPlan is a home whose owner's plan does not include broadcasting.
-	ErrNotInPlan = errors.New("broadcast: not in plan")
-	// ErrUnknownServer is a home the cloud does not know.
-	ErrUnknownServer = errors.New("broadcast: unknown server")
-)
-
-// Plans answers what a home may publish (story 50.20 replaces the default with the
-// Broadcaster tier's catalog, the agreement check and the channel count).
-type Plans interface {
-	ForServer(ctx context.Context, serverID string) (Allowance, error)
-}
-
-// Deps wires the handler. A nil Key turns the route off (503 broadcast_disabled).
+// Deps are the routes' dependencies.
 type Deps struct {
+	DB      *sql.DB
+	Servers *stores.Servers
+	Store   *billingpkg.BroadcastStore
+	Logger  *slog.Logger
+	// IPSalt keys the hash of the address an agreement was accepted from (never the address).
+	IPSalt []byte
+
+	// The ingest token (story 50.21, ingest_token.go). Agents checks the home's credential
+	// (Servers when nil); Plans says what it may publish; a nil Key turns the route off
+	// (503 broadcast_disabled).
 	Agents    Agents
 	Plans     Plans
 	Key       *bc.Key
@@ -60,120 +54,258 @@ type Deps struct {
 	Now       func() time.Time
 }
 
-// MountAgent registers the home agent's broadcast routes, outside the user auth group.
+// MountAgent registers the routes a home calls with its server credential.
 func MountAgent(r chi.Router, d *Deps) {
+	r.Post("/v1/broadcast/channels", d.Publish)
+	r.Delete("/v1/broadcast/channels/{id}", d.Unpublish)
+	r.Get("/v1/broadcast/state", d.State)
 	r.Post("/v1/broadcast/ingest-token", d.IngestToken)
 }
 
-type tokenReq struct {
-	// Channel is the home's own channel id; the edge sees an opaque id derived from it.
-	Channel string   `json:"channel"`
-	Rungs   []string `json:"rungs"`
+// MountUser registers the account routes (inside the bearer-token group).
+func MountUser(r chi.Router, d *Deps) {
+	r.Get("/v1/broadcast/agreement", d.GetAgreement)
+	r.Post("/v1/broadcast/agreement", d.AcceptAgreement)
 }
 
-type tokenResp struct {
-	Token        string    `json:"token"`
-	Channel      string    `json:"channel"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	RefreshAfter int       `json:"refresh_after_seconds"`
-	IngestURL    string    `json:"ingest_url"`
-	Rungs        []string  `json:"rungs"`
-	MaxTopKbps   int       `json:"max_top_kbps"`
+type agreementView struct {
+	Version  int  `json:"version"`
+	Accepted bool `json:"accepted"`
+	// AcceptedVersion is the newest version the account accepted (0: none).
+	AcceptedVersion int `json:"accepted_version"`
 }
 
-var localChannelRE = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,64}$`)
-
-func (d *Deps) now() time.Time {
-	if d.Now != nil {
-		return d.Now()
-	}
-	return time.Now()
-}
-
-// IngestToken issues a home's ingest token for one channel.
-func (d *Deps) IngestToken(w http.ResponseWriter, r *http.Request) {
-	if d.Key == nil || d.Plans == nil {
-		writeErr(w, 503, "broadcast_disabled")
+// GetAgreement is the current agreement's version and the caller's acceptance.
+func (d *Deps) GetAgreement(w http.ResponseWriter, r *http.Request) {
+	uid := middleware.GetUserID(r.Context())
+	var newest int
+	if err := d.DB.QueryRowContext(r.Context(), `SELECT COALESCE(max(version), 0) FROM broadcast_agreements WHERE account_id = $1`, uid).Scan(&newest); err != nil {
+		d.fail(w, r, "load agreement", err)
 		return
 	}
-	serverID, secret, ok := r.BasicAuth()
-	if !ok || serverID == "" || d.Agents.VerifySecret(r.Context(), serverID, secret) != nil {
+	v := billingpkg.BroadcastAgreementVersion
+	writeJSON(w, http.StatusOK, agreementView{Version: v, Accepted: newest >= v, AcceptedVersion: newest})
+}
+
+// AcceptAgreement records the caller's acceptance of the current version, with the salted hash
+// of the address it came from.
+func (d *Deps) AcceptAgreement(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Version int `json:"version"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad_request", "body must be {version}")
+		return
+	}
+	if body.Version != billingpkg.BroadcastAgreementVersion {
+		writeErr(w, http.StatusConflict, "agreement_version_stale", "a newer Broadcaster agreement is out; read it and accept it")
+		return
+	}
+	uid := middleware.GetUserID(r.Context())
+	if _, err := d.DB.ExecContext(r.Context(), `
+        INSERT INTO broadcast_agreements (account_id, version, ip_hash) VALUES ($1, $2, $3)
+        ON CONFLICT (account_id, version) DO NOTHING`, uid, body.Version, d.ipHash(middleware.GetClientIP(r.Context()))); err != nil {
+		d.fail(w, r, "accept agreement", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (d *Deps) ipHash(ip string) string {
+	if ip == "" {
+		return ""
+	}
+	m := hmac.New(sha256.New, d.IPSalt)
+	_, _ = m.Write([]byte(ip))
+	return hex.EncodeToString(m.Sum(nil))[:32]
+}
+
+func (d *Deps) agents() Agents {
+	if d.Agents != nil {
+		return d.Agents
+	}
+	return d.Servers
+}
+
+// agent authenticates a home by its id and secret (basic auth); false after writing 401.
+func (d *Deps) agent(w http.ResponseWriter, r *http.Request) (string, bool) {
+	id, secret, ok := r.BasicAuth()
+	if !ok || id == "" || d.agents().VerifySecret(r.Context(), id, secret) != nil {
 		w.Header().Set("WWW-Authenticate", `Basic realm="maktaba-server"`)
-		writeErr(w, 401, "unauthorized")
+		writeErr(w, http.StatusUnauthorized, "unauthorized", "")
+		return "", false
+	}
+	return id, true
+}
+
+var slugRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+
+// PublishRequest is a channel the home publishes.
+type PublishRequest struct {
+	Slug     string `json:"slug"`
+	Access   string `json:"access"`
+	OnDemand bool   `json:"on_demand"`
+	Rungs    int    `json:"rungs"`
+	TopKbps  int    `json:"top_kbps"`
+}
+
+// Publish runs story 50.20's checks for a new channel in order, naming the first that fails:
+// the plan (402 broadcast_needs_plan), the broadcasting gate (403 broadcast_not_enabled), the
+// tier's limits (402 broadcast_limit naming the limit), the account's acceptance of the current
+// Broadcaster agreement (409 broadcast_agreement_required). Then 201 with the channel.
+func (d *Deps) Publish(w http.ResponseWriter, r *http.Request) {
+	id, ok := d.agent(w, r)
+	if !ok {
 		return
 	}
-	var req tokenReq
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil || !localChannelRE.MatchString(req.Channel) {
-		writeErr(w, 400, "invalid_body")
+	var req PublishRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8<<10)).Decode(&req); err != nil || !slugRE.MatchString(req.Slug) {
+		writeErr(w, http.StatusBadRequest, "bad_request", "body must be {slug, access, on_demand, rungs, top_kbps}")
 		return
 	}
-	allow, err := d.Plans.ForServer(r.Context(), serverID)
+	if req.Access == "" {
+		req.Access = billingpkg.AccessInvite
+	}
+	if req.Rungs <= 0 {
+		req.Rungs = 1
+	}
+	ctx := r.Context()
+	p, err := d.Store.Publisher(ctx, id)
+	if err != nil {
+		d.fail(w, r, "load publisher", err)
+		return
+	}
+	tier := p.Tier()
+	if tier == nil {
+		writeErr(w, http.StatusPaymentRequired, "broadcast_needs_plan", "sharing channels with people outside your home needs the Pro plan")
+		return
+	}
+	if !d.Store.Gated(p) {
+		writeErr(w, http.StatusForbidden, "broadcast_not_enabled", "broadcasting isn't open yet")
+		return
+	}
+	limits := p.Limits()
+	// the count and the insert under the home's row lock: two publishes at once can't both
+	// take the last slot
+	tx, err := d.DB.BeginTx(ctx, nil)
+	if err != nil {
+		d.fail(w, r, "begin", err)
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	var live int
+	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM servers WHERE id = $1 FOR UPDATE`, id).Scan(&live); err != nil {
+		d.fail(w, r, "lock home", err)
+		return
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM broadcast_channels WHERE server_id = $1 AND unpublished_at IS NULL`, id).Scan(&live); err != nil {
+		d.fail(w, r, "count channels", err)
+		return
+	}
 	switch {
-	case errors.Is(err, ErrNotInPlan):
-		writeErr(w, 403, "broadcast_not_in_plan")
+	case live >= limits.MaxChannels:
+		limitErr(w, "max_channels", limits.MaxChannels)
 		return
-	case errors.Is(err, ErrUnknownServer):
-		writeErr(w, 404, "not_found")
+	case !tier.AllowsAccess(req.Access):
+		limitErr(w, "access", 0)
 		return
-	case err != nil:
-		writeErr(w, 500, "plan_lookup_failed")
+	case tier.OnDemandOnly && !req.OnDemand:
+		limitErr(w, "on_demand", 0)
 		return
-	}
-	if len(req.Rungs) == 0 || len(req.Rungs) > allow.MaxRungs {
-		writeErr(w, 403, "plan_rungs")
+	case req.Rungs > tier.MaxRungs:
+		limitErr(w, "max_rungs", tier.MaxRungs)
 		return
-	}
-	now := d.now()
-	ch := bc.ChannelID(serverID, req.Channel)
-	tok, err := bc.IssueIngest(*d.Key, bc.IngestClaims{
-		Pub: allow.Publisher, Ch: ch, Rungs: req.Rungs, Home: serverID, Kbps: allow.MaxTopKbps,
-	}, now)
-	if errors.Is(err, bc.ErrBadClaims) {
-		writeErr(w, 400, "invalid_rungs")
+	case req.TopKbps > tier.MaxTopKbps:
+		limitErr(w, "max_top_kbps", tier.MaxTopKbps)
 		return
 	}
+	accepted, err := d.Store.AgreementAccepted(ctx, p.OwnerID)
 	if err != nil {
-		writeErr(w, 500, "sign_failed")
+		d.fail(w, r, "load agreement", err)
 		return
 	}
-	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, 200, tokenResp{
-		Token: tok, Channel: ch, ExpiresAt: now.Add(bc.IngestTTL).UTC(),
-		RefreshAfter: int(bc.RefreshEvery / time.Second), IngestURL: d.IngestURL,
-		Rungs: req.Rungs, MaxTopKbps: allow.MaxTopKbps,
-	})
+	if !accepted {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "broadcast_agreement_required",
+			"message": "the account owner must accept the Broadcaster agreement first", "version": billingpkg.BroadcastAgreementVersion})
+		return
+	}
+	var chID string
+	err = tx.QueryRowContext(ctx, `
+        INSERT INTO broadcast_channels (server_id, slug, access, on_demand, rungs, top_kbps, agreement_version)
+        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id::text`,
+		id, req.Slug, req.Access, req.OnDemand, req.Rungs, req.TopKbps, billingpkg.BroadcastAgreementVersion).Scan(&chID)
+	if err != nil {
+		if isUnique(err) {
+			writeErr(w, http.StatusConflict, "slug_taken", "a published channel already has this slug")
+			return
+		}
+		d.fail(w, r, "publish", err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		d.fail(w, r, "commit", err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"id": chID, "slug": req.Slug, "access": req.Access,
+		"on_demand": req.OnDemand, "rungs": req.Rungs, "top_kbps": req.TopKbps})
 }
 
-// GuestSharing is Pro's guest sharing (README §14.4, 50.20 §1): 2 rungs, up to 3,000 kbps.
-var GuestSharing = Allowance{MaxRungs: 2, MaxTopKbps: 3000}
-
-// DBPlans is the default Plans: an active Pro owner gets guest sharing; any other plan none.
-// Story 50.20 replaces it with the Broadcaster tier (servers.broadcast_plan) and its catalog.
-type DBPlans struct{ DB *sql.DB }
-
-func (p DBPlans) ForServer(ctx context.Context, serverID string) (Allowance, error) {
-	var userID, plan, status string
-	err := p.DB.QueryRowContext(ctx, `
-        SELECT u.id::text, u.plan, u.status
-          FROM servers s JOIN users u ON u.id = s.owner_user_id
-         WHERE s.id::text = $1`, serverID).Scan(&userID, &plan, &status)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Allowance{}, ErrUnknownServer
-	}
-	if err != nil {
-		return Allowance{}, err
-	}
-	return AllowanceFor(userID, plan, status)
+func limitErr(w http.ResponseWriter, limit string, value int) {
+	writeJSON(w, http.StatusPaymentRequired, map[string]any{"error": "broadcast_limit", "limit": limit, "value": value,
+		"message": "your plan doesn't allow this channel; add a channel or unpublish one first"})
 }
 
-// AllowanceFor maps an owner's plan and account status to what the home may publish.
-func AllowanceFor(userID, plan, status string) (Allowance, error) {
-	if status != "active" || plan != billing.PlanPro {
-		return Allowance{}, ErrNotInPlan
+func isUnique(err error) bool {
+	var c interface{ SQLState() string }
+	if errors.As(err, &c) {
+		return c.SQLState() == "23505"
 	}
-	a := GuestSharing
-	a.Publisher = userID
-	return a, nil
+	return false
+}
+
+// Unpublish takes one of the home's channels off (its slot is free at once).
+func (d *Deps) Unpublish(w http.ResponseWriter, r *http.Request) {
+	id, ok := d.agent(w, r)
+	if !ok {
+		return
+	}
+	ch := chi.URLParam(r, "id")
+	if !billingpkg.IsUUID(ch) {
+		writeErr(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+	res, err := d.DB.ExecContext(r.Context(), `UPDATE broadcast_channels SET unpublished_at = now() WHERE id = $1 AND server_id = $2 AND unpublished_at IS NULL`, ch, id)
+	if err != nil {
+		d.fail(w, r, "unpublish", err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		writeErr(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// State is the home's publisher state: its plan's limits, this month's viewer-hours, its
+// pay-as-you-go and the mode for new viewers.
+func (d *Deps) State(w http.ResponseWriter, r *http.Request) {
+	id, ok := d.agent(w, r)
+	if !ok {
+		return
+	}
+	st, err := d.Store.State(r.Context(), id)
+	if err != nil {
+		d.fail(w, r, "state", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
+}
+
+func (d *Deps) fail(w http.ResponseWriter, r *http.Request, what string, err error) {
+	if d.Logger != nil {
+		d.Logger.Error("broadcast: "+what, "err", err, "request_id", middleware.GetRequestID(r.Context()))
+	}
+	writeErr(w, http.StatusInternalServerError, "internal_error", "")
 }
 
 func writeJSON(w http.ResponseWriter, code int, body any) {
@@ -182,6 +314,6 @@ func writeJSON(w http.ResponseWriter, code int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-func writeErr(w http.ResponseWriter, code int, kind string) {
-	writeJSON(w, code, map[string]string{"error": kind})
+func writeErr(w http.ResponseWriter, code int, kind, msg string) {
+	writeJSON(w, code, map[string]string{"error": kind, "message": msg})
 }

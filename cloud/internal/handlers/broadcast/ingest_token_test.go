@@ -44,7 +44,7 @@ func setup(t *testing.T, withKey bool) (*chi.Mux, bc.Key) {
 	k, _ := bc.KeyFromSeed(seed[:])
 	d := &Deps{
 		Agents:    fakeAgents{"pro-home": "s3cret", "free-home": "s3cret"},
-		Plans:     fakePlans{"pro-home": {Publisher: "user-pro", MaxRungs: 2, MaxTopKbps: 3000}},
+		Plans:     fakePlans{"pro-home": {MaxRungs: 2, MaxTopKbps: 3000}},
 		IngestURL: "https://ingest.maktaba.tv",
 		Now:       func() time.Time { return at },
 	}
@@ -137,7 +137,8 @@ func TestIngestTokenIssued(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Pub != "user-pro" || c.Home != "pro-home" || c.Ch != bc.ChannelID("pro-home", "7") || c.Kbps != 3000 || len(c.Rungs) != 2 {
+	// the publisher is the home: the id the edge's usage windows name and the cloud bills
+	if c.Pub != "pro-home" || c.Home != "pro-home" || c.Ch != bc.ChannelID("pro-home", "7") || c.Kbps != 3000 || len(c.Rungs) != 2 {
 		t.Fatalf("claims %+v", c)
 	}
 	if resp.Channel != c.Ch || !resp.ExpiresAt.Equal(at.Add(24*time.Hour)) || resp.RefreshAfter != 3600 {
@@ -153,11 +154,11 @@ func TestIngestTokenOffWithoutAKey(t *testing.T) {
 }
 
 func TestAllowanceFor(t *testing.T) {
-	if a, err := AllowanceFor("u1", "pro", "active"); err != nil || a.Publisher != "u1" || a.MaxRungs != 2 {
+	if a, err := AllowanceFor("pro", "active"); err != nil || a.MaxRungs != 2 {
 		t.Fatalf("pro: %+v %v", a, err)
 	}
 	for _, c := range [][2]string{{"free", "active"}, {"basic", "active"}, {"pro", "suspended"}} {
-		if _, err := AllowanceFor("u1", c[0], c[1]); !errors.Is(err, ErrNotInPlan) {
+		if _, err := AllowanceFor(c[0], c[1]); !errors.Is(err, ErrNotInPlan) {
 			t.Errorf("%v: %v", c, err)
 		}
 	}

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
@@ -293,29 +294,63 @@ func TestParsePrefixesCIDRsOnly(t *testing.T) {
 	}
 }
 
-// Story 50.21: the broadcast edge's settings parse, the ingest host has a default, and the api
-// role never issues ingest tokens without their key.
+// Story 50.20: the broadcast keys, their defaults, and the broadcasting gate (T07).
 func TestBroadcastConfig(t *testing.T) {
 	c := defaultConfig()
-	if c.Broadcast.Enabled || c.Broadcast.IngestURL != "https://ingest.maktaba.tv" {
+	if c.Broadcast.Enabled || !c.Broadcast.PlansEnforce || !c.Broadcast.PAYGReports {
 		t.Fatalf("defaults: %+v", c.Broadcast)
 	}
-	if err := parseTOML("[broadcast]\nenabled = true\nedge_public_key = \"abc\"\ningest_url = \"https://ingest-staging.maktaba.tv\"\n", &c); err != nil {
+	key := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	if err := parseTOML("[broadcast]\nenabled = true\nedge_public_key = \""+key+"\"\n[broadcast.plans]\nenforce = false\n[billing.broadcast_payg]\nenabled = false\n", &c); err != nil {
 		t.Fatal(err)
 	}
-	if !c.Broadcast.Enabled || c.Broadcast.EdgePublicKey != "abc" || c.Broadcast.IngestURL != "https://ingest-staging.maktaba.tv" {
+	if !c.Broadcast.Enabled || c.Broadcast.PlansEnforce || c.Broadcast.PAYGReports || c.Broadcast.EdgePublicKey != key {
+		t.Fatalf("parsed: %+v", c.Broadcast)
+	}
+	// every broadcast price is TBD: switching broadcasting on is refused, naming the fields
+	err := ValidateBroadcast(c.Broadcast)
+	if err == nil || !strings.Contains(err.Error(), "broadcaster.price") || !strings.Contains(err.Error(), "broadcaster.payg_price_per_100h") {
+		t.Fatalf("the gate with TBD prices: %v", err)
+	}
+	if err := ValidateBroadcast(BroadcastConfig{EdgePublicKey: "c2hvcnQ="}); err == nil {
+		t.Fatal("a short edge key was accepted")
+	}
+	if err := ValidateBroadcast(BroadcastConfig{EdgePublicKey: key}); err != nil {
+		t.Fatalf("a good key, gate shut: %v", err)
+	}
+}
+
+// Story 50.21: the ingest host has a default, the key settings parse, the api role never turns
+// broadcasting on without the ingest tokens' key, and the edge's key reads as base64url or
+// standard base64.
+func TestBroadcastEdgeConfig(t *testing.T) {
+	c := defaultConfig()
+	if c.Broadcast.IngestURL != "https://ingest.maktaba.tv" || c.Broadcast.KeyPath != "" {
+		t.Fatalf("defaults: %+v", c.Broadcast)
+	}
+	if err := parseTOML("[broadcast]\nkey_path = \"/k\"\ningest_url = \"https://ingest-staging.maktaba.tv\"\n", &c); err != nil {
+		t.Fatal(err)
+	}
+	if c.Broadcast.KeyPath != "/k" || c.Broadcast.IngestURL != "https://ingest-staging.maktaba.tv" {
 		t.Fatalf("%+v", c.Broadcast)
 	}
+	c = defaultConfig()
 	c.Database.URL = "postgres://x"
 	c.Server.ListenAddr = "127.0.0.1:8090"
+	c.Broadcast.Enabled = true
 	if err := Validate(c, RoleAPI); err == nil || !strings.Contains(err.Error(), "broadcast.key_path") {
 		t.Fatalf("on without a key: %v", err)
 	}
-	if err := parseTOML("[broadcast]\nkey_path = \"/opt/maktaba-cloud/secrets/broadcast.key\"\n", &c); err != nil {
-		t.Fatal(err)
+	raw := make([]byte, 32)
+	raw[0], raw[1] = 0xfb, 0xff // '-' and '_' in base64url, '+' and '/' in standard base64
+	for _, s := range []string{base64.RawURLEncoding.EncodeToString(raw), base64.URLEncoding.EncodeToString(raw),
+		base64.StdEncoding.EncodeToString(raw), base64.RawStdEncoding.EncodeToString(raw)} {
+		if k, err := EdgeKey(s); err != nil || k[0] != 0xfb {
+			t.Fatalf("EdgeKey(%q) = %v", s, err)
+		}
 	}
-	if err := Validate(c, RoleAPI); err != nil {
-		t.Fatalf("with the key: %v", err)
+	if _, err := EdgeKey("c2hvcnQ"); err == nil {
+		t.Fatal("a short edge key was accepted")
 	}
 }
 
