@@ -344,4 +344,3 @@ func fetch(srv *httptest.Server, slug string) int {
 	}
 	return resp.StatusCode
 }
-
