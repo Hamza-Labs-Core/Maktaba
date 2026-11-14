@@ -49,8 +49,10 @@ type CORSConfig struct {
 	// The answer echoes the origin and NEVER allows credentials, so the browser sends no
 	// cookie and shows no answer to a request that carried one: the app reaches the API
 	// only with a bearer token it holds (Authorization), like a native app, and every
-	// route keeps its own sign-in and role checks. A web page that claims such an origin
-	// (a sandboxed frame says `null`) gains nothing it could not ask without CORS.
+	// route keeps its own sign-in and role checks. Only a call that carries a bearer token
+	// (or a preflight asking to send `Authorization`) is answered: a web page that claims
+	// such an origin (a sandboxed frame says `null`) reads nothing it could not read with a
+	// token of its own, never an answer that needs no sign-in.
 	PackagedApps bool
 }
 
@@ -60,6 +62,33 @@ const bearerHeaders = "Authorization, Content-Type, X-Maktaba-Client"
 // packagedOrigin reports whether origin is a packaged TV app's (see PackagedApps).
 func packagedOrigin(origin string) bool {
 	return origin == "null" || origin == "file://" || strings.HasPrefix(origin, "app://")
+}
+
+// packagedOpenPaths are answered for a packaged origin before it holds a token: whether it
+// is signed in (a 401 at most), renewing a token it holds, and redeeming a device code it
+// was given. Starting a code (POST /api/pairing/device) is not among them: a web page that
+// claims `null` could otherwise read a fresh home code and phish its approval.
+var packagedOpenPaths = map[string]bool{
+	"/api/auth/me":              true,
+	"/api/auth/refresh":         true,
+	"/api/pairing/device/token": true,
+}
+
+// carriesBearer reports whether a request is a bearer call, or the preflight of one, or one
+// of packagedOpenPaths: only those are answered for a packaged origin (see PackagedApps).
+func carriesBearer(r *http.Request, preflight bool) bool {
+	if packagedOpenPaths[r.URL.Path] {
+		return true
+	}
+	if preflight {
+		for _, h := range strings.Split(r.Header.Get("Access-Control-Request-Headers"), ",") {
+			if strings.EqualFold(strings.TrimSpace(h), "authorization") {
+				return true
+			}
+		}
+		return false
+	}
+	return strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ")
 }
 
 // packagedHeaders are the request headers a packaged app's calls carry.
@@ -120,6 +149,8 @@ func CORS(cfg CORSConfig) func(http.Handler) http.Handler {
 				// a public answer: any origin, no credentials
 				h := w.Header()
 				h.Set("Access-Control-Allow-Origin", "*")
+				// an allow-listed origin gets its own answer here: no shared cache serves it "*"
+				h.Add("Vary", "Origin")
 				if isPreflight {
 					h.Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 					h.Set("Access-Control-Allow-Headers", "Content-Type, X-Maktaba-Client, X-Request-Id")
@@ -127,7 +158,7 @@ func CORS(cfg CORSConfig) func(http.Handler) http.Handler {
 						h.Set("Access-Control-Max-Age", itoa(cfg.MaxAge))
 					}
 				}
-			case origin != "" && cfg.PackagedApps && packagedOrigin(origin) && !listed:
+			case origin != "" && cfg.PackagedApps && packagedOrigin(origin) && !listed && carriesBearer(r, isPreflight):
 				// a packaged TV app: its origin, never credentials (bearer only)
 				h := w.Header()
 				h.Set("Access-Control-Allow-Origin", origin)

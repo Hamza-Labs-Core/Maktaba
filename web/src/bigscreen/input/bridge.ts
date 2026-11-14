@@ -179,7 +179,8 @@ let nextId = 1;
 const helloWaiters: ((h: LauncherHello | null) => void)[] = [];
 const stateListeners = new Set<(s: LauncherPlayerState) => void>();
 const visibilityListeners = new Set<(hidden: boolean) => void>();
-const logWaiters = new Map<number, (lines: string | null) => void>();
+/** The one log request waiting for its answer (a newer request replaces it). */
+let logsPending: { id: number; done: (lines: string | null) => void } | null = null;
 let started = false;
 
 function isHello(m: Record<string, unknown>): boolean {
@@ -208,10 +209,11 @@ function onBridgeMessage(e: MessageEvent): void {
       if (typeof m.hidden === "boolean") visibilityListeners.forEach((f) => f(m.hidden as boolean));
       return;
     case "maktaba:logs": {
-      const w = typeof m.re === "number" ? logWaiters.get(m.re) : undefined;
-      if (w && typeof m.lines === "string") {
-        logWaiters.delete(m.re as number);
-        w(m.lines);
+      // the answer to the request waiting, matched by its id (never looked up by it)
+      const p = logsPending;
+      if (p && m.re === p.id && typeof m.lines === "string") {
+        logsPending = null;
+        p.done(m.lines);
       }
       return;
     }
@@ -273,15 +275,19 @@ export function onLauncherVisibility(f: (hidden: boolean) => void): () => void {
 export function launcherLogs(timeoutMs = 2000): Promise<string | null> {
   if (!launcherTakes("logs")) return Promise.resolve(null);
   const id = nextId++;
+  logsPending?.done(null);
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
-      logWaiters.delete(id);
+      if (logsPending?.id === id) logsPending = null;
       resolve(null);
     }, timeoutMs);
-    logWaiters.set(id, (lines) => {
-      clearTimeout(timer);
-      resolve(lines);
-    });
+    logsPending = {
+      id,
+      done: (lines) => {
+        clearTimeout(timer);
+        resolve(lines);
+      },
+    };
     postToLauncher({ type: "maktaba:logs", id });
   });
 }
@@ -299,7 +305,7 @@ export function resetBridgeForTest(): void {
   helloWaiters.length = 0;
   stateListeners.clear();
   visibilityListeners.clear();
-  logWaiters.clear();
+  logsPending = null;
   if (started) window.removeEventListener("message", onBridgeMessage);
   started = false;
 }

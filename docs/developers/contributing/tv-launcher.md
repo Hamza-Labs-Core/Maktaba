@@ -72,7 +72,12 @@ launcher has answered `hello`, `/tv/` sends nothing but `ready` and `hello`.
   reads it before it has chosen a home.
 - A packaged app's origin (`null`, `file://`, `app://…`) gets its own origin back and the
   headers a bearer call needs, never `Access-Control-Allow-Credentials`: no cookie is sent
-  cross-site, and every rule of who may do what is the API's, as for any device.
+  cross-site, and every rule of who may do what is the API's, as for any device. It is
+  answered only for a call that carries a bearer token (or its preflight), and before a token
+  for `/api/auth/me`, `/api/auth/refresh` and `/api/pairing/device/token`: a web page can
+  claim `null` too, and must read nothing that needs no sign-in. Starting a code
+  (`POST /api/pairing/device`) is not answered, so the `--bundle-ui` copy signs in by the
+  cloud code (a grant it redeems at the token route).
 
 ## Building and testing
 

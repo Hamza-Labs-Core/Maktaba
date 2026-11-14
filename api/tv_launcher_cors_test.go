@@ -76,8 +76,13 @@ func TestPackagedTVOrigin_RolesUnchanged(t *testing.T) {
 			if rec.Code != c.want {
 				t.Errorf("%s %s (token %v): %d, want %d", origin, c.path, c.token != "", rec.Code, c.want)
 			}
-			if got := rec.Header().Get("Access-Control-Allow-Origin"); got != origin {
-				t.Errorf("%s %s: Allow-Origin %q", origin, c.path, got)
+			// answered only for a bearer call (a page claiming null reads no unsigned answer)
+			want := ""
+			if c.token != "" {
+				want = origin
+			}
+			if got := rec.Header().Get("Access-Control-Allow-Origin"); got != want {
+				t.Errorf("%s %s (token %v): Allow-Origin %q, want %q", origin, c.path, c.token != "", got, want)
 			}
 			if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "" {
 				t.Errorf("%s %s: Allow-Credentials %q, want none", origin, c.path, got)

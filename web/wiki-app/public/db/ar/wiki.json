@@ -5958,7 +5958,9 @@
         "Auth",
         "get"
       ],
-      "related": [],
+      "related": [
+        "story-58.9"
+      ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },

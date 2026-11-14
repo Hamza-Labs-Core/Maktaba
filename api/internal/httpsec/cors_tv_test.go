@@ -62,6 +62,7 @@ func TestCORS_PackagedAppOriginWithoutCredentials(t *testing.T) {
 		pre := httptest.NewRequest(http.MethodOptions, "/api/libraries", nil)
 		pre.Header.Set("Origin", origin)
 		pre.Header.Set("Access-Control-Request-Method", "GET")
+		pre.Header.Set("Access-Control-Request-Headers", "authorization, x-maktaba-client")
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, pre)
 		hd := rec.Header()
@@ -71,6 +72,49 @@ func TestCORS_PackagedAppOriginWithoutCredentials(t *testing.T) {
 		}
 		if got := hd.Get("Access-Control-Allow-Headers"); got != packagedHeaders {
 			t.Fatalf("%s preflight headers = %q (no CSRF header: a cookie session cannot be used)", origin, got)
+		}
+	}
+	// the packaged origin with no bearer (a sandboxed web page says null too): no answer, so
+	// nothing that needs no sign-in can be read cross-origin
+	for _, origin := range []string{"file://", "null"} {
+		pre := httptest.NewRequest(http.MethodOptions, "/api/libraries", nil)
+		pre.Header.Set("Origin", origin)
+		pre.Header.Set("Access-Control-Request-Method", "GET")
+		pre.Header.Set("Access-Control-Request-Headers", "content-type")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, pre)
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Fatalf("%s preflight without Authorization: Allow-Origin %q", origin, got)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/api/setup/status", nil)
+		req.Header.Set("Origin", origin)
+		rec = httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Fatalf("%s GET without a bearer: Allow-Origin %q", origin, got)
+		}
+		req.Header.Set("Authorization", "Bearer x")
+		rec = httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != origin {
+			t.Fatalf("%s GET with a bearer: Allow-Origin %q", origin, got)
+		}
+	}
+	// before it holds a token: whether it is signed in, a renewal and a code's redemption are
+	// answered; starting a code is not (a page claiming null must not read a fresh code)
+	for path, want := range map[string]string{
+		"/api/auth/me": "null", "/api/auth/refresh": "null", "/api/pairing/device/token": "null",
+		"/api/pairing/device": "",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.Header.Set("Origin", "null")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != want {
+			t.Fatalf("null %s without a bearer: Allow-Origin %q, want %q", path, got, want)
+		}
+		if rec.Header().Get("Access-Control-Allow-Credentials") != "" {
+			t.Fatalf("null %s: credentials allowed", path)
 		}
 	}
 	// a web origin, or one that only looks packaged, is not one
