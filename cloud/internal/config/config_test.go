@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
@@ -290,6 +291,32 @@ func TestParsePrefixesCIDRsOnly(t *testing.T) {
 		if _, err := ParsePrefixes([]string{bad}); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+// Story 50.20: the broadcast keys, their defaults, and the broadcasting gate (T07).
+func TestBroadcastConfig(t *testing.T) {
+	c := defaultConfig()
+	if c.Broadcast.Enabled || !c.Broadcast.PlansEnforce || !c.Broadcast.PAYGReports {
+		t.Fatalf("defaults: %+v", c.Broadcast)
+	}
+	key := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	if err := parseTOML("[broadcast]\nenabled = true\nedge_public_key = \""+key+"\"\n[broadcast.plans]\nenforce = false\n[billing.broadcast_payg]\nenabled = false\n", &c); err != nil {
+		t.Fatal(err)
+	}
+	if !c.Broadcast.Enabled || c.Broadcast.PlansEnforce || c.Broadcast.PAYGReports || c.Broadcast.EdgePublicKey != key {
+		t.Fatalf("parsed: %+v", c.Broadcast)
+	}
+	// every broadcast price is TBD: switching broadcasting on is refused, naming the fields
+	err := ValidateBroadcast(c.Broadcast)
+	if err == nil || !strings.Contains(err.Error(), "broadcaster.price") || !strings.Contains(err.Error(), "broadcaster.payg_price_per_100h") {
+		t.Fatalf("the gate with TBD prices: %v", err)
+	}
+	if err := ValidateBroadcast(BroadcastConfig{EdgePublicKey: "c2hvcnQ="}); err == nil {
+		t.Fatal("a short edge key was accepted")
+	}
+	if err := ValidateBroadcast(BroadcastConfig{EdgePublicKey: key}); err != nil {
+		t.Fatalf("a good key, gate shut: %v", err)
 	}
 }
 

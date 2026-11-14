@@ -69,4 +69,8 @@ func TestSensitiveListsDontOverlap(t *testing.T) {
 	if !IsSensitive("POST", "/v1/admin/accounts/{id}/suspend") || IsSensitive("GET", "/v1/admin/accounts") {
 		t.Error("IsSensitive")
 	}
+	// story 50.20: granting a home Broadcaster or test publishing needs a fresh MFA
+	if !IsSensitive("POST", "/v1/admin/servers/{id}/broadcast") {
+		t.Error("the broadcast grant is not sensitive")
+	}
 }
