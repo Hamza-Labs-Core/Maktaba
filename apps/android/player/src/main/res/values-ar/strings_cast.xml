@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- البث (الملحمة 58، القصة 58.06): الجدول المشترك بين المرسِلات. -->
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="cast_local_network_title" tools:ignore="UnusedResources">ابحث عن أجهزة التلفاز على شبكتك</string>
+    <string name="cast_local_network_body" tools:ignore="UnusedResources">لكي تبثّ، يحتاج Maktaba إلى رؤية الأجهزة على شبكة Wi-Fi لديك. سيُطلب منك ذلك الآن.</string>
+    <string name="cast_casting_to">يُعرض على %1$s</string>
+    <string name="cast_old_home">هذا المنزل أقدم، لذا يعرض التلفاز مشغّل Google.</string>
+    <string name="cast_button">البث إلى تلفاز</string>
+    <string name="cast_no_devices">لم يُعثر على تلفاز. يجب أن يكون التلفاز على شبكة Wi-Fi نفسها التي يتصل بها هذا الهاتف. وإن كان على التلفاز تطبيق Maktaba، فافتحه هناك.</string>
+    <string name="cast_error_refused">لا يمكن بث هذا الفيديو من حسابك.</string>
+    <string name="cast_error_cloud">يحتاج البث إلى تسجيل الدخول على المنزل نفسه، لا عبر Maktaba Cloud.</string>
+    <string name="cast_error_failed">لم يبدأ التلفاز تشغيل الفيديو. حاول مرة أخرى.</string>
+    <string name="cast_error_home">لا يستطيع التلفاز الوصول إلى منزلك. تأكد أنه على الشبكة نفسها، أو استخدم العنوان الآمن للمنزل.</string>
+    <string name="cast_error_format">لا يستطيع التلفاز تشغيل صيغة هذا الفيديو.</string>
+    <string name="cast_error_grant_ended">انتهى البث. ابدأ البث من جديد لتواصل المشاهدة على التلفاز.</string>
+    <string name="cast_error_update">يحتاج التلفاز إلى منزل أحدث. حدّث Maktaba على المنزل، ثم ابدأ البث من جديد.</string>
+    <string name="cast_ok">حسنًا</string>
+</resources>

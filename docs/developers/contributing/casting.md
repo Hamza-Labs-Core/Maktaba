@@ -153,6 +153,17 @@ two differ); it also sets the `NSBonjourServices` entries `_googlecast._tcp` and
 gets the plain signed stream URL, which the receiver plays as it came. Tests: MaktabaKit unit
 tests over the vectors, and UI tests against a fake Cast context.
 
+**The Android Player** (`apps/android/player/…/media/`): `Cast.kt` keeps Media3's handover
+between the phone and the TV, and `CastSender.kt` mints the grant before an item reaches the
+TV (and when the next one starts), builds the custom data and follows the receiver. Gradle
+reads the ID from `app.json` into the build config (`-Pmaktaba.castAppId` overrides it). A
+home older than the cast grant is found once per home before any session starts: the app
+sends `POST /api/cast/grants {}`, which a current home refuses with a 422 problem and an
+older one answers with a plain 404; the app then switches to Google's Default Media Receiver
+(`CastContext.setReceiverApplicationId`) and casts the plain signed URL, as it always has.
+Tests: `CastTest.kt` over the vectors and the flows, and Robolectric (`PipBackgroundCastTest.kt`)
+against a fake Cast context.
+
 ## The receiver
 
 `web/packages/castreceiver`, served at `https://cast.maktaba.tv/r/` (the one URL registered in

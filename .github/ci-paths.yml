@@ -850,6 +850,10 @@ roku:
   # the Roku group (story 58.16): apps/tv/roku, shared/i18n/visual-vectors.json, tv-logs, the catalog check
   - *roku
   - '.github/workflows/_roku.yml'
+  # the release workflow builds and tests the same channel (58.13)
+  - '.github/workflows/roku-release.yml'
+  # the player's capability report is held to 58.02's device_caps vectors (58.13)
+  - 'shared/playback/caps-vectors.json'
   # the channel's tests hold it to 58.01's compat vectors; its build bundles the Apple apps'
   # Arabic font and draws its icons and splash from their Maktaba mark (58.12)
   - 'shared/compat/vectors.json'

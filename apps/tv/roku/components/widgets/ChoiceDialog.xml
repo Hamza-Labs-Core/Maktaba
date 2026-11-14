@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- A list to choose from (Epic 58 story 58.13: the player's audio and subtitle pickers), opening
+     from the reading end as the card actions do. -->
+<component name="ChoiceDialog" extends="Group">
+  <interface>
+    <field id="title" type="string" onChange="onTitle" />
+    <field id="options" type="array" onChange="onOptions" />
+    <field id="selected" type="integer" value="0" />
+    <field id="choice" type="integer" alwaysNotify="true" />
+  </interface>
+  <script type="text/brightscript" uri="ChoiceDialog.brs" />
+  <script type="text/brightscript" uri="pkg:/components/common.brs" />
+  <script type="text/brightscript" uri="pkg:/source/i18n.brs" />
+  <script type="text/brightscript" uri="pkg:/source/layout.brs" />
+  <script type="text/brightscript" uri="pkg:/source/config.brs" />
+  <script type="text/brightscript" uri="pkg:/source/net.brs" />
+  <script type="text/brightscript" uri="pkg:/source/nav.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext.brs" />
+  <script type="text/brightscript" uri="pkg:/source/visualtext_tables.brs" />
+  <children>
+    <Rectangle width="1920" height="1080" color="0x000000B0" />
+    <Rectangle id="panel" translation="[1220,0]" width="700" height="1080" color="0x131D2EFF" />
+    <Label id="title" translation="[1270,120]" width="600" height="60" />
+    <LabelList id="list" translation="[1270,240]" itemSize="[600,72]" itemSpacing="[0,12]" numRows="9" vertFocusAnimationStyle="floatingFocus" />
+  </children>
+</component>
