@@ -1,0 +1,40 @@
+# The tests the tv-clients rehearsal must see pass (Epic 58, story 58.17): every test of
+# api/internal/router that the job's -run pattern names, then, as streaming:<name>, every test
+# of streaming/internal/capability its second step names; one a line, each part sorted. The
+# job (.github/workflows/_integration.yml, tv-clients) fails when one of them did not run and
+# pass; TestTVClientsListNamesEveryTest fails when this list and the code differ.
+TestCastGrantRoutesAreMounted
+TestCastGrantWalkRefusesEveryOtherRoute
+TestClientFloorAtSignIn
+TestP58BypassCastGrantAfterTighten
+TestP58BypassCastGrantNamesItems
+TestP58BypassCloudCodeApprover
+TestP58BypassDeepLinkByID
+TestP58BypassNoTVOnlyCheck
+TestP58NamedRoutesAreMounted
+TestP58RoleTable
+TestP58RoleTableNamesEveryRoute
+TestP58RoleTableRules
+TestPGAppSignInsShowTheCloudCodeTV
+TestPGCastGrantHeldToItsUser
+TestPGCastGrantQueue
+TestPGCastGrantVideo
+TestPGCastGrantWhoMayMint
+TestPGCloudAssertionSignsTheTVInAsTheLinkedUser
+TestPGCloudAssertionTVEndsWithItsLink
+TestPGCloudAssertionWithoutACloudIdentity
+TestPGCloudCodeAdminTVRefreshesAsAViewer
+TestPGCloudCodeRefusals
+TestPGCloudCodeSignsTheTVInAsTheApprover
+TestPGCloudCodeTVMintsNothing
+TestTVClientsCloudCode
+TestTVClientsCompat
+TestTVClientsListNamesEveryTest
+TestTVClientsModesAreTheStorys
+TestTVClientsSessions
+streaming:TestCapsVectors
+streaming:TestTVProfiles_Acceptance
+streaming:TestTVProfiles_BitDepthAndFPS
+streaming:TestTVProfiles_ReportClampedToCeiling
+streaming:TestTVProfiles_ReportNarrows
+streaming:TestTVProfiles_VerdictTable

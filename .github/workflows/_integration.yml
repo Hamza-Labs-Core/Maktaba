@@ -12,6 +12,7 @@ on:
       integration: { type: boolean, default: true }
       compat_prev: { type: boolean, default: true }
       parental_bypass: { type: boolean, default: true }
+      tv_clients: { type: boolean, default: true }
 
 permissions:
   contents: read
@@ -484,3 +485,112 @@ jobs:
           path: ${{ runner.temp }}/parental-bypass
           if-no-files-found: ignore
 
+  # Epic 58 story 58.17: the tv-clients rehearsal. A home is seeded on this job's Postgres
+  # behind the production router and driven the way each TV drives it, with the request
+  # shapes the platforms' tests record (each TV's X-Maktaba-Client, the device_caps of
+  # shared/playback/caps-vectors.json), over the LAN and through the relay path: the
+  # compatibility contract (discovery, the update pages, the client floor's 426, a home rolled
+  # back), the cloud code redeemed both ways, sessions with each platform's report, the cast
+  # grant, and 58.14's parental rows; the Epic 58 role table and the cast grant's router walk
+  # beside them. The streaming service's verdicts for the same reports run after it. The
+  # cloud's half of the cloud code, through the tunnel, is cloud-rehearsal.yml's tv-code.
+  tv-clients:
+    if: inputs.tv_clients
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg16
+        env:
+          POSTGRES_USER: maktaba
+          POSTGRES_PASSWORD: maktaba
+          POSTGRES_DB: maktaba
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U maktaba"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      MAKTABA_TEST_PG_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming
+
+      - name: The rehearsal
+        working-directory: api
+        # the home logs every request it answers: the whole output, the home's log with
+        # it, is kept below whether the rehearsal passes or not
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/tv-clients"
+          mkdir -p "$out"
+          set +e
+          go test -count=1 -timeout 10m -v \
+            -run 'TestTVClients|TestP58|TestPGCastGrant|TestPGCloudCode|TestPGCloudAssertion|TestPGAppSignInsShowTheCloudCodeTV|TestClientFloorAtSignIn|TestCastGrant' \
+            ./internal/router/ > "$out/rehearsal.log" 2>&1
+          rc=$?
+          set -e
+          grep -E '^(--- |\s+p58_|PASS|FAIL|ok|panic)' "$out/rehearsal.log" || true
+          ../tools/ci/no-pg-skips.sh "$out/rehearsal.log"
+          # every test the rehearsal names must have run and passed: one that was renamed,
+          # deleted or skipped fails the job (the list is held to the code by
+          # TestTVClientsListNamesEveryTest)
+          while IFS= read -r t; do
+            case "$t" in ''|'#'*|streaming:*) continue ;; esac
+            grep -q -- "--- PASS: $t " "$out/rehearsal.log" || { echo "::error::$t did not pass"; rc=1; }
+          done < ../tools/ci/tv-clients-tests.txt
+          {
+            echo "### tv-clients rehearsal"
+            echo
+            echo '```'
+            grep -E 'a cast grant: [0-9]+ routes refused' "$out/rehearsal.log" | sed -E 's/^ +[a-z0-9_]+\.go:[0-9]+: //' || true
+            echo "passed: $(grep -c -- '--- PASS' "$out/rehearsal.log" || true), failed: $(grep -c -- '--- FAIL' "$out/rehearsal.log" || true)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+
+      # 58.02's table: what the streaming service decides for each platform's recorded report
+      - name: The streaming service's verdicts for the same reports
+        working-directory: streaming
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/tv-clients"
+          mkdir -p "$out"
+          set +e
+          go test -count=1 -v -run 'TestCapsVectors|TestTVProfiles' ./internal/capability/ > "$out/streaming.log" 2>&1
+          rc=$?
+          set -e
+          grep -E '^(--- |PASS|FAIL|ok|panic)' "$out/streaming.log" || true
+          while IFS= read -r t; do
+            case "$t" in streaming:*) t="${t#streaming:}" ;; *) continue ;; esac
+            grep -q -- "--- PASS: $t " "$out/streaming.log" || { echo "::error::$t did not pass"; rc=1; }
+          done < ../tools/ci/tv-clients-tests.txt
+          exit "$rc"
+
+      - name: Keep the home's log
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: tv-clients-log
+          path: ${{ runner.temp }}/tv-clients
+          if-no-files-found: ignore
