@@ -302,12 +302,29 @@ func TestStatesAndSlateArgs(t *testing.T) {
 	if st[0].Resolution != "1920x1080" || st[0].Bandwidth != 6192*1100 || st[1].Resolution != "854x480" {
 		t.Fatalf("%+v", st)
 	}
-	a := strings.Join(SlateArgs("Seerah's: 100%", "/f.ttf", "/o/0.ts"), " ")
-	if !strings.Contains(a, `Seerah\'s\: 100\%`) || !strings.Contains(a, slateOfflineAR) || !strings.Contains(a, "text_shaping=1") {
+	dir := t.TempDir()
+	texts, err := SlateText(dir, "Seerah's: 100%\n[x];")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(texts[0]); string(b) != "Seerah's: 100%[x];" {
+		t.Fatalf("name file %q", b)
+	}
+	if b, _ := os.ReadFile(texts[2]); string(b) != slateOfflineAR {
+		t.Fatalf("arabic file %q", b)
+	}
+	a := strings.Join(SlateArgs(texts, "/f.ttf", true, false, "/o/0.ts"), " ")
+	if strings.Contains(a, "Seerah") || !strings.Contains(a, "textfile=") || !strings.Contains(a, "text_shaping=1") {
 		t.Fatalf("slate: %s", a)
 	}
-	if strings.Contains(strings.Join(SlateArgs("x", "", "/o"), " "), "drawtext") {
+	if strings.Contains(strings.Join(SlateArgs(texts, "", true, false, "/o"), " "), "drawtext") {
 		t.Fatal("drawtext without a font")
+	}
+	// no shaping: the Arabic words and an Arabic name are left out, the English kept
+	plain := strings.Join(SlateArgs(texts, "/f.ttf", false, true, "/o"), " ")
+	if strings.Contains(plain, "text_shaping") || strings.Contains(plain, texts[0]) || strings.Contains(plain, texts[2]) ||
+		!strings.Contains(plain, texts[1]) {
+		t.Fatalf("unshaped slate: %s", plain)
 	}
 	if got := Effective([]string{"src", "720p", "480p"}, 5); len(got) != 1 || got[0] != "480p" {
 		t.Fatalf("effective %v", got)

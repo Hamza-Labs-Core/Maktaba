@@ -36,28 +36,57 @@ func slateFont() string {
 	return ""
 }
 
-// drawtextEscape escapes a drawtext text value.
-func drawtextEscape(s string) string {
-	r := strings.NewReplacer(`\`, `\\`, `'`, `\'`, `:`, `\:`, `%`, `\%`, `,`, `\,`)
-	return r.Replace(s)
+// filterPath quotes a path we chose (the font, the text files) for a filtergraph option.
+func filterPath(p string) string {
+	return "'" + strings.NewReplacer(`\`, `\\`, `'`, `'\''`, `:`, `\:`).Replace(p) + "'"
+}
+
+// SlateText writes the slate's three lines to files in dir (drawtext reads them with
+// textfile=, so a channel's name never becomes part of the filtergraph).
+func SlateText(dir, name string) ([3]string, error) {
+	lines := [3]string{name, slateOfflineEN, slateOfflineAR}
+	var paths [3]string
+	for i, l := range lines {
+		paths[i] = filepath.Join(dir, "line"+itoa(i)+".txt")
+		// a name is one line; control characters are dropped
+		clean := strings.Map(func(r rune) rune {
+			if r < 0x20 || r == 0x7f {
+				return -1
+			}
+			return r
+		}, l)
+		if err := os.WriteFile(paths[i], []byte(clean), 0o600); err != nil {
+			return paths, err
+		}
+	}
+	return paths, nil
 }
 
 // SlateArgs make one 4 s segment of the offline slate (720p, silent audio): the channel's
-// name over the offline words in English and Arabic, or a plain card without a font.
-func SlateArgs(name, font, out string) []string {
+// name over the offline words in English and Arabic (texts: SlateText's files), or a plain
+// card without a font. Without text shaping (an ffmpeg built without HarfBuzz) Arabic
+// would show as loose letters, so only the lines that need none are drawn: the English
+// words, and the name when it has no right-to-left letters (rtlName).
+func SlateArgs(texts [3]string, font string, shaping, rtlName bool, out string) []string {
 	vf := "format=yuv420p"
-	if font != "" {
-		ff := "fontfile='" + strings.ReplaceAll(font, "'", `\'`) + "'"
-		line := func(text string, size, y int, shaping bool) string {
-			s := "drawtext=" + ff + ":text='" + drawtextEscape(text) + "':fontcolor=white:fontsize=" +
-				itoa(size) + ":x=(w-text_w)/2:y=" + itoa(y)
+	if font != "" && texts[0] != "" {
+		line := func(file string, size, y int) string {
+			s := "drawtext=fontfile=" + filterPath(font) + ":textfile=" + filterPath(file) +
+				":expansion=none:fontcolor=white:fontsize=" + itoa(size) + ":x=(w-text_w)/2:y=" + itoa(y)
 			if shaping {
 				s += ":text_shaping=1"
 			}
 			return s
 		}
-		vf = strings.Join([]string{line(name, 56, 260, true), line(slateOfflineEN, 36, 360, false),
-			line(slateOfflineAR, 36, 420, true), vf}, ",")
+		var parts []string
+		if shaping || !rtlName {
+			parts = append(parts, line(texts[0], 56, 260))
+		}
+		parts = append(parts, line(texts[1], 36, 360))
+		if shaping {
+			parts = append(parts, line(texts[2], 36, 420))
+		}
+		vf = strings.Join(append(parts, vf), ",")
 	}
 	return []string{"-hide_banner", "-loglevel", "error", "-nostdin", "-y",
 		"-f", "lavfi", "-i", "color=c=0x101418:s=1280x720:r=25",
@@ -85,8 +114,13 @@ func (c *Ctl) uploadSlate(ctx context.Context, j Job) {
 	if bin == "" {
 		bin = "ffmpeg"
 	}
-	run := func(font string) bool {
-		p, err := runner.Start(bin, SlateArgs(j.Name, font, out))
+	texts, err := SlateText(dir, j.Name)
+	if err != nil {
+		return
+	}
+	rtl := strings.IndexFunc(j.Name, func(r rune) bool { return r >= 0x0590 && r <= 0x08ff || r >= 0xfb1d && r <= 0xfefc }) >= 0
+	run := func(font string, shaping bool) bool {
+		p, err := runner.Start(bin, SlateArgs(texts, font, shaping, rtl, out))
 		if err != nil {
 			return false
 		}
@@ -103,7 +137,8 @@ func (c *Ctl) uploadSlate(ctx context.Context, j Job) {
 		}
 	}
 	// a build without drawtext (or text shaping) still makes the plain card
-	if !run(slateFont()) && !run("") {
+	font := slateFont()
+	if !run(font, true) && !run(font, false) && !run("", false) {
 		c.log().Warn("broadcast: the offline slate could not be made", "channel", j.Channel, "event", "broadcast_slate_error")
 		return
 	}
