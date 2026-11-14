@@ -275,6 +275,8 @@ describe("which answering home is the approving one", () => {
     { url: "https://10-0-0-7.h1.direct.example:8443", kind: "local" },
     { url: "https://h1.direct.example", kind: "direct" },
     { url: "https://den.relay.maktaba.tv", kind: "relay" },
+    // the home's plain public address, kept for older apps
+    { url: "http://203.0.113.5:8088", kind: "direct" },
   ];
   const answer = (urls: string[]) => ({ id: "instance-7", name: "Den", urls });
 
@@ -285,6 +287,40 @@ describe("which answering home is the approving one", () => {
     expect(isApprovedHome("https://h1.direct.example", answer([]), CONNS)).toBe(
       true,
     );
+  });
+
+  it("takes a LAN name under the home's certificate as it is: the certificate proves it", () => {
+    expect(
+      isApprovedHome(
+        "https://10-0-0-7.h1.direct.example:8443",
+        answer([]),
+        CONNS,
+      ),
+    ).toBe(true);
+  });
+
+  it("takes a plain or raw address, even a direct one, only from a home listing a proven name", () => {
+    expect(
+      isApprovedHome(
+        "http://203.0.113.5:8088",
+        answer(["http://203.0.113.5:8088"]),
+        CONNS,
+      ),
+    ).toBe(false);
+    expect(
+      isApprovedHome(
+        "http://203.0.113.5:8088",
+        answer(["https://h1.direct.example"]),
+        CONNS,
+      ),
+    ).toBe(true);
+    expect(
+      isApprovedHome(
+        "http://203.0.113.5:8088",
+        answer(["http://192.168.1.20:8088"]),
+        CONNS,
+      ),
+    ).toBe(false);
   });
 
   it("takes a LAN address only from a home that lists the approving home's relay", () => {

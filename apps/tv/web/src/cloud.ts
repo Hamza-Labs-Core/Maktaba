@@ -218,31 +218,34 @@ function baseOf(u: URL): string {
   return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, "")}`;
 }
 
-/** The kinds of connection whose name Maktaba Cloud gives the home: its relay, its own name. */
-const CLOUD_NAMED = ["relay", "relay_hint", "direct"];
+/** Whether a host is a raw IP address (v4, or v6 in brackets) rather than a name. */
+function isIpHost(host: string): boolean {
+  return host.charAt(0) === "[" || /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+}
 
-/** The cloud's addresses for the home that lead to it alone (CLOUD_NAMED), as bases. */
-function cloudNamed(conns: unknown): string[] {
-  if (!Array.isArray(conns)) return [];
-  return usableConnections(
-    conns.filter(
-      (c) =>
-        !!c &&
-        typeof c === "object" &&
-        CLOUD_NAMED.indexOf(String((c as CloudConnection).kind)) >= 0,
-    ),
-  );
+/**
+ * The cloud's addresses for the home that lead to it alone, as bases: https by name (the
+ * relay, the home's direct name, its LAN names under its own certificate), where the TV's
+ * certificate check proves the home. A plain http address or a raw IP proves nothing (the
+ * cloud keeps the home's plain public address for older apps, and an address can change hands).
+ */
+function provenNames(conns: unknown): string[] {
+  return usableConnections(conns).filter((b) => {
+    const u = new URL(b);
+    return u.protocol === "https:" && !isIpHost(u.hostname);
+  });
 }
 
 /**
  * Whether the home that answered at `base` is the one the cloud approved the code for.
  * The cloud names a home by its own server id, which the home's /api/discovery/home does not
  * say (it gives the home's instance id), so the check is by address:
- *  - a name Maktaba Cloud gives the home (its relay, its direct name) leads to that home alone;
- *  - a LAN address can lead to another machine on another network (a TV at a relative's house,
- *    on the same private range), so the home answering there counts only when it lists one of
- *    those names among its own addresses (a home with remote access lists its relay). Another
- *    home there is passed over, and the grant is never sent to it.
+ *  - an https name the cloud gives for the home (its relay, its direct name, a LAN name under
+ *    its certificate) leads to that home alone: the certificate proves it;
+ *  - a plain http or raw IP address can lead to another machine (a TV at a relative's house on
+ *    the same private range, a public address that changed hands), so the home answering there
+ *    counts only when it lists one of those names among its own addresses (a home with remote
+ *    access lists its relay). Another home there is passed over, and never sent the grant.
  */
 export function isApprovedHome(
   base: string,
@@ -250,7 +253,7 @@ export function isApprovedHome(
   conns: unknown,
 ): boolean {
   if (usableConnections(conns).indexOf(base) < 0) return false;
-  const named = cloudNamed(conns);
+  const named = provenNames(conns);
   if (named.indexOf(base) >= 0) return true;
   return (Array.isArray(answer.urls) ? answer.urls : []).some((raw) => {
     try {

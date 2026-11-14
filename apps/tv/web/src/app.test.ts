@@ -194,6 +194,7 @@ describe("the cloud code", () => {
   };
   const GRANT = "Gr4nt_" + "x".repeat(37);
   const NAME = "https://10-0-0-7.h1.direct-a.example:8443";
+  const PLAIN = "http://10.0.0.7:8088";
   const APPROVAL = {
     status: "approved",
     // the cloud's server id: not the id the home itself answers with (h1)
@@ -202,6 +203,8 @@ describe("the cloud code", () => {
     connections: [
       { url: NAME, kind: "local" },
       { url: "https://10.0.0.7:8443", kind: "local_ip", tls_name: "10-0-0-7.h1.direct-a.example" },
+      // a plain LAN address: on another network it can be another machine
+      { url: PLAIN, kind: "local" },
       { url: "https://h1.relay.maktaba.tv", kind: "relay" },
     ],
     grant: GRANT,
@@ -295,14 +298,14 @@ describe("the cloud code", () => {
     expect(w.calls.filter((c) => c.url.endsWith("/poll")).length).toBe(polls);
   });
 
-  it("passes over another home answering on the LAN name", async () => {
+  it("passes over another home answering on a plain LAN address", async () => {
     vi.useFakeTimers();
     const relay = "https://h1.relay.maktaba.tv";
-    // another home answers on the same LAN name (a relative's network): passed over
+    // another home answers on the same private address (a relative's network): passed over
     const w = world({
       approved: () => true,
-      answers: [NAME, relay],
-      urls: (b) => (b === NAME ? [NAME, "https://other.relay.maktaba.tv"] : [b]),
+      answers: [PLAIN, relay],
+      urls: (b) => (b === PLAIN ? [PLAIN, "https://other.relay.maktaba.tv"] : [b]),
     });
     const m = mount(w.fetch);
     await m.l.start();
@@ -321,6 +324,18 @@ describe("the cloud code", () => {
     await vi.advanceTimersByTimeAsync(5_000);
     await vi.advanceTimersByTimeAsync(100);
     expect(m.frame()!.src).toBe(`${NAME}/tv/?bridge=1&lang=en`);
+  });
+
+  it("takes a plain LAN address when the home there lists its relay", async () => {
+    vi.useFakeTimers();
+    const relay = "https://h1.relay.maktaba.tv";
+    const w = world({ approved: () => true, answers: [PLAIN, relay], urls: () => [PLAIN, relay] });
+    const m = mount(w.fetch);
+    await m.l.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(100);
+    // a plain address: the frame is told it is one
+    expect(m.frame()!.src).toBe(`${PLAIN}/tv/?bridge=1&lang=en&plain=1`);
   });
 
   it("says so when none of the home's connections answers", async () => {
