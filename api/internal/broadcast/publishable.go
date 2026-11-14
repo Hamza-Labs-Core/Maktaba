@@ -131,6 +131,30 @@ func (MarkedPublishable) Seconds(ctx context.Context, db *sql.DB, channelID stri
 	return int(secs), err
 }
 
+// RescheduleLimited marks the schedule of channelIDs (none: every published channel)
+// stale, so the scheduler rewrites it from the block on air instead of only adding past
+// its horizon (story 50.23 §3): a withdrawn permission, a cleared mark or a publish takes
+// effect at the next top-up, and the channel's player slates the block on air meanwhile.
+// Best effort: a failure is logged, the player's check still keeps the item off air.
+func (s *Service) RescheduleLimited(ctx context.Context, channelIDs ...string) {
+	q := `INSERT INTO channel_schedule_state (channel_id, stale, sched_gen)
+		SELECT b.channel_id, true, COALESCE((SELECT live_gen FROM tv_routing WHERE scope = 'cluster'), 0)
+		  FROM broadcast_channels b WHERE b.state IN ('live', 'offline')
+		ON CONFLICT (channel_id, sched_gen) DO UPDATE SET stale = true`
+	args := []any{}
+	if len(channelIDs) > 0 {
+		ids, _ := json.Marshal(channelIDs)
+		q = `INSERT INTO channel_schedule_state (channel_id, stale, sched_gen)
+		SELECT c.id, true, COALESCE((SELECT live_gen FROM tv_routing WHERE scope = 'cluster'), 0)
+		  FROM channels c WHERE c.id::text IN (SELECT jsonb_array_elements_text($1::jsonb))
+		ON CONFLICT (channel_id, sched_gen) DO UPDATE SET stale = true`
+		args = append(args, string(ids))
+	}
+	if _, err := s.Store.DB.ExecContext(ctx, q, args...); err != nil {
+		s.log().Warn("broadcast: marking schedules stale failed", "err", err, "event", "broadcast_reschedule_failed")
+	}
+}
+
 // PublishableOnly is broadcast.publishable_only (absent: on).
 func (s *Store) PublishableOnly(ctx context.Context) bool {
 	var raw string
@@ -155,6 +179,7 @@ func (s *Service) SetPublishableOnly(ctx context.Context, on bool, confirm strin
 		return !on, err
 	}
 	s.log().Info("broadcast: publishable_only changed", "on", on, "event", "broadcast_publishable_only")
+	s.RescheduleLimited(ctx)
 	return on, nil
 }
 
@@ -225,6 +250,7 @@ func (s *Service) RecordSource(ctx context.Context, req PermissionRequest, by Ad
 	}
 	s.log().Info("broadcast: source permission recorded", "kind", src.Kind, "source_id", src.ID,
 		"event", "broadcast_source_recorded")
+	s.RescheduleLimited(ctx)
 	return src, nil
 }
 
@@ -248,6 +274,7 @@ func (s *Service) WithdrawSource(ctx context.Context, id, reason string) (Permis
 		return Permission{}, err
 	}
 	s.log().Info("broadcast: source permission withdrawn", "source_id", id, "event", "broadcast_source_withdrawn")
+	s.RescheduleLimited(ctx)
 	return src, nil
 }
 
@@ -308,6 +335,9 @@ func (s *Service) MarkItems(ctx context.Context, req MarkRequest, by Admin) (int
 	}
 	n, _ := res.RowsAffected()
 	s.log().Info("broadcast: items marked", "reason", req.Reason, "count", n, "event", "broadcast_items_marked")
+	if n > 0 {
+		s.RescheduleLimited(ctx)
+	}
 	return int(n), nil
 }
 

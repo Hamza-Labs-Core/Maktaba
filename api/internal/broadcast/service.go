@@ -276,6 +276,8 @@ func (s *Service) Publish(ctx context.Context, id string, confirmed bool, by Adm
 	if err := s.Store.MarkPublished(ctx, id, cc.ID, state, detail, by.Name); err != nil {
 		return ch, err
 	}
+	// what was planned from the full rules is rewritten from publishable items (§3 of 50.23)
+	s.RescheduleLimited(ctx, id)
 	s.log().Info("broadcast: channel published", "channel_id", id, "slug", ch.Slug, "access", ch.Access,
 		"mode", ch.Mode, "rungs", strings.Join(ch.Rungs, ","), "event", "broadcast_published")
 	return s.Store.Get(ctx, id)
@@ -302,6 +304,8 @@ func (s *Service) Unpublish(ctx context.Context, id string) (Channel, error) {
 	if err := s.Store.MarkUnpublished(ctx, id, pending); err != nil {
 		return ch, err
 	}
+	// the full rules come back from the block on air (50.23 §3)
+	s.RescheduleLimited(ctx, id)
 	s.log().Info("broadcast: channel unpublished", "channel_id", id, "event", "broadcast_unpublished")
 	return s.Store.Get(ctx, id)
 }

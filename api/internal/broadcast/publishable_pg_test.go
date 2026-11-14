@@ -263,6 +263,11 @@ func TestPublishableOnlySwitch(t *testing.T) {
 	if svc.Store.PublishableOnly(ctx) || limited() {
 		t.Fatal("still limited after turning it off")
 	}
+	// the published channel's schedule is rewritten at the next top-up, not only past it
+	var stale bool
+	if err := h.db.QueryRow(`SELECT bool_or(stale) FROM channel_schedule_state WHERE channel_id::text = $1`, h.ch).Scan(&stale); err != nil || !stale {
+		t.Fatalf("schedule not marked stale: %v %v", stale, err)
+	}
 	if on, err := svc.SetPublishableOnly(ctx, true, ""); err != nil || !on || !limited() {
 		t.Fatalf("on again: %v %v", on, err)
 	}
