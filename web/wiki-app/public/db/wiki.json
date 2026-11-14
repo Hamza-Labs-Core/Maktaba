@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 258,
+    "endpoint": 259,
     "entity": 42,
     "epic": 60,
     "feature": 3,
@@ -11422,6 +11422,27 @@
         "path": "/pairing/cloud-approve",
         "tag": "Devices",
         "operationId": "approveCloudTvCode"
+      }
+    },
+    {
+      "id": "ep-post-pairing-cloud-assertion",
+      "type": "endpoint",
+      "title": "POST /pairing/cloud-assertion",
+      "content": "Approve a TV's code for a person on maktaba.tv",
+      "tags": [
+        "api",
+        "Devices",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/pairing/cloud-assertion",
+        "tag": "Devices",
+        "operationId": "approveCloudTvCodeByAssertion"
       }
     },
     {
