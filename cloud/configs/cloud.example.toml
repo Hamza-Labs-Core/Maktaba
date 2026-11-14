@@ -212,9 +212,14 @@ web_origins = ["https://app.maktaba.tv"]
 # publishers a service admin granted may publish, and homes' licences don't carry the broadcast
 # flag. The api role refuses to start with it on while any broadcast price is TBD, naming each.
 enabled = false
-# The broadcast edge's Ed25519 public key (base64) for its usage posts (POST /_edge/usage);
-# public, the private half is a Worker secret. Empty: the edge routes answer 503.
+# The broadcast edge's Ed25519 public key (base64url; standard base64 is read too) for its
+# signed posts (POST /_edge/usage, docs/broadcast-edge.md); public, the private half is the
+# Worker's EDGE_SIGNING_KEY. Empty: the edge routes answer 503.
 edge_public_key = ""
+# The Ed25519 seed (0600) that signs ingest tokens and control posts (story 50.21); its public
+# half goes in the edge's CLOUD_PUBKEYS. Empty: the ingest-token route answers 503.
+key_path = ""
+ingest_url = "https://ingest.maktaba.tv"
 
 [broadcast.plans]
 # true: new viewer sessions get full, lowest or wait as the publisher's plan and usage say;

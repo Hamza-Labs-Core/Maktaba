@@ -320,9 +320,9 @@ func TestBroadcastConfig(t *testing.T) {
 	}
 }
 
-// Story 50.21: the ingest host has a default, the key settings parse, the api role never turns
-// broadcasting on without the ingest tokens' key, and the edge's key reads as base64url or
-// standard base64.
+// Story 50.21: the ingest host has a default, the key settings parse, and the edge's key reads
+// as base64url or standard base64. The ingest tokens' key is optional: without it the
+// ingest-token route answers 503 (cmd/maktaba-cloud's TestBroadcastIngestTokenRouteIsWired).
 func TestBroadcastEdgeConfig(t *testing.T) {
 	c := defaultConfig()
 	if c.Broadcast.IngestURL != "https://ingest.maktaba.tv" || c.Broadcast.KeyPath != "" {
@@ -333,13 +333,6 @@ func TestBroadcastEdgeConfig(t *testing.T) {
 	}
 	if c.Broadcast.KeyPath != "/k" || c.Broadcast.IngestURL != "https://ingest-staging.maktaba.tv" {
 		t.Fatalf("%+v", c.Broadcast)
-	}
-	c = defaultConfig()
-	c.Database.URL = "postgres://x"
-	c.Server.ListenAddr = "127.0.0.1:8090"
-	c.Broadcast.Enabled = true
-	if err := Validate(c, RoleAPI); err == nil || !strings.Contains(err.Error(), "broadcast.key_path") {
-		t.Fatalf("on without a key: %v", err)
 	}
 	raw := make([]byte, 32)
 	raw[0], raw[1] = 0xfb, 0xff // '-' and '_' in base64url, '+' and '/' in standard base64

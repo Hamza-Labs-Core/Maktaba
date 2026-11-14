@@ -18,8 +18,8 @@ import (
 	"time"
 
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
-	edgeh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/edge"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/license"
 )
 
@@ -311,25 +311,27 @@ func (c edgeClient) do(method, path string, body any, at time.Time) resp {
 	if body != nil {
 		b, _ = json.Marshal(body)
 	}
-	req, _ := http.NewRequest(method, path, nil)
-	edgeh.Sign(c.priv, req, b, at)
+	h := http.Header{}
+	broadcast.SignEdgeRequest(c.priv, h, method, path, at.UnixMilli(), b)
 	cl := c.e.client()
-	cl.header = map[string]string{edgeh.HeaderTimestamp: req.Header.Get(edgeh.HeaderTimestamp), edgeh.HeaderSignature: req.Header.Get(edgeh.HeaderSignature)}
+	cl.header = map[string]string{broadcast.HeaderEdgeTime: h.Get(broadcast.HeaderEdgeTime), broadcast.HeaderEdgeSignature: h.Get(broadcast.HeaderEdgeSignature)}
 	if body == nil {
 		return cl.do(method, path, nil)
 	}
 	return cl.do(method, path, b)
 }
 
-type usageReply struct {
-	Taken, Duplicates []string
-	Rejected          []map[string]string
-	States            []billingpkg.PublisherState
-}
+type usageReply = broadcast.UsageReply
 
+// post sends windows as the edge does: its own shape, keyed <publisher>:<window_start>.
 func (c edgeClient) post(t *testing.T, windows ...billingpkg.UsageWindow) usageReply {
 	t.Helper()
-	r := c.do("POST", "/_edge/usage", map[string]any{"edge": "test-edge", "windows": windows}, time.Now())
+	posted := make([]broadcast.UsageWindow, len(windows))
+	for i, w := range windows {
+		posted[i] = broadcast.UsageWindow{Key: billingpkg.WindowKey(w.Publisher, w.Window), Publisher: w.Publisher,
+			WindowStart: w.Window, WindowEnd: w.Window.Add(billingpkg.WindowLength), MinutesFull: w.MinutesFull, MinutesLowest: w.MinutesLowest}
+	}
+	r := c.do("POST", broadcast.UsagePath, broadcast.UsagePost{Edge: "test-edge", Windows: posted}, time.Now())
 	if r.code != http.StatusOK {
 		t.Fatalf("usage post: %d %s", r.code, r.body)
 	}
@@ -349,7 +351,7 @@ func TestBroadcastEdgeUsageAndPAYG(t *testing.T) {
 	e := newEnvFull(t, &fakeProvider{}, nil, func(c *config.Config) {
 		c.Broadcast.Enabled = true
 		c.Broadcast.PlansEnforce = true // the harness's config starts from zero values, not the defaults
-		c.Broadcast.EdgePublicKey = base64.StdEncoding.EncodeToString(pub)
+		c.Broadcast.EdgePublicKey = base64.RawURLEncoding.EncodeToString(pub)
 	})
 	edge := edgeClient{e: e, priv: priv}
 	owner := e.registerVerified("caster@example.test")
@@ -377,7 +379,8 @@ func TestBroadcastEdgeUsageAndPAYG(t *testing.T) {
 	win := func(i int, full, lowest int64) billingpkg.UsageWindow {
 		return billingpkg.UsageWindow{Publisher: h.id, Window: base.Add(time.Duration(i) * billingpkg.WindowLength), MinutesFull: full, MinutesLowest: lowest}
 	}
-	if out := edge.post(t, win(0, 100, 0)); len(out.Taken) != 1 || len(out.States) != 1 || out.States[0].Mode != "full" {
+	if out := edge.post(t, win(0, 100, 0)); len(out.Taken) != 1 || len(out.States) != 1 || out.States[0].Mode != "full" ||
+		len(out.Plans) != 1 || out.Plans[0].Pub != h.id || out.Plans[0].Mode != "full" {
 		t.Fatalf("first window: %+v", out)
 	}
 	if out := edge.post(t, win(0, 100, 0)); len(out.Duplicates) != 1 || len(out.Taken) != 0 {

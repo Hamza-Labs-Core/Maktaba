@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 )
 
 var update = flag.Bool("update", false, "rewrite testdata/vectors.json")
@@ -125,10 +127,11 @@ func TestVerifyEdgeRequest(t *testing.T) {
 	k := testKey(t, "edge-1")
 	body := []byte(`{"windows":[]}`)
 	ms := vectorAt.UnixMilli()
-	sig := ed25519.Sign(k.Priv, []byte(EdgeSigningInput("POST", "/_edge/usage", ms, body)))
 	h := http.Header{}
-	h.Set(HeaderEdgeTime, strconv.FormatInt(ms, 10))
-	h.Set(HeaderEdgeSignature, b64.EncodeToString(sig))
+	SignEdgeRequest(k.Priv, h, "POST", "/_edge/usage", ms, body)
+	if h.Get(HeaderEdgeTime) != strconv.FormatInt(ms, 10) {
+		t.Fatalf("time header %q", h.Get(HeaderEdgeTime))
+	}
 	pub := k.Priv.Public().(ed25519.PublicKey)
 	if err := VerifyEdgeRequest(pub, "POST", "/_edge/usage", h, body, vectorAt.Add(time.Minute)); err != nil {
 		t.Fatal(err)
@@ -151,16 +154,23 @@ type vectors struct {
 	IngestClaims IngestClaims `json:"ingest_claims"`
 	Plan         string       `json:"plan"`
 	Revocations  string       `json:"revocations"`
-	Edge         struct {
-		Seed      string `json:"seed"`
-		Public    string `json:"public"`
-		Method    string `json:"method"`
-		Path      string `json:"path"`
-		Ms        int64  `json:"ms"`
-		Body      string `json:"body"`
-		Signature string `json:"signature"`
+	// Edge is a usage post as the edge signs it: Body is UsagePost's JSON with one window
+	// (publisher.ts builds the same bytes), UsageReply the cloud's answer to it.
+	Edge struct {
+		Seed       string `json:"seed"`
+		Public     string `json:"public"`
+		Method     string `json:"method"`
+		Path       string `json:"path"`
+		Ms         int64  `json:"ms"`
+		Body       string `json:"body"`
+		Signature  string `json:"signature"`
+		UsageReply string `json:"usage_reply"`
 	} `json:"edge"`
-	Channel struct {
+	// State is a publisher's state; PlanState the Plan the edge holds for it (Plan above is
+	// that Plan signed as a push).
+	State     billing.PublisherState `json:"state"`
+	PlanState Plan                   `json:"plan_state"`
+	Channel   struct {
 		Server string `json:"server"`
 		Local  string `json:"local"`
 		ID     string `json:"id"`
@@ -178,13 +188,22 @@ func makeVectors(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	v.IngestClaims, _ = VerifyIngest(pubkeys(k), v.Ingest, vectorAt)
-	v.Plan, _ = SignControl(k, "plan", map[string]any{"pub": "pub-1", "mode": "lowest", "version": 3, "max_rungs": 2, "max_top_kbps": 3000}, vectorAt, 15*time.Minute)
+	v.State = vectorState()
+	v.PlanState = PlanFromState(v.State)
+	if v.Plan, err = SignPlan(k, v.PlanState, vectorAt); err != nil {
+		t.Fatal(err)
+	}
 	v.Revocations, _ = SignControl(k, "revocations", map[string]any{"version": 1, "pubs": []string{}, "channels": []string{ChannelID("srv-1", "7")}, "homes": []string{}}, vectorAt, 24*time.Hour)
 	e := testKey(t, "edge-1")
 	v.Edge.Seed = b64.EncodeToString(e.Priv.Seed())
 	v.Edge.Public = b64.EncodeToString(e.Priv.Public().(ed25519.PublicKey))
-	v.Edge.Method, v.Edge.Path, v.Edge.Ms, v.Edge.Body = "POST", "/_edge/usage", vectorAt.UnixMilli(), `{"edge":"broadcast-edge","windows":[]}`
-	v.Edge.Signature = b64.EncodeToString(ed25519.Sign(e.Priv, []byte(EdgeSigningInput(v.Edge.Method, v.Edge.Path, v.Edge.Ms, []byte(v.Edge.Body)))))
+	w := vectorWindow()
+	body, _ := json.Marshal(UsagePost{Edge: "broadcast-edge", Windows: []UsageWindow{w}})
+	v.Edge.Method, v.Edge.Path, v.Edge.Ms, v.Edge.Body = "POST", UsagePath, vectorAt.UnixMilli(), string(body)
+	v.Edge.Signature = b64.EncodeToString(ed25519.Sign(e.Priv, []byte(EdgeSigningInput(v.Edge.Method, v.Edge.Path, v.Edge.Ms, body))))
+	reply, _ := json.Marshal(UsageReply{Taken: []string{w.Key}, Duplicates: []string{}, Rejected: []Rejected{},
+		States: []billing.PublisherState{v.State}, Plans: []Plan{v.PlanState}})
+	v.Edge.UsageReply = string(reply)
 	v.Channel.Server, v.Channel.Local = "srv-1", "7"
 	v.Channel.ID = ChannelID("srv-1", "7")
 	out, err := json.MarshalIndent(v, "", "  ")
@@ -192,6 +211,24 @@ func makeVectors(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return append(out, '\n')
+}
+
+// vectorPublisher is a home id (publishers are homes, story 50.20).
+const vectorPublisher = "6f1c0a52-0d3e-4c55-9a51-3b1f0e7d2a10"
+
+// vectorWindow is the 5 minutes before vectorAt, every counter set.
+func vectorWindow() UsageWindow {
+	start := vectorAt.Add(-billing.WindowLength)
+	return UsageWindow{Key: billing.WindowKey(vectorPublisher, start), Publisher: vectorPublisher, WindowStart: start, WindowEnd: vectorAt,
+		MinutesFull: 12, MinutesLowest: 3, MinutesStream: 2, SegmentsIn: 150, BytesIn: 123456789, PeakSessions: 9}
+}
+
+func vectorState() billing.PublisherState {
+	return billing.PublisherState{Publisher: vectorPublisher, Plan: "broadcaster", Mode: "lowest", Enforce: true,
+		Limits:   billing.Limits{MaxChannels: 3, MaxConcurrentViewers: 500},
+		MaxRungs: 4, MaxTopKbps: 8000, Access: []string{"invite", "open"}, Month: "2026-11",
+		Usage:            billing.BroadcastUsage{MinutesFull: 300000, MinutesLowest: 1200},
+		AllowanceMinutes: 300000, FairUseMinutes: 600000, PAYG: billing.BroadcastPAYG{}, At: vectorAt}
 }
 
 func TestVectors(t *testing.T) {

@@ -37,10 +37,11 @@ one kind never passes as another.
 | Ingest token | `mkbi1.<payload>.<Ed25519>`, domain `maktaba-broadcast-ingest-v1` | the cloud (`broadcast.key_path`) | `CLOUD_PUBKEYS` |
 | Control post | `mkbc1.<payload>.<Ed25519>`, domain `maktaba-broadcast-control-v1` | the cloud | `CLOUD_PUBKEYS` |
 | Viewer token | `mkbv1.<payload>.<HMAC-SHA256>`, domain `maktaba-broadcast-viewer-v1` | `watch.maktaba.tv` (50.26) | `VIEWER_TOKEN_KEY` |
-| Edge post | headers `X-Maktaba-Edge-Time`, `X-Maktaba-Edge-Signature` (Ed25519 over `maktaba-broadcast-edge-v1\n<METHOD>\n<path>\n<ms>\n<hex sha256 body>`) | the edge (`EDGE_SIGNING_KEY`) | the cloud (`broadcast.edge_public_key`, `broadcast.VerifyEdgeRequest`) |
+| Edge post | headers `X-Maktaba-Edge-Time` (unix ms), `X-Maktaba-Edge-Signature` (base64url Ed25519 over `maktaba-broadcast-edge-v1\n<METHOD>\n<path>\n<ms>\n<hex sha256 body>`), at most 5 minutes from the cloud's clock | the edge (`EDGE_SIGNING_KEY`) | the cloud (`broadcast.edge_public_key`, `broadcast.VerifyEdgeRequest`) |
 
 - **Ingest token** payload: `{typ: "ingest", pub, ch, rungs[], home, kbps, iat, exp, kid}`.
-  `pub` is the publisher (the home's owner), `ch` the edge's channel id, `rungs` the rung names
+  `pub` is the publisher: the home (its server id, the same as `home`), the id the edge keys
+  `PublisherControl` by and the cloud bills usage to; `ch` the edge's channel id, `rungs` the rung names
   the channel may push (top first, at most 4, never `slate`), `kbps` the plan's top bitrate (the
   size guard). It lives 24 h; the home asks again every hour, so a cloud outage stops no
   broadcast for a day. A token for another channel, or a rung it does not list, is `403`; a bad,
@@ -54,7 +55,37 @@ one kind never passes as another.
 - **Viewer token** payload: `{pub, ch, session, mode, exp, country?}`, `exp` at most 10 minutes
   ahead. `mode` is `full`, `lowest`, `wait` (`429 broadcast_full`) or `off` (`403`).
 - Both sides check the same vectors: `cloud/internal/broadcast/testdata/vectors.json` (TEST keys
-  from public labels; `go test ./internal/broadcast -run TestVectors -update` rewrites them).
+  from public labels; `go test ./internal/broadcast -run TestVectors -update` rewrites them):
+  the ingest token, the control posts, and the whole edge↔cloud contract below (a signed usage
+  post, the cloud's reply to it, a publisher's state and the plan it becomes). The Go tests run
+  the vectors' usage post through the cloud's handler and compare its reply byte for byte; the
+  edge's tests (`test/contract.test.ts`) build the same post and read the same reply and push.
+
+## The edge↔cloud contract
+
+One contract, written once in Go (`cloud/internal/broadcast/edge.go`) and mirrored in
+`src/publisher.ts` and `src/edge_sign.ts`; the vectors keep the two from drifting.
+
+| Call | Direction | Body | Answer |
+|---|---|---|---|
+| `POST /_edge/usage` | edge → `API_ORIGIN`, edge post | `{edge, windows: [UsageWindow]}`, at most 2,000 windows (a longer queue goes in pages) | `200 {taken: [key], duplicates: [key], rejected: [{key, error}], states: [PublisherState], plans: [Plan]}`; `401 bad_edge_signature`, `400` over 2,000, `503 try_again` (resent later) |
+| `GET /_edge/publishers/{id}` | edge → cloud, edge post | none | `200 PublisherState`, `404 unknown_publisher` |
+| `PUT /v1/control/plan` | cloud → edge, control post `typ: "plan"` (15 minutes) | `Plan` | `200 {status: "applied"}`, `409 older_plan` |
+| `PUT /v1/control/revocations` | cloud → edge, control post `typ: "revocations"` | `{version, pubs[], channels[], homes[]}` | `200`; `GET` answers the version held |
+
+- **UsageWindow**: `{key, publisher, window_start, window_end, minutes_full, minutes_lowest,
+  minutes_stream, segments_in, bytes_in, peak_sessions}`, in that order. `key` is
+  `<publisher>:<window_start>`; times are RFC 3339 UTC in whole seconds (`2026-11-13T00:05:00Z`,
+  never `.000Z`), `window_end` 5 minutes after `window_start`. The cloud bills `minutes_full`
+  and `minutes_lowest`; the other counters it checks (not negative) and does not store yet. A
+  window posted again under its key is counted once, so the edge resends freely after an outage.
+- **The reply** names each window by the key the edge sent. Taken, duplicate and rejected
+  (`unknown_publisher`, `bad_window`: never taken) windows are done; any other stays queued.
+- **Plan**: `{pub, version, mode, max_rungs?, max_top_kbps?, max_viewers?, delivery?}`
+  (`broadcast.PlanFromState`: `version` is the state's time in unix ms, `max_viewers` the
+  concurrent-viewer limit). The cloud pushes it signed (`broadcast.SignPlan`) and returns it in
+  every usage reply, so the edge's plan follows the cloud's at least every 5 minutes; an older
+  `version` never replaces a newer one.
 
 ## Ingest (home → edge)
 
@@ -120,8 +151,8 @@ revocations and metering stay the same; Stream's viewer-minutes are counted apar
 
 | Story | Seam | Where |
 |---|---|---|
-| 50.20 | The cloud pushes a publisher's plan: `PUT /v1/control/plan` with a control post `{typ: "plan", pub, mode, version, max_rungs?, max_top_kbps?, max_viewers?, delivery?}`. An older `version` is `409`. `mode` is what a new session gets; `off` stops ingest and play. | `PublisherControl.setPlan`, `ChannelLive.setPlan` |
-| 50.20 | Usage: 5-minute windows `{key: "<pub>:<window start>", publisher, window_start, window_end, minutes_full, minutes_lowest, minutes_stream, segments_in, bytes_in, peak_sessions}`, kept 7 days, posted every 5 minutes to `API_ORIGIN` + `/_edge/usage` as `{edge: "broadcast-edge", windows: [...]}`, signed (edge post). A window is resent until a `2xx`. | `PublisherControl.alarm`, `pendingUsage`, `ack` |
+| 50.20, 50.26 | The cloud pushes a publisher's `Plan` (above) to `PUT /v1/control/plan`; until it does, the plan comes with each usage reply. `mode` is what a new session gets; `off` stops ingest and play. | `PublisherControl.setPlan`, `ChannelLive.setPlan`, `parsePlan` |
+| 50.20 | Usage: 5-minute windows (above), kept 7 days, posted every 5 minutes to `API_ORIGIN` + `/_edge/usage` in pages of 2,000, signed (edge post). A window is resent until the cloud's reply names it. | `PublisherControl.alarm`, `pendingUsage`, `ack`, `readUsageReply` |
 | 50.22 | The home's uploader: the ingest endpoints above, the slate, the control socket, the speed test. | `ingest.ts` |
 | 50.25 | The revocation list: `PUT /v1/control/revocations` with a control post `{typ: "revocations", version, pubs[], channels[], homes[]}`; `GET` answers the version held. A newer list revokes what it adds (ingest and playlists refused, the home told) and restores what it drops. `BROADCAST_GLOBAL_OFF = 1` stops everything. | `Revocations.install`, `ChannelLive.revoke` |
 | 50.26 | Viewer tokens (mint with `mintViewerToken`, the same `VIEWER_TOKEN_KEY`), the session's mode, the concurrent count (`PublisherControl.beat` answers `concurrent`), the watch site on `watch.` | `tokens.ts`, `publisher.ts`, `worker.ts` |
@@ -148,10 +179,11 @@ revocations and metering stay the same; Stream's viewer-minutes are counted apar
 | `STREAM_ACCOUNT_ID`, `STREAM_CUSTOMER_CODE`, `STREAM_KEY_ID` | var | the fallback's account and signing key id |
 | `STREAM_API_TOKEN`, `STREAM_KEY_JWK` | secret | the fallback's API token (Stream: Edit) and signing key |
 
-The cloud's side (`cloud.toml`): `[broadcast] enabled`, `key_path` (the Ed25519 seed, 0600;
-the api role refuses to start with `enabled` and no key), `ingest_url` (default
-`https://ingest.maktaba.tv`) and `edge_public_key`. Until 50.20 lands, an active Pro owner's home
-gets Pro's guest sharing (2 rungs, 3,000 kbps) and any other plan none.
+The cloud's side (`cloud.toml`): `[broadcast] enabled` (50.20's broadcasting gate), `key_path`
+(the Ed25519 seed, 0600; without it the ingest-token route answers `503 broadcast_disabled`),
+`ingest_url` (default `https://ingest.maktaba.tv`) and `edge_public_key` (base64url, as printed
+from the seed; standard base64 is read too). Until 50.22 reads the Broadcaster tier's ladder, an
+active Pro owner's home gets Pro's guest sharing (2 rungs, 3,000 kbps) and any other plan none.
 
 ## Running it
 
@@ -163,8 +195,8 @@ node scripts/rehearsal.mjs      # wrangler dev, a fake home, 100 viewers (CI: 1,
 npx wrangler deploy --dry-run   # the bundle and bindings, offline
 ```
 
-CI runs all of this in `_broadcast-edge.yml` whenever the package or the cloud's broadcast
-package changes; the rehearsal's report is kept as the `broadcast-edge-rehearsal` artifact.
+CI runs all of this in `_broadcast-edge.yml` whenever the package, the cloud's broadcast package
+or its edge API (`cloud/internal/handlers/edge`) changes; the rehearsal's report is kept as the `broadcast-edge-rehearsal` artifact.
 
 ## Before the first deploy (owner)
 

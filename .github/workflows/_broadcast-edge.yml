@@ -51,9 +51,9 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       # the vectors the edge's tests verify are the ones the cloud signs (stale: go test -update)
-      - name: The cloud's ingest tokens and endpoint
+      - name: The cloud's ingest tokens, endpoint and edge API
         working-directory: cloud
-        run: go test ./internal/broadcast/... ./internal/handlers/broadcast/...
+        run: go test ./internal/broadcast/... ./internal/handlers/broadcast/... ./internal/handlers/edge/...
 
       - name: Typecheck and tests (Miniflare)
         run: npm test

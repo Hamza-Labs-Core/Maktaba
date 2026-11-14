@@ -18,7 +18,7 @@
     "exp": 1794614400,
     "kid": "fa449d63be7d92cd"
   },
-  "plan": "mkbc1.eyJleHAiOjE3OTQ1Mjg5MDAsImlhdCI6MTc5NDUyODAwMCwia2lkIjoiZmE0NDlkNjNiZTdkOTJjZCIsIm1heF9ydW5ncyI6MiwibWF4X3RvcF9rYnBzIjozMDAwLCJtb2RlIjoibG93ZXN0IiwicHViIjoicHViLTEiLCJ0eXAiOiJwbGFuIiwidmVyc2lvbiI6M30.viJvd6PPLOLoXVt7VEmwrot2288A0FgxzqakL41ExTa6ZS31ppSHY4WaFGE58-astcbnwE8PC5IJVlxTG7_vBw",
+  "plan": "mkbc1.eyJleHAiOjE3OTQ1Mjg5MDAsImlhdCI6MTc5NDUyODAwMCwia2lkIjoiZmE0NDlkNjNiZTdkOTJjZCIsIm1heF9ydW5ncyI6NCwibWF4X3RvcF9rYnBzIjo4MDAwLCJtYXhfdmlld2VycyI6NTAwLCJtb2RlIjoibG93ZXN0IiwicHViIjoiNmYxYzBhNTItMGQzZS00YzU1LTlhNTEtM2IxZjBlN2QyYTEwIiwidHlwIjoicGxhbiIsInZlcnNpb24iOjE3OTQ1MjgwMDAwMDB9.2okDO-UtFV8Kxj4Z7HeOCF_KuZ4hSY768qXnJQkCBu3E4brRvtD6Uq-G7FyNSk0CXLDiciVD-Hku139TWlGpBA",
   "revocations": "mkbc1.eyJjaGFubmVscyI6WyI2NmI1NGZmYzQwMTIwMGRiYjA0OThmZDg2YTM3ZDdkYSJdLCJleHAiOjE3OTQ2MTQ0MDAsImhvbWVzIjpbXSwiaWF0IjoxNzk0NTI4MDAwLCJraWQiOiJmYTQ0OWQ2M2JlN2Q5MmNkIiwicHVicyI6W10sInR5cCI6InJldm9jYXRpb25zIiwidmVyc2lvbiI6MX0.Vem95t_ip5cX6sZiAauxugGzPXR52iFZjkqKPXWyUy87x6DlNJx4rW7Zd3s2CojtJv7nu9M8oVgl9OAp9DgRDA",
   "edge": {
     "seed": "PTIESADJNgSD0U7khi8PQi-ynUPPndL7UPRToOzx4GY",
@@ -26,8 +26,48 @@
     "method": "POST",
     "path": "/_edge/usage",
     "ms": 1794528000000,
-    "body": "{\"edge\":\"broadcast-edge\",\"windows\":[]}",
-    "signature": "-r0P_d6FPwWTjYd8N0GSsf50Zlj9X5D3y5O-ywdo50Wib4zmi4TmEhTeJNv8-E1ig2yt3g8zQaoEMhjwD_LKCA"
+    "body": "{\"edge\":\"broadcast-edge\",\"windows\":[{\"key\":\"6f1c0a52-0d3e-4c55-9a51-3b1f0e7d2a10:2026-11-12T23:55:00Z\",\"publisher\":\"6f1c0a52-0d3e-4c55-9a51-3b1f0e7d2a10\",\"window_start\":\"2026-11-12T23:55:00Z\",\"window_end\":\"2026-11-13T00:00:00Z\",\"minutes_full\":12,\"minutes_lowest\":3,\"minutes_stream\":2,\"segments_in\":150,\"bytes_in\":123456789,\"peak_sessions\":9}]}",
+    "signature": "jnrFrD9uSY_JgWGyaMOCAQ_PTYEC1fn-n99321CQQiJbXhUuREOXXPXqzwYoJ3A76rO6TkeQX-UlTCi2QW15AA",
+    "usage_reply": "{\"taken\":[\"6f1c0a52-0d3e-4c55-9a51-3b1f0e7d2a10:2026-11-12T23:55:00Z\"],\"duplicates\":[],\"rejected\":[],\"states\":[{\"publisher\":\"6f1c0a52-0d3e-4c55-9a51-3b1f0e7d2a10\",\"plan\":\"broadcaster\",\"mode\":\"lowest\",\"enforce\":true,\"max_channels\":3,\"max_concurrent_viewers\":500,\"max_rungs\":4,\"max_top_kbps\":8000,\"access\":[\"invite\",\"open\"],\"on_demand_only\":false,\"month\":\"2026-11\",\"usage\":{\"minutes_full\":300000,\"minutes_lowest\":1200,\"minutes_payg\":0},\"allowance_minutes\":300000,\"fair_use_minutes\":600000,\"payg\":{\"on\":false,\"cap_cents\":0,\"spent_cents\":0,\"minutes\":0,\"cap_minutes\":0},\"at\":\"2026-11-13T00:00:00Z\"}],\"plans\":[{\"pub\":\"6f1c0a52-0d3e-4c55-9a51-3b1f0e7d2a10\",\"version\":1794528000000,\"mode\":\"lowest\",\"max_rungs\":4,\"max_top_kbps\":8000,\"max_viewers\":500}]}"
+  },
+  "state": {
+    "publisher": "6f1c0a52-0d3e-4c55-9a51-3b1f0e7d2a10",
+    "plan": "broadcaster",
+    "mode": "lowest",
+    "enforce": true,
+    "max_channels": 3,
+    "max_concurrent_viewers": 500,
+    "max_rungs": 4,
+    "max_top_kbps": 8000,
+    "access": [
+      "invite",
+      "open"
+    ],
+    "on_demand_only": false,
+    "month": "2026-11",
+    "usage": {
+      "minutes_full": 300000,
+      "minutes_lowest": 1200,
+      "minutes_payg": 0
+    },
+    "allowance_minutes": 300000,
+    "fair_use_minutes": 600000,
+    "payg": {
+      "on": false,
+      "cap_cents": 0,
+      "spent_cents": 0,
+      "minutes": 0,
+      "cap_minutes": 0
+    },
+    "at": "2026-11-13T00:00:00Z"
+  },
+  "plan_state": {
+    "pub": "6f1c0a52-0d3e-4c55-9a51-3b1f0e7d2a10",
+    "version": 1794528000000,
+    "mode": "lowest",
+    "max_rungs": 4,
+    "max_top_kbps": 8000,
+    "max_viewers": 500
   },
   "channel": {
     "server": "srv-1",

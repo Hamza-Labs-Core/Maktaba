@@ -20,7 +20,7 @@ import { globallyOff, type Env } from "./env";
 import { json, problem } from "./http";
 import { log } from "./log";
 import { segmentKey } from "./playlist";
-import type { PlanState } from "./publisher";
+import { parsePlan } from "./publisher";
 import { forgetRevocations, isRevoked, revocationsFor } from "./revocations";
 import { createLiveInput, streamConfigured } from "./stream_fallback";
 import { verifyControl, verifyIngest, type IngestClaims } from "./tokens";
@@ -369,25 +369,9 @@ async function handleControl(request: Request, env: Env, path: string): Promise<
   if (path === "/v1/control/plan" && request.method === "PUT") {
     const v = await verifyControl(await request.text(), "plan", env.CLOUD_PUBKEYS, t);
     if (!v.ok) return problem(v.error === "wrong_type" ? 400 : 401, v.error);
-    const p = v.payload;
-    const modes = ["full", "lowest", "wait", "off"];
-    if (
-      typeof p.pub !== "string" ||
-      typeof p.version !== "number" ||
-      typeof p.mode !== "string" ||
-      !modes.includes(p.mode)
-    )
-      return problem(400, "bad_plan");
-    const num = (x: unknown) => (typeof x === "number" && x > 0 ? x : undefined);
-    const plan: PlanState = {
-      mode: p.mode as PlanState["mode"],
-      version: p.version,
-      max_rungs: num(p.max_rungs),
-      max_top_kbps: num(p.max_top_kbps),
-      max_viewers: num(p.max_viewers),
-      delivery: p.delivery === "stream" || p.delivery === "r2" ? p.delivery : null,
-    };
-    const r = await env.PUBLISHER.get(env.PUBLISHER.idFromName(p.pub)).setPlan(p.pub, plan);
+    const p = parsePlan(v.payload);
+    if (!p) return problem(400, "bad_plan");
+    const r = await env.PUBLISHER.get(env.PUBLISHER.idFromName(p.pub)).setPlan(p.pub, p.plan);
     return r === "applied" ? json(200, { status: r }) : problem(409, "older_plan");
   }
   return problem(404, "not_found");
