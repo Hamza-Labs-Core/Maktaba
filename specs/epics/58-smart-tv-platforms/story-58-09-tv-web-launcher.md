@@ -24,7 +24,7 @@ Tizen (58.10) and an `.ipk` for webOS (58.11).
 
 ```
 ┌ packaged app (file:// origin, has webapis / webOS APIs) ───────────────────────┐
-│  launcher: home picker · discovery · cloud code · compat check · errors        │
+│  launcher: home picker · discovery · compat check · errors                     │
 │  ┌ full-screen iframe: https://<home>/tv/?bridge=1 (the home's own origin) ───┐ │
 │  │  the 10-foot UI (58.08)  ◀── postMessage bridge ──▶  launcher              │ │
 │  └────────────────────────────────────────────────────────────────────────────┘ │
@@ -53,12 +53,9 @@ tokens. That uses the same code, a store update per UI change, and the compatibi
 (58.01) to cover the gap. Which mode each store gets is decided at its first submission, and
 owner question Q3 records the default.
 
-**Finding the home.** The first screen offers three ways, in this order:
+**Finding the home.** The first screen (Choose your home) offers, in this order:
 1. **Saved homes.** The last home used is opened at once.
-2. **Sign in with a code** (default for a new TV), via Maktaba Cloud (58.03). The screen shows the
-   code large, the QR, how long it lasts, and where to approve it: "In Maktaba on your phone:
-   Profile → Approve a TV, or go to maktaba.tv/tv".
-3. **Find on this network.** The launcher probes the TV's own /24 subnet:
+2. **Find on this network.** The launcher probes the TV's own /24 subnet:
    - The TV's address comes from `webapis.network.getIp()` on Tizen, or
      `luna://com.webos.service.connectionmanager` on webOS.
    - It sends `GET http://<ip>:8088/api/discovery/home` to each of the 254 addresses, 32 at a
@@ -69,16 +66,28 @@ owner question Q3 records the default.
      another site. If that name does not answer as the same home (a router blocking DNS
      rebinding), it falls back to plain HTTP on the LAN; a plain fallback never replaces a
      saved HTTPS address.
-   - It then shows the home's own code (`POST /api/pairing/device`) to approve on a phone.
+   - Each home found is listed by name; choosing one connects to it.
 
 A typed address (`Enter the home's address`) is the last option, under More ways.
 
+**Signing in** is `/tv/`'s, inside the frame, by the home's own code (`web/src/tv/CodeSignIn.tsx`):
+`/tv/` asks the home for a code (`POST /api/pairing/device`), shows it large with a QR of the
+approve page and how long it lasts, and polls `POST /api/pairing/device/token` until a person
+signed in on a phone or computer approves it. A new code is fetched when one expires (410). No
+password is typed on the TV.
+
+**The cloud code is not in the launcher yet.** The cloud code of 58.03 as the default sign-in for
+a new TV, a `signIn {grant}` message on the bridge, and CORS on the cloud's `/v1/tv/*` are the
+story's second part, not built; until then a TV off the home's network has no way in from the
+launcher.
+
 **CORS for the launcher.**
 - The launcher's own requests run from a `file://` (Tizen) or `file://`/`null` (webOS) origin.
-  They are only `GET /api/discovery/home` on the home, and the cloud code calls (58.03).
+  They are only `GET /api/discovery/home` on the home (the cloud code calls of 58.03 join them
+  with the second part).
 - The home answers `/api/discovery/home` with `Access-Control-Allow-Origin: *` and no
   credentials, since that answer is public.
-- The cloud answers `/v1/tv/*` the same way.
+- The cloud is to answer `/v1/tv/*` the same way, with the second part; it does not yet.
 - A packaged app's origin (`null`, `file://`, `app://…`) gets its own origin back and the headers
   a bearer call needs (the `--bundle-ui` copy of the UI calls the home cross-origin), never
   `Access-Control-Allow-Credentials`: no cookie rides cross-site, and every role rule stays the
@@ -87,7 +96,8 @@ A typed address (`Enter the home's address`) is the last option, under More ways
   and before a token for
   `/api/auth/me`, `/api/auth/refresh` and `/api/pairing/device/token`: a web page can claim
   `null` too. Starting a code is not answered (a fresh code read cross-origin could be phished),
-  so the `--bundle-ui` copy signs in by the cloud code, redeeming its grant at the token route. The allow-list for web origins (`httpsec/cors.go`) is unchanged. The UI in the iframe
+  so the `--bundle-ui` copy is to sign in by the cloud code, redeeming its grant at the token
+  route, once the second part is built; until then it has no sign-in of its own. The allow-list for web origins (`httpsec/cors.go`) is unchanged. The UI in the iframe
   is same-origin with the home, so it needs none.
 - `/tv/`'s page carries `Content-Security-Policy: frame-ancestors 'self' file: app:`: only a
   packaged app or the home itself may frame it.
@@ -150,7 +160,7 @@ from `/tv/` set `client_profile` to `tizen` or `webos`, with the launcher's `dev
 | T01 | Vitest | the subnet probe with a fake fetch | scan | 32 at a time, 700 ms timeout, stops at the first home per IP, lists several homes |
 | T02 | Vitest | the bridge with a fake iframe | messages from the home origin and another origin | handled / dropped |
 | T03 | Vitest | the compat check with the 58.01 vectors | each case | the right screen |
-| T04 | Playwright (Chromium, 1920×1080), the launcher with a fake `webapis`/webOS shim and a mock home and cloud | cloud code, find on network, typed address, iframe load, play via the bridge | D-pad only | screenshots dark, en and ar; launcher log and bridge trace in the CI report |
+| T04 | Playwright (Chromium, 1920×1080, `pnpm e2e:launcher`), the launcher from `file://` with a Tizen and a webOS shim and a mock home on the TV's /24 | find on network, iframe load, the home's code and its approval, the big screen by bearer, play via the bridge, exit, the saved home after a reload, Switch home | D-pad only | screenshots dark, en and ar; launcher log, console, network and bearer log in the CI report |
 | T05 | Go unit | `/api/discovery/home`, a packaged app's origin, `/tv/`'s page | preflight and GET with `Origin: file://` or `null`; a viewer's and an admin's bearer | `*` on discovery; the packaged origin echoed, never credentials; roles unchanged (401, 403, 200); `/tv/` framed only by `'self' file: app:` |
 | T06 | Contract test | `bridge_level` 1 schema `apps/tv/web/bridge.schema.json` | UI and launcher messages | both sides validate against it |
 
@@ -160,22 +170,32 @@ The launcher's catalogs are `apps/tv/web/i18n/{en,ar}.json`, plus 58.01's `compa
 
 | Key | English | Arabic |
 |---|---|---|
-| `launcher.code.title` | Sign in with a code | تسجيل الدخول برمز |
-| `launcher.code.where` | In Maktaba on your phone: Profile → Approve a TV, or go to maktaba.tv/tv | في Maktaba على هاتفك: الملف الشخصي ← الموافقة على تلفاز، أو اذهب إلى maktaba.tv/tv |
-| `launcher.code.expires` | This code lasts %1$d minutes. | يبقى هذا الرمز صالحًا %1$d دقائق. |
-| `launcher.code.new` | Get a new code | احصل على رمز جديد |
+| `launcher.start.title` | Choose your home | اختر جهازك الرئيسي |
+| `launcher.saved.title` | Your homes | أجهزتك الرئيسية |
 | `launcher.find.title` | Find on this network | ابحث في هذه الشبكة |
-| `launcher.find.searching` | Looking for Maktaba homes… | جارٍ البحث عن منازل Maktaba… |
-| `launcher.find.none` | No home found on this network. Try a code instead. | لم يُعثر على منزل في هذه الشبكة. جرّب الرمز بدلًا من ذلك. |
-| `launcher.typed.title` | Enter the home's address | أدخل عنوان المنزل |
+| `launcher.find.searching` | Looking for Maktaba homes… | جارٍ البحث عن أجهزة مكتبة الرئيسية… |
+| `launcher.find.none` | No home found on this network. | لم يُعثر على جهاز رئيسي في هذه الشبكة. |
+| `launcher.typed.title` | Enter the home's address | أدخل عنوان الجهاز الرئيسي |
 | `launcher.more` | More ways | طرق أخرى |
 | `launcher.plainHttp` | Connected without encryption on your network | متصل دون تشفير على شبكتك |
-| `launcher.tooOld` | This TV is too old for the Maktaba app. You can still cast to it from Maktaba on your phone if it supports Google Cast or AirPlay. | هذا التلفاز أقدم من أن يعمل عليه تطبيق Maktaba. ما زال بإمكانك البث إليه من Maktaba على هاتفك إن كان يدعم Google Cast أو AirPlay. |
+| `launcher.plainHttpCode` | Sign in with a code: a password is never sent without encryption. | سجّل الدخول برمز: لا تُرسَل كلمة المرور أبدًا دون تشفير. |
+| `launcher.tooOld` | This TV is too old for the Maktaba app. You can still cast to it from Maktaba on your phone if it supports Google Cast or AirPlay. | هذا التلفاز أقدم من أن يعمل عليه تطبيق مكتبة. ما زال بإمكانك البث إليه من مكتبة على هاتفك إن كان يدعم Google Cast أو AirPlay. |
+
+The code screen is `/tv/`'s, so its keys are in `web/src/i18n`:
+
+| Key | English | Arabic |
+|---|---|---|
+| `tv.code.title` | Sign in with a code | تسجيل الدخول برمز |
+| `tv.code.where` | On a phone or computer signed in to Maktaba, open {url} or scan the code, then approve this TV. | على هاتف أو حاسوب سجّل الدخول إلى Maktaba، افتح {url} أو امسح الرمز، ثم وافق على هذا التلفاز. |
+| `tv.code.expires` | This code lasts {n} minutes. | يبقى هذا الرمز صالحًا {n} دقائق. |
+| `tv.code.new` | Get a new code | احصل على رمز جديد |
+| `tv.code.onlyCode` | A password is never sent without encryption: sign in with a code. | لا تُرسَل كلمة المرور أبدًا دون تشفير: سجّل الدخول برمز. |
 
 ## Edge cases
 
 - **A home with several addresses on different subnets** (a VLAN for the TV): the probe finds
-  nothing, and the cloud code works because the cloud lists every connection.
+  nothing; a typed address works, and so will the cloud code (the second part), because the
+  cloud lists every connection.
 - **The TV sleeps mid-video**: on `visibility {hidden}` the UI reports progress and stops the
   session. On wake it offers Resume.
 - **Two homes found**: the picker lists both by name, as the Android TV app does.
@@ -184,11 +204,11 @@ The launcher's catalogs are `apps/tv/web/i18n/{en,ar}.json`, plus 58.01's `compa
 
 | File | Change |
 |---|---|
-| `apps/tv/web/` (new) | launcher, bridge, i18n, platform shims (`platform/tizen.ts`, `platform/webos.ts`, `platform/browser.ts` for tests) |
+| `apps/tv/web/` (new) | launcher (`src/app.ts`, `src/probe.ts`, `src/discovery.ts`, `src/compat.ts`), bridge, i18n, platform shims (`src/platform/tizen.ts`, `src/platform/webos.ts`, `src/platform/browser.ts` for tests) |
 | `apps/tv/web/bridge.schema.json` | the bridge contract |
 | `web/src/bigscreen/input/bridge.ts` | the UI side of the bridge |
 | `web/src/tv/session.ts`, `web/src/tv/CodeSignIn.tsx`, `web/src/lib/api.ts` (new, changed) | the code sign-in and bearer tokens in the launcher |
 | `api/internal/httpsec/cors.go` | the public CORS answer, and a packaged app's origin |
 | `cmd/maktaba-server/internal/webui/serve.go` | `/tv/`'s `frame-ancestors` |
 | `web/vite.launcher.config.ts`, `web/vite.config.ts` (`tv-bundled`) | the launcher build and `--bundle-ui` |
-| `cloud/internal/handlers/tvcodes/` | the same on `/v1/tv/*` |
+| `cloud/internal/handlers/tvcodes/` | the same on `/v1/tv/*` (the second part; not built) |

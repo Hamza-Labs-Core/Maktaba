@@ -35,6 +35,11 @@ end sub
 
 sub onSeries(ev as Object)
     r = ev.GetData()
+    ' story 58.14: for a sign-in under a limit a 404 may be the limit: the blocked page asks a parent
+    if r.status = 404 and ParentalLimited(m.global.session.parental) then
+        ui_Navigate({to: "BlockedScreen", replace: true, params: {kind: "series", id: m.top.params.id}})
+        return
+    end if
     if r.status <> 200 or r.data = invalid then return
     m.title.text = ui_Vis(r.data.name, 50)
     if r.data.description <> invalid then m.desc.text = VisualLines(r.data.description, 70, 2, "auto").Join(Chr(10))

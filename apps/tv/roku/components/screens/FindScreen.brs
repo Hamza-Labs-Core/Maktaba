@@ -65,7 +65,7 @@ sub onSelected()
         return
     end if
     h = m.homes[i]
-    m.state.text = m.i18n.Format("launcher.connecting", [ui_Vis(h.name, 30)])
+    m.state.text = m.i18n.Format("launcher.connecting", [ui_Arg(h.name)])
     t = CreateObject("roSGNode", "HomeTask")
     t.command = {kind: "choose", foundAt: h.foundAt, answer: h.answer}
     t.ObserveField("result", "onChosen")

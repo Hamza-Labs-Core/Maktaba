@@ -94,3 +94,28 @@ def test_check_finds_a_stale_file(tmp_path: Path) -> None:
     assert shape_strings.main(["--check", "--root", str(tmp_path)]) == 0
     (tmp_path / "locale" / "ar_SA" / "strings.json").write_text("{}", encoding="utf-8")
     assert shape_strings.main(["--check", "--root", str(tmp_path)]) == 1
+
+
+def test_arabic_inside_an_english_string_is_shaped_left_to_right(tmp_path: Path) -> None:
+    # a language's own name in the English catalog: Roku would draw it unjoined and reversed
+    en = {"@k": {"widthChars": 30, "lines": 1}, "k": "Language: العربية", "@p": {"widthChars": 30}, "p": "Plain"}
+    root = _catalog(tmp_path, en, {"k": "اللغة: العربية", "p": "عادي"})
+    files, problems = shape_strings.build(root)
+    assert problems == []
+    out = json.loads(files[root / "locale" / "en_US" / "strings.json"])
+    assert out["strings"]["k"] == "Language: " + visual.visual_text("العربية")
+    assert out["strings"]["k"] == visual.visual_text("Language: العربية", 0, "ltr")
+    assert out["strings"]["p"] == "Plain"  # English alone is left to the Label
+
+
+def test_english_statics_equal_the_reference() -> None:
+    en = json.loads((ROKU / "i18n" / "en.json").read_text(encoding="utf-8"))
+    out = json.loads((ROKU / "locale" / "en_US" / "strings.json").read_text(encoding="utf-8"))
+    assert out["rtl"] is False
+    for key, text in out["strings"].items():
+        if shape_strings.has_rtl(en[key]):
+            meta = en["@" + key]
+            assert text.split("\n") == visual.visual_lines(en[key], meta["widthChars"], meta["lines"], "ltr"), key
+        else:
+            assert text == en[key], key
+    assert out["strings"]["account.language.ar"] == visual.visual_text("العربية")
