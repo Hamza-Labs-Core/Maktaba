@@ -68,11 +68,14 @@ function seed(args: { home: string; token: string }) {
 interface Trail {
   console: string[];
   network: string[];
+  /** every URL asked for, as it is asked (a failed media load may never finish) */
+  requests: string[];
   sessions: Record<string, unknown>[];
 }
 
 async function home(page: Page): Promise<{ home: MockHome; trail: Trail }> {
-  const trail: Trail = { console: [], network: [], sessions: [] };
+  const trail: Trail = { console: [], network: [], requests: [], sessions: [] };
+  page.on("request", (r) => trail.requests.push(r.url()));
   page.on("console", (m) => trail.console.push(`[${m.type()}] ${m.text()}`));
   page.on("pageerror", (e) => trail.console.push(`[pageerror] ${e.message}`));
   page.on("requestfinished", async (r) => {
@@ -221,12 +224,10 @@ for (const lang of ["en", "ar"] as const) {
       // 2023 (webOS 23) is not a year the device checklist marked good for Dolby Vision
       expect((trail.sessions[0]!.device_caps as { hdr: string[] }).hdr).not.toContain("dv-p8");
 
-      // the launcher's own <video> has the signed URL; /tv/ is transparent over it
-      await expect
-        .poll(() =>
-          page.evaluate(() => document.querySelector("video.ml-plane")?.getAttribute("src") ?? "")
-        )
-        .toContain(`${HOME}/stream/s1/file.mp4?sig=sig1`);
+      // the launcher's own <video> asks for the signed URL; /tv/ is transparent over it. The
+      // request is checked, not the src: the file fails at once here, and the transcode's URL
+      // may replace it before a poll of the src would see it
+      await expect.poll(() => trail.requests).toContain(`${HOME}/stream/s1/file.mp4?sig=sig1`);
       const tv = tvFrame(page)!;
       await expect(tv.locator("html.tv-launcher-video")).toHaveCount(1);
 
