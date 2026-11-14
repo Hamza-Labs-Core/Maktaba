@@ -95,8 +95,15 @@ type Deps struct {
 	// (so no one else spends a home's allowance): burst 30, then one every 6 s, when nil. A
 	// home approving a TV makes two calls; a home trying codes it was not given runs out.
 	AgentLimit *ratelimit.Limiter
-	Now        func() time.Time
-	Logger     *slog.Logger
+	// Approving on maktaba.tv (approve.go): the account's homes, the assertion signer, the call
+	// to a home through the relay; any nil: 503. UserLimit caps each account's lookups and
+	// approvals (burst 20, then one every 3 s, when nil).
+	Homes     Homes
+	Signer    Asserter
+	Caller    HomeCaller
+	UserLimit *ratelimit.Limiter
+	Now       func() time.Time
+	Logger    *slog.Logger
 }
 
 func (d *Deps) now() time.Time {

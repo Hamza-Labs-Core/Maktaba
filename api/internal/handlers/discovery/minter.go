@@ -203,6 +203,7 @@ func (m *tokenMinter) mint(ctx context.Context, userID, deviceKind, deviceLabel,
 		RefreshToken:     rt.Plaintext,
 		RefreshExpiresIn: int(time.Until(rt.ExpiresAt).Seconds()),
 		UserID:           userID,
+		FamilyID:         rt.FamilyID,
 	}, nil
 }
 

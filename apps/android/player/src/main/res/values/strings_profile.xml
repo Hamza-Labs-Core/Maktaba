@@ -51,6 +51,11 @@
     <string name="profile_session_last_seen">last used %1$s</string>
     <string name="profile_session_current">this browser</string>
     <string name="profile_session_sign_out">Sign out</string>
+    <string name="profile_app_sign_ins">App sign-ins</string>
+    <string name="profile_app_sign_ins_about">TVs and devices signed in as you with a code.</string>
+    <string name="profile_app_via_cloud_code">%1$s TV, via Maktaba Cloud code</string>
+    <string name="profile_app_unknown">A TV or device</string>
+    <string name="profile_app_current">this device</string>
 
     <string name="profile_autoplay_next">Play the next episode automatically</string>
     <string name="profile_resume_without_asking">Resume without asking</string>
