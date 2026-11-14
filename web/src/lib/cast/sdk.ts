@@ -117,9 +117,10 @@ export function castBlocked(
   if (!appId) return "no-app";
   if (!win.isSecureContext || win.location.protocol !== "https:") return "insecure";
   const ua = win.navigator.userAgent;
-  // Chrome and Chromium-based browsers that ship Chrome's Cast support; Firefox and Safari
-  // never load the framework, and the script itself says so for the rest
-  if (!/\b(Chrome|CriOS)\//.test(ua) || /\b(Firefox|FxiOS)\//.test(ua)) return "browser";
+  // Chrome and the Chromium browsers that ship Chrome's Cast support; Firefox, Safari and
+  // Chrome on iOS (CriOS, Safari's engine) never load the framework, and the script itself
+  // says so for the rest
+  if (!/\bChrome\//.test(ua) || /\b(Firefox|FxiOS)\//.test(ua)) return "browser";
   return null;
 }
 
