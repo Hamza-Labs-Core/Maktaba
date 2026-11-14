@@ -176,11 +176,16 @@ async function keep(page: Page, info: TestInfo, console: string[]) {
       }, expr)
       .catch(() => "(page closed)");
   await info.attach("launcher.log", { body: await read("log"), contentType: "text/plain" });
-  await info.attach("avplay-calls.json", { body: await read("av"), contentType: "application/json" });
+  await info.attach("avplay-calls.json", {
+    body: await read("av"),
+    contentType: "application/json",
+  });
   await info.attach("console.log", { body: console.join("\n"), contentType: "text/plain" });
   const tv = page.frames().find((f) => f.url().startsWith(`${HOME}/tv/`));
   const got = tv
-    ? await tv.evaluate(() => JSON.stringify((window as unknown as { __got: unknown[] }).__got, null, 1))
+    ? await tv.evaluate(() =>
+        JSON.stringify((window as unknown as { __got: unknown[] }).__got, null, 1)
+      )
     : "[]";
   await info.attach("bridge-to-ui.json", { body: got, contentType: "application/json" });
 }
@@ -222,7 +227,9 @@ for (const lang of ["en", "ar"] as const) {
 
       // hello: the caps webapis gave, in the API's shape; no Dolby Vision
       await post({ type: "maktaba:hello", id: 1, bridge_level: 1 });
-      await expect.poll(async () => (await got()).some((m) => m.type === "maktaba:hello")).toBe(true);
+      await expect
+        .poll(async () => (await got()).some((m) => m.type === "maktaba:hello"))
+        .toBe(true);
       const hello = (await got()).find((m) => m.type === "maktaba:hello") as {
         platform: string;
         device_caps: {
@@ -298,8 +305,7 @@ for (const lang of ["en", "ar"] as const) {
         .poll(async () =>
           (await got()).some(
             (m) =>
-              m.type === "maktaba:state" &&
-              m.error === "avplay PLAYER_ERROR_NOT_SUPPORTED_FILE"
+              m.type === "maktaba:state" && m.error === "avplay PLAYER_ERROR_NOT_SUPPORTED_FILE"
           )
         )
         .toBe(true);
@@ -314,7 +320,11 @@ for (const lang of ["en", "ar"] as const) {
         await page.evaluate(
           ([c, k]) =>
             window.dispatchEvent(
-              new KeyboardEvent("keydown", { keyCode: c, key: k, bubbles: true } as KeyboardEventInit)
+              new KeyboardEvent("keydown", {
+                keyCode: c,
+                key: k,
+                bubbles: true,
+              } as KeyboardEventInit)
             ),
           [keyCode, key] as const
         );
