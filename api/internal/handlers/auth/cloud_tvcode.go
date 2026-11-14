@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/cloudlink"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/securityaudit"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	discoveryh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/discovery"
@@ -68,4 +69,17 @@ func (h *Handler) TVCodeApprover(ctx context.Context, assertion, code string) (s
 		return refuse("home user must change their password", u.ID)
 	}
 	return u.ID, nil
+}
+
+// RecordTVCodeSignIn records the refresh family of a TV approved on maktaba.tv as a cloud sign-in
+// of userID's link, scope play: unlinking the cloud account revokes it (Unlink), a refresh after
+// the link is gone ends it, and its refreshed tokens are capped as any cloud sign-in's.
+func (h *Handler) RecordTVCodeSignIn(ctx context.Context, familyID, userID string) error {
+	if h.Cloud == nil || h.Cloud.Store == nil {
+		return discoveryh.ErrCloudNotLinked
+	}
+	if familyID == "" {
+		return errors.New("auth: no refresh family to record")
+	}
+	return h.Cloud.Store.RecordSignIn(ctx, cloudlink.KindRefresh, familyID, userID, principal.CloudScopePlay)
 }

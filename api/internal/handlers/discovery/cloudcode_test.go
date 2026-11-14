@@ -221,9 +221,19 @@ func TestARestrictedSignInApprovesNothing(t *testing.T) {
 
 // fakeAsserter is CloudAsserter: the assertion "ok-<user>" stands for <user>, for wantCode only.
 type fakeAsserter struct {
-	err      error
-	wantCode string
-	codes    []string
+	err       error
+	wantCode  string
+	codes     []string
+	recordErr error
+	recorded  []string // "<family> <user>"
+}
+
+func (f *fakeAsserter) RecordTVCodeSignIn(_ context.Context, familyID, userID string) error {
+	if f.recordErr != nil {
+		return f.recordErr
+	}
+	f.recorded = append(f.recorded, familyID+" "+userID)
+	return nil
 }
 
 func (f *fakeAsserter) TVCodeApprover(_ context.Context, assertion, code string) (string, error) {
@@ -260,6 +270,37 @@ func TestCloudAssertionApprovesAsTheLinkedUser(t *testing.T) {
 	}
 	if fm.lastUID != "viewer-1" || fm.lastKnd != "tv" || fm.lastVia != ViaCloudCode {
 		t.Fatalf("minted for %q kind %q via %q", fm.lastUID, fm.lastKnd, fm.lastVia)
+	}
+	// its sign-in is a cloud sign-in of the link: unlinking the account ends it
+	if len(as.recorded) != 1 || as.recorded[0] != "fam.viewer-1 viewer-1" {
+		t.Fatalf("recorded %v", as.recorded)
+	}
+}
+
+// A TV approved on maktaba.tv whose sign-in cannot be recorded as the link's gets no tokens:
+// unlinking the account could not end it.
+func TestCloudAssertionSignInUnrecordedHandsOutNothing(t *testing.T) {
+	cloud := &fakeCloud{open: "WEBS2345"}
+	h, _, r := newCloudHandler(t, cloud)
+	as := &fakeAsserter{wantCode: "WEBS2345", recordErr: errors.New("db down")}
+	h.CloudAssertions = as
+	if rec := do(r, http.MethodPost, "/api/pairing/cloud-assertion", `{"code":"WEBS2345","assertion":"ok-viewer-1"}`, ""); rec.Code != http.StatusOK {
+		t.Fatalf("approve = %d %s", rec.Code, rec.Body.String())
+	}
+	rec := poll(r, cloud.grants[0])
+	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "access_token") {
+		t.Fatalf("redeem = %d %s", rec.Code, rec.Body.String())
+	}
+	// and a home that lost its cloud links since hands out nothing either
+	cloud2 := &fakeCloud{open: "WEBS2345"}
+	h2, _, r2 := newCloudHandler(t, cloud2)
+	h2.CloudAssertions = &fakeAsserter{wantCode: "WEBS2345"}
+	if rec := do(r2, http.MethodPost, "/api/pairing/cloud-assertion", `{"code":"WEBS2345","assertion":"ok-viewer-1"}`, ""); rec.Code != http.StatusOK {
+		t.Fatalf("approve = %d", rec.Code)
+	}
+	h2.CloudAssertions = nil
+	if rec := poll(r2, cloud2.grants[0]); rec.Code != http.StatusServiceUnavailable || strings.Contains(rec.Body.String(), "access_token") {
+		t.Fatalf("redeem without links = %d %s", rec.Code, rec.Body.String())
 	}
 }
 

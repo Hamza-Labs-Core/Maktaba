@@ -41,6 +41,8 @@ type MintedTokens struct {
 	RefreshToken     string
 	RefreshExpiresIn int
 	UserID           string
+	// FamilyID is the refresh token's family (a sign-in recorded as a cloud one names it).
+	FamilyID string
 }
 
 // TokenMinter turns a consumed pairing ticket into device credentials.

@@ -458,3 +458,97 @@ func TestPGCloudAssertionWithoutACloudIdentity(t *testing.T) {
 		t.Fatal("claimed")
 	}
 }
+
+// A TV approved on maktaba.tv is a cloud sign-in of the link it came through: it refreshes as a
+// restricted viewer (an admin's too), and unlinking the cloud account ends it, at once and for
+// every token of its family.
+func TestPGCloudAssertionTVEndsWithItsLink(t *testing.T) {
+	cloud := cloudlinktest.New(t)
+	h, agent, read, exec := setupCloudCodeWith(t, cloud)
+	exec(`INSERT INTO home_user_links (user_id, cloud_user_id, scope) VALUES ($1,'cloud-viewer','play'), ($2,'cloud-admin','manage')`,
+		ccViewer, ccAdmin)
+	signIn := func(cloudUser, code string) (string, ccClaims) {
+		t.Helper()
+		a := cloud.Assertion(cloudlink.PurposeTVCode, cloudUser, code)
+		if rec := ccDo(h, "", http.MethodPost, "/api/pairing/cloud-assertion", `{"code":"`+code+`","assertion":"`+a+`"}`); rec.Code != http.StatusOK {
+			t.Fatalf("%s: approve = %d %s", cloudUser, rec.Code, rec.Body.String())
+		}
+		rec := ccDo(h, "", http.MethodPost, "/api/pairing/device/token", `{"device_code":"`+agent.grant(code)+`"}`)
+		var tok struct {
+			AccessToken  string `json:"access_token"`
+			RefreshToken string `json:"refresh_token"`
+		}
+		if _ = json.Unmarshal(rec.Body.Bytes(), &tok); rec.Code != http.StatusOK || tok.RefreshToken == "" {
+			t.Fatalf("%s: redeem = %d %s", cloudUser, rec.Code, rec.Body.String())
+		}
+		return tok.RefreshToken, ccTokenClaims(t, tok.AccessToken)
+	}
+	refresh := func(rt string) (*httptest.ResponseRecorder, string, ccClaims) {
+		t.Helper()
+		rec := ccDo(h, "", http.MethodPost, "/api/auth/refresh", `{"refresh_token":"`+rt+`"}`)
+		var out struct {
+			AccessToken  string `json:"access_token"`
+			RefreshToken string `json:"refresh_token"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		if rec.Code != http.StatusOK {
+			return rec, "", ccClaims{}
+		}
+		return rec, out.RefreshToken, ccTokenClaims(t, out.AccessToken)
+	}
+
+	viewerRT, viewer := signIn("cloud-viewer", "TVVW2345")
+	adminRT, admin := signIn("cloud-admin", "TVAD2345")
+	// recorded as each link's cloud sign-in, scope play
+	for _, c := range []ccClaims{viewer, admin} {
+		if got := read(`SELECT string_agg(kind||' '||scope, ',') FROM cloud_sign_ins WHERE user_id = $1`, c.Usr); got != "refresh play" {
+			t.Fatalf("%s: cloud sign-in = %q", c.Usr, got)
+		}
+	}
+	// an admin's TV refreshes restricted and never as an admin, twice (a rotation too)
+	for range 2 {
+		rec, next, c := refresh(adminRT)
+		if rec.Code != http.StatusOK || c.Usr != ccAdmin || c.IsAdmin || !c.Rst {
+			t.Fatalf("admin TV refresh = %d %+v %s", rec.Code, c, rec.Body.String())
+		}
+		adminRT = next
+	}
+	rec, next, c := refresh(viewerRT)
+	if rec.Code != http.StatusOK || c.Usr != ccViewer || !c.Rst || strings.Join(c.Lib, ",") != ccLibA {
+		t.Fatalf("viewer TV refresh = %d %+v", rec.Code, c)
+	}
+	viewerRT = next
+
+	// the admin unlinks the viewer's cloud account: the viewer's TV is signed out at once
+	if rec := ccDo(h, "admin", http.MethodDelete, "/api/users/"+ccViewer+"/cloud-link", ""); rec.Code/100 != 2 {
+		t.Fatalf("unlink = %d %s", rec.Code, rec.Body.String())
+	}
+	if live := read(`SELECT count(*)::text FROM refresh_tokens WHERE family_id = $1 AND revoked_at IS NULL`, viewer.Fam); live != "0" {
+		t.Fatalf("live tokens of the unlinked TV = %s", live)
+	}
+	if rec, _, _ := refresh(viewerRT); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unlinked TV refresh = %d %s", rec.Code, rec.Body.String())
+	}
+	// the admin's TV, another link, is untouched
+	if rec, _, _ := refresh(adminRT); rec.Code != http.StatusOK {
+		t.Fatalf("other TV refresh = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// ccTokenClaims reads an access token's claims.
+func ccTokenClaims(t *testing.T, access string) ccClaims {
+	t.Helper()
+	parts := strings.Split(access, ".")
+	if len(parts) != 3 {
+		t.Fatalf("access token %q", access)
+	}
+	b, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c ccClaims
+	if err := json.Unmarshal(b, &c); err != nil {
+		t.Fatal(err)
+	}
+	return c
+}

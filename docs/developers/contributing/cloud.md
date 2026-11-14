@@ -148,7 +148,9 @@ nothing itself: only a home that linked the account has a user to approve as, an
 registration is not enough. A home that is offline (`409` `home_offline`) or that the relay cannot
 reach (`503` `home_unreachable`) approves nothing, and the TV keeps waiting. The home checks the
 assertion against the cloud key it pinned at claim, uses it once, and gives the TV the same
-restricted sign-in as any cloud code's TV. The cloud caps each account's lookups and approvals (20,
+restricted sign-in as any cloud code's TV. That sign-in is also recorded as a cloud sign-in of the
+link it came through (scope `play`): unlinking the cloud account, on the home or by an admin, ends
+it at once, and a refresh after the link is gone ends it too. The cloud caps each account's lookups and approvals (20,
 then one every 3 seconds).
 
 ## The cloud rehearsal

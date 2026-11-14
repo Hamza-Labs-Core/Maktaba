@@ -45,6 +45,7 @@ func (f *fakeMinter) Mint(_ context.Context, userID, kind, label string) (Minted
 		AccessExpiresIn:  900,
 		RefreshToken:     "mkt_rt_v1.row." + userID,
 		RefreshExpiresIn: int(PairRefreshTTL.Seconds()),
+		FamilyID:         "fam." + userID,
 		UserID:           userID,
 	}, nil
 }

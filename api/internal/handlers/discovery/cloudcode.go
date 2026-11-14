@@ -81,6 +81,9 @@ var ErrCloudAssertionRefused = errors.New("discovery: the cloud's assertion is r
 // CloudAsserter finds the home user a cloud tvcode assertion stands for (handlers/auth).
 type CloudAsserter interface {
 	TVCodeApprover(ctx context.Context, assertion, code string) (string, error)
+	// RecordTVCodeSignIn records the refresh family a TV approved this way collected as a cloud
+	// sign-in of userID's link, so unlinking the cloud account ends it.
+	RecordTVCodeSignIn(ctx context.Context, familyID, userID string) error
 }
 
 // CloudCodes reaches the cloud's TV codes as this home.
@@ -266,7 +269,7 @@ func (h *Handler) CloudApprove(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, e)
 		return
 	}
-	claimed, e := h.approveCloudCode(r.Context(), code, userID, p.UserID)
+	claimed, e := h.approveCloudCode(r.Context(), code, userID, p.UserID, cloudTicketPrefix)
 	if e != nil {
 		httperror.Write(w, r, e)
 		return
@@ -316,7 +319,7 @@ func (h *Handler) CloudAssertApprove(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Internal("cloud assertion").Wrap(err))
 		return
 	}
-	claimed, e := h.approveCloudCode(r.Context(), code, userID, userID)
+	claimed, e := h.approveCloudCode(r.Context(), code, userID, userID, cloudLinkTicketPrefix)
 	if e != nil {
 		httperror.Write(w, r, e)
 		return
@@ -327,9 +330,9 @@ func (h *Handler) CloudAssertApprove(w http.ResponseWriter, r *http.Request) {
 }
 
 // approveCloudCode signs the TV showing code in as userID: a device code of this home approved at
-// once (its ticket says it came by a cloud code), handed to the cloud as the TV's grant. actorID
-// is who approved it, for the audit log.
-func (h *Handler) approveCloudCode(ctx context.Context, code, userID, actorID string) (CloudCode, *httperror.Error) {
+// once (its ticket, under prefix, says it came by a cloud code, and whether through a cloud
+// link), handed to the cloud as the TV's grant. actorID is who approved it, for the audit log.
+func (h *Handler) approveCloudCode(ctx context.Context, code, userID, actorID, prefix string) (CloudCode, *httperror.Error) {
 	if h.CloudCodes == nil {
 		return CloudCode{}, cloudCodeError(ErrCloudNotLinked)
 	}
@@ -368,7 +371,7 @@ func (h *Handler) approveCloudCode(ctx context.Context, code, userID, actorID st
 	}, now) {
 		return CloudCode{}, httperror.Unavailable(30)
 	}
-	key := cloudTicketPrefix + homeCode
+	key := prefix + homeCode
 	if err := h.Store.Insert(ctx, discovery.PairingTicket{
 		Code: key, UserID: userID, IssuedAt: now, ExpiresAt: exp,
 	}); err != nil {
