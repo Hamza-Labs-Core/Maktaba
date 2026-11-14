@@ -187,7 +187,7 @@ jobs:
     name: Player UI tests (${{ matrix.device }} ${{ matrix.shard }}/${{ matrix.shards }})
     if: inputs.player_ui
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 170 # TEMPORARY: -test-iterations 3
     permissions:
       contents: read
       actions: read # the build's artifact, as soon as it is uploaded
@@ -341,7 +341,7 @@ jobs:
           printf '%s\n' "${only[@]}" > "$RESULTS/$device-$shard.selection"
           xctestrun=$(ls "$PRODUCTS/Products/${scheme}_iphonesimulator"*.xctestrun)
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test-without-building -xctestrun "$xctestrun" \
-            -destination "id=$UDID" -resultBundlePath "$RESULTS/$device-$shard.xcresult" "${only[@]}"
+            -destination "id=$UDID" -resultBundlePath "$RESULTS/$device-$shard.xcresult" -test-iterations 3 "${only[@]}"
 
       # xcodebuild can say TEST EXECUTE SUCCEEDED for a run that ran none, or not all, of its
       # tests: a runner restarted after an unexpected exit may run nothing (CI run 43605618404,
