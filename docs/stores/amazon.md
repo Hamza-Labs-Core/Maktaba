@@ -133,7 +133,7 @@ options). Capture `adb logcat` for the whole run.
 
 | # | Check | Pass when |
 |---|---|---|
-| 1 | Find the home on the network (mDNS), then sign in by the home's code, and by a cloud code against the review home | the home is listed, the code screen shows, the phone approves, Home loads |
+| 1 | Find the home on the network (mDNS), then sign in by the home's code, and by the picker's cloud code against the review home | the home is listed, the code screen shows, the phone approves, Home loads |
 | 2 | Play a 4K HEVC HDR10 MKV on the 4K Max | plays in HDR at 4K (the TV's info overlay says so), direct play (no transcode on the home) |
 | 3 | Play a 1080p H.264 file on the Fire OS 7 device | plays, direct play |
 | 4 | Play a Dolby Vision profile 8 file | plays as DV or HDR10, never washed-out SDR |
@@ -144,6 +144,10 @@ options). Capture `adb logcat` for the whole run.
 | 9 | The Amazon remote: Back, Home, play/pause, rewind, fast-forward, menu, the microphone button | each does what its label says; the microphone opens Search; Back from Home leaves the app |
 | 10 | Leave and return from Amazon's launcher | the app returns to where it was |
 | 11 | The home's log of the playback (Admin, Logs) | the session's profile is `firetv` and its device report names the device's decoders |
+| 12 | First start, no home saved: the home picker | it opens on Sign in with a code: a code from Maktaba Cloud and its QR, with the homes on this network and the address field beside it, in English and in Arabic |
+| 13 | On another network (a phone's hotspot), approve the code from a phone's Player (Approve a TV or device) | Home loads through the home's relay; the home's sign-ins list the TV as a Maktaba Cloud code sign-in |
+| 14 | Approve a code as the home's admin | the TV signs in as a viewer of every library: no admin screen, nothing it can approve |
+| 15 | On the home's own network, approve a code | the TV opens the home at its LAN address, not the relay (the home's log of the sign-in names the LAN address) |
 
 If a device fault shows that Amazon's Media3 port (`amzn/media3-external-port`) fixes, the
 finding goes in the result line and a follow-up moves the Fire TV build to the port; both

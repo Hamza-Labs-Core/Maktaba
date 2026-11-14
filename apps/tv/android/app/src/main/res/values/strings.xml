@@ -33,6 +33,17 @@
     <string name="signin_code_unsupported">This home cannot sign a TV in with a code yet. Sign in with your username and password.</string>
     <string name="tv_label">Android TV</string>
 
+    <!-- the cloud code (story 58.03's TV side): the home picker's first way in -->
+    <string name="cloud_code_title">Sign in with a code</string>
+    <!-- %1$s: the phones' button (core approve_tv) -->
+    <string name="cloud_code_where">On a phone signed in to your home, open Maktaba Player or Maktaba Remote, tap “%1$s” and type this code, or scan the QR code. This TV does not need to be on your home\'s network.</string>
+    <string name="cloud_code_asking">Getting a code from Maktaba Cloud…</string>
+    <string name="cloud_code_down">A code from Maktaba Cloud is unavailable right now. Choose a home on this network, or enter its address.</string>
+    <!-- %1$s: the home's name -->
+    <string name="cloud_code_opening">Approved. Opening %1$s…</string>
+    <!-- %1$s: the home's name -->
+    <string name="cloud_code_unreachable">Approved, but %1$s cannot be reached from this TV right now.</string>
+
     <string name="continue_watching">Continue watching</string>
     <string name="recently_added">Recently added</string>
     <string name="for_you">For you</string>
