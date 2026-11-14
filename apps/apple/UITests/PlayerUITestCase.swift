@@ -265,7 +265,10 @@ class PlayerUITestCase: XCTestCase {
     /// the box still 0 in the hierarchy kept at the failure). A tap that did nothing leaves
     /// nothing behind, so a switch that still reads what it read before the tap gets one more
     /// tap; a second miss fails naming the switch, and so does any other value. The app's log
-    /// says how long each touch was held (`TouchWatcher`), for the next miss.
+    /// says how long each touch was held (`TouchWatcher`): in #1249's run 43573942988 (iphone
+    /// 6/6) a miss logged "touch held 0.07 s at (341, 194)", a whole quick tap on the still
+    /// switch that the switch ignored (the setting is written only by the switch), and the
+    /// second tap, the same 0.07 s at the same point, turned it off.
     func flip(_ toggle: XCUIElement, to value: String, _ what: String,
               file: StaticString = #filePath, line: UInt = #line) {
         for attempt in 1 ... 2 {
