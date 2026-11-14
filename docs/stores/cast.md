@@ -4,6 +4,15 @@ The Maktaba Cast receiver (story 58.07) and the iPhone, Android and Chrome sende
 58.06). Story 58.04 adds the console steps and the submission notes here; story 58.07 adds the
 test device registration.
 
+## Submission notes
+
+The store's reviewers sign in to the project's review home, review.maktaba.tv (story 58.04).
+The notes, what reviewers get and how a submission round goes are in
+[review-home.md](review-home.md): its text goes in nowhere a reviewer reads (Google's Cast console has no review): the notes are what a tester of the published receiver follows, with a sender signed in to the review home. The password is never written
+here: the notes name the release secret `REVIEW_HOME_VIEWER_PASSWORD` (and, for the parental
+checks, `REVIEW_HOME_CHILD_PASSWORD`), and the release session fills each in when it submits.
+After the round, the release checklist rotates both ([review-home.md](review-home.md#a-submission-round)).
+
 ## Real-device checklist
 
 Run before each receiver release candidate is published in Google's Cast console, and before a
