@@ -60,6 +60,10 @@ type Claims struct {
 	// 13, 16, 18); absent when the device gave none. The home holds the
 	// request to it as well as to the account's policy.
 	Ac *int `json:"ac,omitempty"`
+	// Cv and Cq are a cast grant's items (Epic 58 story 58.07; aud "cast"): the
+	// video, or the play queue, a Cast receiver may play. Empty on every other token.
+	Cv string `json:"cv,omitempty"`
+	Cq string `json:"cq,omitempty"`
 }
 
 // Errors exported by Verify.

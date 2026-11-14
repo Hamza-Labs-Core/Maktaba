@@ -12,9 +12,12 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/google/uuid"
 	"golang.org/x/text/language"
 	"golang.org/x/text/language/display"
 
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/auth"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/httpx"
 )
 
@@ -166,6 +169,14 @@ func WithSubtitleRenditions(master []byte, langs []string) []byte {
 // measures it.
 const hlsTimestampBase = 126000
 
+// hlsFMP4TimestampBase is that timestamp in a session's fMP4 segments (story
+// 58.02): ffmpeg's fMP4 starts at 0, not 1.4 s in (measured by
+// TestRemuxFMP4_RealFFmpeg).
+const hlsFMP4TimestampBase = 0
+
+// hlsFMP4 is the sidecar route's hls= value for an fMP4 session's rendition.
+const hlsFMP4 = "fmp4"
+
 // hlsTimestampQuery on the sidecar route asks for the WebVTT as an HLS
 // segment: with X-TIMESTAMP-MAP, which ties its cue times to the segments'
 // timestamps. Without it, a player takes cue time 0 for timestamp 0 and shows
@@ -187,7 +198,11 @@ const hlsTimestampQuery = "hls"
 // Lines may end in CR, LF or CRLF (WebVTT allows all three): the header is
 // read with any of them, the map line takes the WEBVTT line's ending, and the
 // rest of the file is left as it is.
-func WithTimestampMap(vtt []byte) []byte {
+func WithTimestampMap(vtt []byte) []byte { return withTimestampMapAt(vtt, hlsTimestampBase) }
+
+// withTimestampMapAt is WithTimestampMap with the session's segments' base
+// timestamp (hlsTimestampBase for TS, hlsFMP4TimestampBase for fMP4).
+func withTimestampMapAt(vtt []byte, base int) []byte {
 	body := bytes.TrimPrefix(vtt, []byte("\uFEFF"))
 	if !bytes.HasPrefix(body, []byte("WEBVTT")) {
 		return vtt
@@ -214,7 +229,7 @@ func WithTimestampMap(vtt []byte) []byte {
 	}
 	out := make([]byte, 0, len(body)+64)
 	out = append(out, first...)
-	out = fmt.Appendf(out, "%sX-TIMESTAMP-MAP=MPEGTS:%d,LOCAL:%s%s", nl, hlsTimestampBase, local, nl)
+	out = fmt.Appendf(out, "%sX-TIMESTAMP-MAP=MPEGTS:%d,LOCAL:%s%s", nl, base, local, nl)
 	out = append(out, header...)
 	return append(out, rest...)
 }
@@ -264,6 +279,12 @@ func mapLocal(v string) string {
 // segment (relative to the playlist's folder, so a front door mounting
 // /stream/ elsewhere keeps it).
 func SubtitlePlaylist(lang string, durationSec float64) []byte {
+	return subtitlePlaylist(lang, durationSec, "1")
+}
+
+// subtitlePlaylist is SubtitlePlaylist with the sidecar's hls= value: "1" for a
+// session in TS segments, hlsFMP4 for one in fMP4 (its own timestamp base).
+func subtitlePlaylist(lang string, durationSec float64, hls string) []byte {
 	target := max(int(math.Ceil(durationSec)), 1)
 	return fmt.Appendf(nil, "#EXTM3U\n"+
 		"#EXT-X-VERSION:3\n"+
@@ -271,8 +292,8 @@ func SubtitlePlaylist(lang string, durationSec float64) []byte {
 		"#EXT-X-MEDIA-SEQUENCE:0\n"+
 		"#EXT-X-PLAYLIST-TYPE:VOD\n"+
 		"#EXTINF:%.3f,\n"+
-		"../subs/sidecar/%s.vtt?%s=1\n"+
-		"#EXT-X-ENDLIST\n", target, durationSec, lang, hlsTimestampQuery)
+		"../subs/sidecar/%s.vtt?%s=%s\n"+
+		"#EXT-X-ENDLIST\n", target, durationSec, lang, hlsTimestampQuery, hls)
 }
 
 // subtitles is the request's session's subtitle set when renditions can be
@@ -298,7 +319,13 @@ func (h *ManifestHandler) ServeSubtitlePlaylist(w http.ResponseWriter, r *http.R
 		httpx.Write(w, http.StatusNotFound, "subtitle-not-found", "no subtitle in this language", "")
 		return
 	}
-	data := SubtitlePlaylist(lang, set.DurationSec)
+	hls := "1"
+	if id, err := uuid.Parse(auth.SubjectFromContext(r.Context())); err == nil {
+		if row, ok, err := h.Sessions.Get(r.Context(), id); err == nil && ok && row.Segments == ffmpeg.SegmentsFMP4 {
+			hls = hlsFMP4
+		}
+	}
+	data := subtitlePlaylist(lang, set.DurationSec, hls)
 	if sig := r.URL.Query().Get("sig"); sig != "" {
 		data = SignPlaylist(data, sig)
 	}

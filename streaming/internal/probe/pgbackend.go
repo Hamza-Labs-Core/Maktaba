@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -88,7 +89,10 @@ func (b *PGBackend) Close() {
 //   - has_audio     — any audio_tracks row, or an audio stream in raw_ffprobe:
 //     a track row with no codec is still audio (Row.NoAudio)
 //   - media_info.raw_ffprobe — the first video stream (not cover art): its
-//     colour and pixel format, for the transcode's tone-mapping
+//     colour and pixel format, for the transcode's tone-mapping, and its
+//     Dolby Vision configuration record (profile, base-layer compatibility),
+//     for the TV profiles' verdicts (story 58.02)
+//   - media_info.fps — the video's frame rate
 //
 // HDR and MIME have no columns in the current schema; the matrix
 // treats an empty HDR as SDR and direct-play derives Content-Type from
@@ -120,7 +124,10 @@ SELECT
      FROM jsonb_array_elements(CASE WHEN jsonb_typeof(mi.raw_ffprobe->'streams') = 'array'
                                     THEN mi.raw_ffprobe->'streams' ELSE '[]'::jsonb END) AS au(stream)
      WHERE au.stream->>'codec_type' = 'audio'
-  )) AS has_audio
+  )) AS has_audio,
+  COALESCE(mi.fps, 0)::float8,
+  COALESCE(dovi.d->>'dv_profile', '0'),
+  COALESCE(dovi.d->>'dv_bl_signal_compatibility_id', '0')
 FROM videos v
 LEFT JOIN media_info mi ON mi.video_id = v.id
 LEFT JOIN LATERAL (
@@ -131,6 +138,13 @@ LEFT JOIN LATERAL (
     AND COALESCE(s->'disposition'->>'attached_pic', '0') <> '1'
   LIMIT 1
 ) vs ON true
+LEFT JOIN LATERAL (
+  SELECT d
+  FROM jsonb_array_elements(CASE WHEN jsonb_typeof(vs.s->'side_data_list') = 'array'
+                                 THEN vs.s->'side_data_list' ELSE '[]'::jsonb END) d
+  WHERE d->>'side_data_type' = 'DOVI configuration record'
+  LIMIT 1
+) dovi ON true
 LEFT JOIN LATERAL (
   SELECT codec, channels, true AS present
   FROM audio_tracks
@@ -206,6 +220,7 @@ func probeOnPlay(ctx context.Context, q pgExecQuerier, videoID uuid.UUID, wait, 
 // it against a fake pgx.Row source.
 func lookupOn(ctx context.Context, q pgQuerier, videoID uuid.UUID) (*Row, error) {
 	row := &Row{VideoID: videoID}
+	var dvProfile, dvCompat string
 	err := q.QueryRow(ctx, lookupSQL, videoID).Scan(
 		&row.VideoID,
 		&row.LibraryID,
@@ -228,6 +243,9 @@ func lookupOn(ctx context.Context, q pgQuerier, videoID uuid.UUID) (*Row, error)
 		&row.ColorRange,
 		&row.PixFmt,
 		&row.HasAudio,
+		&row.FPS,
+		&dvProfile,
+		&dvCompat,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -238,5 +256,7 @@ func lookupOn(ctx context.Context, q pgQuerier, videoID uuid.UUID) (*Row, error)
 	if !row.Probed {
 		return nil, ErrNotProbed
 	}
+	row.DVProfile, _ = strconv.Atoi(dvProfile)
+	row.DVCompat, _ = strconv.Atoi(dvCompat)
 	return row, nil
 }

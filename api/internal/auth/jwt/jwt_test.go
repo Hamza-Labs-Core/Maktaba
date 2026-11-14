@@ -181,3 +181,26 @@ func TestVerify_Malformed(t *testing.T) {
 		}
 	}
 }
+
+// TestSignVerify_CastClaims: a cast grant's item claims (Epic 58 story 58.07) survive the
+// round trip, and a token without them carries neither.
+func TestSignVerify_CastClaims(t *testing.T) {
+	s := newSet(t)
+	for _, in := range []Claims{
+		{Aud: "cast", Usr: "user-1", Cv: "video-1"},
+		{Aud: "cast", Usr: "user-1", Cq: "queue-1"},
+		{Aud: "cast", Usr: "user-1"},
+	} {
+		tok, err := Sign(s, in)
+		if err != nil {
+			t.Fatalf("Sign: %v", err)
+		}
+		out, err := Verify(s, tok, "cast")
+		if err != nil {
+			t.Fatalf("Verify: %v", err)
+		}
+		if out.Cv != in.Cv || out.Cq != in.Cq {
+			t.Errorf("cast claims = %q, %q; want %q, %q", out.Cv, out.Cq, in.Cv, in.Cq)
+		}
+	}
+}

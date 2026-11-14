@@ -175,3 +175,46 @@ func TestDecide_ProbeContainerNames(t *testing.T) {
 		}
 	}
 }
+
+// The older profiles meet ffprobe's codec names ("hevc", "eac3"), not their
+// own spellings: an Android player direct-plays an HEVC file it decodes, and
+// the profiles whose players cannot take any HEVC file keep transcoding it.
+func TestDecide_ProbeCodecNames(t *testing.T) {
+	r := NewRegistry()
+	mkv := "matroska,webm"
+	mp4 := "mov,mp4,m4a,3gp,3g2,mj2"
+	cases := []struct {
+		profile, container, video, audio, hdr string
+		dv                                    int
+		want                                  Mode
+	}{
+		{"androidtv", mkv, "hevc", "eac3", "", 0, ModeDirect},
+		{"android-native", mp4, "hevc", "aac", "", 0, ModeDirect},
+		{"android-native", mkv, "hevc", "aac", "hdr10", 0, ModeDirect},
+		// HDR the profile does not show: a transcode (tone-mapped), not the
+		// HDR picture on an SDR screen
+		{"android-native", mkv, "hevc", "aac", "", 5, ModeTranscode},
+		{"browser-chrome", mp4, "av1", "opus", "hdr10", 0, ModeTranscode},
+		{"androidtv", mkv, "hevc", "eac3", "hdr10", 5, ModeDirect},
+		// Chrome decodes HEVC only on some hardware, Firefox never; Safari and
+		// AVPlayer refuse an MP4 whose HEVC is tagged hev1 (the probe does not
+		// record the tag): HEVC still transcodes for them
+		{"browser-chrome", mp4, "hevc", "aac", "", 0, ModeTranscode},
+		{"browser-safari", mp4, "hevc", "aac", "", 0, ModeTranscode},
+		{"ios-native", mp4, "hevc", "aac", "", 0, ModeTranscode},
+		{"tvos", mp4, "hevc", "eac3", "", 0, ModeTranscode},
+		{"desktop-player", mp4, "hevc", "aac", "", 0, ModeTranscode},
+		{"generic", mp4, "hevc", "aac", "", 0, ModeTranscode},
+		// a codec's other spellings read as its one name
+		{"androidtv", mkv, "h265", "ec-3", "", 0, ModeDirect},
+		{"ios-native", mp4, "avc1", "E-AC-3", "", 0, ModeDirect},
+	}
+	for _, c := range cases {
+		p, _ := r.Get(c.profile)
+		src := Source{Container: c.container, VideoCodec: c.video, AudioCodec: c.audio, HDR: c.hdr,
+			DVProfile: c.dv, Height: 2160, BitrateKbps: 20000}
+		if v := r.Decide(p, src, Override{}); v.Mode != c.want {
+			t.Errorf("%s %s/%s/%s dv%d: got %s (%s), want %s", c.profile, c.video, c.audio, c.hdr, c.dv, v.Mode, v.Reason, c.want)
+		}
+	}
+}
